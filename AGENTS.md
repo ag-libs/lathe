@@ -3,6 +3,11 @@
 Full design: `lathe-design-v3-latest.md`. Phase plan and implementation recipes: `lathe-plan.md`.
 Before implementing any phase, read that phase's section in `lathe-plan.md`.
 
+## Working style
+
+- **Ask before coding when in doubt** — if the approach is unclear or multiple valid designs exist, present the options and ask the user to choose before writing any code.
+- **Present design for non-trivial changes** — any change that touches multiple classes, introduces new abstractions, or affects public APIs requires a design summary (what classes change, what is added, why) and user approval before implementation.
+
 ---
 
 ## Modules
