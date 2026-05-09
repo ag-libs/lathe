@@ -8,21 +8,20 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-// Sample.java (0-based lines, after Javadoc additions):
-//  17:   @Retention(RetentionPolicy.RUNTIME)     RUNTIME=29
-//  18:   @Target(ElementType.METHOD)             METHOD=22
-//  23:   enum Status {
-//  24:     ACTIVE,                                ACTIVE=4
-//  25:     INACTIVE                               INACTIVE=4
-//  28:   private static final String PREFIX       PREFIX=30
-//  73:     return "hello".toUpperCase(ENGLISH)    ENGLISH=31
-//  88:   public <T> T identity(final T value)    T(decl)=10  T(ret)=13  T(param)=30
-// 101:         .filter(s -> s.startsWith(PREFIX)) PREFIX=34
-// 106:   public static String staticHelper(...)   staticHelper=23
-// 109:     return PREFIX + upper;                 PREFIX=11
-// 123:   @Deprecated
-// 124:   public String oldFormat(...)             oldFormat=16
-// 129:     return oldFormat(value);               oldFormat=11
+// Sample.java (0-based lines):
+//  16:   @Retention(RetentionPolicy.RUNTIME)     RUNTIME=29
+//  17:   @Target(ElementType.METHOD)             METHOD=22
+//  22:   enum Status {
+//  23:     ACTIVE, INACTIVE                       ACTIVE=4  INACTIVE=12
+//  26:   private static final String PREFIX       PREFIX=30
+//  54:     return "hello".toUpperCase(ENGLISH)    ENGLISH=31
+//  69:   public <T> T identity(final T value)    T(decl)=10  T(ret)=13  T(param)=30
+//  82:         .filter(s -> s.startsWith(PREFIX)) PREFIX=34
+//  87:   public static String staticHelper(...)   staticHelper=23
+//  90:     return PREFIX + upper;                 PREFIX=11
+// 104:   @Deprecated
+// 105:   public String oldFormat(...)             oldFormat=16
+// 110:     return oldFormat(value);               oldFormat=11
 class SemanticTokensTest extends SampleFixture {
 
   List<SemanticToken> tokens;
@@ -37,20 +36,20 @@ class SemanticTokensTest extends SampleFixture {
 
     @Test
     void class_annotation_is_annotation_type() {
-      // @SuppressWarnings at 0-based line 14: @ col 0, name at col 1
-      assertToken(14, 1, "annotation");
+      // @SuppressWarnings at 0-based line 13: @ col 0, name at col 1
+      assertToken(13, 1, "annotation");
     }
 
     @Test
     void method_annotation_is_annotation_type() {
-      // @Logged at 0-based line 98: @ col 2, name at col 3
-      assertToken(98, 3, "annotation");
+      // @Logged at 0-based line 80: @ col 2, name at col 3
+      assertToken(80, 3, "annotation");
     }
 
     @Test
     void deprecated_annotation_is_annotation_type() {
-      // @Deprecated at 0-based line 123: @ col 2, name at col 3
-      assertToken(123, 3, "annotation");
+      // @Deprecated at 0-based line 105: @ col 2, name at col 3
+      assertToken(105, 3, "annotation");
     }
   }
 
@@ -59,28 +58,28 @@ class SemanticTokensTest extends SampleFixture {
 
     @Test
     void typeParam_decl_is_typeParameter_with_declaration() {
-      assertToken(88, 10, "typeParameter", "declaration");
+      assertToken(70, 10, "typeParameter", "declaration");
     }
 
     @Test
     void enumConst_decl_is_enumMember_with_declaration() {
-      assertToken(25, 4, "enumMember", "declaration");
+      assertToken(23, 4, "enumMember", "declaration");
       assertToken(24, 4, "enumMember", "declaration");
     }
 
     @Test
     void staticField_decl_has_static_modifier() {
-      assertToken(28, 30, "property", "declaration", "static");
+      assertToken(27, 30, "property", "declaration", "static");
     }
 
     @Test
     void staticMethod_decl_has_static_modifier() {
-      assertToken(106, 23, "method", "declaration", "static");
+      assertToken(88, 23, "method", "declaration", "static");
     }
 
     @Test
     void deprecated_method_decl_has_deprecated_modifier() {
-      assertToken(124, 16, "method", "declaration", "deprecated");
+      assertToken(106, 16, "method", "declaration", "deprecated");
     }
   }
 
@@ -89,40 +88,40 @@ class SemanticTokensTest extends SampleFixture {
 
     @Test
     void typeParam_in_return_type_is_typeParameter() {
-      assertToken(88, 13, "typeParameter");
+      assertToken(70, 13, "typeParameter");
     }
 
     @Test
     void typeParam_in_param_type_is_typeParameter() {
-      assertToken(88, 30, "typeParameter");
+      assertToken(70, 30, "typeParameter");
     }
 
     @Test
     void enumConst_in_field_access_is_enumMember() {
       // Status.ACTIVE
-      assertToken(120, 18, "enumMember");
+      assertToken(102, 18, "enumMember");
     }
 
     @Test
     void enumConst_in_annotation_arg_is_enumMember() {
       // RetentionPolicy.RUNTIME and ElementType.METHOD
-      assertToken(17, 29, "enumMember");
-      assertToken(18, 22, "enumMember");
+      assertToken(16, 29, "enumMember");
+      assertToken(17, 22, "enumMember");
     }
 
     @Test
     void staticField_usage_is_property_with_static() {
       // ENGLISH from static import
-      assertToken(73, 31, "property", "static");
+      assertToken(55, 31, "property", "static");
       // PREFIX in summarize
-      assertToken(101, 34, "property", "static");
+      assertToken(83, 34, "property", "static");
       // PREFIX in staticHelper
-      assertToken(109, 11, "property", "static");
+      assertToken(91, 11, "property", "static");
     }
 
     @Test
     void deprecated_method_usage_has_deprecated_modifier() {
-      assertToken(129, 11, "method", "deprecated");
+      assertToken(111, 11, "method", "deprecated");
     }
   }
 
@@ -132,31 +131,31 @@ class SemanticTokensTest extends SampleFixture {
     @Test
     void regular_method_decl_has_no_token() {
       // "getName" — instance method, no interesting modifiers
-      assertNoToken(48, 16);
+      assertNoToken(37, 16);
     }
 
     @Test
     void instance_field_usage_has_no_token() {
       // "name" in "return name;"
-      assertNoToken(49, 11);
+      assertNoToken(38, 11);
     }
 
     @Test
     void parameter_has_no_token() {
       // "value" in "public String run(final String value)"
-      assertNoToken(67, 33);
+      assertNoToken(49, 33);
     }
 
     @Test
     void local_variable_has_no_token() {
       // "trimmed" in "var trimmed = input.strip();"
-      assertNoToken(107, 8);
+      assertNoToken(89, 8);
     }
 
     @Test
     void type_reference_has_no_token() {
       // "String" return type of getName
-      assertNoToken(48, 9);
+      assertNoToken(37, 9);
     }
   }
 

@@ -13,31 +13,39 @@ import org.junit.jupiter.api.Test;
 //
 //  0: import java.lang.annotation.ElementType;
 //  ...
-// 10: import static java.lang.String.format;
-// 11: import static java.util.Locale.ENGLISH;
-// 12: (blank)
-// 13: /** A sample class ... */
-// 14: @SuppressWarnings("unused")
-// 15: public class Sample {                      Sample=13
+// 11: import static java.lang.String.format;
+// 12: import static java.util.Locale.ENGLISH;
+// 13: (blank)
+// 14: public class Sample {                      Sample=13
+// 15: (blank)
+// 16:   @Retention(RetentionPolicy.RUNTIME)
+// 17:   @Target(ElementType.METHOD)
+// 18:   public @interface Logged {
+// 19:     String value() default "";
+// 20:   }
+// 21: (blank)
+// 22:   enum Status {
+// 23:     ACTIVE, INACTIVE
+// 24:   }
+// 25: (blank)
+// 26:   private static final String PREFIX = "item-";
+// 27: (blank)
+// 28:   private final String name;               name=23
+// 29:   private int count;
+// 30: (blank)
+// 31:   public Sample(String name) {             Sample=9  name=23
+// 32:     this.name = name;                      name(rhs)=19
 // ...
-// 23:   enum Status {
-// 24:     ACTIVE, INACTIVE
+// 36:   public String getName() {                String=9  getName=16
+// 37:     return name;                           name=11
 // ...
-// 30:   private final String name;               name=23
+// 48:   public String run(final String value) {  value=33
+// 49:     Objects.requireNonNull(value);         requireNonNull=12  value(arg)=27
+// 50:     return format("result: %s", value);    format=11  "result:%s"=18     value(arg)=32
 // ...
-// 38:   public Sample(String name) {             Sample=9  name=23
-// 39:     this.name = name;                      name(rhs)=19
+// 54:     return "hello".toUpperCase(ENGLISH);   ENGLISH=31
 // ...
-// 48:   public String getName() {                String=9  getName=16
-// 49:     return name;                           name=11
-// ...
-// 67:   public String run(final String value) {  value=33
-// 68:     Objects.requireNonNull(value);         requireNonNull=12  value(arg)=27
-// 69:     return format("result: %s", value);    format=11  "result:%s"=18     value(arg)=32
-// ...
-// 73:     return "hello".toUpperCase(ENGLISH);   ENGLISH=31
-// ...
-// 77:     return items.stream().map(s -> s.toUpperCase()).toList();
+// 58:     return items.stream().map(s -> s.toUpperCase()).toList();
 //                                        ^30    ^35 ^37
 class SourceLocatorTest extends SampleFixture {
 
@@ -48,7 +56,7 @@ class SourceLocatorTest extends SampleFixture {
 
     @Test
     void className_resolves_to_class_element() {
-      final var element = elementAt(15, 13);
+      final var element = elementAt(14, 13);
       assertThat(element).isNotNull();
       assertThat(element.getKind()).isEqualTo(ElementKind.CLASS);
       assertThat(element.getSimpleName().toString()).isEqualTo("Sample");
@@ -57,7 +65,7 @@ class SourceLocatorTest extends SampleFixture {
     @Test
     void fieldDeclaration_resolves_to_field_element() {
       // "name" in "  private final String name;"
-      final var element = elementAt(30, 23);
+      final var element = elementAt(29, 23);
       assertThat(element).isNotNull();
       assertThat(element.getKind()).isEqualTo(ElementKind.FIELD);
       assertThat(element.getSimpleName().toString()).isEqualTo("name");
@@ -66,7 +74,7 @@ class SourceLocatorTest extends SampleFixture {
     @Test
     void methodDeclaration_resolves_to_method_element() {
       // "getName" in "  public String getName() {"
-      final var element = elementAt(48, 16);
+      final var element = elementAt(37, 16);
       assertThat(element).isNotNull();
       assertThat(element.getKind()).isEqualTo(ElementKind.METHOD);
       assertThat(element.getSimpleName().toString()).isEqualTo("getName");
@@ -75,7 +83,7 @@ class SourceLocatorTest extends SampleFixture {
     @Test
     void constructorDeclaration_resolves_to_constructor_element() {
       // "Sample" in "  public Sample(String name) {"
-      final var element = elementAt(38, 9);
+      final var element = elementAt(32, 9);
       assertThat(element).isNotNull();
       assertThat(element.getKind()).isEqualTo(ElementKind.CONSTRUCTOR);
     }
@@ -83,7 +91,7 @@ class SourceLocatorTest extends SampleFixture {
     @Test
     void returnType_resolves_to_class_element() {
       // "String" in "  public String getName() {"
-      final var element = elementAt(48, 9);
+      final var element = elementAt(37, 9);
       assertThat(element).isNotNull();
       assertThat(element.getKind()).isEqualTo(ElementKind.CLASS);
       assertThat(element.getSimpleName().toString()).isEqualTo("String");
@@ -92,7 +100,7 @@ class SourceLocatorTest extends SampleFixture {
     @Test
     void fieldReference_in_method_body_resolves_to_field_element() {
       // "name" in "    return name;"
-      final var element = elementAt(49, 11);
+      final var element = elementAt(38, 11);
       assertThat(element).isNotNull();
       assertThat(element.getKind()).isEqualTo(ElementKind.FIELD);
       assertThat(element.getSimpleName().toString()).isEqualTo("name");
@@ -101,7 +109,7 @@ class SourceLocatorTest extends SampleFixture {
     @Test
     void parameterDeclaration_resolves_to_parameter_element() {
       // "name" in "  public Sample(String name) {"
-      final var element = elementAt(38, 23);
+      final var element = elementAt(32, 23);
       assertThat(element).isNotNull();
       assertThat(element.getKind()).isEqualTo(ElementKind.PARAMETER);
       assertThat(element.getSimpleName().toString()).isEqualTo("name");
@@ -110,7 +118,7 @@ class SourceLocatorTest extends SampleFixture {
     @Test
     void parameterUsageInBody_resolves_to_parameter_element() {
       // second "name" (rhs) in "    this.name = name;"
-      final var element = elementAt(39, 19);
+      final var element = elementAt(33, 19);
       assertThat(element).isNotNull();
       assertThat(element.getKind()).isEqualTo(ElementKind.PARAMETER);
       assertThat(element.getSimpleName().toString()).isEqualTo("name");
@@ -125,7 +133,7 @@ class SourceLocatorTest extends SampleFixture {
     @Test
     void methodName_memberSelect_resolves_to_method() {
       // "requireNonNull" in "Objects.requireNonNull(value)"
-      final var element = elementAt(68, 14);
+      final var element = elementAt(50, 14);
       assertThat(element).isNotNull();
       assertThat(element.getKind()).isEqualTo(ElementKind.METHOD);
       assertThat(element.getSimpleName().toString()).isEqualTo("requireNonNull");
@@ -134,7 +142,7 @@ class SourceLocatorTest extends SampleFixture {
     @Test
     void methodName_staticImport_resolves_to_method() {
       // "format" in "format("result: %s", value)"
-      final var element = elementAt(69, 13);
+      final var element = elementAt(51, 13);
       assertThat(element).isNotNull();
       assertThat(element.getKind()).isEqualTo(ElementKind.METHOD);
       assertThat(element.getSimpleName().toString()).isEqualTo("format");
@@ -143,7 +151,7 @@ class SourceLocatorTest extends SampleFixture {
     @Test
     void argument_to_requireNonNull_resolves_to_parameter() {
       // "value" in "Objects.requireNonNull(value)"
-      final var param = parameterAt(68, 29);
+      final var param = parameterAt(50, 29);
       assertThat(param).isNotNull();
       assertThat(param.getKind()).isEqualTo(ElementKind.PARAMETER);
     }
@@ -151,7 +159,7 @@ class SourceLocatorTest extends SampleFixture {
     @Test
     void firstArgument_to_format_resolves_to_parameter() {
       // "result: %s" string literal in "format("result: %s", value)"
-      final var param = parameterAt(69, 22);
+      final var param = parameterAt(51, 22);
       assertThat(param).isNotNull();
       assertThat(param.getKind()).isEqualTo(ElementKind.PARAMETER);
     }
@@ -159,7 +167,7 @@ class SourceLocatorTest extends SampleFixture {
     @Test
     void secondArgument_to_format_resolves_to_parameter() {
       // second "value" in "format("result: %s", value)"
-      final var param = parameterAt(69, 34);
+      final var param = parameterAt(51, 34);
       assertThat(param).isNotNull();
       assertThat(param.getKind()).isEqualTo(ElementKind.PARAMETER);
     }
@@ -167,7 +175,7 @@ class SourceLocatorTest extends SampleFixture {
     @Test
     void staticField_argument_resolves_to_field_not_parameter() {
       // "ENGLISH" in "\"hello\".toUpperCase(ENGLISH)" — Locale.ENGLISH is a static field
-      final var element = elementAt(73, 34);
+      final var element = elementAt(55, 34);
       assertThat(element).isNotNull();
       assertThat(element.getKind()).isEqualTo(ElementKind.FIELD);
       assertThat(element.getSimpleName().toString()).isEqualTo("ENGLISH");
@@ -176,7 +184,7 @@ class SourceLocatorTest extends SampleFixture {
     @Test
     void staticField_argument_parameterElementAt_returns_null() {
       // parameterElementAt must not mask static fields or enum constants
-      final var param = parameterAt(73, 34);
+      final var param = parameterAt(55, 34);
       assertThat(param).isNull();
     }
   }
@@ -213,7 +221,7 @@ class SourceLocatorTest extends SampleFixture {
     @Test
     void overloaded_stringArg_resolves_to_string_param() {
       // "hello" in "overloaded("hello")"
-      final var param = parameterAt(93, 16);
+      final var param = parameterAt(75, 16);
       assertThat(param).isNotNull();
       assertThat(param.getKind()).isEqualTo(ElementKind.PARAMETER);
       assertThat(param.asType().toString()).isEqualTo("java.lang.String");
@@ -222,7 +230,7 @@ class SourceLocatorTest extends SampleFixture {
     @Test
     void overloaded_intArg_resolves_to_int_param() {
       // 42 in "overloaded(42)"
-      final var param = parameterAt(94, 15);
+      final var param = parameterAt(76, 15);
       assertThat(param).isNotNull();
       assertThat(param.getKind()).isEqualTo(ElementKind.PARAMETER);
       assertThat(param.asType().getKind()).isEqualTo(TypeKind.INT);
@@ -231,7 +239,7 @@ class SourceLocatorTest extends SampleFixture {
     @Test
     void generic_method_param_is_typevar() {
       // "text" in "identity("text")"
-      final var param = parameterAt(95, 14);
+      final var param = parameterAt(77, 14);
       assertThat(param).isNotNull();
       assertThat(param.getKind()).isEqualTo(ElementKind.PARAMETER);
       assertThat(param.asType().getKind()).isEqualTo(TypeKind.TYPEVAR);
@@ -247,7 +255,7 @@ class SourceLocatorTest extends SampleFixture {
     @Test
     void lambdaParam_resolves_to_parameter() {
       // "s" (declaration) in "map(s -> s.toUpperCase())"
-      final var element = elementAt(77, 30);
+      final var element = elementAt(59, 30);
       assertThat(element).isNotNull();
       assertThat(element.getKind()).isEqualTo(ElementKind.PARAMETER);
       assertThat(element.getSimpleName().toString()).isEqualTo("s");
@@ -256,7 +264,7 @@ class SourceLocatorTest extends SampleFixture {
     @Test
     void lambdaParamUsage_in_body_resolves_to_parameter() {
       // "s" (usage) in "s -> s.toUpperCase()"
-      final var element = elementAt(77, 35);
+      final var element = elementAt(59, 35);
       assertThat(element).isNotNull();
       assertThat(element.getKind()).isEqualTo(ElementKind.PARAMETER);
       assertThat(element.getSimpleName().toString()).isEqualTo("s");
@@ -265,7 +273,7 @@ class SourceLocatorTest extends SampleFixture {
     @Test
     void methodCall_in_lambda_body_resolves_to_method() {
       // "toUpperCase" in "s -> s.toUpperCase()"
-      final var element = elementAt(77, 37);
+      final var element = elementAt(59, 37);
       assertThat(element).isNotNull();
       assertThat(element.getKind()).isEqualTo(ElementKind.METHOD);
       assertThat(element.getSimpleName().toString()).isEqualTo("toUpperCase");
@@ -274,7 +282,7 @@ class SourceLocatorTest extends SampleFixture {
     @Test
     void lambda_as_argument_parameterAt_returns_enclosing_method_param() {
       // hovering on lambda param "s" — parameterAt resolves to Stream.map's functional param
-      final var param = parameterAt(77, 30);
+      final var param = parameterAt(59, 30);
       assertThat(param).isNotNull();
       assertThat(param.getKind()).isEqualTo(ElementKind.PARAMETER);
     }

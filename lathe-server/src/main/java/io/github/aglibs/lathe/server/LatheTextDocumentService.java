@@ -171,7 +171,7 @@ final class LatheTextDocumentService implements TextDocumentService {
     final var pos = params.getPosition();
     LOG.fine(() -> "[hover] %s %d:%d".formatted(uri, pos.getLine(), pos.getCharacter()));
     try {
-      return CompletableFuture.completedFuture(engine.hover(uri, pos, registry.allSourceRoots()));
+      return CompletableFuture.completedFuture(engine.hover(uri, pos));
     } catch (final Exception e) {
       LOG.log(SEVERE, e, () -> "[hover] failed for " + uri);
       return CompletableFuture.completedFuture(null);

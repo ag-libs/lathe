@@ -19,8 +19,8 @@ class DefinitionLocatorTest extends SampleFixture {
 
     @Test
     void typeReference() {
-      // "Status" in return type of getStatus() at line 119 (0-based), col 9
-      final var offset = SourceLocator.toOffset(cu, 119, 9);
+      // "Status" in return type of getStatus() at line 101 (0-based), col 9
+      final var offset = SourceLocator.toOffset(cu, 101, 9);
       final var path = SourceLocator.pathAt(trees, cu, offset);
       final var element = SourceLocator.elementAt(trees, path);
 
@@ -30,15 +30,15 @@ class DefinitionLocatorTest extends SampleFixture {
 
       assertThat(location).isPresent();
       assertThat(location.get().getUri()).endsWith("Sample.java");
-      // "Status" name at 1-based line 24 col 8 = 0-based line 23 col 7
-      assertThat(location.get().getRange().getStart().getLine()).isEqualTo(23);
+      // "Status" name at 1-based line 23 col 8 = 0-based line 22 col 7
+      assertThat(location.get().getRange().getStart().getLine()).isEqualTo(22);
       assertThat(location.get().getRange().getStart().getCharacter()).isEqualTo(7);
     }
 
     @Test
     void methodReference() {
-      // "overloaded" call at line 93 (0-based), col 4
-      final var offset = SourceLocator.toOffset(cu, 93, 4);
+      // "overloaded" call at line 75 (0-based), col 4
+      final var offset = SourceLocator.toOffset(cu, 75, 4);
       final var path = SourceLocator.pathAt(trees, cu, offset);
       final var element = SourceLocator.elementAt(trees, path);
 
@@ -48,8 +48,8 @@ class DefinitionLocatorTest extends SampleFixture {
 
       assertThat(location).isPresent();
       assertThat(location.get().getUri()).endsWith("Sample.java");
-      // "overloaded" name at 1-based line 81 col 17 = 0-based line 80 col 16
-      assertThat(location.get().getRange().getStart().getLine()).isEqualTo(80);
+      // "overloaded" name at 1-based line 63 col 17 = 0-based line 62 col 16
+      assertThat(location.get().getRange().getStart().getLine()).isEqualTo(62);
       assertThat(location.get().getRange().getStart().getCharacter()).isEqualTo(16);
     }
   }

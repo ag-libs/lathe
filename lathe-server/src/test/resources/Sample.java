@@ -11,7 +11,6 @@ import java.util.stream.Collectors;
 import static java.lang.String.format;
 import static java.util.Locale.ENGLISH;
 
-/** A sample class used for testing the Lathe language server. */
 @SuppressWarnings("unused")
 public class Sample {
 
@@ -31,21 +30,11 @@ public class Sample {
   private final String name;
   private int count;
 
-  /**
-   * Creates a new sample with the given name.
-   *
-   * @param name the display name
-   */
   public Sample(String name) {
     this.name = name;
     this.count = 0;
   }
 
-  /**
-   * Returns the display name of this sample.
-   *
-   * @return the name
-   */
   public String getName() {
     return name;
   }
@@ -58,13 +47,6 @@ public class Sample {
     return count;
   }
 
-  /**
-   * Runs a computation using the given value.
-   *
-   * @param value the input value; must not be null
-   * @return the formatted result
-   * @throws NullPointerException if value is null
-   */
   public String run(final String value) {
     Objects.requireNonNull(value);
     return format("result: %s", value);

@@ -1,8 +1,8 @@
 package io.github.aglibs.lathe.server;
 
 import com.sun.source.tree.CompilationUnitTree;
-import com.sun.source.util.DocTrees;
 import com.sun.source.util.JavacTask;
+import com.sun.source.util.Trees;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -21,7 +21,7 @@ abstract class SampleFixture {
   @TempDir Path tmp;
 
   CompilationUnitTree cu;
-  DocTrees trees;
+  Trees trees;
 
   @BeforeEach
   void compile() throws IOException {
@@ -38,6 +38,6 @@ abstract class SampleFixture {
 
     cu = task.parse().iterator().next();
     task.analyze();
-    trees = DocTrees.instance(task);
+    trees = Trees.instance(task);
   }
 }

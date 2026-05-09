@@ -1,8 +1,8 @@
 package io.github.aglibs.lathe.server;
 
 import com.sun.source.tree.CompilationUnitTree;
-import com.sun.source.util.DocTrees;
 import com.sun.source.util.JavacTask;
+import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Stopwatch;
 import java.io.IOException;
@@ -171,7 +171,7 @@ final class ModuleCompiler implements AutoCloseable {
     if (mode == Mode.FULL) {
       task.generate();
     }
-    final var trees = DocTrees.instance(task);
+    final var trees = Trees.instance(task);
     if (cu != null) {
       final var t = Stopwatch.start();
       final List<SemanticToken> semanticTokens = SemanticTokensScanner.scan(trees, cu);

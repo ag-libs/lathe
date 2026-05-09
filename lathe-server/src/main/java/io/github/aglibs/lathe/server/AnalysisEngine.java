@@ -63,7 +63,7 @@ final class AnalysisEngine implements AutoCloseable {
     return ctx != null ? ctx.semanticTokens() : null;
   }
 
-  Hover hover(final String uri, final Position pos, final List<Path> sourceRoots) {
+  Hover hover(final String uri, final Position pos) {
     LOG.fine(() -> "[hover] %s".formatted(uri));
     final CursorContext cur = resolve(uri, pos);
     if (cur == null) {
@@ -73,22 +73,15 @@ final class AnalysisEngine implements AutoCloseable {
     final VariableElement param = SourceLocator.parameterElementAt(cur.ctx().trees(), cur.path());
     if (param != null) {
       LOG.fine(() -> "[hover] param=%s".formatted(param));
-      final var sig = HoverFormatter.formatParameter(param);
-      final var javadoc = JavadocExtractor.extractParam(cur.ctx().trees(), param, sourceRoots);
-      return new Hover(new MarkupContent("markdown", joinMarkdown(sig, javadoc)));
+      return new Hover(new MarkupContent("markdown", HoverFormatter.formatParameter(param)));
     }
 
     final Element element = SourceLocator.elementAt(cur.ctx().trees(), cur.path());
     final TypeMirror type = cur.path() != null ? cur.ctx().trees().getTypeMirror(cur.path()) : null;
     LOG.fine(() -> "[hover] element=%s type=%s".formatted(element, type));
-    final var javadoc = JavadocExtractor.extract(cur.ctx().trees(), element, sourceRoots);
     return HoverFormatter.format(element, type)
-        .map(sig -> new Hover(new MarkupContent("markdown", joinMarkdown(sig, javadoc))))
+        .map(md -> new Hover(new MarkupContent("markdown", md)))
         .orElse(null);
-  }
-
-  private static String joinMarkdown(final String sig, final Optional<String> javadoc) {
-    return javadoc.filter(s -> !s.isBlank()).map(s -> sig + "\n\n---\n\n" + s).orElse(sig);
   }
 
   Optional<Location> definition(
