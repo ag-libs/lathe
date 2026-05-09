@@ -41,13 +41,17 @@ mvn verify -pl lathe-maven-plugin -Dinvoker.test=jpms-project   # one invoker pr
 ## Coding style
 
 - `final` on all fields, local variables, and parameters — omit only when reassignment is needed
-- `var` unless the type is not obvious from the right-hand side
+- `var` only when the type is obvious from the right-hand side; use the explicit type otherwise (e.g. `JavaCompiler compiler = ToolProvider.getSystemJavaCompiler()`)
+- Always use `{}` braces on `if`/`else`, even for single-line bodies
+- Document magic numbers with an inline comment (e.g. `final int openLen = 3; // "/**"`)
 - Streams, lambdas, and method references over imperative loops
+- Extract long lambda bodies to a named private method; pass as a method reference where the signature allows
 - Records for all value types (params, results, entries, config objects)
 - `Optional<T>` as return type only — never as a field or parameter
 - Immutable collections: `List.of`, `Map.of`, `Set.of`
 - No nullable annotations (`@Nullable`, `@NonNull`, etc.)
 - No comments unless the WHY is non-obvious
+- Avoid name echo between class and method (e.g. prefer `SourceParser.parse()` over `SourceParser.withParsed()`)
 
 ---
 
@@ -84,6 +88,8 @@ static List<String> readIndexed(Properties props, String key) {
 - `INFO` — server lifecycle only (startup, reload, shutdown)
 - `FINE` — all timed operations
 
+All handler methods in `AnalysisEngine` (`hover`, `definition`, etc.) must open with `Stopwatch.start()` and include elapsed ms in the log message.
+
 Logger field name: `LOG` (static final). Always use lambda form, single space after the operation tag:
 ```java
 LOG.fine(() -> "[change] %-20s %-35s %dms".formatted(moduleRel, fileRel, ms(t)));
@@ -101,6 +107,7 @@ Message format: `[operation] module-rel file-rel detail Xms outcome`
 - `@TempDir` for all filesystem tests
 - Always include both positive and negative cases
 - Group related assertions — few meaningful test methods per class
+- Extract shared compiler/fixture boilerplate into a dedicated test utility class rather than duplicating across test classes (see `TestCompiler`)
 
 Every test module needs `src/test/resources/junit-platform.properties`:
 ```properties
