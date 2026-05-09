@@ -111,4 +111,40 @@ public class Sample {
   public String useDeprecated(String value) {
     return oldFormat(value);
   }
+
+  /** Utility for hover Javadoc tests. */
+  public static class DocHelper {
+
+    /** The maximum number of items allowed. */
+    public static final int MAX = 100;
+
+    /**
+     * Returns a greeting message.
+     *
+     * @return the greeting
+     */
+    public static String greet() {
+      return "Hello";
+    }
+
+    /**
+     * Repeats the given value the specified number of times.
+     *
+     * @param <T> the value type
+     * @param value the value to repeat
+     * @param count how many times to repeat it
+     * @return a list of repeated values
+     */
+    public static <T> List<T> repeat(final T value, final int count) {
+      return java.util.Collections.nCopies(count, value);
+    }
+
+    public void exercises() {
+      var instance = new DocHelper();
+      var max = MAX;
+      var greeting = greet();
+      var items = repeat("hi", 3);
+      var upper = repeat("hi", 3).stream().map(s -> greet()).toList();
+    }
+  }
 }

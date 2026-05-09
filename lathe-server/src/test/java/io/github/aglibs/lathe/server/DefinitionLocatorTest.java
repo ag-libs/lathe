@@ -2,12 +2,10 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.sun.source.util.JavacTask;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import javax.tools.ToolProvider;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -66,29 +64,18 @@ class DefinitionLocatorTest extends SampleFixture {
 
       final var classDir = tempDir.resolve("classes");
       Files.createDirectories(classDir);
-
-      final var compiler = ToolProvider.getSystemJavaCompiler();
-      final var fm1 = compiler.getStandardFileManager(null, null, null);
-      fm1.setLocationFromPaths(javax.tools.StandardLocation.CLASS_OUTPUT, List.of(classDir));
-      compiler.getTask(null, fm1, null, null, null, fm1.getJavaFileObjects(greeterSrc)).call();
+      TestCompiler.compileToDir(greeterSrc, classDir);
 
       final var userSrc = tempDir.resolve("User.java");
       Files.writeString(userSrc, "public class User { public void run(Greeter g) { g.greet(); } }");
 
-      final var fm2 = compiler.getStandardFileManager(null, null, null);
-      fm2.setLocationFromPaths(javax.tools.StandardLocation.CLASS_PATH, List.of(classDir));
-      final var task2 =
-          (JavacTask)
-              compiler.getTask(null, fm2, null, null, null, fm2.getJavaFileObjects(userSrc));
-      task2.parse();
-      task2.analyze();
-      final var trees2 = com.sun.source.util.Trees.instance(task2);
-
-      final var greeterElement = task2.getElements().getTypeElement("Greeter");
-      assertThat(trees2.getPath(greeterElement)).isNull();
+      final var compiled = TestCompiler.parseWithClasspath(userSrc, classDir);
+      final var greeterElement = compiled.task().getElements().getTypeElement("Greeter");
+      assertThat(compiled.trees().getPath(greeterElement)).isNull();
 
       final var location =
-          DefinitionLocator.locate(greeterElement, trees2, List.of(srcDir), "file:///irrelevant");
+          DefinitionLocator.locate(
+              greeterElement, compiled.trees(), List.of(srcDir), "file:///irrelevant");
 
       assertThat(location).isPresent();
       assertThat(location.get().getUri()).endsWith("Greeter.java");

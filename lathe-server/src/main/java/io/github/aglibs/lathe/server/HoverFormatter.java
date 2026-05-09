@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server;
 
+import java.util.Arrays;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import javax.lang.model.element.Element;
@@ -12,7 +13,8 @@ final class HoverFormatter {
 
   private HoverFormatter() {}
 
-  static Optional<String> format(final Element element, final TypeMirror type) {
+  static Optional<String> format(
+      final Element element, final TypeMirror type, final String javadoc) {
     if (element == null && type == null) {
       return Optional.empty();
     }
@@ -41,10 +43,30 @@ final class HoverFormatter {
     } else {
       sig = element.toString();
     }
-    return Optional.of("```java\n" + sig + "\n```");
+
+    final var sb = new StringBuilder("```java\n").append(sig).append("\n```");
+    if (javadoc != null && !javadoc.isBlank()) {
+      sb.append("\n\n").append(cleanDoc(javadoc));
+    }
+    return Optional.of(sb.toString());
   }
 
   static String formatParameter(final VariableElement param) {
     return "```java\n" + param.asType() + " " + param.getSimpleName() + "\n```";
+  }
+
+  private static String cleanDoc(final String raw) {
+    final int openLen = 3; // "/**"
+    final int closeLen = 2; // "*/"
+    final var withoutOpen = raw.startsWith("/**") ? raw.substring(openLen) : raw;
+    final var withoutClose =
+        withoutOpen.endsWith("*/")
+            ? withoutOpen.substring(0, withoutOpen.length() - closeLen)
+            : withoutOpen;
+    return Arrays.stream(withoutClose.split("\n"))
+        .map(line -> line.stripLeading().replaceFirst("^\\*\\s?", "").stripTrailing())
+        .filter(line -> !line.isBlank())
+        .collect(Collectors.joining("\n"))
+        .strip();
   }
 }

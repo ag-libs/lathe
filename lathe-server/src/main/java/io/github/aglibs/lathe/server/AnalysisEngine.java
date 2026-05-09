@@ -63,8 +63,8 @@ final class AnalysisEngine implements AutoCloseable {
     return ctx != null ? ctx.semanticTokens() : null;
   }
 
-  Hover hover(final String uri, final Position pos) {
-    LOG.fine(() -> "[hover] %s".formatted(uri));
+  Hover hover(final String uri, final Position pos, final List<Path> sourceRoots) {
+    final var t = Stopwatch.start();
     final CursorContext cur = resolve(uri, pos);
     if (cur == null) {
       return null;
@@ -72,14 +72,18 @@ final class AnalysisEngine implements AutoCloseable {
 
     final VariableElement param = SourceLocator.parameterElementAt(cur.ctx().trees(), cur.path());
     if (param != null) {
-      LOG.fine(() -> "[hover] param=%s".formatted(param));
+      LOG.fine(() -> "[hover] param=%s %dms".formatted(param, t.elapsedMs()));
       return new Hover(new MarkupContent("markdown", HoverFormatter.formatParameter(param)));
     }
 
     final Element element = SourceLocator.elementAt(cur.ctx().trees(), cur.path());
     final TypeMirror type = cur.path() != null ? cur.ctx().trees().getTypeMirror(cur.path()) : null;
-    LOG.fine(() -> "[hover] element=%s type=%s".formatted(element, type));
-    return HoverFormatter.format(element, type)
+    final var javadoc = JavadocLocator.locate(element, cur.ctx().trees(), sourceRoots).orElse(null);
+    LOG.fine(
+        () ->
+            "[hover] %dms element=%s type=%s doc=%s"
+                .formatted(t.elapsedMs(), element, type, javadoc != null));
+    return HoverFormatter.format(element, type, javadoc)
         .map(md -> new Hover(new MarkupContent("markdown", md)))
         .orElse(null);
   }
