@@ -1,0 +1,36 @@
+package io.github.aglibs.lathe.server;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.google.googlejavaformat.java.Formatter;
+import com.google.googlejavaformat.java.FormatterException;
+import java.io.IOException;
+import java.util.Objects;
+import org.junit.jupiter.api.Test;
+
+class FormattingTest {
+
+  private static String sampleSource() throws IOException {
+    try (final var in = FormattingTest.class.getResourceAsStream("/Sample.java")) {
+      return new String(Objects.requireNonNull(in).readAllBytes());
+    }
+  }
+
+  @Test
+  void formatsViolationBackToOriginal() throws IOException, FormatterException {
+    final var original = sampleSource();
+    final var unformatted = original.replace("public String getName()", "public String  getName()");
+    assertThat(new Formatter().formatSource(unformatted)).isEqualTo(original);
+  }
+
+  @Test
+  void alreadyFormattedProducesNoEdit() throws IOException {
+    final var original = sampleSource();
+    assertThat(JavaFormatter.format(original)).isEmpty();
+  }
+
+  @Test
+  void syntaxErrorProducesNoEdit() {
+    assertThat(JavaFormatter.format("class { broken")).isEmpty();
+  }
+}

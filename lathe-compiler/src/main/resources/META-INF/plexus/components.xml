@@ -1,0 +1,16 @@
+<component-set>
+  <components>
+    <component>
+      <role>org.codehaus.plexus.compiler.Compiler</role>
+      <role-hint>lathe</role-hint>
+      <implementation>io.github.aglibs.lathe.compiler.LatheCompiler</implementation>
+      <requirements>
+        <requirement>
+          <role>org.codehaus.plexus.compiler.Compiler</role>
+          <role-hint>javac</role-hint>
+          <field-name>javacCompiler</field-name>
+        </requirement>
+      </requirements>
+    </component>
+  </components>
+</component-set>

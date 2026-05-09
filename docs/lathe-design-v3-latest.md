@@ -1,0 +1,769 @@
+# Lathe — Java Language Server Design (v3)
+
+## 1. Vision & Scope
+
+Lathe is a Java Language Server for Maven projects using JPMS. Every existing Java LSP reimplements Maven's project model — parsing POMs, guessing classpaths, playing catch-up with plugins. Lathe sidesteps this entirely: a compiler shim captures the exact javac invocation parameters Maven used, and the language server uses them directly.
+
+This makes Lathe correct by construction for projects where other tools fail:
+- JPMS monorepos with complex module path configurations
+- Heavy annotation processing setups (MapStruct, Dagger, Hibernate metamodel) — AP runs on `didSave`, not on every keystroke, keeping `didChange` latency low while preserving full AP correctness at save boundaries
+- Custom Maven plugins that add source roots or modify compilation parameters
+
+Lathe is designed for JPMS projects but most features work without it. Lathe does not support Lombok. It operates on source as written.
+
+Lathe assumes a workflow of small modules and small files. The language server holds no per-module javac state between requests — every compilation pass is built fresh. This trades a fixed per-pass cost for the absence of an entire class of staleness and memory-growth bugs. The target is 500ms p95 from `didChange` debounce-fire to `publishDiagnostics` for a representative file (≤500 LOC) in a representative module (≤50 source files, ≤50 classpath entries). AP-heavy modules meet this budget because annotation processing runs only on `didSave`.
+
+---
+
+## 2. Components
+
+Three components, no circular dependencies.
+
+**`lathe-compiler`** — a Plexus compiler SPI implementation. Registered as the compiler for `maven-compiler-plugin`. Delegates to real javac unchanged, then writes compilation parameters to `.lathe/` and copies compiled artifacts to `.lathe/<rel>/classes/`, `.lathe/<rel>/test-classes/`, and `.lathe/<rel>/generated-sources/` after each build.
+
+**`lathe-maven-plugin`** — provides `lathe:init`. Writes `.lathe/root.marker` to mark the workspace root, extracts the bundled server distribution to `~/.cache/lathe/bin/<version>/`, and updates the `current` symlink. Also owns all integration and e2e tests via maven-invoker and Neovim headless execution.
+
+**`lathe-server`** — the LSP server. Reads params files written by the shim, builds a fresh `JavacTaskImpl` per compilation pass, and serves LSP requests. Extracts JDK sources at startup (once per JDK version, cached in `~/.cache/lathe/`). Extracts dependency sources lazily when the user first navigates to a type in that dependency. Builds type indexes lazily on first completion request using the javac FileManager and Elements APIs. No dependency on the other two components — only on the files they produce.
+
+```
+lathe-compiler
+    implements → Plexus compiler SPI
+    delegates  → plexus-compiler-javac
+
+lathe-maven-plugin
+    bundles    → lathe-server + runtime deps (extracted at init time)
+    contains   → invoker test projects + Neovim e2e harness
+
+lathe-server
+    reads        → .lathe/ params files
+    reads/writes → .lathe/<rel>/classes/, .lathe/<rel>/test-classes/, .lathe/<rel>/generated-sources/
+    reads/writes → ~/.cache/lathe/ (sources, type indexes — on demand)
+    depends on   → lsp4j, google-java-format
+```
+
+The server distribution is bundled inside the plugin JAR under `META-INF/lathe/server-dist/`. At build time, `maven-dependency-plugin:copy-dependencies` copies `lathe-server` and its runtime dependencies into the plugin's resources alongside the launcher script. `lathe:init` extracts this directory to `~/.cache/lathe/bin/<version>/` and sets the executable bit on the launcher script.
+
+```
+lathe-maven-plugin/src/main/resources/
+└── META-INF/lathe/server-dist/
+    ├── lathe-launcher.sh             ← committed to source, extracted as-is
+    └── modules/                      ← copied in at build time by maven-dependency-plugin
+        ├── lathe-server-0.1.0.jar
+        ├── lsp4j-*.jar
+        └── google-java-format-*.jar
+```
+
+---
+
+## 3. Setup & User Configuration
+
+### One-time POM configuration
+
+Two blocks in the parent `pom.xml`:
+
+```xml
+<!-- compiler shim -->
+<plugin>
+  <groupId>org.apache.maven.plugins</groupId>
+  <artifactId>maven-compiler-plugin</artifactId>
+  <dependencies>
+    <dependency>
+      <groupId>io.github.ag-libs</groupId>
+      <artifactId>lathe-compiler</artifactId>
+      <version>0.1.0</version>
+    </dependency>
+  </dependencies>
+  <configuration>
+    <compilerId>lathe</compilerId>
+  </configuration>
+</plugin>
+
+<!-- init goal -->
+<plugin>
+  <groupId>io.github.ag-libs</groupId>
+  <artifactId>lathe-maven-plugin</artifactId>
+  <version>0.1.0</version>
+</plugin>
+```
+
+### Initializing
+
+```bash
+mvn io.github.ag-libs:lathe-maven-plugin:VERSION:init
+```
+
+1. Inspect the top-level `pom.xml` via the Maven model to check whether the compiler shim is already configured (i.e. `maven-compiler-plugin` has `lathe-compiler` as a dependency and `<compilerId>lathe</compilerId>` set). If not, print the exact XML blocks to add and remind the user to re-run `lathe:init` after editing:
+
+   ```
+   [lathe] Compiler shim not configured. Add the following to your parent pom.xml:
+
+   <plugin>
+     <groupId>org.apache.maven.plugins</groupId>
+     <artifactId>maven-compiler-plugin</artifactId>
+     <dependencies>
+       <dependency>
+         <groupId>io.github.ag-libs</groupId>
+         <artifactId>lathe-compiler</artifactId>
+         <version>0.1.0</version>
+       </dependency>
+     </dependencies>
+     <configuration>
+       <compilerId>lathe</compilerId>
+     </configuration>
+   </plugin>
+
+   Re-run 'mvn io.github.ag-libs:lathe-maven-plugin:VERSION:init' after updating the POM.
+   ```
+
+   If the shim is configured, check that its version matches the plugin version. If they differ:
+
+   ```
+   [lathe] lathe-compiler version 0.1.0 does not match lathe-maven-plugin version 0.2.0.
+           Update both versions together in your pom.xml, then re-run 'mvn io.github.ag-libs:lathe-maven-plugin:VERSION:init'.
+   ```
+
+   Abort — do not proceed with mismatched versions.
+
+   If both are configured and versions match, continue silently.
+
+2. Write `.lathe/root.marker`
+3. If `~/.cache/lathe/bin/<version>/` already exists, skip extraction. Otherwise extract `META-INF/lathe/server-dist/` from the plugin JAR to `~/.cache/lathe/bin/<version>/` and set the executable bit on `lathe-launcher.sh`.
+4. Update `~/.cache/lathe/bin/current` symlink — always, even if extraction was skipped, to recover from a broken symlink.
+
+Old version directories under `~/.cache/lathe/bin/` are left in place. They are small and accumulate slowly; the user can clean them manually.
+
+### Ongoing workflow
+
+```bash
+mvn io.github.ag-libs:lathe-maven-plugin:VERSION:init       # once: write root.marker + install server
+mvnd test-compile                                           # normal development — shim writes params as side effect
+```
+
+Run `mvnd test-compile` as you normally would. The shim updates `lsp-params-classes.properties` and `lsp-params-test-classes.properties` for every module it compiles. The LS reads them on the next pass for any open file in that module. No additional steps after dependency changes.
+
+If a module has no params file yet (first checkout, new module added), the LS surfaces: "Run `mvn test-compile` to activate module `<relativePath>`."
+
+Re-run `lathe:init` only when upgrading the Lathe version. The new server is installed alongside the old one — the running LS is not affected and picks up the new version on the next editor LSP restart.
+
+### JVM customization
+
+```bash
+export LATHE_JVM_OPTS="-Xmx4g -Xms512m -XX:+UseZGC"
+```
+
+Set in `.bashrc` or `.zshrc`. Nothing committed to the project.
+
+---
+
+## 4. File Layout
+
+Lathe uses two directories with distinct purposes.
+
+**`.lathe/`** — workspace-level, project-specific metadata and LS bytecode. Written by the shim on every compile (params files and class copies) and by `lathe:init` for the workspace root marker. Written by the LS for compilation outputs. Add to `.gitignore`. The directory structure mirrors the Maven project hierarchy — each module's subdirectory is keyed by its path relative to the workspace root and contains all params, lock, and output files for that module.
+
+**`~/.cache/lathe/`** — user-level cache, shared across all projects on the machine. Server binaries written by `lathe:init`. JDK sources extracted by the LS at startup. Dependency sources and type indexes written by the LS on demand. Never needs to be gitignored.
+
+```
+~/.cache/lathe/
+├── bin/
+│   ├── 0.1.0/
+│   │   ├── lathe-launcher.sh
+│   │   └── modules/
+│   │       ├── lathe-server-0.1.0.jar
+│   │       ├── lsp4j-*.jar
+│   │       └── google-java-format-*.jar
+│   └── current -> 0.1.0/
+├── jdk-21/                              ← extracted by LS at startup, once per JDK version
+│   └── java/lang/String.java
+├── deps/                                ← extracted by LS on first go-to-definition for that dep
+│   └── com.google.guava/
+│       └── guava/32.0.0-jre/
+│           └── com/google/common/collect/ImmutableList.java
+└── type-index/
+    └── jars/
+        └── com.google.guava/
+            └── guava/
+                └── 32.0.0-jre.index    ← written by LS on first completion request, shared across projects
+
+.lathe/
+├── root.marker                                    ← written by lathe:init
+├── module-a/
+│   ├── lsp-params-classes.properties              ← written by shim
+│   ├── lsp-params-test-classes.properties         ← written by shim
+│   ├── lathe.lock                                 ← written by shim
+│   ├── classes/                                   ← seeded by shim, written by LS
+│   │   └── com/example/alpha/
+│   │       └── Foo.class
+│   ├── test-classes/                              ← seeded by shim, written by LS
+│   │   └── com/example/alpha/
+│   │       └── FooTest.class
+│   └── generated-sources/                         ← seeded by shim, written by LS
+│       └── com/example/alpha/
+│           └── FooBuilder.java
+└── platform/
+    └── core/                                      ← nested module, path preserved
+        ├── lsp-params-classes.properties
+        ├── lsp-params-test-classes.properties
+        ├── lathe.lock
+        ├── classes/
+        │   └── com/example/platform/
+        │       └── Bar.class
+        ├── test-classes/
+        │   └── com/example/platform/
+        │       └── BarTest.class
+        └── generated-sources/
+            └── com/example/platform/
+                └── BarBuilder.java
+```
+
+**Nothing committed to the repo.** `.lathe/` is gitignored and fully regenerated. `~/.cache/lathe/` is outside the project entirely.
+
+**Shared across projects.** JDK sources, dependency sources, server binaries, and type indexes are shared across all projects on the machine. Extracted or built once per version, reused everywhere.
+
+**Survives `mvn clean`.** Both directories are outside Maven's build output management. `mvn clean` deletes `target/` only — `.lathe/<rel>/classes/`, `.lathe/<rel>/test-classes/`, and `.lathe/<rel>/generated-sources/` survive intact.
+
+**Concurrent safety.** Multiple LS instances extract to a temp directory first then atomically rename — safe on Linux via `rename(2)`.
+
+---
+
+## 5. Compiler Shim
+
+The shim is a Plexus compiler SPI implementation (`org.codehaus.plexus.compiler.Compiler`, hint `lathe`). The Maven compiler plugin invokes it instead of javac directly. The shim delegates to real javac unchanged — the build is unaffected — then captures the invocation parameters.
+
+### Locating the workspace
+
+**Module root** — `CompilerConfiguration.getWorkingDirectory()`, which Maven sets to the module's base directory for each compilation invocation.
+
+**Workspace root** — walk up from the module root until a directory containing `.lathe/root.marker` is found. If not found — the shim skips writing params silently. The LS will prompt the user to run `mvn lathe:init`.
+
+**Relative path** — the module root path relative to the workspace root. Used as the key for the module's `.lathe/` subdirectory:
+
+```
+workspaceRoot = /workspace
+moduleRoot    = /workspace/platform/core
+relativePath  = platform/core
+outputDir     = .lathe/platform/core/
+```
+
+### Invocation sequence
+
+1. Locate workspace root and derive relative path — skip silently if `root.marker` not found
+2. Create `.lathe/<relativePath>/` if it does not exist, then write empty `lathe.lock`
+3. Delegate to `plexus-compiler-javac` — real javac runs, AP executes, generated sources are produced
+4. In `finally` — write params file
+5. Copy all files from `outputDir` to `.lathe/<relativePath>/classes/` (main) or `.lathe/<relativePath>/test-classes/` (test)
+6. If AP ran, copy all files from `target/generated-sources/annotations/` to `.lathe/<relativePath>/generated-sources/`
+7. Delete `lathe.lock` — last action, signals LS that params and bytecode are both ready
+
+Steps 4–7 run unconditionally in `finally` — regardless of compilation success or failure. The copied bytecode reflects the actual state of the module after this compile, which is exactly what the LS needs.
+
+**Lock ordering.** The lock is deleted last, after the copy is complete. The LS waits while the lock exists — there is no concurrent access to `.lathe/<rel>/classes/` between shim and LS, so a plain bulk copy is sufficient. No per-file atomicity is needed.
+
+Source tree (main vs test) is detected from the output directory — whether it contains `classes` or `test-classes`.
+
+### Lock file protocol
+
+`lathe.lock` is an empty file. The LS uses its modification time:
+
+- **Lock exists, mtime < 2 minutes** — Maven is compiling. LS pauses compilation passes for this module
+- **Lock exists, mtime ≥ 2 minutes** — Maven was killed. Treat as stale, ignore
+- **Lock deleted** — compilation finished. LS re-reads the module's params file on its next compilation pass for any open file in that module. No state to invalidate — the next pass builds a fresh `JavacTaskImpl` from the new params.
+
+### `lsp-params-classes.properties`
+
+```properties
+sourceTree=classes
+outputDir=/workspace/module-a/target/classes
+generatedSourcesDir=/workspace/module-a/target/generated-sources/annotations
+
+sourceRoots.0=/workspace/module-a/src/main/java
+sourceRoots.1=/workspace/module-a/target/generated-sources/annotations   ← LS remaps to .lathe/module-a/generated-sources/
+
+classpath.0=/root/.m2/repository/com/google/guava/guava/32.0.0-jre/guava-32.0.0-jre.jar
+
+modulepath.0=/workspace/platform/core/target/classes                      ← LS remaps to .lathe/platform/core/classes/
+
+processorPath.0=/root/.m2/repository/org/mapstruct/mapstruct-processor/1.5.5/mapstruct-processor-1.5.5.jar
+
+release=21
+encoding=UTF-8
+parameters=true
+enablePreview=false
+proc=
+compilerArgs.0=-Xlint:unchecked
+compilerArgs.1=-Amapstruct.defaultComponentModel=spring
+```
+
+`projectDir` and `buildDir` are not stored — the LS derives `projectDir` from the params file's location within `.lathe/`, and `buildDir` by convention (`<projectDir>/target`).
+
+### Overhead
+
+Shim overhead above normal javac is one directory walk, one file write, and a bulk directory copy per compilation invocation. The copy cost is proportional to the module's class file count — typically 50–200ms I/O for a small module. Safe with parallel builds (`mvnd -T N`) — each module writes to its own independent `.lathe/<rel>/` directory. Copy duration is logged when `LATHE_DEBUG=1`.
+
+---
+
+## 6. Language Server — Module Model
+
+### Startup
+
+The LS scans `.lathe/` at the workspace root, finds all `lsp-params-*.properties` files, and derives the module registry from them. For each params file:
+
+- **Relative path** — the directory containing the params file, relative to `.lathe/`. A file at `.lathe/platform/core/lsp-params-classes.properties` belongs to module `platform/core`.
+- **Project directory** — `<workspaceRoot>/<relativePath>`.
+- **Reactor dependency graph** — built by cross-referencing all modules' `outputDir` values against each other's classpath entries. If module A's `classpath.N` matches module B's `outputDir`, A depends on B. Both main and test classpath entries are cross-referenced.
+
+No `JavacTaskImpl` is created at startup. No `CustomFileManager` is created. Startup cost is bounded by the number of params files, not by reactor complexity or classpath size.
+
+If `.lathe/` does not exist: "Run `mvn lathe:init` then `mvn test-compile` to initialize Lathe."
+If a module directory has no params files: "Run `mvn test-compile` to activate module `<relativePath>`."
+
+The LS watches `.lathe/root.marker` for modification. `lathe:init` writes `root.marker` early in its sequence (before server extraction) — the mtime change triggers a full LS reload: the module registry is re-scanned from `.lathe/`, all `CustomFileManager` instances and result caches are dropped, all type-completion `TreeMap`s are invalidated, and open files are re-attributed. The user sees a brief "Workspace reloaded" notification. Server extraction happens after `root.marker` is written and does not affect the LS reload.
+
+### Stateless compilation model
+
+Lathe holds no per-module javac state between requests. Every operation that needs javac — diagnostics on `didChange`, member-access completion, find-references attribution against open files, hover, semantic tokens — builds a fresh `JavacTaskImpl` from the module's params, runs the pass, and discards the task.
+
+The only durable per-module state is:
+
+- **Parsed params** — read from disk on startup and re-read after the module's `lathe.lock` disappears.
+- **`CustomFileManager`** — one per module, created lazily on first `didOpen` for that module. Manages a per-module temp directory: open files are written there on `didOpen`/`didChange`, and the temp dir is prepended to the source roots for each compilation pass so javac finds the current content before falling back to disk. Only overrides `getJavaFileForOutput()` to redirect `CLASS_OUTPUT` → `.lathe/<rel>/classes/` and `SOURCE_OUTPUT` → `.lathe/<rel>/generated-sources/`. Holds no javac-internal state. Reused across passes for the same module. Dropped (and temp dir deleted) when the last file in the module is closed.
+
+  _v1 simplification — the temp-dir approach is straightforward to implement and test. A future version may replace it with in-memory `JavaFileObject` serving to avoid the disk round-trip._
+- **Per-file result cache** — `Map<Path, CompileResult>` keyed by document content hash. Holds the post-attribution `CompilationUnitTree` and pre-computed semantic tokens from the most recent pass for each open file. At most one entry per currently-open file. Invalidated on next `didChange` for that file. Dropped on `didClose`. Used by hover and semantic-tokens to avoid re-running javac for read-only queries.
+
+Because there is no symbol cache across passes, there is no cross-module staleness. When module B is recompiled by Maven, the shim copies fresh bytecode to `.lathe/platform/core/classes/`; when the LS compiles a file in B, it writes directly to `.lathe/platform/core/classes/`. Either way, module A's next compilation pass reads B's current `.class` from `.lathe/platform/core/classes/` via the file manager. No invalidation logic, no propagation graph, no `Symtab` eviction.
+
+### LS write semantics
+
+Maven owns `target/classes/`, `target/test-classes/`, and `target/generated-sources/annotations/`. The LS never writes there. The LS owns `.lathe/<rel>/classes/`, `.lathe/<rel>/test-classes/`, and `.lathe/<rel>/generated-sources/`. Maven never writes there. The two output spaces are fully separate.
+
+**Classpath remapping.** The params file records Maven's output paths (e.g. `classpath.0=/workspace/platform/core/target/classes`). Before building a `JavacTaskImpl`, the LS rewrites the classpath to point at the `.lathe/` copies instead:
+
+- Any `classpath.N` or `modulepath.N` entry matching a reactor module's `outputDir` from `lsp-params-classes.properties` is remapped to `.lathe/<that-module-rel>/classes/`.
+- Any entry matching a reactor module's `outputDir` from `lsp-params-test-classes.properties` is remapped to `.lathe/<that-module-rel>/test-classes/`.
+- The `generatedSourcesDir` entry in `sourceRoots.N` is remapped to `.lathe/<this-module-rel>/generated-sources/`.
+
+Non-reactor entries (JARs in `~/.m2/repository/`) are used as-is. The `outputDir` field in the params file is used only as a lookup key for this remapping — the LS never reads from or writes to it.
+
+**LS output redirection.** When javac calls `getJavaFileForOutput(location, ...)` during a compilation pass, the `CustomFileManager` intercepts and redirects:
+
+- `StandardLocation.CLASS_OUTPUT` → `.lathe/<this-module-rel>/classes/`
+- `StandardLocation.SOURCE_OUTPUT` → `.lathe/<this-module-rel>/generated-sources/`
+
+This is independent of `outputDir`. The LS writes compiled artifacts to `.lathe/` regardless of what Maven's output directory is.
+
+**Orphan handling.** When a compile pass produces fewer class files than the previous pass for the same source:
+
+- Before the pass, snapshot `.lathe/<rel>/classes/` entries matching the source basename pattern (`Foo.class`, `Foo$*.class`).
+- During the pass, capture files actually written via `getJavaFileForOutput`.
+- After the pass, delete `snapshot \ written` from `.lathe/<rel>/classes/`.
+
+Same logic applies to `.lathe/<rel>/generated-sources/` for AP outputs.
+
+**Source file deletion** (via `didChangeWatchedFiles`): walk `.lathe/<rel>/classes/<package>/` for class files matching the deleted source's basename (including `$Inner` variants) and delete them. Walk `.lathe/<rel>/generated-sources/` for matching generated sources and delete them.
+
+**Maven recompiles the module** (lock file deleted): the shim has already copied fresh bytecode to `.lathe/<rel>/classes/` and generated sources to `.lathe/<rel>/generated-sources/` as part of the compile. The LS re-reads params on the next pass automatically. No LS-side action needed.
+
+### Single-file compilation semantics
+
+Each pass compiles exactly one source file — the file being edited or opened. Dependencies within the same module are resolved by the `CustomFileManager` based on whether each sibling file is currently open:
+
+- **Open sibling files** — served from the module's temp directory (current content written there on `didOpen`/`didChange`). javac resolves them via the prepended temp source root; no class file is generated for them in this pass.
+- **Closed sibling files** — resolved from `.lathe/<rel>/classes/` (main) or `.lathe/<rel>/test-classes/` (test) via CLASS_PATH. Their on-disk source is not read.
+- **Reactor dependencies** — resolved from `.lathe/<that-module-rel>/classes/` for main deps, or `.lathe/<that-module-rel>/test-classes/` for test-scoped deps (e.g. shared test utilities).
+- **JAR and JDK dependencies** — resolved from `~/.m2/repository/` and the JDK as normal.
+
+**New files** not yet compiled (no `.class` in `.lathe/<rel>/classes/`): visible because `didOpen` writes them to the module's temp directory immediately, making them resolvable via the temp source root.
+
+### File-to-module matching
+
+When `didOpen` fires, the LS finds the owning module by scanning loaded params for a `sourceRoots.N` entry that is a prefix of the opened file path. Main and test are distinguished — a file under `src/test/java/` matches `lsp-params-test-classes.properties`. Generated source files under `.lathe/<rel>/generated-sources/` match correctly because the LS registers this directory as a source root.
+
+### `didChange` flow — fast pass
+
+```
+didChange received (LSP receive thread)
+  → write updated content to module's temp dir (replaces previous version of the file)
+  → invalidate per-file result cache entry
+  → cancel in-flight pass for this module if any (set its AtomicBoolean token)
+  → cancel any pending debounce
+  → schedule debounce (500ms)
+
+debounce fires (module thread):
+  → create fresh AtomicBoolean cancellation token, store as module's current token
+  → wait for the file's own module's lathe.lock to disappear if present
+  → wait for any direct reactor dependency's lathe.lock to disappear if present
+  → build fresh JavacTaskImpl from params + CustomFileManager (proc=none — AP skipped)
+  → register TaskListener: on each ANALYZE event, check token — throw CancellationException if set
+  → single-file attribution pass for the changed file
+  → in finally: call javacTask.close() and fileManager.flush() to release internal file handles
+  → if cancelled: discard results, do not publish, do not update cache
+  → else: publish diagnostics, store CompilationUnitTree in result cache
+          (class files are written to .lathe/<rel>/classes/ or test-classes/ via CLASS_OUTPUT redirection in CustomFileManager)
+  → clear module's current token
+```
+
+AP is skipped on the fast pass. Target: 500ms p95.
+
+### `didSave` flow — full pass
+
+```
+didSave received (LSP receive thread)
+  → cancel in-flight pass for this module if any (set its AtomicBoolean token)
+  → cancel any pending debounce
+
+full pass runs (module thread):
+  → create fresh AtomicBoolean cancellation token, store as module's current token
+  → wait for the file's own module's lathe.lock to disappear if present
+  → wait for any direct reactor dependency's lathe.lock to disappear if present
+  → build fresh JavacTaskImpl from params + CustomFileManager (proc= from params — AP runs)
+  → register TaskListener: on each ANALYZE event, check token — throw CancellationException if set
+  → single-file compilation pass for the changed file
+  → in finally: call javacTask.close() and fileManager.flush() to release internal file handles
+  → if cancelled: discard results
+  → else: run orphan cleanup, write .class to .lathe/<rel>/classes/ and generated sources
+         to .lathe/<rel>/generated-sources/, publish diagnostics, store CompilationUnitTree in result cache
+  → clear module's current token
+```
+
+Target: ~1–2s p95 for AP-heavy modules.
+
+### `didOpen` flow — full pass
+
+Cancels any in-flight pass for the module and any pending debounce, then runs immediately with no debounce, using the same full-pass logic as `didSave`. First-file-in-module open also pays for `CustomFileManager` creation and params-file parse.
+
+If the module has no params yet: "Run `mvn test-compile` to activate module `<relativePath>`."
+
+Target: ~1s p95.
+
+### `didClose` flow
+
+Delete the file from the module's temp directory. Drop its result cache entry. Publish empty diagnostics array to clear client display. If this was the last open file in the module, drop the `CustomFileManager` and delete the temp directory.
+
+### File deletion
+
+`workspace/didChangeWatchedFiles` with a deleted event:
+
+1. Remove from `CustomFileManager` in-memory tracking
+2. Drop result cache entry
+3. Delete corresponding `.class` files from `.lathe/<rel>/classes/` or `.lathe/<rel>/test-classes/`
+4. For any other open file in the module, the next `didChange` or read-cache miss will compile against current state automatically
+
+### Threading
+
+One virtual thread per module serializes compilation passes and result-cache access for that module. Temp directory writes (on `didOpen`/`didChange`) happen synchronously on the LSP receive thread before scheduling the debounce — the write is small and fast, and the 500ms debounce ensures the file is fully written before the next pass reads it.
+
+Each module holds a `volatile AtomicBoolean currentPassToken`. The LSP receive thread sets it to cancel an in-flight pass; the module thread creates and owns the token for the duration of each pass and clears it when done.
+
+A single `ScheduledExecutorService` handles debounces. Cross-module operations (find-references, workspace symbols) submit subtasks to each module's own thread and await results.
+
+**Dependency lock wait.** Before starting any pass, the module thread checks not only its own lock but also the locks of all direct reactor dependencies (derived from the in-memory reactor graph). This prevents reading stale `.lathe/<dep-rel>/classes/` while the shim is mid-copy for a dependency during a parallel `mvnd -T N` build.
+
+**Resource cleanup.** Every `JavacTaskImpl` is closed via `javacTask.close()` in a finally block — on normal completion, cancellation, and exceptions. This releases file handles that javac opens internally during class loading.
+
+---
+
+## 7. Language Server — Features
+
+### Type completion
+
+Type name completion uses three sources assembled into a single `TreeMap<String, List<TypeEntry>>` per module on the first completion request after the module's `CustomFileManager` is created. Subsequent requests within the lifetime of that file manager search the in-memory map directly. The map is dropped when the `CustomFileManager` is dropped (last file closed in the module).
+
+All three sources are assembled on the first completion request by a single dedicated enumeration task: a fresh `JavacTaskImpl` built from the module's params (classpath, modulepath, `--release`) with `proc=none`.
+
+**JDK types** — enumerated via `Elements.getModuleElement("java.se")` and its transitive `requires`, walking exported packages. Respects `--release` automatically.
+
+**Reactor types** — enumerated via `Elements.getModuleElement(moduleName)` for each reactor module on the modulepath, walking `ExportsDirective` entries. Respects `module-info.class` exports — internal packages do not appear in dependent module completion.
+
+**JAR dependency types** — for each non-reactor JAR on the classpath or modulepath (reactor modules are already covered by the "Reactor types" source above), the LS checks `~/.cache/lathe/type-index/jars/<gav>.index`. If the index exists, it is read directly. If not, the JAR is scanned and the index written before reading:
+
+- *Modular JARs on the modulepath* — find the module element for this JAR's module name, walk its `ExportsDirective` → `PackageElement` → `getEnclosedElements()`. Qualified exports are preserved.
+- *Non-modular JARs on the classpath* — enumerated via `fileManager.list(CLASS_PATH, "", EnumSet.of(Kind.CLASS), true)` with `fileManager.inferBinaryName()` to derive binary names. Inner classes (`$` in simple name) are filtered.
+
+The index file is written to `~/.cache/lathe/type-index/jars/<gav>.index` and shared across all projects on the machine. The enumeration task is discarded after the `TreeMap` is built.
+
+**First-completion latency.** The enumeration task walks platform modules plus all deps. This takes 300–800ms on a cold JVM. Paid once per module per editing session. Subsequent completion requests use the cached `TreeMap` and are fast.
+
+`TreeMap<String, List<TypeEntry>>` enables O(log n) prefix search across all three sources:
+
+```java
+var results = typeIndex.subMap(prefix, prefix + Character.MAX_VALUE);
+```
+
+The index file format per JAR:
+
+```properties
+jarPath=/root/.m2/repository/com/google/guava/guava/32.0.0-jre/guava-32.0.0-jre.jar
+typeCount=3
+
+type.0.simpleName=ImmutableList
+type.0.fqn=com.google.common.collect.ImmutableList
+type.0.kind=CLASS
+type.0.exported=true
+type.0.exportedTo=
+
+type.1.simpleName=ImmutableMap
+type.1.fqn=com.google.common.collect.ImmutableMap
+type.1.kind=CLASS
+type.1.exported=true
+type.1.exportedTo=
+
+type.2.simpleName=Striped
+type.2.fqn=com.google.common.util.concurrent.Striped
+type.2.kind=CLASS
+type.2.exported=true
+type.2.exportedTo=com.example.internal
+```
+
+**`module-info.java` invalidation.** When `didSave` fires for a `module-info.java` file in module B, the type-completion `TreeMap` is nulled out for:
+
+- **Modules that have B as a reactor dependency** — their reactor-type slice may have gained or lost exported packages.
+- **Module B itself** — its `requires` graph may have changed.
+
+The nulled map is rebuilt lazily on the next completion request.
+
+### Member access completion
+
+Triggered when the user types `.` before the cursor. The file likely has a syntax error at the cursor — the expression is incomplete. Solution: method body erasing, run as a fresh `JavacTaskImpl`:
+
+1. **Erase method bodies** — replace all method bodies except the one containing the cursor with empty blocks `{}`. Reduces file size 80–90%.
+2. **Inject sentinel** — insert `$lathe$sentinel$` after the dot.
+3. **Compile with `proc=none`**.
+4. **Find sentinel** — locate the `MemberSelectTree`, get its receiver `TypeMirror`.
+5. **Enumerate members** — `Elements.getAllMembers(typeElement)` with `types.asMemberOf(receiverType, member)` for correct generic substitution.
+6. **Filter and return** — filter by accessibility and prefix match.
+7. **Discard the task** — call `javacTask.close()`.
+
+### Go-to-definition
+
+**Reactor types in an open-file module** — if the target source file is open, return the declaration location from that file's cached `CompilationUnitTree`, or run a fresh pass for that file if its cache is empty.
+
+**Reactor types in a module with no open files** — locate the source file via the target module's `sourceRoots.N` entries, return the `file://` URI.
+
+**JDK types** — source at `~/.cache/lathe/jdk-<release>/<package/ClassName>.java`. Extracted from `$JAVA_HOME/lib/src.zip` at LS startup. The release version is taken from `Runtime.version().feature()` (e.g. `21`) — this is the JVM running the server, which matches `$JAVA_HOME`. Extraction is skipped if `~/.cache/lathe/jdk-<release>/` already exists. Plain `file://` URI.
+
+**Dependency types** — the JAR path is known from the type entry. The `-sources.jar` is derived by Maven local repository naming convention: replace `.jar` with `-sources.jar` at the same path in `~/.m2/repository/`. The LS checks if the sources have already been extracted to `~/.cache/lathe/deps/<gav-path>/`. If not:
+
+1. Check `~/.m2/repository/<gav-path>/<artifactId>-<version>-sources.jar`
+2. Found → extract the full sources JAR to `~/.cache/lathe/deps/<gav-path>/`, return the `file://` URI
+3. Not found → "Sources not available — run `mvn dependency:sources`"
+
+After the user runs `mvn dependency:sources` and retries navigation, the sources JAR is present and extraction proceeds automatically. Extracted sources are shared across all projects.
+
+All results are plain `file://` URIs — no custom URI scheme, no virtual buffers.
+
+### Find-references
+
+**Open-file AST scan** — scan the cached `CompilationUnitTree` of each open file across all modules with open files. Trigger a compilation pass for files with empty cache. All scans run in parallel on their respective module threads.
+
+**Closed-module Class-File API scan** — parallel scan of `.class` files in both `.lathe/<rel>/classes/` and `.lathe/<rel>/test-classes/` across all reactor modules with no currently-open files, using virtual threads. `InvokeInstruction` and `FieldInstruction` entries identify references. `LineNumberTable` gives line numbers from bytecode. Modules with no `.lathe/<rel>/classes/` are silently skipped.
+
+**Limitations** — surfaced explicitly:
+- After an API change in a dependency, closed-module `.class` files may reference the old method descriptor until `mvn test-compile` runs.
+- Constants inlined by the compiler, `@PolymorphicSignature` targets, and `invokedynamic`-based method references are missed in closed-module scans.
+- Partially-open modules have a blind spot: the open-file AST scan covers only the open files, and the bytecode scan skips the module entirely because it has open files. References in the remaining closed files of a partially-open module are not found. Closing all files in the module (or opening all of them) eliminates the gap.
+
+### Opening dependency source files
+
+Fresh read-only `JavacTaskImpl` per request using the consuming module's params. Diagnostics swallowed. `javacTask.close()` called after attribution. Result stored in the consuming module's result cache keyed by the dependency source file path, and held until the user closes the file.
+
+### Hover
+
+Served from the result cache. `Trees.getPath()` at cursor → `Trees.getElement()` → `Trees.getTypeMirror()`. Formats type signature and javadoc as markdown. No recompilation. If cache is empty, trigger a pass first.
+
+### Semantic tokens
+
+`TreeScanner` walk over the cached `CompilationUnitTree`. Computed once per compilation pass and cached alongside the `CompilationUnitTree`. Invalidated on next `didChange`.
+
+### Formatting
+
+`google-java-format` as a library. Full file and range formatting. `FormatterException` caught gracefully on syntax errors.
+
+---
+
+## 8. Remaining Features
+
+The following features build naturally on the model established in sections 6 and 7.
+
+### Diagnostics
+
+Pushed via `textDocument/publishDiagnostics` after every compilation pass — fast pass on `didChange`, full pass on `didSave` and `didOpen`. On `didClose` — publish empty array to clear client display.
+
+AP processor diagnostics are only updated by full passes. During fast passes, AP-derived diagnostics remain frozen at the state from the last full pass.
+
+### Code actions
+
+**Add missing import** — when a type name is unresolved, search the type index for candidates. User selects one, import statement inserted.
+
+**Organize imports** — sort and remove unused imports. Pure source text manipulation.
+
+### Document symbols
+
+Walk the file's `CompilationUnitTree`, emit `DocumentSymbol` for each class, method, and field declaration.
+
+### Workspace symbols
+
+Prefix search on the full type index — JDK types, reactor types, and JAR dependency types — regardless of which modules are currently open. Indexes are built lazily as described in the type completion section; a workspace symbol query may trigger index building for modules not yet opened.
+
+### Rename (post-v1)
+
+In-module rename via AST scan. Cross-module rename via closed-module Class-File API scan. Produces a `WorkspaceEdit` grouping all edits including import statements.
+
+### Inlay hints (post-v1)
+
+Parameter name hints on method call arguments via `MethodInvocationTree` and `ExecutableElement.getParameters()`.
+
+### Signature help (post-v1)
+
+Enumerate overloads when cursor is inside method call parentheses. Reuses method body erasing and sentinel technique.
+
+### Run, test, and debug (post-v1)
+
+Editor-driven run/test/debug by spawning `mvnd` from the LS and attaching DAP to JDWP — see [lathe-run-test-debug.md](lathe-run-test-debug.md).
+
+---
+
+## 9. Distribution
+
+### Binary cache
+
+Lathe server binaries are installed to `~/.cache/lathe/bin/<version>/` by `lathe:init`, extracted directly from `META-INF/lathe/server-dist/` bundled inside the plugin JAR. The `current` symlink always points at the latest installed version and is updated by every `lathe:init` run. Installation works fully offline — no network access or Maven resolution needed at init time.
+
+### Launcher script
+
+`lathe-launcher.sh` is committed to source under `lathe-maven-plugin/src/main/resources/META-INF/lathe/server-dist/` and extracted as-is to `~/.cache/lathe/bin/<version>/`. It uses `$(dirname "$0")` so no path substitution is needed at extraction time. All JARs (server and runtime dependencies) are placed in `modules/` and launched via `--module-path` since `lathe-server` is a JPMS module.
+
+```bash
+#!/bin/bash
+LATHE_HOME="$(dirname "$0")"
+exec "$JAVA_HOME/bin/java" \
+    --add-opens jdk.compiler/com.sun.tools.javac.api=io.github.aglibs.lathe.server \
+    --add-opens jdk.compiler/com.sun.tools.javac.comp=io.github.aglibs.lathe.server \
+    --add-opens jdk.compiler/com.sun.tools.javac.tree=io.github.aglibs.lathe.server \
+    --add-opens jdk.compiler/com.sun.tools.javac.util=io.github.aglibs.lathe.server \
+    --add-opens jdk.compiler/com.sun.tools.javac.code=io.github.aglibs.lathe.server \
+    --add-opens jdk.compiler/com.sun.tools.javac.file=io.github.aglibs.lathe.server \
+    --add-opens jdk.compiler/com.sun.tools.javac.main=io.github.aglibs.lathe.server \
+    --add-exports jdk.compiler/com.sun.tools.javac.parser=io.github.aglibs.lathe.server \
+    ${LATHE_JVM_OPTS} \
+    --module-path "${LATHE_HOME}/modules" \
+    --module io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer \
+    "$@"
+```
+
+### Neovim
+
+```lua
+vim.lsp.config('lathe', {
+    cmd = { vim.env.HOME .. '/.cache/lathe/bin/current/lathe-launcher.sh' },
+    filetypes = { 'java' },
+    root_dir = function(fname)
+        return vim.fs.root(fname, '.lathe/root.marker')
+    end,
+})
+vim.lsp.enable('lathe')
+```
+
+Static personal configuration — never project-specific, never committed. The `current` symlink means this config never needs updating on version upgrades.
+
+### VS Code (post-v1)
+
+A minimal `vscode-lathe` extension (~50 lines TypeScript) starts the launcher script and connects via LSP. Surfaces `LATHE_JVM_OPTS` as a VS Code setting. Requires disabling `vscjava.vscode-java-pack` — documented as a prerequisite.
+
+---
+
+## 10. Testing Strategy
+
+### Layer 1 — Unit tests (JUnit 5)
+
+Compiler engine tests with no LSP involvement. `JavacTaskImpl` initialization from params files, single-file compilation, class file writing, diagnostics. Fast — milliseconds per test.
+
+### Layer 2 — Integration (maven-invoker)
+
+`lathe-maven-plugin` owns all integration and e2e tests. Invoker runs `lathe:init` and `mvn test-compile` against real test projects under `src/it/`:
+
+```
+lathe-maven-plugin/src/it/
+├── simple-module/
+├── jpms-project/
+│   ├── module-a/
+│   └── platform/
+│       └── core/
+└── annotation-processing/
+```
+
+Each project has an `invoker.properties` declaring the goals to run and a `post-build.sh` verifying the output — checking `.lathe/` was created, params files were written, class files copied to `.lathe/<rel>/classes/` and `.lathe/<rel>/test-classes/`. No Groovy scripts.
+
+### Layer 3 — Neovim headless e2e
+
+Bound to `post-integration-test` via the exec plugin. Runs after all invoker tests succeed. Neovim 0.11+ built-in LSP — no plugins required.
+
+```
+lathe-maven-plugin/src/it/neovim/
+├── minimal_init.lua
+├── harness.lua
+├── run_tests.lua
+└── tests/
+    ├── diagnostics_spec.lua
+    ├── definition_spec.lua
+    └── references_spec.lua
+```
+
+Tests open files from the invoker-prepared `target/it/jpms-project/`, send LSP requests, assert responses using `vim.wait()` polling — no fixed sleeps. Exit code propagates to Maven.
+
+### Running locally
+
+```bash
+mvn install -DskipTests                                          # build and install
+mvn verify -pl lathe-maven-plugin                                # all layers
+mvn verify -pl lathe-maven-plugin -DskipNeovimTests              # invoker only
+mvn verify -pl lathe-maven-plugin -Dinvoker.test=jpms-project    # one project
+```
+
+### CI — GitHub Actions
+
+```yaml
+jobs:
+  build:
+    steps:
+      - run: mvn install -DskipTests
+      - uses: actions/upload-artifact@v4
+        with:
+          name: maven-repo
+          path: ~/.m2/repository/io/github/ag-libs
+
+  test:
+    needs: build
+    strategy:
+      matrix:
+        include:
+          - invoker-test: simple-module
+            skip-neovim: true
+          - invoker-test: jpms-project
+            skip-neovim: false
+          - invoker-test: annotation-processing
+            skip-neovim: true
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: maven-repo
+          path: ~/.m2/repository/io/github/ag-libs
+      - run: |
+          mvn verify -pl lathe-maven-plugin \
+            -Dinvoker.test=${{ matrix.invoker-test }} \
+            -DskipNeovimTests=${{ matrix.skip-neovim }}
+```
+
+---
+
+## 11. What's Not Supported
+
+**Non-JPMS projects** — most of Lathe works correctly without JPMS: diagnostics, hover, go-to-definition, find-references, member access completion, and formatting all operate on the attributed AST or bytecode. The only gap is type name completion for reactor types — without `module-info.java`, `getModuleElement()` cannot enumerate a module's exported types. A fallback using `fileManager.list()` on `.lathe/<rel>/classes/` would close this gap. Non-JPMS support is a small, well-defined future contribution.
+
+**Gradle** — Lathe hooks into the Maven compiler plugin via the Plexus SPI. Gradle support would require a separate Gradle plugin writing the same params file format. The LS itself is build-tool-agnostic and would work unchanged.
+
+**Lombok** — Lathe operates on source as written. Lombok rewrites the AST during annotation processing in ways that conflict with Lathe's per-pass model. Not advertised and not tested.
+
+**Multi-JDK projects** — Lathe uses `$JAVA_HOME` consistently, matching Maven's behaviour. Projects requiring multiple JDKs for different modules are not supported in v1.
+
+**IDE plugins beyond Neovim and VS Code** — Lathe speaks standard LSP. Any LSP-capable editor can connect using the launcher script.
