@@ -78,6 +78,20 @@ After a large Java change, agents may run `mvn spotless:apply` before tests to n
 - No comments unless the WHY is non-obvious
 - Avoid name echo between class and method.
   Prefer `SourceParser.parse()` over `SourceParser.withParsed()`.
+- Prefer KISS and DRY, but do not introduce abstractions before there is a clear repeated pattern.
+- Favor functional style for collection transformations and stream pipelines.
+  Avoid mutable counters inside streams when a collector expresses the result clearly.
+- Use existing core utilities before adding local helpers.
+  For timing, use `Stopwatch`.
+  For filesystem helpers, prefer `FileUtil`.
+  For checked `IOException` lambdas, use `IOUtil`.
+- Do not create constants for one-off string literals.
+  Constants are for names with domain meaning, file-format keys used in multiple places,
+  public/shared values, or values where a typo would be costly.
+- Keep Maven Mojo classes as orchestration-first code.
+  Extract helper methods when they separate Maven discovery, resolution, cache decisions,
+  file IO, and logging.
+- Use formatted strings for structured log messages instead of long string concatenation.
 
 ## Markdown style
 
