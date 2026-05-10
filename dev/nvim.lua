@@ -13,12 +13,16 @@ end
 local module_path = lathe_src .. '/lathe-server/target/classes'
   .. ':' .. lathe_src .. '/lathe-server/target/dependency'
 
--- Google Java Format uses javac internals; Lathe server code does not.
+-- Classpath javac plugins and Google Java Format use javac internals; Lathe server code does not.
 local javac_packages = {
   'api', 'code', 'comp', 'file', 'main', 'model', 'parser', 'processing', 'tree', 'util',
 }
 local cmd = { java_home .. '/bin/java' }
 for _, pkg in ipairs(javac_packages) do
+  table.insert(cmd, '--add-exports')
+  table.insert(cmd, 'jdk.compiler/com.sun.tools.javac.' .. pkg .. '=ALL-UNNAMED')
+  table.insert(cmd, '--add-opens')
+  table.insert(cmd, 'jdk.compiler/com.sun.tools.javac.' .. pkg .. '=ALL-UNNAMED')
   table.insert(cmd, '--add-exports')
   table.insert(cmd, 'jdk.compiler/com.sun.tools.javac.' .. pkg .. '=com.google.googlejavaformat')
   table.insert(cmd, '--add-opens')

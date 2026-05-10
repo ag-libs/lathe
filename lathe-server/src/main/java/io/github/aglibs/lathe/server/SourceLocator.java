@@ -1,15 +1,20 @@
 package io.github.aglibs.lathe.server;
 
+import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.ImportTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
+import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.Tree;
+import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
+import java.io.IOException;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.IntStream;
@@ -19,6 +24,7 @@ import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.DeclaredType;
+import javax.tools.Diagnostic;
 import org.eclipse.lsp4j.Position;
 
 final class SourceLocator {
@@ -77,6 +83,22 @@ final class SourceLocator {
     return new Position(line, col);
   }
 
+  static Optional<Position> declarationNamePosition(
+      final Trees trees, final CompilationUnitTree cu, final TreePath path, final String name)
+      throws IOException {
+    if (path == null) {
+      return Optional.empty();
+    }
+    final long declStart = trees.getSourcePositions().getStartPosition(cu, path.getLeaf());
+    if (declStart == Diagnostic.NOPOS) {
+      return Optional.empty();
+    }
+    final CharSequence content = cu.getSourceFile().getCharContent(false);
+    final int idx = content.toString().indexOf(name, (int) declStart);
+    final long nameOffset = idx >= 0 ? idx : declStart;
+    return Optional.of(offsetToPosition(cu, nameOffset));
+  }
+
   static Element elementAt(final Trees trees, final TreePath path) {
     var p = path;
     while (p != null) {
@@ -96,6 +118,50 @@ final class SourceLocator {
       p = p.getParentPath();
     }
     return null;
+  }
+
+  static TreePath declarationPath(final CompilationUnitTree cu, final Element target) {
+    if (target == null) {
+      return null;
+    }
+    final var result = new AtomicReference<TreePath>();
+    new TreePathScanner<Void, Void>() {
+      @Override
+      public Void visitClass(final ClassTree tree, final Void unused) {
+        if ((target.getKind().isClass() || target.getKind().isInterface())
+            && tree.getSimpleName().contentEquals(target.getSimpleName())) {
+          result.set(getCurrentPath());
+        }
+        return super.visitClass(tree, unused);
+      }
+
+      @Override
+      public Void visitMethod(final MethodTree tree, final Void unused) {
+        if ((target.getKind() == ElementKind.METHOD || target.getKind() == ElementKind.CONSTRUCTOR)
+            && tree.getName().contentEquals(declarationName(target))
+            && tree.getParameters().size() == ((ExecutableElement) target).getParameters().size()) {
+          result.set(getCurrentPath());
+        }
+        return super.visitMethod(tree, unused);
+      }
+
+      @Override
+      public Void visitVariable(final VariableTree tree, final Void unused) {
+        if ((target.getKind() == ElementKind.FIELD || target.getKind() == ElementKind.ENUM_CONSTANT)
+            && tree.getName().contentEquals(target.getSimpleName())
+            && getCurrentPath().getParentPath().getLeaf() instanceof ClassTree) {
+          result.set(getCurrentPath());
+        }
+        return super.visitVariable(tree, unused);
+      }
+    }.scan(cu, null);
+    return result.get();
+  }
+
+  static CharSequence declarationName(final Element element) {
+    return element.getKind() == ElementKind.CONSTRUCTOR
+        ? element.getEnclosingElement().getSimpleName()
+        : element.getSimpleName();
   }
 
   private static Element resolveStaticImportMember(
@@ -121,11 +187,8 @@ final class SourceLocator {
     if (path == null) {
       return null;
     }
-    // Don't mask enum constants or fields — let elementAt show the value directly
     final var leafElement = trees.getElement(path);
-    if (leafElement != null
-        && (leafElement.getKind() == ElementKind.ENUM_CONSTANT
-            || leafElement.getKind() == ElementKind.FIELD)) {
+    if (leafElement != null && masksParameterContext(leafElement.getKind())) {
       return null;
     }
     var argPath = path;
@@ -161,6 +224,13 @@ final class SourceLocator {
       parent = parent.getParentPath();
     }
     return null;
+  }
+
+  private static boolean masksParameterContext(final ElementKind kind) {
+    return switch (kind) {
+      case ANNOTATION_TYPE, CLASS, ENUM, ENUM_CONSTANT, FIELD, INTERFACE, RECORD -> true;
+      default -> false;
+    };
   }
 
   private static int indexIn(final List<? extends Tree> list, final Tree target) {

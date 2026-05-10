@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server;
 
+import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.Trees;
 import java.io.IOException;
@@ -12,7 +13,7 @@ import javax.tools.ToolProvider;
 
 final class TestCompiler {
 
-  record CrossFileTask(JavacTask task, Trees trees) {}
+  record CrossFileTask(JavacTask task, Trees trees, CompilationUnitTree cu) {}
 
   private TestCompiler() {}
 
@@ -29,8 +30,8 @@ final class TestCompiler {
     fm.setLocationFromPaths(StandardLocation.CLASS_PATH, List.of(classDir));
     final JavacTask task =
         (JavacTask) compiler.getTask(null, fm, null, null, null, fm.getJavaFileObjects(src));
-    task.parse();
+    final CompilationUnitTree cu = task.parse().iterator().next();
     task.analyze();
-    return new CrossFileTask(task, Trees.instance(task));
+    return new CrossFileTask(task, Trees.instance(task), cu);
   }
 }

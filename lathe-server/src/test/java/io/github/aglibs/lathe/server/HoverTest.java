@@ -11,8 +11,6 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.util.List;
-import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 class HoverTest extends SampleFixture {
@@ -55,16 +53,5 @@ class HoverTest extends SampleFixture {
     final var md = hoverAt(146, 52);
     assertThat(md).isPresent();
     assertThat(md.get()).contains("greet").contains("Returns a greeting message");
-  }
-
-  // --- infrastructure ---
-
-  private Optional<String> hoverAt(final int line, final int character) {
-    final var offset = SourceLocator.toOffset(cu, line, character);
-    final var path = SourceLocator.pathAt(trees, cu, offset);
-    final var element = SourceLocator.elementAt(trees, path);
-    final var type = path != null ? trees.getTypeMirror(path) : null;
-    final var javadoc = JavadocLocator.locate(element, trees, List.of()).orElse(null);
-    return HoverFormatter.format(element, type, javadoc);
   }
 }

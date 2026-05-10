@@ -2,12 +2,16 @@ package io.github.aglibs.lathe.server;
 
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.JavacTask;
+import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
+import javax.lang.model.element.Element;
+import javax.lang.model.element.VariableElement;
 import javax.tools.ToolProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.io.TempDir;
@@ -39,5 +43,26 @@ abstract class SampleFixture {
     cu = task.parse().iterator().next();
     task.analyze();
     trees = Trees.instance(task);
+  }
+
+  Optional<String> hoverAt(final int line, final int character) {
+    final var path = pathAt(line, character);
+    final var element = SourceLocator.elementAt(trees, path);
+    final var type = path != null ? trees.getTypeMirror(path) : null;
+    final var javadoc = JavadocLocator.locate(element, trees, List.of()).orElse(null);
+    return HoverFormatter.format(element, type, javadoc);
+  }
+
+  Element elementAt(final int line, final int character) {
+    return SourceLocator.elementAt(trees, pathAt(line, character));
+  }
+
+  VariableElement parameterAt(final int line, final int character) {
+    return SourceLocator.parameterElementAt(trees, pathAt(line, character));
+  }
+
+  TreePath pathAt(final int line, final int character) {
+    final var offset = SourceLocator.toOffset(cu, line, character);
+    return SourceLocator.pathAt(trees, cu, offset);
   }
 }

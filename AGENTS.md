@@ -52,11 +52,13 @@ mvn verify -pl lathe-maven-plugin -Dinvoker.test=jpms-project   # one invoker pr
 ```
 
 `spotless:check` runs on `verify` — run `spotless:apply` to fix formatting before committing.
+After a large Java change, agents may run `mvn spotless:apply` before tests to normalize formatting.
 
 ---
 
 ## Coding style
 
+- Java formatting is Google Java Format via Spotless.
 - `final` on all fields, local variables, and parameters — omit only when reassignment is needed
 - `var` only when the type is obvious from the right-hand side.
   Use the explicit type otherwise, for example `JavaCompiler compiler = ToolProvider.getSystemJavaCompiler()`.

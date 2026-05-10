@@ -2,9 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
-import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeKind;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -286,19 +284,5 @@ class SourceLocatorTest extends SampleFixture {
       assertThat(param).isNotNull();
       assertThat(param.getKind()).isEqualTo(ElementKind.PARAMETER);
     }
-  }
-
-  // --- infrastructure ---
-
-  private Element elementAt(final int line, final int character) {
-    final var offset = SourceLocator.toOffset(cu, line, character);
-    final var path = SourceLocator.pathAt(trees, cu, offset);
-    return SourceLocator.elementAt(trees, path);
-  }
-
-  private VariableElement parameterAt(final int line, final int character) {
-    final var offset = SourceLocator.toOffset(cu, line, character);
-    final var path = SourceLocator.pathAt(trees, cu, offset);
-    return SourceLocator.parameterElementAt(trees, path);
   }
 }

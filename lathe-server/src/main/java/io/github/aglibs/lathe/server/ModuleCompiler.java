@@ -218,14 +218,20 @@ final class ModuleCompiler implements AutoCloseable {
     if (params.enablePreview()) {
       opts.add("--enable-preview");
     }
-    final var compilerArgs =
-        mode == Mode.FAST
-            ? cm.compilerArgs().stream().filter(a -> !a.startsWith("-Xplugin:")).toList()
-            : cm.compilerArgs();
-    opts.addAll(compilerArgs);
+    opts.addAll(modeCompilerArgs(cm.compilerArgs(), mode));
     if (mode == Mode.FAST || mode == Mode.OPEN) {
       opts.add("-proc:none");
     }
     return opts;
+  }
+
+  static List<String> modeCompilerArgs(final List<String> args, final Mode mode) {
+    return mode == Mode.FULL
+        ? args
+        : args.stream().filter(ModuleCompiler::isInteractiveCompilerArg).toList();
+  }
+
+  private static boolean isInteractiveCompilerArg(final String arg) {
+    return !arg.startsWith("-Xplugin:") && !arg.startsWith("-Xep");
   }
 }

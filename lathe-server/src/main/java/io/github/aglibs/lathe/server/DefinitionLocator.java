@@ -1,9 +1,6 @@
 package io.github.aglibs.lathe.server;
 
-import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
-import com.sun.source.tree.Tree;
-import com.sun.source.util.SourcePositions;
 import com.sun.source.util.Trees;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -16,7 +13,6 @@ import java.util.logging.Logger;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.TypeElement;
-import javax.tools.Diagnostic;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
@@ -39,32 +35,30 @@ final class DefinitionLocator {
     final var path = trees.getPath(element);
     if (path != null) {
       final var cu = path.getCompilationUnit();
-      final long declStart = trees.getSourcePositions().getStartPosition(cu, path.getLeaf());
-      if (declStart != Diagnostic.NOPOS) {
-        try {
-          final CharSequence content = cu.getSourceFile().getCharContent(false);
-          final long nameOffset =
-              nameOffset(content, declStart, element.getSimpleName().toString());
-          final var lspPos = SourceLocator.offsetToPosition(cu, nameOffset);
+      try {
+        final Optional<Position> position =
+            SourceLocator.declarationNamePosition(
+                trees, cu, path, SourceLocator.declarationName(element).toString());
+        if (position.isPresent()) {
+          final var lspPos = position.get();
           LOG.fine(
               () ->
                   "[definition] same-file %s %d:%d"
                       .formatted(sourceUri, lspPos.getLine(), lspPos.getCharacter()));
           return Optional.of(new Location(sourceUri, new Range(lspPos, lspPos)));
-        } catch (final IOException e) {
-          LOG.log(
-              Level.WARNING,
-              e,
-              () -> "[definition] failed to read source for %s".formatted(sourceUri));
         }
+      } catch (final IOException e) {
+        LOG.log(
+            Level.WARNING,
+            e,
+            () -> "[definition] failed to read source for %s".formatted(sourceUri));
       }
     }
 
     return findSourceFile(element, sourceRoots)
         .map(
             file -> {
-              final var simpleName = element.getSimpleName().toString();
-              final var lspPos = parsePosition(file, simpleName);
+              final var lspPos = parsePosition(file, element);
               LOG.fine(
                   () ->
                       "[definition] reactor %s %d:%d"
@@ -93,34 +87,24 @@ final class DefinitionLocator {
     return Optional.empty();
   }
 
-  static Position parsePosition(final Path sourceFile, final String simpleName) {
-    return SourceParser.parse(sourceFile, (trees, cu) -> extractPosition(trees, cu, simpleName))
+  static Position parsePosition(final Path sourceFile, final Element element) {
+    return SourceParser.parse(
+            sourceFile, (trees, cu) -> parseDeclarationPosition(trees, cu, element))
         .orElse(new Position(0, 0));
   }
 
-  private static Position extractPosition(
-      final Trees trees, final CompilationUnitTree cu, final String simpleName) {
-    final SourcePositions positions = trees.getSourcePositions();
+  private static Position parseDeclarationPosition(
+      final Trees trees, final CompilationUnitTree cu, final Element element) {
     try {
-      final CharSequence content = cu.getSourceFile().getCharContent(false);
-      for (final Tree decl : cu.getTypeDecls()) {
-        if (decl instanceof final ClassTree ct && ct.getSimpleName().contentEquals(simpleName)) {
-          final long declStart = positions.getStartPosition(cu, decl);
-          if (declStart != Diagnostic.NOPOS) {
-            return SourceLocator.offsetToPosition(cu, nameOffset(content, declStart, simpleName));
-          }
-        }
-      }
+      return SourceLocator.declarationNamePosition(
+              trees,
+              cu,
+              SourceLocator.declarationPath(cu, element),
+              SourceLocator.declarationName(element).toString())
+          .orElse(null);
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }
-    return null;
-  }
-
-  private static long nameOffset(
-      final CharSequence content, final long declStart, final String name) {
-    final int idx = content.toString().indexOf(name, (int) declStart);
-    return idx >= 0 ? idx : declStart;
   }
 
   private static TypeElement topLevelClass(final Element element) {

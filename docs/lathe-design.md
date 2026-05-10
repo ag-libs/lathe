@@ -243,7 +243,10 @@ Nothing committed to the project.
 Lathe server code may use the public `javax.tools`, `javax.lang.model`, and exported `com.sun.source.*` APIs.
 It must not import `com.sun.tools.javac.*`.
 JVM `--add-exports` / `--add-opens` flags for `com.sun.tools.javac.*` are allowed only for third-party modules that
-require them, such as `com.google.googlejavaformat`.
+require them, such as `com.google.googlejavaformat` and classpath-loaded javac plugins.
+Interactive attribution (`didOpen` / `didChange`) does not replay javac plugins from captured Maven compiler arguments.
+Options such as `-Xplugin:ErrorProne` and Error Prone's `-Xep*` flags are stripped for interactive passes.
+Full save passes replay them for Maven-faithful diagnostics.
 
 ---
 
@@ -1082,13 +1085,34 @@ LSP initialization state, exit-code protocols, or crash-loop handling.
 ### Launcher script
 
 The launcher starts `lathe-server`.
-JDK compiler internals are exported/opened only to third-party formatter modules that require them.
+JDK compiler internals are exported/opened only to classpath javac plugins and third-party formatter modules that
+require them.
 It is installed by `lathe:sync` as part of the server distribution.
 
 ```bash
 #!/bin/bash
 LATHE_HOME="$(dirname "$0")"
 exec "$JAVA_HOME/bin/java" \
+    --add-exports jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED \
+    --add-exports jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED \
+    --add-exports jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED \
+    --add-exports jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED \
+    --add-exports jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED \
+    --add-exports jdk.compiler/com.sun.tools.javac.model=ALL-UNNAMED \
+    --add-exports jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED \
+    --add-exports jdk.compiler/com.sun.tools.javac.processing=ALL-UNNAMED \
+    --add-exports jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED \
+    --add-exports jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED \
+    --add-opens jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED \
+    --add-opens jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED \
+    --add-opens jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED \
+    --add-opens jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED \
+    --add-opens jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED \
+    --add-opens jdk.compiler/com.sun.tools.javac.model=ALL-UNNAMED \
+    --add-opens jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED \
+    --add-opens jdk.compiler/com.sun.tools.javac.processing=ALL-UNNAMED \
+    --add-opens jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED \
+    --add-opens jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED \
     --add-exports jdk.compiler/com.sun.tools.javac.api=com.google.googlejavaformat \
     --add-exports jdk.compiler/com.sun.tools.javac.file=com.google.googlejavaformat \
     --add-exports jdk.compiler/com.sun.tools.javac.main=com.google.googlejavaformat \
