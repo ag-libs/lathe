@@ -18,6 +18,9 @@ Implemented:
 
 - `lathe-core` shared layout, property-file, file, and timing helpers.
 - `lathe:init` creates `.lathe/root.marker` and resets `.lathe/workspace.properties`.
+- `lathe:sync` runs at `process-test-classes`, is aggregator/thread-safe, and skips non-top-level projects.
+- `lathe:sync` discovers reactor modules, resolves direct external dependency source JARs through Maven,
+  and extracts resolved sources under `~/.cache/lathe/deps/`.
 - Compiler shim writes params files, manages `lathe.lock`, copies class outputs,
   and copies generated sources.
 - Server supports diagnostics, hover with Javadoc, semantic tokens, formatting,
@@ -32,11 +35,10 @@ Planned next:
   - preserve file-manager flushing semantics;
   - make silent javac failure surface as an `IOException`;
   - make server compilation wait for fresh `lathe.lock` files in the target module and direct reactor dependencies;
-  - update missing-module diagnostics from `mvn test-compile` to `mvn process-test-classes`;
   - redirect accidental stdout logging away from the LSP pipe before starting stdio transport.
-- `lathe:sync` with default phase `process-test-classes`.
 - `.lathe/workspace.properties` workspace manifest.
-- Dependency source and exact JDK source sync.
+- Record dependency source cache entries in the workspace manifest.
+- Exact JDK source sync, after the manifest can record the selected cache path.
 - Maven-managed server distribution under `~/.cache/lathe/servers/<version>/`.
 - LSP stale-POM detection against `workspace.properties`.
 
@@ -71,16 +73,28 @@ deletes `.lathe/workspace.properties`, and leaves the user-level cache untouched
 
 ## Phase 2b — `lathe:sync`
 
-**Output:** `lathe:sync`, with default phase `process-test-classes`, is the no-op-fast synchronization point for the
-workspace manifest, server distribution, dependency sources, exact JDK sources, and later indexes.
+**Output:** `lathe:sync`, with default phase `process-test-classes`, is the synchronization point for dependency
+sources, the workspace manifest, server distribution, exact JDK sources, and later indexes.
+
+Current implementation:
+
+- `SyncMojo` has `defaultPhase = LifecyclePhase.PROCESS_TEST_CLASSES`,
+  `aggregator = true`, and `threadSafe = true`.
+- The goal runs only for the top-level project.
+- It logs reactor modules in deterministic relative-path order.
+- It resolves direct external dependency source JARs through Maven without forcing early reactor dependency resolution.
+- It extracts resolved source JARs under `~/.cache/lathe/deps/<group path>/<artifact>/<version>/`.
+- Extraction is parallel, zip-slip-safe via `FileUtil.unzip`, and skipped when `.lathe-source.properties`
+  matches the current source JAR path, size, and modified time.
+- Missing source JARs are not sync failures.
 
 Implement in small slices:
 
 ### Phase 2b.1 — Manifest and no-op fast path
 
-- Add `SyncMojo` with `defaultPhase = LifecyclePhase.PROCESS_TEST_CLASSES`;
+- `SyncMojo` already exists with `defaultPhase = LifecyclePhase.PROCESS_TEST_CLASSES`;
   users add an execution for `sync` and can omit `<phase>`.
-- Read the Maven session/reactor after compile and test-compile have resolved dependencies.
+- Read the Maven session/reactor after compile and test-compile have run.
 - Compute a project state fingerprint from content hashes of relevant POM files, resolved dependency
   coordinates/artifacts, server version, JDK identity, and workspace/index schema version.
 - If `.lathe/workspace.properties` exists and the fingerprint is unchanged, exit quickly.
@@ -107,23 +121,29 @@ Implement in small slices:
 
 ### Phase 2b.3 — Dependency sources
 
-- If changed, resolve source JAR artifacts through Maven, extract available dependency sources under
-  `~/.cache/lathe/deps/<gav-path>/`, and record missing sources explicitly.
-  Use Maven-style group paths, for example `~/.cache/lathe/deps/com/google/guava/guava/32.0.0-jre/`.
-- Extraction is idempotent:
+- Current implementation resolves direct external dependency source JAR artifacts through Maven,
+  extracts available dependency sources under `~/.cache/lathe/deps/<gav-path>/`,
+  and treats missing source JARs as non-fatal.
+  It uses Maven-style group paths, for example `~/.cache/lathe/deps/com/google/guava/guava/32.0.0-jre/`.
+- Current extraction is idempotent:
   extract to a temp directory, write a `.lathe-source.properties` marker after success,
   then atomically move into the final cache path.
-  The marker records schema, GAV, source JAR path, and source JAR SHA-256.
-- Missing sources are not sync failures.
-  Record `sourceStatus=missing` and continue.
+  The marker records schema, GAV, source JAR path, source JAR size, and source JAR modified time.
+- Still planned: record dependency source status and cache paths in `.lathe/workspace.properties`.
+- Still planned: evaluate whether direct dependencies are sufficient,
+  or whether sync should use Maven's resolved transitive artifacts after the manifest slice is in place.
+- Still planned: record `sourceStatus=missing` in the manifest and continue.
   Fail only for internal cache write/corruption errors where Lathe cannot leave a valid old or new cache entry.
-- Unit tests: source JAR extraction, directory entries, zip-slip rejection, marker-after-success, failed extraction
-  does not leave a partial final directory, and rerun with the same marker skips extraction.
+- Current unit tests cover shared unzip success, zip-slip rejection, and checked-IO wrapping.
+- Still planned unit tests: marker-after-success, failed extraction does not leave a partial final directory,
+  and rerun with the same marker skips extraction.
 - Invoker tests: include one dependency with available sources and one local test dependency without a sources JAR;
   assert `sourceStatus=present` plus `sources=...` for the first and `sourceStatus=missing` for the second.
 
 ### Phase 2b.4 — JDK sources
 
+- Depends on `.lathe/workspace.properties`;
+  the server should consume the selected JDK source cache path from sync output rather than rediscovering it.
 - Select/extract the exact JDK source archive for the JDK/toolchain Maven used and record the cache location.
   Prefer a cache key based on `src.zip` SHA-256 rather than only the release number.
   Example: `~/.cache/lathe/jdks/<src-zip-sha256>/`.
