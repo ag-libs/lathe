@@ -17,7 +17,7 @@ Read the full section before starting work.
 Implemented:
 
 - `lathe-core` shared layout, property-file, file, and timing helpers.
-- `lathe:init` creates `.lathe/root.marker`.
+- `lathe:init` creates `.lathe/root.marker` and resets `.lathe/workspace.properties`.
 - Compiler shim writes params files, manages `lathe.lock`, copies class outputs,
   and copies generated sources.
 - Server supports diagnostics, hover with Javadoc, semantic tokens, formatting,
@@ -34,7 +34,6 @@ Planned next:
   - make server compilation wait for fresh `lathe.lock` files in the target module and direct reactor dependencies;
   - update missing-module diagnostics from `mvn test-compile` to `mvn process-test-classes`;
   - redirect accidental stdout logging away from the LSP pipe before starting stdio transport.
-- `lathe:init` setup validation and `.lathe/workspace.properties` reset.
 - `lathe:sync` with default phase `process-test-classes`.
 - `.lathe/workspace.properties` workspace manifest.
 - Dependency source and exact JDK source sync.
@@ -53,19 +52,22 @@ copy bytecode to `.lathe/<rel>/classes/` and `.lathe/<rel>/test-classes/`, and m
 
 ## Phase 2 — `lathe:init` ✓
 
-**Output:** `mvn lathe:init` writes `.lathe/root.marker`, creates the workspace `.lathe/` directory,
-and leaves the user-level cache untouched.
+**Output:** `mvn lathe:init` creates the workspace `.lathe/` directory, writes `.lathe/root.marker`,
+deletes `.lathe/workspace.properties`, and leaves the user-level cache untouched.
 
-- Current implementation: `InitMojo` writes `.lathe/root.marker` at the top-level project.
+- Current implementation: `InitMojo` writes `.lathe/root.marker` at the top-level project and deletes stale
+  `.lathe/workspace.properties`.
+- `lathe:init` is intentionally informational only.
+- `lathe:init` does not validate Maven compiler configuration.
+- `lathe:init` does not inspect or edit POM files.
+- `lathe:init` does not warn about missing `lathe-compiler`, missing `<compilerId>lathe</compilerId>`,
+  missing `lathe:sync`, or version mismatches.
 - `lathe:init` does not install server distributions.
-- Integration test: `multi-module` runs `lathe:init` before compilation and verifies `root.marker` plus compiler-shim
-  outputs.
-- **TODO:** reset workspace-local state by deleting `.lathe/workspace.properties`.
-- **TODO:** setup guidance — inspect the Maven model and print tailored XML when any of these are missing:
-  - `maven-compiler-plugin` has `lathe-compiler` as a dependency
-  - `maven-compiler-plugin` sets `<compilerId>lathe</compilerId>`
-  - `lathe-maven-plugin` has an execution for `lathe:sync`
-  - `lathe-compiler` and `lathe-maven-plugin` versions match
+- Integration test: `multi-module` runs `lathe:init` before compilation and verifies `root.marker`,
+  compiler-shim outputs, and stale `workspace.properties` removal.
+- Installation remains documented in the user guide / README.
+- Configuration problems are detected later from observable Lathe state:
+  missing compiler params, missing workspace metadata, or stale sync output.
 
 ## Phase 2b — `lathe:sync`
 
@@ -374,8 +376,6 @@ document outline and workspace type search work.
   launcher path is user/editor configuration and is not produced by `lathe:init`
 - Error surface polish: all "Run `mvn ...`"
   messages consistent; missing params per-module vs missing `.lathe/` root distinguished clearly
-- Setup detection (from Phase 2 TODO): check compiler shim and sync binding across the effective Maven model;
-  report missing modules/configuration by name; abort on version mismatch
 - Deploy parent POM, `lathe-compiler`, `lathe-maven-plugin`, `lathe-server` to Maven Central under `io.github.ag-libs`
 
 ---

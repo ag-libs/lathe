@@ -46,8 +46,8 @@ Delegates to real javac unchanged, then writes compilation parameters to `.lathe
 `.lathe/<rel>/classes/`, `.lathe/<rel>/test-classes/`, and `.lathe/<rel>/generated-sources/` after each build.
 
 **`lathe-maven-plugin`** — provides `lathe:init` and `lathe:sync`.
-`init` creates `.lathe/`, writes `.lathe/root.marker`, resets the workspace manifest, and prints setup guidance
-when the compiler shim or sync binding is missing.
+`init` creates `.lathe/`, writes `.lathe/root.marker`, and resets the workspace manifest.
+It does not validate Maven configuration or inspect/edit POM files.
 `sync` runs after Maven compilation, compares the current Maven project state with the last workspace manifest,
 refreshes shared dependency/JDK sources and later indexes,
 and installs the matching server distribution into the user cache when needed.
@@ -139,74 +139,21 @@ Any normal `mvn process-test-classes`, `mvn package`, or `mvn install` run heals
 mvn io.github.ag-libs:lathe-maven-plugin:VERSION:init
 ```
 
-1. Inspect the Maven model to check whether the compiler shim and sync goal are configured.
-   The shim is configured when `maven-compiler-plugin` has `lathe-compiler` as a dependency and
-   `<compilerId>lathe</compilerId>` set.
-   Sync is configured when `lathe-maven-plugin` has a `lathe:sync` execution;
-   the goal's default phase binds it to `process-test-classes` unless the user overrides it.
-   If anything is missing, print XML tailored to the current POM and remind the user to re-run `lathe:init` after
-   editing:
-
-   ```
-   [lathe] Compiler shim not configured. Add the following to your parent pom.xml:
-
-   <plugin>
-     <groupId>org.apache.maven.plugins</groupId>
-     <artifactId>maven-compiler-plugin</artifactId>
-     <dependencies>
-       <dependency>
-         <groupId>io.github.ag-libs</groupId>
-         <artifactId>lathe-compiler</artifactId>
-         <version>0.1.0</version>
-       </dependency>
-     </dependencies>
-     <configuration>
-       <compilerId>lathe</compilerId>
-     </configuration>
-   </plugin>
-
-   Re-run 'mvn io.github.ag-libs:lathe-maven-plugin:VERSION:init' after updating the POM.
-   ```
-
-Also suggest adding the sync execution:
-
-   ```xml
-   <plugin>
-     <groupId>io.github.ag-libs</groupId>
-     <artifactId>lathe-maven-plugin</artifactId>
-     <version>0.1.0</version>
-     <executions>
-       <execution>
-         <id>lathe-sync</id>
-         <goals>
-           <goal>sync</goal>
-         </goals>
-       </execution>
-     </executions>
-   </plugin>
-   ```
-
-If the shim and plugin are configured, check that their versions match.
-If they differ:
-
-   ```
-   [lathe] lathe-compiler version 0.1.0 does not match lathe-maven-plugin version 0.2.0.
-           Update both versions together in your pom.xml, then re-run 'mvn io.github.ag-libs:lathe-maven-plugin:VERSION:init'.
-   ```
-
-Abort — do not proceed with mismatched versions.
-
-If both are configured and versions match, continue silently.
-
-2. Create `.lathe/` if missing.
-3. Write `.lathe/root.marker`.
-4. Reset workspace-local state by deleting `.lathe/workspace.properties` if present.
+1. Create `.lathe/` if missing.
+2. Write `.lathe/root.marker`.
+3. Reset workspace-local state by deleting `.lathe/workspace.properties` if present.
    User-level cache under `~/.cache/lathe/` is left intact.
+
+`lathe:init` does not validate Maven configuration.
+Maven setup can be inherited from parents, profiles, plugin management, or external build conventions,
+so v1 treats POM validation as out of scope.
+Missing or incorrect setup is surfaced later by the compiler shim, sync goal, or language server based on files that
+Lathe actually needs.
 
 ### Ongoing workflow
 
 ```bash
-mvn io.github.ag-libs:lathe-maven-plugin:VERSION:init       # once: write root.marker + validate setup
+mvn io.github.ag-libs:lathe-maven-plugin:VERSION:init       # once: write root.marker + reset workspace state
 mvnd process-test-classes                                   # refresh Lathe — shim writes params, sync refreshes metadata
 ```
 
