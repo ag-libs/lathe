@@ -48,6 +48,19 @@ final class FileUtilTest {
     assertThat(tempDir.resolve("tree")).doesNotExist();
   }
 
+  @Test
+  void moveReplacingReplacesFile() throws IOException {
+    final Path src = tempDir.resolve("src.txt");
+    final Path dest = tempDir.resolve("dest.txt");
+    Files.writeString(src, "new");
+    Files.writeString(dest, "old");
+
+    FileUtil.moveReplacing(src, dest);
+
+    assertThat(src).doesNotExist();
+    assertThat(dest).hasContent("new");
+  }
+
   private static void zip(final Path zip, final String name, final String content)
       throws IOException {
     try (final ZipOutputStream out = new ZipOutputStream(Files.newOutputStream(zip))) {

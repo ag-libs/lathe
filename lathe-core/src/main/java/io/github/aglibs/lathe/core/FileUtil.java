@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.core;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -18,6 +19,14 @@ public final class FileUtil {
       deleteDir(dest);
     }
     copyDir(src, dest);
+  }
+
+  public static void moveReplacing(final Path src, final Path dest) throws IOException {
+    try {
+      Files.move(src, dest, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+    } catch (final AtomicMoveNotSupportedException e) {
+      Files.move(src, dest, StandardCopyOption.REPLACE_EXISTING);
+    }
   }
 
   public static void copyDir(final Path src, final Path dest) throws IOException {
