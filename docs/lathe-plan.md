@@ -26,6 +26,13 @@ Implemented:
 
 Planned next:
 
+- Fix shim/server drift found during design conformance review:
+  - move compiler-shim params writing, class copying, generated-source copying, and lock cleanup into a true
+    `finally` path around `javacCompiler.performCompile()`;
+  - close `JavacTask` in `ModuleCompiler.runTask()` and preserve file-manager flushing semantics;
+  - make silent javac failure surface as an `IOException`;
+  - update missing-module diagnostics from `mvn test-compile` to `mvn process-test-classes`;
+  - redirect accidental stdout logging away from the LSP pipe before starting stdio transport.
 - `lathe:init` setup validation and `.lathe/workspace.properties` reset.
 - `lathe:sync` with default phase `process-test-classes`.
 - `.lathe/workspace.properties` workspace manifest.

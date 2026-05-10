@@ -993,6 +993,43 @@ Editor integrations stay thin.
 They do not need to understand Maven or resolve Lathe artifacts;
 they launch `~/.cache/lathe/current/lathe-launcher.sh` and let Maven keep that target current.
 
+### Server upgrade and restart
+
+`lathe:sync` is the only component that installs server distributions and moves `~/.cache/lathe/current`.
+The launcher does not poll for updates and does not run a restart loop.
+It starts exactly one server process using the module path from the `current` distribution at process start.
+
+The running server records its own implementation version.
+When it reads `.lathe/workspace.properties` on startup or registry reload,
+it compares that version with `server.version` from the manifest.
+If they differ, the server reports that the workspace was synced with a different Lathe server version.
+The server should continue serving requests when the manifest schema is compatible,
+but features that require a newer manifest schema may degrade with a clear message.
+
+The restart policy belongs to the editor integration:
+
+- **Neovim v1** — show a normal LSP message:
+  `Lathe server updated. Restart the language server.`
+  Users can run `:LspRestart`.
+- **VS Code extension** — listen for a Lathe-specific server-update notification,
+  stop the current `LanguageClient`,
+  and start a new one from `~/.cache/lathe/current/lathe-launcher.sh`.
+  The restarted client naturally picks up the new module path because `current` has already been updated by
+  `lathe:sync`.
+
+The custom notification payload is intentionally small:
+
+```json
+{
+  "runningVersion": "0.1.0",
+  "workspaceVersion": "0.2.0",
+  "launcher": "/home/user/.cache/lathe/current/lathe-launcher.sh"
+}
+```
+
+This keeps upgrade behavior explicit without teaching the shell launcher about workspace roots,
+LSP initialization state, exit-code protocols, or crash-loop handling.
+
 ### Launcher script
 
 The launcher starts `lathe-server` with the required JDK compiler module exports and opens.
