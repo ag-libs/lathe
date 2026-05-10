@@ -74,8 +74,8 @@ with LatheClient.start(find_workspace_root(file)) as c:
     refs = c.references(file, line=10, col=5)
 ```
 
-Unimplemented features raise `RuntimeError` with the server's
-`UnsupportedOperationException` — that's the expected signal until the phase is done.
+Unimplemented features raise `RuntimeError` with the server's `UnsupportedOperationException` —
+that's the expected signal until the phase is done.
 
 ### Environment variables
 
