@@ -29,9 +29,6 @@ Planned next:
 - Fix shim/server drift found during design conformance review:
   - move compiler-shim params writing, class copying, generated-source copying, and lock cleanup into a true
     `finally` path around `javacCompiler.performCompile()`;
-  - make `CompilationTaskContext` own cached javac task resources and close previous contexts on replacement,
-    invalidation, `didClose`, and server shutdown;
-  - close task resources immediately for compile failures that do not enter the result cache;
   - preserve file-manager flushing semantics;
   - make silent javac failure surface as an `IOException`;
   - make server compilation wait for fresh `lathe.lock` files in the target module and direct reactor dependencies;
@@ -166,7 +163,8 @@ Implement in small slices:
 - LRU cache of `StandardJavaFileManager` instances keyed by `ModuleParams` (100 entries, closes on eviction;
   invalidated on registry reload); `fm.flush()` after each `FULL` pass
 - Per-file result cache stores `CompilationTaskContext` for hover, definition, and semantic-token reads.
-  Cached contexts own javac task resources and are closed when replaced or invalidated.
+  Cached contexts retain javac task-backed `Trees` and AST state while cached; cleanup means dropping references when
+  replaced or invalidated.
 - Classpath/modulepath/processorPath remapping: `remapPath()` uses `getParent()` navigation —
   handles root modules and arbitrarily nested paths; unit-tested in `ModuleParamsTest`
 - `--patch-module` handling: normalised to `=` form at cache-creation time; applied once per file manager
@@ -305,7 +303,7 @@ cursor lands on the declaration name token.
 **Output:** `Im<cursor>` completes to `ImmutableList`; selecting it inserts the import.
 First-completion delay is documented.
 
-- On first completion request per module: one dedicated enumeration `JavacTaskImpl` (from params, `proc=none`)
+- On first completion request per module: one dedicated enumeration `JavacTask` (from params, `proc=none`)
   assembles `TreeMap<String, List<TypeEntry>>`
   - JDK modules: `Elements.getModuleElement("java.se")` transitive requires, walk exported packages via
     `Elements.getPackageElement()` + `listMembers()`
@@ -405,7 +403,6 @@ documents disabling `vscjava.vscode-java-pack`.
 
 ## Risk Areas
 
-- **Phase 3** — threading model, cancellation, lock protocol, `JavacTaskImpl` resource management (file descriptor
-  exhaustion without `close()`)
+- **Phase 3** — threading model, cancellation, and lock protocol
 - **Phase 6** — first-completion latency: 300–800ms cold cost from walking `java.se` transitive modules;
   documented as expected behavior, not a bug

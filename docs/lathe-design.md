@@ -55,7 +55,7 @@ It also owns all integration and e2e tests via maven-invoker and Neovim headless
 
 **`lathe-server`** — the LSP server.
 Reads params files written by the shim and the workspace manifest written by the Maven plugin, builds a fresh
-`JavacTaskImpl` per compilation pass, and serves LSP requests.
+`JavacTask` per compilation pass, and serves LSP requests.
 It watches Maven project files while running;
 when a POM changes after the last sync, it prompts the user to run the documented Maven lifecycle command.
 It reads dependency/JDK sources and indexes from `~/.cache/lathe/`.
@@ -237,6 +237,13 @@ export LATHE_JVM_OPTS="-Xmx4g -Xms512m -XX:+UseZGC"
 
 Set in `.bashrc` or `.zshrc`.
 Nothing committed to the project.
+
+### Javac API Boundary
+
+Lathe server code may use the public `javax.tools`, `javax.lang.model`, and exported `com.sun.source.*` APIs.
+It must not import `com.sun.tools.javac.*`.
+JVM `--add-exports` / `--add-opens` flags for `com.sun.tools.javac.*` are allowed only for third-party modules that
+require them, such as `com.google.googlejavaformat`.
 
 ---
 
@@ -452,7 +459,7 @@ The LS uses its modification time:
   Treat as stale, ignore
 - **Lock deleted** — compilation finished.
   LS re-reads the module's params file on its next compilation pass for any open file in that module.
-  No state to invalidate — the next pass builds a fresh `JavacTaskImpl` from the new params.
+  No state to invalidate — the next pass builds a fresh `JavacTask` from the new params.
 
 ### `lsp-params-classes.properties`
 
@@ -510,7 +517,7 @@ For each params file:
   If module A's `classpath.N` matches module B's `outputDir`, A depends on B.
   Both main and test classpath entries are cross-referenced.
 
-No `JavacTaskImpl` is created at startup.
+No `JavacTask` is created at startup.
 No `CustomFileManager` is created.
 Startup cost is bounded by the number of params files, not by reactor complexity or classpath size.
 
@@ -533,11 +540,11 @@ The user sees a brief "Workspace reloaded" notification.
 
 Lathe holds no long-lived cross-module javac symbol cache.
 Every operation that needs javac — diagnostics on `didChange`, member-access completion, find-references attribution
-against open files, hover, semantic tokens — builds a fresh `JavacTaskImpl` from the module's params and runs the pass.
+against open files, hover, semantic tokens — builds a fresh `JavacTask` from the module's params and runs the pass.
 When an attributed result is cached for later hover, definition, or semantic-token requests,
-the cached `CompilationTaskContext` owns the javac task resources that back `Trees` and the attributed
+the cached `CompilationTaskContext` retains the javac task-backed state needed by `Trees` and the attributed
 `CompilationUnitTree`.
-Those resources are closed when the cached context is replaced, invalidated, or dropped on `didClose`.
+Those references are dropped when the cached context is replaced, invalidated, or dropped on `didClose`.
 
 The only durable per-module state is:
 
@@ -555,12 +562,12 @@ A future version may replace it with in-memory `JavaFileObject` serving to avoid
 - **Per-file result cache** — `Map<Path, CompileResult>` keyed by document content hash.
   Holds the post-attribution `CompilationTaskContext` from the most recent pass for each open file.
   The context includes `Trees`, `CompilationUnitTree`, and pre-computed semantic tokens.
-  Because `Trees` is backed by javac task state, the context is closeable.
+  Because `Trees` is backed by javac task state, the context intentionally keeps that state reachable while cached.
   At most one entry per currently-open file.
-  The previous context is closed when replaced by a new compile result,
+  The previous context is dropped when replaced by a new compile result,
   invalidated on next `didChange` for that file,
   dropped on `didClose`,
-  and closed during registry reload or server shutdown.
+  and cleared during registry reload or server shutdown.
   Used by hover, definition, and semantic-tokens to avoid re-running javac for read-only queries.
 
 Because there is no symbol cache across passes, there is no cross-module staleness.
@@ -580,7 +587,7 @@ The two output spaces are fully separate.
 
 **Classpath remapping.** The params file records Maven's output paths.
 For example: `classpath.0=/workspace/platform/core/target/classes`.
-Before building a `JavacTaskImpl`, the LS rewrites the classpath to point at the `.lathe/` copies instead:
+Before building a `JavacTask`, the LS rewrites the classpath to point at the `.lathe/` copies instead:
 
 - Any `classpath.N` or `modulepath.N` entry matching a reactor module's `outputDir` from
   `lsp-params-classes.properties` is remapped to `.lathe/<that-module-rel>/classes/`.
@@ -663,7 +670,7 @@ debounce fires (module thread):
   → create fresh AtomicBoolean cancellation token, store as module's current token
   → wait for the file's own module's lathe.lock to disappear if present
   → wait for any direct reactor dependency's lathe.lock to disappear if present
-  → build fresh JavacTaskImpl from params + CustomFileManager (proc=none — AP skipped)
+  → build fresh JavacTask from params + CustomFileManager (proc=none — AP skipped)
   → single-file attribution pass for the changed file
   → flush file manager after the pass as needed
   → if cancelled: discard results, do not publish, do not update cache
@@ -686,7 +693,7 @@ full pass runs (module thread):
   → create fresh AtomicBoolean cancellation token, store as module's current token
   → wait for the file's own module's lathe.lock to disappear if present
   → wait for any direct reactor dependency's lathe.lock to disappear if present
-  → build fresh JavacTaskImpl from params + CustomFileManager (proc= from params — AP runs)
+  → build fresh JavacTask from params + CustomFileManager (proc= from params — AP runs)
   → single-file compilation pass for the changed file
   → flush file manager after the pass
   → if cancelled: discard results
@@ -745,10 +752,12 @@ of all direct reactor dependencies (derived from the in-memory reactor graph).
 This prevents reading stale `.lathe/<dep-rel>/classes/`
 while the shim is mid-copy for a dependency during a parallel `mvnd -T N` build.
 
-**Resource cleanup.** `CompilationTaskContext` owns any javac task resources needed by cached `Trees`.
-Contexts are closed when replaced, invalidated, dropped on `didClose`, or cleared during registry reload and server
-shutdown.
-Compile failures that do not produce a cached context close task resources immediately.
+**Resource cleanup.** `CompilationTaskContext` retains any javac task-backed state needed by cached `Trees`.
+The public `JavacTask` API has no supported close method,
+so cleanup means dropping cached context references when replaced,
+invalidated, dropped on `didClose`, or cleared during registry reload and server shutdown.
+The closeable javac resource Lathe owns is the cached `StandardJavaFileManager`;
+it is flushed after full passes and closed on eviction, registry reload, and server shutdown.
 
 ---
 
@@ -762,7 +771,7 @@ Subsequent requests within the lifetime of that file manager search the in-memor
 The map is dropped when the `CustomFileManager` is dropped (last file closed in the module).
 
 All three sources are assembled on the first completion request by a single dedicated enumeration task:
-a fresh `JavacTaskImpl` built from the module's params (classpath, modulepath, `--release`) with `proc=none`.
+a fresh `JavacTask` built from the module's params (classpath, modulepath, `--release`) with `proc=none`.
 
 **JDK types** — enumerated via `Elements.getModuleElement("java.se")` and its transitive `requires`, walking exported
 packages.
@@ -836,7 +845,7 @@ The nulled map is rebuilt lazily on the next completion request.
 Triggered when the user types `.`
 before the cursor.
 The file likely has a syntax error at the cursor — the expression is incomplete.
-Solution: method body erasing, run as a fresh `JavacTaskImpl`:
+Solution: method body erasing, run as a fresh `JavacTask`:
 
 1. **Erase method bodies** — replace all method bodies except the one containing the cursor with empty blocks `{}`.
    Reduces file size 80–90%.
@@ -846,7 +855,7 @@ Solution: method body erasing, run as a fresh `JavacTaskImpl`:
 5. **Enumerate members** — `Elements.getAllMembers(typeElement)` with `types.asMemberOf(receiverType, member)` for
    correct generic substitution.
 6. **Filter and return** — filter by accessibility and prefix match.
-7. **Discard the task** — call `javacTask.close()`.
+7. **Discard the task** — drop task references after collecting completion items.
 
 ### Go-to-definition
 
@@ -898,9 +907,9 @@ Modules with no `.lathe/<rel>/classes/` are silently skipped.
 
 ### Opening dependency source files
 
-Fresh read-only `JavacTaskImpl` per request using the consuming module's params.
+Fresh read-only `JavacTask` per request using the consuming module's params.
 Diagnostics swallowed.
-`javacTask.close()` called after attribution.
+Task references are dropped after attribution.
 Result stored in the consuming module's result cache keyed by the dependency source file path,
 and held until the user closes the file.
 
@@ -1072,21 +1081,24 @@ LSP initialization state, exit-code protocols, or crash-loop handling.
 
 ### Launcher script
 
-The launcher starts `lathe-server` with the required JDK compiler module exports and opens.
+The launcher starts `lathe-server`.
+JDK compiler internals are exported/opened only to third-party formatter modules that require them.
 It is installed by `lathe:sync` as part of the server distribution.
 
 ```bash
 #!/bin/bash
 LATHE_HOME="$(dirname "$0")"
 exec "$JAVA_HOME/bin/java" \
-    --add-opens jdk.compiler/com.sun.tools.javac.api=io.github.aglibs.lathe.server \
-    --add-opens jdk.compiler/com.sun.tools.javac.comp=io.github.aglibs.lathe.server \
-    --add-opens jdk.compiler/com.sun.tools.javac.tree=io.github.aglibs.lathe.server \
-    --add-opens jdk.compiler/com.sun.tools.javac.util=io.github.aglibs.lathe.server \
-    --add-opens jdk.compiler/com.sun.tools.javac.code=io.github.aglibs.lathe.server \
-    --add-opens jdk.compiler/com.sun.tools.javac.file=io.github.aglibs.lathe.server \
-    --add-opens jdk.compiler/com.sun.tools.javac.main=io.github.aglibs.lathe.server \
-    --add-exports jdk.compiler/com.sun.tools.javac.parser=io.github.aglibs.lathe.server \
+    --add-exports jdk.compiler/com.sun.tools.javac.api=com.google.googlejavaformat \
+    --add-exports jdk.compiler/com.sun.tools.javac.file=com.google.googlejavaformat \
+    --add-exports jdk.compiler/com.sun.tools.javac.main=com.google.googlejavaformat \
+    --add-exports jdk.compiler/com.sun.tools.javac.model=com.google.googlejavaformat \
+    --add-exports jdk.compiler/com.sun.tools.javac.parser=com.google.googlejavaformat \
+    --add-exports jdk.compiler/com.sun.tools.javac.processing=com.google.googlejavaformat \
+    --add-exports jdk.compiler/com.sun.tools.javac.tree=com.google.googlejavaformat \
+    --add-exports jdk.compiler/com.sun.tools.javac.util=com.google.googlejavaformat \
+    --add-opens jdk.compiler/com.sun.tools.javac.code=com.google.googlejavaformat \
+    --add-opens jdk.compiler/com.sun.tools.javac.comp=com.google.googlejavaformat \
     ${LATHE_JVM_OPTS} \
     --module-path "${LATHE_HOME}/modules" \
     --module io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer \
@@ -1122,7 +1134,7 @@ Requires disabling `vscjava.vscode-java-pack` — documented as a prerequisite.
 ### Layer 1 — Unit tests (JUnit 5)
 
 Compiler engine tests with no LSP involvement.
-`JavacTaskImpl` initialization from params files, single-file compilation, class file writing, diagnostics.
+`JavacTask` initialization from params files, single-file compilation, class file writing, diagnostics.
 Fast — milliseconds per test.
 
 ### Layer 2 — Integration (maven-invoker)

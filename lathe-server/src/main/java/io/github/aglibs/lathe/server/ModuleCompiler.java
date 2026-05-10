@@ -91,12 +91,14 @@ final class ModuleCompiler implements AutoCloseable {
     final var options = buildOptions(params, cm, mode);
     LOG.fine(() -> "[%s] td=%s root=%s opts=%s".formatted(mode.tag, cm.td(), sourceRoot, options));
     final JavaFileObject file = cm.fm().getJavaFileObjects(tempFile).iterator().next();
-    final CompilationTaskContext context = runTask(cm.fm(), collector, options, file, mode);
-    if (mode == Mode.FULL) {
-      cm.fm().flush();
+    try {
+      final CompilationTaskContext context = runTask(cm.fm(), collector, options, file, mode);
+      return new CompilationResult(collector.getDiagnostics(), context);
+    } finally {
+      if (mode == Mode.FULL) {
+        cm.fm().flush();
+      }
     }
-
-    return new CompilationResult(collector.getDiagnostics(), context);
   }
 
   void invalidate() {
