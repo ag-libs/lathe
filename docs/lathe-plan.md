@@ -75,11 +75,15 @@ and leaves the user-level cache untouched.
 **Output:** `lathe:sync`, with default phase `process-test-classes`, is the no-op-fast synchronization point for the
 workspace manifest, server distribution, dependency sources, exact JDK sources, and later indexes.
 
+Implement in small slices:
+
+### Phase 2b.1 — Manifest and no-op fast path
+
 - Add `SyncMojo` with `defaultPhase = LifecyclePhase.PROCESS_TEST_CLASSES`;
   users add an execution for `sync` and can omit `<phase>`.
 - Read the Maven session/reactor after compile and test-compile have resolved dependencies.
 - Compute a project state fingerprint from content hashes of relevant POM files, resolved dependency
-  coordinates/artifacts, source artifact status, server version, JDK identity, and workspace/index schema version.
+  coordinates/artifacts, server version, JDK identity, and workspace/index schema version.
 - If `.lathe/workspace.properties` exists and the fingerprint is unchanged, exit quickly.
 - Keep `.lathe/root.marker` as the bootstrap/root-discovery marker;
   `workspace.properties` is a synchronized snapshot and may be missing or stale.
@@ -87,12 +91,54 @@ workspace manifest, server distribution, dependency sources, exact JDK sources, 
   params files.
   Do not duplicate compile or test classpaths in the first manifest; the shim's params files remain the source of truth
   for dependency resolution.
+- Write `.lathe/workspace.properties` only after successful refresh, using an atomic temp-file-then-move update.
+- Unit tests: fingerprint stability, POM SHA-256 hashing, nested/root module relative paths, manifest writer shape,
+  indexed property ordering, and atomic writer behavior.
+- Invoker tests: update `multi-module` to run `lathe:init process-test-classes`;
+  assert manifest existence, schema/server version, POM hashes, and all reactor `module.N.*` entries without depending
+  on nondeterministic module order.
+  Prefer deterministic module sorting by relative path.
+- No-op fast-path test: rerun `process-test-classes` with unchanged inputs and assert the manifest is not rewritten.
+  Use file content hash rather than timestamp if `syncedAt` is not rewritten on no-op.
+
+### Phase 2b.2 — Server distribution
+
 - Install the matching server distribution under `~/.cache/lathe/servers/<version>/` if missing,
   then update `~/.cache/lathe/current`.
+
+### Phase 2b.3 — Dependency sources
+
 - If changed, resolve source JAR artifacts through Maven, extract available dependency sources under
   `~/.cache/lathe/deps/<gav-path>/`, and record missing sources explicitly.
+  Use Maven-style group paths, for example `~/.cache/lathe/deps/com/google/guava/guava/32.0.0-jre/`.
+- Extraction is idempotent:
+  extract to a temp directory, write a `.lathe-source.properties` marker after success,
+  then atomically move into the final cache path.
+  The marker records schema, GAV, source JAR path, and source JAR SHA-256.
+- Missing sources are not sync failures.
+  Record `sourceStatus=missing` and continue.
+  Fail only for internal cache write/corruption errors where Lathe cannot leave a valid old or new cache entry.
+- Unit tests: source JAR extraction, directory entries, zip-slip rejection, marker-after-success, failed extraction
+  does not leave a partial final directory, and rerun with the same marker skips extraction.
+- Invoker tests: include one dependency with available sources and one local test dependency without a sources JAR;
+  assert `sourceStatus=present` plus `sources=...` for the first and `sourceStatus=missing` for the second.
+
+### Phase 2b.4 — JDK sources
+
 - Select/extract the exact JDK source archive for the JDK/toolchain Maven used and record the cache location.
-- Write `.lathe/workspace.properties` only after successful refresh, using an atomic temp-file-then-move update.
+  Prefer a cache key based on `src.zip` SHA-256 rather than only the release number.
+  Example: `~/.cache/lathe/jdks/<src-zip-sha256>/`.
+- JDK sources are optional.
+  If `src.zip` is absent, record `jdk.sourceStatus=missing` and continue.
+  If present, record `jdk.sourceStatus=present`, `jdk.sources`, `jdk.srcZip`, and `jdk.srcZip.sha256`.
+- Unit tests: fake `src.zip` extraction, module-prefixed entries such as `java.base/java/lang/String.java`,
+  zip-slip rejection, missing `src.zip` status, and injected/fake JDK home resolution.
+  Avoid host-JDK-dependent unit tests.
+- Invoker tests should only assert real JDK extraction when the running JDK has `src.zip`;
+  otherwise assert that missing source status is recorded without failing sync.
+
+### Phase 2b.5 — Server consumption
+
 - Future extension: build type/reference indexes in the same sync pipeline.
 - LSP follow-up: read `.lathe/workspace.properties` on startup and registry reload;
   keep it as an immutable in-memory snapshot for handlers.
