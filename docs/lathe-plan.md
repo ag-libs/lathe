@@ -29,8 +29,12 @@ Planned next:
 - Fix shim/server drift found during design conformance review:
   - move compiler-shim params writing, class copying, generated-source copying, and lock cleanup into a true
     `finally` path around `javacCompiler.performCompile()`;
-  - close `JavacTask` in `ModuleCompiler.runTask()` and preserve file-manager flushing semantics;
+  - make `CompilationTaskContext` own cached javac task resources and close previous contexts on replacement,
+    invalidation, `didClose`, and server shutdown;
+  - close task resources immediately for compile failures that do not enter the result cache;
+  - preserve file-manager flushing semantics;
   - make silent javac failure surface as an `IOException`;
+  - make server compilation wait for fresh `lathe.lock` files in the target module and direct reactor dependencies;
   - update missing-module diagnostics from `mvn test-compile` to `mvn process-test-classes`;
   - redirect accidental stdout logging away from the LSP pipe before starting stdio transport.
 - `lathe:init` setup validation and `.lathe/workspace.properties` reset.
@@ -115,6 +119,8 @@ workspace manifest, server distribution, dependency sources, exact JDK sources, 
   `didSave`); each mode carries a log `tag`; single `compileWith` dispatch method
 - LRU cache of `StandardJavaFileManager` instances keyed by `ModuleParams` (100 entries, closes on eviction;
   invalidated on registry reload); `fm.flush()` after each `FULL` pass
+- Per-file result cache stores `CompilationTaskContext` for hover, definition, and semantic-token reads.
+  Cached contexts own javac task resources and are closed when replaced or invalidated.
 - Classpath/modulepath/processorPath remapping: `remapPath()` uses `getParent()` navigation —
   handles root modules and arbitrarily nested paths; unit-tested in `ModuleParamsTest`
 - `--patch-module` handling: normalised to `=` form at cache-creation time; applied once per file manager

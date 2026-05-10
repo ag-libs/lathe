@@ -529,35 +529,39 @@ all type-completion `TreeMap`s are invalidated,
 and open files are re-attributed.
 The user sees a brief "Workspace reloaded" notification.
 
-### Stateless compilation model
+### Compilation state model
 
-Lathe holds no per-module javac state between requests.
+Lathe holds no long-lived cross-module javac symbol cache.
 Every operation that needs javac — diagnostics on `didChange`, member-access completion, find-references attribution
-against open files, hover, semantic tokens — builds a fresh `JavacTaskImpl` from the module's params, runs the pass,
-and discards the task.
+against open files, hover, semantic tokens — builds a fresh `JavacTaskImpl` from the module's params and runs the pass.
+When an attributed result is cached for later hover, definition, or semantic-token requests,
+the cached `CompilationTaskContext` owns the javac task resources that back `Trees` and the attributed
+`CompilationUnitTree`.
+Those resources are closed when the cached context is replaced, invalidated, or dropped on `didClose`.
 
 The only durable per-module state is:
 
 - **Parsed params** — read from disk on startup and re-read after the module's `lathe.lock` disappears.
-- **`CustomFileManager`** — one per module, created lazily on first `didOpen` for that module.
-  Manages a per-module temp directory: open files are written there on `didOpen`/`didChange`,
-  and the temp dir is prepended to the source roots for each compilation pass so javac finds the current content before
-  falling back to disk.
-  Only overrides `getJavaFileForOutput()` to redirect `CLASS_OUTPUT` → `.lathe/<rel>/classes/` and `SOURCE_OUTPUT` →
-  `.lathe/<rel>/generated-sources/`.
-  Holds no javac-internal state.
-  Reused across passes for the same module.
-  Dropped (and temp dir deleted) when the last file in the module is closed.
+- **File manager cache** — an LRU of `StandardJavaFileManager` instances keyed by `ModuleParams`.
+  Each cached manager owns a temp directory for open-file content and sets explicit javac locations:
+  `CLASS_OUTPUT` → `.lathe/<rel>/classes`,
+  `SOURCE_OUTPUT` → `.lathe/<rel>/generated-sources`,
+  plus remapped classpath/modulepath/processor path entries.
+  It holds no attributed javac task state.
+  It is closed on LRU eviction, registry reload, and server shutdown.
 
 _v1 simplification — the temp-dir approach is straightforward to implement and test.
 A future version may replace it with in-memory `JavaFileObject` serving to avoid the disk round-trip._
 - **Per-file result cache** — `Map<Path, CompileResult>` keyed by document content hash.
-  Holds the post-attribution `CompilationUnitTree` and pre-computed semantic tokens from the most recent pass for each
-  open file.
+  Holds the post-attribution `CompilationTaskContext` from the most recent pass for each open file.
+  The context includes `Trees`, `CompilationUnitTree`, and pre-computed semantic tokens.
+  Because `Trees` is backed by javac task state, the context is closeable.
   At most one entry per currently-open file.
-  Invalidated on next `didChange` for that file.
-  Dropped on `didClose`.
-  Used by hover and semantic-tokens to avoid re-running javac for read-only queries.
+  The previous context is closed when replaced by a new compile result,
+  invalidated on next `didChange` for that file,
+  dropped on `didClose`,
+  and closed during registry reload or server shutdown.
+  Used by hover, definition, and semantic-tokens to avoid re-running javac for read-only queries.
 
 Because there is no symbol cache across passes, there is no cross-module staleness.
 When module B is recompiled by Maven, the shim copies fresh bytecode to `.lathe/platform/core/classes/`;
@@ -660,11 +664,10 @@ debounce fires (module thread):
   → wait for the file's own module's lathe.lock to disappear if present
   → wait for any direct reactor dependency's lathe.lock to disappear if present
   → build fresh JavacTaskImpl from params + CustomFileManager (proc=none — AP skipped)
-  → register TaskListener: on each ANALYZE event, check token — throw CancellationException if set
   → single-file attribution pass for the changed file
-  → in finally: call javacTask.close() and fileManager.flush() to release internal file handles
+  → flush file manager after the pass as needed
   → if cancelled: discard results, do not publish, do not update cache
-  → else: publish diagnostics, store CompilationUnitTree in result cache
+  → else: publish diagnostics, store CompilationTaskContext in result cache
           (class files are written to .lathe/<rel>/classes/ or test-classes/ via CLASS_OUTPUT redirection in CustomFileManager)
   → clear module's current token
 ```
@@ -684,12 +687,11 @@ full pass runs (module thread):
   → wait for the file's own module's lathe.lock to disappear if present
   → wait for any direct reactor dependency's lathe.lock to disappear if present
   → build fresh JavacTaskImpl from params + CustomFileManager (proc= from params — AP runs)
-  → register TaskListener: on each ANALYZE event, check token — throw CancellationException if set
   → single-file compilation pass for the changed file
-  → in finally: call javacTask.close() and fileManager.flush() to release internal file handles
+  → flush file manager after the pass
   → if cancelled: discard results
   → else: run orphan cleanup, write .class to .lathe/<rel>/classes/ and generated sources
-         to .lathe/<rel>/generated-sources/, publish diagnostics, store CompilationUnitTree in result cache
+         to .lathe/<rel>/generated-sources/, publish diagnostics, store CompilationTaskContext in result cache
   → clear module's current token
 ```
 
@@ -708,9 +710,9 @@ Target: ~1s p95.
 ### `didClose` flow
 
 Delete the file from the module's temp directory.
-Drop its result cache entry.
+Drop and close its result cache entry.
 Publish empty diagnostics array to clear client display.
-If this was the last open file in the module, drop the `CustomFileManager` and delete the temp directory.
+Cached file managers remain bounded by the LRU and are closed on eviction or registry reload.
 
 ### File deletion
 
@@ -729,9 +731,10 @@ Temp directory writes (on `didOpen`/`didChange`) happen synchronously on the LSP
 debounce — the write is small and fast, and the 500ms debounce ensures the file is fully written before the next pass
 reads it.
 
-Each module holds a `volatile AtomicBoolean currentPassToken`.
-The LSP receive thread sets it to cancel an in-flight pass;
-the module thread creates and owns the token for the duration of each pass and clears it when done.
+Cancellation is cooperative at scheduling boundaries for v1.
+The LSP receive thread cancels pending debounced work and suppresses stale publish results after interruption.
+Fine-grained javac cancellation with a `TaskListener` and per-module token remains a targeted optimization if
+profiling shows long-running attribution passes.
 
 A single `ScheduledExecutorService` handles debounces.
 Cross-module operations (find-references, workspace symbols) submit subtasks to each module's own thread and await
@@ -742,9 +745,10 @@ of all direct reactor dependencies (derived from the in-memory reactor graph).
 This prevents reading stale `.lathe/<dep-rel>/classes/`
 while the shim is mid-copy for a dependency during a parallel `mvnd -T N` build.
 
-**Resource cleanup.** Every `JavacTaskImpl` is closed via `javacTask.close()` in a finally block —
-on normal completion, cancellation, and exceptions.
-This releases file handles that javac opens internally during class loading.
+**Resource cleanup.** `CompilationTaskContext` owns any javac task resources needed by cached `Trees`.
+Contexts are closed when replaced, invalidated, dropped on `didClose`, or cleared during registry reload and server
+shutdown.
+Compile failures that do not produce a cached context close task resources immediately.
 
 ---
 
