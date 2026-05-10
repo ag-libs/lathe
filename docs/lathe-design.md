@@ -958,11 +958,47 @@ which modules are currently open.
 Indexes are built lazily as described in the type completion section;
 a workspace symbol query may trigger index building for modules not yet opened.
 
+### Refactoring strategy
+
+Lathe should not try to clone the full Eclipse JDT refactoring stack.
+Its core responsibility is to provide compiler-accurate facts from Maven's real javac state:
+symbol identity, diagnostics, definitions, references, module ownership, source roots, test roots,
+dependency/JDK source locations, and stale-workspace state.
+
+Native LSP refactorings are limited to deterministic, fast edits where Lathe can produce a precise `WorkspaceEdit`
+without design judgment or long-running iteration:
+
+- rename local variables, parameters, private members, and tightly scoped in-module symbols
+- add missing import
+- organize imports
+- simple file-local or module-local source rewrites with clear symbol identity
+
+Large or design-sensitive refactorings are delegated to agentic tools that can plan,
+edit multiple files, run Maven/tests, interpret failures, and ask the user when architectural choices are needed:
+
+- public API rename across JPMS reactor modules
+- move type or split package/module boundaries
+- migrate test frameworks or dependency APIs
+- broad generated-source/AP-sensitive rewrites
+- change-signature, extract-method, and inline operations when they affect multiple modules
+
+To support those tools, Lathe exposes refactoring facts rather than trying to own every refactoring workflow:
+
+- `lathe/symbolAt` — stable symbol identity at a position
+- `lathe/references` — source and bytecode-backed references with known limitations
+- `lathe/moduleGraph` — Maven reactor/module ownership and dependency edges
+- `lathe/affectedModules` — modules likely affected by a symbol or file change
+- `lathe/compileState` — stale manifest, missing params, diagnostics, and source availability
+- `lathe/runTestsForSymbol` — post-v1 test selection built on the run/test/debug design
+
+This makes Lathe a JPMS/Maven-accurate Java backend for editors and coding agents,
+not a feature-for-feature clone of JDT LS.
+
 ### Rename (post-v1)
 
-In-module rename via AST scan.
-Cross-module rename via closed-module Class-File API scan.
-Produces a `WorkspaceEdit` grouping all edits including import statements.
+Native rename starts with local and in-module symbols.
+Cross-module public API rename is an agent-oriented workflow that consumes Lathe reference/module facts,
+applies edits, runs verification, and iterates.
 
 ### Inlay hints (post-v1)
 
