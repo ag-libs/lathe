@@ -10,7 +10,7 @@ import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 
 @SuppressWarnings("unused")
-@Mojo(name = "init", aggregator = true)
+@Mojo(name = "init", aggregator = true, threadSafe = true)
 public final class InitMojo extends AbstractMojo {
 
   @Parameter(defaultValue = "${session}", readonly = true, required = true)
