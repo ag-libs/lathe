@@ -7,6 +7,8 @@ fail() { echo "ERROR: $1"; exit 1; }
 
 [ -f .lathe/root.marker ] || fail "root.marker not written by lathe:init"
 
+[ ! -f .lathe/workspace.properties ] || fail "workspace.properties not reset by lathe:init"
+
 # --- core module ---
 
 [ -f .lathe/core/lsp-params-classes.properties ] || fail "core: lsp-params-classes.properties not written"

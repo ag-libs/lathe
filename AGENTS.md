@@ -59,12 +59,17 @@ After a large Java change, agents may run `mvn spotless:apply` before tests to n
 ## Coding style
 
 - Java formatting is Google Java Format via Spotless.
+- Keep string literal lines within 100 columns where practical;
+  split long messages across multiple lines instead of relying on very long literals.
 - `final` on all fields, local variables, and parameters — omit only when reassignment is needed
 - `var` only when the type is obvious from the right-hand side.
   Use the explicit type otherwise, for example `JavaCompiler compiler = ToolProvider.getSystemJavaCompiler()`.
 - Always use `{}` braces on `if`/`else`, even for single-line bodies
+- Leave a blank line after an `if`/`else` block when another statement follows in the same scope.
 - Document magic numbers with an inline comment, for example `final int openLen = 3; // "/**"`.
 - Streams, lambdas, and method references over imperative loops
+- Avoid fully qualified imports when a normal import is practical,
+  for example prefer `import java.util.stream.Stream` over `java.util.stream.Stream.xxx`.
 - Extract long lambda bodies to a named private method; pass as a method reference where the signature allows
 - Records for all value types (params, results, entries, config objects)
 - `Optional<T>` as return type only — never as a field or parameter
