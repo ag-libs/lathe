@@ -70,14 +70,22 @@ workspace manifest, server distribution, dependency sources, exact JDK sources, 
 - Compute a project state fingerprint from content hashes of relevant POM files, resolved dependency
   coordinates/artifacts, source artifact status, server version, JDK identity, and workspace/index schema version.
 - If `.lathe/workspace.properties` exists and the fingerprint is unchanged, exit quickly.
+- Keep `.lathe/root.marker` as the bootstrap/root-discovery marker;
+  `workspace.properties` is a synchronized snapshot and may be missing or stale.
+- Write one indexed `module.N.*` block per reactor project, including `rel`, `baseDir`, GAV, and paths to main/test
+  params files.
+  Do not duplicate compile or test classpaths in the first manifest; the shim's params files remain the source of truth
+  for dependency resolution.
 - Install the matching server distribution under `~/.cache/lathe/servers/<version>/` if missing,
   then update `~/.cache/lathe/current`.
 - If changed, resolve source JAR artifacts through Maven, extract available dependency sources under
   `~/.cache/lathe/deps/<gav-path>/`, and record missing sources explicitly.
 - Select/extract the exact JDK source archive for the JDK/toolchain Maven used and record the cache location.
-- Write `.lathe/workspace.properties` only after successful refresh.
+- Write `.lathe/workspace.properties` only after successful refresh, using an atomic temp-file-then-move update.
 - Future extension: build type/reference indexes in the same sync pipeline.
-- LSP follow-up: watch POM files and compare their content hashes with `.lathe/workspace.properties`.
+- LSP follow-up: read `.lathe/workspace.properties` on startup and registry reload;
+  keep it as an immutable in-memory snapshot for handlers.
+  Watch POM files and compare their content hashes with the loaded manifest.
   When stale or missing, prompt: `Maven project changed. Run mvn process-test-classes to refresh Lathe.`
 
 ---
@@ -242,7 +250,9 @@ First-completion delay is documented.
   assembles `TreeMap<String, List<TypeEntry>>`
   - JDK modules: `Elements.getModuleElement("java.se")` transitive requires, walk exported packages via
     `Elements.getPackageElement()` + `listMembers()`
-  - Reactor modules: `getModuleElement()` per reactor module on modulepath, respects exports
+  - JPMS reactor modules: `getModuleElement()` per reactor module on modulepath, respects exports
+  - Non-JPMS reactor type discovery is deferred; fallback classpath scanning of `.lathe/<rel>/classes/` is a focused
+    future contribution target
   - JAR deps: check `~/.cache/lathe/type-index/jars/<gav>.index`; build and cache if absent —
     modular JARs via `ExportsDirective`, non-modular via `fileManager.list(CLASS_PATH, ...)`
 - `subMap(prefix, prefix + Character.MAX_VALUE)` for O(log n) prefix search

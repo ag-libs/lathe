@@ -2,7 +2,7 @@
 
 ## 1. Vision & Scope
 
-Lathe is a Java Language Server for Maven projects using JPMS.
+Lathe is a JPMS-first Java Language Server for Maven projects.
 Every existing Java LSP reimplements Maven's project model —
 parsing POMs, guessing classpaths, playing catch-up with plugins.
 Lathe sidesteps this entirely: a compiler shim captures the exact javac invocation parameters Maven used,
@@ -15,7 +15,12 @@ This makes Lathe correct by construction for projects where other tools fail:
   while preserving full AP correctness at save boundaries
 - Custom Maven plugins that add source roots or modify compilation parameters
 
-Lathe is designed for JPMS projects but most features work without it.
+JPMS projects define Lathe's primary correctness target,
+especially reactor type discovery, exported-package visibility, and module-aware completion.
+Ordinary classpath Maven projects are still supported for the core features that replay Maven's exact javac invocation:
+diagnostics, hover, semantic tokens, formatting, and many definition cases.
+Full non-JPMS type discovery is left as a focused future contribution based on classpath scanning.
+Lathe does not try to support split-package behavior beyond whatever javac accepts from the captured Maven invocation.
 Lathe does not support Lombok.
 It operates on source as written.
 
@@ -212,7 +217,7 @@ The bound `lathe:sync` goal then checks whether Maven project state changed.
 If unchanged, it exits quickly.
 If changed, it resolves source JARs, refreshes extracted dependency/JDK sources under `~/.cache/lathe/`, ensures the
 matching server distribution is installed, and later rebuilds indexes.
-The LS reads params and the workspace manifest on the next pass for any open file in that module.
+The LS reads params and the workspace manifest on startup and on the next registry reload.
 
 If a module has no params file yet (first checkout, new module added), the LS surfaces:
 "Run `mvn process-test-classes` to activate module `<relativePath>`."
@@ -325,10 +330,14 @@ and indexes to a temp directory first, then atomically renames into the shared c
 `lathe:sync` writes `.lathe/workspace.properties` after a successful refresh.
 The manifest is workspace-local because it records the current Maven project shape,
 but it points at user-cache entries shared across workspaces.
+It is not the workspace bootstrap marker.
+`.lathe/root.marker` remains the stable signal that a checkout is Lathe-enabled,
+while `workspace.properties` is a disposable synchronized snapshot that may be missing or stale.
 
 ```properties
 schemaVersion=1
 syncedAt=2026-05-10T12:34:56Z
+fingerprint=...
 server.version=0.1.0
 server.home=/home/user/.cache/lathe/servers/0.1.0
 server.launcher=/home/user/.cache/lathe/current/lathe-launcher.sh
@@ -341,7 +350,11 @@ pom.0.sha256=...
 pom.1.path=/workspace/module-a/pom.xml
 pom.1.sha256=...
 
+module.0.groupId=com.example
+module.0.artifactId=module-a
+module.0.version=1.0-SNAPSHOT
 module.0.rel=module-a
+module.0.baseDir=/workspace/module-a
 module.0.mainParams=.lathe/module-a/lsp-params-classes.properties
 module.0.testParams=.lathe/module-a/lsp-params-test-classes.properties
 module.0.sourceRoots.0=/workspace/module-a/src/main/java
@@ -357,6 +370,28 @@ dependency.0.sources=/home/user/.cache/lathe/deps/com.google.guava/guava/32.0.0-
 The hash fields are content hashes, not mtimes, so timestamp-only changes do not force unnecessary work.
 `lathe:init` may delete this file to force the next sync to re-check the project.
 The LS compares watched POM content against this manifest and prompts for `mvn process-test-classes` when it diverges.
+
+`lathe:sync` writes the manifest atomically:
+write a complete temporary file in `.lathe/`,
+then move it over `workspace.properties`.
+The LS therefore sees either the previous complete manifest or the next complete manifest,
+never a partially written file.
+
+The manifest describes the full Maven reactor with one indexed `module.N.*` block per reactor project.
+Module identity is the path relative to the workspace root, for example `module-a` or `platform/core`.
+The module block points at the main and test params files produced by the shim.
+The params files remain the compile source of truth:
+main dependencies live in `lsp-params-classes.properties`,
+and test dependencies live in `lsp-params-test-classes.properties`.
+The first manifest format does not duplicate per-module classpath or test dependency lists.
+The server can infer reactor dependency edges by comparing params-file classpath and modulepath entries with other
+reactor modules' output directories, then remapping those entries to `.lathe/<rel>/classes/` or
+`.lathe/<rel>/test-classes/`.
+
+The LS loads the manifest into an immutable in-memory snapshot during startup and registry reload.
+Feature handlers read that snapshot for stale-POM checks, JDK source locations, dependency source locations,
+and module-to-params metadata.
+Handlers do not re-read `workspace.properties` on every hover, completion, or diagnostic request.
 
 ---
 
@@ -462,7 +497,8 @@ Copy duration is logged when `LATHE_DEBUG=1`.
 
 ### Startup
 
-The LS scans `.lathe/` at the workspace root, finds all `lsp-params-*.properties` files,
+The LS reads `.lathe/workspace.properties` if present,
+then scans `.lathe/` at the workspace root, finds all `lsp-params-*.properties` files,
 and derives the module registry from them.
 For each params file:
 
@@ -479,12 +515,17 @@ No `CustomFileManager` is created.
 Startup cost is bounded by the number of params files, not by reactor complexity or classpath size.
 
 If `.lathe/` does not exist: "Run `mvn lathe:init` then `mvn process-test-classes` to initialize Lathe."
+If `.lathe/root.marker` is present but `.lathe/workspace.properties` is missing:
+"Run `mvn process-test-classes` to refresh Lathe."
 If a module directory has no params files: "Run `mvn process-test-classes` to activate module `<relativePath>`."
 
 The LS watches `.lathe/root.marker` for modification.
 `lathe:init` writes `root.marker` after creating `.lathe/` and resetting workspace state —
-the mtime change triggers a full LS reload: the module registry is re-scanned from `.lathe/`, all `CustomFileManager`
-instances and result caches are dropped, all type-completion `TreeMap`s are invalidated,
+the mtime change triggers a full LS reload:
+the workspace manifest is re-read if present,
+the module registry is re-scanned from `.lathe/`,
+all `CustomFileManager` instances and result caches are dropped,
+all type-completion `TreeMap`s are invalidated,
 and open files are re-attributed.
 The user sees a brief "Workspace reloaded" notification.
 
@@ -1095,13 +1136,17 @@ jobs:
 
 ## 11. What's Not Supported
 
-**Non-JPMS projects** — most of Lathe works correctly without JPMS:
-diagnostics, hover, go-to-definition, find-references, member access completion,
-and formatting all operate on the attributed AST or bytecode.
-The only gap is type name completion for reactor types —
-without `module-info.java`, `getModuleElement()` cannot enumerate a module's exported types.
-A fallback using `fileManager.list()` on `.lathe/<rel>/classes/` would close this gap.
-Non-JPMS support is a small, well-defined future contribution.
+**Full non-JPMS type discovery** — core classpath Maven projects work for features that replay captured javac params:
+diagnostics, hover, semantic tokens, formatting, and many definition/member-access cases.
+The deliberate gap is type-name completion and add-missing-import for reactor and dependency types.
+Without `module-info.java`, `getModuleElement()` cannot enumerate a module's exported types because there is no named
+module or JPMS exports boundary.
+A fallback using `fileManager.list()` on `.lathe/<rel>/classes/` and dependency classpath entries would close this gap
+by indexing public top-level classes.
+That fallback is a focused community contribution target.
+
+**Split-package support** — Lathe does not try to model or repair split-package behavior.
+It relies on the captured Maven javac invocation and accepts what javac accepts.
 
 **Gradle** — Lathe hooks into the Maven compiler plugin via the Plexus SPI.
 Gradle support would require a separate Gradle plugin writing the same params file format.
