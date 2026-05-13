@@ -50,7 +50,7 @@ abstract class SampleFixture {
     final var element = SourceLocator.elementAt(trees, path);
     final var type = path != null ? trees.getTypeMirror(path) : null;
     final var javadoc = JavadocLocator.locate(element, trees, List.of()).orElse(null);
-    return HoverFormatter.format(element, type, javadoc);
+    return HoverFormatter.format(element, type, javadoc, null);
   }
 
   Element elementAt(final int line, final int character) {

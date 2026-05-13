@@ -14,7 +14,7 @@ final class HoverFormatter {
   private HoverFormatter() {}
 
   static Optional<String> format(
-      final Element element, final TypeMirror type, final String javadoc) {
+      final Element element, final TypeMirror type, final String javadoc, final String origin) {
     if (element == null && type == null) {
       return Optional.empty();
     }
@@ -47,6 +47,9 @@ final class HoverFormatter {
     final var sb = new StringBuilder("```java\n").append(sig).append("\n```");
     if (javadoc != null && !javadoc.isBlank()) {
       sb.append("\n\n").append(cleanDoc(javadoc));
+    }
+    if (origin != null) {
+      sb.append("\n\n*source: ").append(origin).append("*");
     }
     return Optional.of(sb.toString());
   }

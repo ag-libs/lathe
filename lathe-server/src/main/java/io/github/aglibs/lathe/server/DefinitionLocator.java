@@ -120,7 +120,7 @@ final class DefinitionLocator {
     }
   }
 
-  private static TypeElement topLevelClass(final Element element) {
+  static TypeElement topLevelClass(final Element element) {
     var e = element;
     while (e != null) {
       if (e instanceof final TypeElement te

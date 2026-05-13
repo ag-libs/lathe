@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.maven;
 
 import io.github.aglibs.lathe.core.ParamStore.PrefixedStore;
 import io.github.aglibs.lathe.core.ParamStore.PrefixedWritable;
+import io.github.aglibs.lathe.core.maven.DependencyEntry;
 import java.nio.file.Path;
 import java.util.List;
 import org.eclipse.aether.artifact.Artifact;
@@ -24,9 +25,8 @@ record DependencySource(String gav, Path jar, String status, Path dir, Artifact 
 
   @Override
   public void writeTo(final PrefixedStore store) {
-    store.set("gav", gav);
-    store.set("status", status);
-    store.setIfPresent("jar", jar);
-    store.setIfPresent("dir", dir);
+    new DependencyEntry(
+            gav, jar != null ? jar.toString() : null, status, dir != null ? dir.toString() : null)
+        .writeTo(store);
   }
 }

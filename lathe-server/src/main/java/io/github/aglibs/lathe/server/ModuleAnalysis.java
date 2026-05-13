@@ -56,7 +56,11 @@ final class ModuleAnalysis {
     return ctx != null ? ctx.semanticTokens() : null;
   }
 
-  Hover hover(final String uri, final Position pos, final List<Path> sourceRoots) {
+  Hover hover(
+      final String uri,
+      final Position pos,
+      final List<Path> sourceRoots,
+      final WorkspaceManifest manifest) {
     final var t = Stopwatch.start();
     final CursorContext cur = resolve(uri, pos);
     if (cur == null) {
@@ -72,11 +76,12 @@ final class ModuleAnalysis {
     final Element element = SourceLocator.elementAt(cur.ctx().trees(), cur.path());
     final TypeMirror type = cur.path() != null ? cur.ctx().trees().getTypeMirror(cur.path()) : null;
     final var javadoc = JavadocLocator.locate(element, cur.ctx().trees(), sourceRoots).orElse(null);
+    final var origin = manifest.originLabel(element, compiler.fileManager()).orElse(null);
     LOG.fine(
         () ->
-            "[hover] %dms element=%s type=%s doc=%s"
-                .formatted(t.elapsedMs(), element, type, javadoc != null));
-    return HoverFormatter.format(element, type, javadoc)
+            "[hover] %dms element=%s type=%s doc=%s origin=%s"
+                .formatted(t.elapsedMs(), element, type, javadoc != null, origin));
+    return HoverFormatter.format(element, type, javadoc, origin)
         .map(md -> new Hover(new MarkupContent("markdown", md)))
         .orElse(null);
   }

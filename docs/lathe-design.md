@@ -39,6 +39,9 @@ Four components, no circular dependencies.
 
 **`lathe-core`** — shared filesystem and property-file helpers used by the compiler shim, Maven plugin, and server.
 It has no external dependencies and is a JPMS module.
+`ParamStore` provides indexed write (`putIndexed`) and read (`readIndexed`) via `PrefixedStore`/`PrefixedReader` inner classes.
+`io.github.aglibs.lathe.core.maven.DependencyEntry` is the shared serialization record for `dependencySource.N.*` blocks,
+used by the Maven plugin for writing and by the server for reading.
 
 **`lathe-compiler`** — a Plexus compiler SPI implementation.
 Registered as the compiler for `maven-compiler-plugin`.
@@ -349,11 +352,12 @@ main dependencies live in `lsp-params-classes.properties`,
 and test dependencies live in `lsp-params-test-classes.properties`.
 The manifest must not duplicate per-module classpath or test dependency lists.
 
-When server-side manifest consumption is implemented,
-the LS loads the manifest into an immutable in-memory snapshot during startup and registry reload.
-Feature handlers will read that snapshot for dependency source locations first.
-Future slices will add stale-POM checks, JDK source locations, and module-to-params metadata.
-Handlers do not re-read `workspace.properties` on every hover, completion, or diagnostic request.
+The LS loads the manifest into an immutable `WorkspaceManifest` snapshot during startup and registry reload.
+`WorkspaceManifest.load(workspaceRoot)` reads `dependencySource.N.*` entries via `ParamStore.readIndexed` and `DependencyEntry::readFrom`,
+and reads `jdk.version` for JDK label decoration on hover.
+The snapshot is also reloaded whenever `root.marker` modification is detected.
+Feature handlers read that snapshot directly; handlers do not re-read `workspace.properties` on every request.
+Future slices will add stale-POM checks and module-to-params metadata.
 
 ---
 
@@ -506,13 +510,13 @@ Those references are dropped when the cached context is replaced, invalidated, o
 The only durable per-module state is:
 
 - **Parsed params** — read from disk on startup and re-read after the module's `lathe.lock` disappears.
-- **File manager cache** — an LRU of `StandardJavaFileManager` instances keyed by `ModuleParams`.
-  Each cached manager owns a temp directory for open-file content and sets explicit javac locations:
-  `CLASS_OUTPUT` → `.lathe/<rel>/classes`,
-  `SOURCE_OUTPUT` → `.lathe/<rel>/generated-sources`,
-  plus remapped classpath/modulepath/processor path entries.
-  It holds no attributed javac task state.
-  It is closed on LRU eviction, registry reload, and server shutdown.
+- **`ModuleCompiler`** — one instance per module, created on first file access via `ModuleRegistry.getOrCreate(ModuleParams)`.
+  Owns one `StandardJavaFileManager` and one `ModuleAnalysis` instance.
+  The file manager is initialized eagerly in the constructor, sets explicit javac locations
+  (`CLASS_OUTPUT` → `.lathe/<rel>/classes`, `SOURCE_OUTPUT` → `.lathe/<rel>/generated-sources`),
+  and holds no attributed javac task state.
+  `ModuleCompiler` is closed on registry reload and server shutdown; `ModuleRegistry` closes all compilers.
+  There is no LRU — `ModuleCompiler` instances are created on demand and live for the duration of the registry.
 
 _v1 simplification — the temp-dir approach is straightforward to implement and test.
 A future version may replace it with in-memory `JavaFileObject` serving to avoid the disk round-trip._
@@ -876,6 +880,18 @@ Served from the result cache.
 Formats type signature and javadoc as markdown.
 No recompilation.
 If cache is empty, trigger a pass first.
+
+**Origin label** — the hover response includes a `*source: …*` footer derived from `WorkspaceManifest.originLabel()`:
+
+- **JDK types** — element's enclosing `ModuleElement` is found in `SYSTEM_MODULES` → `java.lang (JDK 21.0.7)`
+- **Modular dependency types** — element's `ModuleElement` is found on `MODULE_PATH`;
+  JAR path resolved from the class file URI → matched against `dependencySource.N.jar` →
+  `io.grpc (com.google:grpc-core:1.60.0)`; if no GAV match, module name alone is shown
+- **Classpath dependency types** — class file URI resolved via `CLASS_PATH` → JAR path → GAV lookup →
+  `com.google.guava:guava:32.0.0-jre`
+- **Reactor types** — class file has a `file:` URI under `.lathe/<moduleName>/classes/…` →
+  segment after `.lathe/` extracted → `dropwizard-jetty`
+- If no origin can be determined, the footer is omitted.
 
 ### Semantic tokens
 

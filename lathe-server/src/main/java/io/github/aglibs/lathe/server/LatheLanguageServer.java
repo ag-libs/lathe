@@ -37,6 +37,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     if (rootUri != null) {
       final var workspaceRoot = Path.of(URI.create(rootUri));
       textDocumentService.setRegistry(ModuleRegistry.scan(workspaceRoot));
+      textDocumentService.setManifest(WorkspaceManifest.load(workspaceRoot));
       textDocumentService.startWatching(workspaceRoot);
     } else {
       LOG.warning(() -> "[initialize] no rootUri — module registry not available");

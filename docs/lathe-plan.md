@@ -27,10 +27,19 @@ Implemented:
   recording `jdk.home`, `jdk.vendor`, `jdk.version`, `jdk.sourceStatus`, and `jdk.sourceDir` in the manifest.
 - `CachedZipExtractor` is the shared temp-dir-then-atomic-move extraction utility used by both dependency
   and JDK source extraction.
+- `ParamStore.PrefixedReader` + `readIndexed` provide the read-side counterpart to `PrefixedStore` + `putIndexed`.
+- `io.github.aglibs.lathe.core.maven.DependencyEntry` is the shared serialization record for `dependencySource.N.*` entries;
+  `DependencySource.writeTo` in the Maven plugin delegates to it.
 - Compiler shim writes params files, manages `lathe.lock`, copies class outputs,
   and copies generated sources.
-- Server supports diagnostics, hover with Javadoc, semantic tokens, formatting,
+- Server per-module architecture: one `ModuleCompiler` per module (owns `StandardJavaFileManager` + `ModuleAnalysis`),
+  created on first access via `ModuleRegistry.getOrCreate`; no LRU cache.
+- `WorkspaceManifest` server consumption implemented: loads `dependencySource.N.*` via `readIndexed` and `DependencyEntry::readFrom`,
+  reloaded on `root.marker` change.
+- Server supports diagnostics, hover with Javadoc and origin label, semantic tokens, formatting,
   and go-to-definition.
+- Hover origin label: JDK module+version from `SYSTEM_MODULES` check, Maven GAV from `dependencySource` manifest entries,
+  or reactor module name from `.lathe/<name>/classes/` path segment.
 - Module registry currently scans `lsp-params-*.properties` directly.
 
 Planned next:
@@ -167,13 +176,16 @@ Implement in small slices:
 - Invoker test: asserts `jdk.vendor`, `jdk.version`, and `jdk.sourceStatus` are always written;
   when `jdk.sourceStatus=present`, asserts `jdk.sourceDir` is written and the directory exists on disk.
 
-### Phase 2b.5 — Server consumption
+### Phase 2b.5 — Server consumption ✓ (partial)
 
-- Future extension: build type/reference indexes in the same sync pipeline.
-- LSP follow-up: read `.lathe/workspace.properties` on startup and registry reload;
-  keep it as an immutable in-memory snapshot for handlers.
-  Watch POM files and compare their content hashes with the loaded manifest.
-  When stale or missing, prompt: `Maven project changed. Run mvn process-test-classes to refresh Lathe.`
+- `WorkspaceManifest` loads `dependencySource.N.*` entries on startup and registry reload via
+  `ParamStore.readIndexed("dependencySource", DependencyEntry::readFrom)`; reads `jdk.version` for hover origin labels.
+- `LatheTextDocumentService` holds a `volatile WorkspaceManifest manifest` snapshot; reloaded alongside the module
+  registry whenever `root.marker` modification is detected.
+- Hover origin label uses the manifest: JDK module+version (`SYSTEM_MODULES` check), Maven GAV from
+  `dependencySource.N.jar` lookup, or reactor module name from `.lathe/<name>/classes/` path segment.
+- Remaining: stale-POM detection (watch POM content hashes vs manifest); `jdk.sourceDir` go-to-definition;
+  type/reference index pipeline.
 
 ---
 
@@ -185,16 +197,13 @@ Implement in small slices:
 - Module registry: scans `.lathe/` for all `lsp-params-*.properties`, parses each into `ModuleParams`;
   `ModuleParams` carries `outputDir`, `originalGenSourcesDir`, `sourceRoots`, `parameters`, `proc`,
   and all classpath/modulepath/processorPath lists
-- `ModuleCompiler`: owns the javac invocation;
-  content written to a temp file at the correct relative path under a temp dir;
+- `ModuleCompiler`: one instance per module, created on first access via `ModuleRegistry.getOrCreate(ModuleParams)`;
+  owns one `StandardJavaFileManager` (initialized in constructor) and one `ModuleAnalysis`;
   file manager locations set explicitly (`CLASS_OUTPUT` → `.lathe/<rel>/classes`, `SOURCE_OUTPUT` →
-  `.lathe/<rel>/generated-sources`);
-  `orElseThrow` enforces the invariant that a file must be under a known source root;
-  `FileUtil.deleteDir` handles temp cleanup
-- `ModuleCompiler.Mode`: `FAST` (no EP, no AP, `didChange`), `OPEN` (EP yes, AP no, `didOpen`), `FULL` (EP + AP,
+  `.lathe/<rel>/generated-sources`); implements `AutoCloseable`; closed on registry reload and server shutdown
+- `ModuleAnalysis` (formerly `AnalysisEngine`): per-module compilation and feature dispatch, accessed via `ModuleCompiler.analysis()`
+- `CompileMode` top-level enum: `FAST` (no EP, no AP, `didChange`), `OPEN` (EP yes, AP no, `didOpen`), `FULL` (EP + AP,
   `didSave`); each mode carries a log `tag`; single `compileWith` dispatch method
-- LRU cache of `StandardJavaFileManager` instances keyed by `ModuleParams` (100 entries, closes on eviction;
-  invalidated on registry reload); `fm.flush()` after each `FULL` pass
 - Per-file result cache stores `CompilationTaskContext` for hover, definition, and semantic-token reads.
   Cached contexts retain javac task-backed `Trees` and AST state while cached; cleanup means dropping references when
   replaced or invalidated.
@@ -242,10 +251,12 @@ Full-file and range formatting via google-java-format.
 - `HoverFormatter.formatParameter()`: used when `parameterElementAt` wins.
   It shows declared type + name of the callee's parameter at the cursor position;
   for example, hovering on a `"hello"` argument shows `String s`.
-- `AnalysisEngine.hover()`: checks `parameterElementAt` first (shows callee param context);
+- `ModuleAnalysis.hover()`: checks `parameterElementAt` first (shows callee param context);
   falls back to `elementAt` + `getTypeMirror` for the element itself
 - `JavadocLocator`: resolves same-file and cross-file source Javadoc for hover using available source roots;
   hover markdown includes Javadoc when present
+- `WorkspaceManifest.originLabel()`: appended as `*source: …*` footer; resolves JDK module+version,
+  Maven GAV for dependency JARs, or reactor module name from `.lathe/` path
 - Unit tests: `SourceLocatorTest` — `@Nested` groups `Declarations` (8), `Invocations` (7), `Imports` (2), `Lambdas`
   (4), `Overloads` (3); covers static-import member resolution, overload discrimination by parameter type,
   and generic type variable detection

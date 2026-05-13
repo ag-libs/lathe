@@ -47,6 +47,7 @@ final class LatheTextDocumentService implements TextDocumentService {
   private static final long DEFAULT_DEBOUNCE_MS = 500;
 
   private volatile ModuleRegistry registry;
+  private volatile WorkspaceManifest manifest = WorkspaceManifest.empty();
   private volatile LanguageClient client;
   private final long debounceMs;
 
@@ -79,6 +80,10 @@ final class LatheTextDocumentService implements TextDocumentService {
     old.close();
   }
 
+  void setManifest(final WorkspaceManifest manifest) {
+    this.manifest = manifest;
+  }
+
   void startWatching(final Path workspaceRoot) {
     final var marker =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.ROOT_MARKER);
@@ -90,6 +95,7 @@ final class LatheTextDocumentService implements TextDocumentService {
             lastSeen.set(current);
             LOG.info(() -> "[registry] root.marker changed — reloading");
             setRegistry(ModuleRegistry.scan(workspaceRoot));
+            setManifest(WorkspaceManifest.load(workspaceRoot));
           }
         },
         2,
@@ -178,7 +184,10 @@ final class LatheTextDocumentService implements TextDocumentService {
               .findForFile(toPath(uri))
               .map(
                   m ->
-                      registry.getOrCreate(m).analysis().hover(uri, pos, registry.allSourceRoots()))
+                      registry
+                          .getOrCreate(m)
+                          .analysis()
+                          .hover(uri, pos, registry.allSourceRoots(), manifest))
               .orElse(null);
       return CompletableFuture.completedFuture(result);
     } catch (final Exception e) {

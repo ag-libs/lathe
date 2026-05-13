@@ -6,7 +6,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Objects;
 import java.util.Properties;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -42,13 +44,26 @@ public final class ParamStore {
     }
   }
 
+  public final class PrefixedReader {
+
+    private final String prefix;
+
+    private PrefixedReader(final String prefix) {
+      this.prefix = prefix;
+    }
+
+    public String get(final String name) {
+      return ParamStore.this.get(prefix + name);
+    }
+  }
+
   public String get(final String key) {
     return props.getProperty(key);
   }
 
   public void putList(final String key, final List<?> values) {
     IntStream.range(0, values.size())
-        .forEach(i -> props.setProperty(key + "." + i, values.get(i).toString()));
+        .forEach(i -> props.setProperty(indexedPrefix(key, i), values.get(i).toString()));
   }
 
   public void setIfPresent(final String key, final Object value) {
@@ -65,16 +80,23 @@ public final class ParamStore {
 
   public void putIndexed(final String key, final List<? extends PrefixedWritable> values) {
     IntStream.range(0, values.size())
-        .forEach(
-            i -> {
-              final PrefixedStore store = new PrefixedStore(key + "." + i + ".");
-              values.get(i).writeTo(store);
-            });
+        .forEach(i -> values.get(i).writeTo(new PrefixedStore(indexedPrefix(key, i))));
+  }
+
+  public <T> List<T> readIndexed(final String key, final Function<PrefixedReader, T> reader) {
+    return IntStream.iterate(0, i -> i + 1)
+        .mapToObj(i -> reader.apply(new PrefixedReader(indexedPrefix(key, i))))
+        .takeWhile(Objects::nonNull)
+        .toList();
+  }
+
+  private static String indexedPrefix(final String key, final int index) {
+    return key + "." + index + ".";
   }
 
   public List<String> readList(final String key) {
-    return IntStream.iterate(0, i -> props.containsKey(key + "." + i), i -> i + 1)
-        .mapToObj(i -> props.getProperty(key + "." + i))
+    return IntStream.iterate(0, i -> props.containsKey(indexedPrefix(key, i)), i -> i + 1)
+        .mapToObj(i -> props.getProperty(indexedPrefix(key, i)))
         .toList();
   }
 
