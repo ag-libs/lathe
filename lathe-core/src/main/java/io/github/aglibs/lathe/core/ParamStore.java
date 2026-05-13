@@ -20,6 +20,24 @@ public final class ParamStore {
     props.setProperty(key, value);
   }
 
+  public interface PrefixedWritable {
+
+    void writeTo(PrefixedStore store);
+  }
+
+  public final class PrefixedStore {
+
+    private final String prefix;
+
+    private PrefixedStore(final String prefix) {
+      this.prefix = prefix;
+    }
+
+    public void set(final String name, final String value) {
+      ParamStore.this.set(prefix + name, value);
+    }
+  }
+
   public String get(final String key) {
     return props.getProperty(key);
   }
@@ -33,6 +51,15 @@ public final class ParamStore {
     if (values != null) {
       putList(key, values);
     }
+  }
+
+  public void putIndexed(final String key, final List<? extends PrefixedWritable> values) {
+    IntStream.range(0, values.size())
+        .forEach(
+            i -> {
+              final PrefixedStore store = new PrefixedStore(key + "." + i + ".");
+              values.get(i).writeTo(store);
+            });
   }
 
   public List<String> readList(final String key) {

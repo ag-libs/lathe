@@ -7,7 +7,28 @@ fail() { echo "ERROR: $1"; exit 1; }
 
 [ -f .lathe/root.marker ] || fail "root.marker not written by lathe:init"
 
-[ ! -f .lathe/workspace.properties ] || fail "workspace.properties not reset by lathe:init"
+[ -f .lathe/workspace.properties ] || fail "workspace.properties not written by lathe:sync"
+
+grep -q 'schemaVersion=1' .lathe/workspace.properties \
+  || fail "workspace.properties: schemaVersion not written"
+
+grep -q 'dependencySource\.[0-9]*\.jar=' .lathe/workspace.properties \
+  || fail "workspace.properties: dependency source jar not written"
+
+grep -q 'dependencySource\.[0-9]*\.gav=' .lathe/workspace.properties \
+  || fail "workspace.properties: dependency source gav not written"
+
+grep -q 'dependencySource\.[0-9]*\.status=present' .lathe/workspace.properties \
+  || fail "workspace.properties: present dependency source status not written"
+
+grep -q 'dependencySource\.[0-9]*\.dir=' .lathe/workspace.properties \
+  || fail "workspace.properties: dependency source dir not written"
+
+! grep -q 'dependencySource\.[0-9]*\.sources=' .lathe/workspace.properties \
+  || fail "workspace.properties: old dependency source sources key still written"
+
+! grep -q 'dependencySource\.[0-9]*\.sourceJar=' .lathe/workspace.properties \
+  || fail "workspace.properties: old dependency source sourceJar key still written"
 
 # --- core module ---
 

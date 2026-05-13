@@ -21,6 +21,7 @@ Implemented:
 - `lathe:sync` runs at `process-test-classes`, is aggregator/thread-safe, and skips non-top-level projects.
 - `lathe:sync` discovers reactor modules, resolves direct external dependency source JARs through Maven,
   and extracts resolved sources under `~/.cache/lathe/deps/`.
+- `lathe:sync` records dependency source lookup entries in `.lathe/workspace.properties`.
 - Compiler shim writes params files, manages `lathe.lock`, copies class outputs,
   and copies generated sources.
 - Server supports diagnostics, hover with Javadoc, semantic tokens, formatting,
@@ -36,8 +37,7 @@ Planned next:
   - make silent javac failure surface as an `IOException`;
   - make server compilation wait for fresh `lathe.lock` files in the target module and direct reactor dependencies;
   - redirect accidental stdout logging away from the LSP pipe before starting stdio transport.
-- `.lathe/workspace.properties` workspace manifest.
-- Record dependency source cache entries in the workspace manifest.
+- Complete `.lathe/workspace.properties` reactor workspace manifest.
 - Exact JDK source sync, after the manifest can record the selected cache path.
 - Maven-managed server distribution under `~/.cache/lathe/servers/<version>/`.
 - LSP stale-POM detection against `workspace.properties`.
@@ -129,29 +129,43 @@ Implement in small slices:
   extract to a temp directory, write a `.lathe-source.properties` marker after success,
   then atomically move into the final cache path.
   The marker records schema, GAV, source JAR path, source JAR size, and source JAR modified time.
-- Still planned: record dependency source status and cache paths in `.lathe/workspace.properties`.
+- Current implementation records dependency source lookup entries in `.lathe/workspace.properties`.
+  Each entry uses `dependencySource.N.jar` for the binary JAR path from Maven,
+  `dependencySource.N.gav` for diagnostics and logging,
+  `dependencySource.N.status` for `present`, `missing`, or `skipped`,
+  and `dependencySource.N.dir` only when sources are present.
+  The server matches `dependencySource.N.jar` against absolute JAR paths from the shim params files,
+  then uses `dependencySource.N.dir` as the extracted source root.
 - Still planned: evaluate whether direct dependencies are sufficient,
   or whether sync should use Maven's resolved transitive artifacts after the manifest slice is in place.
-- Still planned: record `sourceStatus=missing` in the manifest and continue.
+- Current implementation records `dependencySource.N.status=missing` in the manifest and continues.
   Fail only for internal cache write/corruption errors where Lathe cannot leave a valid old or new cache entry.
 - Current unit tests cover shared unzip success, zip-slip rejection, and checked-IO wrapping.
 - Still planned unit tests: marker-after-success, failed extraction does not leave a partial final directory,
   and rerun with the same marker skips extraction.
-- Invoker tests: include one dependency with available sources and one local test dependency without a sources JAR;
-  assert `sourceStatus=present` plus `sources=...` for the first and `sourceStatus=missing` for the second.
+- Invoker tests assert `dependencySource.N.status=present`, `jar=...`, `gav=...`, and `dir=...`.
+  A missing-source test dependency is still planned.
 
 ### Phase 2b.4 — JDK sources
 
 - Depends on `.lathe/workspace.properties`;
   the server should consume the selected JDK source cache path from sync output rather than rediscovering it.
-- Select/extract the exact JDK source archive for the JDK/toolchain Maven used and record the cache location.
-  Prefer a cache key based on `src.zip` SHA-256 rather than only the release number.
-  Example: `~/.cache/lathe/jdks/<src-zip-sha256>/`.
+- Use the simple `JAVA_HOME` model for JDK source selection.
+  `lathe:sync` reads `JAVA_HOME`,
+  assumes it matches the current Maven JVM,
+  reads `java.runtime.version` from the current VM,
+  and looks for `$JAVA_HOME/lib/src.zip`.
+- Extract present JDK sources under `~/.cache/lathe/jdks/<sanitized-runtime-version>/`.
+  The first implementation may treat an existing cache directory for that runtime version as current.
 - JDK sources are optional.
   If `src.zip` is absent, record `jdk.sourceStatus=missing` and continue.
-  If present, record `jdk.sourceStatus=present`, `jdk.sources`, `jdk.srcZip`, and `jdk.srcZip.sha256`.
+  If present, record `jdk.home`, `jdk.runtimeVersion`, `jdk.sourceStatus=present`, and `jdk.sourceDir`.
+  The server uses `jdk.sourceDir` directly and does not derive the cache path.
+  On startup or registry reload, the server compares the current `JAVA_HOME` path with `jdk.home`;
+  when they differ, it prompts the user to run `mvn process-test-classes`.
 - Unit tests: fake `src.zip` extraction, module-prefixed entries such as `java.base/java/lang/String.java`,
-  zip-slip rejection, missing `src.zip` status, and injected/fake JDK home resolution.
+  zip-slip rejection, missing `src.zip` status, runtime-version cache naming,
+  and injected/fake `JAVA_HOME` resolution.
   Avoid host-JDK-dependent unit tests.
 - Invoker tests should only assert real JDK extraction when the running JDK has `src.zip`;
   otherwise assert that missing source status is recorded without failing sync.

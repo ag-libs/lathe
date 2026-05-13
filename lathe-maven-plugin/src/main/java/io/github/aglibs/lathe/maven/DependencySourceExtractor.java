@@ -1,0 +1,101 @@
+package io.github.aglibs.lathe.maven;
+
+import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.core.IOUtil;
+import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.ParamStore;
+import io.github.aglibs.lathe.core.Stopwatch;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Collection;
+import java.util.Map;
+import java.util.stream.Collectors;
+import org.apache.maven.plugin.MojoExecutionException;
+import org.apache.maven.plugin.logging.Log;
+import org.eclipse.aether.artifact.Artifact;
+
+final class DependencySourceExtractor {
+
+  private static final String SOURCE_MARKER = ".lathe-source.properties";
+
+  private final Log log;
+
+  DependencySourceExtractor(final Log log) {
+    this.log = log;
+  }
+
+  void extract(final Collection<DependencySource> sources) throws MojoExecutionException {
+    final Stopwatch t = Stopwatch.start();
+    try {
+      final Map<Boolean, Long> counts =
+          sources.parallelStream()
+              .map(source -> IOUtil.unchecked(() -> extract(source)))
+              .collect(
+                  Collectors.partitioningBy(SourceExtraction::extracted, Collectors.counting()));
+      log.info(
+          "[sync] extracted %d source artifacts, %d already cached in %dms"
+              .formatted(
+                  counts.getOrDefault(true, 0L), counts.getOrDefault(false, 0L), t.elapsedMs()));
+    } catch (final UncheckedIOException e) {
+      throw new MojoExecutionException("lathe:sync failed to extract source artifacts", e);
+    }
+  }
+
+  private SourceExtraction extract(final DependencySource source) throws IOException {
+    final Artifact artifact = source.sourceArtifact();
+    final Path sourceJar = artifact.getFile().toPath();
+    final Path targetDir = source.dir();
+    if (isSourceCacheCurrent(targetDir, artifact, sourceJar)) {
+      return new SourceExtraction(false);
+    }
+
+    Files.createDirectories(targetDir.getParent());
+    final Path tempDir =
+        Files.createTempDirectory(targetDir.getParent(), targetDir.getFileName() + ".tmp-");
+    try {
+      FileUtil.unzip(sourceJar, tempDir);
+      writeSourceMarker(tempDir, artifact, sourceJar);
+      if (Files.exists(targetDir)) {
+        FileUtil.deleteDir(targetDir);
+      }
+      FileUtil.moveReplacing(tempDir, targetDir);
+      return new SourceExtraction(true);
+    } finally {
+      if (Files.exists(tempDir)) {
+        FileUtil.deleteDir(tempDir);
+      }
+    }
+  }
+
+  private boolean isSourceCacheCurrent(
+      final Path targetDir, final Artifact artifact, final Path sourceJar) throws IOException {
+    final Path marker = targetDir.resolve(SOURCE_MARKER);
+    if (!Files.exists(marker)) {
+      return false;
+    }
+
+    final ParamStore props = ParamStore.load(marker);
+
+    return LatheLayout.SCHEMA_VERSION.equals(props.get("schema"))
+        && ReactorProjects.gav(artifact).equals(props.get("gav"))
+        && sourceJar.toString().equals(props.get("sourceJar"))
+        && Long.toString(Files.size(sourceJar)).equals(props.get("sourceJar.size"))
+        && Long.toString(Files.getLastModifiedTime(sourceJar).toMillis())
+            .equals(props.get("sourceJar.modified"));
+  }
+
+  private void writeSourceMarker(final Path tempDir, final Artifact artifact, final Path sourceJar)
+      throws IOException {
+    final ParamStore props = new ParamStore();
+    props.set("schema", LatheLayout.SCHEMA_VERSION);
+    props.set("gav", ReactorProjects.gav(artifact));
+    props.set("sourceJar", sourceJar.toString());
+    props.set("sourceJar.size", Long.toString(Files.size(sourceJar)));
+    props.set("sourceJar.modified", Long.toString(Files.getLastModifiedTime(sourceJar).toMillis()));
+    props.store(tempDir.resolve(SOURCE_MARKER));
+  }
+
+  private record SourceExtraction(boolean extracted) {}
+}
