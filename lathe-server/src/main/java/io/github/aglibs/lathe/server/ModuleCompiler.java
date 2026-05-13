@@ -82,7 +82,8 @@ final class ModuleCompiler implements AutoCloseable {
     }
   }
 
-  void invalidate() {
+  @Override
+  public void close() {
     try {
       fm.close();
     } catch (final IOException e) {
@@ -94,11 +95,6 @@ final class ModuleCompiler implements AutoCloseable {
       LOG.log(Level.WARNING, e, () -> "[cache] failed to delete temp dir %s".formatted(td));
     }
     analysis.clearCache();
-  }
-
-  @Override
-  public void close() {
-    invalidate();
   }
 
   private void initLocations() throws IOException {

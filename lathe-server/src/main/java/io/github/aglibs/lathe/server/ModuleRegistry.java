@@ -61,18 +61,14 @@ final class ModuleRegistry implements AutoCloseable {
     return compilers.computeIfAbsent(params, ModuleCompiler::new);
   }
 
-  void invalidateAll() {
-    compilers.values().forEach(ModuleCompiler::close);
-    compilers.clear();
-  }
-
   void dropFromAllCaches(final String uri) {
     compilers.values().forEach(c -> c.analysis().dropFromCache(uri));
   }
 
   @Override
   public void close() {
-    invalidateAll();
+    compilers.values().forEach(ModuleCompiler::close);
+    compilers.clear();
   }
 
   Optional<ModuleParams> findForFile(final Path filePath) {

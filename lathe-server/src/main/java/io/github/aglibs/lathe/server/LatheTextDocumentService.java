@@ -76,7 +76,7 @@ final class LatheTextDocumentService implements TextDocumentService {
   void setRegistry(final ModuleRegistry newRegistry) {
     final var old = this.registry;
     this.registry = newRegistry;
-    old.invalidateAll();
+    old.close();
   }
 
   void startWatching(final Path workspaceRoot) {
