@@ -12,6 +12,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.PackageElement;
 import javax.lang.model.element.TypeElement;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
@@ -72,19 +73,15 @@ final class DefinitionLocator {
     if (topLevel == null) {
       return Optional.empty();
     }
-    final var fileName = topLevel.getSimpleName().toString() + ".java";
-    for (final var sourceRoot : sourceRoots) {
-      try (final var stream = Files.walk(sourceRoot)) {
-        final var found =
-            stream.filter(p -> p.getFileName().toString().equals(fileName)).findFirst();
-        if (found.isPresent()) {
-          return found;
-        }
-      } catch (final IOException e) {
-        LOG.log(Level.WARNING, e, () -> "[definition] error scanning %s".formatted(sourceRoot));
-      }
-    }
-    return Optional.empty();
+    final var pkg = ((PackageElement) topLevel.getEnclosingElement()).getQualifiedName().toString();
+    final var relPath =
+        pkg.isEmpty()
+            ? topLevel.getSimpleName() + ".java"
+            : pkg.replace('.', '/') + "/" + topLevel.getSimpleName() + ".java";
+    return sourceRoots.stream()
+        .map(root -> root.resolve(relPath))
+        .filter(Files::isRegularFile)
+        .findFirst();
   }
 
   static Position parsePosition(final Path sourceFile, final Element element) {

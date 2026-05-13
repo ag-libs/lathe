@@ -105,6 +105,32 @@ class DefinitionLocatorTest extends SampleFixture {
   class ReactorFallback {
 
     @Test
+    void findSourceFile_locatesByPackagePath(@TempDir final Path tempDir) throws IOException {
+      final var pkgDir = tempDir.resolve("src/com/example");
+      Files.createDirectories(pkgDir);
+      final var greeterSrc = pkgDir.resolve("Greeter.java");
+      Files.writeString(greeterSrc, "package com.example;\npublic class Greeter {}");
+
+      final var classDir = tempDir.resolve("classes");
+      Files.createDirectories(classDir);
+      TestCompiler.compileToDir(greeterSrc, classDir);
+
+      final var userSrc = tempDir.resolve("User.java");
+      Files.writeString(userSrc, "import com.example.Greeter; public class User { Greeter g; }");
+
+      final var compiled = TestCompiler.parseWithClasspath(userSrc, classDir);
+      final var greeterElement =
+          compiled.task().getElements().getTypeElement("com.example.Greeter");
+
+      final var location =
+          DefinitionLocator.locate(
+              greeterElement, compiled.trees(), List.of(tempDir.resolve("src")), "file:///x");
+
+      assertThat(location).isPresent();
+      assertThat(location.get().getUri()).endsWith("Greeter.java");
+    }
+
+    @Test
     void findsFileByTopLevelClassName(@TempDir final Path tempDir) throws IOException {
       final var srcDir = tempDir.resolve("src");
       Files.createDirectories(srcDir);
