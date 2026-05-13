@@ -6,19 +6,17 @@ import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Stopwatch;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
-import javax.tools.JavaFileManager;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
@@ -27,55 +25,38 @@ import javax.tools.ToolProvider;
 final class ModuleCompiler implements AutoCloseable {
 
   private static final Logger LOG = Logger.getLogger(ModuleCompiler.class.getName());
-  private static final int MAX_CACHED = 100;
   private static final String PATCH_MODULE = "--patch-module";
   private static final String PATCH_MODULE_EQ = PATCH_MODULE + "=";
 
-  enum Mode {
-    FAST("compile"),
-    OPEN("open"),
-    FULL("save");
-
-    final String tag;
-
-    Mode(final String tag) {
-      this.tag = tag;
-    }
-  }
-
-  private record CachedManager(StandardJavaFileManager fm, Path td, List<String> compilerArgs) {
-    void close() {
-      try {
-        fm.close();
-      } catch (final IOException e) {
-        LOG.log(Level.WARNING, e, () -> "[cache] failed to close file manager");
-      }
-      try {
-        FileUtil.deleteDir(td);
-      } catch (final IOException e) {
-        LOG.log(Level.WARNING, e, () -> "[cache] failed to delete temp dir %s".formatted(td));
-      }
-    }
-  }
-
+  private final ModuleParams params;
   private final JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+  private final StandardJavaFileManager fm;
+  private final Path td;
+  private final List<String> compilerArgs;
+  private final ModuleAnalysis analysis = new ModuleAnalysis(this);
 
-  private final LinkedHashMap<ModuleParams, CachedManager> cache =
-      new LinkedHashMap<>() {
-        @Override
-        protected boolean removeEldestEntry(final Map.Entry<ModuleParams, CachedManager> eldest) {
-          if (size() > MAX_CACHED) {
-            eldest.getValue().close();
-            return true;
-          }
-          return false;
-        }
-      };
+  ModuleCompiler(final ModuleParams params) {
+    this.params = params;
+    try {
+      this.td = Files.createTempDirectory("lathe-");
+      this.fm = compiler.getStandardFileManager(null, null, null);
+      initLocations();
+      this.compilerArgs = processPatchModules(params.compilerArgs(), fm, td);
+    } catch (final IOException e) {
+      throw new UncheckedIOException(e);
+    }
+  }
 
-  CompilationResult compile(
-      final String uri, final String content, final ModuleParams params, final Mode mode)
+  ModuleAnalysis analysis() {
+    return analysis;
+  }
+
+  StandardJavaFileManager fileManager() {
+    return fm;
+  }
+
+  CompilationResult compile(final String uri, final String content, final CompileMode mode)
       throws IOException {
-    final CachedManager cm = getOrCreate(params);
     final DiagnosticCollector<JavaFileObject> collector = new DiagnosticCollector<>();
     final Path filePath = Path.of(URI.create(uri));
     final Path sourceRoot =
@@ -84,26 +65,35 @@ final class ModuleCompiler implements AutoCloseable {
             .max(Comparator.comparingInt(Path::getNameCount))
             .orElseThrow(() -> new IllegalStateException("no source root for " + uri));
 
-    final var tempFile = cm.td().resolve(sourceRoot.relativize(filePath));
+    final var tempFile = td.resolve(sourceRoot.relativize(filePath));
     Files.createDirectories(tempFile.getParent());
     Files.writeString(tempFile, content);
 
-    final var options = buildOptions(params, cm, mode);
-    LOG.fine(() -> "[%s] td=%s root=%s opts=%s".formatted(mode.tag, cm.td(), sourceRoot, options));
-    final JavaFileObject file = cm.fm().getJavaFileObjects(tempFile).iterator().next();
+    final var options = buildOptions(params, compilerArgs, mode);
+    LOG.fine(() -> "[%s] td=%s root=%s opts=%s".formatted(mode.tag, td, sourceRoot, options));
+    final JavaFileObject file = fm.getJavaFileObjects(tempFile).iterator().next();
     try {
-      final CompilationTaskContext context = runTask(cm.fm(), collector, options, file, mode);
+      final CompilationTaskContext context = runTask(collector, options, file, mode);
       return new CompilationResult(collector.getDiagnostics(), context);
     } finally {
-      if (mode == Mode.FULL) {
-        cm.fm().flush();
+      if (mode == CompileMode.FULL) {
+        fm.flush();
       }
     }
   }
 
   void invalidate() {
-    cache.values().forEach(CachedManager::close);
-    cache.clear();
+    try {
+      fm.close();
+    } catch (final IOException e) {
+      LOG.log(Level.WARNING, e, () -> "[cache] failed to close file manager");
+    }
+    try {
+      FileUtil.deleteDir(td);
+    } catch (final IOException e) {
+      LOG.log(Level.WARNING, e, () -> "[cache] failed to delete temp dir %s".formatted(td));
+    }
+    analysis.clearCache();
   }
 
   @Override
@@ -111,19 +101,7 @@ final class ModuleCompiler implements AutoCloseable {
     invalidate();
   }
 
-  private CachedManager getOrCreate(final ModuleParams params) throws IOException {
-    var cm = cache.get(params);
-    if (cm == null) {
-      cm = createCachedManager(params);
-      cache.put(params, cm);
-    }
-    return cm;
-  }
-
-  private CachedManager createCachedManager(final ModuleParams params) throws IOException {
-    final var td = Files.createTempDirectory("lathe-");
-    final var fm = compiler.getStandardFileManager(null, null, null);
-
+  private void initLocations() throws IOException {
     final var classesDir = params.latheClassesDir();
     Files.createDirectories(classesDir);
     fm.setLocation(StandardLocation.CLASS_OUTPUT, List.of(classesDir.toFile()));
@@ -139,38 +117,33 @@ final class ModuleCompiler implements AutoCloseable {
       fm.setLocation(StandardLocation.CLASS_PATH, classpath.stream().map(Path::toFile).toList());
       LOG.fine(() -> "[cache] CLASS_PATH=%s".formatted(classpath));
     }
+
     final var modulepath = params.remappedModulepath();
     if (!modulepath.isEmpty()) {
       fm.setLocation(StandardLocation.MODULE_PATH, modulepath.stream().map(Path::toFile).toList());
       LOG.fine(() -> "[cache] MODULE_PATH=%s".formatted(modulepath));
     }
+
     if (!params.processorPath().isEmpty()) {
       fm.setLocation(
           StandardLocation.ANNOTATION_PROCESSOR_PATH,
           params.remappedProcessorPath().stream().map(Path::toFile).toList());
       LOG.fine(() -> "[cache] ANNOTATION_PROCESSOR_PATH=%s".formatted(params.processorPath()));
     }
-
-    // Process --patch-module entries once at creation, pointing at the dedicated temp dir.
-    // Filtered out of per-task options so handleOption is never called twice for the same module.
-    final var compilerArgs = processPatchModules(params.compilerArgs(), fm, td);
-    return new CachedManager(fm, td, compilerArgs);
   }
 
   private CompilationTaskContext runTask(
-      final JavaFileManager fileManager,
       final DiagnosticCollector<JavaFileObject> collector,
       final List<String> options,
       final JavaFileObject sourceFile,
-      final Mode mode)
+      final CompileMode mode)
       throws IOException {
     final var task =
-        (JavacTask)
-            compiler.getTask(null, fileManager, collector, options, null, List.of(sourceFile));
+        (JavacTask) compiler.getTask(null, this.fm, collector, options, null, List.of(sourceFile));
     final var it = task.parse().iterator();
     final CompilationUnitTree cu = it.hasNext() ? it.next() : null;
     task.analyze();
-    if (mode == Mode.FULL) {
+    if (mode == CompileMode.FULL) {
       task.generate();
     }
     final var trees = Trees.instance(task);
@@ -204,7 +177,7 @@ final class ModuleCompiler implements AutoCloseable {
   }
 
   private static List<String> buildOptions(
-      final ModuleParams params, final CachedManager cm, final Mode mode) {
+      final ModuleParams params, final List<String> compilerArgs, final CompileMode mode) {
     final var opts = new ArrayList<String>();
     if (params.release() != null && !params.release().isBlank()) {
       opts.add("--release");
@@ -218,15 +191,15 @@ final class ModuleCompiler implements AutoCloseable {
     if (params.enablePreview()) {
       opts.add("--enable-preview");
     }
-    opts.addAll(modeCompilerArgs(cm.compilerArgs(), mode));
-    if (mode == Mode.FAST || mode == Mode.OPEN) {
+    opts.addAll(modeCompilerArgs(compilerArgs, mode));
+    if (mode == CompileMode.FAST || mode == CompileMode.OPEN) {
       opts.add("-proc:none");
     }
     return opts;
   }
 
-  static List<String> modeCompilerArgs(final List<String> args, final Mode mode) {
-    return mode == Mode.FULL
+  static List<String> modeCompilerArgs(final List<String> args, final CompileMode mode) {
+    return mode == CompileMode.FULL
         ? args
         : args.stream().filter(ModuleCompiler::isInteractiveCompilerArg).toList();
   }

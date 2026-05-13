@@ -19,9 +19,9 @@ class ModuleCompilerTest {
             "--add-reads",
             "com.example=ALL-UNNAMED");
 
-    assertThat(ModuleCompiler.modeCompilerArgs(args, ModuleCompiler.Mode.FAST))
+    assertThat(ModuleCompiler.modeCompilerArgs(args, CompileMode.FAST))
         .containsExactly("-Xlint:unchecked", "--add-reads", "com.example=ALL-UNNAMED");
-    assertThat(ModuleCompiler.modeCompilerArgs(args, ModuleCompiler.Mode.OPEN))
+    assertThat(ModuleCompiler.modeCompilerArgs(args, CompileMode.OPEN))
         .containsExactly("-Xlint:unchecked", "--add-reads", "com.example=ALL-UNNAMED");
   }
 
@@ -35,6 +35,6 @@ class ModuleCompilerTest {
             "-XepDisableWarningsInGeneratedCode",
             "-XepOpt:NullAway:AnnotatedPackages=com.example");
 
-    assertThat(ModuleCompiler.modeCompilerArgs(args, ModuleCompiler.Mode.FULL)).isSameAs(args);
+    assertThat(ModuleCompiler.modeCompilerArgs(args, CompileMode.FULL)).isSameAs(args);
   }
 }

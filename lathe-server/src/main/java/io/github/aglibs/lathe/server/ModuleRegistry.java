@@ -6,15 +6,18 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-final class ModuleRegistry {
+final class ModuleRegistry implements AutoCloseable {
 
   private static final Logger LOG = Logger.getLogger(ModuleRegistry.class.getName());
 
   private final List<ModuleParams> modules;
+  private final Map<ModuleParams, ModuleCompiler> compilers = new ConcurrentHashMap<>();
 
   private ModuleRegistry(final List<ModuleParams> modules) {
     this.modules = modules;
@@ -52,6 +55,24 @@ final class ModuleRegistry {
     LOG.info(
         () -> "[registry] loaded %d module(s) from %s".formatted(modules.size(), workspaceRoot));
     return new ModuleRegistry(List.copyOf(modules));
+  }
+
+  ModuleCompiler getOrCreate(final ModuleParams params) {
+    return compilers.computeIfAbsent(params, ModuleCompiler::new);
+  }
+
+  void invalidateAll() {
+    compilers.values().forEach(ModuleCompiler::close);
+    compilers.clear();
+  }
+
+  void dropFromAllCaches(final String uri) {
+    compilers.values().forEach(c -> c.analysis().dropFromCache(uri));
+  }
+
+  @Override
+  public void close() {
+    invalidateAll();
   }
 
   Optional<ModuleParams> findForFile(final Path filePath) {

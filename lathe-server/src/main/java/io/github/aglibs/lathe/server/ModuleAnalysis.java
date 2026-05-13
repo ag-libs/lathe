@@ -22,32 +22,25 @@ import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 
-final class AnalysisEngine implements AutoCloseable {
+final class ModuleAnalysis {
 
-  private static final Logger LOG = Logger.getLogger(AnalysisEngine.class.getName());
+  private static final Logger LOG = Logger.getLogger(ModuleAnalysis.class.getName());
 
-  private final ModuleCompiler compiler = new ModuleCompiler();
+  private final ModuleCompiler compiler;
   private final Map<String, CompilationTaskContext> cache = new ConcurrentHashMap<>();
 
-  void invalidate() {
-    compiler.invalidate();
+  ModuleAnalysis(final ModuleCompiler compiler) {
+    this.compiler = compiler;
+  }
+
+  void clearCache() {
     cache.clear();
   }
 
-  @Override
-  public void close() {
-    compiler.close();
-    cache.clear();
-  }
-
-  List<Diagnostic> compile(
-      final String uri,
-      final String content,
-      final ModuleParams params,
-      final ModuleCompiler.Mode mode)
+  List<Diagnostic> compile(final String uri, final String content, final CompileMode mode)
       throws IOException {
     final var t = Stopwatch.start();
-    final var run = compiler.compile(uri, content, params, mode);
+    final var run = compiler.compile(uri, content, mode);
     cache.put(uri, run.context());
     final var diags = filterAndMap(run.diagnostics(), content);
     LOG.fine(() -> "[%s] %s %dms diags=%d".formatted(mode.tag, uri, t.elapsedMs(), diags.size()));
@@ -117,11 +110,12 @@ final class AnalysisEngine implements AutoCloseable {
     if (ctx == null || ctx.tree() == null) {
       return null;
     }
+
     final long offset = SourceLocator.toOffset(ctx.tree(), pos.getLine(), pos.getCharacter());
     return new CursorContext(ctx, SourceLocator.pathAt(ctx.trees(), ctx.tree(), offset));
   }
 
-  List<Diagnostic> filterAndMap(
+  static List<Diagnostic> filterAndMap(
       final List<? extends javax.tools.Diagnostic<? extends JavaFileObject>> raw,
       final String content) {
     return raw.stream()

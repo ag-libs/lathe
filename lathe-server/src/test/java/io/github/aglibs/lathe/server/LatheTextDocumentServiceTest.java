@@ -26,8 +26,7 @@ class LatheTextDocumentServiceTest {
   @Test
   void didChange_rapidKeystrokes_compilesOnlyOnce() throws InterruptedException {
     final var client = mock(LanguageClient.class);
-    final var service =
-        new LatheTextDocumentService(ModuleRegistry.empty(), new AnalysisEngine(), DEBOUNCE_MS);
+    final var service = new LatheTextDocumentService(ModuleRegistry.empty(), DEBOUNCE_MS);
     service.connect(client);
 
     for (int i = 0; i < 5; i++) {
@@ -46,8 +45,7 @@ class LatheTextDocumentServiceTest {
   @Test
   void didChange_rapidKeystrokes_compilesLatestContent() throws InterruptedException {
     final var client = mock(LanguageClient.class);
-    final var service =
-        new LatheTextDocumentService(ModuleRegistry.empty(), new AnalysisEngine(), DEBOUNCE_MS);
+    final var service = new LatheTextDocumentService(ModuleRegistry.empty(), DEBOUNCE_MS);
     service.connect(client);
 
     for (int i = 0; i < 5; i++) {
@@ -66,8 +64,7 @@ class LatheTextDocumentServiceTest {
   @Test
   void didOpen_compilesImmediatelyWithoutDebounce() {
     final var client = mock(LanguageClient.class);
-    final var service =
-        new LatheTextDocumentService(ModuleRegistry.empty(), new AnalysisEngine(), DEBOUNCE_MS);
+    final var service = new LatheTextDocumentService(ModuleRegistry.empty(), DEBOUNCE_MS);
     service.connect(client);
 
     service.didOpen(
@@ -81,8 +78,7 @@ class LatheTextDocumentServiceTest {
   @Test
   void didClose_publishesEmptyDiagnostics() {
     final var client = mock(LanguageClient.class);
-    final var service =
-        new LatheTextDocumentService(ModuleRegistry.empty(), new AnalysisEngine(), DEBOUNCE_MS);
+    final var service = new LatheTextDocumentService(ModuleRegistry.empty(), DEBOUNCE_MS);
     service.connect(client);
 
     service.didClose(new DidCloseTextDocumentParams(new TextDocumentIdentifier(URI)));

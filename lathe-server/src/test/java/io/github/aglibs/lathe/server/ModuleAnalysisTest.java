@@ -13,7 +13,7 @@ import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Position;
 import org.junit.jupiter.api.Test;
 
-class AnalysisEngineTest {
+class ModuleAnalysisTest {
 
   // --- offsetToPosition ---
 
@@ -71,7 +71,7 @@ class AnalysisEngineTest {
     final var raw = mockDiag(Diagnostic.Kind.ERROR, Diagnostic.NOPOS, Diagnostic.NOPOS);
     when(raw.getLineNumber()).thenReturn(2L);
     when(raw.getColumnNumber()).thenReturn(5L);
-    final var d = AnalysisEngine.toLsp(raw, "anything");
+    final var d = ModuleAnalysis.toLsp(raw, "anything");
     assertThat(d.getRange().getStart()).isEqualTo(new Position(1, 4));
     assertThat(d.getRange().getEnd()).isEqualTo(new Position(1, 5));
   }
@@ -80,36 +80,30 @@ class AnalysisEngineTest {
 
   @Test
   void filterAndMap_positionlessNote_isDropped() {
-    try (var engine = new AnalysisEngine()) {
-      final var note = mockDiag(Diagnostic.Kind.NOTE, Diagnostic.NOPOS, Diagnostic.NOPOS);
-      assertThat(engine.filterAndMap(List.of(note), "")).isEmpty();
-    }
+    final var note = mockDiag(Diagnostic.Kind.NOTE, Diagnostic.NOPOS, Diagnostic.NOPOS);
+    assertThat(ModuleAnalysis.filterAndMap(List.of(note), "")).isEmpty();
   }
 
   @Test
   void filterAndMap_noteWithPosition_isKept() {
-    try (var engine = new AnalysisEngine()) {
-      final var note = mockDiag(Diagnostic.Kind.NOTE, 0L, 1L);
-      assertThat(engine.filterAndMap(List.of(note), "x")).hasSize(1);
-    }
+    final var note = mockDiag(Diagnostic.Kind.NOTE, 0L, 1L);
+    assertThat(ModuleAnalysis.filterAndMap(List.of(note), "x")).hasSize(1);
   }
 
   @Test
   void filterAndMap_errorAndPositionlessNote_returnsOnlyError() {
-    try (var engine = new AnalysisEngine()) {
-      final var error = mockDiag(Diagnostic.Kind.ERROR, 0L, 1L);
-      final var note = mockDiag(Diagnostic.Kind.NOTE, Diagnostic.NOPOS, Diagnostic.NOPOS);
-      final var result = engine.filterAndMap(List.of(error, note), "x");
-      assertThat(result).hasSize(1);
-      assertThat(result.getFirst().getSeverity()).isEqualTo(DiagnosticSeverity.Error);
-    }
+    final var error = mockDiag(Diagnostic.Kind.ERROR, 0L, 1L);
+    final var note = mockDiag(Diagnostic.Kind.NOTE, Diagnostic.NOPOS, Diagnostic.NOPOS);
+    final var result = ModuleAnalysis.filterAndMap(List.of(error, note), "x");
+    assertThat(result).hasSize(1);
+    assertThat(result.getFirst().getSeverity()).isEqualTo(DiagnosticSeverity.Error);
   }
 
   // --- helpers ---
 
   private static org.eclipse.lsp4j.Diagnostic diag(
       final Diagnostic.Kind kind, final long start, final long end) {
-    return AnalysisEngine.toLsp(mockDiag(kind, start, end), "hello world");
+    return ModuleAnalysis.toLsp(mockDiag(kind, start, end), "hello world");
   }
 
   @SuppressWarnings("unchecked")

@@ -47,7 +47,6 @@ final class LatheTextDocumentService implements TextDocumentService {
   private static final long DEFAULT_DEBOUNCE_MS = 500;
 
   private volatile ModuleRegistry registry;
-  private final AnalysisEngine engine;
   private volatile LanguageClient client;
   private final long debounceMs;
 
@@ -61,14 +60,12 @@ final class LatheTextDocumentService implements TextDocumentService {
   private final ConcurrentHashMap<String, ScheduledFuture<?>> pending = new ConcurrentHashMap<>();
   private final ConcurrentHashMap<String, String> openFiles = new ConcurrentHashMap<>();
 
-  LatheTextDocumentService(final ModuleRegistry registry, final AnalysisEngine engine) {
-    this(registry, engine, DEFAULT_DEBOUNCE_MS);
+  LatheTextDocumentService(final ModuleRegistry registry) {
+    this(registry, DEFAULT_DEBOUNCE_MS);
   }
 
-  LatheTextDocumentService(
-      final ModuleRegistry registry, final AnalysisEngine engine, final long debounceMs) {
+  LatheTextDocumentService(final ModuleRegistry registry, final long debounceMs) {
     this.registry = registry;
-    this.engine = engine;
     this.debounceMs = debounceMs;
   }
 
@@ -76,9 +73,10 @@ final class LatheTextDocumentService implements TextDocumentService {
     this.client = client;
   }
 
-  void setRegistry(final ModuleRegistry registry) {
-    this.registry = registry;
-    engine.invalidate();
+  void setRegistry(final ModuleRegistry newRegistry) {
+    final var old = this.registry;
+    this.registry = newRegistry;
+    old.invalidateAll();
   }
 
   void startWatching(final Path workspaceRoot) {
@@ -100,7 +98,7 @@ final class LatheTextDocumentService implements TextDocumentService {
   }
 
   void close() {
-    engine.close();
+    registry.close();
   }
 
   private static long mtime(final Path path) {
@@ -117,7 +115,7 @@ final class LatheTextDocumentService implements TextDocumentService {
     final var content = params.getTextDocument().getText();
     openFiles.put(uri, content);
     LOG.fine(() -> "[open] %s".formatted(uri));
-    compileWith(uri, content, ModuleCompiler.Mode.OPEN);
+    compileWith(uri, content, CompileMode.OPEN);
   }
 
   @Override
@@ -133,7 +131,7 @@ final class LatheTextDocumentService implements TextDocumentService {
         debouncer.schedule(
             () -> {
               pending.remove(uri);
-              compileWith(uri, content, ModuleCompiler.Mode.FAST);
+              compileWith(uri, content, CompileMode.FAST);
             },
             debounceMs,
             TimeUnit.MILLISECONDS);
@@ -145,7 +143,7 @@ final class LatheTextDocumentService implements TextDocumentService {
     final var uri = params.getTextDocument().getUri();
     openFiles.remove(uri);
     cancelPending(uri, false, "close");
-    engine.dropFromCache(uri);
+    registry.dropFromAllCaches(uri);
     client.publishDiagnostics(new PublishDiagnosticsParams(uri, List.of()));
   }
 
@@ -153,7 +151,11 @@ final class LatheTextDocumentService implements TextDocumentService {
   public CompletableFuture<SemanticTokens> semanticTokensFull(final SemanticTokensParams params) {
     final var uri = params.getTextDocument().getUri();
     LOG.fine(() -> "[semanticTokens] %s".formatted(uri));
-    final var tokens = engine.semanticTokens(uri);
+    final var tokens =
+        registry
+            .findForFile(toPath(uri))
+            .map(m -> registry.getOrCreate(m).analysis().semanticTokens(uri))
+            .orElse(null);
     if (tokens == null) {
       return CompletableFuture.completedFuture(null);
     }
@@ -171,7 +173,14 @@ final class LatheTextDocumentService implements TextDocumentService {
     final var pos = params.getPosition();
     LOG.fine(() -> "[hover] %s %d:%d".formatted(uri, pos.getLine(), pos.getCharacter()));
     try {
-      return CompletableFuture.completedFuture(engine.hover(uri, pos, registry.allSourceRoots()));
+      final var result =
+          registry
+              .findForFile(toPath(uri))
+              .map(
+                  m ->
+                      registry.getOrCreate(m).analysis().hover(uri, pos, registry.allSourceRoots()))
+              .orElse(null);
+      return CompletableFuture.completedFuture(result);
     } catch (final Exception e) {
       LOG.log(SEVERE, e, () -> "[hover] failed for " + uri);
       return CompletableFuture.completedFuture(null);
@@ -184,7 +193,15 @@ final class LatheTextDocumentService implements TextDocumentService {
     final var uri = params.getTextDocument().getUri();
     final var pos = params.getPosition();
     try {
-      final var location = engine.definition(uri, pos, registry.allSourceRoots());
+      final var location =
+          registry
+              .findForFile(toPath(uri))
+              .flatMap(
+                  m ->
+                      registry
+                          .getOrCreate(m)
+                          .analysis()
+                          .definition(uri, pos, registry.allSourceRoots()));
       return CompletableFuture.completedFuture(
           Either.forLeft(location.map(List::of).orElseGet(List::of)));
     } catch (final Exception e) {
@@ -200,7 +217,7 @@ final class LatheTextDocumentService implements TextDocumentService {
     debouncer.submit(
         () -> {
           try {
-            compileWith(uri, Files.readString(toPath(uri)), ModuleCompiler.Mode.FULL);
+            compileWith(uri, Files.readString(toPath(uri)), CompileMode.FULL);
             registry
                 .findForFile(toPath(uri))
                 .ifPresent(module -> scheduleOpenFilesInModule(uri, module));
@@ -241,7 +258,7 @@ final class LatheTextDocumentService implements TextDocumentService {
                     pending.remove(depUri);
                     final var content = openFiles.get(depUri);
                     if (content != null) {
-                      compileWith(depUri, content, ModuleCompiler.Mode.OPEN);
+                      compileWith(depUri, content, CompileMode.OPEN);
                     }
                   },
                   0L,
@@ -280,13 +297,14 @@ final class LatheTextDocumentService implements TextDocumentService {
     return Path.of(URI.create(uri));
   }
 
-  private void compileWith(final String uri, final String content, final ModuleCompiler.Mode mode) {
+  private void compileWith(final String uri, final String content, final CompileMode mode) {
     registry
         .findForFile(toPath(uri))
         .ifPresentOrElse(
             module -> {
               try {
-                final List<Diagnostic> diagnostics = engine.compile(uri, content, module, mode);
+                final List<Diagnostic> diagnostics =
+                    registry.getOrCreate(module).analysis().compile(uri, content, mode);
                 if (Thread.interrupted()) {
                   LOG.fine(
                       () -> "[%s] interrupted, skipping publish for %s".formatted(mode.tag, uri));

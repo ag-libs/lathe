@@ -22,7 +22,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
   private static final Logger LOG = Logger.getLogger(LatheLanguageServer.class.getName());
 
   private final LatheTextDocumentService textDocumentService =
-      new LatheTextDocumentService(ModuleRegistry.empty(), new AnalysisEngine());
+      new LatheTextDocumentService(ModuleRegistry.empty());
 
   @Override
   public void connect(final LanguageClient client) {

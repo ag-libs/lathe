@@ -152,4 +152,3 @@ If mvnd is used, restart it after rebuilding Lathe itself:
 
 mvn --stop
 ```
-
