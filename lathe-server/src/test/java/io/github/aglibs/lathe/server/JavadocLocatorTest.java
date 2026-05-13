@@ -39,7 +39,7 @@ class JavadocLocatorTest {
         }
         """);
 
-    TestCompiler.compileToDir(documentedSrc, classDir);
+    TestCompiler.compileToDir(classDir, documentedSrc);
 
     final var userSrc = tempDir.resolve("User.java");
     Files.writeString(

@@ -10,8 +10,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Stream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.ModuleElement;
 import javax.lang.model.element.PackageElement;
 import javax.lang.model.element.TypeElement;
 import org.eclipse.lsp4j.Location;
@@ -73,13 +75,27 @@ final class DefinitionLocator {
     if (topLevel == null) {
       return Optional.empty();
     }
-    final var pkg = ((PackageElement) topLevel.getEnclosingElement()).getQualifiedName().toString();
+    final var pkgElement = (PackageElement) topLevel.getEnclosingElement();
+    final var pkg = pkgElement.getQualifiedName().toString();
     final var relPath =
         pkg.isEmpty()
             ? topLevel.getSimpleName() + ".java"
             : pkg.replace('.', '/') + "/" + topLevel.getSimpleName() + ".java";
+    final var enclosingModule = pkgElement.getEnclosingElement();
+    final String moduleName =
+        enclosingModule instanceof final ModuleElement me && !me.isUnnamed()
+            ? me.getQualifiedName().toString()
+            : null;
     return sourceRoots.stream()
-        .map(root -> root.resolve(relPath))
+        .flatMap(
+            root -> {
+              final var direct = root.resolve(relPath);
+              if (moduleName != null) {
+                final var modPrefixed = root.resolve(moduleName).resolve(relPath);
+                return Stream.of(modPrefixed, direct);
+              }
+              return Stream.of(direct);
+            })
         .filter(Files::isRegularFile)
         .findFirst();
   }

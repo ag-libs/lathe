@@ -17,17 +17,22 @@ final class TestCompiler {
 
   private TestCompiler() {}
 
-  static void compileToDir(final Path src, final Path classDir) throws IOException {
+  static void compileToDir(final Path classDir, final Path... sources) throws IOException {
     final JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
     final StandardJavaFileManager fm = compiler.getStandardFileManager(null, null, null);
     fm.setLocationFromPaths(StandardLocation.CLASS_OUTPUT, List.of(classDir));
-    compiler.getTask(null, fm, null, null, null, fm.getJavaFileObjects(src)).call();
+    compiler.getTask(null, fm, null, null, null, fm.getJavaFileObjects(sources)).call();
   }
 
   static CrossFileTask parseWithClasspath(final Path src, final Path classDir) throws IOException {
+    return parseWith(src, StandardLocation.CLASS_PATH, classDir);
+  }
+
+  private static CrossFileTask parseWith(
+      final Path src, final StandardLocation location, final Path dir) throws IOException {
     final JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
     final StandardJavaFileManager fm = compiler.getStandardFileManager(null, null, null);
-    fm.setLocationFromPaths(StandardLocation.CLASS_PATH, List.of(classDir));
+    fm.setLocationFromPaths(location, List.of(dir));
     final JavacTask task =
         (JavacTask) compiler.getTask(null, fm, null, null, null, fm.getJavaFileObjects(src));
     final CompilationUnitTree cu = task.parse().iterator().next();

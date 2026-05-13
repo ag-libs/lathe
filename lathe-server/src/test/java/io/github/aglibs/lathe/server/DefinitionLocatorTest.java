@@ -113,7 +113,7 @@ class DefinitionLocatorTest extends SampleFixture {
 
       final var classDir = tempDir.resolve("classes");
       Files.createDirectories(classDir);
-      TestCompiler.compileToDir(greeterSrc, classDir);
+      TestCompiler.compileToDir(classDir, greeterSrc);
 
       final var userSrc = tempDir.resolve("User.java");
       Files.writeString(userSrc, "import com.example.Greeter; public class User { Greeter g; }");
@@ -131,6 +131,29 @@ class DefinitionLocatorTest extends SampleFixture {
     }
 
     @Test
+    void findSourceFile_locatesByModulePrefixedPath(@TempDir final Path tempDir)
+        throws IOException {
+      // java.lang.String belongs to java.base — always in the module graph
+      final var srcRoot = tempDir.resolve("src");
+      Files.createDirectories(srcRoot.resolve("java.base/java/lang"));
+      Files.writeString(
+          srcRoot.resolve("java.base/java/lang/String.java"),
+          "package java.lang;\npublic class String {}");
+
+      final var classDir = tempDir.resolve("classes");
+      Files.createDirectories(classDir);
+      final var userSrc = tempDir.resolve("User.java");
+      Files.writeString(userSrc, "public class User { String s; }");
+      final var compiled = TestCompiler.parseWithClasspath(userSrc, classDir);
+      final var stringElement = compiled.task().getElements().getTypeElement("java.lang.String");
+
+      final var file = DefinitionLocator.findSourceFile(stringElement, List.of(srcRoot));
+
+      assertThat(file).isPresent();
+      assertThat(file.get().getFileName().toString()).isEqualTo("String.java");
+    }
+
+    @Test
     void findsFileByTopLevelClassName(@TempDir final Path tempDir) throws IOException {
       final var srcDir = tempDir.resolve("src");
       Files.createDirectories(srcDir);
@@ -139,7 +162,7 @@ class DefinitionLocatorTest extends SampleFixture {
 
       final var classDir = tempDir.resolve("classes");
       Files.createDirectories(classDir);
-      TestCompiler.compileToDir(greeterSrc, classDir);
+      TestCompiler.compileToDir(classDir, greeterSrc);
 
       final var userSrc = tempDir.resolve("User.java");
       Files.writeString(userSrc, "public class User { public void run(Greeter g) { g.greet(); } }");
@@ -188,7 +211,7 @@ class DefinitionLocatorTest extends SampleFixture {
 
     final var classDir = tempDir.resolve("classes");
     Files.createDirectories(classDir);
-    TestCompiler.compileToDir(greeterSrc, classDir);
+    TestCompiler.compileToDir(classDir, greeterSrc);
 
     final var userSrc = tempDir.resolve("User.java");
     Files.writeString(userSrc, "public class User { public void run(Greeter g) { g.greet(); } }");
