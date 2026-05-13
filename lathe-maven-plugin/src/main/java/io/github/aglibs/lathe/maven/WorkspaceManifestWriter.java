@@ -18,7 +18,7 @@ final class WorkspaceManifestWriter {
       final List<DependencySource> dependencySources,
       final JdkSource jdkSource,
       final Log log) {
-    final Path latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
+    final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
     Path tempFile = null;
     try {
       Files.createDirectories(latheDir);
@@ -44,7 +44,7 @@ final class WorkspaceManifestWriter {
       final List<DependencySource> dependencySources,
       final JdkSource jdkSource)
       throws IOException {
-    final ParamStore props = new ParamStore();
+    final var props = new ParamStore();
     props.set("schemaVersion", LatheLayout.SCHEMA_VERSION);
     props.set("workspaceRoot", workspaceRoot.toString());
     jdkSource.writeTo(props);

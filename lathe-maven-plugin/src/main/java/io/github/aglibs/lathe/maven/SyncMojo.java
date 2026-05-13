@@ -40,17 +40,16 @@ public final class SyncMojo extends AbstractMojo {
     }
 
     try {
-      final Path workspaceRoot = session.getTopLevelProject().getBasedir().toPath();
-      final List<MavenProject> projects = ReactorProjects.sorted(session, workspaceRoot);
+      final var workspaceRoot = session.getTopLevelProject().getBasedir().toPath();
+      final var projects = ReactorProjects.sorted(session, workspaceRoot);
       logModules(workspaceRoot, projects);
-      final DependencySourceResolver resolver =
-          new DependencySourceResolver(repositorySystem, session, getLog());
-      final List<DependencySource> dependencySources =
+      final var resolver = new DependencySourceResolver(repositorySystem, session, getLog());
+      final var dependencySources =
           resolver.resolve(
               ReactorProjects.externalArtifacts(projects),
               ReactorProjects.remoteRepositories(projects));
       DependencySourceExtractor.extract(DependencySource.present(dependencySources), getLog());
-      final JdkSource jdkSource = JdkSourceResolver.resolve();
+      final var jdkSource = JdkSourceResolver.resolve();
       JdkSourceExtractor.extract(jdkSource, getLog());
       WorkspaceManifestWriter.write(workspaceRoot, dependencySources, jdkSource, getLog());
     } catch (final SyncException e) {

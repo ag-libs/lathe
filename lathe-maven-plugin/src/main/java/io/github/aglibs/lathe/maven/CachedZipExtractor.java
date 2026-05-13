@@ -12,7 +12,7 @@ final class CachedZipExtractor {
   static void extract(final Path zipFile, final Path targetDir, final AfterExtract afterExtract)
       throws IOException {
     Files.createDirectories(targetDir.getParent());
-    final Path tempDir =
+    final var tempDir =
         Files.createTempDirectory(targetDir.getParent(), targetDir.getFileName() + ".tmp-");
     try {
       FileUtil.unzip(zipFile, tempDir);

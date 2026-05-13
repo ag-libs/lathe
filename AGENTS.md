@@ -19,6 +19,8 @@ Before implementing a planned phase, read that phase's section in `docs/lathe-pl
 - **Present design for non-trivial changes** — any change that touches multiple classes, introduces new abstractions,
   or affects public APIs requires a design summary (what classes change, what is added, why) and user approval before
   implementation.
+- **Never commit or push without explicit user approval** — always show what will be committed and ask before running
+  `git commit` or `git push`.
 
 ---
 

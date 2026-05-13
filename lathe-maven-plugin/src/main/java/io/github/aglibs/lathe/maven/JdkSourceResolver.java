@@ -14,16 +14,16 @@ final class JdkSourceResolver {
   }
 
   static JdkSource resolve(final Map<String, String> env) {
-    final String vendor = System.getProperty("java.vendor");
-    final String version = System.getProperty("java.version");
-    final String javaHome = env.get("JAVA_HOME");
+    final var vendor = System.getProperty("java.vendor");
+    final var version = System.getProperty("java.version");
+    final var javaHome = env.get("JAVA_HOME");
     if (javaHome == null) {
       return JdkSource.missing(vendor, version, null);
     }
 
-    final Path home = Path.of(javaHome);
-    final Path sourceZip = home.resolve("lib").resolve("src.zip");
-    final Path sourceDir =
+    final var home = Path.of(javaHome);
+    final var sourceZip = home.resolve("lib").resolve("src.zip");
+    final var sourceDir =
         LatheLayout.userCacheRoot()
             .resolve(LatheLayout.CACHE_JDKS_DIR)
             .resolve(sanitize(vendor))

@@ -15,7 +15,7 @@ final class JdkSourceExtractor {
       return;
     }
 
-    final Stopwatch t = Stopwatch.start();
+    final var t = Stopwatch.start();
     try {
       if (Files.exists(source.sourceDir())) {
         log.info("[sync] jdk sources already cached in %dms".formatted(t.elapsedMs()));

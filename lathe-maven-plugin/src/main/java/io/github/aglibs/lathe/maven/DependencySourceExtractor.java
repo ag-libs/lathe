@@ -21,7 +21,7 @@ final class DependencySourceExtractor {
   private DependencySourceExtractor() {}
 
   static void extract(final Collection<DependencySource> sources, final Log log) {
-    final Stopwatch t = Stopwatch.start();
+    final var t = Stopwatch.start();
     try {
       final Map<Boolean, Long> counts =
           sources.stream()
@@ -38,9 +38,9 @@ final class DependencySourceExtractor {
   }
 
   private static SourceExtraction extract(final DependencySource source) throws IOException {
-    final Artifact artifact = source.sourceArtifact();
-    final Path sourceJar = artifact.getFile().toPath();
-    final Path targetDir = source.dir();
+    final var artifact = source.sourceArtifact();
+    final var sourceJar = artifact.getFile().toPath();
+    final var targetDir = source.dir();
     if (isSourceCacheCurrent(targetDir, artifact, sourceJar)) {
       return new SourceExtraction(false);
     }
@@ -52,12 +52,12 @@ final class DependencySourceExtractor {
 
   private static boolean isSourceCacheCurrent(
       final Path targetDir, final Artifact artifact, final Path sourceJar) throws IOException {
-    final Path marker = targetDir.resolve(SOURCE_MARKER);
+    final var marker = targetDir.resolve(SOURCE_MARKER);
     if (!Files.exists(marker)) {
       return false;
     }
 
-    final ParamStore props = ParamStore.load(marker);
+    final var props = ParamStore.load(marker);
 
     return LatheLayout.SCHEMA_VERSION.equals(props.get("schema"))
         && ReactorProjects.gav(artifact).equals(props.get("gav"))
@@ -69,7 +69,7 @@ final class DependencySourceExtractor {
 
   private static void writeSourceMarker(
       final Path tempDir, final Artifact artifact, final Path sourceJar) throws IOException {
-    final ParamStore props = new ParamStore();
+    final var props = new ParamStore();
     props.set("schema", LatheLayout.SCHEMA_VERSION);
     props.set("gav", ReactorProjects.gav(artifact));
     props.set("sourceJar", sourceJar.toString());
