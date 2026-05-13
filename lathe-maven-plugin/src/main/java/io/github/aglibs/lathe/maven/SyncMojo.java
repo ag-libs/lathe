@@ -29,6 +29,11 @@ public final class SyncMojo extends AbstractMojo {
 
   @Override
   public void execute() throws MojoExecutionException {
+    if (isDirectSyncInvocation(session.getRequest().getGoals())) {
+      throw new MojoExecutionException(
+          "Do not run lathe:sync directly. Run mvn process-test-classes instead.");
+    }
+
     if (!session.getCurrentProject().equals(session.getTopLevelProject())) {
       getLog().debug("[sync] skipping non top-level project");
       return;
@@ -62,5 +67,9 @@ public final class SyncMojo extends AbstractMojo {
 
   private void logModules(final Path workspaceRoot, final List<MavenProject> projects) {
     projects.forEach(project -> logModule(workspaceRoot, project));
+  }
+
+  static boolean isDirectSyncInvocation(final List<String> goals) {
+    return goals.stream().anyMatch(goal -> goal.contains(":sync"));
   }
 }
