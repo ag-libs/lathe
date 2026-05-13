@@ -18,10 +18,6 @@ record DependencySource(String gav, Path jar, String status, Path dir, Artifact 
     return new DependencySource(gav, jar, "missing", null, null);
   }
 
-  static DependencySource skipped(final String gav) {
-    return new DependencySource(gav, null, "skipped", null, null);
-  }
-
   static List<DependencySource> present(final List<DependencySource> sources) {
     return sources.stream().filter(source -> "present".equals(source.status())).toList();
   }

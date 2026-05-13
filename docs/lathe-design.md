@@ -325,7 +325,6 @@ the server uses `dependencySource.N.dir` as the extracted source root for that J
 `dependencySource.N.gav` is retained for diagnostics and logging,
 but the JAR path is the lookup key.
 Missing source JARs are recorded with `dependencySource.N.status=missing` and no `dir`.
-Skipped source lookups are recorded with `dependencySource.N.status=skipped`.
 
 JDK sources are separate from dependency sources and are the next manifest slice.
 That slice will use `JAVA_HOME` and the current VM's `java.runtime.version`,

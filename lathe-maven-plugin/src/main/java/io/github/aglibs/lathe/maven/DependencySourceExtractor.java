@@ -12,7 +12,6 @@ import java.nio.file.Path;
 import java.util.Collection;
 import java.util.Map;
 import java.util.stream.Collectors;
-import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.logging.Log;
 import org.eclipse.aether.artifact.Artifact;
 
@@ -20,17 +19,13 @@ final class DependencySourceExtractor {
 
   private static final String SOURCE_MARKER = ".lathe-source.properties";
 
-  private final Log log;
+  private DependencySourceExtractor() {}
 
-  DependencySourceExtractor(final Log log) {
-    this.log = log;
-  }
-
-  void extract(final Collection<DependencySource> sources) throws MojoExecutionException {
+  static void extract(final Collection<DependencySource> sources, final Log log) {
     final Stopwatch t = Stopwatch.start();
     try {
       final Map<Boolean, Long> counts =
-          sources.parallelStream()
+          sources.stream()
               .map(source -> IOUtil.unchecked(() -> extract(source)))
               .collect(
                   Collectors.partitioningBy(SourceExtraction::extracted, Collectors.counting()));
@@ -39,11 +34,11 @@ final class DependencySourceExtractor {
               .formatted(
                   counts.getOrDefault(true, 0L), counts.getOrDefault(false, 0L), t.elapsedMs()));
     } catch (final UncheckedIOException e) {
-      throw new MojoExecutionException("lathe:sync failed to extract source artifacts", e);
+      throw new SyncException("lathe:sync failed to extract source artifacts", e);
     }
   }
 
-  private SourceExtraction extract(final DependencySource source) throws IOException {
+  private static SourceExtraction extract(final DependencySource source) throws IOException {
     final Artifact artifact = source.sourceArtifact();
     final Path sourceJar = artifact.getFile().toPath();
     final Path targetDir = source.dir();
@@ -69,7 +64,7 @@ final class DependencySourceExtractor {
     }
   }
 
-  private boolean isSourceCacheCurrent(
+  private static boolean isSourceCacheCurrent(
       final Path targetDir, final Artifact artifact, final Path sourceJar) throws IOException {
     final Path marker = targetDir.resolve(SOURCE_MARKER);
     if (!Files.exists(marker)) {
@@ -86,8 +81,8 @@ final class DependencySourceExtractor {
             .equals(props.get("sourceJar.modified"));
   }
 
-  private void writeSourceMarker(final Path tempDir, final Artifact artifact, final Path sourceJar)
-      throws IOException {
+  private static void writeSourceMarker(
+      final Path tempDir, final Artifact artifact, final Path sourceJar) throws IOException {
     final ParamStore props = new ParamStore();
     props.set("schema", LatheLayout.SCHEMA_VERSION);
     props.set("gav", ReactorProjects.gav(artifact));

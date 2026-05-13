@@ -19,10 +19,8 @@ class DependencySourceTest {
             "com.example:present:1", Path.of("/repo/present.jar"), Path.of("/cache/present"), null);
     final DependencySource missing =
         DependencySource.missing("com.example:missing:1", Path.of("/repo/missing.jar"));
-    final DependencySource skipped = DependencySource.skipped("com.example:skipped:null");
 
-    assertThat(DependencySource.present(List.of(present, missing, skipped)))
-        .containsExactly(present);
+    assertThat(DependencySource.present(List.of(present, missing))).containsExactly(present);
   }
 
   @Test

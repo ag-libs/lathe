@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Path;
 import java.util.List;
-import org.apache.maven.model.Dependency;
+import java.util.Set;
+import org.apache.maven.artifact.Artifact;
+import org.apache.maven.artifact.DefaultArtifact;
 import org.apache.maven.project.MavenProject;
 import org.eclipse.aether.repository.RemoteRepository;
 import org.junit.jupiter.api.Test;
@@ -22,16 +24,30 @@ class ReactorProjectsTest {
   }
 
   @Test
-  void externalDependencies_filtersReactorProjectsAndDeduplicates() {
+  void externalArtifacts_filtersReactorProjectsAndDeduplicates() {
     final MavenProject core = project("com.example", "core", "1", tmp.resolve("core"));
     final MavenProject app = project("com.example", "app", "1", tmp.resolve("app"));
-    app.getDependencies().add(dependency("com.example", "core", "1"));
-    app.getDependencies().add(dependency("org.example", "external", "1"));
-    app.getDependencies().add(dependency("org.example", "external", "1"));
+    final MavenProject test = project("com.example", "test", "1", tmp.resolve("test"));
+    app.setArtifacts(
+        Set.of(artifact("com.example", "core", "1"), artifact("org.example", "external", "1")));
+    test.setArtifacts(Set.of(artifact("org.example", "external", "1")));
 
-    assertThat(ReactorProjects.externalDependencies(List.of(core, app)).values())
-        .extracting(Dependency::getGroupId, Dependency::getArtifactId, Dependency::getVersion)
+    assertThat(ReactorProjects.externalArtifacts(List.of(core, app, test)).values())
+        .extracting(Artifact::getGroupId, Artifact::getArtifactId, Artifact::getVersion)
         .containsExactly(org.assertj.core.groups.Tuple.tuple("org.example", "external", "1"));
+  }
+
+  @Test
+  void externalArtifacts_usesResolvedArtifactsIncludingTransitives() {
+    final MavenProject app = project("com.example", "app", "1", tmp.resolve("app"));
+    app.setArtifacts(
+        Set.of(artifact("org.example", "direct", "1"), artifact("org.example", "transitive", "2")));
+
+    assertThat(ReactorProjects.externalArtifacts(List.of(app)).values())
+        .extracting(Artifact::getGroupId, Artifact::getArtifactId, Artifact::getVersion)
+        .containsExactly(
+            org.assertj.core.groups.Tuple.tuple("org.example", "direct", "1"),
+            org.assertj.core.groups.Tuple.tuple("org.example", "transitive", "2"));
   }
 
   @Test
@@ -56,14 +72,11 @@ class ReactorProjectsTest {
     return project;
   }
 
-  private static Dependency dependency(
-      final String groupId, final String artifactId, final String version) {
-    final Dependency dependency = new Dependency();
-    dependency.setGroupId(groupId);
-    dependency.setArtifactId(artifactId);
-    dependency.setVersion(version);
-    dependency.setType("jar");
-    return dependency;
+  private Artifact artifact(final String groupId, final String artifactId, final String version) {
+    final Artifact artifact =
+        new DefaultArtifact(groupId, artifactId, version, "compile", "jar", "", null);
+    artifact.setFile(tmp.resolve("%s-%s.jar".formatted(artifactId, version)).toFile());
+    return artifact;
   }
 
   private static final class TestProject extends MavenProject {

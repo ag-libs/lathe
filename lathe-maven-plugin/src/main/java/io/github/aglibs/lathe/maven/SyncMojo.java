@@ -9,6 +9,7 @@ import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
+import org.apache.maven.plugins.annotations.ResolutionScope;
 import org.apache.maven.project.MavenProject;
 import org.eclipse.aether.RepositorySystem;
 
@@ -17,6 +18,7 @@ import org.eclipse.aether.RepositorySystem;
     name = "sync",
     aggregator = true,
     defaultPhase = LifecyclePhase.PROCESS_TEST_CLASSES,
+    requiresDependencyResolution = ResolutionScope.TEST,
     threadSafe = true)
 public final class SyncMojo extends AbstractMojo {
 
@@ -32,17 +34,21 @@ public final class SyncMojo extends AbstractMojo {
       return;
     }
 
-    final Path workspaceRoot = session.getTopLevelProject().getBasedir().toPath();
-    final List<MavenProject> projects = ReactorProjects.sorted(session, workspaceRoot);
-    logModules(workspaceRoot, projects);
-    final DependencySourceResolver resolver =
-        new DependencySourceResolver(repositorySystem, session, getLog());
-    final List<DependencySource> dependencySources =
-        resolver.resolve(
-            ReactorProjects.externalDependencies(projects),
-            ReactorProjects.remoteRepositories(projects));
-    new DependencySourceExtractor(getLog()).extract(DependencySource.present(dependencySources));
-    WorkspaceManifestWriter.write(workspaceRoot, dependencySources, getLog());
+    try {
+      final Path workspaceRoot = session.getTopLevelProject().getBasedir().toPath();
+      final List<MavenProject> projects = ReactorProjects.sorted(session, workspaceRoot);
+      logModules(workspaceRoot, projects);
+      final DependencySourceResolver resolver =
+          new DependencySourceResolver(repositorySystem, session, getLog());
+      final List<DependencySource> dependencySources =
+          resolver.resolve(
+              ReactorProjects.externalArtifacts(projects),
+              ReactorProjects.remoteRepositories(projects));
+      DependencySourceExtractor.extract(DependencySource.present(dependencySources), getLog());
+      WorkspaceManifestWriter.write(workspaceRoot, dependencySources, getLog());
+    } catch (final SyncException e) {
+      throw new MojoExecutionException(e.getMessage(), e);
+    }
   }
 
   private void logModule(final Path workspaceRoot, final MavenProject project) {

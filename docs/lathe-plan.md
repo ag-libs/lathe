@@ -19,7 +19,8 @@ Implemented:
 - `lathe-core` shared layout, property-file, file, and timing helpers.
 - `lathe:init` creates `.lathe/root.marker` and resets `.lathe/workspace.properties`.
 - `lathe:sync` runs at `process-test-classes`, is aggregator/thread-safe, and skips non-top-level projects.
-- `lathe:sync` discovers reactor modules, resolves direct external dependency source JARs through Maven,
+- `lathe:sync` discovers reactor modules, resolves external dependency source JARs for Maven's resolved
+  test-scope reactor artifacts,
   and extracts resolved sources under `~/.cache/lathe/deps/`.
 - `lathe:sync` records dependency source lookup entries in `.lathe/workspace.properties`.
 - Compiler shim writes params files, manages `lathe.lock`, copies class outputs,
@@ -82,9 +83,10 @@ Current implementation:
   `aggregator = true`, and `threadSafe = true`.
 - The goal runs only for the top-level project.
 - It logs reactor modules in deterministic relative-path order.
-- It resolves direct external dependency source JARs through Maven without forcing early reactor dependency resolution.
+- It requires Maven test-scope dependency resolution and resolves source JARs for resolved external reactor artifacts,
+  including transitive dependencies.
 - It extracts resolved source JARs under `~/.cache/lathe/deps/<group path>/<artifact>/<version>/`.
-- Extraction is parallel, zip-slip-safe via `FileUtil.unzip`, and skipped when `.lathe-source.properties`
+- Extraction is sequential, zip-slip-safe via `FileUtil.unzip`, and skipped when `.lathe-source.properties`
   matches the current source JAR path, size, and modified time.
 - Missing source JARs are not sync failures.
 
@@ -121,7 +123,8 @@ Implement in small slices:
 
 ### Phase 2b.3 — Dependency sources
 
-- Current implementation resolves direct external dependency source JAR artifacts through Maven,
+- Current implementation uses Maven's resolved test-scope reactor artifacts,
+  resolves matching dependency source JAR artifacts through Maven,
   extracts available dependency sources under `~/.cache/lathe/deps/<gav-path>/`,
   and treats missing source JARs as non-fatal.
   It uses Maven-style group paths, for example `~/.cache/lathe/deps/com/google/guava/guava/32.0.0-jre/`.
@@ -132,12 +135,10 @@ Implement in small slices:
 - Current implementation records dependency source lookup entries in `.lathe/workspace.properties`.
   Each entry uses `dependencySource.N.jar` for the binary JAR path from Maven,
   `dependencySource.N.gav` for diagnostics and logging,
-  `dependencySource.N.status` for `present`, `missing`, or `skipped`,
+  `dependencySource.N.status` for `present` or `missing`,
   and `dependencySource.N.dir` only when sources are present.
   The server matches `dependencySource.N.jar` against absolute JAR paths from the shim params files,
   then uses `dependencySource.N.dir` as the extracted source root.
-- Still planned: evaluate whether direct dependencies are sufficient,
-  or whether sync should use Maven's resolved transitive artifacts after the manifest slice is in place.
 - Current implementation records `dependencySource.N.status=missing` in the manifest and continues.
   Fail only for internal cache write/corruption errors where Lathe cannot leave a valid old or new cache entry.
 - Current unit tests cover shared unzip success, zip-slip rejection, and checked-IO wrapping.

@@ -24,6 +24,12 @@ grep -q 'dependencySource\.[0-9]*\.status=present' .lathe/workspace.properties \
 grep -q 'dependencySource\.[0-9]*\.dir=' .lathe/workspace.properties \
   || fail "workspace.properties: dependency source dir not written"
 
+grep -Fq 'gav=org.junit.jupiter\:junit-jupiter-api\:5.14.4' .lathe/workspace.properties \
+  || fail "workspace.properties: direct test dependency source entry not written"
+
+grep -Fq 'gav=org.opentest4j\:opentest4j\:1.3.0' .lathe/workspace.properties \
+  || fail "workspace.properties: transitive test dependency source entry not written"
+
 ! grep -q 'dependencySource\.[0-9]*\.sources=' .lathe/workspace.properties \
   || fail "workspace.properties: old dependency source sources key still written"
 

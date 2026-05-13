@@ -7,8 +7,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
+import org.apache.maven.artifact.Artifact;
 import org.apache.maven.execution.MavenSession;
-import org.apache.maven.model.Dependency;
 import org.apache.maven.project.MavenProject;
 import org.eclipse.aether.repository.RemoteRepository;
 
@@ -22,15 +22,17 @@ final class ReactorProjects {
         .toList();
   }
 
-  static Map<String, Dependency> externalDependencies(final List<MavenProject> projects) {
+  static Map<String, Artifact> externalArtifacts(final List<MavenProject> projects) {
     final Set<String> reactorProjects = reactorProjects(projects);
     return projects.stream()
-        .flatMap(project -> project.getDependencies().stream())
-        .filter(dependency -> !reactorProjects.contains(ga(dependency)))
+        .flatMap(project -> project.getArtifacts().stream())
+        .filter(artifact -> artifact.getFile() != null)
+        .filter(artifact -> artifact.getFile().getName().endsWith(".jar"))
+        .filter(artifact -> !reactorProjects.contains(ga(artifact)))
         .collect(
             Collectors.toMap(
-                ReactorProjects::dependencyKey,
-                dependency -> dependency,
+                ReactorProjects::artifactKey,
+                artifact -> artifact,
                 (first, ignored) -> first,
                 TreeMap::new));
   }
@@ -62,18 +64,9 @@ final class ReactorProjects {
         .formatted(project.getGroupId(), project.getArtifactId(), project.getVersion());
   }
 
-  static String dependencySourceGav(final Dependency dependency) {
+  static String gav(final Artifact artifact) {
     return "%s:%s:%s"
-        .formatted(dependency.getGroupId(), dependency.getArtifactId(), dependency.getVersion());
-  }
-
-  static String gav(final Dependency dependency) {
-    return "%s:%s:%s:%s"
-        .formatted(
-            dependency.getGroupId(),
-            dependency.getArtifactId(),
-            dependency.getType(),
-            dependency.getVersion());
+        .formatted(artifact.getGroupId(), artifact.getArtifactId(), artifact.getVersion());
   }
 
   static String gav(final org.eclipse.aether.artifact.Artifact artifact) {
@@ -87,18 +80,18 @@ final class ReactorProjects {
         .collect(Collectors.toSet());
   }
 
-  private static String ga(final Dependency dependency) {
-    return dependency.getGroupId() + ":" + dependency.getArtifactId();
+  private static String ga(final Artifact artifact) {
+    return artifact.getGroupId() + ":" + artifact.getArtifactId();
   }
 
-  private static String dependencyKey(final Dependency dependency) {
+  private static String artifactKey(final Artifact artifact) {
     return "%s:%s:%s:%s:%s"
         .formatted(
-            dependency.getGroupId(),
-            dependency.getArtifactId(),
-            dependency.getType(),
-            dependency.getClassifier(),
-            dependency.getVersion());
+            artifact.getGroupId(),
+            artifact.getArtifactId(),
+            artifact.getType(),
+            artifact.getClassifier(),
+            artifact.getVersion());
   }
 
   private static String repositoryKey(final RemoteRepository repository) {

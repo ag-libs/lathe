@@ -7,7 +7,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.logging.Log;
 
 final class WorkspaceManifestWriter {
@@ -15,8 +14,7 @@ final class WorkspaceManifestWriter {
   private WorkspaceManifestWriter() {}
 
   static void write(
-      final Path workspaceRoot, final List<DependencySource> dependencySources, final Log log)
-      throws MojoExecutionException {
+      final Path workspaceRoot, final List<DependencySource> dependencySources, final Log log) {
     final Path latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
     Path tempFile = null;
     try {
@@ -25,7 +23,7 @@ final class WorkspaceManifestWriter {
       write(tempFile, workspaceRoot, dependencySources);
       FileUtil.moveReplacing(tempFile, latheDir.resolve(LatheLayout.WORKSPACE_PROPERTIES));
     } catch (final IOException e) {
-      throw new MojoExecutionException("lathe:sync failed to write workspace properties", e);
+      throw new SyncException("lathe:sync failed to write workspace properties", e);
     } finally {
       if (tempFile != null) {
         try {
