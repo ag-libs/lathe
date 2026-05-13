@@ -163,7 +163,7 @@ The shim updates `lsp-params-classes.properties` and `lsp-params-test-classes.pr
 The bound `lathe:sync` goal then resolves external dependency source JARs,
 refreshes extracted dependency sources under `~/.cache/lathe/deps/`,
 and writes the minimal dependency-source manifest to `.lathe/workspace.properties`.
-JDK sources, server distribution installation, stale-POM fingerprints, and indexes are later sync slices.
+Server distribution installation, stale-POM fingerprints, and indexes are later sync slices.
 The LS currently reads shim params on startup and registry reload;
 workspace-manifest consumption for dependency source lookup is the next server-side step after the sync output exists.
 
@@ -225,8 +225,10 @@ Never needs to be gitignored.
 │           ├── lsp4j-*.jar
 │           └── google-java-format-*.jar
 ├── current -> servers/0.1.0/
-├── jdk-21/                              ← selected/extracted by lathe:sync, once per JDK version
-│   └── java/lang/String.java
+├── jdks/                                ← JDK sources extracted by lathe:sync, once per vendor/version
+│   └── Eclipse-Adoptium/
+│       └── 21.0.7/
+│           └── java/lang/String.java
 ├── deps/                                ← dependency source jars extracted by lathe:sync
 │   └── com.google.guava/
 │       └── guava/32.0.0-jre/
@@ -304,6 +306,12 @@ dependencySource.0.dir=/home/user/.cache/lathe/deps/com/google/guava/guava/32.0.
 dependencySource.1.jar=/home/user/.m2/repository/org/example/no-sources/1.0/no-sources-1.0.jar
 dependencySource.1.gav=org.example:no-sources:1.0
 dependencySource.1.status=missing
+
+jdk.home=/usr/lib/jvm/temurin-21
+jdk.vendor=Eclipse-Adoptium
+jdk.version=21.0.7
+jdk.sourceStatus=present
+jdk.sourceDir=/home/user/.cache/lathe/jdks/Eclipse-Adoptium/21.0.7
 ```
 
 `lathe:sync` writes the manifest atomically:
@@ -326,11 +334,11 @@ the server uses `dependencySource.N.dir` as the extracted source root for that J
 but the JAR path is the lookup key.
 Missing source JARs are recorded with `dependencySource.N.status=missing` and no `dir`.
 
-JDK sources are separate from dependency sources and are the next manifest slice.
-That slice will use `JAVA_HOME` and the current VM's `java.runtime.version`,
-extract `$JAVA_HOME/lib/src.zip` to a runtime-version cache directory,
-and record the selected path in `jdk.sourceDir`.
-The server will consume `jdk.sourceDir` directly and will not derive or rediscover the JDK source cache path.
+JDK sources are the implemented sync slice after dependency sources.
+`lathe:sync` reads `JAVA_HOME`, extracts `$JAVA_HOME/lib/src.zip` to
+`~/.cache/lathe/jdks/<sanitizedVendor>/<sanitizedVersion>/` when present,
+and records `jdk.home`, `jdk.vendor`, `jdk.version`, `jdk.sourceStatus`, and `jdk.sourceDir` in the manifest.
+The server uses `jdk.sourceDir` directly and does not derive or rediscover the JDK source cache path.
 
 When reactor module metadata is added to the manifest,
 module identity will be the path relative to the workspace root,
@@ -814,11 +822,9 @@ file's cached `CompilationUnitTree`, or run a fresh pass for that file if its ca
 **Reactor types in a module with no open files** —
 locate the source file via the target module's `sourceRoots.N` entries, return the `file://` URI.
 
-**JDK types** — deferred to the next sync slice.
-`lathe:sync` will use the simple `JAVA_HOME` model,
-extract `$JAVA_HOME/lib/src.zip` under `~/.cache/lathe/jdks/<sanitized-runtime-version>/`,
-then record `jdk.sourceStatus` and `jdk.sourceDir` in `.lathe/workspace.properties`.
-The server will use that recorded directory directly.
+**JDK types** — `lathe:sync` writes `jdk.sourceDir` to `.lathe/workspace.properties` when
+`$JAVA_HOME/lib/src.zip` is present.
+Server-side consumption of `jdk.sourceDir` for go-to-definition is the pending step.
 
 **Dependency types** — the JAR path is known from the type entry.
 `lathe:sync` resolves the matching source artifacts through Maven, extracts available source JARs to

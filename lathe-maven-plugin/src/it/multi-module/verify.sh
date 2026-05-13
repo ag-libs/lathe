@@ -36,6 +36,25 @@ grep -Fq 'gav=org.opentest4j\:opentest4j\:1.3.0' .lathe/workspace.properties \
 ! grep -q 'dependencySource\.[0-9]*\.sourceJar=' .lathe/workspace.properties \
   || fail "workspace.properties: old dependency source sourceJar key still written"
 
+# --- JDK sources ---
+
+grep -Fq 'jdk.vendor=' .lathe/workspace.properties \
+  || fail "workspace.properties: jdk.vendor not written"
+
+grep -Fq 'jdk.version=' .lathe/workspace.properties \
+  || fail "workspace.properties: jdk.version not written"
+
+grep -Fq 'jdk.sourceStatus=' .lathe/workspace.properties \
+  || fail "workspace.properties: jdk.sourceStatus not written"
+
+if grep -Fq 'jdk.sourceStatus=present' .lathe/workspace.properties; then
+  grep -Fq 'jdk.sourceDir=' .lathe/workspace.properties \
+    || fail "workspace.properties: jdk.sourceDir not written when sourceStatus=present"
+  jdk_source_dir=$(grep -F 'jdk.sourceDir=' .lathe/workspace.properties | cut -d= -f2-)
+  [ -d "$jdk_source_dir" ] \
+    || fail "jdk source dir does not exist: $jdk_source_dir"
+fi
+
 # --- core module ---
 
 [ -f .lathe/core/lsp-params-classes.properties ] || fail "core: lsp-params-classes.properties not written"

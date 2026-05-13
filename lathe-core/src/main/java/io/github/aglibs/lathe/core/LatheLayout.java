@@ -8,6 +8,7 @@ public final class LatheLayout {
   public static final String CACHE_DIR = ".cache";
   public static final String CACHE_LATHE_DIR = "lathe";
   public static final String CACHE_DEPS_DIR = "deps";
+  public static final String CACHE_JDKS_DIR = "jdks";
   public static final String SCHEMA_VERSION = "1";
   public static final String ROOT_MARKER = "root.marker";
   public static final String WORKSPACE_PROPERTIES = "workspace.properties";

@@ -26,12 +26,7 @@ record DependencySource(String gav, Path jar, String status, Path dir, Artifact 
   public void writeTo(final PrefixedStore store) {
     store.set("gav", gav);
     store.set("status", status);
-    if (jar != null) {
-      store.set("jar", jar.toString());
-    }
-
-    if (dir != null) {
-      store.set("dir", dir.toString());
-    }
+    store.setIfPresent("jar", jar);
+    store.setIfPresent("dir", dir);
   }
 }

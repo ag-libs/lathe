@@ -50,7 +50,9 @@ public final class SyncMojo extends AbstractMojo {
               ReactorProjects.externalArtifacts(projects),
               ReactorProjects.remoteRepositories(projects));
       DependencySourceExtractor.extract(DependencySource.present(dependencySources), getLog());
-      WorkspaceManifestWriter.write(workspaceRoot, dependencySources, getLog());
+      final JdkSource jdkSource = JdkSourceResolver.resolve();
+      JdkSourceExtractor.extract(jdkSource, getLog());
+      WorkspaceManifestWriter.write(workspaceRoot, dependencySources, jdkSource, getLog());
     } catch (final SyncException e) {
       throw new MojoExecutionException(e.getMessage(), e);
     }

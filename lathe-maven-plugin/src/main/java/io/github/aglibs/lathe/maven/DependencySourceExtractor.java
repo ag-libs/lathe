@@ -1,6 +1,5 @@
 package io.github.aglibs.lathe.maven;
 
-import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.ParamStore;
@@ -46,22 +45,9 @@ final class DependencySourceExtractor {
       return new SourceExtraction(false);
     }
 
-    Files.createDirectories(targetDir.getParent());
-    final Path tempDir =
-        Files.createTempDirectory(targetDir.getParent(), targetDir.getFileName() + ".tmp-");
-    try {
-      FileUtil.unzip(sourceJar, tempDir);
-      writeSourceMarker(tempDir, artifact, sourceJar);
-      if (Files.exists(targetDir)) {
-        FileUtil.deleteDir(targetDir);
-      }
-      FileUtil.moveReplacing(tempDir, targetDir);
-      return new SourceExtraction(true);
-    } finally {
-      if (Files.exists(tempDir)) {
-        FileUtil.deleteDir(tempDir);
-      }
-    }
+    CachedZipExtractor.extract(
+        sourceJar, targetDir, tempDir -> writeSourceMarker(tempDir, artifact, sourceJar));
+    return new SourceExtraction(true);
   }
 
   private static boolean isSourceCacheCurrent(

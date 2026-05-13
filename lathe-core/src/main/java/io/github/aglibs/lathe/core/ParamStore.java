@@ -36,6 +36,10 @@ public final class ParamStore {
     public void set(final String name, final String value) {
       ParamStore.this.set(prefix + name, value);
     }
+
+    public void setIfPresent(final String name, final Object value) {
+      ParamStore.this.setIfPresent(prefix + name, value);
+    }
   }
 
   public String get(final String key) {
@@ -45,6 +49,12 @@ public final class ParamStore {
   public void putList(final String key, final List<?> values) {
     IntStream.range(0, values.size())
         .forEach(i -> props.setProperty(key + "." + i, values.get(i).toString()));
+  }
+
+  public void setIfPresent(final String key, final Object value) {
+    if (value != null) {
+      set(key, value.toString());
+    }
   }
 
   public void putListIfPresent(final String key, final List<?> values) {

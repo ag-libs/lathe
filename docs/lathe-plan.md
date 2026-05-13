@@ -23,6 +23,10 @@ Implemented:
   test-scope reactor artifacts,
   and extracts resolved sources under `~/.cache/lathe/deps/`.
 - `lathe:sync` records dependency source lookup entries in `.lathe/workspace.properties`.
+- `lathe:sync` resolves and extracts JDK sources under `~/.cache/lathe/jdks/<sanitizedVendor>/<sanitizedVersion>/`,
+  recording `jdk.home`, `jdk.vendor`, `jdk.version`, `jdk.sourceStatus`, and `jdk.sourceDir` in the manifest.
+- `CachedZipExtractor` is the shared temp-dir-then-atomic-move extraction utility used by both dependency
+  and JDK source extraction.
 - Compiler shim writes params files, manages `lathe.lock`, copies class outputs,
   and copies generated sources.
 - Server supports diagnostics, hover with Javadoc, semantic tokens, formatting,
@@ -39,7 +43,6 @@ Planned next:
   - make server compilation wait for fresh `lathe.lock` files in the target module and direct reactor dependencies;
   - redirect accidental stdout logging away from the LSP pipe before starting stdio transport.
 - Complete `.lathe/workspace.properties` reactor workspace manifest.
-- Exact JDK source sync, after the manifest can record the selected cache path.
 - Maven-managed server distribution under `~/.cache/lathe/servers/<version>/`.
 - LSP stale-POM detection against `workspace.properties`.
 
@@ -141,35 +144,28 @@ Implement in small slices:
   then uses `dependencySource.N.dir` as the extracted source root.
 - Current implementation records `dependencySource.N.status=missing` in the manifest and continues.
   Fail only for internal cache write/corruption errors where Lathe cannot leave a valid old or new cache entry.
-- Current unit tests cover shared unzip success, zip-slip rejection, and checked-IO wrapping.
-- Still planned unit tests: marker-after-success, failed extraction does not leave a partial final directory,
-  and rerun with the same marker skips extraction.
+- Unit tests cover zip-slip rejection and checked-IO wrapping in `FileUtilTest`;
+  marker-after-success, temp-dir cleanup on failure, and skip-on-marker-match in
+  `DependencySourceExtractorTest` and `CachedZipExtractorTest`.
 - Invoker tests assert `dependencySource.N.status=present`, `jar=...`, `gav=...`, and `dir=...`.
   A missing-source test dependency is still planned.
 
-### Phase 2b.4 — JDK sources
+### Phase 2b.4 — JDK sources ✓
 
-- Depends on `.lathe/workspace.properties`;
-  the server should consume the selected JDK source cache path from sync output rather than rediscovering it.
-- Use the simple `JAVA_HOME` model for JDK source selection.
-  `lathe:sync` reads `JAVA_HOME`,
-  assumes it matches the current Maven JVM,
-  reads `java.runtime.version` from the current VM,
-  and looks for `$JAVA_HOME/lib/src.zip`.
-- Extract present JDK sources under `~/.cache/lathe/jdks/<sanitized-runtime-version>/`.
-  The first implementation may treat an existing cache directory for that runtime version as current.
+- Uses the simple `JAVA_HOME` model: reads `JAVA_HOME` from the environment and looks for `$JAVA_HOME/lib/src.zip`.
+- Extracts present JDK sources under `~/.cache/lathe/jdks/<sanitizedVendor>/<sanitizedVersion>/`.
+  An existing cache directory for that vendor/version is treated as current.
 - JDK sources are optional.
-  If `src.zip` is absent, record `jdk.sourceStatus=missing` and continue.
-  If present, record `jdk.home`, `jdk.runtimeVersion`, `jdk.sourceStatus=present`, and `jdk.sourceDir`.
+  If `src.zip` is absent or `JAVA_HOME` is unset, records `jdk.sourceStatus=missing` and continues.
+  If present, records `jdk.home`, `jdk.vendor`, `jdk.version`, `jdk.sourceStatus=present`, and `jdk.sourceDir`.
+  Extraction delegates to `CachedZipExtractor` — temp-dir-then-atomic-move, same as dependency sources.
   The server uses `jdk.sourceDir` directly and does not derive the cache path.
   On startup or registry reload, the server compares the current `JAVA_HOME` path with `jdk.home`;
   when they differ, it prompts the user to run `mvn process-test-classes`.
-- Unit tests: fake `src.zip` extraction, module-prefixed entries such as `java.base/java/lang/String.java`,
-  zip-slip rejection, missing `src.zip` status, runtime-version cache naming,
-  and injected/fake `JAVA_HOME` resolution.
-  Avoid host-JDK-dependent unit tests.
-- Invoker tests should only assert real JDK extraction when the running JDK has `src.zip`;
-  otherwise assert that missing source status is recorded without failing sync.
+- Unit tests: `JdkSourceResolverTest` (missing `JAVA_HOME`, no `src.zip`, present with correct paths and
+  sanitized cache dir); `CachedZipExtractorTest` (temp dir cleanup on failure).
+- Invoker test: asserts `jdk.vendor`, `jdk.version`, and `jdk.sourceStatus` are always written;
+  when `jdk.sourceStatus=present`, asserts `jdk.sourceDir` is written and the directory exists on disk.
 
 ### Phase 2b.5 — Server consumption
 

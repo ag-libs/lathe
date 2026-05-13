@@ -14,13 +14,16 @@ final class WorkspaceManifestWriter {
   private WorkspaceManifestWriter() {}
 
   static void write(
-      final Path workspaceRoot, final List<DependencySource> dependencySources, final Log log) {
+      final Path workspaceRoot,
+      final List<DependencySource> dependencySources,
+      final JdkSource jdkSource,
+      final Log log) {
     final Path latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
     Path tempFile = null;
     try {
       Files.createDirectories(latheDir);
       tempFile = Files.createTempFile(latheDir, LatheLayout.WORKSPACE_PROPERTIES, ".tmp");
-      write(tempFile, workspaceRoot, dependencySources);
+      write(tempFile, workspaceRoot, dependencySources, jdkSource);
       FileUtil.moveReplacing(tempFile, latheDir.resolve(LatheLayout.WORKSPACE_PROPERTIES));
     } catch (final IOException e) {
       throw new SyncException("lathe:sync failed to write workspace properties", e);
@@ -36,11 +39,15 @@ final class WorkspaceManifestWriter {
   }
 
   private static void write(
-      final Path file, final Path workspaceRoot, final List<DependencySource> dependencySources)
+      final Path file,
+      final Path workspaceRoot,
+      final List<DependencySource> dependencySources,
+      final JdkSource jdkSource)
       throws IOException {
     final ParamStore props = new ParamStore();
     props.set("schemaVersion", LatheLayout.SCHEMA_VERSION);
     props.set("workspaceRoot", workspaceRoot.toString());
+    jdkSource.writeTo(props);
     props.putIndexed("dependencySource", dependencySources);
     props.store(file);
   }

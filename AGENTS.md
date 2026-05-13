@@ -153,6 +153,8 @@ Message format: `[operation] module-rel file-rel detail Xms outcome`
 
 ## Testing
 
+- Test method names follow `methodName_condition_result` with underscores:
+  `resolve_missingJavaHome_returnsMissing`, `extract_writesMarkerAfterSuccess`
 - JUnit 5 + AssertJ in all modules
 - Mockito available but **not used in `lathe-compiler`**
 - `@TempDir` for all filesystem tests
