@@ -121,6 +121,18 @@ class DefinitionLocatorTest extends SampleFixture {
     }
 
     @Test
+    void constructorCall() {
+      // "DocHelper" in "new DocHelper()" on line 143 (1-based) = 0-based line 142, col 25
+      final var location = definitionAt(142, 25);
+
+      assertThat(location).isPresent();
+      assertThat(location.get().getUri()).endsWith("Sample.java");
+      // "DocHelper" class at 1-based line 116 = 0-based line 115, col 22
+      assertThat(location.get().getRange().getStart().getLine()).isEqualTo(115);
+      assertThat(location.get().getRange().getStart().getCharacter()).isEqualTo(22);
+    }
+
+    @Test
     void enumConstantArgumentInMethodCall(@TempDir final Path tempDir) throws IOException {
       final var sourceFile = tempDir.resolve("EnumArgument.java");
       Files.writeString(sourceFile, ENUM_ARGUMENT_SOURCE);
@@ -146,6 +158,31 @@ class DefinitionLocatorTest extends SampleFixture {
       assertThat(constantLocation.get().getRange().getStart().getCharacter()).isEqualTo(4);
       assertThat(typeParameter).isNull();
       assertThat(constantParameter).isNull();
+    }
+  }
+
+  @Nested
+  class ExternalSymbol {
+
+    @Test
+    void staticImportMethod_withoutSourceRoots_isEmpty() {
+      // "format" in "return format("result: %s", value)" on line 52 (1-based) = 0-based line 51
+      final var location = definitionAt(51, 11);
+      assertThat(location).isNotPresent();
+    }
+
+    @Test
+    void staticImportField_withoutSourceRoots_isEmpty() {
+      // "ENGLISH" in "return "hello".toUpperCase(ENGLISH)" on line 56 (1-based) = 0-based line 55
+      final var location = definitionAt(55, 31);
+      assertThat(location).isNotPresent();
+    }
+
+    @Test
+    void methodReference_withoutSourceRoots_isEmpty() {
+      // "toUpperCase" in ".map(String::toUpperCase)" on line 85 (1-based) = 0-based line 84
+      final var location = definitionAt(84, 21);
+      assertThat(location).isNotPresent();
     }
   }
 

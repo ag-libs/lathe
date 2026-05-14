@@ -78,4 +78,20 @@ class HoverTest extends SampleFixture {
     assertThat(md).isPresent();
     assertThat(md.get()).contains("String").contains("s");
   }
+
+  @Test
+  void hover_annotationType_showsKindAndName() {
+    // "Logged" in "@Logged("summarize")" on line 81
+    final var md = hoverAt(80, 3);
+    assertThat(md).isPresent();
+    assertThat(md.get()).contains("@interface").contains("Logged");
+  }
+
+  @Test
+  void hover_enumConstant_showsTypeAndName() {
+    // "ACTIVE" in "return Status.ACTIVE" on line 103
+    final var md = hoverAt(102, 18);
+    assertThat(md).isPresent();
+    assertThat(md.get()).contains("Status").contains("ACTIVE");
+  }
 }
