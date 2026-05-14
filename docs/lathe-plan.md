@@ -425,6 +425,8 @@ document outline and workspace type search work.
 - `LATHE_JVM_OPTS` support in launcher; `LATHE_DEBUG=1` overhead logging in shim
 - Neovim config snippet documented (design §9);
   launcher path is user/editor configuration and is not produced by `lathe:init`
+- Neovim integration marks extracted dependency/JDK source buffers read-only and silently attaches the already-running
+  Lathe client for hover, definition, diagnostics, and semantic tokens.
 - Error surface polish: all "Run `mvn ...`"
   messages consistent; missing params per-module vs missing `.lathe/` root distinguished clearly
 - Deploy parent POM, `lathe-compiler`, `lathe-maven-plugin`, `lathe-server` to Maven Central under `io.github.ag-libs`
@@ -443,8 +445,9 @@ lightweight source parse for column precision; `WorkspaceEdit` including import 
 **Signature help** — method body erasing + sentinel inside call parentheses;
 enumerate overloads, highlight current parameter.
 
-**VS Code extension** — ~50 lines TypeScript; starts launcher, connects via LSP;
-documents disabling `vscjava.vscode-java-pack`.
+**VS Code extension** — starts launcher, connects via LSP, documents disabling `vscjava.vscode-java-pack`;
+uses `lathe-source://` virtual read-only documents for extracted dependency/JDK sources,
+initially by translating cache-backed `file://` definition results in the extension.
 
 **Run / Test / Debug** (lathe-run-test-debug.md) —
 `mvnd` delegation, six `workspace/executeCommand` commands, `lathe/sessionEvent` streaming, JDWP handshake, bundled

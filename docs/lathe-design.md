@@ -1145,6 +1145,8 @@ The `current` symlink means this config does not need version-specific edits.
 
 For dependency and JDK source files opened from the extracted cache,
 the Neovim integration should mark buffers read-only at the editor layer rather than changing filesystem permissions.
+It should also attach the already-running Lathe client silently so hover, definition, diagnostics, and semantic tokens
+continue to work without prompting on each dependency source buffer.
 The first version keeps `file://` buffers for maximum compatibility:
 
 ```lua
