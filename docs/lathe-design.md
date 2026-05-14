@@ -850,7 +850,21 @@ The LS uses that state:
 
 Extracted sources are shared across all projects.
 
-All results are plain `file://` URIs — no custom URI scheme, no virtual buffers.
+The baseline protocol result is a plain `file://` URI under the extracted cache directory.
+This keeps Neovim and simple LSP clients working without extension-specific URI support.
+Clients that support virtual read-only documents may present the same target through a Lathe-owned URI scheme:
+
+```text
+lathe-source://dep/io/grpc/grpc-api/1.73.0/io/grpc/DecompressorRegistry.java
+lathe-source://jdk/Amazon.com-Inc./26/java.base/java/util/Collection.java
+```
+
+In the first implementation, `lathe-source://` is only a presentation layer backed by the already-extracted source
+file.
+The VS Code extension can translate returned cache `file://` locations to `lathe-source://` before opening them.
+A later server capability can let clients advertise `lathe.externalSourceUriScheme=lathe-source`,
+after which the server may return `lathe-source://` directly for dependency/JDK source locations.
+The storage model stays unchanged until Lathe can read source archives lazily.
 
 ### Find-references
 
@@ -877,7 +891,7 @@ Modules with no `.lathe/<rel>/classes/` are silently skipped.
 ### Opening dependency source files
 
 `ExternalFileCompiler` handles source files outside any reactor module when their path is under a manifest
-dependency source root or `jdk.sourceDir`.
+dependency source root, `jdk.sourceDir`, or a client virtual URI that resolves to one of those extracted files.
 It owns a reusable `StandardJavaFileManager`, a temp source root, and a `ModuleAnalysis`.
 For dependency sources it sets `CLASS_PATH` from the manifest's per-dependency classpath entries plus the dependency's
 own JAR;
@@ -1129,11 +1143,61 @@ vim.lsp.enable('lathe')
 Static personal configuration — never project-specific, never committed.
 The `current` symlink means this config does not need version-specific edits.
 
+For dependency and JDK source files opened from the extracted cache,
+the Neovim integration should mark buffers read-only at the editor layer rather than changing filesystem permissions.
+The first version keeps `file://` buffers for maximum compatibility:
+
+```lua
+local function lathe_readonly_external_sources(args)
+    local name = vim.fs.normalize(vim.api.nvim_buf_get_name(args.buf))
+    local cache = vim.fs.normalize(vim.fn.expand('~/.cache/lathe'))
+    if vim.startswith(name, cache .. '/deps/') or vim.startswith(name, cache .. '/jdks/') then
+        vim.bo[args.buf].readonly = true
+        vim.bo[args.buf].modifiable = false
+        vim.bo[args.buf].bufhidden = 'hide'
+    end
+end
+
+vim.api.nvim_create_autocmd({ 'BufReadPost', 'BufNewFile' }, {
+    pattern = '*.java',
+    callback = lathe_readonly_external_sources,
+})
+```
+
+A later Neovim plugin may also support `lathe-source://` buffers by resolving URI content through a Lathe command and
+attaching the already-running LSP client.
+That is optional because editor-local read-only `file://` buffers already solve accidental edits.
+
 ### VS Code (post-v1)
 
-A minimal `vscode-lathe` extension (~50 lines TypeScript) starts the launcher script and connects via LSP.
-Surfaces `LATHE_JVM_OPTS` as a VS Code setting.
-Requires disabling `vscjava.vscode-java-pack` — documented as a prerequisite.
+A minimal `vscode-lathe` extension starts the launcher script and connects via LSP.
+It surfaces `LATHE_JVM_OPTS` as a VS Code setting.
+It requires disabling `vscjava.vscode-java-pack` — documented as a prerequisite.
+
+VS Code should present dependency/JDK sources as read-only virtual documents using a `TextDocumentContentProvider`
+registered for `lathe-source`.
+The first implementation can be extension-local and still use the server's current extracted `file://` locations:
+
+1. request definition from Lathe;
+2. if the returned URI is under `~/.cache/lathe/deps/` or `~/.cache/lathe/jdks/`, convert it to `lathe-source://`;
+3. open the virtual document;
+4. map `lathe-source://` back to the extracted file path inside `provideTextDocumentContent()`.
+
+The extension should set the document language to Java after opening the virtual document.
+VS Code treats provider-backed documents as read-only, so no filesystem permission changes are needed.
+
+When this behavior is proven, the extension can advertise a Lathe client capability:
+
+```json
+{
+  "lathe": {
+    "externalSourceUriScheme": "lathe-source"
+  }
+}
+```
+
+The server can then return `lathe-source://` locations directly for supporting clients while continuing to return
+`file://` for clients that do not advertise the capability.
 
 ---
 
