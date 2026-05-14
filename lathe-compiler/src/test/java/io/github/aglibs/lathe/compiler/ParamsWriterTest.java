@@ -3,7 +3,7 @@ package io.github.aglibs.lathe.compiler;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.Json;
-import io.github.aglibs.lathe.core.maven.ModuleConfigData;
+import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;

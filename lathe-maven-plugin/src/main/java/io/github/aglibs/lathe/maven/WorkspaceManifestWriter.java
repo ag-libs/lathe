@@ -3,7 +3,7 @@ package io.github.aglibs.lathe.maven;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
-import io.github.aglibs.lathe.core.maven.WorkspaceManifestData;
+import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.maven.dependency.DependencySource;
 import io.github.aglibs.lathe.maven.jdk.JdkSource;
 import java.io.IOException;
@@ -51,8 +51,8 @@ final class WorkspaceManifestWriter {
         new WorkspaceManifestData(
             LatheLayout.SCHEMA_VERSION,
             workspaceRoot.toString(),
-            jdkSource.toEntry(),
-            dependencySources.stream().map(DependencySource::toEntry).toList());
+            jdkSource.toData(),
+            dependencySources.stream().map(DependencySource::toData).toList());
     Json.write(data, file);
   }
 }

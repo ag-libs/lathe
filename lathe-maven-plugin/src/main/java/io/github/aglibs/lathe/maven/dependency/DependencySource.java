@@ -1,6 +1,6 @@
 package io.github.aglibs.lathe.maven.dependency;
 
-import io.github.aglibs.lathe.core.maven.DependencyEntry;
+import io.github.aglibs.lathe.core.schema.DependencyData;
 import java.nio.file.Path;
 import java.util.List;
 import org.eclipse.aether.artifact.Artifact;
@@ -26,8 +26,8 @@ public record DependencySource(
     return sources.stream().filter(source -> "present".equals(source.status())).toList();
   }
 
-  public DependencyEntry toEntry() {
-    return new DependencyEntry(
+  public DependencyData toData() {
+    return new DependencyData(
         gav,
         jar != null ? jar.toString() : null,
         status,

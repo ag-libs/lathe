@@ -4,9 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
-import io.github.aglibs.lathe.core.maven.DependencyEntry;
-import io.github.aglibs.lathe.core.maven.JdkSourceEntry;
-import io.github.aglibs.lathe.core.maven.WorkspaceManifestData;
+import io.github.aglibs.lathe.core.schema.DependencyData;
+import io.github.aglibs.lathe.core.schema.JdkSourceData;
+import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.module.CompileMode;
 import io.github.aglibs.lathe.server.workspace.ExternalFileCompiler;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
@@ -160,13 +160,13 @@ class ExternalFileCompilerTest {
     Files.createDirectories(latheDir);
     final var deps =
         List.of(
-            new DependencyEntry(
+            new DependencyData(
                 "com.example:uses:1",
                 usesJar.toString(),
                 "present",
                 usesSourceRoot.toString(),
                 usesClasspath.stream().map(Path::toString).toList()),
-            new DependencyEntry(
+            new DependencyData(
                 "com.example:helper:1",
                 helperJar.toString(),
                 "present",
@@ -183,7 +183,7 @@ class ExternalFileCompilerTest {
     Files.createDirectories(latheDir);
     final var deps =
         List.of(
-            new DependencyEntry(
+            new DependencyData(
                 "com.example:uses:1",
                 usesJar.toString(),
                 "present",
@@ -197,7 +197,7 @@ class ExternalFileCompilerTest {
   private void writeJdkWorkspaceManifest(final Path sourceRoot) throws Exception {
     final Path latheDir = tmp.resolve(LatheLayout.LATHE_DIR);
     Files.createDirectories(latheDir);
-    final var jdk = JdkSourceEntry.present("test", "26", Path.of("/opt/jdk"), null, sourceRoot);
+    final var jdk = JdkSourceData.present("test", "26", Path.of("/opt/jdk"), null, sourceRoot);
     Json.write(
         new WorkspaceManifestData(LatheLayout.SCHEMA_VERSION, tmp.toString(), jdk, List.of()),
         latheDir.resolve(LatheLayout.WORKSPACE_JSON));

@@ -1,7 +1,7 @@
 package io.github.aglibs.lathe.compiler;
 
 import io.github.aglibs.lathe.core.Json;
-import io.github.aglibs.lathe.core.maven.ModuleConfigData;
+import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;

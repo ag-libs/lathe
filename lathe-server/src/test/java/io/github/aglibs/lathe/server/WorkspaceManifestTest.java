@@ -4,9 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
-import io.github.aglibs.lathe.core.maven.DependencyEntry;
-import io.github.aglibs.lathe.core.maven.JdkSourceEntry;
-import io.github.aglibs.lathe.core.maven.WorkspaceManifestData;
+import io.github.aglibs.lathe.core.schema.DependencyData;
+import io.github.aglibs.lathe.core.schema.JdkSourceData;
+import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -35,7 +35,7 @@ class WorkspaceManifestTest extends SampleFixture {
         new WorkspaceManifestData(
             LatheLayout.SCHEMA_VERSION,
             tmp.toString(),
-            new JdkSourceEntry(null, "21.0.1", null, null, null, null),
+            new JdkSourceData(null, "21.0.1", null, null, null, null),
             List.of()),
         latheDir.resolve(LatheLayout.WORKSPACE_JSON));
 
@@ -66,7 +66,7 @@ class WorkspaceManifestTest extends SampleFixture {
     final Path sourceFile = sourceDir.resolve("com/example/Self.java");
     writeWorkspaceManifest(
         List.of(
-            new DependencyEntry(
+            new DependencyData(
                 "com.example:self:1",
                 selfJar.toString(),
                 "present",
@@ -95,7 +95,7 @@ class WorkspaceManifestTest extends SampleFixture {
     TestCompiler.compileToJar(jar, tmp.resolve("classes/greeter"), List.of(), greeterSrc);
     writeWorkspaceManifest(
         List.of(
-            new DependencyEntry(
+            new DependencyData(
                 "com.example:greeter:1",
                 jar.toString(),
                 "present",
@@ -111,7 +111,7 @@ class WorkspaceManifestTest extends SampleFixture {
         .hasValue(sourceDir);
   }
 
-  private void writeWorkspaceManifest(final List<DependencyEntry> deps) throws Exception {
+  private void writeWorkspaceManifest(final List<DependencyData> deps) throws Exception {
     final Path latheDir = tmp.resolve(LatheLayout.LATHE_DIR);
     Files.createDirectories(latheDir);
     Json.write(

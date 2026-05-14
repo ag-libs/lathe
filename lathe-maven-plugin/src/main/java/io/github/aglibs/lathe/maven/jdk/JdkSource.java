@@ -1,6 +1,6 @@
 package io.github.aglibs.lathe.maven.jdk;
 
-import io.github.aglibs.lathe.core.maven.JdkSourceEntry;
+import io.github.aglibs.lathe.core.schema.JdkSourceData;
 import java.nio.file.Path;
 
 public record JdkSource(
@@ -23,7 +23,7 @@ public record JdkSource(
     return "present".equals(status);
   }
 
-  public JdkSourceEntry toEntry() {
-    return new JdkSourceEntry(vendor, version, status, home, sourceZip, sourceDir);
+  public JdkSourceData toData() {
+    return new JdkSourceData(vendor, version, status, home, sourceZip, sourceDir);
   }
 }

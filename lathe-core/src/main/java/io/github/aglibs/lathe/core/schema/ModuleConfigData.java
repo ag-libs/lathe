@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.core.maven;
+package io.github.aglibs.lathe.core.schema;
 
 import java.util.List;
 

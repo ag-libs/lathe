@@ -46,6 +46,11 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
       LOG.warning(() -> "[initialize] no rootUri — module registry not available");
     }
 
+    final var capabilities = createCapabilities();
+    return CompletableFuture.completedFuture(new InitializeResult(capabilities));
+  }
+
+  private static ServerCapabilities createCapabilities() {
     final var capabilities = new ServerCapabilities();
     capabilities.setTextDocumentSync(TextDocumentSyncKind.Full);
     capabilities.setHoverProvider(true);
@@ -57,7 +62,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     capabilities.setDocumentFormattingProvider(true);
     capabilities.setDocumentRangeFormattingProvider(true);
     capabilities.setDefinitionProvider(true);
-    return CompletableFuture.completedFuture(new InitializeResult(capabilities));
+    return capabilities;
   }
 
   @Override

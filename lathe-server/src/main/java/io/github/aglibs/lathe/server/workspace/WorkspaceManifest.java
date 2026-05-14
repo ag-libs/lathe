@@ -2,8 +2,8 @@ package io.github.aglibs.lathe.server.workspace;
 
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
-import io.github.aglibs.lathe.core.maven.DependencyEntry;
-import io.github.aglibs.lathe.core.maven.WorkspaceManifestData;
+import io.github.aglibs.lathe.core.schema.DependencyData;
+import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.DefinitionLocator;
 import java.io.IOException;
 import java.net.URI;
@@ -73,11 +73,11 @@ public final class WorkspaceManifest {
 
       final var rawEntries = data.dependencySources();
       final var entries =
-          (rawEntries != null ? rawEntries : List.<DependencyEntry>of())
+          (rawEntries != null ? rawEntries : List.<DependencyData>of())
               .stream().filter(e -> e.jar() != null).toList();
       final var jarToGav =
           entries.stream()
-              .collect(Collectors.toUnmodifiableMap(e -> Path.of(e.jar()), DependencyEntry::gav));
+              .collect(Collectors.toUnmodifiableMap(e -> Path.of(e.jar()), DependencyData::gav));
       final var jarToSourceDir =
           entries.stream()
               .filter(e -> e.dir() != null)

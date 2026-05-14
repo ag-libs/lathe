@@ -25,7 +25,7 @@ class DependencySourceTest {
   }
 
   @Test
-  void toEntry_presentSource_mapsAllFields() {
+  void toData_presentSource_mapsAllFields() {
     final var source =
         DependencySource.present(
             "com.example:lib:1",
@@ -34,7 +34,7 @@ class DependencySourceTest {
             null,
             List.of(Path.of("/repo/dep-a.jar"), Path.of("/repo/dep-b.jar")));
 
-    final var entry = source.toEntry();
+    final var entry = source.toData();
 
     assertThat(entry.gav()).isEqualTo("com.example:lib:1");
     assertThat(entry.jar()).isEqualTo("/repo/lib.jar");
@@ -44,11 +44,11 @@ class DependencySourceTest {
   }
 
   @Test
-  void toEntry_missingSource_hasNullDirAndEmptyClasspath() {
+  void toData_missingSource_hasNullDirAndEmptyClasspath() {
     final var source =
         DependencySource.missing("com.example:absent:1", Path.of("/repo/absent.jar"), List.of());
 
-    final var entry = source.toEntry();
+    final var entry = source.toData();
 
     assertThat(entry.gav()).isEqualTo("com.example:absent:1");
     assertThat(entry.jar()).isEqualTo("/repo/absent.jar");
