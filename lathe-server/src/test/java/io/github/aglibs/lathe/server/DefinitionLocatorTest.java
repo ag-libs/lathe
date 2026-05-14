@@ -138,15 +138,14 @@ class DefinitionLocatorTest extends SampleFixture {
       Files.writeString(sourceFile, ENUM_ARGUMENT_SOURCE);
       final var classDir = tempDir.resolve("classes");
       Files.createDirectories(classDir);
-      final var compiled = TestCompiler.parseWithClasspath(sourceFile, classDir);
+      final var parsed = TestCompiler.parseWithClasspath(sourceFile, classDir);
       final var expression = "statuses.put(\"string\", Status.ACTIVE)";
-      final var typePath = pathAt(compiled.trees(), compiled.cu(), expression, "Status");
-      final var constantPath = pathAt(compiled.trees(), compiled.cu(), expression, "ACTIVE");
-      final var typeLocation = definitionAt(compiled, typePath);
-      final var constantLocation = definitionAt(compiled, constantPath);
-      final var typeParameter = SourceLocator.parameterElementAt(compiled.trees(), typePath);
-      final var constantParameter =
-          SourceLocator.parameterElementAt(compiled.trees(), constantPath);
+      final var typePath = pathAt(parsed.trees(), parsed.cu(), expression, "Status");
+      final var constantPath = pathAt(parsed.trees(), parsed.cu(), expression, "ACTIVE");
+      final var typeLocation = definitionAt(parsed, typePath);
+      final var constantLocation = definitionAt(parsed, constantPath);
+      final var typeParameter = SourceLocator.parameterElementAt(parsed.trees(), typePath);
+      final var constantParameter = SourceLocator.parameterElementAt(parsed.trees(), constantPath);
 
       assertThat(typeLocation).isPresent();
       assertThat(typeLocation.get().getUri()).endsWith("EnumArgument.java");
@@ -203,13 +202,12 @@ class DefinitionLocatorTest extends SampleFixture {
       final var userSrc = tempDir.resolve("User.java");
       Files.writeString(userSrc, "import com.example.Greeter; public class User { Greeter g; }");
 
-      final var compiled = TestCompiler.parseWithClasspath(userSrc, classDir);
-      final var greeterElement =
-          compiled.task().getElements().getTypeElement("com.example.Greeter");
+      final var parsed = TestCompiler.parseWithClasspath(userSrc, classDir);
+      final var greeterElement = parsed.task().getElements().getTypeElement("com.example.Greeter");
 
       final var location =
-          DefinitionLocator.locate(
-              greeterElement, compiled.trees(), List.of(tempDir.resolve("src")), "file:///x");
+          new DefinitionLocator(parsed.parser())
+              .locate(greeterElement, parsed.trees(), List.of(tempDir.resolve("src")), "file:///x");
 
       assertThat(location).isPresent();
       assertThat(location.get().getUri()).endsWith("Greeter.java");
@@ -229,8 +227,8 @@ class DefinitionLocatorTest extends SampleFixture {
       Files.createDirectories(classDir);
       final var userSrc = tempDir.resolve("User.java");
       Files.writeString(userSrc, "public class User { String s; }");
-      final var compiled = TestCompiler.parseWithClasspath(userSrc, classDir);
-      final var stringElement = compiled.task().getElements().getTypeElement("java.lang.String");
+      final var parsed = TestCompiler.parseWithClasspath(userSrc, classDir);
+      final var stringElement = parsed.task().getElements().getTypeElement("java.lang.String");
 
       final var file = DefinitionLocator.findSourceFile(stringElement, List.of(srcRoot));
 
@@ -252,13 +250,13 @@ class DefinitionLocatorTest extends SampleFixture {
       final var userSrc = tempDir.resolve("User.java");
       Files.writeString(userSrc, "public class User { public void run(Greeter g) { g.greet(); } }");
 
-      final var compiled = TestCompiler.parseWithClasspath(userSrc, classDir);
-      final var greeterElement = compiled.task().getElements().getTypeElement("Greeter");
-      assertThat(compiled.trees().getPath(greeterElement)).isNull();
+      final var parsed = TestCompiler.parseWithClasspath(userSrc, classDir);
+      final var greeterElement = parsed.task().getElements().getTypeElement("Greeter");
+      assertThat(parsed.trees().getPath(greeterElement)).isNull();
 
       final var location =
-          DefinitionLocator.locate(
-              greeterElement, compiled.trees(), List.of(srcDir), "file:///irrelevant");
+          new DefinitionLocator(parsed.parser())
+              .locate(greeterElement, parsed.trees(), List.of(srcDir), "file:///irrelevant");
 
       assertThat(location).isPresent();
       assertThat(location.get().getUri()).endsWith("Greeter.java");
@@ -301,17 +299,17 @@ class DefinitionLocatorTest extends SampleFixture {
     final var userSrc = tempDir.resolve("User.java");
     Files.writeString(userSrc, "public class User { public void run(Greeter g) { g.greet(); } }");
 
-    final var compiled = TestCompiler.parseWithClasspath(userSrc, classDir);
-    final var greeterElement = compiled.task().getElements().getTypeElement("Greeter");
+    final var parsed = TestCompiler.parseWithClasspath(userSrc, classDir);
+    final var greeterElement = parsed.task().getElements().getTypeElement("Greeter");
     final var member =
         greeterElement.getEnclosedElements().stream()
             .filter(e -> e.getSimpleName().contentEquals(memberName))
             .findFirst()
             .orElseThrow();
-    assertThat(compiled.trees().getPath(member)).isNull();
+    assertThat(parsed.trees().getPath(member)).isNull();
 
-    return DefinitionLocator.locate(
-        member, compiled.trees(), List.of(srcDir), "file:///irrelevant");
+    return new DefinitionLocator(parsed.parser())
+        .locate(member, parsed.trees(), List.of(srcDir), "file:///irrelevant");
   }
 
   private Optional<Location> definitionAt(final String expression, final String token) {
@@ -323,20 +321,21 @@ class DefinitionLocatorTest extends SampleFixture {
   }
 
   private Optional<Location> definitionAt(final TreePath path) {
-    final var element = SourceLocator.elementAt(trees, path);
-    return DefinitionLocator.locate(
-        element, trees, List.of(), cu.getSourceFile().toUri().toString());
+    final var element = SourceLocator.elementAt(compiled.trees(), path);
+    return new DefinitionLocator(compiled.parser())
+        .locate(
+            element, compiled.trees(), List.of(), compiled.cu().getSourceFile().toUri().toString());
   }
 
   private static Optional<Location> definitionAt(
-      final TestCompiler.CrossFileTask compiled, final TreePath path) {
-    final var element = SourceLocator.elementAt(compiled.trees(), path);
-    return DefinitionLocator.locate(
-        element, compiled.trees(), List.of(), compiled.cu().getSourceFile().toUri().toString());
+      final TestCompiler.ParsedSource parsed, final TreePath path) {
+    final var element = SourceLocator.elementAt(parsed.trees(), path);
+    return new DefinitionLocator(parsed.parser())
+        .locate(element, parsed.trees(), List.of(), parsed.cu().getSourceFile().toUri().toString());
   }
 
   private TreePath pathAt(final String expression, final String token) {
-    return pathAt(trees, cu, expression, token);
+    return pathAt(compiled.trees(), compiled.cu(), expression, token);
   }
 
   private static TreePath pathAt(

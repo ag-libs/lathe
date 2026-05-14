@@ -24,9 +24,13 @@ public final class DefinitionLocator {
 
   private static final Logger LOG = Logger.getLogger(DefinitionLocator.class.getName());
 
-  private DefinitionLocator() {}
+  private final SourceParser parser;
 
-  public static Optional<Location> locate(
+  public DefinitionLocator(final SourceParser parser) {
+    this.parser = parser;
+  }
+
+  public Optional<Location> locate(
       final Element element,
       final Trees trees,
       final List<Path> sourceRoots,
@@ -100,9 +104,9 @@ public final class DefinitionLocator {
         .findFirst();
   }
 
-  public static Position parsePosition(final Path sourceFile, final Element element) {
-    return SourceParser.parse(
-            sourceFile, (trees, cu) -> parseDeclarationPosition(trees, cu, element))
+  public Position parsePosition(final Path sourceFile, final Element element) {
+    return parser
+        .parse(sourceFile, (trees, cu) -> parseDeclarationPosition(trees, cu, element))
         .orElse(new Position(0, 0));
   }
 

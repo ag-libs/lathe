@@ -37,7 +37,7 @@ public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
   private final StandardJavaFileManager fm;
   private final Path td;
   private final List<String> compilerArgs;
-  private final AnalysisEngine analysis = new AnalysisEngine(this);
+  private final AnalysisEngine analysis;
 
   ModuleCompiler(final ModuleConfig config) {
     this.config = config;
@@ -46,6 +46,7 @@ public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
       this.fm = compiler.getStandardFileManager(null, null, null);
       initLocations();
       this.compilerArgs = processPatchModules(config.compilerArgs(), fm, td);
+      this.analysis = new AnalysisEngine(this);
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }
@@ -53,6 +54,11 @@ public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
 
   AnalysisEngine analysis() {
     return analysis;
+  }
+
+  @Override
+  public JavaCompiler compiler() {
+    return compiler;
   }
 
   @Override
@@ -157,7 +163,7 @@ public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
       return new FileAnalysis(trees, cu, semanticTokens);
     }
 
-    return new FileAnalysis(trees, cu, null);
+    return new FileAnalysis(trees, null, null);
   }
 
   private static List<String> processPatchModules(

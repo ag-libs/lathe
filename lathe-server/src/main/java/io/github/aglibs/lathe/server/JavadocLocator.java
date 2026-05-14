@@ -11,9 +11,13 @@ public final class JavadocLocator {
 
   private static final Logger LOG = Logger.getLogger(JavadocLocator.class.getName());
 
-  private JavadocLocator() {}
+  private final SourceParser parser;
 
-  public static Optional<String> locate(
+  public JavadocLocator(final SourceParser parser) {
+    this.parser = parser;
+  }
+
+  public Optional<String> locate(
       final Element element, final Trees trees, final List<Path> sourceRoots) {
     if (element == null) {
       return Optional.empty();
@@ -29,7 +33,7 @@ public final class JavadocLocator {
         .flatMap(
             file -> {
               LOG.fine(() -> "[javadoc] reactor %s → %s".formatted(element, file));
-              return SourceParser.parse(
+              return parser.parse(
                   file,
                   (parsedTrees, cu) -> {
                     final var path = SourceLocator.declarationPath(cu, element);

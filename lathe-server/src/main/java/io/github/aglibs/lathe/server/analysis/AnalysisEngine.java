@@ -6,6 +6,7 @@ import io.github.aglibs.lathe.server.DefinitionLocator;
 import io.github.aglibs.lathe.server.HoverFormatter;
 import io.github.aglibs.lathe.server.JavadocLocator;
 import io.github.aglibs.lathe.server.SourceLocator;
+import io.github.aglibs.lathe.server.SourceParser;
 import io.github.aglibs.lathe.server.module.CompileMode;
 import io.github.aglibs.lathe.server.module.SourceCompiler;
 import io.github.aglibs.lathe.server.tokens.SemanticToken;
@@ -36,10 +37,16 @@ public final class AnalysisEngine {
   private static final Logger LOG = Logger.getLogger(AnalysisEngine.class.getName());
 
   private final SourceCompiler compiler;
+  private final DefinitionLocator definitionLocator;
+  private final JavadocLocator javadocLocator;
   private final Map<String, FileAnalysis> cache = new ConcurrentHashMap<>();
 
   public AnalysisEngine(final SourceCompiler compiler) {
     this.compiler = compiler;
+    final var parsingFm = compiler.compiler().getStandardFileManager(null, null, null);
+    final var parser = new SourceParser(compiler.compiler(), parsingFm);
+    this.definitionLocator = new DefinitionLocator(parser);
+    this.javadocLocator = new JavadocLocator(parser);
   }
 
   public void clearCache() {
@@ -90,7 +97,7 @@ public final class AnalysisEngine {
     final TypeMirror type = cur.path() != null ? cur.ctx().trees().getTypeMirror(cur.path()) : null;
     final var allRoots =
         Stream.concat(sourceRoots.stream(), manifest.externalSourceDirs().stream()).toList();
-    final var javadoc = JavadocLocator.locate(element, cur.ctx().trees(), allRoots).orElse(null);
+    final var javadoc = javadocLocator.locate(element, cur.ctx().trees(), allRoots).orElse(null);
     final var origin = manifest.originLabel(element, compiler.fileManager()).orElse(null);
     LOG.fine(
         () ->
@@ -113,7 +120,7 @@ public final class AnalysisEngine {
     }
 
     final var element = SourceLocator.elementAt(cur.ctx().trees(), cur.path());
-    var result = DefinitionLocator.locate(element, cur.ctx().trees(), sourceRoots, uri);
+    var result = definitionLocator.locate(element, cur.ctx().trees(), sourceRoots, uri);
     if (result.isEmpty()) {
       result =
           manifest
@@ -121,7 +128,7 @@ public final class AnalysisEngine {
               .flatMap(root -> DefinitionLocator.findSourceFile(element, List.of(root)))
               .map(
                   file -> {
-                    final var lspPos = DefinitionLocator.parsePosition(file, element);
+                    final var lspPos = definitionLocator.parsePosition(file, element);
                     return new Location(file.toUri().toString(), new Range(lspPos, lspPos));
                   });
     }

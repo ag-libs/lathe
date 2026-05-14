@@ -64,6 +64,46 @@ class ExternalFileCompilerTest {
   }
 
   @Test
+  void definition_afterHoverTriggersSourceParse_stillFindsExternalType() throws Exception {
+    final Path helperSourceRoot = tmp.resolve("sources/helper");
+    final Path helperSource = helperSourceRoot.resolve("b/Helper.java");
+    Files.createDirectories(helperSource.getParent());
+    Files.writeString(helperSource, "package b; public class Helper {}");
+    final Path helperJar = tmp.resolve("repo/helper.jar");
+    Files.createDirectories(helperJar.getParent());
+    TestCompiler.compileToJar(helperJar, tmp.resolve("classes/helper"), List.of(), helperSource);
+
+    final Path usesSourceRoot = tmp.resolve("sources/uses");
+    final Path usesSource = usesSourceRoot.resolve("a/Uses.java");
+    final String usesContent = "package a; public class Uses { b.Helper helper; }";
+    Files.createDirectories(usesSource.getParent());
+    Files.writeString(usesSource, usesContent);
+    final Path usesJar = tmp.resolve("repo/uses.jar");
+    TestCompiler.compileToJar(usesJar, tmp.resolve("classes/uses"), List.of(helperJar), usesSource);
+
+    writeWorkspaceManifest(
+        usesJar, usesSourceRoot, List.of(helperJar), helperJar, helperSourceRoot);
+    final WorkspaceManifest manifest = WorkspaceManifest.load(tmp);
+    final String usesUri = usesSource.toUri().toString();
+    final Position helperPos =
+        SourceLocator.offsetToPosition(usesContent, usesContent.indexOf("Helper"));
+
+    try (final var compiler = new ExternalFileCompiler(manifest)) {
+      compiler.analysis().compile(usesUri, usesContent, CompileMode.OPEN);
+
+      // Hover over Helper: JavadocLocator finds helperSource via manifest.externalSourceDirs()
+      // and calls parser.parse(helperSource). In the broken state this resets the compilation
+      // FM's CLASS_PATH, causing the subsequent definition lookup to return empty.
+      compiler.analysis().hover(usesUri, helperPos, List.of(), manifest);
+
+      final var definition = compiler.analysis().definition(usesUri, helperPos, List.of(), manifest);
+
+      assertThat(definition).isPresent();
+      assertThat(definition.get().getUri()).isEqualTo(helperSource.toUri().toString());
+    }
+  }
+
+  @Test
   void compile_manifestClasspathRemoved_reportsMissingDependency() throws Exception {
     final Path helperSourceRoot = tmp.resolve("sources/helper");
     final Path helperSource = helperSourceRoot.resolve("b/Helper.java");

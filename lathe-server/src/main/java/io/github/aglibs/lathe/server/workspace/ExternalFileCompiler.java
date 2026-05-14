@@ -38,13 +38,14 @@ public final class ExternalFileCompiler implements SourceCompiler, AutoCloseable
   private final StandardJavaFileManager fm;
   private final Path td;
   private final Set<String> patchedModules = new HashSet<>();
-  private final AnalysisEngine analysis = new AnalysisEngine(this);
+  private final AnalysisEngine analysis;
 
   public ExternalFileCompiler(final WorkspaceManifest manifest) {
     this.manifest = manifest;
     try {
       this.fm = javac.getStandardFileManager(null, null, null);
       this.td = Files.createTempDirectory("lathe-ext-");
+      this.analysis = new AnalysisEngine(this);
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }
@@ -65,6 +66,11 @@ public final class ExternalFileCompiler implements SourceCompiler, AutoCloseable
       analysis.compile(uri, content, CompileMode.OPEN);
     }
     return analysis;
+  }
+
+  @Override
+  public JavaCompiler compiler() {
+    return javac;
   }
 
   @Override

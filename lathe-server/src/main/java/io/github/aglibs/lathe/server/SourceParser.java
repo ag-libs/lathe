@@ -14,18 +14,21 @@ import java.util.logging.Logger;
 import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
-import javax.tools.ToolProvider;
 
-final class SourceParser {
+public final class SourceParser {
 
   private static final Logger LOG = Logger.getLogger(SourceParser.class.getName());
 
-  private SourceParser() {}
+  private final JavaCompiler compiler;
+  private final StandardJavaFileManager fm;
 
-  static <T> Optional<T> parse(
-      final Path sourceFile, final BiFunction<Trees, CompilationUnitTree, T> fn) {
-    final JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-    try (final StandardJavaFileManager fm = compiler.getStandardFileManager(null, null, null)) {
+  public SourceParser(final JavaCompiler compiler, final StandardJavaFileManager fm) {
+    this.compiler = compiler;
+    this.fm = fm;
+  }
+
+  <T> Optional<T> parse(final Path sourceFile, final BiFunction<Trees, CompilationUnitTree, T> fn) {
+    try {
       final JavaFileObject jfo = fm.getJavaFileObjects(sourceFile).iterator().next();
       final JavacTask task = (JavacTask) compiler.getTask(null, fm, null, null, null, List.of(jfo));
       final CompilationUnitTree cu = task.parse().iterator().next();

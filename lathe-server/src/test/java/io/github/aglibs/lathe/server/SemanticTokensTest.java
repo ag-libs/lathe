@@ -30,7 +30,7 @@ class SemanticTokensTest extends SampleFixture {
 
   @BeforeEach
   void scanTokens() throws IOException {
-    tokens = TokenScanner.scan(trees, cu);
+    tokens = TokenScanner.scan(compiled.trees(), compiled.cu());
   }
 
   @Nested

@@ -1,9 +1,6 @@
 package io.github.aglibs.lathe.server;
 
-import com.sun.source.tree.CompilationUnitTree;
-import com.sun.source.util.JavacTask;
 import com.sun.source.util.TreePath;
-import com.sun.source.util.Trees;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -12,23 +9,18 @@ import java.util.Objects;
 import java.util.Optional;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.VariableElement;
-import javax.tools.StandardJavaFileManager;
-import javax.tools.ToolProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Base class that compiles {@code Sample.java} before each test. Subclasses inherit {@link #cu},
- * {@link #trees}, {@link #task}, and {@link #fm} ready for inspection.
+ * Base class that compiles {@code Sample.java} before each test. Subclasses inherit {@link
+ * #compiled} ready for inspection.
  */
 abstract class SampleFixture {
 
   @TempDir Path tmp;
 
-  CompilationUnitTree cu;
-  Trees trees;
-  JavacTask task;
-  StandardJavaFileManager fm;
+  TestCompiler.ParsedSource compiled;
 
   @BeforeEach
   void compile() throws IOException {
@@ -37,35 +29,30 @@ abstract class SampleFixture {
             Objects.requireNonNull(getClass().getResourceAsStream("/Sample.java")).readAllBytes());
     final var sourceFile = tmp.resolve("Sample.java");
     Files.writeString(sourceFile, source);
-
-    final var compiler = ToolProvider.getSystemJavaCompiler();
-    fm = compiler.getStandardFileManager(null, null, null);
-    final var jfo = fm.getJavaFileObjects(sourceFile).iterator().next();
-    task = (JavacTask) compiler.getTask(null, fm, null, null, null, List.of(jfo));
-
-    cu = task.parse().iterator().next();
-    task.analyze();
-    trees = Trees.instance(task);
+    compiled = TestCompiler.parse(sourceFile);
   }
 
   Optional<String> hoverAt(final int line, final int character) {
     final var path = pathAt(line, character);
-    final var element = SourceLocator.elementAt(trees, path);
-    final var type = path != null ? trees.getTypeMirror(path) : null;
-    final var javadoc = JavadocLocator.locate(element, trees, List.of()).orElse(null);
+    final var element = SourceLocator.elementAt(compiled.trees(), path);
+    final var type = path != null ? compiled.trees().getTypeMirror(path) : null;
+    final var javadoc =
+        new JavadocLocator(compiled.parser())
+            .locate(element, compiled.trees(), List.of())
+            .orElse(null);
     return HoverFormatter.format(element, type, javadoc, null);
   }
 
   Element elementAt(final int line, final int character) {
-    return SourceLocator.elementAt(trees, pathAt(line, character));
+    return SourceLocator.elementAt(compiled.trees(), pathAt(line, character));
   }
 
   VariableElement parameterAt(final int line, final int character) {
-    return SourceLocator.parameterElementAt(trees, pathAt(line, character));
+    return SourceLocator.parameterElementAt(compiled.trees(), pathAt(line, character));
   }
 
   TreePath pathAt(final int line, final int character) {
-    final var offset = SourceLocator.toOffset(cu, line, character);
-    return SourceLocator.pathAt(trees, cu, offset);
+    final var offset = SourceLocator.toOffset(compiled.cu(), line, character);
+    return SourceLocator.pathAt(compiled.trees(), compiled.cu(), offset);
   }
 }

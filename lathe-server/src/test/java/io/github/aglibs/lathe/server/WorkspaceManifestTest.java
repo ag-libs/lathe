@@ -23,8 +23,9 @@ class WorkspaceManifestTest extends SampleFixture {
 
   @Test
   void originLabel_jdkType_returnsModuleName() {
-    final var listType = task.getElements().getTypeElement("java.util.List");
-    assertThat(WorkspaceManifest.empty().originLabel(listType, fm)).hasValue("java.base");
+    final var listType = compiled.task().getElements().getTypeElement("java.util.List");
+    assertThat(WorkspaceManifest.empty().originLabel(listType, compiled.fm()))
+        .hasValue("java.base");
   }
 
   @Test
@@ -39,8 +40,8 @@ class WorkspaceManifestTest extends SampleFixture {
             List.of()),
         latheDir.resolve(LatheLayout.WORKSPACE_JSON));
 
-    final var listType = task.getElements().getTypeElement("java.util.List");
-    assertThat(WorkspaceManifest.load(tmp).originLabel(listType, fm))
+    final var listType = compiled.task().getElements().getTypeElement("java.util.List");
+    assertThat(WorkspaceManifest.load(tmp).originLabel(listType, compiled.fm()))
         .hasValue("java.base (JDK 21.0.1)");
   }
 
@@ -51,11 +52,10 @@ class WorkspaceManifestTest extends SampleFixture {
     final Path sampleSrc = tmp.resolve("Sample.java");
     TestCompiler.compileToDir(classDir, sampleSrc);
 
-    final var compiled = TestCompiler.parseWithClasspath(sampleSrc, classDir);
-    final var sampleType = compiled.task().getElements().getTypeElement("Sample");
+    final var parsed = TestCompiler.parseWithClasspath(sampleSrc, classDir);
+    final var sampleType = parsed.task().getElements().getTypeElement("Sample");
 
-    assertThat(WorkspaceManifest.empty().originLabel(sampleType, compiled.fm()))
-        .hasValue("mymodule");
+    assertThat(WorkspaceManifest.empty().originLabel(sampleType, parsed.fm())).hasValue("mymodule");
   }
 
   @Test
@@ -104,10 +104,10 @@ class WorkspaceManifestTest extends SampleFixture {
 
     final Path userSrc = tmp.resolve("User.java");
     Files.writeString(userSrc, "import com.example.Greeter; public class User { Greeter g; }");
-    final var compiled = TestCompiler.parseWithClasspath(userSrc, jar);
-    final var greeterElement = compiled.task().getElements().getTypeElement("com.example.Greeter");
+    final var parsed = TestCompiler.parseWithClasspath(userSrc, jar);
+    final var greeterElement = parsed.task().getElements().getTypeElement("com.example.Greeter");
 
-    assertThat(WorkspaceManifest.load(tmp).externalSourceRoot(greeterElement, compiled.fm()))
+    assertThat(WorkspaceManifest.load(tmp).externalSourceRoot(greeterElement, parsed.fm()))
         .hasValue(sourceDir);
   }
 

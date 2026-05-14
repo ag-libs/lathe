@@ -16,8 +16,13 @@ import javax.tools.ToolProvider;
 
 final class TestCompiler {
 
-  record CrossFileTask(
-      JavacTask task, Trees trees, CompilationUnitTree cu, StandardJavaFileManager fm) {}
+  record ParsedSource(
+      JavacTask task,
+      Trees trees,
+      CompilationUnitTree cu,
+      StandardJavaFileManager fm,
+      JavaCompiler compiler,
+      SourceParser parser) {}
 
   private TestCompiler() {}
 
@@ -53,14 +58,26 @@ final class TestCompiler {
     }
   }
 
-  static CrossFileTask parseWithClasspath(final Path src, final Path dir) throws IOException {
+  static ParsedSource parse(final Path src) throws IOException {
     final JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
     final StandardJavaFileManager fm = compiler.getStandardFileManager(null, null, null);
-    fm.setLocationFromPaths(StandardLocation.CLASS_PATH, List.of(dir));
     final JavacTask task =
         (JavacTask) compiler.getTask(null, fm, null, null, null, fm.getJavaFileObjects(src));
     final CompilationUnitTree cu = task.parse().iterator().next();
     task.analyze();
-    return new CrossFileTask(task, Trees.instance(task), cu, fm);
+    return new ParsedSource(
+        task, Trees.instance(task), cu, fm, compiler, new SourceParser(compiler, fm));
+  }
+
+  static ParsedSource parseWithClasspath(final Path src, final Path classDir) throws IOException {
+    final JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+    final StandardJavaFileManager fm = compiler.getStandardFileManager(null, null, null);
+    fm.setLocationFromPaths(StandardLocation.CLASS_PATH, List.of(classDir));
+    final JavacTask task =
+        (JavacTask) compiler.getTask(null, fm, null, null, null, fm.getJavaFileObjects(src));
+    final CompilationUnitTree cu = task.parse().iterator().next();
+    task.analyze();
+    return new ParsedSource(
+        task, Trees.instance(task), cu, fm, compiler, new SourceParser(compiler, fm));
   }
 }
