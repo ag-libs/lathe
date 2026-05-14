@@ -54,4 +54,28 @@ class HoverTest extends SampleFixture {
     assertThat(md).isPresent();
     assertThat(md.get()).contains("greet").contains("Returns a greeting message");
   }
+
+  @Test
+  void hover_parameter_showsTypeAndName() {
+    // "value" in "Objects.requireNonNull(value)" on line 51
+    final var md = hoverAt(50, 27);
+    assertThat(md).isPresent();
+    assertThat(md.get()).contains("String").contains("value");
+  }
+
+  @Test
+  void hover_localVariable_showsTypeAndName() {
+    // "trimmed" in "var trimmed = input.strip()" on line 90
+    final var md = hoverAt(89, 8);
+    assertThat(md).isPresent();
+    assertThat(md.get()).contains("String").contains("trimmed");
+  }
+
+  @Test
+  void hover_lambdaParameter_showsTypeAndName() {
+    // "s" parameter declaration in ".map(s -> s.toUpperCase())" on line 60
+    final var md = hoverAt(59, 30);
+    assertThat(md).isPresent();
+    assertThat(md.get()).contains("String").contains("s");
+  }
 }

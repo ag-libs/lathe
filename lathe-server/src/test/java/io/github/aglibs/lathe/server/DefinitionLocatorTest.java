@@ -73,6 +73,54 @@ class DefinitionLocatorTest extends SampleFixture {
     }
 
     @Test
+    void fieldReference() {
+      // "name" in "return name" on line 39 (1-based) = 0-based line 38, col 11
+      final var location = definitionAt(38, 11);
+
+      assertThat(location).isPresent();
+      assertThat(location.get().getUri()).endsWith("Sample.java");
+      // "name" field at 1-based line 30 = 0-based line 29, col 23
+      assertThat(location.get().getRange().getStart().getLine()).isEqualTo(29);
+      assertThat(location.get().getRange().getStart().getCharacter()).isEqualTo(23);
+    }
+
+    @Test
+    void staticFieldReference() {
+      // "PREFIX" in "s.startsWith(PREFIX)" on line 84 (1-based) = 0-based line 83, col 34
+      final var location = definitionAt(83, 34);
+
+      assertThat(location).isPresent();
+      assertThat(location.get().getUri()).endsWith("Sample.java");
+      // "PREFIX" field at 1-based line 28 = 0-based line 27, col 30
+      assertThat(location.get().getRange().getStart().getLine()).isEqualTo(27);
+      assertThat(location.get().getRange().getStart().getCharacter()).isEqualTo(30);
+    }
+
+    @Test
+    void secondOverload() {
+      // "overloaded(42)" on line 77 (1-based) = 0-based line 76, col 4
+      final var location = definitionAt(76, 4);
+
+      assertThat(location).isPresent();
+      assertThat(location.get().getUri()).endsWith("Sample.java");
+      // int overload at 1-based line 67 = 0-based line 66, col 13
+      assertThat(location.get().getRange().getStart().getLine()).isEqualTo(66);
+      assertThat(location.get().getRange().getStart().getCharacter()).isEqualTo(13);
+    }
+
+    @Test
+    void genericMethod() {
+      // "identity(\"text\")" on line 78 (1-based) = 0-based line 77, col 4
+      final var location = definitionAt(77, 4);
+
+      assertThat(location).isPresent();
+      assertThat(location.get().getUri()).endsWith("Sample.java");
+      // "identity" at 1-based line 71 = 0-based line 70, col 15
+      assertThat(location.get().getRange().getStart().getLine()).isEqualTo(70);
+      assertThat(location.get().getRange().getStart().getCharacter()).isEqualTo(15);
+    }
+
+    @Test
     void enumConstantArgumentInMethodCall(@TempDir final Path tempDir) throws IOException {
       final var sourceFile = tempDir.resolve("EnumArgument.java");
       Files.writeString(sourceFile, ENUM_ARGUMENT_SOURCE);
