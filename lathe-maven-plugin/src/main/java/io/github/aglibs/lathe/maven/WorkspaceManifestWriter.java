@@ -1,8 +1,9 @@
 package io.github.aglibs.lathe.maven;
 
 import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
-import io.github.aglibs.lathe.core.ParamStore;
+import io.github.aglibs.lathe.core.maven.WorkspaceManifestData;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,17 +23,17 @@ final class WorkspaceManifestWriter {
     Path tempFile = null;
     try {
       Files.createDirectories(latheDir);
-      tempFile = Files.createTempFile(latheDir, LatheLayout.WORKSPACE_PROPERTIES, ".tmp");
+      tempFile = Files.createTempFile(latheDir, LatheLayout.WORKSPACE_JSON, ".tmp");
       write(tempFile, workspaceRoot, dependencySources, jdkSource);
-      FileUtil.moveReplacing(tempFile, latheDir.resolve(LatheLayout.WORKSPACE_PROPERTIES));
+      FileUtil.moveReplacing(tempFile, latheDir.resolve(LatheLayout.WORKSPACE_JSON));
     } catch (final IOException e) {
-      throw new SyncException("lathe:sync failed to write workspace properties", e);
+      throw new SyncException("lathe:sync failed to write workspace manifest", e);
     } finally {
       if (tempFile != null) {
         try {
           Files.deleteIfExists(tempFile);
         } catch (final IOException e) {
-          log.debug("[sync] failed to clean temporary workspace properties", e);
+          log.debug("[sync] failed to clean temporary workspace manifest", e);
         }
       }
     }
@@ -44,11 +45,12 @@ final class WorkspaceManifestWriter {
       final List<DependencySource> dependencySources,
       final JdkSource jdkSource)
       throws IOException {
-    final var props = new ParamStore();
-    props.set("schemaVersion", LatheLayout.SCHEMA_VERSION);
-    props.set("workspaceRoot", workspaceRoot.toString());
-    jdkSource.writeTo(props);
-    props.putIndexed("dependencySource", dependencySources);
-    props.store(file);
+    final var data =
+        new WorkspaceManifestData(
+            LatheLayout.SCHEMA_VERSION,
+            workspaceRoot.toString(),
+            jdkSource.toEntry(),
+            dependencySources.stream().map(DependencySource::toEntry).toList());
+    Json.write(data, file);
   }
 }

@@ -24,7 +24,7 @@ public final class InitMojo extends AbstractMojo {
     try {
       Files.createDirectories(latheDir);
       Files.writeString(latheDir.resolve(LatheLayout.ROOT_MARKER), "");
-      Files.deleteIfExists(latheDir.resolve(LatheLayout.WORKSPACE_PROPERTIES));
+      Files.deleteIfExists(latheDir.resolve(LatheLayout.WORKSPACE_JSON));
     } catch (final IOException e) {
       throw new MojoExecutionException("lathe:init failed", e);
     }

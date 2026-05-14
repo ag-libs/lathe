@@ -28,6 +28,8 @@
     <surefire.version>3.5.5</surefire.version>
     <lsp4j.version>1.0.0</lsp4j.version>
     <plexus-compiler.version>2.16.2</plexus-compiler.version>
+    <gson.version>2.14.0</gson.version>
+    <validcheck.version>0.11.0</validcheck.version>
   </properties>
 
   <dependencyManagement>
@@ -86,6 +88,16 @@
         <artifactId>mockito-core</artifactId>
         <version>${mockito.version}</version>
         <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>com.google.code.gson</groupId>
+        <artifactId>gson</artifactId>
+        <version>${gson.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.github.ag-libs</groupId>
+        <artifactId>validcheck</artifactId>
+        <version>${validcheck.version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>

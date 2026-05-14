@@ -2,12 +2,14 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.maven.DependencyEntry;
+import io.github.aglibs.lathe.core.maven.JdkSourceEntry;
+import io.github.aglibs.lathe.core.maven.WorkspaceManifestData;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.Position;
 import org.junit.jupiter.api.Test;
@@ -153,60 +155,49 @@ class ExternalFileCompilerTest {
       throws Exception {
     final Path latheDir = tmp.resolve(LatheLayout.LATHE_DIR);
     Files.createDirectories(latheDir);
-    final String classpath =
-        IntStream.range(0, usesClasspath.size())
-            .mapToObj(
-                i -> "dependencySource.0.classpath.%d=%s\n".formatted(i, usesClasspath.get(i)))
-            .collect(Collectors.joining());
-    Files.writeString(
-        latheDir.resolve(LatheLayout.WORKSPACE_PROPERTIES),
-        """
-        schemaVersion=1
-        workspaceRoot=%s
-        dependencySource.0.gav=com.example:uses:1
-        dependencySource.0.jar=%s
-        dependencySource.0.status=present
-        dependencySource.0.dir=%s
-        %sdependencySource.1.gav=com.example:helper:1
-        dependencySource.1.jar=%s
-        dependencySource.1.status=present
-        dependencySource.1.dir=%s
-        """
-            .formatted(tmp, usesJar, usesSourceRoot, classpath, helperJar, helperSourceRoot));
+    final var deps =
+        List.of(
+            new DependencyEntry(
+                "com.example:uses:1",
+                usesJar.toString(),
+                "present",
+                usesSourceRoot.toString(),
+                usesClasspath.stream().map(Path::toString).toList()),
+            new DependencyEntry(
+                "com.example:helper:1",
+                helperJar.toString(),
+                "present",
+                helperSourceRoot.toString(),
+                List.of()));
+    Json.write(
+        new WorkspaceManifestData(LatheLayout.SCHEMA_VERSION, tmp.toString(), null, deps),
+        latheDir.resolve(LatheLayout.WORKSPACE_JSON));
   }
 
   private void writeWorkspaceManifestWithoutHelper(final Path usesJar, final Path usesSourceRoot)
       throws Exception {
     final Path latheDir = tmp.resolve(LatheLayout.LATHE_DIR);
     Files.createDirectories(latheDir);
-    Files.writeString(
-        latheDir.resolve(LatheLayout.WORKSPACE_PROPERTIES),
-        """
-        schemaVersion=1
-        workspaceRoot=%s
-        dependencySource.0.gav=com.example:uses:1
-        dependencySource.0.jar=%s
-        dependencySource.0.status=present
-        dependencySource.0.dir=%s
-        """
-            .formatted(tmp, usesJar, usesSourceRoot));
+    final var deps =
+        List.of(
+            new DependencyEntry(
+                "com.example:uses:1",
+                usesJar.toString(),
+                "present",
+                usesSourceRoot.toString(),
+                List.of()));
+    Json.write(
+        new WorkspaceManifestData(LatheLayout.SCHEMA_VERSION, tmp.toString(), null, deps),
+        latheDir.resolve(LatheLayout.WORKSPACE_JSON));
   }
 
   private void writeJdkWorkspaceManifest(final Path sourceRoot) throws Exception {
     final Path latheDir = tmp.resolve(LatheLayout.LATHE_DIR);
     Files.createDirectories(latheDir);
-    Files.writeString(
-        latheDir.resolve(LatheLayout.WORKSPACE_PROPERTIES),
-        """
-        schemaVersion=1
-        workspaceRoot=%s
-        jdk.home=/opt/jdk
-        jdk.vendor=test
-        jdk.version=26
-        jdk.sourceStatus=present
-        jdk.sourceDir=%s
-        """
-            .formatted(tmp, sourceRoot));
+    final var jdk = JdkSourceEntry.present("test", "26", Path.of("/opt/jdk"), null, sourceRoot);
+    Json.write(
+        new WorkspaceManifestData(LatheLayout.SCHEMA_VERSION, tmp.toString(), jdk, List.of()),
+        latheDir.resolve(LatheLayout.WORKSPACE_JSON));
   }
 
   private String jdkProbe(final String className) {

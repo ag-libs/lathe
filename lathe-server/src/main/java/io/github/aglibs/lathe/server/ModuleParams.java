@@ -1,7 +1,8 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
-import io.github.aglibs.lathe.core.ParamStore;
+import io.github.aglibs.lathe.core.maven.ModuleConfig;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
@@ -73,22 +74,25 @@ record ModuleParams(
   }
 
   static ModuleParams load(final Path paramsFile, final Path latheModuleDir) throws IOException {
-    final var store = ParamStore.load(paramsFile);
-    final var genSourcesDir = store.get("generatedSourcesDir");
+    final var config = Json.read(paramsFile, ModuleConfig.class);
     return new ModuleParams(
         latheModuleDir,
-        store.get("sourceTree"),
-        Path.of(store.get("outputDir")),
-        genSourcesDir != null ? Path.of(genSourcesDir) : null,
-        store.readList("sourceRoots").stream().map(Path::of).toList(),
-        store.readList("classpath").stream().map(Path::of).toList(),
-        store.readList("modulepath").stream().map(Path::of).toList(),
-        store.readList("processorPath").stream().map(Path::of).toList(),
-        store.get("release"),
-        store.get("encoding") != null ? store.get("encoding") : "UTF-8",
-        Boolean.parseBoolean(store.get("parameters")),
-        Boolean.parseBoolean(store.get("enablePreview")),
-        store.get("proc"),
-        store.readList("compilerArgs"));
+        config.sourceTree(),
+        Path.of(config.outputDir()),
+        config.generatedSourcesDir() != null ? Path.of(config.generatedSourcesDir()) : null,
+        toPaths(config.sourceRoots()),
+        toPaths(config.classpath()),
+        toPaths(config.modulepath()),
+        toPaths(config.processorPath()),
+        config.release(),
+        config.encoding() != null ? config.encoding() : "UTF-8",
+        config.parameters(),
+        config.enablePreview(),
+        config.proc(),
+        config.compilerArgs() != null ? config.compilerArgs() : List.of());
+  }
+
+  private static List<Path> toPaths(final List<String> strings) {
+    return strings != null ? strings.stream().map(Path::of).toList() : List.of();
   }
 }

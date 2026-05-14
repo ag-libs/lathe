@@ -1,8 +1,9 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
-import io.github.aglibs.lathe.core.ParamStore;
 import io.github.aglibs.lathe.core.maven.DependencyEntry;
+import io.github.aglibs.lathe.core.maven.WorkspaceManifestData;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Files;
@@ -54,25 +55,25 @@ final class WorkspaceManifest {
 
   static WorkspaceManifest load(final Path workspaceRoot) {
     final var file =
-        workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_PROPERTIES);
+        workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
     if (!Files.exists(file)) {
       return empty();
     }
 
     try {
-      final var props = ParamStore.load(file);
-      if (!LatheLayout.SCHEMA_VERSION.equals(props.get("schemaVersion"))) {
+      final var data = Json.read(file, WorkspaceManifestData.class);
+      if (!LatheLayout.SCHEMA_VERSION.equals(data.schemaVersion())) {
         LOG.warning(
             () ->
                 "[manifest] unexpected schemaVersion %s — ignoring"
-                    .formatted(props.get("schemaVersion")));
+                    .formatted(data.schemaVersion()));
         return empty();
       }
 
+      final var rawEntries = data.dependencySources();
       final var entries =
-          props.readIndexed("dependencySource", DependencyEntry::readFrom).stream()
-              .filter(e -> e.jar() != null)
-              .toList();
+          (rawEntries != null ? rawEntries : List.<DependencyEntry>of())
+              .stream().filter(e -> e.jar() != null).toList();
       final var jarToGav =
           entries.stream()
               .collect(Collectors.toUnmodifiableMap(e -> Path.of(e.jar()), DependencyEntry::gav));
@@ -86,21 +87,20 @@ final class WorkspaceManifest {
               .collect(Collectors.toUnmodifiableMap(e -> Path.of(e.dir()), e -> Path.of(e.jar())));
       final var sourceDirToClasspath =
           entries.stream()
-              .filter(e -> e.dir() != null && !e.classpath().isEmpty())
+              .filter(e -> e.dir() != null && e.classpath() != null && !e.classpath().isEmpty())
               .collect(
                   Collectors.toUnmodifiableMap(
                       e -> Path.of(e.dir()), e -> e.classpath().stream().map(Path::of).toList()));
-      final var rawSourceDir = props.get("jdk.sourceDir");
-      final var jdkSourceDir = rawSourceDir != null ? Path.of(rawSourceDir) : null;
+      final var jdk = data.jdk();
       return new WorkspaceManifest(
           jarToGav,
           jarToSourceDir,
           sourceDirToJar,
-          props.get("jdk.version"),
-          jdkSourceDir,
+          jdk != null ? jdk.version() : null,
+          jdk != null ? jdk.sourceDir() : null,
           sourceDirToClasspath);
     } catch (final IOException e) {
-      LOG.log(Level.WARNING, e, () -> "[manifest] failed to load workspace properties");
+      LOG.log(Level.WARNING, e, () -> "[manifest] failed to load workspace manifest");
       return empty();
     }
   }

@@ -1,5 +1,7 @@
 package io.github.aglibs.lathe.maven;
 
+import io.github.aglibs.lathe.core.LatheLayout;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import javax.inject.Inject;
@@ -41,6 +43,11 @@ public final class SyncMojo extends AbstractMojo {
 
     try {
       final var workspaceRoot = session.getTopLevelProject().getBasedir().toPath();
+      if (!Files.exists(
+          workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.ROOT_MARKER))) {
+        getLog().info("[sync] lathe:init has not been run — skipping");
+        return;
+      }
       final var projects = ReactorProjects.sorted(session, workspaceRoot);
       logModules(workspaceRoot, projects);
       final var resolver = new DependencySourceResolver(repositorySystem, session, getLog());

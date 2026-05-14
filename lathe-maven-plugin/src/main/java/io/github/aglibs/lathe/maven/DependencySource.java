@@ -1,15 +1,12 @@
 package io.github.aglibs.lathe.maven;
 
-import io.github.aglibs.lathe.core.ParamStore.PrefixedStore;
-import io.github.aglibs.lathe.core.ParamStore.PrefixedWritable;
 import io.github.aglibs.lathe.core.maven.DependencyEntry;
 import java.nio.file.Path;
 import java.util.List;
 import org.eclipse.aether.artifact.Artifact;
 
 record DependencySource(
-    String gav, Path jar, String status, Path dir, Artifact sourceArtifact, List<Path> classpath)
-    implements PrefixedWritable {
+    String gav, Path jar, String status, Path dir, Artifact sourceArtifact, List<Path> classpath) {
 
   static DependencySource present(
       final String gav,
@@ -28,14 +25,12 @@ record DependencySource(
     return sources.stream().filter(source -> "present".equals(source.status())).toList();
   }
 
-  @Override
-  public void writeTo(final PrefixedStore store) {
-    new DependencyEntry(
-            gav,
-            jar != null ? jar.toString() : null,
-            status,
-            dir != null ? dir.toString() : null,
-            classpath.stream().map(Path::toString).toList())
-        .writeTo(store);
+  DependencyEntry toEntry() {
+    return new DependencyEntry(
+        gav,
+        jar != null ? jar.toString() : null,
+        status,
+        dir != null ? dir.toString() : null,
+        classpath.stream().map(Path::toString).toList());
   }
 }

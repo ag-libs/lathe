@@ -2,15 +2,11 @@ package io.github.aglibs.lathe.maven;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.aglibs.lathe.core.ParamStore;
 import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 class DependencySourceTest {
-
-  @TempDir Path tmp;
 
   @Test
   void present_filtersPresentEntries() {
@@ -28,33 +24,35 @@ class DependencySourceTest {
   }
 
   @Test
-  void writeTo_writesPresentFieldsOnlyWhenAvailable() throws Exception {
-    final ParamStore store = new ParamStore();
-    store.putIndexed(
-        "dependencySource",
-        List.of(
-            DependencySource.present(
-                "com.example:present:1",
-                Path.of("/repo/present.jar"),
-                Path.of("/cache/present"),
-                null,
-                List.of(Path.of("/repo/dep-a.jar"), Path.of("/repo/dep-b.jar"))),
-            DependencySource.missing(
-                "com.example:missing:1", Path.of("/repo/missing.jar"), List.of())));
+  void toEntry_presentSource_mapsAllFields() {
+    final var source =
+        DependencySource.present(
+            "com.example:lib:1",
+            Path.of("/repo/lib.jar"),
+            Path.of("/cache/lib"),
+            null,
+            List.of(Path.of("/repo/dep-a.jar"), Path.of("/repo/dep-b.jar")));
 
-    final Path file = tmp.resolve("workspace.properties");
-    store.store(file);
+    final var entry = source.toEntry();
 
-    final ParamStore loaded = ParamStore.load(file);
-    assertThat(loaded.get("dependencySource.0.gav")).isEqualTo("com.example:present:1");
-    assertThat(loaded.get("dependencySource.0.jar")).isEqualTo("/repo/present.jar");
-    assertThat(loaded.get("dependencySource.0.status")).isEqualTo("present");
-    assertThat(loaded.get("dependencySource.0.dir")).isEqualTo("/cache/present");
-    assertThat(loaded.get("dependencySource.0.classpath.0")).isEqualTo("/repo/dep-a.jar");
-    assertThat(loaded.get("dependencySource.0.classpath.1")).isEqualTo("/repo/dep-b.jar");
-    assertThat(loaded.get("dependencySource.1.gav")).isEqualTo("com.example:missing:1");
-    assertThat(loaded.get("dependencySource.1.jar")).isEqualTo("/repo/missing.jar");
-    assertThat(loaded.get("dependencySource.1.status")).isEqualTo("missing");
-    assertThat(loaded.get("dependencySource.1.dir")).isNull();
+    assertThat(entry.gav()).isEqualTo("com.example:lib:1");
+    assertThat(entry.jar()).isEqualTo("/repo/lib.jar");
+    assertThat(entry.status()).isEqualTo("present");
+    assertThat(entry.dir()).isEqualTo("/cache/lib");
+    assertThat(entry.classpath()).containsExactly("/repo/dep-a.jar", "/repo/dep-b.jar");
+  }
+
+  @Test
+  void toEntry_missingSource_hasNullDirAndEmptyClasspath() {
+    final var source =
+        DependencySource.missing("com.example:absent:1", Path.of("/repo/absent.jar"), List.of());
+
+    final var entry = source.toEntry();
+
+    assertThat(entry.gav()).isEqualTo("com.example:absent:1");
+    assertThat(entry.jar()).isEqualTo("/repo/absent.jar");
+    assertThat(entry.status()).isEqualTo("missing");
+    assertThat(entry.dir()).isNull();
+    assertThat(entry.classpath()).isEmpty();
   }
 }

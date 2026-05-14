@@ -2,8 +2,8 @@ package io.github.aglibs.lathe.maven;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
-import io.github.aglibs.lathe.core.ParamStore;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -24,10 +24,14 @@ class DependencySourceExtractorTest {
 
     DependencySourceExtractor.extract(List.of(source), new SystemStreamLog());
 
-    final ParamStore marker = ParamStore.load(source.dir().resolve(".lathe-source.properties"));
-    assertThat(marker.get("schema")).isEqualTo(LatheLayout.SCHEMA_VERSION);
-    assertThat(marker.get("gav")).isEqualTo("com.example:dep:1.0");
-    assertThat(marker.get("sourceJar")).isEqualTo(source.jar().toString());
+    final var content = Files.readString(source.dir().resolve(".lathe-source.json"));
+    assertThat(content).contains("\"schema\"").contains("\"" + LatheLayout.SCHEMA_VERSION + "\"");
+    assertThat(content).contains("\"gav\"").contains("com.example:dep:1.0");
+    assertThat(content).contains("\"sourceJar\"");
+    final var marker = Json.fromJson(content, MarkerSnapshot.class);
+    assertThat(marker.schema()).isEqualTo(LatheLayout.SCHEMA_VERSION);
+    assertThat(marker.gav()).isEqualTo("com.example:dep:1.0");
+    assertThat(marker.sourceJar()).isEqualTo(source.jar().toString());
   }
 
   @Test
@@ -49,4 +53,6 @@ class DependencySourceExtractorTest {
     return DependencySource.present(
         "com.example:dep:1.0", jar, tmp.resolve("cache/dep"), artifact, List.of());
   }
+
+  private record MarkerSnapshot(String schema, String gav, String sourceJar) {}
 }

@@ -1,6 +1,6 @@
 package io.github.aglibs.lathe.maven;
 
-import io.github.aglibs.lathe.core.ParamStore;
+import io.github.aglibs.lathe.core.maven.JdkSourceEntry;
 import java.nio.file.Path;
 
 record JdkSource(
@@ -23,11 +23,7 @@ record JdkSource(
     return "present".equals(status);
   }
 
-  void writeTo(final ParamStore props) {
-    props.setIfPresent("jdk.home", home);
-    props.set("jdk.vendor", vendor);
-    props.set("jdk.version", version);
-    props.set("jdk.sourceStatus", status);
-    props.setIfPresent("jdk.sourceDir", sourceDir);
+  JdkSourceEntry toEntry() {
+    return new JdkSourceEntry(vendor, version, status, home, sourceZip, sourceDir);
   }
 }

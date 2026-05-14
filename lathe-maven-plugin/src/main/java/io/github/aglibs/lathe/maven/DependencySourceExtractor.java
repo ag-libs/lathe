@@ -1,8 +1,8 @@
 package io.github.aglibs.lathe.maven;
 
 import io.github.aglibs.lathe.core.IOUtil;
+import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
-import io.github.aglibs.lathe.core.ParamStore;
 import io.github.aglibs.lathe.core.Stopwatch;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -16,7 +16,7 @@ import org.eclipse.aether.artifact.Artifact;
 
 final class DependencySourceExtractor {
 
-  private static final String SOURCE_MARKER = ".lathe-source.properties";
+  private static final String SOURCE_MARKER = ".lathe-source.json";
 
   private DependencySourceExtractor() {}
 
@@ -56,27 +56,32 @@ final class DependencySourceExtractor {
     if (!Files.exists(marker)) {
       return false;
     }
-
-    final var props = ParamStore.load(marker);
-
-    return LatheLayout.SCHEMA_VERSION.equals(props.get("schema"))
-        && ReactorProjects.gav(artifact).equals(props.get("gav"))
-        && sourceJar.toString().equals(props.get("sourceJar"))
-        && Long.toString(Files.size(sourceJar)).equals(props.get("sourceJar.size"))
-        && Long.toString(Files.getLastModifiedTime(sourceJar).toMillis())
-            .equals(props.get("sourceJar.modified"));
+    try {
+      final var m = Json.read(marker, SourceMarker.class);
+      return LatheLayout.SCHEMA_VERSION.equals(m.schema())
+          && ReactorProjects.gav(artifact).equals(m.gav())
+          && sourceJar.toString().equals(m.sourceJar())
+          && Files.size(sourceJar) == m.sourceJarSize()
+          && Files.getLastModifiedTime(sourceJar).toMillis() == m.sourceJarModified();
+    } catch (final IOException e) {
+      return false;
+    }
   }
 
   private static void writeSourceMarker(
       final Path tempDir, final Artifact artifact, final Path sourceJar) throws IOException {
-    final var props = new ParamStore();
-    props.set("schema", LatheLayout.SCHEMA_VERSION);
-    props.set("gav", ReactorProjects.gav(artifact));
-    props.set("sourceJar", sourceJar.toString());
-    props.set("sourceJar.size", Long.toString(Files.size(sourceJar)));
-    props.set("sourceJar.modified", Long.toString(Files.getLastModifiedTime(sourceJar).toMillis()));
-    props.store(tempDir.resolve(SOURCE_MARKER));
+    final var marker =
+        new SourceMarker(
+            LatheLayout.SCHEMA_VERSION,
+            ReactorProjects.gav(artifact),
+            sourceJar.toString(),
+            Files.size(sourceJar),
+            Files.getLastModifiedTime(sourceJar).toMillis());
+    Json.write(marker, tempDir.resolve(SOURCE_MARKER));
   }
+
+  private record SourceMarker(
+      String schema, String gav, String sourceJar, long sourceJarSize, long sourceJarModified) {}
 
   private record SourceExtraction(boolean extracted) {}
 }

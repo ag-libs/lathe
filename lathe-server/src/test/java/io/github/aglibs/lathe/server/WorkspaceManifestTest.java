@@ -2,7 +2,11 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.maven.DependencyEntry;
+import io.github.aglibs.lathe.core.maven.JdkSourceEntry;
+import io.github.aglibs.lathe.core.maven.WorkspaceManifestData;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -26,9 +30,13 @@ class WorkspaceManifestTest extends SampleFixture {
   void originLabel_jdkType_withVersionInManifest_includesVersion() throws Exception {
     final Path latheDir = tmp.resolve(LatheLayout.LATHE_DIR);
     Files.createDirectories(latheDir);
-    Files.writeString(
-        latheDir.resolve(LatheLayout.WORKSPACE_PROPERTIES),
-        "schemaVersion=1\njdk.version=21.0.1\n");
+    Json.write(
+        new WorkspaceManifestData(
+            LatheLayout.SCHEMA_VERSION,
+            tmp.toString(),
+            new JdkSourceEntry(null, "21.0.1", null, null, null, null),
+            List.of()),
+        latheDir.resolve(LatheLayout.WORKSPACE_JSON));
 
     final var listType = task.getElements().getTypeElement("java.util.List");
     assertThat(WorkspaceManifest.load(tmp).originLabel(listType, fm))
@@ -56,14 +64,13 @@ class WorkspaceManifestTest extends SampleFixture {
     final Path sourceDir = tmp.resolve("sources/self");
     final Path sourceFile = sourceDir.resolve("com/example/Self.java");
     writeWorkspaceManifest(
-        """
-        dependencySource.0.gav=com.example:self:1
-        dependencySource.0.jar=%s
-        dependencySource.0.status=present
-        dependencySource.0.dir=%s
-        dependencySource.0.classpath.0=%s
-        """
-            .formatted(selfJar, sourceDir, transitiveJar));
+        List.of(
+            new DependencyEntry(
+                "com.example:self:1",
+                selfJar.toString(),
+                "present",
+                sourceDir.toString(),
+                List.of(transitiveJar.toString()))));
     Files.createDirectories(sourceFile.getParent());
     Files.writeString(sourceFile, "package com.example; public class Self {}");
 
@@ -86,13 +93,13 @@ class WorkspaceManifestTest extends SampleFixture {
     Files.createDirectories(jar.getParent());
     TestCompiler.compileToJar(jar, tmp.resolve("classes/greeter"), List.of(), greeterSrc);
     writeWorkspaceManifest(
-        """
-        dependencySource.0.gav=com.example:greeter:1
-        dependencySource.0.jar=%s
-        dependencySource.0.status=present
-        dependencySource.0.dir=%s
-        """
-            .formatted(jar, sourceDir));
+        List.of(
+            new DependencyEntry(
+                "com.example:greeter:1",
+                jar.toString(),
+                "present",
+                sourceDir.toString(),
+                List.of())));
 
     final Path userSrc = tmp.resolve("User.java");
     Files.writeString(userSrc, "import com.example.Greeter; public class User { Greeter g; }");
@@ -103,16 +110,11 @@ class WorkspaceManifestTest extends SampleFixture {
         .hasValue(sourceDir);
   }
 
-  private void writeWorkspaceManifest(final String entries) throws Exception {
+  private void writeWorkspaceManifest(final List<DependencyEntry> deps) throws Exception {
     final Path latheDir = tmp.resolve(LatheLayout.LATHE_DIR);
     Files.createDirectories(latheDir);
-    Files.writeString(
-        latheDir.resolve(LatheLayout.WORKSPACE_PROPERTIES),
-        """
-        schemaVersion=1
-        workspaceRoot=%s
-        %s
-        """
-            .formatted(tmp, entries));
+    Json.write(
+        new WorkspaceManifestData(LatheLayout.SCHEMA_VERSION, tmp.toString(), null, deps),
+        latheDir.resolve(LatheLayout.WORKSPACE_JSON));
   }
 }

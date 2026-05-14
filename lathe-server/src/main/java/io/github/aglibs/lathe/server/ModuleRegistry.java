@@ -38,7 +38,7 @@ final class ModuleRegistry implements AutoCloseable {
     try (final var stream = Files.walk(latheDir)) {
       stream
           .filter(p -> p.getFileName().toString().startsWith("lsp-params-"))
-          .filter(p -> p.getFileName().toString().endsWith(".properties"))
+          .filter(p -> p.getFileName().toString().endsWith(".json"))
           .forEach(
               paramsFile -> {
                 try {

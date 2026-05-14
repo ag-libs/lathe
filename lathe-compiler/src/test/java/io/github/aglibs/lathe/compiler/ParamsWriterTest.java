@@ -2,7 +2,8 @@ package io.github.aglibs.lathe.compiler;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.aglibs.lathe.core.ParamStore;
+import io.github.aglibs.lathe.core.Json;
+import io.github.aglibs.lathe.core.maven.ModuleConfig;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -15,7 +16,7 @@ class ParamsWriterTest {
   @TempDir Path tmp;
 
   @Test
-  void write_producesCorrectProperties() throws Exception {
+  void write_producesCorrectJson() throws Exception {
     final var moduleRoot = tmp.resolve("module-a");
     final var outputDir = moduleRoot.resolve("target/classes");
     final var latheModuleDir = tmp.resolve(".lathe/module-a");
@@ -31,21 +32,19 @@ class ParamsWriterTest {
 
     ParamsWriter.write(config, latheModuleDir);
 
-    final var store = ParamStore.load(latheModuleDir.resolve("lsp-params-classes.properties"));
-    assertThat(store.get("sourceTree")).isEqualTo("classes");
-    assertThat(store.get("outputDir")).isEqualTo(outputDir.toString());
-    assertThat(store.get("release")).isEqualTo("25");
-    assertThat(store.get("encoding")).isEqualTo("UTF-8");
-    assertThat(store.readList("sourceRoots"))
+    final var result =
+        Json.read(latheModuleDir.resolve("lsp-params-classes.json"), ModuleConfig.class);
+    assertThat(result.sourceTree()).isEqualTo("classes");
+    assertThat(result.outputDir()).isEqualTo(outputDir.toString());
+    assertThat(result.release()).isEqualTo("25");
+    assertThat(result.encoding()).isEqualTo("UTF-8");
+    assertThat(result.sourceRoots())
         .containsExactly(moduleRoot.resolve("src/main/java").toString());
-    assertThat(store.readList("classpath")).containsExactly("/root/.m2/repository/guava.jar");
-    assertThat(store.get("formatVersion")).isNull();
-    assertThat(store.get("projectDir")).isNull();
-    assertThat(store.get("buildDir")).isNull();
+    assertThat(result.classpath()).containsExactly("/root/.m2/repository/guava.jar");
   }
 
   @Test
-  void write_omitsEmptyOptionalSections() throws Exception {
+  void write_omitsNullForMissingOptionalFields() throws Exception {
     final var moduleRoot = tmp.resolve("module-c");
     final var latheModuleDir = tmp.resolve(".lathe/module-c");
     Files.createDirectories(latheModuleDir);
@@ -56,16 +55,17 @@ class ParamsWriterTest {
 
     ParamsWriter.write(config, latheModuleDir);
 
-    final var store = ParamStore.load(latheModuleDir.resolve("lsp-params-classes.properties"));
-    assertThat(store.readList("classpath")).isEmpty();
-    assertThat(store.readList("modulepath")).isEmpty();
-    assertThat(store.readList("processorPath")).isEmpty();
-    assertThat(store.get("proc")).isNull();
-    assertThat(store.get("release")).isNull();
+    final var result =
+        Json.read(latheModuleDir.resolve("lsp-params-classes.json"), ModuleConfig.class);
+    assertThat(result.classpath()).isEmpty();
+    assertThat(result.modulepath()).isEmpty();
+    assertThat(result.processorPath()).isEmpty();
+    assertThat(result.proc()).isNull();
+    assertThat(result.release()).isNull();
   }
 
   @Test
-  void write_indexedListsAreCorrectlyNumbered() throws Exception {
+  void write_classpathOrderIsPreserved() throws Exception {
     final var moduleRoot = tmp.resolve("module-d");
     final var latheModuleDir = tmp.resolve(".lathe/module-d");
     Files.createDirectories(latheModuleDir);
@@ -79,8 +79,9 @@ class ParamsWriterTest {
 
     ParamsWriter.write(config, latheModuleDir);
 
-    final var store = ParamStore.load(latheModuleDir.resolve("lsp-params-classes.properties"));
-    assertThat(store.readList("classpath"))
+    final var result =
+        Json.read(latheModuleDir.resolve("lsp-params-classes.json"), ModuleConfig.class);
+    assertThat(result.classpath())
         .containsExactly("/path/to/dep-a.jar", "/path/to/dep-b.jar", "/path/to/dep-c.jar");
   }
 
@@ -98,13 +99,14 @@ class ParamsWriterTest {
 
     ParamsWriter.write(config, latheModuleDir);
 
-    final var store = ParamStore.load(latheModuleDir.resolve("lsp-params-classes.properties"));
-    assertThat(store.readList("compilerArgs"))
+    final var result =
+        Json.read(latheModuleDir.resolve("lsp-params-classes.json"), ModuleConfig.class);
+    assertThat(result.compilerArgs())
         .containsExactly("--module-version", "27.0.0-SNAPSHOT", "-Werror");
   }
 
   @Test
-  void write_fileHasNoTimestampAndSortedKeys() throws Exception {
+  void write_producesReadableJsonFile() throws Exception {
     final var moduleRoot = tmp.resolve("module-f");
     final var latheModuleDir = tmp.resolve(".lathe/module-f");
     Files.createDirectories(latheModuleDir);
@@ -117,12 +119,11 @@ class ParamsWriterTest {
 
     ParamsWriter.write(config, latheModuleDir);
 
-    final var lines =
-        Files.readAllLines(latheModuleDir.resolve("lsp-params-classes.properties")).stream()
-            .filter(l -> !l.isBlank())
-            .toList();
-    assertThat(lines).noneMatch(l -> l.startsWith("#"));
-    final var keys = lines.stream().map(l -> l.split("=", 2)[0]).toList();
-    assertThat(keys).isSortedAccordingTo(String::compareTo);
+    final var jsonFile = latheModuleDir.resolve("lsp-params-classes.json");
+    assertThat(Files.exists(jsonFile)).isTrue();
+    final var content = Files.readString(jsonFile);
+    assertThat(content).contains("\"sourceTree\"").contains("\"classpath\"");
+    final var result = Json.read(jsonFile, ModuleConfig.class);
+    assertThat(result.classpath()).containsExactly("/b.jar", "/a.jar");
   }
 }
