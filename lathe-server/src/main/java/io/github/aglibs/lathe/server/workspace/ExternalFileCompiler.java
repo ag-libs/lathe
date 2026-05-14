@@ -1,10 +1,16 @@
-package io.github.aglibs.lathe.server;
+package io.github.aglibs.lathe.server.workspace;
 
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Stopwatch;
+import io.github.aglibs.lathe.server.analysis.AnalysisEngine;
+import io.github.aglibs.lathe.server.analysis.CompilationResult;
+import io.github.aglibs.lathe.server.analysis.FileAnalysis;
+import io.github.aglibs.lathe.server.module.CompileMode;
+import io.github.aglibs.lathe.server.module.SourceCompiler;
+import io.github.aglibs.lathe.server.tokens.TokenScanner;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
@@ -23,7 +29,7 @@ import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
 import javax.tools.ToolProvider;
 
-final class ExternalFileCompiler implements SourceCompiler, AutoCloseable {
+public final class ExternalFileCompiler implements SourceCompiler, AutoCloseable {
 
   private static final Logger LOG = Logger.getLogger(ExternalFileCompiler.class.getName());
 
@@ -34,7 +40,7 @@ final class ExternalFileCompiler implements SourceCompiler, AutoCloseable {
   private final Set<String> patchedModules = new HashSet<>();
   private final AnalysisEngine analysis = new AnalysisEngine(this);
 
-  ExternalFileCompiler(final WorkspaceManifest manifest) {
+  public ExternalFileCompiler(final WorkspaceManifest manifest) {
     this.manifest = manifest;
     try {
       this.fm = javac.getStandardFileManager(null, null, null);
@@ -44,16 +50,16 @@ final class ExternalFileCompiler implements SourceCompiler, AutoCloseable {
     }
   }
 
-  void setManifest(final WorkspaceManifest manifest) {
+  public void setManifest(final WorkspaceManifest manifest) {
     this.manifest = manifest;
     analysis.clearCache();
   }
 
-  AnalysisEngine analysis() {
+  public AnalysisEngine analysis() {
     return analysis;
   }
 
-  AnalysisEngine ensureCompiled(final String uri) throws IOException {
+  public AnalysisEngine ensureCompiled(final String uri) throws IOException {
     if (!analysis.isCached(uri)) {
       final var content = Files.readString(Path.of(URI.create(uri)));
       analysis.compile(uri, content, CompileMode.OPEN);
@@ -94,7 +100,8 @@ final class ExternalFileCompiler implements SourceCompiler, AutoCloseable {
     final Trees trees = Trees.instance(task);
     if (cu != null) {
       final var t = Stopwatch.start();
-      final List<SemanticToken> tokens = TokenScanner.scan(trees, cu);
+      final List<io.github.aglibs.lathe.server.tokens.SemanticToken> tokens =
+          TokenScanner.scan(trees, cu);
       LOG.fine(
           () ->
               "[external] %s compiled %d tokens %dms".formatted(uri, tokens.size(), t.elapsedMs()));

@@ -9,11 +9,11 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;
 
-final class HoverFormatter {
+public final class HoverFormatter {
 
   private HoverFormatter() {}
 
-  static Optional<String> format(
+  public static Optional<String> format(
       final Element element, final TypeMirror type, final String javadoc, final String origin) {
     if (element == null && type == null) {
       return Optional.empty();
@@ -54,7 +54,7 @@ final class HoverFormatter {
     return Optional.of(sb.toString());
   }
 
-  static String formatParameter(final VariableElement param) {
+  public static String formatParameter(final VariableElement param) {
     return "```java\n" + param.asType() + " " + param.getSimpleName() + "\n```";
   }
 

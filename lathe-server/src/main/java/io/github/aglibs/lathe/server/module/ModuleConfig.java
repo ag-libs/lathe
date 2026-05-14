@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.server;
+package io.github.aglibs.lathe.server.module;
 
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
@@ -7,7 +7,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 
-record ModuleConfig(
+public record ModuleConfig(
     Path moduleDir,
     String sourceTree,
     Path outputDir,
@@ -23,23 +23,23 @@ record ModuleConfig(
     String proc,
     List<String> compilerArgs) {
 
-  Path latheClassesDir() {
+  public Path latheClassesDir() {
     return moduleDir.resolve(sourceTree);
   }
 
-  Path generatedSourcesDir() {
+  public Path generatedSourcesDir() {
     return moduleDir.resolve(LatheLayout.GENERATED_SOURCES);
   }
 
-  List<Path> remappedClasspath() {
+  public List<Path> remappedClasspath() {
     return remapped(classpath);
   }
 
-  List<Path> remappedModulepath() {
+  public List<Path> remappedModulepath() {
     return remapped(modulepath);
   }
 
-  List<Path> remappedProcessorPath() {
+  public List<Path> remappedProcessorPath() {
     return remapped(processorPath);
   }
 
@@ -57,23 +57,22 @@ record ModuleConfig(
     return p;
   }
 
-  static Path remapPath(final Path p, final Path workspaceRoot, final Path latheDir) {
+  public static Path remapPath(final Path p, final Path workspaceRoot, final Path latheDir) {
     if (!p.startsWith(workspaceRoot)) {
       return p;
     }
     final var rel = workspaceRoot.relativize(p);
-    // Must be at least <buildDir>/<sourceTree>
     if (rel.getParent() == null) {
       return p;
     }
     final var sourceTree = rel.getFileName();
-    final var moduleRel = rel.getParent().getParent(); // null when module is workspace root
+    final var moduleRel = rel.getParent().getParent();
     return moduleRel != null
         ? latheDir.resolve(moduleRel).resolve(sourceTree)
         : latheDir.resolve(sourceTree);
   }
 
-  static ModuleConfig load(final Path paramsFile, final Path moduleDir) throws IOException {
+  public static ModuleConfig load(final Path paramsFile, final Path moduleDir) throws IOException {
     final var config = Json.read(paramsFile, ModuleConfigData.class);
     return new ModuleConfig(
         moduleDir,

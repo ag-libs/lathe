@@ -1,6 +1,11 @@
 package io.github.aglibs.lathe.maven;
 
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.maven.dep.DependencySource;
+import io.github.aglibs.lathe.maven.dep.DependencySourceResolver;
+import io.github.aglibs.lathe.maven.dep.DependencySourceSync;
+import io.github.aglibs.lathe.maven.jdk.JdkSourceResolver;
+import io.github.aglibs.lathe.maven.jdk.JdkSourceSync;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -56,9 +61,9 @@ public final class SyncMojo extends AbstractMojo {
               ReactorProjects.externalArtifacts(projects),
               ReactorProjects.artifactClasspaths(projects),
               ReactorProjects.remoteRepositories(projects));
-      DependencySourceExtractor.extract(DependencySource.present(dependencySources), getLog());
+      DependencySourceSync.extract(DependencySource.present(dependencySources), getLog());
       final var jdkSource = JdkSourceResolver.resolve();
-      JdkSourceExtractor.extract(jdkSource, getLog());
+      JdkSourceSync.extract(jdkSource, getLog());
       WorkspaceManifestWriter.write(workspaceRoot, dependencySources, jdkSource, getLog());
     } catch (final SyncException e) {
       throw new MojoExecutionException(e.getMessage(), e);

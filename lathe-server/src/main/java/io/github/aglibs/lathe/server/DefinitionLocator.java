@@ -20,13 +20,13 @@ import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 
-final class DefinitionLocator {
+public final class DefinitionLocator {
 
   private static final Logger LOG = Logger.getLogger(DefinitionLocator.class.getName());
 
   private DefinitionLocator() {}
 
-  static Optional<Location> locate(
+  public static Optional<Location> locate(
       final Element element,
       final Trees trees,
       final List<Path> sourceRoots,
@@ -70,7 +70,7 @@ final class DefinitionLocator {
             });
   }
 
-  static Optional<Path> findSourceFile(final Element element, final List<Path> sourceRoots) {
+  public static Optional<Path> findSourceFile(final Element element, final List<Path> sourceRoots) {
     final var topLevel = topLevelClass(element);
     if (topLevel == null) {
       return Optional.empty();
@@ -100,7 +100,7 @@ final class DefinitionLocator {
         .findFirst();
   }
 
-  static Position parsePosition(final Path sourceFile, final Element element) {
+  public static Position parsePosition(final Path sourceFile, final Element element) {
     return SourceParser.parse(
             sourceFile, (trees, cu) -> parseDeclarationPosition(trees, cu, element))
         .orElse(new Position(0, 0));
@@ -120,7 +120,7 @@ final class DefinitionLocator {
     }
   }
 
-  static TypeElement topLevelClass(final Element element) {
+  public static TypeElement topLevelClass(final Element element) {
     var e = element;
     while (e != null) {
       if (e instanceof final TypeElement te

@@ -1,10 +1,14 @@
-package io.github.aglibs.lathe.server;
+package io.github.aglibs.lathe.server.module;
 
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Stopwatch;
+import io.github.aglibs.lathe.server.analysis.AnalysisEngine;
+import io.github.aglibs.lathe.server.analysis.CompilationResult;
+import io.github.aglibs.lathe.server.analysis.FileAnalysis;
+import io.github.aglibs.lathe.server.tokens.TokenScanner;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
@@ -22,7 +26,7 @@ import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
 import javax.tools.ToolProvider;
 
-final class ModuleCompiler implements SourceCompiler, AutoCloseable {
+public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
 
   private static final Logger LOG = Logger.getLogger(ModuleCompiler.class.getName());
   private static final String PATCH_MODULE = "--patch-module";
@@ -147,7 +151,8 @@ final class ModuleCompiler implements SourceCompiler, AutoCloseable {
     final var trees = Trees.instance(task);
     if (cu != null) {
       final var t = Stopwatch.start();
-      final List<SemanticToken> semanticTokens = TokenScanner.scan(trees, cu);
+      final List<io.github.aglibs.lathe.server.tokens.SemanticToken> semanticTokens =
+          TokenScanner.scan(trees, cu);
       LOG.fine(() -> "[tokens] %d tokens %dms".formatted(semanticTokens.size(), t.elapsedMs()));
       return new FileAnalysis(trees, cu, semanticTokens);
     }
@@ -196,7 +201,7 @@ final class ModuleCompiler implements SourceCompiler, AutoCloseable {
     return opts;
   }
 
-  static List<String> modeCompilerArgs(final List<String> args, final CompileMode mode) {
+  public static List<String> modeCompilerArgs(final List<String> args, final CompileMode mode) {
     return mode == CompileMode.FULL
         ? args
         : args.stream().filter(ModuleCompiler::isInteractiveCompilerArg).toList();

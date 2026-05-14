@@ -1,14 +1,14 @@
-package io.github.aglibs.lathe.maven;
+package io.github.aglibs.lathe.maven.dep;
 
 import io.github.aglibs.lathe.core.maven.DependencyEntry;
 import java.nio.file.Path;
 import java.util.List;
 import org.eclipse.aether.artifact.Artifact;
 
-record DependencySource(
+public record DependencySource(
     String gav, Path jar, String status, Path dir, Artifact sourceArtifact, List<Path> classpath) {
 
-  static DependencySource present(
+  public static DependencySource present(
       final String gav,
       final Path jar,
       final Path dir,
@@ -17,15 +17,16 @@ record DependencySource(
     return new DependencySource(gav, jar, "present", dir, sourceArtifact, classpath);
   }
 
-  static DependencySource missing(final String gav, final Path jar, final List<Path> classpath) {
+  public static DependencySource missing(
+      final String gav, final Path jar, final List<Path> classpath) {
     return new DependencySource(gav, jar, "missing", null, null, classpath);
   }
 
-  static List<DependencySource> present(final List<DependencySource> sources) {
+  public static List<DependencySource> present(final List<DependencySource> sources) {
     return sources.stream().filter(source -> "present".equals(source.status())).toList();
   }
 
-  DependencyEntry toEntry() {
+  public DependencyEntry toEntry() {
     return new DependencyEntry(
         gav,
         jar != null ? jar.toString() : null,

@@ -2,6 +2,8 @@ package io.github.aglibs.lathe.maven;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.maven.jdk.JdkSource;
+import io.github.aglibs.lathe.maven.jdk.JdkSourceResolver;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;

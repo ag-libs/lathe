@@ -27,21 +27,22 @@ import javax.lang.model.type.DeclaredType;
 import javax.tools.Diagnostic;
 import org.eclipse.lsp4j.Position;
 
-final class SourceLocator {
+public final class SourceLocator {
 
   private SourceLocator() {}
 
-  static long toOffset(final CompilationUnitTree cu, final int line, final int character) {
+  public static long toOffset(final CompilationUnitTree cu, final int line, final int character) {
     return cu.getLineMap().getPosition(line + 1, character + 1);
   }
 
-  static Position offsetToPosition(final CompilationUnitTree cu, final long offset) {
+  public static Position offsetToPosition(final CompilationUnitTree cu, final long offset) {
     final var lineMap = cu.getLineMap();
     return new Position(
         (int) lineMap.getLineNumber(offset) - 1, (int) lineMap.getColumnNumber(offset) - 1);
   }
 
-  static TreePath pathAt(final Trees trees, final CompilationUnitTree cu, final long offset) {
+  public static TreePath pathAt(
+      final Trees trees, final CompilationUnitTree cu, final long offset) {
     final var positions = trees.getSourcePositions();
     final var result = new AtomicReference<TreePath>();
     final var size = new AtomicLong(Long.MAX_VALUE);
@@ -68,7 +69,7 @@ final class SourceLocator {
     return result.get();
   }
 
-  static Position offsetToPosition(final String content, final long offset) {
+  public static Position offsetToPosition(final String content, final long offset) {
     final int limit = (int) Math.min(offset, content.length());
     int line = 0;
     int col = 0;
@@ -83,7 +84,7 @@ final class SourceLocator {
     return new Position(line, col);
   }
 
-  static Optional<Position> declarationNamePosition(
+  public static Optional<Position> declarationNamePosition(
       final Trees trees, final CompilationUnitTree cu, final TreePath path, final String name)
       throws IOException {
     if (path == null) {
@@ -99,7 +100,7 @@ final class SourceLocator {
     return Optional.of(offsetToPosition(cu, nameOffset));
   }
 
-  static Element elementAt(final Trees trees, final TreePath path) {
+  public static Element elementAt(final Trees trees, final TreePath path) {
     var p = path;
     while (p != null) {
       final var element = trees.getElement(p);
@@ -120,7 +121,7 @@ final class SourceLocator {
     return null;
   }
 
-  static TreePath declarationPath(final CompilationUnitTree cu, final Element target) {
+  public static TreePath declarationPath(final CompilationUnitTree cu, final Element target) {
     if (target == null) {
       return null;
     }
@@ -158,7 +159,7 @@ final class SourceLocator {
     return result.get();
   }
 
-  static CharSequence declarationName(final Element element) {
+  public static CharSequence declarationName(final Element element) {
     return element.getKind() == ElementKind.CONSTRUCTOR
         ? element.getEnclosingElement().getSimpleName()
         : element.getSimpleName();
@@ -183,7 +184,7 @@ final class SourceLocator {
         .orElse(null);
   }
 
-  static VariableElement parameterElementAt(final Trees trees, final TreePath path) {
+  public static VariableElement parameterElementAt(final Trees trees, final TreePath path) {
     if (path == null) {
       return null;
     }

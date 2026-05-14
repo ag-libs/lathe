@@ -1,9 +1,12 @@
-package io.github.aglibs.lathe.maven;
+package io.github.aglibs.lathe.maven.dep;
 
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.Stopwatch;
+import io.github.aglibs.lathe.core.ZipCache;
+import io.github.aglibs.lathe.maven.ReactorProjects;
+import io.github.aglibs.lathe.maven.SyncException;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
@@ -14,13 +17,13 @@ import java.util.stream.Collectors;
 import org.apache.maven.plugin.logging.Log;
 import org.eclipse.aether.artifact.Artifact;
 
-final class DependencySourceExtractor {
+public final class DependencySourceSync {
 
   private static final String SOURCE_MARKER = ".lathe-source.json";
 
-  private DependencySourceExtractor() {}
+  private DependencySourceSync() {}
 
-  static void extract(final Collection<DependencySource> sources, final Log log) {
+  public static void extract(final Collection<DependencySource> sources, final Log log) {
     final var t = Stopwatch.start();
     try {
       final Map<Boolean, Long> counts =
@@ -45,7 +48,7 @@ final class DependencySourceExtractor {
       return new SourceExtraction(false);
     }
 
-    CachedZipExtractor.extract(
+    ZipCache.extract(
         sourceJar, targetDir, tempDir -> writeSourceMarker(tempDir, artifact, sourceJar));
     return new SourceExtraction(true);
   }

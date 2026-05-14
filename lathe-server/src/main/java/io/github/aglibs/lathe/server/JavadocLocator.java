@@ -7,13 +7,13 @@ import java.util.Optional;
 import java.util.logging.Logger;
 import javax.lang.model.element.Element;
 
-final class JavadocLocator {
+public final class JavadocLocator {
 
   private static final Logger LOG = Logger.getLogger(JavadocLocator.class.getName());
 
   private JavadocLocator() {}
 
-  static Optional<String> locate(
+  public static Optional<String> locate(
       final Element element, final Trees trees, final List<Path> sourceRoots) {
     if (element == null) {
       return Optional.empty();

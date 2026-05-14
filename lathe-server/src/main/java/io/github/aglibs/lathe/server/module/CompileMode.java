@@ -1,11 +1,11 @@
-package io.github.aglibs.lathe.server;
+package io.github.aglibs.lathe.server.module;
 
-enum CompileMode {
+public enum CompileMode {
   FAST("compile"),
   OPEN("open"),
   FULL("save");
 
-  final String tag;
+  public final String tag;
 
   CompileMode(final String tag) {
     this.tag = tag;

@@ -1,9 +1,10 @@
-package io.github.aglibs.lathe.server;
+package io.github.aglibs.lathe.server.workspace;
 
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.maven.DependencyEntry;
 import io.github.aglibs.lathe.core.maven.WorkspaceManifestData;
+import io.github.aglibs.lathe.server.DefinitionLocator;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Files;
@@ -22,7 +23,7 @@ import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
 
-final class WorkspaceManifest {
+public final class WorkspaceManifest {
 
   private static final Logger LOG = Logger.getLogger(WorkspaceManifest.class.getName());
 
@@ -49,11 +50,11 @@ final class WorkspaceManifest {
     this.sourceDirToClasspath = sourceDirToClasspath;
   }
 
-  static WorkspaceManifest empty() {
+  public static WorkspaceManifest empty() {
     return new WorkspaceManifest(Map.of(), Map.of(), Map.of(), null, null, Map.of());
   }
 
-  static WorkspaceManifest load(final Path workspaceRoot) {
+  public static WorkspaceManifest load(final Path workspaceRoot) {
     final var file =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
     if (!Files.exists(file)) {
@@ -125,11 +126,11 @@ final class WorkspaceManifest {
     return new TypeEntry(topLevel, moduleName);
   }
 
-  boolean containsFile(final Path file) {
+  public boolean containsFile(final Path file) {
     return externalSourceRootForFile(file).isPresent();
   }
 
-  List<Path> externalSourceDirs() {
+  public List<Path> externalSourceDirs() {
     final var dirs = new java.util.ArrayList<Path>(jarToSourceDir.values());
     if (jdkSourceDir != null) {
       dirs.add(jdkSourceDir);
@@ -137,7 +138,7 @@ final class WorkspaceManifest {
     return List.copyOf(dirs);
   }
 
-  List<Path> depClasspathForFile(final Path file) {
+  public List<Path> depClasspathForFile(final Path file) {
     return externalSourceRootForFile(file)
         .map(
             root -> {
@@ -155,14 +156,14 @@ final class WorkspaceManifest {
         .orElse(List.of());
   }
 
-  Optional<Path> externalSourceRootForFile(final Path file) {
+  public Optional<Path> externalSourceRootForFile(final Path file) {
     if (jdkSourceDir != null && file.startsWith(jdkSourceDir)) {
       return Optional.of(jdkSourceDir);
     }
     return jarToSourceDir.values().stream().filter(file::startsWith).findFirst();
   }
 
-  Optional<String> jdkModuleForFile(final Path file) {
+  public Optional<String> jdkModuleForFile(final Path file) {
     if (jdkSourceDir == null || !file.startsWith(jdkSourceDir)) {
       return Optional.empty();
     }
@@ -173,7 +174,7 @@ final class WorkspaceManifest {
     return Optional.of(rel.getName(0).toString());
   }
 
-  Optional<String> originLabel(final Element element, final StandardJavaFileManager fm) {
+  public Optional<String> originLabel(final Element element, final StandardJavaFileManager fm) {
     final var entry = classify(element);
     if (entry == null) {
       return Optional.empty();
@@ -190,7 +191,8 @@ final class WorkspaceManifest {
     }
   }
 
-  Optional<Path> externalSourceRoot(final Element element, final StandardJavaFileManager fm) {
+  public Optional<Path> externalSourceRoot(
+      final Element element, final StandardJavaFileManager fm) {
     final var entry = classify(element);
     if (entry == null) {
       return Optional.empty();

@@ -1,19 +1,19 @@
-package io.github.aglibs.lathe.maven;
+package io.github.aglibs.lathe.maven.jdk;
 
 import io.github.aglibs.lathe.core.LatheLayout;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 
-final class JdkSourceResolver {
+public final class JdkSourceResolver {
 
   private JdkSourceResolver() {}
 
-  static JdkSource resolve() {
+  public static JdkSource resolve() {
     return resolve(System.getenv());
   }
 
-  static JdkSource resolve(final Map<String, String> env) {
+  public static JdkSource resolve(final Map<String, String> env) {
     final var vendor = System.getProperty("java.vendor");
     final var version = System.getProperty("java.version");
     final var javaHome = env.get("JAVA_HOME");

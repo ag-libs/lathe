@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.maven.DependencyEntry;
 import io.github.aglibs.lathe.core.maven.JdkSourceEntry;
 import io.github.aglibs.lathe.core.maven.WorkspaceManifestData;
+import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;

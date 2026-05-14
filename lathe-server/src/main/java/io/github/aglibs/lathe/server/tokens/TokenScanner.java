@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.server;
+package io.github.aglibs.lathe.server.tokens;
 
 import com.sun.source.tree.AnnotationTree;
 import com.sun.source.tree.CompilationUnitTree;
@@ -10,6 +10,7 @@ import com.sun.source.tree.VariableTree;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
+import io.github.aglibs.lathe.server.SourceLocator;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -21,12 +22,12 @@ import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
 import org.eclipse.lsp4j.Position;
 
-final class TokenScanner extends TreePathScanner<Void, Void> {
+public final class TokenScanner extends TreePathScanner<Void, Void> {
 
-  static final List<String> TOKEN_TYPES =
+  public static final List<String> TOKEN_TYPES =
       List.of("enumMember", "method", "property", "typeParameter", "annotation");
 
-  static final List<String> TOKEN_MODIFIERS = List.of("declaration", "static", "deprecated");
+  public static final List<String> TOKEN_MODIFIERS = List.of("declaration", "static", "deprecated");
 
   private final Trees trees;
   private final CompilationUnitTree cu;
@@ -41,7 +42,7 @@ final class TokenScanner extends TreePathScanner<Void, Void> {
     this.source = source;
   }
 
-  static List<SemanticToken> scan(final Trees trees, final CompilationUnitTree cu)
+  public static List<SemanticToken> scan(final Trees trees, final CompilationUnitTree cu)
       throws IOException {
     final var scanner =
         new TokenScanner(trees, cu, cu.getSourceFile().getCharContent(true).toString());
@@ -51,7 +52,7 @@ final class TokenScanner extends TreePathScanner<Void, Void> {
     return List.copyOf(scanner.tokens);
   }
 
-  static int[] encode(final List<SemanticToken> tokens) {
+  public static int[] encode(final List<SemanticToken> tokens) {
     final var data = new int[tokens.size() * 5];
     int prevLine = 0;
     int prevChar = 0;

@@ -1,6 +1,7 @@
-package io.github.aglibs.lathe.server;
+package io.github.aglibs.lathe.server.module;
 
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.server.analysis.AnalysisEngine;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -12,7 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-final class ModuleRegistry implements AutoCloseable {
+public final class ModuleRegistry implements AutoCloseable {
 
   private static final Logger LOG = Logger.getLogger(ModuleRegistry.class.getName());
 
@@ -23,11 +24,11 @@ final class ModuleRegistry implements AutoCloseable {
     this.modules = modules;
   }
 
-  static ModuleRegistry empty() {
+  public static ModuleRegistry empty() {
     return new ModuleRegistry(List.of());
   }
 
-  static ModuleRegistry scan(final Path workspaceRoot) {
+  public static ModuleRegistry scan(final Path workspaceRoot) {
     final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
     if (!Files.isDirectory(latheDir)) {
       LOG.warning(() -> "[registry] .lathe/ not found at " + workspaceRoot);
@@ -57,11 +58,11 @@ final class ModuleRegistry implements AutoCloseable {
     return new ModuleRegistry(List.copyOf(modules));
   }
 
-  AnalysisEngine engineFor(final ModuleConfig config) {
+  public AnalysisEngine engineFor(final ModuleConfig config) {
     return compilers.computeIfAbsent(config, ModuleCompiler::new).analysis();
   }
 
-  void dropFromAllCaches(final String uri) {
+  public void dropFromAllCaches(final String uri) {
     compilers.values().forEach(c -> c.analysis().dropFromCache(uri));
   }
 
@@ -71,13 +72,13 @@ final class ModuleRegistry implements AutoCloseable {
     compilers.clear();
   }
 
-  Optional<ModuleConfig> moduleFor(final Path filePath) {
+  public Optional<ModuleConfig> moduleFor(final Path filePath) {
     return modules.stream()
         .filter(m -> m.sourceRoots().stream().anyMatch(filePath::startsWith))
         .findFirst();
   }
 
-  List<Path> allSourceRoots() {
+  public List<Path> allSourceRoots() {
     return modules.stream().flatMap(m -> m.sourceRoots().stream()).toList();
   }
 }

@@ -1,6 +1,8 @@
-package io.github.aglibs.lathe.maven;
+package io.github.aglibs.lathe.maven.dep;
 
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.maven.ReactorProjects;
+import io.github.aglibs.lathe.maven.SyncException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -13,20 +15,20 @@ import org.eclipse.aether.repository.RemoteRepository;
 import org.eclipse.aether.resolution.ArtifactRequest;
 import org.eclipse.aether.resolution.ArtifactResolutionException;
 
-final class DependencySourceResolver {
+public final class DependencySourceResolver {
 
   private final RepositorySystem repositorySystem;
   private final MavenSession session;
   private final Log log;
 
-  DependencySourceResolver(
+  public DependencySourceResolver(
       final RepositorySystem repositorySystem, final MavenSession session, final Log log) {
     this.repositorySystem = repositorySystem;
     this.session = session;
     this.log = log;
   }
 
-  List<DependencySource> resolve(
+  public List<DependencySource> resolve(
       final Map<String, Artifact> artifacts,
       final Map<String, List<Path>> artifactClasspaths,
       final List<RemoteRepository> repositories) {

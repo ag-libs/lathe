@@ -1,15 +1,17 @@
-package io.github.aglibs.lathe.maven;
+package io.github.aglibs.lathe.maven.jdk;
 
 import io.github.aglibs.lathe.core.Stopwatch;
+import io.github.aglibs.lathe.core.ZipCache;
+import io.github.aglibs.lathe.maven.SyncException;
 import java.io.IOException;
 import java.nio.file.Files;
 import org.apache.maven.plugin.logging.Log;
 
-final class JdkSourceExtractor {
+public final class JdkSourceSync {
 
-  private JdkSourceExtractor() {}
+  private JdkSourceSync() {}
 
-  static void extract(final JdkSource source, final Log log) {
+  public static void extract(final JdkSource source, final Log log) {
     if (!source.isPresent()) {
       log.info("[sync] jdk sources missing");
       return;
@@ -22,7 +24,7 @@ final class JdkSourceExtractor {
         return;
       }
 
-      CachedZipExtractor.extract(source.sourceZip(), source.sourceDir(), ignored -> {});
+      ZipCache.extract(source.sourceZip(), source.sourceDir(), ignored -> {});
       log.info("[sync] jdk sources extracted in %dms".formatted(t.elapsedMs()));
     } catch (final IOException e) {
       throw new SyncException("lathe:sync failed to extract JDK sources", e);

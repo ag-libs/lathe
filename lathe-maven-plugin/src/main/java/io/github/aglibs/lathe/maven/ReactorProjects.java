@@ -12,11 +12,11 @@ import org.apache.maven.execution.MavenSession;
 import org.apache.maven.project.MavenProject;
 import org.eclipse.aether.repository.RemoteRepository;
 
-final class ReactorProjects {
+public final class ReactorProjects {
 
   private ReactorProjects() {}
 
-  static List<MavenProject> sorted(final MavenSession session, final Path workspaceRoot) {
+  public static List<MavenProject> sorted(final MavenSession session, final Path workspaceRoot) {
     return session.getProjects().stream()
         .sorted(Comparator.comparing(project -> moduleRel(workspaceRoot, project)))
         .toList();
@@ -30,7 +30,7 @@ final class ReactorProjects {
    * already resolved version conflicts, so any module's view of a dep's transitive classpath is
    * correct.
    */
-  static Map<String, List<Path>> artifactClasspaths(final List<MavenProject> projects) {
+  public static Map<String, List<Path>> artifactClasspaths(final List<MavenProject> projects) {
     final var reactorGAs = reactorProjects(projects);
     final Map<String, List<Path>> result = new TreeMap<>();
     for (final MavenProject project : projects) {
@@ -46,7 +46,7 @@ final class ReactorProjects {
     return result;
   }
 
-  static Map<String, Artifact> externalArtifacts(final List<MavenProject> projects) {
+  public static Map<String, Artifact> externalArtifacts(final List<MavenProject> projects) {
     final Set<String> reactorProjects = reactorProjects(projects);
     return projects.stream()
         .flatMap(project -> project.getArtifacts().stream())
@@ -61,7 +61,7 @@ final class ReactorProjects {
                 TreeMap::new));
   }
 
-  static List<RemoteRepository> remoteRepositories(final List<MavenProject> projects) {
+  public static List<RemoteRepository> remoteRepositories(final List<MavenProject> projects) {
     final Map<String, RemoteRepository> repositories =
         projects.stream()
             .flatMap(project -> project.getRemoteProjectRepositories().stream())
@@ -74,7 +74,7 @@ final class ReactorProjects {
     return List.copyOf(repositories.values());
   }
 
-  static String moduleRel(final Path workspaceRoot, final MavenProject project) {
+  public static String moduleRel(final Path workspaceRoot, final MavenProject project) {
     final String rel = workspaceRoot.relativize(project.getBasedir().toPath()).toString();
     if (rel.isEmpty()) {
       return ".";
@@ -83,17 +83,17 @@ final class ReactorProjects {
     return rel;
   }
 
-  static String gav(final MavenProject project) {
+  public static String gav(final MavenProject project) {
     return "%s:%s:%s"
         .formatted(project.getGroupId(), project.getArtifactId(), project.getVersion());
   }
 
-  static String gav(final Artifact artifact) {
+  public static String gav(final Artifact artifact) {
     return "%s:%s:%s"
         .formatted(artifact.getGroupId(), artifact.getArtifactId(), artifact.getVersion());
   }
 
-  static String gav(final org.eclipse.aether.artifact.Artifact artifact) {
+  public static String gav(final org.eclipse.aether.artifact.Artifact artifact) {
     return "%s:%s:%s"
         .formatted(artifact.getGroupId(), artifact.getArtifactId(), artifact.getVersion());
   }
@@ -108,7 +108,7 @@ final class ReactorProjects {
     return artifact.getGroupId() + ":" + artifact.getArtifactId();
   }
 
-  static String artifactKey(final Artifact artifact) {
+  public static String artifactKey(final Artifact artifact) {
     return "%s:%s:%s:%s:%s"
         .formatted(
             artifact.getGroupId(),

@@ -1,7 +1,15 @@
-package io.github.aglibs.lathe.server;
+package io.github.aglibs.lathe.server.analysis;
 
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.core.Stopwatch;
+import io.github.aglibs.lathe.server.DefinitionLocator;
+import io.github.aglibs.lathe.server.HoverFormatter;
+import io.github.aglibs.lathe.server.JavadocLocator;
+import io.github.aglibs.lathe.server.SourceLocator;
+import io.github.aglibs.lathe.server.module.CompileMode;
+import io.github.aglibs.lathe.server.module.SourceCompiler;
+import io.github.aglibs.lathe.server.tokens.SemanticToken;
+import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
@@ -23,22 +31,22 @@ import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 
-final class AnalysisEngine {
+public final class AnalysisEngine {
 
   private static final Logger LOG = Logger.getLogger(AnalysisEngine.class.getName());
 
   private final SourceCompiler compiler;
   private final Map<String, FileAnalysis> cache = new ConcurrentHashMap<>();
 
-  AnalysisEngine(final SourceCompiler compiler) {
+  public AnalysisEngine(final SourceCompiler compiler) {
     this.compiler = compiler;
   }
 
-  void clearCache() {
+  public void clearCache() {
     cache.clear();
   }
 
-  List<Diagnostic> compile(final String uri, final String content, final CompileMode mode)
+  public List<Diagnostic> compile(final String uri, final String content, final CompileMode mode)
       throws IOException {
     final var t = Stopwatch.start();
     final var run = compiler.compile(uri, content, mode);
@@ -48,20 +56,20 @@ final class AnalysisEngine {
     return diags;
   }
 
-  void dropFromCache(final String uri) {
+  public void dropFromCache(final String uri) {
     cache.remove(uri);
   }
 
-  boolean isCached(final String uri) {
+  public boolean isCached(final String uri) {
     return cache.containsKey(uri);
   }
 
-  List<SemanticToken> semanticTokens(final String uri) {
+  public List<SemanticToken> semanticTokens(final String uri) {
     final var ctx = cache.get(uri);
     return ctx != null ? ctx.semanticTokens() : null;
   }
 
-  Hover hover(
+  public Hover hover(
       final String uri,
       final Position pos,
       final List<Path> sourceRoots,
@@ -93,7 +101,7 @@ final class AnalysisEngine {
         .orElse(null);
   }
 
-  Optional<Location> definition(
+  public Optional<Location> definition(
       final String uri,
       final Position pos,
       final List<Path> sourceRoots,
@@ -143,7 +151,7 @@ final class AnalysisEngine {
     return new CursorContext(ctx, SourceLocator.pathAt(ctx.trees(), ctx.tree(), offset));
   }
 
-  static List<Diagnostic> filterAndMap(
+  public static List<Diagnostic> filterAndMap(
       final List<? extends javax.tools.Diagnostic<? extends JavaFileObject>> raw,
       final String content) {
     return raw.stream()
@@ -155,7 +163,7 @@ final class AnalysisEngine {
         .toList();
   }
 
-  static Diagnostic toLsp(
+  public static Diagnostic toLsp(
       final javax.tools.Diagnostic<? extends JavaFileObject> d, final String content) {
     final var severity =
         switch (d.getKind()) {
