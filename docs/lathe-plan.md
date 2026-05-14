@@ -23,6 +23,7 @@ Implemented:
   test-scope reactor artifacts,
   and extracts resolved sources under `~/.cache/lathe/deps/`.
 - `lathe:sync` records dependency source lookup entries in `.lathe/workspace.properties`.
+  Present source entries also include per-dependency classpath entries used when compiling opened dependency source files.
 - `lathe:sync` resolves and extracts JDK sources under `~/.cache/lathe/jdks/<sanitizedVendor>/<sanitizedVersion>/`,
   recording `jdk.home`, `jdk.vendor`, `jdk.version`, `jdk.sourceStatus`, and `jdk.sourceDir` in the manifest.
 - `CachedZipExtractor` is the shared temp-dir-then-atomic-move extraction utility used by both dependency
@@ -38,6 +39,8 @@ Implemented:
   reloaded on `root.marker` change.
 - Server supports diagnostics, hover with Javadoc and origin label, semantic tokens, formatting,
   and go-to-definition.
+- Server uses manifest dependency/JDK source roots for go-to-definition and compiles opened external source files
+  with `ExternalFileCompiler`.
 - Hover origin label: JDK module+version from `SYSTEM_MODULES` check, Maven GAV from `dependencySource` manifest entries,
   or reactor module name from `.lathe/<name>/classes/` path segment.
 - Module registry currently scans `lsp-params-*.properties` directly.
@@ -148,7 +151,9 @@ Implement in small slices:
   Each entry uses `dependencySource.N.jar` for the binary JAR path from Maven,
   `dependencySource.N.gav` for diagnostics and logging,
   `dependencySource.N.status` for `present` or `missing`,
-  and `dependencySource.N.dir` only when sources are present.
+  `dependencySource.N.dir` only when sources are present,
+  and `dependencySource.N.classpath.M` entries for the compile/provided external JARs needed when opening
+  that dependency's source files.
   The server matches `dependencySource.N.jar` against absolute JAR paths from the shim params files,
   then uses `dependencySource.N.dir` as the extracted source root.
 - Current implementation records `dependencySource.N.status=missing` in the manifest and continues.
@@ -156,7 +161,8 @@ Implement in small slices:
 - Unit tests cover zip-slip rejection and checked-IO wrapping in `FileUtilTest`;
   marker-after-success, temp-dir cleanup on failure, and skip-on-marker-match in
   `DependencySourceExtractorTest` and `CachedZipExtractorTest`.
-- Invoker tests assert `dependencySource.N.status=present`, `jar=...`, `gav=...`, and `dir=...`.
+- Invoker tests assert `dependencySource.N.status=present`, `jar=...`, `gav=...`, `dir=...`,
+  and representative `classpath.N=...` entries.
   A missing-source test dependency is still planned.
 
 ### Phase 2b.4 — JDK sources ✓
@@ -176,16 +182,19 @@ Implement in small slices:
 - Invoker test: asserts `jdk.vendor`, `jdk.version`, and `jdk.sourceStatus` are always written;
   when `jdk.sourceStatus=present`, asserts `jdk.sourceDir` is written and the directory exists on disk.
 
-### Phase 2b.5 — Server consumption ✓ (partial)
+### Phase 2b.5 — Server consumption ✓
 
 - `WorkspaceManifest` loads `dependencySource.N.*` entries on startup and registry reload via
-  `ParamStore.readIndexed("dependencySource", DependencyEntry::readFrom)`; reads `jdk.version` for hover origin labels.
+  `ParamStore.readIndexed("dependencySource", DependencyEntry::readFrom)`;
+  reads dependency source roots, per-dependency classpaths, `jdk.sourceDir`, and `jdk.version`.
 - `LatheTextDocumentService` holds a `volatile WorkspaceManifest manifest` snapshot; reloaded alongside the module
   registry whenever `root.marker` modification is detected.
 - Hover origin label uses the manifest: JDK module+version (`SYSTEM_MODULES` check), Maven GAV from
   `dependencySource.N.jar` lookup, or reactor module name from `.lathe/<name>/classes/` path segment.
-- Remaining: stale-POM detection (watch POM content hashes vs manifest); `jdk.sourceDir` go-to-definition;
-  type/reference index pipeline.
+- Go-to-definition uses the manifest as a fallback source-root map for JDK and dependency types.
+- `ExternalFileCompiler` compiles opened dependency/JDK source files outside the reactor, caches their attributed
+  trees until close/manifest reload, publishes diagnostics, and serves hover/definition/semantic-token reads.
+- Remaining: stale-POM detection (watch POM content hashes vs manifest); type/reference index pipeline.
 
 ---
 
@@ -336,7 +345,7 @@ cursor lands on the declaration name token.
 - `LatheTextDocumentService.definition()`: `CompletableFuture.completedFuture()` —
   no debouncer, cache read is thread-safe; returns `Either.forLeft(List.of(location))`
 - `definitionProvider(true)` declared in server capabilities
-- JDK and dependency types return empty (deferred)
+- JDK and dependency types use `WorkspaceManifest` source-root lookup after the reactor-source fallback
 - `DefinitionLocatorTest`: `SameFile` — type ref (`Status`) at exact col, method ref (`overloaded`) at exact col;
   `ReactorFallback` — element from bytecode-only class, file found via source root scan
 

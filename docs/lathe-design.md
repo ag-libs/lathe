@@ -168,7 +168,8 @@ refreshes extracted dependency sources under `~/.cache/lathe/deps/`,
 and writes the minimal dependency-source manifest to `.lathe/workspace.properties`.
 Server distribution installation, stale-POM fingerprints, and indexes are later sync slices.
 The LS currently reads shim params on startup and registry reload;
-workspace-manifest consumption for dependency source lookup is the next server-side step after the sync output exists.
+it also reads the workspace manifest for dependency/JDK source roots, external-source classpaths,
+and hover origin labels.
 
 If a module has no params file yet (first checkout, new module added), the LS surfaces:
 "Run `mvn process-test-classes` to activate module `<relativePath>`."
@@ -305,6 +306,7 @@ dependencySource.0.jar=/home/user/.m2/repository/com/google/guava/guava/32.0.0-j
 dependencySource.0.gav=com.google.guava:guava:32.0.0-jre
 dependencySource.0.status=present
 dependencySource.0.dir=/home/user/.cache/lathe/deps/com/google/guava/guava/32.0.0-jre
+dependencySource.0.classpath.0=/home/user/.m2/repository/com/google/guava/failureaccess/1.0.2/failureaccess-1.0.2.jar
 
 dependencySource.1.jar=/home/user/.m2/repository/org/example/no-sources/1.0/no-sources-1.0.jar
 dependencySource.1.gav=org.example:no-sources:1.0
@@ -333,6 +335,9 @@ For dependency source lookup,
 the server matches absolute classpath and modulepath JAR paths from the params files against `dependencySource.N.jar`.
 If `dependencySource.N.status=present`,
 the server uses `dependencySource.N.dir` as the extracted source root for that JAR.
+`dependencySource.N.classpath.M` stores the compile/provided external JARs from the first reactor module that
+resolved the dependency.
+The server uses those entries, plus the dependency's own JAR, when compiling opened dependency source files.
 `dependencySource.N.gav` is retained for diagnostics and logging,
 but the JAR path is the lookup key.
 Missing source JARs are recorded with `dependencySource.N.status=missing` and no `dir`.
@@ -354,8 +359,11 @@ The manifest must not duplicate per-module classpath or test dependency lists.
 
 The LS loads the manifest into an immutable `WorkspaceManifest` snapshot during startup and registry reload.
 `WorkspaceManifest.load(workspaceRoot)` reads `dependencySource.N.*` entries via `ParamStore.readIndexed` and `DependencyEntry::readFrom`,
-and reads `jdk.version` for JDK label decoration on hover.
+builds binary-JAR to source-root maps,
+builds source-root to per-dependency classpath maps,
+and reads `jdk.sourceDir` and `jdk.version`.
 The snapshot is also reloaded whenever `root.marker` modification is detected.
+Reloading the snapshot clears cached external source analyses so definition and hover use the new source/classpath map.
 Feature handlers read that snapshot directly; handlers do not re-read `workspace.properties` on every request.
 Future slices will add stale-POM checks and module-to-params metadata.
 
@@ -828,16 +836,17 @@ locate the source file via the target module's `sourceRoots.N` entries, return t
 
 **JDK types** — `lathe:sync` writes `jdk.sourceDir` to `.lathe/workspace.properties` when
 `$JAVA_HOME/lib/src.zip` is present.
-Server-side consumption of `jdk.sourceDir` for go-to-definition is the pending step.
+The server resolves attributed JDK elements through `SYSTEM_MODULES`,
+then searches `jdk.sourceDir` for the matching source file.
 
-**Dependency types** — the JAR path is known from the type entry.
+**Dependency types** — the binary JAR path is resolved from the attributed element through the active javac file manager.
 `lathe:sync` resolves the matching source artifacts through Maven, extracts available source JARs to
 `~/.cache/lathe/deps/<gav-path>/`, and records source status in `.lathe/workspace.properties`.
 The LS uses that state:
 
 1. `dependencySource.N.status=present` → return the extracted `file://` URI under `dependencySource.N.dir`
-2. `dependencySource.N.status=missing` → surface "Sources not available for `<gav>`"
-3. no workspace manifest or no matching JAR entry → prompt the user to run `mvn process-test-classes`
+2. `dependencySource.N.status=missing` or no matching JAR entry → return no location
+3. no workspace manifest → prompt the user to run `mvn process-test-classes` when opening files outside any module
 
 Extracted sources are shared across all projects.
 
@@ -867,11 +876,15 @@ Modules with no `.lathe/<rel>/classes/` are silently skipped.
 
 ### Opening dependency source files
 
-Fresh read-only `JavacTask` per request using the consuming module's params.
-Diagnostics swallowed.
-Task references are dropped after attribution.
-Result stored in the consuming module's result cache keyed by the dependency source file path,
-and held until the user closes the file.
+`ExternalFileCompiler` handles source files outside any reactor module when their path is under a manifest
+dependency source root or `jdk.sourceDir`.
+It owns a reusable `StandardJavaFileManager`, a temp source root, and a `ModuleAnalysis`.
+For dependency sources it sets `CLASS_PATH` from the manifest's per-dependency classpath entries plus the dependency's
+own JAR;
+for JDK sources the classpath is empty.
+The file being edited is copied to the temp source root before attribution so unsaved content is analyzed.
+Diagnostics are published for opened dependency sources.
+Attributed trees and semantic tokens are cached by external source URI until close, shutdown, or manifest reload.
 
 ### Hover
 
