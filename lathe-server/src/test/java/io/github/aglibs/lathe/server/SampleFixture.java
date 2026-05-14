@@ -12,13 +12,14 @@ import java.util.Objects;
 import java.util.Optional;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.VariableElement;
+import javax.tools.StandardJavaFileManager;
 import javax.tools.ToolProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Base class that compiles {@code Sample.java} before each test. Subclasses inherit {@link #cu} and
- * {@link #trees} ready for inspection.
+ * Base class that compiles {@code Sample.java} before each test. Subclasses inherit {@link #cu},
+ * {@link #trees}, {@link #task}, and {@link #fm} ready for inspection.
  */
 abstract class SampleFixture {
 
@@ -26,6 +27,8 @@ abstract class SampleFixture {
 
   CompilationUnitTree cu;
   Trees trees;
+  JavacTask task;
+  StandardJavaFileManager fm;
 
   @BeforeEach
   void compile() throws IOException {
@@ -36,9 +39,9 @@ abstract class SampleFixture {
     Files.writeString(sourceFile, source);
 
     final var compiler = ToolProvider.getSystemJavaCompiler();
-    final var fm = compiler.getStandardFileManager(null, null, null);
+    fm = compiler.getStandardFileManager(null, null, null);
     final var jfo = fm.getJavaFileObjects(sourceFile).iterator().next();
-    final var task = (JavacTask) compiler.getTask(null, fm, null, null, null, List.of(jfo));
+    task = (JavacTask) compiler.getTask(null, fm, null, null, null, List.of(jfo));
 
     cu = task.parse().iterator().next();
     task.analyze();

@@ -45,4 +45,40 @@ class WorkspaceManifestWriterTest {
     assertThat(props.get("dependencySource.0.status")).isEqualTo("present");
     assertThat(props.get("dependencySource.0.dir")).isEqualTo("/cache/dep");
   }
+
+  @Test
+  void write_missingJdkSource_omitsSourceDir() throws Exception {
+    final JdkSource jdkSource = JdkSource.missing("Example Vendor", "21.0.1", Path.of("/jdk"));
+
+    WorkspaceManifestWriter.write(workspaceRoot, List.of(), jdkSource, new SystemStreamLog());
+
+    final Path manifest =
+        workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_PROPERTIES);
+    final ParamStore props = ParamStore.load(manifest);
+    assertThat(props.get("jdk.version")).isEqualTo("21.0.1");
+    assertThat(props.get("jdk.sourceStatus")).isEqualTo("missing");
+    assertThat(props.get("jdk.sourceDir")).isNull();
+  }
+
+  @Test
+  void write_multipleDependencies_writesAllEntries() throws Exception {
+    final List<DependencySource> deps =
+        List.of(
+            DependencySource.present(
+                "com.example:a:1", Path.of("/repo/a.jar"), Path.of("/cache/a"), null),
+            DependencySource.present(
+                "com.example:b:2", Path.of("/repo/b.jar"), Path.of("/cache/b"), null));
+    final JdkSource jdkSource =
+        JdkSource.present(
+            "Vendor", "21", Path.of("/jdk"), Path.of("/jdk/src.zip"), Path.of("/cache/jdk"));
+
+    WorkspaceManifestWriter.write(workspaceRoot, deps, jdkSource, new SystemStreamLog());
+
+    final Path manifest =
+        workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_PROPERTIES);
+    final ParamStore props = ParamStore.load(manifest);
+    assertThat(props.get("dependencySource.0.gav")).isEqualTo("com.example:a:1");
+    assertThat(props.get("dependencySource.1.gav")).isEqualTo("com.example:b:2");
+    assertThat(props.get("dependencySource.1.jar")).isEqualTo("/repo/b.jar");
+  }
 }

@@ -34,6 +34,19 @@ class ParamStoreTest {
     assertThat(loaded.get("dependencySource.1.status")).isEqualTo("missing");
   }
 
+  @Test
+  void putList_readList_storeLoadRoundtrip() throws Exception {
+    final ParamStore store = new ParamStore();
+    store.putList("sourceRoots", List.of("/src/main/java", "/src/generated"));
+
+    final Path file = tmp.resolve("params.properties");
+    store.store(file);
+
+    final ParamStore loaded = ParamStore.load(file);
+    assertThat(loaded.get("sourceRoots.0")).isEqualTo("/src/main/java");
+    assertThat(loaded.readList("sourceRoots")).containsExactly("/src/main/java", "/src/generated");
+  }
+
   private record DependencySource(String jar, String gav, String status)
       implements PrefixedWritable {
 

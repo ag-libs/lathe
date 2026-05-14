@@ -44,6 +44,14 @@ final class WorkspaceManifest {
 
     try {
       final var props = ParamStore.load(file);
+      if (!LatheLayout.SCHEMA_VERSION.equals(props.get("schemaVersion"))) {
+        LOG.warning(
+            () ->
+                "[manifest] unexpected schemaVersion %s — ignoring"
+                    .formatted(props.get("schemaVersion")));
+        return empty();
+      }
+
       final var jarToGav =
           props.readIndexed("dependencySource", DependencyEntry::readFrom).stream()
               .filter(e -> e.jar() != null)
@@ -63,69 +71,66 @@ final class WorkspaceManifest {
 
     final var pkgElement = (PackageElement) topLevel.getEnclosingElement();
     final var enclosingModule = pkgElement.getEnclosingElement();
-    if (enclosingModule instanceof final ModuleElement me && !me.isUnnamed()) {
-      return originLabelForModule(
-          me.getQualifiedName().toString(), topLevel.getQualifiedName().toString(), fm);
-    }
+    try {
+      if (enclosingModule instanceof final ModuleElement me && !me.isUnnamed()) {
+        return originLabelForModule(
+            me.getQualifiedName().toString(), topLevel.getQualifiedName().toString(), fm);
+      }
 
-    return classpathLabel(topLevel.getQualifiedName().toString(), fm);
+      return classpathLabel(topLevel.getQualifiedName().toString(), fm);
+    } catch (final IOException e) {
+      LOG.log(
+          Level.FINE,
+          e,
+          () -> "[origin] lookup failed for %s".formatted(topLevel.getQualifiedName()));
+      return Optional.empty();
+    }
   }
 
   private Optional<String> originLabelForModule(
-      final String moduleName, final String qualifiedName, final StandardJavaFileManager fm) {
-    try {
-      if (fm.getLocationForModule(StandardLocation.SYSTEM_MODULES, moduleName) != null) {
-        final var jdkLabel =
-            jdkVersion != null ? moduleName + " (JDK " + jdkVersion + ")" : moduleName;
-        LOG.fine(() -> "[origin] module %s → jdk label".formatted(moduleName));
-        return Optional.of(jdkLabel);
-      }
+      final String moduleName, final String qualifiedName, final StandardJavaFileManager fm)
+      throws IOException {
+    if (fm.getLocationForModule(StandardLocation.SYSTEM_MODULES, moduleName) != null) {
+      final var jdkLabel =
+          jdkVersion != null ? moduleName + " (JDK " + jdkVersion + ")" : moduleName;
+      LOG.fine(() -> "[origin] module %s → jdk label".formatted(moduleName));
+      return Optional.of(jdkLabel);
+    }
 
-      final var moduleLoc = fm.getLocationForModule(StandardLocation.MODULE_PATH, moduleName);
-      if (moduleLoc != null) {
-        final var jfo = fm.getJavaFileForInput(moduleLoc, qualifiedName, JavaFileObject.Kind.CLASS);
-        if (jfo != null) {
-          final var gav = extractJarPath(jfo.toUri()).map(jarToGav::get);
-          LOG.fine(
-              () ->
-                  "[origin] module %s → uri=%s gav=%s"
-                      .formatted(moduleName, jfo.toUri(), gav.orElse(null)));
-          return gav.isPresent()
-              ? Optional.of(moduleName + " (" + gav.get() + ")")
-              : Optional.of(moduleName);
-        }
+    final var moduleLoc = fm.getLocationForModule(StandardLocation.MODULE_PATH, moduleName);
+    if (moduleLoc != null) {
+      final var jfo = fm.getJavaFileForInput(moduleLoc, qualifiedName, JavaFileObject.Kind.CLASS);
+      if (jfo != null) {
+        final var gav = extractJarPath(jfo.toUri()).map(jarToGav::get);
+        LOG.fine(
+            () ->
+                "[origin] module %s → uri=%s gav=%s"
+                    .formatted(moduleName, jfo.toUri(), gav.orElse(null)));
+        return gav.map(s -> moduleName + " (" + s + ")").or(() -> Optional.of(moduleName));
       }
-    } catch (final IOException e) {
-      LOG.fine(
-          () -> "[origin] module lookup failed for %s: %s".formatted(moduleName, e.getMessage()));
     }
 
     return Optional.of(moduleName);
   }
 
   private Optional<String> classpathLabel(
-      final String qualifiedName, final StandardJavaFileManager fm) {
-    try {
-      final var jfo =
-          fm.getJavaFileForInput(
-              StandardLocation.CLASS_PATH, qualifiedName, JavaFileObject.Kind.CLASS);
-      if (jfo == null) {
-        LOG.fine(() -> "[origin] no class file for %s".formatted(qualifiedName));
-        return Optional.empty();
-      }
-
-      final var uri = jfo.toUri();
-      final var jarPath = extractJarPath(uri);
-      final var gav = jarPath.map(jarToGav::get);
-      LOG.fine(
-          () ->
-              "[origin] %s → uri=%s jar=%s gav=%s"
-                  .formatted(qualifiedName, uri, jarPath.orElse(null), gav.orElse(null)));
-      return gav.isPresent() ? gav : extractReactorModuleName(uri);
-    } catch (final IOException e) {
-      LOG.fine(() -> "[origin] lookup failed for %s: %s".formatted(qualifiedName, e.getMessage()));
+      final String qualifiedName, final StandardJavaFileManager fm) throws IOException {
+    final var jfo =
+        fm.getJavaFileForInput(
+            StandardLocation.CLASS_PATH, qualifiedName, JavaFileObject.Kind.CLASS);
+    if (jfo == null) {
+      LOG.fine(() -> "[origin] no class file for %s".formatted(qualifiedName));
       return Optional.empty();
     }
+
+    final var uri = jfo.toUri();
+    final var jarPath = extractJarPath(uri);
+    final var gav = jarPath.map(jarToGav::get);
+    LOG.fine(
+        () ->
+            "[origin] %s → uri=%s jar=%s gav=%s"
+                .formatted(qualifiedName, uri, jarPath.orElse(null), gav.orElse(null)));
+    return gav.isPresent() ? gav : extractReactorModuleName(uri);
   }
 
   private static Optional<String> extractReactorModuleName(final URI uri) {
@@ -154,10 +159,6 @@ final class WorkspaceManifest {
       return Optional.empty();
     }
 
-    try {
-      return Optional.of(Path.of(URI.create(specific.substring(0, sep))));
-    } catch (final IllegalArgumentException e) {
-      return Optional.empty();
-    }
+    return Optional.of(Path.of(URI.create(specific.substring(0, sep))));
   }
 }

@@ -13,7 +13,7 @@ import javax.tools.ToolProvider;
 
 final class TestCompiler {
 
-  record CrossFileTask(JavacTask task, Trees trees, CompilationUnitTree cu) {}
+  record CrossFileTask(JavacTask task, Trees trees, CompilationUnitTree cu, StandardJavaFileManager fm) {}
 
   private TestCompiler() {}
 
@@ -37,6 +37,6 @@ final class TestCompiler {
         (JavacTask) compiler.getTask(null, fm, null, null, null, fm.getJavaFileObjects(src));
     final CompilationUnitTree cu = task.parse().iterator().next();
     task.analyze();
-    return new CrossFileTask(task, Trees.instance(task), cu);
+    return new CrossFileTask(task, Trees.instance(task), cu, fm);
   }
 }
