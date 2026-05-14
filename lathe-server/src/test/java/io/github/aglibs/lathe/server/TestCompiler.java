@@ -13,7 +13,8 @@ import javax.tools.ToolProvider;
 
 final class TestCompiler {
 
-  record CrossFileTask(JavacTask task, Trees trees, CompilationUnitTree cu, StandardJavaFileManager fm) {}
+  record CrossFileTask(
+      JavacTask task, Trees trees, CompilationUnitTree cu, StandardJavaFileManager fm) {}
 
   private TestCompiler() {}
 
