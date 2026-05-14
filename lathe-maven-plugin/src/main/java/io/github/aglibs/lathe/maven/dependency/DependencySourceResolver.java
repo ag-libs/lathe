@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.maven.dep;
+package io.github.aglibs.lathe.maven.dependency;
 
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.maven.ReactorProjects;

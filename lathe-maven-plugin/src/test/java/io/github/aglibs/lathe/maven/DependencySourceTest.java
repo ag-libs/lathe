@@ -2,7 +2,7 @@ package io.github.aglibs.lathe.maven;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.aglibs.lathe.maven.dep.DependencySource;
+import io.github.aglibs.lathe.maven.dependency.DependencySource;
 import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.Test;

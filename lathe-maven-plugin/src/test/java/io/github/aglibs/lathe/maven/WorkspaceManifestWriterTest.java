@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.maven.WorkspaceManifestData;
-import io.github.aglibs.lathe.maven.dep.DependencySource;
+import io.github.aglibs.lathe.maven.dependency.DependencySource;
 import io.github.aglibs.lathe.maven.jdk.JdkSource;
 import java.nio.file.Path;
 import java.util.List;

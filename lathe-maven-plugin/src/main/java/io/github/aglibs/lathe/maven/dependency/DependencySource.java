@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.maven.dep;
+package io.github.aglibs.lathe.maven.dependency;
 
 import io.github.aglibs.lathe.core.maven.DependencyEntry;
 import java.nio.file.Path;

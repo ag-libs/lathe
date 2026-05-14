@@ -1,9 +1,9 @@
 package io.github.aglibs.lathe.maven;
 
 import io.github.aglibs.lathe.core.LatheLayout;
-import io.github.aglibs.lathe.maven.dep.DependencySource;
-import io.github.aglibs.lathe.maven.dep.DependencySourceResolver;
-import io.github.aglibs.lathe.maven.dep.DependencySourceSync;
+import io.github.aglibs.lathe.maven.dependency.DependencySource;
+import io.github.aglibs.lathe.maven.dependency.DependencySourceResolver;
+import io.github.aglibs.lathe.maven.dependency.DependencySourceSync;
 import io.github.aglibs.lathe.maven.jdk.JdkSourceResolver;
 import io.github.aglibs.lathe.maven.jdk.JdkSourceSync;
 import java.nio.file.Files;
