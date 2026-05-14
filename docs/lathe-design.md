@@ -234,9 +234,8 @@ Never needs to be gitignored.
 │       └── 21.0.7/
 │           └── java/lang/String.java
 ├── deps/                                ← dependency source jars extracted by lathe:sync
-│   └── com.google.guava/
-│       └── guava/32.0.0-jre/
-│           └── com/google/common/collect/ImmutableList.java
+│   └── com.google.guava:guava:32.0.0-jre/
+│       └── com/google/common/collect/ImmutableList.java
 └── type-index/
     └── jars/
         └── com.google.guava/
@@ -305,7 +304,7 @@ workspaceRoot=/workspace
 dependencySource.0.jar=/home/user/.m2/repository/com/google/guava/guava/32.0.0-jre/guava-32.0.0-jre.jar
 dependencySource.0.gav=com.google.guava:guava:32.0.0-jre
 dependencySource.0.status=present
-dependencySource.0.dir=/home/user/.cache/lathe/deps/com/google/guava/guava/32.0.0-jre
+dependencySource.0.dir=/home/user/.cache/lathe/deps/com.google.guava:guava:32.0.0-jre
 dependencySource.0.classpath.0=/home/user/.m2/repository/com/google/guava/failureaccess/1.0.2/failureaccess-1.0.2.jar
 
 dependencySource.1.jar=/home/user/.m2/repository/org/example/no-sources/1.0/no-sources-1.0.jar

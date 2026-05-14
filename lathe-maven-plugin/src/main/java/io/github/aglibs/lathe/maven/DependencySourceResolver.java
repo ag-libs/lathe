@@ -78,9 +78,6 @@ final class DependencySourceResolver {
 
   private static Path sourceCacheDir(
       final Path cacheRoot, final org.eclipse.aether.artifact.Artifact artifact) {
-    return cacheRoot
-        .resolve(artifact.getGroupId().replace('.', '/'))
-        .resolve(artifact.getArtifactId())
-        .resolve(artifact.getVersion());
+    return cacheRoot.resolve(ReactorProjects.gav(artifact));
   }
 }

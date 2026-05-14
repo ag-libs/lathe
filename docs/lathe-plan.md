@@ -100,7 +100,7 @@ Current implementation:
 - It logs reactor modules in deterministic relative-path order.
 - It requires Maven test-scope dependency resolution and resolves source JARs for resolved external reactor artifacts,
   including transitive dependencies.
-- It extracts resolved source JARs under `~/.cache/lathe/deps/<group path>/<artifact>/<version>/`.
+- It extracts resolved source JARs under `~/.cache/lathe/deps/<groupId:artifactId:version>/`.
 - Extraction is sequential, zip-slip-safe via `FileUtil.unzip`, and skipped when `.lathe-source.properties`
   matches the current source JAR path, size, and modified time.
 - Missing source JARs are not sync failures.
@@ -140,9 +140,9 @@ Implement in small slices:
 
 - Current implementation uses Maven's resolved test-scope reactor artifacts,
   resolves matching dependency source JAR artifacts through Maven,
-  extracts available dependency sources under `~/.cache/lathe/deps/<gav-path>/`,
+  extracts available dependency sources under `~/.cache/lathe/deps/<groupId:artifactId:version>/`,
   and treats missing source JARs as non-fatal.
-  It uses Maven-style group paths, for example `~/.cache/lathe/deps/com/google/guava/guava/32.0.0-jre/`.
+  For example `~/.cache/lathe/deps/com.google.guava:guava:32.0.0-jre/`.
 - Current extraction is idempotent:
   extract to a temp directory, write a `.lathe-source.properties` marker after success,
   then atomically move into the final cache path.
