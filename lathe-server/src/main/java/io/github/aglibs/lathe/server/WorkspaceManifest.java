@@ -149,7 +149,8 @@ final class WorkspaceManifest {
               final var result = new java.util.ArrayList<Path>(transitive.size() + 1);
               result.add(selfJar);
               result.addAll(transitive);
-              return List.copyOf(result);
+              result.addAll(jarToGav.keySet());
+              return result.stream().distinct().toList();
             })
         .orElse(List.of());
   }
@@ -159,6 +160,17 @@ final class WorkspaceManifest {
       return Optional.of(jdkSourceDir);
     }
     return jarToSourceDir.values().stream().filter(file::startsWith).findFirst();
+  }
+
+  Optional<String> jdkModuleForFile(final Path file) {
+    if (jdkSourceDir == null || !file.startsWith(jdkSourceDir)) {
+      return Optional.empty();
+    }
+    final Path rel = jdkSourceDir.relativize(file);
+    if (rel.getNameCount() == 0) {
+      return Optional.empty();
+    }
+    return Optional.of(rel.getName(0).toString());
   }
 
   Optional<String> originLabel(final Element element, final StandardJavaFileManager fm) {

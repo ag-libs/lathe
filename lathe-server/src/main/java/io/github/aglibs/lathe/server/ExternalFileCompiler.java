@@ -10,7 +10,10 @@ import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.tools.DiagnosticCollector;
@@ -28,6 +31,7 @@ final class ExternalFileCompiler implements SourceCompiler, AutoCloseable {
   private final JavaCompiler javac = ToolProvider.getSystemJavaCompiler();
   private final StandardJavaFileManager fm;
   private final Path td;
+  private final Set<String> patchedModules = new HashSet<>();
   private final ModuleAnalysis analysis = new ModuleAnalysis(this);
 
   ExternalFileCompiler(final WorkspaceManifest manifest) {
@@ -63,8 +67,8 @@ final class ExternalFileCompiler implements SourceCompiler, AutoCloseable {
   }
 
   @Override
-  public CompilationResult compile(final String uri, final String content, final CompileMode mode)
-      throws IOException {
+  public synchronized CompilationResult compile(
+      final String uri, final String content, final CompileMode mode) throws IOException {
     final Path filePath = Path.of(URI.create(uri));
     final var sourceRoot = manifest.externalSourceRootForFile(filePath);
     if (sourceRoot.isEmpty()) {
@@ -82,8 +86,8 @@ final class ExternalFileCompiler implements SourceCompiler, AutoCloseable {
 
     final var collector = new DiagnosticCollector<JavaFileObject>();
     final JavaFileObject jfo = fm.getJavaFileObjects(tempFile).iterator().next();
-    final var task =
-        (JavacTask) javac.getTask(null, fm, collector, List.of("-proc:none"), null, List.of(jfo));
+    final List<String> options = buildOptions(filePath);
+    final var task = (JavacTask) javac.getTask(null, fm, collector, options, null, List.of(jfo));
     final var it = task.parse().iterator();
     final CompilationUnitTree cu = it.hasNext() ? it.next() : null;
     task.analyze();
@@ -100,6 +104,20 @@ final class ExternalFileCompiler implements SourceCompiler, AutoCloseable {
 
     return new CompilationResult(
         collector.getDiagnostics(), new CompilationTaskContext(trees, null, null));
+  }
+
+  private List<String> buildOptions(final Path filePath) {
+    final var options = new ArrayList<String>();
+    options.add("-proc:none");
+    manifest
+        .jdkModuleForFile(filePath)
+        .filter(patchedModules::add)
+        .ifPresent(
+            moduleName -> {
+              options.add("--patch-module");
+              options.add(moduleName + "=" + td.resolve(moduleName));
+            });
+    return List.copyOf(options);
   }
 
   @Override
