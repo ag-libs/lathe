@@ -28,26 +28,26 @@ final class ModuleCompiler implements SourceCompiler, AutoCloseable {
   private static final String PATCH_MODULE = "--patch-module";
   private static final String PATCH_MODULE_EQ = PATCH_MODULE + "=";
 
-  private final ModuleParams params;
+  private final ModuleConfig config;
   private final JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
   private final StandardJavaFileManager fm;
   private final Path td;
   private final List<String> compilerArgs;
-  private final ModuleAnalysis analysis = new ModuleAnalysis(this);
+  private final AnalysisEngine analysis = new AnalysisEngine(this);
 
-  ModuleCompiler(final ModuleParams params) {
-    this.params = params;
+  ModuleCompiler(final ModuleConfig config) {
+    this.config = config;
     try {
       this.td = Files.createTempDirectory("lathe-");
       this.fm = compiler.getStandardFileManager(null, null, null);
       initLocations();
-      this.compilerArgs = processPatchModules(params.compilerArgs(), fm, td);
+      this.compilerArgs = processPatchModules(config.compilerArgs(), fm, td);
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }
   }
 
-  ModuleAnalysis analysis() {
+  AnalysisEngine analysis() {
     return analysis;
   }
 
@@ -62,7 +62,7 @@ final class ModuleCompiler implements SourceCompiler, AutoCloseable {
     final DiagnosticCollector<JavaFileObject> collector = new DiagnosticCollector<>();
     final Path filePath = Path.of(URI.create(uri));
     final Path sourceRoot =
-        params.sourceRoots().stream()
+        config.sourceRoots().stream()
             .filter(filePath::startsWith)
             .max(Comparator.comparingInt(Path::getNameCount))
             .orElseThrow(() -> new IllegalStateException("no source root for " + uri));
@@ -71,12 +71,12 @@ final class ModuleCompiler implements SourceCompiler, AutoCloseable {
     Files.createDirectories(tempFile.getParent());
     Files.writeString(tempFile, content);
 
-    final var options = buildOptions(params, compilerArgs, mode);
+    final var options = buildOptions(config, compilerArgs, mode);
     LOG.fine(() -> "[%s] td=%s root=%s opts=%s".formatted(mode.tag, td, sourceRoot, options));
     final JavaFileObject file = fm.getJavaFileObjects(tempFile).iterator().next();
     try {
-      final CompilationTaskContext context = runTask(collector, options, file, mode);
-      return new CompilationResult(collector.getDiagnostics(), context);
+      final FileAnalysis fileAnalysis = runTask(collector, options, file, mode);
+      return new CompilationResult(collector.getDiagnostics(), fileAnalysis);
     } finally {
       if (mode == CompileMode.FULL) {
         fm.flush();
@@ -100,37 +100,37 @@ final class ModuleCompiler implements SourceCompiler, AutoCloseable {
   }
 
   private void initLocations() throws IOException {
-    final var classesDir = params.latheClassesDir();
+    final var classesDir = config.latheClassesDir();
     Files.createDirectories(classesDir);
     fm.setLocation(StandardLocation.CLASS_OUTPUT, List.of(classesDir.toFile()));
     LOG.fine(() -> "[cache] CLASS_OUTPUT=%s".formatted(classesDir));
 
-    final var genSourcesDir = params.generatedSourcesDir();
+    final var genSourcesDir = config.generatedSourcesDir();
     Files.createDirectories(genSourcesDir);
     fm.setLocation(StandardLocation.SOURCE_OUTPUT, List.of(genSourcesDir.toFile()));
     LOG.fine(() -> "[cache] SOURCE_OUTPUT=%s".formatted(genSourcesDir));
 
-    final var classpath = params.remappedClasspath();
+    final var classpath = config.remappedClasspath();
     if (!classpath.isEmpty()) {
       fm.setLocation(StandardLocation.CLASS_PATH, classpath.stream().map(Path::toFile).toList());
       LOG.fine(() -> "[cache] CLASS_PATH=%s".formatted(classpath));
     }
 
-    final var modulepath = params.remappedModulepath();
+    final var modulepath = config.remappedModulepath();
     if (!modulepath.isEmpty()) {
       fm.setLocation(StandardLocation.MODULE_PATH, modulepath.stream().map(Path::toFile).toList());
       LOG.fine(() -> "[cache] MODULE_PATH=%s".formatted(modulepath));
     }
 
-    if (!params.processorPath().isEmpty()) {
+    if (!config.processorPath().isEmpty()) {
       fm.setLocation(
           StandardLocation.ANNOTATION_PROCESSOR_PATH,
-          params.remappedProcessorPath().stream().map(Path::toFile).toList());
-      LOG.fine(() -> "[cache] ANNOTATION_PROCESSOR_PATH=%s".formatted(params.processorPath()));
+          config.remappedProcessorPath().stream().map(Path::toFile).toList());
+      LOG.fine(() -> "[cache] ANNOTATION_PROCESSOR_PATH=%s".formatted(config.processorPath()));
     }
   }
 
-  private CompilationTaskContext runTask(
+  private FileAnalysis runTask(
       final DiagnosticCollector<JavaFileObject> collector,
       final List<String> options,
       final JavaFileObject sourceFile,
@@ -147,12 +147,12 @@ final class ModuleCompiler implements SourceCompiler, AutoCloseable {
     final var trees = Trees.instance(task);
     if (cu != null) {
       final var t = Stopwatch.start();
-      final List<SemanticToken> semanticTokens = SemanticTokensScanner.scan(trees, cu);
+      final List<SemanticToken> semanticTokens = TokenScanner.scan(trees, cu);
       LOG.fine(() -> "[tokens] %d tokens %dms".formatted(semanticTokens.size(), t.elapsedMs()));
-      return new CompilationTaskContext(trees, cu, semanticTokens);
+      return new FileAnalysis(trees, cu, semanticTokens);
     }
 
-    return new CompilationTaskContext(trees, cu, null);
+    return new FileAnalysis(trees, cu, null);
   }
 
   private static List<String> processPatchModules(
@@ -175,18 +175,18 @@ final class ModuleCompiler implements SourceCompiler, AutoCloseable {
   }
 
   private static List<String> buildOptions(
-      final ModuleParams params, final List<String> compilerArgs, final CompileMode mode) {
+      final ModuleConfig config, final List<String> compilerArgs, final CompileMode mode) {
     final var opts = new ArrayList<String>();
-    if (params.release() != null && !params.release().isBlank()) {
+    if (config.release() != null && !config.release().isBlank()) {
       opts.add("--release");
-      opts.add(params.release());
+      opts.add(config.release());
     }
     opts.add("-encoding");
-    opts.add(params.encoding());
-    if (params.parameters()) {
+    opts.add(config.encoding());
+    if (config.parameters()) {
       opts.add("-parameters");
     }
-    if (params.enablePreview()) {
+    if (config.enablePreview()) {
       opts.add("--enable-preview");
     }
     opts.addAll(modeCompilerArgs(compilerArgs, mode));

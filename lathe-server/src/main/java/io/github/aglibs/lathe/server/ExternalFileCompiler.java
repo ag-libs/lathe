@@ -32,7 +32,7 @@ final class ExternalFileCompiler implements SourceCompiler, AutoCloseable {
   private final StandardJavaFileManager fm;
   private final Path td;
   private final Set<String> patchedModules = new HashSet<>();
-  private final ModuleAnalysis analysis = new ModuleAnalysis(this);
+  private final AnalysisEngine analysis = new AnalysisEngine(this);
 
   ExternalFileCompiler(final WorkspaceManifest manifest) {
     this.manifest = manifest;
@@ -49,11 +49,11 @@ final class ExternalFileCompiler implements SourceCompiler, AutoCloseable {
     analysis.clearCache();
   }
 
-  ModuleAnalysis analysis() {
+  AnalysisEngine analysis() {
     return analysis;
   }
 
-  ModuleAnalysis ensureCompiled(final String uri) throws IOException {
+  AnalysisEngine ensureCompiled(final String uri) throws IOException {
     if (!analysis.isCached(uri)) {
       final var content = Files.readString(Path.of(URI.create(uri)));
       analysis.compile(uri, content, CompileMode.OPEN);
@@ -73,7 +73,7 @@ final class ExternalFileCompiler implements SourceCompiler, AutoCloseable {
     final var sourceRoot = manifest.externalSourceRootForFile(filePath);
     if (sourceRoot.isEmpty()) {
       LOG.fine(() -> "[external] no source root for %s — skipping".formatted(uri));
-      return new CompilationResult(List.of(), new CompilationTaskContext(null, null, null));
+      return new CompilationResult(List.of(), new FileAnalysis(null, null, null));
     }
 
     final Path rel = sourceRoot.get().relativize(filePath);
@@ -94,16 +94,14 @@ final class ExternalFileCompiler implements SourceCompiler, AutoCloseable {
     final Trees trees = Trees.instance(task);
     if (cu != null) {
       final var t = Stopwatch.start();
-      final List<SemanticToken> tokens = SemanticTokensScanner.scan(trees, cu);
+      final List<SemanticToken> tokens = TokenScanner.scan(trees, cu);
       LOG.fine(
           () ->
               "[external] %s compiled %d tokens %dms".formatted(uri, tokens.size(), t.elapsedMs()));
-      return new CompilationResult(
-          collector.getDiagnostics(), new CompilationTaskContext(trees, cu, tokens));
+      return new CompilationResult(collector.getDiagnostics(), new FileAnalysis(trees, cu, tokens));
     }
 
-    return new CompilationResult(
-        collector.getDiagnostics(), new CompilationTaskContext(trees, null, null));
+    return new CompilationResult(collector.getDiagnostics(), new FileAnalysis(trees, null, null));
   }
 
   private List<String> buildOptions(final Path filePath) {

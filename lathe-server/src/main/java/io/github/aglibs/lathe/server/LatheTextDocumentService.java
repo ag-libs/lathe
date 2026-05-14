@@ -173,7 +173,7 @@ final class LatheTextDocumentService implements TextDocumentService {
     if (tokens == null) {
       return CompletableFuture.completedFuture(null);
     }
-    final var encoded = SemanticTokensScanner.encode(tokens);
+    final var encoded = TokenScanner.encode(tokens);
     final var dataList = new ArrayList<Integer>(encoded.length);
     for (final var v : encoded) {
       dataList.add(v);
@@ -225,7 +225,7 @@ final class LatheTextDocumentService implements TextDocumentService {
           try {
             compileWith(uri, Files.readString(toPath(uri)), CompileMode.FULL);
             registry
-                .findForFile(toPath(uri))
+                .moduleFor(toPath(uri))
                 .ifPresent(module -> scheduleOpenFilesInModule(uri, module));
           } catch (final IOException e) {
             LOG.log(SEVERE, e, () -> "[save] failed to read %s".formatted(uri));
@@ -233,7 +233,7 @@ final class LatheTextDocumentService implements TextDocumentService {
         });
   }
 
-  private void scheduleOpenFilesInModule(final String savedUri, final ModuleParams savedModule) {
+  private void scheduleOpenFilesInModule(final String savedUri, final ModuleConfig savedModule) {
     LOG.fine(
         () ->
             "[save] checking %d open file(s) for dependents of %s"
@@ -242,14 +242,14 @@ final class LatheTextDocumentService implements TextDocumentService {
   }
 
   private void scheduleIfDependent(
-      final String depUri, final String savedUri, final ModuleParams savedModule) {
+      final String depUri, final String savedUri, final ModuleConfig savedModule) {
     if (depUri.equals(savedUri)) {
       return;
     }
 
-    final Optional<ModuleParams> depModule = registry.findForFile(toPath(depUri));
-    final Optional<ModuleParams> sameModule =
-        depModule.filter(m -> m.latheModuleDir().equals(savedModule.latheModuleDir()));
+    final Optional<ModuleConfig> depModule = registry.moduleFor(toPath(depUri));
+    final Optional<ModuleConfig> sameModule =
+        depModule.filter(m -> m.moduleDir().equals(savedModule.moduleDir()));
     LOG.fine(
         () ->
             "[save] dep=%s module=%s same=%s"
@@ -299,13 +299,13 @@ final class LatheTextDocumentService implements TextDocumentService {
     }
   }
 
-  private ModuleAnalysis resolveAnalysis(final String uri) {
+  private AnalysisEngine resolveAnalysis(final String uri) {
     final var path = toPath(uri);
-    final var reactor = registry.findForFile(path).map(m -> registry.getOrCreate(m).analysis());
+    final var reactor = registry.moduleFor(path).map(registry::engineFor);
     if (reactor.isPresent()) {
       return reactor.get();
     }
-    if (!manifest.isExternalSourceFile(path)) {
+    if (!manifest.containsFile(path)) {
       return null;
     }
     try {
@@ -322,12 +322,12 @@ final class LatheTextDocumentService implements TextDocumentService {
 
   private void compileWith(final String uri, final String content, final CompileMode mode) {
     registry
-        .findForFile(toPath(uri))
+        .moduleFor(toPath(uri))
         .ifPresentOrElse(
             module -> {
               try {
                 final List<Diagnostic> diagnostics =
-                    registry.getOrCreate(module).analysis().compile(uri, content, mode);
+                    registry.engineFor(module).compile(uri, content, mode);
                 if (Thread.interrupted()) {
                   LOG.fine(
                       () -> "[%s] interrupted, skipping publish for %s".formatted(mode.tag, uri));
@@ -342,7 +342,7 @@ final class LatheTextDocumentService implements TextDocumentService {
               }
             },
             () -> {
-              if (manifest.isExternalSourceFile(toPath(uri))) {
+              if (manifest.containsFile(toPath(uri))) {
                 try {
                   final List<Diagnostic> diagnostics =
                       externalCompiler.analysis().compile(uri, content, mode);

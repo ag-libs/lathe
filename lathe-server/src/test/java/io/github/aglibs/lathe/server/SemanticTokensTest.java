@@ -28,7 +28,7 @@ class SemanticTokensTest extends SampleFixture {
 
   @BeforeEach
   void scanTokens() throws IOException {
-    tokens = SemanticTokensScanner.scan(trees, cu);
+    tokens = TokenScanner.scan(trees, cu);
   }
 
   @Nested
@@ -166,7 +166,7 @@ class SemanticTokensTest extends SampleFixture {
 
     @BeforeEach
     void encode() {
-      encoded = SemanticTokensScanner.encode(tokens);
+      encoded = TokenScanner.encode(tokens);
     }
 
     @Test
@@ -183,7 +183,7 @@ class SemanticTokensTest extends SampleFixture {
     @Test
     void token_type_index_is_within_legend_bounds() {
       for (int i = 3; i < encoded.length; i += 5) {
-        assertThat(encoded[i]).isBetween(0, SemanticTokensScanner.TOKEN_TYPES.size() - 1);
+        assertThat(encoded[i]).isBetween(0, TokenScanner.TOKEN_TYPES.size() - 1);
       }
     }
   }

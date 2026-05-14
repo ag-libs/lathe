@@ -2,7 +2,7 @@ package io.github.aglibs.lathe.core.maven;
 
 import java.util.List;
 
-public record ModuleConfig(
+public record ModuleConfigData(
     String sourceTree,
     String outputDir,
     String generatedSourcesDir,

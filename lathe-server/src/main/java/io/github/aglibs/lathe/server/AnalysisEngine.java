@@ -23,14 +23,14 @@ import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 
-final class ModuleAnalysis {
+final class AnalysisEngine {
 
-  private static final Logger LOG = Logger.getLogger(ModuleAnalysis.class.getName());
+  private static final Logger LOG = Logger.getLogger(AnalysisEngine.class.getName());
 
   private final SourceCompiler compiler;
-  private final Map<String, CompilationTaskContext> cache = new ConcurrentHashMap<>();
+  private final Map<String, FileAnalysis> cache = new ConcurrentHashMap<>();
 
-  ModuleAnalysis(final SourceCompiler compiler) {
+  AnalysisEngine(final SourceCompiler compiler) {
     this.compiler = compiler;
   }
 
@@ -42,7 +42,7 @@ final class ModuleAnalysis {
       throws IOException {
     final var t = Stopwatch.start();
     final var run = compiler.compile(uri, content, mode);
-    cache.put(uri, run.context());
+    cache.put(uri, run.fileAnalysis());
     final var diags = filterAndMap(run.diagnostics(), content);
     LOG.fine(() -> "[%s] %s %dms diags=%d".formatted(mode.tag, uri, t.elapsedMs(), diags.size()));
     return diags;
@@ -81,7 +81,7 @@ final class ModuleAnalysis {
     final Element element = SourceLocator.elementAt(cur.ctx().trees(), cur.path());
     final TypeMirror type = cur.path() != null ? cur.ctx().trees().getTypeMirror(cur.path()) : null;
     final var allRoots =
-        Stream.concat(sourceRoots.stream(), manifest.allSourceDirs().stream()).toList();
+        Stream.concat(sourceRoots.stream(), manifest.externalSourceDirs().stream()).toList();
     final var javadoc = JavadocLocator.locate(element, cur.ctx().trees(), allRoots).orElse(null);
     final var origin = manifest.originLabel(element, compiler.fileManager()).orElse(null);
     LOG.fine(
@@ -131,7 +131,7 @@ final class ModuleAnalysis {
     return result;
   }
 
-  private record CursorContext(CompilationTaskContext ctx, TreePath path) {}
+  private record CursorContext(FileAnalysis ctx, TreePath path) {}
 
   private CursorContext resolve(final String uri, final Position pos) {
     final var ctx = cache.get(uri);

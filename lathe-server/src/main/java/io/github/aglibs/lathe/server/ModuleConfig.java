@@ -2,13 +2,13 @@ package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
-import io.github.aglibs.lathe.core.maven.ModuleConfig;
+import io.github.aglibs.lathe.core.maven.ModuleConfigData;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 
-record ModuleParams(
-    Path latheModuleDir,
+record ModuleConfig(
+    Path moduleDir,
     String sourceTree,
     Path outputDir,
     Path originalGenSourcesDir,
@@ -24,11 +24,11 @@ record ModuleParams(
     List<String> compilerArgs) {
 
   Path latheClassesDir() {
-    return latheModuleDir.resolve(sourceTree);
+    return moduleDir.resolve(sourceTree);
   }
 
   Path generatedSourcesDir() {
-    return latheModuleDir.resolve(LatheLayout.GENERATED_SOURCES);
+    return moduleDir.resolve(LatheLayout.GENERATED_SOURCES);
   }
 
   List<Path> remappedClasspath() {
@@ -50,7 +50,7 @@ record ModuleParams(
   }
 
   private Path latheDir() {
-    var p = latheModuleDir;
+    var p = moduleDir;
     while (p != null && !LatheLayout.LATHE_DIR.equals(p.getFileName().toString())) {
       p = p.getParent();
     }
@@ -73,10 +73,10 @@ record ModuleParams(
         : latheDir.resolve(sourceTree);
   }
 
-  static ModuleParams load(final Path paramsFile, final Path latheModuleDir) throws IOException {
-    final var config = Json.read(paramsFile, ModuleConfig.class);
-    return new ModuleParams(
-        latheModuleDir,
+  static ModuleConfig load(final Path paramsFile, final Path moduleDir) throws IOException {
+    final var config = Json.read(paramsFile, ModuleConfigData.class);
+    return new ModuleConfig(
+        moduleDir,
         config.sourceTree(),
         Path.of(config.outputDir()),
         config.generatedSourcesDir() != null ? Path.of(config.generatedSourcesDir()) : null,

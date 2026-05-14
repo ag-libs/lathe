@@ -1,7 +1,7 @@
 package io.github.aglibs.lathe.compiler;
 
 import io.github.aglibs.lathe.core.Json;
-import io.github.aglibs.lathe.core.maven.ModuleConfig;
+import io.github.aglibs.lathe.core.maven.ModuleConfigData;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
@@ -17,7 +17,7 @@ final class ParamsWriter {
     final var outputBaseName = Path.of(config.getOutputLocation()).getFileName().toString();
     final var genSources = config.getGeneratedSourcesDirectory();
     final var moduleConfig =
-        new ModuleConfig(
+        new ModuleConfigData(
             outputBaseName,
             config.getOutputLocation(),
             genSources != null ? genSources.toString() : null,

@@ -21,7 +21,7 @@ import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
 import org.eclipse.lsp4j.Position;
 
-final class SemanticTokensScanner extends TreePathScanner<Void, Void> {
+final class TokenScanner extends TreePathScanner<Void, Void> {
 
   static final List<String> TOKEN_TYPES =
       List.of("enumMember", "method", "property", "typeParameter", "annotation");
@@ -34,8 +34,7 @@ final class SemanticTokensScanner extends TreePathScanner<Void, Void> {
   private final String source;
   private final List<SemanticToken> tokens = new ArrayList<>();
 
-  private SemanticTokensScanner(
-      final Trees trees, final CompilationUnitTree cu, final String source) {
+  private TokenScanner(final Trees trees, final CompilationUnitTree cu, final String source) {
     this.trees = trees;
     this.cu = cu;
     this.positions = trees.getSourcePositions();
@@ -45,7 +44,7 @@ final class SemanticTokensScanner extends TreePathScanner<Void, Void> {
   static List<SemanticToken> scan(final Trees trees, final CompilationUnitTree cu)
       throws IOException {
     final var scanner =
-        new SemanticTokensScanner(trees, cu, cu.getSourceFile().getCharContent(true).toString());
+        new TokenScanner(trees, cu, cu.getSourceFile().getCharContent(true).toString());
     scanner.scan(cu, null);
     scanner.tokens.sort(
         Comparator.comparingInt(SemanticToken::line).thenComparingInt(SemanticToken::character));

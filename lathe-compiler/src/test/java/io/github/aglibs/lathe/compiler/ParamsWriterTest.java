@@ -3,7 +3,7 @@ package io.github.aglibs.lathe.compiler;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.Json;
-import io.github.aglibs.lathe.core.maven.ModuleConfig;
+import io.github.aglibs.lathe.core.maven.ModuleConfigData;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -33,7 +33,7 @@ class ParamsWriterTest {
     ParamsWriter.write(config, latheModuleDir);
 
     final var result =
-        Json.read(latheModuleDir.resolve("lsp-params-classes.json"), ModuleConfig.class);
+        Json.read(latheModuleDir.resolve("lsp-params-classes.json"), ModuleConfigData.class);
     assertThat(result.sourceTree()).isEqualTo("classes");
     assertThat(result.outputDir()).isEqualTo(outputDir.toString());
     assertThat(result.release()).isEqualTo("25");
@@ -56,7 +56,7 @@ class ParamsWriterTest {
     ParamsWriter.write(config, latheModuleDir);
 
     final var result =
-        Json.read(latheModuleDir.resolve("lsp-params-classes.json"), ModuleConfig.class);
+        Json.read(latheModuleDir.resolve("lsp-params-classes.json"), ModuleConfigData.class);
     assertThat(result.classpath()).isEmpty();
     assertThat(result.modulepath()).isEmpty();
     assertThat(result.processorPath()).isEmpty();
@@ -80,7 +80,7 @@ class ParamsWriterTest {
     ParamsWriter.write(config, latheModuleDir);
 
     final var result =
-        Json.read(latheModuleDir.resolve("lsp-params-classes.json"), ModuleConfig.class);
+        Json.read(latheModuleDir.resolve("lsp-params-classes.json"), ModuleConfigData.class);
     assertThat(result.classpath())
         .containsExactly("/path/to/dep-a.jar", "/path/to/dep-b.jar", "/path/to/dep-c.jar");
   }
@@ -100,7 +100,7 @@ class ParamsWriterTest {
     ParamsWriter.write(config, latheModuleDir);
 
     final var result =
-        Json.read(latheModuleDir.resolve("lsp-params-classes.json"), ModuleConfig.class);
+        Json.read(latheModuleDir.resolve("lsp-params-classes.json"), ModuleConfigData.class);
     assertThat(result.compilerArgs())
         .containsExactly("--module-version", "27.0.0-SNAPSHOT", "-Werror");
   }
@@ -123,7 +123,7 @@ class ParamsWriterTest {
     assertThat(Files.exists(jsonFile)).isTrue();
     final var content = Files.readString(jsonFile);
     assertThat(content).contains("\"sourceTree\"").contains("\"classpath\"");
-    final var result = Json.read(jsonFile, ModuleConfig.class);
+    final var result = Json.read(jsonFile, ModuleConfigData.class);
     assertThat(result.classpath()).containsExactly("/b.jar", "/a.jar");
   }
 }

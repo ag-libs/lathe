@@ -5,4 +5,4 @@ import javax.tools.Diagnostic;
 import javax.tools.JavaFileObject;
 
 record CompilationResult(
-    List<Diagnostic<? extends JavaFileObject>> diagnostics, CompilationTaskContext context) {}
+    List<Diagnostic<? extends JavaFileObject>> diagnostics, FileAnalysis fileAnalysis) {}

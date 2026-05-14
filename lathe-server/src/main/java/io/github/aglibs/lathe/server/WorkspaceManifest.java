@@ -125,11 +125,11 @@ final class WorkspaceManifest {
     return new TypeEntry(topLevel, moduleName);
   }
 
-  boolean isExternalSourceFile(final Path file) {
+  boolean containsFile(final Path file) {
     return externalSourceRootForFile(file).isPresent();
   }
 
-  List<Path> allSourceDirs() {
+  List<Path> externalSourceDirs() {
     final var dirs = new java.util.ArrayList<Path>(jarToSourceDir.values());
     if (jdkSourceDir != null) {
       dirs.add(jdkSourceDir);

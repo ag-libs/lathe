@@ -16,10 +16,10 @@ final class ModuleRegistry implements AutoCloseable {
 
   private static final Logger LOG = Logger.getLogger(ModuleRegistry.class.getName());
 
-  private final List<ModuleParams> modules;
-  private final Map<ModuleParams, ModuleCompiler> compilers = new ConcurrentHashMap<>();
+  private final List<ModuleConfig> modules;
+  private final Map<ModuleConfig, ModuleCompiler> compilers = new ConcurrentHashMap<>();
 
-  private ModuleRegistry(final List<ModuleParams> modules) {
+  private ModuleRegistry(final List<ModuleConfig> modules) {
     this.modules = modules;
   }
 
@@ -34,7 +34,7 @@ final class ModuleRegistry implements AutoCloseable {
       return new ModuleRegistry(List.of());
     }
 
-    final var modules = new ArrayList<ModuleParams>();
+    final var modules = new ArrayList<ModuleConfig>();
     try (final var stream = Files.walk(latheDir)) {
       stream
           .filter(p -> p.getFileName().toString().startsWith("lsp-params-"))
@@ -42,7 +42,7 @@ final class ModuleRegistry implements AutoCloseable {
           .forEach(
               paramsFile -> {
                 try {
-                  modules.add(ModuleParams.load(paramsFile, paramsFile.getParent()));
+                  modules.add(ModuleConfig.load(paramsFile, paramsFile.getParent()));
                 } catch (final IOException e) {
                   LOG.log(
                       Level.WARNING, e, () -> "[registry] failed to load %s".formatted(paramsFile));
@@ -57,8 +57,8 @@ final class ModuleRegistry implements AutoCloseable {
     return new ModuleRegistry(List.copyOf(modules));
   }
 
-  ModuleCompiler getOrCreate(final ModuleParams params) {
-    return compilers.computeIfAbsent(params, ModuleCompiler::new);
+  AnalysisEngine engineFor(final ModuleConfig config) {
+    return compilers.computeIfAbsent(config, ModuleCompiler::new).analysis();
   }
 
   void dropFromAllCaches(final String uri) {
@@ -71,7 +71,7 @@ final class ModuleRegistry implements AutoCloseable {
     compilers.clear();
   }
 
-  Optional<ModuleParams> findForFile(final Path filePath) {
+  Optional<ModuleConfig> moduleFor(final Path filePath) {
     return modules.stream()
         .filter(m -> m.sourceRoots().stream().anyMatch(filePath::startsWith))
         .findFirst();

@@ -47,8 +47,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     capabilities.setTextDocumentSync(TextDocumentSyncKind.Full);
     capabilities.setHoverProvider(true);
     final var legend =
-        new SemanticTokensLegend(
-            SemanticTokensScanner.TOKEN_TYPES, SemanticTokensScanner.TOKEN_MODIFIERS);
+        new SemanticTokensLegend(TokenScanner.TOKEN_TYPES, TokenScanner.TOKEN_MODIFIERS);
     final var semanticTokensOptions = new SemanticTokensWithRegistrationOptions(legend);
     semanticTokensOptions.setFull(true);
     capabilities.setSemanticTokensProvider(semanticTokensOptions);
