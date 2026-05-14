@@ -27,10 +27,14 @@ final class DependencySourceResolver {
   }
 
   List<DependencySource> resolve(
-      final Map<String, Artifact> artifacts, final List<RemoteRepository> repositories) {
+      final Map<String, Artifact> artifacts,
+      final Map<String, List<Path>> artifactClasspaths,
+      final List<RemoteRepository> repositories) {
     log.info("[sync] dependencies " + artifacts.size() + " unique external artifacts");
     final List<DependencySource> dependencySources =
-        artifacts.values().stream().map(artifact -> resolve(artifact, repositories)).toList();
+        artifacts.values().stream()
+            .map(artifact -> resolve(artifact, artifactClasspaths, repositories))
+            .toList();
 
     log.info(
         "[sync] sources %d dependency entries, %d with sources"
@@ -40,8 +44,12 @@ final class DependencySourceResolver {
   }
 
   private DependencySource resolve(
-      final Artifact artifact, final List<RemoteRepository> repositories) {
+      final Artifact artifact,
+      final Map<String, List<Path>> artifactClasspaths,
+      final List<RemoteRepository> repositories) {
     final Path binaryJar = artifact.getFile().toPath();
+    final var classpath =
+        artifactClasspaths.getOrDefault(ReactorProjects.artifactKey(artifact), List.of());
     final var sourceArtifact =
         new DefaultArtifact(
             artifact.getGroupId(),
@@ -58,10 +66,11 @@ final class DependencySourceResolver {
           binaryJar,
           sourceCacheDir(
               LatheLayout.userCacheRoot().resolve(LatheLayout.CACHE_DEPS_DIR), resolvedArtifact),
-          resolvedArtifact);
+          resolvedArtifact,
+          classpath);
     } catch (final ArtifactResolutionException e) {
       log.debug("[sync] source missing " + ReactorProjects.gav(artifact), e);
-      return DependencySource.missing(ReactorProjects.gav(artifact), binaryJar);
+      return DependencySource.missing(ReactorProjects.gav(artifact), binaryJar, classpath);
     } catch (final RuntimeException e) {
       throw new SyncException("lathe:sync failed to resolve source artifacts", e);
     }

@@ -46,6 +46,7 @@ class DependencySourceExtractorTest {
     final Path jar =
         ZipFixture.create(tmp.resolve("dep-sources.jar"), "com/example/A.java", "class A {}");
     final Artifact artifact = new DefaultArtifact("com.example:dep:1.0").setFile(jar.toFile());
-    return DependencySource.present("com.example:dep:1.0", jar, tmp.resolve("cache/dep"), artifact);
+    return DependencySource.present(
+        "com.example:dep:1.0", jar, tmp.resolve("cache/dep"), artifact, List.of());
   }
 }

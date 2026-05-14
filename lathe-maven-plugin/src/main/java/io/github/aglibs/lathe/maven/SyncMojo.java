@@ -47,6 +47,7 @@ public final class SyncMojo extends AbstractMojo {
       final var dependencySources =
           resolver.resolve(
               ReactorProjects.externalArtifacts(projects),
+              ReactorProjects.artifactClasspaths(projects),
               ReactorProjects.remoteRepositories(projects));
       DependencySourceExtractor.extract(DependencySource.present(dependencySources), getLog());
       final var jdkSource = JdkSourceResolver.resolve();

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
@@ -51,6 +52,25 @@ class ReactorProjectsTest {
   }
 
   @Test
+  void artifactClasspaths_recordsCompileAndProvidedExternalJars() {
+    final MavenProject core = project("com.example", "core", "1", tmp.resolve("core"));
+    final MavenProject app = project("com.example", "app", "1", tmp.resolve("app"));
+    final Artifact reactor = artifact("com.example", "core", "1");
+    final Artifact compile = artifact("org.example", "compile", "1", Artifact.SCOPE_COMPILE);
+    final Artifact provided = artifact("org.example", "provided", "1", Artifact.SCOPE_PROVIDED);
+    final Artifact runtime = artifact("org.example", "runtime", "1", Artifact.SCOPE_RUNTIME);
+    app.setArtifacts(Set.of(reactor, compile, provided, runtime));
+
+    final Map<String, List<Path>> classpaths =
+        ReactorProjects.artifactClasspaths(List.of(core, app));
+
+    assertThat(classpaths.get(ReactorProjects.artifactKey(compile)))
+        .containsExactlyInAnyOrder(compile.getFile().toPath(), provided.getFile().toPath());
+    assertThat(classpaths.get(ReactorProjects.artifactKey(runtime)))
+        .containsExactlyInAnyOrder(compile.getFile().toPath(), provided.getFile().toPath());
+  }
+
+  @Test
   void remoteRepositories_deduplicatesByIdAndUrl() {
     final MavenProject first = project("com.example", "first", "1", tmp.resolve("first"));
     final MavenProject second = project("com.example", "second", "1", tmp.resolve("second"));
@@ -73,8 +93,13 @@ class ReactorProjectsTest {
   }
 
   private Artifact artifact(final String groupId, final String artifactId, final String version) {
+    return artifact(groupId, artifactId, version, Artifact.SCOPE_COMPILE);
+  }
+
+  private Artifact artifact(
+      final String groupId, final String artifactId, final String version, final String scope) {
     final Artifact artifact =
-        new DefaultArtifact(groupId, artifactId, version, "compile", "jar", "", null);
+        new DefaultArtifact(groupId, artifactId, version, scope, "jar", "", null);
     artifact.setFile(tmp.resolve("%s-%s.jar".formatted(artifactId, version)).toFile());
     return artifact;
   }

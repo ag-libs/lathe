@@ -50,6 +50,8 @@ final class LatheTextDocumentService implements TextDocumentService {
   private volatile WorkspaceManifest manifest = WorkspaceManifest.empty();
   private volatile LanguageClient client;
   private final long debounceMs;
+  private final ExternalFileCompiler externalCompiler =
+      new ExternalFileCompiler(WorkspaceManifest.empty());
 
   private final ScheduledExecutorService debouncer =
       Executors.newSingleThreadScheduledExecutor(
@@ -82,6 +84,7 @@ final class LatheTextDocumentService implements TextDocumentService {
 
   void setManifest(final WorkspaceManifest manifest) {
     this.manifest = manifest;
+    externalCompiler.setManifest(manifest);
   }
 
   void startWatching(final Path workspaceRoot) {
@@ -105,6 +108,7 @@ final class LatheTextDocumentService implements TextDocumentService {
 
   void close() {
     registry.close();
+    externalCompiler.close();
   }
 
   private static long mtime(final Path path) {
@@ -150,6 +154,7 @@ final class LatheTextDocumentService implements TextDocumentService {
     openFiles.remove(uri);
     cancelPending(uri, false, "close");
     registry.dropFromAllCaches(uri);
+    externalCompiler.analysis().dropFromCache(uri);
     client.publishDiagnostics(new PublishDiagnosticsParams(uri, List.of()));
   }
 
@@ -157,11 +162,14 @@ final class LatheTextDocumentService implements TextDocumentService {
   public CompletableFuture<SemanticTokens> semanticTokensFull(final SemanticTokensParams params) {
     final var uri = params.getTextDocument().getUri();
     LOG.fine(() -> "[semanticTokens] %s".formatted(uri));
-    final var tokens =
-        registry
-            .findForFile(toPath(uri))
-            .map(m -> registry.getOrCreate(m).analysis().semanticTokens(uri))
-            .orElse(null);
+    final List<SemanticToken> tokens;
+    try {
+      final var analysis = resolveAnalysis(uri);
+      tokens = analysis != null ? analysis.semanticTokens(uri) : null;
+    } catch (final Exception e) {
+      LOG.log(SEVERE, e, () -> "[semanticTokens] failed for " + uri);
+      return CompletableFuture.completedFuture(null);
+    }
     if (tokens == null) {
       return CompletableFuture.completedFuture(null);
     }
@@ -179,16 +187,9 @@ final class LatheTextDocumentService implements TextDocumentService {
     final var pos = params.getPosition();
     LOG.fine(() -> "[hover] %s %d:%d".formatted(uri, pos.getLine(), pos.getCharacter()));
     try {
+      final var analysis = resolveAnalysis(uri);
       final var result =
-          registry
-              .findForFile(toPath(uri))
-              .map(
-                  m ->
-                      registry
-                          .getOrCreate(m)
-                          .analysis()
-                          .hover(uri, pos, registry.allSourceRoots(), manifest))
-              .orElse(null);
+          analysis != null ? analysis.hover(uri, pos, registry.allSourceRoots(), manifest) : null;
       return CompletableFuture.completedFuture(result);
     } catch (final Exception e) {
       LOG.log(SEVERE, e, () -> "[hover] failed for " + uri);
@@ -202,15 +203,11 @@ final class LatheTextDocumentService implements TextDocumentService {
     final var uri = params.getTextDocument().getUri();
     final var pos = params.getPosition();
     try {
+      final var analysis = resolveAnalysis(uri);
       final var location =
-          registry
-              .findForFile(toPath(uri))
-              .flatMap(
-                  m ->
-                      registry
-                          .getOrCreate(m)
-                          .analysis()
-                          .definition(uri, pos, registry.allSourceRoots()));
+          analysis != null
+              ? analysis.definition(uri, pos, registry.allSourceRoots(), manifest)
+              : Optional.<Location>empty();
       return CompletableFuture.completedFuture(
           Either.forLeft(location.map(List::of).orElseGet(List::of)));
     } catch (final Exception e) {
@@ -302,6 +299,23 @@ final class LatheTextDocumentService implements TextDocumentService {
     }
   }
 
+  private ModuleAnalysis resolveAnalysis(final String uri) {
+    final var path = toPath(uri);
+    final var reactor = registry.findForFile(path).map(m -> registry.getOrCreate(m).analysis());
+    if (reactor.isPresent()) {
+      return reactor.get();
+    }
+    if (!manifest.isExternalSourceFile(path)) {
+      return null;
+    }
+    try {
+      return externalCompiler.ensureCompiled(uri);
+    } catch (final IOException e) {
+      LOG.log(SEVERE, e, () -> "[external] on-demand compile failed for %s".formatted(uri));
+      return null;
+    }
+  }
+
   private static Path toPath(final String uri) {
     return Path.of(URI.create(uri));
   }
@@ -328,12 +342,23 @@ final class LatheTextDocumentService implements TextDocumentService {
               }
             },
             () -> {
-              LOG.fine(() -> "[%s] no module found for %s".formatted(mode.tag, uri));
-              client.publishDiagnostics(
-                  singleDiag(
-                      uri,
-                      "Run `mvn test-compile` to initialize Lathe for this module",
-                      DiagnosticSeverity.Warning));
+              if (manifest.isExternalSourceFile(toPath(uri))) {
+                try {
+                  final List<Diagnostic> diagnostics =
+                      externalCompiler.analysis().compile(uri, content, mode);
+                  client.publishDiagnostics(new PublishDiagnosticsParams(uri, diagnostics));
+                  client.refreshSemanticTokens();
+                } catch (final Exception ex) {
+                  LOG.log(SEVERE, ex, () -> "[external] failed to compile %s".formatted(uri));
+                }
+              } else {
+                LOG.fine(() -> "[%s] no module found for %s".formatted(mode.tag, uri));
+                client.publishDiagnostics(
+                    singleDiag(
+                        uri,
+                        "Run `mvn test-compile` to initialize Lathe for this module",
+                        DiagnosticSeverity.Warning));
+              }
             });
   }
 

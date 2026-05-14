@@ -30,6 +30,9 @@ grep -Fq 'gav=org.junit.jupiter\:junit-jupiter-api\:5.14.4' .lathe/workspace.pro
 grep -Fq 'gav=org.opentest4j\:opentest4j\:1.3.0' .lathe/workspace.properties \
   || fail "workspace.properties: transitive test dependency source entry not written"
 
+grep -q 'dependencySource\.[0-9]*\.classpath\.[0-9]*=.*junit-jupiter-api' .lathe/workspace.properties \
+  || fail "workspace.properties: dependency source classpath entries not written"
+
 ! grep -q 'dependencySource\.[0-9]*\.sources=' .lathe/workspace.properties \
   || fail "workspace.properties: old dependency source sources key still written"
 

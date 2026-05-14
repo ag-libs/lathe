@@ -92,6 +92,6 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
       return folders.getFirst().getUri();
     }
 
-    return null;
+    return params.getRootUri();
   }
 }

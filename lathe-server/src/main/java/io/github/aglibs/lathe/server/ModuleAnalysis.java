@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
+import java.util.stream.Stream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;
@@ -26,10 +27,10 @@ final class ModuleAnalysis {
 
   private static final Logger LOG = Logger.getLogger(ModuleAnalysis.class.getName());
 
-  private final ModuleCompiler compiler;
+  private final SourceCompiler compiler;
   private final Map<String, CompilationTaskContext> cache = new ConcurrentHashMap<>();
 
-  ModuleAnalysis(final ModuleCompiler compiler) {
+  ModuleAnalysis(final SourceCompiler compiler) {
     this.compiler = compiler;
   }
 
@@ -49,6 +50,10 @@ final class ModuleAnalysis {
 
   void dropFromCache(final String uri) {
     cache.remove(uri);
+  }
+
+  boolean isCached(final String uri) {
+    return cache.containsKey(uri);
   }
 
   List<SemanticToken> semanticTokens(final String uri) {
@@ -75,7 +80,9 @@ final class ModuleAnalysis {
 
     final Element element = SourceLocator.elementAt(cur.ctx().trees(), cur.path());
     final TypeMirror type = cur.path() != null ? cur.ctx().trees().getTypeMirror(cur.path()) : null;
-    final var javadoc = JavadocLocator.locate(element, cur.ctx().trees(), sourceRoots).orElse(null);
+    final var allRoots =
+        Stream.concat(sourceRoots.stream(), manifest.allSourceDirs().stream()).toList();
+    final var javadoc = JavadocLocator.locate(element, cur.ctx().trees(), allRoots).orElse(null);
     final var origin = manifest.originLabel(element, compiler.fileManager()).orElse(null);
     LOG.fine(
         () ->
@@ -87,7 +94,10 @@ final class ModuleAnalysis {
   }
 
   Optional<Location> definition(
-      final String uri, final Position pos, final List<Path> sourceRoots) {
+      final String uri,
+      final Position pos,
+      final List<Path> sourceRoots,
+      final WorkspaceManifest manifest) {
     final var t = Stopwatch.start();
     final var cur = resolve(uri, pos);
     if (cur == null) {
@@ -95,14 +105,27 @@ final class ModuleAnalysis {
     }
 
     final var element = SourceLocator.elementAt(cur.ctx().trees(), cur.path());
-    final var result = DefinitionLocator.locate(element, cur.ctx().trees(), sourceRoots, uri);
+    var result = DefinitionLocator.locate(element, cur.ctx().trees(), sourceRoots, uri);
+    if (result.isEmpty()) {
+      result =
+          manifest
+              .externalSourceRoot(element, compiler.fileManager())
+              .flatMap(root -> DefinitionLocator.findSourceFile(element, List.of(root)))
+              .map(
+                  file -> {
+                    final var lspPos = DefinitionLocator.parsePosition(file, element);
+                    return new Location(file.toUri().toString(), new Range(lspPos, lspPos));
+                  });
+    }
+
+    final var finalResult = result;
     LOG.fine(
         () ->
             "[definition] %dms element=%s → %s"
                 .formatted(
                     t.elapsedMs(),
                     element,
-                    result
+                    finalResult
                         .map(l -> "%s:%d".formatted(l.getUri(), l.getRange().getStart().getLine()))
                         .orElse("not found")));
     return result;

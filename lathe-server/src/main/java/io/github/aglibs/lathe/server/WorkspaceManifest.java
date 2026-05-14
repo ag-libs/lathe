@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.logging.Level;
@@ -15,6 +16,7 @@ import java.util.stream.Collectors;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ModuleElement;
 import javax.lang.model.element.PackageElement;
+import javax.lang.model.element.TypeElement;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
@@ -24,15 +26,30 @@ final class WorkspaceManifest {
   private static final Logger LOG = Logger.getLogger(WorkspaceManifest.class.getName());
 
   private final Map<Path, String> jarToGav;
+  private final Map<Path, Path> jarToSourceDir;
+  private final Map<Path, Path> sourceDirToJar;
   private final String jdkVersion;
+  private final Path jdkSourceDir;
 
-  private WorkspaceManifest(final Map<Path, String> jarToGav, final String jdkVersion) {
+  private final Map<Path, List<Path>> sourceDirToClasspath;
+
+  private WorkspaceManifest(
+      final Map<Path, String> jarToGav,
+      final Map<Path, Path> jarToSourceDir,
+      final Map<Path, Path> sourceDirToJar,
+      final String jdkVersion,
+      final Path jdkSourceDir,
+      final Map<Path, List<Path>> sourceDirToClasspath) {
     this.jarToGav = jarToGav;
+    this.jarToSourceDir = jarToSourceDir;
+    this.sourceDirToJar = sourceDirToJar;
     this.jdkVersion = jdkVersion;
+    this.jdkSourceDir = jdkSourceDir;
+    this.sourceDirToClasspath = sourceDirToClasspath;
   }
 
   static WorkspaceManifest empty() {
-    return new WorkspaceManifest(Map.of(), null);
+    return new WorkspaceManifest(Map.of(), Map.of(), Map.of(), null, null, Map.of());
   }
 
   static WorkspaceManifest load(final Path workspaceRoot) {
@@ -52,39 +69,146 @@ final class WorkspaceManifest {
         return empty();
       }
 
-      final var jarToGav =
+      final var entries =
           props.readIndexed("dependencySource", DependencyEntry::readFrom).stream()
               .filter(e -> e.jar() != null)
+              .toList();
+      final var jarToGav =
+          entries.stream()
               .collect(Collectors.toUnmodifiableMap(e -> Path.of(e.jar()), DependencyEntry::gav));
-      return new WorkspaceManifest(jarToGav, props.get("jdk.version"));
+      final var jarToSourceDir =
+          entries.stream()
+              .filter(e -> e.dir() != null)
+              .collect(Collectors.toUnmodifiableMap(e -> Path.of(e.jar()), e -> Path.of(e.dir())));
+      final var sourceDirToJar =
+          entries.stream()
+              .filter(e -> e.dir() != null)
+              .collect(Collectors.toUnmodifiableMap(e -> Path.of(e.dir()), e -> Path.of(e.jar())));
+      final var sourceDirToClasspath =
+          entries.stream()
+              .filter(e -> e.dir() != null && !e.classpath().isEmpty())
+              .collect(
+                  Collectors.toUnmodifiableMap(
+                      e -> Path.of(e.dir()), e -> e.classpath().stream().map(Path::of).toList()));
+      final var rawSourceDir = props.get("jdk.sourceDir");
+      final var jdkSourceDir = rawSourceDir != null ? Path.of(rawSourceDir) : null;
+      return new WorkspaceManifest(
+          jarToGav,
+          jarToSourceDir,
+          sourceDirToJar,
+          props.get("jdk.version"),
+          jdkSourceDir,
+          sourceDirToClasspath);
     } catch (final IOException e) {
       LOG.log(Level.WARNING, e, () -> "[manifest] failed to load workspace properties");
       return empty();
     }
   }
 
-  Optional<String> originLabel(final Element element, final StandardJavaFileManager fm) {
+  private record TypeEntry(TypeElement topLevel, String moduleName) {
+    String qualifiedName() {
+      return topLevel.getQualifiedName().toString();
+    }
+  }
+
+  private static TypeEntry classify(final Element element) {
     final var topLevel = DefinitionLocator.topLevelClass(element);
     if (topLevel == null) {
+      return null;
+    }
+    final var pkg = (PackageElement) topLevel.getEnclosingElement();
+    final var enclosing = pkg.getEnclosingElement();
+    final var moduleName =
+        enclosing instanceof final ModuleElement me && !me.isUnnamed()
+            ? me.getQualifiedName().toString()
+            : null;
+    return new TypeEntry(topLevel, moduleName);
+  }
+
+  boolean isExternalSourceFile(final Path file) {
+    return externalSourceRootForFile(file).isPresent();
+  }
+
+  List<Path> allSourceDirs() {
+    final var dirs = new java.util.ArrayList<Path>(jarToSourceDir.values());
+    if (jdkSourceDir != null) {
+      dirs.add(jdkSourceDir);
+    }
+    return List.copyOf(dirs);
+  }
+
+  List<Path> depClasspathForFile(final Path file) {
+    return externalSourceRootForFile(file)
+        .map(
+            root -> {
+              final var selfJar = sourceDirToJar.get(root);
+              final var transitive = sourceDirToClasspath.getOrDefault(root, List.of());
+              if (selfJar == null) {
+                return transitive;
+              }
+              final var result = new java.util.ArrayList<Path>(transitive.size() + 1);
+              result.add(selfJar);
+              result.addAll(transitive);
+              return List.copyOf(result);
+            })
+        .orElse(List.of());
+  }
+
+  Optional<Path> externalSourceRootForFile(final Path file) {
+    if (jdkSourceDir != null && file.startsWith(jdkSourceDir)) {
+      return Optional.of(jdkSourceDir);
+    }
+    return jarToSourceDir.values().stream().filter(file::startsWith).findFirst();
+  }
+
+  Optional<String> originLabel(final Element element, final StandardJavaFileManager fm) {
+    final var entry = classify(element);
+    if (entry == null) {
       return Optional.empty();
     }
-
-    final var pkgElement = (PackageElement) topLevel.getEnclosingElement();
-    final var enclosingModule = pkgElement.getEnclosingElement();
     try {
-      if (enclosingModule instanceof final ModuleElement me && !me.isUnnamed()) {
-        return originLabelForModule(
-            me.getQualifiedName().toString(), topLevel.getQualifiedName().toString(), fm);
+      if (entry.moduleName() != null) {
+        return originLabelForModule(entry.moduleName(), entry.qualifiedName(), fm);
       }
+      return classpathLabel(entry.qualifiedName(), fm);
+    } catch (final IOException e) {
+      LOG.log(
+          Level.FINE, e, () -> "[origin] lookup failed for %s".formatted(entry.qualifiedName()));
+      return Optional.empty();
+    }
+  }
 
-      return classpathLabel(topLevel.getQualifiedName().toString(), fm);
+  Optional<Path> externalSourceRoot(final Element element, final StandardJavaFileManager fm) {
+    final var entry = classify(element);
+    if (entry == null) {
+      return Optional.empty();
+    }
+    try {
+      if (entry.moduleName() != null) {
+        return externalSourceRootForModule(entry.moduleName(), entry.qualifiedName(), fm);
+      }
+      return classpathSourceRoot(entry.qualifiedName(), fm);
     } catch (final IOException e) {
       LOG.log(
           Level.FINE,
           e,
-          () -> "[origin] lookup failed for %s".formatted(topLevel.getQualifiedName()));
+          () -> "[externalSourceRoot] lookup failed for %s".formatted(entry.qualifiedName()));
       return Optional.empty();
     }
+  }
+
+  private static Optional<Path> jarForModulePath(
+      final String moduleName, final String qualifiedName, final StandardJavaFileManager fm)
+      throws IOException {
+    final var moduleLoc = fm.getLocationForModule(StandardLocation.MODULE_PATH, moduleName);
+    if (moduleLoc == null) {
+      return Optional.empty();
+    }
+    final var jfo = fm.getJavaFileForInput(moduleLoc, qualifiedName, JavaFileObject.Kind.CLASS);
+    if (jfo == null) {
+      return Optional.empty();
+    }
+    return extractJarPath(jfo.toUri());
   }
 
   private Optional<String> originLabelForModule(
@@ -97,20 +221,22 @@ final class WorkspaceManifest {
       return Optional.of(jdkLabel);
     }
 
-    final var moduleLoc = fm.getLocationForModule(StandardLocation.MODULE_PATH, moduleName);
-    if (moduleLoc != null) {
-      final var jfo = fm.getJavaFileForInput(moduleLoc, qualifiedName, JavaFileObject.Kind.CLASS);
-      if (jfo != null) {
-        final var gav = extractJarPath(jfo.toUri()).map(jarToGav::get);
-        LOG.fine(
-            () ->
-                "[origin] module %s → uri=%s gav=%s"
-                    .formatted(moduleName, jfo.toUri(), gav.orElse(null)));
-        return gav.map(s -> moduleName + " (" + s + ")").or(() -> Optional.of(moduleName));
-      }
-    }
+    final var jar = jarForModulePath(moduleName, qualifiedName, fm);
+    final var gav = jar.map(jarToGav::get);
+    LOG.fine(
+        () ->
+            "[origin] module %s → jar=%s gav=%s"
+                .formatted(moduleName, jar.orElse(null), gav.orElse(null)));
+    return gav.map(s -> moduleName + " (" + s + ")").or(() -> Optional.of(moduleName));
+  }
 
-    return Optional.of(moduleName);
+  private Optional<Path> externalSourceRootForModule(
+      final String moduleName, final String qualifiedName, final StandardJavaFileManager fm)
+      throws IOException {
+    if (fm.getLocationForModule(StandardLocation.SYSTEM_MODULES, moduleName) != null) {
+      return Optional.ofNullable(jdkSourceDir);
+    }
+    return jarForModulePath(moduleName, qualifiedName, fm).map(jarToSourceDir::get);
   }
 
   private Optional<String> classpathLabel(
@@ -131,6 +257,17 @@ final class WorkspaceManifest {
             "[origin] %s → uri=%s jar=%s gav=%s"
                 .formatted(qualifiedName, uri, jarPath.orElse(null), gav.orElse(null)));
     return gav.isPresent() ? gav : extractReactorModuleName(uri);
+  }
+
+  private Optional<Path> classpathSourceRoot(
+      final String qualifiedName, final StandardJavaFileManager fm) throws IOException {
+    final var jfo =
+        fm.getJavaFileForInput(
+            StandardLocation.CLASS_PATH, qualifiedName, JavaFileObject.Kind.CLASS);
+    if (jfo == null) {
+      return Optional.empty();
+    }
+    return extractJarPath(jfo.toUri()).map(jarToSourceDir::get);
   }
 
   private static Optional<String> extractReactorModuleName(final URI uri) {

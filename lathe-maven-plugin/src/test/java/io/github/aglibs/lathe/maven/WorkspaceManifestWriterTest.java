@@ -18,7 +18,11 @@ class WorkspaceManifestWriterTest {
   void write_writesWorkspacePropertiesAtomically() throws Exception {
     final DependencySource dependencySource =
         DependencySource.present(
-            "com.example:dep:1", Path.of("/repo/dep.jar"), Path.of("/cache/dep"), null);
+            "com.example:dep:1",
+            Path.of("/repo/dep.jar"),
+            Path.of("/cache/dep"),
+            null,
+            List.of(Path.of("/repo/transitive.jar")));
     final JdkSource jdkSource =
         JdkSource.present(
             "Example Vendor",
@@ -44,6 +48,7 @@ class WorkspaceManifestWriterTest {
     assertThat(props.get("dependencySource.0.jar")).isEqualTo("/repo/dep.jar");
     assertThat(props.get("dependencySource.0.status")).isEqualTo("present");
     assertThat(props.get("dependencySource.0.dir")).isEqualTo("/cache/dep");
+    assertThat(props.get("dependencySource.0.classpath.0")).isEqualTo("/repo/transitive.jar");
   }
 
   @Test
@@ -65,9 +70,9 @@ class WorkspaceManifestWriterTest {
     final List<DependencySource> deps =
         List.of(
             DependencySource.present(
-                "com.example:a:1", Path.of("/repo/a.jar"), Path.of("/cache/a"), null),
+                "com.example:a:1", Path.of("/repo/a.jar"), Path.of("/cache/a"), null, List.of()),
             DependencySource.present(
-                "com.example:b:2", Path.of("/repo/b.jar"), Path.of("/cache/b"), null));
+                "com.example:b:2", Path.of("/repo/b.jar"), Path.of("/cache/b"), null, List.of()));
     final JdkSource jdkSource =
         JdkSource.present(
             "Vendor", "21", Path.of("/jdk"), Path.of("/jdk/src.zip"), Path.of("/cache/jdk"));

@@ -22,6 +22,30 @@ final class ReactorProjects {
         .toList();
   }
 
+  /**
+   * Returns a map from artifact key to the compile classpath of the first reactor module that has
+   * that artifact. Used to populate per-dep classpath entries in the workspace manifest.
+   *
+   * <p>The classpath is the set of compile+provided-scope external JARs from that module. Maven has
+   * already resolved version conflicts, so any module's view of a dep's transitive classpath is
+   * correct.
+   */
+  static Map<String, List<Path>> artifactClasspaths(final List<MavenProject> projects) {
+    final var reactorGAs = reactorProjects(projects);
+    final Map<String, List<Path>> result = new TreeMap<>();
+    for (final MavenProject project : projects) {
+      final var projectClasspath =
+          project.getArtifacts().stream()
+              .filter(a -> a.getFile() != null && a.getFile().getName().endsWith(".jar"))
+              .filter(a -> !reactorGAs.contains(ga(a)))
+              .filter(a -> isCompileClasspathScope(a.getScope()))
+              .map(a -> a.getFile().toPath())
+              .toList();
+      project.getArtifacts().forEach(a -> result.putIfAbsent(artifactKey(a), projectClasspath));
+    }
+    return result;
+  }
+
   static Map<String, Artifact> externalArtifacts(final List<MavenProject> projects) {
     final Set<String> reactorProjects = reactorProjects(projects);
     return projects.stream()
@@ -84,7 +108,7 @@ final class ReactorProjects {
     return artifact.getGroupId() + ":" + artifact.getArtifactId();
   }
 
-  private static String artifactKey(final Artifact artifact) {
+  static String artifactKey(final Artifact artifact) {
     return "%s:%s:%s:%s:%s"
         .formatted(
             artifact.getGroupId(),
@@ -96,5 +120,9 @@ final class ReactorProjects {
 
   private static String repositoryKey(final RemoteRepository repository) {
     return repository.getId() + " " + repository.getUrl();
+  }
+
+  private static boolean isCompileClasspathScope(final String scope) {
+    return Artifact.SCOPE_COMPILE.equals(scope) || Artifact.SCOPE_PROVIDED.equals(scope);
   }
 }

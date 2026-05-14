@@ -42,7 +42,18 @@ end
 
 local function start_lathe()
   local root = vim.fs.root(0, '.lathe')
-  if not root then return end
+  if not root then
+    -- File is outside any workspace (JDK source, dependency source) — attach the
+    -- already-running lathe client so hover/definition work in read-only views.
+    local bufnr = vim.api.nvim_get_current_buf()
+    for _, client in ipairs(vim.lsp.get_clients({ name = 'lathe' })) do
+      if not vim.lsp.buf_is_attached(bufnr, client.id) then
+        vim.lsp.buf_attach_client(bufnr, client.id)
+      end
+      return
+    end
+    return
+  end
   vim.lsp.start({
     name = 'lathe',
     cmd = cmd,

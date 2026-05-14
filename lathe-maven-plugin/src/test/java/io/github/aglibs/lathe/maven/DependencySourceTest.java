@@ -16,9 +16,13 @@ class DependencySourceTest {
   void present_filtersPresentEntries() {
     final DependencySource present =
         DependencySource.present(
-            "com.example:present:1", Path.of("/repo/present.jar"), Path.of("/cache/present"), null);
+            "com.example:present:1",
+            Path.of("/repo/present.jar"),
+            Path.of("/cache/present"),
+            null,
+            List.of());
     final DependencySource missing =
-        DependencySource.missing("com.example:missing:1", Path.of("/repo/missing.jar"));
+        DependencySource.missing("com.example:missing:1", Path.of("/repo/missing.jar"), List.of());
 
     assertThat(DependencySource.present(List.of(present, missing))).containsExactly(present);
   }
@@ -33,8 +37,10 @@ class DependencySourceTest {
                 "com.example:present:1",
                 Path.of("/repo/present.jar"),
                 Path.of("/cache/present"),
-                null),
-            DependencySource.missing("com.example:missing:1", Path.of("/repo/missing.jar"))));
+                null,
+                List.of(Path.of("/repo/dep-a.jar"), Path.of("/repo/dep-b.jar"))),
+            DependencySource.missing(
+                "com.example:missing:1", Path.of("/repo/missing.jar"), List.of())));
 
     final Path file = tmp.resolve("workspace.properties");
     store.store(file);
@@ -44,6 +50,8 @@ class DependencySourceTest {
     assertThat(loaded.get("dependencySource.0.jar")).isEqualTo("/repo/present.jar");
     assertThat(loaded.get("dependencySource.0.status")).isEqualTo("present");
     assertThat(loaded.get("dependencySource.0.dir")).isEqualTo("/cache/present");
+    assertThat(loaded.get("dependencySource.0.classpath.0")).isEqualTo("/repo/dep-a.jar");
+    assertThat(loaded.get("dependencySource.0.classpath.1")).isEqualTo("/repo/dep-b.jar");
     assertThat(loaded.get("dependencySource.1.gav")).isEqualTo("com.example:missing:1");
     assertThat(loaded.get("dependencySource.1.jar")).isEqualTo("/repo/missing.jar");
     assertThat(loaded.get("dependencySource.1.status")).isEqualTo("missing");

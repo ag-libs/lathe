@@ -42,6 +42,10 @@ public final class ParamStore {
     public void setIfPresent(final String name, final Object value) {
       ParamStore.this.setIfPresent(prefix + name, value);
     }
+
+    public void putList(final String name, final List<?> values) {
+      ParamStore.this.putList(prefix + name, values);
+    }
   }
 
   public final class PrefixedReader {
@@ -54,6 +58,10 @@ public final class ParamStore {
 
     public String get(final String name) {
       return ParamStore.this.get(prefix + name);
+    }
+
+    public List<String> readList(final String name) {
+      return ParamStore.this.readList(prefix + name);
     }
   }
 

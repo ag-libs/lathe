@@ -22,7 +22,7 @@ import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
 import javax.tools.ToolProvider;
 
-final class ModuleCompiler implements AutoCloseable {
+final class ModuleCompiler implements SourceCompiler, AutoCloseable {
 
   private static final Logger LOG = Logger.getLogger(ModuleCompiler.class.getName());
   private static final String PATCH_MODULE = "--patch-module";
@@ -51,11 +51,13 @@ final class ModuleCompiler implements AutoCloseable {
     return analysis;
   }
 
-  StandardJavaFileManager fileManager() {
+  @Override
+  public StandardJavaFileManager fileManager() {
     return fm;
   }
 
-  CompilationResult compile(final String uri, final String content, final CompileMode mode)
+  @Override
+  public CompilationResult compile(final String uri, final String content, final CompileMode mode)
       throws IOException {
     final DiagnosticCollector<JavaFileObject> collector = new DiagnosticCollector<>();
     final Path filePath = Path.of(URI.create(uri));
