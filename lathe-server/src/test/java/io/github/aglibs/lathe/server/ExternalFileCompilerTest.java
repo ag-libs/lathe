@@ -96,7 +96,8 @@ class ExternalFileCompilerTest {
       // FM's CLASS_PATH, causing the subsequent definition lookup to return empty.
       compiler.analysis().hover(usesUri, helperPos, List.of(), manifest);
 
-      final var definition = compiler.analysis().definition(usesUri, helperPos, List.of(), manifest);
+      final var definition =
+          compiler.analysis().definition(usesUri, helperPos, List.of(), manifest);
 
       assertThat(definition).isPresent();
       assertThat(definition.get().getUri()).isEqualTo(helperSource.toUri().toString());

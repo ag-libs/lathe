@@ -7,10 +7,10 @@ Design documents live in `docs/`.
 Before making non-trivial changes, read the relevant design document first:
 
 - Overall design: `docs/lathe-design.md`
-- Phase plan and implementation recipes: `docs/lathe-plan.md`
+- Next task recipe: `docs/lathe-plan.md`
 - Run/test/debug design: `docs/lathe-run-test-debug.md`
 
-Before implementing a planned phase, read that phase's section in `docs/lathe-plan.md`.
+Before starting the next task, read `docs/lathe-plan.md` in full.
 
 ## Working style
 

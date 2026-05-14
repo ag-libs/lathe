@@ -1,462 +1,145 @@
-# Lathe — Development Plan
+# Lathe — Next Task: Drop `init`, Rework Refresh Mechanism
 
-Four components with a fixed critical path: `lathe-core` provides shared helpers;
-`lathe-compiler` must be installed before the shim can write params;
-`lathe-maven-plugin` (`lathe:init`) must write `.lathe/root.marker` before the server starts;
-`lathe:sync` runs after Maven compilation to refresh the workspace manifest, dependency/JDK sources,
-server distribution, and later indexes.
-The server reads what the shim and sync goal produce.
-The plan builds vertically through the stack first (minimal shim → minimal init → diagnostics),
-then adds sync and features in value order.
+## Design decisions (settled)
 
-Each phase section is the authoritative implementation guide for that phase.
-Read the full section before starting work.
+**Workspace detection** — shim and sync detect a Lathe workspace by walking up to find the
+`.lathe/` directory (not `root.marker`).
+The directory is created by `sync` on first run.
+Before first sync, `.lathe/` does not exist, so the shim correctly skips.
 
-## Current Implementation Status
+**Opt-out** — replace the explicit `lathe:init` opt-in with an implicit opt-out:
+- If system property `lathe.skip=true` → disabled.
+- Else if env var `CI` is set → disabled.
+- Else if system property `lathe.skip=false` → enabled (overrides `CI`).
+- Otherwise → enabled.
+Check this in both the shim (`LatheCompiler`/`WorkspaceDetector`) and `SyncMojo`.
 
-Implemented:
+**Server refresh — two independent signals:**
 
-- `lathe-core` shared layout, property-file, file, and timing helpers.
-- `lathe:init` creates `.lathe/root.marker` and resets `.lathe/workspace.properties`.
-- `lathe:sync` runs at `process-test-classes`, is aggregator/thread-safe, and skips non-top-level projects.
-- `lathe:sync` discovers reactor modules, resolves external dependency source JARs for Maven's resolved
-  test-scope reactor artifacts,
-  and extracts resolved sources under `~/.cache/lathe/deps/`.
-- `lathe:sync` records dependency source lookup entries in `.lathe/workspace.properties`.
-  Present source entries also include per-dependency classpath entries used when compiling opened dependency source files.
-- `lathe:sync` resolves and extracts JDK sources under `~/.cache/lathe/jdks/<sanitizedVendor>/<sanitizedVersion>/`,
-  recording `jdk.home`, `jdk.vendor`, `jdk.version`, `jdk.sourceStatus`, and `jdk.sourceDir` in the manifest.
-- `CachedZipExtractor` is the shared temp-dir-then-atomic-move extraction utility used by both dependency
-  and JDK source extraction.
-- `ParamStore.PrefixedReader` + `readIndexed` provide the read-side counterpart to `PrefixedStore` + `putIndexed`.
-- `io.github.aglibs.lathe.core.maven.DependencyEntry` is the shared serialization record for `dependencySource.N.*` entries;
-  `DependencySource.writeTo` in the Maven plugin delegates to it.
-- Compiler shim writes params files, manages `lathe.lock`, copies class outputs,
-  and copies generated sources.
-- Server per-module architecture: one `ModuleCompiler` per module (owns `StandardJavaFileManager` + `ModuleAnalysis`),
-  created on first access via `ModuleRegistry.getOrCreate`; no LRU cache.
-- `WorkspaceManifest` server consumption implemented: loads `dependencySource.N.*` via `readIndexed` and `DependencyEntry::readFrom`,
-  reloaded on `root.marker` change.
-- Server supports diagnostics, hover with Javadoc and origin label, semantic tokens, formatting,
-  and go-to-definition.
-- Server uses manifest dependency/JDK source roots for go-to-definition and compiles opened external source files
-  with `ExternalFileCompiler`.
-- Hover origin label: JDK module+version from `SYSTEM_MODULES` check, Maven GAV from `dependencySource` manifest entries,
-  or reactor module name from `.lathe/<name>/classes/` path segment.
-- Module registry currently scans `lsp-params-*.properties` directly.
+| Signal | Writer | Server response |
+|---|---|---|
+| params file mtime changed | shim, after each compile | reload that module's `ModuleCompiler` only |
+| params file gone | module deleted or branch switch | drop that module's `ModuleCompiler` |
+| `workspace.json` mtime changed | sync, only when content changed | full rescan: reload manifest + re-discover all modules |
 
-Planned next:
+No stamp file.
+No `root.marker`.
+No `init` goal.
 
-- Fix shim/server drift found during design conformance review:
-  - move compiler-shim params writing, class copying, generated-source copying, and lock cleanup into a true
-    `finally` path around `javacCompiler.performCompile()`;
-  - preserve file-manager flushing semantics;
-  - make silent javac failure surface as an `IOException`;
-  - make server compilation wait for fresh `lathe.lock` files in the target module and direct reactor dependencies;
-  - redirect accidental stdout logging away from the LSP pipe before starting stdio transport.
-- Complete `.lathe/workspace.properties` reactor workspace manifest.
-- Maven-managed server distribution under `~/.cache/lathe/servers/<version>/`.
-- LSP stale-POM detection against `workspace.properties`.
+**Content-aware manifest write** — `WorkspaceManifestWriter` serializes the new manifest,
+reads the existing `workspace.json` (if present), and skips the write if content is identical.
+This prevents a no-op build from triggering a full server reload.
 
 ---
 
-## Phase 1 — Project Scaffold & Compiler Shim ✓
+## Implementation steps
 
-Complete.
-`mvn compile` and `mvn test-compile` write `lsp-params-classes.properties` and `lsp-params-test-classes.properties`,
-copy bytecode to `.lathe/<rel>/classes/` and `.lathe/<rel>/test-classes/`, and manage `lathe.lock`.
+Read each step fully before starting it.
 
----
+### Step 1 — Content-aware manifest write (`lathe-maven-plugin`)
 
-## Phase 2 — `lathe:init` ✓
+File: `lathe-maven-plugin/src/main/java/io/github/aglibs/lathe/maven/WorkspaceManifestWriter.java`
 
-**Output:** `mvn lathe:init` creates the workspace `.lathe/` directory, writes `.lathe/root.marker`,
-deletes `.lathe/workspace.properties`, and leaves the user-level cache untouched.
+In the `write` method, after serializing the new manifest to a string:
+1. Read the existing `workspace.json` as a string (empty string if absent).
+2. Compare. If identical, log `[sync] workspace unchanged — skipping write` and return.
+3. Otherwise write as before.
 
-- Current implementation: `InitMojo` writes `.lathe/root.marker` at the top-level project and deletes stale
-  `.lathe/workspace.properties`.
-- `lathe:init` is intentionally informational only.
-- `lathe:init` does not validate Maven compiler configuration.
-- `lathe:init` does not inspect or edit POM files.
-- `lathe:init` does not warn about missing `lathe-compiler`, missing `<compilerId>lathe</compilerId>`,
-  missing `lathe:sync`, or version mismatches.
-- `lathe:init` does not install server distributions.
-- Integration test: `multi-module` runs `lathe:init` before compilation and verifies `root.marker`,
-  compiler-shim outputs, and stale `workspace.properties` removal.
-- Installation remains documented in the user guide / README.
-- Configuration problems are detected later from observable Lathe state:
-  missing compiler params, missing workspace metadata, or stale sync output.
+Update `WorkspaceManifestWriterTest` to cover the skip-on-same-content case.
 
-## Phase 2b — `lathe:sync`
+### Step 2 — Shim: swap workspace detection, add CI/skip, drop marker touch (`lathe-compiler`)
 
-**Output:** `lathe:sync`, with default phase `process-test-classes`, is the synchronization point for dependency
-sources, the workspace manifest, server distribution, exact JDK sources, and later indexes.
+**`WorkspaceDetector`**
 
-Current implementation:
+Replace the walk-up-for-`root.marker` logic with walk-up-for-`.lathe/`-directory.
+Add CI/skip check as a static method `isDisabled()`:
+```
+lathe.skip=true  → true
+lathe.skip=false → false  (explicit false overrides CI)
+CI env var set   → true
+otherwise        → false
+```
 
-- `SyncMojo` has `defaultPhase = LifecyclePhase.PROCESS_TEST_CLASSES`,
-  `aggregator = true`, and `threadSafe = true`.
-- The goal runs only for the top-level project.
-- It logs reactor modules in deterministic relative-path order.
-- It requires Maven test-scope dependency resolution and resolves source JARs for resolved external reactor artifacts,
-  including transitive dependencies.
-- It extracts resolved source JARs under `~/.cache/lathe/deps/<groupId:artifactId:version>/`.
-- Extraction is sequential, zip-slip-safe via `FileUtil.unzip`, and skipped when `.lathe-source.properties`
-  matches the current source JAR path, size, and modified time.
-- Missing source JARs are not sync failures.
+Return `Optional.empty()` from `findWorkspaceRoot` when `isDisabled()`.
 
-Implement in small slices:
+Update `WorkspaceDetectorTest`.
 
-### Phase 2b.1 — Manifest and no-op fast path
+**`LatheCompiler`**
 
-- `SyncMojo` already exists with `defaultPhase = LifecyclePhase.PROCESS_TEST_CLASSES`;
-  users add an execution for `sync` and can omit `<phase>`.
-- Read the Maven session/reactor after compile and test-compile have run.
-- Compute a project state fingerprint from content hashes of relevant POM files, resolved dependency
-  coordinates/artifacts, server version, JDK identity, and workspace/index schema version.
-- If `.lathe/workspace.properties` exists and the fingerprint is unchanged, exit quickly.
-- Keep `.lathe/root.marker` as the bootstrap/root-discovery marker;
-  `workspace.properties` is a synchronized snapshot and may be missing or stale.
-- Write one indexed `module.N.*` block per reactor project, including `rel`, `baseDir`, GAV, and paths to main/test
-  params files.
-  Do not duplicate compile or test classpaths in the first manifest; the shim's params files remain the source of truth
-  for dependency resolution.
-- Write `.lathe/workspace.properties` only after successful refresh, using an atomic temp-file-then-move update.
-- Unit tests: fingerprint stability, POM SHA-256 hashing, nested/root module relative paths, manifest writer shape,
-  indexed property ordering, and atomic writer behavior.
-- Invoker tests: update `multi-module` to run `lathe:init process-test-classes`;
-  assert manifest existence, schema/server version, POM hashes, and all reactor `module.N.*` entries without depending
-  on nondeterministic module order.
-  Prefer deterministic module sorting by relative path.
-- No-op fast-path test: rerun `process-test-classes` with unchanged inputs and assert the manifest is not rewritten.
-  Use file content hash rather than timestamp if `syncedAt` is not rewritten on no-op.
+Remove the touch of `root.marker` after compile (the `Files.setLastModifiedTime` call on
+`ctx.get().latheDir().resolve(LatheLayout.ROOT_MARKER)`).
+The params file mtime is now the signal; no extra touch needed.
 
-### Phase 2b.2 — Server distribution
+### Step 3 — `SyncMojo`: drop marker guard, add CI/skip, create `.lathe/` (`lathe-maven-plugin`)
 
-- Install the matching server distribution under `~/.cache/lathe/servers/<version>/` if missing,
-  then update `~/.cache/lathe/current`.
+File: `lathe-maven-plugin/src/main/java/io/github/aglibs/lathe/maven/SyncMojo.java`
 
-### Phase 2b.3 — Dependency sources
+1. At the top of `execute()`, add a disabled check (same three-line logic as Step 2).
+   Log `[sync] disabled (CI or lathe.skip) — skipping` and return if disabled.
+2. Remove the `root.marker` existence guard entirely.
+3. Replace it with: `Files.createDirectories(workspaceRoot.resolve(LatheLayout.LATHE_DIR))`.
+   Sync now owns creating `.lathe/` on first run.
+4. Remove the `isDirectSyncInvocation` guard and its error message
+   (that guard only made sense when `init` had to run first).
 
-- Current implementation uses Maven's resolved test-scope reactor artifacts,
-  resolves matching dependency source JAR artifacts through Maven,
-  extracts available dependency sources under `~/.cache/lathe/deps/<groupId:artifactId:version>/`,
-  and treats missing source JARs as non-fatal.
-  For example `~/.cache/lathe/deps/com.google.guava:guava:32.0.0-jre/`.
-- Current extraction is idempotent:
-  extract to a temp directory, write a `.lathe-source.properties` marker after success,
-  then atomically move into the final cache path.
-  The marker records schema, GAV, source JAR path, source JAR size, and source JAR modified time.
-- Current implementation records dependency source lookup entries in `.lathe/workspace.properties`.
-  Each entry uses `dependencySource.N.jar` for the binary JAR path from Maven,
-  `dependencySource.N.gav` for diagnostics and logging,
-  `dependencySource.N.status` for `present` or `missing`,
-  `dependencySource.N.dir` only when sources are present,
-  and `dependencySource.N.classpath.M` entries for the compile/provided external JARs needed when opening
-  that dependency's source files.
-  The server matches `dependencySource.N.jar` against absolute JAR paths from the shim params files,
-  then uses `dependencySource.N.dir` as the extracted source root.
-- Current implementation records `dependencySource.N.status=missing` in the manifest and continues.
-  Fail only for internal cache write/corruption errors where Lathe cannot leave a valid old or new cache entry.
-- Unit tests cover zip-slip rejection and checked-IO wrapping in `FileUtilTest`;
-  marker-after-success, temp-dir cleanup on failure, and skip-on-marker-match in
-  `DependencySourceExtractorTest` and `CachedZipExtractorTest`.
-- Invoker tests assert `dependencySource.N.status=present`, `jar=...`, `gav=...`, `dir=...`,
-  and representative `classpath.N=...` entries.
-  A missing-source test dependency is still planned.
+Update `SyncMojoTest`.
 
-### Phase 2b.4 — JDK sources ✓
+### Step 4 — Server watch loop: per-module params + `workspace.json` (`lathe-server`)
 
-- Uses the simple `JAVA_HOME` model: reads `JAVA_HOME` from the environment and looks for `$JAVA_HOME/lib/src.zip`.
-- Extracts present JDK sources under `~/.cache/lathe/jdks/<sanitizedVendor>/<sanitizedVersion>/`.
-  An existing cache directory for that vendor/version is treated as current.
-- JDK sources are optional.
-  If `src.zip` is absent or `JAVA_HOME` is unset, records `jdk.sourceStatus=missing` and continues.
-  If present, records `jdk.home`, `jdk.vendor`, `jdk.version`, `jdk.sourceStatus=present`, and `jdk.sourceDir`.
-  Extraction delegates to `CachedZipExtractor` — temp-dir-then-atomic-move, same as dependency sources.
-  The server uses `jdk.sourceDir` directly and does not derive the cache path.
-  On startup or registry reload, the server compares the current `JAVA_HOME` path with `jdk.home`;
-  when they differ, it prompts the user to run `mvn process-test-classes`.
-- Unit tests: `JdkSourceResolverTest` (missing `JAVA_HOME`, no `src.zip`, present with correct paths and
-  sanitized cache dir); `CachedZipExtractorTest` (temp dir cleanup on failure).
-- Invoker test: asserts `jdk.vendor`, `jdk.version`, and `jdk.sourceStatus` are always written;
-  when `jdk.sourceStatus=present`, asserts `jdk.sourceDir` is written and the directory exists on disk.
+File: `lathe-server/src/main/java/io/github/aglibs/lathe/server/LatheTextDocumentService.java`
 
-### Phase 2b.5 — Server consumption ✓
+Replace the current `startWatching` method (which polls `root.marker` mtime and does a full
+reload on any change) with two independent watches in the same poll loop:
 
-- `WorkspaceManifest` loads `dependencySource.N.*` entries on startup and registry reload via
-  `ParamStore.readIndexed("dependencySource", DependencyEntry::readFrom)`;
-  reads dependency source roots, per-dependency classpaths, `jdk.sourceDir`, and `jdk.version`.
-- `LatheTextDocumentService` holds a `volatile WorkspaceManifest manifest` snapshot; reloaded alongside the module
-  registry whenever `root.marker` modification is detected.
-- Hover origin label uses the manifest: JDK module+version (`SYSTEM_MODULES` check), Maven GAV from
-  `dependencySource.N.jar` lookup, or reactor module name from `.lathe/<name>/classes/` path segment.
-- Go-to-definition uses the manifest as a fallback source-root map for JDK and dependency types.
-- `ExternalFileCompiler` compiles opened dependency/JDK source files outside the reactor, caches their attributed
-  trees until close/manifest reload, publishes diagnostics, and serves hover/definition/semantic-token reads.
-- Remaining: stale-POM detection (watch POM content hashes vs manifest); type/reference index pipeline.
+**Params file watch (per-module):**
+- Maintain a `Map<Path, Long> paramsMtimes` of known params files → last-seen mtime.
+- On each poll tick, scan `.lathe/` for all `lsp-params-*.properties` files.
+- For each file:
+  - If mtime changed → call `registry.reload(moduleDir)` to close and recreate that module's
+    `ModuleCompiler`.
+  - If new (not in map) → add to map; `getOrCreate` handles it on next request.
+  - If previously known but now absent → call `registry.remove(moduleDir)` and remove from map.
+- Update map entries after processing.
+
+**Workspace manifest watch:**
+- Maintain `long manifestMtime` of `workspace.json`.
+- On each poll tick, check current mtime.
+- If changed → full rescan: `setRegistry(ModuleRegistry.scan(workspaceRoot))` +
+  `setManifest(WorkspaceManifest.load(workspaceRoot))`.
+  This handles added/removed modules, dep changes, JDK changes.
+
+**`ModuleRegistry`** needs two new methods:
+- `void reload(Path moduleDir)` — close the existing `ModuleCompiler` for that dir and remove
+  it from the map so `getOrCreate` recreates it fresh on next access.
+- `void remove(Path moduleDir)` — close and remove without recreating.
+
+### Step 5 — Delete `InitMojo`, clean up `LatheLayout` (`lathe-maven-plugin`, `lathe-core`)
+
+- Delete `lathe-maven-plugin/src/main/java/io/github/aglibs/lathe/maven/InitMojo.java`.
+- Remove `ROOT_MARKER` constant from `LatheLayout` in `lathe-core`
+  (first verify it is no longer referenced anywhere after Steps 2–4).
+- Remove any invoker IT `pom.xml` references to `lathe:init`
+  (check `lathe-maven-plugin/src/it/`).
+- Update `AGENTS.md` module table: remove `lathe:init` from the plugin description.
+
+### Step 6 — Docs pass
+
+- `docs/lathe-design.md`: update the components section — remove `init` from the plugin
+  description, remove internal implementation detail (ParamStore internals, DependencyEntry
+  internals) that belongs in code/Javadoc not the design doc.
+- Replace this file (`docs/lathe-plan.md`) with a short `docs/roadmap.md`:
+  bullet-level future items, no recipes.
+- `dev/README.md`: remove `root.marker` reference in the `lsp.py` section.
+- `AGENTS.md`: update the design documents section to reference `docs/roadmap.md`
+  instead of `docs/lathe-plan.md`.
 
 ---
 
-## Phase 3 — LS Core: Startup, Module Registry, Diagnostics ✓
+## Key invariants to preserve
 
-**Output:** Neovim shows correct diagnostics for a compile error; diagnostics clear on fix; 500ms p95 target.
-
-- LSP4J wiring, stdio transport, `initialize`/`initialized` handshake
-- Module registry: scans `.lathe/` for all `lsp-params-*.properties`, parses each into `ModuleParams`;
-  `ModuleParams` carries `outputDir`, `originalGenSourcesDir`, `sourceRoots`, `parameters`, `proc`,
-  and all classpath/modulepath/processorPath lists
-- `ModuleCompiler`: one instance per module, created on first access via `ModuleRegistry.getOrCreate(ModuleParams)`;
-  owns one `StandardJavaFileManager` (initialized in constructor) and one `ModuleAnalysis`;
-  file manager locations set explicitly (`CLASS_OUTPUT` → `.lathe/<rel>/classes`, `SOURCE_OUTPUT` →
-  `.lathe/<rel>/generated-sources`); implements `AutoCloseable`; closed on registry reload and server shutdown
-- `ModuleAnalysis` (formerly `AnalysisEngine`): per-module compilation and feature dispatch, accessed via `ModuleCompiler.analysis()`
-- `CompileMode` top-level enum: `FAST` (no EP, no AP, `didChange`), `OPEN` (EP yes, AP no, `didOpen`), `FULL` (EP + AP,
-  `didSave`); each mode carries a log `tag`; single `compileWith` dispatch method
-- Per-file result cache stores `CompilationTaskContext` for hover, definition, and semantic-token reads.
-  Cached contexts retain javac task-backed `Trees` and AST state while cached; cleanup means dropping references when
-  replaced or invalidated.
-- Classpath/modulepath/processorPath remapping: `remapPath()` uses `getParent()` navigation —
-  handles root modules and arbitrarily nested paths; unit-tested in `ModuleParamsTest`
-- `--patch-module` handling: normalised to `=` form at cache-creation time; applied once per file manager
-- `runTask` throws `IOException` on silent javac failure; published as a 0:0 error diagnostic
-- `DiagnosticsEngine`: position-less `NOTE`s filtered; `NOTE` with position → `Hint`;
-  ranges use start/end offsets for token-spanning underlines
-- `didSave`: cancels pending debounce, reads from disk, runs `FULL`;
-  compiler touches `root.marker` mtime after params write;
-  server polls every 2s on debouncer thread via `scheduleAtFixedRate`
-- `didChange`: 500ms debounce with `cancel(true)` + `Thread.interrupted()` guard to suppress stale publish;
-  `openFiles` map tracks current in-editor content
-- After save: recompiles all open files in the same Maven module (`latheModuleDir` match) using latest `openFiles`
-  content, routed through the same pending/cancel path
-- "Run `mvn process-test-classes`" Warning published when no module params found for a file
-- `singleDiag()` helper for single-message diagnostics;
-  `cancelPending()` / `toPath()` helpers eliminate repeated patterns
-- Invoker IT tests: `annotation-processing` (AP with `record-companion-builder`), `jpms-project` (JPMS module with
-  `validcheck`, JUnit tests, `--add-reads` verification)
-- Unit tests: `ModuleParamsTest` (7 `remapPath` cases), `LatheTextDocumentServiceTest` (debounce fires once, compiles
-  latest content)
-
----
-
-## Phase 4 — Result Cache: Hover, Semantic Tokens, Formatting
-
-**Output:** Hover shows type info without recompiling.
-Semantic highlighting works.
-Full-file and range formatting via google-java-format.
-
-### Hover ✓
-
-- Per-file result cache: `Map<String, CompilationTaskContext>` in `AnalysisEngine`, keyed by URI;
-  holds `Trees` + `CompilationUnitTree`; populated on every compile pass, dropped on `didClose` via `dropFromCache()`
-- `SourceLocator`: four static methods — `toOffset` (LSP 0-based → javac position), `pathAt` (narrowest `TreePath` via
-  `TreePathScanner`; smallest span wins), `elementAt` (walks up path; skips PACKAGE elements;
-  handles `MethodInvocationTree` fallback and static `ImportTree` member lookup via `getTypeMirror` →
-  `TypeElement.getEnclosedElements()`), `parameterElementAt` (maps cursor position to the callee's declared parameter;
-  guards against ENUM_CONSTANT/FIELD masking; handles `NewClassTree`)
-- `HoverFormatter.format()`: `ExecutableElement` → `returnType name(params)`;
-  `TypeElement` → `class/interface/enum/record/annotation name`; field/variable → `type name`;
-  wrapped in ` ```java ``` ` markdown
-- `HoverFormatter.formatParameter()`: used when `parameterElementAt` wins.
-  It shows declared type + name of the callee's parameter at the cursor position;
-  for example, hovering on a `"hello"` argument shows `String s`.
-- `ModuleAnalysis.hover()`: checks `parameterElementAt` first (shows callee param context);
-  falls back to `elementAt` + `getTypeMirror` for the element itself
-- `JavadocLocator`: resolves same-file and cross-file source Javadoc for hover using available source roots;
-  hover markdown includes Javadoc when present
-- `WorkspaceManifest.originLabel()`: appended as `*source: …*` footer; resolves JDK module+version,
-  Maven GAV for dependency JARs, or reactor module name from `.lathe/` path
-- Unit tests: `SourceLocatorTest` — `@Nested` groups `Declarations` (8), `Invocations` (7), `Imports` (2), `Lambdas`
-  (4), `Overloads` (3); covers static-import member resolution, overload discrimination by parameter type,
-  and generic type variable detection
-
-### Semantic Tokens ✓
-
-- Gap-filling only — emits tokens tree-sitter cannot derive:
-  `enumMember`, `method`, `property`, `typeParameter`, `annotation`; modifiers `declaration`, `static`, `deprecated`
-- `SemanticTokensScanner` extends `TreePathScanner<Void, Void>`; tokens held as instance field;
-  `scan(Trees, CompilationUnitTree)` static factory returns `List<SemanticToken>`
-- `SemanticToken` record: `(int line, int character, int length, String type, Set<String> modifiers)`
-- `encode(List<SemanticToken>)` produces delta-encoded `int[]` for LSP wire format
-- Tokens computed once in `runTask` after `analyze()`, stored in `CompilationTaskContext`;
-  `semanticTokensFull` reads directly from cache — `CompletableFuture.completedFuture()`, no executor dispatch
-- `AnalysisEngine` cache upgraded to `ConcurrentHashMap` (LSP thread reads tokens/hover, debouncer writes)
-- `interestingModifiers()` returns mutable `HashSet`; callers add `"declaration"` before passing to `addToken`;
-  enum constants skip implicit `STATIC`
-- `isDeprecated()` static helper checks `@Deprecated` annotation on element
-- `findIdentifierFrom()` uses a `for` loop with named `leftBound`/`rightBound` booleans for word-boundary checks
-- `visitAnnotation()`: emits `annotation` token for the simple name after `@`;
-  handles both `IdentifierTree` and `MemberSelectTree` annotation types;
-  `super.visitAnnotation()` walks children without double-emitting (annotation type elements are not matched by
-  `emitIfInteresting`)
-- Test fixture `Sample.java` extended with `enum Status`, `getStatus()`, `@Deprecated oldFormat()`, `useDeprecated()`,
-  generic `identity()`, `staticHelper()`; `SourceLocatorTest` coordinates shifted +4 lines accordingly
-- `SemanticTokensTest`: nested `Annotations`, `Declarations`, `Usages`, `NoToken`, `Encoding` groups;
-  `SampleFixture` base class shared with `SourceLocatorTest`
-
-### Code quality fixes ✓
-
-- `HoverFormatter.format()` → `Optional<String>`; `AnalysisEngine` call site uses `.map().orElse(null)`
-- `SourceLocator.indexIn` → `IntStream.range` with `==` reference-equality filter
-- `LatheLanguageServer` + `LatheServer` INFO log calls wrapped in lambdas (consistent with FINE calls)
-- `SourceLocator.offsetToPosition(CompilationUnitTree, long)` overload added;
-  used by `DefinitionLocator` and `SemanticTokensScanner` — no more inline `lineMap.getLineNumber/getColumnNumber`
-- `AnalysisEngine.CursorContext` record + `resolve(uri, pos)`: shared by `hover()` and `definition()` —
-  cache lookup, `toOffset`, `pathAt` in one place
-- Debouncer removed from `hover()` and `definition()` — both use `completedFuture()` directly;
-  debouncer's sole job is sequencing compilations
-- `maven.compiler.release` lowered from 25 to 21 — no Java 22+ language features were in use
-
-### Formatting ✓
-
-- `JavaFormatter`: `format(String)` static method; `Formatter.formatSource()` → single full-file `TextEdit`;
-  catches `Throwable` (not just `FormatterException`), logs SEVERE, returns empty list; measures time with `Stopwatch`;
-  `FormatterException` never escapes the handler so the server cannot die from a format failure
-- `LatheTextDocumentService`: `formatting()`/`rangeFormatting()` both delegate to private `format(tag, uri)` →
-  `JavaFormatter.format(openFiles.get(uri))`; `documentFormattingProvider` + `documentRangeFormattingProvider` declared
-  in server capabilities
-- `nvim.lua`: javac packages exported to both `ALL-UNNAMED` and `com.google.googlejavaformat` (named module —
-  `ALL-UNNAMED` alone is not enough)
-- **TODO:** `LatheServer.main()` should redirect accidental stdout logging away from the LSP pipe;
-  current implementation loads logging config and starts the stdio server without this guard
-- `FormattingTest`: 3 cases — violation produces edit, already-formatted produces nothing, syntax error produces nothing
-
----
-
-## Phase 5 — Go-to-Definition ✓
-
-**Output:** Navigate to reactor types and same-file declarations via `file://` URIs;
-cursor lands on the declaration name token.
-
-- `DefinitionLocator.locate(element, trees, sourceRoots, sourceUri)`:
-  same-file → `trees.getPath(element)` → `nameOffset()` finds exact name position;
-  reactor fallback → `topLevelClass(element)` → scan `sourceRoots` for `ClassName.java` → `parsePosition()` finds class
-  name
-- `nameOffset(content, declStart, name)`: `indexOf(name, declStart)` so cursor lands on the name token (not
-  `public`/modifiers); works for methods, fields, parameters, classes
-- `parsePosition(Path, String)`: parse-only javac task on reactor file;
-  walks `cu.getTypeDecls()` for matching `ClassTree`; designed to be reused for dependency source jars;
-  falls back to 0:0
-- Temp URI fix: `trees.getPath(element)` returns temp compilation URI;
-  original `sourceUri` passed through and used for same-file results
-- `ModuleRegistry.allSourceRoots()`: flat list of all source roots across all modules
-- `AnalysisEngine.definition(uri, pos, sourceRoots)`: shared `CursorContext`/`resolve()` helper with hover;
-  delegates to `DefinitionLocator`; single consolidated log line
-- `LatheTextDocumentService.definition()`: `CompletableFuture.completedFuture()` —
-  no debouncer, cache read is thread-safe; returns `Either.forLeft(List.of(location))`
-- `definitionProvider(true)` declared in server capabilities
-- JDK and dependency types use `WorkspaceManifest` source-root lookup after the reactor-source fallback
-- `DefinitionLocatorTest`: `SameFile` — type ref (`Status`) at exact col, method ref (`overloaded`) at exact col;
-  `ReactorFallback` — element from bytecode-only class, file found via source root scan
-
----
-
-## Phase 6 — Type Name Completion & Add Missing Import
-
-**Output:** `Im<cursor>` completes to `ImmutableList`; selecting it inserts the import.
-First-completion delay is documented.
-
-- On first completion request per module: one dedicated enumeration `JavacTask` (from params, `proc=none`)
-  assembles `TreeMap<String, List<TypeEntry>>`
-  - JDK modules: `Elements.getModuleElement("java.se")` transitive requires, walk exported packages via
-    `Elements.getPackageElement()` + `listMembers()`
-  - JPMS reactor modules: `getModuleElement()` per reactor module on modulepath, respects exports
-  - Non-JPMS reactor type discovery is deferred; fallback classpath scanning of `.lathe/<rel>/classes/` is a focused
-    future contribution target
-  - JAR deps: check `~/.cache/lathe/type-index/jars/<gav>.index`; build and cache if absent —
-    modular JARs via `ExportsDirective`, non-modular via `fileManager.list(CLASS_PATH, ...)`
-- `subMap(prefix, prefix + Character.MAX_VALUE)` for O(log n) prefix search
-- `TreeMap` dropped when `CustomFileManager` is dropped; nulled on `module-info.java` `didSave` for affected modules
-- Add missing import code action: unresolved name → type index prefix search → suggest candidates → insert import
-  statement
-
----
-
-## Phase 7 — Member Access Completion & Organize Imports
-
-**Output:** `list.<cursor>` shows `add`, `get`, `size` with correct return types for generic substitution.
-
-- Method body erasing: replace all method bodies except the one containing cursor with `{}`;
-  write erased versions to temp dir for the pass
-- Inject `$lathe$sentinel$` after dot; compile with `proc=none`
-- Locate `MemberSelectTree` for sentinel, get receiver `TypeMirror`
-- `Elements.getAllMembers(typeElement)` + `types.asMemberOf(receiverType, member)` for generic substitution
-- Filter by accessibility and prefix match; cancel pending diagnostic debounce during completion, reschedule after
-- Organize imports code action: sort and deduplicate imports, remove unused; pure source text manipulation
-
----
-
-## Phase 8 — Find References & Document/Workspace Symbols
-
-**Output:** Find all references to a method across open files and closed modules;
-document outline and workspace type search work.
-
-- Find references — open files: scan cached `CompilationUnitTree` per open file in parallel on module threads;
-  trigger pass if cache empty
-- Find references — closed modules: parallel virtual thread scan of `.lathe/<rel>/classes/` and
-  `.lathe/<rel>/test-classes/` with Class-File API; `InvokeInstruction`/`FieldInstruction` for references;
-  `LineNumberTable` for line numbers; import block string scan for column precision
-- Surface limitations on every response: AP-changed descriptors, inlined constants, `invokedynamic` method references,
-  partially-open modules
-- Document symbols: walk `CompilationUnitTree`, emit `DocumentSymbol` for classes/methods/fields
-- Workspace symbols: prefix search on type index across all modules → `SymbolInformation` list
-
----
-
-## Phase 9 — Neovim e2e Harness & CI
-
-**Output:** GitHub Actions CI green across all test projects.
-
-- maven-invoker test projects: `simple-module`, `jpms-project` (two JPMS modules), `annotation-processing`;
-  `post-build.sh` assertions per project; no Groovy scripts
-- Neovim headless harness: `minimal_init.lua`, `harness.lua`, `run_tests.lua`;
-  test specs for diagnostics, go-to-definition, find-references; `vim.wait()` polling, no fixed sleeps;
-  exit code propagates to Maven; bound to `post-integration-test`
-- GitHub Actions: `build` job (`mvn install -DskipTests`, upload local repo artifact);
-  `test` job matrix (3 projects × skip/run Neovim); `lathe-server` resolved from local repo artifact —
-  no Central access in CI
-
----
-
-## Phase 10 — Polish & v0.1.0 Release
-
-**Output:** Lathe works correctly on its own codebase (dogfood); release artifacts published.
-
-- `LATHE_JVM_OPTS` support in launcher; `LATHE_DEBUG=1` overhead logging in shim
-- Neovim config snippet documented (design §9);
-  launcher path is user/editor configuration and is not produced by `lathe:init`
-- Neovim integration marks extracted dependency/JDK source buffers read-only and silently attaches the already-running
-  Lathe client for hover, definition, diagnostics, and semantic tokens.
-- Error surface polish: all "Run `mvn ...`"
-  messages consistent; missing params per-module vs missing `.lathe/` root distinguished clearly
-- Deploy parent POM, `lathe-compiler`, `lathe-maven-plugin`, `lathe-server` to Maven Central under `io.github.ag-libs`
-
----
-
-## Post-v1
-
-These build directly on the established model and are straightforward once the core is stable.
-
-**Rename** — in-module `IdentifierTree` AST scan + cross-module Class-File API scan;
-lightweight source parse for column precision; `WorkspaceEdit` including import statements.
-
-**Inlay hints** — `MethodInvocationTree` walk, match args to `ExecutableElement.getParameters()`, emit `InlayHint`.
-
-**Signature help** — method body erasing + sentinel inside call parentheses;
-enumerate overloads, highlight current parameter.
-
-**VS Code extension** — starts launcher, connects via LSP, documents disabling `vscjava.vscode-java-pack`;
-uses `lathe-source://` virtual read-only documents for extracted dependency/JDK sources,
-initially by translating cache-backed `file://` definition results in the extension.
-
-**Run / Test / Debug** (lathe-run-test-debug.md) —
-`mvnd` delegation, six `workspace/executeCommand` commands, `lathe/sessionEvent` streaming, JDWP handshake, bundled
-`java-debug` adapter, `neotest-lathe` Neovim adapter (~250 lines Lua).
-
----
-
-## Risk Areas
-
-- **Phase 3** — threading model, cancellation, and lock protocol
-- **Phase 6** — first-completion latency: 300–800ms cold cost from walking `java.se` transitive modules;
-  documented as expected behavior, not a bug
+- The shim must still write params files and manage `lathe.lock` exactly as today.
+- The server's per-module `ModuleCompiler` lifecycle (create on first access, no LRU eviction)
+  is unchanged; the watch loop adds a way to force-close a specific entry.
+- `ExternalFileCompiler` and its `AnalysisEngine` are unaffected.
+- Neovim root detection (`vim.fs.root(0, '.lathe')`) already works — no Lua changes needed.
+- The invoker IT project's `pom.xml` already has no `init` execution; verify and leave as-is.
