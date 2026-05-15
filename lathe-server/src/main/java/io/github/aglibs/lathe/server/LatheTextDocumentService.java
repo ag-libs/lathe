@@ -19,10 +19,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.DefinitionParams;
 import org.eclipse.lsp4j.Diagnostic;
@@ -60,15 +56,7 @@ final class LatheTextDocumentService implements TextDocumentService {
   private final long debounceMs;
   private final ExternalFileCompiler externalCompiler =
       new ExternalFileCompiler(WorkspaceManifest.empty());
-
-  private final ScheduledExecutorService debouncer =
-      Executors.newSingleThreadScheduledExecutor(
-          r -> {
-            final var t = new Thread(r, "lathe-debouncer");
-            t.setDaemon(true);
-            return t;
-          });
-  private final ConcurrentHashMap<String, ScheduledFuture<?>> pending = new ConcurrentHashMap<>();
+  private final Debouncer debouncer = new Debouncer();
   private final ConcurrentHashMap<String, String> openFiles = new ConcurrentHashMap<>();
 
   LatheTextDocumentService(final ModuleRegistry registry) {
@@ -113,6 +101,7 @@ final class LatheTextDocumentService implements TextDocumentService {
     }
     registry.close();
     externalCompiler.close();
+    debouncer.close();
   }
 
   @Override
@@ -130,25 +119,15 @@ final class LatheTextDocumentService implements TextDocumentService {
     final var content = params.getContentChanges().getFirst().getText();
     openFiles.put(uri, content);
     LOG.fine(() -> "[change] %s".formatted(uri));
-    cancelPending(uri, true, "change");
     client.publishDiagnostics(new PublishDiagnosticsParams(uri, List.of()));
-
-    final var future =
-        debouncer.schedule(
-            () -> {
-              pending.remove(uri);
-              compileWith(uri, content, CompileMode.FAST);
-            },
-            debounceMs,
-            TimeUnit.MILLISECONDS);
-    pending.put(uri, future);
+    debouncer.schedule(uri, debounceMs, () -> compileWith(uri, content, CompileMode.FAST));
   }
 
   @Override
   public void didClose(final DidCloseTextDocumentParams params) {
     final var uri = params.getTextDocument().getUri();
     openFiles.remove(uri);
-    cancelPending(uri, false, "close");
+    debouncer.cancel(uri);
     registry.dropFromAllCaches(uri);
     externalCompiler.analysis().dropFromCache(uri);
     client.publishDiagnostics(new PublishDiagnosticsParams(uri, List.of()));
@@ -214,8 +193,8 @@ final class LatheTextDocumentService implements TextDocumentService {
 
   public void didSave(final DidSaveTextDocumentParams params) {
     final var uri = params.getTextDocument().getUri();
-    cancelPending(uri, false, "save");
     LOG.fine(() -> "[save] %s".formatted(uri));
+    debouncer.cancel(uri);
     debouncer.submit(
         () -> {
           try {
@@ -242,27 +221,23 @@ final class LatheTextDocumentService implements TextDocumentService {
                     .moduleFor(toPath(uri))
                     .map(m -> m.moduleDir().equals(savedModule.moduleDir()))
                     .orElse(false))
-        .forEach(uri -> scheduleOpenFile(uri, "save"));
+        .forEach(this::scheduleOpenFile);
   }
 
   private void scheduleAllOpenFiles() {
-    openFiles.keySet().forEach(uri -> scheduleOpenFile(uri, "reload"));
+    openFiles.keySet().forEach(this::scheduleOpenFile);
   }
 
-  private void scheduleOpenFile(final String uri, final String tag) {
-    cancelPending(uri, true, tag);
-    final var future =
-        debouncer.schedule(
-            () -> {
-              pending.remove(uri);
-              final var content = openFiles.get(uri);
-              if (content != null) {
-                compileWith(uri, content, CompileMode.OPEN);
-              }
-            },
-            0L,
-            TimeUnit.MILLISECONDS);
-    pending.put(uri, future);
+  private void scheduleOpenFile(final String uri) {
+    debouncer.schedule(
+        uri,
+        0L,
+        () -> {
+          final var content = openFiles.get(uri);
+          if (content != null) {
+            compileWith(uri, content, CompileMode.OPEN);
+          }
+        });
   }
 
   @Override
@@ -280,14 +255,6 @@ final class LatheTextDocumentService implements TextDocumentService {
   private CompletableFuture<List<? extends TextEdit>> format(final String tag, final String uri) {
     LOG.fine(() -> "[%s] %s".formatted(tag, uri));
     return CompletableFuture.completedFuture(JavaFormatter.format(openFiles.get(uri)));
-  }
-
-  private void cancelPending(final String uri, final boolean mayInterrupt, final String tag) {
-    final var previous = pending.remove(uri);
-    if (previous != null) {
-      final var cancelled = previous.cancel(mayInterrupt);
-      LOG.fine(() -> "[%s] cancelled pending=%s %s".formatted(tag, cancelled, uri));
-    }
   }
 
   private AnalysisEngine resolveAnalysis(final String uri) {
@@ -312,45 +279,47 @@ final class LatheTextDocumentService implements TextDocumentService {
   }
 
   private void compileWith(final String uri, final String content, final CompileMode mode) {
-    registry
-        .moduleFor(toPath(uri))
-        .ifPresentOrElse(
-            module -> {
-              try {
-                final List<Diagnostic> diagnostics =
-                    registry.engineFor(module).compile(uri, content, mode);
-                if (Thread.interrupted()) {
-                  LOG.fine(
-                      () -> "[%s] interrupted, skipping publish for %s".formatted(mode.tag, uri));
-                  return;
-                }
+    final var module = registry.moduleFor(toPath(uri));
+    if (module.isPresent()) {
+      compileInModule(uri, content, mode, module.get());
+    } else if (manifest.containsFile(toPath(uri))) {
+      compileExternal(uri, content, mode);
+    } else {
+      LOG.fine(() -> "[%s] no module found for %s".formatted(mode.tag, uri));
+      client.publishDiagnostics(
+          singleDiag(
+              uri,
+              "Run `mvn process-test-classes` to initialize Lathe for this module",
+              DiagnosticSeverity.Warning));
+    }
+  }
 
-                client.publishDiagnostics(new PublishDiagnosticsParams(uri, diagnostics));
-                client.refreshSemanticTokens();
-              } catch (final Exception ex) {
-                LOG.log(SEVERE, ex, () -> "[%s] failed for %s".formatted(mode.tag, uri));
-                publishError(uri, ex);
-              }
-            },
-            () -> {
-              if (manifest.containsFile(toPath(uri))) {
-                try {
-                  final List<Diagnostic> diagnostics =
-                      externalCompiler.analysis().compile(uri, content, mode);
-                  client.publishDiagnostics(new PublishDiagnosticsParams(uri, diagnostics));
-                  client.refreshSemanticTokens();
-                } catch (final Exception ex) {
-                  LOG.log(SEVERE, ex, () -> "[external] failed to compile %s".formatted(uri));
-                }
-              } else {
-                LOG.fine(() -> "[%s] no module found for %s".formatted(mode.tag, uri));
-                client.publishDiagnostics(
-                    singleDiag(
-                        uri,
-                        "Run `mvn test-compile` to initialize Lathe for this module",
-                        DiagnosticSeverity.Warning));
-              }
-            });
+  private void compileInModule(
+      final String uri, final String content, final CompileMode mode, final ModuleConfig module) {
+    try {
+      final var diagnostics = registry.engineFor(module).compile(uri, content, mode);
+      if (Thread.interrupted()) {
+        LOG.fine(() -> "[%s] interrupted, skipping publish for %s".formatted(mode.tag, uri));
+        return;
+      }
+      publishDiagnosticsAndRefresh(uri, diagnostics);
+    } catch (final Exception ex) {
+      LOG.log(SEVERE, ex, () -> "[%s] failed for %s".formatted(mode.tag, uri));
+      publishError(uri, ex);
+    }
+  }
+
+  private void compileExternal(final String uri, final String content, final CompileMode mode) {
+    try {
+      publishDiagnosticsAndRefresh(uri, externalCompiler.analysis().compile(uri, content, mode));
+    } catch (final Exception ex) {
+      LOG.log(SEVERE, ex, () -> "[external] failed to compile %s".formatted(uri));
+    }
+  }
+
+  private void publishDiagnosticsAndRefresh(final String uri, final List<Diagnostic> diagnostics) {
+    client.publishDiagnostics(new PublishDiagnosticsParams(uri, diagnostics));
+    client.refreshSemanticTokens();
   }
 
   private void publishError(final String uri, final Exception ex) {

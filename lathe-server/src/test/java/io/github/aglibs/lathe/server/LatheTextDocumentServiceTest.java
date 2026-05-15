@@ -62,7 +62,7 @@ class LatheTextDocumentServiceTest {
     final var captor = ArgumentCaptor.forClass(PublishDiagnosticsParams.class);
     verify(client, atLeastOnce()).publishDiagnostics(captor.capture());
     assertThat(captor.getAllValues().getLast().getDiagnostics().getFirst().getMessage().getLeft())
-        .contains("mvn test-compile");
+        .contains("mvn process-test-classes");
   }
 
   @Test
