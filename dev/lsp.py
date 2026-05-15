@@ -373,9 +373,9 @@ def parse_arg(arg: str) -> tuple[Path, tuple[int, int] | None]:
 
 def find_workspace_root(file: Path) -> Path:
     for p in [file, *file.parents]:
-        if (p / ".lathe" / "root.marker").exists():
+        if (p / ".lathe").is_dir():
             return p
-    raise RuntimeError(f"No .lathe/root.marker found above {file}")
+    raise RuntimeError(f"No .lathe/ directory found above {file}")
 
 
 def print_diagnostics(file: Path, diags: list[dict]):

@@ -37,8 +37,9 @@ AP-heavy modules meet this budget because annotation processing runs only on `di
 
 Four components, no circular dependencies.
 
-**`lathe-core`** — shared filesystem and property-file helpers used by the compiler shim, Maven plugin, and server.
-It has no external dependencies and is a JPMS module.
+**`lathe-core`** — shared filesystem, JSON-serialization, schema, file, and timing helpers used by the compiler shim,
+Maven plugin, and server.
+It is a JPMS module.
 
 **`lathe-compiler`** — a Plexus compiler SPI implementation.
 Registered as the compiler for `maven-compiler-plugin`.
@@ -57,11 +58,12 @@ Reads params files written by the shim and the workspace manifest written by the
 `JavacTask` per compilation pass, and serves LSP requests.
 It watches Maven project files while running;
 when a POM changes after the last sync, it prompts the user to run the documented Maven lifecycle command.
-It reads dependency/JDK sources and indexes from `~/.cache/lathe/`.
+It reads dependency/JDK sources from `~/.cache/lathe/`.
+Type indexes are a later slice.
 
 ```
 lathe-core
-    provides   → layout, property-file, file, and timing helpers
+    provides   → layout, JSON, schema, file, and timing helpers
 
 lathe-compiler
     implements → Plexus compiler SPI
@@ -72,19 +74,18 @@ lathe-maven-plugin
     provides   → init + sync goals
     reads      → Maven session/reactor/dependency resolution
     writes     → .lathe/ (init), .lathe/workspace.json (sync)
-    writes     → ~/.cache/lathe/ (server dist, dependency sources, JDK sources, indexes)
+    writes     → ~/.cache/lathe/ (dependency sources, JDK sources)
     depends on → lathe-core
 
 lathe-server
     reads        → .lathe/ params files + workspace manifest
     reads/writes → .lathe/<rel>/classes/, .lathe/<rel>/test-classes/, .lathe/<rel>/generated-sources/
-    reads        → ~/.cache/lathe/ (sources, type indexes)
+    reads        → ~/.cache/lathe/ (sources)
     depends on   → lathe-core, lsp4j, google-java-format
 ```
 
 `lathe:init` does not install server binaries.
-`lathe:sync` installs or updates the server distribution for the plugin version,
-so normal Maven builds keep the project metadata and the user-level server installation current.
+Server distribution installation is a later sync slice.
 
 ---
 
@@ -111,12 +112,19 @@ Two blocks in the parent `pom.xml`:
   </configuration>
 </plugin>
 
-<!-- sync goal: runs after test compilation -->
+<!-- init + sync goals: bind to initialize and process-test-classes -->
 <plugin>
   <groupId>io.github.ag-libs</groupId>
   <artifactId>lathe-maven-plugin</artifactId>
   <version>0.1.0</version>
+  <inherited>false</inherited>
   <executions>
+    <execution>
+      <id>lathe-init</id>
+      <goals>
+        <goal>init</goal>
+      </goals>
+    </execution>
     <execution>
       <id>lathe-sync</id>
       <goals>
@@ -127,9 +135,12 @@ Two blocks in the parent `pom.xml`:
 </plugin>
 ```
 
-`SyncMojo` declares `process-test-classes` as its default phase, so the execution can omit `<phase>`.
-That phase guarantees `lathe:sync` runs after `maven-compiler-plugin:testCompile`,
-so the compiler shim has already written params and copied class outputs.
+Maven only runs a third-party plugin during normal lifecycle builds when the plugin has bound executions.
+Lathe therefore still needs the two executions above for `mvn package`, `mvn install`,
+or `mvn process-test-classes` to refresh the workspace automatically.
+Both mojos declare their default phase via `@Mojo(defaultPhase = ...)`, so those executions can omit `<phase>`.
+`init` defaults to `initialize` (before compilation); `sync` defaults to `process-test-classes` (after test compilation).
+`<inherited>false</inherited>` ensures both goals run once from the reactor root, not once per module.
 Any normal `mvn process-test-classes`, `mvn package`, or `mvn install` run heals Lathe state automatically.
 
 ### Initializing
@@ -138,10 +149,7 @@ Any normal `mvn process-test-classes`, `mvn package`, or `mvn install` run heals
 mvn io.github.ag-libs:lathe-maven-plugin:VERSION:init
 ```
 
-1. Create `.lathe/` if missing.
-2. Write `.lathe/root.marker`.
-3. Reset workspace-local state by deleting `.lathe/workspace.properties` if present.
-   User-level cache under `~/.cache/lathe/` is left intact.
+Create `.lathe/` at the Maven session top-level project if missing.
 
 `lathe:init` does not validate Maven configuration.
 Maven setup can be inherited from parents, profiles, plugin management, or external build conventions,
@@ -152,16 +160,16 @@ Lathe actually needs.
 ### Ongoing workflow
 
 ```bash
-mvn io.github.ag-libs:lathe-maven-plugin:VERSION:init       # once: write root.marker + reset workspace state
+mvn io.github.ag-libs:lathe-maven-plugin:VERSION:init       # once: create .lathe/
 mvnd process-test-classes                                   # refresh Lathe — shim writes params, sync refreshes metadata
 ```
 
 Run `mvnd process-test-classes` when you want to refresh Lathe directly;
 ordinary `mvnd package` and `mvnd install` runs also reach this phase and refresh Lathe automatically.
-The shim updates `lsp-params-classes.properties` and `lsp-params-test-classes.properties` for every module it compiles.
+The shim updates `lsp-params-classes.json` and `lsp-params-test-classes.json` for every module it compiles.
 The bound `lathe:sync` goal then resolves external dependency source JARs,
 refreshes extracted dependency sources under `~/.cache/lathe/deps/`,
-and writes the minimal dependency-source manifest to `.lathe/workspace.properties`.
+and writes the minimal dependency-source manifest to `.lathe/workspace.json`.
 Server distribution installation, stale-POM fingerprints, and indexes are later sync slices.
 The LS currently reads shim params on startup and registry reload;
 it also reads the workspace manifest for dependency/JDK source roots, external-source classpaths,
@@ -174,8 +182,7 @@ Future stale-POM detection will compare watched POM content against hashes in th
 "Maven project changed. Run `mvn process-test-classes` to refresh Lathe."
 
 Re-run `lathe:init` when setting up a checkout or after changing Lathe POM configuration.
-It resets workspace-local state so the next `process-test-classes`, `package`,
-or `install` run performs a full sync check.
+The next `process-test-classes`, `package`, or `install` run refreshes params and synchronized metadata.
 
 ### JVM customization
 
@@ -203,7 +210,8 @@ Full save passes replay them for Maven-faithful diagnostics.
 Lathe uses two directories with distinct purposes.
 
 **`.lathe/`** — workspace-level, project-specific metadata and LS bytecode.
-Written by the shim on every compile (params files and class copies), by `lathe:init` for the workspace root marker,
+Created by `lathe:init`.
+Written by the shim on every compile for params files and class copies,
 and by `lathe:sync` for the workspace manifest.
 Written by the LS for compilation outputs.
 Add to `.gitignore`.
@@ -212,12 +220,13 @@ each module's subdirectory is keyed by its path relative to the workspace root a
 and output files for that module.
 
 **`~/.cache/lathe/`** — user-level cache, shared across all projects on the machine.
-Server distributions, JDK sources, dependency sources, and indexes are written by `lathe:sync`.
+JDK sources and dependency sources are written by `lathe:sync`.
+Server distributions and indexes are later sync slices.
 Never needs to be gitignored.
 
 ```
 ~/.cache/lathe/
-├── servers/
+├── servers/                              ← future server distributions
 │   └── 0.1.0/
 │       ├── lathe-launcher.sh
 │       └── modules/
@@ -232,18 +241,17 @@ Never needs to be gitignored.
 ├── deps/                                ← dependency source jars extracted by lathe:sync
 │   └── com.google.guava:guava:32.0.0-jre/
 │       └── com/google/common/collect/ImmutableList.java
-└── type-index/
+└── type-index/                           ← future shared type indexes
     └── jars/
         └── com.google.guava/
             └── guava/
-                └── 32.0.0-jre.index    ← written by lathe:sync, shared across projects
+                └── 32.0.0-jre.index
 
 .lathe/
-├── root.marker                                    ← written by lathe:init
-├── workspace.properties                           ← written by lathe:sync
+├── workspace.json                                 ← written by lathe:sync
 ├── module-a/
-│   ├── lsp-params-classes.properties              ← written by shim
-│   ├── lsp-params-test-classes.properties         ← written by shim
+│   ├── lsp-params-classes.json                    ← written by shim
+│   ├── lsp-params-test-classes.json               ← written by shim
 │   ├── lathe.lock                                 ← written by shim
 │   ├── classes/                                   ← seeded by shim, written by LS
 │   │   └── com/example/alpha/
@@ -256,8 +264,8 @@ Never needs to be gitignored.
 │           └── FooBuilder.java
 └── platform/
     └── core/                                      ← nested module, path preserved
-        ├── lsp-params-classes.properties
-        ├── lsp-params-test-classes.properties
+        ├── lsp-params-classes.json
+        ├── lsp-params-test-classes.json
         ├── lathe.lock
         ├── classes/
         │   └── com/example/platform/
@@ -273,74 +281,87 @@ Never needs to be gitignored.
 **Nothing committed to the repo.** `.lathe/` is gitignored and fully regenerated.
 `~/.cache/lathe/` is outside the project entirely.
 
-**Shared across projects.** Server distributions, JDK sources, dependency sources,
-and type indexes are shared across all projects on the machine.
+**Shared across projects.** JDK sources and dependency sources are shared across all projects on the machine.
+Future server distributions and type indexes will be shared the same way.
 Extracted or built once per version, reused everywhere.
 
 **Survives `mvn clean`.** Both directories are outside Maven's build output management.
 `mvn clean` deletes `target/` only — `.lathe/<rel>/classes/`, `.lathe/<rel>/test-classes/`,
 and `.lathe/<rel>/generated-sources/` survive intact.
 
-**Concurrent safety.** `lathe:sync` writes server distributions, extracted sources,
-and indexes to a temp directory first, then atomically renames into the shared cache where the platform supports it.
+**Concurrent safety.** `lathe:sync` writes extracted sources to a temp directory first,
+then atomically renames into the shared cache where the platform supports it.
+Future server distribution and index writes should use the same pattern.
 
 ### Workspace manifest
 
-`lathe:sync` writes `.lathe/workspace.properties` after a successful refresh.
+`lathe:sync` writes `.lathe/workspace.json` after a successful refresh.
 The manifest is workspace-local because it records the current Maven project shape,
 but it points at user-cache entries shared across workspaces.
 It is not the workspace bootstrap marker.
-`.lathe/root.marker` remains the stable signal that a checkout is Lathe-enabled,
-while `workspace.properties` is a disposable synchronized snapshot that may be missing or stale.
+The `.lathe/` directory is the stable signal that a checkout is Lathe-enabled,
+while `workspace.json` is a disposable synchronized snapshot that may be missing or stale.
 
-```properties
-schemaVersion=1
-workspaceRoot=/workspace
-
-dependencySource.0.jar=/home/user/.m2/repository/com/google/guava/guava/32.0.0-jre/guava-32.0.0-jre.jar
-dependencySource.0.gav=com.google.guava:guava:32.0.0-jre
-dependencySource.0.status=present
-dependencySource.0.dir=/home/user/.cache/lathe/deps/com.google.guava:guava:32.0.0-jre
-dependencySource.0.classpath.0=/home/user/.m2/repository/com/google/guava/failureaccess/1.0.2/failureaccess-1.0.2.jar
-
-dependencySource.1.jar=/home/user/.m2/repository/org/example/no-sources/1.0/no-sources-1.0.jar
-dependencySource.1.gav=org.example:no-sources:1.0
-dependencySource.1.status=missing
-
-jdk.home=/usr/lib/jvm/temurin-21
-jdk.vendor=Eclipse-Adoptium
-jdk.version=21.0.7
-jdk.sourceStatus=present
-jdk.sourceDir=/home/user/.cache/lathe/jdks/Eclipse-Adoptium/21.0.7
+```json
+{
+  "schemaVersion": "1",
+  "workspaceRoot": "/workspace",
+  "jdk": {
+    "vendor": "Eclipse-Adoptium",
+    "version": "21.0.7",
+    "status": "present",
+    "home": "/usr/lib/jvm/temurin-21",
+    "sourceZip": "/usr/lib/jvm/temurin-21/lib/src.zip",
+    "sourceDir": "/home/user/.cache/lathe/jdks/Eclipse-Adoptium/21.0.7"
+  },
+  "dependencySources": [
+    {
+      "gav": "com.google.guava:guava:32.0.0-jre",
+      "jar": "/home/user/.m2/repository/com/google/guava/guava/32.0.0-jre/guava-32.0.0-jre.jar",
+      "status": "present",
+      "dir": "/home/user/.cache/lathe/deps/com.google.guava/guava/32.0.0-jre",
+      "classpath": [
+        "/home/user/.m2/repository/com/google/guava/failureaccess/1.0.2/failureaccess-1.0.2.jar"
+      ]
+    },
+    {
+      "gav": "org.example:no-sources:1.0",
+      "jar": "/home/user/.m2/repository/org/example/no-sources/1.0/no-sources-1.0.jar",
+      "status": "missing",
+      "dir": null,
+      "classpath": []
+    }
+  ]
+}
 ```
 
 `lathe:sync` writes the manifest atomically:
 write a complete temporary file in `.lathe/`,
-then move it over `workspace.properties`.
+then move it over `workspace.json`.
 The LS therefore sees either the previous complete manifest or the next complete manifest,
 never a partially written file.
 
 The first manifest format is intentionally minimal.
 It records the workspace root and external dependency source lookup entries.
 It does not describe the full Maven reactor yet.
-The server still discovers modules from the shim-written `lsp-params-*.properties` files.
+The server still discovers modules from the shim-written `lsp-params-*.json` files.
 Later manifest slices may add `module.N.*` blocks, POM hashes, server distribution paths, and stale-project fingerprints.
 
 For dependency source lookup,
-the server matches absolute classpath and modulepath JAR paths from the params files against `dependencySource.N.jar`.
-If `dependencySource.N.status=present`,
-the server uses `dependencySource.N.dir` as the extracted source root for that JAR.
-`dependencySource.N.classpath.M` stores the compile/provided external JARs from the first reactor module that
-resolved the dependency.
+the server matches absolute classpath and modulepath JAR paths from the params files against `dependencySources[].jar`.
+If `dependencySources[].status` is `present`,
+the server uses `dependencySources[].dir` as the extracted source root for that JAR.
+`dependencySources[].classpath` stores the compile/provided external JARs from the first reactor module that resolved
+the dependency.
 The server uses those entries, plus the dependency's own JAR, when compiling opened dependency source files.
-`dependencySource.N.gav` is retained for diagnostics and logging,
+`dependencySources[].gav` is retained for diagnostics and logging,
 but the JAR path is the lookup key.
-Missing source JARs are recorded with `dependencySource.N.status=missing` and no `dir`.
+Missing source JARs are recorded with `status` set to `missing` and no `dir`.
 
 JDK sources are the implemented sync slice after dependency sources.
 `lathe:sync` reads `JAVA_HOME`, extracts `$JAVA_HOME/lib/src.zip` to
 `~/.cache/lathe/jdks/<sanitizedVendor>/<sanitizedVersion>/` when present,
-and records `jdk.home`, `jdk.vendor`, `jdk.version`, `jdk.sourceStatus`, and `jdk.sourceDir` in the manifest.
+and records `jdk.home`, `jdk.vendor`, `jdk.version`, `jdk.status`, `jdk.sourceZip`, and `jdk.sourceDir` in the manifest.
 The server uses `jdk.sourceDir` directly and does not derive or rediscover the JDK source cache path.
 
 When reactor module metadata is added to the manifest,
@@ -348,18 +369,18 @@ module identity will be the path relative to the workspace root,
 for example `module-a` or `platform/core`.
 Those future module blocks will point at the main and test params files produced by the shim.
 The params files remain the compile source of truth:
-main dependencies live in `lsp-params-classes.properties`,
-and test dependencies live in `lsp-params-test-classes.properties`.
+main dependencies live in `lsp-params-classes.json`,
+and test dependencies live in `lsp-params-test-classes.json`.
 The manifest must not duplicate per-module classpath or test dependency lists.
 
 The LS loads the manifest into an immutable `WorkspaceManifest` snapshot during startup and registry reload.
-`WorkspaceManifest.load(workspaceRoot)` reads `dependencySource.N.*` entries via `ParamStore.readIndexed` and `DependencyEntry::readFrom`,
+`WorkspaceManifest.load(workspaceRoot)` reads `.lathe/workspace.json`,
 builds binary-JAR to source-root maps,
 builds source-root to per-dependency classpath maps,
 and reads `jdk.sourceDir` and `jdk.version`.
-The snapshot is also reloaded whenever `root.marker` modification is detected.
+The snapshot is also reloaded whenever `workspace.json` or params-file changes are detected.
 Reloading the snapshot clears cached external source analyses so definition and hover use the new source/classpath map.
-Feature handlers read that snapshot directly; handlers do not re-read `workspace.properties` on every request.
+Feature handlers read that snapshot directly; handlers do not re-read `workspace.json` on every request.
 Future slices will add stale-POM checks and module-to-params metadata.
 
 ---
@@ -375,7 +396,7 @@ The shim delegates to real javac unchanged — the build is unaffected — then 
 **Module root** — `CompilerConfiguration.getWorkingDirectory()`,
 which Maven sets to the module's base directory for each compilation invocation.
 
-**Workspace root** — walk up from the module root until a directory containing `.lathe/root.marker` is found.
+**Workspace root** — walk up from the module root until a directory containing `.lathe/` is found.
 If not found — the shim skips writing params silently.
 The LS will prompt the user to run `mvn lathe:init`.
 
@@ -391,7 +412,7 @@ outputDir     = .lathe/platform/core/
 
 ### Invocation sequence
 
-1. Locate workspace root and derive relative path — skip silently if `root.marker` not found
+1. Locate workspace root and derive relative path — skip silently if `.lathe/` is not found
 2. Create `.lathe/<relativePath>/` if it does not exist, then write empty `lathe.lock`
 3. Delegate to `plexus-compiler-javac` — real javac runs, AP executes, generated sources are produced
 4. In `finally` — write params file
@@ -423,29 +444,36 @@ The LS uses its modification time:
   LS re-reads the module's params file on its next compilation pass for any open file in that module.
   No state to invalidate — the next pass builds a fresh `JavacTask` from the new params.
 
-### `lsp-params-classes.properties`
+### `lsp-params-classes.json`
 
-```properties
-sourceTree=classes
-outputDir=/workspace/module-a/target/classes
-generatedSourcesDir=/workspace/module-a/target/generated-sources/annotations
-
-sourceRoots.0=/workspace/module-a/src/main/java
-sourceRoots.1=/workspace/module-a/target/generated-sources/annotations   ← LS remaps to .lathe/module-a/generated-sources/
-
-classpath.0=/root/.m2/repository/com/google/guava/guava/32.0.0-jre/guava-32.0.0-jre.jar
-
-modulepath.0=/workspace/platform/core/target/classes                      ← LS remaps to .lathe/platform/core/classes/
-
-processorPath.0=/root/.m2/repository/org/mapstruct/mapstruct-processor/1.5.5/mapstruct-processor-1.5.5.jar
-
-release=21
-encoding=UTF-8
-parameters=true
-enablePreview=false
-proc=
-compilerArgs.0=-Xlint:unchecked
-compilerArgs.1=-Amapstruct.defaultComponentModel=spring
+```json
+{
+  "sourceTree": "classes",
+  "outputDir": "/workspace/module-a/target/classes",
+  "generatedSourcesDir": "/workspace/module-a/target/generated-sources/annotations",
+  "sourceRoots": [
+    "/workspace/module-a/src/main/java",
+    "/workspace/module-a/target/generated-sources/annotations"
+  ],
+  "classpath": [
+    "/root/.m2/repository/com/google/guava/guava/32.0.0-jre/guava-32.0.0-jre.jar"
+  ],
+  "modulepath": [
+    "/workspace/platform/core/target/classes"
+  ],
+  "processorPath": [
+    "/root/.m2/repository/org/mapstruct/mapstruct-processor/1.5.5/mapstruct-processor-1.5.5.jar"
+  ],
+  "release": "21",
+  "encoding": "UTF-8",
+  "parameters": true,
+  "enablePreview": false,
+  "proc": "",
+  "compilerArgs": [
+    "-Xlint:unchecked",
+    "-Amapstruct.defaultComponentModel=spring"
+  ]
+}
 ```
 
 `projectDir` and `buildDir` are not stored —
@@ -467,14 +495,14 @@ Copy duration is logged when `LATHE_DEBUG=1`.
 ### Startup
 
 The LS currently scans `.lathe/` at the workspace root,
-finds all `lsp-params-*.properties` files,
+finds all `lsp-params-*.json` files,
 and derives the module registry from them.
-`workspace.properties` is written by sync but is not yet used for module discovery.
-The next server-side manifest step is to read dependency source lookup entries from it.
+`workspace.json` is written by sync and read for dependency/JDK source lookup,
+but it is not yet used for module discovery.
 For each params file:
 
 - **Relative path** — the directory containing the params file, relative to `.lathe/`.
-  A file at `.lathe/platform/core/lsp-params-classes.properties` belongs to module `platform/core`.
+  A file at `.lathe/platform/core/lsp-params-classes.json` belongs to module `platform/core`.
 - **Project directory** — `<workspaceRoot>/<relativePath>`.
 - **Reactor dependency graph** — built by cross-referencing all modules' `outputDir` values against each other's
   classpath entries.
@@ -486,14 +514,13 @@ No `CustomFileManager` is created.
 Startup cost is bounded by the number of params files, not by reactor complexity or classpath size.
 
 If `.lathe/` does not exist: "Run `mvn lathe:init` then `mvn process-test-classes` to initialize Lathe."
-If `.lathe/root.marker` is present but dependency source lookup is unavailable,
+If `.lathe/` is present but dependency source lookup is unavailable,
 the LS may still serve compiler-backed features from params files and should prompt for
 `mvn process-test-classes` only when a feature needs synced source metadata.
 If a module directory has no params files: "Run `mvn process-test-classes` to activate module `<relativePath>`."
 
-The LS watches `.lathe/root.marker` for modification.
-`lathe:init` writes `root.marker` after creating `.lathe/` and resetting workspace state —
-the mtime change triggers a full LS reload:
+The LS watches `workspace.json` and `lsp-params-*.json` files.
+Manifest or params changes trigger a full LS reload:
 the module registry is re-scanned from `.lathe/`,
 all `CustomFileManager` instances and result caches are dropped,
 all type-completion `TreeMap`s are invalidated,
@@ -554,8 +581,8 @@ For example: `classpath.0=/workspace/platform/core/target/classes`.
 Before building a `JavacTask`, the LS rewrites the classpath to point at the `.lathe/` copies instead:
 
 - Any `classpath.N` or `modulepath.N` entry matching a reactor module's `outputDir` from
-  `lsp-params-classes.properties` is remapped to `.lathe/<that-module-rel>/classes/`.
-- Any entry matching a reactor module's `outputDir` from `lsp-params-test-classes.properties` is remapped to
+  `lsp-params-classes.json` is remapped to `.lathe/<that-module-rel>/classes/`.
+- Any entry matching a reactor module's `outputDir` from `lsp-params-test-classes.json` is remapped to
   `.lathe/<that-module-rel>/test-classes/`.
 - The `generatedSourcesDir` entry in `sourceRoots.N` is remapped to `.lathe/<this-module-rel>/generated-sources/`.
 
@@ -616,7 +643,7 @@ That makes them resolvable via the temp source root.
 
 When `didOpen` fires, the LS finds the owning module by scanning loaded params for a `sourceRoots.N` entry that is a
 prefix of the opened file path.
-Main and test are distinguished — a file under `src/test/java/` matches `lsp-params-test-classes.properties`.
+Main and test are distinguished — a file under `src/test/java/` matches `lsp-params-test-classes.json`.
 Generated source files under `.lathe/<rel>/generated-sources/` match correctly
 because the LS registers this directory as a source root.
 
@@ -829,18 +856,18 @@ file's cached `CompilationUnitTree`, or run a fresh pass for that file if its ca
 **Reactor types in a module with no open files** —
 locate the source file via the target module's `sourceRoots.N` entries, return the `file://` URI.
 
-**JDK types** — `lathe:sync` writes `jdk.sourceDir` to `.lathe/workspace.properties` when
+**JDK types** — `lathe:sync` writes `jdk.sourceDir` to `.lathe/workspace.json` when
 `$JAVA_HOME/lib/src.zip` is present.
 The server resolves attributed JDK elements through `SYSTEM_MODULES`,
 then searches `jdk.sourceDir` for the matching source file.
 
 **Dependency types** — the binary JAR path is resolved from the attributed element through the active javac file manager.
 `lathe:sync` resolves the matching source artifacts through Maven, extracts available source JARs to
-`~/.cache/lathe/deps/<gav-path>/`, and records source status in `.lathe/workspace.properties`.
+`~/.cache/lathe/deps/<gav-path>/`, and records source status in `.lathe/workspace.json`.
 The LS uses that state:
 
-1. `dependencySource.N.status=present` → return the extracted `file://` URI under `dependencySource.N.dir`
-2. `dependencySource.N.status=missing` or no matching JAR entry → return no location
+1. `dependencySources[].status=present` → return the extracted `file://` URI under `dependencySources[].dir`
+2. `dependencySources[].status=missing` or no matching JAR entry → return no location
 3. no workspace manifest → prompt the user to run `mvn process-test-classes` when opening files outside any module
 
 Extracted sources are shared across all projects.
@@ -907,7 +934,7 @@ If cache is empty, trigger a pass first.
 
 - **JDK types** — element's enclosing `ModuleElement` is found in `SYSTEM_MODULES` → `java.lang (JDK 21.0.7)`
 - **Modular dependency types** — element's `ModuleElement` is found on `MODULE_PATH`;
-  JAR path resolved from the class file URI → matched against `dependencySource.N.jar` →
+  JAR path resolved from the class file URI → matched against `dependencySources[].jar` →
   `io.grpc (com.google:grpc-core:1.60.0)`; if no GAV match, module name alone is shown
 - **Classpath dependency types** — class file URI resolved via `CLASS_PATH` → JAR path → GAV lookup →
   `com.google.guava:guava:32.0.0-jre`
@@ -1045,7 +1072,7 @@ The launcher does not poll for updates and does not run a restart loop.
 It starts exactly one server process using the module path from the `current` distribution at process start.
 
 The running server records its own implementation version.
-When manifest server-version fields are implemented and the server reads `.lathe/workspace.properties`,
+When manifest server-version fields are implemented and the server reads `.lathe/workspace.json`,
 it compares that version with `server.version` from the manifest.
 If they differ, the server reports that the workspace was synced with a different Lathe server version.
 The server should continue serving requests when the manifest schema is compatible,
@@ -1129,7 +1156,7 @@ vim.lsp.config('lathe', {
     cmd = { vim.env.HOME .. '/.cache/lathe/current/lathe-launcher.sh' },
     filetypes = { 'java' },
     root_dir = function(fname)
-        return vim.fs.root(fname, '.lathe/root.marker')
+        return vim.fs.root(fname, '.lathe')
     end,
 })
 vim.lsp.enable('lathe')
