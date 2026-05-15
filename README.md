@@ -76,13 +76,21 @@ The `<inherited>false</inherited>` entry is important in multi-module reactors.
 Both goals are reactor-level steps and should run once from the root,
 not once for every child module.
 
-Refresh Lathe state with:
+Initialize Lathe with:
+
+```bash
+mvn clean process-test-classes
+```
+
+`clean` is required on the first run so that Maven recompiles all classes through the Lathe
+compiler shim rather than skipping compilation due to existing output.
+Subsequent refreshes can omit `clean`:
 
 ```bash
 mvn process-test-classes
 ```
 
-The same refresh also happens during normal builds that reach `process-test-classes`,
+A refresh also happens automatically during any normal build that reaches `process-test-classes`,
 such as `mvn test`, `mvn package`, or `mvn install`.
 
 Add `.lathe/` to `.gitignore`.
@@ -125,7 +133,7 @@ Some projects have a reactor root that is not the same POM as the parent used by
 In that layout, install the two Lathe pieces in different places:
 
 - Put `lathe-maven-plugin` with `<inherited>false</inherited>` in the reactor root POM,
-  the POM from which users run `mvn process-test-classes`.
+  the POM from which users run `mvn clean process-test-classes`.
 - Put the `maven-compiler-plugin` Lathe configuration in every parent or standalone POM
   that controls Java compilation for modules in the reactor.
 
@@ -165,9 +173,9 @@ add the shim there as well.
 
 After editing, run:
 
-mvn process-test-classes
+mvn clean process-test-classes
 
-If mvnd is used, restart it after rebuilding Lathe itself:
+If mvnd is used, stop the daemon after installing updated Lathe JARs so it picks up the new version:
 
-mvn --stop
+mvnd --stop
 ```

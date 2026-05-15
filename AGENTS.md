@@ -102,27 +102,6 @@ After a large Java change, agents may run `mvn spotless:apply` before tests to n
 
 ---
 
-## Properties file format
-
-All `.lathe/` property files are written and read with `java.util.Properties`.
-
-Indexed lists use the pattern `key.0=`, `key.1=`, etc. Two shared helpers:
-
-```java
-static void putIndexed(Properties props, String key, List<?> values) {
-    IntStream.range(0, values.size())
-        .forEach(i -> props.setProperty(key + "." + i, values.get(i).toString()));
-}
-
-static List<String> readIndexed(Properties props, String key) {
-    return IntStream.iterate(0, i -> props.containsKey(key + "." + i), i -> i + 1)
-        .mapToObj(i -> props.getProperty(key + "." + i))
-        .toList();
-}
-```
-
----
-
 ## Logging
 
 **`lathe-compiler`** — SLF4J logger.
