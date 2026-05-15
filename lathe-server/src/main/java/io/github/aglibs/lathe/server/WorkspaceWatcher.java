@@ -8,15 +8,22 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Logger;
 
 final class WorkspaceWatcher {
 
   private static final Logger LOG = Logger.getLogger(WorkspaceWatcher.class.getName());
 
-  private final Path marker;
+  private record Fingerprint(long count, long maxMtime) {
+    static final Fingerprint EMPTY = new Fingerprint(0L, 0L);
+  }
+
+  private final Path latheDir;
+  private final Path manifestPath;
   private final Runnable onReload;
-  private final AtomicLong lastSeen;
+  private final AtomicLong lastManifestMtime;
+  private final AtomicReference<Fingerprint> lastParams;
   private final ScheduledExecutorService executor =
       Executors.newSingleThreadScheduledExecutor(
           r -> {
@@ -26,9 +33,11 @@ final class WorkspaceWatcher {
           });
 
   WorkspaceWatcher(final Path workspaceRoot, final Runnable onReload) {
-    this.marker = workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
+    this.latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
+    this.manifestPath = latheDir.resolve(LatheLayout.WORKSPACE_JSON);
     this.onReload = onReload;
-    this.lastSeen = new AtomicLong(mtime(marker));
+    this.lastManifestMtime = new AtomicLong(mtime(manifestPath));
+    this.lastParams = new AtomicReference<>(paramsFingerprint());
   }
 
   void start() {
@@ -39,12 +48,55 @@ final class WorkspaceWatcher {
     executor.shutdownNow();
   }
 
-  private void poll() {
-    final long current = mtime(marker);
-    if (current != lastSeen.get()) {
-      lastSeen.set(current);
-      LOG.info(() -> "[registry] workspace.json changed — reloading");
+  void poll() {
+    final var manifestChanged = detectManifestChange();
+    final var paramsChanged = detectParamsChange();
+    if (manifestChanged || paramsChanged) {
+      LOG.info(
+          () ->
+              "[watcher] reloading (manifest=%s, params=%s)"
+                  .formatted(manifestChanged, paramsChanged));
       onReload.run();
+    }
+  }
+
+  private boolean detectManifestChange() {
+    final long current = mtime(manifestPath);
+    if (current == lastManifestMtime.get()) {
+      return false;
+    }
+
+    lastManifestMtime.set(current);
+    LOG.fine(() -> "[watcher] workspace.json changed");
+    return true;
+  }
+
+  private boolean detectParamsChange() {
+    final var current = paramsFingerprint();
+    if (current.equals(lastParams.get())) {
+      return false;
+    }
+
+    lastParams.set(current);
+    LOG.fine(() -> "[watcher] params files changed");
+    return true;
+  }
+
+  private Fingerprint paramsFingerprint() {
+    if (!Files.isDirectory(latheDir)) {
+      return Fingerprint.EMPTY;
+    }
+
+    try (final var stream = Files.walk(latheDir)) {
+      final var files =
+          stream
+              .filter(p -> p.getFileName().toString().startsWith("lsp-params-"))
+              .filter(p -> p.getFileName().toString().endsWith(".json"))
+              .toList();
+      final long maxMtime = files.stream().mapToLong(WorkspaceWatcher::mtime).max().orElse(0L);
+      return new Fingerprint(files.size(), maxMtime);
+    } catch (final IOException e) {
+      return Fingerprint.EMPTY;
     }
   }
 

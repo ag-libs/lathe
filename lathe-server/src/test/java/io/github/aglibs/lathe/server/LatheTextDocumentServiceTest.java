@@ -16,6 +16,7 @@ import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.TextDocumentItem;
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
 import org.eclipse.lsp4j.services.LanguageClient;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -24,12 +25,18 @@ class LatheTextDocumentServiceTest {
   private static final String URI = "file:///workspace/src/main/java/Foo.java";
   private static final long DEBOUNCE_MS = 50;
 
+  private LanguageClient client;
+  private LatheTextDocumentService service;
+
+  @BeforeEach
+  void setUp() {
+    client = mock(LanguageClient.class);
+    service = new LatheTextDocumentService(ModuleRegistry.empty(), DEBOUNCE_MS);
+    service.connect(client);
+  }
+
   @Test
   void didChange_rapidKeystrokes_compilesOnlyOnce() throws InterruptedException {
-    final var client = mock(LanguageClient.class);
-    final var service = new LatheTextDocumentService(ModuleRegistry.empty(), DEBOUNCE_MS);
-    service.connect(client);
-
     for (int i = 0; i < 5; i++) {
       service.didChange(changeParams("content-" + i));
       Thread.sleep(10);
@@ -45,10 +52,6 @@ class LatheTextDocumentServiceTest {
 
   @Test
   void didChange_rapidKeystrokes_compilesLatestContent() throws InterruptedException {
-    final var client = mock(LanguageClient.class);
-    final var service = new LatheTextDocumentService(ModuleRegistry.empty(), DEBOUNCE_MS);
-    service.connect(client);
-
     for (int i = 0; i < 5; i++) {
       service.didChange(changeParams("content-" + i));
       Thread.sleep(10);
@@ -64,10 +67,6 @@ class LatheTextDocumentServiceTest {
 
   @Test
   void didOpen_compilesImmediatelyWithoutDebounce() {
-    final var client = mock(LanguageClient.class);
-    final var service = new LatheTextDocumentService(ModuleRegistry.empty(), DEBOUNCE_MS);
-    service.connect(client);
-
     service.didOpen(
         new DidOpenTextDocumentParams(new TextDocumentItem(URI, "java", 1, "class Foo {}")));
 
@@ -78,10 +77,6 @@ class LatheTextDocumentServiceTest {
 
   @Test
   void didClose_publishesEmptyDiagnostics() {
-    final var client = mock(LanguageClient.class);
-    final var service = new LatheTextDocumentService(ModuleRegistry.empty(), DEBOUNCE_MS);
-    service.connect(client);
-
     service.didClose(new DidCloseTextDocumentParams(new TextDocumentIdentifier(URI)));
 
     final var captor = ArgumentCaptor.forClass(PublishDiagnosticsParams.class);

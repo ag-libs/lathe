@@ -104,6 +104,7 @@ final class LatheTextDocumentService implements TextDocumentService {
   private void reload() {
     setRegistry(ModuleRegistry.scan(workspaceRoot));
     setManifest(WorkspaceManifest.load(workspaceRoot));
+    scheduleAllOpenFiles();
   }
 
   void close() {
@@ -233,40 +234,35 @@ final class LatheTextDocumentService implements TextDocumentService {
         () ->
             "[save] checking %d open file(s) for dependents of %s"
                 .formatted(openFiles.size(), savedUri));
-    openFiles.forEach((depUri, ignored) -> scheduleIfDependent(depUri, savedUri, savedModule));
+    openFiles.keySet().stream()
+        .filter(uri -> !uri.equals(savedUri))
+        .filter(
+            uri ->
+                registry
+                    .moduleFor(toPath(uri))
+                    .map(m -> m.moduleDir().equals(savedModule.moduleDir()))
+                    .orElse(false))
+        .forEach(uri -> scheduleOpenFile(uri, "save"));
   }
 
-  private void scheduleIfDependent(
-      final String depUri, final String savedUri, final ModuleConfig savedModule) {
-    if (depUri.equals(savedUri)) {
-      return;
-    }
+  private void scheduleAllOpenFiles() {
+    openFiles.keySet().forEach(uri -> scheduleOpenFile(uri, "reload"));
+  }
 
-    final Optional<ModuleConfig> depModule = registry.moduleFor(toPath(depUri));
-    final Optional<ModuleConfig> sameModule =
-        depModule.filter(m -> m.moduleDir().equals(savedModule.moduleDir()));
-    LOG.fine(
-        () ->
-            "[save] dep=%s module=%s same=%s"
-                .formatted(depUri, depModule.isPresent(), sameModule.isPresent()));
-    sameModule.ifPresent(
-        ignored -> {
-          cancelPending(depUri, true, "save");
-
-          final var future =
-              debouncer.schedule(
-                  () -> {
-                    pending.remove(depUri);
-                    final var content = openFiles.get(depUri);
-                    if (content != null) {
-                      compileWith(depUri, content, CompileMode.OPEN);
-                    }
-                  },
-                  0L,
-                  TimeUnit.MILLISECONDS);
-          pending.put(depUri, future);
-          LOG.fine(() -> "[save] scheduled dependent recompile for %s".formatted(depUri));
-        });
+  private void scheduleOpenFile(final String uri, final String tag) {
+    cancelPending(uri, true, tag);
+    final var future =
+        debouncer.schedule(
+            () -> {
+              pending.remove(uri);
+              final var content = openFiles.get(uri);
+              if (content != null) {
+                compileWith(uri, content, CompileMode.OPEN);
+              }
+            },
+            0L,
+            TimeUnit.MILLISECONDS);
+    pending.put(uri, future);
   }
 
   @Override

@@ -23,6 +23,6 @@ Unlocks writing real setup documentation and onboarding external users.
 ## Longer-term
 
 **Stale-POM detection**
-Once the refresh mechanism and distribution story are solid:
+Once the distribution story is solid:
 prompt the user in the editor when a `pom.xml` changes after the last sync run,
 so they know to re-run the documented Maven lifecycle command.
