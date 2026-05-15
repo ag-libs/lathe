@@ -10,7 +10,6 @@ public final class LatheLayout {
   public static final String CACHE_DEPS_DIR = "deps";
   public static final String CACHE_JDKS_DIR = "jdks";
   public static final String SCHEMA_VERSION = "1";
-  public static final String ROOT_MARKER = "root.marker";
   public static final String WORKSPACE_JSON = "workspace.json";
   public static final String LOCK_FILE = "lathe.lock";
   public static final String GENERATED_SOURCES = "generated-sources";

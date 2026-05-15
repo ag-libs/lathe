@@ -7,7 +7,9 @@ import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.maven.dependency.DependencySource;
 import io.github.aglibs.lathe.maven.jdk.JdkSource;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.List;
 import org.apache.maven.plugin.logging.SystemStreamLog;
 import org.junit.jupiter.api.Test;
@@ -16,6 +18,10 @@ import org.junit.jupiter.api.io.TempDir;
 class WorkspaceManifestWriterTest {
 
   @TempDir Path workspaceRoot;
+
+  private WorkspaceManifestWriter writer() {
+    return new WorkspaceManifestWriter(new SystemStreamLog());
+  }
 
   @Test
   void write_writesWorkspaceJsonAtomically() throws Exception {
@@ -34,7 +40,7 @@ class WorkspaceManifestWriterTest {
             Path.of("/jdk/lib/src.zip"),
             Path.of("/cache/jdks/Example-Vendor/21.0.1"));
 
-    WorkspaceManifestWriter.write(workspaceRoot, List.of(dep), jdk, new SystemStreamLog());
+    writer().write(workspaceRoot, List.of(dep), jdk);
 
     final var manifest =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
@@ -59,7 +65,7 @@ class WorkspaceManifestWriterTest {
   void write_missingJdkSource_hasNullSourceDir() throws Exception {
     final var jdk = JdkSource.missing("Example Vendor", "21.0.1", Path.of("/jdk"));
 
-    WorkspaceManifestWriter.write(workspaceRoot, List.of(), jdk, new SystemStreamLog());
+    writer().write(workspaceRoot, List.of(), jdk);
 
     final var manifest =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
@@ -67,6 +73,21 @@ class WorkspaceManifestWriterTest {
     assertThat(data.jdk().version()).isEqualTo("21.0.1");
     assertThat(data.jdk().status()).isEqualTo("missing");
     assertThat(data.jdk().sourceDir()).isNull();
+  }
+
+  @Test
+  void write_sameContent_skipsWrite() throws Exception {
+    final var jdk = JdkSource.missing("Vendor", "21", Path.of("/jdk"));
+    writer().write(workspaceRoot, List.of(), jdk);
+
+    final var manifest =
+        workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
+    final var sentinel = FileTime.fromMillis(1_000_000L);
+    Files.setLastModifiedTime(manifest, sentinel);
+
+    writer().write(workspaceRoot, List.of(), jdk);
+
+    assertThat(Files.getLastModifiedTime(manifest)).isEqualTo(sentinel);
   }
 
   @Test
@@ -81,7 +102,7 @@ class WorkspaceManifestWriterTest {
         JdkSource.present(
             "Vendor", "21", Path.of("/jdk"), Path.of("/jdk/src.zip"), Path.of("/cache/jdk"));
 
-    WorkspaceManifestWriter.write(workspaceRoot, deps, jdk, new SystemStreamLog());
+    writer().write(workspaceRoot, deps, jdk);
 
     final var manifest =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);

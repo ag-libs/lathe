@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.maven.dependency.DependencySource;
 import io.github.aglibs.lathe.maven.jdk.JdkSource;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -14,45 +15,51 @@ import org.apache.maven.plugin.logging.Log;
 
 final class WorkspaceManifestWriter {
 
-  private WorkspaceManifestWriter() {}
+  private final Log log;
 
-  static void write(
-      final Path workspaceRoot,
-      final List<DependencySource> dependencySources,
-      final JdkSource jdkSource,
-      final Log log) {
-    final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
-    Path tempFile = null;
-    try {
-      Files.createDirectories(latheDir);
-      tempFile = Files.createTempFile(latheDir, LatheLayout.WORKSPACE_JSON, ".tmp");
-      write(tempFile, workspaceRoot, dependencySources, jdkSource);
-      FileUtil.moveReplacing(tempFile, latheDir.resolve(LatheLayout.WORKSPACE_JSON));
-    } catch (final IOException e) {
-      throw new SyncException("lathe:sync failed to write workspace manifest", e);
-    } finally {
-      if (tempFile != null) {
-        try {
-          Files.deleteIfExists(tempFile);
-        } catch (final IOException e) {
-          log.debug("[sync] failed to clean temporary workspace manifest", e);
-        }
-      }
-    }
+  WorkspaceManifestWriter(final Log log) {
+    this.log = log;
   }
 
-  private static void write(
-      final Path file,
+  void write(
       final Path workspaceRoot,
       final List<DependencySource> dependencySources,
-      final JdkSource jdkSource)
-      throws IOException {
+      final JdkSource jdkSource) {
     final var data =
         new WorkspaceManifestData(
             LatheLayout.SCHEMA_VERSION,
             workspaceRoot.toString(),
             jdkSource.toData(),
             dependencySources.stream().map(DependencySource::toData).toList());
-    Json.write(data, file);
+    final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
+    final var manifestPath = latheDir.resolve(LatheLayout.WORKSPACE_JSON);
+    final var newContent = Json.toJson(data);
+    try {
+      Files.createDirectories(latheDir);
+      if (Files.exists(manifestPath)
+          && newContent.equals(Files.readString(manifestPath, StandardCharsets.UTF_8))) {
+        log.info("[sync] workspace unchanged — skipping write");
+        return;
+      }
+
+      writeAtomically(latheDir, manifestPath, newContent);
+    } catch (final IOException e) {
+      throw new SyncException("lathe:sync failed to write workspace manifest", e);
+    }
+  }
+
+  private void writeAtomically(
+      final Path latheDir, final Path manifestPath, final String newContent) throws IOException {
+    final var tempFile = Files.createTempFile(latheDir, LatheLayout.WORKSPACE_JSON, ".tmp");
+    try {
+      Files.writeString(tempFile, newContent, StandardCharsets.UTF_8);
+      FileUtil.moveReplacing(tempFile, manifestPath);
+    } finally {
+      try {
+        Files.deleteIfExists(tempFile);
+      } catch (final IOException e) {
+        log.debug("[sync] failed to clean temporary workspace manifest", e);
+      }
+    }
   }
 }

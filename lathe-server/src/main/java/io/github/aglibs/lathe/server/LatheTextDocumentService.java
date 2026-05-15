@@ -2,7 +2,6 @@ package io.github.aglibs.lathe.server;
 
 import static java.util.logging.Level.SEVERE;
 
-import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.server.analysis.AnalysisEngine;
 import io.github.aglibs.lathe.server.module.CompileMode;
 import io.github.aglibs.lathe.server.module.ModuleConfig;
@@ -24,7 +23,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.DefinitionParams;
 import org.eclipse.lsp4j.Diagnostic;
@@ -56,6 +54,8 @@ final class LatheTextDocumentService implements TextDocumentService {
 
   private volatile ModuleRegistry registry;
   private volatile WorkspaceManifest manifest = WorkspaceManifest.empty();
+  private volatile Path workspaceRoot;
+  private volatile WorkspaceWatcher watcher;
   private volatile LanguageClient client;
   private final long debounceMs;
   private final ExternalFileCompiler externalCompiler =
@@ -96,35 +96,22 @@ final class LatheTextDocumentService implements TextDocumentService {
   }
 
   void startWatching(final Path workspaceRoot) {
-    final var marker =
-        workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.ROOT_MARKER);
-    final var lastSeen = new AtomicLong(mtime(marker));
-    debouncer.scheduleAtFixedRate(
-        () -> {
-          final long current = mtime(marker);
-          if (current != lastSeen.get()) {
-            lastSeen.set(current);
-            LOG.info(() -> "[registry] root.marker changed — reloading");
-            setRegistry(ModuleRegistry.scan(workspaceRoot));
-            setManifest(WorkspaceManifest.load(workspaceRoot));
-          }
-        },
-        2,
-        2,
-        TimeUnit.SECONDS);
+    this.workspaceRoot = workspaceRoot;
+    watcher = new WorkspaceWatcher(workspaceRoot, this::reload);
+    watcher.start();
+  }
+
+  private void reload() {
+    setRegistry(ModuleRegistry.scan(workspaceRoot));
+    setManifest(WorkspaceManifest.load(workspaceRoot));
   }
 
   void close() {
+    if (watcher != null) {
+      watcher.close();
+    }
     registry.close();
     externalCompiler.close();
-  }
-
-  private static long mtime(final Path path) {
-    try {
-      return Files.getLastModifiedTime(path).toMillis();
-    } catch (final IOException e) {
-      return 0;
-    }
   }
 
   @Override

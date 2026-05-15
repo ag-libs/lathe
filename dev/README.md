@@ -42,7 +42,7 @@ LATHE_DEBUG_PORT=5005 ./dev/nvim.sh path/to/File.java
 python3 dev/lsp.py path/to/Foo.java path/to/FooTest.java
 ```
 
-Workspace root is auto-detected from the nearest `.lathe/root.marker`.
+Workspace root is auto-detected from the nearest `.lathe/` directory.
 
 ### Import mode — test specific LSP features
 

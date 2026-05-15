@@ -1,12 +1,10 @@
 package io.github.aglibs.lathe.maven;
 
-import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.maven.dependency.DependencySource;
 import io.github.aglibs.lathe.maven.dependency.DependencySourceResolver;
 import io.github.aglibs.lathe.maven.dependency.DependencySourceSync;
 import io.github.aglibs.lathe.maven.jdk.JdkSourceResolver;
 import io.github.aglibs.lathe.maven.jdk.JdkSourceSync;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import javax.inject.Inject;
@@ -36,23 +34,18 @@ public final class SyncMojo extends AbstractMojo {
 
   @Override
   public void execute() throws MojoExecutionException {
-    if (isDirectSyncInvocation(session.getRequest().getGoals())) {
-      throw new MojoExecutionException(
-          "Do not run lathe:sync directly. Run mvn process-test-classes instead.");
+    if (LatheFlags.isDisabled()) {
+      getLog().info("[sync] disabled (CI or lathe.skip) — skipping");
+      return;
     }
 
     if (!session.getCurrentProject().equals(session.getTopLevelProject())) {
-      getLog().debug("[sync] skipping non top-level project");
+      getLog().info("[sync] skipping non top-level project");
       return;
     }
 
     try {
       final var workspaceRoot = session.getTopLevelProject().getBasedir().toPath();
-      if (!Files.exists(
-          workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.ROOT_MARKER))) {
-        getLog().info("[sync] lathe:init has not been run — skipping");
-        return;
-      }
       final var projects = ReactorProjects.sorted(session, workspaceRoot);
       logModules(workspaceRoot, projects);
       final var resolver = new DependencySourceResolver(repositorySystem, session, getLog());
@@ -64,10 +57,18 @@ public final class SyncMojo extends AbstractMojo {
       DependencySourceSync.extract(DependencySource.present(dependencySources), getLog());
       final var jdkSource = JdkSourceResolver.resolve();
       JdkSourceSync.extract(jdkSource, getLog());
-      WorkspaceManifestWriter.write(workspaceRoot, dependencySources, jdkSource, getLog());
+      if (isPartialReactor() && !LatheFlags.isForcedSync()) {
+        getLog().debug("[sync] partial reactor (-pl) — skipping workspace.json write");
+      } else {
+        new WorkspaceManifestWriter(getLog()).write(workspaceRoot, dependencySources, jdkSource);
+      }
     } catch (final SyncException e) {
       throw new MojoExecutionException(e.getMessage(), e);
     }
+  }
+
+  private boolean isPartialReactor() {
+    return !session.getRequest().getSelectedProjects().isEmpty();
   }
 
   private void logModule(final Path workspaceRoot, final MavenProject project) {
@@ -81,9 +82,5 @@ public final class SyncMojo extends AbstractMojo {
 
   private void logModules(final Path workspaceRoot, final List<MavenProject> projects) {
     projects.forEach(project -> logModule(workspaceRoot, project));
-  }
-
-  static boolean isDirectSyncInvocation(final List<String> goals) {
-    return goals.stream().anyMatch(goal -> goal.contains(":sync"));
   }
 }

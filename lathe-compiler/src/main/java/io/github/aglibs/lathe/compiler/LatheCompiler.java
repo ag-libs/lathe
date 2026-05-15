@@ -6,7 +6,6 @@ import io.github.aglibs.lathe.core.Stopwatch;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.FileTime;
 import java.util.Optional;
 import org.codehaus.plexus.compiler.Compiler;
 import org.codehaus.plexus.compiler.CompilerConfiguration;
@@ -59,7 +58,7 @@ public final class LatheCompiler implements Compiler {
     final var ctx = resolveLatheContext(config);
 
     if (ctx.isEmpty()) {
-      LOG.debug("[lathe] no root.marker found — skipping");
+      LOG.debug("[lathe] no .lathe/ found — skipping");
       return javacCompiler.performCompile(config);
     }
 
@@ -79,15 +78,13 @@ public final class LatheCompiler implements Compiler {
     final var sw = Stopwatch.start();
     try {
       ParamsWriter.write(config, moduleDir);
-      Files.setLastModifiedTime(
-          ctx.get().latheDir().resolve(LatheLayout.ROOT_MARKER),
-          FileTime.fromMillis(System.currentTimeMillis()));
       final var outputDir = Path.of(config.getOutputLocation());
       FileUtil.replaceDir(outputDir, moduleDir.resolve(outputDir.getFileName()));
       final var genSources = config.getGeneratedSourcesDirectory();
       if (genSources != null && Files.isDirectory(genSources.toPath())) {
         FileUtil.replaceDir(genSources.toPath(), moduleDir.resolve(LatheLayout.GENERATED_SOURCES));
       }
+
       LOG.info("[lathe] {} {}ms", moduleRel, sw.elapsedMs());
     } catch (final IOException e) {
       LOG.warn("[lathe] {} post-compile step failed", moduleRel, e);

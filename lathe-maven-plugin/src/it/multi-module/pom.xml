@@ -48,6 +48,12 @@
         <inherited>false</inherited>
         <executions>
           <execution>
+            <id>lathe-init</id>
+            <goals>
+              <goal>init</goal>
+            </goals>
+          </execution>
+          <execution>
             <id>lathe-sync</id>
             <goals>
               <goal>sync</goal>

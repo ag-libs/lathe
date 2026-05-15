@@ -39,9 +39,6 @@ Four components, no circular dependencies.
 
 **`lathe-core`** — shared filesystem and property-file helpers used by the compiler shim, Maven plugin, and server.
 It has no external dependencies and is a JPMS module.
-`ParamStore` provides indexed write (`putIndexed`) and read (`readIndexed`) via `PrefixedStore`/`PrefixedReader` inner classes.
-`io.github.aglibs.lathe.core.maven.DependencyEntry` is the shared serialization record for `dependencySource.N.*` blocks,
-used by the Maven plugin for writing and by the server for reading.
 
 **`lathe-compiler`** — a Plexus compiler SPI implementation.
 Registered as the compiler for `maven-compiler-plugin`.
@@ -49,12 +46,11 @@ Delegates to real javac unchanged, then writes compilation parameters to `.lathe
 `.lathe/<rel>/classes/`, `.lathe/<rel>/test-classes/`, and `.lathe/<rel>/generated-sources/` after each build.
 
 **`lathe-maven-plugin`** — provides `lathe:init` and `lathe:sync`.
-`init` creates `.lathe/`, writes `.lathe/root.marker`, and resets the workspace manifest.
-It does not validate Maven configuration or inspect/edit POM files.
-`sync` runs after Maven compilation, compares the current Maven project state with the last workspace manifest,
-refreshes shared dependency/JDK sources and later indexes,
-and installs the matching server distribution into the user cache when needed.
-It also owns all integration and e2e tests via maven-invoker and Neovim headless execution.
+`init` auto-binds to the `initialize` phase; its only job is `Files.createDirectories(.lathe/)`.
+It runs silently before compilation so the shim always finds `.lathe/` on the very first build.
+`sync` auto-binds to `process-test-classes`; it refreshes shared dependency/JDK sources,
+writes `workspace.json` (skipped when content is unchanged or when Maven is invoked with `-pl`),
+and owns all integration and e2e tests via maven-invoker and Neovim headless execution.
 
 **`lathe-server`** — the LSP server.
 Reads params files written by the shim and the workspace manifest written by the Maven plugin, builds a fresh
@@ -75,7 +71,7 @@ lathe-compiler
 lathe-maven-plugin
     provides   → init + sync goals
     reads      → Maven session/reactor/dependency resolution
-    writes     → .lathe/root.marker, .lathe/workspace.properties
+    writes     → .lathe/ (init), .lathe/workspace.json (sync)
     writes     → ~/.cache/lathe/ (server dist, dependency sources, JDK sources, indexes)
     depends on → lathe-core
 

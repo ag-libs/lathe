@@ -8,7 +8,7 @@ and the Maven plugin refreshes workspace metadata and dependency sources.
 Lathe setup has two parts:
 
 - `lathe-compiler` is configured as the `maven-compiler-plugin` compiler.
-- `lathe-maven-plugin` is bound at the reactor root so `lathe:sync` runs after test compilation.
+- `lathe-maven-plugin` declares two goals in the reactor root: `init` (auto-bound to `initialize`) and `sync` (auto-bound to `process-test-classes`).
 
 ## Installation
 
@@ -43,7 +43,7 @@ For a simple project, this is usually the parent POM:
 Keep any existing compiler configuration.
 Only add the `lathe-compiler` dependency and `<compilerId>lathe</compilerId>`.
 
-Bind `lathe:sync` in the reactor root POM:
+Bind both goals in the reactor root POM:
 
 ```xml
 <plugin>
@@ -52,6 +52,12 @@ Bind `lathe:sync` in the reactor root POM:
     <version>${lathe.version}</version>
     <inherited>false</inherited>
     <executions>
+        <execution>
+            <id>lathe-init</id>
+            <goals>
+                <goal>init</goal>
+            </goals>
+        </execution>
         <execution>
             <id>lathe-sync</id>
             <goals>
@@ -62,42 +68,56 @@ Bind `lathe:sync` in the reactor root POM:
 </plugin>
 ```
 
-Do not add an explicit `<phase>`.
-The `sync` goal declares `process-test-classes` as its default phase,
-so Maven runs it after main and test compilation.
+Do not add explicit `<phase>` elements.
+`init` defaults to `initialize` (the first Maven phase, before `compile`).
+`sync` defaults to `process-test-classes` (after main and test compilation).
 
 The `<inherited>false</inherited>` entry is important in multi-module reactors.
-`lathe:sync` is a reactor-level refresh step and should run once from the root,
+Both goals are reactor-level steps and should run once from the root,
 not once for every child module.
 
-Initialize the checkout once:
-
-```bash
-mvn io.github.ag-libs:lathe-maven-plugin:${lathe.version}:init
-```
-
-Then refresh Lathe state with:
+Refresh Lathe state with:
 
 ```bash
 mvn process-test-classes
 ```
 
 The same refresh also happens during normal builds that reach `process-test-classes`,
-such as `mvn package` or `mvn install`.
+such as `mvn test`, `mvn package`, or `mvn install`.
+
+Add `.lathe/` to `.gitignore`.
 
 ## What The Build Writes
 
-`lathe:init` creates `.lathe/root.marker` and clears stale workspace state.
+`lathe:init` creates `.lathe/` at the workspace root on the first build.
+It runs automatically at the `initialize` phase — no manual invocation needed.
 
 The compiler shim writes compilation parameter files under `.lathe/` as each module compiles.
 Those files contain the classpath, module path, source roots, generated-source locations,
 annotation processor settings, and other `javac` inputs that the language server needs.
 
-`lathe:sync` resolves dependency source JARs through Maven.
+`lathe:sync` resolves dependency source JARs through Maven and writes `workspace.json`.
 The source JARs are downloaded into the normal local Maven repository.
 They are resolved on demand by Maven instead of being guessed from POM text.
+The write is skipped when the content is unchanged, so a no-op build does not trigger
+a server reload.
 
-Add `.lathe/` to `.gitignore`.
+## Opt-out and CI
+
+Lathe is active by default and skips automatically in CI environments:
+
+| Condition | Effect |
+|---|---|
+| `CI` environment variable is set | both `init` and `sync` are skipped |
+| `-Dlathe.skip=true` | disabled regardless of other settings |
+| `-Dlathe.skip=false` | enabled, overrides `CI` |
+
+## Partial builds
+
+When Maven is invoked with `-pl`, `lathe:sync` skips writing `workspace.json`
+to avoid overwriting the full workspace manifest with a partial view.
+Module params files are still written by the compiler shim for compiled modules.
+To force a workspace manifest write from a partial build, pass `-Dlathe.sync.force=true`.
 
 ## Non-Trivial Maven Projects
 
@@ -132,9 +152,9 @@ Install two pieces:
    compiler args, plugin management, and executions.
 
 2. Bind io.github.ag-libs:lathe-maven-plugin:${lathe.version} in the reactor root POM.
-   Add an execution with id lathe-sync and goal sync.
-   Do not specify a phase; the goal has defaultPhase process-test-classes.
-   Set <inherited>false</inherited> so sync runs once at the reactor root.
+   Add two executions: id lathe-init with goal init, and id lathe-sync with goal sync.
+   Do not specify phases; init defaults to initialize and sync defaults to process-test-classes.
+   Set <inherited>false</inherited> so both goals run once at the reactor root.
 
 Do not assume the reactor root POM is the parent POM.
 Inspect the Maven structure first.
@@ -145,7 +165,6 @@ add the shim there as well.
 
 After editing, run:
 
-mvn io.github.ag-libs:lathe-maven-plugin:${lathe.version}:init
 mvn process-test-classes
 
 If mvnd is used, restart it after rebuilding Lathe itself:

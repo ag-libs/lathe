@@ -2,18 +2,30 @@ package io.github.aglibs.lathe.maven;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.util.List;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 class SyncMojoTest {
 
-  @Test
-  void isDirectSyncInvocation_detectsDirectSyncGoal() {
-    assertThat(SyncMojo.isDirectSyncInvocation(List.of("lathe:sync"))).isTrue();
+  @AfterEach
+  void clearProperty() {
+    System.clearProperty("lathe.skip");
   }
 
   @Test
-  void isDirectSyncInvocation_ignoresLifecycleGoals() {
-    assertThat(SyncMojo.isDirectSyncInvocation(List.of("process-test-classes"))).isFalse();
+  void latheFlags_notDisabledByDefault() {
+    assertThat(LatheFlags.isDisabled()).isFalse();
+  }
+
+  @Test
+  void latheFlags_disabledWhenSkipTrue() {
+    System.setProperty("lathe.skip", "true");
+    assertThat(LatheFlags.isDisabled()).isTrue();
+  }
+
+  @Test
+  void latheFlags_enabledWhenSkipFalse() {
+    System.setProperty("lathe.skip", "false");
+    assertThat(LatheFlags.isDisabled()).isFalse();
   }
 }

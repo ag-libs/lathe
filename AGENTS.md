@@ -7,10 +7,8 @@ Design documents live in `docs/`.
 Before making non-trivial changes, read the relevant design document first:
 
 - Overall design: `docs/lathe-design.md`
-- Next task recipe: `docs/lathe-plan.md`
+- Roadmap: `docs/roadmap.md`
 - Run/test/debug design: `docs/lathe-run-test-debug.md`
-
-Before starting the next task, read `docs/lathe-plan.md` in full.
 
 ## Working style
 
@@ -30,7 +28,7 @@ Before starting the next task, read `docs/lathe-plan.md` in full.
 |---|---|
 | `lathe-core` | Shared utilities (property file helpers, future shared code); no external deps; has `module-info.java` |
 | `lathe-compiler` | Plexus compiler SPI (`hint=lathe`) |
-| `lathe-maven-plugin` | `lathe:init` and `lathe:sync` Mojos; owns Maven invoker integration tests |
+| `lathe-maven-plugin` | `lathe:init` (auto-bound to `initialize`, creates `.lathe/`) and `lathe:sync` (auto-bound to `process-test-classes`) Mojos; owns Maven invoker integration tests |
 | `lathe-server` | LSP server; reads files produced by the other two; JPMS module; regular dep on `lathe-core` |
 
 Build order: `lathe-core` → `lathe-compiler` → `lathe-server` → `lathe-maven-plugin`.
@@ -67,7 +65,7 @@ After a large Java change, agents may run `mvn spotless:apply` before tests to n
 - `var` only when the type is obvious from the right-hand side.
   Use the explicit type otherwise, for example `JavaCompiler compiler = ToolProvider.getSystemJavaCompiler()`.
 - Always use `{}` braces on `if`/`else`, even for single-line bodies
-- Leave a blank line after an `if`/`else` block when another statement follows in the same scope.
+- Leave a blank line after the closing `}` of every `if`/`else` block when another statement follows in the same scope.
 - Document magic numbers with an inline comment, for example `final int openLen = 3; // "/**"`.
 - Streams, lambdas, and method references over imperative loops
 - Avoid fully qualified imports when a normal import is practical,
