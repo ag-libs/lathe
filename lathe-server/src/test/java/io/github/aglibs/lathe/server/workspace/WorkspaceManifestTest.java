@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.server;
+package io.github.aglibs.lathe.server.workspace;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -7,7 +7,8 @@ import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.DependencyData;
 import io.github.aglibs.lathe.core.schema.JdkSourceData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
-import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
+import io.github.aglibs.lathe.server.SampleFixture;
+import io.github.aglibs.lathe.server.TestCompiler;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;

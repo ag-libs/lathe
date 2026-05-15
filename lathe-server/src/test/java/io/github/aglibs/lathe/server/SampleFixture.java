@@ -16,11 +16,11 @@ import org.junit.jupiter.api.io.TempDir;
  * Base class that compiles {@code Sample.java} before each test. Subclasses inherit {@link
  * #compiled} ready for inspection.
  */
-abstract class SampleFixture {
+public abstract class SampleFixture {
 
-  @TempDir Path tmp;
+  @TempDir public Path tmp;
 
-  TestCompiler.ParsedSource compiled;
+  public TestCompiler.ParsedSource compiled;
 
   @BeforeEach
   void compile() throws IOException {

@@ -289,7 +289,7 @@ final class LatheTextDocumentService implements TextDocumentService {
       client.publishDiagnostics(
           singleDiag(
               uri,
-              "Run `mvn process-test-classes` to initialize Lathe for this module",
+              "Run `mvn clean process-test-classes` to initialize Lathe for this module",
               DiagnosticSeverity.Warning));
     }
   }

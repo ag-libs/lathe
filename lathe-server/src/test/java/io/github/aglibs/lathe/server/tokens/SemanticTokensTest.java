@@ -1,9 +1,8 @@
-package io.github.aglibs.lathe.server;
+package io.github.aglibs.lathe.server.tokens;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.aglibs.lathe.server.tokens.SemanticToken;
-import io.github.aglibs.lathe.server.tokens.TokenScanner;
+import io.github.aglibs.lathe.server.SampleFixture;
 import java.io.IOException;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;

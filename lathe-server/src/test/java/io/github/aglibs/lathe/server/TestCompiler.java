@@ -14,9 +14,9 @@ import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
 import javax.tools.ToolProvider;
 
-final class TestCompiler {
+public final class TestCompiler {
 
-  record ParsedSource(
+  public record ParsedSource(
       JavacTask task,
       Trees trees,
       CompilationUnitTree cu,
@@ -32,12 +32,12 @@ final class TestCompiler {
     return COMPILER.getStandardFileManager(null, null, null);
   }
 
-  static void compileToDir(final Path classDir, final Path... sources) throws IOException {
+  public static void compileToDir(final Path classDir, final Path... sources) throws IOException {
     compileToDir(classDir, List.of(), sources);
   }
 
-  static void compileToDir(final Path classDir, final List<Path> classpath, final Path... sources)
-      throws IOException {
+  public static void compileToDir(
+      final Path classDir, final List<Path> classpath, final Path... sources) throws IOException {
     final var fm = newFm();
     Files.createDirectories(classDir);
     fm.setLocationFromPaths(StandardLocation.CLASS_OUTPUT, List.of(classDir));
@@ -47,7 +47,7 @@ final class TestCompiler {
     COMPILER.getTask(null, fm, null, null, null, fm.getJavaFileObjects(sources)).call();
   }
 
-  static void compileToJar(
+  public static void compileToJar(
       final Path jar, final Path classDir, final List<Path> classpath, final Path... sources)
       throws IOException {
     compileToDir(classDir, classpath, sources);
@@ -63,11 +63,12 @@ final class TestCompiler {
     }
   }
 
-  static ParsedSource parse(final Path src) throws IOException {
+  public static ParsedSource parse(final Path src) throws IOException {
     return doParse(src, List.of());
   }
 
-  static ParsedSource parseWithClasspath(final Path src, final Path classDir) throws IOException {
+  public static ParsedSource parseWithClasspath(final Path src, final Path classDir)
+      throws IOException {
     return doParse(src, List.of(classDir));
   }
 
