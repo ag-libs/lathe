@@ -2,6 +2,10 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+echo "[lathe] installing server binaries..."
+mvn install -f "$REPO_ROOT/pom.xml" -pl lathe-core,lathe-server -am -DskipTests
 
 LAUNCHER="$HOME/.cache/lathe/current/lathe-launcher.sh"
 if [ ! -x "$LAUNCHER" ]; then

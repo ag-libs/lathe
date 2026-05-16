@@ -10,6 +10,7 @@ import io.github.aglibs.lathe.server.module.CompileMode;
 import io.github.aglibs.lathe.server.module.SourceCompiler;
 import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Logger;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
@@ -89,18 +90,18 @@ final class CompletionProvider {
   }
 
   private static TreePath findSentinel(final FileAnalysis analysis) {
-    final var result = new TreePath[1];
+    final var result = new AtomicReference<TreePath>();
     new TreePathScanner<Void, Void>() {
       @Override
       public Void visitMemberSelect(final MemberSelectTree node, final Void unused) {
         if (node.getIdentifier().toString().startsWith(SENTINEL)) {
-          result[0] = getCurrentPath();
+          result.set(getCurrentPath());
         }
 
         return super.visitMemberSelect(node, unused);
       }
     }.scan(analysis.tree(), null);
-    return result[0];
+    return result.get();
   }
 
   private static CompletionItem toItem(
