@@ -53,6 +53,12 @@ mvn verify -pl lathe-maven-plugin -DskipNeovimTests             # invoker only
 mvn verify -pl lathe-maven-plugin -Dinvoker.test=jpms-project   # one invoker project
 ```
 
+## Test projects
+
+**dropwizard** (`~/git/dropwizard`) — used to test lathe end-to-end with a large real-world codebase.
+Requires Java 25 (Corretto 25); set `JAVA_HOME=/opt/amazon-corretto-25.0.0.36.2-linux-x64` before building.
+Run `mvn process-test-classes` to trigger `lathe:sync` and verify the launcher and workspace manifest.
+
 `spotless:check` runs on `verify` — run `spotless:apply` to fix formatting before committing.
 After a large Java change, agents may run `mvn spotless:apply` before tests to normalize formatting.
 

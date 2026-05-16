@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.core;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -19,6 +20,21 @@ public final class FileUtil {
       deleteDir(dest);
     }
     copyDir(src, dest);
+  }
+
+  public static void writeAtomically(
+      final Path dir, final Path target, final String content, final boolean executable)
+      throws IOException {
+    final var tmp = Files.createTempFile(dir, target.getFileName().toString(), ".tmp");
+    try {
+      Files.writeString(tmp, content, StandardCharsets.UTF_8);
+      if (executable) {
+        tmp.toFile().setExecutable(true, false);
+      }
+      moveReplacing(tmp, target);
+    } finally {
+      Files.deleteIfExists(tmp);
+    }
   }
 
   public static void moveReplacing(final Path src, final Path dest) throws IOException {

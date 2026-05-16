@@ -12,7 +12,6 @@ import javax.inject.Inject;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
-import org.apache.maven.plugin.descriptor.PluginDescriptor;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
@@ -34,11 +33,14 @@ public final class SyncMojo extends AbstractMojo {
   @Parameter(defaultValue = "${session}", readonly = true, required = true)
   private MavenSession session;
 
-  @Parameter(defaultValue = "${plugin}", readonly = true, required = true)
-  private PluginDescriptor pluginDescriptor;
-
   @Override
   public void execute() throws MojoExecutionException {
+    if (isDirectInvocation()) {
+      getLog()
+          .warn("[sync] direct invocation is not supported — run mvn process-test-classes instead");
+      return;
+    }
+
     if (LatheFlags.isDisabled()) {
       getLog().info("[sync] disabled (CI or lathe.skip) — skipping");
       return;
@@ -63,23 +65,21 @@ public final class SyncMojo extends AbstractMojo {
       DependencySourceSync.extract(DependencySource.present(dependencySources), getLog());
       final var jdkSource = JdkSourceResolver.resolve();
       JdkSourceSync.extract(jdkSource, getLog());
-      final var installer =
-          new ServerInstaller(
-              repositorySystem,
-              session.getRepositorySession(),
-              remoteRepos,
-              getLog(),
-              pluginDescriptor.getVersion());
-      installer.install();
+      new ServerInstaller(repositorySystem, session.getRepositorySession(), remoteRepos, getLog())
+          .install();
       if (isPartialReactor() && !LatheFlags.isForcedSync()) {
         getLog().debug("[sync] partial reactor (-pl) — skipping workspace.json write");
       } else {
         new WorkspaceManifestWriter(getLog())
-            .write(workspaceRoot, dependencySources, jdkSource, pluginDescriptor.getVersion());
+            .write(workspaceRoot, dependencySources, jdkSource, PluginProps.version());
       }
     } catch (final SyncException e) {
       throw new MojoExecutionException(e.getMessage(), e);
     }
+  }
+
+  private boolean isDirectInvocation() {
+    return session.getRequest().getGoals().stream().anyMatch(g -> g.contains("lathe:sync"));
   }
 
   private boolean isPartialReactor() {
@@ -89,10 +89,10 @@ public final class SyncMojo extends AbstractMojo {
   private void logModule(final Path workspaceRoot, final MavenProject project) {
     getLog()
         .info(
-            "[sync] module "
-                + ReactorProjects.moduleRel(workspaceRoot, project)
-                + " "
-                + ReactorProjects.gav(project));
+            "[sync] module %s %s"
+                .formatted(
+                    ReactorProjects.moduleRel(workspaceRoot, project),
+                    ReactorProjects.gav(project)));
   }
 
   private void logModules(final Path workspaceRoot, final List<MavenProject> projects) {

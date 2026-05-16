@@ -43,6 +43,20 @@ class MultiModuleTest {
     assertThat(LATHE_CACHE.resolve("current")).isSymbolicLink();
   }
 
+  @Test
+  void launcherContentValid() throws IOException {
+    final var launcher =
+        LATHE_CACHE.resolve("servers").resolve(LATHE_VERSION).resolve("lathe-launcher.sh");
+    final var content = read(launcher);
+    assertThat(content).startsWith("#!/bin/sh\n");
+    assertThat(content).contains("--add-modules java.net.http");
+    assertThat(content).contains("--add-exports jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED");
+    assertThat(content).contains("--add-opens jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED");
+    assertThat(content).contains("--add-exports jdk.compiler/com.sun.tools.javac.api=com.google.googlejavaformat");
+    assertThat(content).contains("--module-path");
+    assertThat(content).contains("-m io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer");
+  }
+
   // --- sync: workspace.json ---
 
   @Test

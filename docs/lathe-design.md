@@ -1110,22 +1110,22 @@ It is installed by `lathe:sync` as part of the server distribution.
 ```sh
 #!/bin/sh
 exec java \
+  # Classpath javac plugins (e.g. Error Prone via -Xplugin:) run in the unnamed module
+  # and access javac internals directly. Without ALL-UNNAMED exports, didSave full passes
+  # that replay -Xplugin:ErrorProne throw IllegalAccessError.
+  --add-exports jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED \
+  ... (all 10 packages) ...
+  --add-opens jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED \
+  --add-opens jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED \
+  # google-java-format is a named module on the module path; use module-qualified exports.
   --add-exports jdk.compiler/com.sun.tools.javac.api=com.google.googlejavaformat \
-  --add-exports jdk.compiler/com.sun.tools.javac.code=com.google.googlejavaformat \
-  --add-exports jdk.compiler/com.sun.tools.javac.comp=com.google.googlejavaformat \
-  --add-exports jdk.compiler/com.sun.tools.javac.file=com.google.googlejavaformat \
-  --add-exports jdk.compiler/com.sun.tools.javac.main=com.google.googlejavaformat \
-  --add-exports jdk.compiler/com.sun.tools.javac.model=com.google.googlejavaformat \
-  --add-exports jdk.compiler/com.sun.tools.javac.parser=com.google.googlejavaformat \
-  --add-exports jdk.compiler/com.sun.tools.javac.tree=com.google.googlejavaformat \
-  --add-exports jdk.compiler/com.sun.tools.javac.util=com.google.googlejavaformat \
+  ... (9 packages, no processing) ...
   --add-opens jdk.compiler/com.sun.tools.javac.code=com.google.googlejavaformat \
   --add-opens jdk.compiler/com.sun.tools.javac.comp=com.google.googlejavaformat \
   --module-path /abs/.m2/.../lathe-server.jar:/abs/.m2/.../lathe-core.jar:... \
   -m io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer "$@"
 ```
 
-All deps land on `--module-path` so only module-qualified `=com.google.googlejavaformat` exports are needed.
 The module path is a colon-separated list of absolute `.m2` JAR paths rendered by `ServerInstaller` at install time;
 no staging `lib/` directory is created.
 `LATHE_JVM_OPTS` support is a planned addition for users who need heap or GC tuning.

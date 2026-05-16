@@ -44,24 +44,9 @@ final class WorkspaceManifestWriter {
         return;
       }
 
-      writeAtomically(latheDir, manifestPath, newContent);
+      FileUtil.writeAtomically(latheDir, manifestPath, newContent, false);
     } catch (final IOException e) {
       throw new SyncException("lathe:sync failed to write workspace manifest", e);
-    }
-  }
-
-  private void writeAtomically(
-      final Path latheDir, final Path manifestPath, final String newContent) throws IOException {
-    final var tempFile = Files.createTempFile(latheDir, LatheLayout.WORKSPACE_JSON, ".tmp");
-    try {
-      Files.writeString(tempFile, newContent, StandardCharsets.UTF_8);
-      FileUtil.moveReplacing(tempFile, manifestPath);
-    } finally {
-      try {
-        Files.deleteIfExists(tempFile);
-      } catch (final IOException e) {
-        log.debug("[sync] failed to clean temporary workspace manifest", e);
-      }
     }
   }
 }
