@@ -17,6 +17,13 @@ class ModuleConfigTest {
   }
 
   @Test
+  void remapPath_reactorJar_remappedToLatheClasses() {
+    final var jar = WORKSPACE.resolve("service/registry/target/helidon-service-registry.jar");
+    assertThat(ModuleConfig.remapPath(jar, WORKSPACE, LATHE_DIR))
+        .isEqualTo(LATHE_DIR.resolve("service/registry/classes"));
+  }
+
+  @Test
   void remapPath_simpleModule_remappedToLathe() {
     final var outputDir = WORKSPACE.resolve("module-a/target/classes");
     assertThat(ModuleConfig.remapPath(outputDir, WORKSPACE, LATHE_DIR))

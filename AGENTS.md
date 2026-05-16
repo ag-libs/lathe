@@ -19,6 +19,8 @@ Before making non-trivial changes, read the relevant design document first:
   implementation.
 - **Never commit or push without explicit user approval** — always show what will be committed and ask before running
   `git commit` or `git push`.
+- **No backward compatibility requirement** — the tool has no external adopters yet;
+  schema changes, format changes, and API changes may break existing files without migration support.
 
 ---
 

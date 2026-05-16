@@ -133,10 +133,11 @@ public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
     }
 
     if (!config.processorPath().isEmpty()) {
+      final var processorPath = config.remappedProcessorPath();
       fm.setLocation(
           StandardLocation.ANNOTATION_PROCESSOR_PATH,
-          config.remappedProcessorPath().stream().map(Path::toFile).toList());
-      LOG.fine(() -> "[cache] ANNOTATION_PROCESSOR_PATH=%s".formatted(config.processorPath()));
+          processorPath.stream().map(Path::toFile).toList());
+      LOG.fine(() -> "[cache] ANNOTATION_PROCESSOR_PATH=%s".formatted(processorPath));
     }
   }
 

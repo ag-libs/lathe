@@ -67,11 +67,16 @@ public record ModuleConfig(
       return p;
     }
 
-    final var sourceTree = rel.getFileName();
+    final var sourceTree = rel.getFileName().toString();
     final var moduleRel = rel.getParent().getParent();
+    // Reactor module JARs (e.g. target/foo-1.0.jar) appear when Maven reuses a previously
+    // packaged artifact instead of target/classes. Inter-module dependencies are always main
+    // artifacts — test JARs never appear on another module's path. Remap to the .lathe/classes
+    // mirror, which the shim keeps current, so the server always sees the latest compiled state.
+    final var latheSourceTree = sourceTree.endsWith(".jar") ? "classes" : sourceTree;
     return moduleRel != null
-        ? latheDir.resolve(moduleRel).resolve(sourceTree)
-        : latheDir.resolve(sourceTree);
+        ? latheDir.resolve(moduleRel).resolve(latheSourceTree)
+        : latheDir.resolve(latheSourceTree);
   }
 
   public static ModuleConfig load(final Path paramsFile, final Path moduleDir) throws IOException {

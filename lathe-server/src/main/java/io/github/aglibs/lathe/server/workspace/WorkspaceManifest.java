@@ -101,7 +101,7 @@ public final class WorkspaceManifest {
           jdk != null ? jdk.version() : null,
           jdk != null ? jdk.sourceDir() : null,
           sourceDirToClasspath);
-    } catch (final IOException e) {
+    } catch (final Exception e) {
       LOG.log(Level.WARNING, e, () -> "[manifest] failed to load workspace manifest");
       return empty();
     }
