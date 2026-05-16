@@ -10,6 +10,9 @@ import org.junit.jupiter.api.Test;
 class MultiModuleTest {
 
   private static final Path ROOT = Path.of(System.getProperty("user.dir")).getParent();
+  private static final String LATHE_VERSION = System.getProperty("lathe.version");
+  private static final Path LATHE_CACHE =
+      Path.of(System.getProperty("user.home"), ".cache", "lathe");
 
   private static Path lathe(final String rel) {
     return ROOT.resolve(".lathe").resolve(rel);
@@ -26,6 +29,20 @@ class MultiModuleTest {
     assertThat(ROOT.resolve(".lathe")).isDirectory();
   }
 
+  // --- sync: server distribution ---
+
+  @Test
+  void launcherInstalled() {
+    final var launcher =
+        LATHE_CACHE.resolve("servers").resolve(LATHE_VERSION).resolve("lathe-launcher.sh");
+    assertThat(launcher).exists().isExecutable();
+  }
+
+  @Test
+  void currentSymlinkCreated() {
+    assertThat(LATHE_CACHE.resolve("current")).isSymbolicLink();
+  }
+
   // --- sync: workspace.json ---
 
   @Test
@@ -35,6 +52,7 @@ class MultiModuleTest {
     final var content = read(ws);
     assertThat(content).contains("\"schemaVersion\"");
     assertThat(content).contains("\"workspaceRoot\"");
+    assertThat(content).contains("\"serverVersion\"");
     assertThat(content).contains("\"jdk\"");
     assertThat(content).contains("\"dependencySources\"");
     assertThat(content).contains("\"org.junit.jupiter:junit-jupiter-api");

@@ -215,7 +215,7 @@ class ExternalFileCompilerTest {
                 helperSourceRoot.toString(),
                 List.of()));
     Json.write(
-        new WorkspaceManifestData(LatheLayout.SCHEMA_VERSION, tmp.toString(), null, deps),
+        new WorkspaceManifestData(LatheLayout.SCHEMA_VERSION, tmp.toString(), null, null, deps),
         latheDir.resolve(LatheLayout.WORKSPACE_JSON));
   }
 
@@ -232,7 +232,7 @@ class ExternalFileCompilerTest {
                 usesSourceRoot.toString(),
                 List.of()));
     Json.write(
-        new WorkspaceManifestData(LatheLayout.SCHEMA_VERSION, tmp.toString(), null, deps),
+        new WorkspaceManifestData(LatheLayout.SCHEMA_VERSION, tmp.toString(), null, null, deps),
         latheDir.resolve(LatheLayout.WORKSPACE_JSON));
   }
 
@@ -241,7 +241,7 @@ class ExternalFileCompilerTest {
     Files.createDirectories(latheDir);
     final var jdk = JdkSourceData.present("test", "26", Path.of("/opt/jdk"), null, sourceRoot);
     Json.write(
-        new WorkspaceManifestData(LatheLayout.SCHEMA_VERSION, tmp.toString(), jdk, List.of()),
+        new WorkspaceManifestData(LatheLayout.SCHEMA_VERSION, tmp.toString(), null, jdk, List.of()),
         latheDir.resolve(LatheLayout.WORKSPACE_JSON));
   }
 

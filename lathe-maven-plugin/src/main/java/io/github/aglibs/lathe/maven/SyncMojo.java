@@ -12,6 +12,7 @@ import javax.inject.Inject;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
+import org.apache.maven.plugin.descriptor.PluginDescriptor;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
@@ -33,6 +34,9 @@ public final class SyncMojo extends AbstractMojo {
   @Parameter(defaultValue = "${session}", readonly = true, required = true)
   private MavenSession session;
 
+  @Parameter(defaultValue = "${plugin}", readonly = true, required = true)
+  private PluginDescriptor pluginDescriptor;
+
   @Override
   public void execute() throws MojoExecutionException {
     if (LatheFlags.isDisabled()) {
@@ -49,19 +53,29 @@ public final class SyncMojo extends AbstractMojo {
       final var workspaceRoot = session.getTopLevelProject().getBasedir().toPath();
       final var projects = ReactorProjects.sorted(session, workspaceRoot);
       logModules(workspaceRoot, projects);
+      final var remoteRepos = ReactorProjects.remoteRepositories(projects);
       final var resolver = new DependencySourceResolver(repositorySystem, session, getLog());
       final var dependencySources =
           resolver.resolve(
               ReactorProjects.externalArtifacts(projects),
               ReactorProjects.artifactClasspaths(projects),
-              ReactorProjects.remoteRepositories(projects));
+              remoteRepos);
       DependencySourceSync.extract(DependencySource.present(dependencySources), getLog());
       final var jdkSource = JdkSourceResolver.resolve();
       JdkSourceSync.extract(jdkSource, getLog());
+      final var installer =
+          new ServerInstaller(
+              repositorySystem,
+              session.getRepositorySession(),
+              remoteRepos,
+              getLog(),
+              pluginDescriptor.getVersion());
+      installer.install();
       if (isPartialReactor() && !LatheFlags.isForcedSync()) {
         getLog().debug("[sync] partial reactor (-pl) — skipping workspace.json write");
       } else {
-        new WorkspaceManifestWriter(getLog()).write(workspaceRoot, dependencySources, jdkSource);
+        new WorkspaceManifestWriter(getLog())
+            .write(workspaceRoot, dependencySources, jdkSource, pluginDescriptor.getVersion());
       }
     } catch (final SyncException e) {
       throw new MojoExecutionException(e.getMessage(), e);

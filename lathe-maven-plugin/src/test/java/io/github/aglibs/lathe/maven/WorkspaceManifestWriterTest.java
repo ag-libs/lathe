@@ -41,7 +41,7 @@ class WorkspaceManifestWriterTest {
             Path.of("/jdk/lib/src.zip"),
             Path.of("/cache/jdks/Example-Vendor/21.0.1"));
 
-    writer().write(workspaceRoot, List.of(dep), jdk);
+    writer().write(workspaceRoot, List.of(dep), jdk, null);
 
     final var manifest =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
@@ -66,7 +66,7 @@ class WorkspaceManifestWriterTest {
   void write_missingJdkSource_hasNullSourceDir() throws Exception {
     final var jdk = JdkSource.missing("Example Vendor", "21.0.1", Path.of("/jdk"));
 
-    writer().write(workspaceRoot, List.of(), jdk);
+    writer().write(workspaceRoot, List.of(), jdk, null);
 
     final var manifest =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
@@ -79,14 +79,14 @@ class WorkspaceManifestWriterTest {
   @Test
   void write_sameContent_skipsWrite() throws Exception {
     final var jdk = JdkSource.missing("Vendor", "21", Path.of("/jdk"));
-    writer().write(workspaceRoot, List.of(), jdk);
+    writer().write(workspaceRoot, List.of(), jdk, null);
 
     final var manifest =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
     final var sentinel = FileTime.fromMillis(1_000_000L);
     Files.setLastModifiedTime(manifest, sentinel);
 
-    writer().write(workspaceRoot, List.of(), jdk);
+    writer().write(workspaceRoot, List.of(), jdk, null);
 
     assertThat(Files.getLastModifiedTime(manifest)).isEqualTo(sentinel);
   }
@@ -103,7 +103,7 @@ class WorkspaceManifestWriterTest {
         JdkSource.present(
             "Vendor", "21", Path.of("/jdk"), Path.of("/jdk/src.zip"), Path.of("/cache/jdk"));
 
-    writer().write(workspaceRoot, deps, jdk);
+    writer().write(workspaceRoot, deps, jdk, null);
 
     final var manifest =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);

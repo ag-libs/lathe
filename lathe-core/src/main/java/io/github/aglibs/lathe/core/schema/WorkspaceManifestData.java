@@ -7,6 +7,7 @@ import java.util.Objects;
 public record WorkspaceManifestData(
     String schemaVersion,
     String workspaceRoot,
+    String serverVersion,
     JdkSourceData jdk,
     List<DependencyData> dependencySources) {
 

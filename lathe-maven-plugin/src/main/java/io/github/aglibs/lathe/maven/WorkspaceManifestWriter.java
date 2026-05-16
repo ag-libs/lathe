@@ -24,11 +24,13 @@ final class WorkspaceManifestWriter {
   void write(
       final Path workspaceRoot,
       final List<DependencySource> dependencySources,
-      final JdkSource jdkSource) {
+      final JdkSource jdkSource,
+      final String serverVersion) {
     final var data =
         new WorkspaceManifestData(
             LatheLayout.SCHEMA_VERSION,
             workspaceRoot.toString(),
+            serverVersion,
             jdkSource.toData(),
             dependencySources.stream().map(DependencySource::toData).toList());
     final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
