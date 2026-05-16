@@ -5,6 +5,8 @@
 Lathe is in the post-bootstrap sync phase.
 The compiler shim, Maven plugin, JSON schemas, workspace manifest, dependency-source sync,
 JDK-source sync, and server-side manifest loading are now in place.
+Shim correctness (finally-guarded lifecycle, silent-failure surfacing, stdout guard) and
+the IT verify infrastructure are also closed.
 
 Current lifecycle shape:
 
@@ -20,99 +22,105 @@ Current lifecycle shape:
   and can compile opened external source files from synced dependency/JDK sources.
 
 The project is not yet externally installable.
-Users still need a locally built server and local editor wiring.
-The next milestone is making Maven install and update the server distribution.
+The next milestone is making `lathe:sync` generate and install the server launcher.
 
-## Completed Recently
+## Completed
 
-**JSON state format**
-Params and workspace state moved from ad hoc property files to shared JSON schema records in `lathe-core`.
-The design doc now treats `workspace.json` and `lsp-params-*.json` as the current format.
-
-**Workspace sync slices**
-Dependency source resolution/extraction and JDK source extraction are implemented in `lathe:sync`.
-The server reads the resulting manifest for go-to-definition, hover origin labels, and external-source compilation.
-
-**Lifecycle binding**
-Both Maven goals declare default phases.
-User POMs still need explicit executions,
-but those executions can omit `<phase>`.
-
-**`compileWith` simplification**
-`LatheTextDocumentService.compileWith` is now a small dispatcher.
-The reactor, external-source, publish, and error paths have already been split into focused helper methods,
-so the old refactor item is closed.
+- **JSON state format** — params and workspace state moved from ad hoc property files to shared JSON schema records in `lathe-core`.
+- **Workspace sync slices** — dependency and JDK source resolution, extraction, and server-side manifest loading are implemented.
+- **Lifecycle binding** — both Maven goals declare default phases; user POM executions can omit `<phase>`.
+- **`compileWith` simplification** — `LatheTextDocumentService.compileWith` is a small dispatcher with focused helper methods for each path.
+- **Shim correctness** — lock cleanup moved to `finally`; silent javac failure surfaces as `IOException`; `LatheServer.main` acquires stdout before any logging can write to it.
+- **IT verify module** — dead `verify.sh` replaced by a `verify/` JUnit submodule that runs as part of the normal invoker lifecycle; `@property@` tokens pin the plugin version.
 
 ## Near-Term
 
 **Maven-managed server distribution**
-Install the server binary under `~/.cache/lathe/servers/<version>/` via `lathe:sync`,
-then update `~/.cache/lathe/current`.
-This is the prerequisite for external adoption,
-because users should not need to build the server from source.
-Current source has `lathe-launcher.sh.template`,
-but no sync-time installer, server assembly, `current` update logic, or invoker assertion for launcher installation.
+Install the server launcher under `~/.cache/lathe/servers/<version>/` via `lathe:sync`,
+then update the `~/.cache/lathe/current` symlink.
+This is the prerequisite for external adoption:
+users must not need to build the server from source or hand-wire classpaths.
 
-This slice should add:
+`lathe:sync` generates the launcher directly rather than extracting a bundled tarball:
 
-- server distribution assembly packaged with the Maven plugin release
-- launcher installation/update logic in `lathe:sync`
-- manifest fields for synced server version and compatible schema version
-- invoker coverage proving a normal lifecycle build installs the launcher
-- updated editor setup docs that launch `~/.cache/lathe/current/lathe-launcher.sh`
+1. Inject `${plugin.version}` into `SyncMojo` via `@Parameter(defaultValue = "${plugin.version}")`.
+2. Skip generation if `~/.cache/lathe/servers/<version>/lathe-launcher.sh` already exists (idempotent).
+3. Resolve `io.github.ag-libs:lathe-server:<version>` and all transitive runtime dependencies
+   via the already-injected Aether `RepositorySystem`, using the same session repositories available in `SyncMojo`.
+4. Collect the absolute `.m2` JAR paths from the resolved artifacts.
+5. Render `lathe-launcher.sh` from a Java string template.
+   `--module-path` accepts individual JAR files colon-separated — no staging `lib/` directory needed.
+6. Write the script to `~/.cache/lathe/servers/<version>/lathe-launcher.sh` and set it executable.
+7. Create or replace the `~/.cache/lathe/current` symlink pointing to the version directory.
 
-**Shim correctness drift**
-Verified against `LatheCompiler.performCompile`.
-Several known issues remain:
+The generated launcher shape:
 
-- Move params writing, class copying, generated-source copying, and lock cleanup into a true
-  `finally` path around `javacCompiler.performCompile()`.
-- Make silent javac failure surface as an `IOException` instead of being swallowed.
-- Add an explicit stdout guard before starting the server,
-  so accidental writes cannot corrupt the LSP stdio pipe.
+```sh
+#!/bin/sh
+exec java \
+  --add-exports jdk.compiler/com.sun.tools.javac.api=com.google.googlejavaformat \
+  --add-exports jdk.compiler/com.sun.tools.javac.code=com.google.googlejavaformat \
+  --add-exports jdk.compiler/com.sun.tools.javac.comp=com.google.googlejavaformat \
+  --add-exports jdk.compiler/com.sun.tools.javac.file=com.google.googlejavaformat \
+  --add-exports jdk.compiler/com.sun.tools.javac.main=com.google.googlejavaformat \
+  --add-exports jdk.compiler/com.sun.tools.javac.model=com.google.googlejavaformat \
+  --add-exports jdk.compiler/com.sun.tools.javac.parser=com.google.googlejavaformat \
+  --add-exports jdk.compiler/com.sun.tools.javac.tree=com.google.googlejavaformat \
+  --add-exports jdk.compiler/com.sun.tools.javac.util=com.google.googlejavaformat \
+  --add-opens jdk.compiler/com.sun.tools.javac.code=com.google.googlejavaformat \
+  --add-opens jdk.compiler/com.sun.tools.javac.comp=com.google.googlejavaformat \
+  --module-path /abs/.m2/.../lathe-server.jar:/abs/.m2/.../lathe-core.jar:... \
+  -m io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer "$@"
+```
 
-The server's JUL logging currently goes through `ConsoleHandler`,
-which writes to stderr,
-but `LatheServer` still passes `System.out` directly to LSP4J and does not protect against accidental stdout writes.
+The `--add-exports/--add-opens` flags are hardcoded in the template — they are stable across JDK 21+
+and `google-java-format`'s internal javac access does not change between releases.
+The module-qualified form (`=com.google.googlejavaformat`) is correct because all deps land on the module path.
 
-## Medium-Term Verified Open
+Files to add or change:
+
+- `LatheLayout` — add `SERVERS_DIR`, `CURRENT_LINK`, `LAUNCHER_SCRIPT`;
+  add `serverVersionDir(String version)` and `currentLink()` helpers.
+- `WorkspaceManifestData` — add `serverVersion` field.
+- `WorkspaceManifestWriter` — write `serverVersion`.
+- `ServerInstaller` (new class in `lathe-maven-plugin`) — steps 2–7 above.
+- `SyncMojo` — inject plugin version, call `ServerInstaller.install()`.
+- `MultiModuleTest` (IT verify) — assert launcher exists and is executable,
+  `current` symlink exists, `workspace.json` contains `serverVersion`.
+- Editor setup docs — update to launch `~/.cache/lathe/current/lathe-launcher.sh`.
+
+## Future Work
 
 **Stale-POM detection**
 Record POM fingerprints in `workspace.json` during `lathe:sync`.
-When watched POM files change after the last sync,
-prompt the user in the editor to run the documented lifecycle command.
-Current source does not implement this yet.
-`WorkspaceManifestData` has no POM fingerprint field,
-`WorkspaceManifestWriter` does not write POM hashes,
-and `WorkspaceWatcher` watches only `workspace.json` plus `lsp-params-*.json`.
-`StubWorkspaceService.didChangeWatchedFiles` is still empty.
+When `WorkspaceWatcher` sees a POM change after the last sync timestamp,
+`StubWorkspaceService.didChangeWatchedFiles` prompts the user in the editor to re-run the documented Maven lifecycle command.
+`WorkspaceManifestData`, `WorkspaceManifestWriter`, and `WorkspaceWatcher` all need additions;
+`didChangeWatchedFiles` is currently empty.
 
 **Type indexes**
-Build the shared JAR/JDK/reactor type index described in the design doc.
-This unlocks reliable missing-import suggestions,
-workspace symbols,
-and broader classpath type discovery for non-JPMS projects.
-Current source does not implement this yet.
-There is no type-index package or cache writer,
+Build the shared JAR/JDK/reactor type index described in the design doc,
+giving the server a fast lookup over all known types without scanning source on every request.
+This unlocks reliable missing-import suggestions, workspace symbols, and broader classpath type discovery for non-JPMS projects.
+There is no type-index package or cache writer yet,
 and `LatheLanguageServer` does not advertise workspace-symbol, completion, or code-action capabilities.
 
 **Module metadata in the manifest**
-Add reactor module entries to `workspace.json` only after the params-file model is stable.
-The params files should remain the compile source of truth;
-manifest module data should support staleness, UX, and faster lookup rather than duplicate classpaths.
-Current source does not implement this yet.
-`WorkspaceManifestData` contains only schema version, workspace root, JDK source data,
-and dependency source data.
-`ModuleRegistry` still discovers modules by scanning `lsp-params-*.json`.
-
-## Longer-Term
+Add reactor module entries to `workspace.json` after the params-file model is stable,
+to support staleness detection, UX hints, and faster server startup without duplicating classpaths.
+`WorkspaceManifestData` currently holds only schema version, workspace root, JDK source, and dependency sources;
+`ModuleRegistry` still discovers modules by scanning `lsp-params-*.json` at startup.
 
 **Run, test, and debug**
-Adopt the design in `lathe-run-test-debug.md` after distribution and stale-workspace handling are solid.
+Adopt the design in `lathe-run-test-debug.md` to let the server manage Maven test/run executions
+and stream results back to the editor as LSP notifications.
+Depends on distribution and stale-workspace handling being solid first.
 
 **Editor integrations**
-Keep Neovim/VS Code clients thin.
-They should launch the Maven-managed server distribution and ask the server for Lathe-specific state.
+Keep Neovim/VS Code clients thin: they launch `~/.cache/lathe/current/lathe-launcher.sh`
+and ask the server for Lathe-specific state via custom LSP requests.
+No client-side project model parsing.
 
 **Post-v1 language features**
-Rename, inlay hints, signature help, and richer code actions come after the sync/distribution foundation.
+Rename, inlay hints, signature help, and richer code actions,
+after the sync/distribution/type-index foundation is in place.
