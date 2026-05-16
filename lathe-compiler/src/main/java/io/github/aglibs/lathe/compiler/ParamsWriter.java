@@ -28,7 +28,7 @@ final class ParamsWriter {
             config.getReleaseVersion(),
             config.getSourceEncoding() != null ? config.getSourceEncoding() : "UTF-8",
             config.isParameters(),
-            config.isEnablePreview(),
+            enablePreview(config),
             config.getProc(),
             compilerArgs(config));
     Json.write(moduleConfig, latheModuleDir.resolve("lsp-params-" + sourceTree + ".json"));
@@ -48,6 +48,16 @@ final class ParamsWriter {
                   : Stream.of(e.getKey());
             })
         .toList();
+  }
+
+  // isEnablePreview() was added in plexus-compiler-api 2.9.0; older maven-compiler-plugin
+  // versions (e.g. 3.8.1) ship 2.8.4 and will throw NoSuchMethodError at runtime.
+  private static boolean enablePreview(final CompilerConfiguration config) {
+    try {
+      return config.isEnablePreview();
+    } catch (final NoSuchMethodError e) {
+      return false;
+    }
   }
 
   private static List<String> nullToEmpty(final List<String> list) {
