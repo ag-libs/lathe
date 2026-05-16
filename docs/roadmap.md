@@ -20,7 +20,8 @@ Current lifecycle shape:
   and compiles opened files — including external dependency/JDK sources.
 - Editors launch `~/.cache/lathe/current/lathe-launcher.sh`.
 
-The next milestone is member-access completion.
+The next piece of work is the server threading model,
+so completion can be implemented without adding ad hoc synchronization around compiler state.
 
 ## Completed
 
@@ -37,6 +38,20 @@ The next milestone is member-access completion.
   `dev/nvim.sh` and `dev/lsp.py` updated to launch via the installed script.
 
 ## Near-Term
+
+**Server threading model**
+Adopt the single-worker design described in [lathe-server-threading-design.md](lathe-server-threading-design.md).
+
+Core flow:
+1. Route LSP request/notification handlers through a server-owned worker.
+2. Keep mutable Lathe state and javac-backed objects on that worker.
+3. Move workspace reload onto the worker so registry swaps cannot race with active compiles.
+4. Keep request boundaries simple: immutable request data in, final LSP DTOs out.
+5. Leave the current concurrent maps in place during migration;
+   simplify them only after the worker-owned invariant is established.
+
+Before the full worker refactor,
+serialize `ExternalFileCompiler.setManifest()` with `compile()` and snapshot the manifest inside `compile()`.
 
 **Completion (member access)**
 Implement `textDocument/completion` for member-access expressions using the sentinel approach
