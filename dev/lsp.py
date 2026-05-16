@@ -35,12 +35,8 @@ from typing import Any, Callable
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-LATHE_SRC = Path(__file__).parent.parent  # dev/ lives inside the lathe/ root
-JAVA_HOME = Path(os.environ.get("JAVA_HOME", "/opt/jdk"))
-LATHE_LAUNCHER = os.environ.get("LATHE_LAUNCHER")  # path to lathe-launcher.sh; overrides built cmd
-MODULE_PATH = (
-    f"{LATHE_SRC}/lathe-server/target/classes"
-    f":{LATHE_SRC}/lathe-server/target/dependency"
+LATHE_LAUNCHER = os.environ.get(
+    "LATHE_LAUNCHER", str(Path.home() / ".cache/lathe/current/lathe-launcher.sh")
 )
 DEFAULT_TIMEOUT = int(os.environ.get("LATHE_TIMEOUT", "15"))
 
@@ -74,44 +70,7 @@ class LatheClient:
     @classmethod
     def start(cls, workspace_root: str | Path, debug: bool | None = None) -> "LatheClient":
         root = Path(workspace_root).resolve()
-        if LATHE_LAUNCHER:
-            cmd = [LATHE_LAUNCHER]
-        else:
-            cmd = [
-                str(JAVA_HOME / "bin" / "java"),
-                "--add-exports", "jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED",
-                "--add-exports", "jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED",
-                "--add-exports", "jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED",
-                "--add-exports", "jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED",
-                "--add-exports", "jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED",
-                "--add-exports", "jdk.compiler/com.sun.tools.javac.model=ALL-UNNAMED",
-                "--add-exports", "jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED",
-                "--add-exports", "jdk.compiler/com.sun.tools.javac.processing=ALL-UNNAMED",
-                "--add-exports", "jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED",
-                "--add-exports", "jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED",
-                "--add-opens", "jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED",
-                "--add-opens", "jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED",
-                "--add-opens", "jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED",
-                "--add-opens", "jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED",
-                "--add-opens", "jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED",
-                "--add-opens", "jdk.compiler/com.sun.tools.javac.model=ALL-UNNAMED",
-                "--add-opens", "jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED",
-                "--add-opens", "jdk.compiler/com.sun.tools.javac.processing=ALL-UNNAMED",
-                "--add-opens", "jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED",
-                "--add-opens", "jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED",
-                "--add-exports", "jdk.compiler/com.sun.tools.javac.api=com.google.googlejavaformat",
-                "--add-exports", "jdk.compiler/com.sun.tools.javac.file=com.google.googlejavaformat",
-                "--add-exports", "jdk.compiler/com.sun.tools.javac.main=com.google.googlejavaformat",
-                "--add-exports", "jdk.compiler/com.sun.tools.javac.model=com.google.googlejavaformat",
-                "--add-exports", "jdk.compiler/com.sun.tools.javac.parser=com.google.googlejavaformat",
-                "--add-exports", "jdk.compiler/com.sun.tools.javac.processing=com.google.googlejavaformat",
-                "--add-exports", "jdk.compiler/com.sun.tools.javac.tree=com.google.googlejavaformat",
-                "--add-exports", "jdk.compiler/com.sun.tools.javac.util=com.google.googlejavaformat",
-                "--add-opens", "jdk.compiler/com.sun.tools.javac.code=com.google.googlejavaformat",
-                "--add-opens", "jdk.compiler/com.sun.tools.javac.comp=com.google.googlejavaformat",
-                "--module-path", MODULE_PATH,
-                "--module", "io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer",
-            ]
+        cmd = [LATHE_LAUNCHER]
         use_debug = debug if debug is not None else bool(os.environ.get("LATHE_DEBUG"))
         env = {**os.environ, **({"LATHE_DEBUG": "1"} if use_debug else {})}
         proc = subprocess.Popen(
@@ -423,8 +382,7 @@ def main():
 
     workspace_root = find_workspace_root(targets[0][0])
     print(f"workspace: {workspace_root}", file=sys.stderr)
-    server_label = LATHE_LAUNCHER or f"{LATHE_SRC}/lathe-server/target/classes"
-    print(f"server:    {server_label}", file=sys.stderr)
+    print(f"server:    {LATHE_LAUNCHER}", file=sys.stderr)
 
     with LatheClient.start(workspace_root, debug=True) as client:
         for file, pos in targets:
