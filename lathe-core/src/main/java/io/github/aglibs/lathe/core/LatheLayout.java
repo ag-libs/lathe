@@ -20,6 +20,11 @@ public final class LatheLayout {
   private LatheLayout() {}
 
   public static Path userCacheRoot() {
+    final var override = System.getProperty("lathe.cache");
+    if (override != null) {
+      return Path.of(override);
+    }
+
     return Path.of(System.getProperty("user.home"), CACHE_DIR, CACHE_LATHE_DIR);
   }
 
