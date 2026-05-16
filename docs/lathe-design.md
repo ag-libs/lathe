@@ -86,7 +86,7 @@ lathe-server
 ```
 
 `lathe:init` does not install server binaries.
-Server distribution installation is a later sync slice.
+`lathe:sync` installs the server launcher into `~/.cache/lathe/servers/<version>/` and updates the `~/.cache/lathe/current` symlink.
 
 ---
 
@@ -170,8 +170,9 @@ ordinary `mvnd package` and `mvnd install` runs also reach this phase and refres
 The shim updates `lsp-params-classes.json` and `lsp-params-test-classes.json` for every module it compiles.
 The bound `lathe:sync` goal then resolves external dependency source JARs,
 refreshes extracted dependency sources under `~/.cache/lathe/deps/`,
-and writes the minimal dependency-source manifest to `.lathe/workspace.json`.
-Server distribution installation, stale-POM fingerprints, and indexes are later sync slices.
+writes the minimal dependency-source manifest to `.lathe/workspace.json`,
+and installs the server launcher into `~/.cache/lathe/servers/<version>/` (idempotent).
+Stale-POM fingerprints and type indexes are later sync slices.
 The LS currently reads shim params on startup and registry reload;
 it also reads the workspace manifest for dependency/JDK source roots, external-source classpaths,
 and hover origin labels.
@@ -830,6 +831,8 @@ The nulled map is rebuilt lazily on the next completion request.
 
 ### Member access completion
 
+> Full design: [lathe_completion_design.md](lathe_completion_design.md)
+
 Triggered when the user types `.`
 before the cursor.
 The file likely has a syntax error at the cursor — the expression is incomplete.
@@ -1047,13 +1050,11 @@ see [lathe-run-test-debug.md](lathe-run-test-debug.md).
 
 ### Server distribution
 
-Server distribution installation is a later sync slice.
-When implemented, `lathe:sync` installs the server distribution that matches the Maven plugin version into
-`~/.cache/lathe/servers/<version>/` when that directory is missing.
+`lathe:sync` installs the server launcher that matches the Maven plugin version into
+`~/.cache/lathe/servers/<version>/` when the launcher script is missing there (idempotent).
 It then updates `~/.cache/lathe/current` to point at that version.
 
-The server distribution is bundled with the Maven plugin release,
-so upgrading the Maven plugin and running any build that reaches `process-test-classes` also updates the user-level
+Upgrading the Maven plugin and running any build that reaches `process-test-classes` also updates the user-level
 server installation.
 Old versions are left in place; they are small and can be deleted manually.
 
@@ -1106,45 +1107,28 @@ JDK compiler internals are exported/opened only to classpath javac plugins and t
 require them.
 It is installed by `lathe:sync` as part of the server distribution.
 
-```bash
-#!/bin/bash
-LATHE_HOME="$(dirname "$0")"
-exec "$JAVA_HOME/bin/java" \
-    --add-exports jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED \
-    --add-exports jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED \
-    --add-exports jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED \
-    --add-exports jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED \
-    --add-exports jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED \
-    --add-exports jdk.compiler/com.sun.tools.javac.model=ALL-UNNAMED \
-    --add-exports jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED \
-    --add-exports jdk.compiler/com.sun.tools.javac.processing=ALL-UNNAMED \
-    --add-exports jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED \
-    --add-exports jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED \
-    --add-opens jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED \
-    --add-opens jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED \
-    --add-opens jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED \
-    --add-opens jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED \
-    --add-opens jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED \
-    --add-opens jdk.compiler/com.sun.tools.javac.model=ALL-UNNAMED \
-    --add-opens jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED \
-    --add-opens jdk.compiler/com.sun.tools.javac.processing=ALL-UNNAMED \
-    --add-opens jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED \
-    --add-opens jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED \
-    --add-exports jdk.compiler/com.sun.tools.javac.api=com.google.googlejavaformat \
-    --add-exports jdk.compiler/com.sun.tools.javac.file=com.google.googlejavaformat \
-    --add-exports jdk.compiler/com.sun.tools.javac.main=com.google.googlejavaformat \
-    --add-exports jdk.compiler/com.sun.tools.javac.model=com.google.googlejavaformat \
-    --add-exports jdk.compiler/com.sun.tools.javac.parser=com.google.googlejavaformat \
-    --add-exports jdk.compiler/com.sun.tools.javac.processing=com.google.googlejavaformat \
-    --add-exports jdk.compiler/com.sun.tools.javac.tree=com.google.googlejavaformat \
-    --add-exports jdk.compiler/com.sun.tools.javac.util=com.google.googlejavaformat \
-    --add-opens jdk.compiler/com.sun.tools.javac.code=com.google.googlejavaformat \
-    --add-opens jdk.compiler/com.sun.tools.javac.comp=com.google.googlejavaformat \
-    ${LATHE_JVM_OPTS} \
-    --module-path "${LATHE_HOME}/modules" \
-    --module io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer \
-    "$@"
+```sh
+#!/bin/sh
+exec java \
+  --add-exports jdk.compiler/com.sun.tools.javac.api=com.google.googlejavaformat \
+  --add-exports jdk.compiler/com.sun.tools.javac.code=com.google.googlejavaformat \
+  --add-exports jdk.compiler/com.sun.tools.javac.comp=com.google.googlejavaformat \
+  --add-exports jdk.compiler/com.sun.tools.javac.file=com.google.googlejavaformat \
+  --add-exports jdk.compiler/com.sun.tools.javac.main=com.google.googlejavaformat \
+  --add-exports jdk.compiler/com.sun.tools.javac.model=com.google.googlejavaformat \
+  --add-exports jdk.compiler/com.sun.tools.javac.parser=com.google.googlejavaformat \
+  --add-exports jdk.compiler/com.sun.tools.javac.tree=com.google.googlejavaformat \
+  --add-exports jdk.compiler/com.sun.tools.javac.util=com.google.googlejavaformat \
+  --add-opens jdk.compiler/com.sun.tools.javac.code=com.google.googlejavaformat \
+  --add-opens jdk.compiler/com.sun.tools.javac.comp=com.google.googlejavaformat \
+  --module-path /abs/.m2/.../lathe-server.jar:/abs/.m2/.../lathe-core.jar:... \
+  -m io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer "$@"
 ```
+
+All deps land on `--module-path` so only module-qualified `=com.google.googlejavaformat` exports are needed.
+The module path is a colon-separated list of absolute `.m2` JAR paths rendered by `ServerInstaller` at install time;
+no staging `lib/` directory is created.
+`LATHE_JVM_OPTS` support is a planned addition for users who need heap or GC tuning.
 
 ### Neovim
 

@@ -2,11 +2,9 @@
 
 ## Current Position
 
-Lathe is in the post-bootstrap sync phase.
-The compiler shim, Maven plugin, JSON schemas, workspace manifest, dependency-source sync,
-JDK-source sync, and server-side manifest loading are now in place.
-Shim correctness (finally-guarded lifecycle, silent-failure surfacing, stdout guard) and
-the IT verify infrastructure are also closed.
+Lathe is externally installable.
+The compiler shim, Maven plugin, workspace manifest, dependency/JDK sync, server-side manifest loading,
+server launcher distribution, and dev tooling are all in place.
 
 Current lifecycle shape:
 
@@ -15,14 +13,14 @@ Current lifecycle shape:
 - `lathe:sync` runs during `process-test-classes`,
   resolves dependency source JARs,
   extracts dependency/JDK sources into `~/.cache/lathe/`,
-  and writes `.lathe/workspace.json`.
-- The server scans params files for reactor modules,
-  watches params and `workspace.json`,
-  uses the manifest for dependency/JDK source lookup,
-  and can compile opened external source files from synced dependency/JDK sources.
+  writes `.lathe/workspace.json`,
+  and installs `~/.cache/lathe/servers/<version>/lathe-launcher.sh` (idempotent).
+- The server reads params files and the workspace manifest,
+  watches for changes,
+  and compiles opened files — including external dependency/JDK sources.
+- Editors launch `~/.cache/lathe/current/lathe-launcher.sh`.
 
-The project is not yet externally installable.
-The next milestone is making `lathe:sync` generate and install the server launcher.
+The next milestone is member-access completion.
 
 ## Completed
 
@@ -32,62 +30,38 @@ The next milestone is making `lathe:sync` generate and install the server launch
 - **`compileWith` simplification** — `LatheTextDocumentService.compileWith` is a small dispatcher with focused helper methods for each path.
 - **Shim correctness** — lock cleanup moved to `finally`; silent javac failure surfaces as `IOException`; `LatheServer.main` acquires stdout before any logging can write to it.
 - **IT verify module** — dead `verify.sh` replaced by a `verify/` JUnit submodule that runs as part of the normal invoker lifecycle; `@property@` tokens pin the plugin version.
+- **Maven-managed server distribution** — `lathe:sync` resolves `lathe-server` and all transitive runtime deps via Aether,
+  renders `lathe-launcher.sh` with colon-separated `--module-path` pointing at `.m2` JAR paths,
+  writes it to `~/.cache/lathe/servers/<version>/`,
+  and updates the `~/.cache/lathe/current` symlink.
+  `dev/nvim.sh` and `dev/lsp.py` updated to launch via the installed script.
 
 ## Near-Term
 
-**Maven-managed server distribution**
-Install the server launcher under `~/.cache/lathe/servers/<version>/` via `lathe:sync`,
-then update the `~/.cache/lathe/current` symlink.
-This is the prerequisite for external adoption:
-users must not need to build the server from source or hand-wire classpaths.
+**Completion (member access)**
+Implement `textDocument/completion` for member-access expressions using the sentinel approach
+described in [lathe_completion_design.md](lathe_completion_design.md).
 
-`lathe:sync` generates the launcher directly rather than extracting a bundled tarball:
+Core flow:
+1. Take an immutable source snapshot at the trigger position.
+2. Inject `__LATHE_SENTINEL__` after the dot.
+3. Compile with `proc=none` — no AP, no bytecode.
+4. Locate the `MemberSelectTree` whose selector is the sentinel identifier;
+   check that its receiver `TypeMirror` is non-null and non-ERROR.
+5. Enumerate accessible members via `Elements.getAllMembers` + `Types.asMemberOf` for correct generic substitution.
+6. If attribution fails, apply one bounded repair round (insert `)`, `]`, `}`, `;` guided by parse diagnostics)
+   and recompile.
+7. Return items within the 200 ms budget; return partial or empty on timeout.
 
-1. Inject `${plugin.version}` into `SyncMojo` via `@Parameter(defaultValue = "${plugin.version}")`.
-2. Skip generation if `~/.cache/lathe/servers/<version>/lathe-launcher.sh` already exists (idempotent).
-3. Resolve `io.github.ag-libs:lathe-server:<version>` and all transitive runtime dependencies
-   via the already-injected Aether `RepositorySystem`, using the same session repositories available in `SyncMojo`.
-4. Collect the absolute `.m2` JAR paths from the resolved artifacts.
-5. Render `lathe-launcher.sh` from a Java string template.
-   `--module-path` accepts individual JAR files colon-separated — no staging `lib/` directory needed.
-6. Write the script to `~/.cache/lathe/servers/<version>/lathe-launcher.sh` and set it executable.
-7. Create or replace the `~/.cache/lathe/current` symlink pointing to the version directory.
-
-The generated launcher shape:
-
-```sh
-#!/bin/sh
-exec java \
-  --add-exports jdk.compiler/com.sun.tools.javac.api=com.google.googlejavaformat \
-  --add-exports jdk.compiler/com.sun.tools.javac.code=com.google.googlejavaformat \
-  --add-exports jdk.compiler/com.sun.tools.javac.comp=com.google.googlejavaformat \
-  --add-exports jdk.compiler/com.sun.tools.javac.file=com.google.googlejavaformat \
-  --add-exports jdk.compiler/com.sun.tools.javac.main=com.google.googlejavaformat \
-  --add-exports jdk.compiler/com.sun.tools.javac.model=com.google.googlejavaformat \
-  --add-exports jdk.compiler/com.sun.tools.javac.parser=com.google.googlejavaformat \
-  --add-exports jdk.compiler/com.sun.tools.javac.tree=com.google.googlejavaformat \
-  --add-exports jdk.compiler/com.sun.tools.javac.util=com.google.googlejavaformat \
-  --add-opens jdk.compiler/com.sun.tools.javac.code=com.google.googlejavaformat \
-  --add-opens jdk.compiler/com.sun.tools.javac.comp=com.google.googlejavaformat \
-  --module-path /abs/.m2/.../lathe-server.jar:/abs/.m2/.../lathe-core.jar:... \
-  -m io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer "$@"
-```
-
-The `--add-exports/--add-opens` flags are hardcoded in the template — they are stable across JDK 21+
-and `google-java-format`'s internal javac access does not change between releases.
-The module-qualified form (`=com.google.googlejavaformat`) is correct because all deps land on the module path.
+The `ModuleCompiler` file manager and temp-dir approach already handle single-file compilation —
+completion reuses the same infrastructure with a sentinel-injected source copy.
 
 Files to add or change:
 
-- `LatheLayout` — add `SERVERS_DIR`, `CURRENT_LINK`, `LAUNCHER_SCRIPT`;
-  add `serverVersionDir(String version)` and `currentLink()` helpers.
-- `WorkspaceManifestData` — add `serverVersion` field.
-- `WorkspaceManifestWriter` — write `serverVersion`.
-- `ServerInstaller` (new class in `lathe-maven-plugin`) — steps 2–7 above.
-- `SyncMojo` — inject plugin version, call `ServerInstaller.install()`.
-- `MultiModuleTest` (IT verify) — assert launcher exists and is executable,
-  `current` symlink exists, `workspace.json` contains `serverVersion`.
-- Editor setup docs — update to launch `~/.cache/lathe/current/lathe-launcher.sh`.
+- `CompletionProvider` (new class in `lathe-server`) — sentinel injection, compile, member enumeration, repair round.
+- `LatheTextDocumentService.completion()` — wire `CompletionProvider`, declare the capability.
+- `LatheLanguageServer` — advertise `completionProvider` in `ServerCapabilities`.
+- Unit tests for sentinel injection and member enumeration on well-formed and broken source.
 
 ## Future Work
 
