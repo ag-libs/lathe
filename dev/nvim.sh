@@ -1,20 +1,14 @@
-:#!/bin/bash
+#!/bin/sh
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-LATHE_ROOT="$(dirname "$SCRIPT_DIR")"
 
-echo "[lathe] building..."
-mvn install -pl lathe-server -am -DskipTests -f "$LATHE_ROOT/pom.xml"
+LAUNCHER="$HOME/.cache/lathe/current/lathe-launcher.sh"
+if [ ! -x "$LAUNCHER" ]; then
+  echo "[lathe] launcher not found at $LAUNCHER — run 'mvn process-test-classes' in your project first" >&2
+  exit 1
+fi
 
-echo "[lathe] copying dependencies..."
-mvn dependency:copy-dependencies \
-    -pl lathe-server \
-    -DincludeScope=runtime \
-    -DoutputDirectory=target/dependency \
-    -f "$LATHE_ROOT/pom.xml" \
-    -q
-
-export LATHE_SRC="$LATHE_ROOT"
+export LATHE_LAUNCHER="$LAUNCHER"
 
 exec nvim -c "luafile $SCRIPT_DIR/nvim.lua" "$@"
