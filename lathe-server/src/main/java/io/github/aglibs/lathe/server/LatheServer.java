@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.PrintStream;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.logging.Level;
@@ -22,7 +23,7 @@ public final class LatheServer {
     }
 
     LOG.info(() -> "[startup] Lathe language server starting");
-    run(System.in, System.out);
+    run(System.in, acquireStdout());
   }
 
   static void run(final InputStream in, final OutputStream out)
@@ -34,6 +35,12 @@ public final class LatheServer {
     LOG.info(() -> "[startup] Lathe language server ready");
     listening.get();
     LOG.info(() -> "[shutdown] Lathe language server stopped");
+  }
+
+  private static PrintStream acquireStdout() {
+    final var out = System.out;
+    System.setOut(System.err);
+    return out;
   }
 
   private static void loadLoggingConfig() {

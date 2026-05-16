@@ -118,6 +118,7 @@ public final class WorkspaceManifest {
     if (topLevel == null) {
       return null;
     }
+
     final var pkg = (PackageElement) topLevel.getEnclosingElement();
     final var enclosing = pkg.getEnclosingElement();
     final var moduleName =
@@ -147,6 +148,7 @@ public final class WorkspaceManifest {
               if (selfJar == null) {
                 return transitive;
               }
+
               final var selfAndTransitive = Stream.concat(Stream.of(selfJar), transitive.stream());
               return Stream.concat(selfAndTransitive, jarToGav.keySet().stream())
                   .distinct()
@@ -159,6 +161,7 @@ public final class WorkspaceManifest {
     if (jdkSourceDir != null && file.startsWith(jdkSourceDir)) {
       return Optional.of(jdkSourceDir);
     }
+
     return jarToSourceDir.values().stream().filter(file::startsWith).findFirst();
   }
 
@@ -166,10 +169,12 @@ public final class WorkspaceManifest {
     if (jdkSourceDir == null || !file.startsWith(jdkSourceDir)) {
       return Optional.empty();
     }
+
     final Path rel = jdkSourceDir.relativize(file);
     if (rel.getNameCount() == 0) {
       return Optional.empty();
     }
+
     return Optional.of(rel.getName(0).toString());
   }
 
@@ -178,10 +183,12 @@ public final class WorkspaceManifest {
     if (entry == null) {
       return Optional.empty();
     }
+
     try {
       if (entry.moduleName() != null) {
         return originLabelForModule(entry.moduleName(), entry.qualifiedName(), fm);
       }
+
       return classpathLabel(entry.qualifiedName(), fm);
     } catch (final IOException e) {
       LOG.log(
@@ -196,10 +203,12 @@ public final class WorkspaceManifest {
     if (entry == null) {
       return Optional.empty();
     }
+
     try {
       if (entry.moduleName() != null) {
         return externalSourceRootForModule(entry.moduleName(), entry.qualifiedName(), fm);
       }
+
       return classpathSourceRoot(entry.qualifiedName(), fm);
     } catch (final IOException e) {
       LOG.log(
@@ -217,10 +226,12 @@ public final class WorkspaceManifest {
     if (moduleLoc == null) {
       return Optional.empty();
     }
+
     final var jfo = fm.getJavaFileForInput(moduleLoc, qualifiedName, JavaFileObject.Kind.CLASS);
     if (jfo == null) {
       return Optional.empty();
     }
+
     return extractJarPath(jfo.toUri());
   }
 
@@ -249,6 +260,7 @@ public final class WorkspaceManifest {
     if (fm.getLocationForModule(StandardLocation.SYSTEM_MODULES, moduleName) != null) {
       return Optional.ofNullable(jdkSourceDir);
     }
+
     return jarForModulePath(moduleName, qualifiedName, fm).map(jarToSourceDir::get);
   }
 
@@ -280,6 +292,7 @@ public final class WorkspaceManifest {
     if (jfo == null) {
       return Optional.empty();
     }
+
     return extractJarPath(jfo.toUri()).map(jarToSourceDir::get);
   }
 

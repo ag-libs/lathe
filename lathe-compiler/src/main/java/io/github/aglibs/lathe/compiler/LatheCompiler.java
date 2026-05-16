@@ -74,10 +74,30 @@ public final class LatheCompiler implements Compiler {
       LOG.warn("[lathe] {} failed to create lock file", moduleRel, e);
     }
 
-    final var result = javacCompiler.performCompile(config);
+    try {
+      final var result = javacCompiler.performCompile(config);
+      syncOutput(config, moduleDir, moduleRel, result);
+      return result;
+    } finally {
+      try {
+        Files.deleteIfExists(lockFile);
+      } catch (final IOException e) {
+        LOG.warn("[lathe] {} failed to delete lock file", moduleRel, e);
+      }
+    }
+  }
 
+  private void syncOutput(
+      final CompilerConfiguration config,
+      final Path moduleDir,
+      final Path moduleRel,
+      final CompilerResult result) {
     final var sw = Stopwatch.start();
     try {
+      if (!result.isSuccess() && result.getCompilerMessages().isEmpty()) {
+        throw new IOException("javac returned failure with no diagnostics");
+      }
+
       ParamsWriter.write(config, moduleDir);
       final var outputDir = Path.of(config.getOutputLocation());
       FileUtil.replaceDir(outputDir, moduleDir.resolve(outputDir.getFileName()));
@@ -89,15 +109,7 @@ public final class LatheCompiler implements Compiler {
       LOG.info("[lathe] {} {}ms", moduleRel, sw.elapsedMs());
     } catch (final IOException e) {
       LOG.warn("[lathe] {} post-compile step failed", moduleRel, e);
-    } finally {
-      try {
-        Files.deleteIfExists(lockFile);
-      } catch (final IOException e) {
-        LOG.warn("[lathe] {} failed to delete lock file", moduleRel, e);
-      }
     }
-
-    return result;
   }
 
   private Optional<LatheContext> resolveLatheContext(final CompilerConfiguration config) {

@@ -61,10 +61,12 @@ public record ModuleConfig(
     if (!p.startsWith(workspaceRoot)) {
       return p;
     }
+
     final var rel = workspaceRoot.relativize(p);
     if (rel.getParent() == null) {
       return p;
     }
+
     final var sourceTree = rel.getFileName();
     final var moduleRel = rel.getParent().getParent();
     return moduleRel != null
