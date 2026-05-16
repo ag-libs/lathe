@@ -60,7 +60,8 @@ local function start_lathe()
     cmd = cmd,
     root_dir = root,
     capabilities = vim.lsp.protocol.make_client_capabilities(),
-    on_attach = function(_, bufnr)
+    on_attach = function(client, bufnr)
+      vim.lsp.completion.enable(true, client.id, bufnr, { autotrigger = true })
       if not is_external_source(bufnr) then
         vim.notify('Lathe: attached to ' .. vim.api.nvim_buf_get_name(bufnr), vim.log.levels.INFO)
       end
