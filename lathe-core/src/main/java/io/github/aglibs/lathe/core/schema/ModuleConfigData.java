@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.core.schema;
 
 import java.util.List;
+import java.util.Objects;
 
 public record ModuleConfigData(
     String sourceTree,
@@ -15,4 +16,10 @@ public record ModuleConfigData(
     boolean parameters,
     boolean enablePreview,
     String proc,
-    List<String> compilerArgs) {}
+    List<String> compilerArgs) {
+
+  public ModuleConfigData {
+    encoding = Objects.requireNonNullElse(encoding, "UTF-8");
+    compilerArgs = Objects.requireNonNullElse(compilerArgs, List.of());
+  }
+}

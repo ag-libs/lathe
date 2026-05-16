@@ -22,6 +22,10 @@
       <artifactId>lathe-core</artifactId>
     </dependency>
     <dependency>
+      <groupId>io.github.ag-libs.validcheck</groupId>
+      <artifactId>validcheck</artifactId>
+    </dependency>
+    <dependency>
       <groupId>io.github.ag-libs</groupId>
       <artifactId>lathe-compiler</artifactId>
       <scope>provided</scope>

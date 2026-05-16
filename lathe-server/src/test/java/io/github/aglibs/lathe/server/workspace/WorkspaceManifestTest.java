@@ -6,6 +6,7 @@ import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.DependencyData;
 import io.github.aglibs.lathe.core.schema.JdkSourceData;
+import io.github.aglibs.lathe.core.schema.SourceStatus;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.SampleFixture;
 import io.github.aglibs.lathe.server.TestCompiler;
@@ -37,7 +38,7 @@ class WorkspaceManifestTest extends SampleFixture {
         new WorkspaceManifestData(
             LatheLayout.SCHEMA_VERSION,
             tmp.toString(),
-            new JdkSourceData(null, "21.0.1", null, null, null, null),
+            new JdkSourceData("OpenJDK", "21.0.1", SourceStatus.MISSING, null, null, null),
             List.of()),
         latheDir.resolve(LatheLayout.WORKSPACE_JSON));
 
@@ -70,7 +71,7 @@ class WorkspaceManifestTest extends SampleFixture {
             new DependencyData(
                 "com.example:self:1",
                 selfJar.toString(),
-                "present",
+                SourceStatus.PRESENT,
                 sourceDir.toString(),
                 List.of(transitiveJar.toString()))));
     Files.createDirectories(sourceFile.getParent());
@@ -99,7 +100,7 @@ class WorkspaceManifestTest extends SampleFixture {
             new DependencyData(
                 "com.example:greeter:1",
                 jar.toString(),
-                "present",
+                SourceStatus.PRESENT,
                 sourceDir.toString(),
                 List.of())));
 

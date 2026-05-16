@@ -84,11 +84,11 @@ public record ModuleConfig(
         toPaths(config.modulepath()),
         toPaths(config.processorPath()),
         config.release(),
-        config.encoding() != null ? config.encoding() : "UTF-8",
+        config.encoding(),
         config.parameters(),
         config.enablePreview(),
         config.proc(),
-        config.compilerArgs() != null ? config.compilerArgs() : List.of());
+        config.compilerArgs());
   }
 
   private static List<Path> toPaths(final List<String> strings) {

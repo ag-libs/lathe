@@ -6,6 +6,7 @@ import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.DependencyData;
 import io.github.aglibs.lathe.core.schema.JdkSourceData;
+import io.github.aglibs.lathe.core.schema.SourceStatus;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.SourceLocator;
 import io.github.aglibs.lathe.server.TestCompiler;
@@ -204,13 +205,13 @@ class ExternalFileCompilerTest {
             new DependencyData(
                 "com.example:uses:1",
                 usesJar.toString(),
-                "present",
+                SourceStatus.PRESENT,
                 usesSourceRoot.toString(),
                 usesClasspath.stream().map(Path::toString).toList()),
             new DependencyData(
                 "com.example:helper:1",
                 helperJar.toString(),
-                "present",
+                SourceStatus.PRESENT,
                 helperSourceRoot.toString(),
                 List.of()));
     Json.write(
@@ -227,7 +228,7 @@ class ExternalFileCompilerTest {
             new DependencyData(
                 "com.example:uses:1",
                 usesJar.toString(),
-                "present",
+                SourceStatus.PRESENT,
                 usesSourceRoot.toString(),
                 List.of()));
     Json.write(

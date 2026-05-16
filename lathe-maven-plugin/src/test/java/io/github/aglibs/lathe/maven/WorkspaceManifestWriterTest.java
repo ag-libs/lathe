@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.SourceStatus;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.maven.dependency.DependencySource;
 import io.github.aglibs.lathe.maven.jdk.JdkSource;
@@ -50,13 +51,13 @@ class WorkspaceManifestWriterTest {
     assertThat(data.jdk().home().toString()).isEqualTo("/jdk");
     assertThat(data.jdk().vendor()).isEqualTo("Example Vendor");
     assertThat(data.jdk().version()).isEqualTo("21.0.1");
-    assertThat(data.jdk().status()).isEqualTo("present");
+    assertThat(data.jdk().status()).isEqualTo(SourceStatus.PRESENT);
     assertThat(data.jdk().sourceDir().toString()).isEqualTo("/cache/jdks/Example-Vendor/21.0.1");
     assertThat(data.dependencySources()).hasSize(1);
     final var entry = data.dependencySources().get(0);
     assertThat(entry.gav()).isEqualTo("com.example:dep:1");
     assertThat(entry.jar()).isEqualTo("/repo/dep.jar");
-    assertThat(entry.status()).isEqualTo("present");
+    assertThat(entry.status()).isEqualTo(SourceStatus.PRESENT);
     assertThat(entry.dir()).isEqualTo("/cache/dep");
     assertThat(entry.classpath()).containsExactly("/repo/transitive.jar");
   }
@@ -71,7 +72,7 @@ class WorkspaceManifestWriterTest {
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
     final var data = Json.read(manifest, WorkspaceManifestData.class);
     assertThat(data.jdk().version()).isEqualTo("21.0.1");
-    assertThat(data.jdk().status()).isEqualTo("missing");
+    assertThat(data.jdk().status()).isEqualTo(SourceStatus.MISSING);
     assertThat(data.jdk().sourceDir()).isNull();
   }
 

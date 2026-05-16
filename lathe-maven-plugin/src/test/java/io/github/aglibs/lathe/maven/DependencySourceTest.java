@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.maven;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.core.schema.SourceStatus;
 import io.github.aglibs.lathe.maven.dependency.DependencySource;
 import java.nio.file.Path;
 import java.util.List;
@@ -38,7 +39,7 @@ class DependencySourceTest {
 
     assertThat(entry.gav()).isEqualTo("com.example:lib:1");
     assertThat(entry.jar()).isEqualTo("/repo/lib.jar");
-    assertThat(entry.status()).isEqualTo("present");
+    assertThat(entry.status()).isEqualTo(SourceStatus.PRESENT);
     assertThat(entry.dir()).isEqualTo("/cache/lib");
     assertThat(entry.classpath()).containsExactly("/repo/dep-a.jar", "/repo/dep-b.jar");
   }
@@ -52,7 +53,7 @@ class DependencySourceTest {
 
     assertThat(entry.gav()).isEqualTo("com.example:absent:1");
     assertThat(entry.jar()).isEqualTo("/repo/absent.jar");
-    assertThat(entry.status()).isEqualTo("missing");
+    assertThat(entry.status()).isEqualTo(SourceStatus.MISSING);
     assertThat(entry.dir()).isNull();
     assertThat(entry.classpath()).isEmpty();
   }

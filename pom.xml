@@ -95,7 +95,7 @@
         <version>${gson.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.github.ag-libs</groupId>
+        <groupId>io.github.ag-libs.validcheck</groupId>
         <artifactId>validcheck</artifactId>
         <version>${validcheck.version}</version>
       </dependency>
