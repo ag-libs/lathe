@@ -51,14 +51,15 @@ Delegates to real javac unchanged, then writes compilation parameters to `.lathe
 It runs silently before compilation so the shim always finds `.lathe/` on the very first build.
 `sync` auto-binds to `process-test-classes`; it refreshes shared dependency/JDK sources,
 writes `workspace.json` (skipped when content is unchanged or when Maven is invoked with `-pl`),
-and owns all integration and e2e tests via maven-invoker and Neovim headless execution.
+and owns all integration tests via maven-invoker.
+Neovim headless e2e (Layer 3) is a planned test layer, not yet implemented.
 
 **`lathe-server`** — the LSP server.
 Reads params files written by the shim and the workspace manifest written by the Maven plugin, builds a fresh
 `JavacTask` per compilation pass, and serves LSP requests.
-It watches Maven project files while running;
-when a POM changes after the last sync, it prompts the user to run the documented Maven lifecycle command.
 It reads dependency/JDK sources from `~/.cache/lathe/`.
+Stale-POM detection (watching POM changes and prompting the user to re-sync) is a planned feature,
+not yet implemented — `StubWorkspaceService.didChangeWatchedFiles` is currently empty.
 Type indexes are a later slice.
 
 ```
@@ -226,13 +227,9 @@ Never needs to be gitignored.
 
 ```
 ~/.cache/lathe/
-├── servers/                              ← future server distributions
+├── servers/                              ← server launchers installed by lathe:sync
 │   └── 0.1.0/
-│       ├── lathe-launcher.sh
-│       └── modules/
-│           ├── lathe-server-0.1.0.jar
-│           ├── lsp4j-*.jar
-│           └── google-java-format-*.jar
+│       └── lathe-launcher.sh            ← generated; --module-path points at absolute .m2 paths
 ├── current -> servers/0.1.0/
 ├── jdks/                                ← JDK sources extracted by lathe:sync, once per vendor/version
 │   └── Eclipse-Adoptium/
@@ -309,7 +306,7 @@ while `workspace.json` is a disposable synchronized snapshot that may be missing
   "jdk": {
     "vendor": "Eclipse-Adoptium",
     "version": "21.0.7",
-    "status": "present",
+    "status": "PRESENT",
     "home": "/usr/lib/jvm/temurin-21",
     "sourceZip": "/usr/lib/jvm/temurin-21/lib/src.zip",
     "sourceDir": "/home/user/.cache/lathe/jdks/Eclipse-Adoptium/21.0.7"
@@ -318,7 +315,7 @@ while `workspace.json` is a disposable synchronized snapshot that may be missing
     {
       "gav": "com.google.guava:guava:32.0.0-jre",
       "jar": "/home/user/.m2/repository/com/google/guava/guava/32.0.0-jre/guava-32.0.0-jre.jar",
-      "status": "present",
+      "status": "PRESENT",
       "dir": "/home/user/.cache/lathe/deps/com.google.guava/guava/32.0.0-jre",
       "classpath": [
         "/home/user/.m2/repository/com/google/guava/failureaccess/1.0.2/failureaccess-1.0.2.jar"
@@ -327,7 +324,7 @@ while `workspace.json` is a disposable synchronized snapshot that may be missing
     {
       "gav": "org.example:no-sources:1.0",
       "jar": "/home/user/.m2/repository/org/example/no-sources/1.0/no-sources-1.0.jar",
-      "status": "missing",
+      "status": "MISSING",
       "dir": null,
       "classpath": []
     }
