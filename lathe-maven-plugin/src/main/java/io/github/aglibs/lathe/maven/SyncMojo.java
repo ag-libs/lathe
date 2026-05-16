@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.maven;
 
+import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.maven.dependency.DependencySource;
 import io.github.aglibs.lathe.maven.dependency.DependencySourceResolver;
 import io.github.aglibs.lathe.maven.dependency.DependencySourceSync;

@@ -88,16 +88,17 @@ final class WorkspaceWatcher {
     }
 
     try (final var stream = Files.walk(latheDir)) {
-      final var files =
-          stream
-              .filter(p -> p.getFileName().toString().startsWith("lsp-params-"))
-              .filter(p -> p.getFileName().toString().endsWith(".json"))
-              .toList();
+      final var files = stream.filter(WorkspaceWatcher::isParamsFile).toList();
       final long maxMtime = files.stream().mapToLong(WorkspaceWatcher::mtime).max().orElse(0L);
       return new Fingerprint(files.size(), maxMtime);
     } catch (final IOException e) {
       return Fingerprint.EMPTY;
     }
+  }
+
+  private static boolean isParamsFile(final Path p) {
+    final var name = p.getFileName().toString();
+    return name.startsWith("lsp-params-") && name.endsWith(".json");
   }
 
   private static long mtime(final Path path) {

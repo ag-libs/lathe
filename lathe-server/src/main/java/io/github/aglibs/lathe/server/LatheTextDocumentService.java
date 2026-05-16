@@ -14,12 +14,12 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
+import java.util.stream.IntStream;
 import org.eclipse.lsp4j.DefinitionParams;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
@@ -149,11 +149,8 @@ final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(null);
     }
     final var encoded = TokenScanner.encode(tokens);
-    final var dataList = new ArrayList<Integer>(encoded.length);
-    for (final var v : encoded) {
-      dataList.add(v);
-    }
-    return CompletableFuture.completedFuture(new SemanticTokens(dataList));
+    return CompletableFuture.completedFuture(
+        new SemanticTokens(IntStream.of(encoded).boxed().toList()));
   }
 
   @Override

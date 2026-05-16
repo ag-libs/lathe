@@ -32,7 +32,7 @@ public final class DependencySourceResolver {
       final Map<String, Artifact> artifacts,
       final Map<String, List<Path>> artifactClasspaths,
       final List<RemoteRepository> repositories) {
-    log.info("[sync] dependencies " + artifacts.size() + " unique external artifacts");
+    log.info("[sync] %d unique external artifacts".formatted(artifacts.size()));
     final List<DependencySource> dependencySources =
         artifacts.values().stream()
             .map(artifact -> resolve(artifact, artifactClasspaths, repositories))
@@ -71,7 +71,7 @@ public final class DependencySourceResolver {
           resolvedArtifact,
           classpath);
     } catch (final ArtifactResolutionException e) {
-      log.debug("[sync] source missing " + ReactorProjects.gav(artifact), e);
+      log.debug("[sync] source missing %s".formatted(ReactorProjects.gav(artifact)), e);
       return DependencySource.missing(ReactorProjects.gav(artifact), binaryJar, classpath);
     } catch (final RuntimeException e) {
       throw new SyncException("lathe:sync failed to resolve source artifacts", e);

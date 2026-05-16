@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.maven;
 
+import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import java.io.IOException;
 import java.nio.file.Files;

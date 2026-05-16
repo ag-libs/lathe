@@ -29,8 +29,7 @@ public final class DependencySourceSync {
       final Map<Boolean, Long> counts =
           sources.stream()
               .map(source -> IOUtil.unchecked(() -> extract(source)))
-              .collect(
-                  Collectors.partitioningBy(SourceExtraction::extracted, Collectors.counting()));
+              .collect(Collectors.partitioningBy(b -> b, Collectors.counting()));
       log.info(
           "[sync] extracted %d source artifacts, %d already cached in %dms"
               .formatted(
@@ -40,17 +39,17 @@ public final class DependencySourceSync {
     }
   }
 
-  private static SourceExtraction extract(final DependencySource source) throws IOException {
+  private static boolean extract(final DependencySource source) throws IOException {
     final var artifact = source.sourceArtifact();
     final var sourceJar = artifact.getFile().toPath();
     final var targetDir = source.dir();
     if (isSourceCacheCurrent(targetDir, artifact, sourceJar)) {
-      return new SourceExtraction(false);
+      return false;
     }
 
     ZipCache.extract(
         sourceJar, targetDir, tempDir -> writeSourceMarker(tempDir, artifact, sourceJar));
-    return new SourceExtraction(true);
+    return true;
   }
 
   private static boolean isSourceCacheCurrent(
@@ -59,6 +58,7 @@ public final class DependencySourceSync {
     if (!Files.exists(marker)) {
       return false;
     }
+
     try {
       final var m = Json.read(marker, SourceMarker.class);
       return LatheLayout.SCHEMA_VERSION.equals(m.schema())
@@ -85,6 +85,4 @@ public final class DependencySourceSync {
 
   private record SourceMarker(
       String schema, String gav, String sourceJar, long sourceJarSize, long sourceJarModified) {}
-
-  private record SourceExtraction(boolean extracted) {}
 }

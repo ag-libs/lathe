@@ -62,8 +62,9 @@ public final class LatheCompiler implements Compiler {
       return javacCompiler.performCompile(config);
     }
 
-    final var moduleDir = ctx.get().moduleDir();
-    final var moduleRel = ctx.get().moduleRel();
+    final var latheCtx = ctx.get();
+    final var moduleDir = latheCtx.moduleDir();
+    final var moduleRel = latheCtx.moduleRel();
     final var lockFile = moduleDir.resolve(LatheLayout.LOCK_FILE);
 
     try {

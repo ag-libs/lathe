@@ -38,8 +38,7 @@ public final class ModuleRegistry implements AutoCloseable {
     final var modules = new ArrayList<ModuleConfig>();
     try (final var stream = Files.walk(latheDir)) {
       stream
-          .filter(p -> p.getFileName().toString().startsWith("lsp-params-"))
-          .filter(p -> p.getFileName().toString().endsWith(".json"))
+          .filter(ModuleRegistry::isParamsFile)
           .forEach(
               paramsFile -> {
                 try {
@@ -70,6 +69,11 @@ public final class ModuleRegistry implements AutoCloseable {
   public void close() {
     compilers.values().forEach(ModuleCompiler::close);
     compilers.clear();
+  }
+
+  private static boolean isParamsFile(final Path p) {
+    final var name = p.getFileName().toString();
+    return name.startsWith("lsp-params-") && name.endsWith(".json");
   }
 
   public Optional<ModuleConfig> moduleFor(final Path filePath) {

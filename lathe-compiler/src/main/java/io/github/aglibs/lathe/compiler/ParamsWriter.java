@@ -14,11 +14,11 @@ final class ParamsWriter {
 
   static void write(final CompilerConfiguration config, final Path latheModuleDir)
       throws IOException {
-    final var outputBaseName = Path.of(config.getOutputLocation()).getFileName().toString();
+    final var sourceTree = Path.of(config.getOutputLocation()).getFileName().toString();
     final var genSources = config.getGeneratedSourcesDirectory();
     final var moduleConfig =
         new ModuleConfigData(
-            outputBaseName,
+            sourceTree,
             config.getOutputLocation(),
             genSources != null ? genSources.toString() : null,
             nullToEmpty(config.getSourceLocations()),
@@ -31,7 +31,7 @@ final class ParamsWriter {
             config.isEnablePreview(),
             config.getProc(),
             compilerArgs(config));
-    Json.write(moduleConfig, latheModuleDir.resolve("lsp-params-" + outputBaseName + ".json"));
+    Json.write(moduleConfig, latheModuleDir.resolve("lsp-params-" + sourceTree + ".json"));
   }
 
   private static List<String> compilerArgs(final CompilerConfiguration config) {

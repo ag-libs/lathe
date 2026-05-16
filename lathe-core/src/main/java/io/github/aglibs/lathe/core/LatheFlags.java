@@ -1,10 +1,10 @@
-package io.github.aglibs.lathe.maven;
+package io.github.aglibs.lathe.core;
 
-final class LatheFlags {
+public final class LatheFlags {
 
   private LatheFlags() {}
 
-  static boolean isDisabled() {
+  public static boolean isDisabled() {
     final var skip = System.getProperty("lathe.skip");
     if ("true".equals(skip)) {
       return true;
@@ -17,7 +17,7 @@ final class LatheFlags {
     return System.getenv("CI") != null;
   }
 
-  static boolean isForcedSync() {
+  public static boolean isForcedSync() {
     return "true".equals(System.getProperty("lathe.sync.force"));
   }
 }

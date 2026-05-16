@@ -15,6 +15,7 @@ import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ModuleElement;
 import javax.lang.model.element.PackageElement;
@@ -131,11 +132,10 @@ public final class WorkspaceManifest {
   }
 
   public List<Path> externalSourceDirs() {
-    final var dirs = new java.util.ArrayList<Path>(jarToSourceDir.values());
-    if (jdkSourceDir != null) {
-      dirs.add(jdkSourceDir);
-    }
-    return List.copyOf(dirs);
+    return Stream.concat(
+            jarToSourceDir.values().stream(),
+            jdkSourceDir != null ? Stream.of(jdkSourceDir) : Stream.empty())
+        .toList();
   }
 
   public List<Path> depClasspathForFile(final Path file) {
@@ -147,11 +147,10 @@ public final class WorkspaceManifest {
               if (selfJar == null) {
                 return transitive;
               }
-              final var result = new java.util.ArrayList<Path>(transitive.size() + 1);
-              result.add(selfJar);
-              result.addAll(transitive);
-              result.addAll(jarToGav.keySet());
-              return result.stream().distinct().toList();
+              final var selfAndTransitive = Stream.concat(Stream.of(selfJar), transitive.stream());
+              return Stream.concat(selfAndTransitive, jarToGav.keySet().stream())
+                  .distinct()
+                  .toList();
             })
         .orElse(List.of());
   }

@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.compiler;
 
+import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -10,7 +11,7 @@ final class WorkspaceDetector {
   private WorkspaceDetector() {}
 
   static Optional<Path> findWorkspaceRoot(final Path startDir) {
-    if (isDisabled()) {
+    if (LatheFlags.isDisabled()) {
       return Optional.empty();
     }
 
@@ -22,18 +23,5 @@ final class WorkspaceDetector {
       current = current.getParent();
     }
     return Optional.empty();
-  }
-
-  private static boolean isDisabled() {
-    final var skip = System.getProperty("lathe.skip");
-    if ("true".equals(skip)) {
-      return true;
-    }
-
-    if ("false".equals(skip)) {
-      return false;
-    }
-
-    return System.getenv("CI") != null;
   }
 }

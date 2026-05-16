@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.maven;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.core.LatheFlags;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
