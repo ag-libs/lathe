@@ -116,9 +116,6 @@ Visible via Maven logging output.
 - `INFO` — server lifecycle only (startup, reload, shutdown)
 - `FINE` — all timed operations
 
-All handler methods in `AnalysisEngine` (`hover`, `definition`, etc.)
-must open with `Stopwatch.start()` and include elapsed ms in the log message.
-
 Logger field name: `LOG` (static final).
 Always use lambda form, single space after the operation tag:
 ```java
