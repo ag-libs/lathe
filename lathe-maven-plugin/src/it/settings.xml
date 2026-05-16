@@ -6,7 +6,7 @@
       <repositories>
         <repository>
           <id>local-m2</id>
-          <url>file://${user.home}/.m2/repository</url>
+          <url>file://${latheLocalRepo}</url>
           <releases>
             <enabled>true</enabled>
             <checksumPolicy>ignore</checksumPolicy>
@@ -20,7 +20,7 @@
       <pluginRepositories>
         <pluginRepository>
           <id>local-m2-plugins</id>
-          <url>file://${user.home}/.m2/repository</url>
+          <url>file://${latheLocalRepo}</url>
           <releases>
             <enabled>true</enabled>
             <checksumPolicy>ignore</checksumPolicy>

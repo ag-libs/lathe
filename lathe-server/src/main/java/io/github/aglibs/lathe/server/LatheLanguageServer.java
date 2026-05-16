@@ -1,8 +1,6 @@
 package io.github.aglibs.lathe.server;
 
-import io.github.aglibs.lathe.server.module.ModuleRegistry;
 import io.github.aglibs.lathe.server.tokens.TokenScanner;
-import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.net.URI;
 import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
@@ -24,8 +22,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
 
   private static final Logger LOG = Logger.getLogger(LatheLanguageServer.class.getName());
 
-  private final LatheTextDocumentService textDocumentService =
-      new LatheTextDocumentService(ModuleRegistry.empty());
+  private final LatheTextDocumentService textDocumentService = new LatheTextDocumentService();
 
   @Override
   public void connect(final LanguageClient client) {
@@ -38,10 +35,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     LOG.fine(() -> "[initialize] rootUri=%s client=%s".formatted(rootUri, params.getClientInfo()));
 
     if (rootUri != null) {
-      final var workspaceRoot = Path.of(URI.create(rootUri));
-      textDocumentService.setRegistry(ModuleRegistry.scan(workspaceRoot));
-      textDocumentService.setManifest(WorkspaceManifest.load(workspaceRoot));
-      textDocumentService.startWatching(workspaceRoot);
+      textDocumentService.initialize(Path.of(URI.create(rootUri)));
     } else {
       LOG.warning(() -> "[initialize] no rootUri — module registry not available");
     }

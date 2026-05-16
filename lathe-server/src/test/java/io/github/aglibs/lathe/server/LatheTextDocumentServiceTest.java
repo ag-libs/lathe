@@ -6,7 +6,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
-import io.github.aglibs.lathe.server.module.ModuleRegistry;
 import java.util.List;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.DidCloseTextDocumentParams;
@@ -33,7 +32,7 @@ class LatheTextDocumentServiceTest {
   @BeforeEach
   void setUp() {
     client = mock(LanguageClient.class);
-    service = new LatheTextDocumentService(ModuleRegistry.empty(), DEBOUNCE_MS);
+    service = new LatheTextDocumentService(DEBOUNCE_MS);
     service.connect(client);
   }
 
