@@ -47,6 +47,10 @@ The next milestone is member-access completion.
 - **Server threading model** — LSP request/notification handlers and workspace reload now route through a single server worker.
   Mutable Lathe state and javac-backed objects stay on that worker,
   and worker-owned caches use ordinary maps.
+  `DocumentSession` encapsulates all worker-confined state and business logic;
+  `LatheTextDocumentService` is a stateless LSP dispatcher.
+- **Stale-result guard** — `publishIfCurrent` compares the content that triggered a compile against the latest open content before publishing diagnostics,
+  so rapid edits never overwrite newer results with an older compile's output.
 
 ## Near-Term
 
