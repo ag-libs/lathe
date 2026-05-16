@@ -3,6 +3,9 @@ package io.github.aglibs.lathe.server;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import org.eclipse.lsp4j.CompletionItem;
+import org.eclipse.lsp4j.CompletionList;
+import org.eclipse.lsp4j.CompletionParams;
 import org.eclipse.lsp4j.DefinitionParams;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.DidCloseTextDocumentParams;
@@ -80,6 +83,14 @@ final class LatheTextDocumentService implements TextDocumentService {
     final var uri = params.getTextDocument().getUri();
     final var content = params.getText();
     worker.execute(() -> session.onSave(uri, content));
+  }
+
+  @Override
+  public CompletableFuture<Either<List<CompletionItem>, CompletionList>> completion(
+      final CompletionParams params) {
+    final var uri = params.getTextDocument().getUri();
+    final var pos = params.getPosition();
+    return worker.submit(() -> Either.forLeft(session.completion(uri, pos)));
   }
 
   @Override

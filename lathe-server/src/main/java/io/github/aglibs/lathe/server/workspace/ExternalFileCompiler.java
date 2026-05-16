@@ -85,7 +85,7 @@ public final class ExternalFileCompiler implements SourceCompiler, AutoCloseable
     final var sourceRoot = manifest.externalSourceRootForFile(filePath);
     if (sourceRoot.isEmpty()) {
       LOG.fine(() -> "[external] no source root for %s — skipping".formatted(uri));
-      return new CompilationResult(List.of(), new FileAnalysis(null, null, null));
+      return new CompilationResult(List.of(), new FileAnalysis(null, null, null, null, null));
     }
 
     final var rel = sourceRoot.get().relativize(filePath);
@@ -104,6 +104,8 @@ public final class ExternalFileCompiler implements SourceCompiler, AutoCloseable
     final CompilationUnitTree cu = it.hasNext() ? it.next() : null;
     task.analyze();
     final Trees trees = Trees.instance(task);
+    final var elements = task.getElements();
+    final var types = task.getTypes();
     if (cu != null) {
       final var t = Stopwatch.start();
       final List<io.github.aglibs.lathe.server.tokens.SemanticToken> tokens =
@@ -111,10 +113,12 @@ public final class ExternalFileCompiler implements SourceCompiler, AutoCloseable
       LOG.fine(
           () ->
               "[external] %s compiled %d tokens %dms".formatted(uri, tokens.size(), t.elapsedMs()));
-      return new CompilationResult(collector.getDiagnostics(), new FileAnalysis(trees, cu, tokens));
+      return new CompilationResult(
+          collector.getDiagnostics(), new FileAnalysis(trees, elements, types, cu, tokens));
     }
 
-    return new CompilationResult(collector.getDiagnostics(), new FileAnalysis(trees, null, null));
+    return new CompilationResult(
+        collector.getDiagnostics(), new FileAnalysis(trees, elements, types, null, null));
   }
 
   private List<String> buildOptions(final Path filePath) {

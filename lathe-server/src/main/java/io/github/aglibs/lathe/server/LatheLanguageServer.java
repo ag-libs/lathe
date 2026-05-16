@@ -5,6 +5,7 @@ import java.net.URI;
 import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
 import java.util.logging.Logger;
+import org.eclipse.lsp4j.CompletionOptions;
 import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.InitializeResult;
 import org.eclipse.lsp4j.InitializedParams;
@@ -47,6 +48,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
   private static ServerCapabilities createCapabilities() {
     final var capabilities = new ServerCapabilities();
     capabilities.setTextDocumentSync(TextDocumentSyncKind.Full);
+    capabilities.setCompletionProvider(new CompletionOptions());
     capabilities.setHoverProvider(true);
     final var legend =
         new SemanticTokensLegend(TokenScanner.TOKEN_TYPES, TokenScanner.TOKEN_MODIFIERS);

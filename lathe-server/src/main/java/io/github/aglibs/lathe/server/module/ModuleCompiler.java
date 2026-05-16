@@ -22,6 +22,7 @@ import java.util.logging.Logger;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
+import javax.tools.SimpleJavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
 import javax.tools.ToolProvider;
@@ -83,7 +84,7 @@ public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
 
     final var options = buildOptions(config, compilerArgs, mode);
     LOG.fine(() -> "[%s] td=%s root=%s opts=%s".formatted(mode.tag, td, sourceRoot, options));
-    final JavaFileObject file = fm.getJavaFileObjects(tempFile).iterator().next();
+    final JavaFileObject file = inMemorySource(tempFile.toUri(), content);
     try {
       final FileAnalysis fileAnalysis = runTask(collector, options, file, mode);
       return new CompilationResult(collector.getDiagnostics(), fileAnalysis);
@@ -156,15 +157,17 @@ public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
       task.generate();
     }
     final var trees = Trees.instance(task);
+    final var elements = task.getElements();
+    final var types = task.getTypes();
     if (cu != null) {
       final var t = Stopwatch.start();
       final List<io.github.aglibs.lathe.server.tokens.SemanticToken> semanticTokens =
           TokenScanner.scan(trees, cu);
       LOG.fine(() -> "[tokens] %d tokens %dms".formatted(semanticTokens.size(), t.elapsedMs()));
-      return new FileAnalysis(trees, cu, semanticTokens);
+      return new FileAnalysis(trees, elements, types, cu, semanticTokens);
     }
 
-    return new FileAnalysis(trees, null, null);
+    return new FileAnalysis(trees, elements, types, null, null);
   }
 
   private static List<String> processPatchModules(
@@ -216,5 +219,14 @@ public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
 
   private static boolean isInteractiveCompilerArg(final String arg) {
     return !arg.startsWith("-Xplugin:") && !arg.startsWith("-Xep");
+  }
+
+  private static JavaFileObject inMemorySource(final java.net.URI uri, final String content) {
+    return new SimpleJavaFileObject(uri, JavaFileObject.Kind.SOURCE) {
+      @Override
+      public CharSequence getCharContent(final boolean ignoreEncodingErrors) {
+        return content;
+      }
+    };
   }
 }

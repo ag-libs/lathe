@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.logging.Logger;
 import java.util.stream.IntStream;
+import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Hover;
@@ -171,6 +172,20 @@ final class DocumentSession {
       LOG.log(SEVERE, e, () -> "[definition] failed for " + uri);
       return Either.forLeft(List.of());
     }
+  }
+
+  List<CompletionItem> completion(final String uri, final Position pos) {
+    final var content = openFiles.get(uri);
+    if (content == null) {
+      return List.of();
+    }
+
+    final var module = registry.moduleFor(toPath(uri));
+    if (module.isEmpty()) {
+      return List.of();
+    }
+
+    return registry.engineFor(module.get()).complete(uri, content, pos);
   }
 
   List<? extends TextEdit> format(final String tag, final String uri) {

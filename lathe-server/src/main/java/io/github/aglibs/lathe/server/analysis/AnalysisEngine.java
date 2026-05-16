@@ -24,6 +24,7 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.JavaFileObject;
+import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Hover;
@@ -37,12 +38,14 @@ public final class AnalysisEngine {
   private static final Logger LOG = Logger.getLogger(AnalysisEngine.class.getName());
 
   private final SourceCompiler compiler;
+  private final CompletionProvider completionProvider;
   private final DefinitionLocator definitionLocator;
   private final JavadocLocator javadocLocator;
   private final Map<String, FileAnalysis> cache = new HashMap<>();
 
   public AnalysisEngine(final SourceCompiler compiler) {
     this.compiler = compiler;
+    this.completionProvider = new CompletionProvider(compiler);
     final var parsingFm = compiler.compiler().getStandardFileManager(null, null, null);
     final var parser = new SourceParser(compiler.compiler(), parsingFm);
     this.definitionLocator = new DefinitionLocator(parser);
@@ -61,6 +64,13 @@ public final class AnalysisEngine {
     final var diags = filterAndMap(run.diagnostics(), content);
     LOG.fine(() -> "[%s] %s %dms diags=%d".formatted(mode.tag, uri, t.elapsedMs(), diags.size()));
     return diags;
+  }
+
+  public List<CompletionItem> complete(final String uri, final String content, final Position pos) {
+    final var t = Stopwatch.start();
+    final var items = completionProvider.complete(uri, content, pos);
+    LOG.fine(() -> "[completion] %s %dms items=%d".formatted(uri, t.elapsedMs(), items.size()));
+    return items;
   }
 
   public void dropFromCache(final String uri) {
