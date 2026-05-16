@@ -139,7 +139,15 @@ final class LatheTextDocumentService implements TextDocumentService {
     openFiles.put(uri, content);
     LOG.fine(() -> "[change] %s".formatted(uri));
     client.publishDiagnostics(new PublishDiagnosticsParams(uri, List.of()));
-    worker.schedule(uri, debounceMs, () -> compileWith(uri, content, CompileMode.FAST));
+    worker.schedule(
+        uri,
+        debounceMs,
+        () -> {
+          final var latest = openFiles.get(uri);
+          if (latest != null) {
+            compileWith(uri, latest, CompileMode.FAST);
+          }
+        });
   }
 
   @Override
@@ -224,18 +232,29 @@ final class LatheTextDocumentService implements TextDocumentService {
 
   public void didSave(final DidSaveTextDocumentParams params) {
     final var uri = params.getTextDocument().getUri();
-    worker.execute(() -> doDidSave(uri));
+    final var content = params.getText();
+    worker.execute(() -> doDidSave(uri, content));
   }
 
-  private void doDidSave(final String uri) {
+  private void doDidSave(final String uri, final String savedContent) {
     LOG.fine(() -> "[save] %s".formatted(uri));
     worker.cancel(uri);
     try {
-      compileWith(uri, Files.readString(toPath(uri)), CompileMode.FULL);
+      final var content = contentForSave(uri, savedContent);
+      compileWith(uri, content, CompileMode.FULL);
       registry.moduleFor(toPath(uri)).ifPresent(module -> scheduleOpenFilesInModule(uri, module));
     } catch (final IOException e) {
       LOG.log(SEVERE, e, () -> "[save] failed to read %s".formatted(uri));
     }
+  }
+
+  private String contentForSave(final String uri, final String savedContent) throws IOException {
+    if (savedContent != null) {
+      return savedContent;
+    }
+
+    final var openContent = openFiles.get(uri);
+    return openContent != null ? openContent : Files.readString(toPath(uri));
   }
 
   private void scheduleOpenFilesInModule(final String savedUri, final ModuleConfig savedModule) {
@@ -332,19 +351,30 @@ final class LatheTextDocumentService implements TextDocumentService {
         LOG.fine(() -> "[%s] interrupted, skipping publish for %s".formatted(mode.tag, uri));
         return;
       }
-      publishDiagnosticsAndRefresh(uri, diagnostics);
+      publishIfCurrent(uri, content, diagnostics);
     } catch (final Exception ex) {
       LOG.log(SEVERE, ex, () -> "[%s] failed for %s".formatted(mode.tag, uri));
-      publishError(uri, ex);
+      publishErrorIfCurrent(uri, content, ex);
     }
   }
 
   private void compileExternal(final String uri, final String content, final CompileMode mode) {
     try {
-      publishDiagnosticsAndRefresh(uri, externalCompiler.analysis().compile(uri, content, mode));
+      publishIfCurrent(uri, content, externalCompiler.analysis().compile(uri, content, mode));
     } catch (final Exception ex) {
       LOG.log(SEVERE, ex, () -> "[external] failed to compile %s".formatted(uri));
+      publishErrorIfCurrent(uri, content, ex);
     }
+  }
+
+  private void publishIfCurrent(
+      final String uri, final String content, final List<Diagnostic> diagnostics) {
+    if (!isCurrentOpenContent(uri, content)) {
+      LOG.fine(() -> "[publish] stale result skipped for %s".formatted(uri));
+      return;
+    }
+
+    publishDiagnosticsAndRefresh(uri, diagnostics);
   }
 
   private void publishDiagnosticsAndRefresh(final String uri, final List<Diagnostic> diagnostics) {
@@ -352,9 +382,19 @@ final class LatheTextDocumentService implements TextDocumentService {
     client.refreshSemanticTokens();
   }
 
+  private void publishErrorIfCurrent(final String uri, final String content, final Exception ex) {
+    if (isCurrentOpenContent(uri, content)) {
+      publishError(uri, ex);
+    }
+  }
+
   private void publishError(final String uri, final Exception ex) {
     final var msg = ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
     client.publishDiagnostics(singleDiag(uri, "Lathe: " + msg, DiagnosticSeverity.Error));
+  }
+
+  private boolean isCurrentOpenContent(final String uri, final String content) {
+    return content.equals(openFiles.get(uri));
   }
 
   private static PublishDiagnosticsParams singleDiag(
