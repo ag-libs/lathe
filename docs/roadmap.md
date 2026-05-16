@@ -20,8 +20,16 @@ Current lifecycle shape:
   and compiles opened files — including external dependency/JDK sources.
 - Editors launch `~/.cache/lathe/current/lathe-launcher.sh`.
 
-The next piece of work is the server threading model,
-so completion can be implemented without adding ad hoc synchronization around compiler state.
+Threading choice:
+Lathe currently uses one server worker thread for LSP request/notification work that touches mutable server state,
+workspace reload, debounced compilation, external-source compilation, and all javac-backed analysis.
+LSP4J and watcher threads only capture immutable request data and enqueue work;
+results cross back as LSP DTOs or client notifications.
+This intentionally serializes compiler access for now,
+keeps `ModuleCompiler`, `ExternalFileCompiler`, `AnalysisEngine` caches, and `ModuleRegistry` thread-confined,
+and avoids method-level synchronization around javac file managers.
+
+The next milestone is member-access completion.
 
 ## Completed
 
@@ -36,22 +44,11 @@ so completion can be implemented without adding ad hoc synchronization around co
   writes it to `~/.cache/lathe/servers/<version>/`,
   and updates the `~/.cache/lathe/current` symlink.
   `dev/nvim.sh` and `dev/lsp.py` updated to launch via the installed script.
+- **Server threading model** — LSP request/notification handlers and workspace reload now route through a single server worker.
+  Mutable Lathe state and javac-backed objects stay on that worker,
+  and worker-owned caches use ordinary maps.
 
 ## Near-Term
-
-**Server threading model**
-Adopt the single-worker design described in [lathe-server-threading-design.md](lathe-server-threading-design.md).
-
-Core flow:
-1. Route LSP request/notification handlers through a server-owned worker.
-2. Keep mutable Lathe state and javac-backed objects on that worker.
-3. Move workspace reload onto the worker so registry swaps cannot race with active compiles.
-4. Keep request boundaries simple: immutable request data in, final LSP DTOs out.
-5. Leave the current concurrent maps in place during migration;
-   simplify them only after the worker-owned invariant is established.
-
-Before the full worker refactor,
-serialize `ExternalFileCompiler.setManifest()` with `compile()` and snapshot the manifest inside `compile()`.
 
 **Completion (member access)**
 Implement `textDocument/completion` for member-access expressions using the sentinel approach

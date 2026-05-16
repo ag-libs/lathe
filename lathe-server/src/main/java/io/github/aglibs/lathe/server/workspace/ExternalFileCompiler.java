@@ -33,7 +33,7 @@ public final class ExternalFileCompiler implements SourceCompiler, AutoCloseable
 
   private static final Logger LOG = Logger.getLogger(ExternalFileCompiler.class.getName());
 
-  private volatile WorkspaceManifest manifest;
+  private WorkspaceManifest manifest;
   private final JavaCompiler javac = ToolProvider.getSystemJavaCompiler();
   private final StandardJavaFileManager fm;
   private final Path td;
@@ -79,17 +79,17 @@ public final class ExternalFileCompiler implements SourceCompiler, AutoCloseable
   }
 
   @Override
-  public synchronized CompilationResult compile(
-      final String uri, final String content, final CompileMode mode) throws IOException {
-    final Path filePath = Path.of(URI.create(uri));
+  public CompilationResult compile(final String uri, final String content, final CompileMode mode)
+      throws IOException {
+    final var filePath = Path.of(URI.create(uri));
     final var sourceRoot = manifest.externalSourceRootForFile(filePath);
     if (sourceRoot.isEmpty()) {
       LOG.fine(() -> "[external] no source root for %s — skipping".formatted(uri));
       return new CompilationResult(List.of(), new FileAnalysis(null, null, null));
     }
 
-    final Path rel = sourceRoot.get().relativize(filePath);
-    final Path tempFile = td.resolve(rel);
+    final var rel = sourceRoot.get().relativize(filePath);
+    final var tempFile = td.resolve(rel);
     Files.createDirectories(tempFile.getParent());
     Files.writeString(tempFile, content);
 

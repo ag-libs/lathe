@@ -6,10 +6,10 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -18,7 +18,7 @@ public final class ModuleRegistry implements AutoCloseable {
   private static final Logger LOG = Logger.getLogger(ModuleRegistry.class.getName());
 
   private final List<ModuleConfig> modules;
-  private final Map<ModuleConfig, ModuleCompiler> compilers = new ConcurrentHashMap<>();
+  private final Map<ModuleConfig, ModuleCompiler> compilers = new HashMap<>();
 
   private ModuleRegistry(final List<ModuleConfig> modules) {
     this.modules = modules;

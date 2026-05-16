@@ -13,11 +13,11 @@ import io.github.aglibs.lathe.server.tokens.SemanticToken;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
 import javax.lang.model.element.Element;
@@ -39,7 +39,7 @@ public final class AnalysisEngine {
   private final SourceCompiler compiler;
   private final DefinitionLocator definitionLocator;
   private final JavadocLocator javadocLocator;
-  private final Map<String, FileAnalysis> cache = new ConcurrentHashMap<>();
+  private final Map<String, FileAnalysis> cache = new HashMap<>();
 
   public AnalysisEngine(final SourceCompiler compiler) {
     this.compiler = compiler;

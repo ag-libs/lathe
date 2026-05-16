@@ -649,23 +649,22 @@ because the LS registers this directory as a source root.
 
 ```
 didChange received (LSP receive thread)
-  → write updated content to module's temp dir (replaces previous version of the file)
-  → invalidate per-file result cache entry
-  → cancel in-flight pass for this module if any (set its AtomicBoolean token)
-  → cancel any pending debounce
+  → capture URI and full-content snapshot
+  → enqueue didChange work on the server worker
+
+server worker:
+  → store the open-file snapshot
+  → publish empty diagnostics
+  → cancel any pending debounce for this URI
   → schedule debounce (500ms)
 
-debounce fires (module thread):
-  → create fresh AtomicBoolean cancellation token, store as module's current token
+debounce fires (server worker):
   → wait for the file's own module's lathe.lock to disappear if present
   → wait for any direct reactor dependency's lathe.lock to disappear if present
-  → build fresh JavacTask from params + CustomFileManager (proc=none — AP skipped)
+  → build fresh JavacTask from params (proc=none — AP skipped)
   → single-file attribution pass for the changed file
   → flush file manager after the pass as needed
-  → if cancelled: discard results, do not publish, do not update cache
-  → else: publish diagnostics, store CompilationTaskContext in result cache
-          (class files are written to .lathe/<rel>/classes/ or test-classes/ via CLASS_OUTPUT redirection in CustomFileManager)
-  → clear module's current token
+  → publish diagnostics and store `FileAnalysis` in the analysis cache
 ```
 
 AP is skipped on the fast pass.
@@ -675,20 +674,18 @@ Target: 500ms p95.
 
 ```
 didSave received (LSP receive thread)
-  → cancel in-flight pass for this module if any (set its AtomicBoolean token)
-  → cancel any pending debounce
+  → capture URI
+  → enqueue didSave work on the server worker
 
-full pass runs (module thread):
-  → create fresh AtomicBoolean cancellation token, store as module's current token
+server worker:
+  → cancel any pending debounce
   → wait for the file's own module's lathe.lock to disappear if present
   → wait for any direct reactor dependency's lathe.lock to disappear if present
   → build fresh JavacTask from params + CustomFileManager (proc= from params — AP runs)
   → single-file compilation pass for the changed file
   → flush file manager after the pass
-  → if cancelled: discard results
-  → else: run orphan cleanup, write .class to .lathe/<rel>/classes/ and generated sources
-         to .lathe/<rel>/generated-sources/, publish diagnostics, store CompilationTaskContext in result cache
-  → clear module's current token
+  → write .class to .lathe/<rel>/classes/ and generated sources
+     to .lathe/<rel>/generated-sources/, publish diagnostics, store `FileAnalysis` in the analysis cache
 ```
 
 Target: ~1–2s p95 for AP-heavy modules.
@@ -722,22 +719,18 @@ Cached file managers remain bounded by the LRU and are closed on eviction or reg
 
 ### Threading
 
-One virtual thread per module serializes compilation passes and result-cache access for that module.
-Temp directory writes (on `didOpen`/`didChange`) happen synchronously on the LSP receive thread before scheduling the
-debounce — the write is small and fast, and the 500ms debounce ensures the file is fully written before the next pass
-reads it.
+Lathe uses one server worker thread for all work that touches mutable server state or javac-backed objects.
+LSP4J message threads and the workspace watcher capture immutable request data, enqueue work, and return futures.
+The worker owns `ModuleRegistry`, `ExternalFileCompiler`, `ModuleCompiler` instances, open-file snapshots, analysis
+caches, debounced compilation, and workspace reload.
+This deliberately serializes compiler access for v1, keeps javac file managers thread-confined, and avoids
+method-level synchronization around compiler internals.
+If profiling later shows this is too restrictive, the worker boundary can split into per-module or project/external
+lanes without changing the request boundary: immutable data in, LSP DTOs or client notifications out.
 
-Cancellation is cooperative at scheduling boundaries for v1.
-The LSP receive thread cancels pending debounced work and suppresses stale publish results after interruption.
-Fine-grained javac cancellation with a `TaskListener` and per-module token remains a targeted optimization if
-profiling shows long-running attribution passes.
-
-A single `ScheduledExecutorService` handles debounces.
-Cross-module operations (find-references, workspace symbols) submit subtasks to each module's own thread and await
-results.
-
-**Dependency lock wait.** Before starting any pass, the module thread checks not only its own lock but also the locks
-of all direct reactor dependencies (derived from the in-memory reactor graph).
+**Dependency lock wait.** Before starting any pass,
+the server worker checks not only the file module's lock but also the locks of all direct reactor dependencies
+(derived from the in-memory reactor graph).
 This prevents reading stale `.lathe/<dep-rel>/classes/`
 while the shim is mid-copy for a dependency during a parallel `mvnd -T N` build.
 
@@ -892,7 +885,8 @@ The storage model stays unchanged until Lathe can read source archives lazily.
 
 **Open-file AST scan** — scan the cached `CompilationUnitTree` of each open file across all modules with open files.
 Trigger a compilation pass for files with empty cache.
-All scans run in parallel on their respective module threads.
+In the current single-worker model, scans that read javac-backed cached analysis run on the server worker.
+Parallel per-module scans are a future optimization if profiling shows find-references latency needs it.
 
 **Closed-module Class-File API scan** — parallel scan of `.class` files in both `.lathe/<rel>/classes/` and
 `.lathe/<rel>/test-classes/` across all reactor modules with no currently-open files, using virtual threads.

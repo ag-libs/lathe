@@ -14,10 +14,11 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 import java.util.stream.IntStream;
 import org.eclipse.lsp4j.DefinitionParams;
@@ -48,16 +49,16 @@ final class LatheTextDocumentService implements TextDocumentService {
   private static final Logger LOG = Logger.getLogger(LatheTextDocumentService.class.getName());
   private static final long DEFAULT_DEBOUNCE_MS = 500;
 
-  private volatile ModuleRegistry registry;
-  private volatile WorkspaceManifest manifest = WorkspaceManifest.empty();
-  private volatile Path workspaceRoot;
-  private volatile WorkspaceWatcher watcher;
-  private volatile LanguageClient client;
+  private ModuleRegistry registry;
+  private WorkspaceManifest manifest = WorkspaceManifest.empty();
+  private Path workspaceRoot;
+  private WorkspaceWatcher watcher;
+  private LanguageClient client;
   private final long debounceMs;
   private final ExternalFileCompiler externalCompiler =
       new ExternalFileCompiler(WorkspaceManifest.empty());
-  private final Debouncer debouncer = new Debouncer();
-  private final ConcurrentHashMap<String, String> openFiles = new ConcurrentHashMap<>();
+  private final ServerWorker worker = new ServerWorker();
+  private final Map<String, String> openFiles = new HashMap<>();
 
   LatheTextDocumentService(final ModuleRegistry registry) {
     this(registry, DEFAULT_DEBOUNCE_MS);
@@ -90,6 +91,10 @@ final class LatheTextDocumentService implements TextDocumentService {
   }
 
   private void reload() {
+    worker.execute(this::doReload);
+  }
+
+  private void doReload() {
     setRegistry(ModuleRegistry.scan(workspaceRoot));
     setManifest(WorkspaceManifest.load(workspaceRoot));
     scheduleAllOpenFiles();
@@ -99,15 +104,25 @@ final class LatheTextDocumentService implements TextDocumentService {
     if (watcher != null) {
       watcher.close();
     }
-    registry.close();
-    externalCompiler.close();
-    debouncer.close();
+    worker
+        .submit(
+            () -> {
+              registry.close();
+              externalCompiler.close();
+              return null;
+            })
+        .join();
+    worker.close();
   }
 
   @Override
   public void didOpen(final DidOpenTextDocumentParams params) {
     final var uri = params.getTextDocument().getUri();
     final var content = params.getTextDocument().getText();
+    worker.execute(() -> doDidOpen(uri, content));
+  }
+
+  private void doDidOpen(final String uri, final String content) {
     openFiles.put(uri, content);
     LOG.fine(() -> "[open] %s".formatted(uri));
     compileWith(uri, content, CompileMode.OPEN);
@@ -117,17 +132,25 @@ final class LatheTextDocumentService implements TextDocumentService {
   public void didChange(final DidChangeTextDocumentParams params) {
     final var uri = params.getTextDocument().getUri();
     final var content = params.getContentChanges().getFirst().getText();
+    worker.execute(() -> doDidChange(uri, content));
+  }
+
+  private void doDidChange(final String uri, final String content) {
     openFiles.put(uri, content);
     LOG.fine(() -> "[change] %s".formatted(uri));
     client.publishDiagnostics(new PublishDiagnosticsParams(uri, List.of()));
-    debouncer.schedule(uri, debounceMs, () -> compileWith(uri, content, CompileMode.FAST));
+    worker.schedule(uri, debounceMs, () -> compileWith(uri, content, CompileMode.FAST));
   }
 
   @Override
   public void didClose(final DidCloseTextDocumentParams params) {
     final var uri = params.getTextDocument().getUri();
+    worker.execute(() -> doDidClose(uri));
+  }
+
+  private void doDidClose(final String uri) {
     openFiles.remove(uri);
-    debouncer.cancel(uri);
+    worker.cancel(uri);
     registry.dropFromAllCaches(uri);
     externalCompiler.analysis().dropFromCache(uri);
     client.publishDiagnostics(new PublishDiagnosticsParams(uri, List.of()));
@@ -136,6 +159,10 @@ final class LatheTextDocumentService implements TextDocumentService {
   @Override
   public CompletableFuture<SemanticTokens> semanticTokensFull(final SemanticTokensParams params) {
     final var uri = params.getTextDocument().getUri();
+    return worker.submit(() -> doSemanticTokensFull(uri));
+  }
+
+  private SemanticTokens doSemanticTokensFull(final String uri) {
     LOG.fine(() -> "[semanticTokens] %s".formatted(uri));
     final List<SemanticToken> tokens;
     try {
@@ -143,29 +170,32 @@ final class LatheTextDocumentService implements TextDocumentService {
       tokens = analysis != null ? analysis.semanticTokens(uri) : null;
     } catch (final Exception e) {
       LOG.log(SEVERE, e, () -> "[semanticTokens] failed for " + uri);
-      return CompletableFuture.completedFuture(null);
+      return null;
     }
     if (tokens == null) {
-      return CompletableFuture.completedFuture(null);
+      return null;
     }
     final var encoded = TokenScanner.encode(tokens);
-    return CompletableFuture.completedFuture(
-        new SemanticTokens(IntStream.of(encoded).boxed().toList()));
+    return new SemanticTokens(IntStream.of(encoded).boxed().toList());
   }
 
   @Override
   public CompletableFuture<Hover> hover(final HoverParams params) {
     final var uri = params.getTextDocument().getUri();
     final var pos = params.getPosition();
+    return worker.submit(() -> doHover(uri, pos));
+  }
+
+  private Hover doHover(final String uri, final Position pos) {
     LOG.fine(() -> "[hover] %s %d:%d".formatted(uri, pos.getLine(), pos.getCharacter()));
     try {
       final var analysis = resolveAnalysis(uri);
-      final var result =
-          analysis != null ? analysis.hover(uri, pos, registry.allSourceRoots(), manifest) : null;
-      return CompletableFuture.completedFuture(result);
+      return analysis != null
+          ? analysis.hover(uri, pos, registry.allSourceRoots(), manifest)
+          : null;
     } catch (final Exception e) {
       LOG.log(SEVERE, e, () -> "[hover] failed for " + uri);
-      return CompletableFuture.completedFuture(null);
+      return null;
     }
   }
 
@@ -174,35 +204,38 @@ final class LatheTextDocumentService implements TextDocumentService {
       definition(final DefinitionParams params) {
     final var uri = params.getTextDocument().getUri();
     final var pos = params.getPosition();
+    return worker.submit(() -> doDefinition(uri, pos));
+  }
+
+  private Either<List<? extends Location>, List<? extends LocationLink>> doDefinition(
+      final String uri, final Position pos) {
     try {
       final var analysis = resolveAnalysis(uri);
       final var location =
           analysis != null
               ? analysis.definition(uri, pos, registry.allSourceRoots(), manifest)
               : Optional.<Location>empty();
-      return CompletableFuture.completedFuture(
-          Either.forLeft(location.map(List::of).orElseGet(List::of)));
+      return Either.forLeft(location.map(List::of).orElseGet(List::of));
     } catch (final Exception e) {
       LOG.log(SEVERE, e, () -> "[definition] failed for " + uri);
-      return CompletableFuture.completedFuture(Either.forLeft(List.of()));
+      return Either.forLeft(List.of());
     }
   }
 
   public void didSave(final DidSaveTextDocumentParams params) {
     final var uri = params.getTextDocument().getUri();
+    worker.execute(() -> doDidSave(uri));
+  }
+
+  private void doDidSave(final String uri) {
     LOG.fine(() -> "[save] %s".formatted(uri));
-    debouncer.cancel(uri);
-    debouncer.submit(
-        () -> {
-          try {
-            compileWith(uri, Files.readString(toPath(uri)), CompileMode.FULL);
-            registry
-                .moduleFor(toPath(uri))
-                .ifPresent(module -> scheduleOpenFilesInModule(uri, module));
-          } catch (final IOException e) {
-            LOG.log(SEVERE, e, () -> "[save] failed to read %s".formatted(uri));
-          }
-        });
+    worker.cancel(uri);
+    try {
+      compileWith(uri, Files.readString(toPath(uri)), CompileMode.FULL);
+      registry.moduleFor(toPath(uri)).ifPresent(module -> scheduleOpenFilesInModule(uri, module));
+    } catch (final IOException e) {
+      LOG.log(SEVERE, e, () -> "[save] failed to read %s".formatted(uri));
+    }
   }
 
   private void scheduleOpenFilesInModule(final String savedUri, final ModuleConfig savedModule) {
@@ -226,7 +259,7 @@ final class LatheTextDocumentService implements TextDocumentService {
   }
 
   private void scheduleOpenFile(final String uri) {
-    debouncer.schedule(
+    worker.schedule(
         uri,
         0L,
         () -> {
@@ -240,18 +273,18 @@ final class LatheTextDocumentService implements TextDocumentService {
   @Override
   public CompletableFuture<List<? extends TextEdit>> formatting(
       final DocumentFormattingParams params) {
-    return format("format", params.getTextDocument().getUri());
+    return worker.submit(() -> format("format", params.getTextDocument().getUri()));
   }
 
   @Override
   public CompletableFuture<List<? extends TextEdit>> rangeFormatting(
       final DocumentRangeFormattingParams params) {
-    return format("rangeFormat", params.getTextDocument().getUri());
+    return worker.submit(() -> format("rangeFormat", params.getTextDocument().getUri()));
   }
 
-  private CompletableFuture<List<? extends TextEdit>> format(final String tag, final String uri) {
+  private List<? extends TextEdit> format(final String tag, final String uri) {
     LOG.fine(() -> "[%s] %s".formatted(tag, uri));
-    return CompletableFuture.completedFuture(JavaFormatter.format(openFiles.get(uri)));
+    return JavaFormatter.format(openFiles.get(uri));
   }
 
   private AnalysisEngine resolveAnalysis(final String uri) {

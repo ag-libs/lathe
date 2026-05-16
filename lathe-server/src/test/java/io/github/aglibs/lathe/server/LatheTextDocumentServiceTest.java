@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
 import io.github.aglibs.lathe.server.module.ModuleRegistry;
@@ -16,6 +17,7 @@ import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.TextDocumentItem;
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
 import org.eclipse.lsp4j.services.LanguageClient;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -33,6 +35,11 @@ class LatheTextDocumentServiceTest {
     client = mock(LanguageClient.class);
     service = new LatheTextDocumentService(ModuleRegistry.empty(), DEBOUNCE_MS);
     service.connect(client);
+  }
+
+  @AfterEach
+  void close() {
+    service.close();
   }
 
   @Test
@@ -71,7 +78,7 @@ class LatheTextDocumentServiceTest {
         new DidOpenTextDocumentParams(new TextDocumentItem(URI, "java", 1, "class Foo {}")));
 
     final var captor = ArgumentCaptor.forClass(PublishDiagnosticsParams.class);
-    verify(client).publishDiagnostics(captor.capture());
+    verify(client, timeout(DEBOUNCE_MS * 3)).publishDiagnostics(captor.capture());
     assertThat(captor.getValue().getUri()).isEqualTo(URI);
   }
 
@@ -80,7 +87,7 @@ class LatheTextDocumentServiceTest {
     service.didClose(new DidCloseTextDocumentParams(new TextDocumentIdentifier(URI)));
 
     final var captor = ArgumentCaptor.forClass(PublishDiagnosticsParams.class);
-    verify(client).publishDiagnostics(captor.capture());
+    verify(client, timeout(DEBOUNCE_MS * 3)).publishDiagnostics(captor.capture());
     assertThat(captor.getValue().getUri()).isEqualTo(URI);
     assertThat(captor.getValue().getDiagnostics()).isEmpty();
   }
