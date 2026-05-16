@@ -76,11 +76,7 @@ public final class ReactorProjects {
 
   public static String moduleRel(final Path workspaceRoot, final MavenProject project) {
     final String rel = workspaceRoot.relativize(project.getBasedir().toPath()).toString();
-    if (rel.isEmpty()) {
-      return ".";
-    }
-
-    return rel;
+    return rel.isEmpty() ? "." : rel;
   }
 
   public static String gav(final MavenProject project) {
