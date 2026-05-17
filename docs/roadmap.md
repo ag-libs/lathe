@@ -57,34 +57,20 @@ but it should be revisited after the server data-flow recipe is implemented and 
 ## Near-Term
 
 **Completion (member access)**
-Initial `textDocument/completion` work exists,
-but it was built during the server refactor and should be redone or tightened after
-[lathe-server-data-flow-recipe.md](lathe-server-data-flow-recipe.md) lands.
-The intended member-access approach is still the sentinel strategy described in
-[lathe_completion_design.md](lathe_completion_design.md).
+The completion pipeline has been refactored into `analysis/completion/`:
+`CompletionPipeline` tries three strategies in order — `StaleCacheStrategy` (no recompile),
+`SentinelStrategy` (inject `__LATHE_SENTINEL__()`, compile, resolve receiver),
+and `RepairStrategy` (guided repair via `DiagnosticRepairer`, then retry sentinel).
+`CompletionProvider` was deleted; `CompilationContext` now uses `CompletionPipeline` directly.
+`WorkbenchFixture` + `TempSourceCompiler` provide the test foundation;
+`CompletionTest` covers local vars, fields, chained calls, generics, enums, and inner classes.
 
-Core flow:
-1. Take an immutable source snapshot at the trigger position.
-2. Inject `__LATHE_SENTINEL__` after the dot.
-3. Compile with `proc=none` — no AP, no bytecode.
-4. Locate the `MemberSelectTree` whose selector is the sentinel identifier;
-   check that its receiver `TypeMirror` is non-null and non-ERROR.
-5. Enumerate accessible members via `Elements.getAllMembers` + `Types.asMemberOf` for correct generic substitution.
-6. If attribution fails, apply one bounded repair round (insert `)`, `]`, `}`, `;` guided by parse diagnostics)
-   and recompile.
-7. Return items within the 200 ms budget; return partial or empty on timeout.
+Still needs cleanup:
 
-The `ModuleCompiler`/`ExternalCompiler` file-manager and temp-dir approach already handles single-file compilation.
-Completion should reuse the same infrastructure through `CompilationContext` and `ModuleWorker`
-with a sentinel-injected source copy.
-
-Files to revisit:
-
-- `CompletionProvider` — sentinel injection, compile, member enumeration, and any bounded repair round.
-- `CompilationContext.complete(...)` — keep content flow explicit and avoid storing source text in `FileAnalysis`.
 - `WorkspaceSession.completionFuture(...)` — route from current open-file content through the correct `ModuleWorker`.
 - `LatheLanguageServer` — keep `completionProvider` capability aligned with implementation status.
-- Unit tests for sentinel injection and member enumeration on well-formed and broken source.
+- `DiagnosticRepairer` — basic `'x' expected` handling only; improve coverage with targeted test cases.
+- Timeout guard — return partial or empty within the 200 ms budget.
 
 ## Future Work
 

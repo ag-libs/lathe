@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.analysis;
 
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.core.Stopwatch;
+import io.github.aglibs.lathe.server.analysis.completion.CompletionPipeline;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -35,14 +36,14 @@ public final class CompilationContext implements AutoCloseable {
 
   private final SourceCompiler compiler;
   private final StandardJavaFileManager parsingFm;
-  private final CompletionProvider completionProvider;
+  private final CompletionPipeline completionPipeline;
   private final DefinitionLocator definitionLocator;
   private final JavadocLocator javadocLocator;
   private final Map<String, CachedAnalysis> cache = new HashMap<>();
 
   public CompilationContext(final SourceCompiler compiler) {
     this.compiler = compiler;
-    this.completionProvider = new CompletionProvider(compiler);
+    this.completionPipeline = new CompletionPipeline(compiler);
     final JavaCompiler parsingCompiler = ToolProvider.getSystemJavaCompiler();
     this.parsingFm = parsingCompiler.getStandardFileManager(null, null, null);
     final var parser = new SourceParser(parsingCompiler, parsingFm);
@@ -63,7 +64,7 @@ public final class CompilationContext implements AutoCloseable {
     final var t = Stopwatch.start();
     final var cached = cache.get(uri);
     final var items =
-        completionProvider.complete(
+        completionPipeline.complete(
             uri, content, pos, cached != null ? cached.content() : null, cachedAnalysis(cached));
     LOG.fine(() -> "[completion] %s %dms items=%d".formatted(uri, t.elapsedMs(), items.size()));
     return items;
