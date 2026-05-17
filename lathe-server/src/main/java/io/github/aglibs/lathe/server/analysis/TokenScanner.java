@@ -31,14 +31,14 @@ public final class TokenScanner extends TreePathScanner<Void, Void> {
   private final Trees trees;
   private final CompilationUnitTree cu;
   private final SourcePositions positions;
-  private final String source;
+  private final String content;
   private final List<SemanticToken> tokens = new ArrayList<>();
 
-  private TokenScanner(final Trees trees, final CompilationUnitTree cu, final String source) {
+  private TokenScanner(final Trees trees, final CompilationUnitTree cu, final String content) {
     this.trees = trees;
     this.cu = cu;
     this.positions = trees.getSourcePositions();
-    this.source = source;
+    this.content = content;
   }
 
   public static List<SemanticToken> scan(final Trees trees, final CompilationUnitTree cu)
@@ -219,15 +219,16 @@ public final class TokenScanner extends TreePathScanner<Void, Void> {
 
   private long findIdentifierFrom(final long fromOffset, final String name) {
     final int nameLen = name.length();
-    final int limit = source.length() - nameLen;
+    final int limit = content.length() - nameLen;
     for (int i = (int) fromOffset; i <= limit; i++) {
-      if (!source.regionMatches(i, name, 0, nameLen)) {
+      if (!content.regionMatches(i, name, 0, nameLen)) {
         continue;
       }
-      final boolean leftBound = i == 0 || !Character.isJavaIdentifierPart(source.charAt(i - 1));
+
+      final boolean leftBound = i == 0 || !Character.isJavaIdentifierPart(content.charAt(i - 1));
       final boolean rightBound =
-          i + nameLen >= source.length()
-              || !Character.isJavaIdentifierPart(source.charAt(i + nameLen));
+          i + nameLen >= content.length()
+              || !Character.isJavaIdentifierPart(content.charAt(i + nameLen));
       if (leftBound && rightBound) {
         return i;
       }

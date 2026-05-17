@@ -25,7 +25,6 @@ import java.util.logging.Logger;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
-import javax.tools.SimpleJavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
 import javax.tools.ToolProvider;
@@ -82,11 +81,14 @@ public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
             .orElseThrow(() -> new IllegalStateException("no source root for " + uri));
 
     final var tempFile = td.resolve(sourceRoot.relativize(filePath));
+    Files.createDirectories(tempFile.getParent());
+    Files.writeString(tempFile, content);
+
     final var options = buildOptions(config, compilerArgs, mode);
     LOG.fine(() -> "[%s] td=%s root=%s opts=%s".formatted(mode.tag, td, sourceRoot, options));
-    final JavaFileObject file = inMemorySource(tempFile.toUri(), content);
+    final JavaFileObject jfo = fm.getJavaFileObjects(tempFile).iterator().next();
     try {
-      final FileAnalysis fileAnalysis = runTask(collector, options, file, mode);
+      final FileAnalysis fileAnalysis = runTask(collector, options, jfo, mode);
       return new CompilationResult(collector.getDiagnostics(), fileAnalysis);
     } finally {
       if (mode == CompileMode.FULL) {
@@ -218,14 +220,5 @@ public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
 
   private static boolean isInteractiveCompilerArg(final String arg) {
     return !arg.startsWith("-Xplugin:") && !arg.startsWith("-Xep");
-  }
-
-  private static JavaFileObject inMemorySource(final URI uri, final String content) {
-    return new SimpleJavaFileObject(uri, JavaFileObject.Kind.SOURCE) {
-      @Override
-      public CharSequence getCharContent(final boolean ignoreEncodingErrors) {
-        return content;
-      }
-    };
   }
 }
