@@ -1,5 +1,9 @@
 # Lathe Server — Refactoring Design
 
+> Obsolete.
+> Use `docs/lathe-server-data-flow-recipe.md` as the settled implementation plan.
+> This document is kept as historical context for the original refactoring analysis.
+
 ## Goals
 
 1. Introduce cleaner ownership: `CompilationContext` owns the compiler, not the other way around.

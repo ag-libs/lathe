@@ -1,5 +1,9 @@
 # Lathe Server — New Design
 
+> Obsolete.
+> Use `docs/lathe-server-data-flow-recipe.md` as the settled implementation plan.
+> This document is kept as historical context for the first per-module-worker design sketch.
+
 ## Threads
 
 ```
