@@ -52,8 +52,7 @@ public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
   }
 
   @Override
-  public CompilationResult compile(final String uri, final String content, final CompileMode mode)
-      throws IOException {
+  public CompilationResult compile(final String uri, final String content, final CompileMode mode) {
     final var filePath = Path.of(URI.create(uri));
     final Path sourceRoot =
         config.sourceRoots().stream()
@@ -62,18 +61,23 @@ public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
             .orElseThrow(() -> new IllegalStateException("no source root for " + uri));
 
     final var tempFile = td.resolve(sourceRoot.relativize(filePath));
-    Files.createDirectories(tempFile.getParent());
-    Files.writeString(tempFile, content);
 
-    final var options = buildOptions(config, compilerArgs, mode);
-    LOG.fine(() -> "[%s] td=%s root=%s opts=%s".formatted(mode.tag, td, sourceRoot, options));
-    final JavaFileObject jfo = fm.getJavaFileObjects(tempFile).iterator().next();
     try {
-      return runner.run(jfo, options, mode);
-    } finally {
-      if (mode == CompileMode.FULL) {
-        fm.flush();
+      Files.createDirectories(tempFile.getParent());
+      Files.writeString(tempFile, content);
+
+      final var options = buildOptions(config, compilerArgs, mode);
+      LOG.fine(() -> "[%s] td=%s root=%s opts=%s".formatted(mode.tag, td, sourceRoot, options));
+      final JavaFileObject jfo = fm.getJavaFileObjects(tempFile).iterator().next();
+      try {
+        return runner.run(jfo, options, mode);
+      } finally {
+        if (mode == CompileMode.FULL) {
+          fm.flush();
+        }
       }
+    } catch (final IOException e) {
+      throw new UncheckedIOException(e);
     }
   }
 

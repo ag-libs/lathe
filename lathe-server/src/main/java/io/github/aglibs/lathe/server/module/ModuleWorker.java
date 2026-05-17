@@ -12,6 +12,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.Location;
@@ -19,6 +21,8 @@ import org.eclipse.lsp4j.Position;
 
 /** Called from the server worker; executes all compilation work on its own module thread. */
 public final class ModuleWorker {
+
+  private static final Logger LOG = Logger.getLogger(ModuleWorker.class.getName());
 
   private final ExecutorService executor;
   private final Supplier<CompilationContext> contextFactory;
@@ -65,6 +69,7 @@ public final class ModuleWorker {
 
             closeFuture.complete(null);
           } catch (final Throwable t) {
+            LOG.log(Level.SEVERE, t, () -> "[module] failed to close");
             closeFuture.completeExceptionally(t);
             rethrowError(t);
           } finally {
@@ -135,10 +140,11 @@ public final class ModuleWorker {
     try {
       executor.execute(
           () -> {
-            if (context == null) {
-              context = contextFactory.get();
-            }
             try {
+              if (context == null) {
+                context = contextFactory.get();
+              }
+
               future.complete(fn.apply(context));
             } catch (final Throwable t) {
               future.completeExceptionally(t);

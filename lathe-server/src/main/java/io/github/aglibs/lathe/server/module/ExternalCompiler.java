@@ -51,8 +51,7 @@ public final class ExternalCompiler implements SourceCompiler {
   }
 
   @Override
-  public CompilationResult compile(final String uri, final String content, final CompileMode mode)
-      throws IOException {
+  public CompilationResult compile(final String uri, final String content, final CompileMode mode) {
     final var filePath = Path.of(URI.create(uri));
     final var sourceRoot = manifest.externalSourceRootForFile(filePath);
     if (sourceRoot.isEmpty()) {
@@ -62,16 +61,21 @@ public final class ExternalCompiler implements SourceCompiler {
 
     final var rel = sourceRoot.get().relativize(filePath);
     final var tempFile = td.resolve(rel);
-    Files.createDirectories(tempFile.getParent());
-    Files.writeString(tempFile, content);
 
-    final var classpath = manifest.depClasspathForFile(filePath);
-    fm.setLocation(StandardLocation.CLASS_PATH, classpath.stream().map(Path::toFile).toList());
+    try {
+      Files.createDirectories(tempFile.getParent());
+      Files.writeString(tempFile, content);
 
-    final JavaFileObject jfo = fm.getJavaFileObjects(tempFile).iterator().next();
-    final List<String> options = buildOptions(filePath);
-    final var externalMode = mode == CompileMode.FULL ? CompileMode.FAST : mode;
-    return runner.run(jfo, options, externalMode);
+      final var classpath = manifest.depClasspathForFile(filePath);
+      fm.setLocation(StandardLocation.CLASS_PATH, classpath.stream().map(Path::toFile).toList());
+
+      final JavaFileObject jfo = fm.getJavaFileObjects(tempFile).iterator().next();
+      final List<String> options = buildOptions(filePath);
+      final var externalMode = mode == CompileMode.FULL ? CompileMode.FAST : mode;
+      return runner.run(jfo, options, externalMode);
+    } catch (final IOException e) {
+      throw new UncheckedIOException(e);
+    }
   }
 
   private List<String> buildOptions(final Path filePath) {

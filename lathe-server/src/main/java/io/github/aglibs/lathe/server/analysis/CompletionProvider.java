@@ -1,12 +1,9 @@
 package io.github.aglibs.lathe.server.analysis;
 
-import static java.util.logging.Level.SEVERE;
-
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import io.github.aglibs.lathe.core.Stopwatch;
-import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Logger;
@@ -53,14 +50,7 @@ final class CompletionProvider {
     LOG.fine(() -> "[completion] stale miss, compiling");
     final var injected = content.substring(0, offset) + SENTINEL + content.substring(offset);
     final var t = Stopwatch.start();
-    final FileAnalysis analysis;
-    try {
-      analysis = compiler.compile(uri, injected, CompileMode.FAST).fileAnalysis();
-    } catch (final IOException e) {
-      LOG.log(SEVERE, e, () -> "[completion] compile failed for " + uri);
-      return List.of();
-    }
-
+    final var analysis = compiler.compile(uri, injected, CompileMode.FAST).fileAnalysis();
     LOG.fine(() -> "[completion] compiled %dms".formatted(t.elapsedMs()));
     return membersFromSentinel(analysis);
   }

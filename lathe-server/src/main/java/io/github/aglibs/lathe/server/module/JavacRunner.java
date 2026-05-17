@@ -9,6 +9,7 @@ import io.github.aglibs.lathe.server.analysis.FileAnalysis;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
 import io.github.aglibs.lathe.server.analysis.TokenScanner;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.List;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
@@ -26,29 +27,33 @@ final class JavacRunner {
   }
 
   CompilationResult run(
-      final JavaFileObject sourceFile, final List<String> options, final CompileMode mode)
-      throws IOException {
+      final JavaFileObject sourceFile, final List<String> options, final CompileMode mode) {
     final var collector = new DiagnosticCollector<JavaFileObject>();
     final var task =
         (JavacTask) compiler.getTask(null, fm, collector, options, null, List.of(sourceFile));
-    final var it = task.parse().iterator();
-    final CompilationUnitTree cu = it.hasNext() ? it.next() : null;
-    task.analyze();
-    if (mode == CompileMode.FULL) {
-      task.generate();
-    }
 
-    final Trees trees = Trees.instance(task);
-    final var elements = task.getElements();
-    final var types = task.getTypes();
-    final FileAnalysis fileAnalysis;
-    if (cu != null) {
-      final List<SemanticToken> semanticTokens = TokenScanner.scan(trees, cu);
-      fileAnalysis = new FileAnalysis(trees, elements, types, cu, semanticTokens);
-    } else {
-      fileAnalysis = new FileAnalysis(trees, elements, types, null, null);
-    }
+    try {
+      final var it = task.parse().iterator();
+      final CompilationUnitTree cu = it.hasNext() ? it.next() : null;
+      task.analyze();
+      if (mode == CompileMode.FULL) {
+        task.generate();
+      }
 
-    return new CompilationResult(collector.getDiagnostics(), fileAnalysis);
+      final Trees trees = Trees.instance(task);
+      final var elements = task.getElements();
+      final var types = task.getTypes();
+      final FileAnalysis fileAnalysis;
+      if (cu != null) {
+        final List<SemanticToken> semanticTokens = TokenScanner.scan(trees, cu);
+        fileAnalysis = new FileAnalysis(trees, elements, types, cu, semanticTokens);
+      } else {
+        fileAnalysis = new FileAnalysis(trees, elements, types, null, null);
+      }
+
+      return new CompilationResult(collector.getDiagnostics(), fileAnalysis);
+    } catch (final IOException e) {
+      throw new UncheckedIOException(e);
+    }
   }
 }

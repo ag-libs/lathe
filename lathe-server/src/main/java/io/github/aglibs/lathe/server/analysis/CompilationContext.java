@@ -4,7 +4,6 @@ import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
@@ -53,13 +52,7 @@ public final class CompilationContext implements AutoCloseable {
 
   public List<Diagnostic> compile(final String uri, final String content, final CompileMode mode) {
     final var t = Stopwatch.start();
-    final CompilationResult run;
-    try {
-      run = compiler.compile(uri, content, mode);
-    } catch (final IOException e) {
-      throw new UncheckedIOException(e);
-    }
-
+    final var run = compiler.compile(uri, content, mode);
     cache.put(uri, new CachedAnalysis(content, run.fileAnalysis()));
     final var diags = filterAndMap(run.diagnostics(), content);
     LOG.fine(() -> "[%s] %s %dms diags=%d".formatted(mode.tag, uri, t.elapsedMs(), diags.size()));
