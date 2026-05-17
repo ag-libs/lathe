@@ -1,6 +1,5 @@
-package io.github.aglibs.lathe.server.module;
+package io.github.aglibs.lathe.server.analysis;
 
-import io.github.aglibs.lathe.server.analysis.CompilationResult;
 import java.io.IOException;
 import javax.tools.JavaCompiler;
 import javax.tools.StandardJavaFileManager;

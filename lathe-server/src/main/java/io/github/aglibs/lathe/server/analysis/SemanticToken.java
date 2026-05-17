@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.server.tokens;
+package io.github.aglibs.lathe.server.analysis;
 
 import java.util.Set;
 

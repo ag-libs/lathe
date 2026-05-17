@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.server;
+package io.github.aglibs.lathe.server.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

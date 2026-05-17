@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.server;
+package io.github.aglibs.lathe.server.analysis;
 
 import java.util.Arrays;
 import java.util.Optional;

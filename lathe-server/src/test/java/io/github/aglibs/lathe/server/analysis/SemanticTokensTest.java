@@ -1,8 +1,7 @@
-package io.github.aglibs.lathe.server.tokens;
+package io.github.aglibs.lathe.server.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.aglibs.lathe.server.SampleFixture;
 import java.io.IOException;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;

@@ -1,10 +1,11 @@
-package io.github.aglibs.lathe.server;
+package io.github.aglibs.lathe.server.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;
+import io.github.aglibs.lathe.server.TestCompiler;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;

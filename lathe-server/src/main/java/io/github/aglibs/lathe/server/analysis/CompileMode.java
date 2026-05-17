@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.server.module;
+package io.github.aglibs.lathe.server.analysis;
 
 public enum CompileMode {
   FAST("compile"),

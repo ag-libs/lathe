@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server;
 import com.google.googlejavaformat.java.Formatter;
 import com.google.googlejavaformat.java.FormatterException;
 import io.github.aglibs.lathe.core.Stopwatch;
+import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;

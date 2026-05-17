@@ -6,8 +6,6 @@ import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import io.github.aglibs.lathe.core.Stopwatch;
-import io.github.aglibs.lathe.server.module.CompileMode;
-import io.github.aglibs.lathe.server.module.SourceCompiler;
 import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;

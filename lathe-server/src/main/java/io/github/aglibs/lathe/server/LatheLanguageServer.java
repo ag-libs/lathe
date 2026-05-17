@@ -1,6 +1,6 @@
 package io.github.aglibs.lathe.server;
 
-import io.github.aglibs.lathe.server.tokens.TokenScanner;
+import io.github.aglibs.lathe.server.analysis.TokenScanner;
 import java.net.URI;
 import java.nio.file.Path;
 import java.util.List;

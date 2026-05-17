@@ -2,14 +2,6 @@ package io.github.aglibs.lathe.server.analysis;
 
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.core.Stopwatch;
-import io.github.aglibs.lathe.server.DefinitionLocator;
-import io.github.aglibs.lathe.server.HoverFormatter;
-import io.github.aglibs.lathe.server.JavadocLocator;
-import io.github.aglibs.lathe.server.SourceLocator;
-import io.github.aglibs.lathe.server.SourceParser;
-import io.github.aglibs.lathe.server.module.CompileMode;
-import io.github.aglibs.lathe.server.module.SourceCompiler;
-import io.github.aglibs.lathe.server.tokens.SemanticToken;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
 import java.nio.file.Path;

@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.Trees;
+import io.github.aglibs.lathe.server.analysis.SourceParser;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;

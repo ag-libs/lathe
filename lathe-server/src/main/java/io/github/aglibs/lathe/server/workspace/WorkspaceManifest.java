@@ -4,7 +4,7 @@ import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.DependencyData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
-import io.github.aglibs.lathe.server.DefinitionLocator;
+import io.github.aglibs.lathe.server.analysis.DefinitionLocator;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Files;

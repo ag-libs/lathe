@@ -7,8 +7,11 @@ import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.analysis.AnalysisEngine;
 import io.github.aglibs.lathe.server.analysis.CompilationResult;
+import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.analysis.FileAnalysis;
-import io.github.aglibs.lathe.server.tokens.TokenScanner;
+import io.github.aglibs.lathe.server.analysis.SemanticToken;
+import io.github.aglibs.lathe.server.analysis.SourceCompiler;
+import io.github.aglibs.lathe.server.analysis.TokenScanner;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
@@ -70,8 +73,8 @@ public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
   @Override
   public CompilationResult compile(final String uri, final String content, final CompileMode mode)
       throws IOException {
-    final DiagnosticCollector<JavaFileObject> collector = new DiagnosticCollector<>();
-    final Path filePath = Path.of(URI.create(uri));
+    final var collector = new DiagnosticCollector<JavaFileObject>();
+    final var filePath = Path.of(URI.create(uri));
     final Path sourceRoot =
         config.sourceRoots().stream()
             .filter(filePath::startsWith)
@@ -79,9 +82,6 @@ public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
             .orElseThrow(() -> new IllegalStateException("no source root for " + uri));
 
     final var tempFile = td.resolve(sourceRoot.relativize(filePath));
-    Files.createDirectories(tempFile.getParent());
-    Files.writeString(tempFile, content);
-
     final var options = buildOptions(config, compilerArgs, mode);
     LOG.fine(() -> "[%s] td=%s root=%s opts=%s".formatted(mode.tag, td, sourceRoot, options));
     final JavaFileObject file = inMemorySource(tempFile.toUri(), content);
@@ -161,8 +161,7 @@ public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
     final var types = task.getTypes();
     if (cu != null) {
       final var t = Stopwatch.start();
-      final List<io.github.aglibs.lathe.server.tokens.SemanticToken> semanticTokens =
-          TokenScanner.scan(trees, cu);
+      final List<SemanticToken> semanticTokens = TokenScanner.scan(trees, cu);
       LOG.fine(() -> "[tokens] %d tokens %dms".formatted(semanticTokens.size(), t.elapsedMs()));
       return new FileAnalysis(trees, elements, types, cu, semanticTokens);
     }
@@ -221,7 +220,7 @@ public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
     return !arg.startsWith("-Xplugin:") && !arg.startsWith("-Xep");
   }
 
-  private static JavaFileObject inMemorySource(final java.net.URI uri, final String content) {
+  private static JavaFileObject inMemorySource(final URI uri, final String content) {
     return new SimpleJavaFileObject(uri, JavaFileObject.Kind.SOURCE) {
       @Override
       public CharSequence getCharContent(final boolean ignoreEncodingErrors) {

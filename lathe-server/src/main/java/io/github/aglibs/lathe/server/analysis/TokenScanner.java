@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.server.tokens;
+package io.github.aglibs.lathe.server.analysis;
 
 import com.sun.source.tree.AnnotationTree;
 import com.sun.source.tree.CompilationUnitTree;
@@ -10,7 +10,6 @@ import com.sun.source.tree.VariableTree;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
-import io.github.aglibs.lathe.server.SourceLocator;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Comparator;

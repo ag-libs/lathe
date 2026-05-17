@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.module;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.server.analysis.CompileMode;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 

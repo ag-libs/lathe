@@ -7,10 +7,10 @@ import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.analysis.AnalysisEngine;
 import io.github.aglibs.lathe.server.analysis.CompilationResult;
+import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.analysis.FileAnalysis;
-import io.github.aglibs.lathe.server.module.CompileMode;
-import io.github.aglibs.lathe.server.module.SourceCompiler;
-import io.github.aglibs.lathe.server.tokens.TokenScanner;
+import io.github.aglibs.lathe.server.analysis.SourceCompiler;
+import io.github.aglibs.lathe.server.analysis.TokenScanner;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
@@ -108,8 +108,7 @@ public final class ExternalFileCompiler implements SourceCompiler, AutoCloseable
     final var types = task.getTypes();
     if (cu != null) {
       final var t = Stopwatch.start();
-      final List<io.github.aglibs.lathe.server.tokens.SemanticToken> tokens =
-          TokenScanner.scan(trees, cu);
+      final var tokens = TokenScanner.scan(trees, cu);
       LOG.fine(
           () ->
               "[external] %s compiled %d tokens %dms".formatted(uri, tokens.size(), t.elapsedMs()));
