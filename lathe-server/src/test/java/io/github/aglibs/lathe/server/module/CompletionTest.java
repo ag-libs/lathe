@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.module;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.server.analysis.CompilationContext;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -18,7 +19,7 @@ class CompletionTest {
 
   @TempDir Path tmp;
 
-  private ModuleCompiler compiler;
+  private CompilationContext context;
   private String uri;
 
   @BeforeEach
@@ -47,12 +48,12 @@ class CompletionTest {
             false,
             null,
             List.of());
-    compiler = new ModuleCompiler(config);
+    context = new CompilationContext(new ModuleCompiler(config));
   }
 
   @AfterEach
   void tearDown() {
-    compiler.close();
+    context.close();
   }
 
   // --- member access cases ---
@@ -285,7 +286,7 @@ class CompletionTest {
       }
     }
 
-    return compiler.analysis().complete(uri, source, new Position(line, offset - lineStart));
+    return context.complete(uri, source, new Position(line, offset - lineStart));
   }
 
   private static List<String> labels(final List<CompletionItem> items) {

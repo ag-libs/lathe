@@ -1,0 +1,61 @@
+package io.github.aglibs.lathe.server.module;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import io.github.aglibs.lathe.server.analysis.CompilationContext;
+import io.github.aglibs.lathe.server.analysis.CompileMode;
+import java.util.List;
+import org.eclipse.lsp4j.Diagnostic;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+
+class ModuleWorkerTest {
+
+  private final CompilationContext context = mock(CompilationContext.class);
+  private final ModuleWorker worker = new ModuleWorker("lathe-module-test", () -> context);
+
+  @AfterEach
+  void close() {
+    worker.close();
+  }
+
+  @Test
+  void compile_request_returnsResultWithSnapshotIdentity() {
+    final var diagnostic = new Diagnostic();
+    final var request = new CompileRequest("file:///A.java", "class A {}", 42L, CompileMode.OPEN);
+    when(context.compile(request.uri(), request.content(), request.mode()))
+        .thenReturn(List.of(diagnostic));
+
+    final var result = worker.compile(request).join();
+
+    assertThat(result.uri()).isEqualTo(request.uri());
+    assertThat(result.generation()).isEqualTo(request.generation());
+    assertThat(result.diagnostics()).containsExactly(diagnostic);
+  }
+
+  @Test
+  void dropFromCache_initializedContext_dropsOnWorkerContext() {
+    final var request = new CompileRequest("file:///A.java", "class A {}", 1L, CompileMode.OPEN);
+    when(context.compile(request.uri(), request.content(), request.mode())).thenReturn(List.of());
+
+    worker.compile(request).join();
+    worker.dropFromCache(request.uri());
+
+    worker.compile(request).join();
+    verify(context).dropFromCache(request.uri());
+  }
+
+  @Test
+  void close_initializedContext_closesContext() {
+    final var request = new CompileRequest("file:///A.java", "class A {}", 1L, CompileMode.OPEN);
+    when(context.compile(request.uri(), request.content(), request.mode())).thenReturn(List.of());
+
+    worker.compile(request).join();
+    worker.close();
+
+    verify(context).close();
+  }
+}

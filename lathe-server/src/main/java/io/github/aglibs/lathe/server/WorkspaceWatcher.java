@@ -4,11 +4,6 @@ import io.github.aglibs.lathe.core.LatheLayout;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Logger;
 
 final class WorkspaceWatcher {
@@ -21,63 +16,48 @@ final class WorkspaceWatcher {
 
   private final Path latheDir;
   private final Path manifestPath;
-  private final Runnable onReload;
-  private final AtomicLong lastManifestMtime;
-  private final AtomicReference<Fingerprint> lastParams;
-  private final ScheduledExecutorService executor =
-      Executors.newSingleThreadScheduledExecutor(
-          r -> {
-            final var t = new Thread(r, "lathe-watcher");
-            t.setDaemon(true);
-            return t;
-          });
+  private long lastManifestMtime;
+  private Fingerprint lastParams;
 
-  WorkspaceWatcher(final Path workspaceRoot, final Runnable onReload) {
+  WorkspaceWatcher(final Path workspaceRoot) {
     this.latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
     this.manifestPath = latheDir.resolve(LatheLayout.WORKSPACE_JSON);
-    this.onReload = onReload;
-    this.lastManifestMtime = new AtomicLong(mtime(manifestPath));
-    this.lastParams = new AtomicReference<>(paramsFingerprint());
+    this.lastManifestMtime = mtime(manifestPath);
+    this.lastParams = paramsFingerprint();
   }
 
-  void start() {
-    executor.scheduleAtFixedRate(this::poll, 2, 2, TimeUnit.SECONDS);
-  }
-
-  void close() {
-    executor.shutdownNow();
-  }
-
-  void poll() {
+  boolean poll() {
     final var manifestChanged = detectManifestChange();
     final var paramsChanged = detectParamsChange();
     if (manifestChanged || paramsChanged) {
       LOG.info(
           () ->
-              "[watcher] reloading (manifest=%s, params=%s)"
+              "[watcher] reload triggered (manifest=%s, params=%s)"
                   .formatted(manifestChanged, paramsChanged));
-      onReload.run();
+      return true;
     }
+
+    return false;
   }
 
   private boolean detectManifestChange() {
     final long current = mtime(manifestPath);
-    if (current == lastManifestMtime.get()) {
+    if (current == lastManifestMtime) {
       return false;
     }
 
-    lastManifestMtime.set(current);
+    lastManifestMtime = current;
     LOG.fine(() -> "[watcher] workspace.json changed");
     return true;
   }
 
   private boolean detectParamsChange() {
     final var current = paramsFingerprint();
-    if (current.equals(lastParams.get())) {
+    if (current.equals(lastParams)) {
       return false;
     }
 
-    lastParams.set(current);
+    lastParams = current;
     LOG.fine(() -> "[watcher] params files changed");
     return true;
   }

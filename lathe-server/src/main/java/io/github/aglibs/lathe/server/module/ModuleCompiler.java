@@ -1,17 +1,9 @@
 package io.github.aglibs.lathe.server.module;
 
-import com.sun.source.tree.CompilationUnitTree;
-import com.sun.source.util.JavacTask;
-import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.core.FileUtil;
-import io.github.aglibs.lathe.core.Stopwatch;
-import io.github.aglibs.lathe.server.analysis.AnalysisEngine;
 import io.github.aglibs.lathe.server.analysis.CompilationResult;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
-import io.github.aglibs.lathe.server.analysis.FileAnalysis;
-import io.github.aglibs.lathe.server.analysis.SemanticToken;
 import io.github.aglibs.lathe.server.analysis.SourceCompiler;
-import io.github.aglibs.lathe.server.analysis.TokenScanner;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
@@ -22,7 +14,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
@@ -38,30 +29,21 @@ public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
   private final ModuleConfig config;
   private final JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
   private final StandardJavaFileManager fm;
+  private final JavacRunner runner;
   private final Path td;
   private final List<String> compilerArgs;
-  private final AnalysisEngine analysis;
 
   ModuleCompiler(final ModuleConfig config) {
     this.config = config;
     try {
       this.td = Files.createTempDirectory("lathe-");
       this.fm = compiler.getStandardFileManager(null, null, null);
+      this.runner = new JavacRunner(compiler, fm);
       initLocations();
       this.compilerArgs = processPatchModules(config.compilerArgs(), fm, td);
-      this.analysis = new AnalysisEngine(this);
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }
-  }
-
-  AnalysisEngine analysis() {
-    return analysis;
-  }
-
-  @Override
-  public JavaCompiler compiler() {
-    return compiler;
   }
 
   @Override
@@ -72,7 +54,6 @@ public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
   @Override
   public CompilationResult compile(final String uri, final String content, final CompileMode mode)
       throws IOException {
-    final var collector = new DiagnosticCollector<JavaFileObject>();
     final var filePath = Path.of(URI.create(uri));
     final Path sourceRoot =
         config.sourceRoots().stream()
@@ -88,8 +69,7 @@ public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
     LOG.fine(() -> "[%s] td=%s root=%s opts=%s".formatted(mode.tag, td, sourceRoot, options));
     final JavaFileObject jfo = fm.getJavaFileObjects(tempFile).iterator().next();
     try {
-      final FileAnalysis fileAnalysis = runTask(collector, options, jfo, mode, content);
-      return new CompilationResult(collector.getDiagnostics(), fileAnalysis);
+      return runner.run(jfo, options, mode);
     } finally {
       if (mode == CompileMode.FULL) {
         fm.flush();
@@ -109,7 +89,6 @@ public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
     } catch (final IOException e) {
       LOG.log(Level.WARNING, e, () -> "[cache] failed to delete temp dir %s".formatted(td));
     }
-    analysis.clearCache();
   }
 
   private void initLocations() throws IOException {
@@ -142,34 +121,6 @@ public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
           processorPath.stream().map(Path::toFile).toList());
       LOG.fine(() -> "[cache] ANNOTATION_PROCESSOR_PATH=%s".formatted(processorPath));
     }
-  }
-
-  private FileAnalysis runTask(
-      final DiagnosticCollector<JavaFileObject> collector,
-      final List<String> options,
-      final JavaFileObject sourceFile,
-      final CompileMode mode,
-      final String content)
-      throws IOException {
-    final var task =
-        (JavacTask) compiler.getTask(null, this.fm, collector, options, null, List.of(sourceFile));
-    final var it = task.parse().iterator();
-    final CompilationUnitTree cu = it.hasNext() ? it.next() : null;
-    task.analyze();
-    if (mode == CompileMode.FULL) {
-      task.generate();
-    }
-    final var trees = Trees.instance(task);
-    final var elements = task.getElements();
-    final var types = task.getTypes();
-    if (cu != null) {
-      final var t = Stopwatch.start();
-      final List<SemanticToken> semanticTokens = TokenScanner.scan(trees, cu);
-      LOG.fine(() -> "[tokens] %d tokens %dms".formatted(semanticTokens.size(), t.elapsedMs()));
-      return new FileAnalysis(trees, elements, types, cu, semanticTokens, content);
-    }
-
-    return new FileAnalysis(trees, elements, types, null, null, content);
   }
 
   private static List<String> processPatchModules(

@@ -1,13 +1,13 @@
 package io.github.aglibs.lathe.server.analysis;
 
 import java.io.IOException;
-import javax.tools.JavaCompiler;
 import javax.tools.StandardJavaFileManager;
 
-public interface SourceCompiler {
+public interface SourceCompiler extends AutoCloseable {
   CompilationResult compile(String uri, String content, CompileMode mode) throws IOException;
 
-  JavaCompiler compiler();
-
   StandardJavaFileManager fileManager();
+
+  @Override
+  void close();
 }

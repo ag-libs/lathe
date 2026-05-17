@@ -4,18 +4,23 @@ import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;
+import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
+import javax.tools.StandardJavaFileManager;
+import javax.tools.ToolProvider;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
@@ -25,34 +30,37 @@ import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 
-public final class AnalysisEngine {
+public final class CompilationContext implements AutoCloseable {
 
-  private static final Logger LOG = Logger.getLogger(AnalysisEngine.class.getName());
+  private static final Logger LOG = Logger.getLogger(CompilationContext.class.getName());
 
   private final SourceCompiler compiler;
+  private final StandardJavaFileManager parsingFm;
   private final CompletionProvider completionProvider;
   private final DefinitionLocator definitionLocator;
   private final JavadocLocator javadocLocator;
-  private final Map<String, FileAnalysis> cache = new HashMap<>();
+  private final Map<String, CachedAnalysis> cache = new HashMap<>();
 
-  public AnalysisEngine(final SourceCompiler compiler) {
+  public CompilationContext(final SourceCompiler compiler) {
     this.compiler = compiler;
     this.completionProvider = new CompletionProvider(compiler);
-    final var parsingFm = compiler.compiler().getStandardFileManager(null, null, null);
-    final var parser = new SourceParser(compiler.compiler(), parsingFm);
+    final JavaCompiler parsingCompiler = ToolProvider.getSystemJavaCompiler();
+    this.parsingFm = parsingCompiler.getStandardFileManager(null, null, null);
+    final var parser = new SourceParser(parsingCompiler, parsingFm);
     this.definitionLocator = new DefinitionLocator(parser);
     this.javadocLocator = new JavadocLocator(parser);
   }
 
-  public void clearCache() {
-    cache.clear();
-  }
-
-  public List<Diagnostic> compile(final String uri, final String content, final CompileMode mode)
-      throws IOException {
+  public List<Diagnostic> compile(final String uri, final String content, final CompileMode mode) {
     final var t = Stopwatch.start();
-    final var run = compiler.compile(uri, content, mode);
-    cache.put(uri, run.fileAnalysis());
+    final CompilationResult run;
+    try {
+      run = compiler.compile(uri, content, mode);
+    } catch (final IOException e) {
+      throw new UncheckedIOException(e);
+    }
+
+    cache.put(uri, new CachedAnalysis(content, run.fileAnalysis()));
     final var diags = filterAndMap(run.diagnostics(), content);
     LOG.fine(() -> "[%s] %s %dms diags=%d".formatted(mode.tag, uri, t.elapsedMs(), diags.size()));
     return diags;
@@ -60,7 +68,10 @@ public final class AnalysisEngine {
 
   public List<CompletionItem> complete(final String uri, final String content, final Position pos) {
     final var t = Stopwatch.start();
-    final var items = completionProvider.complete(uri, content, pos, cache.get(uri));
+    final var cached = cache.get(uri);
+    final var items =
+        completionProvider.complete(
+            uri, content, pos, cached != null ? cached.content() : null, cachedAnalysis(cached));
     LOG.fine(() -> "[completion] %s %dms items=%d".formatted(uri, t.elapsedMs(), items.size()));
     return items;
   }
@@ -69,13 +80,9 @@ public final class AnalysisEngine {
     cache.remove(uri);
   }
 
-  public boolean isCached(final String uri) {
-    return cache.containsKey(uri);
-  }
-
   public List<SemanticToken> semanticTokens(final String uri) {
     final var ctx = cache.get(uri);
-    return ctx != null ? ctx.semanticTokens() : null;
+    return ctx != null ? ctx.analysis().semanticTokens() : null;
   }
 
   public Hover hover(
@@ -148,10 +155,23 @@ public final class AnalysisEngine {
     return result;
   }
 
+  public void close() {
+    cache.clear();
+    try {
+      parsingFm.close();
+    } catch (final IOException e) {
+      LOG.log(Level.WARNING, e, () -> "[context] failed to close parsingFm");
+    }
+    compiler.close();
+  }
+
+  private record CachedAnalysis(String content, FileAnalysis analysis) {}
+
   private record CursorContext(FileAnalysis ctx, TreePath path) {}
 
   private CursorContext resolve(final String uri, final Position pos) {
-    final var analysis = cache.get(uri);
+    final var cached = cache.get(uri);
+    final var analysis = cachedAnalysis(cached);
     if (analysis == null || analysis.tree() == null) {
       return null;
     }
@@ -159,6 +179,10 @@ public final class AnalysisEngine {
     final long offset = SourceLocator.toOffset(analysis.tree(), pos.getLine(), pos.getCharacter());
     return new CursorContext(
         analysis, SourceLocator.pathAt(analysis.trees(), analysis.tree(), offset));
+  }
+
+  private static FileAnalysis cachedAnalysis(final CachedAnalysis cached) {
+    return cached != null ? cached.analysis() : null;
   }
 
   public static List<Diagnostic> filterAndMap(

@@ -13,7 +13,7 @@ import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Position;
 import org.junit.jupiter.api.Test;
 
-class AnalysisEngineTest {
+class CompilationContextTest {
 
   // --- offsetToPosition ---
 
@@ -71,7 +71,7 @@ class AnalysisEngineTest {
     final var raw = mockDiag(Diagnostic.Kind.ERROR, Diagnostic.NOPOS, Diagnostic.NOPOS);
     when(raw.getLineNumber()).thenReturn(2L);
     when(raw.getColumnNumber()).thenReturn(5L);
-    final var d = AnalysisEngine.toLsp(raw, "anything");
+    final var d = CompilationContext.toLsp(raw, "anything");
     assertThat(d.getRange().getStart()).isEqualTo(new Position(1, 4));
     assertThat(d.getRange().getEnd()).isEqualTo(new Position(1, 5));
   }
@@ -81,20 +81,20 @@ class AnalysisEngineTest {
   @Test
   void filterAndMap_positionlessNote_isDropped() {
     final var note = mockDiag(Diagnostic.Kind.NOTE, Diagnostic.NOPOS, Diagnostic.NOPOS);
-    assertThat(AnalysisEngine.filterAndMap(List.of(note), "")).isEmpty();
+    assertThat(CompilationContext.filterAndMap(List.of(note), "")).isEmpty();
   }
 
   @Test
   void filterAndMap_noteWithPosition_isKept() {
     final var note = mockDiag(Diagnostic.Kind.NOTE, 0L, 1L);
-    assertThat(AnalysisEngine.filterAndMap(List.of(note), "x")).hasSize(1);
+    assertThat(CompilationContext.filterAndMap(List.of(note), "x")).hasSize(1);
   }
 
   @Test
   void filterAndMap_errorAndPositionlessNote_returnsOnlyError() {
     final var error = mockDiag(Diagnostic.Kind.ERROR, 0L, 1L);
     final var note = mockDiag(Diagnostic.Kind.NOTE, Diagnostic.NOPOS, Diagnostic.NOPOS);
-    final var result = AnalysisEngine.filterAndMap(List.of(error, note), "x");
+    final var result = CompilationContext.filterAndMap(List.of(error, note), "x");
     assertThat(result).hasSize(1);
     assertThat(result.getFirst().getSeverity()).isEqualTo(DiagnosticSeverity.Error);
   }
@@ -103,7 +103,7 @@ class AnalysisEngineTest {
 
   private static org.eclipse.lsp4j.Diagnostic diag(
       final Diagnostic.Kind kind, final long start, final long end) {
-    return AnalysisEngine.toLsp(mockDiag(kind, start, end), "hello world");
+    return CompilationContext.toLsp(mockDiag(kind, start, end), "hello world");
   }
 
   @SuppressWarnings("unchecked")

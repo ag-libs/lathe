@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.server.workspace;
+package io.github.aglibs.lathe.server.module;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -9,8 +9,10 @@ import io.github.aglibs.lathe.core.schema.JdkSourceData;
 import io.github.aglibs.lathe.core.schema.SourceStatus;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.TestCompiler;
+import io.github.aglibs.lathe.server.analysis.CompilationContext;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
+import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -19,7 +21,7 @@ import org.eclipse.lsp4j.Position;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class ExternalFileCompilerTest {
+class ExternalCompilerTest {
 
   @TempDir Path tmp;
 
@@ -46,16 +48,14 @@ class ExternalFileCompilerTest {
         usesJar, usesSourceRoot, List.of(helperJar), helperJar, helperSourceRoot);
     final WorkspaceManifest manifest = WorkspaceManifest.load(tmp);
 
-    try (final var compiler = new ExternalFileCompiler(manifest)) {
+    try (final var ctx = new CompilationContext(new ExternalCompiler(manifest))) {
       final List<org.eclipse.lsp4j.Diagnostic> diagnostics =
-          compiler.analysis().compile(usesSource.toUri().toString(), usesContent, CompileMode.OPEN);
+          ctx.compile(usesSource.toUri().toString(), usesContent, CompileMode.OPEN);
       final Position helperPos =
           SourceLocator.offsetToPosition(usesContent, usesContent.indexOf("Helper"));
 
       final var definition =
-          compiler
-              .analysis()
-              .definition(usesSource.toUri().toString(), helperPos, List.of(), manifest);
+          ctx.definition(usesSource.toUri().toString(), helperPos, List.of(), manifest);
 
       assertThat(diagnostics).isEmpty();
       assertThat(definition).isPresent();
@@ -89,16 +89,15 @@ class ExternalFileCompilerTest {
     final Position helperPos =
         SourceLocator.offsetToPosition(usesContent, usesContent.indexOf("Helper"));
 
-    try (final var compiler = new ExternalFileCompiler(manifest)) {
-      compiler.analysis().compile(usesUri, usesContent, CompileMode.OPEN);
+    try (final var ctx = new CompilationContext(new ExternalCompiler(manifest))) {
+      ctx.compile(usesUri, usesContent, CompileMode.OPEN);
 
       // Hover over Helper: JavadocLocator finds helperSource via manifest.externalSourceDirs()
       // and calls parser.parse(helperSource). In the broken state this resets the compilation
       // FM's CLASS_PATH, causing the subsequent definition lookup to return empty.
-      compiler.analysis().hover(usesUri, helperPos, List.of(), manifest);
+      ctx.hover(usesUri, helperPos, List.of(), manifest);
 
-      final var definition =
-          compiler.analysis().definition(usesUri, helperPos, List.of(), manifest);
+      final var definition = ctx.definition(usesUri, helperPos, List.of(), manifest);
 
       assertThat(definition).isPresent();
       assertThat(definition.get().getUri()).isEqualTo(helperSource.toUri().toString());
@@ -123,18 +122,19 @@ class ExternalFileCompilerTest {
     final Path usesJar = tmp.resolve("repo/uses.jar");
     TestCompiler.compileToJar(usesJar, tmp.resolve("classes/uses"), List.of(helperJar), usesSource);
 
+    final String uri = usesSource.toUri().toString();
+
     writeWorkspaceManifest(
         usesJar, usesSourceRoot, List.of(helperJar), helperJar, helperSourceRoot);
-    try (final var compiler = new ExternalFileCompiler(WorkspaceManifest.load(tmp))) {
-      final String uri = usesSource.toUri().toString();
-      assertThat(compiler.analysis().compile(uri, usesContent, CompileMode.OPEN)).isEmpty();
+    try (final var ctx =
+        new CompilationContext(new ExternalCompiler(WorkspaceManifest.load(tmp)))) {
+      assertThat(ctx.compile(uri, usesContent, CompileMode.OPEN)).isEmpty();
+    }
 
-      writeWorkspaceManifestWithoutHelper(usesJar, usesSourceRoot);
-      compiler.setManifest(WorkspaceManifest.load(tmp));
-      final List<Diagnostic> diagnostics =
-          compiler.analysis().compile(uri, usesContent, CompileMode.OPEN);
-
-      assertThat(compiler.analysis().isCached(uri)).isTrue();
+    writeWorkspaceManifestWithoutHelper(usesJar, usesSourceRoot);
+    try (final var ctx =
+        new CompilationContext(new ExternalCompiler(WorkspaceManifest.load(tmp)))) {
+      final List<Diagnostic> diagnostics = ctx.compile(uri, usesContent, CompileMode.OPEN);
       assertThat(diagnostics)
           .extracting(d -> d.getMessage().getLeft())
           .anySatisfy(message -> assertThat(message).contains("package b does not exist"));
@@ -160,10 +160,10 @@ class ExternalFileCompilerTest {
     TestCompiler.compileToJar(usesJar, tmp.resolve("classes/uses"), List.of(helperJar), usesSource);
     writeWorkspaceManifest(usesJar, usesSourceRoot, List.of(), helperJar, helperSourceRoot);
 
-    try (final var compiler = new ExternalFileCompiler(WorkspaceManifest.load(tmp))) {
+    try (final var ctx =
+        new CompilationContext(new ExternalCompiler(WorkspaceManifest.load(tmp)))) {
       final List<Diagnostic> diagnostics =
-          compiler.analysis().compile(usesSource.toUri().toString(), usesContent, CompileMode.OPEN);
-
+          ctx.compile(usesSource.toUri().toString(), usesContent, CompileMode.OPEN);
       assertThat(diagnostics).isEmpty();
     }
   }
@@ -180,13 +180,10 @@ class ExternalFileCompilerTest {
     Files.writeString(secondSource, secondContent);
     writeJdkWorkspaceManifest(sourceRoot);
 
-    try (final var compiler = new ExternalFileCompiler(WorkspaceManifest.load(tmp))) {
-      assertThat(compiler.analysis().compile(source.toUri().toString(), content, CompileMode.OPEN))
-          .isEmpty();
-      assertThat(
-              compiler
-                  .analysis()
-                  .compile(secondSource.toUri().toString(), secondContent, CompileMode.OPEN))
+    try (final var ctx =
+        new CompilationContext(new ExternalCompiler(WorkspaceManifest.load(tmp)))) {
+      assertThat(ctx.compile(source.toUri().toString(), content, CompileMode.OPEN)).isEmpty();
+      assertThat(ctx.compile(secondSource.toUri().toString(), secondContent, CompileMode.OPEN))
           .isEmpty();
     }
   }

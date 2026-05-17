@@ -53,6 +53,11 @@ final class ServerWorker {
     }
   }
 
+  void scheduleAtFixedRate(final long intervalMs, final Runnable task) {
+    executor.scheduleAtFixedRate(
+        () -> runLogged(task), intervalMs, intervalMs, TimeUnit.MILLISECONDS);
+  }
+
   void cancel(final String key) {
     if (isWorkerThread()) {
       doCancel(key, false);

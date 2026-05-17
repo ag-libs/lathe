@@ -29,18 +29,19 @@ final class LatheTextDocumentService implements TextDocumentService {
   private static final long DEFAULT_DEBOUNCE_MS = 500;
 
   private final ServerWorker worker = new ServerWorker();
-  private final DocumentSession session;
+  private final long debounceMs;
+  private WorkspaceSession session;
 
   LatheTextDocumentService() {
     this(DEFAULT_DEBOUNCE_MS);
   }
 
   LatheTextDocumentService(final long debounceMs) {
-    session = new DocumentSession(debounceMs, worker);
+    this.debounceMs = debounceMs;
   }
 
   void connect(final LanguageClient client) {
-    worker.execute(() -> session.connect(client));
+    session = new WorkspaceSession(client, worker, debounceMs);
   }
 
   void initialize(final Path workspaceRoot) {
@@ -48,14 +49,17 @@ final class LatheTextDocumentService implements TextDocumentService {
   }
 
   void close() {
-    worker
-        .submit(
-            () -> {
-              session.close();
-              return null;
-            })
-        .join();
+    worker.submit(this::closeSession).join();
+
     worker.close();
+  }
+
+  private Void closeSession() {
+    if (session != null) {
+      session.close();
+    }
+
+    return null;
   }
 
   @Override
@@ -90,20 +94,23 @@ final class LatheTextDocumentService implements TextDocumentService {
       final CompletionParams params) {
     final var uri = params.getTextDocument().getUri();
     final var pos = params.getPosition();
-    return worker.submit(() -> Either.forLeft(session.completion(uri, pos)));
+    return worker
+        .submit(() -> session.completionFuture(uri, pos))
+        .thenCompose(f -> f)
+        .thenApply(Either::forLeft);
   }
 
   @Override
   public CompletableFuture<SemanticTokens> semanticTokensFull(final SemanticTokensParams params) {
     final var uri = params.getTextDocument().getUri();
-    return worker.submit(() -> session.semanticTokens(uri));
+    return worker.submit(() -> session.semanticTokensFuture(uri)).thenCompose(f -> f);
   }
 
   @Override
   public CompletableFuture<Hover> hover(final HoverParams params) {
     final var uri = params.getTextDocument().getUri();
     final var pos = params.getPosition();
-    return worker.submit(() -> session.hover(uri, pos));
+    return worker.submit(() -> session.hoverFuture(uri, pos)).thenCompose(f -> f);
   }
 
   @Override
@@ -111,7 +118,7 @@ final class LatheTextDocumentService implements TextDocumentService {
       definition(final DefinitionParams params) {
     final var uri = params.getTextDocument().getUri();
     final var pos = params.getPosition();
-    return worker.submit(() -> session.definition(uri, pos));
+    return worker.submit(() -> session.definitionFuture(uri, pos)).thenCompose(f -> f);
   }
 
   @Override

@@ -33,13 +33,17 @@ final class CompletionProvider {
   }
 
   List<CompletionItem> complete(
-      final String uri, final String content, final Position pos, final FileAnalysis cached) {
+      final String uri,
+      final String content,
+      final Position pos,
+      final String cachedContent,
+      final FileAnalysis cached) {
     final int offset = cursorOffset(content, pos);
     LOG.fine(
         () -> "[completion] %d:%d offset=%d".formatted(pos.getLine(), pos.getCharacter(), offset));
 
     if (cached != null) {
-      final var stale = tryFromStale(cached, content, offset);
+      final var stale = tryFromStale(cached, cachedContent, content, offset);
       if (stale != null) {
         LOG.fine(() -> "[completion] stale hit items=%d".formatted(stale.size()));
         return stale;
@@ -62,15 +66,22 @@ final class CompletionProvider {
   }
 
   private List<CompletionItem> tryFromStale(
-      final FileAnalysis cached, final String content, final int cursorOffset) {
+      final FileAnalysis cached,
+      final String cachedContent,
+      final String content,
+      final int cursorOffset) {
+    if (cachedContent == null) {
+      return null;
+    }
+
     final int staleOffset;
-    if (content.equals(cached.content())) {
+    if (content.equals(cachedContent)) {
       if (cursorOffset < 1) {
         return null;
       }
 
       staleOffset = cursorOffset - 1;
-    } else if (isDotOnlyInsertion(content, cached.content(), cursorOffset)) {
+    } else if (isDotOnlyInsertion(content, cachedContent, cursorOffset)) {
       if (cursorOffset < 2) {
         return null;
       }
@@ -85,7 +96,7 @@ final class CompletionProvider {
     }
 
     final var receiverType =
-        resolveReceiverType(cached, staleOffset, content.equals(cached.content()));
+        resolveReceiverType(cached, staleOffset, content.equals(cachedContent));
     if (receiverType == null || receiverType.getKind() == TypeKind.ERROR) {
       return null;
     }

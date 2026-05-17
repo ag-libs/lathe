@@ -7,7 +7,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -19,80 +18,60 @@ class WorkspaceWatcherTest {
   @TempDir Path workspaceRoot;
 
   private Path latheDir;
-  private AtomicInteger reloads;
 
   @BeforeEach
   void setUp() throws IOException {
     latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
     Files.createDirectories(latheDir);
-    reloads = new AtomicInteger();
   }
 
   @Test
-  void poll_noChange_doesNotReload() throws IOException {
+  void poll_noChange_returnsFalse() throws IOException {
     writeOld(LatheLayout.WORKSPACE_JSON, "{}");
-    final var watcher = new WorkspaceWatcher(workspaceRoot, reloads::incrementAndGet);
-
-    watcher.poll();
-
-    assertThat(reloads.get()).isEqualTo(0);
+    final var watcher = new WorkspaceWatcher(workspaceRoot);
+    assertThat(watcher.poll()).isFalse();
   }
 
   @Test
-  void poll_workspaceJsonChanged_reloads() throws IOException {
+  void poll_workspaceJsonChanged_returnsTrue() throws IOException {
     writeOld(LatheLayout.WORKSPACE_JSON, "{}");
-    final var watcher = new WorkspaceWatcher(workspaceRoot, reloads::incrementAndGet);
-
+    final var watcher = new WorkspaceWatcher(workspaceRoot);
     Files.writeString(latheDir.resolve(LatheLayout.WORKSPACE_JSON), "{updated}");
-    watcher.poll();
-
-    assertThat(reloads.get()).isEqualTo(1);
+    assertThat(watcher.poll()).isTrue();
   }
 
   @Test
-  void poll_paramsFileAdded_reloads() throws IOException {
-    final var watcher = new WorkspaceWatcher(workspaceRoot, reloads::incrementAndGet);
-
+  void poll_paramsFileAdded_returnsTrue() throws IOException {
+    final var watcher = new WorkspaceWatcher(workspaceRoot);
     Files.writeString(latheDir.resolve("lsp-params-module-a.json"), "{}");
-    watcher.poll();
-
-    assertThat(reloads.get()).isEqualTo(1);
+    assertThat(watcher.poll()).isTrue();
   }
 
   @Test
-  void poll_paramsFileChanged_reloads() throws IOException {
+  void poll_paramsFileChanged_returnsTrue() throws IOException {
     writeOld("lsp-params-module-a.json", "{}");
-    final var watcher = new WorkspaceWatcher(workspaceRoot, reloads::incrementAndGet);
-
+    final var watcher = new WorkspaceWatcher(workspaceRoot);
     Files.writeString(latheDir.resolve("lsp-params-module-a.json"), "{updated}");
-    watcher.poll();
-
-    assertThat(reloads.get()).isEqualTo(1);
+    assertThat(watcher.poll()).isTrue();
   }
 
   @Test
-  void poll_bothSignalsChange_reloadsOnce() throws IOException {
+  void poll_bothSignalsChange_returnsTrue() throws IOException {
     writeOld(LatheLayout.WORKSPACE_JSON, "{}");
     writeOld("lsp-params-module-a.json", "{}");
-    final var watcher = new WorkspaceWatcher(workspaceRoot, reloads::incrementAndGet);
-
+    final var watcher = new WorkspaceWatcher(workspaceRoot);
     Files.writeString(latheDir.resolve(LatheLayout.WORKSPACE_JSON), "{updated}");
     Files.writeString(latheDir.resolve("lsp-params-module-a.json"), "{updated}");
-    watcher.poll();
-
-    assertThat(reloads.get()).isEqualTo(1);
+    assertThat(watcher.poll()).isTrue();
   }
 
   @Test
-  void poll_afterReload_secondPollDoesNotReload() throws IOException {
+  void poll_afterChange_secondPollReturnsFalse() throws IOException {
     writeOld(LatheLayout.WORKSPACE_JSON, "{}");
-    final var watcher = new WorkspaceWatcher(workspaceRoot, reloads::incrementAndGet);
-
+    final var watcher = new WorkspaceWatcher(workspaceRoot);
     Files.writeString(latheDir.resolve(LatheLayout.WORKSPACE_JSON), "{updated}");
-    watcher.poll();
-    watcher.poll();
-
-    assertThat(reloads.get()).isEqualTo(1);
+    assertThat(watcher.poll()).isTrue();
+    assertThat(watcher.poll()).isFalse();
   }
 
   private void writeOld(final String filename, final String content) throws IOException {

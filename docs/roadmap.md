@@ -21,15 +21,17 @@ Current lifecycle shape:
 - Editors launch `~/.cache/lathe/current/lathe-launcher.sh`.
 
 Threading choice:
-Lathe currently uses one server worker thread for LSP request/notification work that touches mutable server state,
-workspace reload, debounced compilation, external-source compilation, and all javac-backed analysis.
-LSP4J and watcher threads only capture immutable request data and enqueue work;
-results cross back as LSP DTOs or client notifications.
-This intentionally serializes compiler access for now,
-keeps `ModuleCompiler`, `ExternalFileCompiler`, `AnalysisEngine` caches, and `ModuleRegistry` thread-confined,
-and avoids method-level synchronization around javac file managers.
+Lathe is being refactored to use one server worker thread for workspace/session state
+and one module worker thread per javac-backed compilation context.
+The current recipe is [lathe-server-data-flow-recipe.md](lathe-server-data-flow-recipe.md).
+LSP4J threads capture immutable request data and enqueue work.
+The server worker owns `WorkspaceSession`, `ModuleWorkspace`, open-file snapshots, routing,
+stale-result checks, and client publishing.
+Module workers own `CompilationContext` instances and javac-backed compiler state.
+Compile results cross back to the server worker before diagnostics or semantic-token refreshes are published.
 
-The next milestone is member-access completion.
+Member-access completion work has started,
+but it should be revisited after the server data-flow recipe is implemented and reviewed.
 
 ## Completed
 
@@ -45,18 +47,21 @@ The next milestone is member-access completion.
   and updates the `~/.cache/lathe/current` symlink.
   `dev/nvim.sh` and `dev/lsp.py` updated to launch via the installed script.
 - **Server threading model** — LSP request/notification handlers and workspace reload now route through a single server worker.
-  Mutable Lathe state and javac-backed objects stay on that worker,
-  and worker-owned caches use ordinary maps.
-  `DocumentSession` encapsulates all worker-confined state and business logic;
-  `LatheTextDocumentService` is a stateless LSP dispatcher.
+  Mutable workspace state stays on that worker,
+  while javac-backed compiler state is moving behind module workers.
+  `WorkspaceSession` encapsulates worker-confined workspace state and routing;
+  `LatheTextDocumentService` is a thin LSP dispatcher.
 - **Stale-result guard** — `publishIfCurrent` compares the content that triggered a compile against the latest open content before publishing diagnostics,
   so rapid edits never overwrite newer results with an older compile's output.
 
 ## Near-Term
 
 **Completion (member access)**
-Implement `textDocument/completion` for member-access expressions using the sentinel approach
-described in [lathe_completion_design.md](lathe_completion_design.md).
+Initial `textDocument/completion` work exists,
+but it was built during the server refactor and should be redone or tightened after
+[lathe-server-data-flow-recipe.md](lathe-server-data-flow-recipe.md) lands.
+The intended member-access approach is still the sentinel strategy described in
+[lathe_completion_design.md](lathe_completion_design.md).
 
 Core flow:
 1. Take an immutable source snapshot at the trigger position.
@@ -69,14 +74,16 @@ Core flow:
    and recompile.
 7. Return items within the 200 ms budget; return partial or empty on timeout.
 
-The `ModuleCompiler` file manager and temp-dir approach already handle single-file compilation —
-completion reuses the same infrastructure with a sentinel-injected source copy.
+The `ModuleCompiler`/`ExternalCompiler` file-manager and temp-dir approach already handles single-file compilation.
+Completion should reuse the same infrastructure through `CompilationContext` and `ModuleWorker`
+with a sentinel-injected source copy.
 
-Files to add or change:
+Files to revisit:
 
-- `CompletionProvider` (new class in `lathe-server`) — sentinel injection, compile, member enumeration, repair round.
-- `LatheTextDocumentService.completion()` — wire `CompletionProvider`, declare the capability.
-- `LatheLanguageServer` — advertise `completionProvider` in `ServerCapabilities`.
+- `CompletionProvider` — sentinel injection, compile, member enumeration, and any bounded repair round.
+- `CompilationContext.complete(...)` — keep content flow explicit and avoid storing source text in `FileAnalysis`.
+- `WorkspaceSession.completionFuture(...)` — route from current open-file content through the correct `ModuleWorker`.
+- `LatheLanguageServer` — keep `completionProvider` capability aligned with implementation status.
 - Unit tests for sentinel injection and member enumeration on well-formed and broken source.
 
 ## Future Work
@@ -93,13 +100,13 @@ Build the shared JAR/JDK/reactor type index described in the design doc,
 giving the server a fast lookup over all known types without scanning source on every request.
 This unlocks reliable missing-import suggestions, workspace symbols, and broader classpath type discovery for non-JPMS projects.
 There is no type-index package or cache writer yet,
-and `LatheLanguageServer` does not advertise workspace-symbol, completion, or code-action capabilities.
+and `LatheLanguageServer` does not advertise workspace-symbol or code-action capabilities.
 
 **Module metadata in the manifest**
 Add reactor module entries to `workspace.json` after the params-file model is stable,
 to support staleness detection, UX hints, and faster server startup without duplicating classpaths.
 `WorkspaceManifestData` currently holds only schema version, workspace root, JDK source, and dependency sources;
-`ModuleRegistry` still discovers modules by scanning `lsp-params-*.json` at startup.
+`ModuleWorkspace` still discovers modules by scanning `lsp-params-*.json` at startup.
 
 **Run, test, and debug**
 Adopt the design in `lathe-run-test-debug.md` to let the server manage Maven test/run executions
