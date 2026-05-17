@@ -60,7 +60,7 @@ public final class AnalysisEngine {
 
   public List<CompletionItem> complete(final String uri, final String content, final Position pos) {
     final var t = Stopwatch.start();
-    final var items = completionProvider.complete(uri, content, pos);
+    final var items = completionProvider.complete(uri, content, pos, cache.get(uri));
     LOG.fine(() -> "[completion] %s %dms items=%d".formatted(uri, t.elapsedMs(), items.size()));
     return items;
   }
@@ -151,13 +151,14 @@ public final class AnalysisEngine {
   private record CursorContext(FileAnalysis ctx, TreePath path) {}
 
   private CursorContext resolve(final String uri, final Position pos) {
-    final var ctx = cache.get(uri);
-    if (ctx == null || ctx.tree() == null) {
+    final var analysis = cache.get(uri);
+    if (analysis == null || analysis.tree() == null) {
       return null;
     }
 
-    final long offset = SourceLocator.toOffset(ctx.tree(), pos.getLine(), pos.getCharacter());
-    return new CursorContext(ctx, SourceLocator.pathAt(ctx.trees(), ctx.tree(), offset));
+    final long offset = SourceLocator.toOffset(analysis.tree(), pos.getLine(), pos.getCharacter());
+    return new CursorContext(
+        analysis, SourceLocator.pathAt(analysis.trees(), analysis.tree(), offset));
   }
 
   public static List<Diagnostic> filterAndMap(

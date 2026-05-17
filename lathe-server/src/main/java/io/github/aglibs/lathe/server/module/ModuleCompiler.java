@@ -88,7 +88,7 @@ public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
     LOG.fine(() -> "[%s] td=%s root=%s opts=%s".formatted(mode.tag, td, sourceRoot, options));
     final JavaFileObject jfo = fm.getJavaFileObjects(tempFile).iterator().next();
     try {
-      final FileAnalysis fileAnalysis = runTask(collector, options, jfo, mode);
+      final FileAnalysis fileAnalysis = runTask(collector, options, jfo, mode, content);
       return new CompilationResult(collector.getDiagnostics(), fileAnalysis);
     } finally {
       if (mode == CompileMode.FULL) {
@@ -148,7 +148,8 @@ public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
       final DiagnosticCollector<JavaFileObject> collector,
       final List<String> options,
       final JavaFileObject sourceFile,
-      final CompileMode mode)
+      final CompileMode mode,
+      final String content)
       throws IOException {
     final var task =
         (JavacTask) compiler.getTask(null, this.fm, collector, options, null, List.of(sourceFile));
@@ -165,10 +166,10 @@ public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
       final var t = Stopwatch.start();
       final List<SemanticToken> semanticTokens = TokenScanner.scan(trees, cu);
       LOG.fine(() -> "[tokens] %d tokens %dms".formatted(semanticTokens.size(), t.elapsedMs()));
-      return new FileAnalysis(trees, elements, types, cu, semanticTokens);
+      return new FileAnalysis(trees, elements, types, cu, semanticTokens, content);
     }
 
-    return new FileAnalysis(trees, elements, types, null, null);
+    return new FileAnalysis(trees, elements, types, null, null, content);
   }
 
   private static List<String> processPatchModules(

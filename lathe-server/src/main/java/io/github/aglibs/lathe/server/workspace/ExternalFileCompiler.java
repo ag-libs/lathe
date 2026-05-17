@@ -85,7 +85,8 @@ public final class ExternalFileCompiler implements SourceCompiler, AutoCloseable
     final var sourceRoot = manifest.externalSourceRootForFile(filePath);
     if (sourceRoot.isEmpty()) {
       LOG.fine(() -> "[external] no source root for %s — skipping".formatted(uri));
-      return new CompilationResult(List.of(), new FileAnalysis(null, null, null, null, null));
+      return new CompilationResult(
+          List.of(), new FileAnalysis(null, null, null, null, null, content));
     }
 
     final var rel = sourceRoot.get().relativize(filePath);
@@ -113,11 +114,12 @@ public final class ExternalFileCompiler implements SourceCompiler, AutoCloseable
           () ->
               "[external] %s compiled %d tokens %dms".formatted(uri, tokens.size(), t.elapsedMs()));
       return new CompilationResult(
-          collector.getDiagnostics(), new FileAnalysis(trees, elements, types, cu, tokens));
+          collector.getDiagnostics(),
+          new FileAnalysis(trees, elements, types, cu, tokens, content));
     }
 
     return new CompilationResult(
-        collector.getDiagnostics(), new FileAnalysis(trees, elements, types, null, null));
+        collector.getDiagnostics(), new FileAnalysis(trees, elements, types, null, null, content));
   }
 
   private List<String> buildOptions(final Path filePath) {

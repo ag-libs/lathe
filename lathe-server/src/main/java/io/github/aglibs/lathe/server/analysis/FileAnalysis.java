@@ -11,4 +11,5 @@ public record FileAnalysis(
     Elements elements,
     Types types,
     CompilationUnitTree tree,
-    List<SemanticToken> semanticTokens) {}
+    List<SemanticToken> semanticTokens,
+    String content) {}
