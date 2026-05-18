@@ -3,7 +3,6 @@ package io.github.aglibs.lathe.server.analysis.completion;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.util.TreePath;
-import io.github.aglibs.lathe.server.analysis.FileAnalysis;
 import io.github.aglibs.lathe.server.analysis.SourceCompiler;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
@@ -11,7 +10,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.CompletionItem;
-import org.eclipse.lsp4j.Position;
 
 public final class CompletionEngine {
 
@@ -23,36 +21,32 @@ public final class CompletionEngine {
     this.parser = parser;
   }
 
-  public List<CompletionItem> complete(
-      final String uri,
-      final String content,
-      final Position pos,
-      final String cachedContent,
-      final FileAnalysis cachedAnalysis) {
+  public List<CompletionItem> complete(final CompletionRequest req) {
+    final var cached = req.cached();
 
-    final String sourceLine = lineAt(content, pos.getLine());
-    final int cursorOffset = cursorOffset(content, pos);
     LOG.fine(
         () ->
             "[completion] %s line=%d col=%d offset=%d"
-                .formatted(uri, pos.getLine(), pos.getCharacter(), cursorOffset));
-    LOG.fine(() -> "[completion] source line |%s|".formatted(sourceLine));
+                .formatted(
+                    req.uri(), req.pos().getLine(), req.pos().getCharacter(), req.cursorOffset()));
+    LOG.fine(() -> "[completion] source line |%s|".formatted(req.sourceLine()));
+    LOG.fine(() -> "[completion] context: %s".formatted(req.context()));
 
-    if (cachedContent == null) {
+    if (cached == null) {
       LOG.fine(() -> "[completion] diff no cached source");
-    } else if (content.equals(cachedContent)) {
+    } else if (req.noDiff()) {
       LOG.fine(() -> "[completion] diff none (identical)");
     } else {
-      final int deltaLen = content.length() - cachedContent.length();
-      final int firstDiff = firstDiffOffset(content, cachedContent);
+      final int deltaLen = req.content().length() - cached.content().length();
+      final int firstDiff = req.firstDiff();
       LOG.fine(
           () ->
               "[completion] diff Δlen=%+d first=%d cursor=%d"
-                  .formatted(deltaLen, firstDiff, cursorOffset));
+                  .formatted(deltaLen, firstDiff, req.cursorOffset()));
 
-      if (cachedAnalysis != null && cachedAnalysis.tree() != null) {
+      if (cached.analysis() != null && cached.analysis().tree() != null) {
         final var diffPath =
-            SourceLocator.pathAt(cachedAnalysis.trees(), cachedAnalysis.tree(), firstDiff);
+            SourceLocator.pathAt(cached.analysis().trees(), cached.analysis().tree(), firstDiff);
         final var encClass = enclosingClass(diffPath);
         final var encMethod = enclosingMethod(diffPath);
         LOG.fine(
@@ -64,7 +58,7 @@ public final class CompletionEngine {
                         encMethod != null ? encMethod.getName() : "null"));
 
         if (diffPath != null) {
-          final var encElement = SourceLocator.elementAt(cachedAnalysis.trees(), diffPath);
+          final var encElement = SourceLocator.elementAt(cached.analysis().trees(), diffPath);
           LOG.fine(
               () ->
                   "[completion] diff-ctx element=%s kind=%s"
@@ -73,7 +67,7 @@ public final class CompletionEngine {
       }
     }
 
-    final var diags = parser.tryParseContent(uri, content);
+    final var diags = parser.tryParseContent(req.uri(), req.content());
     LOG.fine(() -> "[completion] parse diags=%d".formatted(diags.size()));
     for (final var d : diags) {
       LOG.fine(
@@ -83,18 +77,21 @@ public final class CompletionEngine {
                       d.getKind(), d.getPosition(), d.getCode(), d.getMessage(Locale.ENGLISH)));
     }
 
-    if (content.equals(cachedContent) && cachedAnalysis != null && cachedAnalysis.tree() != null) {
-      final var cu = cachedAnalysis.tree();
-      final long offset = SourceLocator.toOffset(cu, pos.getLine(), pos.getCharacter());
-      final var path = SourceLocator.pathAt(cachedAnalysis.trees(), cu, offset);
+    if (req.noDiff()
+        && cached != null
+        && cached.analysis() != null
+        && cached.analysis().tree() != null) {
+      final var cu = cached.analysis().tree();
+      final long offset = SourceLocator.toOffset(cu, req.pos().getLine(), req.pos().getCharacter());
+      final var path = SourceLocator.pathAt(cached.analysis().trees(), cu, offset);
       LOG.fine(
           () ->
               "[completion] no-diff offset=%d node=%s"
                   .formatted(offset, path != null ? path.getLeaf().getKind() : "null"));
 
       if (path != null) {
-        final var type = cachedAnalysis.trees().getTypeMirror(path);
-        final var element = SourceLocator.elementAt(cachedAnalysis.trees(), path);
+        final var type = cached.analysis().trees().getTypeMirror(path);
+        final var element = SourceLocator.elementAt(cached.analysis().trees(), path);
         LOG.fine(
             () ->
                 "[completion] type %s kind=%s"
@@ -127,33 +124,5 @@ public final class CompletionEngine {
     }
 
     return null;
-  }
-
-  private static int firstDiffOffset(final String a, final String b) {
-    final int limit = Math.min(a.length(), b.length());
-    for (int i = 0; i < limit; i++) {
-      if (a.charAt(i) != b.charAt(i)) {
-        return i;
-      }
-    }
-
-    return limit;
-  }
-
-  private static String lineAt(final String content, final int line) {
-    return content.lines().skip(line).findFirst().orElse("");
-  }
-
-  private static int cursorOffset(final String content, final Position pos) {
-    int offset = 0;
-    int line = 0;
-    for (int i = 0; i < content.length() && line < pos.getLine(); i++) {
-      if (content.charAt(i) == '\n') {
-        line++;
-        offset = i + 1;
-      }
-    }
-
-    return offset + pos.getCharacter();
   }
 }

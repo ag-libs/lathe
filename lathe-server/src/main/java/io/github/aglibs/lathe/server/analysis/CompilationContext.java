@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.analysis;
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionEngine;
+import io.github.aglibs.lathe.server.analysis.completion.CompletionRequest;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -16,14 +17,7 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.JavaFileObject;
-import org.eclipse.lsp4j.CompletionItem;
-import org.eclipse.lsp4j.Diagnostic;
-import org.eclipse.lsp4j.DiagnosticSeverity;
-import org.eclipse.lsp4j.Hover;
-import org.eclipse.lsp4j.Location;
-import org.eclipse.lsp4j.MarkupContent;
-import org.eclipse.lsp4j.Position;
-import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.*;
 
 public final class CompilationContext implements AutoCloseable {
 
@@ -53,13 +47,11 @@ public final class CompilationContext implements AutoCloseable {
     return diags;
   }
 
-  public List<CompletionItem> complete(final String uri, final String content, final Position pos) {
+  public List<CompletionItem> complete(
+      final String uri, final String content, final Position pos, final CompletionContext context) {
     final var t = Stopwatch.start();
-    final var cached = cache.get(uri);
-    final var cachedContent = cached != null ? cached.content() : null;
-    final var cachedAnalysis = cachedAnalysis(cached);
-
-    final var items = completionEngine.complete(uri, content, pos, cachedContent, cachedAnalysis);
+    final var request = new CompletionRequest(uri, content, pos, context, cache.get(uri));
+    final var items = completionEngine.complete(request);
     LOG.fine(() -> "[completion] %s %dms items=%d".formatted(uri, t.elapsedMs(), items.size()));
     return items;
   }
@@ -149,13 +141,11 @@ public final class CompilationContext implements AutoCloseable {
     compiler.close();
   }
 
-  private record CachedAnalysis(String content, FileAnalysis analysis) {}
-
   private record CursorContext(FileAnalysis ctx, TreePath path) {}
 
   private CursorContext resolve(final String uri, final Position pos) {
     final var cached = cache.get(uri);
-    final var analysis = cachedAnalysis(cached);
+    final var analysis = cached != null ? cached.analysis() : null;
     if (analysis == null || analysis.tree() == null) {
       return null;
     }
@@ -163,10 +153,6 @@ public final class CompilationContext implements AutoCloseable {
     final long offset = SourceLocator.toOffset(analysis.tree(), pos.getLine(), pos.getCharacter());
     return new CursorContext(
         analysis, SourceLocator.pathAt(analysis.trees(), analysis.tree(), offset));
-  }
-
-  private static FileAnalysis cachedAnalysis(final CachedAnalysis cached) {
-    return cached != null ? cached.analysis() : null;
   }
 
   public static List<Diagnostic> filterAndMap(

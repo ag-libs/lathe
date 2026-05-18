@@ -14,10 +14,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import org.eclipse.lsp4j.CompletionItem;
-import org.eclipse.lsp4j.Hover;
-import org.eclipse.lsp4j.Location;
-import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.*;
 
 /** Called from the server worker; executes all compilation work on its own module thread. */
 public final class ModuleWorker {
@@ -109,8 +106,11 @@ public final class ModuleWorker {
   }
 
   public CompletableFuture<List<CompletionItem>> complete(
-      final String uri, final String content, final Position position) {
-    return submit(ctx -> ctx.complete(uri, content, position));
+      final String uri,
+      final String content,
+      final Position position,
+      final CompletionContext context) {
+    return submit(ctx -> ctx.complete(uri, content, position, context));
   }
 
   public CompletableFuture<List<SemanticToken>> semanticTokens(final String uri) {

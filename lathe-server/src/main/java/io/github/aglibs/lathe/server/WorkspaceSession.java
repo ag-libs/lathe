@@ -20,17 +20,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 import java.util.logging.Logger;
 import java.util.stream.IntStream;
-import org.eclipse.lsp4j.CompletionItem;
-import org.eclipse.lsp4j.Diagnostic;
-import org.eclipse.lsp4j.DiagnosticSeverity;
-import org.eclipse.lsp4j.Hover;
-import org.eclipse.lsp4j.Location;
-import org.eclipse.lsp4j.LocationLink;
-import org.eclipse.lsp4j.Position;
-import org.eclipse.lsp4j.PublishDiagnosticsParams;
-import org.eclipse.lsp4j.Range;
-import org.eclipse.lsp4j.SemanticTokens;
-import org.eclipse.lsp4j.TextEdit;
+import org.eclipse.lsp4j.*;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.LanguageClient;
 
@@ -145,7 +135,8 @@ final class WorkspaceSession {
         Either.forLeft(List.of()));
   }
 
-  CompletableFuture<List<CompletionItem>> completionFuture(final String uri, final Position pos) {
+  CompletableFuture<List<CompletionItem>> completionFuture(
+      final String uri, final Position pos, final CompletionContext context) {
     final var openFile = openFiles.get(uri);
     if (openFile == null) {
       return CompletableFuture.completedFuture(List.of());
@@ -155,7 +146,7 @@ final class WorkspaceSession {
         uri,
         moduleWorker ->
             moduleWorker
-                .complete(uri, openFile.content(), pos)
+                .complete(uri, openFile.content(), pos, context)
                 .exceptionally(ex -> logAndReturn(ex, "[completion] failed for " + uri, List.of())),
         List.of());
   }

@@ -3,23 +3,7 @@ package io.github.aglibs.lathe.server;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import org.eclipse.lsp4j.CompletionItem;
-import org.eclipse.lsp4j.CompletionList;
-import org.eclipse.lsp4j.CompletionParams;
-import org.eclipse.lsp4j.DefinitionParams;
-import org.eclipse.lsp4j.DidChangeTextDocumentParams;
-import org.eclipse.lsp4j.DidCloseTextDocumentParams;
-import org.eclipse.lsp4j.DidOpenTextDocumentParams;
-import org.eclipse.lsp4j.DidSaveTextDocumentParams;
-import org.eclipse.lsp4j.DocumentFormattingParams;
-import org.eclipse.lsp4j.DocumentRangeFormattingParams;
-import org.eclipse.lsp4j.Hover;
-import org.eclipse.lsp4j.HoverParams;
-import org.eclipse.lsp4j.Location;
-import org.eclipse.lsp4j.LocationLink;
-import org.eclipse.lsp4j.SemanticTokens;
-import org.eclipse.lsp4j.SemanticTokensParams;
-import org.eclipse.lsp4j.TextEdit;
+import org.eclipse.lsp4j.*;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.TextDocumentService;
@@ -41,7 +25,7 @@ final class LatheTextDocumentService implements TextDocumentService {
   }
 
   void connect(final LanguageClient client) {
-    session = new WorkspaceSession(client, worker, debounceMs);
+    worker.execute(() -> session = new WorkspaceSession(client, worker, debounceMs));
   }
 
   void initialize(final Path workspaceRoot) {
@@ -49,17 +33,17 @@ final class LatheTextDocumentService implements TextDocumentService {
   }
 
   void close() {
-    worker.submit(this::closeSession).join();
-
-    worker.close();
-  }
-
-  private Void closeSession() {
     if (session != null) {
-      session.close();
+      worker
+          .submit(
+              () -> {
+                session.close();
+                return null;
+              })
+          .join();
     }
 
-    return null;
+    worker.close();
   }
 
   @Override
@@ -94,8 +78,11 @@ final class LatheTextDocumentService implements TextDocumentService {
       final CompletionParams params) {
     final var uri = params.getTextDocument().getUri();
     final var pos = params.getPosition();
+    final var ctx = params.getContext();
+    final var context = ctx != null ? ctx : new CompletionContext(CompletionTriggerKind.Invoked);
+
     return worker
-        .submit(() -> session.completionFuture(uri, pos))
+        .submit(() -> session.completionFuture(uri, pos, context))
         .thenCompose(f -> f)
         .thenApply(Either::forLeft);
   }

@@ -7,4 +7,5 @@ module io.github.aglibs.lathe.server {
   requires com.google.gson;
   requires com.google.googlejavaformat;
   requires io.github.aglibs.lathe.core;
+  requires io.github.aglibs.validcheck;
 }
