@@ -106,7 +106,7 @@ public final class DefinitionLocator {
 
   public Position parsePosition(final Path sourceFile, final Element element) {
     return parser
-        .parse(sourceFile, (trees, cu) -> parseDeclarationPosition(trees, cu, element))
+        .parseFile(sourceFile, (trees, cu) -> parseDeclarationPosition(trees, cu, element))
         .orElse(new Position(0, 0));
   }
 

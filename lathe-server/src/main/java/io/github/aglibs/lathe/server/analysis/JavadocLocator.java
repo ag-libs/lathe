@@ -33,7 +33,7 @@ public final class JavadocLocator {
         .flatMap(
             file -> {
               LOG.fine(() -> "[javadoc] reactor %s → %s".formatted(element, file));
-              return parser.parse(
+              return parser.parseFile(
                   file,
                   (parsedTrees, cu) -> {
                     final var path = SourceLocator.declarationPath(cu, element);

@@ -5,13 +5,17 @@ import com.sun.source.util.JavacTask;
 import com.sun.source.util.Trees;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.net.URI;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.BiFunction;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import javax.tools.Diagnostic;
+import javax.tools.DiagnosticCollector;
 import javax.tools.JavaFileObject;
+import javax.tools.SimpleJavaFileObject;
 import javax.tools.StandardJavaFileManager;
 
 public final class SourceParser implements AutoCloseable {
@@ -24,7 +28,8 @@ public final class SourceParser implements AutoCloseable {
     this.fm = SourceCompiler.createFileManager();
   }
 
-  <T> Optional<T> parse(final Path sourceFile, final BiFunction<Trees, CompilationUnitTree, T> fn) {
+  <T> Optional<T> parseFile(
+      final Path sourceFile, final BiFunction<Trees, CompilationUnitTree, T> fn) {
     try {
       final JavaFileObject jfo = fm.getJavaFileObjects(sourceFile).iterator().next();
       final JavacTask task =
@@ -35,6 +40,27 @@ public final class SourceParser implements AutoCloseable {
       LOG.log(Level.WARNING, e, () -> "[parse] %s".formatted(sourceFile));
       return Optional.empty();
     }
+  }
+
+  public List<Diagnostic<? extends JavaFileObject>> tryParseContent(
+      final String uri, final String content) {
+    final var collector = new DiagnosticCollector<JavaFileObject>();
+    final var jfo =
+        new SimpleJavaFileObject(URI.create(uri), JavaFileObject.Kind.SOURCE) {
+          @Override
+          public CharSequence getCharContent(final boolean ignoreEncodingErrors) {
+            return content;
+          }
+        };
+    final var task =
+        (JavacTask) SourceCompiler.COMPILER.getTask(null, fm, collector, null, null, List.of(jfo));
+    try {
+      task.parse();
+    } catch (final IOException e) {
+      throw new UncheckedIOException(e);
+    }
+
+    return collector.getDiagnostics();
   }
 
   @Override
