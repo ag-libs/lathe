@@ -3,26 +3,19 @@ package io.github.aglibs.lathe.server.module;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.Trees;
-import io.github.aglibs.lathe.server.analysis.CompilationResult;
-import io.github.aglibs.lathe.server.analysis.CompileMode;
-import io.github.aglibs.lathe.server.analysis.FileAnalysis;
-import io.github.aglibs.lathe.server.analysis.SemanticToken;
-import io.github.aglibs.lathe.server.analysis.TokenScanner;
+import io.github.aglibs.lathe.server.analysis.*;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.List;
 import javax.tools.DiagnosticCollector;
-import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 
 final class JavacRunner {
 
-  private final JavaCompiler compiler;
   private final StandardJavaFileManager fm;
 
-  JavacRunner(final JavaCompiler compiler, final StandardJavaFileManager fm) {
-    this.compiler = compiler;
+  JavacRunner(final StandardJavaFileManager fm) {
     this.fm = fm;
   }
 
@@ -30,7 +23,9 @@ final class JavacRunner {
       final JavaFileObject sourceFile, final List<String> options, final CompileMode mode) {
     final var collector = new DiagnosticCollector<JavaFileObject>();
     final var task =
-        (JavacTask) compiler.getTask(null, fm, collector, options, null, List.of(sourceFile));
+        (JavacTask)
+            SourceCompiler.COMPILER.getTask(
+                null, fm, collector, options, null, List.of(sourceFile));
 
     try {
       final var it = task.parse().iterator();

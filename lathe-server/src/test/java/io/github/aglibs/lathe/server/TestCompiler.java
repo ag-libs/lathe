@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.Trees;
+import io.github.aglibs.lathe.server.analysis.SourceCompiler;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -10,10 +11,8 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
-import javax.tools.JavaCompiler;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
-import javax.tools.ToolProvider;
 
 public final class TestCompiler {
 
@@ -22,16 +21,9 @@ public final class TestCompiler {
       Trees trees,
       CompilationUnitTree cu,
       StandardJavaFileManager fm,
-      JavaCompiler compiler,
       SourceParser parser) {}
 
-  private static final JavaCompiler COMPILER = ToolProvider.getSystemJavaCompiler();
-
   private TestCompiler() {}
-
-  private static StandardJavaFileManager newFm() {
-    return COMPILER.getStandardFileManager(null, null, null);
-  }
 
   public static void compileToDir(final Path classDir, final Path... sources) throws IOException {
     compileToDir(classDir, List.of(), sources);
@@ -39,13 +31,15 @@ public final class TestCompiler {
 
   public static void compileToDir(
       final Path classDir, final List<Path> classpath, final Path... sources) throws IOException {
-    final var fm = newFm();
+    final var fm = SourceCompiler.createFileManager();
     Files.createDirectories(classDir);
     fm.setLocationFromPaths(StandardLocation.CLASS_OUTPUT, List.of(classDir));
     if (!classpath.isEmpty()) {
       fm.setLocationFromPaths(StandardLocation.CLASS_PATH, classpath);
     }
-    COMPILER.getTask(null, fm, null, null, null, fm.getJavaFileObjects(sources)).call();
+    SourceCompiler.COMPILER
+        .getTask(null, fm, null, null, null, fm.getJavaFileObjects(sources))
+        .call();
   }
 
   public static void compileToJar(
@@ -75,15 +69,15 @@ public final class TestCompiler {
 
   private static ParsedSource doParse(final Path src, final List<Path> classpath)
       throws IOException {
-    final var fm = newFm();
+    final var fm = SourceCompiler.createFileManager();
     if (!classpath.isEmpty()) {
       fm.setLocationFromPaths(StandardLocation.CLASS_PATH, classpath);
     }
     final JavacTask task =
-        (JavacTask) COMPILER.getTask(null, fm, null, null, null, fm.getJavaFileObjects(src));
+        (JavacTask)
+            SourceCompiler.COMPILER.getTask(null, fm, null, null, null, fm.getJavaFileObjects(src));
     final CompilationUnitTree cu = task.parse().iterator().next();
     task.analyze();
-    return new ParsedSource(
-        task, Trees.instance(task), cu, fm, COMPILER, new SourceParser(COMPILER, fm));
+    return new ParsedSource(task, Trees.instance(task), cu, fm, new SourceParser());
   }
 }

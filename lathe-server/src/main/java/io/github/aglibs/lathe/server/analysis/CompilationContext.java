@@ -2,25 +2,20 @@ package io.github.aglibs.lathe.server.analysis;
 
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.core.Stopwatch;
-import io.github.aglibs.lathe.server.analysis.completion.CompletionPipeline;
+import io.github.aglibs.lathe.server.analysis.completion.CompletionEngine;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
-import java.io.IOException;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;
-import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
-import javax.tools.StandardJavaFileManager;
-import javax.tools.ToolProvider;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
@@ -35,18 +30,16 @@ public final class CompilationContext implements AutoCloseable {
   private static final Logger LOG = Logger.getLogger(CompilationContext.class.getName());
 
   private final SourceCompiler compiler;
-  private final StandardJavaFileManager parsingFm;
-  private final CompletionPipeline completionPipeline;
+  private final CompletionEngine completionEngine;
   private final DefinitionLocator definitionLocator;
   private final JavadocLocator javadocLocator;
   private final Map<String, CachedAnalysis> cache = new HashMap<>();
+  private final SourceParser parser;
 
   public CompilationContext(final SourceCompiler compiler) {
     this.compiler = compiler;
-    this.completionPipeline = new CompletionPipeline(compiler);
-    final JavaCompiler parsingCompiler = ToolProvider.getSystemJavaCompiler();
-    this.parsingFm = parsingCompiler.getStandardFileManager(null, null, null);
-    final var parser = new SourceParser(parsingCompiler, parsingFm);
+    this.parser = new SourceParser();
+    this.completionEngine = new CompletionEngine(compiler, parser);
     this.definitionLocator = new DefinitionLocator(parser);
     this.javadocLocator = new JavadocLocator(parser);
   }
@@ -63,9 +56,10 @@ public final class CompilationContext implements AutoCloseable {
   public List<CompletionItem> complete(final String uri, final String content, final Position pos) {
     final var t = Stopwatch.start();
     final var cached = cache.get(uri);
-    final var items =
-        completionPipeline.complete(
-            uri, content, pos, cached != null ? cached.content() : null, cachedAnalysis(cached));
+    final var cachedContent = cached != null ? cached.content() : null;
+    final var cachedAnalysis = cachedAnalysis(cached);
+
+    final var items = completionEngine.complete(uri, content, pos, cachedContent, cachedAnalysis);
     LOG.fine(() -> "[completion] %s %dms items=%d".formatted(uri, t.elapsedMs(), items.size()));
     return items;
   }
@@ -151,11 +145,7 @@ public final class CompilationContext implements AutoCloseable {
 
   public void close() {
     cache.clear();
-    try {
-      parsingFm.close();
-    } catch (final IOException e) {
-      LOG.log(Level.WARNING, e, () -> "[context] failed to close parsingFm");
-    }
+    parser.close();
     compiler.close();
   }
 

@@ -17,18 +17,16 @@ import java.util.List;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
-import javax.tools.ToolProvider;
 
 public final class ExternalCompiler implements SourceCompiler {
 
   private static final Logger LOG = Logger.getLogger(ExternalCompiler.class.getName());
 
   private final WorkspaceManifest manifest;
-  private final JavaCompiler javac = ToolProvider.getSystemJavaCompiler();
+
   private final StandardJavaFileManager fm;
   private final JavacRunner runner;
   private final Path td;
@@ -37,8 +35,8 @@ public final class ExternalCompiler implements SourceCompiler {
   public ExternalCompiler(final WorkspaceManifest manifest) {
     this.manifest = manifest;
     try {
-      this.fm = javac.getStandardFileManager(null, null, null);
-      this.runner = new JavacRunner(javac, fm);
+      this.fm = SourceCompiler.createFileManager();
+      this.runner = new JavacRunner(fm);
       this.td = Files.createTempDirectory("lathe-ext-");
     } catch (final IOException e) {
       throw new UncheckedIOException(e);

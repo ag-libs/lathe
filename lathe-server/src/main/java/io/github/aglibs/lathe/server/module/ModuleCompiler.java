@@ -14,11 +14,9 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
-import javax.tools.ToolProvider;
 
 public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
 
@@ -27,7 +25,6 @@ public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
   private static final String PATCH_MODULE_EQ = PATCH_MODULE + "=";
 
   private final ModuleConfig config;
-  private final JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
   private final StandardJavaFileManager fm;
   private final JavacRunner runner;
   private final Path td;
@@ -37,8 +34,8 @@ public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
     this.config = config;
     try {
       this.td = Files.createTempDirectory("lathe-");
-      this.fm = compiler.getStandardFileManager(null, null, null);
-      this.runner = new JavacRunner(compiler, fm);
+      this.fm = SourceCompiler.createFileManager();
+      this.runner = new JavacRunner(fm);
       initLocations();
       this.compilerArgs = processPatchModules(config.compilerArgs(), fm, td);
     } catch (final IOException e) {
