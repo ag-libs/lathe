@@ -52,4 +52,18 @@ public record CompletionRequest(
 
     return limit;
   }
+
+  String prefix() {
+    int end = cursorOffset();
+    int start = end;
+    while (start > 0 && Character.isJavaIdentifierPart(content.charAt(start - 1))) {
+      start--;
+    }
+    return content.substring(start, end);
+  }
+
+  char charBeforePrefix() {
+    final int start = cursorOffset() - prefix().length();
+    return start > 0 ? content.charAt(start - 1) : '\0';
+  }
 }

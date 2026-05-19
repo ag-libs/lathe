@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.CompletionItem;
+import org.eclipse.lsp4j.CompletionTriggerKind;
 
 public final class CompletionEngine {
 
@@ -30,7 +31,11 @@ public final class CompletionEngine {
                 .formatted(
                     req.uri(), req.pos().getLine(), req.pos().getCharacter(), req.cursorOffset()));
     LOG.fine(() -> "[completion] source line |%s|".formatted(req.sourceLine()));
-    LOG.fine(() -> "[completion] context: %s".formatted(req.context()));
+    LOG.fine(
+        () ->
+            "[completion] prefix=|%s| charBefore='%s'"
+                .formatted(req.prefix(), escapedChar(req.charBeforePrefix())));
+    LOG.fine(() -> "[completion] context: %s kind=%s".formatted(req.context(), contextKind(req)));
 
     if (cached == null) {
       LOG.fine(() -> "[completion] diff no cached source");
@@ -69,12 +74,14 @@ public final class CompletionEngine {
 
     final var diags = parser.tryParseContent(req.uri(), req.content());
     LOG.fine(() -> "[completion] parse diags=%d".formatted(diags.size()));
+    final int co = req.cursorOffset();
     for (final var d : diags) {
+      final long dp = d.getPosition();
+      final String tag = dp == co ? "AT" : dp == co - 1 ? "BEFORE" : "pos=" + dp;
       LOG.fine(
           () ->
-              "[completion] diag [%s] pos=%d code=%s %s"
-                  .formatted(
-                      d.getKind(), d.getPosition(), d.getCode(), d.getMessage(Locale.ENGLISH)));
+              "[completion] diag [%s] %s code=%s %s"
+                  .formatted(d.getKind(), tag, d.getCode(), d.getMessage(Locale.ENGLISH)));
     }
 
     if (req.noDiff()
@@ -124,5 +131,56 @@ public final class CompletionEngine {
     }
 
     return null;
+  }
+
+  private static String contextKind(final CompletionRequest req) {
+    final var ctx = req.context();
+    if (ctx != null && ctx.getTriggerKind() == CompletionTriggerKind.TriggerCharacter) {
+      final var tc = ctx.getTriggerCharacter();
+      if (".".equals(tc)) {
+        return "MEMBER_DOT";
+      }
+      if ("@".equals(tc)) {
+        return "ANNOTATION";
+      }
+      if (" ".equals(tc)) {
+        return "KEYWORD_SPACE";
+      }
+      if ("#".equals(tc)) {
+        return "JAVADOC_MEMBER";
+      }
+      return "TRIGGER(" + tc + ")";
+    }
+
+    final char cbc = req.charBeforePrefix();
+    if (cbc == '.') {
+      return "MEMBER_DOT";
+    }
+    if (cbc == '@') {
+      return "ANNOTATION";
+    }
+
+    final String prefix = req.prefix();
+    final String line = req.sourceLine().stripLeading();
+    if (line.startsWith("import ") || line.startsWith("import\t")) {
+      return "IMPORT_PATH";
+    }
+    if (line.startsWith("requires ") || line.startsWith("exports ") || line.startsWith("opens ")) {
+      return "MODULE_DIRECTIVE";
+    }
+    if (!prefix.isEmpty()) {
+      return "STANDALONE_IDENT";
+    }
+    return "UNKNOWN";
+  }
+
+  private static String escapedChar(final char c) {
+    return switch (c) {
+      case '\0' -> "\\0";
+      case '\n' -> "\\n";
+      case '\t' -> "\\t";
+      case ' ' -> "SPC";
+      default -> String.valueOf(c);
+    };
   }
 }
