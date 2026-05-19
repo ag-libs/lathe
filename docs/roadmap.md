@@ -104,6 +104,23 @@ Keep Neovim/VS Code clients thin: they launch `~/.cache/lathe/current/lathe-laun
 and ask the server for Lathe-specific state via custom LSP requests.
 No client-side project model parsing.
 
+**`lathe-source://` URI scheme for external sources**
+Definition jumps into JDK and dependency sources currently return `file://` URIs pointing
+into `~/.cache/lathe/`, causing swap file dialogs in Neovim and requiring path-based
+detection logic in every editor plugin.
+Replace with a `lathe-source://` scheme: one line in `CompilationContext.definition()`;
+editors read the file from the path embedded in the URI and open it as a read-only
+`nofile` buffer — no server round-trip, no per-editor path heuristics.
+See [lathe-source-uri-scheme.md](lathe-source-uri-scheme.md) for the full design.
+
+**Semantic token coverage for VS Code**
+VS Code uses TextMate grammars rather than tree-sitter, so it relies on the LSP for all
+identifier-level highlighting. The current `TokenScanner` legend only covers static/deprecated
+methods and fields, enum constants, type parameters, and annotations.
+Full VS Code parity requires adding `class`, `parameter`, and `variable` token types and
+widening `method`/`property` to emit for all instances.
+See [lathe-vscode-semantic-tokens.md](lathe-vscode-semantic-tokens.md) for the implementation plan.
+
 **Post-v1 language features**
 Rename, inlay hints, signature help, and richer code actions,
 after the sync/distribution/type-index foundation is in place.

@@ -942,6 +942,16 @@ If cache is empty, trigger a pass first.
 Computed once per compilation pass and cached alongside the `CompilationUnitTree`.
 Invalidated on next `didChange`.
 
+The v1 legend covers tokens that require javac attribution to classify: enum constants, type parameters, annotations,
+and methods or fields that carry `static` or `@Deprecated`.
+Plain instance methods, instance fields, parameters, local variables, and type name references are not yet covered
+and are a known gap — VS Code relies on semantic tokens for identifier-level highlighting because it uses TextMate
+grammars rather than tree-sitter.
+
+Full VS Code coverage requires adding `class`, `parameter`, and `variable` token types and widening `method` and
+`property` to cover all instances, not just static or deprecated ones.
+See [lathe-vscode-semantic-tokens.md](lathe-vscode-semantic-tokens.md) for the detailed plan.
+
 ### Formatting
 
 `google-java-format` as a library.

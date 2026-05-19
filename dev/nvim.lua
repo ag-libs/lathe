@@ -70,6 +70,7 @@ end
 
 local function mark_external_source_readonly(args)
   if is_external_source(args.buf) then
+    vim.bo[args.buf].swapfile = false
     vim.bo[args.buf].readonly = true
     vim.bo[args.buf].modifiable = false
     vim.bo[args.buf].bufhidden = 'hide'
@@ -78,6 +79,10 @@ local function mark_external_source_readonly(args)
 end
 
 vim.api.nvim_create_autocmd('FileType', { pattern = 'java', callback = start_lathe })
+vim.api.nvim_create_autocmd('BufReadPre', {
+  pattern = '*.java',
+  callback = mark_external_source_readonly,
+})
 vim.api.nvim_create_autocmd({ 'BufReadPost', 'BufNewFile' }, {
   pattern = '*.java',
   callback = mark_external_source_readonly,
