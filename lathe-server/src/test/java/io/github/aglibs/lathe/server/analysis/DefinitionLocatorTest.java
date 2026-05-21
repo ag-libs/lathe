@@ -2,9 +2,7 @@ package io.github.aglibs.lathe.server.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.TreePath;
-import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.server.TestCompiler;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -335,26 +333,4 @@ class DefinitionLocatorTest extends SampleFixture {
         .locate(element, parsed.trees(), List.of(), parsed.cu().getSourceFile().toUri().toString());
   }
 
-  private TreePath pathAt(final String expression, final String token) {
-    return pathAt(compiled.trees(), compiled.cu(), expression, token);
-  }
-
-  private static TreePath pathAt(
-      final Trees trees,
-      final CompilationUnitTree cu,
-      final String expression,
-      final String token) {
-    final String source = sourceContent(cu);
-    final int expressionOffset = source.indexOf(expression);
-    final int offset = source.indexOf(token, expressionOffset);
-    return SourceLocator.pathAt(trees, cu, offset);
-  }
-
-  private static String sourceContent(final CompilationUnitTree cu) {
-    try {
-      return cu.getSourceFile().getCharContent(false).toString();
-    } catch (final IOException e) {
-      throw new AssertionError(e);
-    }
-  }
 }

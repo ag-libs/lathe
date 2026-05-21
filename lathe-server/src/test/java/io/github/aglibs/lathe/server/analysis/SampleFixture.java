@@ -1,6 +1,8 @@
 package io.github.aglibs.lathe.server.analysis;
 
+import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.TreePath;
+import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.server.TestCompiler;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -55,5 +57,28 @@ public abstract class SampleFixture {
   TreePath pathAt(final int line, final int character) {
     final var offset = SourceLocator.toOffset(compiled.cu(), line, character);
     return SourceLocator.pathAt(compiled.trees(), compiled.cu(), offset);
+  }
+
+  TreePath pathAt(final String expression, final String token) {
+    return pathAt(compiled.trees(), compiled.cu(), expression, token);
+  }
+
+  static TreePath pathAt(
+      final Trees trees,
+      final CompilationUnitTree cu,
+      final String expression,
+      final String token) {
+    final String source = sourceContent(cu);
+    final int expressionOffset = source.indexOf(expression);
+    final int offset = source.indexOf(token, expressionOffset);
+    return SourceLocator.pathAt(trees, cu, offset);
+  }
+
+  static String sourceContent(final CompilationUnitTree cu) {
+    try {
+      return cu.getSourceFile().getCharContent(false).toString();
+    } catch (final IOException e) {
+      throw new AssertionError(e);
+    }
   }
 }

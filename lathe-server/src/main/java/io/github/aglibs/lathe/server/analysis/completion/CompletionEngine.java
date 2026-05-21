@@ -16,6 +16,11 @@ public final class CompletionEngine {
   }
 
   public List<CompletionItem> complete(final CompletionRequest req) {
+    final var sentinel = new SentinelInjector(req.content()).inject(req.cursorOffset());
+    LOG.fine(
+        () ->
+            "[completion] prefix=|%s| receiver=|%s| ctx=%s"
+                .formatted(sentinel.prefix(), sentinel.receiverText(), sentinel.context()));
     return List.of();
   }
 }
