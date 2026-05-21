@@ -69,7 +69,7 @@ Discovery is a one-pass AST walk on the cached `CompilationUnitTree` from sectio
 Same shape, no file argument, returns runnables across all reactor modules.
 Used by editors that populate a workspace-wide test tree on open.
 Lazy population is encouraged for large reactors:
-enumerate test classes from the type index (section 7 of the main design), expand methods on demand via
+enumerate test classes from the type index (future work, see roadmap), expand methods on demand via
 `lathe.runnables.list`.
 
 ### `lathe.run`

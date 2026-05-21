@@ -521,7 +521,6 @@ The LS watches `workspace.json` and `lsp-params-*.json` files.
 Manifest or params changes trigger a full LS reload:
 the module registry is re-scanned from `.lathe/`,
 all `CustomFileManager` instances and result caches are dropped,
-all type-completion `TreeMap`s are invalidated,
 and open files are re-attributed.
 The user sees a brief "Workspace reloaded" notification.
 
@@ -745,101 +744,36 @@ it is flushed after full passes and closed on eviction, registry reload, and ser
 
 ## 7. Language Server — Features
 
-### Type completion
-
-Type name completion uses three sources assembled into a single `TreeMap<String, List<TypeEntry>>` per module on the
-first completion request after the module's `CustomFileManager` is created.
-Subsequent requests within the lifetime of that file manager search the in-memory map directly.
-The map is dropped when the `CustomFileManager` is dropped (last file closed in the module).
-
-All three sources are assembled on the first completion request by a single dedicated enumeration task:
-a fresh `JavacTask` built from the module's params (classpath, modulepath, `--release`) with `proc=none`.
-
-**JDK types** — enumerated via `Elements.getModuleElement("java.se")` and its transitive `requires`, walking exported
-packages.
-Respects `--release` automatically.
-
-**Reactor types** — enumerated via `Elements.getModuleElement(moduleName)` for each reactor module on the modulepath,
-walking `ExportsDirective` entries.
-Respects `module-info.class` exports — internal packages do not appear in dependent module completion.
-
-**JAR dependency types** — for each non-reactor JAR on the classpath or modulepath (reactor modules are already covered
-by the "Reactor types" source above), the LS checks `~/.cache/lathe/type-index/jars/<gav>.index`.
-If the index exists, it is read directly.
-If not, the JAR is scanned and the index written before reading:
-
-- *Modular JARs on the modulepath* — find the module element for this JAR's module name, walk its `ExportsDirective` →
-  `PackageElement` → `getEnclosedElements()`.
-  Qualified exports are preserved.
-- *Non-modular JARs on the classpath* — enumerated via `fileManager.list(CLASS_PATH, "", EnumSet.of(Kind.CLASS), true)`
-  with `fileManager.inferBinaryName()` to derive binary names.
-  Inner classes (`$` in simple name) are filtered.
-
-The index file is written to `~/.cache/lathe/type-index/jars/<gav>.index` and shared across all projects on the machine.
-The enumeration task is discarded after the `TreeMap` is built.
-
-**First-completion latency.** The enumeration task walks platform modules plus all deps.
-This takes 300–800ms on a cold JVM.
-Paid once per module per editing session.
-Subsequent completion requests use the cached `TreeMap` and are fast.
-
-`TreeMap<String, List<TypeEntry>>` enables O(log n) prefix search across all three sources:
-
-```java
-var results = typeIndex.subMap(prefix, prefix + Character.MAX_VALUE);
-```
-
-The index file format per JAR:
-
-```properties
-jarPath=/root/.m2/repository/com/google/guava/guava/32.0.0-jre/guava-32.0.0-jre.jar
-typeCount=3
-
-type.0.simpleName=ImmutableList
-type.0.fqn=com.google.common.collect.ImmutableList
-type.0.kind=CLASS
-type.0.exported=true
-type.0.exportedTo=
-
-type.1.simpleName=ImmutableMap
-type.1.fqn=com.google.common.collect.ImmutableMap
-type.1.kind=CLASS
-type.1.exported=true
-type.1.exportedTo=
-
-type.2.simpleName=Striped
-type.2.fqn=com.google.common.util.concurrent.Striped
-type.2.kind=CLASS
-type.2.exported=true
-type.2.exportedTo=com.example.internal
-```
-
-**`module-info.java` invalidation.** When `didSave` fires for a `module-info.java` file in module B, the
-type-completion `TreeMap` is nulled out for:
-
-- **Modules that have B as a reactor dependency** — their reactor-type slice may have gained or lost exported packages.
-- **Module B itself** — its `requires` graph may have changed.
-
-The nulled map is rebuilt lazily on the next completion request.
-
 ### Member access completion
 
-> Full design: [lathe_completion_design.md](lathe_completion_design.md)
+> Full design: [completion_engine_implementation_guide.md](completion_engine_implementation_guide.md)
 
-Triggered when the user types `.`
-before the cursor.
-The file likely has a syntax error at the cursor — the expression is incomplete.
-Solution: method body erasing, run as a fresh `JavacTask`:
+Completion uses three layers kept strictly separate:
 
-1. **Erase method bodies** — replace all method bodies except the one containing the cursor with empty blocks `{}`.
-   Reduces file size 80–90%.
-2. **Inject sentinel** — insert `$lathe$sentinel$` after the dot.
-3. **Compile with `proc=none`**.
-4. **Find sentinel** — locate the `MemberSelectTree`, get its receiver `TypeMirror`.
-5. **Enumerate members** — `Elements.getAllMembers(typeElement)` with `types.asMemberOf(receiverType, member)` for
-   correct generic substitution.
-6. **Filter and return** — filter by accessibility and prefix match.
-7. **Discard the task** — drop task references after collecting completion items.
+**Layer 1 — Live buffer** — the current content string.
+Used for prefix extraction and scanning only.
+Never passed to javac at completion time.
+
+**Layer 2 — Parse-only sentinel** — a synthetic copy of the live buffer with the cursor token replaced by
+`__LATHE_SENTINEL__` is parsed by javac with no attribution (~10ms).
+The sentinel node's ancestor chain reveals syntactic context: member access, simple name, argument position,
+constructor call, annotation.
+A per-file sentinel cache avoids re-parsing while the user extends the current token —
+cache hits cost under 1ms with no javac invocation.
+
+**Layer 3 — Background attributed snapshot** — the `CachedAnalysis` produced by the debounced attribution pass.
+Used read-only at completion time for receiver type lookup, local variable scanning, and member enumeration.
+No attribution runs during completion.
+
+Injection: backward scan extracts the prefix and detects STATEMENT vs EXPRESSION context;
+forward scan counts unmatched open delimiters;
+the file tail is preserved so lambda-enclosing method calls remain parseable.
+`__LATHE_SENTINEL__` is followed by `";"` in STATEMENT context;
+in EXPRESSION context the tail provides the necessary closing tokens.
+
+Fallback: when sentinel parse fails or the receiver type cannot be resolved from the snapshot,
+index-backed type-name proposals are returned when the type index is available, otherwise an empty list.
+The fallback never returns an error — always a possibly-empty list.
 
 ### Go-to-definition
 
@@ -975,7 +909,7 @@ During fast passes, AP-derived diagnostics remain frozen at the state from the l
 
 ### Code actions
 
-**Add missing import** — when a type name is unresolved, search the type index for candidates.
+**Add missing import** — when a type name is unresolved, search the type index for candidates (depends on type index, future work).
 User selects one, import statement inserted.
 
 **Organize imports** — sort and remove unused imports.
@@ -987,10 +921,9 @@ Walk the file's `CompilationUnitTree`, emit `DocumentSymbol` for each class, met
 
 ### Workspace symbols
 
-Prefix search on the full type index — JDK types, reactor types, and JAR dependency types — regardless of
+Prefix search on the type index — JDK types, reactor types, and JAR dependency types — regardless of
 which modules are currently open.
-Indexes are built lazily as described in the type completion section;
-a workspace symbol query may trigger index building for modules not yet opened.
+Depends on the type index (future work).
 
 ### Refactoring strategy
 
@@ -1041,7 +974,7 @@ Parameter name hints on method call arguments via `MethodInvocationTree` and `Ex
 ### Signature help (post-v1)
 
 Enumerate overloads when cursor is inside method call parentheses.
-Reuses method body erasing and sentinel technique.
+Reuses the sentinel technique.
 
 ### Run, test, and debug (post-v1)
 

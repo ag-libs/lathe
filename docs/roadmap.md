@@ -20,18 +20,12 @@ Current lifecycle shape:
   and compiles opened files — including external dependency/JDK sources.
 - Editors launch `~/.cache/lathe/current/lathe-launcher.sh`.
 
-Threading choice:
-Lathe is being refactored to use one server worker thread for workspace/session state
-and one module worker thread per javac-backed compilation context.
-The current recipe is [lathe-server-data-flow-recipe.md](lathe-server-data-flow-recipe.md).
+Threading model: one server worker thread (`lathe-worker`) owns `WorkspaceSession`, `ModuleWorkspace`,
+open-file snapshots, routing, stale-result checks, and client publishing.
+One module worker thread per javac-backed `CompilationContext`.
 LSP4J threads capture immutable request data and enqueue work.
-The server worker owns `WorkspaceSession`, `ModuleWorkspace`, open-file snapshots, routing,
-stale-result checks, and client publishing.
-Module workers own `CompilationContext` instances and javac-backed compiler state.
-Compile results cross back to the server worker before diagnostics or semantic-token refreshes are published.
-
-Member-access completion work has started,
-but it should be revisited after the server data-flow recipe is implemented and reviewed.
+Compile results cross back to `lathe-worker` before diagnostics or semantic-token refreshes are published.
+Architecture is documented in [lathe-server-data-flow-recipe.md](lathe-server-data-flow-recipe.md).
 
 ## Completed
 
@@ -48,7 +42,7 @@ but it should be revisited after the server data-flow recipe is implemented and 
   `dev/nvim.sh` and `dev/lsp.py` updated to launch via the installed script.
 - **Server threading model** — LSP request/notification handlers and workspace reload now route through a single server worker.
   Mutable workspace state stays on that worker,
-  while javac-backed compiler state is moving behind module workers.
+  javac-backed compiler state is behind module workers.
   `WorkspaceSession` encapsulates worker-confined workspace state and routing;
   `LatheTextDocumentService` is a thin LSP dispatcher.
 - **Stale-result guard** — `publishIfCurrent` compares the content that triggered a compile against the latest open content before publishing diagnostics,
@@ -57,20 +51,29 @@ but it should be revisited after the server data-flow recipe is implemented and 
 ## Near-Term
 
 **Completion (member access)**
-The completion pipeline has been refactored into `analysis/completion/`:
-`CompletionPipeline` tries three strategies in order — `StaleCacheStrategy` (no recompile),
-`SentinelStrategy` (inject `__LATHE_SENTINEL__()`, compile, resolve receiver),
-and `RepairStrategy` (guided repair via `DiagnosticRepairer`, then retry sentinel).
-`CompletionProvider` was deleted; `CompilationContext` now uses `CompletionPipeline` directly.
-`WorkbenchFixture` + `TempSourceCompiler` provide the test foundation;
-`CompletionTest` covers local vars, fields, chained calls, generics, enums, and inner classes.
 
-Still needs cleanup:
+Design: [completion_engine_implementation_guide.md](completion_engine_implementation_guide.md)
 
-- `WorkspaceSession.completionFuture(...)` — route from current open-file content through the correct `ModuleWorker`.
-- `LatheLanguageServer` — keep `completionProvider` capability aligned with implementation status.
-- `DiagnosticRepairer` — basic `'x' expected` handling only; improve coverage with targeted test cases.
-- Timeout guard — return partial or empty within the 200 ms budget.
+`CompletionEngine` is a diagnostic stub returning empty results.
+Implementation proceeds in four layers, each independently testable:
+
+1. **`SentinelInjector`** — backward/forward scan + injection, pure string manipulation with no javac.
+   Extracts prefix, detects STATEMENT/EXPRESSION context, extracts receiver text,
+   balances braces, preserves the file tail for lambda compatibility.
+2. **`SentinelParser`** — parse-only javac invocation on the injected buffer (~10ms).
+   Finds `__LATHE_SENTINEL__` in the AST, extracts `SentinelResult`
+   (context enum, receiver text, enclosing class/method, cursor line).
+3. **Sentinel cache** — `SentinelResult` stored per file in `CompilationContext`.
+   Invalidated on structural characters (`.`, `(`, `{`, newline, etc.).
+   Fast path re-filters on prefix-only extension with no parse.
+4. **Receiver resolution + member proposals** — `CachedAnalysis` (background attributed snapshot)
+   used read-only to resolve receiver type and enumerate members via `getAllMembers`.
+
+Routing still needed:
+
+- `WorkspaceSession.completionFuture(...)` — route completion through the correct `ModuleWorker`.
+- `LatheLanguageServer` — align `completionProvider` capability with implementation status.
+- Timeout guard — return partial or empty within the 200ms budget.
 
 ## Future Work
 
