@@ -332,5 +332,4 @@ class DefinitionLocatorTest extends SampleFixture {
     return new DefinitionLocator(parsed.parser())
         .locate(element, parsed.trees(), List.of(), parsed.cu().getSourceFile().toUri().toString());
   }
-
 }

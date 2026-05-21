@@ -130,7 +130,8 @@ final class SentinelInjector {
       i--;
     }
 
-    final String result = content.substring(i + 1, end + 1).trim();
+    final var raw = content.substring(i + 1, end + 1).trim();
+    final var result = raw.startsWith(".") ? raw.substring(1) : raw;
     return result.isEmpty() ? null : result;
   }
 
