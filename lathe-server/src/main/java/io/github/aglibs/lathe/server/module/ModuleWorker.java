@@ -86,7 +86,7 @@ public final class ModuleWorker {
             new CompileResult(
                 request.uri(),
                 request.generation(),
-                ctx.compile(request.uri(), request.content(), request.mode())));
+                ctx.compile(request.uri(), request.content(), request.version(), request.mode())));
   }
 
   public CompletableFuture<Hover> hover(
@@ -113,8 +113,9 @@ public final class ModuleWorker {
     return submit(ctx -> ctx.complete(uri, content, position, context));
   }
 
-  public CompletableFuture<List<SemanticToken>> semanticTokens(final String uri) {
-    return submit(ctx -> ctx.semanticTokens(uri));
+  public CompletableFuture<List<SemanticToken>> semanticTokens(
+      final String uri, final int expectedVersion) {
+    return submit(ctx -> ctx.semanticTokens(uri, expectedVersion));
   }
 
   public void dropFromCache(final String uri) {

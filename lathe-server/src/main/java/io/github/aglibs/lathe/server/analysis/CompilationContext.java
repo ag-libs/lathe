@@ -38,10 +38,11 @@ public final class CompilationContext implements AutoCloseable {
     this.javadocLocator = new JavadocLocator(parser);
   }
 
-  public List<Diagnostic> compile(final String uri, final String content, final CompileMode mode) {
+  public List<Diagnostic> compile(
+      final String uri, final String content, final int version, final CompileMode mode) {
     final var t = Stopwatch.start();
     final var run = compiler.compile(uri, content, mode);
-    cache.put(uri, new CachedAnalysis(content, run.fileAnalysis()));
+    cache.put(uri, new CachedAnalysis(content, version, run.fileAnalysis()));
     final var diags = filterAndMap(run.diagnostics(), content);
     LOG.info(() -> "[%s] %s %dms diags=%d".formatted(mode.tag, uri, t.elapsedMs(), diags.size()));
     return diags;
@@ -60,9 +61,13 @@ public final class CompilationContext implements AutoCloseable {
     cache.remove(uri);
   }
 
-  public List<SemanticToken> semanticTokens(final String uri) {
+  public List<SemanticToken> semanticTokens(final String uri, final int expectedVersion) {
     final var ctx = cache.get(uri);
-    return ctx != null ? ctx.analysis().semanticTokens() : null;
+    if (ctx == null || ctx.version() != expectedVersion) {
+      return null;
+    }
+
+    return ctx.analysis().semanticTokens();
   }
 
   public Hover hover(

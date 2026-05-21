@@ -57,14 +57,14 @@ final class WorkspaceSession {
     workspace.close();
   }
 
-  void onOpen(final String uri, final String content) {
-    final var snapshot = putOpenFile(uri, content);
+  void onOpen(final String uri, final String content, final int version) {
+    final var snapshot = putOpenFile(uri, content, version);
     LOG.info(() -> "[open] %s".formatted(uri));
     compileAndPublish(snapshot, CompileMode.OPEN);
   }
 
-  void onChange(final String uri, final String content) {
-    putOpenFile(uri, content);
+  void onChange(final String uri, final String content, final int version) {
+    putOpenFile(uri, content, version);
     LOG.fine(() -> "[change] %s".formatted(uri));
     client.publishDiagnostics(new PublishDiagnosticsParams(uri, List.of()));
     worker.cancel(uri);
@@ -153,11 +153,17 @@ final class WorkspaceSession {
   }
 
   CompletableFuture<SemanticTokens> semanticTokensFuture(final String uri) {
+    final var openFile = openFiles.get(uri);
+    if (openFile == null) {
+      return CompletableFuture.completedFuture(null);
+    }
+
+    final int version = openFile.version();
     return routeFeature(
         uri,
         moduleWorker ->
             moduleWorker
-                .semanticTokens(uri)
+                .semanticTokens(uri, version)
                 .thenApply(WorkspaceSession::encodeTokensOrNull)
                 .exceptionally(ex -> logAndReturn(ex, "[semanticTokens] failed for " + uri, null)),
         null);
@@ -182,7 +188,12 @@ final class WorkspaceSession {
     final var old = workspace;
     workspace = newWorkspace;
     manifest = newManifest;
-    refreshOpenFileGenerations();
+    List.copyOf(openFiles.keySet())
+        .forEach(
+            uri -> {
+              final var f = openFiles.get(uri);
+              putOpenFile(uri, f.content(), f.version());
+            });
     old.close();
     scheduleAllOpenFiles();
   }
@@ -215,7 +226,8 @@ final class WorkspaceSession {
       final CompileMode mode,
       final AfterCompile afterCompile) {
     final var request =
-        new CompileRequest(snapshot.uri(), snapshot.content(), snapshot.generation(), mode);
+        new CompileRequest(
+            snapshot.uri(), snapshot.content(), snapshot.version(), snapshot.generation(), mode);
     moduleWorker
         .compile(request)
         .thenAccept(result -> worker.execute(() -> afterCompile.accept(snapshot, result)))
@@ -321,18 +333,13 @@ final class WorkspaceSession {
       return null;
     }
 
-    return savedContent != null ? putOpenFile(uri, savedContent) : openFile;
+    return savedContent != null ? putOpenFile(uri, savedContent, openFile.version()) : openFile;
   }
 
-  private OpenFile putOpenFile(final String uri, final String content) {
-    final var openFile = new OpenFile(uri, content, nextGeneration());
+  private OpenFile putOpenFile(final String uri, final String content, final int version) {
+    final var openFile = new OpenFile(uri, content, version, nextGeneration());
     openFiles.put(uri, openFile);
     return openFile;
-  }
-
-  private void refreshOpenFileGenerations() {
-    openFiles.replaceAll(
-        (uri, openFile) -> new OpenFile(uri, openFile.content(), nextGeneration()));
   }
 
   private long nextGeneration() {
@@ -396,5 +403,5 @@ final class WorkspaceSession {
     void accept(OpenFile snapshot, CompileResult result);
   }
 
-  private record OpenFile(String uri, String content, long generation) {}
+  private record OpenFile(String uri, String content, int version, long generation) {}
 }

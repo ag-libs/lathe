@@ -50,7 +50,7 @@ class ExternalCompilerTest {
 
     try (final var ctx = new CompilationContext(new ExternalCompiler(manifest))) {
       final List<org.eclipse.lsp4j.Diagnostic> diagnostics =
-          ctx.compile(usesSource.toUri().toString(), usesContent, CompileMode.OPEN);
+          ctx.compile(usesSource.toUri().toString(), usesContent, 0, CompileMode.OPEN);
       final Position helperPos =
           SourceLocator.offsetToPosition(usesContent, usesContent.indexOf("Helper"));
 
@@ -90,7 +90,7 @@ class ExternalCompilerTest {
         SourceLocator.offsetToPosition(usesContent, usesContent.indexOf("Helper"));
 
     try (final var ctx = new CompilationContext(new ExternalCompiler(manifest))) {
-      ctx.compile(usesUri, usesContent, CompileMode.OPEN);
+      ctx.compile(usesUri, usesContent, 0, CompileMode.OPEN);
 
       // Hover over Helper: JavadocLocator finds helperSource via manifest.externalSourceDirs()
       // and calls parser.parse(helperSource). In the broken state this resets the compilation
@@ -128,13 +128,13 @@ class ExternalCompilerTest {
         usesJar, usesSourceRoot, List.of(helperJar), helperJar, helperSourceRoot);
     try (final var ctx =
         new CompilationContext(new ExternalCompiler(WorkspaceManifest.load(tmp)))) {
-      assertThat(ctx.compile(uri, usesContent, CompileMode.OPEN)).isEmpty();
+      assertThat(ctx.compile(uri, usesContent, 0, CompileMode.OPEN)).isEmpty();
     }
 
     writeWorkspaceManifestWithoutHelper(usesJar, usesSourceRoot);
     try (final var ctx =
         new CompilationContext(new ExternalCompiler(WorkspaceManifest.load(tmp)))) {
-      final List<Diagnostic> diagnostics = ctx.compile(uri, usesContent, CompileMode.OPEN);
+      final List<Diagnostic> diagnostics = ctx.compile(uri, usesContent, 0, CompileMode.OPEN);
       assertThat(diagnostics)
           .extracting(d -> d.getMessage().getLeft())
           .anySatisfy(message -> assertThat(message).contains("package b does not exist"));
@@ -163,7 +163,7 @@ class ExternalCompilerTest {
     try (final var ctx =
         new CompilationContext(new ExternalCompiler(WorkspaceManifest.load(tmp)))) {
       final List<Diagnostic> diagnostics =
-          ctx.compile(usesSource.toUri().toString(), usesContent, CompileMode.OPEN);
+          ctx.compile(usesSource.toUri().toString(), usesContent, 0, CompileMode.OPEN);
       assertThat(diagnostics).isEmpty();
     }
   }
@@ -182,8 +182,8 @@ class ExternalCompilerTest {
 
     try (final var ctx =
         new CompilationContext(new ExternalCompiler(WorkspaceManifest.load(tmp)))) {
-      assertThat(ctx.compile(source.toUri().toString(), content, CompileMode.OPEN)).isEmpty();
-      assertThat(ctx.compile(secondSource.toUri().toString(), secondContent, CompileMode.OPEN))
+      assertThat(ctx.compile(source.toUri().toString(), content, 0, CompileMode.OPEN)).isEmpty();
+      assertThat(ctx.compile(secondSource.toUri().toString(), secondContent, 0, CompileMode.OPEN))
           .isEmpty();
     }
   }

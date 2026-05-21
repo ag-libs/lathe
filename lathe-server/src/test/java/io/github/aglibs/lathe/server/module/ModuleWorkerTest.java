@@ -25,8 +25,9 @@ class ModuleWorkerTest {
   @Test
   void compile_request_returnsResultWithSnapshotIdentity() {
     final var diagnostic = new Diagnostic();
-    final var request = new CompileRequest("file:///A.java", "class A {}", 42L, CompileMode.OPEN);
-    when(context.compile(request.uri(), request.content(), request.mode()))
+    final var request =
+        new CompileRequest("file:///A.java", "class A {}", 1, 42L, CompileMode.OPEN);
+    when(context.compile(request.uri(), request.content(), request.version(), request.mode()))
         .thenReturn(List.of(diagnostic));
 
     final var result = worker.compile(request).join();
@@ -38,8 +39,9 @@ class ModuleWorkerTest {
 
   @Test
   void dropFromCache_initializedContext_dropsOnWorkerContext() {
-    final var request = new CompileRequest("file:///A.java", "class A {}", 1L, CompileMode.OPEN);
-    when(context.compile(request.uri(), request.content(), request.mode())).thenReturn(List.of());
+    final var request = new CompileRequest("file:///A.java", "class A {}", 1, 1L, CompileMode.OPEN);
+    when(context.compile(request.uri(), request.content(), request.version(), request.mode()))
+        .thenReturn(List.of());
 
     worker.compile(request).join();
     worker.dropFromCache(request.uri());
@@ -50,8 +52,9 @@ class ModuleWorkerTest {
 
   @Test
   void close_initializedContext_closesContext() {
-    final var request = new CompileRequest("file:///A.java", "class A {}", 1L, CompileMode.OPEN);
-    when(context.compile(request.uri(), request.content(), request.mode())).thenReturn(List.of());
+    final var request = new CompileRequest("file:///A.java", "class A {}", 1, 1L, CompileMode.OPEN);
+    when(context.compile(request.uri(), request.content(), request.version(), request.mode()))
+        .thenReturn(List.of());
 
     worker.compile(request).join();
     worker.close();

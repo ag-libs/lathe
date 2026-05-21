@@ -48,16 +48,20 @@ final class LatheTextDocumentService implements TextDocumentService {
 
   @Override
   public void didOpen(final DidOpenTextDocumentParams params) {
-    final var uri = params.getTextDocument().getUri();
-    final var content = params.getTextDocument().getText();
-    worker.execute(() -> session.onOpen(uri, content));
+    final var doc = params.getTextDocument();
+    final var uri = doc.getUri();
+    final var content = doc.getText();
+    final var version = doc.getVersion();
+    worker.execute(() -> session.onOpen(uri, content, version));
   }
 
   @Override
   public void didChange(final DidChangeTextDocumentParams params) {
-    final var uri = params.getTextDocument().getUri();
+    final var doc = params.getTextDocument();
+    final var uri = doc.getUri();
     final var content = params.getContentChanges().getFirst().getText();
-    worker.execute(() -> session.onChange(uri, content));
+    final var version = doc.getVersion();
+    worker.execute(() -> session.onChange(uri, content, version));
   }
 
   @Override
