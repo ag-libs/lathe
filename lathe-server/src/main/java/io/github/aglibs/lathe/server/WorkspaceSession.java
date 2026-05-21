@@ -59,7 +59,7 @@ final class WorkspaceSession {
 
   void onOpen(final String uri, final String content) {
     final var snapshot = putOpenFile(uri, content);
-    LOG.fine(() -> "[open] %s".formatted(uri));
+    LOG.info(() -> "[open] %s".formatted(uri));
     compileAndPublish(snapshot, CompileMode.OPEN);
   }
 
@@ -81,13 +81,14 @@ final class WorkspaceSession {
 
   void onClose(final String uri) {
     openFiles.remove(uri);
+    LOG.info(() -> "[close] %s".formatted(uri));
     worker.cancel(uri);
     workspace.dropFromAllCaches(uri);
     client.publishDiagnostics(new PublishDiagnosticsParams(uri, List.of()));
   }
 
   void onSave(final String uri, final String savedContent) {
-    LOG.fine(() -> "[save] %s".formatted(uri));
+    LOG.info(() -> "[save] %s".formatted(uri));
     worker.cancel(uri);
 
     final var snapshot = snapshotForSave(uri, savedContent);
@@ -175,6 +176,7 @@ final class WorkspaceSession {
   }
 
   private void reload() {
+    LOG.info(() -> "[reload] workspace changed, reloading");
     final var newManifest = WorkspaceManifest.load(workspaceRoot);
     final var newWorkspace = ModuleWorkspace.scan(workspaceRoot, newManifest);
     final var old = workspace;
@@ -252,7 +254,7 @@ final class WorkspaceSession {
   }
 
   private void publishMissingDiagnostic(final CompilerRoute.Missing missing) {
-    LOG.fine(() -> "[compile] no module for %s".formatted(missing.uri()));
+    LOG.warning(() -> "[compile] no module for %s".formatted(missing.uri()));
     client.publishDiagnostics(
         singleDiag(missing.uri(), missing.message(), DiagnosticSeverity.Warning));
   }

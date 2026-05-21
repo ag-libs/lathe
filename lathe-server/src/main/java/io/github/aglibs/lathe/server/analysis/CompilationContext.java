@@ -33,7 +33,7 @@ public final class CompilationContext implements AutoCloseable {
   public CompilationContext(final SourceCompiler compiler) {
     this.compiler = compiler;
     this.parser = new SourceParser();
-    this.completionEngine = new CompletionEngine(compiler, parser);
+    this.completionEngine = new CompletionEngine(parser);
     this.definitionLocator = new DefinitionLocator(parser);
     this.javadocLocator = new JavadocLocator(parser);
   }
@@ -43,7 +43,7 @@ public final class CompilationContext implements AutoCloseable {
     final var run = compiler.compile(uri, content, mode);
     cache.put(uri, new CachedAnalysis(content, run.fileAnalysis()));
     final var diags = filterAndMap(run.diagnostics(), content);
-    LOG.fine(() -> "[%s] %s %dms diags=%d".formatted(mode.tag, uri, t.elapsedMs(), diags.size()));
+    LOG.info(() -> "[%s] %s %dms diags=%d".formatted(mode.tag, uri, t.elapsedMs(), diags.size()));
     return diags;
   }
 

@@ -121,17 +121,34 @@ Visible via Maven logging output.
 
 **`lathe-server`** — JUL only.
 `LATHE_DEBUG=1` enables `FINE` level.
-- `INFO` — server lifecycle only (startup, reload, shutdown)
-- `FINE` — all timed operations
+
+| Level | When to use |
+|---|---|
+| `SEVERE` | Unrecoverable errors: compile/feature failures surfaced to the client, unexpected exceptions. Always include the `Throwable`. |
+| `WARNING` | Actionable problems the user should know about: no module found for an open file, workspace config missing. |
+| `INFO` | Lifecycle events that show the server is working: server start/stop, workspace load/reload, file open/close/save, compile result with diag count and elapsed time. One line per user-visible action. |
+| `FINE` | High-frequency or low-value detail: per-keystroke change events, format requests, classpath/option setup, individual diagnostic entries. Enabled only when `LATHE_DEBUG=1`. |
+| `FINEST` | Rarely needed deep internals. Avoid unless a feature explicitly calls for it. |
+
+Guidelines:
+- **INFO fires once per user action** — opening a file, saving, a compile completing.
+  It must not fire on every keystroke (`onChange`) or on every request that may repeat rapidly (hover, semanticTokens).
+- **Compile results always at INFO** — include mode tag, URI, elapsed ms, and diag count so it is clear the compiler ran and what it found.
+- **FINE for timed sub-operations** — hover resolution, definition lookup, completion steps.
+  These fire on cursor movement and would flood the log at INFO.
+- **WARNING for missing-module** — the user must re-run `mvn process-test-classes`; logging it at WARNING ensures it appears without `LATHE_DEBUG=1`.
+- **Never log content** — do not log file content, source lines, or AST node text at any level.
 
 Logger field name: `LOG` (static final).
 Always use lambda form, single space after the operation tag:
 ```java
-LOG.fine(() -> "[change] %-20s %-35s %dms".formatted(moduleRel, fileRel, ms(t)));
-LOG.log(Level.SEVERE, e, () -> "[copy] %s failed".formatted(moduleRel));
+LOG.info(() -> "[open] %s".formatted(uri));
+LOG.info(() -> "[open] %s %dms diags=%d".formatted(uri, t.elapsedMs(), diags.size()));
+LOG.fine(() -> "[change] %s".formatted(uri));
+LOG.log(Level.SEVERE, e, () -> "[save] failed for %s".formatted(uri));
 ```
 
-Message format: `[operation] module-rel file-rel detail Xms outcome`
+Message format: `[operation] uri-or-module detail Xms outcome`
 
 ---
 
