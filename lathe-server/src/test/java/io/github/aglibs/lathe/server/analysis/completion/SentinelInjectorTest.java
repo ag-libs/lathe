@@ -170,4 +170,17 @@ class SentinelInjectorTest {
     final var result = inject("/* ( */ list.sub§");
     assertThat(result.context()).isEqualTo(Context.STATEMENT);
   }
+
+  @Test
+  void methodCallTail_lambdaArg() {
+    // cursor at end of method name when '(args)' already follows in the file
+    final var result = inject("list.forEach§(x -> x)");
+    assertThat(result.injectedContent()).isEqualTo("list." + SENTINEL + "(x -> x)");
+  }
+
+  @Test
+  void methodCallTail_methodCallArg() {
+    final var result = inject("annotations.addAll§(other.values())");
+    assertThat(result.injectedContent()).isEqualTo("annotations." + SENTINEL + "(other.values())");
+  }
 }

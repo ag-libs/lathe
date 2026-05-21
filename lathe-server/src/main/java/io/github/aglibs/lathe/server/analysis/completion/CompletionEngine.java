@@ -9,18 +9,26 @@ public final class CompletionEngine {
 
   private static final Logger LOG = Logger.getLogger(CompletionEngine.class.getName());
 
-  private final SourceParser parser;
+  private final SentinelParser sentinelParser;
 
   public CompletionEngine(final SourceParser parser) {
-    this.parser = parser;
+    this.sentinelParser = new SentinelParser(parser);
   }
 
   public List<CompletionItem> complete(final CompletionRequest req) {
-    final var sentinel = new SentinelInjector(req.content()).inject(req.cursorOffset());
+    final var injected = new SentinelInjector(req.content()).inject(req.cursorOffset());
     LOG.fine(
         () ->
-            "[completion] prefix=|%s| receiver=|%s| ctx=%s"
-                .formatted(sentinel.prefix(), sentinel.receiverText(), sentinel.context()));
+            "[completion] inject prefix=|%s| receiver=|%s| ctx=%s"
+                .formatted(injected.prefix(), injected.receiverText(), injected.context()));
+
+    final int version = req.cached() != null ? req.cached().version() : -1;
+    final var parsed = sentinelParser.parse(injected, req.pos().getLine(), version);
+    LOG.fine(
+        () ->
+            "[completion] parsed valid=%s sentinelCtx=%s"
+                .formatted(parsed.valid(), parsed.sentinelContext()));
+
     return List.of();
   }
 }

@@ -12,6 +12,7 @@ import java.util.Optional;
 import java.util.function.BiFunction;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 import javax.tools.Diagnostic;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaFileObject;
@@ -30,21 +31,11 @@ public final class SourceParser implements AutoCloseable {
 
   <T> Optional<T> parseFile(
       final Path sourceFile, final BiFunction<Trees, CompilationUnitTree, T> fn) {
-    try {
-      final JavaFileObject jfo = fm.getJavaFileObjects(sourceFile).iterator().next();
-      final JavacTask task =
-          (JavacTask) SourceCompiler.COMPILER.getTask(null, fm, null, null, null, List.of(jfo));
-      final CompilationUnitTree cu = task.parse().iterator().next();
-      return Optional.ofNullable(fn.apply(Trees.instance(task), cu));
-    } catch (final IOException | UncheckedIOException e) {
-      LOG.log(Level.WARNING, e, () -> "[parse] %s".formatted(sourceFile));
-      return Optional.empty();
-    }
+    return parse(fm.getJavaFileObjects(sourceFile).iterator().next(), fn);
   }
 
-  public List<Diagnostic<? extends JavaFileObject>> tryParseContent(
-      final String uri, final String content) {
-    final var collector = new DiagnosticCollector<JavaFileObject>();
+  public <T> Optional<T> parseContent(
+      final String uri, final String content, final BiFunction<Trees, CompilationUnitTree, T> fn) {
     final var jfo =
         new SimpleJavaFileObject(URI.create(uri), JavaFileObject.Kind.SOURCE) {
           @Override
@@ -52,15 +43,35 @@ public final class SourceParser implements AutoCloseable {
             return content;
           }
         };
+    return parse(jfo, fn);
+  }
+
+  private <T> Optional<T> parse(
+      final JavaFileObject jfo, final BiFunction<Trees, CompilationUnitTree, T> fn) {
+    final var collector = new DiagnosticCollector<JavaFileObject>();
     final var task =
         (JavacTask) SourceCompiler.COMPILER.getTask(null, fm, collector, null, null, List.of(jfo));
     try {
-      task.parse();
+      final CompilationUnitTree cu = task.parse().iterator().next();
+      final T result = fn.apply(Trees.instance(task), cu);
+      final var diags = collector.getDiagnostics();
+      if (!diags.isEmpty()) {
+        LOG.fine(() -> "[parse] diags: " + diagSummary(diags));
+      }
+      return Optional.ofNullable(result);
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }
+  }
 
-    return collector.getDiagnostics();
+  private static String diagSummary(
+      final List<? extends Diagnostic<? extends JavaFileObject>> diags) {
+    return diags.stream()
+        .collect(Collectors.groupingBy(Diagnostic::getKind, Collectors.counting()))
+        .entrySet()
+        .stream()
+        .map(e -> e.getKey() + "=" + e.getValue())
+        .collect(Collectors.joining(" "));
   }
 
   @Override
