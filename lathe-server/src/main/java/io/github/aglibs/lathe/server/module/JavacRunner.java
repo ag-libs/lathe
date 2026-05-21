@@ -31,11 +31,10 @@ final class JavacRunner {
       final var it = task.parse().iterator();
       final CompilationUnitTree cu = it.hasNext() ? it.next() : null;
       task.analyze();
+      final Trees trees = Trees.instance(task);
       if (mode == CompileMode.FULL) {
         task.generate();
       }
-
-      final Trees trees = Trees.instance(task);
       final var elements = task.getElements();
       final var types = task.getTypes();
       final FileAnalysis fileAnalysis;
