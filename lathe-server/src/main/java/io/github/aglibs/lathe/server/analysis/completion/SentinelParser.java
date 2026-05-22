@@ -69,8 +69,17 @@ final class SentinelParser {
     }
 
     if (enclosingClass == null && cu.getModule() != null) {
-      LOG.fine(() -> "[sentinel-parse] sentinel in module directive, skipping");
-      return ParsedSentinel.invalid(injected.prefix(), injected.receiverText(), version);
+      final var parsed =
+          new ParsedSentinel(
+              true,
+              injected.prefix(),
+              injected.receiverText(),
+              SentinelContext.MODULE_DIRECTIVE,
+              null,
+              null,
+              version);
+      LOG.fine(() -> "[sentinel-parse] %s".formatted(parsed));
+      return parsed;
     }
 
     final var parsed =
@@ -126,6 +135,13 @@ final class SentinelParser {
       }
 
       return super.visitIdentifier(node, unused);
+    }
+
+    @Override
+    public TreePath visitErroneous(final ErroneousTree node, final Void unused) {
+      // javac wraps non-statement expressions (e.g. bare member access) in ErroneousTree;
+      // scan inside so the sentinel is still reachable.
+      return scan(node.getErrorTrees(), unused);
     }
 
     @Override
