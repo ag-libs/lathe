@@ -89,6 +89,24 @@ final class SentinelInjector {
           context = Context.EXPRESSION;
           break outer;
         }
+        case '>' -> {
+          if (i > 0 && content.charAt(i - 1) == '-') {
+            context = Context.EXPRESSION;
+            break outer;
+          }
+        }
+        case '/' -> {
+          if (i > 0 && content.charAt(i - 1) == '*') {
+            i -= 2;
+            while (i > 0) {
+              if (content.charAt(i) == '*' && content.charAt(i - 1) == '/') {
+                i -= 2;
+                break;
+              }
+              i--;
+            }
+          }
+        }
         default -> {}
       }
       i--;
@@ -184,14 +202,55 @@ final class SentinelInjector {
         continue;
       }
 
+      if (inString) {
+        if (content.charAt(i) == '\\' && i + 1 < content.length()) {
+          i += 2;
+        } else {
+          if (content.charAt(i) == '"') {
+            inString = false;
+          }
+          i++;
+        }
+        continue;
+      }
+
+      if (i + 2 < content.length()
+          && content.charAt(i) == '"'
+          && content.charAt(i + 1) == '"'
+          && content.charAt(i + 2) == '"') {
+        i += 3;
+        while (i < content.length()) {
+          if (i + 2 < content.length()
+              && content.charAt(i) == '"'
+              && content.charAt(i + 1) == '"'
+              && content.charAt(i + 2) == '"') {
+            i += 3;
+            break;
+          }
+          if (content.charAt(i) == '\\') {
+            i += 2;
+          } else {
+            i++;
+          }
+        }
+        continue;
+      }
+
       if (content.charAt(i) == '"') {
-        inString = !inString;
+        inString = true;
         i++;
         continue;
       }
 
-      if (inString) {
-        i++;
+      if (content.charAt(i) == '\'') {
+        i++; // skip opening '
+        if (i < content.length() && content.charAt(i) == '\\') {
+          i++; // skip backslash
+        }
+        i++; // skip char value
+        if (i < content.length() && content.charAt(i) == '\'') {
+          i++; // skip closing '
+        }
         continue;
       }
 

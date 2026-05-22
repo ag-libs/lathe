@@ -5,7 +5,6 @@ import static io.github.aglibs.lathe.server.analysis.completion.SentinelInjector
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.server.analysis.completion.SentinelInjector.Context;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 class SentinelInjectorTest {
@@ -124,47 +123,46 @@ class SentinelInjectorTest {
     assertThat(result.injectedContent()).isEqualTo("/* ( { */; list." + SENTINEL + ";");
   }
 
-  // ── known gaps — disabled until fixed ────────────────────────────────────
+  @Test
+  void forwardScan_textBlock_notCounted() {
+    // embedded '"' inside a text block must not flip inString — the '{' is inside the block
+    final var result = inject("String s = \"\"\"\n    foo \" bar {\n    \"\"\"; list.sub§");
+    assertThat(result.injectedContent())
+        .isEqualTo("String s = \"\"\"\n    foo \" bar {\n    \"\"\"; list." + SENTINEL + ";");
+  }
 
   @Test
-  @Disabled("backwardScan: '->' not detected, switch expression arm gets STATEMENT context")
   void switchExpressionArm_isExpressionContext() {
     assertThat(inject("case 1 -> list.sub§").context()).isEqualTo(Context.EXPRESSION);
   }
 
   @Test
-  @Disabled(
-      "backwardScan: '->' not detected, expression lambda without enclosing '(' gets STATEMENT")
   void expressionLambda_withoutEnclosingParen_isExpressionContext() {
-    // Comparator.comparing starts the lambda — no outer '(' catches it before '->'
+    // comparing( is the outer paren; backward scan reaches it before any '->'
     final var result = inject("Comparator.comparing(s ->\n    s.toStr§");
     assertThat(result.context()).isEqualTo(Context.EXPRESSION);
   }
 
   @Test
-  @Disabled("collectReceiver: depth-exit is off by one, outer '(' excluded from substring")
   void castReceiver_extractedCorrectly() {
     assertThat(inject("((String) obj).sub§").receiverText()).isEqualTo("((String) obj)");
   }
 
   @Test
-  @Disabled("forwardScan: '\\\"' flips inString flag, brackets inside string miscounted")
   void forwardScan_escapeQuoteInString_notCounted() {
-    // the '\\"' must not toggle inString — the '{' that follows is outside the string
-    final var result = inject("String s = \"he\\\"lo\"; list.sub§");
+    // '\"' must not toggle inString — the '{' and '(' that follow are inside the string
+    final var result = inject("String s = \"he\\\"lo { (\"; list.sub§");
     assertThat(result.injectedContent())
-        .isEqualTo("String s = \"he\\\"lo\"; list." + SENTINEL + ";");
+        .isEqualTo("String s = \"he\\\"lo { (\"; list." + SENTINEL + ";");
   }
 
   @Test
-  @Disabled("forwardScan: char literal '{' counted as an open brace")
   void forwardScan_charLiteralBrace_notCounted() {
     final var result = inject("char c = '{'; list.sub§");
     assertThat(result.injectedContent()).isEqualTo("char c = '{'; list." + SENTINEL + ";");
   }
 
   @Test
-  @Disabled("backwardScan: no comment awareness, '(' inside block comment sets EXPRESSION context")
   void backwardScan_blockComment_notConfusedByBrackets() {
     // the '(' is inside a comment — context should still be STATEMENT
     final var result = inject("/* ( */ list.sub§");
