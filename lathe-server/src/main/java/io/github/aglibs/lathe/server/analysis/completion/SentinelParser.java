@@ -68,6 +68,11 @@ final class SentinelParser {
       }
     }
 
+    if (enclosingClass == null && cu.getModule() != null) {
+      LOG.fine(() -> "[sentinel-parse] sentinel in module directive, skipping");
+      return ParsedSentinel.invalid(injected.prefix(), injected.receiverText(), version);
+    }
+
     final var parsed =
         new ParsedSentinel(
             true,
@@ -89,6 +94,13 @@ final class SentinelParser {
       case NewClassTree ignored -> SentinelContext.CONSTRUCTOR_CALL;
       case AnnotationTree ignored -> SentinelContext.ANNOTATION_CONTEXT;
       case LambdaExpressionTree ignored -> SentinelContext.LAMBDA_BODY;
+      case VariableTree v when v.getType() == sentinel -> SentinelContext.TYPE_REFERENCE;
+      case MethodTree m when m.getReturnType() == sentinel -> SentinelContext.TYPE_REFERENCE;
+      case ParameterizedTypeTree ignored -> SentinelContext.TYPE_REFERENCE;
+      case ClassTree ignored -> SentinelContext.TYPE_REFERENCE;
+      case ArrayTypeTree ignored -> SentinelContext.TYPE_REFERENCE;
+      case WildcardTree ignored -> SentinelContext.TYPE_REFERENCE;
+      case TypeCastTree t when t.getType() == sentinel -> SentinelContext.TYPE_REFERENCE;
       default ->
           sentinel instanceof MemberSelectTree
               ? SentinelContext.MEMBER_ACCESS
