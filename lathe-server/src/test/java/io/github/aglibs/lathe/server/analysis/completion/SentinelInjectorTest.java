@@ -181,4 +181,22 @@ class SentinelInjectorTest {
     final var result = inject("annotations.addAll§(other.values())");
     assertThat(result.injectedContent()).isEqualTo("annotations." + SENTINEL + "(other.values())");
   }
+
+  @Test
+  void backwardScan_lineComment_notConfusedByBrackets() {
+    // '(' is inside a // comment — context should be STATEMENT
+    assertThat(inject("// (\nlist.sub§").context()).isEqualTo(Context.STATEMENT);
+  }
+
+  @Test
+  void backwardScan_string_notConfusedByBrackets() {
+    // unmatched '(' inside a string literal must not trigger EXPRESSION context
+    assertThat(inject("\"(\" + list.sub§").context()).isEqualTo(Context.STATEMENT);
+  }
+
+  @Test
+  void backwardScan_charLiteral_notConfusedByBrackets() {
+    // '(' as a char literal must not trigger EXPRESSION context
+    assertThat(inject("'(' + list.sub§").context()).isEqualTo(Context.STATEMENT);
+  }
 }

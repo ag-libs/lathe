@@ -95,6 +95,38 @@ final class SentinelInjector {
             break outer;
           }
         }
+        case '"' -> {
+          i--;
+          while (i >= 0) {
+            if (content.charAt(i) == '"') {
+              break;
+            }
+            if (content.charAt(i) == '\\') {
+              i--;
+            }
+            i--;
+          }
+        }
+        case '\'' -> {
+          if (i >= 2 && content.charAt(i - 2) == '\'') {
+            i -= 2;
+          } else if (i >= 3 && content.charAt(i - 2) == '\\' && content.charAt(i - 3) == '\'') {
+            i -= 3;
+          }
+        }
+        case '\n' -> {
+          int lineStart = i - 1;
+          while (lineStart > 0 && content.charAt(lineStart - 1) != '\n') {
+            lineStart--;
+          }
+          int k = lineStart;
+          while (k < i && (content.charAt(k) == ' ' || content.charAt(k) == '\t')) {
+            k++;
+          }
+          if (k + 1 < i && content.charAt(k) == '/' && content.charAt(k + 1) == '/') {
+            i = lineStart - 1;
+          }
+        }
         case '/' -> {
           if (i > 0 && content.charAt(i - 1) == '*') {
             i -= 2;
