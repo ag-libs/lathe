@@ -5,6 +5,7 @@ import static io.github.aglibs.lathe.server.analysis.completion.SentinelInjector
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.server.analysis.completion.SentinelInjector.Context;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 class SentinelInjectorTest {
@@ -204,5 +205,19 @@ class SentinelInjectorTest {
   void typeParameterBound_isExpressionContext() {
     // '<' of the type parameter list must set EXPRESSION so no ';' is inserted inside '<>'
     assertThat(inject("class Foo<T extends Bar§>").context()).isEqualTo(Context.EXPRESSION);
+  }
+
+  @Disabled(
+      """
+      cursor at START of an existing identifier (empty prefix): the injector appends \
+      the sentinel directly to the remaining identifier chars, producing a single token \
+      like __LATHE_SENTINEL__RoleConfig that SentinelFinder cannot match. \
+      Fix: forward-scan past identifier chars at cursorOffset before building the suffix.""")
+  @Test
+  void cursorAtTokenStart_sentinelNotConcatenatedWithSuffix() {
+    // real case: class RoleValidator implements AbacValidator<RoleValidator.§RoleConfig>
+    // probe places cursor at START of RoleConfig — prefix is empty, but suffix chars follow
+    final var result = inject("list.§values()");
+    assertThat(result.injectedContent()).isEqualTo("list." + SENTINEL + "()");
   }
 }

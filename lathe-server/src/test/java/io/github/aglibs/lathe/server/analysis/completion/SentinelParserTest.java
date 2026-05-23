@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 class SentinelParserTest {
@@ -320,5 +321,158 @@ class SentinelParserTest {
     assertThat(result.valid()).isTrue();
     assertThat(result.sentinelContext()).isEqualTo(SentinelContext.VARIABLE_DECLARATION);
     assertThat(result.declaredTypeText()).isEqualTo("java.util.ArrayList<String>");
+  }
+
+  // ── CLASS / INTERFACE HEADER TYPE REFERENCES ─────────────────────────────
+  // Patterns found in Helidon/Dropwizard:
+  //   class Builder implements io.helidon.common.Builder§<B, T>
+  //   class Foo extends SecurityResponse.SecurityResponseBuilder§<B, T>
+  //   interface Foo extends RuntimeType.Api§<X>
+  //   class Foo implements SomeOuter.SomeInterface§ (no generics)
+  //   record Foo(int x) implements SomeOuter.Interface§ {}
+  //   class Foo<T extends TaskConfig.BuilderBase§<?, ?>>
+
+  @Test
+  void typeReference_extendsClause_dottedType_isTypeReference() {
+    final var result =
+        parse(
+            """
+        class Foo extends java.util.AbstractList§ {
+        }""");
+    assertThat(result.valid()).isTrue();
+    assertThat(result.sentinelContext()).isEqualTo(SentinelContext.TYPE_REFERENCE);
+  }
+
+  @Test
+  void typeReference_extendsClause_dottedTypeWithDot_isTypeReference() {
+    final var result =
+        parse(
+            """
+        class Foo extends SomeOuter.SomeBase§ {
+        }""");
+    assertThat(result.valid()).isTrue();
+    assertThat(result.sentinelContext()).isEqualTo(SentinelContext.TYPE_REFERENCE);
+  }
+
+  @Test
+  void typeReference_extendsClause_dottedTypeBeforeGenerics_isTypeReference() {
+    // cursor before the '<' — real pattern: class Builder extends
+    // SecurityResponse.ResponseBuilder§<B, T>
+    final var result =
+        parse(
+            """
+        class Foo extends SomeOuter.SomeBase§<String> {
+        }""");
+    assertThat(result.valid()).isTrue();
+    assertThat(result.sentinelContext()).isEqualTo(SentinelContext.TYPE_REFERENCE);
+  }
+
+  @Test
+  void typeReference_implementsClause_dottedType_isTypeReference() {
+    // real pattern: class Foo implements SomeOuter.SomeInterface (no generics)
+    final var result =
+        parse(
+            """
+        class Foo implements SomeOuter.SomeInterface§ {
+        }""");
+    assertThat(result.valid()).isTrue();
+    assertThat(result.sentinelContext()).isEqualTo(SentinelContext.TYPE_REFERENCE);
+  }
+
+  @Test
+  void typeReference_implementsClause_qualifiedNameBeforeGenerics_isTypeReference() {
+    // real pattern: class Builder implements io.helidon.common.Builder§<B, T>
+    final var result =
+        parse(
+            """
+        class Foo implements io.some.Interface§<String> {
+        }""");
+    assertThat(result.valid()).isTrue();
+    assertThat(result.sentinelContext()).isEqualTo(SentinelContext.TYPE_REFERENCE);
+  }
+
+  @Test
+  void typeReference_implementsClause_genericTypeArg_isTypeReference() {
+    // cursor inside generic type arg — '<' to the left sets EXPRESSION context
+    // real pattern: class RoleValidator implements AbacValidator<RoleValidator.RoleConfig§>
+    final var result =
+        parse(
+            """
+        class Foo implements java.util.function.Function<String, Bar.Baz§> {
+        }""");
+    assertThat(result.valid()).isTrue();
+    assertThat(result.sentinelContext()).isEqualTo(SentinelContext.TYPE_REFERENCE);
+  }
+
+  @Test
+  void typeReference_interfaceExtendsClause_dottedType_isTypeReference() {
+    // real pattern: interface Foo extends RuntimeType.Api§<X>
+    final var result =
+        parse(
+            """
+        interface Foo extends SomeOuter.BaseInterface§ {
+        }""");
+    assertThat(result.valid()).isTrue();
+    assertThat(result.sentinelContext()).isEqualTo(SentinelContext.TYPE_REFERENCE);
+  }
+
+  @Test
+  void typeReference_typeParameterBoundDotted_isTypeReference() {
+    // real pattern: class Foo<T extends TaskConfig.BuilderBase§<?, ?>>
+    final var result =
+        parse(
+            """
+        class Foo<T extends SomeOuter.SomeBase§> {
+        }""");
+    assertThat(result.valid()).isTrue();
+    assertThat(result.sentinelContext()).isEqualTo(SentinelContext.TYPE_REFERENCE);
+  }
+
+  @Test
+  void typeReference_recordImplementsClause_isTypeReference() {
+    // real pattern: record Foo(int x) implements SomeOuter.Interface§ {}
+    final var result =
+        parse(
+            """
+        record Foo(int x) implements SomeOuter.Interface§ {
+        }""");
+    assertThat(result.valid()).isTrue();
+    assertThat(result.sentinelContext()).isEqualTo(SentinelContext.TYPE_REFERENCE);
+  }
+
+  @Disabled(
+      """
+      cursor at START of an existing identifier: injector produces \
+      __LATHE_SENTINEL__<suffix> as a single token (e.g. __LATHE_SENTINEL__RoleConfig), \
+      which SentinelFinder cannot match — result is invalid. \
+      Real trigger: class RoleValidator implements AbacValidator<RoleValidator.§RoleConfig>. \
+      Fix: forward-scan past identifier chars at cursorOffset in SentinelInjector.inject.""")
+  @Test
+  void memberAccess_cursorAtTokenStart_isValid() {
+    final var result =
+        parse(
+            """
+        class Foo {
+            void m(java.util.List<String> list) {
+                list.§values();
+            }
+        }""");
+    assertThat(result.valid()).isTrue();
+    assertThat(result.sentinelContext()).isEqualTo(SentinelContext.MEMBER_ACCESS);
+    assertThat(result.receiverText()).isEqualTo("list");
+  }
+
+  @Test
+  void typeReference_innerClassExtendsClause_isTypeReference() {
+    // real pattern: inner Builder class extends Outer.Builder§<B>
+    final var result =
+        parse(
+            """
+        class Outer {
+            static class Inner extends Outer.Base§<String> {
+            }
+        }""");
+    assertThat(result.valid()).isTrue();
+    assertThat(result.sentinelContext()).isEqualTo(SentinelContext.TYPE_REFERENCE);
   }
 }
