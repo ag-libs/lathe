@@ -62,7 +62,6 @@ class SentinelParserTest {
     assertThat(result.receiverText()).isEqualTo("io.helidon.dbclient");
   }
 
-
   // ── MEMBER_ACCESS ────────────────────────────────────────────────────────
 
   @Test
