@@ -4,4 +4,5 @@ module io.github.aglibs.lathe.core {
 
   exports io.github.aglibs.lathe.core;
   exports io.github.aglibs.lathe.core.schema;
+  exports io.github.aglibs.lathe.core.typeindex;
 }

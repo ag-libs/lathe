@@ -9,6 +9,7 @@ public final class LatheLayout {
   public static final String CACHE_LATHE_DIR = "lathe";
   public static final String CACHE_DEPS_DIR = "deps";
   public static final String CACHE_JDKS_DIR = "jdks";
+  public static final String TYPE_INDEX_DIR = "type-index";
   public static final String SERVERS_DIR = "servers";
   public static final String CURRENT_LINK = "current";
   public static final String LAUNCHER_SCRIPT = "lathe-launcher.sh";

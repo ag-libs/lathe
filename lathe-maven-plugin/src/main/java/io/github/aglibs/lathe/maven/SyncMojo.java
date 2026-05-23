@@ -6,6 +6,7 @@ import io.github.aglibs.lathe.maven.dependency.DependencySourceResolver;
 import io.github.aglibs.lathe.maven.dependency.DependencySourceSync;
 import io.github.aglibs.lathe.maven.jdk.JdkSourceResolver;
 import io.github.aglibs.lathe.maven.jdk.JdkSourceSync;
+import io.github.aglibs.lathe.maven.typeindex.DependencyTypeIndexSync;
 import java.nio.file.Path;
 import java.util.List;
 import javax.inject.Inject;
@@ -56,13 +57,13 @@ public final class SyncMojo extends AbstractMojo {
       final var projects = ReactorProjects.sorted(session, workspaceRoot);
       logModules(workspaceRoot, projects);
       final var remoteRepos = ReactorProjects.remoteRepositories(projects);
+      final var externalArtifacts = ReactorProjects.externalArtifacts(projects);
       final var resolver = new DependencySourceResolver(repositorySystem, session, getLog());
       final var dependencySources =
           resolver.resolve(
-              ReactorProjects.externalArtifacts(projects),
-              ReactorProjects.artifactClasspaths(projects),
-              remoteRepos);
+              externalArtifacts, ReactorProjects.artifactClasspaths(projects), remoteRepos);
       DependencySourceSync.extract(DependencySource.present(dependencySources), getLog());
+      DependencyTypeIndexSync.index(externalArtifacts.values(), getLog());
       final var jdkSource = JdkSourceResolver.resolve();
       JdkSourceSync.extract(jdkSource, getLog());
       new ServerInstaller(repositorySystem, session.getRepositorySession(), remoteRepos, getLog())
