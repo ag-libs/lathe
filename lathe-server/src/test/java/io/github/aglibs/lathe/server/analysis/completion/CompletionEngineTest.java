@@ -319,4 +319,97 @@ class CompletionEngineTest {
             }""");
     assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("emptyList"));
   }
+
+  // ── pending: additional TypeResolver gaps ──────────────────────────────────
+
+  @Disabled("pending NewClassTree support in resolveByPosition")
+  @Test
+  void memberAccess_newClassReceiver_methodsReturned() {
+    // new Foo().§ — receiver is a NewClassTree; resolveByPosition only visits
+    // MethodInvocationTree / MemberSelectTree / IdentifierTree
+    final var items =
+        complete(
+            """
+            class Test {
+                void m() {
+                    new StringBuilder().ap§
+                }
+            }""");
+    assertThat(items)
+        .extracting(CompletionItem::getLabel)
+        .anyMatch(l -> l.startsWith("append"));
+  }
+
+  @Disabled("pending dotted-name fallback to resolveByPosition for non-FQN paths")
+  @Test
+  void memberAccess_instanceFieldChain_typeResolved() {
+    // this.field.§ — receiverText is "this.name", dotted-name branch tries
+    // getTypeElement("this.name") which is null and returns without resolveByPosition
+    final var items =
+        complete(
+            """
+            class Test {
+                String name = "x";
+                void m() {
+                    this.name.toL§
+                }
+            }""");
+    assertThat(items)
+        .extracting(CompletionItem::getLabel)
+        .anyMatch(l -> l.startsWith("toLowerCase"));
+  }
+
+  @Disabled("pending dotted-name fallback to resolveByPosition for non-FQN paths")
+  @Test
+  void memberAccess_staticFieldChain_typeResolved() {
+    // System.out.§ — receiverText "System.out" is a field access, not a type FQN;
+    // getTypeElement("System.out") returns null and the branch exits without position fallback
+    final var items =
+        complete(
+            """
+            class Test {
+                void m() {
+                    System.out.print§
+                }
+            }""");
+    assertThat(items)
+        .extracting(CompletionItem::getLabel)
+        .anyMatch(l -> l.startsWith("print"));
+  }
+
+  @Disabled("pending ArrayAccessTree support in resolveByPosition")
+  @Test
+  void memberAccess_arrayElementReceiver_typeResolved() {
+    // arr[0].§ — receiver has '[', goes to resolveByPosition, but ArrayAccessTree
+    // is not visited so end-position match never fires
+    final var items =
+        complete(
+            """
+            class Test {
+                void m(String[] arr) {
+                    arr[0].toL§
+                }
+            }""");
+    assertThat(items)
+        .extracting(CompletionItem::getLabel)
+        .anyMatch(l -> l.startsWith("toLowerCase"));
+  }
+
+  @Disabled("pending TypeCastTree support in resolveByPosition")
+  @Test
+  void memberAccess_castReceiver_typeResolved() {
+    // ((Type) expr).§ — receiver has ' ', goes to resolveByPosition, but TypeCastTree
+    // is not visited so end-position match never fires
+    final var items =
+        complete(
+            """
+            class Test {
+                void m(Object obj) {
+                    ((String) obj).toL§
+                }
+            }""");
+    assertThat(items)
+        .extracting(CompletionItem::getLabel)
+        .anyMatch(l -> l.startsWith("toLowerCase"));
+  }
 }
