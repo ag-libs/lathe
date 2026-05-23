@@ -6,7 +6,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 class SentinelParserTest {
@@ -63,17 +62,6 @@ class SentinelParserTest {
     assertThat(result.receiverText()).isEqualTo("io.helidon.dbclient");
   }
 
-  @Disabled("Not implemented yet")
-  @Test
-  void moduleDirective_dotAfterTransitiveKeyword_isInvalid() {
-    final var result =
-        parse(
-            """
-        module foo {
-            requires transitive.§
-        }""");
-    assertThat(result.valid()).isFalse();
-  }
 
   // ── MEMBER_ACCESS ────────────────────────────────────────────────────────
 
