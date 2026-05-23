@@ -427,7 +427,81 @@ class CompletionEngineTest {
         .anyMatch(l -> l.startsWith("toLowerCase"));
   }
 
+  // ── stream API chains ─────────────────────────────────────────────────────
+
+  @Test
+  void streamChain_streamMethods_returned() {
+    // list.stream().§ — MethodInvocationTree for stream() attributed as Stream<String>;
+    // checks that stream-specific methods (filter, map) are returned
+    final var items =
+        complete(
+            """
+            class Test {
+                void m(java.util.List<String> list) {
+                    list.stream().§
+                }
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("filter"));
+    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("map"));
+  }
+
+  @Test
+  void lambdaBody_methodCallReceiver_typeResolved() {
+    // s.trim().to§ inside a lambda — receiver is a method call, not a simple name;
+    // resolveByPosition must find the MethodInvocationTree for trim() inside the lambda body
+    final var items =
+        complete(
+            """
+            class Test {
+                void m(java.util.List<String> list) {
+                    list.forEach(s -> s.trim().to§);
+                }
+            }""");
+    assertThat(items)
+        .extracting(CompletionItem::getLabel)
+        .anyMatch(l -> l.startsWith("toLowerCase"));
+  }
+
+  @Test
+  void builderChain_methodCallChain_typeResolved() {
+    // new StringBuilder().append("x").ap§ — receiver is a MethodInvocationTree (append),
+    // not a bare NewClassTree; resolveByPosition must match its end position at dotOffset
+    final var items =
+        complete(
+            """
+            class Test {
+                void m() {
+                    new StringBuilder().append("x").ap§
+                }
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("append"));
+  }
+
   // ── pending: stale-cache gaps ──────────────────────────────────────────────
+
+  @Disabled("pending on-demand attribution for stale-cache completions")
+  @Test
+  void streamChain_staleCacheFilterLambda_typeResolved() {
+    // User types a new stream chain line not present at last compile time.
+    // The lambda param s is inferred from the stream element type, but the
+    // entire expression is absent from the cached snapshot tree.
+    final var items =
+        completeWithCache(
+            """
+            class Test {
+                void m(java.util.List<String> list) {
+                }
+            }""",
+            """
+            class Test {
+                void m(java.util.List<String> list) {
+                    list.stream().filter(s -> s.to§);
+                }
+            }""");
+    assertThat(items)
+        .extracting(CompletionItem::getLabel)
+        .anyMatch(l -> l.startsWith("toLowerCase"));
+  }
 
   @Disabled("pending on-demand attribution for stale-cache completions")
   @Test
