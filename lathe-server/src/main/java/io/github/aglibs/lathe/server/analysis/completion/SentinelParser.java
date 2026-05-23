@@ -80,6 +80,7 @@ final class SentinelParser {
               -1,
               null,
               null,
+              -1,
               version);
       LOG.fine(() -> "[sentinel-parse] %s".formatted(parsed));
       return parsed;
@@ -96,6 +97,7 @@ final class SentinelParser {
             cls.argIndex(),
             cls.enclosingReceiver(),
             cls.enclosingMethodName(),
+            cls.lambdaParamIndex(),
             version);
 
     LOG.fine(() -> "[sentinel-parse] %s".formatted(parsed));
@@ -103,34 +105,24 @@ final class SentinelParser {
   }
 
   private record Classification(
-      SentinelContext context, int argIndex, String enclosingReceiver, String enclosingMethodName) {
+      SentinelContext context,
+      int argIndex,
+      String enclosingReceiver,
+      String enclosingMethodName,
+      int lambdaParamIndex) {
 
     static Classification of(final SentinelContext ctx) {
-      return new Classification(ctx, -1, null, null);
+      return new Classification(ctx, -1, null, null, -1);
     }
   }
 
   private static Classification classifySentinel(final Tree sentinel, final Tree parent) {
     return switch (parent) {
-      case MethodInvocationTree m when m.getArguments().stream().anyMatch(a -> a == sentinel) -> {
-        final var args = m.getArguments();
-        int argIndex = 0;
-        for (int j = 0; j < args.size(); j++) {
-          if (args.get(j) == sentinel) {
-            argIndex = j;
-            break;
-          }
-        }
-        final var sel = (MemberSelectTree) m.getMethodSelect();
-        yield new Classification(
-            SentinelContext.ARGUMENT_POSITION,
-            argIndex,
-            sel.getExpression().toString(),
-            sel.getIdentifier().toString());
-      }
+      case MethodInvocationTree m when m.getArguments().stream().anyMatch(a -> a == sentinel) ->
+          classifyMethodInvocation(sentinel, m);
+      case LambdaExpressionTree lambda -> classifyLambda(sentinel, lambda);
       case NewClassTree ignored -> Classification.of(SentinelContext.CONSTRUCTOR_CALL);
       case AnnotationTree ignored -> Classification.of(SentinelContext.ANNOTATION_CONTEXT);
-      case LambdaExpressionTree ignored -> Classification.of(SentinelContext.LAMBDA_BODY);
       case VariableTree v when v.getType() == sentinel ->
           Classification.of(SentinelContext.TYPE_REFERENCE);
       case MethodTree m when m.getReturnType() == sentinel ->
@@ -141,12 +133,50 @@ final class SentinelParser {
       case WildcardTree ignored -> Classification.of(SentinelContext.TYPE_REFERENCE);
       case TypeCastTree t when t.getType() == sentinel ->
           Classification.of(SentinelContext.TYPE_REFERENCE);
-      default ->
-          Classification.of(
-              sentinel instanceof MemberSelectTree
-                  ? SentinelContext.MEMBER_ACCESS
-                  : SentinelContext.SIMPLE_NAME);
+      default -> classifyDefault(sentinel);
     };
+  }
+
+  private static Classification classifyMethodInvocation(
+      final Tree sentinel, final MethodInvocationTree m) {
+    final var args = m.getArguments();
+    int argIndex = 0;
+    for (int j = 0; j < args.size(); j++) {
+      if (args.get(j) == sentinel) {
+        argIndex = j;
+        break;
+      }
+    }
+    final var sel = (MemberSelectTree) m.getMethodSelect();
+    return new Classification(
+        SentinelContext.ARGUMENT_POSITION,
+        argIndex,
+        sel.getExpression().toString(),
+        sel.getIdentifier().toString(),
+        -1);
+  }
+
+  private static Classification classifyLambda(
+      final Tree sentinel, final LambdaExpressionTree lambda) {
+    int lambdaParamIndex = -1;
+    if (sentinel instanceof MemberSelectTree sel) {
+      final String receiver = sel.getExpression().toString();
+      final var params = lambda.getParameters();
+      for (int j = 0; j < params.size(); j++) {
+        if (params.get(j).getName().toString().equals(receiver)) {
+          lambdaParamIndex = j;
+          break;
+        }
+      }
+    }
+    return new Classification(SentinelContext.LAMBDA_BODY, -1, null, null, lambdaParamIndex);
+  }
+
+  private static Classification classifyDefault(final Tree sentinel) {
+    return Classification.of(
+        sentinel instanceof MemberSelectTree
+            ? SentinelContext.MEMBER_ACCESS
+            : SentinelContext.SIMPLE_NAME);
   }
 
   private static final class SentinelFinder extends TreePathScanner<TreePath, Void> {

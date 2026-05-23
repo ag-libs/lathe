@@ -308,7 +308,6 @@ class SentinelParserTest {
     assertThat(result.enclosingMethod()).isEqualTo("m");
   }
 
-  @Disabled("lambdaParamIndex not in ParsedSentinel yet")
   @Test
   void lambdaBody_paramIndex_isExtracted() {
     final var result =
@@ -321,7 +320,7 @@ class SentinelParserTest {
         }""");
     assertThat(result.valid()).isTrue();
     assertThat(result.sentinelContext()).isEqualTo(SentinelContext.LAMBDA_BODY);
-    // assertThat(result.lambdaParamIndex()).isEqualTo(0);
+    assertThat(result.lambdaParamIndex()).isEqualTo(0);
   }
 
   // ── VARIABLE_DECLARATION (unsupported) ───────────────────────────────────
