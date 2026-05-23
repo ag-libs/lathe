@@ -101,7 +101,41 @@ class CompletionEngineTest {
     assertThat(items).isEmpty();
   }
 
-  @Disabled("pending nodeLine <= cursorLine fix in TypeResolver.scanForLocalDeclaration")
+  @Test
+  void topLevel_expressionBeforeClass_returnsEmpty() {
+    // "foo." before any class body → javac parses as VariableTree → VARIABLE_DECLARATION context
+    // → engine returns empty without entering MEMBER_ACCESS path
+    final var items = complete("foo.§\nclass Test {}");
+    assertThat(items).isEmpty();
+  }
+
+  @Disabled("pending TYPE_REFERENCE nested type completion in CompletionEngine")
+  @Test
+  void typeReference_dottedOuterClass_innerTypeSuggested() {
+    final var items =
+        complete(
+            """
+            class Test {
+                void m(java.util.Map.En§ entry) {}
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("Entry"));
+  }
+
+  @Disabled("pending SIMPLE_NAME scope enumeration in ProposalGenerator")
+  @Test
+  void simpleName_localVar_suggestedByPrefix() {
+    final var items =
+        complete(
+            """
+            class Test {
+                void m() {
+                    String hello = "x";
+                    hel§
+                }
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("hello");
+  }
+
   @Test
   void memberAccess_methodParamSameLine_typeResolved() {
     // param declared on same line as cursor — needs nodeLine <= cursorLine in
@@ -117,7 +151,6 @@ class CompletionEngineTest {
         .anyMatch(l -> l.startsWith("toLowerCase"));
   }
 
-  @Disabled("pending LAMBDA_BODY context handling in CompletionEngine")
   @Test
   void lambdaBody_thisReceiver_membersReturned() {
     // LAMBDA_BODY context with 'this' receiver — isolates engine routing fix from param resolution
@@ -133,7 +166,6 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).contains("name");
   }
 
-  @Disabled("pending string literal receiver support in TypeResolver")
   @Test
   void memberAccess_stringLiteralReceiver_stringMethodsReturned() {
     final var items =
@@ -149,7 +181,6 @@ class CompletionEngineTest {
         .anyMatch(l -> l.startsWith("toLowerCase"));
   }
 
-  @Disabled("pending LAMBDA_BODY context handling and scanForLocalDeclaration <= fix")
   @Test
   void lambdaBody_memberAccess_paramTypeResolved() {
     final var items =
@@ -222,8 +253,10 @@ class CompletionEngineTest {
     assertThat(items).noneMatch(i -> i.getLabel().equals("secret"));
   }
 
+  @Disabled("pending method-call return type resolution in TypeResolver")
   @Test
-  void memberAccess_complexReceiver_isEmpty() {
+  void memberAccess_complexReceiver_returnTypeResolved() {
+    // method-call receiver — needs Trees.getTypeMirror on the call expression
     final var items =
         complete(
             """
@@ -233,6 +266,62 @@ class CompletionEngineTest {
                     getList().sub§
                 }
             }""");
-    assertThat(items).isEmpty();
+    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("subList"));
+  }
+
+  @Disabled(
+      "pending MemberSelect-in-argument reclassification in SentinelParser + classifyMethodInvocation crash fix")
+  @Test
+  void memberAccess_receiverInsideArgument_completionsReturned() {
+    // receiver.§ inside a method call argument — SentinelParser misclassifies as ARGUMENT_POSITION
+    final var items =
+        complete(
+            """
+            class Test {
+                static void consume(String s) {}
+                void m() {
+                    String hello = "x";
+                    consume(hello.§);
+                }
+            }""");
+    assertThat(items)
+        .extracting(CompletionItem::getLabel)
+        .anyMatch(l -> l.startsWith("toLowerCase"));
+  }
+
+  @Disabled("pending same-package type resolution in TypeResolver")
+  @Test
+  void memberAccess_samePackageType_staticMembersReturned() {
+    // Helper is in the same named package — no import — TypeResolver must fall back to
+    // packageName + "." + simpleName
+    final var items =
+        complete(
+            """
+            package com.example;
+            class Helper {
+                static String greet() { return "hi"; }
+            }
+            class Test {
+                void m() {
+                    Helper.§
+                }
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("greet"));
+  }
+
+  @Disabled("pending on-demand import resolution in TypeResolver")
+  @Test
+  void memberAccess_starImport_staticMembersReturned() {
+    // on-demand import — resolveViaImports only handles single-class imports
+    final var items =
+        complete(
+            """
+            import java.util.*;
+            class Test {
+                void m() {
+                    Collections.§
+                }
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("emptyList"));
   }
 }

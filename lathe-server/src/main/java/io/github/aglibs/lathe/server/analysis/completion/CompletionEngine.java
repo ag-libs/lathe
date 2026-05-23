@@ -29,8 +29,9 @@ public final class CompletionEngine {
             "[completion] parsed valid=%s sentinelCtx=%s"
                 .formatted(parsed.valid(), parsed.sentinelContext()));
 
+    final var ctx = parsed.sentinelContext();
     if (parsed.valid()
-        && parsed.sentinelContext() == SentinelContext.MEMBER_ACCESS
+        && (ctx == SentinelContext.MEMBER_ACCESS || ctx == SentinelContext.LAMBDA_BODY)
         && req.cached() != null) {
       final var snapshot = req.cached().analysis();
       final var receiverType =

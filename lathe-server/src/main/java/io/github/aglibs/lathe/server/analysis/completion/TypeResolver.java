@@ -23,6 +23,10 @@ final class TypeResolver {
       return null;
     }
 
+    if (text.startsWith("\"")) {
+      return snapshot.elements().getTypeElement("java.lang.String").asType();
+    }
+
     if ("this".equals(text)) {
       final var classEl = findClassElement(sentinel.enclosingClass(), snapshot);
       return classEl != null ? classEl.asType() : null;
@@ -146,7 +150,7 @@ final class TypeResolver {
           final long startPos =
               snapshot.trees().getSourcePositions().getStartPosition(snapshot.tree(), node);
           final long nodeLine = snapshot.tree().getLineMap().getLineNumber(startPos) - 1;
-          if (nodeLine < cursorLine) {
+          if (nodeLine <= cursorLine) {
             final var el = snapshot.trees().getElement(getCurrentPath());
             if (el != null) {
               result.set(el.asType());
