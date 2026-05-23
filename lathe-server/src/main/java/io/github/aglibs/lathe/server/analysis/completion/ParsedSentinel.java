@@ -13,6 +13,7 @@ record ParsedSentinel(
     String enclosingReceiver,
     String enclosingMethodName,
     int lambdaParamIndex,
+    String declaredTypeText,
     int docVersion) {
 
   ParsedSentinel {
@@ -32,6 +33,6 @@ record ParsedSentinel(
   static ParsedSentinel invalid(
       final String prefix, final String receiverText, final int docVersion) {
     return new ParsedSentinel(
-        false, prefix, receiverText, null, null, null, -1, null, null, -1, docVersion);
+        false, prefix, receiverText, null, null, null, -1, null, null, -1, null, docVersion);
   }
 }

@@ -49,6 +49,7 @@ final class SentinelInjector {
 
     int parenDepth = 0;
     int bracketDepth = 0;
+    int angleDepth = 0;
     Context context = Context.STATEMENT;
     int i = tokenStart - 1;
 
@@ -91,6 +92,15 @@ final class SentinelInjector {
         }
         case '>' -> {
           if (i > 0 && content.charAt(i - 1) == '-') {
+            context = Context.EXPRESSION;
+            break outer;
+          }
+          angleDepth++;
+        }
+        case '<' -> {
+          if (angleDepth > 0) {
+            angleDepth--;
+          } else {
             context = Context.EXPRESSION;
             break outer;
           }

@@ -160,11 +160,6 @@ class SentinelParserTest {
     assertThat(result.enclosingClass()).isEqualTo("Foo");
   }
 
-  @Disabled(
-      """
-      Two issues: (1) STATEMENT context causes injector to insert ';' inside '<>', \
-      breaking the parse; (2) TypeParameterTree is absent from classifySentinel \
-      so even a correctly-injected snippet would return SIMPLE_NAME instead of TYPE_REFERENCE""")
   @Test
   void typeReference_typeParameterBound_isTypeReference() {
     final var result =
@@ -323,12 +318,8 @@ class SentinelParserTest {
     assertThat(result.lambdaParamIndex()).isEqualTo(0);
   }
 
-  // ── VARIABLE_DECLARATION (unsupported) ───────────────────────────────────
+  // ── VARIABLE_DECLARATION ────────────────────────────────────────────────
 
-  @Disabled(
-      """
-      SentinelFinder.visitVariable not implemented — sentinel as variable name \
-      is a Name on VariableTree, not an IdentifierTree; SentinelFinder never visits it""")
   @Test
   void variableDeclaration_localVar_isVariableDeclaration() {
     final var result =
@@ -341,6 +332,6 @@ class SentinelParserTest {
         }""");
     assertThat(result.valid()).isTrue();
     assertThat(result.sentinelContext()).isEqualTo(SentinelContext.VARIABLE_DECLARATION);
-    // assertThat(result.declaredTypeText()).isEqualTo("java.util.ArrayList<String>");
+    assertThat(result.declaredTypeText()).isEqualTo("java.util.ArrayList<String>");
   }
 }

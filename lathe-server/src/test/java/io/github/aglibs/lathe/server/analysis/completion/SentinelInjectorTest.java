@@ -199,4 +199,10 @@ class SentinelInjectorTest {
     // '(' as a char literal must not trigger EXPRESSION context
     assertThat(inject("'(' + list.sub§").context()).isEqualTo(Context.STATEMENT);
   }
+
+  @Test
+  void typeParameterBound_isExpressionContext() {
+    // '<' of the type parameter list must set EXPRESSION so no ';' is inserted inside '<>'
+    assertThat(inject("class Foo<T extends Bar§>").context()).isEqualTo(Context.EXPRESSION);
+  }
 }

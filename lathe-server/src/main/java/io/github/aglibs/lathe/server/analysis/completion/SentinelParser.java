@@ -81,6 +81,7 @@ final class SentinelParser {
               null,
               null,
               -1,
+              null,
               version);
       LOG.fine(() -> "[sentinel-parse] %s".formatted(parsed));
       return parsed;
@@ -98,6 +99,7 @@ final class SentinelParser {
             cls.enclosingReceiver(),
             cls.enclosingMethodName(),
             cls.lambdaParamIndex(),
+            cls.declaredTypeText(),
             version);
 
     LOG.fine(() -> "[sentinel-parse] %s".formatted(parsed));
@@ -109,14 +111,18 @@ final class SentinelParser {
       int argIndex,
       String enclosingReceiver,
       String enclosingMethodName,
-      int lambdaParamIndex) {
+      int lambdaParamIndex,
+      String declaredTypeText) {
 
     static Classification of(final SentinelContext ctx) {
-      return new Classification(ctx, -1, null, null, -1);
+      return new Classification(ctx, -1, null, null, -1, null);
     }
   }
 
   private static Classification classifySentinel(final Tree sentinel, final Tree parent) {
+    if (sentinel instanceof VariableTree v) {
+      return classifyVariableDeclaration(v);
+    }
     return switch (parent) {
       case MethodInvocationTree m when m.getArguments().stream().anyMatch(a -> a == sentinel) ->
           classifyMethodInvocation(sentinel, m);
@@ -131,10 +137,16 @@ final class SentinelParser {
       case ClassTree ignored -> Classification.of(SentinelContext.TYPE_REFERENCE);
       case ArrayTypeTree ignored -> Classification.of(SentinelContext.TYPE_REFERENCE);
       case WildcardTree ignored -> Classification.of(SentinelContext.TYPE_REFERENCE);
+      case TypeParameterTree ignored -> Classification.of(SentinelContext.TYPE_REFERENCE);
       case TypeCastTree t when t.getType() == sentinel ->
           Classification.of(SentinelContext.TYPE_REFERENCE);
       default -> classifyDefault(sentinel);
     };
+  }
+
+  private static Classification classifyVariableDeclaration(final VariableTree v) {
+    return new Classification(
+        SentinelContext.VARIABLE_DECLARATION, -1, null, null, -1, v.getType().toString());
   }
 
   private static Classification classifyMethodInvocation(
@@ -153,7 +165,8 @@ final class SentinelParser {
         argIndex,
         sel.getExpression().toString(),
         sel.getIdentifier().toString(),
-        -1);
+        -1,
+        null);
   }
 
   private static Classification classifyLambda(
@@ -169,7 +182,7 @@ final class SentinelParser {
         }
       }
     }
-    return new Classification(SentinelContext.LAMBDA_BODY, -1, null, null, lambdaParamIndex);
+    return new Classification(SentinelContext.LAMBDA_BODY, -1, null, null, lambdaParamIndex, null);
   }
 
   private static Classification classifyDefault(final Tree sentinel) {
@@ -180,6 +193,14 @@ final class SentinelParser {
   }
 
   private static final class SentinelFinder extends TreePathScanner<TreePath, Void> {
+
+    @Override
+    public TreePath visitVariable(final VariableTree node, final Void unused) {
+      if (SentinelInjector.SENTINEL.equals(node.getName().toString())) {
+        return getCurrentPath();
+      }
+      return super.visitVariable(node, unused);
+    }
 
     @Override
     public TreePath visitMemberSelect(final MemberSelectTree node, final Void unused) {
