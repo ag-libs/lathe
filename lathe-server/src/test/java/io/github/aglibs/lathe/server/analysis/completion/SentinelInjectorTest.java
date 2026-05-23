@@ -5,7 +5,6 @@ import static io.github.aglibs.lathe.server.analysis.completion.SentinelInjector
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.server.analysis.completion.SentinelInjector.Context;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 class SentinelInjectorTest {
