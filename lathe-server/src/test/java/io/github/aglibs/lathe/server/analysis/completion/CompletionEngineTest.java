@@ -88,6 +88,19 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("emptyList"));
   }
 
+  @Test
+  void stringLiteral_noCompletions() {
+    final var items =
+        complete(
+            """
+            class Test {
+                void m() {
+                    String s = "hello§";
+                }
+            }""");
+    assertThat(items).isEmpty();
+  }
+
   // ── known issues ────────────────────────────────────────────────────────────
 
   @Disabled("pending parameterized type resolution in ProposalGenerator")
