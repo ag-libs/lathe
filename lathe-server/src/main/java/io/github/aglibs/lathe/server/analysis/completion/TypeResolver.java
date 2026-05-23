@@ -1,7 +1,12 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
 import com.sun.source.tree.ClassTree;
+import com.sun.source.tree.ErroneousTree;
+import com.sun.source.tree.IdentifierTree;
+import com.sun.source.tree.MemberSelectTree;
+import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
+import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
@@ -10,6 +15,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 
 final class TypeResolver {
@@ -17,7 +23,10 @@ final class TypeResolver {
   private TypeResolver() {}
 
   static TypeMirror resolveReceiverType(
-      final ParsedSentinel sentinel, final int cursorLine, final FileAnalysis snapshot) {
+      final ParsedSentinel sentinel,
+      final int cursorLine,
+      final int dotOffset,
+      final FileAnalysis snapshot) {
     final var text = sentinel.receiverText();
     if (text == null) {
       return null;
@@ -37,9 +46,9 @@ final class TypeResolver {
       return classEl != null ? classEl.getSuperclass() : null;
     }
 
-    // Complex expressions (method calls, casts, array access) — not resolvable statically
+    // Complex expressions (method calls, casts, array access) — resolve by source position
     if (text.indexOf('(') >= 0 || text.indexOf('[') >= 0 || text.indexOf(' ') >= 0) {
-      return null;
+      return resolveByPosition(dotOffset, snapshot);
     }
 
     // Dotted name — treat as FQN only (e.g. java.util.Collections)
@@ -64,7 +73,11 @@ final class TypeResolver {
       }
 
       final var langEl = snapshot.elements().getTypeElement("java.lang." + text);
-      return langEl != null ? langEl.asType() : null;
+      if (langEl != null) {
+        return langEl.asType();
+      }
+
+      return resolveByPosition(dotOffset, snapshot);
     }
 
     // Simple name — local variable, parameter, or field
@@ -75,7 +88,59 @@ final class TypeResolver {
       return localType;
     }
 
-    return findFieldType(text, sentinel.enclosingClass(), snapshot);
+    final var fieldType = findFieldType(text, sentinel.enclosingClass(), snapshot);
+    if (fieldType != null) {
+      return fieldType;
+    }
+
+    return resolveByPosition(dotOffset, snapshot);
+  }
+
+  private static TypeMirror resolveByPosition(final int dotOffset, final FileAnalysis snapshot) {
+    if (dotOffset < 0 || snapshot.tree() == null) {
+      return null;
+    }
+
+    final var sourcePositions = snapshot.trees().getSourcePositions();
+    final var cu = snapshot.tree();
+    final var result = new AtomicReference<TypeMirror>();
+    new TreePathScanner<Void, Void>() {
+      @Override
+      public Void visitMethodInvocation(final MethodInvocationTree node, final Void unused) {
+        check(node);
+        return super.visitMethodInvocation(node, unused);
+      }
+
+      @Override
+      public Void visitMemberSelect(final MemberSelectTree node, final Void unused) {
+        check(node);
+        return super.visitMemberSelect(node, unused);
+      }
+
+      @Override
+      public Void visitIdentifier(final IdentifierTree node, final Void unused) {
+        check(node);
+        return super.visitIdentifier(node, unused);
+      }
+
+      @Override
+      public Void visitErroneous(final ErroneousTree node, final Void unused) {
+        for (final var e : node.getErrorTrees()) {
+          scan(e, unused);
+        }
+        return null;
+      }
+
+      private void check(final Tree node) {
+        if (sourcePositions.getEndPosition(cu, node) == dotOffset) {
+          final var type = snapshot.trees().getTypeMirror(getCurrentPath());
+          if (type != null && type.getKind() == TypeKind.DECLARED) {
+            result.compareAndSet(null, type);
+          }
+        }
+      }
+    }.scan(cu, null);
+    return result.get();
   }
 
   private static TypeElement findClassElement(

@@ -253,7 +253,6 @@ class CompletionEngineTest {
     assertThat(items).noneMatch(i -> i.getLabel().equals("secret"));
   }
 
-  @Disabled("pending method-call return type resolution in TypeResolver")
   @Test
   void memberAccess_complexReceiver_returnTypeResolved() {
     // method-call receiver — needs Trees.getTypeMirror on the call expression
@@ -269,8 +268,6 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("subList"));
   }
 
-  @Disabled(
-      "pending MemberSelect-in-argument reclassification in SentinelParser + classifyMethodInvocation crash fix")
   @Test
   void memberAccess_receiverInsideArgument_completionsReturned() {
     // receiver.§ inside a method call argument — SentinelParser misclassifies as ARGUMENT_POSITION
@@ -289,7 +286,6 @@ class CompletionEngineTest {
         .anyMatch(l -> l.startsWith("toLowerCase"));
   }
 
-  @Disabled("pending same-package type resolution in TypeResolver")
   @Test
   void memberAccess_samePackageType_staticMembersReturned() {
     // Helper is in the same named package — no import — TypeResolver must fall back to
@@ -309,7 +305,6 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("greet"));
   }
 
-  @Disabled("pending on-demand import resolution in TypeResolver")
   @Test
   void memberAccess_starImport_staticMembersReturned() {
     // on-demand import — resolveViaImports only handles single-class imports

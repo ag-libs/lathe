@@ -124,7 +124,9 @@ final class SentinelParser {
       return classifyVariableDeclaration(v);
     }
     return switch (parent) {
-      case MethodInvocationTree m when m.getArguments().stream().anyMatch(a -> a == sentinel) ->
+      case MethodInvocationTree m
+          when !(sentinel instanceof MemberSelectTree)
+              && m.getArguments().stream().anyMatch(a -> a == sentinel) ->
           classifyMethodInvocation(sentinel, m);
       case LambdaExpressionTree lambda -> classifyLambda(sentinel, lambda);
       case NewClassTree ignored -> Classification.of(SentinelContext.CONSTRUCTOR_CALL);
@@ -159,12 +161,21 @@ final class SentinelParser {
         break;
       }
     }
-    final var sel = (MemberSelectTree) m.getMethodSelect();
+    final String enclosingReceiver;
+    final String enclosingMethodName;
+    if (m.getMethodSelect() instanceof final MemberSelectTree sel) {
+      enclosingReceiver = sel.getExpression().toString();
+      enclosingMethodName = sel.getIdentifier().toString();
+    } else {
+      enclosingReceiver = null;
+      enclosingMethodName = m.getMethodSelect().toString();
+    }
+
     return new Classification(
         SentinelContext.ARGUMENT_POSITION,
         argIndex,
-        sel.getExpression().toString(),
-        sel.getIdentifier().toString(),
+        enclosingReceiver,
+        enclosingMethodName,
         -1,
         null);
   }

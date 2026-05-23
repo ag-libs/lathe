@@ -34,8 +34,9 @@ public final class CompletionEngine {
         && (ctx == SentinelContext.MEMBER_ACCESS || ctx == SentinelContext.LAMBDA_BODY)
         && req.cached() != null) {
       final var snapshot = req.cached().analysis();
+      final int dotOffset = injected.receiverText() != null ? injected.tokenStart() - 1 : -1;
       final var receiverType =
-          TypeResolver.resolveReceiverType(parsed, req.pos().getLine(), snapshot);
+          TypeResolver.resolveReceiverType(parsed, req.pos().getLine(), dotOffset, snapshot);
       LOG.fine(
           () ->
               "[completion] resolve receiver=|%s| type=%s"
