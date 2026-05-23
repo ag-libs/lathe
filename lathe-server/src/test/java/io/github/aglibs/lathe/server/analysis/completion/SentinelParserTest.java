@@ -27,9 +27,7 @@ class SentinelParserTest {
   private static ParsedSentinel parse(final String markedSource) {
     final var c = cursor(markedSource);
     final var injected = new SentinelInjector(c.content()).inject(c.offset());
-    final int lspLine =
-        (int) c.content().substring(0, c.offset()).chars().filter(ch -> ch == '\n').count();
-    return sentinelParser.parse(injected, lspLine, 0);
+    return sentinelParser.parse(injected, c.lspLine(), 0);
   }
 
   // ── MODULE_DIRECTIVE ─────────────────────────────────────────────────────

@@ -39,6 +39,21 @@ public final class CompletionEngine {
           () ->
               "[completion] resolve receiver=|%s| type=%s"
                   .formatted(parsed.receiverText(), receiverType));
+
+      if (receiverType != null) {
+        final var text = parsed.receiverText();
+        final boolean isStaticAccess =
+            text != null && (text.indexOf('.') >= 0 || Character.isUpperCase(text.charAt(0)));
+        final var result =
+            ProposalGenerator.proposeMemberAccess(
+                receiverType, injected.prefix(), isStaticAccess, snapshot);
+        LOG.fine(
+            () ->
+                "[completion] proposals count=%d labels=%s"
+                    .formatted(
+                        result.size(), result.stream().map(CompletionItem::getLabel).toList()));
+        return result;
+      }
     }
 
     return List.of();

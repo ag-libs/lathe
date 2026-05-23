@@ -16,13 +16,13 @@ import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.ToolProvider;
 
-final class TempSourceCompiler implements SourceCompiler {
+public final class TempSourceCompiler implements SourceCompiler {
 
   private final Path td;
   private final JavaCompiler compiler;
   private final StandardJavaFileManager fm;
 
-  TempSourceCompiler() {
+  public TempSourceCompiler() {
     try {
       this.compiler = ToolProvider.getSystemJavaCompiler();
       this.fm = compiler.getStandardFileManager(null, null, null);

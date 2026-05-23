@@ -3,7 +3,15 @@ package io.github.aglibs.lathe.server.analysis.completion;
 final class CursorFixture {
   static final char MARKER = '§';
 
-  record Cursor(String content, int offset) {}
+  record Cursor(String content, int offset) {
+    int lspLine() {
+      return (int) content.substring(0, offset).chars().filter(ch -> ch == '\n').count();
+    }
+
+    int lspChar() {
+      return offset - (content.lastIndexOf('\n', offset - 1) + 1);
+    }
+  }
 
   private CursorFixture() {}
 
