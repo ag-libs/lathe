@@ -44,8 +44,15 @@ public final class CompletionEngine {
 
       if (receiverType != null) {
         final var text = parsed.receiverText();
+        // Static access = receiver is a type name, not a field/variable expression.
+        // Bare uppercase names (no dot) are treated as type references; dotted names
+        // are static only when the text resolves to an actual type FQN — this keeps
+        // field chains like System.out or this.name as instance expressions.
         final boolean isStaticAccess =
-            text != null && (text.indexOf('.') >= 0 || Character.isUpperCase(text.charAt(0)));
+            text != null
+                && (text.indexOf('.') < 0
+                    ? Character.isUpperCase(text.charAt(0))
+                    : snapshot.elements().getTypeElement(text) != null);
         final var result =
             ProposalGenerator.proposeMemberAccess(
                 receiverType, injected.prefix(), isStaticAccess, snapshot);

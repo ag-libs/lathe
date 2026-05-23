@@ -51,10 +51,15 @@ final class TypeResolver {
       return resolveByPosition(dotOffset, snapshot);
     }
 
-    // Dotted name — treat as FQN only (e.g. java.util.Collections)
+    // Dotted name — FQN first (e.g. java.util.Collections), then position fallback
+    // for field chains (System.out, this.name) that are not type names
     if (text.indexOf('.') >= 0) {
       final var el = snapshot.elements().getTypeElement(text);
-      return el != null ? el.asType() : null;
+      if (el != null) {
+        return el.asType();
+      }
+
+      return resolveByPosition(dotOffset, snapshot);
     }
 
     // Capitalized simple name — type reference (e.g. System, ArrayList)

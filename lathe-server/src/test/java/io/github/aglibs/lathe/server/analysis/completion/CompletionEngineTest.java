@@ -47,6 +47,26 @@ class CompletionEngineTest {
             cached));
   }
 
+  /**
+   * Simulates a stale cache: the snapshot is compiled from {@code cachedSource} (an older version
+   * of the file), while {@code currentMarkedSource} is what the user is currently typing. Positions
+   * in the cached tree may not match expressions in the current content.
+   */
+  private static List<CompletionItem> completeWithCache(
+      final String cachedSource, final String currentMarkedSource) {
+    final var c = cursor(currentMarkedSource);
+    final var cachedCompiled =
+        compiler.compile("file:///Test.java", cachedSource, CompileMode.FULL);
+    final var cached = new CachedAnalysis(cachedSource, 0, cachedCompiled.fileAnalysis());
+    return engine.complete(
+        new CompletionRequest(
+            "file:///Test.java",
+            c.content(),
+            new Position(c.lspLine(), c.lspChar()),
+            null,
+            cached));
+  }
+
   @Test
   void memberAccess_instanceMethod_prefixFiltered() {
     final var items =
@@ -335,12 +355,9 @@ class CompletionEngineTest {
                     new StringBuilder().ap§
                 }
             }""");
-    assertThat(items)
-        .extracting(CompletionItem::getLabel)
-        .anyMatch(l -> l.startsWith("append"));
+    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("append"));
   }
 
-  @Disabled("pending dotted-name fallback to resolveByPosition for non-FQN paths")
   @Test
   void memberAccess_instanceFieldChain_typeResolved() {
     // this.field.§ — receiverText is "this.name", dotted-name branch tries
@@ -359,7 +376,6 @@ class CompletionEngineTest {
         .anyMatch(l -> l.startsWith("toLowerCase"));
   }
 
-  @Disabled("pending dotted-name fallback to resolveByPosition for non-FQN paths")
   @Test
   void memberAccess_staticFieldChain_typeResolved() {
     // System.out.§ — receiverText "System.out" is a field access, not a type FQN;
@@ -372,9 +388,7 @@ class CompletionEngineTest {
                     System.out.print§
                 }
             }""");
-    assertThat(items)
-        .extracting(CompletionItem::getLabel)
-        .anyMatch(l -> l.startsWith("print"));
+    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("print"));
   }
 
   @Disabled("pending ArrayAccessTree support in resolveByPosition")
@@ -406,6 +420,61 @@ class CompletionEngineTest {
             class Test {
                 void m(Object obj) {
                     ((String) obj).toL§
+                }
+            }""");
+    assertThat(items)
+        .extracting(CompletionItem::getLabel)
+        .anyMatch(l -> l.startsWith("toLowerCase"));
+  }
+
+  // ── pending: stale-cache gaps ──────────────────────────────────────────────
+
+  @Disabled("pending on-demand attribution for stale-cache completions")
+  @Test
+  void memberAccess_staleCacheNewLine_typeResolved() {
+    // User typed a brand-new line that was not present at last compile time.
+    // resolveByPosition walks the cached snapshot and finds no MethodInvocationTree
+    // at dotOffset because the node simply doesn't exist in the older tree.
+    final var items =
+        completeWithCache(
+            """
+            class Test {
+                java.util.List<String> getList() { return null; }
+                void m() {
+                }
+            }""",
+            """
+            class Test {
+                java.util.List<String> getList() { return null; }
+                void m() {
+                    getList().sub§
+                }
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("subList"));
+  }
+
+  @Disabled("pending on-demand attribution for stale-cache completions")
+  @Test
+  void memberAccess_staleCacheReplacedExpression_typeResolved() {
+    // User replaced an existing expression in-place: the cached snapshot has a
+    // different call at the same source position, so the dotOffset from the current
+    // content hits a node with the wrong type in the cached tree.
+    final var items =
+        completeWithCache(
+            """
+            class Test {
+                String foo() { return ""; }
+                int bar() { return 0; }
+                void m() {
+                    bar();
+                }
+            }""",
+            """
+            class Test {
+                String foo() { return ""; }
+                int bar() { return 0; }
+                void m() {
+                    foo().toL§
                 }
             }""");
     assertThat(items)
