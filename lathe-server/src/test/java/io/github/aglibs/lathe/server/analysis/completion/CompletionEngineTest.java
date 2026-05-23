@@ -101,6 +101,38 @@ class CompletionEngineTest {
     assertThat(items).isEmpty();
   }
 
+  @Disabled("pending string literal receiver support in TypeResolver")
+  @Test
+  void memberAccess_stringLiteralReceiver_stringMethodsReturned() {
+    final var items =
+        complete(
+            """
+            class Test {
+                void m() {
+                    "hello".to§
+                }
+            }""");
+    assertThat(items)
+        .extracting(CompletionItem::getLabel)
+        .anyMatch(l -> l.startsWith("toLowerCase"));
+  }
+
+  @Disabled("pending LAMBDA_BODY context handling and scanForLocalDeclaration <= fix")
+  @Test
+  void lambdaBody_memberAccess_paramTypeResolved() {
+    final var items =
+        complete(
+            """
+            class Test {
+                void m(java.util.List<String> list) {
+                    list.forEach(s -> s.to§);
+                }
+            }""");
+    assertThat(items)
+        .extracting(CompletionItem::getLabel)
+        .anyMatch(l -> l.startsWith("toLowerCase"));
+  }
+
   // ── known issues ────────────────────────────────────────────────────────────
 
   @Disabled("pending parameterized type resolution in ProposalGenerator")
