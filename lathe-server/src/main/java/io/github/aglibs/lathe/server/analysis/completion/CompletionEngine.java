@@ -29,6 +29,18 @@ public final class CompletionEngine {
             "[completion] parsed valid=%s sentinelCtx=%s"
                 .formatted(parsed.valid(), parsed.sentinelContext()));
 
+    if (parsed.valid()
+        && parsed.sentinelContext() == SentinelContext.MEMBER_ACCESS
+        && req.cached() != null) {
+      final var snapshot = req.cached().analysis();
+      final var receiverType =
+          TypeResolver.resolveReceiverType(parsed, req.pos().getLine(), snapshot);
+      LOG.fine(
+          () ->
+              "[completion] resolve receiver=|%s| type=%s"
+                  .formatted(parsed.receiverText(), receiverType));
+    }
+
     return List.of();
   }
 }
