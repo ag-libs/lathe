@@ -227,7 +227,6 @@ class SentinelParserTest {
     assertThat(result.enclosingMethod()).isEqualTo("m");
   }
 
-  @Disabled("argIndex / enclosingReceiver / enclosingMethodName not in ParsedSentinel yet")
   @Test
   void argumentPosition_argIndex_isExtracted() {
     final var result =
@@ -240,9 +239,9 @@ class SentinelParserTest {
         }""");
     assertThat(result.valid()).isTrue();
     assertThat(result.sentinelContext()).isEqualTo(SentinelContext.ARGUMENT_POSITION);
-    // assertThat(result.argIndex()).isEqualTo(1);
-    // assertThat(result.enclosingReceiver()).isEqualTo("map");
-    // assertThat(result.enclosingMethodName()).isEqualTo("put");
+    assertThat(result.argIndex()).isEqualTo(1);
+    assertThat(result.enclosingReceiver()).isEqualTo("map");
+    assertThat(result.enclosingMethodName()).isEqualTo("put");
   }
 
   // ── CONSTRUCTOR_CALL ─────────────────────────────────────────────────────

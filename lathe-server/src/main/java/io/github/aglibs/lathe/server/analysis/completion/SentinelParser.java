@@ -52,10 +52,10 @@ final class SentinelParser {
     }
 
     final var parentPath = sentinelPath.getParentPath();
-    final SentinelContext ctx =
+    final Classification cls =
         parentPath != null
             ? classifySentinel(sentinelPath.getLeaf(), parentPath.getLeaf())
-            : SentinelContext.SIMPLE_NAME;
+            : Classification.of(SentinelContext.SIMPLE_NAME);
 
     String enclosingClass = null;
     String enclosingMethod = null;
@@ -77,6 +77,9 @@ final class SentinelParser {
               SentinelContext.MODULE_DIRECTIVE,
               null,
               null,
+              -1,
+              null,
+              null,
               version);
       LOG.fine(() -> "[sentinel-parse] %s".formatted(parsed));
       return parsed;
@@ -87,33 +90,62 @@ final class SentinelParser {
             true,
             injected.prefix(),
             injected.receiverText(),
-            ctx,
+            cls.context(),
             enclosingClass,
             enclosingMethod,
+            cls.argIndex(),
+            cls.enclosingReceiver(),
+            cls.enclosingMethodName(),
             version);
 
     LOG.fine(() -> "[sentinel-parse] %s".formatted(parsed));
     return parsed;
   }
 
-  private static SentinelContext classifySentinel(final Tree sentinel, final Tree parent) {
+  private record Classification(
+      SentinelContext context, int argIndex, String enclosingReceiver, String enclosingMethodName) {
+
+    static Classification of(final SentinelContext ctx) {
+      return new Classification(ctx, -1, null, null);
+    }
+  }
+
+  private static Classification classifySentinel(final Tree sentinel, final Tree parent) {
     return switch (parent) {
-      case MethodInvocationTree m when m.getArguments().stream().anyMatch(a -> a == sentinel) ->
-          SentinelContext.ARGUMENT_POSITION;
-      case NewClassTree ignored -> SentinelContext.CONSTRUCTOR_CALL;
-      case AnnotationTree ignored -> SentinelContext.ANNOTATION_CONTEXT;
-      case LambdaExpressionTree ignored -> SentinelContext.LAMBDA_BODY;
-      case VariableTree v when v.getType() == sentinel -> SentinelContext.TYPE_REFERENCE;
-      case MethodTree m when m.getReturnType() == sentinel -> SentinelContext.TYPE_REFERENCE;
-      case ParameterizedTypeTree ignored -> SentinelContext.TYPE_REFERENCE;
-      case ClassTree ignored -> SentinelContext.TYPE_REFERENCE;
-      case ArrayTypeTree ignored -> SentinelContext.TYPE_REFERENCE;
-      case WildcardTree ignored -> SentinelContext.TYPE_REFERENCE;
-      case TypeCastTree t when t.getType() == sentinel -> SentinelContext.TYPE_REFERENCE;
+      case MethodInvocationTree m when m.getArguments().stream().anyMatch(a -> a == sentinel) -> {
+        final var args = m.getArguments();
+        int argIndex = 0;
+        for (int j = 0; j < args.size(); j++) {
+          if (args.get(j) == sentinel) {
+            argIndex = j;
+            break;
+          }
+        }
+        final var sel = (MemberSelectTree) m.getMethodSelect();
+        yield new Classification(
+            SentinelContext.ARGUMENT_POSITION,
+            argIndex,
+            sel.getExpression().toString(),
+            sel.getIdentifier().toString());
+      }
+      case NewClassTree ignored -> Classification.of(SentinelContext.CONSTRUCTOR_CALL);
+      case AnnotationTree ignored -> Classification.of(SentinelContext.ANNOTATION_CONTEXT);
+      case LambdaExpressionTree ignored -> Classification.of(SentinelContext.LAMBDA_BODY);
+      case VariableTree v when v.getType() == sentinel ->
+          Classification.of(SentinelContext.TYPE_REFERENCE);
+      case MethodTree m when m.getReturnType() == sentinel ->
+          Classification.of(SentinelContext.TYPE_REFERENCE);
+      case ParameterizedTypeTree ignored -> Classification.of(SentinelContext.TYPE_REFERENCE);
+      case ClassTree ignored -> Classification.of(SentinelContext.TYPE_REFERENCE);
+      case ArrayTypeTree ignored -> Classification.of(SentinelContext.TYPE_REFERENCE);
+      case WildcardTree ignored -> Classification.of(SentinelContext.TYPE_REFERENCE);
+      case TypeCastTree t when t.getType() == sentinel ->
+          Classification.of(SentinelContext.TYPE_REFERENCE);
       default ->
-          sentinel instanceof MemberSelectTree
-              ? SentinelContext.MEMBER_ACCESS
-              : SentinelContext.SIMPLE_NAME;
+          Classification.of(
+              sentinel instanceof MemberSelectTree
+                  ? SentinelContext.MEMBER_ACCESS
+                  : SentinelContext.SIMPLE_NAME);
     };
   }
 

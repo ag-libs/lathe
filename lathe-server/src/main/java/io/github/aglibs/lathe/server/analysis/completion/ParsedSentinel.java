@@ -9,6 +9,9 @@ record ParsedSentinel(
     SentinelContext sentinelContext,
     String enclosingClass,
     String enclosingMethod,
+    int argIndex,
+    String enclosingReceiver,
+    String enclosingMethodName,
     int docVersion) {
 
   ParsedSentinel {
@@ -27,6 +30,7 @@ record ParsedSentinel(
 
   static ParsedSentinel invalid(
       final String prefix, final String receiverText, final int docVersion) {
-    return new ParsedSentinel(false, prefix, receiverText, null, null, null, docVersion);
+    return new ParsedSentinel(
+        false, prefix, receiverText, null, null, null, -1, null, null, docVersion);
   }
 }
