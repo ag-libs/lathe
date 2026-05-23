@@ -72,9 +72,8 @@ If no attributed snapshot or probe is available, completion may return broad ind
 ### In Scope for v1
 
 - public top-level dependency classes
-- public top-level JDK classes
 - public top-level reactor classes
-- static dependency and JDK shards written by `lathe:sync`
+- static dependency shards written by `lathe:sync`
 - reactor shards scanned by the server from `.lathe/<module>/classes` and `.lathe/<module>/test-classes`
 - in-memory merged `WorkspaceTypeIndex` snapshot in the server
 - prefix lookup by simple name
@@ -88,6 +87,7 @@ If no attributed snapshot or probe is available, completion may return broad ind
 - multi-release JAR precision
 - strong content hashing for every dependency JAR
 - persisted reactor shards
+- JDK shard generation
 - fully module-aware filtering without javac
 - package-prefix completion
 - workspace symbols
@@ -98,7 +98,7 @@ If no attributed snapshot or probe is available, completion may return broad ind
 
 ### Static Shards Written by `lathe:sync`
 
-Dependency and JDK type indexes are static relative to a Maven sync.
+Dependency type indexes are static relative to a Maven sync.
 They are written by `lathe-maven-plugin` under `~/.cache/lathe/type-index/`.
 
 `lathe:sync` already has the inputs:
@@ -106,10 +106,12 @@ They are written by `lathe-maven-plugin` under `~/.cache/lathe/type-index/`.
 - resolved dependency artifact JARs
 - dependency GAVs
 - source-JAR status
-- `JAVA_HOME`
-- JDK vendor/version/source metadata
 
 Indexing static artifacts during sync keeps expensive scanning out of completion and out of the normal server edit path.
+
+JDK indexing is a follow-up slice.
+It should also be sync-time work, but it has different mechanics and should not block the first dependency/reactor
+candidate pipeline.
 
 ### Reactor Shards Owned by the Server
 
@@ -186,7 +188,7 @@ Test source completion may see both main and test outputs according to the modul
 
 ---
 
-## 6. Dependency and JDK Static Shards
+## 6. Dependency Static Shards
 
 ### Cache Layout
 
@@ -194,15 +196,11 @@ Static shards live in the user cache:
 
 ```text
 ~/.cache/lathe/type-index/
-├── deps/
-│   └── com.google.guava/
-│       └── guava/
-│           └── 32.0.0-jre/
-│               └── index.json
-└── jdks/
-    └── Eclipse-Adoptium/
-        └── 21.0.7/
-            └── index.json
+└── deps/
+    └── com.google.guava/
+        └── guava/
+            └── 32.0.0-jre/
+                └── index.json
 ```
 
 The exact path is an implementation detail.
@@ -215,13 +213,10 @@ Dependency shard:
 ```json
 {
   "schemaVersion": "1",
-  "origin": {
-    "kind": "DEPENDENCY",
-    "gav": "com.google.guava:guava:32.0.0-jre",
-    "jar": "/home/user/.m2/repository/com/google/guava/guava/32.0.0-jre/guava-32.0.0-jre.jar",
-    "size": 3043932,
-    "mtimeMillis": 1780000000000
-  },
+  "gav": "com.google.guava:guava:32.0.0-jre",
+  "jar": "/home/user/.m2/repository/com/google/guava/guava/32.0.0-jre/guava-32.0.0-jre.jar",
+  "size": 3043932,
+  "mtimeMillis": 1780000000000,
   "types": [
     {
       "simpleName": "ImmutableList",
@@ -233,20 +228,10 @@ Dependency shard:
 }
 ```
 
-JDK shard:
-
-```json
-{
-  "schemaVersion": "1",
-  "origin": {
-    "kind": "JDK",
-    "vendor": "Eclipse-Adoptium",
-    "version": "21.0.7",
-    "home": "/usr/lib/jvm/temurin-21"
-  },
-  "types": []
-}
-```
+The shard intentionally does not duplicate dependency source metadata.
+`workspace.json` owns source status, source directory, external-source classpath, and the shard path.
+The shard keeps `gav` for inspection, logging, and sanity checks, but freshness is based on schema version, JAR path,
+JAR size, and JAR mtime.
 
 ### Freshness Checks
 
@@ -340,7 +325,7 @@ Javac validation remains the final authority.
 ### Public Top-Level Class Filtering
 
 Top-level Java classes can only be public or package-private.
-For external dependency/JDK shards, v1 keeps only public top-level classes.
+For external dependency shards, v1 keeps only public top-level classes.
 
 This avoids noisy fallback completions when no javac snapshot is available.
 
@@ -473,7 +458,7 @@ On startup and workspace reload, the server:
 
 1. loads `.lathe/workspace.json`
 2. scans params files and builds `ModuleWorkspace`
-3. loads static dependency/JDK shards referenced by the manifest
+3. loads static dependency shards referenced by the manifest
 4. scans reactor output directories
 5. builds a merged immutable `WorkspaceTypeIndex`
 
@@ -530,18 +515,22 @@ The manifest should point at static shard paths:
     {
       "gav": "com.google.guava:guava:32.0.0-jre",
       "jar": "/home/user/.m2/.../guava.jar",
+      "status": "PRESENT",
+      "dir": "/home/user/.cache/lathe/deps/com.google.guava/guava/32.0.0-jre",
+      "classpath": [],
       "typeIndex": "/home/user/.cache/lathe/type-index/deps/com.google.guava/guava/32.0.0-jre/index.json"
     }
-  ],
-  "jdk": {
-    "vendor": "Eclipse-Adoptium",
-    "version": "21.0.7",
-    "typeIndex": "/home/user/.cache/lathe/type-index/jdks/Eclipse-Adoptium/21.0.7/index.json"
-  }
+  ]
 }
 ```
 
+`typeIndex` is optional.
+Older manifests and dependencies whose shard failed to build simply omit it.
 If a shard is missing or unreadable, the server logs the issue and continues with the remaining shards.
+
+When merging a shard, the server should prefer the active `DependencyData.gav()` and `DependencyData.jar()` from
+`workspace.json` for the candidate origin.
+The shard's `gav` is a debug/sanity field, not the active workspace authority.
 
 ### Scanning Reactor Outputs
 
@@ -615,6 +604,55 @@ for (TypeCandidate candidate : rankedCandidates) {
 
 If validation yields too few items, completion may validate another page of candidates.
 
+Validation should be measured before adding cache complexity.
+The measured operation is the pair:
+
+```text
+candidate FQN -> Elements.getTypeElement(FQN) -> Elements.isAccessible(...)
+```
+
+Completion should record structured timing fields:
+
+```json
+{
+  "event": "typeCandidateValidation",
+  "prefix": "Arr",
+  "candidateCount": 200,
+  "checked": 64,
+  "resolved": 18,
+  "accessible": 12,
+  "elapsedMicros": 2400
+}
+```
+
+The first implementation should use a validation cap and a small deadline, for example:
+
+```text
+index query limit: 200 candidates
+validation page: 50 candidates
+completion result limit: 50 items
+validation deadline: 20-30ms
+```
+
+If the deadline is reached, completion returns the accessible candidates found so far with `isIncomplete=true`.
+
+### Optional Accessibility Cache
+
+If measurement shows repeated validation is expensive, cache validation results with the cached analysis.
+The cache should not live on the workspace index because accessibility is source-context-specific.
+
+Suggested key:
+
+```java
+record AccessibilityCacheKey(
+    String candidateQualifiedName,
+    String enclosingTypeQualifiedName) {}
+```
+
+The cache is naturally invalidated when the file's `CachedAnalysis` is replaced, dropped on `didClose`, or cleared on
+workspace reload.
+Do not add this cache until timing logs show it is useful.
+
 ### Fallback Without Cached Analysis
 
 If no cached analysis exists, completion should not block on broad attribution.
@@ -647,14 +685,14 @@ Adding import edits is a later slice.
 
 ### Sync-Time Cost
 
-Dependency and JDK scans run during `lathe:sync`.
+Dependency scans run during `lathe:sync`.
 This is the right place to pay static indexing cost because Maven is already resolving dependencies and refreshing
 workspace state.
 
 ### Server Startup Cost
 
 Server startup loads shard JSON and scans reactor outputs.
-Static dependency/JDK JARs are not rescanned by the server.
+Static dependency JARs are not rescanned by the server.
 
 ### Completion-Time Budget
 
@@ -668,7 +706,7 @@ It should only:
 ### Why Not Scan on Completion
 
 Scanning during completion has unpredictable latency and repeats work.
-Large dependency sets and JDK modules make recursive scans especially risky.
+Large dependency sets make recursive scans especially risky.
 
 ---
 
@@ -709,32 +747,42 @@ Static shards for resolved dependencies may still be valid, but the server shoul
 Implement directory and JAR scanning with a streaming classfile access-flags reader.
 Add unit tests for public, package-private, nested, module-info, package-info, and invalid class files.
 
-### Slice 2 — Static Dependency Shards in Maven Plugin
+### Slice 2 — Reactor Index and Unvalidated Completion
+
+Scan reactor `.lathe/` output directories on server startup/reload.
+Build the first in-memory `WorkspaceTypeIndex`.
+Wire simple-name prefix completion to return reactor candidates without import edits.
+
+### Slice 3 — Static Dependency Shards in Maven Plugin
 
 During `lathe:sync`, build or reuse dependency shards based on schema/path/size/mtime.
 Write shard paths into `workspace.json`.
 
-### Slice 3 — Server Load and Reactor Merge
+### Slice 4 — Server Load and Dependency Merge
 
 Load static shards from the manifest.
-Scan reactor `.lathe/` output directories.
-Build immutable `WorkspaceTypeIndex`.
+Merge dependency candidates with reactor candidates in the immutable `WorkspaceTypeIndex`.
 
-### Slice 4 — Type Completion Query
-
-Wire simple-name prefix completion to the index.
-Return labels/details without import edits.
-
-### Slice 5 — Javac Validation
+### Slice 5 — Javac Validation and Timing
 
 Validate top candidates with cached analysis:
 
 - `Elements.getTypeElement`
 - `Elements.isAccessible`
 
-Cap validation work and keep fallback behavior permissive.
+Cap validation work, add structured timing, and keep fallback behavior permissive.
 
-### Slice 6 — Optional JPMS Metadata
+### Slice 6 — Save-Time Reactor Shard Refresh
+
+After full save compiles and source deletions, refresh only the affected reactor module/source-tree shard.
+Coalesce refreshes by `ModuleSourceKey`.
+
+### Slice 7 — JDK `jrt:/` Shard
+
+Add JDK type candidates by scanning the `jrt:/` filesystem under `/modules`.
+Reuse the same classfile access-flags reader.
+
+### Slice 8 — Optional JPMS Metadata
 
 If fallback results are too noisy, add module metadata through `ModuleDescriptor` and `ModuleFinder`.
 Use it only as an optimization.
@@ -750,6 +798,19 @@ Use it only as an optimization.
 - directory scanner
 - shard JSON read/write
 - prefix index lookup and ranking
+
+Scanner fixtures should include:
+
+- public top-level class included
+- package-private top-level class excluded
+- public interface included
+- public enum included
+- public record included
+- public annotation included
+- nested public class skipped in v1
+- `module-info.class` skipped
+- `package-info.class` skipped
+- invalid class file skipped without failing the whole scan
 
 ### Maven Plugin Sync Tests
 
@@ -768,6 +829,7 @@ Server unit/integration tests should verify:
 - reactor classes are scanned from `.lathe/`
 - static and reactor candidates merge correctly
 - reload replaces the index snapshot
+- main/test source-tree filtering works
 
 ### Completion Tests
 
@@ -775,9 +837,9 @@ Completion tests should cover:
 
 - reactor type-name completion
 - dependency type-name completion
-- JDK type-name completion
 - no-snapshot fallback with `isIncomplete=true`
 - javac validation dropping inaccessible candidates
+- validation timing records checked/resolved/accessible/elapsed fields when logging is enabled
 
 ### SNAPSHOT/Freshness Tests
 
@@ -795,10 +857,31 @@ Index public nested classes and validate with javac before returning them.
 
 Respect `META-INF/versions/<N>` according to the active JDK or `--release`.
 
-### JDK Module Indexing
+### JDK `jrt:/` Indexing
 
-Implement a robust JDK shard scanner for system modules.
-This may use `jrt:/` or `ModuleFinder` depending on what is simplest and stable on the supported JDK range.
+Implement a JDK shard scanner by walking the runtime image filesystem:
+
+```text
+jrt:/modules/java.base/java/lang/String.class
+jrt:/modules/java.base/java/util/List.class
+jrt:/modules/java.sql/java/sql/Connection.class
+```
+
+Path shape:
+
+```text
+/modules/<module-name>/<package-path>/<ClassName.class>
+```
+
+The scanner should:
+
+- walk `jrt:/modules`
+- skip `module-info.class`, `package-info.class`, and names containing `$`
+- reuse the classfile access-flags reader
+- keep only `ACC_PUBLIC` top-level classes
+- store the JDK module name on the candidate origin
+
+`ModuleFinder` is useful for module metadata, but `jrt:/` is the primary class enumeration mechanism for the JDK shard.
 
 ### Persistent Reactor Shards
 
