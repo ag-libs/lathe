@@ -440,13 +440,6 @@ class SentinelParserTest {
     assertThat(result.sentinelContext()).isEqualTo(SentinelContext.TYPE_REFERENCE);
   }
 
-  @Disabled(
-      """
-      cursor at START of an existing identifier: injector produces \
-      __LATHE_SENTINEL__<suffix> as a single token (e.g. __LATHE_SENTINEL__RoleConfig), \
-      which SentinelFinder cannot match — result is invalid. \
-      Real trigger: class RoleValidator implements AbacValidator<RoleValidator.§RoleConfig>. \
-      Fix: forward-scan past identifier chars at cursorOffset in SentinelInjector.inject.""")
   @Test
   void memberAccess_cursorAtTokenStart_isValid() {
     final var result =

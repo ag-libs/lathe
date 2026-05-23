@@ -207,12 +207,6 @@ class SentinelInjectorTest {
     assertThat(inject("class Foo<T extends Bar§>").context()).isEqualTo(Context.EXPRESSION);
   }
 
-  @Disabled(
-      """
-      cursor at START of an existing identifier (empty prefix): the injector appends \
-      the sentinel directly to the remaining identifier chars, producing a single token \
-      like __LATHE_SENTINEL__RoleConfig that SentinelFinder cannot match. \
-      Fix: forward-scan past identifier chars at cursorOffset before building the suffix.""")
   @Test
   void cursorAtTokenStart_sentinelNotConcatenatedWithSuffix() {
     // real case: class RoleValidator implements AbacValidator<RoleValidator.§RoleConfig>

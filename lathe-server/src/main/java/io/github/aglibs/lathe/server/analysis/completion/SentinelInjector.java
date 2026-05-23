@@ -24,14 +24,20 @@ final class SentinelInjector {
     final BackwardResult back = backwardScan(cursorOffset);
     final ForwardResult fwd = forwardScan();
 
+    int suffixStart = cursorOffset;
+    while (suffixStart < content.length()
+        && Character.isJavaIdentifierPart(content.charAt(suffixStart))) {
+      suffixStart++;
+    }
+
     final boolean parenFollows =
-        cursorOffset < content.length() && content.charAt(cursorOffset) == '(';
+        suffixStart < content.length() && content.charAt(suffixStart) == '(';
     final var semicolon = back.context() == Context.STATEMENT && !parenFollows ? ";" : "";
     final var injected =
         content.substring(0, back.tokenStart())
             + SENTINEL
             + semicolon
-            + content.substring(cursorOffset)
+            + content.substring(suffixStart)
             + ")".repeat(fwd.unclosedParens())
             + "}".repeat(fwd.unclosedBraces());
 
