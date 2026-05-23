@@ -101,6 +101,38 @@ class CompletionEngineTest {
     assertThat(items).isEmpty();
   }
 
+  @Disabled("pending nodeLine <= cursorLine fix in TypeResolver.scanForLocalDeclaration")
+  @Test
+  void memberAccess_methodParamSameLine_typeResolved() {
+    // param declared on same line as cursor — needs nodeLine <= cursorLine in
+    // scanForLocalDeclaration
+    final var items =
+        complete(
+            """
+            class Test {
+                void m(String s) { s.to§ }
+            }""");
+    assertThat(items)
+        .extracting(CompletionItem::getLabel)
+        .anyMatch(l -> l.startsWith("toLowerCase"));
+  }
+
+  @Disabled("pending LAMBDA_BODY context handling in CompletionEngine")
+  @Test
+  void lambdaBody_thisReceiver_membersReturned() {
+    // LAMBDA_BODY context with 'this' receiver — isolates engine routing fix from param resolution
+    final var items =
+        complete(
+            """
+            class Test {
+                String name = "x";
+                void m(java.util.List<String> list) {
+                    list.forEach(s -> this.na§);
+                }
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("name");
+  }
+
   @Disabled("pending string literal receiver support in TypeResolver")
   @Test
   void memberAccess_stringLiteralReceiver_stringMethodsReturned() {
