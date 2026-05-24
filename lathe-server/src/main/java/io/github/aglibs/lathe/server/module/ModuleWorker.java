@@ -1,9 +1,9 @@
 package io.github.aglibs.lathe.server.module;
 
 import io.github.aglibs.lathe.server.analysis.CompilationContext;
+import io.github.aglibs.lathe.server.analysis.FeatureRequest;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -89,20 +89,12 @@ public final class ModuleWorker {
                 ctx.compile(request.uri(), request.content(), request.version(), request.mode())));
   }
 
-  public CompletableFuture<Hover> hover(
-      final String uri,
-      final Position position,
-      final List<Path> sourceRoots,
-      final WorkspaceManifest manifest) {
-    return submit(ctx -> ctx.hover(uri, position, sourceRoots, manifest));
+  public CompletableFuture<Hover> hover(final FeatureRequest request) {
+    return submit(ctx -> ctx.hover(request));
   }
 
-  public CompletableFuture<Optional<Location>> definition(
-      final String uri,
-      final Position position,
-      final List<Path> sourceRoots,
-      final WorkspaceManifest manifest) {
-    return submit(ctx -> ctx.definition(uri, position, sourceRoots, manifest));
+  public CompletableFuture<Optional<Location>> definition(final FeatureRequest request) {
+    return submit(ctx -> ctx.definition(request));
   }
 
   public CompletableFuture<List<CompletionItem>> complete(

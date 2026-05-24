@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.util.List;
 import java.util.Locale;
 import javax.tools.Diagnostic;
@@ -97,6 +98,23 @@ class CompilationContextTest {
     final var result = CompilationContext.filterAndMap(List.of(error, note), "x");
     assertThat(result).hasSize(1);
     assertThat(result.getFirst().getSeverity()).isEqualTo(DiagnosticSeverity.Error);
+  }
+
+  @Test
+  void hover_staleCache_returnsNull() {
+    final String uri = "file:///Test.java";
+    final String cachedContent = "class Test { String value; }";
+    final String currentContent = "class Test { Integer value; }";
+    final var manifest = WorkspaceManifest.empty();
+    final var pos =
+        SourceLocator.offsetToPosition(currentContent, currentContent.indexOf("Integer"));
+
+    try (var ctx = new CompilationContext(new TempSourceCompiler())) {
+      ctx.compile(uri, cachedContent, 1, CompileMode.OPEN);
+
+      assertThat(ctx.hover(new FeatureRequest(uri, currentContent, pos, List.of(), manifest)))
+          .isNull();
+    }
   }
 
   // --- helpers ---

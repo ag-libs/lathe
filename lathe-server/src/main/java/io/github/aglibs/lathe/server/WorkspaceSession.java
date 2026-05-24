@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server;
 import static java.util.logging.Level.SEVERE;
 
 import io.github.aglibs.lathe.server.analysis.CompileMode;
+import io.github.aglibs.lathe.server.analysis.FeatureRequest;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
 import io.github.aglibs.lathe.server.analysis.TokenScanner;
 import io.github.aglibs.lathe.server.module.CompileRequest;
@@ -113,26 +114,38 @@ final class WorkspaceSession {
   }
 
   CompletableFuture<Hover> hoverFuture(final String uri, final Position pos) {
-    final var sourceRoots = workspace.allSourceRoots();
-    final var manifestSnapshot = manifest;
+    final var openFile = openFiles.get(uri);
+    if (openFile == null) {
+      return CompletableFuture.completedFuture(null);
+    }
+
+    final var request =
+        new FeatureRequest(
+            openFile.uri(), openFile.content(), pos, workspace.allSourceRoots(), manifest);
     return routeFeature(
         uri,
         moduleWorker ->
             moduleWorker
-                .hover(uri, pos, sourceRoots, manifestSnapshot)
+                .hover(request)
                 .exceptionally(ex -> logAndReturn(ex, "[hover] failed for " + uri, null)),
         null);
   }
 
   CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       definitionFuture(final String uri, final Position pos) {
-    final var sourceRoots = workspace.allSourceRoots();
-    final var manifestSnapshot = manifest;
+    final var openFile = openFiles.get(uri);
+    if (openFile == null) {
+      return CompletableFuture.completedFuture(Either.forLeft(List.of()));
+    }
+
+    final var request =
+        new FeatureRequest(
+            openFile.uri(), openFile.content(), pos, workspace.allSourceRoots(), manifest);
     return routeFeature(
         uri,
         moduleWorker ->
             moduleWorker
-                .definition(uri, pos, sourceRoots, manifestSnapshot)
+                .definition(request)
                 .thenApply(location -> definitionResult(location.map(List::of).orElseGet(List::of)))
                 .exceptionally(
                     ex ->

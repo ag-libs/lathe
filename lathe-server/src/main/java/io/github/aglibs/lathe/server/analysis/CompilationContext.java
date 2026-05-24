@@ -4,8 +4,6 @@ import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionEngine;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionRequest;
-import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
-import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -54,7 +52,8 @@ public final class CompilationContext implements AutoCloseable {
   public List<CompletionItem> complete(
       final String uri, final String content, final Position pos, final CompletionContext context) {
     final var t = Stopwatch.start();
-    final var request = new CompletionRequest(uri, content, pos, context, cache.get(uri));
+    final var request =
+        new CompletionRequest(uri, content, pos, context, currentCache(uri, content));
     final var outcome = completionEngine.complete(request);
     if (outcome.freshAnalysis() != null) {
       cache.put(
@@ -82,13 +81,9 @@ public final class CompilationContext implements AutoCloseable {
     return ctx.analysis().semanticTokens();
   }
 
-  public Hover hover(
-      final String uri,
-      final Position pos,
-      final List<Path> sourceRoots,
-      final WorkspaceManifest manifest) {
+  public Hover hover(final FeatureRequest request) {
     final var t = Stopwatch.start();
-    final CursorContext cur = resolve(uri, pos);
+    final CursorContext cur = resolve(request);
     if (cur == null) {
       return null;
     }
@@ -102,9 +97,11 @@ public final class CompilationContext implements AutoCloseable {
     final Element element = SourceLocator.elementAt(cur.ctx().trees(), cur.path());
     final TypeMirror type = cur.path() != null ? cur.ctx().trees().getTypeMirror(cur.path()) : null;
     final var allRoots =
-        Stream.concat(sourceRoots.stream(), manifest.externalSourceDirs().stream()).toList();
+        Stream.concat(
+                request.sourceRoots().stream(), request.manifest().externalSourceDirs().stream())
+            .toList();
     final var javadoc = javadocLocator.locate(element, cur.ctx().trees(), allRoots).orElse(null);
-    final var origin = manifest.originLabel(element, compiler.fileManager()).orElse(null);
+    final var origin = request.manifest().originLabel(element, compiler.fileManager()).orElse(null);
     LOG.fine(
         () ->
             "[hover] %dms element=%s type=%s doc=%s origin=%s"
@@ -114,22 +111,20 @@ public final class CompilationContext implements AutoCloseable {
         .orElse(null);
   }
 
-  public Optional<Location> definition(
-      final String uri,
-      final Position pos,
-      final List<Path> sourceRoots,
-      final WorkspaceManifest manifest) {
+  public Optional<Location> definition(final FeatureRequest request) {
     final var t = Stopwatch.start();
-    final var cur = resolve(uri, pos);
+    final var cur = resolve(request);
     if (cur == null) {
       return Optional.empty();
     }
 
     final var element = SourceLocator.elementAt(cur.ctx().trees(), cur.path());
-    var result = definitionLocator.locate(element, cur.ctx().trees(), sourceRoots, uri);
+    var result =
+        definitionLocator.locate(element, cur.ctx().trees(), request.sourceRoots(), request.uri());
     if (result.isEmpty()) {
       result =
-          manifest
+          request
+              .manifest()
               .externalSourceRoot(element, compiler.fileManager())
               .flatMap(root -> DefinitionLocator.findSourceFile(element, List.of(root)))
               .map(
@@ -160,14 +155,21 @@ public final class CompilationContext implements AutoCloseable {
 
   private record CursorContext(FileAnalysis ctx, TreePath path) {}
 
-  private CursorContext resolve(final String uri, final Position pos) {
+  private CachedAnalysis currentCache(final String uri, final String content) {
     final var cached = cache.get(uri);
+    return cached != null && cached.content().equals(content) ? cached : null;
+  }
+
+  private CursorContext resolve(final FeatureRequest request) {
+    final var cached = currentCache(request.uri(), request.content());
     final var analysis = cached != null ? cached.analysis() : null;
     if (analysis == null || analysis.tree() == null) {
       return null;
     }
 
-    final long offset = SourceLocator.toOffset(analysis.tree(), pos.getLine(), pos.getCharacter());
+    final long offset =
+        SourceLocator.toOffset(
+            analysis.tree(), request.pos().getLine(), request.pos().getCharacter());
     return new CursorContext(
         analysis, SourceLocator.pathAt(analysis.trees(), analysis.tree(), offset));
   }

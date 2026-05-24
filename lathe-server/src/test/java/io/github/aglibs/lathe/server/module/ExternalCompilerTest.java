@@ -11,6 +11,7 @@ import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.TestCompiler;
 import io.github.aglibs.lathe.server.analysis.CompilationContext;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
+import io.github.aglibs.lathe.server.analysis.FeatureRequest;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.nio.file.Files;
@@ -55,7 +56,9 @@ class ExternalCompilerTest {
           SourceLocator.offsetToPosition(usesContent, usesContent.indexOf("Helper"));
 
       final var definition =
-          ctx.definition(usesSource.toUri().toString(), helperPos, List.of(), manifest);
+          ctx.definition(
+              new FeatureRequest(
+                  usesSource.toUri().toString(), usesContent, helperPos, List.of(), manifest));
 
       assertThat(diagnostics).isEmpty();
       assertThat(definition).isPresent();
@@ -95,9 +98,10 @@ class ExternalCompilerTest {
       // Hover over Helper: JavadocLocator finds helperSource via manifest.externalSourceDirs()
       // and calls parser.parse(helperSource). In the broken state this resets the compilation
       // FM's CLASS_PATH, causing the subsequent definition lookup to return empty.
-      ctx.hover(usesUri, helperPos, List.of(), manifest);
+      ctx.hover(new FeatureRequest(usesUri, usesContent, helperPos, List.of(), manifest));
 
-      final var definition = ctx.definition(usesUri, helperPos, List.of(), manifest);
+      final var definition =
+          ctx.definition(new FeatureRequest(usesUri, usesContent, helperPos, List.of(), manifest));
 
       assertThat(definition).isPresent();
       assertThat(definition.get().getUri()).isEqualTo(helperSource.toUri().toString());
