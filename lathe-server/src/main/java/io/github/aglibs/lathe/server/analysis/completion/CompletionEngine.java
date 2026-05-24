@@ -59,12 +59,11 @@ public final class CompletionEngine {
   }
 
   private CompletionOutcome completeImport(
-      final ParsedSentinel parsed,
-      final SentinelResult injected,
-      final CompletionRequest req) {
+      final ParsedSentinel parsed, final SentinelResult injected, final CompletionRequest req) {
     if (parsed.receiverText() == null) {
       return CompletionOutcome.of(List.of());
     }
+
     final var analysis =
         req.cached() != null
             ? req.cached().analysis()
@@ -72,20 +71,20 @@ public final class CompletionEngine {
     if (analysis == null) {
       return CompletionOutcome.of(List.of());
     }
+
     return new CompletionOutcome(
         new ImportCompletionProvider(analysis).propose(parsed.receiverText(), injected.prefix()),
         req.cached() == null ? analysis : null);
   }
 
   private static CompletionOutcome completeSimpleName(
-      final ParsedSentinel parsed,
-      final SentinelResult injected,
-      final CompletionRequest req) {
+      final ParsedSentinel parsed, final SentinelResult injected, final CompletionRequest req) {
     if (parsed.enclosingClass() == null
         || req.cached() == null
         || req.cached().analysis() == null) {
       return CompletionOutcome.of(List.of());
     }
+
     return new CompletionOutcome(
         new ProposalGenerator(req.cached().analysis())
             .proposeSimpleName(
@@ -97,28 +96,23 @@ public final class CompletionEngine {
   }
 
   private static CompletionOutcome completeTypeReference(
-      final ParsedSentinel parsed,
-      final SentinelResult injected,
-      final CompletionRequest req) {
-    if (parsed.receiverText() == null
-        || req.cached() == null
-        || req.cached().analysis() == null) {
+      final ParsedSentinel parsed, final SentinelResult injected, final CompletionRequest req) {
+    if (parsed.receiverText() == null || req.cached() == null || req.cached().analysis() == null) {
       return CompletionOutcome.of(List.of());
     }
-    final var outer =
-        req.cached().analysis().elements().getTypeElement(parsed.receiverText());
+
+    final var outer = req.cached().analysis().elements().getTypeElement(parsed.receiverText());
     if (outer == null) {
       return CompletionOutcome.of(List.of());
     }
+
     return new CompletionOutcome(
         new ProposalGenerator(req.cached().analysis()).proposeNestedTypes(outer, injected.prefix()),
         null);
   }
 
   private CompletionOutcome completeMemberAccess(
-      final ParsedSentinel parsed,
-      final SentinelResult injected,
-      final CompletionRequest req) {
+      final ParsedSentinel parsed, final SentinelResult injected, final CompletionRequest req) {
     final int rawDot = injected.receiverText() != null ? injected.tokenStart() - 1 : -1;
     final int dotOffset = rawDot > 0 ? skipBackWhitespace(req.content(), rawDot) : rawDot;
     final var initialSnapshot = req.cached() != null ? req.cached().analysis() : null;
@@ -174,8 +168,7 @@ public final class CompletionEngine {
     LOG.fine(
         () ->
             "[completion] proposals count=%d labels=%s"
-                .formatted(
-                    items.size(), items.stream().map(CompletionItem::getLabel).toList()));
+                .formatted(items.size(), items.stream().map(CompletionItem::getLabel).toList()));
     return new CompletionOutcome(items, freshAnalysis);
   }
 }
