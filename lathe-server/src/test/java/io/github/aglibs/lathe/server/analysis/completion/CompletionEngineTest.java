@@ -133,7 +133,6 @@ class CompletionEngineTest {
     assertThat(items).isEmpty();
   }
 
-  @Disabled("pending TYPE_REFERENCE nested type completion in CompletionEngine")
   @Test
   void typeReference_dottedOuterClass_innerTypeSuggested() {
     final var items =
@@ -222,7 +221,6 @@ class CompletionEngineTest {
 
   // ── known issues ────────────────────────────────────────────────────────────
 
-  @Disabled("pending parameterized type resolution in ProposalGenerator")
   @Test
   void memberAccess_typeArgResolved_notRawTypeVar() {
     // List<String>.add§ should show add(String), not add(E)
