@@ -129,6 +129,7 @@ final class SentinelParser {
     if (sentinel instanceof VariableTree v) {
       return classifyVariableDeclaration(v);
     }
+
     return switch (parent) {
       case MethodInvocationTree m
           when !(sentinel instanceof MemberSelectTree)
@@ -206,6 +207,7 @@ final class SentinelParser {
         }
       }
     }
+
     return new Classification(SentinelContext.LAMBDA_BODY, -1, null, null, lambdaParamIndex, null);
   }
 
@@ -223,6 +225,7 @@ final class SentinelParser {
       if (SentinelInjector.SENTINEL.equals(node.getName().toString())) {
         return getCurrentPath();
       }
+
       return super.visitVariable(node, unused);
     }
 
