@@ -326,7 +326,6 @@ class CompletionEngineTest {
         .anyMatch(l -> l.startsWith("toLowerCase"));
   }
 
-  @Disabled("pending simple-name proposals in argument position")
   @Test
   void argumentPosition_emptyPrefix_suggestsVisibleLocal() {
     final var items =
@@ -349,7 +348,6 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).contains("value");
   }
 
-  @Disabled("pending simple-name proposals in argument position")
   @Test
   void argumentPosition_prefix_suggestsVisibleLocal() {
     final var items =
@@ -366,7 +364,6 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).contains("value");
   }
 
-  @Disabled("pending simple-name proposals in constructor argument position")
   @Test
   void constructorCall_emptyArgument_suggestsVisibleLocal() {
     final var items =
@@ -385,7 +382,6 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).contains("value");
   }
 
-  @Disabled("pending simple-name proposals in constructor argument position")
   @Test
   void constructorCall_prefix_suggestsVisibleLocal() {
     final var items =
@@ -404,7 +400,6 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).contains("value");
   }
 
-  @Disabled("pending lambda parameters in argument-position simple-name proposals")
   @Test
   void argumentPosition_lambdaParam_suggestsVisibleParam() {
     final var items =
@@ -420,7 +415,6 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).contains("value");
   }
 
-  @Disabled("pending pattern variables in argument-position simple-name proposals")
   @Test
   void argumentPosition_switchPatternVar_suggestsVisiblePatternVar() {
     final var items =
@@ -473,7 +467,6 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("emptyList"));
   }
 
-  @Disabled("pending enum constants in static member completion")
   @Test
   void memberAccess_staticEnumReceiver_enumConstantsReturned() {
     final var items =

@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
+import com.sun.source.tree.BindingPatternTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.VariableTree;
@@ -44,7 +45,11 @@ final class ProposalGenerator {
     }
 
     return snapshot.elements().getAllMembers(typeEl).stream()
-        .filter(el -> el.getKind() == ElementKind.METHOD || el.getKind() == ElementKind.FIELD)
+        .filter(
+            el ->
+                el.getKind() == ElementKind.METHOD
+                    || el.getKind() == ElementKind.FIELD
+                    || el.getKind() == ElementKind.ENUM_CONSTANT)
         .filter(el -> !isStaticAccess || el.getModifiers().contains(Modifier.STATIC))
         .filter(el -> el.getSimpleName().toString().startsWith(prefix))
         .map(el -> toCompletionItem(el, declaredType))
@@ -77,7 +82,7 @@ final class ProposalGenerator {
       final String enclosingClass,
       final String enclosingMethod,
       final String prefix,
-      final int cursorLine) {
+      final int cursorOffset) {
     final var seen = new LinkedHashSet<String>();
     final var items = new ArrayList<CompletionItem>();
 
@@ -97,16 +102,25 @@ final class ProposalGenerator {
           new TreePathScanner<Void, Void>() {
             @Override
             public Void visitVariable(final VariableTree node, final Void unused) {
+              addVariableIfVisible(node);
+              return super.visitVariable(node, unused);
+            }
+
+            @Override
+            public Void visitBindingPattern(final BindingPatternTree node, final Void unused) {
+              addVariableIfVisible(node.getVariable());
+              return super.visitBindingPattern(node, unused);
+            }
+
+            private void addVariableIfVisible(final VariableTree node) {
               final long pos =
                   snapshot.trees().getSourcePositions().getStartPosition(snapshot.tree(), node);
-              final long line = snapshot.tree().getLineMap().getLineNumber(pos) - 1;
-              if (line < cursorLine) {
+              if (pos >= 0 && pos < cursorOffset) {
                 final var name = node.getName().toString();
                 if (name.startsWith(prefix) && seen.add(name)) {
                   items.add(varItem(name));
                 }
               }
-              return super.visitVariable(node, unused);
             }
           }.scan(methodPath, null);
         }

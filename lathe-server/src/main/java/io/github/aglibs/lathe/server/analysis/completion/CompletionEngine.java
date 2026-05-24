@@ -43,7 +43,7 @@ public final class CompletionEngine {
 
     final var ctx = parsed.sentinelContext();
     if (parsed.valid()
-        && ctx == SentinelContext.SIMPLE_NAME
+        && isSimpleNameProposalContext(ctx, req)
         && parsed.enclosingClass() != null
         && req.cached() != null) {
       return new CompletionOutcome(
@@ -52,7 +52,7 @@ public final class CompletionEngine {
                   parsed.enclosingClass(),
                   parsed.enclosingMethod(),
                   injected.prefix(),
-                  req.pos().getLine()),
+                  req.cursorOffset()),
           null);
     }
 
@@ -117,5 +117,12 @@ public final class CompletionEngine {
     }
 
     return CompletionOutcome.of(List.of());
+  }
+
+  private static boolean isSimpleNameProposalContext(
+      final SentinelContext ctx, final CompletionRequest req) {
+    return ctx == SentinelContext.SIMPLE_NAME
+        || ctx == SentinelContext.ARGUMENT_POSITION
+        || (ctx == SentinelContext.CONSTRUCTOR_CALL && req.charBeforePrefix() == '(');
   }
 }
