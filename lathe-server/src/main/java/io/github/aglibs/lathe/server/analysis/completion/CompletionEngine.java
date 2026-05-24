@@ -1,6 +1,5 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
-import io.github.aglibs.lathe.server.analysis.FileAnalysis;
 import io.github.aglibs.lathe.server.analysis.SourceCompiler;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
 import java.util.List;
@@ -64,6 +63,7 @@ public final class CompletionEngine {
         final var text = parsed.receiverText();
         final boolean isStaticAccess =
             text != null
+                && text.indexOf('(') < 0
                 && (text.indexOf('.') < 0
                     ? Character.isUpperCase(text.charAt(0))
                     : snapshot.elements().getTypeElement(text) != null);

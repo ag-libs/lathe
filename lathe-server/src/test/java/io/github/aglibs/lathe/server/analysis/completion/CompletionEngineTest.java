@@ -38,7 +38,8 @@ class CompletionEngineTest {
     final var c = cursor(markedSource);
     final var compiled = compiler.compile("file:///Test.java", c.content(), CompileMode.FULL);
     final var cached = new CachedAnalysis(c.content(), 0, compiled.fileAnalysis());
-    return engine.complete(
+    return engine
+        .complete(
             new CompletionRequest(
                 "file:///Test.java",
                 c.content(),
@@ -59,7 +60,8 @@ class CompletionEngineTest {
     final var cachedCompiled =
         compiler.compile("file:///Test.java", cachedSource, CompileMode.FULL);
     final var cached = new CachedAnalysis(cachedSource, 0, cachedCompiled.fileAnalysis());
-    return engine.complete(
+    return engine
+        .complete(
             new CompletionRequest(
                 "file:///Test.java",
                 c.content(),
@@ -344,7 +346,6 @@ class CompletionEngineTest {
 
   // ── pending: additional TypeResolver gaps ──────────────────────────────────
 
-  @Disabled("pending NewClassTree support in resolveByPosition")
   @Test
   void memberAccess_newClassReceiver_methodsReturned() {
     // new Foo().§ — receiver is a NewClassTree; resolveByPosition only visits
@@ -393,7 +394,6 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("print"));
   }
 
-  @Disabled("pending ArrayAccessTree support in resolveByPosition")
   @Test
   void memberAccess_arrayElementReceiver_typeResolved() {
     // arr[0].§ — receiver has '[', goes to resolveByPosition, but ArrayAccessTree
@@ -411,7 +411,6 @@ class CompletionEngineTest {
         .anyMatch(l -> l.startsWith("toLowerCase"));
   }
 
-  @Disabled("pending TypeCastTree support in resolveByPosition")
   @Test
   void memberAccess_castReceiver_typeResolved() {
     // ((Type) expr).§ — receiver has ' ', goes to resolveByPosition, but TypeCastTree

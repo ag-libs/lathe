@@ -54,12 +54,15 @@ public final class CompilationContext implements AutoCloseable {
     final var request = new CompletionRequest(uri, content, pos, context, cache.get(uri));
     final var outcome = completionEngine.complete(request);
     if (outcome.freshAnalysis() != null) {
-      cache.put(uri, new CachedAnalysis(content, cache.get(uri).version(), outcome.freshAnalysis()));
+      cache.put(
+          uri, new CachedAnalysis(content, cache.get(uri).version(), outcome.freshAnalysis()));
     }
+
     LOG.fine(
         () ->
             "[completion] %s %dms items=%d reattributed=%s"
-                .formatted(uri, t.elapsedMs(), outcome.items().size(), outcome.freshAnalysis() != null));
+                .formatted(
+                    uri, t.elapsedMs(), outcome.items().size(), outcome.freshAnalysis() != null));
     return outcome.items();
   }
 

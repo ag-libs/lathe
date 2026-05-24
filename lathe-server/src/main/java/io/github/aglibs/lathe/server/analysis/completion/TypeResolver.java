@@ -1,11 +1,14 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
+import com.sun.source.tree.ArrayAccessTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.ErroneousTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
+import com.sun.source.tree.NewClassTree;
+import com.sun.source.tree.ParenthesizedTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
@@ -126,6 +129,24 @@ final class TypeResolver {
       public Void visitIdentifier(final IdentifierTree node, final Void unused) {
         check(node);
         return super.visitIdentifier(node, unused);
+      }
+
+      @Override
+      public Void visitNewClass(final NewClassTree node, final Void unused) {
+        check(node);
+        return super.visitNewClass(node, unused);
+      }
+
+      @Override
+      public Void visitArrayAccess(final ArrayAccessTree node, final Void unused) {
+        check(node);
+        return super.visitArrayAccess(node, unused);
+      }
+
+      @Override
+      public Void visitParenthesized(final ParenthesizedTree node, final Void unused) {
+        check(node);
+        return super.visitParenthesized(node, unused);
       }
 
       @Override
