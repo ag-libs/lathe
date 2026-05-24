@@ -54,8 +54,7 @@ public final class CompilationContext implements AutoCloseable {
   public List<CompletionItem> complete(
       final String uri, final String content, final Position pos, final CompletionContext context) {
     final var t = Stopwatch.start();
-    final var request =
-        new CompletionRequest(uri, content, pos, context, currentCache(uri, content));
+    final var request = new CompletionRequest(uri, content, pos, context, cache.get(uri));
     final var outcome = completionEngine.complete(request);
     if (outcome.freshAnalysis() != null) {
       cache.put(

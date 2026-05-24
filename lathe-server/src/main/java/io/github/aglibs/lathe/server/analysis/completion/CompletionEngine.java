@@ -42,18 +42,24 @@ public final class CompletionEngine {
                 .formatted(parsed.valid(), parsed.sentinelContext()));
 
     final var ctx = parsed.sentinelContext();
-    if (parsed.valid() && ctx == SentinelContext.IMPORT) {
-      LOG.fine(
-          () ->
-              "[completion] import context receiver=|%s| prefix=|%s|; type-index/package search not implemented yet"
-                  .formatted(parsed.receiverText(), parsed.prefix()));
-      return CompletionOutcome.of(List.of());
+    if (parsed.valid() && ctx == SentinelContext.IMPORT && parsed.receiverText() != null) {
+      final var importAnalysis =
+          req.cached() != null
+              ? req.cached().analysis()
+              : (compiler != null ? compiler.reattribute(req.uri(), req.content()) : null);
+      if (importAnalysis != null) {
+        return new CompletionOutcome(
+            new ImportCompletionProvider(importAnalysis)
+                .propose(parsed.receiverText(), injected.prefix()),
+            req.cached() == null ? importAnalysis : null);
+      }
     }
 
     if (parsed.valid()
         && isSimpleNameProposalContext(ctx, req)
         && parsed.enclosingClass() != null
-        && req.cached() != null) {
+        && req.cached() != null
+        && req.cached().analysis() != null) {
       return new CompletionOutcome(
           new ProposalGenerator(req.cached().analysis())
               .proposeSimpleName(
@@ -67,7 +73,8 @@ public final class CompletionEngine {
     if (parsed.valid()
         && ctx == SentinelContext.TYPE_REFERENCE
         && parsed.receiverText() != null
-        && req.cached() != null) {
+        && req.cached() != null
+        && req.cached().analysis() != null) {
       final var outer = req.cached().analysis().elements().getTypeElement(parsed.receiverText());
       if (outer != null) {
         return new CompletionOutcome(
@@ -80,14 +87,26 @@ public final class CompletionEngine {
     if (parsed.valid()
         && (ctx == SentinelContext.MEMBER_ACCESS
             || ctx == SentinelContext.LAMBDA_BODY
-            || ctx == SentinelContext.STATIC_IMPORT)
-        && req.cached() != null) {
+            || ctx == SentinelContext.STATIC_IMPORT)) {
 
       final int rawDot = injected.receiverText() != null ? injected.tokenStart() - 1 : -1;
       final int dotOffset = rawDot > 0 ? skipBackWhitespace(req.content(), rawDot) : rawDot;
-      final var initialSnapshot = req.cached().analysis();
+      final var initialSnapshot = req.cached() != null ? req.cached().analysis() : null;
       final var initialType =
-          TypeResolver.resolveReceiverType(parsed, req.pos().getLine(), dotOffset, initialSnapshot);
+          initialSnapshot != null
+              ? TypeResolver.resolveReceiverType(
+                  parsed, req.pos().getLine(), dotOffset, initialSnapshot)
+              : null;
+
+      if (ctx == SentinelContext.STATIC_IMPORT
+          && initialType == null
+          && initialSnapshot != null
+          && parsed.receiverText() != null) {
+        return new CompletionOutcome(
+            new ImportCompletionProvider(initialSnapshot)
+                .propose(parsed.receiverText(), injected.prefix()),
+            null);
+      }
 
       final var freshAnalysis =
           (initialType == null && compiler != null && !req.noDiff())

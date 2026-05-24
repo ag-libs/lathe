@@ -29,28 +29,8 @@ public record CompletionRequest(
     return offset + pos.getCharacter();
   }
 
-  String sourceLine() {
-    return content.lines().skip(pos.getLine()).findFirst().orElse("");
-  }
-
   boolean noDiff() {
     return cached != null && content.equals(cached.content());
-  }
-
-  int firstDiff() {
-    if (cached == null) {
-      return 0;
-    }
-
-    final var c = cached.content();
-    final int limit = Math.min(content.length(), c.length());
-    for (int i = 0; i < limit; i++) {
-      if (content.charAt(i) != c.charAt(i)) {
-        return i;
-      }
-    }
-
-    return limit;
   }
 
   String prefix() {

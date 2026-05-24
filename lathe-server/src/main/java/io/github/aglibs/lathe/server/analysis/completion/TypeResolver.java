@@ -198,6 +198,10 @@ final class TypeResolver {
 
   private static TypeElement findClassElement(
       final String simpleName, final FileAnalysis snapshot) {
+    if (simpleName == null || snapshot.tree() == null) {
+      return null;
+    }
+
     final var result = new AtomicReference<TypeElement>();
     new TreePathScanner<Void, Void>() {
       @Override

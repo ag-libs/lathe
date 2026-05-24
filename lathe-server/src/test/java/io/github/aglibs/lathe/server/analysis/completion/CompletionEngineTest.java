@@ -168,7 +168,6 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("emptyList"));
   }
 
-  @Disabled("pending import-context package segment completion")
   @Test
   void importDeclaration_packageSegmentSuggested() {
     final var items =
@@ -181,7 +180,6 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).contains("util");
   }
 
-  @Disabled("pending import-context package segment completion after dot")
   @Test
   void importDeclaration_afterPackageDot_suggestsPackageSegment() {
     final var items =
@@ -194,7 +192,6 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).contains("util");
   }
 
-  @Disabled("pending import-context package and type completion after dot")
   @Test
   void importDeclaration_afterNestedPackageDot_suggestsTypesAndSubpackages() {
     final var items =
@@ -207,7 +204,6 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).contains("Collections", "concurrent");
   }
 
-  @Disabled("pending import-context top-level type segment completion")
   @Test
   void importDeclaration_typeSegmentSuggested() {
     final var items =
