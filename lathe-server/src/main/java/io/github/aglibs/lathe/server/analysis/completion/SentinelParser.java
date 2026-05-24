@@ -54,18 +54,9 @@ final class SentinelParser {
     final var importTree = enclosingImport(sentinelPath);
     if (importTree != null) {
       final var parsed =
-          new ParsedSentinel(
-              true,
-              injected.prefix(),
-              injected.receiverText(),
+          ParsedSentinel.valid(
+              injected,
               importTree.isStatic() ? SentinelContext.STATIC_IMPORT : SentinelContext.IMPORT,
-              null,
-              null,
-              -1,
-              null,
-              null,
-              -1,
-              null,
               version);
       LOG.fine(() -> "[sentinel-parse] %s".formatted(parsed));
       return parsed;
@@ -89,29 +80,14 @@ final class SentinelParser {
     }
 
     if (enclosingClass == null && cu.getModule() != null) {
-      final var parsed =
-          new ParsedSentinel(
-              true,
-              injected.prefix(),
-              injected.receiverText(),
-              SentinelContext.MODULE_DIRECTIVE,
-              null,
-              null,
-              -1,
-              null,
-              null,
-              -1,
-              null,
-              version);
+      final var parsed = ParsedSentinel.valid(injected, SentinelContext.MODULE_DIRECTIVE, version);
       LOG.fine(() -> "[sentinel-parse] %s".formatted(parsed));
       return parsed;
     }
 
     final var parsed =
-        new ParsedSentinel(
-            true,
-            injected.prefix(),
-            injected.receiverText(),
+        ParsedSentinel.valid(
+            injected,
             cls.context(),
             enclosingClass,
             enclosingMethod,
