@@ -42,6 +42,14 @@ public final class CompletionEngine {
                 .formatted(parsed.valid(), parsed.sentinelContext()));
 
     final var ctx = parsed.sentinelContext();
+    if (parsed.valid() && ctx == SentinelContext.IMPORT) {
+      LOG.fine(
+          () ->
+              "[completion] import context receiver=|%s| prefix=|%s|; type-index/package search not implemented yet"
+                  .formatted(parsed.receiverText(), parsed.prefix()));
+      return CompletionOutcome.of(List.of());
+    }
+
     if (parsed.valid()
         && isSimpleNameProposalContext(ctx, req)
         && parsed.enclosingClass() != null
@@ -70,7 +78,9 @@ public final class CompletionEngine {
     }
 
     if (parsed.valid()
-        && (ctx == SentinelContext.MEMBER_ACCESS || ctx == SentinelContext.LAMBDA_BODY)
+        && (ctx == SentinelContext.MEMBER_ACCESS
+            || ctx == SentinelContext.LAMBDA_BODY
+            || ctx == SentinelContext.STATIC_IMPORT)
         && req.cached() != null) {
 
       final int rawDot = injected.receiverText() != null ? injected.tokenStart() - 1 : -1;
@@ -99,11 +109,12 @@ public final class CompletionEngine {
       if (receiverType != null) {
         final var text = parsed.receiverText();
         final boolean isStaticAccess =
-            text != null
-                && text.indexOf('(') < 0
-                && (text.indexOf('.') < 0
-                    ? Character.isUpperCase(text.charAt(0))
-                    : snapshot.elements().getTypeElement(text) != null);
+            ctx == SentinelContext.STATIC_IMPORT
+                || (text != null
+                    && text.indexOf('(') < 0
+                    && (text.indexOf('.') < 0
+                        ? Character.isUpperCase(text.charAt(0))
+                        : snapshot.elements().getTypeElement(text) != null));
         final var scope = TypeResolver.resolveScope(snapshot, req.cursorOffset());
         final var items =
             new ProposalGenerator(snapshot)

@@ -51,6 +51,26 @@ final class SentinelParser {
       return ParsedSentinel.invalid(injected.prefix(), injected.receiverText(), version);
     }
 
+    final var importTree = enclosingImport(sentinelPath);
+    if (importTree != null) {
+      final var parsed =
+          new ParsedSentinel(
+              true,
+              injected.prefix(),
+              injected.receiverText(),
+              importTree.isStatic() ? SentinelContext.STATIC_IMPORT : SentinelContext.IMPORT,
+              null,
+              null,
+              -1,
+              null,
+              null,
+              -1,
+              null,
+              version);
+      LOG.fine(() -> "[sentinel-parse] %s".formatted(parsed));
+      return parsed;
+    }
+
     final var parentPath = sentinelPath.getParentPath();
     final Classification cls =
         parentPath != null
@@ -104,6 +124,16 @@ final class SentinelParser {
 
     LOG.fine(() -> "[sentinel-parse] %s".formatted(parsed));
     return parsed;
+  }
+
+  private static ImportTree enclosingImport(final TreePath path) {
+    for (final Tree node : path) {
+      if (node instanceof final ImportTree importTree) {
+        return importTree;
+      }
+    }
+
+    return null;
   }
 
   private record Classification(

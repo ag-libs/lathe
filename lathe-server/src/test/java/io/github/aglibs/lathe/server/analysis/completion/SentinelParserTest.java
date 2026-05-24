@@ -30,6 +30,52 @@ class SentinelParserTest {
     return sentinelParser.parse(injected, c.lspLine(), 0);
   }
 
+  // ── IMPORT ───────────────────────────────────────────────────────────────
+
+  @Test
+  void importDeclaration_regularImport_isImportContext() {
+    final var result =
+        parse(
+            """
+        import java.util.Collections.empty§;
+
+        class Foo {
+        }""");
+    assertThat(result.valid()).isTrue();
+    assertThat(result.sentinelContext()).isEqualTo(SentinelContext.IMPORT);
+    assertThat(result.receiverText()).isEqualTo("java.util.Collections");
+    assertThat(result.enclosingClass()).isNull();
+    assertThat(result.enclosingMethod()).isNull();
+  }
+
+  @Test
+  void importDeclaration_staticImport_isStaticImportContext() {
+    final var result =
+        parse(
+            """
+        import static java.util.Collections.empty§;
+
+        class Foo {
+        }""");
+    assertThat(result.valid()).isTrue();
+    assertThat(result.sentinelContext()).isEqualTo(SentinelContext.STATIC_IMPORT);
+    assertThat(result.receiverText()).isEqualTo("java.util.Collections");
+  }
+
+  @Test
+  void importDeclaration_afterPackageDot_isImportContext() {
+    final var result =
+        parse(
+            """
+        import java.§;
+
+        class Foo {
+        }""");
+    assertThat(result.valid()).isTrue();
+    assertThat(result.sentinelContext()).isEqualTo(SentinelContext.IMPORT);
+    assertThat(result.receiverText()).isEqualTo("java");
+  }
+
   // ── MODULE_DIRECTIVE ─────────────────────────────────────────────────────
 
   @Test

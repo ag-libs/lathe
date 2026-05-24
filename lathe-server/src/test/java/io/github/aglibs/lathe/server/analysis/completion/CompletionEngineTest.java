@@ -144,7 +144,6 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("Entry"));
   }
 
-  @Disabled("pending import-context filtering: ordinary imports must not propose static methods")
   @Test
   void importDeclaration_nonStaticImport_staticMethodNotSuggested() {
     final var items =
