@@ -144,6 +144,112 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("Entry"));
   }
 
+  @Disabled("pending import-context filtering: ordinary imports must not propose static methods")
+  @Test
+  void importDeclaration_nonStaticImport_staticMethodNotSuggested() {
+    final var items =
+        complete(
+            """
+            import java.util.Collections.empty§;
+
+            class Test {
+            }""");
+    assertThat(items).noneMatch(i -> i.getLabel().startsWith("emptyList"));
+  }
+
+  @Test
+  void importDeclaration_staticImport_staticMethodSuggested() {
+    final var items =
+        complete(
+            """
+            import static java.util.Collections.empty§;
+
+            class Test {
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("emptyList"));
+  }
+
+  @Disabled("pending import-context package segment completion")
+  @Test
+  void importDeclaration_packageSegmentSuggested() {
+    final var items =
+        complete(
+            """
+            import java.ut§;
+
+            class Test {
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("util");
+  }
+
+  @Disabled("pending import-context top-level type segment completion")
+  @Test
+  void importDeclaration_typeSegmentSuggested() {
+    final var items =
+        complete(
+            """
+            import java.util.Col§;
+
+            class Test {
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("Collections");
+  }
+
+  @Disabled("pending class-body declaration completion")
+  @Test
+  void classBody_emptyDeclaration_suggestsMemberDeclarationStarters() {
+    final var items =
+        complete(
+            """
+            class Test {
+                private String existing;
+
+                §
+            }""");
+    assertThat(items)
+        .extracting(CompletionItem::getLabel)
+        .contains("private", "protected", "public", "static", "final", "class", "interface");
+  }
+
+  @Disabled("pending class-body declaration completion")
+  @Test
+  void classBody_modifierPrefix_suggestsMatchingModifier() {
+    final var items =
+        complete(
+            """
+            class Test {
+                pri§
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("private");
+    assertThat(items).extracting(CompletionItem::getLabel).doesNotContain("protected");
+  }
+
+  @Disabled("pending class-body type-name completion")
+  @Test
+  void classBody_typePrefix_suggestsVisibleTypes() {
+    final var items =
+        complete(
+            """
+            class Test {
+                Str§
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("String");
+  }
+
+  @Disabled("pending class-body type-name completion")
+  @Test
+  void classBody_afterModifier_suggestsTypesAndNestedDeclarations() {
+    final var items =
+        complete(
+            """
+            class Test {
+                private §
+            }""");
+    assertThat(items)
+        .extracting(CompletionItem::getLabel)
+        .contains("String", "class", "interface", "enum", "record");
+  }
+
   @Test
   void simpleName_localVar_suggestedByPrefix() {
     final var items =
