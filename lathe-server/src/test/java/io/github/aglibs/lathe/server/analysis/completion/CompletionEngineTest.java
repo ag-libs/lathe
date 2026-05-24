@@ -526,6 +526,72 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("subList"));
   }
 
+  // ── multiline chain: sentinel-line mismatch ───────────────────────────────
+  // SentinelParser uses getStartPosition of the MemberSelectTree to check the
+  // sentinel's line. For a chained expression like
+  //   return A.b().c().__LATHE_SENTINEL__
+  // getStartPosition returns the start of the ENTIRE chain (the return line),
+  // not the line where the sentinel was injected. → "sentinel moved" → 0 items.
+
+  @Disabled("pending SentinelParser fix: use getEndPosition for sentinel line check")
+  @Test
+  void multilineChain_returnTwoLines_sentinelOnCursorLine() {
+    // return new StringBuilder()         ← chain starts here (line 2)
+    //         .toS§                      ← cursor here (line 3)
+    // getStartPosition of .__SENTINEL__ = line 2 ≠ expectedLspLine 3 → sentinel moved
+    final var items =
+        complete(
+            """
+            class Test {
+                String m() {
+                    return new StringBuilder()
+                            .toS§
+                }
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("toString"));
+  }
+
+  @Disabled("pending SentinelParser fix: use getEndPosition for sentinel line check")
+  @Test
+  void multilineChain_returnThreeLines_sentinelOnCursorLine() {
+    // return new StringBuilder()         ← chain starts here (line 2)
+    //         .append("x")              ← line 3
+    //         .ap§                       ← cursor here (line 4)
+    // getStartPosition of .__SENTINEL__ = line 2 ≠ expectedLspLine 4 → sentinel moved
+    final var items =
+        complete(
+            """
+            class Test {
+                String m() {
+                    return new StringBuilder()
+                            .append("x")
+                            .ap§
+                }
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("append"));
+  }
+
+  @Disabled("pending SentinelParser fix: use getEndPosition for sentinel line check")
+  @Test
+  void multilineChain_callOnNextLine_sentinelOnCursorLine() {
+    // foo()                              ← receiver on its own line (line 3)
+    //     .toL§                          ← cursor on next line (line 4)
+    // getStartPosition of foo().__SENTINEL__ = line 3 ≠ expectedLspLine 4
+    final var items =
+        complete(
+            """
+            class Test {
+                String foo() { return ""; }
+                void m() {
+                    foo()
+                        .toL§
+                }
+            }""");
+    assertThat(items)
+        .extracting(CompletionItem::getLabel)
+        .anyMatch(l -> l.startsWith("toLowerCase"));
+  }
+
   @Test
   void memberAccess_staleCacheReplacedExpression_typeResolved() {
     // User replaced an existing expression in-place: the cached snapshot has a
