@@ -17,6 +17,7 @@ import com.sun.source.util.TreePathScanner;
 import io.github.aglibs.lathe.server.analysis.FileAnalysis;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
@@ -122,10 +123,10 @@ final class TypeResolver {
     try {
       return snapshot.trees().getScope(path);
     } catch (final IllegalArgumentException e) {
-      LOG.fine(
-          () ->
-              "[completion] scope resolve failed at offset %d: %s"
-                  .formatted(cursorOffset, e.getMessage()));
+      LOG.log(
+          Level.FINE,
+          e,
+          () -> "[completion] scope resolve failed at offset %d".formatted(cursorOffset));
       return null;
     }
   }

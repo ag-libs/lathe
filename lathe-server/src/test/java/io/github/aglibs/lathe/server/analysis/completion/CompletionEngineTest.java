@@ -29,7 +29,7 @@ class CompletionEngineTest {
   }
 
   @AfterAll
-  static void teardown() throws Exception {
+  static void teardown() {
     compiler.close();
     sourceParser.close();
   }
@@ -182,6 +182,32 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).contains("util");
   }
 
+  @Disabled("pending import-context package segment completion after dot")
+  @Test
+  void importDeclaration_afterPackageDot_suggestsPackageSegment() {
+    final var items =
+        complete(
+            """
+            import java.§;
+
+            class Test {
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("util");
+  }
+
+  @Disabled("pending import-context package and type completion after dot")
+  @Test
+  void importDeclaration_afterNestedPackageDot_suggestsTypesAndSubpackages() {
+    final var items =
+        complete(
+            """
+            import java.util.§;
+
+            class Test {
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("Collections", "concurrent");
+  }
+
   @Disabled("pending import-context top-level type segment completion")
   @Test
   void importDeclaration_typeSegmentSuggested() {
@@ -294,7 +320,6 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).contains("StringBuilder");
   }
 
-  @Disabled("pending static-context filtering for simple-name completion")
   @Test
   void staticMethodBody_simpleName_doesNotSuggestInstanceMembers() {
     final var items =
