@@ -41,7 +41,7 @@ final class SentinelParser {
       return ParsedSentinel.invalid(injected.prefix(), injected.receiverText(), version);
     }
 
-    final long startPos = trees.getSourcePositions().getStartPosition(cu, sentinelPath.getLeaf());
+    final long startPos = trees.getSourcePositions().getEndPosition(cu, sentinelPath.getLeaf());
     final long javacLine = cu.getLineMap().getLineNumber(startPos);
     if (javacLine - 1 != expectedLspLine) {
       LOG.fine(

@@ -532,51 +532,57 @@ class CompletionEngineTest {
   //   return A.b().c().__LATHE_SENTINEL__
   // getStartPosition returns the start of the ENTIRE chain (the return line),
   // not the line where the sentinel was injected. → "sentinel moved" → 0 items.
+  //
+  // The correct fix is to use getEndPosition, which always points to just after
+  // the sentinel identifier — always on the cursor's line.
+  //
+  // These tests cover the real-world pattern: the IMMEDIATE receiver sits on the
+  // same line as the cursor's dot; it is a longer chain that started earlier.
 
-  @Disabled("pending SentinelParser fix: use getEndPosition for sentinel line check")
   @Test
-  void multilineChain_returnTwoLines_sentinelOnCursorLine() {
-    // return new StringBuilder()         ← chain starts here (line 2)
-    //         .toS§                      ← cursor here (line 3)
-    // getStartPosition of .__SENTINEL__ = line 2 ≠ expectedLspLine 3 → sentinel moved
+  void multilineChain_twoLines_completionOnSameLine() {
+    // return new StringBuilder()           ← chain starts line 2 (0-indexed)
+    //         .append("x").ap§             ← cursor line 3; receiver append("x") on THIS line
+    // getStartPosition of __SENTINEL__ = start of chain = line 2 ≠ expectedLspLine 3
     final var items =
         complete(
             """
             class Test {
                 String m() {
                     return new StringBuilder()
-                            .toS§
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("toString"));
-  }
-
-  @Disabled("pending SentinelParser fix: use getEndPosition for sentinel line check")
-  @Test
-  void multilineChain_returnThreeLines_sentinelOnCursorLine() {
-    // return new StringBuilder()         ← chain starts here (line 2)
-    //         .append("x")              ← line 3
-    //         .ap§                       ← cursor here (line 4)
-    // getStartPosition of .__SENTINEL__ = line 2 ≠ expectedLspLine 4 → sentinel moved
-    final var items =
-        complete(
-            """
-            class Test {
-                String m() {
-                    return new StringBuilder()
-                            .append("x")
-                            .ap§
+                            .append("x").ap§
                 }
             }""");
     assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("append"));
   }
 
-  @Disabled("pending SentinelParser fix: use getEndPosition for sentinel line check")
   @Test
-  void multilineChain_callOnNextLine_sentinelOnCursorLine() {
-    // foo()                              ← receiver on its own line (line 3)
-    //     .toL§                          ← cursor on next line (line 4)
-    // getStartPosition of foo().__SENTINEL__ = line 3 ≠ expectedLspLine 4
+  void multilineChain_threeLines_completionOnSameLine() {
+    // return new StringBuilder()           ← chain starts line 2 (0-indexed)
+    //         .append("a")                 ← line 3
+    //         .append("b").ap§             ← cursor line 4; receiver append("b") on THIS line
+    // getStartPosition of __SENTINEL__ = start of chain = line 2 ≠ expectedLspLine 4
+    final var items =
+        complete(
+            """
+            class Test {
+                String m() {
+                    return new StringBuilder()
+                            .append("a")
+                            .append("b").ap§
+                }
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("append"));
+  }
+
+  @Disabled("pending resolveByPosition: receiver ends on previous line, dot is on next line")
+  @Test
+  void multilineChain_receiverOnPreviousLine_crossLineCompletion() {
+    // foo()                              ← receiver ends on line 3 (0-indexed)
+    //     .toL§                          ← dot is on line 4
+    // After the sentinel-line fix this no longer fails the line check, but
+    // resolveByPosition cannot match: getEndPosition(foo()) ≠ dotOffset because
+    // the closing ) and the . are on different lines.
     final var items =
         complete(
             """
