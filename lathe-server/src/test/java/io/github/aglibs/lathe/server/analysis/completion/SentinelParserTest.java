@@ -499,6 +499,22 @@ class SentinelParserTest {
   }
 
   @Test
+  void typeReference_genericTypeArg_inLocalVar_isTypeReference() {
+    final var result =
+        parse(
+            """
+        class Foo {
+            void m() {
+                java.util.List<Str§> list;
+            }
+        }""");
+    assertThat(result.valid()).isTrue();
+    assertThat(result.sentinelContext()).isEqualTo(SentinelContext.TYPE_REFERENCE);
+    assertThat(result.enclosingClass()).isEqualTo("Foo");
+    assertThat(result.enclosingMethod()).isEqualTo("m");
+  }
+
+  @Test
   void memberAccess_cursorAtTokenStart_isValid() {
     final var result =
         parse(

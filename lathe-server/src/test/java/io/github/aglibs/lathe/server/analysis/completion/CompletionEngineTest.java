@@ -357,6 +357,46 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).doesNotContain("instanceValue");
   }
 
+  @Disabled("pending simple-name type-reference completion")
+  @Test
+  void typeReference_methodParam_simpleTypePrefix_suggestsMatchingType() {
+    final var items =
+        complete(
+            """
+            class Test {
+                void m(Str§ param) {}
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("String");
+  }
+
+  @Disabled("pending simple-name type-reference completion")
+  @Test
+  void typeReference_genericTypeArg_simpleTypePrefix_suggestsMatchingType() {
+    final var items =
+        complete(
+            """
+            class Test {
+                void m() {
+                    java.util.List<Str§> list;
+                }
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("String");
+  }
+
+  @Disabled("pending simple-name type-reference completion")
+  @Test
+  void typeReference_genericTypeArg_emptyPrefix_suggestsCommonTypes() {
+    final var items =
+        complete(
+            """
+            class Test {
+                void m() {
+                    java.util.List<§> list;
+                }
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("String", "Integer");
+  }
+
   @Disabled("pending extends-clause type-name completion")
   @Test
   void classHeader_extendsPrefix_suggestsSuperclasses() {
