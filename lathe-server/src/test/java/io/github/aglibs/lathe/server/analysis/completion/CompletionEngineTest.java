@@ -540,23 +540,6 @@ class CompletionEngineTest {
   // same line as the cursor's dot; it is a longer chain that started earlier.
 
   @Test
-  void multilineChain_twoLines_completionOnSameLine() {
-    // return new StringBuilder()           ← chain starts line 2 (0-indexed)
-    //         .append("x").ap§             ← cursor line 3; receiver append("x") on THIS line
-    // getStartPosition of __SENTINEL__ = start of chain = line 2 ≠ expectedLspLine 3
-    final var items =
-        complete(
-            """
-            class Test {
-                String m() {
-                    return new StringBuilder()
-                            .append("x").ap§
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("append"));
-  }
-
-  @Test
   void multilineChain_threeLines_completionOnSameLine() {
     // return new StringBuilder()           ← chain starts line 2 (0-indexed)
     //         .append("a")                 ← line 3
@@ -570,6 +553,27 @@ class CompletionEngineTest {
                     return new StringBuilder()
                             .append("a")
                             .append("b").ap§
+                }
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("append"));
+  }
+
+  @Test
+  void multilineChain_cursorAtFirstCall_continuationLinesBelow() {
+    // forTesting().§               ← cursor here; continuation lines exist below
+    //         .packages(...)
+    //         .register(...)
+    // After injection: forTesting().__LATHE_SENTINEL__; followed by dangling .packages(...)
+    // lines. The sentinel line check must pass AND resolveByPosition must match forTesting().
+    final var items =
+        complete(
+            """
+            class Test {
+                StringBuilder makeBuilder() { return new StringBuilder(); }
+                void m() {
+                    makeBuilder().§
+                            .append("x")
+                            .append("y");
                 }
             }""");
     assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("append"));
