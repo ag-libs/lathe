@@ -319,6 +319,102 @@ If `textEdit` is not added in the first implementation,
 Lathe must still set `insertText` to the source text,
 not the display label.
 
+### 6.1 Position Encoding
+
+Java source offsets are not LSP positions.
+When Lathe computes a replacement range from source offsets,
+it must convert back to LSP `Position` values through the same coordinate model used elsewhere in the server.
+
+Do not send byte offsets.
+Do not assume Neovim stores positions as bytes.
+
+For ordinary Java identifiers,
+the replacement range should stay on one line:
+
+```text
+range.start.line == range.end.line
+range.start.character <= range.end.character
+```
+
+The range should contain only the identifier prefix or token being replaced.
+
+### 6.2 InsertReplaceEdit
+
+Neovim users often trigger completion before an existing token:
+
+```java
+accept(§connectionString)
+```
+
+A zero-width edit would duplicate the token:
+
+```java
+accept(connectionStringconnectionString)
+```
+
+Lathe should strongly consider using `InsertReplaceEdit` for this case:
+
+```text
+insert range  = cursor..cursor
+replace range = cursor..endOfIdentifier
+newText       = "connectionString"
+```
+
+For typed prefixes inside an existing token:
+
+```java
+accept(conn§ectionString)
+```
+
+the insert range can replace only the typed prefix,
+while the replace range can replace the full identifier.
+
+This matches common Java IDE behavior:
+completion replaces the identifier under the cursor,
+but still supports plain insertion when the user is at an empty position.
+
+### 6.3 Filtering and Overloads
+
+If the visible label is:
+
+```text
+add(String)
+```
+
+then filtering and insertion must still use:
+
+```text
+add
+```
+
+Method overloads should have distinct labels but the same insert text:
+
+```text
+label      = "add(String)"       text edit = "add"
+label      = "add(int, String)"  text edit = "add"
+filterText = "add"
+```
+
+Until snippets are deliberately enabled,
+selecting any overload inserts only the method name.
+
+### 6.4 Resolve Invariant
+
+`completionItem/resolve` must not change fields that affect insertion,
+filtering,
+or ranking:
+
+```text
+textEdit
+insertText
+filterText
+sortText
+additionalTextEdits
+```
+
+These fields must be final in the initial completion response.
+Resolve may fill documentation and other non-critical display fields.
+
 ---
 
 ## 7. Ranking
@@ -671,6 +767,34 @@ list.§
 
 The edit range should be zero-width at the cursor.
 
+Cover an existing token under the cursor:
+
+```java
+accept(§connectionString)
+accept(conn§ectionString)
+```
+
+When using `InsertReplaceEdit`,
+assert both ranges:
+
+```text
+insert range  = cursor..cursor or prefixStart..cursor
+replace range = tokenStart..tokenEnd
+newText       = "connectionString"
+```
+
+Completion insertion should be verified in Neovim with `blink.cmp`,
+not only through programmatic LSP probes.
+Manual smoke cases:
+
+```text
+list.ad§
+list.§
+accept(§connectionString)
+accept(conn§ectionString)
+list.add§
+```
+
 ### Documentation Tests
 
 The first presentation slice may not implement resolve,
@@ -715,7 +839,9 @@ completionResolve_typeIndexCandidate_resolvesDocsWhenElementAvailable
 ## 14. Working Decisions
 
 - Use `textEdit` for exact insertion when practical.
+- Prefer `InsertReplaceEdit` for completion before or inside an existing identifier.
 - Never let the visible method signature become the inserted source text.
+- Keep snippets and commit characters out of the first insertion slice.
 - Keep Javadocs out of the type index.
 - Reuse hover formatting through lower-level element documentation helpers.
 - Prefer lazy documentation via `completionItem/resolve`.
