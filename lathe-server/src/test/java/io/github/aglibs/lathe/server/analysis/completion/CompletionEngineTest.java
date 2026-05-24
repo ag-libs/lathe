@@ -526,18 +526,23 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("subList"));
   }
 
-  // ── multiline chain: sentinel-line mismatch ───────────────────────────────
-  // SentinelParser uses getStartPosition of the MemberSelectTree to check the
-  // sentinel's line. For a chained expression like
-  //   return A.b().c().__LATHE_SENTINEL__
-  // getStartPosition returns the start of the ENTIRE chain (the return line),
-  // not the line where the sentinel was injected. → "sentinel moved" → 0 items.
+  // ── multiline chains ──────────────────────────────────────────────────────
+  // Three distinct failure modes, each with its own test:
   //
-  // The correct fix is to use getEndPosition, which always points to just after
-  // the sentinel identifier — always on the cursor's line.
+  // 1. Sentinel-line mismatch (SentinelParser): for a MemberSelectTree that spans
+  //    multiple lines, getStartPosition returns the start of the ENTIRE chain, not
+  //    the cursor line. Fix: use getEndPosition (always on the cursor's line).
   //
-  // These tests cover the real-world pattern: the IMMEDIATE receiver sits on the
-  // same line as the cursor's dot; it is a longer chain that started earlier.
+  // 2. Dangling continuation lines: when the cursor sits at the first call in a
+  //    chain, injection produces __LATHE_SENTINEL__; followed by the remaining
+  //    .method() calls as parse errors. Parser must still find the sentinel.
+  //
+  // 3. Cross-line receiver (CompletionEngine): when the receiver ends on line N and
+  //    the dot is on line N+1, dotOffset > getEndPosition(receiver). Fix:
+  //    skipBackWhitespace adjusts dotOffset to position right after receiver's last
+  //    character, restoring the exact-match invariant for resolveByPosition.
+  //    Note: simple-identifier receivers bypass resolveByPosition entirely
+  //    (scanForLocalDeclaration) and therefore work without the fix.
 
   @Test
   void multilineChain_threeLines_completionOnSameLine() {
@@ -579,14 +584,31 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("append"));
   }
 
-  @Disabled("pending resolveByPosition: receiver ends on previous line, dot is on next line")
+  @Test
+  void multilineChain_simpleIdentifierReceiver_crossLine() {
+    // bufferedReader                ← simple local var, line N  (AbstractServerFactory pattern)
+    //     .§toUp                    ← dot on line N+1
+    // TypeResolver takes scanForLocalDeclaration path (name lookup, no position matching)
+    // so cross-line placement is fine; contrast with method-call receiver case below.
+    final var items =
+        complete(
+            """
+            class Test {
+                void m() {
+                    String s = "hello";
+                    s
+                        .§toUp
+                }
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("toUpper"));
+  }
+
   @Test
   void multilineChain_receiverOnPreviousLine_crossLineCompletion() {
     // foo()                              ← receiver ends on line 3 (0-indexed)
     //     .toL§                          ← dot is on line 4
-    // After the sentinel-line fix this no longer fails the line check, but
-    // resolveByPosition cannot match: getEndPosition(foo()) ≠ dotOffset because
-    // the closing ) and the . are on different lines.
+    // dotOffset (position of '.') > getEndPosition(foo()) because of the whitespace gap.
+    // Fix: skipBackWhitespace adjusts dotOffset to position right after receiver's ')'.
     final var items =
         complete(
             """

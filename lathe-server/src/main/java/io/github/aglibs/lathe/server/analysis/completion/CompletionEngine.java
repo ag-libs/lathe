@@ -18,6 +18,15 @@ public final class CompletionEngine {
     this.compiler = compiler;
   }
 
+  private static int skipBackWhitespace(final String content, final int dotPos) {
+    int i = dotPos - 1;
+    while (i >= 0 && Character.isWhitespace(content.charAt(i))) {
+      i--;
+    }
+
+    return i + 1;
+  }
+
   public CompletionOutcome complete(final CompletionRequest req) {
     final var injected = new SentinelInjector(req.content()).inject(req.cursorOffset());
     LOG.fine(
@@ -37,7 +46,8 @@ public final class CompletionEngine {
         && (ctx == SentinelContext.MEMBER_ACCESS || ctx == SentinelContext.LAMBDA_BODY)
         && req.cached() != null) {
 
-      final int dotOffset = injected.receiverText() != null ? injected.tokenStart() - 1 : -1;
+      final int rawDot = injected.receiverText() != null ? injected.tokenStart() - 1 : -1;
+      final int dotOffset = rawDot > 0 ? skipBackWhitespace(req.content(), rawDot) : rawDot;
       final var initialSnapshot = req.cached().analysis();
       final var initialType =
           TypeResolver.resolveReceiverType(parsed, req.pos().getLine(), dotOffset, initialSnapshot);
