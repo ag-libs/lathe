@@ -21,20 +21,35 @@ final class JavacRunner {
 
   CompilationResult run(
       final JavaFileObject sourceFile, final List<String> options, final CompileMode mode) {
+    return mode == CompileMode.FULL
+        ? compileFull(sourceFile, options)
+        : analyze(sourceFile, options);
+  }
+
+  private CompilationResult compileFull(
+      final JavaFileObject sourceFile, final List<String> options) {
     final var collector = new DiagnosticCollector<JavaFileObject>();
-    final var task =
-        (JavacTask)
-            SourceCompiler.COMPILER.getTask(
-                null, fm, collector, options, null, List.of(sourceFile));
+    createTask(sourceFile, options, collector).call();
+    return new CompilationResult(collector.getDiagnostics(), FileAnalysis.diagnosticsOnly());
+  }
+
+  private JavacTask createTask(
+      final JavaFileObject sourceFile,
+      final List<String> options,
+      final DiagnosticCollector<JavaFileObject> collector) {
+    return (JavacTask)
+        SourceCompiler.COMPILER.getTask(null, fm, collector, options, null, List.of(sourceFile));
+  }
+
+  private CompilationResult analyze(final JavaFileObject sourceFile, final List<String> options) {
+    final var collector = new DiagnosticCollector<JavaFileObject>();
+    final var task = createTask(sourceFile, options, collector);
 
     try {
       final var it = task.parse().iterator();
       final CompilationUnitTree cu = it.hasNext() ? it.next() : null;
       task.analyze();
       final Trees trees = Trees.instance(task);
-      if (mode == CompileMode.FULL) {
-        task.generate();
-      }
       final var elements = task.getElements();
       final var types = task.getTypes();
       final FileAnalysis fileAnalysis;

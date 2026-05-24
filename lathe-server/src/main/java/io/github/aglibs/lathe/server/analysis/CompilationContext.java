@@ -42,7 +42,10 @@ public final class CompilationContext implements AutoCloseable {
       final String uri, final String content, final int version, final CompileMode mode) {
     final var t = Stopwatch.start();
     final var run = compiler.compile(uri, content, mode);
-    cache.put(uri, new CachedAnalysis(content, version, run.fileAnalysis()));
+    if (mode != CompileMode.FULL) {
+      cache.put(uri, new CachedAnalysis(content, version, run.fileAnalysis()));
+    }
+
     final var diags = filterAndMap(run.diagnostics(), content);
     LOG.info(() -> "[%s] %s %dms diags=%d".formatted(mode.tag, uri, t.elapsedMs(), diags.size()));
     return diags;

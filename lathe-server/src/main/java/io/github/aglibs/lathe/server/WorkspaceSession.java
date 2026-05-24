@@ -100,8 +100,13 @@ final class WorkspaceSession {
     final AfterCompile afterCompile =
         switch (route) {
           case CompilerRoute.Module module ->
-              publishIfCurrentThen(() -> scheduleOpenFilesInModule(uri, module.config()));
-          case CompilerRoute.External ignored -> this::publishIfCurrent;
+              publishIfCurrentThen(
+                  () -> {
+                    scheduleFastAnalysis(uri);
+                    scheduleOpenFilesInModule(uri, module.config());
+                  });
+          case CompilerRoute.External ignored ->
+              publishIfCurrentThen(() -> scheduleFastAnalysis(uri));
           case CompilerRoute.Missing ignored -> this::publishIfCurrent;
         };
     submitCompile(route, snapshot, CompileMode.FULL, afterCompile);
@@ -323,6 +328,18 @@ final class WorkspaceSession {
           final var openFile = openFiles.get(uri);
           if (openFile != null) {
             compileAndPublish(openFile, CompileMode.OPEN);
+          }
+        });
+  }
+
+  private void scheduleFastAnalysis(final String uri) {
+    worker.schedule(
+        uri,
+        0L,
+        () -> {
+          final var openFile = openFiles.get(uri);
+          if (openFile != null) {
+            compileAndPublish(openFile, CompileMode.FAST);
           }
         });
   }
