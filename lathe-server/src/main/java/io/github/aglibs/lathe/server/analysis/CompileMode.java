@@ -1,9 +1,9 @@
 package io.github.aglibs.lathe.server.analysis;
 
 public enum CompileMode {
-  FAST("compile"),
+  FAST("fast"),
   OPEN("open"),
-  FULL("save");
+  FULL("full");
 
   public final String tag;
 

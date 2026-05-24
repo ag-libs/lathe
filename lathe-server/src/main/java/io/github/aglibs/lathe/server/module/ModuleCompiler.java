@@ -64,7 +64,8 @@ public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
       Files.writeString(tempFile, content);
 
       final var options = buildOptions(config, compilerArgs, mode);
-      LOG.fine(() -> "[%s] td=%s root=%s opts=%s".formatted(mode.tag, td, sourceRoot, options));
+      LOG.fine(
+          () -> "[compile:%s] td=%s root=%s opts=%s".formatted(mode.tag, td, sourceRoot, options));
       final JavaFileObject jfo = fm.getJavaFileObjects(tempFile).iterator().next();
       try {
         return runner.run(jfo, options, mode);

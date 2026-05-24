@@ -45,7 +45,9 @@ public final class CompilationContext implements AutoCloseable {
     }
 
     final var diags = filterAndMap(run.diagnostics(), content);
-    LOG.info(() -> "[%s] %s %dms diags=%d".formatted(mode.tag, uri, t.elapsedMs(), diags.size()));
+    LOG.info(
+        () ->
+            "[compile:%s] %s %dms diags=%d".formatted(mode.tag, uri, t.elapsedMs(), diags.size()));
     return diags;
   }
 

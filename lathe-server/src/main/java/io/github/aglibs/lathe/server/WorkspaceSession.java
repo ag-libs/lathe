@@ -382,7 +382,7 @@ final class WorkspaceSession {
       return;
     }
 
-    LOG.log(SEVERE, ex, () -> "[%s] failed for %s".formatted(mode.tag, snapshot.uri()));
+    LOG.log(SEVERE, ex, () -> "[compile:%s] failed for %s".formatted(mode.tag, snapshot.uri()));
     final var msg = ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
     client.publishDiagnostics(
         singleDiag(snapshot.uri(), "Lathe: " + msg, DiagnosticSeverity.Error));
