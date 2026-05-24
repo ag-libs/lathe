@@ -326,6 +326,119 @@ class CompletionEngineTest {
         .anyMatch(l -> l.startsWith("toLowerCase"));
   }
 
+  @Disabled("pending simple-name proposals in argument position")
+  @Test
+  void argumentPosition_emptyPrefix_suggestsVisibleLocal() {
+    final var items =
+        complete(
+            """
+            class Test {
+                static class ReceiverFactory {
+                    static Receiver create() { return new Receiver(); }
+                }
+
+                static class Receiver {
+                    void accept(String value) {}
+                }
+
+                void m() {
+                    String value = "";
+                    ReceiverFactory.create().accept(§value);
+                }
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("value");
+  }
+
+  @Disabled("pending simple-name proposals in argument position")
+  @Test
+  void argumentPosition_prefix_suggestsVisibleLocal() {
+    final var items =
+        complete(
+            """
+            class Test {
+                static void accept(String value) {}
+
+                void m() {
+                    String value = "";
+                    accept(val§);
+                }
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("value");
+  }
+
+  @Disabled("pending simple-name proposals in constructor argument position")
+  @Test
+  void constructorCall_emptyArgument_suggestsVisibleLocal() {
+    final var items =
+        complete(
+            """
+            class Test {
+                static class Receiver {
+                    Receiver(String value) {}
+                }
+
+                void m() {
+                    String value = "";
+                    new Receiver(§value);
+                }
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("value");
+  }
+
+  @Disabled("pending simple-name proposals in constructor argument position")
+  @Test
+  void constructorCall_prefix_suggestsVisibleLocal() {
+    final var items =
+        complete(
+            """
+            class Test {
+                static class Receiver {
+                    Receiver(String value) {}
+                }
+
+                void m() {
+                    String value = "";
+                    new Receiver(val§);
+                }
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("value");
+  }
+
+  @Disabled("pending lambda parameters in argument-position simple-name proposals")
+  @Test
+  void argumentPosition_lambdaParam_suggestsVisibleParam() {
+    final var items =
+        complete(
+            """
+            class Test {
+                static void consume(Object value) {}
+
+                void m(java.util.List<String> list) {
+                    list.forEach(value -> consume(val§));
+                }
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("value");
+  }
+
+  @Disabled("pending pattern variables in argument-position simple-name proposals")
+  @Test
+  void argumentPosition_switchPatternVar_suggestsVisiblePatternVar() {
+    final var items =
+        complete(
+            """
+            class Test {
+                static void consume(Object value) {}
+
+                void m(Object object) {
+                    switch (object) {
+                        case String value -> consume(val§);
+                        default -> {}
+                    }
+                }
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("value");
+  }
+
   @Test
   void memberAccess_samePackageType_staticMembersReturned() {
     // Helper is in the same named package — no import — TypeResolver must fall back to
@@ -358,6 +471,25 @@ class CompletionEngineTest {
                 }
             }""");
     assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("emptyList"));
+  }
+
+  @Disabled("pending enum constants in static member completion")
+  @Test
+  void memberAccess_staticEnumReceiver_enumConstantsReturned() {
+    final var items =
+        complete(
+            """
+            enum Kind {
+                FIRST,
+                SECOND
+            }
+
+            class Test {
+                void m() {
+                    Kind.§
+                }
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("FIRST", "SECOND");
   }
 
   // ── pending: additional TypeResolver gaps ──────────────────────────────────
