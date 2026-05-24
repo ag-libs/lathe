@@ -250,6 +250,90 @@ class CompletionEngineTest {
         .contains("String", "class", "interface", "enum", "record");
   }
 
+  @Disabled("pending method-body statement completion")
+  @Test
+  void methodBody_emptyStatement_suggestsStatementStarters() {
+    final var items =
+        complete(
+            """
+            class Test {
+                void run() {
+                    §
+                }
+            }""");
+    assertThat(items)
+        .extracting(CompletionItem::getLabel)
+        .contains("return", "if", "for", "while", "switch", "try", "throw", "new");
+  }
+
+  @Disabled("pending method-body type-name completion")
+  @Test
+  void methodBody_typePrefix_suggestsVisibleTypes() {
+    final var items =
+        complete(
+            """
+            class Test {
+                void run() {
+                    Str§ value;
+                }
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("String");
+  }
+
+  @Disabled("pending method-body type-name completion")
+  @Test
+  void methodBody_afterNew_suggestsConstructibleTypes() {
+    final var items =
+        complete(
+            """
+            class Test {
+                void run() {
+                    Object value = new Str§
+                }
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("StringBuilder");
+  }
+
+  @Disabled("pending static-context filtering for simple-name completion")
+  @Test
+  void staticMethodBody_simpleName_doesNotSuggestInstanceMembers() {
+    final var items =
+        complete(
+            """
+            class Test {
+                String instanceValue;
+                static String staticValue;
+
+                static void run() {
+                    §
+                }
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("staticValue");
+    assertThat(items).extracting(CompletionItem::getLabel).doesNotContain("instanceValue");
+  }
+
+  @Disabled("pending extends-clause type-name completion")
+  @Test
+  void classHeader_extendsPrefix_suggestsSuperclasses() {
+    final var items =
+        complete(
+            """
+            class Test extends AbstractL§ {
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("AbstractList");
+  }
+
+  @Disabled("pending implements-clause type-name completion")
+  @Test
+  void classHeader_implementsPrefix_suggestsInterfaces() {
+    final var items =
+        complete(
+            """
+            class Test implements Runn§ {
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("Runnable");
+  }
+
   @Test
   void simpleName_localVar_suggestedByPrefix() {
     final var items =
