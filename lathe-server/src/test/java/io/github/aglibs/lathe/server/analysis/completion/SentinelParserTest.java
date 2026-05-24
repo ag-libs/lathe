@@ -366,6 +366,21 @@ class SentinelParserTest {
     assertThat(result.declaredTypeText()).isEqualTo("java.util.ArrayList<String>");
   }
 
+  @Test
+  void variableDeclaration_missingType_isVariableDeclarationWithoutTypeText() {
+    final var result =
+        parse(
+            """
+        class Foo {
+            void m(java.util.List<String> list) {
+                list.forEach(§ -> {});
+            }
+        }""");
+    assertThat(result.valid()).isTrue();
+    assertThat(result.sentinelContext()).isEqualTo(SentinelContext.VARIABLE_DECLARATION);
+    assertThat(result.declaredTypeText()).isNull();
+  }
+
   // ── CLASS / INTERFACE HEADER TYPE REFERENCES ─────────────────────────────
   // Patterns found in Helidon/Dropwizard:
   //   class Builder implements io.helidon.common.Builder§<B, T>

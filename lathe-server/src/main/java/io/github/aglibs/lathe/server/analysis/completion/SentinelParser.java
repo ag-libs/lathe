@@ -154,8 +154,14 @@ final class SentinelParser {
   }
 
   private static Classification classifyVariableDeclaration(final VariableTree v) {
+    final var type = v.getType();
     return new Classification(
-        SentinelContext.VARIABLE_DECLARATION, -1, null, null, -1, v.getType().toString());
+        SentinelContext.VARIABLE_DECLARATION,
+        -1,
+        null,
+        null,
+        -1,
+        type != null ? type.toString() : null);
   }
 
   private static Classification classifyMethodInvocation(
