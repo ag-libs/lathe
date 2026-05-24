@@ -129,7 +129,8 @@ final class SentinelParser {
               && m.getArguments().stream().anyMatch(a -> a == sentinel) ->
           classifyMethodInvocation(sentinel, m);
       case LambdaExpressionTree lambda -> classifyLambda(sentinel, lambda);
-      case NewClassTree ignored -> Classification.of(SentinelContext.CONSTRUCTOR_CALL);
+      case NewClassTree ignored when !(sentinel instanceof MemberSelectTree) ->
+          Classification.of(SentinelContext.CONSTRUCTOR_CALL);
       case AnnotationTree ignored -> Classification.of(SentinelContext.ANNOTATION_CONTEXT);
       case VariableTree v when v.getType() == sentinel ->
           Classification.of(SentinelContext.TYPE_REFERENCE);

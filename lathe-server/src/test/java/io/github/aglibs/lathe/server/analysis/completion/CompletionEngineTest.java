@@ -308,6 +308,25 @@ class CompletionEngineTest {
   }
 
   @Test
+  void memberAccess_receiverInsideNewClassArg_completionsReturned() {
+    // receiver.§ inside a constructor call argument — NewClassTree parent causes
+    // CONSTRUCTOR_CALL classification instead of MEMBER_ACCESS because the guard
+    // `when !(sentinel instanceof MemberSelectTree)` is missing on the NewClassTree case
+    final var items =
+        complete(
+            """
+            class Test {
+                void m() {
+                    String hello = "x";
+                    new StringBuilder(hello.§);
+                }
+            }""");
+    assertThat(items)
+        .extracting(CompletionItem::getLabel)
+        .anyMatch(l -> l.startsWith("toLowerCase"));
+  }
+
+  @Test
   void memberAccess_samePackageType_staticMembersReturned() {
     // Helper is in the same named package — no import — TypeResolver must fall back to
     // packageName + "." + simpleName
