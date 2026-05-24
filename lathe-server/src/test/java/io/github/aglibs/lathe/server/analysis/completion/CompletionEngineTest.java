@@ -169,6 +169,31 @@ class CompletionEngineTest {
   }
 
   @Test
+  void importDeclaration_staticImport_packagePrefix_suggestsPackageSegment() {
+    final var items =
+        complete(
+            """
+            import static java.§;
+
+            class Test {
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("util");
+  }
+
+  @Test
+  void importDeclaration_staticImport_packagePrefix_doesNotSuggestStaticMembers() {
+    final var items =
+        complete(
+            """
+            import static java.util.§;
+
+            class Test {
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("Collections", "concurrent");
+    assertThat(items).noneMatch(i -> i.getLabel().equals("emptyList"));
+  }
+
+  @Test
   void importDeclaration_packageSegmentSuggested() {
     final var items =
         complete(
@@ -849,6 +874,47 @@ class CompletionEngineTest {
   }
 
   // ── pending: stale-cache gaps ──────────────────────────────────────────────
+
+  @Test
+  void importDeclaration_staleCacheDotTrigger_packageSuggested() {
+    // Simulates dot-trigger: cached content has no dot yet, completion fires
+    // from the stale snapshot before the 500ms recompile.
+    final var items =
+        completeWithCache(
+            "import java;\nclass Test {}",
+            """
+            import java.§;
+
+            class Test {
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("util");
+  }
+
+  @Test
+  void importDeclaration_staleCacheDotTrigger_typeSuggested() {
+    final var items =
+        completeWithCache(
+            "import java.util;\nclass Test {}",
+            """
+            import java.util.§;
+
+            class Test {
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("Collections");
+  }
+
+  @Test
+  void importDeclaration_staticImport_staleCacheDotTrigger_packageSuggested() {
+    final var items =
+        completeWithCache(
+            "import static java;\nclass Test {}",
+            """
+            import static java.§;
+
+            class Test {
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("util");
+  }
 
   @Test
   void streamChain_staleCacheFilterLambda_typeResolved() {
