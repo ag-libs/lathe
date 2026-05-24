@@ -42,10 +42,11 @@ public final class CompletionEngine {
                 .formatted(parsed.valid(), parsed.sentinelContext()));
 
     final var ctx = parsed.sentinelContext();
-    if (parsed.valid() && ctx == SentinelContext.TYPE_REFERENCE
-        && parsed.receiverText() != null && req.cached() != null) {
-      final var outer =
-          req.cached().analysis().elements().getTypeElement(parsed.receiverText());
+    if (parsed.valid()
+        && ctx == SentinelContext.TYPE_REFERENCE
+        && parsed.receiverText() != null
+        && req.cached() != null) {
+      final var outer = req.cached().analysis().elements().getTypeElement(parsed.receiverText());
       if (outer != null) {
         return new CompletionOutcome(
             ProposalGenerator.proposeNestedTypes(outer, injected.prefix()), null);
