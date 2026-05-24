@@ -238,7 +238,8 @@ class CompletionEngineTest {
   @Disabled("pending Object boilerplate filter in ProposalGenerator")
   @Test
   void memberAccess_objectBoilerplateExcluded() {
-    // wait/notify/clone/finalize are noise and should not appear
+    // Presentation policy: wait/notify/finalize are almost always noise.
+    // equals/hashCode/toString/getClass may remain available, but should rank below domain members.
     final var items =
         complete(
             """
@@ -256,22 +257,40 @@ class CompletionEngineTest {
                     || i.getLabel().equals("finalize()"));
   }
 
-  @Disabled("pending Trees.isAccessible(Scope, Element, DeclaredType) implementation")
   @Test
-  void memberAccess_privateMemberExcluded() {
-    // private members of the receiver type must not appear
+  void memberAccess_privateMemberOnOtherReceiverExcluded() {
+    // Private members are valid through this.§ inside the declaring class.
+    // They must not be offered through an unrelated receiver expression.
+    final var items =
+        complete(
+            """
+            class Other {
+                private String secret = "x";
+                public String visible = "y";
+            }
+
+            class Test {
+                void m(Other other) {
+                    other.§
+                }
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("visible");
+    assertThat(items).noneMatch(i -> i.getLabel().equals("secret"));
+  }
+
+  @Test
+  void memberAccess_privateMemberOnThisReceiverIncluded() {
     final var items =
         complete(
             """
             class Test {
                 private String secret = "x";
-                public String visible = "y";
+
                 void m() {
-                    this.§
+                    this.se§
                 }
             }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("visible");
-    assertThat(items).noneMatch(i -> i.getLabel().equals("secret"));
+    assertThat(items).extracting(CompletionItem::getLabel).contains("secret");
   }
 
   @Test

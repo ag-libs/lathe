@@ -104,9 +104,10 @@ public final class CompletionEngine {
                 && (text.indexOf('.') < 0
                     ? Character.isUpperCase(text.charAt(0))
                     : snapshot.elements().getTypeElement(text) != null);
+        final var scope = TypeResolver.resolveScope(snapshot, req.cursorOffset());
         final var items =
             new ProposalGenerator(snapshot)
-                .proposeMemberAccess(receiverType, injected.prefix(), isStaticAccess);
+                .proposeMemberAccess(receiverType, injected.prefix(), isStaticAccess, scope);
         LOG.fine(
             () ->
                 "[completion] proposals count=%d labels=%s"

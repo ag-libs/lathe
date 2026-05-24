@@ -9,12 +9,15 @@ import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.ParenthesizedTree;
+import com.sun.source.tree.Scope;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import io.github.aglibs.lathe.server.analysis.FileAnalysis;
+import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.logging.Logger;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.TypeElement;
@@ -22,6 +25,8 @@ import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 
 final class TypeResolver {
+
+  private static final Logger LOG = Logger.getLogger(TypeResolver.class.getName());
 
   private TypeResolver() {}
 
@@ -102,6 +107,27 @@ final class TypeResolver {
     }
 
     return resolveByPosition(dotOffset, snapshot);
+  }
+
+  static Scope resolveScope(final FileAnalysis snapshot, final int cursorOffset) {
+    if (snapshot.tree() == null) {
+      return null;
+    }
+
+    final var path = SourceLocator.pathAt(snapshot.trees(), snapshot.tree(), cursorOffset);
+    if (path == null) {
+      return null;
+    }
+
+    try {
+      return snapshot.trees().getScope(path);
+    } catch (final IllegalArgumentException e) {
+      LOG.fine(
+          () ->
+              "[completion] scope resolve failed at offset %d: %s"
+                  .formatted(cursorOffset, e.getMessage()));
+      return null;
+    }
   }
 
   private static TypeMirror resolveByPosition(final int dotOffset, final FileAnalysis snapshot) {

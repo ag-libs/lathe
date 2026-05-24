@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.analysis.completion;
 import com.sun.source.tree.BindingPatternTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.MethodTree;
+import com.sun.source.tree.Scope;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
@@ -34,7 +35,10 @@ final class ProposalGenerator {
   }
 
   List<CompletionItem> proposeMemberAccess(
-      final TypeMirror receiverType, final String prefix, final boolean isStaticAccess) {
+      final TypeMirror receiverType,
+      final String prefix,
+      final boolean isStaticAccess,
+      final Scope scope) {
     if (!(receiverType instanceof final DeclaredType declaredType)) {
       return List.of();
     }
@@ -51,6 +55,7 @@ final class ProposalGenerator {
                     || el.getKind() == ElementKind.FIELD
                     || el.getKind() == ElementKind.ENUM_CONSTANT)
         .filter(el -> !isStaticAccess || el.getModifiers().contains(Modifier.STATIC))
+        .filter(el -> isAccessible(el, declaredType, scope))
         .filter(el -> el.getSimpleName().toString().startsWith(prefix))
         .map(el -> toCompletionItem(el, declaredType))
         .toList();
@@ -204,6 +209,23 @@ final class ProposalGenerator {
     }
 
     return item;
+  }
+
+  private boolean isAccessible(
+      final Element el, final DeclaredType receiverType, final Scope scope) {
+    if (scope == null) {
+      return true;
+    }
+
+    try {
+      return snapshot.trees().isAccessible(scope, el, receiverType);
+    } catch (final IllegalArgumentException e) {
+      LOG.fine(
+          () ->
+              "[proposal] isAccessible failed for %s on %s: %s"
+                  .formatted(el.getSimpleName(), receiverType, e.getMessage()));
+      return true;
+    }
   }
 
   private List<? extends TypeMirror> resolveParamTypes(
