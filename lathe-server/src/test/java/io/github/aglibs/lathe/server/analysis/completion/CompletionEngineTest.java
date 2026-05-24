@@ -144,7 +144,6 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("Entry"));
   }
 
-  @Disabled("pending SIMPLE_NAME scope enumeration in ProposalGenerator")
   @Test
   void simpleName_localVar_suggestedByPrefix() {
     final var items =

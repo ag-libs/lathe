@@ -43,13 +43,29 @@ public final class CompletionEngine {
 
     final var ctx = parsed.sentinelContext();
     if (parsed.valid()
+        && ctx == SentinelContext.SIMPLE_NAME
+        && parsed.enclosingClass() != null
+        && req.cached() != null) {
+      return new CompletionOutcome(
+          new ProposalGenerator(req.cached().analysis())
+              .proposeSimpleName(
+                  parsed.enclosingClass(),
+                  parsed.enclosingMethod(),
+                  injected.prefix(),
+                  req.pos().getLine()),
+          null);
+    }
+
+    if (parsed.valid()
         && ctx == SentinelContext.TYPE_REFERENCE
         && parsed.receiverText() != null
         && req.cached() != null) {
       final var outer = req.cached().analysis().elements().getTypeElement(parsed.receiverText());
       if (outer != null) {
         return new CompletionOutcome(
-            ProposalGenerator.proposeNestedTypes(outer, injected.prefix()), null);
+            new ProposalGenerator(req.cached().analysis())
+                .proposeNestedTypes(outer, injected.prefix()),
+            null);
       }
     }
 
@@ -89,8 +105,8 @@ public final class CompletionEngine {
                     ? Character.isUpperCase(text.charAt(0))
                     : snapshot.elements().getTypeElement(text) != null);
         final var items =
-            ProposalGenerator.proposeMemberAccess(
-                receiverType, injected.prefix(), isStaticAccess, snapshot);
+            new ProposalGenerator(snapshot)
+                .proposeMemberAccess(receiverType, injected.prefix(), isStaticAccess);
         LOG.fine(
             () ->
                 "[completion] proposals count=%d labels=%s"

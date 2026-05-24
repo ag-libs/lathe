@@ -1,7 +1,16 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
+import com.sun.source.tree.ClassTree;
+import com.sun.source.tree.MethodTree;
+import com.sun.source.tree.VariableTree;
+import com.sun.source.util.TreePath;
+import com.sun.source.util.TreePathScanner;
 import io.github.aglibs.lathe.server.analysis.FileAnalysis;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import javax.lang.model.element.*;
 import javax.lang.model.type.DeclaredType;
@@ -13,18 +22,23 @@ import org.eclipse.lsp4j.CompletionItemKind;
 
 final class ProposalGenerator {
 
-  private ProposalGenerator() {}
+  private static final Logger LOG = Logger.getLogger(ProposalGenerator.class.getName());
 
-  static List<CompletionItem> proposeMemberAccess(
-      final TypeMirror receiverType,
-      final String prefix,
-      final boolean isStaticAccess,
-      final FileAnalysis snapshot) {
+  private final FileAnalysis snapshot;
+  private final Types types;
+
+  ProposalGenerator(final FileAnalysis snapshot) {
+    this.snapshot = snapshot;
+    this.types = snapshot.types();
+  }
+
+  List<CompletionItem> proposeMemberAccess(
+      final TypeMirror receiverType, final String prefix, final boolean isStaticAccess) {
     if (!(receiverType instanceof final DeclaredType declaredType)) {
       return List.of();
     }
 
-    final var element = snapshot.types().asElement(declaredType);
+    final var element = types.asElement(declaredType);
     if (!(element instanceof final TypeElement typeEl)) {
       return List.of();
     }
@@ -33,11 +47,11 @@ final class ProposalGenerator {
         .filter(el -> el.getKind() == ElementKind.METHOD || el.getKind() == ElementKind.FIELD)
         .filter(el -> !isStaticAccess || el.getModifiers().contains(Modifier.STATIC))
         .filter(el -> el.getSimpleName().toString().startsWith(prefix))
-        .map(el -> toCompletionItem(el, declaredType, snapshot.types()))
-        .collect(Collectors.toList());
+        .map(el -> toCompletionItem(el, declaredType))
+        .toList();
   }
 
-  static List<CompletionItem> proposeNestedTypes(final TypeElement outer, final String prefix) {
+  List<CompletionItem> proposeNestedTypes(final TypeElement outer, final String prefix) {
     return outer.getEnclosedElements().stream()
         .filter(
             el ->
@@ -56,38 +70,142 @@ final class ProposalGenerator {
                       : CompletionItemKind.Class);
               return item;
             })
-        .collect(Collectors.toList());
+        .toList();
   }
 
-  private static CompletionItem toCompletionItem(
-      final Element el, final DeclaredType receiverType, final Types types) {
+  List<CompletionItem> proposeSimpleName(
+      final String enclosingClass,
+      final String enclosingMethod,
+      final String prefix,
+      final int cursorLine) {
+    final var seen = new LinkedHashSet<String>();
+    final var items = new ArrayList<CompletionItem>();
+
+    // 1. Parameters and local variables from the enclosing method
+    if (enclosingMethod != null && enclosingClass != null) {
+      final var methodPath = findScopeMethodPath(enclosingClass, enclosingMethod);
+      if (methodPath != null) {
+        final var methodTree = (MethodTree) methodPath.getLeaf();
+        for (final var param : methodTree.getParameters()) {
+          final var name = param.getName().toString();
+          if (name.startsWith(prefix) && seen.add(name)) {
+            items.add(varItem(name));
+          }
+        }
+
+        if (methodTree.getBody() != null) {
+          new TreePathScanner<Void, Void>() {
+            @Override
+            public Void visitVariable(final VariableTree node, final Void unused) {
+              final long pos =
+                  snapshot.trees().getSourcePositions().getStartPosition(snapshot.tree(), node);
+              final long line = snapshot.tree().getLineMap().getLineNumber(pos) - 1;
+              if (line < cursorLine) {
+                final var name = node.getName().toString();
+                if (name.startsWith(prefix) && seen.add(name)) {
+                  items.add(varItem(name));
+                }
+              }
+              return super.visitVariable(node, unused);
+            }
+          }.scan(methodPath, null);
+        }
+      }
+    }
+
+    // 2. Fields and methods of the enclosing class
+    if (enclosingClass != null) {
+      final var classEl = findScopeClassElement(enclosingClass);
+      if (classEl != null) {
+        final var declaredType = (DeclaredType) classEl.asType();
+        snapshot.elements().getAllMembers(classEl).stream()
+            .filter(el -> el.getKind() == ElementKind.METHOD || el.getKind() == ElementKind.FIELD)
+            .filter(el -> el.getSimpleName().toString().startsWith(prefix))
+            .filter(el -> seen.add(el.getSimpleName().toString()))
+            .map(el -> toCompletionItem(el, declaredType))
+            .forEach(items::add);
+      }
+    }
+
+    return items;
+  }
+
+  private static CompletionItem varItem(final String name) {
+    final var item = new CompletionItem();
+    item.setLabel(name);
+    item.setKind(CompletionItemKind.Variable);
+    return item;
+  }
+
+  private TreePath findScopeMethodPath(final String className, final String methodName) {
+    final var result = new AtomicReference<TreePath>();
+    new TreePathScanner<Void, Void>() {
+      @Override
+      public Void visitClass(final ClassTree node, final Void unused) {
+        return className.equals(node.getSimpleName().toString())
+            ? super.visitClass(node, unused)
+            : null;
+      }
+
+      @Override
+      public Void visitMethod(final MethodTree node, final Void unused) {
+        if (result.get() == null && methodName.equals(node.getName().toString())) {
+          result.set(getCurrentPath());
+        }
+        return null;
+      }
+    }.scan(snapshot.tree(), null);
+    return result.get();
+  }
+
+  private TypeElement findScopeClassElement(final String simpleName) {
+    final var result = new AtomicReference<TypeElement>();
+    new TreePathScanner<Void, Void>() {
+      @Override
+      public Void visitClass(final ClassTree node, final Void unused) {
+        if (simpleName.equals(node.getSimpleName().toString())) {
+          final var el = snapshot.trees().getElement(getCurrentPath());
+          if (el instanceof final TypeElement te) {
+            result.set(te);
+          }
+        }
+        return super.visitClass(node, unused);
+      }
+    }.scan(snapshot.tree(), null);
+    return result.get();
+  }
+
+  private CompletionItem toCompletionItem(final Element el, final DeclaredType receiverType) {
     final var item = new CompletionItem();
     if (el.getKind() == ElementKind.METHOD) {
       final var method = (ExecutableElement) el;
-      final List<? extends TypeMirror> paramTypes = resolveParamTypes(method, receiverType, types);
+      final List<? extends TypeMirror> paramTypes = resolveParamTypes(method, receiverType);
       final var params =
-          paramTypes.stream().map(t -> simpleTypeName(t, types)).collect(Collectors.joining(", "));
+          paramTypes.stream().map(this::simpleTypeName).collect(Collectors.joining(", "));
       item.setLabel(el.getSimpleName() + "(" + params + ")");
       item.setKind(CompletionItemKind.Method);
     } else {
       item.setLabel(el.getSimpleName().toString());
       item.setKind(CompletionItemKind.Field);
     }
+
     return item;
   }
 
-  private static List<? extends TypeMirror> resolveParamTypes(
-      final ExecutableElement method, final DeclaredType receiverType, final Types types) {
+  private List<? extends TypeMirror> resolveParamTypes(
+      final ExecutableElement method, final DeclaredType receiverType) {
     try {
       return ((ExecutableType) types.asMemberOf(receiverType, method)).getParameterTypes();
-    } catch (final IllegalArgumentException ignored) {
-      return method.getParameters().stream()
-          .map(VariableElement::asType)
-          .collect(Collectors.toList());
+    } catch (final IllegalArgumentException e) {
+      LOG.fine(
+          () ->
+              "[proposal] asMemberOf failed for %s on %s: %s"
+                  .formatted(method.getSimpleName(), receiverType, e.getMessage()));
+      return method.getParameters().stream().map(VariableElement::asType).toList();
     }
   }
 
-  private static String simpleTypeName(final TypeMirror type, final Types types) {
+  private String simpleTypeName(final TypeMirror type) {
     final var el = types.asElement(type);
     return el != null ? el.getSimpleName().toString() : type.toString();
   }
