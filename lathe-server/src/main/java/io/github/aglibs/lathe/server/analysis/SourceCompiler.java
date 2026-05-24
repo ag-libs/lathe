@@ -13,6 +13,10 @@ public interface SourceCompiler extends AutoCloseable {
 
   CompilationResult compile(String uri, String content, CompileMode mode);
 
+  default FileAnalysis reattribute(final String uri, final String content) {
+    return compile(uri, content, CompileMode.FAST).fileAnalysis();
+  }
+
   StandardJavaFileManager fileManager();
 
   @Override

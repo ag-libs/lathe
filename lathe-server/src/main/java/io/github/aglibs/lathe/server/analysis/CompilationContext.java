@@ -33,7 +33,7 @@ public final class CompilationContext implements AutoCloseable {
   public CompilationContext(final SourceCompiler compiler) {
     this.compiler = compiler;
     this.parser = new SourceParser();
-    this.completionEngine = new CompletionEngine(parser);
+    this.completionEngine = new CompletionEngine(parser, compiler);
     this.definitionLocator = new DefinitionLocator(parser);
     this.javadocLocator = new JavadocLocator(parser);
   }
@@ -52,9 +52,15 @@ public final class CompilationContext implements AutoCloseable {
       final String uri, final String content, final Position pos, final CompletionContext context) {
     final var t = Stopwatch.start();
     final var request = new CompletionRequest(uri, content, pos, context, cache.get(uri));
-    final var items = completionEngine.complete(request);
-    LOG.fine(() -> "[completion] %s %dms items=%d".formatted(uri, t.elapsedMs(), items.size()));
-    return items;
+    final var outcome = completionEngine.complete(request);
+    if (outcome.freshAnalysis() != null) {
+      cache.put(uri, new CachedAnalysis(content, cache.get(uri).version(), outcome.freshAnalysis()));
+    }
+    LOG.fine(
+        () ->
+            "[completion] %s %dms items=%d reattributed=%s"
+                .formatted(uri, t.elapsedMs(), outcome.items().size(), outcome.freshAnalysis() != null));
+    return outcome.items();
   }
 
   public void dropFromCache(final String uri) {

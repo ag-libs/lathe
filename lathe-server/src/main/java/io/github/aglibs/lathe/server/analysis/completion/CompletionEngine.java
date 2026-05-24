@@ -1,5 +1,7 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
+import io.github.aglibs.lathe.server.analysis.FileAnalysis;
+import io.github.aglibs.lathe.server.analysis.SourceCompiler;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
 import java.util.List;
 import java.util.logging.Logger;
@@ -10,12 +12,14 @@ public final class CompletionEngine {
   private static final Logger LOG = Logger.getLogger(CompletionEngine.class.getName());
 
   private final SentinelParser sentinelParser;
+  private final SourceCompiler compiler;
 
-  public CompletionEngine(final SourceParser parser) {
+  public CompletionEngine(final SourceParser parser, final SourceCompiler compiler) {
     this.sentinelParser = new SentinelParser(parser);
+    this.compiler = compiler;
   }
 
-  public List<CompletionItem> complete(final CompletionRequest req) {
+  public CompletionOutcome complete(final CompletionRequest req) {
     final var injected = new SentinelInjector(req.content()).inject(req.cursorOffset());
     LOG.fine(
         () ->
@@ -33,38 +37,48 @@ public final class CompletionEngine {
     if (parsed.valid()
         && (ctx == SentinelContext.MEMBER_ACCESS || ctx == SentinelContext.LAMBDA_BODY)
         && req.cached() != null) {
-      final var snapshot = req.cached().analysis();
+
       final int dotOffset = injected.receiverText() != null ? injected.tokenStart() - 1 : -1;
+      final var initialSnapshot = req.cached().analysis();
+      final var initialType =
+          TypeResolver.resolveReceiverType(parsed, req.pos().getLine(), dotOffset, initialSnapshot);
+
+      final var freshAnalysis =
+          (initialType == null && compiler != null && !req.noDiff())
+              ? compiler.reattribute(req.uri(), req.content())
+              : null;
+
+      final var snapshot = freshAnalysis != null ? freshAnalysis : initialSnapshot;
       final var receiverType =
-          TypeResolver.resolveReceiverType(parsed, req.pos().getLine(), dotOffset, snapshot);
+          freshAnalysis != null
+              ? TypeResolver.resolveReceiverType(
+                  parsed, req.pos().getLine(), dotOffset, freshAnalysis)
+              : initialType;
+
       LOG.fine(
           () ->
-              "[completion] resolve receiver=|%s| type=%s"
-                  .formatted(parsed.receiverText(), receiverType));
+              "[completion] resolve receiver=|%s| type=%s reattributed=%s"
+                  .formatted(parsed.receiverText(), receiverType, freshAnalysis != null));
 
       if (receiverType != null) {
         final var text = parsed.receiverText();
-        // Static access = receiver is a type name, not a field/variable expression.
-        // Bare uppercase names (no dot) are treated as type references; dotted names
-        // are static only when the text resolves to an actual type FQN — this keeps
-        // field chains like System.out or this.name as instance expressions.
         final boolean isStaticAccess =
             text != null
                 && (text.indexOf('.') < 0
                     ? Character.isUpperCase(text.charAt(0))
                     : snapshot.elements().getTypeElement(text) != null);
-        final var result =
+        final var items =
             ProposalGenerator.proposeMemberAccess(
                 receiverType, injected.prefix(), isStaticAccess, snapshot);
         LOG.fine(
             () ->
                 "[completion] proposals count=%d labels=%s"
                     .formatted(
-                        result.size(), result.stream().map(CompletionItem::getLabel).toList()));
-        return result;
+                        items.size(), items.stream().map(CompletionItem::getLabel).toList()));
+        return new CompletionOutcome(items, freshAnalysis);
       }
     }
 
-    return List.of();
+    return CompletionOutcome.of(List.of());
   }
 }

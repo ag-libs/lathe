@@ -25,7 +25,7 @@ class CompletionEngineTest {
   static void setup() {
     sourceParser = new SourceParser();
     compiler = new TempSourceCompiler();
-    engine = new CompletionEngine(sourceParser);
+    engine = new CompletionEngine(sourceParser, compiler);
   }
 
   @AfterAll
@@ -39,12 +39,13 @@ class CompletionEngineTest {
     final var compiled = compiler.compile("file:///Test.java", c.content(), CompileMode.FULL);
     final var cached = new CachedAnalysis(c.content(), 0, compiled.fileAnalysis());
     return engine.complete(
-        new CompletionRequest(
-            "file:///Test.java",
-            c.content(),
-            new Position(c.lspLine(), c.lspChar()),
-            null,
-            cached));
+            new CompletionRequest(
+                "file:///Test.java",
+                c.content(),
+                new Position(c.lspLine(), c.lspChar()),
+                null,
+                cached))
+        .items();
   }
 
   /**
@@ -59,12 +60,13 @@ class CompletionEngineTest {
         compiler.compile("file:///Test.java", cachedSource, CompileMode.FULL);
     final var cached = new CachedAnalysis(cachedSource, 0, cachedCompiled.fileAnalysis());
     return engine.complete(
-        new CompletionRequest(
-            "file:///Test.java",
-            c.content(),
-            new Position(c.lspLine(), c.lspChar()),
-            null,
-            cached));
+            new CompletionRequest(
+                "file:///Test.java",
+                c.content(),
+                new Position(c.lspLine(), c.lspChar()),
+                null,
+                cached))
+        .items();
   }
 
   @Test
@@ -479,7 +481,6 @@ class CompletionEngineTest {
 
   // ── pending: stale-cache gaps ──────────────────────────────────────────────
 
-  @Disabled("pending on-demand attribution for stale-cache completions")
   @Test
   void streamChain_staleCacheFilterLambda_typeResolved() {
     // User types a new stream chain line not present at last compile time.
@@ -503,7 +504,6 @@ class CompletionEngineTest {
         .anyMatch(l -> l.startsWith("toLowerCase"));
   }
 
-  @Disabled("pending on-demand attribution for stale-cache completions")
   @Test
   void memberAccess_staleCacheNewLine_typeResolved() {
     // User typed a brand-new line that was not present at last compile time.
@@ -527,7 +527,6 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("subList"));
   }
 
-  @Disabled("pending on-demand attribution for stale-cache completions")
   @Test
   void memberAccess_staleCacheReplacedExpression_typeResolved() {
     // User replaced an existing expression in-place: the cached snapshot has a
