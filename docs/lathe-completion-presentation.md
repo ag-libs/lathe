@@ -671,7 +671,140 @@ Do not put source lookup or Javadoc parsing into `ProposalGenerator`.
 
 ---
 
-## 12. Tests
+## 12. Implementation Plan
+
+Implement presentation before the type index.
+The current member and simple-name completion paths are useful enough that better insertion,
+labels,
+sorting,
+and details will improve every existing completion result immediately.
+The type index should follow once the visible completion behavior is stable.
+
+### Slice 1 — Candidate Model and Item Presenter
+
+Add the internal presentation model first,
+without changing completion discovery semantics.
+
+Expected changes:
+
+- Add package-private candidate records for member,
+  local variable,
+  parameter,
+  and type-like completion items as needed.
+- Add `CompletionItemPresenter`.
+- Add `CompletionSortKey` or equivalent sort-key helper.
+- Move LSP `CompletionItem` construction out of `ProposalGenerator`.
+- Keep `ProposalGenerator` responsible for finding javac-backed candidates and their metadata.
+
+This slice should preserve existing passing completion tests.
+Focused presentation tests should assert item shape instead of only candidate presence.
+
+### Slice 2 — Exact Insertion
+
+Make insertion deterministic for Neovim and portable to VS Code.
+
+Expected behavior:
+
+- Prefer `textEdit` over plain `insertText`.
+- Replace only the typed prefix for normal member and simple-name completion.
+- Use `InsertReplaceEdit` when completing before or inside an existing identifier.
+- Insert method names only,
+  even when labels include signatures.
+- Do not add snippets,
+  parentheses,
+  or commit characters in this slice.
+
+This is the highest-value user-experience slice.
+It prevents invalid source insertion such as `list.subList(int, int)`.
+
+### Slice 3 — Labels, Details, and Ranking
+
+Improve menu readability after insertion is correct.
+
+Expected behavior:
+
+- Method labels include compact signatures.
+- Method insertion remains the simple method name.
+- `filterText` is the simple symbol name.
+- `detail` contains return type,
+  field type,
+  variable type,
+  or qualified type name when cheaply available.
+- `kind` maps to the most specific LSP completion kind.
+- `sortText` is deterministic and groups high-value Java members above inherited noise.
+
+Receiver type should be used for generic substitution when possible.
+For example,
+`List<String>.add§` should present `add(String)`,
+not `add(E)`.
+
+Object boilerplate ranking can be handled here.
+Methods such as `wait`,
+`notify`,
+and `finalize` should be suppressed or ranked very low;
+`toString`,
+`equals`,
+`hashCode`,
+and `getClass` may remain but should not outrank domain members.
+
+### Slice 4 — Neovim Validation
+
+Validate the first three slices against real Neovim behavior with `blink.cmp`.
+Programmatic LSP tests are necessary,
+but they do not prove that the editor applies ranges the same way a user experiences them.
+
+Smoke cases:
+
+```text
+list.ad§
+list.§
+accept(§connectionString)
+accept(conn§ectionString)
+list.add§
+```
+
+Validation should check both the menu and the resulting buffer text after accepting a completion.
+
+### Slice 5 — Lazy Documentation Resolve
+
+Add `completionItem/resolve` only after initial items have stable insertion,
+filtering,
+and sorting fields.
+
+Expected behavior:
+
+- Initial completion does not load Javadocs.
+- `data` carries enough stable identity to resolve documentation later.
+- Resolve may fill `documentation` and richer display-only detail.
+- Resolve must not change `label`,
+  `filterText`,
+  `sortText`,
+  `textEdit`,
+  `insertText`,
+  or `additionalTextEdits`.
+- Documentation failures return the original item unchanged.
+
+Reuse hover's lower-level formatting and source lookup helpers where practical.
+Do not call hover directly from completion resolve.
+
+### Slice 6 — Type Index Integration
+
+After presentation is stable,
+wire type-index candidates into the same presenter.
+
+Initial scope:
+
+- simple type-name completion
+- qualified type in `detail`
+- no import edits
+- `isIncomplete=true` when candidates are broad or only partially validated
+
+Future import edits should use the same insertion contract and add `additionalTextEdits` only after focused import
+placement tests exist.
+
+---
+
+## 13. Tests
 
 ### Presentation Tests
 
@@ -823,7 +956,7 @@ completionResolve_typeIndexCandidate_resolvesDocsWhenElementAvailable
 
 ---
 
-## 13. References
+## 14. References
 
 - LSP 3.17 completion specification:
   `textDocument/completion`, `completionItem/resolve`, `CompletionItem`, `CompletionItemLabelDetails`.
@@ -836,7 +969,7 @@ completionResolve_typeIndexCandidate_resolvesDocsWhenElementAvailable
 
 ---
 
-## 14. Working Decisions
+## 15. Working Decisions
 
 - Use `textEdit` for exact insertion when practical.
 - Prefer `InsertReplaceEdit` for completion before or inside an existing identifier.
