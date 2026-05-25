@@ -36,6 +36,7 @@
           <systemPropertyVariables>
             <lathe.version>@project.version@</lathe.version>
             <user.home>${user.home}</user.home>
+            <lathe.cache>${lathe.cache}</lathe.cache>
           </systemPropertyVariables>
         </configuration>
       </plugin>

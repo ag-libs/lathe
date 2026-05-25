@@ -11,8 +11,7 @@ class MultiModuleTest {
 
   private static final Path ROOT = Path.of(System.getProperty("user.dir")).getParent();
   private static final String LATHE_VERSION = System.getProperty("lathe.version");
-  private static final Path LATHE_CACHE =
-      Path.of(System.getProperty("user.home"), ".cache", "lathe");
+  private static final Path LATHE_CACHE = Path.of(System.getProperty("lathe.cache"));
 
   private static Path lathe(final String rel) {
     return ROOT.resolve(".lathe").resolve(rel);
@@ -72,6 +71,23 @@ class MultiModuleTest {
     assertThat(content).contains("\"org.junit.jupiter:junit-jupiter-api");
     assertThat(content).contains("\"org.opentest4j:opentest4j");
     assertThat(content).contains("\"PRESENT\"");
+    assertThat(content).contains("\"typeIndex\"");
+  }
+
+  @Test
+  void typeIndexShardCreated() throws IOException {
+    final var shard =
+        LATHE_CACHE
+            .resolve("type-index")
+            .resolve("deps")
+            .resolve("org.junit.jupiter")
+            .resolve("junit-jupiter-api")
+            .resolve("5.14.4")
+            .resolve("index.json");
+    assertThat(shard).exists();
+    final var content = read(shard);
+    assertThat(content).contains("\"types\"");
+    assertThat(content).contains("\"simpleName\"");
   }
 
   // --- core module ---
