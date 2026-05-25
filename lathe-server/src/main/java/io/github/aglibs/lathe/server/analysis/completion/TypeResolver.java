@@ -4,6 +4,7 @@ import com.sun.source.tree.ArrayAccessTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.ErroneousTree;
 import com.sun.source.tree.IdentifierTree;
+import com.sun.source.tree.LiteralTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
@@ -170,6 +171,12 @@ final class TypeResolver {
       public Void visitParenthesized(final ParenthesizedTree node, final Void unused) {
         check(node);
         return super.visitParenthesized(node, unused);
+      }
+
+      @Override
+      public Void visitLiteral(final LiteralTree node, final Void unused) {
+        check(node);
+        return super.visitLiteral(node, unused);
       }
 
       @Override
