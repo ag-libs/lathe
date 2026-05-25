@@ -20,8 +20,9 @@ Suites:
     type_ref   Type-reference injection at class fields, method bodies
     blank      Blank and short-prefix behaviour at class/method body
     filter     Prefix filter accuracy — no stray items returned
-    member     Broad scan across real files (auto-detected positions, perf data)
-    multi_tree Open main-tree and test-tree files from the same module in one session
+    member        Broad scan across real files (auto-detected positions, perf data)
+    member_inject Inject `receiver.` at class/method/ctor body positions, cursor after dot
+    multi_tree    Open main-tree and test-tree files from the same module in one session
                (regression test for the wrong-worker-per-source-tree crash)
 """
 
@@ -89,6 +90,11 @@ def _insert_line(line_idx: int, indent: int, prefix: str) -> MakeContentFn:
         lines.insert(line_idx, " " * indent + prefix)
         return "\n".join(lines), line_idx, indent + len(prefix)
     return fn
+
+
+def _member_access(line_idx: int, indent: int, receiver: str) -> MakeContentFn:
+    """Inject `<indent><receiver>.` at line_idx; cursor lands after the dot (empty member prefix)."""
+    return _insert_line(line_idx, indent, receiver + ".")
 
 
 def _type_ref_first_method(prefix: str) -> MakeContentFn:
@@ -196,6 +202,27 @@ BLANK_PROBES: list[Probe] = [
           make_content=_insert_line(99, 8, "Mon"), min_count=1),
     Probe("blank", MONGO, "method body — prefix 'Mongo'",
           make_content=_insert_line(99, 8, "Mongo"), min_count=1),
+]
+
+# Member-access injection suite: insert `receiver.` at class-body and method/ctor-body
+# positions and request completion at the empty-prefix member-access point.
+#
+# MongoDbClient (0-based line refs):
+#   line 38  class body between field declarations  indent=4
+#   line 60  ctor body, after connectionString is declared at line 54  indent=8
+#   line 99  method body (execute()), no local vars  indent=8
+#
+# Unknown-receiver probes (a.) report as INFO — no assertion on count or labels,
+# just verify the server does not crash and we can observe fallback behaviour.
+# Known-receiver probe (connectionString.) asserts specific members and min count.
+MEMBER_INJECT_PROBES: list[Probe] = [
+    Probe("member_inject", MONGO, "MONGO class body 'a.' — unknown receiver, observe fallback",
+          make_content=_member_access(38, 4, "a")),
+    Probe("member_inject", MONGO, "MONGO method body 'a.' — unknown receiver, observe fallback",
+          make_content=_member_access(99, 8, "a")),
+    Probe("member_inject", MONGO, "MONGO ctor body 'connectionString.' — local var in scope",
+          expected=["getDatabase", "getUsername"], min_count=3,
+          make_content=_member_access(60, 8, "connectionString")),
 ]
 
 # Multi-tree suite: open test-tree and main-tree files from the same Maven module
@@ -596,7 +623,7 @@ def print_summary(results: list[ProbeResult]) -> None:
 
 # ─── Main ────────────────────────────────────────────────────────────────────
 
-ALL_SUITES = ("ux", "present", "type_ref", "blank", "filter", "member", "multi_tree")
+ALL_SUITES = ("ux", "present", "type_ref", "blank", "filter", "member", "member_inject", "multi_tree")
 
 
 def build_probes(suites: set[str]) -> list[Probe]:
@@ -606,8 +633,9 @@ def build_probes(suites: set[str]) -> list[Probe]:
     if "type_ref" in suites: result.extend(TYPE_REF_PROBES)
     if "blank"    in suites: result.extend(BLANK_PROBES)
     if "filter"   in suites: result.extend(FILTER_PROBES)
-    if "member"     in suites: result.extend(_auto_member_probes())
-    if "multi_tree" in suites: result.extend(MULTI_TREE_PROBES)
+    if "member"        in suites: result.extend(_auto_member_probes())
+    if "member_inject" in suites: result.extend(MEMBER_INJECT_PROBES)
+    if "multi_tree"    in suites: result.extend(MULTI_TREE_PROBES)
     return result
 
 
