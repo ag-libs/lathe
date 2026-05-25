@@ -84,7 +84,7 @@ public final class ModuleWorkspace implements AutoCloseable {
 
   public ModuleWorker workerFor(final ModuleConfig config) {
     return workers.computeIfAbsent(
-        config.moduleDir().toString(), key -> ModuleWorker.module(config, typeIndex));
+        config.latheClassesDir().toString(), key -> ModuleWorker.module(config, typeIndex));
   }
 
   public ModuleWorker externalWorker() {

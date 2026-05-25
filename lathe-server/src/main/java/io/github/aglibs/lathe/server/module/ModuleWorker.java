@@ -31,7 +31,7 @@ public final class ModuleWorker {
 
   static ModuleWorker module(final ModuleConfig config, final WorkspaceTypeIndex typeIndex) {
     return new ModuleWorker(
-        "lathe-module-" + config.moduleDir().getFileName(),
+        "lathe-module-" + config.moduleDir().getFileName() + "-" + config.sourceTree(),
         () -> new CompilationContext(new ModuleCompiler(config), typeIndex));
   }
 
