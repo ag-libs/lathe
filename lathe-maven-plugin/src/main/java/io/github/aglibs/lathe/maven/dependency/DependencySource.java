@@ -13,7 +13,8 @@ public record DependencySource(
     SourceStatus status,
     Path dir,
     Artifact sourceArtifact,
-    List<Path> classpath) {
+    List<Path> classpath,
+    Path typeIndex) {
 
   public DependencySource {
     ValidCheck.check()
@@ -31,16 +32,21 @@ public record DependencySource(
       final Path dir,
       final Artifact sourceArtifact,
       final List<Path> classpath) {
-    return new DependencySource(gav, jar, SourceStatus.PRESENT, dir, sourceArtifact, classpath);
+    return new DependencySource(
+        gav, jar, SourceStatus.PRESENT, dir, sourceArtifact, classpath, null);
   }
 
   public static DependencySource missing(
       final String gav, final Path jar, final List<Path> classpath) {
-    return new DependencySource(gav, jar, SourceStatus.MISSING, null, null, classpath);
+    return new DependencySource(gav, jar, SourceStatus.MISSING, null, null, classpath, null);
   }
 
   public static List<DependencySource> present(final List<DependencySource> sources) {
     return sources.stream().filter(s -> s.status() == SourceStatus.PRESENT).toList();
+  }
+
+  public DependencySource withTypeIndex(final Path typeIndexPath) {
+    return new DependencySource(gav, jar, status, dir, sourceArtifact, classpath, typeIndexPath);
   }
 
   public DependencyData toData() {
@@ -49,6 +55,7 @@ public record DependencySource(
         jar != null ? jar.toString() : null,
         status,
         dir != null ? dir.toString() : null,
-        classpath.stream().map(Path::toString).toList());
+        classpath.stream().map(Path::toString).toList(),
+        typeIndex != null ? typeIndex.toString() : null);
   }
 }

@@ -74,7 +74,8 @@ class WorkspaceManifestTest extends SampleFixture {
                 selfJar.toString(),
                 SourceStatus.PRESENT,
                 sourceDir.toString(),
-                List.of(transitiveJar.toString()))));
+                List.of(transitiveJar.toString()),
+                null)));
     Files.createDirectories(sourceFile.getParent());
     Files.writeString(sourceFile, "package com.example; public class Self {}");
 
@@ -103,7 +104,8 @@ class WorkspaceManifestTest extends SampleFixture {
                 jar.toString(),
                 SourceStatus.PRESENT,
                 sourceDir.toString(),
-                List.of())));
+                List.of(),
+                null)));
 
     final Path userSrc = tmp.resolve("User.java");
     Files.writeString(userSrc, "import com.example.Greeter; public class User { Greeter g; }");

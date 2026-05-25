@@ -91,6 +91,8 @@ If no attributed snapshot or probe is available, completion may return broad ind
 - fully module-aware filtering without javac
 - package-prefix completion
 - workspace symbols
+- server-side JAR change detection and index rebuild without Maven sync (requires `ClassFileTypeScanner`
+  to move from `lathe-maven-plugin` to `lathe-core` so the server can rebuild shards independently)
 
 ---
 
@@ -538,6 +540,12 @@ Reactor output scanning is local to the server because the output changes during
 
 ### Immutable `WorkspaceTypeIndex`
 
+`WorkspaceTypeIndex` should live in the `analysis` package, not the `workspace` package.
+`WorkspaceManifest` (in `workspace`) already imports `DefinitionLocator` from `analysis`, so placing
+`WorkspaceTypeIndex` in `workspace` would create a cyclic package dependency with `analysis.completion`.
+Keeping it in `analysis` avoids the cycle and reflects that it is analysis infrastructure consumed by
+`CompletionEngine`.
+
 Internal shape:
 
 ```java
@@ -601,6 +609,12 @@ for (TypeCandidate candidate : rankedCandidates) {
   }
 }
 ```
+
+For the first simple-name type-reference slice, only `getTypeElement` is used as the classpath gate.
+`enclosingType` is not yet determined, so `isAccessible` is skipped.
+`getTypeElement` alone is still meaningful: it runs inside the current module/classpath context, so types
+not on the module's classpath return `null` and are dropped.
+`isAccessible` can be layered in once `enclosingType` resolution is wired.
 
 If validation yields too few items, completion may validate another page of candidates.
 
@@ -718,6 +732,15 @@ The index may be stale if a SNAPSHOT JAR changes without size/mtime changes.
 Compilation remains correct because javac uses the actual JAR.
 Completion may miss new classes until the shard is rebuilt.
 
+A further gap: even when a SNAPSHOT JAR does change size or mtime, the server has no mechanism to
+detect this between Maven sync runs and rebuild the shard autonomously.
+The current path is: re-run `mvn process-test-classes` → `lathe:sync` detects the mtime/size change →
+rebuilds the shard → writes the updated path into `workspace.json` → server reloads on next file-watcher
+tick.
+Server-side autonomous rebuild would require `ClassFileTypeScanner` to move to `lathe-core` and a
+`WorkspaceWatcher` extension to monitor JAR mtimes.
+This is deferred.
+
 ### Missing Shard
 
 If a static shard is missing, the server continues without candidates from that origin.
@@ -747,29 +770,41 @@ Static shards for resolved dependencies may still be valid, but the server shoul
 Implement directory and JAR scanning with a streaming classfile access-flags reader.
 Add unit tests for public, package-private, nested, module-info, package-info, and invalid class files.
 
-### Slice 2 — Reactor Index and Unvalidated Completion
+**Status: done.**
+
+### Slice 2 — Static Dependency Shards + Server Load + `getTypeElement` Validation
+
+The dependency shard infrastructure in `lathe-maven-plugin` is nearly complete after Slice 1.
+This slice finishes the end-to-end dependency pipeline before the reactor slice, because it unblocks
+testing the full type-completion path with real JAR types:
+
+1. Fix `ClassAccess.kind()` to return `TypeKind.CLASS` for plain classes (was `UNKNOWN`).
+2. Add `typeIndex` field to `DependencyData` and `DependencySource`; update `toData()` and factory
+   methods.
+3. Make `DependencyTypeIndexSync.indexPath()` public.
+4. In `SyncMojo`, build a `jar → typeIndex path` map from `externalArtifacts` after calling
+   `DependencyTypeIndexSync.index()`; enrich each `DependencySource` with its path via
+   `withTypeIndex()` before writing the manifest.
+5. In `WorkspaceManifest.load()`, collect `typeIndex` paths from `DependencyData`; expose via
+   `typeIndexShardPaths()`.
+6. Add `WorkspaceTypeIndex` in the `analysis` package with `build(List<Path>)`, `empty()`, and
+   `search(prefix, limit)` backed by a `NavigableMap<String, List<TypeIndexEntry>>`.
+7. Thread `WorkspaceTypeIndex` through `ModuleWorkspace` → `ModuleWorker` → `CompilationContext` →
+   `CompletionEngine`.
+8. In `CompletionEngine.completeTypeReference` when `receiverText == null`: query the index for
+   prefix matches, filter through `elements.getTypeElement(fqn) != null`, and return items with
+   `label = simpleName` and `detail = qualifiedName`.
+9. In `WorkspaceSession.initialize()`, build `WorkspaceTypeIndex` from
+   `manifest.typeIndexShardPaths()` and pass to `ModuleWorkspace.scan()`.
+
+### Slice 3 — Reactor Index and Unvalidated Completion
 
 Scan reactor `.lathe/` output directories on server startup/reload.
-Build the first in-memory `WorkspaceTypeIndex`.
-Wire simple-name prefix completion to return reactor candidates without import edits.
+Merge reactor candidates into `WorkspaceTypeIndex` alongside static dependency candidates.
 
-### Slice 3 — Static Dependency Shards in Maven Plugin
+### Slice 4 — `isAccessible` Validation and Timing
 
-During `lathe:sync`, build or reuse dependency shards based on schema/path/size/mtime.
-Write shard paths into `workspace.json`.
-
-### Slice 4 — Server Load and Dependency Merge
-
-Load static shards from the manifest.
-Merge dependency candidates with reactor candidates in the immutable `WorkspaceTypeIndex`.
-
-### Slice 5 — Javac Validation and Timing
-
-Validate top candidates with cached analysis:
-
-- `Elements.getTypeElement`
-- `Elements.isAccessible`
-
+Extend validation to include `Elements.isAccessible` once `enclosingType` resolution is wired.
 Cap validation work, add structured timing, and keep fallback behavior permissive.
 
 ### Slice 6 — Save-Time Reactor Shard Refresh

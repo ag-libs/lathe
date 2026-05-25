@@ -27,7 +27,7 @@ record ClassAccess(int flags) {
       return TypeKind.INTERFACE;
     }
 
-    return TypeKind.UNKNOWN;
+    return TypeKind.CLASS;
   }
 
   private boolean hasFlag(final int flag) {

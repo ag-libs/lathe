@@ -43,7 +43,7 @@ public final class DependencyTypeIndexSync {
     }
   }
 
-  static Path indexPath(final Artifact artifact) {
+  public static Path indexPath(final Artifact artifact) {
     final Path versionDir =
         LatheLayout.userCacheRoot()
             .resolve(LatheLayout.TYPE_INDEX_DIR)

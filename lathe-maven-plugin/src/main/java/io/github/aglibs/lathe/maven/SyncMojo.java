@@ -9,6 +9,8 @@ import io.github.aglibs.lathe.maven.jdk.JdkSourceSync;
 import io.github.aglibs.lathe.maven.typeindex.DependencyTypeIndexSync;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import javax.inject.Inject;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
@@ -64,6 +66,21 @@ public final class SyncMojo extends AbstractMojo {
               externalArtifacts, ReactorProjects.artifactClasspaths(projects), remoteRepos);
       DependencySourceSync.extract(DependencySource.present(dependencySources), getLog());
       DependencyTypeIndexSync.index(externalArtifacts.values(), getLog());
+      final Map<Path, Path> jarToTypeIndex =
+          externalArtifacts.values().stream()
+              .collect(
+                  Collectors.toMap(
+                      a -> a.getFile().toPath(),
+                      DependencyTypeIndexSync::indexPath,
+                      (first, ignored) -> first));
+      final List<DependencySource> enrichedSources =
+          dependencySources.stream()
+              .map(
+                  s -> {
+                    final var idx = s.jar() != null ? jarToTypeIndex.get(s.jar()) : null;
+                    return idx != null ? s.withTypeIndex(idx) : s;
+                  })
+              .toList();
       final var jdkSource = JdkSourceResolver.resolve();
       JdkSourceSync.extract(jdkSource, getLog());
       new ServerInstaller(repositorySystem, session.getRepositorySession(), remoteRepos, getLog())
@@ -72,7 +89,7 @@ public final class SyncMojo extends AbstractMojo {
         getLog().debug("[sync] partial reactor (-pl) — skipping workspace.json write");
       } else {
         new WorkspaceManifestWriter(getLog())
-            .write(workspaceRoot, dependencySources, jdkSource, PluginProps.version());
+            .write(workspaceRoot, enrichedSources, jdkSource, PluginProps.version());
       }
     } catch (final SyncException e) {
       throw new MojoExecutionException(e.getMessage(), e);

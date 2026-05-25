@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.analysis.completion;
 
 import io.github.aglibs.lathe.server.analysis.SourceCompiler;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
+import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import java.util.List;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.CompletionItem;
@@ -12,10 +13,15 @@ public final class CompletionEngine {
 
   private final SentinelParser sentinelParser;
   private final SourceCompiler compiler;
+  private final WorkspaceTypeIndex typeIndex;
 
-  public CompletionEngine(final SourceParser parser, final SourceCompiler compiler) {
+  public CompletionEngine(
+      final SourceParser parser,
+      final SourceCompiler compiler,
+      final WorkspaceTypeIndex typeIndex) {
     this.sentinelParser = new SentinelParser(parser);
     this.compiler = compiler;
+    this.typeIndex = typeIndex;
   }
 
   private static int skipBackWhitespace(final String content, final int dotPos) {
@@ -95,9 +101,18 @@ public final class CompletionEngine {
         null);
   }
 
-  private static CompletionOutcome completeTypeReference(
+  private CompletionOutcome completeTypeReference(
       final ParsedSentinel parsed, final SentinelResult injected, final CompletionRequest req) {
-    if (parsed.receiverText() == null || req.cached() == null || req.cached().analysis() == null) {
+    if (parsed.receiverText() != null) {
+      return completeNestedTypes(parsed, injected, req);
+    }
+
+    return completeSimpleNameTypeReference(injected, req);
+  }
+
+  private static CompletionOutcome completeNestedTypes(
+      final ParsedSentinel parsed, final SentinelResult injected, final CompletionRequest req) {
+    if (req.cached() == null || req.cached().analysis() == null) {
       return CompletionOutcome.of(List.of());
     }
 
@@ -109,6 +124,31 @@ public final class CompletionEngine {
     return new CompletionOutcome(
         new ProposalGenerator(req.cached().analysis()).proposeNestedTypes(outer, injected.prefix()),
         null);
+  }
+
+  private CompletionOutcome completeSimpleNameTypeReference(
+      final SentinelResult injected, final CompletionRequest req) {
+    if (typeIndex == null || injected.prefix().isEmpty()) {
+      return CompletionOutcome.of(List.of());
+    }
+
+    final var candidates = typeIndex.search(injected.prefix(), 200);
+    final var analysis = req.cached() != null ? req.cached().analysis() : null;
+    final var items =
+        candidates.stream()
+            .filter(
+                e ->
+                    analysis == null
+                        || analysis.elements().getTypeElement(e.qualifiedName()) != null)
+            .limit(50)
+            .map(
+                e -> {
+                  final var item = new CompletionItem(e.simpleName());
+                  item.setDetail(e.qualifiedName());
+                  return item;
+                })
+            .toList();
+    return CompletionOutcome.of(items);
   }
 
   private CompletionOutcome completeMemberAccess(

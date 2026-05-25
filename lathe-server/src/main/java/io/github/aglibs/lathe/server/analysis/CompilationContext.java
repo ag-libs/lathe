@@ -28,10 +28,10 @@ public final class CompilationContext implements AutoCloseable {
   private final Map<String, CachedAnalysis> cache = new HashMap<>();
   private final SourceParser parser;
 
-  public CompilationContext(final SourceCompiler compiler) {
+  public CompilationContext(final SourceCompiler compiler, final WorkspaceTypeIndex typeIndex) {
     this.compiler = compiler;
     this.parser = new SourceParser();
-    this.completionEngine = new CompletionEngine(parser, compiler);
+    this.completionEngine = new CompletionEngine(parser, compiler, typeIndex);
     this.definitionLocator = new DefinitionLocator(parser);
     this.javadocLocator = new JavadocLocator(parser);
   }

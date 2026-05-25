@@ -42,7 +42,7 @@ class ClassFileTypeScannerTest {
             "com.example.Broken",
             "com.example.VersionedOnly",
             "com.example.Meta");
-    assertThat(byQualifiedName.get("com.example.PublicType").kind()).isEqualTo(TypeKind.UNKNOWN);
+    assertThat(byQualifiedName.get("com.example.PublicType").kind()).isEqualTo(TypeKind.CLASS);
     assertThat(byQualifiedName.get("com.example.PublicInterface").kind())
         .isEqualTo(TypeKind.INTERFACE);
     assertThat(byQualifiedName.get("com.example.PublicEnum").kind()).isEqualTo(TypeKind.ENUM);

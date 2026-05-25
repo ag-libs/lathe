@@ -4,7 +4,12 @@ import io.github.aglibs.validcheck.ValidCheck;
 import java.util.List;
 
 public record DependencyData(
-    String gav, String jar, SourceStatus status, String dir, List<String> classpath) {
+    String gav,
+    String jar,
+    SourceStatus status,
+    String dir,
+    List<String> classpath,
+    String typeIndex) {
 
   public DependencyData {
     ValidCheck.check()

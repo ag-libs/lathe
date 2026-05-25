@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.module;
 import io.github.aglibs.lathe.server.analysis.CompilationContext;
 import io.github.aglibs.lathe.server.analysis.FeatureRequest;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
+import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.util.List;
 import java.util.Optional;
@@ -27,15 +28,15 @@ public final class ModuleWorker {
   private boolean closed;
   private CompletableFuture<Void> closeFuture;
 
-  static ModuleWorker module(final ModuleConfig config) {
+  static ModuleWorker module(final ModuleConfig config, final WorkspaceTypeIndex typeIndex) {
     return new ModuleWorker(
         "lathe-module-" + config.moduleDir().getFileName(),
-        () -> new CompilationContext(new ModuleCompiler(config)));
+        () -> new CompilationContext(new ModuleCompiler(config), typeIndex));
   }
 
   static ModuleWorker external(final WorkspaceManifest manifest) {
     return new ModuleWorker(
-        "lathe-external", () -> new CompilationContext(new ExternalCompiler(manifest)));
+        "lathe-external", () -> new CompilationContext(new ExternalCompiler(manifest), null));
   }
 
   ModuleWorker(final String name, final Supplier<CompilationContext> contextFactory) {

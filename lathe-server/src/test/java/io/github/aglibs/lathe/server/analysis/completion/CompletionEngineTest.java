@@ -3,10 +3,19 @@ package io.github.aglibs.lathe.server.analysis.completion;
 import static io.github.aglibs.lathe.server.analysis.completion.CursorFixture.cursor;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.core.Json;
+import io.github.aglibs.lathe.core.typeindex.DependencyTypeIndexOrigin;
+import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
+import io.github.aglibs.lathe.core.typeindex.TypeIndexFile;
+import io.github.aglibs.lathe.core.typeindex.TypeIndexOrigin;
+import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import io.github.aglibs.lathe.server.analysis.CachedAnalysis;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
 import io.github.aglibs.lathe.server.analysis.TempSourceCompiler;
+import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.List;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.Position;
@@ -14,8 +23,11 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class CompletionEngineTest {
+
+  @TempDir private Path tmp;
 
   private static SourceParser sourceParser;
   private static TempSourceCompiler compiler;
@@ -25,7 +37,7 @@ class CompletionEngineTest {
   static void setup() {
     sourceParser = new SourceParser();
     compiler = new TempSourceCompiler();
-    engine = new CompletionEngine(sourceParser, compiler);
+    engine = new CompletionEngine(sourceParser, compiler, WorkspaceTypeIndex.empty());
   }
 
   @AfterAll
@@ -1126,5 +1138,46 @@ class CompletionEngineTest {
     assertThat(items)
         .extracting(CompletionItem::getLabel)
         .anyMatch(l -> l.startsWith("toLowerCase"));
+  }
+
+  @Test
+  void typeReference_simpleNameFromTypeIndex_returnsIndexedType() throws IOException {
+    final var shard =
+        tmp.resolve("shard.json");
+    Json.write(
+        new TypeIndexFile(
+            "v1",
+            TypeIndexOrigin.dependency(
+                new DependencyTypeIndexOrigin("com.example:lib:1.0", "/lib.jar", 0L, 0L)),
+            List.of(
+                new TypeIndexEntry("FooService", "com.example.FooService", "com.example", TypeKind.CLASS))),
+        shard);
+
+    final var indexedEngine =
+        new CompletionEngine(sourceParser, compiler, WorkspaceTypeIndex.build(List.of(shard)));
+
+    final var c =
+        cursor(
+            """
+            class Test {
+                void m(FooServ§ param) {}
+            }""");
+    final var items =
+        indexedEngine
+            .complete(
+                new CompletionRequest(
+                    "file:///Test.java",
+                    c.content(),
+                    new Position(c.lspLine(), c.lspChar()),
+                    null,
+                    null))
+            .items();
+
+    assertThat(items)
+        .extracting(CompletionItem::getLabel)
+        .contains("FooService");
+    assertThat(items)
+        .extracting(CompletionItem::getDetail)
+        .contains("com.example.FooService");
   }
 }

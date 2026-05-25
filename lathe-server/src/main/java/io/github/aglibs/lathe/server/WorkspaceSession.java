@@ -6,6 +6,7 @@ import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.analysis.FeatureRequest;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
 import io.github.aglibs.lathe.server.analysis.TokenScanner;
+import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.server.module.CompileRequest;
 import io.github.aglibs.lathe.server.module.CompileResult;
 import io.github.aglibs.lathe.server.module.ModuleConfig;
@@ -49,7 +50,8 @@ final class WorkspaceSession {
   void initialize(final Path root) {
     this.workspaceRoot = root;
     manifest = WorkspaceManifest.load(root);
-    workspace = ModuleWorkspace.scan(root, manifest);
+    final var typeIndex = WorkspaceTypeIndex.build(manifest.typeIndexShardPaths());
+    workspace = ModuleWorkspace.scan(root, manifest, typeIndex);
     watcher = new WorkspaceWatcher(root);
     worker.scheduleAtFixedRate(2_000L, this::checkForChanges);
   }
@@ -202,7 +204,8 @@ final class WorkspaceSession {
   private void reload() {
     LOG.info(() -> "[reload] workspace changed, reloading");
     final var newManifest = WorkspaceManifest.load(workspaceRoot);
-    final var newWorkspace = ModuleWorkspace.scan(workspaceRoot, newManifest);
+    final var newTypeIndex = WorkspaceTypeIndex.build(newManifest.typeIndexShardPaths());
+    final var newWorkspace = ModuleWorkspace.scan(workspaceRoot, newManifest, newTypeIndex);
     final var old = workspace;
     workspace = newWorkspace;
     manifest = newManifest;

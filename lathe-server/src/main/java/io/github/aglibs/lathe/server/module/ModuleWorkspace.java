@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server.module;
 
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -22,21 +23,29 @@ public final class ModuleWorkspace implements AutoCloseable {
   private final List<ModuleConfig> modules;
   private final Map<String, ModuleWorker> workers = new HashMap<>();
   private final ModuleWorker externalWorker;
+  private final WorkspaceTypeIndex typeIndex;
 
-  private ModuleWorkspace(final List<ModuleConfig> modules, final WorkspaceManifest manifest) {
+  private ModuleWorkspace(
+      final List<ModuleConfig> modules,
+      final WorkspaceManifest manifest,
+      final WorkspaceTypeIndex typeIndex) {
     this.modules = modules;
+    this.typeIndex = typeIndex;
     this.externalWorker = ModuleWorker.external(manifest);
   }
 
   public static ModuleWorkspace empty() {
-    return new ModuleWorkspace(List.of(), WorkspaceManifest.empty());
+    return new ModuleWorkspace(List.of(), WorkspaceManifest.empty(), WorkspaceTypeIndex.empty());
   }
 
-  public static ModuleWorkspace scan(final Path workspaceRoot, final WorkspaceManifest manifest) {
+  public static ModuleWorkspace scan(
+      final Path workspaceRoot,
+      final WorkspaceManifest manifest,
+      final WorkspaceTypeIndex typeIndex) {
     final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
     if (!Files.isDirectory(latheDir)) {
       LOG.warning(() -> "[workspace] .lathe/ not found at " + workspaceRoot);
-      return new ModuleWorkspace(List.of(), manifest);
+      return new ModuleWorkspace(List.of(), manifest, typeIndex);
     }
 
     final var modules = new ArrayList<ModuleConfig>();
@@ -60,7 +69,7 @@ public final class ModuleWorkspace implements AutoCloseable {
 
     LOG.info(
         () -> "[workspace] loaded %d module(s) from %s".formatted(modules.size(), workspaceRoot));
-    return new ModuleWorkspace(List.copyOf(modules), manifest);
+    return new ModuleWorkspace(List.copyOf(modules), manifest, typeIndex);
   }
 
   public Optional<ModuleConfig> moduleFor(final Path filePath) {
@@ -75,7 +84,7 @@ public final class ModuleWorkspace implements AutoCloseable {
 
   public ModuleWorker workerFor(final ModuleConfig config) {
     return workers.computeIfAbsent(
-        config.moduleDir().toString(), key -> ModuleWorker.module(config));
+        config.moduleDir().toString(), key -> ModuleWorker.module(config, typeIndex));
   }
 
   public ModuleWorker externalWorker() {

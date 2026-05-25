@@ -33,8 +33,8 @@ public final class WorkspaceManifest {
   private final Map<Path, Path> sourceDirToJar;
   private final String jdkVersion;
   private final Path jdkSourceDir;
-
   private final Map<Path, List<Path>> sourceDirToClasspath;
+  private final List<Path> typeIndexShardPaths;
 
   private WorkspaceManifest(
       final Map<Path, String> jarToGav,
@@ -42,17 +42,19 @@ public final class WorkspaceManifest {
       final Map<Path, Path> sourceDirToJar,
       final String jdkVersion,
       final Path jdkSourceDir,
-      final Map<Path, List<Path>> sourceDirToClasspath) {
+      final Map<Path, List<Path>> sourceDirToClasspath,
+      final List<Path> typeIndexShardPaths) {
     this.jarToGav = jarToGav;
     this.jarToSourceDir = jarToSourceDir;
     this.sourceDirToJar = sourceDirToJar;
     this.jdkVersion = jdkVersion;
     this.jdkSourceDir = jdkSourceDir;
     this.sourceDirToClasspath = sourceDirToClasspath;
+    this.typeIndexShardPaths = typeIndexShardPaths;
   }
 
   public static WorkspaceManifest empty() {
-    return new WorkspaceManifest(Map.of(), Map.of(), Map.of(), null, null, Map.of());
+    return new WorkspaceManifest(Map.of(), Map.of(), Map.of(), null, null, Map.of(), List.of());
   }
 
   public static WorkspaceManifest load(final Path workspaceRoot) {
@@ -93,6 +95,12 @@ public final class WorkspaceManifest {
               .collect(
                   Collectors.toUnmodifiableMap(
                       e -> Path.of(e.dir()), e -> e.classpath().stream().map(Path::of).toList()));
+      final var typeIndexShardPaths =
+          entries.stream()
+              .map(DependencyData::typeIndex)
+              .filter(p -> p != null && !p.isBlank())
+              .map(Path::of)
+              .toList();
       final var jdk = data.jdk();
       return new WorkspaceManifest(
           jarToGav,
@@ -100,7 +108,8 @@ public final class WorkspaceManifest {
           sourceDirToJar,
           jdk != null ? jdk.version() : null,
           jdk != null ? jdk.sourceDir() : null,
-          sourceDirToClasspath);
+          sourceDirToClasspath,
+          typeIndexShardPaths);
     } catch (final Exception e) {
       LOG.log(Level.WARNING, e, () -> "[manifest] failed to load workspace manifest");
       return empty();
@@ -130,6 +139,10 @@ public final class WorkspaceManifest {
 
   public boolean containsFile(final Path file) {
     return externalSourceRootForFile(file).isPresent();
+  }
+
+  public List<Path> typeIndexShardPaths() {
+    return typeIndexShardPaths;
   }
 
   public List<Path> externalSourceDirs() {

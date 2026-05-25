@@ -109,7 +109,7 @@ class CompilationContextTest {
     final var pos =
         SourceLocator.offsetToPosition(currentContent, currentContent.indexOf("Integer"));
 
-    try (var ctx = new CompilationContext(new TempSourceCompiler())) {
+    try (var ctx = new CompilationContext(new TempSourceCompiler(), WorkspaceTypeIndex.empty())) {
       ctx.compile(uri, cachedContent, 1, CompileMode.OPEN);
 
       assertThat(ctx.hover(new FeatureRequest(uri, currentContent, pos, List.of(), manifest)))
