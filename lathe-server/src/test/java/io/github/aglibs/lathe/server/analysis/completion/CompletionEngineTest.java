@@ -1142,15 +1142,15 @@ class CompletionEngineTest {
 
   @Test
   void typeReference_simpleNameFromTypeIndex_returnsIndexedType() throws IOException {
-    final var shard =
-        tmp.resolve("shard.json");
+    final var shard = tmp.resolve("shard.json");
     Json.write(
         new TypeIndexFile(
             "v1",
             TypeIndexOrigin.dependency(
                 new DependencyTypeIndexOrigin("com.example:lib:1.0", "/lib.jar", 0L, 0L)),
             List.of(
-                new TypeIndexEntry("FooService", "com.example.FooService", "com.example", TypeKind.CLASS))),
+                new TypeIndexEntry(
+                    "FooService", "com.example.FooService", "com.example", TypeKind.CLASS))),
         shard);
 
     final var indexedEngine =
@@ -1173,11 +1173,7 @@ class CompletionEngineTest {
                     null))
             .items();
 
-    assertThat(items)
-        .extracting(CompletionItem::getLabel)
-        .contains("FooService");
-    assertThat(items)
-        .extracting(CompletionItem::getDetail)
-        .contains("com.example.FooService");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("FooService");
+    assertThat(items).extracting(CompletionItem::getDetail).contains("com.example.FooService");
   }
 }
