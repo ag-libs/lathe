@@ -31,83 +31,78 @@ final class TypeResolver {
 
   private TypeResolver() {}
 
-  static TypeMirror resolveReceiverType(
-      final ParsedSentinel sentinel,
-      final int cursorLine,
-      final int dotOffset,
-      final FileAnalysis snapshot) {
+  static ResolvedReceiver resolveReceiver(
+      final ParsedSentinel sentinel, final int cursorLine, final FileAnalysis snapshot) {
+
+    // Primary: AST-based resolution using the position from the injected parse
+    if (sentinel.receiverEndOffset() >= 0) {
+      final var resolved = resolveByPosition(sentinel.receiverEndOffset(), snapshot);
+      if (resolved != null) {
+        return resolved;
+      }
+    }
+
+    // Fallback: text-based resolution for stale caches and trivial cases
     final var text = sentinel.receiverText();
     if (text == null) {
       return null;
     }
 
     if (text.startsWith("\"")) {
-      return snapshot.elements().getTypeElement("java.lang.String").asType();
+      final var el = snapshot.elements().getTypeElement("java.lang.String");
+      return el != null ? new ResolvedReceiver(el.asType(), false) : null;
     }
 
     if ("this".equals(text)) {
       final var classEl = findClassElement(sentinel.enclosingClass(), snapshot);
-      return classEl != null ? classEl.asType() : null;
+      return classEl != null ? new ResolvedReceiver(classEl.asType(), false) : null;
     }
 
     if ("super".equals(text)) {
       final var classEl = findClassElement(sentinel.enclosingClass(), snapshot);
-      return classEl != null ? classEl.getSuperclass() : null;
+      return classEl != null ? new ResolvedReceiver(classEl.getSuperclass(), false) : null;
     }
 
-    // Complex expressions (method calls, casts, array access) — resolve by source position
+    // Complex expressions — position-based already tried above, cannot do better
     if (text.indexOf('(') >= 0 || text.indexOf('[') >= 0 || text.indexOf(' ') >= 0) {
-      return resolveByPosition(dotOffset, snapshot);
+      return null;
     }
 
-    // Dotted name — FQN first (e.g. java.util.Collections), then position fallback
-    // for field chains (System.out, this.name) that are not type names
+    // Dotted name — FQN type lookup (type reference = static access)
     if (text.indexOf('.') >= 0) {
       final var el = snapshot.elements().getTypeElement(text);
-      if (el != null) {
-        return el.asType();
-      }
-
-      return resolveByPosition(dotOffset, snapshot);
+      return el != null ? new ResolvedReceiver(el.asType(), true) : null;
     }
 
-    // Capitalized simple name — type reference (e.g. System, ArrayList)
+    // Capitalized simple name — type reference (static access)
     if (Character.isUpperCase(text.charAt(0))) {
       final var el = snapshot.elements().getTypeElement(text);
       if (el != null) {
-        return el.asType();
-      }
-
-      final var fqn = resolveViaImports(text, snapshot);
-      if (fqn != null) {
-        final var importedEl = snapshot.elements().getTypeElement(fqn);
-        if (importedEl != null) {
-          return importedEl.asType();
-        }
+        return new ResolvedReceiver(el.asType(), true);
       }
 
       final var langEl = snapshot.elements().getTypeElement("java.lang." + text);
       if (langEl != null) {
-        return langEl.asType();
+        return new ResolvedReceiver(langEl.asType(), true);
       }
 
-      return resolveByPosition(dotOffset, snapshot);
+      return null;
     }
 
-    // Simple name — local variable, parameter, or field
+    // Simple name — local variable, parameter, or field (instance access)
     final var localType =
         scanForLocalDeclaration(
             text, sentinel.enclosingClass(), sentinel.enclosingMethod(), cursorLine, snapshot);
     if (localType != null) {
-      return localType;
+      return new ResolvedReceiver(localType, false);
     }
 
     final var fieldType = findFieldType(text, sentinel.enclosingClass(), snapshot);
     if (fieldType != null) {
-      return fieldType;
+      return new ResolvedReceiver(fieldType, false);
     }
 
-    return resolveByPosition(dotOffset, snapshot);
+    return null;
   }
 
   static Scope resolveScope(final FileAnalysis snapshot, final int cursorOffset) {
@@ -131,14 +126,15 @@ final class TypeResolver {
     }
   }
 
-  private static TypeMirror resolveByPosition(final int dotOffset, final FileAnalysis snapshot) {
+  private static ResolvedReceiver resolveByPosition(
+      final int dotOffset, final FileAnalysis snapshot) {
     if (dotOffset < 0 || snapshot.tree() == null) {
       return null;
     }
 
     final var sourcePositions = snapshot.trees().getSourcePositions();
     final var cu = snapshot.tree();
-    final var result = new AtomicReference<TypeMirror>();
+    final var result = new AtomicReference<ResolvedReceiver>();
     new TreePathScanner<Void, Void>() {
       @Override
       public Void visitMethodInvocation(final MethodInvocationTree node, final Void unused) {
@@ -188,7 +184,13 @@ final class TypeResolver {
         if (sourcePositions.getEndPosition(cu, node) == dotOffset) {
           final var type = snapshot.trees().getTypeMirror(getCurrentPath());
           if (type != null && type.getKind() == TypeKind.DECLARED) {
-            result.compareAndSet(null, type);
+            final var element = snapshot.trees().getElement(getCurrentPath());
+            final boolean isStatic =
+                element instanceof TypeElement
+                    && !(node instanceof final IdentifierTree id
+                        && (id.getName().contentEquals("this")
+                            || id.getName().contentEquals("super")));
+            result.compareAndSet(null, new ResolvedReceiver(type, isStatic));
           }
         }
       }
@@ -299,19 +301,5 @@ final class TypeResolver {
         .findFirst()
         .map(Element::asType)
         .orElse(null);
-  }
-
-  private static String resolveViaImports(final String simpleName, final FileAnalysis snapshot) {
-    for (final var imp : snapshot.tree().getImports()) {
-      if (imp.isStatic()) {
-        continue;
-      }
-
-      final var fqn = imp.getQualifiedIdentifier().toString();
-      if (fqn.endsWith("." + simpleName)) {
-        return fqn;
-      }
-    }
-    return null;
   }
 }

@@ -1181,9 +1181,7 @@ class CompletionEngineTest {
                     assertThat(getStatus()).isEqual§
                 }
             }""");
-    assertThat(items)
-        .extracting(CompletionItem::getLabel)
-        .anyMatch(l -> l.startsWith("isEqualTo"));
+    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("isEqualTo"));
     // StrAssert-only members must not appear — confirms the right overload was picked
     assertThat(items).noneMatch(i -> i.getLabel().startsWith("contains"));
   }
@@ -1209,9 +1207,7 @@ class CompletionEngineTest {
                     assertThat(readEntity(String.class)).isEqual§
                 }
             }""");
-    assertThat(items)
-        .extracting(CompletionItem::getLabel)
-        .anyMatch(l -> l.startsWith("isEqualTo"));
+    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("isEqualTo"));
   }
 
   @Test
@@ -1235,9 +1231,7 @@ class CompletionEngineTest {
                     new Connection(config.ur§);
                 }
             }""");
-    assertThat(items)
-        .extracting(CompletionItem::getLabel)
-        .anyMatch(l -> l.startsWith("url"));
+    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("url"));
   }
 
   @Test
@@ -1260,9 +1254,7 @@ class CompletionEngineTest {
                     create(settingsBuilder.buil§);
                 }
             }""");
-    assertThat(items)
-        .extracting(CompletionItem::getLabel)
-        .anyMatch(l -> l.startsWith("build"));
+    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("build"));
   }
 
   // --- type index: helpers ---

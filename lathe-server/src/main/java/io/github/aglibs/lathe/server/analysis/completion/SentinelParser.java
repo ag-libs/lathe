@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
 import com.sun.source.tree.*;
+import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
@@ -41,7 +42,16 @@ final class SentinelParser {
       return ParsedSentinel.invalid(injected.prefix(), injected.receiverText(), version);
     }
 
-    final long startPos = trees.getSourcePositions().getEndPosition(cu, sentinelPath.getLeaf());
+    final SourcePositions sourcePositions = trees.getSourcePositions();
+    final int receiverEndOffset;
+    if (sentinelPath.getLeaf() instanceof final MemberSelectTree memberSelect) {
+      final long pos = sourcePositions.getEndPosition(cu, memberSelect.getExpression());
+      receiverEndOffset = pos >= 0 ? (int) pos : -1;
+    } else {
+      receiverEndOffset = -1;
+    }
+
+    final long startPos = sourcePositions.getEndPosition(cu, sentinelPath.getLeaf());
     final long javacLine = cu.getLineMap().getLineNumber(startPos);
     if (javacLine - 1 != expectedLspLine) {
       LOG.fine(
@@ -57,6 +67,7 @@ final class SentinelParser {
           ParsedSentinel.valid(
               injected,
               importTree.isStatic() ? SentinelContext.STATIC_IMPORT : SentinelContext.IMPORT,
+              receiverEndOffset,
               version);
       logValid(parsed);
       return parsed;
@@ -80,7 +91,9 @@ final class SentinelParser {
     }
 
     if (enclosingClass == null && cu.getModule() != null) {
-      final var parsed = ParsedSentinel.valid(injected, SentinelContext.MODULE_DIRECTIVE, version);
+      final var parsed =
+          ParsedSentinel.valid(
+              injected, SentinelContext.MODULE_DIRECTIVE, receiverEndOffset, version);
       logValid(parsed);
       return parsed;
     }
@@ -89,6 +102,7 @@ final class SentinelParser {
         ParsedSentinel.valid(
             injected,
             cls.context(),
+            receiverEndOffset,
             enclosingClass,
             enclosingMethod,
             cls.argIndex(),

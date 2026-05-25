@@ -30,15 +30,6 @@ public final class CompletionEngine {
     this.typeIndex = typeIndex;
   }
 
-  private static int skipBackWhitespace(final String content, final int dotPos) {
-    int i = dotPos - 1;
-    while (i >= 0 && Character.isWhitespace(content.charAt(i))) {
-      i--;
-    }
-
-    return i + 1;
-  }
-
   public CompletionOutcome complete(final CompletionRequest req) {
     final var injected = new SentinelInjector(req.content()).inject(req.cursorOffset());
     LOG.fine(
@@ -202,17 +193,14 @@ public final class CompletionEngine {
 
   private CompletionOutcome completeMemberAccess(
       final ParsedSentinel parsed, final SentinelResult injected, final CompletionRequest req) {
-    final int rawDot = injected.receiverText() != null ? injected.tokenStart() - 1 : -1;
-    final int dotOffset = rawDot > 0 ? skipBackWhitespace(req.content(), rawDot) : rawDot;
     final var initialSnapshot = req.cached() != null ? req.cached().analysis() : null;
-    final var initialType =
+    final var initialResolved =
         initialSnapshot != null
-            ? TypeResolver.resolveReceiverType(
-                parsed, req.pos().getLine(), dotOffset, initialSnapshot)
+            ? TypeResolver.resolveReceiver(parsed, req.pos().getLine(), initialSnapshot)
             : null;
 
     if (parsed.sentinelContext() == SentinelContext.STATIC_IMPORT
-        && initialType == null
+        && initialResolved == null
         && initialSnapshot != null
         && parsed.receiverText() != null) {
       return new CompletionOutcome(
@@ -222,38 +210,35 @@ public final class CompletionEngine {
     }
 
     final var freshAnalysis =
-        (initialType == null && compiler != null && !req.noDiff())
+        (initialResolved == null && compiler != null && !req.noDiff())
             ? compiler.reattribute(req.uri(), req.content())
             : null;
 
     final var snapshot = freshAnalysis != null ? freshAnalysis : initialSnapshot;
-    final var receiverType =
+    final var resolved =
         freshAnalysis != null
-            ? TypeResolver.resolveReceiverType(
-                parsed, req.pos().getLine(), dotOffset, freshAnalysis)
-            : initialType;
+            ? TypeResolver.resolveReceiver(parsed, req.pos().getLine(), freshAnalysis)
+            : initialResolved;
 
     LOG.fine(
         () ->
-            "[completion] resolve receiver=|%s| type=%s reattributed=%s"
-                .formatted(parsed.receiverText(), receiverType, freshAnalysis != null));
+            "[completion] resolve receiver=|%s| type=%s static=%s reattributed=%s"
+                .formatted(
+                    parsed.receiverText(),
+                    resolved != null ? resolved.type() : null,
+                    resolved != null ? resolved.staticAccess() : null,
+                    freshAnalysis != null));
 
-    if (receiverType == null) {
+    if (resolved == null) {
       return CompletionOutcome.of(List.of());
     }
 
-    final var text = parsed.receiverText();
     final boolean isStaticAccess =
-        parsed.sentinelContext() == SentinelContext.STATIC_IMPORT
-            || (text != null
-                && text.indexOf('(') < 0
-                && (text.indexOf('.') < 0
-                    ? Character.isUpperCase(text.charAt(0))
-                    : snapshot.elements().getTypeElement(text) != null));
+        parsed.sentinelContext() == SentinelContext.STATIC_IMPORT || resolved.staticAccess();
     final var scope = TypeResolver.resolveScope(snapshot, req.cursorOffset());
     final var items =
         new ProposalGenerator(snapshot)
-            .proposeMemberAccess(receiverType, injected.prefix(), isStaticAccess, scope);
+            .proposeMemberAccess(resolved.type(), injected.prefix(), isStaticAccess, scope);
     LOG.fine(
         () ->
             "[completion] proposals count=%d labels=%s"
