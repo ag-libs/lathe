@@ -35,6 +35,13 @@ Architecture is documented in [lathe-server-data-flow-recipe.md](lathe-server-da
 - **`compileWith` simplification** — `LatheTextDocumentService.compileWith` is a small dispatcher with focused helper methods for each path.
 - **Shim correctness** — lock cleanup moved to `finally`; silent javac failure surfaces as `IOException`; `LatheServer.main` acquires stdout before any logging can write to it.
 - **IT verify module** — dead `verify.sh` replaced by a `verify/` JUnit submodule that runs as part of the normal invoker lifecycle; `@property@` tokens pin the plugin version.
+- **Completion engine** — `SentinelInjector`, `SentinelParser`, `CompletionEngine`, `ProposalGenerator`,
+  and `TypeResolver` are implemented and tested.
+  Handles member access, simple name, argument position, type reference, import, static import,
+  constructor call, lambda body, and variable declaration contexts.
+  Type index is built from JDK and dependency JARs during sync, filtered by package visibility.
+  Keyword completion and argument-position type ranking are in place.
+  See [completion_engine_implementation_guide.md](completion_engine_implementation_guide.md).
 - **Maven-managed server distribution** — `lathe:sync` resolves `lathe-server` and all transitive runtime deps via Aether,
   renders `lathe-launcher.sh` with colon-separated `--module-path` pointing at `.m2` JAR paths,
   writes it to `~/.cache/lathe/servers/<version>/`,
@@ -50,30 +57,25 @@ Architecture is documented in [lathe-server-data-flow-recipe.md](lathe-server-da
 
 ## Near-Term
 
-**Completion (member access)**
+**Completion presentation (UX)**
 
-Design: [completion_engine_implementation_guide.md](completion_engine_implementation_guide.md)
+Design: [lathe-completion-presentation.md](lathe-completion-presentation.md)
+Current state and gap analysis: [completion-ux-findings.md](completion-ux-findings.md)
+Specific gaps from probe runs: [completion-gaps.md](completion-gaps.md)
 
-`CompletionEngine` is a diagnostic stub returning empty results.
-Implementation proceeds in four layers, each independently testable:
+The completion engine is functional. The next work is making item presentation IDE-grade.
+Gaps in priority order:
 
-1. **`SentinelInjector`** — backward/forward scan + injection, pure string manipulation with no javac.
-   Extracts prefix, detects STATEMENT/EXPRESSION context, extracts receiver text,
-   balances braces, preserves the file tail for lambda compatibility.
-2. **`SentinelParser`** — parse-only javac invocation on the injected buffer (~10ms).
-   Finds `__LATHE_SENTINEL__` in the AST, extracts `SentinelResult`
-   (context enum, receiver text, enclosing class/method, cursor line).
-3. **Sentinel cache** — `SentinelResult` stored per file in `CompilationContext`.
-   Invalidated on structural characters (`.`, `(`, `{`, newline, etc.).
-   Fast path re-filters on prefix-only extension with no parse.
-4. **Receiver resolution + member proposals** — `CachedAnalysis` (background attributed snapshot)
-   used read-only to resolve receiver type and enumerate members via `getAllMembers`.
-
-Routing still needed:
-
-- `WorkspaceSession.completionFuture(...)` — route completion through the correct `ModuleWorker`.
-- `LatheLanguageServer` — align `completionProvider` capability with implementation status.
-- Timeout guard — return partial or empty within the 200ms budget.
+1. **`textEdit` with explicit prefix range** — highest impact; prevents prefix duplication on commit.
+   Range must cover `tokenStart..cursor`; use `InsertReplaceEdit` when completing inside an existing token.
+2. **`filterText` on all items** — method labels include signatures (`subList(int, int)`);
+   without `filterText = "subList"` some clients filter against the full label.
+3. **Object utility methods ranked below domain members** — `toString`, `equals`, `hashCode`, `getClass`
+   should sort to `7_` not `0_`; currently they appear at the top of every member-access list.
+4. **Import auto-insertion via `additionalTextEdits`** — type-index completions that introduce
+   an unimported type must add the import statement on commit.
+5. **Snippet insertion for method params** — `insertTextFormat: 2` with `${1:param}` tab stops,
+   conditional on client `snippetSupport`.
 
 ## Future Work
 
