@@ -68,6 +68,8 @@ class Probe:
     prefix_filter: str | None = None
     # Fail if fewer than this many items are returned
     min_count: int = 0
+    # Fail if more than this many items are returned (-1 = no limit)
+    max_count: int = -1
 
 
 @dataclass
@@ -190,6 +192,14 @@ TYPE_REF_PROBES: list[Probe] = [
 ]
 
 BLANK_PROBES: list[Probe] = [
+    # Bare dot (no receiver) — the injector sees only '.' before the cursor and produces
+    # receiver=null, prefix=''.  Correct behaviour: 0 items.
+    # method body: currently returns ~33 Object methods via SIMPLE_NAME empty-prefix path
+    # class body:  currently returns ~14 keyword items via TYPE_REFERENCE empty-prefix path
+    Probe("blank", MONGO, "method body — bare dot no receiver (expect 0)",
+          make_content=_insert_line(99, 8, "."), max_count=0),
+    Probe("blank", MONGO, "class body — bare dot no receiver (expect 0)",
+          make_content=_insert_line(38, 4, "."), max_count=0),
     # Empty prefix — server guard should return 0 items; reported as INFO (no assertion)
     Probe("blank", MONGO, "class body — empty prefix",
           make_content=_insert_line(38, 4, "")),
@@ -468,6 +478,10 @@ def _run_one(c: LatheClient, probe: Probe,
 
     if probe.min_count > 0 and len(items) < probe.min_count:
         issues.append(f"too few items: got {len(items)}, want ≥{probe.min_count}")
+        status = "fail"
+
+    if probe.max_count >= 0 and len(items) > probe.max_count:
+        issues.append(f"too many items: got {len(items)}, want ≤{probe.max_count}")
         status = "fail"
 
     # Downgrade to INFO when there are no assertions at all
