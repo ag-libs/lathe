@@ -1308,6 +1308,25 @@ class CompletionEngineTest {
     assertThat(outcome.incomplete()).isTrue();
   }
 
+  @Test
+  void typeIndex_candidates_rankExactCaseAndJavaLangFirst() throws IOException {
+    final var indexedEngine =
+        engineWith(
+            typeEntry("MoBeta", "com.example.MoBeta", TypeKind.CLASS),
+            typeEntry("moAlpha", "com.example.moAlpha", TypeKind.CLASS),
+            typeEntry("MoString", "java.lang.MoString", TypeKind.CLASS));
+
+    assertThat(
+            completeWith(
+                indexedEngine,
+                """
+                class Test {
+                    Mo§ field;
+                }"""))
+        .extracting(CompletionItem::getLabel)
+        .containsExactly("MoString", "MoBeta", "moAlpha");
+  }
+
   // --- type index: gaps ---
 
   @Disabled(

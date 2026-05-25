@@ -1,8 +1,11 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
+import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
+import io.github.aglibs.lathe.server.analysis.FileAnalysis;
 import io.github.aglibs.lathe.server.analysis.SourceCompiler;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
+import java.util.Comparator;
 import java.util.List;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.CompletionItem;
@@ -10,6 +13,8 @@ import org.eclipse.lsp4j.CompletionItem;
 public final class CompletionEngine {
 
   private static final Logger LOG = Logger.getLogger(CompletionEngine.class.getName());
+  private static final int TYPE_INDEX_RESULT_LIMIT = 50;
+  private static final int TYPE_INDEX_VALIDATION_CANDIDATE_LIMIT = 1_000;
 
   private final SentinelParser sentinelParser;
   private final SourceCompiler compiler;
@@ -132,7 +137,8 @@ public final class CompletionEngine {
       return CompletionOutcome.of(List.of());
     }
 
-    final var candidates = typeIndex.search(injected.prefix(), 200);
+    final var candidates =
+        typeIndex.search(injected.prefix(), TYPE_INDEX_VALIDATION_CANDIDATE_LIMIT);
     final var analysis = req.cached() != null ? req.cached().analysis() : null;
     LOG.fine(
         () ->
@@ -140,20 +146,30 @@ public final class CompletionEngine {
                 .formatted(injected.prefix(), candidates.size(), analysis != null));
     final var items =
         candidates.stream()
-            .filter(
-                e ->
-                    analysis == null
-                        || analysis.elements().getTypeElement(e.qualifiedName()) != null)
-            .limit(50)
-            .map(
-                e -> {
-                  final var item = new CompletionItem(e.simpleName());
-                  item.setDetail(e.qualifiedName());
-                  return item;
-                })
+            .sorted(typeCandidateComparator(injected.prefix()))
+            .filter(e -> isResolvableType(e, analysis))
+            .limit(TYPE_INDEX_RESULT_LIMIT)
+            .map(CompletionEngine::typeIndexItem)
             .toList();
     LOG.fine(() -> "[type-index] typeRef items=%d".formatted(items.size()));
     return CompletionOutcome.incomplete(items);
+  }
+
+  private static Comparator<TypeIndexEntry> typeCandidateComparator(final String prefix) {
+    return Comparator.comparing((TypeIndexEntry e) -> !e.simpleName().startsWith(prefix))
+        .thenComparing(e -> !"java.lang".equals(e.packageName()))
+        .thenComparingInt(e -> e.qualifiedName().length())
+        .thenComparing(TypeIndexEntry::qualifiedName);
+  }
+
+  private static boolean isResolvableType(final TypeIndexEntry entry, final FileAnalysis analysis) {
+    return analysis == null || analysis.elements().getTypeElement(entry.qualifiedName()) != null;
+  }
+
+  private static CompletionItem typeIndexItem(final TypeIndexEntry entry) {
+    final var item = new CompletionItem(entry.simpleName());
+    item.setDetail(entry.qualifiedName());
+    return item;
   }
 
   private CompletionOutcome completeMemberAccess(
