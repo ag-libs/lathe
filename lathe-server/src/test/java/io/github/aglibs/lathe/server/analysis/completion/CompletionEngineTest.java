@@ -1149,6 +1149,122 @@ class CompletionEngineTest {
         .anyMatch(l -> l.startsWith("toLowerCase"));
   }
 
+  // ── probe-derived: real-world patterns (UX analysis on dropwizard/helidon) ───
+  // Patterns observed while probing AbstractServerFactory.java,
+  // ConstraintViolationExceptionMapperTest.java, and MongoDbClient.java.
+  // Probe cursor positions had off-by-one errors (cursor ON the dot), so engine
+  // behaviour at the correct position was not verified. Each test documents one
+  // pattern that requires a specific TypeResolver path to work.
+
+  @Test
+  void memberAccess_overloadedMethodCallReceiver_correctReturnTypeResolved() {
+    // assertThat(response.getStatus()).isEqualTo§
+    // Outer receiver assertThat(getStatus()) is a MethodInvocationTree whose argument
+    // is itself a MethodInvocationTree. resolveByPosition must attribute the outer call
+    // to the int-accepting overload and return IntAssert, not StrAssert.
+    final var items =
+        complete(
+            """
+            class Test {
+                static class IntAssert {
+                    IntAssert isEqualTo(int v) { return this; }
+                    IntAssert isGreaterThan(int v) { return this; }
+                }
+                static class StrAssert {
+                    StrAssert isEqualTo(String v) { return this; }
+                    StrAssert contains(String s) { return this; }
+                }
+                static IntAssert assertThat(int v) { return new IntAssert(); }
+                static StrAssert assertThat(String v) { return new StrAssert(); }
+                int getStatus() { return 200; }
+                void m() {
+                    assertThat(getStatus()).isEqual§
+                }
+            }""");
+    assertThat(items)
+        .extracting(CompletionItem::getLabel)
+        .anyMatch(l -> l.startsWith("isEqualTo"));
+    // StrAssert-only members must not appear — confirms the right overload was picked
+    assertThat(items).noneMatch(i -> i.getLabel().startsWith("contains"));
+  }
+
+  @Test
+  void memberAccess_methodCallReceiver_argumentContainsClassLiteral_returnTypeResolved() {
+    // assertThat(response.readEntity(String.class)).isEqualTo§
+    // The receiver's argument contains a .class literal: readEntity(String.class).
+    // collectReceiver must scan past the nested parens and the dotted literal without
+    // breaking early on the '.' inside 'String.class'.
+    final var items =
+        complete(
+            """
+            class Test {
+                static class StrAssert {
+                    StrAssert isEqualTo(String v) { return this; }
+                    StrAssert contains(String s) { return this; }
+                    StrAssert startsWith(String s) { return this; }
+                }
+                static StrAssert assertThat(String v) { return new StrAssert(); }
+                static <T> T readEntity(Class<T> cls) { return null; }
+                void m() {
+                    assertThat(readEntity(String.class)).isEqual§
+                }
+            }""");
+    assertThat(items)
+        .extracting(CompletionItem::getLabel)
+        .anyMatch(l -> l.startsWith("isEqualTo"));
+  }
+
+  @Test
+  void memberAccess_methodParam_insideConstructorCallArg_typeResolved() {
+    // new ConnectionString(config.url§)
+    // config is a method parameter, not a local variable. collectReceiver stops at the
+    // opening '(' of ConnectionString, yielding "config". scanForLocalDeclaration must
+    // then find it among the enclosing method's parameters, not only its local vars.
+    final var items =
+        complete(
+            """
+            class Test {
+                static class Config {
+                    String url() { return ""; }
+                    String username() { return ""; }
+                }
+                static class Connection {
+                    Connection(String url) {}
+                }
+                void m(Config config) {
+                    new Connection(config.ur§);
+                }
+            }""");
+    assertThat(items)
+        .extracting(CompletionItem::getLabel)
+        .anyMatch(l -> l.startsWith("url"));
+  }
+
+  @Test
+  void memberAccess_localVar_insideStaticFactoryCallArg_typeResolved() {
+    // MongoClients.create(settingsBuilder.build§)
+    // settingsBuilder is a local variable; the cursor sits inside an argument to a
+    // static factory. The EXPRESSION context (backwardScan detects unclosed '(') must
+    // not interfere with MEMBER_ACCESS routing after SentinelParser classifies via AST.
+    final var items =
+        complete(
+            """
+            class Test {
+                static class Builder {
+                    Object build() { return null; }
+                    Builder credential(String c) { return this; }
+                }
+                static Object create(Object settings) { return null; }
+                void m() {
+                    Builder settingsBuilder = new Builder();
+                    create(settingsBuilder.buil§);
+                }
+            }""");
+    assertThat(items)
+        .extracting(CompletionItem::getLabel)
+        .anyMatch(l -> l.startsWith("build"));
+  }
+
   // --- type index: helpers ---
 
   private CompletionEngine engineWith() throws IOException {

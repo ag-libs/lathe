@@ -398,6 +398,13 @@ filterText = "add"
 Until snippets are deliberately enabled,
 selecting any overload inserts only the method name.
 
+`filterText` must always be set explicitly on every item.
+When `filterText` is absent, clients fall back to `label`.
+For methods where the label includes a signature such as `wait(long)`,
+the client matches against the full signature string rather than the method name,
+breaking prefix-based filtering.
+Every completion item must carry an explicit `filterText` equal to the simple symbol name.
+
 ### 6.4 Resolve Invariant
 
 `completionItem/resolve` must not change fields that affect insertion,
@@ -432,6 +439,15 @@ Suggested member-access buckets:
 | `7000` | `Object` boilerplate and other low-value inherited members. |
 | `8000` | Deprecated members. |
 | `9000` | Low-confidence fallback candidates. |
+
+Without stable `sortText`, results follow `getAllMembers` stream order.
+The JDK returns inherited `Object` members early in that stream.
+A typical member-access list on a concrete class opens with
+`wait(long)`, `wait(long, int)`, `wait()`, `getClass()`, `notify()`, `notifyAll()`, and `finalize()`
+before any domain-specific members appear.
+On a large receiver type these items occupy the entire visible window,
+making member-access completion practically unusable.
+Correct `sortText` is therefore a usability requirement, not a ranking refinement.
 
 The bucket decision should use both `receiverType` and `declaringType`.
 For example,
@@ -710,6 +726,7 @@ Expected behavior:
 - Use `InsertReplaceEdit` when completing before or inside an existing identifier.
 - Insert method names only,
   even when labels include signatures.
+- Set `filterText` to the simple symbol name on all items.
 - Do not add snippets,
   parentheses,
   or commit characters in this slice.
@@ -718,6 +735,10 @@ This is the highest-value user-experience slice.
 It prevents invalid source insertion such as `list.subList(int, int)`.
 
 ### Slice 3 — Labels, Details, and Ranking
+
+Note: correct `sortText` is a prerequisite for practical usability, not just menu polish.
+Without it, Object boilerplate occupies the entire visible completion window for every member-access list.
+This slice must be treated as a usability requirement and implemented immediately after Slice 2.
 
 Improve menu readability after insertion is correct.
 
