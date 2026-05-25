@@ -35,11 +35,12 @@ class WorkspaceManifestWriterTest {
             List.of(Path.of("/repo/transitive.jar")));
     final var jdk =
         JdkSource.present(
-            "Example Vendor",
-            "21.0.1",
-            Path.of("/jdk"),
-            Path.of("/jdk/lib/src.zip"),
-            Path.of("/cache/jdks/Example-Vendor/21.0.1"));
+                "Example Vendor",
+                "21.0.1",
+                Path.of("/jdk"),
+                Path.of("/jdk/lib/src.zip"),
+                Path.of("/cache/jdks/Example-Vendor/21.0.1"))
+            .withTypeIndex(Path.of("/cache/type-index/jdks/Example-Vendor/21.0.1/index.json"));
 
     writer().write(workspaceRoot, List.of(dep), jdk, null);
 
@@ -53,6 +54,8 @@ class WorkspaceManifestWriterTest {
     assertThat(data.jdk().version()).isEqualTo("21.0.1");
     assertThat(data.jdk().status()).isEqualTo(SourceStatus.PRESENT);
     assertThat(data.jdk().sourceDir().toString()).isEqualTo("/cache/jdks/Example-Vendor/21.0.1");
+    assertThat(data.jdk().typeIndex().toString())
+        .isEqualTo("/cache/type-index/jdks/Example-Vendor/21.0.1/index.json");
     assertThat(data.dependencySources()).hasSize(1);
     final var entry = data.dependencySources().get(0);
     assertThat(entry.gav()).isEqualTo("com.example:dep:1");

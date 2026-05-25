@@ -1,8 +1,6 @@
 package io.github.aglibs.lathe.maven.typeindex;
 
-import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
-import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.DependencyTypeIndexOrigin;
@@ -17,13 +15,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collection;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.plugin.logging.Log;
 
 public final class DependencyTypeIndexSync {
-
-  private static final String INDEX_JSON = "index.json";
 
   private DependencyTypeIndexSync() {}
 
@@ -53,21 +50,21 @@ public final class DependencyTypeIndexSync {
             .resolve(artifact.getVersion());
     final String classifier = artifact.getClassifier();
     if (classifier == null || classifier.isBlank()) {
-      return versionDir.resolve(INDEX_JSON);
+      return versionDir.resolve(TypeIndexFiles.INDEX_JSON);
     }
 
-    return versionDir.resolve(classifier).resolve(INDEX_JSON);
+    return versionDir.resolve(classifier).resolve(TypeIndexFiles.INDEX_JSON);
   }
 
   private static boolean index(final Artifact artifact, final Log log) throws IOException {
     final Path jar = artifact.getFile().toPath();
     final Path index = indexPath(artifact);
     final Stopwatch t = Stopwatch.start();
-    if (isCurrent(index, artifact, jar)) {
-      final TypeIndexFile current = Json.read(index, TypeIndexFile.class);
+    final Optional<TypeIndexFile> current = currentIndex(index, artifact, jar);
+    if (current.isPresent()) {
       log.debug(
           "[type-index] reused %s %dms types=%d"
-              .formatted(jar, t.elapsedMs(), current.types().size()));
+              .formatted(jar, t.elapsedMs(), current.get().types().size()));
       return false;
     }
 
@@ -82,31 +79,27 @@ public final class DependencyTypeIndexSync {
                     Files.size(jar),
                     Files.getLastModifiedTime(jar).toMillis())),
             scanner.scanJar(jar));
-    Files.createDirectories(index.getParent());
-    FileUtil.writeAtomically(index.getParent(), index, Json.toJson(file), false);
+    TypeIndexFiles.write(index, file);
     log.debug(
         "[type-index] scanned %s %dms types=%d".formatted(jar, t.elapsedMs(), file.types().size()));
     return true;
   }
 
-  private static boolean isCurrent(final Path index, final Artifact artifact, final Path jar) {
-    if (!Files.exists(index)) {
-      return false;
-    }
+  private static Optional<TypeIndexFile> currentIndex(
+      final Path index, final Artifact artifact, final Path jar) {
+    return TypeIndexFiles.current(index, TypeIndexOriginKind.DEPENDENCY)
+        .filter(file -> isCurrent(file, artifact, jar));
+  }
 
+  private static boolean isCurrent(
+      final TypeIndexFile file, final Artifact artifact, final Path jar) {
     try {
-      final TypeIndexFile file = Json.read(index, TypeIndexFile.class);
-      if (file.origin().kind() != TypeIndexOriginKind.DEPENDENCY) {
-        return false;
-      }
-
       final DependencyTypeIndexOrigin origin = file.origin().dependency();
-      return LatheLayout.SCHEMA_VERSION.equals(file.schema())
-          && ReactorProjects.gav(artifact).equals(origin.gav())
+      return ReactorProjects.gav(artifact).equals(origin.gav())
           && jar.toString().equals(origin.jar())
           && Files.size(jar) == origin.size()
           && Files.getLastModifiedTime(jar).toMillis() == origin.mtimeMillis();
-    } catch (final RuntimeException | IOException e) {
+    } catch (final IOException e) {
       return false;
     }
   }

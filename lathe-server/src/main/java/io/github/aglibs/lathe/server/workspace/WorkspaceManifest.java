@@ -95,13 +95,17 @@ public final class WorkspaceManifest {
               .collect(
                   Collectors.toUnmodifiableMap(
                       e -> Path.of(e.dir()), e -> e.classpath().stream().map(Path::of).toList()));
-      final var typeIndexShardPaths =
-          entries.stream()
-              .map(DependencyData::typeIndex)
-              .filter(p -> p != null && !p.isBlank())
-              .map(Path::of)
-              .toList();
       final var jdk = data.jdk();
+      final var typeIndexShardPaths =
+          Stream.concat(
+                  entries.stream()
+                      .map(DependencyData::typeIndex)
+                      .filter(p -> p != null && !p.isBlank())
+                      .map(Path::of),
+                  jdk != null && jdk.typeIndex() != null
+                      ? Stream.of(jdk.typeIndex())
+                      : Stream.empty())
+              .toList();
       return new WorkspaceManifest(
           jarToGav,
           jarToSourceDir,

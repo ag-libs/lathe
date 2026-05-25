@@ -39,7 +39,7 @@ class WorkspaceManifestTest extends SampleFixture {
             LatheLayout.SCHEMA_VERSION,
             tmp.toString(),
             null,
-            new JdkSourceData("OpenJDK", "21.0.1", SourceStatus.MISSING, null, null, null),
+            new JdkSourceData("OpenJDK", "21.0.1", SourceStatus.MISSING, null, null, null, null),
             List.of()),
         latheDir.resolve(LatheLayout.WORKSPACE_JSON));
 
@@ -85,6 +85,24 @@ class WorkspaceManifestTest extends SampleFixture {
     assertThat(manifest.containsFile(sourceFile)).isTrue();
     assertThat(manifest.externalSourceDirs()).containsExactly(sourceDir);
     assertThat(manifest.depClasspathForFile(sourceFile)).containsExactly(selfJar, transitiveJar);
+  }
+
+  @Test
+  void load_jdkTypeIndex_includesShardPath() throws Exception {
+    final Path typeIndex = tmp.resolve("cache/type-index/jdks/vendor/21/index.json");
+    final Path latheDir = tmp.resolve(LatheLayout.LATHE_DIR);
+    Files.createDirectories(latheDir);
+    Json.write(
+        new WorkspaceManifestData(
+            LatheLayout.SCHEMA_VERSION,
+            tmp.toString(),
+            null,
+            new JdkSourceData(
+                "OpenJDK", "21.0.1", SourceStatus.MISSING, Path.of("/jdk"), null, null, typeIndex),
+            List.of()),
+        latheDir.resolve(LatheLayout.WORKSPACE_JSON));
+
+    assertThat(WorkspaceManifest.load(tmp).typeIndexShardPaths()).containsExactly(typeIndex);
   }
 
   @Test

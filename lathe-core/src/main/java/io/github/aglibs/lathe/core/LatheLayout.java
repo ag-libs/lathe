@@ -36,4 +36,8 @@ public final class LatheLayout {
   public static Path currentLink() {
     return userCacheRoot().resolve(CURRENT_LINK);
   }
+
+  public static String cacheName(final String value) {
+    return value.replaceAll("[^A-Za-z0-9._-]", "-").replaceAll("-+", "-");
+  }
 }

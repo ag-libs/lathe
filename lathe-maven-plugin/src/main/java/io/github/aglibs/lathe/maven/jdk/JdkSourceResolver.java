@@ -26,16 +26,12 @@ public final class JdkSourceResolver {
     final var sourceDir =
         LatheLayout.userCacheRoot()
             .resolve(LatheLayout.CACHE_JDKS_DIR)
-            .resolve(sanitize(vendor))
-            .resolve(sanitize(version));
+            .resolve(LatheLayout.cacheName(vendor))
+            .resolve(LatheLayout.cacheName(version));
     if (Files.exists(sourceZip)) {
       return JdkSource.present(vendor, version, home, sourceZip, sourceDir);
     }
 
     return JdkSource.missing(vendor, version, home);
-  }
-
-  private static String sanitize(final String value) {
-    return value.replaceAll("[^A-Za-z0-9._-]", "-").replaceAll("-+", "-");
   }
 }

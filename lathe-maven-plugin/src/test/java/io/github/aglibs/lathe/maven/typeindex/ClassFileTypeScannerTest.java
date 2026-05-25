@@ -27,6 +27,22 @@ class ClassFileTypeScannerTest {
 
     final List<TypeIndexEntry> entries = new ClassFileTypeScanner().scanJar(jar);
 
+    assertFixtureEntries(entries);
+  }
+
+  @Test
+  void scanDirectory_standardClassFiles_returnsPublicTopLevelTypes() throws Exception {
+    final Path classes = compileFixtureClasses();
+    Files.write(classes.resolve("com/example/Broken.class"), new byte[] {0, 1, 2});
+    Files.write(classes.resolve("module-info.class"), new byte[] {0, 1, 2});
+    Files.write(classes.resolve("com/example/package-info.class"), new byte[] {0, 1, 2});
+
+    final List<TypeIndexEntry> entries = new ClassFileTypeScanner().scanDirectory(classes);
+
+    assertFixtureEntries(entries);
+  }
+
+  private void assertFixtureEntries(final List<TypeIndexEntry> entries) {
     final Map<String, TypeIndexEntry> byQualifiedName =
         entries.stream()
             .collect(Collectors.toMap(TypeIndexEntry::qualifiedName, Function.identity()));

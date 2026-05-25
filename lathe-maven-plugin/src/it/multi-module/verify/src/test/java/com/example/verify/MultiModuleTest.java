@@ -21,6 +21,14 @@ class MultiModuleTest {
     return Files.readString(path);
   }
 
+  private static String readUnchecked(final Path path) {
+    try {
+      return read(path);
+    } catch (final IOException e) {
+      throw new AssertionError(e);
+    }
+  }
+
   // --- init ---
 
   @Test
@@ -72,6 +80,7 @@ class MultiModuleTest {
     assertThat(content).contains("\"org.opentest4j:opentest4j");
     assertThat(content).contains("\"PRESENT\"");
     assertThat(content).contains("\"typeIndex\"");
+    assertThat(content).contains("type-index/jdks");
   }
 
   @Test
@@ -88,6 +97,20 @@ class MultiModuleTest {
     final var content = read(shard);
     assertThat(content).contains("\"types\"");
     assertThat(content).contains("\"simpleName\"");
+  }
+
+  @Test
+  void jdkTypeIndexShardCreated() throws IOException {
+    final var jdkTypeIndexes = LATHE_CACHE.resolve("type-index").resolve("jdks");
+    assertThat(jdkTypeIndexes).isDirectory();
+    try (final var files = Files.walk(jdkTypeIndexes)) {
+      final var shards =
+          files
+              .filter(path -> path.getFileName().toString().equals("index.json"))
+              .filter(path -> readUnchecked(path).contains("\"java.lang.String\""))
+              .toList();
+      assertThat(shards).isNotEmpty();
+    }
   }
 
   // --- core module ---

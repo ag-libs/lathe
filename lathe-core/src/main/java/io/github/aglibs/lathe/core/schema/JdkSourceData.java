@@ -4,7 +4,13 @@ import io.github.aglibs.validcheck.ValidCheck;
 import java.nio.file.Path;
 
 public record JdkSourceData(
-    String vendor, String version, SourceStatus status, Path home, Path sourceZip, Path sourceDir) {
+    String vendor,
+    String version,
+    SourceStatus status,
+    Path home,
+    Path sourceZip,
+    Path sourceDir,
+    Path typeIndex) {
 
   public JdkSourceData {
     ValidCheck.check()
@@ -23,11 +29,12 @@ public record JdkSourceData(
       final Path home,
       final Path sourceZip,
       final Path sourceDir) {
-    return new JdkSourceData(vendor, version, SourceStatus.PRESENT, home, sourceZip, sourceDir);
+    return new JdkSourceData(
+        vendor, version, SourceStatus.PRESENT, home, sourceZip, sourceDir, null);
   }
 
   public static JdkSourceData missing(final String vendor, final String version, final Path home) {
-    return new JdkSourceData(vendor, version, SourceStatus.MISSING, home, null, null);
+    return new JdkSourceData(vendor, version, SourceStatus.MISSING, home, null, null, null);
   }
 
   public boolean isPresent() {

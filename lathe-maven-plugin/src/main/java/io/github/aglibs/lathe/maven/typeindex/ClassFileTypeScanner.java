@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.maven.typeindex;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
@@ -22,11 +23,16 @@ public final class ClassFileTypeScanner {
         new JarFile(jar.toFile(), false, JarFile.OPEN_READ, Runtime.version())) {
       final boolean multiRelease = jarFile.isMultiRelease();
       try (final Stream<JarEntry> entries = entries(jarFile)) {
-        return entries
-            .flatMap(entry -> scanJarEntry(jarFile, entry, multiRelease).stream())
-            .sorted(Comparator.comparing(TypeIndexEntry::qualifiedName))
-            .toList();
+        return sorted(
+            entries.flatMap(entry -> scanJarEntry(jarFile, entry, multiRelease).stream()));
       }
+    }
+  }
+
+  public List<TypeIndexEntry> scanDirectory(final Path root) throws IOException {
+    try (final Stream<Path> files = Files.walk(root)) {
+      return sorted(
+          files.filter(Files::isRegularFile).flatMap(path -> scanClassFile(root, path).stream()));
     }
   }
 
@@ -42,15 +48,41 @@ public final class ClassFileTypeScanner {
     }
 
     try (final InputStream in = jarFile.getInputStream(entry)) {
-      final Optional<ClassAccess> access = ClassAccessReader.read(in);
-      if (access.isEmpty() || !access.get().isPublicTopLevelType()) {
-        return Optional.empty();
-      }
-
-      return Optional.of(toEntry(className.get(), access.get()));
+      return scanClassEntry(className.get(), in);
     } catch (final IOException | IllegalArgumentException e) {
       return Optional.empty();
     }
+  }
+
+  private Optional<TypeIndexEntry> scanClassFile(final Path root, final Path file) {
+    final Optional<String> className = standardClassEntryName(classEntryName(root, file), false);
+    if (className.isEmpty()) {
+      return Optional.empty();
+    }
+
+    try (final InputStream in = Files.newInputStream(file)) {
+      return scanClassEntry(className.get(), in);
+    } catch (final IOException | IllegalArgumentException e) {
+      return Optional.empty();
+    }
+  }
+
+  private Optional<TypeIndexEntry> scanClassEntry(final String className, final InputStream in)
+      throws IOException {
+    final Optional<ClassAccess> access = ClassAccessReader.read(in);
+    if (access.isEmpty() || !access.get().isPublicTopLevelType()) {
+      return Optional.empty();
+    }
+
+    return Optional.of(toEntry(className, access.get()));
+  }
+
+  private String classEntryName(final Path root, final Path file) {
+    return root.relativize(file).toString().replace('\\', '/');
+  }
+
+  private List<TypeIndexEntry> sorted(final Stream<TypeIndexEntry> entries) {
+    return entries.sorted(Comparator.comparing(TypeIndexEntry::qualifiedName)).toList();
   }
 
   private Optional<String> standardClassEntryName(

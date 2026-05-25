@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.maven.dependency.DependencySourceSync;
 import io.github.aglibs.lathe.maven.jdk.JdkSourceResolver;
 import io.github.aglibs.lathe.maven.jdk.JdkSourceSync;
 import io.github.aglibs.lathe.maven.typeindex.DependencyTypeIndexSync;
+import io.github.aglibs.lathe.maven.typeindex.JdkTypeIndexSync;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -83,13 +84,14 @@ public final class SyncMojo extends AbstractMojo {
               .toList();
       final var jdkSource = JdkSourceResolver.resolve();
       JdkSourceSync.extract(jdkSource, getLog());
+      final var enrichedJdkSource = JdkTypeIndexSync.index(jdkSource, getLog());
       new ServerInstaller(repositorySystem, session.getRepositorySession(), remoteRepos, getLog())
           .install();
       if (isPartialReactor() && !LatheFlags.isForcedSync()) {
         getLog().debug("[sync] partial reactor (-pl) — skipping workspace.json write");
       } else {
         new WorkspaceManifestWriter(getLog())
-            .write(workspaceRoot, enrichedSources, jdkSource, PluginProps.version());
+            .write(workspaceRoot, enrichedSources, enrichedJdkSource, PluginProps.version());
       }
     } catch (final SyncException e) {
       throw new MojoExecutionException(e.getMessage(), e);
