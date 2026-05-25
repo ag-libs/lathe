@@ -774,6 +774,32 @@ class CompletionEngineTest {
   }
 
   @Test
+  void argumentPosition_receiverQualifiedCall_localVarMatchingParamType_rankedFirst() {
+    // helper.consume(§) — helper is a local of type Helper; consume(String s) expects String
+    // strVar (String) should rank before intVar (int)
+    final var items =
+        complete(
+            """
+            class Helper { void consume(String s) {} }
+            class Foo {
+                void test() {
+                    Helper helper = new Helper();
+                    String strVar = "hello";
+                    int intVar = 42;
+                    helper.consume(§);
+                }
+            }
+            """);
+    final var strVarItem =
+        items.stream().filter(i -> "strVar".equals(i.getFilterText())).findFirst();
+    final var intVarItem =
+        items.stream().filter(i -> "intVar".equals(i.getFilterText())).findFirst();
+    assertThat(strVarItem).isPresent();
+    assertThat(intVarItem).isPresent();
+    assertThat(strVarItem.get().getSortText()).isLessThan(intVarItem.get().getSortText());
+  }
+
+  @Test
   void memberAccess_samePackageType_staticMembersReturned() {
     // Helper is in the same named package — no import — TypeResolver must fall back to
     // packageName + "." + simpleName

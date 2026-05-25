@@ -99,7 +99,8 @@ public final class CompletionEngine {
     }
 
     final var analysis = req.cached().analysis();
-    final var expectedParamType = TypeResolver.resolveExpectedParamType(parsed, analysis);
+    final var expectedParamType =
+        TypeResolver.resolveExpectedParamType(parsed, req.pos().getLine(), analysis);
     return new ProposalGenerator(analysis)
         .proposeSimpleName(
             parsed.enclosingClass(),
