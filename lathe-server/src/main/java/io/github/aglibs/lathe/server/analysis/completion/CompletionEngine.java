@@ -134,6 +134,10 @@ public final class CompletionEngine {
 
     final var candidates = typeIndex.search(injected.prefix(), 200);
     final var analysis = req.cached() != null ? req.cached().analysis() : null;
+    LOG.fine(
+        () ->
+            "[type-index] typeRef prefix=|%s| candidates=%d cached=%s"
+                .formatted(injected.prefix(), candidates.size(), analysis != null));
     final var items =
         candidates.stream()
             .filter(
@@ -148,6 +152,7 @@ public final class CompletionEngine {
                   return item;
                 })
             .toList();
+    LOG.fine(() -> "[type-index] typeRef items=%d".formatted(items.size()));
     return CompletionOutcome.of(items);
   }
 
