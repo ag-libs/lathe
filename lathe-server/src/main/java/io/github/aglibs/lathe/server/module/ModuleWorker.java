@@ -4,6 +4,7 @@ import io.github.aglibs.lathe.server.analysis.CompilationContext;
 import io.github.aglibs.lathe.server.analysis.FeatureRequest;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
+import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.util.List;
 import java.util.Optional;
@@ -98,7 +99,7 @@ public final class ModuleWorker {
     return submit(ctx -> ctx.definition(request));
   }
 
-  public CompletableFuture<List<CompletionItem>> complete(
+  public CompletableFuture<CompletionOutcome> complete(
       final String uri,
       final String content,
       final Position position,

@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -88,7 +89,16 @@ final class LatheTextDocumentService implements TextDocumentService {
     return worker
         .submit(() -> session.completionFuture(uri, pos, context))
         .thenCompose(f -> f)
-        .thenApply(Either::forLeft);
+        .thenApply(LatheTextDocumentService::completionResult);
+  }
+
+  static Either<List<CompletionItem>, CompletionList> completionResult(
+      final CompletionOutcome outcome) {
+    if (outcome.incomplete()) {
+      return Either.forRight(new CompletionList(true, outcome.items()));
+    }
+
+    return Either.forLeft(outcome.items());
   }
 
   @Override

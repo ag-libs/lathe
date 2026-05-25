@@ -6,7 +6,9 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
+import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import java.util.List;
+import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.DidCloseTextDocumentParams;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
@@ -89,6 +91,17 @@ class LatheTextDocumentServiceTest {
     verify(client, timeout(DEBOUNCE_MS * 3)).publishDiagnostics(captor.capture());
     assertThat(captor.getValue().getUri()).isEqualTo(URI);
     assertThat(captor.getValue().getDiagnostics()).isEmpty();
+  }
+
+  @Test
+  void completionResult_incompleteOutcome_returnsIncompleteCompletionList() {
+    final var item = new CompletionItem("FooService");
+    final var result =
+        LatheTextDocumentService.completionResult(new CompletionOutcome(List.of(item), null, true));
+
+    assertThat(result.isRight()).isTrue();
+    assertThat(result.getRight().isIncomplete()).isTrue();
+    assertThat(result.getRight().getItems()).containsExactly(item);
   }
 
   private static DidChangeTextDocumentParams changeParams(final String text) {

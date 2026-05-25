@@ -153,7 +153,7 @@ public final class CompletionEngine {
                 })
             .toList();
     LOG.fine(() -> "[type-index] typeRef items=%d".formatted(items.size()));
-    return CompletionOutcome.of(items);
+    return CompletionOutcome.incomplete(items);
   }
 
   private CompletionOutcome completeMemberAccess(

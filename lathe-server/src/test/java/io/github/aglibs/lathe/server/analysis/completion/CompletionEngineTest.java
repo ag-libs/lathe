@@ -15,9 +15,7 @@ import io.github.aglibs.lathe.server.analysis.SourceParser;
 import io.github.aglibs.lathe.server.analysis.TempSourceCompiler;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import java.io.IOException;
-import java.lang.reflect.RecordComponent;
 import java.nio.file.Path;
-import java.util.Arrays;
 import java.util.List;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -1305,14 +1303,9 @@ class CompletionEngineTest {
                 class Test {
                     FooServ§ field;
                 }"""));
-    final var components =
-        Arrays.stream(CompletionOutcome.class.getRecordComponents())
-            .map(RecordComponent::getName)
-            .toList();
 
     assertThat(outcome.items()).extracting(CompletionItem::getLabel).contains("FooService");
-    assertThat(components).contains("incomplete");
-    assertThat(outcome).extracting("incomplete").isEqualTo(true);
+    assertThat(outcome.incomplete()).isTrue();
   }
 
   // --- type index: gaps ---

@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.analysis;
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionEngine;
+import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionRequest;
 import java.util.HashMap;
 import java.util.List;
@@ -51,7 +52,7 @@ public final class CompilationContext implements AutoCloseable {
     return diags;
   }
 
-  public List<CompletionItem> complete(
+  public CompletionOutcome complete(
       final String uri, final String content, final Position pos, final CompletionContext context) {
     final var t = Stopwatch.start();
     final var request = new CompletionRequest(uri, content, pos, context, cache.get(uri));
@@ -66,7 +67,7 @@ public final class CompilationContext implements AutoCloseable {
             "[completion] %s %dms items=%d reattributed=%s"
                 .formatted(
                     uri, t.elapsedMs(), outcome.items().size(), outcome.freshAnalysis() != null));
-    return outcome.items();
+    return outcome;
   }
 
   public void dropFromCache(final String uri) {

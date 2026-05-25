@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.server.analysis.FeatureRequest;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
 import io.github.aglibs.lathe.server.analysis.TokenScanner;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
+import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.module.CompileRequest;
 import io.github.aglibs.lathe.server.module.CompileResult;
 import io.github.aglibs.lathe.server.module.ModuleConfig;
@@ -156,11 +157,11 @@ final class WorkspaceSession {
         Either.forLeft(List.of()));
   }
 
-  CompletableFuture<List<CompletionItem>> completionFuture(
+  CompletableFuture<CompletionOutcome> completionFuture(
       final String uri, final Position pos, final CompletionContext context) {
     final var openFile = openFiles.get(uri);
     if (openFile == null) {
-      return CompletableFuture.completedFuture(List.of());
+      return CompletableFuture.completedFuture(CompletionOutcome.of(List.of()));
     }
 
     return routeFeature(
@@ -168,8 +169,11 @@ final class WorkspaceSession {
         moduleWorker ->
             moduleWorker
                 .complete(uri, openFile.content(), pos, context)
-                .exceptionally(ex -> logAndReturn(ex, "[completion] failed for " + uri, List.of())),
-        List.of());
+                .exceptionally(
+                    ex ->
+                        logAndReturn(
+                            ex, "[completion] failed for " + uri, CompletionOutcome.of(List.of()))),
+        CompletionOutcome.of(List.of()));
   }
 
   CompletableFuture<SemanticTokens> semanticTokensFuture(final String uri) {
