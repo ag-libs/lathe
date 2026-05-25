@@ -515,6 +515,44 @@ class SentinelParserTest {
   }
 
   @Test
+  void typeReference_localVariableType_isTypeReference() {
+    final var result =
+        parse(
+            """
+        class Foo {
+            void m() {
+                ArrayL§ local;
+            }
+        }""");
+    assertThat(result.valid()).isTrue();
+    assertThat(result.sentinelContext()).isEqualTo(SentinelContext.TYPE_REFERENCE);
+    assertThat(result.enclosingClass()).isEqualTo("Foo");
+    assertThat(result.enclosingMethod()).isEqualTo("m");
+  }
+
+  @Test
+  void typeReference_extendsClause_simpleName_isTypeReference() {
+    final var result =
+        parse(
+            """
+        class Foo extends AbstractL§ {
+        }""");
+    assertThat(result.valid()).isTrue();
+    assertThat(result.sentinelContext()).isEqualTo(SentinelContext.TYPE_REFERENCE);
+  }
+
+  @Test
+  void typeReference_implementsClause_simpleName_isTypeReference() {
+    final var result =
+        parse(
+            """
+        class Foo implements Runnabl§ {
+        }""");
+    assertThat(result.valid()).isTrue();
+    assertThat(result.sentinelContext()).isEqualTo(SentinelContext.TYPE_REFERENCE);
+  }
+
+  @Test
   void memberAccess_cursorAtTokenStart_isValid() {
     final var result =
         parse(

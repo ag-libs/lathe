@@ -21,6 +21,7 @@ import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.Position;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -32,12 +33,18 @@ class CompletionEngineTest {
   private static SourceParser sourceParser;
   private static TempSourceCompiler compiler;
   private static CompletionEngine engine;
+  private CompletionEngine eng;
 
   @BeforeAll
   static void setup() {
     sourceParser = new SourceParser();
     compiler = new TempSourceCompiler();
     engine = new CompletionEngine(sourceParser, compiler, WorkspaceTypeIndex.empty());
+  }
+
+  @BeforeEach
+  void setUpTypeIndexEngine() throws IOException {
+    eng = engineWith("FooService", "com.example.FooService");
   }
 
   @AfterAll
@@ -1138,6 +1145,133 @@ class CompletionEngineTest {
     assertThat(items)
         .extracting(CompletionItem::getLabel)
         .anyMatch(l -> l.startsWith("toLowerCase"));
+  }
+
+  // --- type index: helpers ---
+
+  private CompletionEngine engineWith(final String simpleName, final String qualifiedName)
+      throws IOException {
+    final var pkg = qualifiedName.substring(0, qualifiedName.lastIndexOf('.'));
+    final var shardPath = tmp.resolve(simpleName + ".json");
+    Json.write(
+        new TypeIndexFile(
+            "v1",
+            TypeIndexOrigin.dependency(
+                new DependencyTypeIndexOrigin("test:lib:1.0", "/lib.jar", 0L, 0L)),
+            List.of(new TypeIndexEntry(simpleName, qualifiedName, pkg, TypeKind.CLASS))),
+        shardPath);
+    return new CompletionEngine(
+        sourceParser, compiler, WorkspaceTypeIndex.build(List.of(shardPath)));
+  }
+
+  private static List<CompletionItem> completeWith(
+      final CompletionEngine eng, final String markedSource) {
+    final var c = cursor(markedSource);
+    return eng.complete(
+            new CompletionRequest(
+                "file:///Test.java",
+                c.content(),
+                new Position(c.lspLine(), c.lspChar()),
+                null,
+                null))
+        .items();
+  }
+
+  // --- type index: positions where completion fires ---
+
+  @Test
+  void typeIndex_methodParam_suggestsIndexedType() {
+    assertThat(
+            completeWith(
+                eng,
+                """
+                class Test {
+                    void m(FooServ§ p) {}
+                }"""))
+        .extracting(CompletionItem::getLabel)
+        .contains("FooService");
+  }
+
+  @Test
+  void typeIndex_genericTypeArg_suggestsIndexedType() {
+    assertThat(
+            completeWith(
+                eng,
+                """
+                class Test {
+                    void m() {
+                        java.util.List<FooServ§> list;
+                    }
+                }"""))
+        .extracting(CompletionItem::getLabel)
+        .contains("FooService");
+  }
+
+  @Test
+  void typeIndex_fieldDeclaration_suggestsIndexedType() {
+    assertThat(
+            completeWith(
+                eng,
+                """
+                class Test {
+                    FooServ§ field;
+                }"""))
+        .extracting(CompletionItem::getLabel)
+        .contains("FooService");
+  }
+
+  @Test
+  void typeIndex_methodReturnType_suggestsIndexedType() {
+    assertThat(
+            completeWith(
+                eng,
+                """
+                class Test {
+                    FooServ§ getService() { return null; }
+                }"""))
+        .extracting(CompletionItem::getLabel)
+        .contains("FooService");
+  }
+
+  // --- type index: gaps ---
+
+  @Test
+  void typeIndex_localVariable_suggestsIndexedType() {
+    assertThat(
+            completeWith(
+                eng,
+                """
+                class Test {
+                    void m() {
+                        FooServ§ local;
+                    }
+                }"""))
+        .extracting(CompletionItem::getLabel)
+        .contains("FooService");
+  }
+
+  @Test
+  void typeIndex_extendsClause_suggestsIndexedType() {
+    assertThat(
+            completeWith(
+                eng,
+                """
+                class Test extends FooServ§ {
+                }"""))
+        .extracting(CompletionItem::getLabel)
+        .contains("FooService");
+  }
+
+  @Test
+  void typeIndex_implementsClause_suggestsIndexedType() {
+    assertThat(
+            completeWith(
+                eng,
+                """
+                class Test implements FooServ§ {
+                }"""))
+        .extracting(CompletionItem::getLabel)
+        .contains("FooService");
   }
 
   @Test

@@ -32,7 +32,12 @@ final class SentinelInjector {
 
     final boolean parenFollows =
         suffixStart < content.length() && content.charAt(suffixStart) == '(';
-    final var semicolon = back.context() == Context.STATEMENT && !parenFollows ? ";" : "";
+    final boolean suppressSemicolon =
+        back.context() == Context.STATEMENT
+            && !parenFollows
+            && shouldSuppressSemicolon(content, suffixStart);
+    final var semicolon =
+        back.context() == Context.STATEMENT && !parenFollows && !suppressSemicolon ? ";" : "";
     final var injected =
         content.substring(0, back.tokenStart())
             + SENTINEL
@@ -201,6 +206,46 @@ final class SentinelInjector {
     final var raw = content.substring(i + 1, end + 1).trim();
     final var result = raw.startsWith(".") ? raw.substring(1) : raw;
     return result.isEmpty() ? null : result;
+  }
+
+  /**
+   * Returns true when the suffix looks like a variable declaration or class-header type position,
+   * meaning the sentinel token is already the type and no semicolon should be inserted between it
+   * and the rest of the expression.
+   *
+   * <p>Two cases are detected:
+   *
+   * <ul>
+   *   <li>{@code identifier[;=,)]} — variable/parameter name follows (var decl or resource decl)
+   *   <li>{@code \{} — opening brace follows (extends / implements clause before class body)
+   * </ul>
+   */
+  private static boolean shouldSuppressSemicolon(final String content, final int suffixStart) {
+    int i = suffixStart;
+    while (i < content.length() && Character.isWhitespace(content.charAt(i))) {
+      i++;
+    }
+    if (i >= content.length()) {
+      return false;
+    }
+    final char first = content.charAt(i);
+    if (first == '{') {
+      return true;
+    }
+    if (!Character.isJavaIdentifierStart(first)) {
+      return false;
+    }
+    while (i < content.length() && Character.isJavaIdentifierPart(content.charAt(i))) {
+      i++;
+    }
+    while (i < content.length() && Character.isWhitespace(content.charAt(i))) {
+      i++;
+    }
+    if (i >= content.length()) {
+      return false;
+    }
+    final char next = content.charAt(i);
+    return next == ';' || next == '=' || next == ',' || next == ')';
   }
 
   private ForwardResult forwardScan() {
