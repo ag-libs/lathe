@@ -225,25 +225,32 @@ final class SentinelInjector {
     while (i < content.length() && Character.isWhitespace(content.charAt(i))) {
       i++;
     }
+
     if (i >= content.length()) {
       return false;
     }
+
     final char first = content.charAt(i);
     if (first == '{') {
       return true;
     }
+
     if (!Character.isJavaIdentifierStart(first)) {
       return false;
     }
+
     while (i < content.length() && Character.isJavaIdentifierPart(content.charAt(i))) {
       i++;
     }
+
     while (i < content.length() && Character.isWhitespace(content.charAt(i))) {
       i++;
     }
+
     if (i >= content.length()) {
       return false;
     }
+
     final char next = content.charAt(i);
     return next == ';' || next == '=' || next == ',' || next == ')';
   }
