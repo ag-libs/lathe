@@ -49,7 +49,12 @@ final class ProposalGenerator {
         .filter(el -> !isStaticAccess || el.getModifiers().contains(Modifier.STATIC))
         .filter(el -> isAccessible(el, declaredType, scope))
         .filter(el -> el.getSimpleName().toString().startsWith(prefix))
-        .map(el -> itemFactory.member(el, declaredType))
+        .map(
+            el -> {
+              final var item = itemFactory.member(el, declaredType);
+              item.setSortText(sortKey(el));
+              return item;
+            })
         .toList();
   }
 
@@ -64,8 +69,11 @@ final class ProposalGenerator {
         .filter(el -> el.getSimpleName().toString().startsWith(prefix))
         .map(
             el -> {
+              final var name = el.getSimpleName().toString();
               final var item = new CompletionItem();
-              item.setLabel(el.getSimpleName().toString());
+              item.setLabel(name);
+              item.setInsertText(name);
+              item.setFilterText(name);
               item.setKind(
                   el.getKind() == ElementKind.INTERFACE
                       ? CompletionItemKind.Interface
@@ -83,6 +91,14 @@ final class ProposalGenerator {
     final var context =
         new SimpleNameProposalContext(enclosingClass, enclosingMethod, prefix, cursorOffset);
     return new SimpleNameProposalCollector(snapshot, itemFactory, context).collect();
+  }
+
+  private static String sortKey(final Element el) {
+    final var declaring = el.getEnclosingElement();
+    final boolean isObjectMember =
+        declaring instanceof TypeElement te
+            && te.getQualifiedName().contentEquals("java.lang.Object");
+    return (isObjectMember ? "9_" : "0_") + el.getSimpleName();
   }
 
   private boolean isAccessible(

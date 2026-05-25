@@ -168,6 +168,8 @@ public final class CompletionEngine {
 
   private static CompletionItem typeIndexItem(final TypeIndexEntry entry) {
     final var item = new CompletionItem(entry.simpleName());
+    item.setInsertText(entry.simpleName());
+    item.setFilterText(entry.simpleName());
     item.setDetail(entry.qualifiedName());
     return item;
   }

@@ -27,23 +27,32 @@ final class CompletionItemFactory {
   CompletionItem variable(final String name) {
     final var item = new CompletionItem();
     item.setLabel(name);
+    item.setInsertText(name);
+    item.setFilterText(name);
     item.setKind(CompletionItemKind.Variable);
     return item;
   }
 
   CompletionItem member(final Element el, final DeclaredType receiverType) {
     final var item = new CompletionItem();
+    final var name = el.getSimpleName().toString();
     switch (el.getKind()) {
       case METHOD -> {
         final var method = (ExecutableElement) el;
         final List<? extends TypeMirror> paramTypes = resolveParamTypes(method, receiverType);
         final var params =
             paramTypes.stream().map(this::simpleTypeName).collect(Collectors.joining(", "));
-        item.setLabel(el.getSimpleName() + "(" + params + ")");
+        item.setLabel(name + "(" + params + ")");
+        item.setInsertText(paramTypes.isEmpty() ? name + "()" : name + "(");
+        item.setFilterText(name);
+        item.setDetail(simpleTypeName(method.getReturnType()));
         item.setKind(CompletionItemKind.Method);
       }
       case FIELD, ENUM_CONSTANT -> {
-        item.setLabel(el.getSimpleName().toString());
+        item.setLabel(name);
+        item.setInsertText(name);
+        item.setFilterText(name);
+        item.setDetail(simpleTypeName(el.asType()));
         item.setKind(CompletionItemKind.Field);
       }
       default -> throw new IllegalArgumentException("Unsupported completion element: " + el);
