@@ -22,6 +22,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
@@ -31,6 +32,46 @@ final class TypeResolver {
   private static final Logger LOG = Logger.getLogger(TypeResolver.class.getName());
 
   private TypeResolver() {}
+
+  static TypeMirror resolveExpectedParamType(
+      final ParsedSentinel sentinel, final FileAnalysis snapshot) {
+    final int argIndex = sentinel.argIndex();
+    final String methodName = sentinel.enclosingMethodName();
+    if (snapshot.tree() == null || argIndex < 0 || methodName == null) {
+      return null;
+    }
+
+    final String receiver = sentinel.enclosingReceiver();
+    final TypeElement ownerType;
+    if (receiver == null || "this".equals(receiver)) {
+      ownerType = findClassElement(sentinel.enclosingClass(), snapshot);
+    } else {
+      return null;
+    }
+
+    if (ownerType == null) {
+      return null;
+    }
+
+    for (final var el : snapshot.elements().getAllMembers(ownerType)) {
+      if (el.getKind() != ElementKind.METHOD) {
+        continue;
+      }
+
+      if (!methodName.equals(el.getSimpleName().toString())) {
+        continue;
+      }
+
+      final var method = (ExecutableElement) el;
+      final var params = method.getParameters();
+      final int idx = method.isVarArgs() ? Math.min(argIndex, params.size() - 1) : argIndex;
+      if (idx >= 0 && idx < params.size()) {
+        return params.get(idx).asType();
+      }
+    }
+
+    return null;
+  }
 
   static ResolvedReceiver resolveReceiver(
       final ParsedSentinel sentinel, final int cursorLine, final FileAnalysis snapshot) {

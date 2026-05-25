@@ -749,7 +749,6 @@ class CompletionEngineTest {
   }
 
   @Test
-  @Disabled("argument position: type-contextual ranking not yet implemented")
   void argumentPosition_localVar_matchingParamType_rankedBeforeNonMatching() {
     // strVar (String) matches target(String s); intVar (int) does not
     // Both must be proposed, but the type-compatible candidate must sort first

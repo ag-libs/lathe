@@ -13,9 +13,11 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.TypeMirror;
 import org.eclipse.lsp4j.CompletionItem;
 
 final class SimpleNameProposalCollector {
@@ -59,9 +61,12 @@ final class SimpleNameProposalCollector {
     }
 
     final var methodTree = (MethodTree) methodPath.getLeaf();
-    methodTree.getParameters().stream()
-        .map(param -> param.getName().toString())
-        .forEach(this::addVariable);
+    final var methodEl = snapshot.trees().getElement(methodPath);
+    if (methodEl instanceof final ExecutableElement execEl) {
+      execEl.getParameters().forEach(p -> addVariable(p.getSimpleName().toString(), p.asType()));
+    } else {
+      methodTree.getParameters().forEach(p -> addVariable(p.getName().toString(), null));
+    }
 
     if (methodTree.getBody() != null) {
       new TreePathScanner<Void, Void>() {
@@ -81,16 +86,23 @@ final class SimpleNameProposalCollector {
           final long pos =
               snapshot.trees().getSourcePositions().getStartPosition(snapshot.tree(), node);
           if (pos >= 0 && pos < context.cursorOffset()) {
-            addVariable(node.getName().toString());
+            final var el = snapshot.trees().getElement(getCurrentPath());
+            addVariable(node.getName().toString(), el != null ? el.asType() : null);
           }
         }
       }.scan(methodPath, null);
     }
   }
 
-  private void addVariable(final String name) {
+  private void addVariable(final String name, final TypeMirror type) {
     if (name.startsWith(context.prefix()) && seen.add(name)) {
-      items.add(itemFactory.variable(name));
+      final var item = itemFactory.variable(name);
+      final var expected = context.expectedParamType();
+      if (expected != null) {
+        final boolean matches = type != null && snapshot.types().isAssignable(type, expected);
+        item.setSortText(matches ? "0_" + name : "1_" + name);
+      }
+      items.add(item);
     }
   }
 

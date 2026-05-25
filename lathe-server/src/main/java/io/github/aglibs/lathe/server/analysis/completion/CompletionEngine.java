@@ -98,12 +98,15 @@ public final class CompletionEngine {
       return List.of();
     }
 
-    return new ProposalGenerator(req.cached().analysis())
+    final var analysis = req.cached().analysis();
+    final var expectedParamType = TypeResolver.resolveExpectedParamType(parsed, analysis);
+    return new ProposalGenerator(analysis)
         .proposeSimpleName(
             parsed.enclosingClass(),
             parsed.enclosingMethod(),
             injected.prefix(),
-            req.cursorOffset());
+            req.cursorOffset(),
+            expectedParamType);
   }
 
   private CompletionOutcome completeTypeReference(
