@@ -15,8 +15,12 @@ import io.github.aglibs.lathe.server.analysis.SourceParser;
 import io.github.aglibs.lathe.server.analysis.TempSourceCompiler;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import java.io.IOException;
+import java.lang.reflect.RecordComponent;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.Position;
 import org.junit.jupiter.api.AfterAll;
@@ -44,7 +48,7 @@ class CompletionEngineTest {
 
   @BeforeEach
   void setUpTypeIndexEngine() throws IOException {
-    eng = engineWith("FooService", "com.example.FooService");
+    eng = engineWith();
   }
 
   @AfterAll
@@ -1149,32 +1153,58 @@ class CompletionEngineTest {
 
   // --- type index: helpers ---
 
-  private CompletionEngine engineWith(final String simpleName, final String qualifiedName)
-      throws IOException {
-    final var pkg = qualifiedName.substring(0, qualifiedName.lastIndexOf('.'));
-    final var shardPath = tmp.resolve(simpleName + ".json");
-    Json.write(
-        new TypeIndexFile(
-            "v1",
-            TypeIndexOrigin.dependency(
-                new DependencyTypeIndexOrigin("test:lib:1.0", "/lib.jar", 0L, 0L)),
-            List.of(new TypeIndexEntry(simpleName, qualifiedName, pkg, TypeKind.CLASS))),
-        shardPath);
+  private CompletionEngine engineWith() throws IOException {
+    return engineWith(typeEntry("FooService", "com.example.FooService", TypeKind.CLASS));
+  }
+
+  private CompletionEngine engineWith(final TypeIndexEntry... entries) throws IOException {
+    final var shardPath = writeTypeIndexShard(tmp.resolve("type-index.json"), List.of(entries));
     return new CompletionEngine(
         sourceParser, compiler, WorkspaceTypeIndex.build(List.of(shardPath)));
   }
 
   private static List<CompletionItem> completeWith(
       final CompletionEngine eng, final String markedSource) {
+    return eng.complete(completionRequest(markedSource)).items();
+  }
+
+  private static List<CompletionItem> completeWithCurrentContentCached(
+      final CompletionEngine eng, final String markedSource) {
     final var c = cursor(markedSource);
+    final var compiled = compiler.compile("file:///Test.java", c.content(), CompileMode.FULL);
+    final var cached = new CachedAnalysis(c.content(), 0, compiled.fileAnalysis());
     return eng.complete(
             new CompletionRequest(
                 "file:///Test.java",
                 c.content(),
                 new Position(c.lspLine(), c.lspChar()),
                 null,
-                null))
+                cached))
         .items();
+  }
+
+  private static CompletionRequest completionRequest(final String markedSource) {
+    final var c = cursor(markedSource);
+    return new CompletionRequest(
+        "file:///Test.java", c.content(), new Position(c.lspLine(), c.lspChar()), null, null);
+  }
+
+  private static Path writeTypeIndexShard(final Path shardPath, final List<TypeIndexEntry> entries)
+      throws IOException {
+    Json.write(
+        new TypeIndexFile(
+            "v1",
+            TypeIndexOrigin.dependency(
+                new DependencyTypeIndexOrigin("test:lib:1.0", "/lib.jar", 0L, 0L)),
+            entries),
+        shardPath);
+    return shardPath;
+  }
+
+  private static TypeIndexEntry typeEntry(
+      final String simpleName, final String qualifiedName, final TypeKind kind) {
+    final var pkg = qualifiedName.substring(0, qualifiedName.lastIndexOf('.'));
+    return new TypeIndexEntry(simpleName, qualifiedName, pkg, kind);
   }
 
   // --- type index: positions where completion fires ---
@@ -1233,7 +1263,78 @@ class CompletionEngineTest {
         .contains("FooService");
   }
 
+  @Test
+  void typeIndex_shortPrefixValidationFirstPageUnderfills_suggestsReachableLaterCandidate()
+      throws IOException {
+    final List<TypeIndexEntry> entries =
+        Stream.concat(
+                // Put the reachable candidate after the current 200-candidate validation page.
+                IntStream.range(0, 220)
+                    .mapToObj(
+                        i ->
+                            typeEntry(
+                                "Maa%03d".formatted(i),
+                                "missing.Maa%03d".formatted(i),
+                                TypeKind.CLASS)),
+                Stream.of(typeEntry("Map", "java.util.Map", TypeKind.INTERFACE)))
+            .toList();
+    final var indexedEngine =
+        new CompletionEngine(
+            sourceParser,
+            compiler,
+            WorkspaceTypeIndex.build(
+                List.of(writeTypeIndexShard(tmp.resolve("short-prefix-underfill.json"), entries))));
+
+    assertThat(
+            completeWithCurrentContentCached(
+                indexedEngine,
+                """
+                class Test {
+                    M§ field;
+                }"""))
+        .extracting(CompletionItem::getLabel)
+        .contains("Map");
+  }
+
+  @Test
+  void typeIndex_completionOutcome_marksResultsIncomplete() {
+    final var outcome =
+        eng.complete(
+            completionRequest(
+                """
+                class Test {
+                    FooServ§ field;
+                }"""));
+    final var components =
+        Arrays.stream(CompletionOutcome.class.getRecordComponents())
+            .map(RecordComponent::getName)
+            .toList();
+
+    assertThat(outcome.items()).extracting(CompletionItem::getLabel).contains("FooService");
+    assertThat(components).contains("incomplete");
+    assertThat(outcome).extracting("incomplete").isEqualTo(true);
+  }
+
   // --- type index: gaps ---
+
+  @Disabled(
+      "pending: SIMPLE_NAME context in method body does not consult type index;"
+          + " suffix has no var-name token so shouldSuppressSemicolon() returns false,"
+          + " sentinel becomes an expression statement instead of a variable declaration")
+  @Test
+  void typeIndex_bareUppercasePrefixInMethodBody_suggestsIndexedType() {
+    assertThat(
+            completeWith(
+                eng,
+                """
+                class Test {
+                    void m() {
+                        FooServ§
+                    }
+                }"""))
+        .extracting(CompletionItem::getLabel)
+        .contains("FooService");
+  }
 
   @Test
   void typeIndex_localVariable_suggestsIndexedType() {
@@ -1276,36 +1377,15 @@ class CompletionEngineTest {
 
   @Test
   void typeReference_simpleNameFromTypeIndex_returnsIndexedType() throws IOException {
-    final var shard = tmp.resolve("shard.json");
-    Json.write(
-        new TypeIndexFile(
-            "v1",
-            TypeIndexOrigin.dependency(
-                new DependencyTypeIndexOrigin("com.example:lib:1.0", "/lib.jar", 0L, 0L)),
-            List.of(
-                new TypeIndexEntry(
-                    "FooService", "com.example.FooService", "com.example", TypeKind.CLASS))),
-        shard);
+    final var indexedEngine = engineWith();
 
-    final var indexedEngine =
-        new CompletionEngine(sourceParser, compiler, WorkspaceTypeIndex.build(List.of(shard)));
-
-    final var c =
-        cursor(
+    final var items =
+        completeWith(
+            indexedEngine,
             """
             class Test {
                 void m(FooServ§ param) {}
             }""");
-    final var items =
-        indexedEngine
-            .complete(
-                new CompletionRequest(
-                    "file:///Test.java",
-                    c.content(),
-                    new Position(c.lspLine(), c.lspChar()),
-                    null,
-                    null))
-            .items();
 
     assertThat(items).extracting(CompletionItem::getLabel).contains("FooService");
     assertThat(items).extracting(CompletionItem::getDetail).contains("com.example.FooService");
