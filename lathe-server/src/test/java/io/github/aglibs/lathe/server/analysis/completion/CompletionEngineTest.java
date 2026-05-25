@@ -9,12 +9,15 @@ import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexFile;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexOrigin;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
+import io.github.aglibs.lathe.server.TestCompiler;
 import io.github.aglibs.lathe.server.analysis.CachedAnalysis;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
+import io.github.aglibs.lathe.server.analysis.FileAnalysis;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
 import io.github.aglibs.lathe.server.analysis.TempSourceCompiler;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.stream.IntStream;
@@ -1340,6 +1343,39 @@ class CompletionEngineTest {
         .items();
   }
 
+  private List<CompletionItem> completeWithJpmsCache(
+      final CompletionEngine eng, final String markedSource, final String moduleInfo)
+      throws IOException {
+    final var c = cursor(markedSource);
+    final var cached = new CachedAnalysis(c.content(), 0, compileJpms(c.content(), moduleInfo));
+    return eng.complete(
+            new CompletionRequest(
+                "file:///Test.java",
+                c.content(),
+                new Position(c.lspLine(), c.lspChar()),
+                null,
+                cached))
+        .items();
+  }
+
+  private FileAnalysis compileJpms(final String source, final String moduleInfo)
+      throws IOException {
+    final Path moduleDir = tmp.resolve("jpms");
+    final Path moduleInfoFile = moduleDir.resolve("module-info.java");
+    final Path sourceFile = moduleDir.resolve("com/example/app/Test.java");
+    Files.createDirectories(sourceFile.getParent());
+    Files.writeString(moduleInfoFile, moduleInfo);
+    Files.writeString(sourceFile, source);
+
+    final var parsed = TestCompiler.parse(sourceFile, List.of("-proc:none"), moduleInfoFile);
+    return new FileAnalysis(
+        parsed.trees(),
+        parsed.task().getElements(),
+        parsed.task().getTypes(),
+        parsed.cu(),
+        List.of());
+  }
+
   private static CompletionRequest completionRequest(final String markedSource) {
     final var c = cursor(markedSource);
     return new CompletionRequest(
@@ -1484,6 +1520,49 @@ class CompletionEngineTest {
                 }"""))
         .extracting(CompletionItem::getLabel)
         .containsExactly("MoString", "MoBeta", "moAlpha");
+  }
+
+  @Test
+  void typeIndex_jpmsReadablePackage_suggestsIndexedType() throws IOException {
+    final var indexedEngine =
+        engineWith(typeEntry("JButton", "javax.swing.JButton", TypeKind.CLASS));
+
+    assertThat(
+            completeWithJpmsCache(
+                indexedEngine,
+                """
+                package com.example.app;
+
+                class Test {
+                    JBut§ field;
+                }""",
+                """
+                module com.example.app {
+                  requires java.desktop;
+                }"""))
+        .extracting(CompletionItem::getLabel)
+        .contains("JButton");
+  }
+
+  @Test
+  void typeIndex_jpmsUnreadablePackage_doesNotSuggestIndexedType() throws IOException {
+    final var indexedEngine =
+        engineWith(typeEntry("JButton", "javax.swing.JButton", TypeKind.CLASS));
+
+    assertThat(
+            completeWithJpmsCache(
+                indexedEngine,
+                """
+                package com.example.app;
+
+                class Test {
+                    JBut§ field;
+                }""",
+                """
+                module com.example.app {
+                }"""))
+        .extracting(CompletionItem::getLabel)
+        .doesNotContain("JButton");
   }
 
   // --- type index: gaps ---

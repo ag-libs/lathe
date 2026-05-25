@@ -8,9 +8,13 @@ import io.github.aglibs.lathe.server.analysis.SourceParser;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
+import java.util.stream.Stream;
+import javax.tools.DiagnosticCollector;
+import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
 
@@ -59,23 +63,34 @@ public final class TestCompiler {
   }
 
   public static ParsedSource parse(final Path src) throws IOException {
-    return doParse(src, List.of());
+    return parse(src, List.of());
+  }
+
+  public static ParsedSource parse(
+      final Path primarySource, final List<String> options, final Path... companionSources)
+      throws IOException {
+    final List<Path> sources =
+        Stream.concat(Stream.of(primarySource), Arrays.stream(companionSources)).toList();
+    return doParse(sources, List.of(), options);
   }
 
   public static ParsedSource parseWithClasspath(final Path src, final Path classDir)
       throws IOException {
-    return doParse(src, List.of(classDir));
+    return doParse(List.of(src), List.of(classDir), List.of());
   }
 
-  private static ParsedSource doParse(final Path src, final List<Path> classpath)
+  private static ParsedSource doParse(
+      final List<Path> sources, final List<Path> classpath, final List<String> options)
       throws IOException {
     final var fm = SourceCompiler.createFileManager();
     if (!classpath.isEmpty()) {
       fm.setLocationFromPaths(StandardLocation.CLASS_PATH, classpath);
     }
+    final var diagnostics = new DiagnosticCollector<JavaFileObject>();
     final JavacTask task =
         (JavacTask)
-            SourceCompiler.COMPILER.getTask(null, fm, null, null, null, fm.getJavaFileObjects(src));
+            SourceCompiler.COMPILER.getTask(
+                null, fm, diagnostics, options, null, fm.getJavaFileObjectsFromPaths(sources));
     final CompilationUnitTree cu = task.parse().iterator().next();
     task.analyze();
     return new ParsedSource(task, Trees.instance(task), cu, fm, new SourceParser());

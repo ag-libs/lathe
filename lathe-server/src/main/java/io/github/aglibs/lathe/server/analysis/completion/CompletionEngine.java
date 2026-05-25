@@ -1,7 +1,6 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
-import io.github.aglibs.lathe.server.analysis.FileAnalysis;
 import io.github.aglibs.lathe.server.analysis.SourceCompiler;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
@@ -148,10 +147,11 @@ public final class CompletionEngine {
         () ->
             "[type-index] typeRef prefix=|%s| candidates=%d cached=%s"
                 .formatted(injected.prefix(), candidates.size(), analysis != null));
+    final var validator = new TypeIndexValidator(analysis);
     final var items =
         candidates.stream()
             .sorted(typeCandidateComparator(injected.prefix()))
-            .filter(e -> isResolvableType(e, analysis))
+            .filter(validator::isResolvable)
             .limit(TYPE_INDEX_RESULT_LIMIT)
             .map(CompletionEngine::typeIndexItem)
             .toList();
@@ -164,10 +164,6 @@ public final class CompletionEngine {
         .thenComparing(e -> !"java.lang".equals(e.packageName()))
         .thenComparingInt(e -> e.qualifiedName().length())
         .thenComparing(TypeIndexEntry::qualifiedName);
-  }
-
-  private static boolean isResolvableType(final TypeIndexEntry entry, final FileAnalysis analysis) {
-    return analysis == null || analysis.elements().getTypeElement(entry.qualifiedName()) != null;
   }
 
   private static CompletionItem typeIndexItem(final TypeIndexEntry entry) {
