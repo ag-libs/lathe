@@ -47,6 +47,7 @@ final class ProposalGenerator {
                     || el.getKind() == ElementKind.FIELD
                     || el.getKind() == ElementKind.ENUM_CONSTANT)
         .filter(el -> !isStaticAccess || el.getModifiers().contains(Modifier.STATIC))
+        .filter(el -> !isObjectBoilerplate(el))
         .filter(el -> isAccessible(el, declaredType, scope))
         .filter(el -> el.getSimpleName().toString().startsWith(prefix))
         .map(
@@ -93,6 +94,20 @@ final class ProposalGenerator {
         new SimpleNameProposalContext(
             enclosingClass, enclosingMethod, prefix, cursorOffset, expectedParamType);
     return new SimpleNameProposalCollector(snapshot, itemFactory, context).collect();
+  }
+
+  private static boolean isObjectBoilerplate(final Element el) {
+    final var declaring = el.getEnclosingElement();
+    if (!(declaring instanceof TypeElement te)
+        || !te.getQualifiedName().contentEquals("java.lang.Object")) {
+      return false;
+    }
+
+    final var name = el.getSimpleName().toString();
+    return name.equals("wait")
+        || name.equals("notify")
+        || name.equals("notifyAll")
+        || name.equals("finalize");
   }
 
   private static String sortKey(final Element el) {

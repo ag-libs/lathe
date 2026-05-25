@@ -265,7 +265,6 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).contains("Collections");
   }
 
-  @Disabled("pending class-body declaration completion")
   @Test
   void classBody_emptyDeclaration_suggestsMemberDeclarationStarters() {
     final var items =
@@ -281,7 +280,6 @@ class CompletionEngineTest {
         .contains("private", "protected", "public", "static", "final", "class", "interface");
   }
 
-  @Disabled("pending class-body declaration completion")
   @Test
   void classBody_modifierPrefix_suggestsMatchingModifier() {
     final var items =
@@ -294,11 +292,11 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).doesNotContain("protected");
   }
 
-  @Disabled("pending class-body type-name completion")
   @Test
   void classBody_typePrefix_suggestsVisibleTypes() {
     final var items =
-        complete(
+        completeWith(
+            eng,
             """
             class Test {
                 Str§
@@ -306,7 +304,7 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).contains("String");
   }
 
-  @Disabled("pending class-body type-name completion")
+  @Disabled("pending class-body type-name completion with empty prefix")
   @Test
   void classBody_afterModifier_suggestsTypesAndNestedDeclarations() {
     final var items =
@@ -320,7 +318,6 @@ class CompletionEngineTest {
         .contains("String", "class", "interface", "enum", "record");
   }
 
-  @Disabled("pending method-body statement completion")
   @Test
   void methodBody_emptyStatement_suggestsStatementStarters() {
     final var items =
@@ -336,11 +333,11 @@ class CompletionEngineTest {
         .contains("return", "if", "for", "while", "switch", "try", "throw", "new");
   }
 
-  @Disabled("pending method-body type-name completion")
   @Test
   void methodBody_typePrefix_suggestsVisibleTypes() {
     final var items =
-        complete(
+        completeWith(
+            eng,
             """
             class Test {
                 void run() {
@@ -350,11 +347,11 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).contains("String");
   }
 
-  @Disabled("pending method-body type-name completion")
   @Test
   void methodBody_afterNew_suggestsConstructibleTypes() {
     final var items =
-        complete(
+        completeWith(
+            eng,
             """
             class Test {
                 void run() {
@@ -381,11 +378,11 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).doesNotContain("instanceValue");
   }
 
-  @Disabled("pending simple-name type-reference completion")
   @Test
   void typeReference_methodParam_simpleTypePrefix_suggestsMatchingType() {
     final var items =
-        complete(
+        completeWith(
+            eng,
             """
             class Test {
                 void m(Str§ param) {}
@@ -393,11 +390,11 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).contains("String");
   }
 
-  @Disabled("pending simple-name type-reference completion")
   @Test
   void typeReference_genericTypeArg_simpleTypePrefix_suggestsMatchingType() {
     final var items =
-        complete(
+        completeWith(
+            eng,
             """
             class Test {
                 void m() {
@@ -407,7 +404,7 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).contains("String");
   }
 
-  @Disabled("pending simple-name type-reference completion")
+  @Disabled("pending simple-name type-reference completion with empty prefix")
   @Test
   void typeReference_genericTypeArg_emptyPrefix_suggestsCommonTypes() {
     final var items =
@@ -421,22 +418,22 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).contains("String", "Integer");
   }
 
-  @Disabled("pending extends-clause type-name completion")
   @Test
   void classHeader_extendsPrefix_suggestsSuperclasses() {
     final var items =
-        complete(
+        completeWith(
+            eng,
             """
             class Test extends AbstractL§ {
             }""");
     assertThat(items).extracting(CompletionItem::getLabel).contains("AbstractList");
   }
 
-  @Disabled("pending implements-clause type-name completion")
   @Test
   void classHeader_implementsPrefix_suggestsInterfaces() {
     final var items =
-        complete(
+        completeWith(
+            eng,
             """
             class Test implements Runn§ {
             }""");
@@ -534,7 +531,6 @@ class CompletionEngineTest {
     assertThat(items).noneMatch(i -> i.getLabel().equals("add(E)"));
   }
 
-  @Disabled("pending Object boilerplate filter in ProposalGenerator")
   @Test
   void memberAccess_objectBoilerplateExcluded() {
     // Presentation policy: wait/notify/finalize are almost always noise.
@@ -1314,7 +1310,13 @@ class CompletionEngineTest {
   // --- type index: helpers ---
 
   private CompletionEngine engineWith() throws IOException {
-    return engineWith(typeEntry("FooService", "com.example.FooService", TypeKind.CLASS));
+    return engineWith(
+        typeEntry("FooService", "com.example.FooService", TypeKind.CLASS),
+        typeEntry("AbstractList", "java.util.AbstractList", TypeKind.CLASS),
+        typeEntry("Integer", "java.lang.Integer", TypeKind.CLASS),
+        typeEntry("Runnable", "java.lang.Runnable", TypeKind.INTERFACE),
+        typeEntry("StringBuilder", "java.lang.StringBuilder", TypeKind.CLASS),
+        typeEntry("String", "java.lang.String", TypeKind.CLASS));
   }
 
   private CompletionEngine engineWith(final TypeIndexEntry... entries) throws IOException {

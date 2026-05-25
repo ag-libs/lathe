@@ -8,6 +8,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.logging.Logger;
+import java.util.stream.Stream;
 import org.eclipse.lsp4j.CompletionItem;
 
 public final class CompletionEngine {
@@ -15,6 +16,41 @@ public final class CompletionEngine {
   private static final Logger LOG = Logger.getLogger(CompletionEngine.class.getName());
   private static final int TYPE_INDEX_RESULT_LIMIT = 50;
   private static final int TYPE_INDEX_VALIDATION_CANDIDATE_LIMIT = 1_000;
+
+  private static final List<String> STATEMENT_KEYWORDS =
+      List.of(
+          "break",
+          "continue",
+          "do",
+          "else",
+          "for",
+          "if",
+          "new",
+          "return",
+          "switch",
+          "this",
+          "throw",
+          "try",
+          "var",
+          "final",
+          "while");
+
+  private static final List<String> CLASS_BODY_KEYWORDS =
+      List.of(
+          "abstract",
+          "class",
+          "enum",
+          "final",
+          "interface",
+          "private",
+          "protected",
+          "public",
+          "record",
+          "static",
+          "synchronized",
+          "transient",
+          "void",
+          "volatile");
 
   private final SentinelParser sentinelParser;
   private final SourceCompiler compiler;
@@ -55,6 +91,10 @@ public final class CompletionEngine {
               ? completeSimpleName(parsed, injected, req)
               : completeSimpleNameTypeReference(injected, req);
       case TYPE_REFERENCE -> completeTypeReference(parsed, injected, req);
+      case VARIABLE_DECLARATION ->
+          parsed.enclosingMethod() == null
+              ? completeTypeReference(parsed, injected, req)
+              : CompletionOutcome.of(List.of());
       case MEMBER_ACCESS, LAMBDA_BODY, STATIC_IMPORT -> completeMemberAccess(parsed, injected, req);
       default -> CompletionOutcome.of(List.of());
     };
@@ -81,12 +121,35 @@ public final class CompletionEngine {
 
   private CompletionOutcome completeSimpleName(
       final ParsedSentinel parsed, final SentinelResult injected, final CompletionRequest req) {
-    final var items = completeJavacSimpleName(parsed, injected, req);
+    final var javacItems = completeJavacSimpleName(parsed, injected, req);
+    final var keywords = keywordsFor(parsed, injected.prefix());
+    final var items =
+        keywords.isEmpty()
+            ? javacItems
+            : Stream.concat(javacItems.stream(), keywords.stream()).toList();
+
     if (!shouldOfferBareTypeReference(injected)) {
       return new CompletionOutcome(items, null);
     }
 
     return mergeSimpleNameAndTypeIndexItems(items, completeSimpleNameTypeReference(injected, req));
+  }
+
+  private static List<CompletionItem> keywordsFor(
+      final ParsedSentinel parsed, final String prefix) {
+    final List<String> source;
+    if (parsed.enclosingMethod() != null) {
+      source = STATEMENT_KEYWORDS;
+    } else if (parsed.enclosingClass() != null) {
+      source = CLASS_BODY_KEYWORDS;
+    } else {
+      return List.of();
+    }
+
+    return source.stream()
+        .filter(kw -> kw.startsWith(prefix))
+        .map(CompletionItemFactory::keyword)
+        .toList();
   }
 
   private static List<CompletionItem> completeJavacSimpleName(
@@ -115,7 +178,16 @@ public final class CompletionEngine {
       return completeNestedTypes(parsed, injected, req);
     }
 
-    return completeSimpleNameTypeReference(injected, req);
+    final var typeRefOutcome = completeSimpleNameTypeReference(injected, req);
+
+    if (parsed.enclosingMethod() == null && parsed.enclosingClass() != null) {
+      final var keywords = keywordsFor(parsed, injected.prefix());
+      if (!keywords.isEmpty()) {
+        return mergeSimpleNameAndTypeIndexItems(keywords, typeRefOutcome);
+      }
+    }
+
+    return typeRefOutcome;
   }
 
   private static CompletionOutcome completeNestedTypes(
