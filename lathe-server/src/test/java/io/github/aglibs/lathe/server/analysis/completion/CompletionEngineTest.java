@@ -1329,10 +1329,6 @@ class CompletionEngineTest {
 
   // --- type index: gaps ---
 
-  @Disabled(
-      "pending: SIMPLE_NAME context in method body does not consult type index;"
-          + " suffix has no var-name token so shouldSuppressSemicolon() returns false,"
-          + " sentinel becomes an expression statement instead of a variable declaration")
   @Test
   void typeIndex_bareUppercasePrefixInMethodBody_suggestsIndexedType() {
     assertThat(
@@ -1346,6 +1342,70 @@ class CompletionEngineTest {
                 }"""))
         .extracting(CompletionItem::getLabel)
         .contains("FooService");
+  }
+
+  @Test
+  void typeIndex_bareUppercasePrefixInConstructorBody_suggestsIndexedType() {
+    assertThat(
+            completeWith(
+                eng,
+                """
+                class Test {
+                    Test() {
+                        FooServ§
+                    }
+                }"""))
+        .extracting(CompletionItem::getLabel)
+        .contains("FooService");
+  }
+
+  @Test
+  void typeIndex_bareUppercasePrefixAfterConstructorCall_suggestsIndexedType() {
+    assertThat(
+            completeWith(
+                eng,
+                """
+                class Test {
+                    void m() {
+                        new StringBuilder();
+                        FooServ§
+                    }
+                }"""))
+        .extracting(CompletionItem::getLabel)
+        .contains("FooService");
+  }
+
+  @Test
+  void typeIndex_constructorCallTypePrefix_suggestsIndexedType() {
+    assertThat(
+            completeWith(
+                eng,
+                """
+                class Test {
+                    void m() {
+                        Object service = new FooServ§
+                    }
+                }"""))
+        .extracting(CompletionItem::getLabel)
+        .contains("FooService");
+  }
+
+  @Test
+  void typeIndex_bareLowercasePrefixInMethodBody_doesNotSuggestIndexedType() throws IOException {
+    final var indexedEngine =
+        engineWith(typeEntry("fooService", "com.example.fooService", TypeKind.CLASS));
+
+    assertThat(
+            completeWith(
+                indexedEngine,
+                """
+                class Test {
+                    void m() {
+                        fooServ§
+                    }
+                }"""))
+        .extracting(CompletionItem::getLabel)
+        .doesNotContain("fooService");
   }
 
   @Test

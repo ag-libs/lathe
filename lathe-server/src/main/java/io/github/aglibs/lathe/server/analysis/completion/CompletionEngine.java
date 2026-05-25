@@ -6,6 +6,7 @@ import io.github.aglibs.lathe.server.analysis.SourceCompiler;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.CompletionItem;
@@ -62,7 +63,7 @@ public final class CompletionEngine {
       case CONSTRUCTOR_CALL ->
           req.charBeforePrefix() == '('
               ? completeSimpleName(parsed, injected, req)
-              : CompletionOutcome.of(List.of());
+              : completeSimpleNameTypeReference(injected, req);
       case TYPE_REFERENCE -> completeTypeReference(parsed, injected, req);
       case MEMBER_ACCESS, LAMBDA_BODY, STATIC_IMPORT -> completeMemberAccess(parsed, injected, req);
       default -> CompletionOutcome.of(List.of());
@@ -88,22 +89,30 @@ public final class CompletionEngine {
         req.cached() == null ? analysis : null);
   }
 
-  private static CompletionOutcome completeSimpleName(
+  private CompletionOutcome completeSimpleName(
+      final ParsedSentinel parsed, final SentinelResult injected, final CompletionRequest req) {
+    final var items = completeJavacSimpleName(parsed, injected, req);
+    if (!shouldOfferBareTypeReference(injected)) {
+      return new CompletionOutcome(items, null);
+    }
+
+    return mergeSimpleNameAndTypeIndexItems(items, completeSimpleNameTypeReference(injected, req));
+  }
+
+  private static List<CompletionItem> completeJavacSimpleName(
       final ParsedSentinel parsed, final SentinelResult injected, final CompletionRequest req) {
     if (parsed.enclosingClass() == null
         || req.cached() == null
         || req.cached().analysis() == null) {
-      return CompletionOutcome.of(List.of());
+      return List.of();
     }
 
-    return new CompletionOutcome(
-        new ProposalGenerator(req.cached().analysis())
-            .proposeSimpleName(
-                parsed.enclosingClass(),
-                parsed.enclosingMethod(),
-                injected.prefix(),
-                req.cursorOffset()),
-        null);
+    return new ProposalGenerator(req.cached().analysis())
+        .proposeSimpleName(
+            parsed.enclosingClass(),
+            parsed.enclosingMethod(),
+            injected.prefix(),
+            req.cursorOffset());
   }
 
   private CompletionOutcome completeTypeReference(
@@ -170,6 +179,25 @@ public final class CompletionEngine {
     final var item = new CompletionItem(entry.simpleName());
     item.setDetail(entry.qualifiedName());
     return item;
+  }
+
+  private static boolean shouldOfferBareTypeReference(final SentinelResult injected) {
+    return injected.context() == SentinelInjector.Context.STATEMENT
+        && injected.receiverText() == null
+        && !injected.prefix().isEmpty()
+        && Character.isUpperCase(injected.prefix().charAt(0));
+  }
+
+  private static CompletionOutcome mergeSimpleNameAndTypeIndexItems(
+      final List<CompletionItem> simpleNameItems, final CompletionOutcome typeIndexOutcome) {
+    final var merged = new LinkedHashMap<String, CompletionItem>();
+    simpleNameItems.forEach(item -> merged.put(completionIdentity(item), item));
+    typeIndexOutcome.items().forEach(item -> merged.putIfAbsent(completionIdentity(item), item));
+    return new CompletionOutcome(List.copyOf(merged.values()), null, typeIndexOutcome.incomplete());
+  }
+
+  private static String completionIdentity(final CompletionItem item) {
+    return "%s\u0000%s".formatted(item.getLabel(), item.getDetail());
   }
 
   private CompletionOutcome completeMemberAccess(
