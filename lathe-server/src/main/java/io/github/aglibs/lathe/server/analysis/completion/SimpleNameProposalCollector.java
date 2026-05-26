@@ -40,7 +40,8 @@ final class SimpleNameProposalCollector {
   List<CompletionItem> collect() {
     final var methodPath =
         context.enclosingMethod() != null
-            ? findScopeMethodPath(context.enclosingClass(), context.enclosingMethod())
+            ? findScopeMethodPath(
+                context.enclosingClass(), context.enclosingMethod(), context.cursorOffset())
             : null;
     final boolean staticMethod = isStaticMethod(methodPath);
 
@@ -122,7 +123,8 @@ final class SimpleNameProposalCollector {
         .forEach(items::add);
   }
 
-  private TreePath findScopeMethodPath(final String className, final String methodName) {
+  private TreePath findScopeMethodPath(
+      final String className, final String methodName, final long cursorOffset) {
     final var result = new AtomicReference<TreePath>();
     new TreePathScanner<Void, Void>() {
       @Override
@@ -134,8 +136,16 @@ final class SimpleNameProposalCollector {
 
       @Override
       public Void visitMethod(final MethodTree node, final Void unused) {
-        if (result.get() == null && methodName.equals(node.getName().toString())) {
-          result.set(getCurrentPath());
+        if (methodName.equals(node.getName().toString())) {
+          final var current = getCurrentPath();
+          final var pos = snapshot.trees().getSourcePositions();
+          final long start = pos.getStartPosition(snapshot.tree(), node);
+          final long end = pos.getEndPosition(snapshot.tree(), node);
+          if (cursorOffset >= start && cursorOffset <= end) {
+            result.set(current);
+          } else if (result.get() == null) {
+            result.set(current);
+          }
         }
         return null;
       }

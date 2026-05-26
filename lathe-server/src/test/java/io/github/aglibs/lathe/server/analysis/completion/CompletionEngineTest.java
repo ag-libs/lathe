@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.eclipse.lsp4j.CompletionItem;
+import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.Position;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -452,6 +453,35 @@ class CompletionEngineTest {
                 }
             }""");
     assertThat(items).extracting(CompletionItem::getLabel).contains("hello");
+  }
+
+  @Test
+  void simpleName_constructorParam_suggestedInCtorBody() {
+    final var items =
+        complete(
+            """
+            class Test {
+                Test(String value) {
+                    val§
+                }
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("value");
+  }
+
+  @Test
+  void simpleName_constructorParam_secondOverload_suggestedInCtorBody() {
+    // When a class has multiple constructors, findScopeMethodPath must pick the one
+    // that contains the cursor (position-based), not always the first "<init>".
+    final var items =
+        complete(
+            """
+            class Test {
+                Test() {}
+                Test(String metricRegistry) {
+                    met§
+                }
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("metricRegistry");
   }
 
   @Test
@@ -1305,6 +1335,127 @@ class CompletionEngineTest {
                 }
             }""");
     assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("build"));
+  }
+
+  // ── gap regression tests ──────────────────────────────────────────────────
+  // One test per open gap from docs/completion-gaps.md.
+  // Gap 1 (SEVERE crash) is server-level; not testable in CompletionEngineTest.
+  // Gaps 6, 8 are covered by existing tests (multilineChain_simpleIdentifierReceiver_crossLine,
+  // memberAccess_newClassReceiver_methodsReturned). Gaps 10, 11 are indexing-level.
+
+  // gap #2 ─ textEdit absent ─────────────────────────────────────────────────
+
+  @Disabled("gap #2: textEdit absent — items must carry explicit replacement range")
+  @Test
+  void memberAccess_item_hasTextEdit() {
+    // Every completion item must carry a non-null textEdit so clients can replace
+    // the prefix correctly rather than appending (duplicates like "toStrtoString()").
+    final var items =
+        complete(
+            """
+            class Test {
+                void m(java.util.ArrayList<String> list) {
+                    list.toS§
+                }
+            }""");
+    assertThat(items).isNotEmpty();
+    assertThat(items).allMatch(i -> i.getTextEdit() != null);
+  }
+
+  // gap #3 ─ Object utility methods rank too high ────────────────────────────
+
+  @Disabled("gap #3: equals/hashCode/toString/getClass rank same as domain members — sortKey() must return '7_' for them")
+  @Test
+  void memberAccess_objectMethods_rankBelowDomainMembers() {
+    // ProposalGenerator.sortKey() returns "0_" for equals/hashCode/toString/getClass,
+    // the same bucket as domain methods. They must move to "7_" so domain methods sort first.
+    // Use size() ('s' > 'e') to expose the bug: "0_size" > "0_equals" with the current code.
+    final var items =
+        complete(
+            """
+            class Test {
+                void m(java.util.ArrayList<String> list) {
+                    list.§
+                }
+            }""");
+    final var sizeItem =
+        items.stream().filter(i -> i.getLabel().equals("size()")).findFirst();
+    final var equalsItem =
+        items.stream().filter(i -> i.getLabel().startsWith("equals")).findFirst();
+    assertThat(sizeItem).isPresent();
+    assertThat(equalsItem).isPresent();
+    assertThat(sizeItem.get().getSortText()).isLessThan(equalsItem.get().getSortText());
+  }
+
+  // gap #4 ─ kind missing on type-index items ───────────────────────────────
+
+  @Disabled("gap #4: type-index items have no CompletionItemKind — typeIndexItem() never calls setKind()")
+  @Test
+  void typeIndex_classEntry_kindIsClass() {
+    // CompletionEngine.typeIndexItem() never calls setKind(). Type completions have no icon.
+    // Kind must be set from TypeIndexEntry.typeKind(): Class, Interface, Enum, or Record.
+    final var items =
+        completeWith(
+            eng,
+            """
+            class Test {
+                FooServ§ field;
+            }""");
+    final var fooService =
+        items.stream().filter(i -> "FooService".equals(i.getLabel())).findFirst();
+    assertThat(fooService).isPresent();
+    assertThat(fooService.get().getKind()).isEqualTo(CompletionItemKind.Class);
+  }
+
+  // gap #7 ─ field receiver resolves to wrong type ──────────────────────────
+
+  @Test
+  void memberAccess_classFieldReceiver_typeResolved() {
+    // handler is a class field (not a local variable or parameter).
+    // TypeResolver.scanForLocalDeclaration only checks method locals/params, not class fields.
+    final var items =
+        complete(
+            """
+            class Test {
+                java.util.ArrayList<String> handler = new java.util.ArrayList<>();
+                void m() {
+                    handler.sub§
+                }
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("subList"));
+  }
+
+  // gap #12 ─ empty-prefix guard bypassed ───────────────────────────────────
+
+  @Test
+  void simpleName_emptyPrefixInClassBody_noTypeIndexItems() {
+    // Class-body position with empty prefix must not offer type-index items.
+    // Gap #12: helidon workspace returns 14 type-index items here via a routing path
+    // that bypasses the prefix.isEmpty() guard in completeSimpleNameTypeReference.
+    final var items =
+        completeWith(
+            eng,
+            """
+            class Test {
+                §
+            }""");
+    assertThat(items).noneMatch(i -> "FooService".equals(i.getLabel()));
+  }
+
+  @Test
+  void simpleName_emptyPrefixInMethodBody_noTypeIndexItems() {
+    // Method-body position with empty prefix must not offer type-index items.
+    // Gap #12: helidon workspace returns 33 type-index items here.
+    final var items =
+        completeWith(
+            eng,
+            """
+            class Test {
+                void m() {
+                    §
+                }
+            }""");
+    assertThat(items).noneMatch(i -> "FooService".equals(i.getLabel()));
   }
 
   // --- type index: helpers ---

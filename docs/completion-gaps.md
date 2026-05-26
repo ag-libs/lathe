@@ -195,6 +195,26 @@ the empty-prefix guard is applied consistently for all code paths, not only for
 
 ---
 
+## Simple name — constructor locals
+
+### 13. Constructor parameter missing from completions when class has multiple constructors
+
+Constructor parameters do not appear in SIMPLE_NAME completions when the class has more
+than one constructor.
+
+Observed in `DropwizardResourceConfig.java` (line 62, inside second constructor):
+`metricRegistry` is a parameter of the `DropwizardResourceConfig(MetricRegistry)` constructor
+but does not appear in completions. The no-arg `DropwizardResourceConfig()` constructor is
+matched first because `findScopeMethodPath` returns the first method named `"<init>"` without
+checking whether that method's source range contains the cursor.
+
+**Fix:** `findScopeMethodPath` now prefers the method whose source range contains the cursor
+offset over the first name-match. The cursor-based selection is used when available; first
+name-match is the fallback for cases where positions don't overlap (e.g. stale cache).
+Test: `simpleName_constructorParam_secondOverload_suggestedInCtorBody` (fixed).
+
+---
+
 ## Summary table
 
 | # | Gap | Area | Effort |
@@ -211,3 +231,4 @@ the empty-prefix guard is applied consistently for all code paths, not only for
 | 9 | Generic return type not substituted | Resolution | Medium |
 | 10 | Helidon internal types not indexed | Indexing | Medium |
 | 11 | Dropwizard dependency types missing | Indexing | Medium |
+| 13 | Constructor param absent — overloaded ctors | Simple name | Small |
