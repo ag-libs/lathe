@@ -28,7 +28,6 @@ import org.eclipse.lsp4j.Position;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -305,7 +304,6 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).contains("String");
   }
 
-  @Disabled("pending class-body type-name completion with empty prefix")
   @Test
   void classBody_afterModifier_suggestsTypesAndNestedDeclarations() {
     final var items =
@@ -405,7 +403,6 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).contains("String");
   }
 
-  @Disabled("pending simple-name type-reference completion with empty prefix")
   @Test
   void typeReference_genericTypeArg_emptyPrefix_suggestsCommonTypes() {
     final var items =
@@ -1460,6 +1457,33 @@ class CompletionEngineTest {
                 }
             }""");
     assertThat(items).noneMatch(i -> "FooService".equals(i.getLabel()));
+  }
+
+  // gap: java.lang types suggested without type-index ─────────────────────────
+
+  @Test
+  void methodBody_typePrefix_suggestsJavaLangType_withoutTypeIndex() {
+    // engine has an empty type index — String must still appear via the java.lang fallback.
+    // Two forms: as a type-reference (variable declaration) and as a bare expression.
+    final var decl =
+        complete(
+            """
+            class Test {
+                void m() {
+                    Str§ value;
+                }
+            }""");
+    assertThat(decl).extracting(CompletionItem::getLabel).contains("String");
+
+    final var bare =
+        complete(
+            """
+            class Test {
+                void m() {
+                    Str§
+                }
+            }""");
+    assertThat(bare).extracting(CompletionItem::getLabel).contains("String");
   }
 
   // --- type index: helpers ---

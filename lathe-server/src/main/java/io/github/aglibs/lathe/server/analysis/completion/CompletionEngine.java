@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
+import io.github.aglibs.lathe.server.analysis.FileAnalysis;
 import io.github.aglibs.lathe.server.analysis.SourceCompiler;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
@@ -9,6 +10,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
+import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.Modifier;
+import javax.lang.model.element.TypeElement;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
@@ -139,7 +143,9 @@ public final class CompletionEngine {
       return new CompletionOutcome(items, null);
     }
 
-    return mergeSimpleNameAndTypeIndexItems(items, completeSimpleNameTypeReference(injected, req));
+    final var typeIndexOutcome = completeSimpleNameTypeReference(injected, req);
+    return mergeSimpleNameAndTypeIndexItems(
+        items, mergeLangTypes(injected.prefix(), req, typeIndexOutcome));
   }
 
   private static List<CompletionItem> keywordsFor(
@@ -185,7 +191,8 @@ public final class CompletionEngine {
       return completeNestedTypes(parsed, injected, req);
     }
 
-    final var typeRefOutcome = completeSimpleNameTypeReference(injected, req);
+    final var typeIndexOutcome = completeSimpleNameTypeReference(injected, req);
+    final var typeRefOutcome = withLangTypes(parsed, injected, req, typeIndexOutcome);
 
     if (parsed.enclosingMethod() == null && parsed.enclosingClass() != null) {
       final var keywords = keywordsFor(parsed, injected.prefix());
@@ -195,6 +202,56 @@ public final class CompletionEngine {
     }
 
     return typeRefOutcome;
+  }
+
+  private static CompletionOutcome withLangTypes(
+      final ParsedSentinel parsed,
+      final SentinelResult injected,
+      final CompletionRequest req,
+      final CompletionOutcome base) {
+    if (parsed.sentinelContext() != SentinelContext.TYPE_REFERENCE) {
+      return base;
+    }
+
+    return mergeLangTypes(injected.prefix(), req, base);
+  }
+
+  private static CompletionOutcome mergeLangTypes(
+      final String prefix, final CompletionRequest req, final CompletionOutcome base) {
+    if (req.cached() == null || req.cached().analysis() == null) {
+      return base;
+    }
+
+    final var langItems = proposeLangTypes(prefix, req.cached().analysis());
+    if (langItems.isEmpty()) {
+      return base;
+    }
+
+    final var merged = new LinkedHashMap<String, CompletionItem>();
+    base.items().forEach(i -> merged.put(completionIdentity(i), i));
+    langItems.forEach(i -> merged.putIfAbsent(completionIdentity(i), i));
+    return new CompletionOutcome(
+        List.copyOf(merged.values()), base.freshAnalysis(), base.incomplete());
+  }
+
+  private static List<CompletionItem> proposeLangTypes(
+      final String prefix, final FileAnalysis analysis) {
+    final var pkg = analysis.elements().getPackageElement("java.lang");
+    if (pkg == null) {
+      return List.of();
+    }
+
+    return pkg.getEnclosedElements().stream()
+        .filter(
+            el ->
+                el.getKind() == ElementKind.CLASS
+                    || el.getKind() == ElementKind.INTERFACE
+                    || el.getKind() == ElementKind.ENUM
+                    || el.getKind() == ElementKind.ANNOTATION_TYPE)
+        .filter(el -> !el.getModifiers().contains(Modifier.PRIVATE))
+        .filter(el -> el.getSimpleName().toString().startsWith(prefix))
+        .map(el -> CompletionItemFactory.typeElement((TypeElement) el))
+        .toList();
   }
 
   private CompletionOutcome completeNestedTypes(

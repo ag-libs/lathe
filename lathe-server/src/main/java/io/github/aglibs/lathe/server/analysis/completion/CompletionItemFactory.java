@@ -7,7 +7,9 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import javax.lang.model.element.Element;
+import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.ExecutableType;
@@ -41,6 +43,24 @@ final class CompletionItemFactory {
       case INTERFACE -> CompletionItemKind.Interface;
       case ENUM -> CompletionItemKind.Enum;
       case RECORD, CLASS, ANNOTATION, UNKNOWN -> CompletionItemKind.Class;
+    };
+  }
+
+  static CompletionItem typeElement(final TypeElement el) {
+    final var simpleName = el.getSimpleName().toString();
+    final var item = new CompletionItem(simpleName);
+    item.setInsertText(simpleName);
+    item.setFilterText(simpleName);
+    item.setDetail(el.getQualifiedName().toString());
+    item.setKind(kindForElement(el.getKind()));
+    return item;
+  }
+
+  private static CompletionItemKind kindForElement(final ElementKind kind) {
+    return switch (kind) {
+      case INTERFACE, ANNOTATION_TYPE -> CompletionItemKind.Interface;
+      case ENUM -> CompletionItemKind.Enum;
+      default -> CompletionItemKind.Class;
     };
   }
 
