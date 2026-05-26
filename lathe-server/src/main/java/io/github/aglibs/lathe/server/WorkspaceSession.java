@@ -106,11 +106,11 @@ final class WorkspaceSession {
           case CompilerRoute.Module module ->
               publishIfCurrentThen(
                   () -> {
-                    scheduleFastAnalysis(uri);
+                    scheduleAstRefresh(uri);
                     scheduleOpenFilesInModule(uri, module.config());
                   });
           case CompilerRoute.External ignored ->
-              publishIfCurrentThen(() -> scheduleFastAnalysis(uri));
+              publishIfCurrentThen(() -> scheduleAstRefresh(uri));
           case CompilerRoute.Missing ignored -> this::publishIfCurrent;
         };
     submitCompile(route, snapshot, CompileMode.FULL, afterCompile);
@@ -306,6 +306,15 @@ final class WorkspaceSession {
     return true;
   }
 
+  private boolean refreshTokensIfCurrent(final OpenFile snapshot, final CompileResult result) {
+    if (isStale(snapshot, result.generation())) {
+      return false;
+    }
+
+    client.refreshSemanticTokens();
+    return true;
+  }
+
   private AfterCompile publishIfCurrentThen(final Runnable followUp) {
     return (snapshot, result) -> {
       if (publishIfCurrent(snapshot, result)) {
@@ -352,14 +361,14 @@ final class WorkspaceSession {
         });
   }
 
-  private void scheduleFastAnalysis(final String uri) {
+  private void scheduleAstRefresh(final String uri) {
     worker.schedule(
         uri,
         0L,
         () -> {
           final var openFile = openFiles.get(uri);
           if (openFile != null) {
-            compileAndPublish(openFile, CompileMode.FAST);
+            submitCompile(openFile, CompileMode.FAST, this::refreshTokensIfCurrent);
           }
         });
   }
