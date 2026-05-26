@@ -1,5 +1,7 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
+import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
+import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -22,6 +24,23 @@ final class CompletionItemFactory {
 
   CompletionItemFactory(final Types types) {
     this.types = types;
+  }
+
+  static CompletionItem typeIndexEntry(final TypeIndexEntry entry) {
+    final var item = new CompletionItem(entry.simpleName());
+    item.setInsertText(entry.simpleName());
+    item.setFilterText(entry.simpleName());
+    item.setDetail(entry.qualifiedName());
+    item.setKind(kindFor(entry.kind()));
+    return item;
+  }
+
+  private static CompletionItemKind kindFor(final TypeKind typeKind) {
+    return switch (typeKind) {
+      case INTERFACE -> CompletionItemKind.Interface;
+      case ENUM -> CompletionItemKind.Enum;
+      case RECORD, CLASS, ANNOTATION, UNKNOWN -> CompletionItemKind.Class;
+    };
   }
 
   static CompletionItem keyword(final String kw) {

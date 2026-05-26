@@ -225,7 +225,7 @@ public final class CompletionEngine {
             .sorted(typeCandidateComparator(injected.prefix()))
             .filter(validator::isResolvable)
             .limit(TYPE_INDEX_RESULT_LIMIT)
-            .map(CompletionEngine::typeIndexItem)
+            .map(CompletionItemFactory::typeIndexEntry)
             .toList();
     LOG.fine(() -> "[type-index] typeRef items=%d".formatted(items.size()));
     return CompletionOutcome.incomplete(items);
@@ -236,14 +236,6 @@ public final class CompletionEngine {
         .thenComparing(e -> !"java.lang".equals(e.packageName()))
         .thenComparingInt(e -> e.qualifiedName().length())
         .thenComparing(TypeIndexEntry::qualifiedName);
-  }
-
-  private static CompletionItem typeIndexItem(final TypeIndexEntry entry) {
-    final var item = new CompletionItem(entry.simpleName());
-    item.setInsertText(entry.simpleName());
-    item.setFilterText(entry.simpleName());
-    item.setDetail(entry.qualifiedName());
-    return item;
   }
 
   private static boolean shouldOfferBareTypeReference(final SentinelResult injected) {

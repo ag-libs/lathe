@@ -1389,7 +1389,6 @@ class CompletionEngineTest {
 
   // gap #4 ─ kind missing on type-index items ───────────────────────────────
 
-  @Disabled("gap #4: type-index items have no CompletionItemKind — typeIndexItem() never calls setKind()")
   @Test
   void typeIndex_classEntry_kindIsClass() {
     // CompletionEngine.typeIndexItem() never calls setKind(). Type completions have no icon.
