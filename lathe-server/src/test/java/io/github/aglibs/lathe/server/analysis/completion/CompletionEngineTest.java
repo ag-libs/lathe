@@ -562,9 +562,8 @@ class CompletionEngineTest {
   }
 
   @Test
-  void memberAccess_objectBoilerplateExcluded() {
-    // Presentation policy: wait/notify/finalize are almost always noise.
-    // equals/hashCode/toString/getClass may remain available, but should rank below domain members.
+  void memberAccess_objectMethodsIncludedAndRankLast() {
+    // wait/notify/notifyAll are included but rank after domain methods (sort bucket "9_").
     final var items =
         complete(
             """
@@ -573,13 +572,22 @@ class CompletionEngineTest {
                     list.§
                 }
             }""");
-    assertThat(items)
-        .noneMatch(
+    final var sizeSort =
+        items.stream()
+            .filter(i -> i.getLabel().equals("size()"))
+            .findFirst()
+            .map(CompletionItem::getSortText)
+            .orElseThrow();
+    assertThat(items).anyMatch(i -> i.getLabel().startsWith("wait("));
+    assertThat(items).anyMatch(i -> i.getLabel().equals("notify()"));
+    assertThat(items).anyMatch(i -> i.getLabel().equals("notifyAll()"));
+    items.stream()
+        .filter(
             i ->
                 i.getLabel().startsWith("wait(")
                     || i.getLabel().equals("notify()")
-                    || i.getLabel().equals("notifyAll()")
-                    || i.getLabel().equals("finalize()"));
+                    || i.getLabel().equals("notifyAll()"))
+        .forEach(i -> assertThat(i.getSortText()).isGreaterThan(sizeSort));
   }
 
   @Test
@@ -1364,8 +1372,6 @@ class CompletionEngineTest {
 
   // gap #3 ─ Object utility methods rank too high ────────────────────────────
 
-  @Disabled(
-      "gap #3: equals/hashCode/toString/getClass rank same as domain members — sortKey() must return '7_' for them")
   @Test
   void memberAccess_objectMethods_rankBelowDomainMembers() {
     // ProposalGenerator.sortKey() returns "0_" for equals/hashCode/toString/getClass,

@@ -2,6 +2,8 @@ package io.github.aglibs.lathe.server.analysis.completion;
 
 import com.sun.source.tree.Scope;
 import io.github.aglibs.lathe.server.analysis.FileAnalysis;
+import java.lang.reflect.Method;
+import java.util.Arrays;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -15,6 +17,9 @@ import org.eclipse.lsp4j.CompletionItemKind;
 final class ProposalGenerator {
 
   private static final Logger LOG = Logger.getLogger(ProposalGenerator.class.getName());
+
+  private static final List<String> OBJECT_METHOD_NAMES =
+      Arrays.stream(Object.class.getDeclaredMethods()).map(Method::getName).distinct().toList();
 
   private final FileAnalysis snapshot;
   private final Types types;
@@ -47,7 +52,6 @@ final class ProposalGenerator {
                     || el.getKind() == ElementKind.FIELD
                     || el.getKind() == ElementKind.ENUM_CONSTANT)
         .filter(el -> !isStaticAccess || el.getModifiers().contains(Modifier.STATIC))
-        .filter(el -> !isObjectBoilerplate(el))
         .filter(el -> isAccessible(el, declaredType, scope))
         .filter(el -> el.getSimpleName().toString().startsWith(prefix))
         .map(
@@ -96,26 +100,13 @@ final class ProposalGenerator {
     return new SimpleNameProposalCollector(snapshot, itemFactory, context).collect();
   }
 
-  private static boolean isObjectBoilerplate(final Element el) {
-    final var declaring = el.getEnclosingElement();
-    if (!(declaring instanceof TypeElement te)
-        || !te.getQualifiedName().contentEquals("java.lang.Object")) {
-      return false;
+  private static String sortKey(final Element el) {
+    if (el.getKind() == ElementKind.METHOD
+        && OBJECT_METHOD_NAMES.contains(el.getSimpleName().toString())) {
+      return "9_" + el.getSimpleName();
     }
 
-    final var name = el.getSimpleName().toString();
-    return name.equals("wait")
-        || name.equals("notify")
-        || name.equals("notifyAll")
-        || name.equals("finalize");
-  }
-
-  private static String sortKey(final Element el) {
-    final var declaring = el.getEnclosingElement();
-    final boolean isObjectMember =
-        declaring instanceof TypeElement te
-            && te.getQualifiedName().contentEquals("java.lang.Object");
-    return (isObjectMember ? "9_" : "0_") + el.getSimpleName();
+    return "0_" + el.getSimpleName();
   }
 
   private boolean isAccessible(
