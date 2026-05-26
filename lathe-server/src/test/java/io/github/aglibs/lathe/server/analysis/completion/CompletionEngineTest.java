@@ -1364,7 +1364,8 @@ class CompletionEngineTest {
 
   // gap #3 ─ Object utility methods rank too high ────────────────────────────
 
-  @Disabled("gap #3: equals/hashCode/toString/getClass rank same as domain members — sortKey() must return '7_' for them")
+  @Disabled(
+      "gap #3: equals/hashCode/toString/getClass rank same as domain members — sortKey() must return '7_' for them")
   @Test
   void memberAccess_objectMethods_rankBelowDomainMembers() {
     // ProposalGenerator.sortKey() returns "0_" for equals/hashCode/toString/getClass,
@@ -1378,8 +1379,7 @@ class CompletionEngineTest {
                     list.§
                 }
             }""");
-    final var sizeItem =
-        items.stream().filter(i -> i.getLabel().equals("size()")).findFirst();
+    final var sizeItem = items.stream().filter(i -> i.getLabel().equals("size()")).findFirst();
     final var equalsItem =
         items.stream().filter(i -> i.getLabel().startsWith("equals")).findFirst();
     assertThat(sizeItem).isPresent();
