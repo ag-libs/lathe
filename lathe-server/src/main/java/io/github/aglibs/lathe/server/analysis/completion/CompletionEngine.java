@@ -10,6 +10,10 @@ import java.util.List;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
 import org.eclipse.lsp4j.CompletionItem;
+import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.TextEdit;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 public final class CompletionEngine {
 
@@ -83,21 +87,24 @@ public final class CompletionEngine {
       return CompletionOutcome.of(List.of());
     }
 
-    return switch (parsed.sentinelContext()) {
-      case IMPORT -> completeImport(parsed, injected, req);
-      case SIMPLE_NAME, ARGUMENT_POSITION -> completeSimpleName(parsed, injected, req);
-      case CONSTRUCTOR_CALL ->
-          req.charBeforePrefix() == '('
-              ? completeSimpleName(parsed, injected, req)
-              : completeSimpleNameTypeReference(injected, req);
-      case TYPE_REFERENCE -> completeTypeReference(parsed, injected, req);
-      case VARIABLE_DECLARATION ->
-          parsed.enclosingMethod() == null
-              ? completeTypeReference(parsed, injected, req)
-              : CompletionOutcome.of(List.of());
-      case MEMBER_ACCESS, LAMBDA_BODY, STATIC_IMPORT -> completeMemberAccess(parsed, injected, req);
-      default -> CompletionOutcome.of(List.of());
-    };
+    final var outcome =
+        switch (parsed.sentinelContext()) {
+          case IMPORT -> completeImport(parsed, injected, req);
+          case SIMPLE_NAME, ARGUMENT_POSITION -> completeSimpleName(parsed, injected, req);
+          case CONSTRUCTOR_CALL ->
+              req.charBeforePrefix() == '('
+                  ? completeSimpleName(parsed, injected, req)
+                  : completeSimpleNameTypeReference(injected, req);
+          case TYPE_REFERENCE -> completeTypeReference(parsed, injected, req);
+          case VARIABLE_DECLARATION ->
+              parsed.enclosingMethod() == null
+                  ? completeTypeReference(parsed, injected, req)
+                  : CompletionOutcome.of(List.of());
+          case MEMBER_ACCESS, LAMBDA_BODY, STATIC_IMPORT ->
+              completeMemberAccess(parsed, injected, req);
+          default -> CompletionOutcome.of(List.of());
+        };
+    return applyTextEdits(outcome, req.pos(), injected.prefix());
   }
 
   private CompletionOutcome completeImport(
@@ -152,7 +159,7 @@ public final class CompletionEngine {
         .toList();
   }
 
-  private static List<CompletionItem> completeJavacSimpleName(
+  private List<CompletionItem> completeJavacSimpleName(
       final ParsedSentinel parsed, final SentinelResult injected, final CompletionRequest req) {
     if (parsed.enclosingClass() == null
         || req.cached() == null
@@ -190,7 +197,7 @@ public final class CompletionEngine {
     return typeRefOutcome;
   }
 
-  private static CompletionOutcome completeNestedTypes(
+  private CompletionOutcome completeNestedTypes(
       final ParsedSentinel parsed, final SentinelResult injected, final CompletionRequest req) {
     if (req.cached() == null || req.cached().analysis() == null) {
       return CompletionOutcome.of(List.of());
@@ -251,6 +258,25 @@ public final class CompletionEngine {
     simpleNameItems.forEach(item -> merged.put(completionIdentity(item), item));
     typeIndexOutcome.items().forEach(item -> merged.putIfAbsent(completionIdentity(item), item));
     return new CompletionOutcome(List.copyOf(merged.values()), null, typeIndexOutcome.incomplete());
+  }
+
+  private static CompletionOutcome applyTextEdits(
+      final CompletionOutcome outcome, final Position cursor, final String prefix) {
+    if (outcome.items().isEmpty()) {
+      return outcome;
+    }
+
+    final var start = new Position(cursor.getLine(), cursor.getCharacter() - prefix.length());
+    final var range = new Range(start, cursor);
+    outcome
+        .items()
+        .forEach(
+            item -> {
+              final var newText =
+                  item.getInsertText() != null ? item.getInsertText() : item.getLabel();
+              item.setTextEdit(Either.forLeft(new TextEdit(range, newText)));
+            });
+    return outcome;
   }
 
   private static String completionIdentity(final CompletionItem item) {

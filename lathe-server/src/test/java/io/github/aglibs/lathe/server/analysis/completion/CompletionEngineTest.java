@@ -1353,7 +1353,6 @@ class CompletionEngineTest {
 
   // gap #2 ─ textEdit absent ─────────────────────────────────────────────────
 
-  @Disabled("gap #2: textEdit absent — items must carry explicit replacement range")
   @Test
   void memberAccess_item_hasTextEdit() {
     // Every completion item must carry a non-null textEdit so clients can replace

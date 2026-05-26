@@ -15,6 +15,7 @@ import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Types;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
+import org.eclipse.lsp4j.InsertTextFormat;
 
 final class CompletionItemFactory {
 
@@ -71,8 +72,13 @@ final class CompletionItemFactory {
         final var params =
             paramTypes.stream().map(this::simpleTypeName).collect(Collectors.joining(", "));
         item.setLabel(name + "(" + params + ")");
-        item.setInsertText(paramTypes.isEmpty() ? name + "()" : name + "(");
         item.setFilterText(name);
+        if (paramTypes.isEmpty()) {
+          item.setInsertText(name + "()");
+        } else {
+          item.setInsertText(name + "($1)");
+          item.setInsertTextFormat(InsertTextFormat.Snippet);
+        }
         item.setDetail(simpleTypeName(method.getReturnType()));
         item.setKind(CompletionItemKind.Method);
       }
