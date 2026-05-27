@@ -1,7 +1,7 @@
 # Lathe — Dev Tooling
 
 Scripts for building and testing the server locally against real projects.
-All scripts live here (`dev/`) and are never shipped.
+All files live in `dev/` and are never shipped with the distribution.
 
 ---
 
@@ -11,14 +11,14 @@ All scripts live here (`dev/`) and are never shipped.
 |---|---|
 | `nvim.sh` | Build server + open Neovim with Lathe attached |
 | `nvim.lua` | Neovim config loaded by `nvim.sh` (not used directly) |
-| `lsp.py` | Python LSP client — CLI diagnostics or importable `LatheClient` |
+| `lsp.py` | Python LSP client library and CLI diagnostics tool |
+| `explore.py` | Interactive LSP shell — explore any file like an engineer would |
 
 ---
 
-## nvim.sh — interactive testing
+## nvim.sh — interactive testing in a real editor
 
 ```bash
-cd /home/ag-libs/design/lathe
 ./dev/nvim.sh /home/ag-libs/git/helidon/scheduling/src/main/java/io/helidon/scheduling/Scheduling.java
 ```
 
@@ -34,79 +34,172 @@ LATHE_DEBUG_PORT=5005 ./dev/nvim.sh path/to/File.java
 
 ---
 
-## lsp.py — programmatic LSP testing
+## explore.py — interactive LSP shell
 
-### CLI mode — print diagnostics
+`explore.py` opens a single Java file in the Lathe server and drops into a
+read-eval-print loop.  You interact with the file the same way a software
+engineer would: look at the code, position the cursor at an interesting spot,
+ask for completions or hover information, temporarily inject a new line to
+see what the engine suggests there, then reset.
 
-```bash
-python3 dev/lsp.py path/to/Foo.java path/to/FooTest.java
+No probes are hard-coded.  The file and the questions are entirely up to you.
+
+### Usage
+
+**Interactive REPL**
+```
+python3 dev/explore.py path/to/File.java
 ```
 
-Workspace root is auto-detected from the nearest `.lathe/` directory.
+**Single inline command** (remaining args are joined as one command line):
+```
+python3 dev/explore.py File.java complete after "handler.getServletContext()."
+python3 dev/explore.py File.java hover "MongoClients"
+python3 dev/explore.py File.java inject "MongoClients."
+```
 
-### Import mode — test specific LSP features
+**Piped / sub-agent** (one command per stdin line, no prompt):
+```
+printf 'grep setAttribute\ncomplete after "handler.getServletContext()."\n' \
+    | python3 dev/explore.py AbstractServerFactory.java
+```
+
+### Commands
+
+| Command | What it does |
+|---|---|
+| `show [<line>]` | Print file with line numbers, centred on `<line>` (1-based) if given |
+| `grep <pattern>` | Show every line containing `<pattern>` with its line number |
+| `complete <line>:<col>` | Completions at the given 0-based position |
+| `complete after <text>` | Find first occurrence of `<text>`, complete right after it |
+| `hover <line>:<col>` | Hover info (type, docs) at the given 0-based position |
+| `hover <text>` | Hover info at the first occurrence of `<text>` |
+| `definition <line>:<col>` | Declaration site of the symbol (alias: `def`) |
+| `refs <line>:<col>` | Known call/use sites of the symbol |
+| `diagnostics` | Compiler errors and warnings (alias: `diag`) |
+| `inject <code> [at <line>]` | Insert a temporary line, complete at its end |
+| `reset` | Discard injected content, restore original server view |
+| `log [<n>]` | Last `<n>` relevant server log lines (default 20) |
+| `help` | Print the command reference |
+| `quit` / `exit` / `q` | End the session |
+
+### Assertion qualifiers
+
+Append to any `complete` or `inject` command to turn observation into a
+pass/fail check.  Multiple qualifiers may be combined freely.
+
+| Qualifier | Meaning |
+|---|---|
+| `expect <label> [<label> …]` | Each label must appear as a prefix of at least one returned item |
+| `min <n>` | At least `n` items must be returned |
+| `max <n>` | At most `n` items may be returned |
+| `filter <prefix>` | Every item's label must start with `prefix` (case-insensitive) |
+
+On success the output line reads `[PASS]`.  On failure it reads `[FAIL]` with
+a reason, and the process exits with code 1.  This makes assertions composable
+in shell scripts.
+
+```bash
+# assert that setAttribute is offered after the chained call
+python3 dev/explore.py AbstractServerFactory.java \
+    complete after "handler.getServletContext()." expect setAttribute min 1
+
+# assert that a member-access after injection surfaces the right factory method
+python3 dev/explore.py MongoDbClient.java \
+    inject "MongoClients." expect create min 1
+
+# assert that a bare-dot with no receiver returns nothing
+python3 dev/explore.py MongoDbClient.java \
+    inject "." max 0
+```
+
+### Typical workflow
+
+```
+> grep getServletContext
+    577      handler.getServletContext().setAttribute("org.eclipse.jetty.server.webapp...");
+
+> complete after "handler.getServletContext()."
+  completing after "handler.getServletContext()."  →  position 576:36
+  ────────────────────────────────────────────────────────────────
+  ...
+  >>> 577    handler.getServletContext().setAttribute("org.eclipse.jetty.server...
+  ────────────────────────────────────────────────────────────────
+  28 item(s):
+    setAttribute  [Method]  void
+    getAttribute  [Method]  Object
+    ...
+
+> hover "getServletContext"
+  found "getServletContext" at 576:11
+  javax.servlet.ServletContext Handler.getServletContext()
+
+> inject "MongoClients."
+  injected at line 101:  "        MongoClients."
+  completing at 100:20
+  ────────────────────────────────────────────────────────────────
+  3 item(s):
+    create  [Method]  MongoClient
+    createWithCustomClass  [Method]  MongoClient
+    ...
+
+> reset
+  reset to original content
+
+> quit
+```
+
+### Columns are 0-based
+
+`complete` and `hover` take **0-based** line and column numbers, matching the
+LSP wire protocol and the coordinates logged by the Lathe server.  `show` and
+`grep` report **1-based** line numbers (as editors do).  `complete after <text>`
+and `hover <text>` handle the conversion automatically.
+
+---
+
+## lsp.py — LSP client library
+
+`lsp.py` is the shared foundation for both `explore.py` and `probe.py`.  It
+wraps the Lathe server process in a synchronous Python API.
+
+### CLI — print diagnostics for a file
+
+```bash
+python3 dev/lsp.py path/to/Foo.java
+python3 dev/lsp.py path/to/Foo.java:42:10   # also prints hover at line 42, col 10 (1-based)
+```
+
+### Importable `LatheClient`
 
 ```python
-import sys; sys.path.insert(0, "/home/ag-libs/design/lathe/dev")
+import sys; sys.path.insert(0, "/home/ag-libs/git/lathe/dev")
 from lsp import LatheClient, find_workspace_root
 from pathlib import Path
 
-file = Path("/home/ag-libs/git/helidon/scheduling/src/main/java/io/helidon/scheduling/Scheduling.java")
-
+file = Path("/home/ag-libs/git/helidon/.../Scheduling.java")
 with LatheClient.start(find_workspace_root(file)) as c:
-    # Phase 3 — diagnostics (implemented)
-    diags = c.open(file)
-    c.change(file, new_content)     # simulate edit (no diagnostics wait)
-    diags = c.save(file)            # full pass with AP
-
-    # Phase 4 — result cache (not yet implemented)
+    diags   = c.open(file)
+    items   = c.completion(file, line=10, col=5)   # 0-based
     hover   = c.hover(file, line=10, col=5)
+    defs    = c.definition(file, line=10, col=5)
+    refs    = c.references(file, line=10, col=5)
     fmt     = c.formatting(file)
     symbols = c.document_symbols(file)
-
-    # Phase 5 — go-to-definition (not yet implemented)
-    defs = c.definition(file, line=10, col=5)
-
-    # Phase 6 — type completion (not yet implemented)
-    items = c.completion(file, line=10, col=5)
-
-    # Phase 8 — find references (not yet implemented)
-    refs = c.references(file, line=10, col=5)
+    diags   = c.save(file)                          # trigger re-analysis
 ```
-
-Unimplemented features raise `RuntimeError` with the server's `UnsupportedOperationException` —
-that's the expected signal until the phase is done.
 
 ### Environment variables
 
 | Variable | Default | Effect |
 |---|---|---|
-| `JAVA_HOME` | `/opt/jdk` | JDK used to run the server |
 | `LATHE_DEBUG` | off | Set to `1` for verbose server logs on stderr |
 | `LATHE_TIMEOUT` | `15` | Per-request timeout in seconds |
 
 ### Prerequisite: build the server
 
-The Python client uses `lathe-server/target/classes` directly (same as `nvim.sh`).
-Build once before using:
-
 ```bash
-cd /home/ag-libs/design/lathe
 mvn install -pl lathe-server -am -DskipTests
-mvn dependency:copy-dependencies -pl lathe-server -DincludeScope=runtime -DoutputDirectory=target/dependency -q
 ```
 
-Or just run `./dev/nvim.sh` once — it does both steps automatically.
-
----
-
-## Tested files (known good)
-
-These files compile cleanly with 0 diagnostics and are good regression anchors:
-
-```bash
-python3 dev/lsp.py \
-  /home/ag-libs/git/helidon/scheduling/src/main/java/io/helidon/scheduling/Scheduling.java \
-  /home/ag-libs/git/helidon/scheduling/src/test/java/io/helidon/scheduling/CronSchedulingTest.java \
-  /home/ag-libs/git/helidon/common/key-util/src/test/java/io/helidon/common/pki/KeyConfigTest.java
-```
+Or run `./dev/nvim.sh` once — it builds automatically.

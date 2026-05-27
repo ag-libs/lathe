@@ -1568,6 +1568,34 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).contains("String");
   }
 
+  // gap: platform types (java.util.*) must survive the type-index validator ─────
+
+  @Test
+  void typeIndex_platformType_survivesValidator_jpmsModule() throws IOException {
+    // java.base is implicitly required by every named module, so java.util.Objects must
+    // pass the type-index validator even when the module-info has no explicit requires.
+    // Regression: TypeIndexValidator.isVisiblePackage used getAllPackageElements which
+    // returns unexpected results for JDK packages in JPMS compilation contexts (e.g.
+    // the helidon workspace with --module-path and --release 26), causing every platform
+    // type to be silently dropped.  The fix uses getTypeElement exclusively.
+    final var eng = engineWith(typeEntry("Objects", "java.util.Objects", TypeKind.CLASS));
+
+    final var items =
+        completeWithJpmsCache(
+            eng,
+            """
+            package com.example.app;
+            class Test {
+                void m() {
+                    Obj§
+                }
+            }""",
+            """
+            module com.example.app {
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("Objects"));
+  }
+
   // --- type index: helpers ---
 
   private CompletionEngine engineWith() throws IOException {

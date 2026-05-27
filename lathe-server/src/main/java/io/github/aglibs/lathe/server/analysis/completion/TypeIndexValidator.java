@@ -2,19 +2,21 @@ package io.github.aglibs.lathe.server.analysis.completion;
 
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.logging.Logger;
 
+/**
+ * Filters type-index candidates to those that are actually resolvable from the current compilation
+ * context.
+ *
+ * <p>Visibility is determined solely by {@code Elements.getTypeElement}: if javac cannot resolve
+ * the qualified name from the current compilation unit (because the type is in a module that is not
+ * readable, or on a JAR that is not on the classpath), it returns {@code null} and the candidate is
+ * excluded. This follows JPMS module-boundary semantics automatically — platform packages ({@code
+ * java.util}, {@code java.io}, …) and dependency packages alike are handled uniformly without
+ * special-casing.
+ */
 final class TypeIndexValidator {
 
-  private static final Logger LOG = Logger.getLogger(TypeIndexValidator.class.getName());
-  private static final Set<String> WARNED_SPLIT_PACKAGES = ConcurrentHashMap.newKeySet();
-
   private final AttributedFileAnalysis analysis;
-  private final Map<String, Boolean> visiblePackages = new HashMap<>();
 
   TypeIndexValidator(final AttributedFileAnalysis analysis) {
     this.analysis = analysis;
@@ -25,19 +27,6 @@ final class TypeIndexValidator {
       return true;
     }
 
-    return visiblePackages.computeIfAbsent(entry.packageName(), this::isVisiblePackage)
-        && analysis.elements().getTypeElement(entry.qualifiedName()) != null;
-  }
-
-  private boolean isVisiblePackage(final String packageName) {
-    final var packages = analysis.elements().getAllPackageElements(packageName);
-    if (packages.size() > 1 && WARNED_SPLIT_PACKAGES.add(packageName)) {
-      LOG.warning(
-          () ->
-              "[type-index] split package %s has %d visible owners; skipping candidates"
-                  .formatted(packageName, packages.size()));
-    }
-
-    return packages.size() == 1;
+    return analysis.elements().getTypeElement(entry.qualifiedName()) != null;
   }
 }
