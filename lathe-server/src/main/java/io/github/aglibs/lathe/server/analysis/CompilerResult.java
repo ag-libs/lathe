@@ -4,5 +4,5 @@ import java.util.List;
 import javax.tools.Diagnostic;
 import javax.tools.JavaFileObject;
 
-public record CompilationResult(
-    List<Diagnostic<? extends JavaFileObject>> diagnostics, FileAnalysis fileAnalysis) {}
+public record CompilerResult(
+    List<Diagnostic<? extends JavaFileObject>> diagnostics, AttributedFileAnalysis fileAnalysis) {}

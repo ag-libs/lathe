@@ -19,18 +19,17 @@ final class JavacRunner {
     this.fm = fm;
   }
 
-  CompilationResult run(
+  CompilerResult run(
       final JavaFileObject sourceFile, final List<String> options, final CompileMode mode) {
     return mode == CompileMode.FULL
         ? compileFull(sourceFile, options)
         : analyze(sourceFile, options);
   }
 
-  private CompilationResult compileFull(
-      final JavaFileObject sourceFile, final List<String> options) {
+  private CompilerResult compileFull(final JavaFileObject sourceFile, final List<String> options) {
     final var collector = new DiagnosticCollector<JavaFileObject>();
     createTask(sourceFile, options, collector).call();
-    return new CompilationResult(collector.getDiagnostics(), FileAnalysis.diagnosticsOnly());
+    return new CompilerResult(collector.getDiagnostics(), AttributedFileAnalysis.diagnosticsOnly());
   }
 
   private JavacTask createTask(
@@ -38,10 +37,11 @@ final class JavacRunner {
       final List<String> options,
       final DiagnosticCollector<JavaFileObject> collector) {
     return (JavacTask)
-        SourceCompiler.COMPILER.getTask(null, fm, collector, options, null, List.of(sourceFile));
+        JavaSourceCompiler.COMPILER.getTask(
+            null, fm, collector, options, null, List.of(sourceFile));
   }
 
-  private CompilationResult analyze(final JavaFileObject sourceFile, final List<String> options) {
+  private CompilerResult analyze(final JavaFileObject sourceFile, final List<String> options) {
     final var collector = new DiagnosticCollector<JavaFileObject>();
     final var task = createTask(sourceFile, options, collector);
 
@@ -52,15 +52,15 @@ final class JavacRunner {
       final Trees trees = Trees.instance(task);
       final var elements = task.getElements();
       final var types = task.getTypes();
-      final FileAnalysis fileAnalysis;
+      final AttributedFileAnalysis fileAnalysis;
       if (cu != null) {
         final List<SemanticToken> semanticTokens = TokenScanner.scan(trees, cu);
-        fileAnalysis = new FileAnalysis(trees, elements, types, cu, semanticTokens);
+        fileAnalysis = new AttributedFileAnalysis(trees, elements, types, cu, semanticTokens);
       } else {
-        fileAnalysis = new FileAnalysis(trees, elements, types, null, null);
+        fileAnalysis = new AttributedFileAnalysis(trees, elements, types, null, null);
       }
 
-      return new CompilationResult(collector.getDiagnostics(), fileAnalysis);
+      return new CompilerResult(collector.getDiagnostics(), fileAnalysis);
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }

@@ -20,9 +20,9 @@ Current lifecycle shape:
   and compiles opened files — including external dependency/JDK sources.
 - Editors launch `~/.cache/lathe/current/lathe-launcher.sh`.
 
-Threading model: one server worker thread (`lathe-worker`) owns `WorkspaceSession`, `ModuleWorkspace`,
+Threading model: one server worker thread (`lathe-worker`) owns `WorkspaceSession`, `WorkspaceModules`,
 open-file snapshots, routing, stale-result checks, and client publishing.
-One module worker thread per javac-backed `CompilationContext`.
+One module worker thread per javac-backed `ModuleAnalysisSession`.
 LSP4J threads capture immutable request data and enqueue work.
 Compile results cross back to `lathe-worker` before diagnostics or semantic-token refreshes are published.
 Architecture is documented in [lathe-server-data-flow-recipe.md](lathe-server-data-flow-recipe.md).
@@ -97,7 +97,7 @@ and `LatheLanguageServer` does not advertise workspace-symbol or code-action cap
 Add reactor module entries to `workspace.json` after the params-file model is stable,
 to support staleness detection, UX hints, and faster server startup without duplicating classpaths.
 `WorkspaceManifestData` currently holds only schema version, workspace root, JDK source, and dependency sources;
-`ModuleWorkspace` still discovers modules by scanning `lsp-params-*.json` at startup.
+`WorkspaceModules` still discovers modules by scanning `lsp-params-*.json` at startup.
 
 **Run, test, and debug**
 Adopt the design in `lathe-run-test-debug.md` to let the server manage Maven test/run executions
@@ -113,7 +113,7 @@ No client-side project model parsing.
 Definition jumps into JDK and dependency sources currently return `file://` URIs pointing
 into `~/.cache/lathe/`, causing swap file dialogs in Neovim and requiring path-based
 detection logic in every editor plugin.
-Replace with a `lathe-source://` scheme: one line in `CompilationContext.definition()`;
+Replace with a `lathe-source://` scheme: one line in `ModuleAnalysisSession.definition()`;
 editors read the file from the path embedded in the URI and open it as a read-only
 `nofile` buffer — no server round-trip, no per-editor path heuristics.
 See [lathe-source-uri-scheme.md](lathe-source-uri-scheme.md) for the full design.

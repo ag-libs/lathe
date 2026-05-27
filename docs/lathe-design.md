@@ -537,17 +537,17 @@ Those references are dropped when the cached context is replaced, invalidated, o
 The only durable per-module state is:
 
 - **Parsed params** — read from disk on startup and re-read after the module's `lathe.lock` disappears.
-- **`ModuleCompiler`** — one instance per module, created on first file access via `ModuleRegistry.getOrCreate(ModuleParams)`.
+- **`ModuleSourceCompiler`** — one instance per module, created on first file access via `ModuleRegistry.getOrCreate(ModuleParams)`.
   Owns one `StandardJavaFileManager` and one `ModuleAnalysis` instance.
   The file manager is initialized eagerly in the constructor, sets explicit javac locations
   (`CLASS_OUTPUT` → `.lathe/<rel>/classes`, `SOURCE_OUTPUT` → `.lathe/<rel>/generated-sources`),
   and holds no attributed javac task state.
-  `ModuleCompiler` is closed on registry reload and server shutdown; `ModuleRegistry` closes all compilers.
-  There is no LRU — `ModuleCompiler` instances are created on demand and live for the duration of the registry.
+  `ModuleSourceCompiler` is closed on registry reload and server shutdown; `ModuleRegistry` closes all compilers.
+  There is no LRU — `ModuleSourceCompiler` instances are created on demand and live for the duration of the registry.
 
 _v1 simplification — the temp-dir approach is straightforward to implement and test.
 A future version may replace it with in-memory `JavaFileObject` serving to avoid the disk round-trip._
-- **Per-file result cache** — `Map<Path, CompileResult>` keyed by document content hash.
+- **Per-file result cache** — `Map<Path, CompileResponse>` keyed by document content hash.
   Holds the post-attribution `CompilationTaskContext` from the most recent pass for each open file.
   The context includes `Trees`, `CompilationUnitTree`, and pre-computed semantic tokens.
   Because `Trees` is backed by javac task state, the context intentionally keeps that state reachable while cached.
@@ -663,7 +663,7 @@ debounce fires (server worker):
   → build fresh JavacTask from params (proc=none — AP skipped)
   → single-file attribution pass for the changed file
   → flush file manager after the pass as needed
-  → publish diagnostics and store `FileAnalysis` in the analysis cache
+  → publish diagnostics and store `AttributedFileAnalysis` in the analysis cache
 ```
 
 AP is skipped on the fast pass.
@@ -684,7 +684,7 @@ server worker:
   → single-file compilation pass for the changed file
   → flush file manager after the pass
   → write .class to .lathe/<rel>/classes/ and generated sources
-     to .lathe/<rel>/generated-sources/, publish diagnostics, store `FileAnalysis` in the analysis cache
+     to .lathe/<rel>/generated-sources/, publish diagnostics, store `AttributedFileAnalysis` in the analysis cache
 ```
 
 Target: ~1–2s p95 for AP-heavy modules.
@@ -720,7 +720,7 @@ Cached file managers remain bounded by the LRU and are closed on eviction or reg
 
 Lathe uses one server worker thread for all work that touches mutable server state or javac-backed objects.
 LSP4J message threads and the workspace watcher capture immutable request data, enqueue work, and return futures.
-The worker owns `ModuleRegistry`, `ExternalFileCompiler`, `ModuleCompiler` instances, open-file snapshots, analysis
+The worker owns `ModuleRegistry`, `ExternalFileCompiler`, `ModuleSourceCompiler` instances, open-file snapshots, analysis
 caches, debounced compilation, and workspace reload.
 This deliberately serializes compiler access for v1, keeps javac file managers thread-confined, and avoids
 method-level synchronization around compiler internals.
@@ -761,7 +761,7 @@ constructor call, annotation.
 A per-file sentinel cache avoids re-parsing while the user extends the current token —
 cache hits cost under 1ms with no javac invocation.
 
-**Layer 3 — Background attributed snapshot** — the `CachedAnalysis` produced by the debounced attribution pass.
+**Layer 3 — Background attributed snapshot** — the `CachedFileAnalysis` produced by the debounced attribution pass.
 Used read-only at completion time for receiver type lookup, local variable scanning, and member enumeration.
 No attribution runs during completion.
 

@@ -1,6 +1,6 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
-import io.github.aglibs.lathe.server.analysis.FileAnalysis;
+import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import java.util.List;
 import java.util.stream.Stream;
 import javax.lang.model.element.ElementKind;
@@ -10,9 +10,9 @@ import org.eclipse.lsp4j.CompletionItemKind;
 
 final class ImportCompletionProvider {
 
-  private final FileAnalysis snapshot;
+  private final AttributedFileAnalysis snapshot;
 
-  ImportCompletionProvider(final FileAnalysis snapshot) {
+  ImportCompletionProvider(final AttributedFileAnalysis snapshot) {
     this.snapshot = snapshot;
   }
 

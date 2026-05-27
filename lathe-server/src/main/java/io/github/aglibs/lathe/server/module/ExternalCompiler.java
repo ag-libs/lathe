@@ -1,10 +1,10 @@
 package io.github.aglibs.lathe.server.module;
 
 import io.github.aglibs.lathe.core.FileUtil;
-import io.github.aglibs.lathe.server.analysis.CompilationResult;
+import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
-import io.github.aglibs.lathe.server.analysis.FileAnalysis;
-import io.github.aglibs.lathe.server.analysis.SourceCompiler;
+import io.github.aglibs.lathe.server.analysis.CompilerResult;
+import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -21,7 +21,7 @@ import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
 
-public final class ExternalCompiler implements SourceCompiler {
+public final class ExternalCompiler implements JavaSourceCompiler {
 
   private static final Logger LOG = Logger.getLogger(ExternalCompiler.class.getName());
 
@@ -35,7 +35,7 @@ public final class ExternalCompiler implements SourceCompiler {
   public ExternalCompiler(final WorkspaceManifest manifest) {
     this.manifest = manifest;
     try {
-      this.fm = SourceCompiler.createFileManager();
+      this.fm = JavaSourceCompiler.createFileManager();
       this.runner = new JavacRunner(fm);
       this.td = Files.createTempDirectory("lathe-ext-");
     } catch (final IOException e) {
@@ -49,12 +49,13 @@ public final class ExternalCompiler implements SourceCompiler {
   }
 
   @Override
-  public CompilationResult compile(final String uri, final String content, final CompileMode mode) {
+  public CompilerResult compile(final String uri, final String content, final CompileMode mode) {
     final var filePath = Path.of(URI.create(uri));
     final var sourceRoot = manifest.externalSourceRootForFile(filePath);
     if (sourceRoot.isEmpty()) {
       LOG.fine(() -> "[external] no source root for %s — skipping".formatted(uri));
-      return new CompilationResult(List.of(), new FileAnalysis(null, null, null, null, null));
+      return new CompilerResult(
+          List.of(), new AttributedFileAnalysis(null, null, null, null, null));
     }
 
     final var rel = sourceRoot.get().relativize(filePath);

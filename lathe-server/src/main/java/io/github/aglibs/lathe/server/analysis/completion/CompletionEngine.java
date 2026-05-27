@@ -1,8 +1,8 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
-import io.github.aglibs.lathe.server.analysis.FileAnalysis;
-import io.github.aglibs.lathe.server.analysis.SourceCompiler;
+import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import java.util.Comparator;
@@ -26,12 +26,12 @@ public final class CompletionEngine {
   private static final int TYPE_INDEX_VALIDATION_CANDIDATE_LIMIT = 1_000;
 
   private final SentinelParser sentinelParser;
-  private final SourceCompiler compiler;
+  private final JavaSourceCompiler compiler;
   private final WorkspaceTypeIndex typeIndex;
 
   public CompletionEngine(
       final SourceParser parser,
-      final SourceCompiler compiler,
+      final JavaSourceCompiler compiler,
       final WorkspaceTypeIndex typeIndex) {
     this.sentinelParser = new SentinelParser(parser);
     this.compiler = compiler;
@@ -193,7 +193,7 @@ public final class CompletionEngine {
   }
 
   private static List<CompletionItem> proposeLangTypes(
-      final String prefix, final FileAnalysis analysis) {
+      final String prefix, final AttributedFileAnalysis analysis) {
     final var pkg = analysis.elements().getPackageElement("java.lang");
     if (pkg == null) {
       return List.of();

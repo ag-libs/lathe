@@ -82,7 +82,7 @@ Do not re-implement any of the following.
 
 ## 4. New State
 
-Two new fields on `OpenFile`. Nothing else is new at the file level.
+Two new fields on `OpenDocument`. Nothing else is new at the file level.
 
 ### 4.1 TreeSnapshot
 
@@ -106,7 +106,7 @@ TreeSnapshot {
 created together and replaced together. Never use `elements` from one snapshot with `tree`
 from another.
 
-Stored as `volatile TreeSnapshot snapshot` on `OpenFile`. The attribution thread is the
+Stored as `volatile TreeSnapshot snapshot` on `OpenDocument`. The attribution thread is the
 only writer. All other code is read-only.
 
 ### 4.2 SentinelResult
@@ -146,7 +146,7 @@ SentinelResult {
 }
 ```
 
-Stored as `SentinelResult lastSentinel` on `OpenFile`. Null means invalid. Always check
+Stored as `SentinelResult lastSentinel` on `OpenDocument`. Null means invalid. Always check
 `lastSentinel.docVersion == f.version` before use.
 
 ---

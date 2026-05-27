@@ -5,17 +5,18 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.github.aglibs.lathe.server.analysis.CompilationContext;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
+import io.github.aglibs.lathe.server.analysis.ModuleAnalysisSession;
 import java.util.List;
 import org.eclipse.lsp4j.Diagnostic;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
-class ModuleWorkerTest {
+class ModuleSourceWorkerTest {
 
-  private final CompilationContext context = mock(CompilationContext.class);
-  private final ModuleWorker worker = new ModuleWorker("lathe-module-test", () -> context);
+  private final ModuleAnalysisSession context = mock(ModuleAnalysisSession.class);
+  private final ModuleSourceWorker worker =
+      new ModuleSourceWorker("lathe-module-test", () -> context);
 
   @AfterEach
   void close() {

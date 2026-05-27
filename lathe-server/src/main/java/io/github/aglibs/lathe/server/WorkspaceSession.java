@@ -3,16 +3,16 @@ package io.github.aglibs.lathe.server;
 import static java.util.logging.Level.SEVERE;
 
 import io.github.aglibs.lathe.server.analysis.CompileMode;
-import io.github.aglibs.lathe.server.analysis.FeatureRequest;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
+import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.server.analysis.TokenScanner;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.module.CompileRequest;
-import io.github.aglibs.lathe.server.module.CompileResult;
-import io.github.aglibs.lathe.server.module.ModuleConfig;
-import io.github.aglibs.lathe.server.module.ModuleWorker;
-import io.github.aglibs.lathe.server.module.ModuleWorkspace;
+import io.github.aglibs.lathe.server.module.CompileResponse;
+import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
+import io.github.aglibs.lathe.server.module.ModuleSourceWorker;
+import io.github.aglibs.lathe.server.module.WorkspaceModules;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.net.URI;
 import java.nio.file.Path;
@@ -37,9 +37,9 @@ final class WorkspaceSession {
   private final long debounceMs;
   private Path workspaceRoot;
   private WorkspaceManifest manifest = WorkspaceManifest.empty();
-  private ModuleWorkspace workspace = ModuleWorkspace.empty();
+  private WorkspaceModules workspace = WorkspaceModules.empty();
   private WorkspaceWatcher watcher;
-  private final Map<String, OpenFile> openFiles = new HashMap<>();
+  private final Map<String, OpenDocument> openDocuments = new HashMap<>();
   private long nextGeneration;
 
   WorkspaceSession(final LanguageClient client, final ServerWorker worker, final long debounceMs) {
@@ -52,7 +52,7 @@ final class WorkspaceSession {
     this.workspaceRoot = root;
     manifest = WorkspaceManifest.load(root);
     final var typeIndex = WorkspaceTypeIndex.build(manifest.typeIndexShardPaths());
-    workspace = ModuleWorkspace.scan(root, manifest, typeIndex);
+    workspace = WorkspaceModules.scan(root, manifest, typeIndex);
     watcher = new WorkspaceWatcher(root);
     worker.scheduleAtFixedRate(2_000L, this::checkForChanges);
   }
@@ -76,7 +76,7 @@ final class WorkspaceSession {
         uri,
         debounceMs,
         () -> {
-          final var latest = openFiles.get(uri);
+          final var latest = openDocuments.get(uri);
           if (latest != null) {
             compileAndPublish(latest, CompileMode.FAST);
           }
@@ -84,7 +84,7 @@ final class WorkspaceSession {
   }
 
   void onClose(final String uri) {
-    openFiles.remove(uri);
+    openDocuments.remove(uri);
     LOG.info(() -> "[close] %s".formatted(uri));
     worker.cancel(uri);
     workspace.dropFromAllCaches(uri);
@@ -117,13 +117,13 @@ final class WorkspaceSession {
   }
 
   CompletableFuture<Hover> hoverFuture(final String uri, final Position pos) {
-    final var openFile = openFiles.get(uri);
+    final var openFile = openDocuments.get(uri);
     if (openFile == null) {
       return CompletableFuture.completedFuture(null);
     }
 
     final var request =
-        new FeatureRequest(
+        new SourceFeatureRequest(
             openFile.uri(), openFile.content(), pos, workspace.allSourceRoots(), manifest);
     return routeFeature(
         uri,
@@ -136,13 +136,13 @@ final class WorkspaceSession {
 
   CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       definitionFuture(final String uri, final Position pos) {
-    final var openFile = openFiles.get(uri);
+    final var openFile = openDocuments.get(uri);
     if (openFile == null) {
       return CompletableFuture.completedFuture(Either.forLeft(List.of()));
     }
 
     final var request =
-        new FeatureRequest(
+        new SourceFeatureRequest(
             openFile.uri(), openFile.content(), pos, workspace.allSourceRoots(), manifest);
     return routeFeature(
         uri,
@@ -159,7 +159,7 @@ final class WorkspaceSession {
 
   CompletableFuture<CompletionOutcome> completionFuture(
       final String uri, final Position pos, final CompletionContext context) {
-    final var openFile = openFiles.get(uri);
+    final var openFile = openDocuments.get(uri);
     if (openFile == null) {
       return CompletableFuture.completedFuture(CompletionOutcome.of(List.of()));
     }
@@ -177,7 +177,7 @@ final class WorkspaceSession {
   }
 
   CompletableFuture<SemanticTokens> semanticTokensFuture(final String uri) {
-    final var openFile = openFiles.get(uri);
+    final var openFile = openDocuments.get(uri);
     if (openFile == null) {
       return CompletableFuture.completedFuture(null);
     }
@@ -195,7 +195,7 @@ final class WorkspaceSession {
 
   List<? extends TextEdit> format(final String tag, final String uri) {
     LOG.fine(() -> "[%s] %s".formatted(tag, uri));
-    final var openFile = openFiles.get(uri);
+    final var openFile = openDocuments.get(uri);
     return JavaFormatter.format(openFile != null ? openFile.content() : null);
   }
 
@@ -209,32 +209,32 @@ final class WorkspaceSession {
     LOG.info(() -> "[reload] workspace changed, reloading");
     final var newManifest = WorkspaceManifest.load(workspaceRoot);
     final var newTypeIndex = WorkspaceTypeIndex.build(newManifest.typeIndexShardPaths());
-    final var newWorkspace = ModuleWorkspace.scan(workspaceRoot, newManifest, newTypeIndex);
+    final var newWorkspace = WorkspaceModules.scan(workspaceRoot, newManifest, newTypeIndex);
     final var old = workspace;
     workspace = newWorkspace;
     manifest = newManifest;
-    List.copyOf(openFiles.keySet())
+    List.copyOf(openDocuments.keySet())
         .forEach(
             uri -> {
-              final var f = openFiles.get(uri);
+              final var f = openDocuments.get(uri);
               putOpenFile(uri, f.content(), f.version());
             });
     old.close();
     scheduleAllOpenFiles();
   }
 
-  private void compileAndPublish(final OpenFile snapshot, final CompileMode mode) {
+  private void compileAndPublish(final OpenDocument snapshot, final CompileMode mode) {
     submitCompile(snapshot, mode, this::publishIfCurrent);
   }
 
   private void submitCompile(
-      final OpenFile snapshot, final CompileMode mode, final AfterCompile afterCompile) {
+      final OpenDocument snapshot, final CompileMode mode, final AfterCompile afterCompile) {
     submitCompile(routeCompiler(snapshot.uri()), snapshot, mode, afterCompile);
   }
 
   private void submitCompile(
       final CompilerRoute route,
-      final OpenFile snapshot,
+      final OpenDocument snapshot,
       final CompileMode mode,
       final AfterCompile afterCompile) {
     switch (route) {
@@ -246,8 +246,8 @@ final class WorkspaceSession {
   }
 
   private void submitTo(
-      final ModuleWorker moduleWorker,
-      final OpenFile snapshot,
+      final ModuleSourceWorker moduleWorker,
+      final OpenDocument snapshot,
       final CompileMode mode,
       final AfterCompile afterCompile) {
     final var request =
@@ -281,7 +281,7 @@ final class WorkspaceSession {
 
   private <T> CompletableFuture<T> routeFeature(
       final String uri,
-      final Function<ModuleWorker, CompletableFuture<T>> operation,
+      final Function<ModuleSourceWorker, CompletableFuture<T>> operation,
       final T missingFallback) {
     return switch (routeCompiler(uri)) {
       case CompilerRoute.Module module -> operation.apply(module.worker());
@@ -296,7 +296,7 @@ final class WorkspaceSession {
         singleDiag(missing.uri(), missing.message(), DiagnosticSeverity.Warning));
   }
 
-  private boolean publishIfCurrent(final OpenFile snapshot, final CompileResult result) {
+  private boolean publishIfCurrent(final OpenDocument snapshot, final CompileResponse result) {
     if (isStale(snapshot, result.generation())) {
       return false;
     }
@@ -306,7 +306,8 @@ final class WorkspaceSession {
     return true;
   }
 
-  private boolean refreshTokensIfCurrent(final OpenFile snapshot, final CompileResult result) {
+  private boolean refreshTokensIfCurrent(
+      final OpenDocument snapshot, final CompileResponse result) {
     if (isStale(snapshot, result.generation())) {
       return false;
     }
@@ -323,18 +324,19 @@ final class WorkspaceSession {
     };
   }
 
-  private boolean isStale(final OpenFile snapshot, final long generation) {
-    final var current = openFiles.get(snapshot.uri());
+  private boolean isStale(final OpenDocument snapshot, final long generation) {
+    final var current = openDocuments.get(snapshot.uri());
     return current == null || current.generation() != generation;
   }
 
-  private void scheduleOpenFilesInModule(final String savedUri, final ModuleConfig savedModule) {
+  private void scheduleOpenFilesInModule(
+      final String savedUri, final ModuleSourceConfig savedModule) {
     LOG.fine(
         () ->
             "[save] checking %d open file(s) for dependents of %s"
-                .formatted(openFiles.size(), savedUri));
-    openFiles.values().stream()
-        .map(OpenFile::uri)
+                .formatted(openDocuments.size(), savedUri));
+    openDocuments.values().stream()
+        .map(OpenDocument::uri)
         .filter(uri -> !uri.equals(savedUri))
         .filter(
             uri ->
@@ -346,7 +348,7 @@ final class WorkspaceSession {
   }
 
   private void scheduleAllOpenFiles() {
-    openFiles.values().stream().map(OpenFile::uri).toList().forEach(this::scheduleOpenFile);
+    openDocuments.values().stream().map(OpenDocument::uri).toList().forEach(this::scheduleOpenFile);
   }
 
   private void scheduleOpenFile(final String uri) {
@@ -354,7 +356,7 @@ final class WorkspaceSession {
         uri,
         0L,
         () -> {
-          final var openFile = openFiles.get(uri);
+          final var openFile = openDocuments.get(uri);
           if (openFile != null) {
             compileAndPublish(openFile, CompileMode.OPEN);
           }
@@ -366,15 +368,15 @@ final class WorkspaceSession {
         uri,
         0L,
         () -> {
-          final var openFile = openFiles.get(uri);
+          final var openFile = openDocuments.get(uri);
           if (openFile != null) {
             submitCompile(openFile, CompileMode.FAST, this::refreshTokensIfCurrent);
           }
         });
   }
 
-  private OpenFile snapshotForSave(final String uri, final String savedContent) {
-    final var openFile = openFiles.get(uri);
+  private OpenDocument snapshotForSave(final String uri, final String savedContent) {
+    final var openFile = openDocuments.get(uri);
     if (openFile == null) {
       return null;
     }
@@ -382,9 +384,9 @@ final class WorkspaceSession {
     return savedContent != null ? putOpenFile(uri, savedContent, openFile.version()) : openFile;
   }
 
-  private OpenFile putOpenFile(final String uri, final String content, final int version) {
-    final var openFile = new OpenFile(uri, content, version, nextGeneration());
-    openFiles.put(uri, openFile);
+  private OpenDocument putOpenFile(final String uri, final String content, final int version) {
+    final var openFile = new OpenDocument(uri, content, version, nextGeneration());
+    openDocuments.put(uri, openFile);
     return openFile;
   }
 
@@ -393,7 +395,7 @@ final class WorkspaceSession {
   }
 
   private void publishCompileError(
-      final OpenFile snapshot, final CompileMode mode, final Throwable ex) {
+      final OpenDocument snapshot, final CompileMode mode, final Throwable ex) {
     if (isStale(snapshot, snapshot.generation())) {
       return;
     }
@@ -437,17 +439,17 @@ final class WorkspaceSession {
   }
 
   private sealed interface CompilerRoute {
-    record Module(ModuleWorker worker, ModuleConfig config) implements CompilerRoute {}
+    record Module(ModuleSourceWorker worker, ModuleSourceConfig config) implements CompilerRoute {}
 
-    record External(ModuleWorker worker) implements CompilerRoute {}
+    record External(ModuleSourceWorker worker) implements CompilerRoute {}
 
     record Missing(String uri, String message) implements CompilerRoute {}
   }
 
   @FunctionalInterface
   private interface AfterCompile {
-    void accept(OpenFile snapshot, CompileResult result);
+    void accept(OpenDocument snapshot, CompileResponse result);
   }
 
-  private record OpenFile(String uri, String content, int version, long generation) {}
+  private record OpenDocument(String uri, String content, int version, long generation) {}
 }

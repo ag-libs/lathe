@@ -18,18 +18,19 @@ import javax.lang.model.type.TypeMirror;
 import javax.tools.JavaFileObject;
 import org.eclipse.lsp4j.*;
 
-public final class CompilationContext implements AutoCloseable {
+public final class ModuleAnalysisSession implements AutoCloseable {
 
-  private static final Logger LOG = Logger.getLogger(CompilationContext.class.getName());
+  private static final Logger LOG = Logger.getLogger(ModuleAnalysisSession.class.getName());
 
-  private final SourceCompiler compiler;
+  private final JavaSourceCompiler compiler;
   private final CompletionEngine completionEngine;
   private final DefinitionLocator definitionLocator;
   private final JavadocLocator javadocLocator;
-  private final Map<String, CachedAnalysis> cache = new HashMap<>();
+  private final Map<String, CachedFileAnalysis> cache = new HashMap<>();
   private final SourceParser parser;
 
-  public CompilationContext(final SourceCompiler compiler, final WorkspaceTypeIndex typeIndex) {
+  public ModuleAnalysisSession(
+      final JavaSourceCompiler compiler, final WorkspaceTypeIndex typeIndex) {
     this.compiler = compiler;
     this.parser = new SourceParser();
     this.completionEngine = new CompletionEngine(parser, compiler, typeIndex);
@@ -42,7 +43,7 @@ public final class CompilationContext implements AutoCloseable {
     final var t = Stopwatch.start();
     final var run = compiler.compile(uri, content, mode);
     if (mode != CompileMode.FULL) {
-      cache.put(uri, new CachedAnalysis(content, version, run.fileAnalysis()));
+      cache.put(uri, new CachedFileAnalysis(content, version, run.fileAnalysis()));
     }
 
     final var diags = filterAndMap(run.diagnostics(), content);
@@ -59,7 +60,7 @@ public final class CompilationContext implements AutoCloseable {
     final var outcome = completionEngine.complete(request);
     if (outcome.freshAnalysis() != null) {
       cache.put(
-          uri, new CachedAnalysis(content, cache.get(uri).version(), outcome.freshAnalysis()));
+          uri, new CachedFileAnalysis(content, cache.get(uri).version(), outcome.freshAnalysis()));
     }
 
     LOG.fine(
@@ -83,7 +84,7 @@ public final class CompilationContext implements AutoCloseable {
     return ctx.analysis().semanticTokens();
   }
 
-  public Hover hover(final FeatureRequest request) {
+  public Hover hover(final SourceFeatureRequest request) {
     final var t = Stopwatch.start();
     final CursorContext cur = resolve(request);
     if (cur == null) {
@@ -113,7 +114,7 @@ public final class CompilationContext implements AutoCloseable {
         .orElse(null);
   }
 
-  public Optional<Location> definition(final FeatureRequest request) {
+  public Optional<Location> definition(final SourceFeatureRequest request) {
     final var t = Stopwatch.start();
     final var cur = resolve(request);
     if (cur == null) {
@@ -155,14 +156,14 @@ public final class CompilationContext implements AutoCloseable {
     compiler.close();
   }
 
-  private record CursorContext(FileAnalysis ctx, TreePath path) {}
+  private record CursorContext(AttributedFileAnalysis ctx, TreePath path) {}
 
-  private CachedAnalysis currentCache(final String uri, final String content) {
+  private CachedFileAnalysis currentCache(final String uri, final String content) {
     final var cached = cache.get(uri);
     return cached != null && cached.content().equals(content) ? cached : null;
   }
 
-  private CursorContext resolve(final FeatureRequest request) {
+  private CursorContext resolve(final SourceFeatureRequest request) {
     final var cached = currentCache(request.uri(), request.content());
     final var analysis = cached != null ? cached.analysis() : null;
     if (analysis == null || analysis.tree() == null) {

@@ -1,8 +1,8 @@
 package io.github.aglibs.lathe.server.module;
 
-import io.github.aglibs.lathe.server.analysis.CompilationContext;
-import io.github.aglibs.lathe.server.analysis.FeatureRequest;
+import io.github.aglibs.lathe.server.analysis.ModuleAnalysisSession;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
+import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
@@ -19,28 +19,29 @@ import java.util.logging.Logger;
 import org.eclipse.lsp4j.*;
 
 /** Called from the server worker; executes all compilation work on its own module thread. */
-public final class ModuleWorker {
+public final class ModuleSourceWorker {
 
-  private static final Logger LOG = Logger.getLogger(ModuleWorker.class.getName());
+  private static final Logger LOG = Logger.getLogger(ModuleSourceWorker.class.getName());
 
   private final ExecutorService executor;
-  private final Supplier<CompilationContext> contextFactory;
-  private CompilationContext context;
+  private final Supplier<ModuleAnalysisSession> contextFactory;
+  private ModuleAnalysisSession context;
   private boolean closed;
   private CompletableFuture<Void> closeFuture;
 
-  static ModuleWorker module(final ModuleConfig config, final WorkspaceTypeIndex typeIndex) {
-    return new ModuleWorker(
+  static ModuleSourceWorker module(
+      final ModuleSourceConfig config, final WorkspaceTypeIndex typeIndex) {
+    return new ModuleSourceWorker(
         "lathe-module-" + config.moduleDir().getFileName() + "-" + config.sourceTree(),
-        () -> new CompilationContext(new ModuleCompiler(config), typeIndex));
+        () -> new ModuleAnalysisSession(new ModuleSourceCompiler(config), typeIndex));
   }
 
-  static ModuleWorker external(final WorkspaceManifest manifest) {
-    return new ModuleWorker(
-        "lathe-external", () -> new CompilationContext(new ExternalCompiler(manifest), null));
+  static ModuleSourceWorker external(final WorkspaceManifest manifest) {
+    return new ModuleSourceWorker(
+        "lathe-external", () -> new ModuleAnalysisSession(new ExternalCompiler(manifest), null));
   }
 
-  ModuleWorker(final String name, final Supplier<CompilationContext> contextFactory) {
+  ModuleSourceWorker(final String name, final Supplier<ModuleAnalysisSession> contextFactory) {
     this.contextFactory = contextFactory;
     this.executor =
         Executors.newSingleThreadExecutor(
@@ -82,20 +83,20 @@ public final class ModuleWorker {
     closeAsync().join();
   }
 
-  public CompletableFuture<CompileResult> compile(final CompileRequest request) {
+  public CompletableFuture<CompileResponse> compile(final CompileRequest request) {
     return submit(
         ctx ->
-            new CompileResult(
+            new CompileResponse(
                 request.uri(),
                 request.generation(),
                 ctx.compile(request.uri(), request.content(), request.version(), request.mode())));
   }
 
-  public CompletableFuture<Hover> hover(final FeatureRequest request) {
+  public CompletableFuture<Hover> hover(final SourceFeatureRequest request) {
     return submit(ctx -> ctx.hover(request));
   }
 
-  public CompletableFuture<Optional<Location>> definition(final FeatureRequest request) {
+  public CompletableFuture<Optional<Location>> definition(final SourceFeatureRequest request) {
     return submit(ctx -> ctx.definition(request));
   }
 
@@ -125,7 +126,7 @@ public final class ModuleWorker {
         });
   }
 
-  private <T> CompletableFuture<T> submit(final Function<CompilationContext, T> fn) {
+  private <T> CompletableFuture<T> submit(final Function<ModuleAnalysisSession, T> fn) {
     final var future = new CompletableFuture<T>();
     if (closed) {
       future.completeExceptionally(new IllegalStateException("module worker is closed"));

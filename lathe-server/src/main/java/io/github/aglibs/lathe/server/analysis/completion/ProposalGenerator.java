@@ -1,7 +1,7 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
 import com.sun.source.tree.Scope;
-import io.github.aglibs.lathe.server.analysis.FileAnalysis;
+import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.List;
@@ -21,11 +21,11 @@ final class ProposalGenerator {
   private static final List<String> OBJECT_METHOD_NAMES =
       Arrays.stream(Object.class.getDeclaredMethods()).map(Method::getName).distinct().toList();
 
-  private final FileAnalysis snapshot;
+  private final AttributedFileAnalysis snapshot;
   private final Types types;
   private final CompletionItemFactory itemFactory;
 
-  ProposalGenerator(final FileAnalysis snapshot) {
+  ProposalGenerator(final AttributedFileAnalysis snapshot) {
     this.snapshot = snapshot;
     this.types = snapshot.types();
     this.itemFactory = new CompletionItemFactory(types);

@@ -9,9 +9,9 @@ import io.github.aglibs.lathe.core.schema.JdkSourceData;
 import io.github.aglibs.lathe.core.schema.SourceStatus;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.TestCompiler;
-import io.github.aglibs.lathe.server.analysis.CompilationContext;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
-import io.github.aglibs.lathe.server.analysis.FeatureRequest;
+import io.github.aglibs.lathe.server.analysis.ModuleAnalysisSession;
+import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.nio.file.Files;
@@ -49,7 +49,7 @@ class ExternalCompilerTest {
         usesJar, usesSourceRoot, List.of(helperJar), helperJar, helperSourceRoot);
     final WorkspaceManifest manifest = WorkspaceManifest.load(tmp);
 
-    try (final var ctx = new CompilationContext(new ExternalCompiler(manifest), null)) {
+    try (final var ctx = new ModuleAnalysisSession(new ExternalCompiler(manifest), null)) {
       final List<org.eclipse.lsp4j.Diagnostic> diagnostics =
           ctx.compile(usesSource.toUri().toString(), usesContent, 0, CompileMode.OPEN);
       final Position helperPos =
@@ -57,7 +57,7 @@ class ExternalCompilerTest {
 
       final var definition =
           ctx.definition(
-              new FeatureRequest(
+              new SourceFeatureRequest(
                   usesSource.toUri().toString(), usesContent, helperPos, List.of(), manifest));
 
       assertThat(diagnostics).isEmpty();
@@ -92,16 +92,17 @@ class ExternalCompilerTest {
     final Position helperPos =
         SourceLocator.offsetToPosition(usesContent, usesContent.indexOf("Helper"));
 
-    try (final var ctx = new CompilationContext(new ExternalCompiler(manifest), null)) {
+    try (final var ctx = new ModuleAnalysisSession(new ExternalCompiler(manifest), null)) {
       ctx.compile(usesUri, usesContent, 0, CompileMode.OPEN);
 
       // Hover over Helper: JavadocLocator finds helperSource via manifest.externalSourceDirs()
       // and calls parser.parse(helperSource). In the broken state this resets the compilation
       // FM's CLASS_PATH, causing the subsequent definition lookup to return empty.
-      ctx.hover(new FeatureRequest(usesUri, usesContent, helperPos, List.of(), manifest));
+      ctx.hover(new SourceFeatureRequest(usesUri, usesContent, helperPos, List.of(), manifest));
 
       final var definition =
-          ctx.definition(new FeatureRequest(usesUri, usesContent, helperPos, List.of(), manifest));
+          ctx.definition(
+              new SourceFeatureRequest(usesUri, usesContent, helperPos, List.of(), manifest));
 
       assertThat(definition).isPresent();
       assertThat(definition.get().getUri()).isEqualTo(helperSource.toUri().toString());
@@ -131,13 +132,13 @@ class ExternalCompilerTest {
     writeWorkspaceManifest(
         usesJar, usesSourceRoot, List.of(helperJar), helperJar, helperSourceRoot);
     try (final var ctx =
-        new CompilationContext(new ExternalCompiler(WorkspaceManifest.load(tmp)), null)) {
+        new ModuleAnalysisSession(new ExternalCompiler(WorkspaceManifest.load(tmp)), null)) {
       assertThat(ctx.compile(uri, usesContent, 0, CompileMode.OPEN)).isEmpty();
     }
 
     writeWorkspaceManifestWithoutHelper(usesJar, usesSourceRoot);
     try (final var ctx =
-        new CompilationContext(new ExternalCompiler(WorkspaceManifest.load(tmp)), null)) {
+        new ModuleAnalysisSession(new ExternalCompiler(WorkspaceManifest.load(tmp)), null)) {
       final List<Diagnostic> diagnostics = ctx.compile(uri, usesContent, 0, CompileMode.OPEN);
       assertThat(diagnostics)
           .extracting(d -> d.getMessage().getLeft())
@@ -165,7 +166,7 @@ class ExternalCompilerTest {
     writeWorkspaceManifest(usesJar, usesSourceRoot, List.of(), helperJar, helperSourceRoot);
 
     try (final var ctx =
-        new CompilationContext(new ExternalCompiler(WorkspaceManifest.load(tmp)), null)) {
+        new ModuleAnalysisSession(new ExternalCompiler(WorkspaceManifest.load(tmp)), null)) {
       final List<Diagnostic> diagnostics =
           ctx.compile(usesSource.toUri().toString(), usesContent, 0, CompileMode.OPEN);
       assertThat(diagnostics).isEmpty();
@@ -185,7 +186,7 @@ class ExternalCompilerTest {
     writeJdkWorkspaceManifest(sourceRoot);
 
     try (final var ctx =
-        new CompilationContext(new ExternalCompiler(WorkspaceManifest.load(tmp)), null)) {
+        new ModuleAnalysisSession(new ExternalCompiler(WorkspaceManifest.load(tmp)), null)) {
       assertThat(ctx.compile(source.toUri().toString(), content, 0, CompileMode.OPEN)).isEmpty();
       assertThat(ctx.compile(secondSource.toUri().toString(), secondContent, 0, CompileMode.OPEN))
           .isEmpty();

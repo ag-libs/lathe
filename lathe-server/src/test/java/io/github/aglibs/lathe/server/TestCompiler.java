@@ -3,7 +3,7 @@ package io.github.aglibs.lathe.server;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.Trees;
-import io.github.aglibs.lathe.server.analysis.SourceCompiler;
+import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -35,13 +35,13 @@ public final class TestCompiler {
 
   public static void compileToDir(
       final Path classDir, final List<Path> classpath, final Path... sources) throws IOException {
-    final var fm = SourceCompiler.createFileManager();
+    final var fm = JavaSourceCompiler.createFileManager();
     Files.createDirectories(classDir);
     fm.setLocationFromPaths(StandardLocation.CLASS_OUTPUT, List.of(classDir));
     if (!classpath.isEmpty()) {
       fm.setLocationFromPaths(StandardLocation.CLASS_PATH, classpath);
     }
-    SourceCompiler.COMPILER
+    JavaSourceCompiler.COMPILER
         .getTask(null, fm, null, null, null, fm.getJavaFileObjects(sources))
         .call();
   }
@@ -82,14 +82,14 @@ public final class TestCompiler {
   private static ParsedSource doParse(
       final List<Path> sources, final List<Path> classpath, final List<String> options)
       throws IOException {
-    final var fm = SourceCompiler.createFileManager();
+    final var fm = JavaSourceCompiler.createFileManager();
     if (!classpath.isEmpty()) {
       fm.setLocationFromPaths(StandardLocation.CLASS_PATH, classpath);
     }
     final var diagnostics = new DiagnosticCollector<JavaFileObject>();
     final JavacTask task =
         (JavacTask)
-            SourceCompiler.COMPILER.getTask(
+            JavaSourceCompiler.COMPILER.getTask(
                 null, fm, diagnostics, options, null, fm.getJavaFileObjectsFromPaths(sources));
     final CompilationUnitTree cu = task.parse().iterator().next();
     task.analyze();

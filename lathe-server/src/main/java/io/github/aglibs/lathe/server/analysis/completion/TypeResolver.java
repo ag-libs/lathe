@@ -15,7 +15,7 @@ import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
-import io.github.aglibs.lathe.server.analysis.FileAnalysis;
+import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
@@ -34,7 +34,7 @@ final class TypeResolver {
   private TypeResolver() {}
 
   static TypeMirror resolveExpectedParamType(
-      final ParsedSentinel sentinel, final int cursorLine, final FileAnalysis snapshot) {
+      final ParsedSentinel sentinel, final int cursorLine, final AttributedFileAnalysis snapshot) {
     final int argIndex = sentinel.argIndex();
     final String methodName = sentinel.enclosingMethodName();
     if (snapshot.tree() == null || argIndex < 0 || methodName == null) {
@@ -90,7 +90,7 @@ final class TypeResolver {
   }
 
   static ResolvedReceiver resolveReceiver(
-      final ParsedSentinel sentinel, final int cursorLine, final FileAnalysis snapshot) {
+      final ParsedSentinel sentinel, final int cursorLine, final AttributedFileAnalysis snapshot) {
 
     // Primary: AST-based resolution using the position from the injected parse
     if (sentinel.receiverEndOffset() >= 0) {
@@ -163,7 +163,7 @@ final class TypeResolver {
     return null;
   }
 
-  static Scope resolveScope(final FileAnalysis snapshot, final int cursorOffset) {
+  static Scope resolveScope(final AttributedFileAnalysis snapshot, final int cursorOffset) {
     if (snapshot.tree() == null) {
       return null;
     }
@@ -185,7 +185,7 @@ final class TypeResolver {
   }
 
   private static ResolvedReceiver resolveByPosition(
-      final int dotOffset, final FileAnalysis snapshot) {
+      final int dotOffset, final AttributedFileAnalysis snapshot) {
     if (dotOffset < 0 || snapshot.tree() == null) {
       return null;
     }
@@ -263,7 +263,7 @@ final class TypeResolver {
   }
 
   private static TypeElement findClassElement(
-      final String simpleName, final FileAnalysis snapshot) {
+      final String simpleName, final AttributedFileAnalysis snapshot) {
     if (simpleName == null || snapshot.tree() == null) {
       return null;
     }
@@ -286,7 +286,7 @@ final class TypeResolver {
   }
 
   private static TreePath findMethodPath(
-      final String className, final String methodName, final FileAnalysis snapshot) {
+      final String className, final String methodName, final AttributedFileAnalysis snapshot) {
     final var result = new AtomicReference<TreePath>();
     new TreePathScanner<Void, Void>() {
       @Override
@@ -315,7 +315,7 @@ final class TypeResolver {
       final String enclosingClass,
       final String enclosingMethod,
       final int cursorLine,
-      final FileAnalysis snapshot) {
+      final AttributedFileAnalysis snapshot) {
     if (enclosingMethod == null) {
       return null;
     }
@@ -353,7 +353,7 @@ final class TypeResolver {
   }
 
   private static TypeMirror findFieldType(
-      final String name, final String className, final FileAnalysis snapshot) {
+      final String name, final String className, final AttributedFileAnalysis snapshot) {
     final var classEl = findClassElement(className, snapshot);
     if (classEl == null) {
       return null;

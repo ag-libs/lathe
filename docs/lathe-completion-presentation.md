@@ -510,7 +510,7 @@ but it must not alter sorting, filtering, or insertion fields.
 
 ### 8.1 Reusing Hover
 
-Do not call `CompilationContext.hover(...)` from completion.
+Do not call `ModuleAnalysisSession.hover(...)` from completion.
 That method is cursor-oriented.
 
 Reuse the lower-level pieces instead:
@@ -527,7 +527,7 @@ Conceptual inputs:
 ```text
 Element element
 TypeMirror type
-FileAnalysis snapshot
+AttributedFileAnalysis snapshot
 List<Path> sourceRoots
 WorkspaceManifest manifest
 JavaFileManager fileManager

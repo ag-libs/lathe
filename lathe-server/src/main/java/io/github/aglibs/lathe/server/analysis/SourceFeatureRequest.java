@@ -6,10 +6,10 @@ import java.nio.file.Path;
 import java.util.List;
 import org.eclipse.lsp4j.Position;
 
-public record FeatureRequest(
+public record SourceFeatureRequest(
     String uri, String content, Position pos, List<Path> sourceRoots, WorkspaceManifest manifest) {
 
-  public FeatureRequest {
+  public SourceFeatureRequest {
     ValidCheck.check()
         .notBlank(uri, "uri")
         .notNull(content, "content")
