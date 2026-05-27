@@ -107,7 +107,8 @@ public final class CompletionEngine {
           case CONSTRUCTOR_CALL ->
               req.charBeforePrefix() == '('
                   ? completeSimpleName(parsed, injected, req)
-                  : completeSimpleNameTypeReference(injected, req);
+                  : mergeLangTypes(
+                      injected.prefix(), req, completeSimpleNameTypeReference(injected, req));
           case TYPE_REFERENCE -> completeTypeReference(parsed, injected, req);
           case VARIABLE_DECLARATION ->
               parsed.enclosingMethod() == null

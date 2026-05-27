@@ -1552,6 +1552,22 @@ class CompletionEngineTest {
     assertThat(bare).extracting(CompletionItem::getLabel).contains("String");
   }
 
+  @Test
+  void constructorCall_typePrefix_suggestsJavaLangType_withoutTypeIndex() {
+    // 'new Str§' routes to CONSTRUCTOR_CALL context → completeSimpleNameTypeReference.
+    // java.lang types must appear via the same fallback used for TYPE_REFERENCE even
+    // when the type index is empty (gap: withLangTypes is not called for CONSTRUCTOR_CALL).
+    final var items =
+        complete(
+            """
+            class Test {
+                void m() {
+                    Object o = new Str§
+                }
+            }""");
+    assertThat(items).extracting(CompletionItem::getLabel).contains("String");
+  }
+
   // --- type index: helpers ---
 
   private CompletionEngine engineWith() throws IOException {
