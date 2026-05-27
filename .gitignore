@@ -2,3 +2,4 @@ target/
 .lathe/
 .idea/
 __pycache__/
+.worktrees/
