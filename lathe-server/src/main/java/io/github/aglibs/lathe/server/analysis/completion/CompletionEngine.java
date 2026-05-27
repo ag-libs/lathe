@@ -25,41 +25,6 @@ public final class CompletionEngine {
   private static final int TYPE_INDEX_RESULT_LIMIT = 50;
   private static final int TYPE_INDEX_VALIDATION_CANDIDATE_LIMIT = 1_000;
 
-  private static final List<String> STATEMENT_KEYWORDS =
-      List.of(
-          "break",
-          "continue",
-          "do",
-          "else",
-          "for",
-          "if",
-          "new",
-          "return",
-          "switch",
-          "this",
-          "throw",
-          "try",
-          "var",
-          "final",
-          "while");
-
-  private static final List<String> CLASS_BODY_KEYWORDS =
-      List.of(
-          "abstract",
-          "class",
-          "enum",
-          "final",
-          "interface",
-          "private",
-          "protected",
-          "public",
-          "record",
-          "static",
-          "synchronized",
-          "transient",
-          "void",
-          "volatile");
-
   private final SentinelParser sentinelParser;
   private final SourceCompiler compiler;
   private final WorkspaceTypeIndex typeIndex;
@@ -143,7 +108,7 @@ public final class CompletionEngine {
   private CompletionOutcome completeSimpleName(
       final ParsedSentinel parsed, final SentinelResult injected, final CompletionRequest req) {
     final var javacItems = completeJavacSimpleName(parsed, injected, req);
-    final var keywords = keywordsFor(parsed, injected.prefix());
+    final var keywords = KeywordProvider.suggest(parsed, injected.prefix(), injected.context());
     final var items =
         keywords.isEmpty()
             ? javacItems
@@ -156,23 +121,6 @@ public final class CompletionEngine {
     final var typeIndexOutcome = completeSimpleNameTypeReference(injected, req);
     return mergeSimpleNameAndTypeIndexItems(
         items, mergeLangTypes(injected.prefix(), req, typeIndexOutcome));
-  }
-
-  private static List<CompletionItem> keywordsFor(
-      final ParsedSentinel parsed, final String prefix) {
-    final List<String> source;
-    if (parsed.enclosingMethod() != null) {
-      source = STATEMENT_KEYWORDS;
-    } else if (parsed.enclosingClass() != null) {
-      source = CLASS_BODY_KEYWORDS;
-    } else {
-      return List.of();
-    }
-
-    return source.stream()
-        .filter(kw -> kw.startsWith(prefix))
-        .map(CompletionItemFactory::keyword)
-        .toList();
   }
 
   private List<CompletionItem> completeJavacSimpleName(
@@ -205,7 +153,7 @@ public final class CompletionEngine {
     final var typeRefOutcome = withLangTypes(parsed, injected, req, typeIndexOutcome);
 
     if (parsed.enclosingMethod() == null && parsed.enclosingClass() != null) {
-      final var keywords = keywordsFor(parsed, injected.prefix());
+      final var keywords = KeywordProvider.suggest(parsed, injected.prefix(), injected.context());
       if (!keywords.isEmpty()) {
         return mergeSimpleNameAndTypeIndexItems(keywords, typeRefOutcome);
       }
