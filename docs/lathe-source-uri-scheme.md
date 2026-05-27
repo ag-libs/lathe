@@ -40,7 +40,7 @@ The path portion maps directly to the disk file that `lathe:sync` extracted into
 
 ## Server changes
 
-One change in `ModuleAnalysisSession.definition()`. The external-source branch already resolves
+One change in `SourceAnalysisSession.definition()`. The external-source branch already resolves
 the file via `WorkspaceManifest.externalSourceRoot()` and `DefinitionLocator.findSourceFile()`.
 Only the final URI construction changes:
 

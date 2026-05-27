@@ -16,11 +16,18 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.JavaFileObject;
-import org.eclipse.lsp4j.*;
+import org.eclipse.lsp4j.CompletionContext;
+import org.eclipse.lsp4j.Diagnostic;
+import org.eclipse.lsp4j.DiagnosticSeverity;
+import org.eclipse.lsp4j.Hover;
+import org.eclipse.lsp4j.Location;
+import org.eclipse.lsp4j.MarkupContent;
+import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.Range;
 
-public final class ModuleAnalysisSession implements AutoCloseable {
+public final class SourceAnalysisSession implements AutoCloseable {
 
-  private static final Logger LOG = Logger.getLogger(ModuleAnalysisSession.class.getName());
+  private static final Logger LOG = Logger.getLogger(SourceAnalysisSession.class.getName());
 
   private final JavaSourceCompiler compiler;
   private final CompletionEngine completionEngine;
@@ -29,7 +36,7 @@ public final class ModuleAnalysisSession implements AutoCloseable {
   private final Map<String, CachedFileAnalysis> cache = new HashMap<>();
   private final SourceParser parser;
 
-  public ModuleAnalysisSession(
+  public SourceAnalysisSession(
       final JavaSourceCompiler compiler, final WorkspaceTypeIndex typeIndex) {
     this.compiler = compiler;
     this.parser = new SourceParser();
@@ -54,13 +61,16 @@ public final class ModuleAnalysisSession implements AutoCloseable {
   }
 
   public CompletionOutcome complete(
-      final String uri, final String content, final Position pos, final CompletionContext context) {
+      final String uri,
+      final String content,
+      final int version,
+      final Position pos,
+      final CompletionContext context) {
     final var t = Stopwatch.start();
     final var request = new CompletionRequest(uri, content, pos, context, cache.get(uri));
     final var outcome = completionEngine.complete(request);
     if (outcome.freshAnalysis() != null) {
-      cache.put(
-          uri, new CachedFileAnalysis(content, cache.get(uri).version(), outcome.freshAnalysis()));
+      cache.put(uri, new CachedFileAnalysis(content, version, outcome.freshAnalysis()));
     }
 
     LOG.fine(

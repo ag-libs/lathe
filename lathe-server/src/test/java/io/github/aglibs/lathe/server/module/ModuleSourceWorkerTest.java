@@ -6,7 +6,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.github.aglibs.lathe.server.analysis.CompileMode;
-import io.github.aglibs.lathe.server.analysis.ModuleAnalysisSession;
+import io.github.aglibs.lathe.server.analysis.SourceAnalysisSession;
 import java.util.List;
 import org.eclipse.lsp4j.Diagnostic;
 import org.junit.jupiter.api.AfterEach;
@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 
 class ModuleSourceWorkerTest {
 
-  private final ModuleAnalysisSession context = mock(ModuleAnalysisSession.class);
+  private final SourceAnalysisSession context = mock(SourceAnalysisSession.class);
   private final ModuleSourceWorker worker =
       new ModuleSourceWorker("lathe-module-test", () -> context);
 

@@ -789,7 +789,7 @@ testing the full type-completion path with real JAR types:
    `typeIndexShardPaths()`.
 6. Add `WorkspaceTypeIndex` in the `analysis` package with `build(List<Path>)`, `empty()`, and
    `search(prefix, limit)` backed by a `NavigableMap<String, List<TypeIndexEntry>>`.
-7. Thread `WorkspaceTypeIndex` through `WorkspaceModules` → `ModuleSourceWorker` → `ModuleAnalysisSession` →
+7. Thread `WorkspaceTypeIndex` through `WorkspaceModules` → `ModuleSourceWorker` → `SourceAnalysisSession` →
    `CompletionEngine`.
 8. In `CompletionEngine.completeTypeReference` when `receiverText == null`: query the index for
    prefix matches, filter through `elements.getTypeElement(fqn) != null`, and return items with

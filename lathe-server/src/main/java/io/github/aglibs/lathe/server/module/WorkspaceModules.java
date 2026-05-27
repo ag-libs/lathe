@@ -20,16 +20,16 @@ public final class WorkspaceModules implements AutoCloseable {
 
   private static final Logger LOG = Logger.getLogger(WorkspaceModules.class.getName());
 
-  private final List<ModuleSourceConfig> modules;
+  private final List<ModuleSourceConfig> moduleSources;
   private final Map<String, ModuleSourceWorker> workers = new HashMap<>();
   private final ModuleSourceWorker externalWorker;
   private final WorkspaceTypeIndex typeIndex;
 
   private WorkspaceModules(
-      final List<ModuleSourceConfig> modules,
+      final List<ModuleSourceConfig> moduleSources,
       final WorkspaceManifest manifest,
       final WorkspaceTypeIndex typeIndex) {
-    this.modules = modules;
+    this.moduleSources = moduleSources;
     this.typeIndex = typeIndex;
     this.externalWorker = ModuleSourceWorker.external(manifest);
   }
@@ -48,14 +48,14 @@ public final class WorkspaceModules implements AutoCloseable {
       return new WorkspaceModules(List.of(), manifest, typeIndex);
     }
 
-    final var modules = new ArrayList<ModuleSourceConfig>();
+    final var moduleSources = new ArrayList<ModuleSourceConfig>();
     try (final var stream = Files.walk(latheDir)) {
       stream
           .filter(WorkspaceModules::isParamsFile)
           .forEach(
               paramsFile -> {
                 try {
-                  modules.add(ModuleSourceConfig.load(paramsFile, paramsFile.getParent()));
+                  moduleSources.add(ModuleSourceConfig.load(paramsFile, paramsFile.getParent()));
                 } catch (final IOException e) {
                   LOG.log(
                       Level.WARNING,
@@ -68,18 +68,20 @@ public final class WorkspaceModules implements AutoCloseable {
     }
 
     LOG.info(
-        () -> "[workspace] loaded %d module(s) from %s".formatted(modules.size(), workspaceRoot));
-    return new WorkspaceModules(List.copyOf(modules), manifest, typeIndex);
+        () ->
+            "[workspace] loaded %d module source config(s) from %s"
+                .formatted(moduleSources.size(), workspaceRoot));
+    return new WorkspaceModules(List.copyOf(moduleSources), manifest, typeIndex);
   }
 
-  public Optional<ModuleSourceConfig> moduleFor(final Path filePath) {
-    return modules.stream()
+  public Optional<ModuleSourceConfig> moduleSourceFor(final Path filePath) {
+    return moduleSources.stream()
         .filter(m -> m.sourceRoots().stream().anyMatch(filePath::startsWith))
         .findFirst();
   }
 
   public List<Path> allSourceRoots() {
-    return modules.stream().flatMap(m -> m.sourceRoots().stream()).toList();
+    return moduleSources.stream().flatMap(m -> m.sourceRoots().stream()).toList();
   }
 
   public ModuleSourceWorker workerFor(final ModuleSourceConfig config) {

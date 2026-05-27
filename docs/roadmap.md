@@ -21,8 +21,8 @@ Current lifecycle shape:
 - Editors launch `~/.cache/lathe/current/lathe-launcher.sh`.
 
 Threading model: one server worker thread (`lathe-worker`) owns `WorkspaceSession`, `WorkspaceModules`,
-open-file snapshots, routing, stale-result checks, and client publishing.
-One module worker thread per javac-backed `ModuleAnalysisSession`.
+open-document snapshots, routing, stale-result checks, and client publishing.
+One module worker thread per javac-backed `SourceAnalysisSession`.
 LSP4J threads capture immutable request data and enqueue work.
 Compile results cross back to `lathe-worker` before diagnostics or semantic-token refreshes are published.
 Architecture is documented in [lathe-server-data-flow-recipe.md](lathe-server-data-flow-recipe.md).
@@ -113,7 +113,7 @@ No client-side project model parsing.
 Definition jumps into JDK and dependency sources currently return `file://` URIs pointing
 into `~/.cache/lathe/`, causing swap file dialogs in Neovim and requiring path-based
 detection logic in every editor plugin.
-Replace with a `lathe-source://` scheme: one line in `ModuleAnalysisSession.definition()`;
+Replace with a `lathe-source://` scheme: one line in `SourceAnalysisSession.definition()`;
 editors read the file from the path embedded in the URI and open it as a read-only
 `nofile` buffer — no server round-trip, no per-editor path heuristics.
 See [lathe-source-uri-scheme.md](lathe-source-uri-scheme.md) for the full design.

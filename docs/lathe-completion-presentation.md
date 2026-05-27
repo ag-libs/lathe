@@ -510,7 +510,7 @@ but it must not alter sorting, filtering, or insertion fields.
 
 ### 8.1 Reusing Hover
 
-Do not call `ModuleAnalysisSession.hover(...)` from completion.
+Do not call `SourceAnalysisSession.hover(...)` from completion.
 That method is cursor-oriented.
 
 Reuse the lower-level pieces instead:

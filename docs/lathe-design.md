@@ -519,8 +519,8 @@ If a module directory has no params files: "Run `mvn process-test-classes` to ac
 
 The LS watches `workspace.json` and `lsp-params-*.json` files.
 Manifest or params changes trigger a full LS reload:
-the module registry is re-scanned from `.lathe/`,
-all `CustomFileManager` instances and result caches are dropped,
+module source configs are re-scanned from `.lathe/`,
+all `ModuleSourceWorker` instances and result caches are dropped,
 and open files are re-attributed.
 The user sees a brief "Workspace reloaded" notification.
 
@@ -530,27 +530,31 @@ Lathe holds no long-lived cross-module javac symbol cache.
 Every operation that needs javac — diagnostics on `didChange`, member-access completion, find-references attribution
 against open files, hover, semantic tokens — builds a fresh `JavacTask` from the module's params and runs the pass.
 When an attributed result is cached for later hover, definition, or semantic-token requests,
-the cached `CompilationTaskContext` retains the javac task-backed state needed by `Trees` and the attributed
+the cached `AttributedFileAnalysis` retains the javac task-backed state needed by `Trees` and the attributed
 `CompilationUnitTree`.
 Those references are dropped when the cached context is replaced, invalidated, or dropped on `didClose`.
 
-The only durable per-module state is:
+The only durable per-module-source state is:
 
 - **Parsed params** — read from disk on startup and re-read after the module's `lathe.lock` disappears.
-- **`ModuleSourceCompiler`** — one instance per module, created on first file access via `ModuleRegistry.getOrCreate(ModuleParams)`.
-  Owns one `StandardJavaFileManager` and one `ModuleAnalysis` instance.
+- **`ModuleSourceWorker`** — one lazy worker per `ModuleSourceConfig`, which means main and test params get
+  separate workers.
+  The worker owns one long-lived `SourceAnalysisSession`.
+- **`SourceAnalysisSession`** — owns one `JavaSourceCompiler`, feature helpers, and the per-file analysis cache.
+- **`ModuleSourceCompiler`** — one instance per module source tree.
+  Owns one `StandardJavaFileManager`.
   The file manager is initialized eagerly in the constructor, sets explicit javac locations
   (`CLASS_OUTPUT` → `.lathe/<rel>/classes`, `SOURCE_OUTPUT` → `.lathe/<rel>/generated-sources`),
   and holds no attributed javac task state.
-  `ModuleSourceCompiler` is closed on registry reload and server shutdown; `ModuleRegistry` closes all compilers.
-  There is no LRU — `ModuleSourceCompiler` instances are created on demand and live for the duration of the registry.
+  `ModuleSourceCompiler` is closed when its `SourceAnalysisSession` closes during workspace reload or server shutdown.
+  There is no LRU — workers are created on demand and live for the duration of the current `WorkspaceModules` snapshot.
 
 _v1 simplification — the temp-dir approach is straightforward to implement and test.
 A future version may replace it with in-memory `JavaFileObject` serving to avoid the disk round-trip._
 - **Per-file result cache** — `Map<Path, CompileResponse>` keyed by document content hash.
-  Holds the post-attribution `CompilationTaskContext` from the most recent pass for each open file.
-  The context includes `Trees`, `CompilationUnitTree`, and pre-computed semantic tokens.
-  Because `Trees` is backed by javac task state, the context intentionally keeps that state reachable while cached.
+  Holds the post-attribution `AttributedFileAnalysis` from the most recent pass for each open file.
+  The analysis includes `Trees`, `CompilationUnitTree`, and pre-computed semantic tokens.
+  Because `Trees` is backed by javac task state, the analysis intentionally keeps that state reachable while cached.
   At most one entry per currently-open file.
   The previous context is dropped when replaced by a new compile result,
   invalidated on next `didChange` for that file,
@@ -652,7 +656,7 @@ didChange received (LSP receive thread)
   → enqueue didChange work on the server worker
 
 server worker:
-  → store the open-file snapshot
+  → store the open-document snapshot
   → publish empty diagnostics
   → cancel any pending debounce for this URI
   → schedule debounce (500ms)
@@ -720,10 +724,11 @@ Cached file managers remain bounded by the LRU and are closed on eviction or reg
 
 Lathe uses one server worker thread for all work that touches mutable server state or javac-backed objects.
 LSP4J message threads and the workspace watcher capture immutable request data, enqueue work, and return futures.
-The worker owns `ModuleRegistry`, `ExternalFileCompiler`, `ModuleSourceCompiler` instances, open-file snapshots, analysis
-caches, debounced compilation, and workspace reload.
-This deliberately serializes compiler access for v1, keeps javac file managers thread-confined, and avoids
-method-level synchronization around compiler internals.
+The server worker owns `WorkspaceSession`, `WorkspaceModules`, open-document snapshots, routing, stale checks,
+client publishing, debounced compilation, and workspace reload.
+Each `ModuleSourceWorker` or external worker owns its `SourceAnalysisSession`, `JavaSourceCompiler`,
+and javac-backed analysis cache on a single worker thread.
+This keeps javac file managers thread-confined and avoids method-level synchronization around compiler internals.
 If profiling later shows this is too restrictive, the worker boundary can split into per-module or project/external
 lanes without changing the request boundary: immutable data in, LSP DTOs or client notifications out.
 
@@ -733,12 +738,12 @@ the server worker checks not only the file module's lock but also the locks of a
 This prevents reading stale `.lathe/<dep-rel>/classes/`
 while the shim is mid-copy for a dependency during a parallel `mvnd -T N` build.
 
-**Resource cleanup.** `CompilationTaskContext` retains any javac task-backed state needed by cached `Trees`.
+**Resource cleanup.** `AttributedFileAnalysis` retains any javac task-backed state needed by cached `Trees`.
 The public `JavacTask` API has no supported close method,
 so cleanup means dropping cached context references when replaced,
 invalidated, dropped on `didClose`, or cleared during registry reload and server shutdown.
-The closeable javac resource Lathe owns is the cached `StandardJavaFileManager`;
-it is flushed after full passes and closed on eviction, registry reload, and server shutdown.
+The closeable javac resource Lathe owns is the `StandardJavaFileManager` inside each `JavaSourceCompiler`;
+it is flushed after full passes and closed on workspace reload and server shutdown.
 
 ---
 
@@ -833,14 +838,14 @@ Modules with no `.lathe/<rel>/classes/` are silently skipped.
   process-test-classes` runs.
 - Constants inlined by the compiler, `@PolymorphicSignature` targets,
   and `invokedynamic`-based method references are missed in closed-module scans.
-- Partially-open modules have a blind spot: the open-file AST scan covers only the open files,
+- Partially-open modules have a blind spot: the open-document AST scan covers only the open files,
   and the bytecode scan skips the module entirely because it has open files.
   References in the remaining closed files of a partially-open module are not found.
   Closing all files in the module (or opening all of them) eliminates the gap.
 
 ### Opening dependency source files
 
-`ExternalFileCompiler` handles source files outside any reactor module when their path is under a manifest
+`ExternalCompiler` handles source files outside any reactor module when their path is under a manifest
 dependency source root, `jdk.sourceDir`, or a client virtual URI that resolves to one of those extracted files.
 It owns a reusable `StandardJavaFileManager`, a temp source root, and a `ModuleAnalysis`.
 For dependency sources it sets `CLASS_PATH` from the manifest's per-dependency classpath entries plus the dependency's

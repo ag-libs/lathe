@@ -23,7 +23,17 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 import java.util.logging.Logger;
 import java.util.stream.IntStream;
-import org.eclipse.lsp4j.*;
+import org.eclipse.lsp4j.CompletionContext;
+import org.eclipse.lsp4j.Diagnostic;
+import org.eclipse.lsp4j.DiagnosticSeverity;
+import org.eclipse.lsp4j.Hover;
+import org.eclipse.lsp4j.Location;
+import org.eclipse.lsp4j.LocationLink;
+import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.PublishDiagnosticsParams;
+import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.SemanticTokens;
+import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.LanguageClient;
 
@@ -168,7 +178,7 @@ final class WorkspaceSession {
         uri,
         moduleWorker ->
             moduleWorker
-                .complete(uri, openFile.content(), pos, context)
+                .complete(uri, openFile.content(), openFile.version(), pos, context)
                 .exceptionally(
                     ex ->
                         logAndReturn(
@@ -266,7 +276,7 @@ final class WorkspaceSession {
   private CompilerRoute routeCompiler(final String uri) {
     final var path = toPath(uri);
     return workspace
-        .moduleFor(path)
+        .moduleSourceFor(path)
         .<CompilerRoute>map(module -> new CompilerRoute.Module(workspace.workerFor(module), module))
         .orElseGet(
             () -> {
@@ -341,7 +351,7 @@ final class WorkspaceSession {
         .filter(
             uri ->
                 workspace
-                    .moduleFor(toPath(uri))
+                    .moduleSourceFor(toPath(uri))
                     .map(m -> m.moduleDir().equals(savedModule.moduleDir()))
                     .orElse(false))
         .forEach(this::scheduleOpenFile);

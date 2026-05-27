@@ -8,9 +8,9 @@ The server uses one workspace worker for LSP/session state and one worker per co
 | Thread | Owns | Does not own |
 |---|---|---|
 | LSP4J receive thread | immutable request data extracted from LSP params | workspace state, javac state |
-| `lathe-worker` | `WorkspaceSession`, `WorkspaceModules`, `WorkspaceManifest`, `WorkspaceWatcher`, `openDocuments`, routing, stale checks, client publishing | javac-backed `ModuleAnalysisSession` |
-| `lathe-module-<name>` | one module `ModuleAnalysisSession` and `JavaSourceCompiler` | workspace routing state, `openDocuments`, client publishing |
-| `lathe-external` | one external-source `ModuleAnalysisSession` and `JavaSourceCompiler` | workspace routing state, `openDocuments`, client publishing |
+| `lathe-worker` | `WorkspaceSession`, `WorkspaceModules`, `WorkspaceManifest`, `WorkspaceWatcher`, `openDocuments`, routing, stale checks, client publishing | javac-backed `SourceAnalysisSession` |
+| `lathe-module-<name>` | one module-source `SourceAnalysisSession` and `JavaSourceCompiler` | workspace routing state, `openDocuments`, client publishing |
+| `lathe-external` | one external-source `SourceAnalysisSession` and `JavaSourceCompiler` | workspace routing state, `openDocuments`, client publishing |
 
 `openDocuments` is a plain `HashMap`.
 It is server-worker-confined.
@@ -39,20 +39,20 @@ private final Map<String, OpenDocument> openDocuments = new HashMap<>();
 `OpenDocument` is the latest open-document snapshot:
 
 ```java
-record OpenDocument(String uri, String content, long generation) {}
+record OpenDocument(String uri, String content, int version, long generation) {}
 ```
 
 The single `generation` value is incremented for every open-document snapshot.
 Reload refreshes all open-document generations, so old compile results are stale even when text is unchanged.
 
-`WorkspaceModules` owns discovered module configs and lazy workers.
+`WorkspaceModules` owns discovered module source configs and lazy workers.
 It also owns the external-source worker for the current manifest.
 
-`ModuleSourceWorker` owns a single-thread executor and a lazy `ModuleAnalysisSession`.
+`ModuleSourceWorker` owns a single-thread executor and a lazy `SourceAnalysisSession`.
 It exposes domain-specific methods: `compile`, `hover`, `definition`, `complete`, `semanticTokens`, and `dropFromCache`.
 Its `close()` waits for context cleanup to finish.
 
-`ModuleAnalysisSession` owns analysis cache and feature helpers.
+`SourceAnalysisSession` owns analysis cache and feature helpers.
 Its cache stores source text separately from javac analysis:
 
 ```java
@@ -78,7 +78,7 @@ record CompileResponse(String uri, long generation, List<Diagnostic> diagnostics
 The worker does not publish diagnostics and does not inspect workspace state.
 The result carries the generation from the request.
 
-`WorkspaceSession` publishes only when the result still matches the current open-file generation:
+`WorkspaceSession` publishes only when the result still matches the current open-document generation:
 
 ```java
 private boolean isStale(final OpenDocument snapshot, final long generation) {
@@ -204,7 +204,7 @@ lathe-worker watcher poll:
 ```
 
 `oldWorkspace.close()` waits for its module workers to close their contexts.
-Any old compile result that returns after reload is dropped by the refreshed open-file generation.
+Any old compile result that returns after reload is dropped by the refreshed open-document generation.
 
 ## Feature Flows
 
@@ -212,9 +212,9 @@ Hover, definition, completion, semantic tokens, and formatting all enter through
 The service submits a small routing operation to `ServerWorker`.
 
 Hover and definition snapshot source roots and manifest on `lathe-worker`, then query the routed module worker.
-Completion uses the current open-file content from `openDocuments`.
+Completion uses the current open-document content from `openDocuments`.
 Semantic tokens read cached tokens from the routed context and return `null` at the LSP boundary when no tokens are cached.
-Formatting uses the current open-file content and does not use module workers.
+Formatting uses the current open-document content and does not use module workers.
 
 Feature requests do not publish diagnostics and do not mutate workspace state.
 
@@ -235,7 +235,7 @@ WorkspaceModules.close()
   -> wait for all close futures
 
 ModuleSourceWorker.close()
-  -> close ModuleAnalysisSession on the module worker thread
+  -> close SourceAnalysisSession on the module worker thread
   -> complete close future
   -> shutdown executor
 ```
