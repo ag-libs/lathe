@@ -1426,6 +1426,72 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("subList"));
   }
 
+  // gap #12 ─ bare dot with no receiver must return empty ─────────────────
+  //
+  // When the user types '.' at a position where there is no syntactic receiver
+  // (e.g. right after ';', right after '{', or at class-body level), the injected
+  // sentinel becomes '.__LATHE_SENTINEL__'.  Javac's error recovery drops the bare '.'
+  // and classifies the node as SIMPLE_NAME (method body) or TYPE_REFERENCE (class body),
+  // so the engine falls into those paths with prefix="" and receiverText=null and returns
+  // keyword / local-variable items.  Correct behaviour: 0 items.
+
+  @Test
+  void bareDot_afterSemicolon_sameLineInMethodBody_returnsEmpty() {
+    // 'stmt();.' on the same line — backward scan hits ';', receiverText=null
+    final var items =
+        complete(
+            """
+            class Test {
+                void m() {
+                    System.out.println("hi");.§
+                }
+            }""");
+    assertThat(items).isEmpty();
+  }
+
+  @Test
+  void bareDot_afterSemicolon_nextLineInMethodBody_returnsEmpty() {
+    // '.' on the line following a completed statement — scan crosses '\n' then ';',
+    // receiverText=null
+    final var items =
+        complete(
+            """
+            class Test {
+                void m() {
+                    System.out.println("hi");
+                    .§
+                }
+            }""");
+    assertThat(items).isEmpty();
+  }
+
+  @Test
+  void bareDot_atMethodBodyStart_returnsEmpty() {
+    // '.' as the very first token in a method body — backward scan hits '{', receiverText=null
+    final var items =
+        complete(
+            """
+            class Test {
+                void m() {
+                    .§
+                }
+            }""");
+    assertThat(items).isEmpty();
+  }
+
+  @Test
+  void bareDot_inClassBody_returnsEmpty() {
+    // '.' at class-body level — backward scan hits '{', receiverText=null;
+    // routes to TYPE_REFERENCE, currently returns class-body keywords
+    final var items =
+        complete(
+            """
+            class Test {
+                .§
+            }""");
+    assertThat(items).isEmpty();
+  }
+
   // gap #12 ─ empty-prefix guard bypassed ───────────────────────────────────
 
   @Test

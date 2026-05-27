@@ -77,8 +77,17 @@ public final class CompletionEngine {
     final var injected = new SentinelInjector(req.content()).inject(req.cursorOffset());
     LOG.fine(
         () ->
-            "[completion] inject prefix=|%s| receiver=|%s| ctx=%s"
-                .formatted(injected.prefix(), injected.receiverText(), injected.context()));
+            "[completion] inject prefix=|%s| receiver=|%s| ctx=%s hasDot=%s"
+                .formatted(
+                    injected.prefix(),
+                    injected.receiverText(),
+                    injected.context(),
+                    injected.hasDot()));
+
+    if (injected.hasDot() && injected.receiverText() == null) {
+      LOG.fine(() -> "[completion] bare dot with no receiver — returning empty");
+      return CompletionOutcome.of(List.of());
+    }
 
     final int version = req.cached() != null ? req.cached().version() : -1;
     final var parsed = sentinelParser.parse(injected, req.pos().getLine(), version);

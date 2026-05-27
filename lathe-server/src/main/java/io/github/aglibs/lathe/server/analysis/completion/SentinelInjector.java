@@ -10,7 +10,7 @@ final class SentinelInjector {
   }
 
   private record BackwardResult(
-      String prefix, int tokenStart, Context context, String receiverText) {}
+      String prefix, int tokenStart, Context context, String receiverText, boolean hasDot) {}
 
   private record ForwardResult(int unclosedParens, int unclosedBraces) {}
 
@@ -47,7 +47,12 @@ final class SentinelInjector {
             + "}".repeat(fwd.unclosedBraces());
 
     return new SentinelResult(
-        back.prefix(), back.tokenStart(), back.receiverText(), back.context(), injected);
+        back.prefix(),
+        back.tokenStart(),
+        back.receiverText(),
+        back.context(),
+        back.hasDot(),
+        injected);
   }
 
   private BackwardResult backwardScan(final int cursorOffset) {
@@ -166,7 +171,7 @@ final class SentinelInjector {
     }
 
     final String receiverText = hasDot ? collectReceiver(tokenStart - 2) : null;
-    return new BackwardResult(prefix, tokenStart, context, receiverText);
+    return new BackwardResult(prefix, tokenStart, context, receiverText, hasDot);
   }
 
   private String collectReceiver(final int from) {

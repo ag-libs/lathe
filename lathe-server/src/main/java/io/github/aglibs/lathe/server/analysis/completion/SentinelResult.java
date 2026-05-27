@@ -7,6 +7,7 @@ record SentinelResult(
     int tokenStart,
     String receiverText,
     SentinelInjector.Context context,
+    boolean hasDot,
     String injectedContent) {
 
   SentinelResult {
