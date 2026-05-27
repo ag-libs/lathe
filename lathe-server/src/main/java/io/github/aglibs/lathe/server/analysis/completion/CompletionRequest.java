@@ -1,12 +1,16 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
-import io.github.aglibs.lathe.server.analysis.CachedAnalysis;
+import io.github.aglibs.lathe.server.analysis.CachedFileAnalysis;
 import io.github.aglibs.validcheck.ValidCheck;
 import org.eclipse.lsp4j.CompletionContext;
 import org.eclipse.lsp4j.Position;
 
 public record CompletionRequest(
-    String uri, String content, Position pos, CompletionContext context, CachedAnalysis cached) {
+    String uri,
+    String content,
+    Position pos,
+    CompletionContext context,
+    CachedFileAnalysis cached) {
 
   public CompletionRequest {
     ValidCheck.check()

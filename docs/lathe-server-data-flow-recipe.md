@@ -8,14 +8,14 @@ The server uses one workspace worker for LSP/session state and one worker per co
 | Thread | Owns | Does not own |
 |---|---|---|
 | LSP4J receive thread | immutable request data extracted from LSP params | workspace state, javac state |
-| `lathe-worker` | `WorkspaceSession`, `ModuleWorkspace`, `WorkspaceManifest`, `WorkspaceWatcher`, `openFiles`, routing, stale checks, client publishing | javac-backed `CompilationContext` |
-| `lathe-module-<name>` | one module `CompilationContext` and `SourceCompiler` | workspace routing state, `openFiles`, client publishing |
-| `lathe-external` | one external-source `CompilationContext` and `SourceCompiler` | workspace routing state, `openFiles`, client publishing |
+| `lathe-worker` | `WorkspaceSession`, `WorkspaceModules`, `WorkspaceManifest`, `WorkspaceWatcher`, `openDocuments`, routing, stale checks, client publishing | javac-backed `SourceAnalysisSession` |
+| `lathe-module-<name>` | one module-source `SourceAnalysisSession` and `JavaSourceCompiler` | workspace routing state, `openDocuments`, client publishing |
+| `lathe-external` | one external-source `SourceAnalysisSession` and `JavaSourceCompiler` | workspace routing state, `openDocuments`, client publishing |
 
-`openFiles` is a plain `HashMap`.
+`openDocuments` is a plain `HashMap`.
 It is server-worker-confined.
 
-Module workers never read `openFiles`.
+Module workers never read `openDocuments`.
 Compilation results always hop back to `lathe-worker` before stale checks or publishing.
 
 ## Main Types
@@ -31,38 +31,38 @@ It serializes workspace state changes, keyed debounced tasks, watcher polling, a
 
 ```java
 private WorkspaceManifest manifest;
-private ModuleWorkspace workspace;
+private WorkspaceModules workspace;
 private WorkspaceWatcher watcher;
-private final Map<String, OpenFile> openFiles = new HashMap<>();
+private final Map<String, OpenDocument> openDocuments = new HashMap<>();
 ```
 
-`OpenFile` is the latest open-file snapshot:
+`OpenDocument` is the latest open-document snapshot:
 
 ```java
-record OpenFile(String uri, String content, long generation) {}
+record OpenDocument(String uri, String content, int version, long generation) {}
 ```
 
-The single `generation` value is incremented for every open-file snapshot.
-Reload refreshes all open-file generations, so old compile results are stale even when text is unchanged.
+The single `generation` value is incremented for every open-document snapshot.
+Reload refreshes all open-document generations, so old compile results are stale even when text is unchanged.
 
-`ModuleWorkspace` owns discovered module configs and lazy workers.
+`WorkspaceModules` owns discovered module source configs and lazy workers.
 It also owns the external-source worker for the current manifest.
 
-`ModuleWorker` owns a single-thread executor and a lazy `CompilationContext`.
+`ModuleSourceWorker` owns a single-thread executor and a lazy `SourceAnalysisSession`.
 It exposes domain-specific methods: `compile`, `hover`, `definition`, `complete`, `semanticTokens`, and `dropFromCache`.
 Its `close()` waits for context cleanup to finish.
 
-`CompilationContext` owns analysis cache and feature helpers.
+`SourceAnalysisSession` owns analysis cache and feature helpers.
 Its cache stores source text separately from javac analysis:
 
 ```java
-record CachedAnalysis(String content, FileAnalysis analysis) {}
+record CachedFileAnalysis(String content, AttributedFileAnalysis analysis) {}
 ```
 
-`FileAnalysis` contains only javac analysis state.
+`AttributedFileAnalysis` contains only javac analysis state.
 It does not contain source text.
 
-`ModuleCompiler` and `ExternalCompiler` implement `SourceCompiler`.
+`ModuleSourceCompiler` and `ExternalCompiler` implement `JavaSourceCompiler`.
 Both delegate javac task execution to `JavacRunner`.
 
 ## Compile Identity
@@ -72,17 +72,17 @@ Module workers receive explicit requests and return pure results:
 ```java
 record CompileRequest(String uri, String content, long generation, CompileMode mode) {}
 
-record CompileResult(String uri, long generation, List<Diagnostic> diagnostics) {}
+record CompileResponse(String uri, long generation, List<Diagnostic> diagnostics) {}
 ```
 
 The worker does not publish diagnostics and does not inspect workspace state.
 The result carries the generation from the request.
 
-`WorkspaceSession` publishes only when the result still matches the current open-file generation:
+`WorkspaceSession` publishes only when the result still matches the current open-document generation:
 
 ```java
-private boolean isStale(final OpenFile snapshot, final long generation) {
-  final var current = openFiles.get(snapshot.uri());
+private boolean isStale(final OpenDocument snapshot, final long generation) {
+  final var current = openDocuments.get(snapshot.uri());
   return current == null || current.generation() != generation;
 }
 ```
@@ -95,9 +95,9 @@ This drops results for closed files, later edits, saves with newer content, and 
 
 ```java
 sealed interface CompilerRoute {
-  record Module(ModuleWorker worker, ModuleConfig config) implements CompilerRoute {}
+  record Module(ModuleSourceWorker worker, ModuleSourceConfig config) implements CompilerRoute {}
 
-  record External(ModuleWorker worker) implements CompilerRoute {}
+  record External(ModuleSourceWorker worker) implements CompilerRoute {}
 
   record Missing(String uri, String message) implements CompilerRoute {}
 }
@@ -123,7 +123,7 @@ lathe-worker:
 
 module worker:
   context.compile(uri, content, OPEN)
-  return CompileResult(uri, generation, diagnostics)
+  return CompileResponse(uri, generation, diagnostics)
 
 lathe-worker:
   publish only if current generation still matches
@@ -142,7 +142,7 @@ lathe-worker:
   schedule debounce task
 
 debounce task on lathe-worker:
-  latest = openFiles.get(uri)
+  latest = openDocuments.get(uri)
   if latest != null:
     submitCompile(latest, FAST, publishIfCurrent)
 ```
@@ -162,7 +162,7 @@ lathe-worker:
 
 module worker:
   context.compile(uri, snapshot.content, FULL)
-  return CompileResult
+  return CompileResponse
 
 lathe-worker:
   publish only if current
@@ -179,7 +179,7 @@ LSP didClose(uri)
   -> ServerWorker.execute(session.onClose(uri))
 
 lathe-worker:
-  openFiles.remove(uri)
+  openDocuments.remove(uri)
   cancel pending debounce
   workspace.dropFromAllCaches(uri)
   publish empty diagnostics
@@ -194,7 +194,7 @@ module workers:
 lathe-worker watcher poll:
   if changed:
     newManifest = WorkspaceManifest.load(root)
-    newWorkspace = ModuleWorkspace.scan(root, newManifest)
+    newWorkspace = WorkspaceModules.scan(root, newManifest)
     oldWorkspace = workspace
     workspace = newWorkspace
     manifest = newManifest
@@ -204,7 +204,7 @@ lathe-worker watcher poll:
 ```
 
 `oldWorkspace.close()` waits for its module workers to close their contexts.
-Any old compile result that returns after reload is dropped by the refreshed open-file generation.
+Any old compile result that returns after reload is dropped by the refreshed open-document generation.
 
 ## Feature Flows
 
@@ -212,9 +212,9 @@ Hover, definition, completion, semantic tokens, and formatting all enter through
 The service submits a small routing operation to `ServerWorker`.
 
 Hover and definition snapshot source roots and manifest on `lathe-worker`, then query the routed module worker.
-Completion uses the current open-file content from `openFiles`.
+Completion uses the current open-document content from `openDocuments`.
 Semantic tokens read cached tokens from the routed context and return `null` at the LSP boundary when no tokens are cached.
-Formatting uses the current open-file content and does not use module workers.
+Formatting uses the current open-document content and does not use module workers.
 
 Feature requests do not publish diagnostics and do not mutate workspace state.
 
@@ -228,14 +228,14 @@ LatheTextDocumentService.close()
   -> ServerWorker.close()
 
 WorkspaceSession.close()
-  -> ModuleWorkspace.close()
+  -> WorkspaceModules.close()
 
-ModuleWorkspace.close()
+WorkspaceModules.close()
   -> close all module workers and external worker
   -> wait for all close futures
 
-ModuleWorker.close()
-  -> close CompilationContext on the module worker thread
+ModuleSourceWorker.close()
+  -> close SourceAnalysisSession on the module worker thread
   -> complete close future
   -> shutdown executor
 ```
@@ -243,8 +243,8 @@ ModuleWorker.close()
 ## Cleanup Notes
 
 Keep `WorkspaceSession` as the orchestration point unless it becomes clearly too large.
-Do not introduce a generic worker abstraction just to share executor boilerplate between `ServerWorker` and `ModuleWorker`.
+Do not introduce a generic worker abstraction just to share executor boilerplate between `ServerWorker` and `ModuleSourceWorker`.
 The two classes have different domain roles.
 
-Keep `CompilerRoute`, `AfterCompile`, and `OpenFile` private to `WorkspaceSession`.
-Keep `CompileRequest` and `CompileResult` in the `module` package because they are the public value boundary for `ModuleWorker.compile`.
+Keep `CompilerRoute`, `AfterCompile`, and `OpenDocument` private to `WorkspaceSession`.
+Keep `CompileRequest` and `CompileResponse` in the `module` package because they are the public value boundary for `ModuleSourceWorker.compile`.

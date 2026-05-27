@@ -1,9 +1,9 @@
 package io.github.aglibs.lathe.server.module;
 
 import io.github.aglibs.lathe.core.FileUtil;
-import io.github.aglibs.lathe.server.analysis.CompilationResult;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
-import io.github.aglibs.lathe.server.analysis.SourceCompiler;
+import io.github.aglibs.lathe.server.analysis.CompilerResult;
+import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
@@ -18,23 +18,23 @@ import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
 
-public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
+public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoCloseable {
 
-  private static final Logger LOG = Logger.getLogger(ModuleCompiler.class.getName());
+  private static final Logger LOG = Logger.getLogger(ModuleSourceCompiler.class.getName());
   private static final String PATCH_MODULE = "--patch-module";
   private static final String PATCH_MODULE_EQ = PATCH_MODULE + "=";
 
-  private final ModuleConfig config;
+  private final ModuleSourceConfig config;
   private final StandardJavaFileManager fm;
   private final JavacRunner runner;
   private final Path td;
   private final List<String> compilerArgs;
 
-  ModuleCompiler(final ModuleConfig config) {
+  ModuleSourceCompiler(final ModuleSourceConfig config) {
     this.config = config;
     try {
       this.td = Files.createTempDirectory("lathe-");
-      this.fm = SourceCompiler.createFileManager();
+      this.fm = JavaSourceCompiler.createFileManager();
       this.runner = new JavacRunner(fm);
       initLocations();
       this.compilerArgs = processPatchModules(config.compilerArgs(), fm, td);
@@ -49,7 +49,7 @@ public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
   }
 
   @Override
-  public CompilationResult compile(final String uri, final String content, final CompileMode mode) {
+  public CompilerResult compile(final String uri, final String content, final CompileMode mode) {
     final var filePath = Path.of(URI.create(uri));
     final Path sourceRoot =
         config.sourceRoots().stream()
@@ -145,7 +145,7 @@ public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
   }
 
   private static List<String> buildOptions(
-      final ModuleConfig config, final List<String> compilerArgs, final CompileMode mode) {
+      final ModuleSourceConfig config, final List<String> compilerArgs, final CompileMode mode) {
     final var opts = new ArrayList<String>();
     if (config.release() != null && !config.release().isBlank()) {
       opts.add("--release");
@@ -169,7 +169,7 @@ public final class ModuleCompiler implements SourceCompiler, AutoCloseable {
   public static List<String> modeCompilerArgs(final List<String> args, final CompileMode mode) {
     return mode == CompileMode.FULL
         ? args
-        : args.stream().filter(ModuleCompiler::isInteractiveCompilerArg).toList();
+        : args.stream().filter(ModuleSourceCompiler::isInteractiveCompilerArg).toList();
   }
 
   private static boolean isInteractiveCompilerArg(final String arg) {

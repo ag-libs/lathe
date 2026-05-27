@@ -7,7 +7,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 
-public record ModuleConfig(
+public record ModuleSourceConfig(
     Path moduleDir,
     String sourceTree,
     Path outputDir,
@@ -79,9 +79,10 @@ public record ModuleConfig(
         : latheDir.resolve(latheSourceTree);
   }
 
-  public static ModuleConfig load(final Path paramsFile, final Path moduleDir) throws IOException {
+  public static ModuleSourceConfig load(final Path paramsFile, final Path moduleDir)
+      throws IOException {
     final var config = Json.read(paramsFile, ModuleConfigData.class);
-    return new ModuleConfig(
+    return new ModuleSourceConfig(
         moduleDir,
         config.sourceTree(),
         Path.of(config.outputDir()),

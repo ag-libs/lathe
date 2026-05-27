@@ -10,9 +10,9 @@ import io.github.aglibs.lathe.core.typeindex.TypeIndexFile;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexOrigin;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import io.github.aglibs.lathe.server.TestCompiler;
-import io.github.aglibs.lathe.server.analysis.CachedAnalysis;
+import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.server.analysis.CachedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
-import io.github.aglibs.lathe.server.analysis.FileAnalysis;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
 import io.github.aglibs.lathe.server.analysis.TempSourceCompiler;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
@@ -61,7 +61,7 @@ class CompletionEngineTest {
   private static List<CompletionItem> complete(final String markedSource) {
     final var c = cursor(markedSource);
     final var compiled = compiler.compile("file:///Test.java", c.content(), CompileMode.FULL);
-    final var cached = new CachedAnalysis(c.content(), 0, compiled.fileAnalysis());
+    final var cached = new CachedFileAnalysis(c.content(), 0, compiled.fileAnalysis());
     return engine
         .complete(
             new CompletionRequest(
@@ -83,7 +83,7 @@ class CompletionEngineTest {
     final var c = cursor(currentMarkedSource);
     final var cachedCompiled =
         compiler.compile("file:///Test.java", cachedSource, CompileMode.FULL);
-    final var cached = new CachedAnalysis(cachedSource, 0, cachedCompiled.fileAnalysis());
+    final var cached = new CachedFileAnalysis(cachedSource, 0, cachedCompiled.fileAnalysis());
     return engine
         .complete(
             new CompletionRequest(
@@ -1595,7 +1595,7 @@ class CompletionEngineTest {
       final CompletionEngine eng, final String markedSource) {
     final var c = cursor(markedSource);
     final var compiled = compiler.compile("file:///Test.java", c.content(), CompileMode.FULL);
-    final var cached = new CachedAnalysis(c.content(), 0, compiled.fileAnalysis());
+    final var cached = new CachedFileAnalysis(c.content(), 0, compiled.fileAnalysis());
     return eng.complete(
             new CompletionRequest(
                 "file:///Test.java",
@@ -1610,7 +1610,7 @@ class CompletionEngineTest {
       final CompletionEngine eng, final String markedSource, final String moduleInfo)
       throws IOException {
     final var c = cursor(markedSource);
-    final var cached = new CachedAnalysis(c.content(), 0, compileJpms(c.content(), moduleInfo));
+    final var cached = new CachedFileAnalysis(c.content(), 0, compileJpms(c.content(), moduleInfo));
     return eng.complete(
             new CompletionRequest(
                 "file:///Test.java",
@@ -1621,7 +1621,7 @@ class CompletionEngineTest {
         .items();
   }
 
-  private FileAnalysis compileJpms(final String source, final String moduleInfo)
+  private AttributedFileAnalysis compileJpms(final String source, final String moduleInfo)
       throws IOException {
     final Path moduleDir = tmp.resolve("jpms");
     final Path moduleInfoFile = moduleDir.resolve("module-info.java");
@@ -1631,7 +1631,7 @@ class CompletionEngineTest {
     Files.writeString(sourceFile, source);
 
     final var parsed = TestCompiler.parse(sourceFile, List.of("-proc:none"), moduleInfoFile);
-    return new FileAnalysis(
+    return new AttributedFileAnalysis(
         parsed.trees(),
         parsed.task().getElements(),
         parsed.task().getTypes(),

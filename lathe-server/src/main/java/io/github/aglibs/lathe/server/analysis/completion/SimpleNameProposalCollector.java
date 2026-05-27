@@ -6,7 +6,7 @@ import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
-import io.github.aglibs.lathe.server.analysis.FileAnalysis;
+import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -22,14 +22,14 @@ import org.eclipse.lsp4j.CompletionItem;
 
 final class SimpleNameProposalCollector {
 
-  private final FileAnalysis snapshot;
+  private final AttributedFileAnalysis snapshot;
   private final CompletionItemFactory itemFactory;
   private final SimpleNameProposalContext context;
   private final Set<String> seen = new LinkedHashSet<>();
   private final List<CompletionItem> items = new ArrayList<>();
 
   SimpleNameProposalCollector(
-      final FileAnalysis snapshot,
+      final AttributedFileAnalysis snapshot,
       final CompletionItemFactory itemFactory,
       final SimpleNameProposalContext context) {
     this.snapshot = snapshot;

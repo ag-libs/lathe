@@ -1,7 +1,7 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
-import io.github.aglibs.lathe.server.analysis.FileAnalysis;
+import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -13,10 +13,10 @@ final class TypeIndexValidator {
   private static final Logger LOG = Logger.getLogger(TypeIndexValidator.class.getName());
   private static final Set<String> WARNED_SPLIT_PACKAGES = ConcurrentHashMap.newKeySet();
 
-  private final FileAnalysis analysis;
+  private final AttributedFileAnalysis analysis;
   private final Map<String, Boolean> visiblePackages = new HashMap<>();
 
-  TypeIndexValidator(final FileAnalysis analysis) {
+  TypeIndexValidator(final AttributedFileAnalysis analysis) {
     this.analysis = analysis;
   }
 

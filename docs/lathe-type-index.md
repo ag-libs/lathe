@@ -459,7 +459,7 @@ module/classpath context.
 On startup and workspace reload, the server:
 
 1. loads `.lathe/workspace.json`
-2. scans params files and builds `ModuleWorkspace`
+2. scans params files and builds `WorkspaceModules`
 3. loads static dependency shards referenced by the manifest
 4. scans reactor output directories
 5. builds a merged immutable `WorkspaceTypeIndex`
@@ -561,7 +561,7 @@ A trie is unnecessary until measurement proves otherwise.
 
 ### Replacement on Reload
 
-`WorkspaceSession` owns the current index snapshot together with the current `ModuleWorkspace`.
+`WorkspaceSession` owns the current index snapshot together with the current `WorkspaceModules`.
 Reload builds a new workspace and a new index from the same manifest/params snapshot.
 
 ---
@@ -663,7 +663,7 @@ record AccessibilityCacheKey(
     String enclosingTypeQualifiedName) {}
 ```
 
-The cache is naturally invalidated when the file's `CachedAnalysis` is replaced, dropped on `didClose`, or cleared on
+The cache is naturally invalidated when the file's `CachedFileAnalysis` is replaced, dropped on `didClose`, or cleared on
 workspace reload.
 Do not add this cache until timing logs show it is useful.
 
@@ -789,13 +789,13 @@ testing the full type-completion path with real JAR types:
    `typeIndexShardPaths()`.
 6. Add `WorkspaceTypeIndex` in the `analysis` package with `build(List<Path>)`, `empty()`, and
    `search(prefix, limit)` backed by a `NavigableMap<String, List<TypeIndexEntry>>`.
-7. Thread `WorkspaceTypeIndex` through `ModuleWorkspace` → `ModuleWorker` → `CompilationContext` →
+7. Thread `WorkspaceTypeIndex` through `WorkspaceModules` → `ModuleSourceWorker` → `SourceAnalysisSession` →
    `CompletionEngine`.
 8. In `CompletionEngine.completeTypeReference` when `receiverText == null`: query the index for
    prefix matches, filter through `elements.getTypeElement(fqn) != null`, and return items with
    `label = simpleName` and `detail = qualifiedName`.
 9. In `WorkspaceSession.initialize()`, build `WorkspaceTypeIndex` from
-   `manifest.typeIndexShardPaths()` and pass to `ModuleWorkspace.scan()`.
+   `manifest.typeIndexShardPaths()` and pass to `WorkspaceModules.scan()`.
 
 ### Slice 3 — Reactor Index and Unvalidated Completion
 

@@ -26,7 +26,7 @@ public final class SourceParser implements AutoCloseable {
   private final StandardJavaFileManager fm;
 
   public SourceParser() {
-    this.fm = SourceCompiler.createFileManager();
+    this.fm = JavaSourceCompiler.createFileManager();
   }
 
   <T> Optional<T> parseFile(
@@ -50,7 +50,8 @@ public final class SourceParser implements AutoCloseable {
       final JavaFileObject jfo, final BiFunction<Trees, CompilationUnitTree, T> fn) {
     final var collector = new DiagnosticCollector<JavaFileObject>();
     final var task =
-        (JavacTask) SourceCompiler.COMPILER.getTask(null, fm, collector, null, null, List.of(jfo));
+        (JavacTask)
+            JavaSourceCompiler.COMPILER.getTask(null, fm, collector, null, null, List.of(jfo));
     try {
       final CompilationUnitTree cu = task.parse().iterator().next();
       final T result = fn.apply(Trees.instance(task), cu);

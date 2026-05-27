@@ -16,7 +16,7 @@ import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.ToolProvider;
 
-public final class TempSourceCompiler implements SourceCompiler {
+public final class TempSourceCompiler implements JavaSourceCompiler {
 
   private final Path td;
   private final JavaCompiler compiler;
@@ -38,7 +38,7 @@ public final class TempSourceCompiler implements SourceCompiler {
   }
 
   @Override
-  public CompilationResult compile(final String uri, final String content, final CompileMode mode) {
+  public CompilerResult compile(final String uri, final String content, final CompileMode mode) {
     try {
       final var filename = Path.of(URI.create(uri)).getFileName();
       final var tempFile = td.resolve(filename);
@@ -60,15 +60,17 @@ public final class TempSourceCompiler implements SourceCompiler {
       task.analyze();
 
       final Trees trees = Trees.instance(task);
-      final FileAnalysis fileAnalysis;
+      final AttributedFileAnalysis fileAnalysis;
       if (cu != null) {
         final List<SemanticToken> tokens = TokenScanner.scan(trees, cu);
-        fileAnalysis = new FileAnalysis(trees, task.getElements(), task.getTypes(), cu, tokens);
+        fileAnalysis =
+            new AttributedFileAnalysis(trees, task.getElements(), task.getTypes(), cu, tokens);
       } else {
-        fileAnalysis = new FileAnalysis(trees, task.getElements(), task.getTypes(), null, null);
+        fileAnalysis =
+            new AttributedFileAnalysis(trees, task.getElements(), task.getTypes(), null, null);
       }
 
-      return new CompilationResult(collector.getDiagnostics(), fileAnalysis);
+      return new CompilerResult(collector.getDiagnostics(), fileAnalysis);
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }

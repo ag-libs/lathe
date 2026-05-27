@@ -1,13 +1,14 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
-import io.github.aglibs.lathe.server.analysis.FileAnalysis;
+import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import java.util.List;
 import org.eclipse.lsp4j.CompletionItem;
 
 public record CompletionOutcome(
-    List<CompletionItem> items, FileAnalysis freshAnalysis, boolean incomplete) {
+    List<CompletionItem> items, AttributedFileAnalysis freshAnalysis, boolean incomplete) {
 
-  public CompletionOutcome(final List<CompletionItem> items, final FileAnalysis freshAnalysis) {
+  public CompletionOutcome(
+      final List<CompletionItem> items, final AttributedFileAnalysis freshAnalysis) {
     this(items, freshAnalysis, false);
   }
 

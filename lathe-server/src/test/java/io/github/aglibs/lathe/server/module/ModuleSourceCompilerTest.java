@@ -9,7 +9,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class ModuleCompilerTest {
+class ModuleSourceCompilerTest {
 
   @TempDir private Path td;
 
@@ -25,9 +25,9 @@ class ModuleCompilerTest {
             "--add-reads",
             "com.example=ALL-UNNAMED");
 
-    assertThat(ModuleCompiler.modeCompilerArgs(args, CompileMode.FAST))
+    assertThat(ModuleSourceCompiler.modeCompilerArgs(args, CompileMode.FAST))
         .containsExactly("-Xlint:unchecked", "--add-reads", "com.example=ALL-UNNAMED");
-    assertThat(ModuleCompiler.modeCompilerArgs(args, CompileMode.OPEN))
+    assertThat(ModuleSourceCompiler.modeCompilerArgs(args, CompileMode.OPEN))
         .containsExactly("-Xlint:unchecked", "--add-reads", "com.example=ALL-UNNAMED");
   }
 
@@ -41,7 +41,7 @@ class ModuleCompilerTest {
             "-XepDisableWarningsInGeneratedCode",
             "-XepOpt:NullAway:AnnotatedPackages=com.example");
 
-    assertThat(ModuleCompiler.modeCompilerArgs(args, CompileMode.FULL)).isSameAs(args);
+    assertThat(ModuleSourceCompiler.modeCompilerArgs(args, CompileMode.FULL)).isSameAs(args);
   }
 
   @Test
@@ -51,7 +51,7 @@ class ModuleCompilerTest {
     Files.createDirectories(sourceFile.getParent());
 
     final var config =
-        new ModuleConfig(
+        new ModuleSourceConfig(
             td.resolve(".lathe"),
             "classes",
             td.resolve("target/classes"),
@@ -67,7 +67,7 @@ class ModuleCompilerTest {
             null,
             List.of());
 
-    try (var compiler = new ModuleCompiler(config)) {
+    try (var compiler = new ModuleSourceCompiler(config)) {
       final var result =
           compiler.compile(
               sourceFile.toUri().toString(),

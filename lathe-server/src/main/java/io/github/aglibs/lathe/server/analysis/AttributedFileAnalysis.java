@@ -6,14 +6,14 @@ import java.util.List;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 
-public record FileAnalysis(
+public record AttributedFileAnalysis(
     Trees trees,
     Elements elements,
     Types types,
     CompilationUnitTree tree,
     List<SemanticToken> semanticTokens) {
 
-  public static FileAnalysis diagnosticsOnly() {
-    return new FileAnalysis(null, null, null, null, null);
+  public static AttributedFileAnalysis diagnosticsOnly() {
+    return new AttributedFileAnalysis(null, null, null, null, null);
   }
 }
