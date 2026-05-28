@@ -86,9 +86,13 @@ final class SimpleNameProposalCollector {
         }
 
         private void addVariableIfVisible(final VariableTree node) {
-          final long pos =
-              snapshot.trees().getSourcePositions().getStartPosition(snapshot.tree(), node);
-          if (pos >= 0 && pos < context.cursorOffset()) {
+          final var positions = snapshot.trees().getSourcePositions();
+          final long start = positions.getStartPosition(snapshot.tree(), node);
+          final long end = positions.getEndPosition(snapshot.tree(), node);
+          if (start >= 0
+              && start < context.cursorOffset()
+              && end >= 0
+              && end < context.cursorOffset()) {
             final var el = snapshot.trees().getElement(getCurrentPath());
             addVariable(node.getName().toString(), el != null ? el.asType() : null);
           }

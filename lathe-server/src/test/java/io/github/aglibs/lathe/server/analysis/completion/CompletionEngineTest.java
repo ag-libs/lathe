@@ -548,6 +548,32 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).contains("hello");
   }
 
+  // gap C: variable offered as completion in its own initializer ─────────────────────────────────
+
+  @Test
+  void simpleName_variableNotOfferedInOwnInitializer() {
+    // `String foo = fo§` must not offer `foo` — it is not in scope at the initializer.
+    // `fooBar`, declared before, must still be offered.
+    // Regression: addMethodLocals filters by startPosition < cursorOffset; the start of
+    // `foo`'s declaration is before the cursor, so it passes the filter and appears.
+    final var items =
+        complete(
+            """
+            class Test {
+                void m() {
+                    String fooBar = "x";
+                    String foo = fo§
+                }
+            }""");
+    assertThat(items)
+        .as("foo must not appear in its own initializer")
+        .noneMatch(i -> "foo".equals(i.getFilterText()));
+    assertThat(items)
+        .as("fooBar declared before must still be offered")
+        .extracting(CompletionItem::getFilterText)
+        .contains("fooBar");
+  }
+
   @Test
   void simpleName_constructorParam_suggestedInCtorBody() {
     final var items =
