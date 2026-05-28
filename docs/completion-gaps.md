@@ -56,6 +56,11 @@ top match and complete on its members exactly as `proposeMemberAccess` does toda
 TYPE_REFERENCE path resolves `Objects` → `java.util.Objects` purely by index scan (no import
 needed), so the same mechanism works here without any new infrastructure.
 
+`WorkspaceTypeIndex` is already threaded all the way to `CompletionEngine` (`this.typeIndex`),
+so no plumbing changes are needed — the fallback is a self-contained addition inside
+`CompletionEngine.completeMemberAccess`.  When the reactor type index lands it will extend the
+same `WorkspaceTypeIndex`, so Gap B will automatically benefit from reactor types too.
+
 ---
 
 ### Gap C — Variable offered as completion in its own initializer

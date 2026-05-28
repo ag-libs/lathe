@@ -337,7 +337,7 @@ public final class CompletionEngine {
                     freshAnalysis != null));
 
     if (resolved == null) {
-      return CompletionOutcome.of(List.of());
+      return completeMemberAccessTypeIndexFallback(parsed, injected, snapshot, req.cursorOffset());
     }
 
     final boolean isStaticAccess =
@@ -351,5 +351,37 @@ public final class CompletionEngine {
             "[completion] proposals count=%d labels=%s"
                 .formatted(items.size(), items.stream().map(CompletionItem::getLabel).toList()));
     return new CompletionOutcome(items, freshAnalysis);
+  }
+
+  private CompletionOutcome completeMemberAccessTypeIndexFallback(
+      final ParsedSentinel parsed,
+      final SentinelResult injected,
+      final AttributedFileAnalysis snapshot,
+      final int cursorOffset) {
+    if (typeIndex == null || snapshot == null || parsed.receiverText() == null) {
+      return CompletionOutcome.of(List.of());
+    }
+
+    final var scope = TypeResolver.resolveScope(snapshot, cursorOffset);
+
+    for (final var candidate : typeIndex.search(parsed.receiverText(), 200)) {
+      if (!candidate.simpleName().equals(parsed.receiverText())) {
+        continue;
+      }
+
+      final var typeEl = snapshot.elements().getTypeElement(candidate.qualifiedName());
+      if (typeEl == null) {
+        continue;
+      }
+
+      final var items =
+          new ProposalGenerator(snapshot)
+              .proposeMemberAccess(typeEl.asType(), injected.prefix(), true, scope);
+      if (!items.isEmpty()) {
+        return CompletionOutcome.of(items);
+      }
+    }
+
+    return CompletionOutcome.of(List.of());
   }
 }

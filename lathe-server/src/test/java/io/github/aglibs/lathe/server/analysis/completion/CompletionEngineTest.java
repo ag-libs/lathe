@@ -136,6 +136,33 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("emptyList"));
   }
 
+  // gap B: member-access on a simple name that is in the type index but not a regular import ──────
+
+  @Test
+  void memberAccess_unimportedSimpleName_typeIndexFallback_suggestsMembers() throws IOException {
+    // java.util.Objects is in the type index but not in the regular imports — only
+    // requireNonNull is statically imported.  javac attributes "Objects" as an error node, so
+    // the engine currently finds no receiver type and returns nothing.
+    // The fix: when the receiver is an error node, extract the token text, look it up in the
+    // type index, resolve the type via getTypeElement, and complete on its members.
+    final var eng = engineWith(typeEntry("Objects", "java.util.Objects", TypeKind.CLASS));
+    final var items =
+        completeWithCurrentContentCached(
+            eng,
+            """
+            import static java.util.Objects.requireNonNull;
+
+            class Test {
+                void m(String s) {
+                    Objects.§
+                }
+            }""");
+    assertThat(items)
+        .as("Objects. should resolve via type-index fallback and offer Objects' static members")
+        .extracting(CompletionItem::getLabel)
+        .anyMatch(l -> l.startsWith("requireNonNull"));
+  }
+
   @Test
   void stringLiteral_noCompletions() {
     final var items =
