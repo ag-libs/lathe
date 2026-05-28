@@ -103,9 +103,7 @@ public final class CompletionEngine {
 
     final var items =
         new ImportCompletionProvider(analysis).propose(parsed.receiverText(), injected.prefix());
-    final boolean hasSemicolon =
-        req.cursorOffset() < req.content().length()
-            && req.content().charAt(req.cursorOffset()) == ';';
+    final boolean hasSemicolon = req.charAfterCursor() == ';';
 
     if (!hasSemicolon) {
       items.stream()
@@ -361,6 +359,16 @@ public final class CompletionEngine {
         () ->
             "[completion] proposals count=%d labels=%s"
                 .formatted(items.size(), items.stream().map(CompletionItem::getLabel).toList()));
+
+    if (parsed.sentinelContext() == SentinelContext.STATIC_IMPORT) {
+      final var suffix = req.charAfterCursor() == ';' ? "" : ";";
+      items.forEach(
+          item -> {
+            item.setInsertText(item.getFilterText() + suffix);
+            item.setInsertTextFormat(null);
+          });
+    }
+
     return new CompletionOutcome(items, freshAnalysis);
   }
 

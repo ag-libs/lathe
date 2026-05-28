@@ -224,6 +224,26 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("Entry"));
   }
 
+  // gap G: static import inserts method snippet instead of bare name ──────────────────────────────
+
+  @Test
+  void importDeclaration_staticImport_methodCompletion_textEditIsBareNameWithSemicolon() {
+    // Selecting a method from `import static java.util.Objects.§` must produce "equals;"
+    // (bare identifier + semicolon), not a snippet like "equals($1)" which is a syntax
+    // error in an import declaration.
+    final var items =
+        complete(
+            """
+            import static java.util.Objects.§
+
+            class Test {
+            }""");
+    final var equalsItem =
+        items.stream().filter(i -> i.getLabel().startsWith("equals")).findFirst();
+    assertThat(equalsItem).isPresent();
+    assertThat(equalsItem.get().getTextEdit().getLeft().getNewText()).isEqualTo("equals;");
+  }
+
   // gap F: import completions missing trailing semicolon ─────────────────────────────────────────
 
   @Test

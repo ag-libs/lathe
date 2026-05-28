@@ -50,4 +50,9 @@ public record CompletionRequest(
     final int start = cursorOffset() - prefix().length();
     return start > 0 ? content.charAt(start - 1) : '\0';
   }
+
+  char charAfterCursor() {
+    final int offset = cursorOffset();
+    return offset < content.length() ? content.charAt(offset) : '\0';
+  }
 }
