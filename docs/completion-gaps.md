@@ -242,6 +242,40 @@ member-access and requires its own handling in `SentinelContext` / `CompletionEn
 
 ---
 
+### Gap K — Keywords not filtered by syntactic context (low priority)
+
+**Symptom:** In several positions the engine offers keywords that are syntactically impossible
+there.  Three confirmed cases:
+
+| Position | Wrongly offered | Should be |
+|---|---|---|
+| `import ` | *(no completions at all)* | `static` + package names |
+| `return ` | `if`, `for`, `while`, `do`, `switch`, `try`, `final`, `var`, … | expression keywords only (`new`, `null`, `true`, `false`, `this`, `super`) |
+| `String foo = ` | same full statement set | expression keywords only |
+
+The engine does handle some contexts correctly — `if (` and `while (` already return only
+expression-level keywords — so the infrastructure exists; it is just not applied uniformly.
+
+**Verified on:** `MongoDbClient.java` (helidon mongodb module)
+
+```
+inject "import "        at 30  →  [] keywords  (static missing)
+inject "        return " at 55  →  [if, for, while, do, switch, try,
+                                    synchronized, throw, break, continue,
+                                    final, var, assert, …]
+inject "        String foo = " at 55  →  same full set as above
+inject "        if ("   at 55  →  [new, null, true, false, this, super]  ✅
+```
+
+**Root cause (suspected):** `KeywordProvider` maintains a flat keyword set for
+statement-level contexts.  The context classifier (`SentinelContext`) knows the tree node at
+the cursor position but does not yet map all node types to their allowed keyword subsets.
+Fixing this requires extending the context classifier to recognise expression-position nodes
+(`ASSIGNMENT`, `RETURN`, `VARIABLE` initialiser, …) and narrowing the keyword list
+accordingly, and separately handling the `IMPORT` node to offer only `static`.
+
+---
+
 ## Closed
 
 All gaps identified before 2026-05-27 have been addressed.
