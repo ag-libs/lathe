@@ -574,6 +574,186 @@ class CompletionEngineTest {
         .contains("fooBar");
   }
 
+  // gap D: no type-based ranking for class members after = ───────────────────────────────────────
+
+  @Test
+  void simpleName_classMember_matchingDeclaredType_rankedBeforeNonMatching() {
+    // `String result = §` — members whose return/field type is String should sort
+    // before members of unrelated types.
+    // Regression: addClassMembers() does not consult expectedParamType, so all
+    // class members share an empty sortText regardless of type compatibility.
+    final var items =
+        complete(
+            """
+            class Test {
+                String label = "x";
+                int count = 0;
+                String name() { return ""; }
+                int size() { return 0; }
+                void m() {
+                    String result = §
+                }
+            }""");
+    final var labelItem = items.stream().filter(i -> "label".equals(i.getFilterText())).findFirst();
+    final var countItem = items.stream().filter(i -> "count".equals(i.getFilterText())).findFirst();
+    assertThat(labelItem).isPresent();
+    assertThat(countItem).isPresent();
+    assertThat(labelItem.get().getSortText())
+        .as("String field should sort before int field when target type is String")
+        .isLessThan(countItem.get().getSortText());
+  }
+
+  @Test
+  void simpleName_objectMethods_rankedAfterOwnNonMatchingMembers() {
+    // In statement context (no expected type) Object methods land in "9_" while own
+    // members have no sort text — ensuring Object methods sort below domain members
+    // in any LSP client that respects sortText.
+    // Uses 'zebra' (own field) vs 'clone' (Object method): alphabetically 'clone' < 'zebra',
+    // so without demotion 'clone' would float above 'zebra'.
+    final var items =
+        complete(
+            """
+            class Test {
+                int zebra = 0;
+                void m() {
+                    §
+                }
+            }""");
+    final var zebraItem = items.stream().filter(i -> "zebra".equals(i.getFilterText())).findFirst();
+    final var cloneItem = items.stream().filter(i -> "clone".equals(i.getFilterText())).findFirst();
+    assertThat(zebraItem).isPresent();
+    assertThat(cloneItem).isPresent();
+    assertThat(cloneItem.get().getSortText())
+        .as("Object method must be demoted to the \"9_\" bucket")
+        .startsWith("9_");
+    assertThat(zebraItem.get().getSortText())
+        .as("own member must not be in the Object-method bucket")
+        .isNull();
+  }
+
+  // Filtering strategy: void methods and Object-declared methods ──────────────────────────────────
+  //
+  // When expected type is known (argument position or variable initializer):
+  //   - void-returning methods → excluded entirely (can never be a value; client recency would
+  //     promote them after accidental selection)
+  //   - Object-declared methods → excluded entirely (infrastructure; non-void ones like toString
+  //     are almost never the intended argument)
+  //   - non-void, non-assignable methods → shown with "1_" rank (user may cast)
+  //   - type names (java.lang, type index) → not offered (separate guard via
+  // shouldOfferBareTypeRef)
+  //
+  // When expected type is unknown (plain statement):
+  //   - void own-class methods → shown (calling them as statements is valid)
+  //   - Object-declared methods → shown but demoted to "9_"
+
+  @Test
+  void simpleName_ownVoidMethod_shownInStatementContext() {
+    // In a plain statement position there is no expected type — own void methods are valid
+    // to call as statements and must appear in the list.
+    final var items =
+        complete(
+            """
+            class Test {
+                void doWork() {}
+                void m() {
+                    §
+                }
+            }""");
+    assertThat(items)
+        .as("own void method must appear when completing a bare statement (no expected type)")
+        .extracting(CompletionItem::getFilterText)
+        .contains("doWork");
+  }
+
+  @Test
+  void simpleName_objectMethods_demotedInStatementContext() {
+    // In a plain statement position (no expected type) Object methods are present
+    // but must be demoted to "9_" so domain methods sort above them.
+    final var items =
+        complete(
+            """
+            class Test {
+                String name() { return ""; }
+                void m() {
+                    §
+                }
+            }""");
+    final var waitItem = items.stream().filter(i -> "wait".equals(i.getFilterText())).findFirst();
+    final var nameItem = items.stream().filter(i -> "name".equals(i.getFilterText())).findFirst();
+    assertThat(waitItem)
+        .as("wait must be present (valid to call in statement context)")
+        .isPresent();
+    assertThat(nameItem).isPresent();
+    assertThat(waitItem.get().getSortText())
+        .as("Object method must be demoted to \"9_\" bucket")
+        .startsWith("9_");
+  }
+
+  @Test
+  void simpleName_voidMethod_excludedWhenExpectedTypeKnown_initializer() {
+    // In a variable initializer the expected type is known — void methods can never
+    // be used as values and must be excluded entirely to prevent client recency pollution.
+    final var items =
+        complete(
+            """
+            class Test {
+                void doWork() {}
+                String getValue() { return ""; }
+                void m() {
+                    String s = §
+                }
+            }""");
+    assertThat(items)
+        .as("void method must not appear when completing a typed initializer")
+        .noneMatch(i -> "doWork".equals(i.getFilterText()));
+    assertThat(items)
+        .as("non-void method must still appear")
+        .extracting(CompletionItem::getFilterText)
+        .contains("getValue");
+  }
+
+  @Test
+  void simpleName_voidMethod_excludedWhenExpectedTypeKnown_argumentPosition() {
+    // Same rule in argument position: void-returning methods excluded when
+    // the callee's parameter type is known.
+    final var items =
+        complete(
+            """
+            class Test {
+                void doWork() {}
+                String getValue() { return ""; }
+                void accept(String s) {}
+                void m() {
+                    accept(§);
+                }
+            }""");
+    assertThat(items)
+        .as("void method must not appear when completing a typed argument")
+        .noneMatch(i -> "doWork".equals(i.getFilterText()));
+    assertThat(items)
+        .as("non-void matching method must still appear")
+        .extracting(CompletionItem::getFilterText)
+        .contains("getValue");
+  }
+
+  @Test
+  void simpleName_objectMethods_excludedWhenExpectedTypeKnown() {
+    // Object-declared methods (wait, finalize, notify…) are excluded entirely when
+    // expected type is known — they are infrastructure methods that are never a useful
+    // argument, and leaving them in the list risks client recency promoting them.
+    final var items =
+        complete(
+            """
+            class Test {
+                void m() {
+                    String s = §
+                }
+            }""");
+    assertThat(items)
+        .extracting(CompletionItem::getFilterText)
+        .doesNotContainAnyElementsOf(List.of("wait", "finalize", "notify", "notifyAll"));
+  }
+
   @Test
   void simpleName_constructorParam_suggestedInCtorBody() {
     final var items =
@@ -836,24 +1016,6 @@ class CompletionEngineTest {
   }
 
   @Test
-  void constructorCall_emptyArgument_suggestsVisibleLocal() {
-    final var items =
-        complete(
-            """
-            class Test {
-                static class Receiver {
-                    Receiver(String value) {}
-                }
-
-                void m() {
-                    String value = "";
-                    new Receiver(§value);
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("value");
-  }
-
-  @Test
   void constructorCall_prefix_suggestsVisibleLocal() {
     final var items =
         complete(
@@ -869,6 +1031,99 @@ class CompletionEngineTest {
                 }
             }""");
     assertThat(items).extracting(CompletionItem::getLabel).contains("value");
+  }
+
+  @Test
+  void constructorCall_secondArg_noLangTypes() {
+    final var items =
+        complete(
+            """
+            class Test {
+                static class Receiver {
+                    Receiver(String a, String b) {}
+                }
+
+                void m() {
+                    String value = "";
+                    new Receiver(value, val§);
+                }
+            }""");
+    assertThat(items)
+        .extracting(CompletionItem::getLabel)
+        .contains("value")
+        .doesNotContain("String", "Object", "Integer", "Thread");
+  }
+
+  @Test
+  void constructorCall_anyArg_noObjectMethods() {
+    final var items =
+        complete(
+            """
+            class Test {
+                static class Receiver {
+                    Receiver(String value) {}
+                }
+
+                String result() { return ""; }
+
+                void m() {
+                    new Receiver(§);
+                }
+            }""");
+    assertThat(items)
+        .extracting(CompletionItem::getFilterText)
+        .contains("result")
+        .doesNotContainAnyElementsOf(List.of("wait", "finalize", "notify", "notifyAll"));
+  }
+
+  /**
+   * When completing before an expression that itself is an argument (e.g. {@code foo(§bar.m())}),
+   * the sentinel becomes the receiver of a MemberSelectTree, so the parser classifies it as
+   * SIMPLE_NAME with argIndex=-1. But the injector's backward scan still sets context=EXPRESSION
+   * (an unmatched '(' was found to the left). Object-declared methods such as {@code finalize} must
+   * be suppressed in that position just as in any other value context.
+   */
+  @Test
+  void simpleName_expressionContext_noObjectMethods() {
+    final var items =
+        complete(
+            """
+            class Test {
+                void consume(String s) {}
+
+                String result() { return ""; }
+
+                void m() {
+                    consume(§result());
+                }
+            }""");
+    assertThat(items)
+        .extracting(CompletionItem::getFilterText)
+        .contains("result")
+        .doesNotContainAnyElementsOf(List.of("wait", "finalize", "notify", "notifyAll"));
+  }
+
+  /**
+   * Gap: when the target method/constructor takes zero parameters, completion inside its {@code ()}
+   * should return nothing — there is no slot to fill. Currently the engine returns all visible
+   * locals/members because it does not resolve the callee's arity.
+   */
+  @Test
+  void argumentPosition_zeroParamMethod_suppressesCompletions() {
+    final var items =
+        complete(
+            """
+            class Test {
+                static void noArgs() {}
+
+                String result() { return ""; }
+
+                void m() {
+                    String value = "";
+                    noArgs(§);
+                }
+            }""");
+    assertThat(items).isEmpty();
   }
 
   @Test

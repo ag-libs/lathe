@@ -93,11 +93,26 @@ final class ProposalGenerator {
       final String enclosingMethod,
       final String prefix,
       final int cursorOffset,
-      final TypeMirror expectedParamType) {
+      final TypeMirror expectedParamType,
+      final boolean inValueContext) {
     final var context =
         new SimpleNameProposalContext(
-            enclosingClass, enclosingMethod, prefix, cursorOffset, expectedParamType);
+            enclosingClass,
+            enclosingMethod,
+            prefix,
+            cursorOffset,
+            expectedParamType,
+            inValueContext);
     return new SimpleNameProposalCollector(snapshot, itemFactory, context).collect();
+  }
+
+  // Declaring-type check: true only for methods actually declared on Object (not overridden
+  // copies).
+  // Used in simple-name context where an overriding equals/hashCode is a real domain method.
+  static boolean isDeclaredInObject(final Element el) {
+    return el.getKind() == ElementKind.METHOD
+        && el.getEnclosingElement() instanceof TypeElement te
+        && "java.lang.Object".equals(te.getQualifiedName().toString());
   }
 
   private static String sortKey(final Element el) {

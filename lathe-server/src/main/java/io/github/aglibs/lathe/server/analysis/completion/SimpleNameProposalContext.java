@@ -8,7 +8,8 @@ record SimpleNameProposalContext(
     String enclosingMethod,
     String prefix,
     int cursorOffset,
-    TypeMirror expectedParamType) {
+    TypeMirror expectedParamType,
+    boolean inValueContext) {
 
   SimpleNameProposalContext {
     ValidCheck.check()

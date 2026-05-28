@@ -7,6 +7,7 @@ import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
 import java.util.logging.Logger;
+import java.util.stream.IntStream;
 
 final class SentinelParser {
 
@@ -157,8 +158,8 @@ final class SentinelParser {
               && m.getArguments().stream().anyMatch(a -> a == sentinel) ->
           classifyMethodInvocation(sentinel, m);
       case LambdaExpressionTree lambda -> classifyLambda(sentinel, lambda);
-      case NewClassTree ignored when !(sentinel instanceof MemberSelectTree) ->
-          Classification.of(SentinelContext.CONSTRUCTOR_CALL);
+      case NewClassTree m when !(sentinel instanceof MemberSelectTree) ->
+          classifyConstructorCall(sentinel, m);
       case AnnotationTree ignored -> Classification.of(SentinelContext.ANNOTATION_CONTEXT);
       case VariableTree v when v.getType() == sentinel ->
           Classification.of(SentinelContext.TYPE_REFERENCE);
@@ -189,13 +190,8 @@ final class SentinelParser {
   private static Classification classifyMethodInvocation(
       final Tree sentinel, final MethodInvocationTree m) {
     final var args = m.getArguments();
-    int argIndex = 0;
-    for (int j = 0; j < args.size(); j++) {
-      if (args.get(j) == sentinel) {
-        argIndex = j;
-        break;
-      }
-    }
+    final int argIndex =
+        IntStream.range(0, args.size()).filter(j -> args.get(j) == sentinel).findFirst().orElse(0);
     final String enclosingReceiver;
     final String enclosingMethodName;
     if (m.getMethodSelect() instanceof final MemberSelectTree sel) {
@@ -217,19 +213,26 @@ final class SentinelParser {
 
   private static Classification classifyLambda(
       final Tree sentinel, final LambdaExpressionTree lambda) {
-    int lambdaParamIndex = -1;
-    if (sentinel instanceof MemberSelectTree sel) {
-      final String receiver = sel.getExpression().toString();
-      final var params = lambda.getParameters();
-      for (int j = 0; j < params.size(); j++) {
-        if (params.get(j).getName().toString().equals(receiver)) {
-          lambdaParamIndex = j;
-          break;
-        }
-      }
+    if (!(sentinel instanceof final MemberSelectTree sel)) {
+      return new Classification(SentinelContext.LAMBDA_BODY, -1, null, null, -1, null);
     }
 
+    final var params = lambda.getParameters();
+    final String receiver = sel.getExpression().toString();
+    final int lambdaParamIndex =
+        IntStream.range(0, params.size())
+            .filter(j -> params.get(j).getName().toString().equals(receiver))
+            .findFirst()
+            .orElse(-1);
     return new Classification(SentinelContext.LAMBDA_BODY, -1, null, null, lambdaParamIndex, null);
+  }
+
+  private static Classification classifyConstructorCall(
+      final Tree sentinel, final NewClassTree newClass) {
+    final var args = newClass.getArguments();
+    final int argIndex =
+        IntStream.range(0, args.size()).filter(j -> args.get(j) == sentinel).findFirst().orElse(-1);
+    return new Classification(SentinelContext.CONSTRUCTOR_CALL, argIndex, null, null, -1, null);
   }
 
   private static Classification classifyDefault(final Tree sentinel) {

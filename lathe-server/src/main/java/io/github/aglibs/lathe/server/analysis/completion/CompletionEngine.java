@@ -71,7 +71,7 @@ public final class CompletionEngine {
           case IMPORT -> completeImport(parsed, injected, req);
           case SIMPLE_NAME, ARGUMENT_POSITION -> completeSimpleName(parsed, injected, req);
           case CONSTRUCTOR_CALL ->
-              req.charBeforePrefix() == '('
+              parsed.argIndex() >= 0
                   ? completeSimpleName(parsed, injected, req)
                   : mergeLangTypes(
                       injected.prefix(), req, completeSimpleNameTypeReference(injected, req));
@@ -143,13 +143,15 @@ public final class CompletionEngine {
     final var analysis = req.cached().analysis();
     final var expectedParamType =
         TypeResolver.resolveExpectedParamType(parsed, req.pos().getLine(), analysis);
+    final boolean inValueContext = injected.context() == SentinelInjector.Context.EXPRESSION;
     return new ProposalGenerator(analysis)
         .proposeSimpleName(
             parsed.enclosingClass(),
             parsed.enclosingMethod(),
             injected.prefix(),
             req.cursorOffset(),
-            expectedParamType);
+            expectedParamType,
+            inValueContext);
   }
 
   private CompletionOutcome completeTypeReference(

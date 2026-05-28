@@ -13,11 +13,13 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import org.eclipse.lsp4j.CompletionItem;
 
@@ -28,6 +30,7 @@ final class SimpleNameProposalCollector {
   private final SimpleNameProposalContext context;
   private final Set<String> seen = new LinkedHashSet<>();
   private final List<CompletionItem> items = new ArrayList<>();
+  private TypeMirror initializerExpectedType;
 
   SimpleNameProposalCollector(
       final AttributedFileAnalysis snapshot,
@@ -89,12 +92,15 @@ final class SimpleNameProposalCollector {
           final var positions = snapshot.trees().getSourcePositions();
           final long start = positions.getStartPosition(snapshot.tree(), node);
           final long end = positions.getEndPosition(snapshot.tree(), node);
-          if (start >= 0
-              && start < context.cursorOffset()
-              && end >= 0
-              && end < context.cursorOffset()) {
-            final var el = snapshot.trees().getElement(getCurrentPath());
+          if (start < 0 || start >= context.cursorOffset() || end < 0) {
+            return;
+          }
+
+          final var el = snapshot.trees().getElement(getCurrentPath());
+          if (end < context.cursorOffset()) {
             addVariable(node.getName().toString(), el != null ? el.asType() : null);
+          } else if (initializerExpectedType == null && el != null) {
+            initializerExpectedType = el.asType();
           }
         }
       }.scan(methodPath, null);
@@ -104,13 +110,42 @@ final class SimpleNameProposalCollector {
   private void addVariable(final String name, final TypeMirror type) {
     if (name.startsWith(context.prefix()) && seen.add(name)) {
       final var item = itemFactory.variable(name);
-      final var expected = context.expectedParamType();
-      if (expected != null) {
-        final boolean matches = type != null && snapshot.types().isAssignable(type, expected);
-        item.setSortText(matches ? "0_" + name : "1_" + name);
-      }
+      applySortText(item, name, type);
       items.add(item);
     }
+  }
+
+  private void addMember(final Element el, final DeclaredType declaredType) {
+    final var name = el.getSimpleName().toString();
+    if (effectiveExpectedType() != null || context.inValueContext()) {
+      if (ProposalGenerator.isDeclaredInObject(el)) {
+        return;
+      }
+
+      if (el.getKind() == ElementKind.METHOD
+          && ((ExecutableElement) el).getReturnType().getKind() == TypeKind.VOID) {
+        return;
+      }
+    }
+
+    final var item = itemFactory.member(el, declaredType);
+    if (ProposalGenerator.isDeclaredInObject(el)) {
+      item.setSortText("9_" + name);
+    } else {
+      final var memberType =
+          el.getKind() == ElementKind.METHOD
+              ? ((ExecutableElement) el).getReturnType()
+              : el.asType();
+      applySortText(item, name, memberType);
+    }
+
+    items.add(item);
+  }
+
+  private TypeMirror effectiveExpectedType() {
+    return context.expectedParamType() != null
+        ? context.expectedParamType()
+        : initializerExpectedType;
   }
 
   private void addClassMembers(final boolean staticMethod) {
@@ -125,8 +160,17 @@ final class SimpleNameProposalCollector {
         .filter(el -> !staticMethod || el.getModifiers().contains(Modifier.STATIC))
         .filter(el -> el.getSimpleName().toString().startsWith(context.prefix()))
         .filter(el -> seen.add(el.getSimpleName().toString()))
-        .map(el -> itemFactory.member(el, declaredType))
-        .forEach(items::add);
+        .forEach(el -> addMember(el, declaredType));
+  }
+
+  private void applySortText(final CompletionItem item, final String name, final TypeMirror type) {
+    final var expected = effectiveExpectedType();
+    if (expected == null) {
+      return;
+    }
+
+    final boolean matches = type != null && snapshot.types().isAssignable(type, expected);
+    item.setSortText(matches ? "0_" + name : "1_" + name);
   }
 
   private TreePath findScopeMethodPath(
@@ -188,8 +232,7 @@ final class SimpleNameProposalCollector {
           .filter(el -> wildcard || memberName.equals(el.getSimpleName().toString()))
           .filter(el -> el.getSimpleName().toString().startsWith(context.prefix()))
           .filter(el -> seen.add(el.getSimpleName().toString()))
-          .map(el -> itemFactory.member(el, declaredType))
-          .forEach(items::add);
+          .forEach(el -> addMember(el, declaredType));
     }
   }
 
