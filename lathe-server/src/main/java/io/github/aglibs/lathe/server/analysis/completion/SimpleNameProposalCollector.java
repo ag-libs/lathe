@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.analysis.completion;
 
 import com.sun.source.tree.BindingPatternTree;
 import com.sun.source.tree.ClassTree;
+import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
@@ -47,6 +48,7 @@ final class SimpleNameProposalCollector {
 
     addMethodLocals(methodPath);
     addClassMembers(staticMethod);
+    addStaticImportMembers();
 
     return items;
   }
@@ -151,6 +153,40 @@ final class SimpleNameProposalCollector {
       }
     }.scan(snapshot.tree(), null);
     return result.get();
+  }
+
+  private void addStaticImportMembers() {
+    if (snapshot.tree() == null) {
+      return;
+    }
+
+    for (final var imp : snapshot.tree().getImports()) {
+      if (!imp.isStatic()) {
+        continue;
+      }
+
+      if (!(imp.getQualifiedIdentifier() instanceof final MemberSelectTree memberSelect)) {
+        continue;
+      }
+
+      final var memberName = memberSelect.getIdentifier().toString();
+      final var typeName = memberSelect.getExpression().toString();
+      final var typeEl = snapshot.elements().getTypeElement(typeName);
+      if (typeEl == null) {
+        continue;
+      }
+
+      final boolean wildcard = "*".equals(memberName);
+      final var declaredType = (DeclaredType) typeEl.asType();
+      snapshot.elements().getAllMembers(typeEl).stream()
+          .filter(el -> el.getModifiers().contains(Modifier.STATIC))
+          .filter(el -> el.getKind() == ElementKind.METHOD || el.getKind() == ElementKind.FIELD)
+          .filter(el -> wildcard || memberName.equals(el.getSimpleName().toString()))
+          .filter(el -> el.getSimpleName().toString().startsWith(context.prefix()))
+          .filter(el -> seen.add(el.getSimpleName().toString()))
+          .map(el -> itemFactory.member(el, declaredType))
+          .forEach(items::add);
+    }
   }
 
   private TypeElement findScopeClassElement(final String simpleName) {

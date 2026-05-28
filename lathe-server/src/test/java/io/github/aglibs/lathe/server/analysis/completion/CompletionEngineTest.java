@@ -1453,6 +1453,53 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("subList"));
   }
 
+  // gap A: static-import members not offered as simple names ──────────────────────────────────────
+
+  @Test
+  void simpleName_staticImportedMethod_offeredWithoutQualifier() {
+    // When a file has `import static java.util.Objects.requireNonNull`, typing `requireN`
+    // in a method body should offer requireNonNull as a simple-name completion.
+    // Regression: SimpleNameProposalCollector only consults local variables and class members;
+    // it does not walk CompilationUnitTree.getImports() for static imports, so statically-
+    // imported identifiers are silently absent.
+    final var items =
+        completeWithCurrentContentCached(
+            eng,
+            """
+            import static java.util.Objects.requireNonNull;
+
+            class Test {
+                void m(String s) {
+                    requireN§
+                }
+            }""");
+    assertThat(items)
+        .as("requireNonNull should be offered as a simple name via the static import")
+        .extracting(CompletionItem::getLabel)
+        .anyMatch(l -> l.startsWith("requireNonNull"));
+  }
+
+  @Test
+  void simpleName_wildcardStaticImport_allMembersOffered() {
+    // import static java.util.Objects.* should make all static members of Objects available
+    // as simple-name completions.
+    final var items =
+        completeWithCurrentContentCached(
+            eng,
+            """
+            import static java.util.Objects.*;
+
+            class Test {
+                void m(String s) {
+                    requireN§
+                }
+            }""");
+    assertThat(items)
+        .as("wildcard static import should offer all static members of the imported type")
+        .extracting(CompletionItem::getLabel)
+        .anyMatch(l -> l.startsWith("requireNonNull"));
+  }
+
   // gap #12 ─ bare dot with no receiver must return empty ─────────────────
   //
   // When the user types '.' at a position where there is no syntactic receiver
