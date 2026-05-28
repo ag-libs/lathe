@@ -140,6 +140,247 @@ The completion item must contain those edits in the initial `textDocument/comple
 Resolve may add documentation later,
 but it must not change insertion fields, replacement ranges, or import edits.
 
+## Target Data Flow And Responsibilities
+
+The refactored completion path should follow this flow:
+
+```text
+CompletionRequest
+  -> SentinelInjector
+  -> SentinelParser
+  -> CompletionSite
+  -> SemanticCompletionContext
+  -> providers selected by mode/breadth
+  -> CompletionCandidate list
+  -> CompletionCandidateRanker
+  -> RankedCompletionCandidate list
+  -> CompletionItemPresenter
+  -> CompletionOutcome
+```
+
+### `CompletionEngine`
+
+`CompletionEngine` is orchestration only.
+
+Responsibilities:
+
+- receive `CompletionRequest`
+- run injection and sentinel parse
+- build `CompletionSite`
+- get or refresh javac analysis when needed
+- build `SemanticCompletionContext`
+- choose candidate providers based on `CompletionSite.mode()` and `CompletionSite.breadth()`
+- call the ranker
+- call the presenter
+- return `CompletionOutcome`
+
+It should not contain detailed rules such as uppercase-prefix type lookup,
+Object-method demotion,
+or expected-type ranking.
+Those belong in site creation or ranking.
+
+### `CompletionSite`
+
+`CompletionSite` is pure cursor/request context.
+
+It describes where completion is happening and how broad this request should be.
+It owns the replacement range.
+
+Examples:
+
+```text
+Str§ in method body
+  -> mode = MIXED
+  -> breadth = NARROW
+  -> prefix = "Str"
+
+str§ in method body
+  -> mode = VALUE
+  -> breadth = NARROW
+  -> prefix = "str"
+```
+
+### `SemanticCompletionContext`
+
+`SemanticCompletionContext` is javac semantic context for the site.
+
+Responsibilities:
+
+- expose the current `AttributedFileAnalysis`
+- expose the current javac `Scope`
+- expose the enclosing type
+- expose expected value context through `ExpectedValue`
+- expose whether values are legal here
+- expose static-context information
+
+The important rule is that expected type must not be nullable.
+`ExpectedValue.NoSlot` is how `noArgs(§)` becomes "return no value completions",
+not "unknown, show everything".
+
+### Candidate Providers
+
+Providers discover candidates.
+They do not make final ranking or presentation decisions.
+
+Provider input:
+
+```java
+provide(CompletionSite site, SemanticCompletionContext context)
+```
+
+Provider output:
+
+```java
+List<CompletionCandidate>
+```
+
+Provider responsibilities:
+
+- `ScopeCandidateProvider`: locals, parameters, fields, and same-class methods
+- `MemberAccessCandidateProvider`: members of an expression or type receiver
+- `StaticImportCandidateProvider`: members visible through existing static imports
+- `TypeIndexCandidateProvider`: indexed dependency, JDK, and reactor types
+- `JavaLangCandidateProvider`: temporary fallback for `java.lang` types if not covered by the index
+- `ImportCandidateProvider`: packages, types, and static members inside import declarations
+- `KeywordCandidateProvider`: context-valid keywords
+
+Providers may attach semantic metadata such as value type, declaring type, visibility, and import intent.
+They should not create LSP `CompletionItem`.
+
+### `CompletionCandidate`
+
+`CompletionCandidate` is the internal semantic model for an offered thing.
+It describes what the candidate is and what accepting it means.
+
+Example candidates:
+
+```text
+local String name
+  kind = LOCAL_VARIABLE
+  valueType = java.lang.String
+  visibility = IN_SCOPE
+  importEdit = null
+
+java.util.ArrayList
+  kind = TYPE
+  valueType = java.util.ArrayList where applicable
+  visibility = IMPORTABLE
+  importEdit = import java.util.ArrayList
+
+Objects.requireNonNull
+  kind = STATIC_MEMBER
+  valueType = T
+  visibility = IMPORTABLE
+  importEdit = import static java.util.Objects.requireNonNull
+```
+
+### `SymbolVisibility`
+
+Use explicit symbol visibility instead of a single `needsImport` boolean:
+
+```java
+enum SymbolVisibility {
+  IN_SCOPE,
+  IMPORTABLE,
+  NOT_ACCESSIBLE
+}
+```
+
+Responsibilities:
+
+- prefer already-visible symbols
+- allow importable symbols with `additionalTextEdits`
+- drop inaccessible symbols
+
+### `ImportEdit`
+
+`ImportEdit` represents import intent before LSP presentation:
+
+```java
+record ImportEdit(String qualifiedName, boolean isStatic) {}
+```
+
+Responsibilities:
+
+- keep auto-import part of the candidate model
+- let the presenter create `additionalTextEdits`
+- support both normal type imports and static imports
+
+### `CompletionCandidateRanker`
+
+The ranker is the central semantic fit and ordering component.
+
+Input:
+
+```java
+List<CompletionCandidate>
+CompletionSite
+SemanticCompletionContext
+```
+
+Output:
+
+```java
+List<RankedCompletionCandidate>
+```
+
+Responsibilities:
+
+- drop invalid candidates
+- apply expected-type fit
+- apply static/instance legality
+- exclude void methods in value contexts
+- demote or exclude Object methods depending on context
+- prefer `IN_SCOPE` over `IMPORTABLE`
+- rank direct assignable values high
+- preserve broad fallback candidates with low rank or incomplete marker
+
+It should not create LSP items.
+
+### `RankedCompletionCandidate`
+
+`RankedCompletionCandidate` is the result of semantic ranking.
+
+Suggested shape:
+
+```java
+record RankedCompletionCandidate(
+    CompletionCandidate candidate,
+    String sortText,
+    MatchQuality quality,
+    boolean incomplete) {}
+```
+
+This keeps ranking testable without inspecting LSP objects.
+
+### `CompletionItemPresenter`
+
+The presenter is the only class that creates LSP `CompletionItem`.
+
+Responsibilities:
+
+- set `label`
+- set `kind`
+- set `filterText`
+- set `sortText`
+- set `insertText`
+- set `insertTextFormat`
+- set `textEdit` using `CompletionSite.replacementRange()`
+- set `additionalTextEdits` from `ImportEdit`
+- leave documentation for `completionItem/resolve`
+
+This is where auto-import becomes LSP edits.
+
+### Responsibility Boundary
+
+The core separation is:
+
+- `CompletionSite`: where am I?
+- `SemanticCompletionContext`: what does javac know?
+- providers: what symbols exist?
+- ranker: what fits and in what order?
+- presenter: how does LSP display and insert it?
+
 ## Target Data Model
 
 ### `CompletionSite`
@@ -485,6 +726,239 @@ One-hop derived-expression completion may be considered later as a separate feat
 ## Testing Strategy
 
 Keep existing completion tests as regression coverage during every slice.
+
+The current tests cover many common-sense cases, regressions, and gaps found during development.
+The refactor should keep that coverage,
+but new tests should use a systematic set of scenarios so completion behavior stays coherent as the architecture changes.
+
+Prefer explicit scenario tests backed by strong fixtures over large parameterized matrices.
+Parameterized tests are useful for small uniform rules,
+but semantic completion tests are usually clearer when each scenario has a descriptive test method.
+
+### No Mocked Javac Model Objects
+
+Do not mock javac semantic objects.
+
+This includes:
+
+- `CompilationUnitTree`
+- `Trees`
+- `Elements`
+- `Types`
+- `Scope`
+- `Element`
+- `TypeElement`
+- `ExecutableElement`
+- `TypeMirror`
+
+Tests that need semantic Java information must obtain it from real compilation of minimal source fixtures.
+Use existing utilities such as `TempSourceCompiler`, `TestCompiler`, and small inline source snippets.
+
+Mocking javac internals makes completion tests pass against fake type behavior that javac may never produce.
+Completion correctness depends on javac's actual attribution, accessibility, and assignability behavior,
+so semantic tests should use real javac contexts.
+
+LSP DTOs and internal pure data records may be instantiated directly.
+Pure presenter tests may use synthetic `CompletionCandidate` values when no javac type behavior is involved.
+
+### Test Dimensions
+
+Use these axes when adding or reorganizing tests.
+They describe the behavior matrix,
+but they do not require every test to be parameterized:
+
+- site kind: member access, simple name, type reference, import, static import, constructor call, argument position, return, initializer
+- invocation kind: automatic/narrow, explicit/broad, smart
+- prefix shape: empty, lowercase, uppercase, qualified, partial member
+- semantic expectation: unknown, expected type, no argument slot
+- symbol source: local, parameter, field, method, static import, importable type, `java.lang`, dependency/JDK/reactor index
+- visibility: in scope, importable, inaccessible, unreadable module
+- candidate fit: assignable, non-assignable, void, Object method, static/instance mismatch
+- presentation: `textEdit`, `filterText`, `sortText`, `kind`, `additionalTextEdits`
+
+### Completion Test Fixture
+
+Add or evolve a small fixture DSL so tests read like completion scenarios rather than compiler setup.
+The fixture should hide boilerplate, not behavior.
+
+Fixture responsibilities:
+
+- parse the `§` cursor marker
+- compile source with real javac when semantic context is needed
+- create `CompletionRequest`
+- allow invocation kind such as automatic, broad basic, smart, and broad smart
+- expose labels, kinds, details, sort order, text edits, and import edits
+- support type-index shard setup
+- support JPMS `module-info.java` setup
+
+Suggested helper entry points:
+
+```java
+completeAutomatic(source)
+completeBasicBroad(source)
+completeSmart(source)
+completeSmartBroad(source)
+```
+
+Suggested assertion style:
+
+```java
+final var result =
+    completeSmart(
+        """
+        class Test {
+          void accept(String value) {}
+          String name() { return ""; }
+          int count() { return 0; }
+
+          void m() {
+            accept(§);
+          }
+        }
+        """);
+
+assertThat(result)
+    .containsLabel("name()")
+    .ordersBefore("name()", "count()")
+    .doesNotContainLabels("wait", "notify", "doWork");
+```
+
+For import assertions:
+
+```java
+assertThat(result)
+    .item("ArrayList")
+    .hasImportEdit("java.util.ArrayList");
+```
+
+Fixture assertions should make failures easy to read.
+Avoid hiding core behavior behind overly broad helpers.
+
+### Parameterized Tests
+
+Use parameterized tests only where the setup and assertion shape are truly uniform.
+
+Good candidates:
+
+- site mode classification
+- keyword set per syntactic context
+- type kind to LSP completion kind mapping
+- import insertion location variants
+- simple rank bucket ordering where candidates are synthetic and no javac type behavior is needed
+
+Avoid large parameterized tests for semantic completion behavior when each row needs different source setup,
+different assertions,
+or different explanation.
+Those scenarios are clearer as explicit tests using the fixture.
+
+### Test Layers
+
+#### Site Classification Tests
+
+Validate `CompletionSite` creation from source strings.
+These tests should be pure string/parser tests unless semantic expected-type state is needed.
+
+Examples:
+
+- `Str§` -> `MIXED`, narrow
+- `str§` -> `VALUE`, narrow
+- `new Arr§` -> `TYPE`
+- `foo.§` -> `MEMBER`
+- `import java.ut§` -> `IMPORT`
+
+#### Semantic Context Tests
+
+Validate expected value and scope derivation using real javac compilation.
+
+Examples:
+
+- assignment RHS resolves the assigned type
+- variable initializer resolves the declared type
+- `return §` resolves the enclosing method return type
+- method-call argument resolves the parameter type
+- zero-parameter invocation resolves `ExpectedValue.NoSlot`
+- unknown expression context resolves `ExpectedValue.Unknown`
+
+#### Provider Tests
+
+Provider tests should use real `SemanticCompletionContext` when semantic data is involved.
+
+Examples:
+
+- scope provider returns locals, parameters, fields, and same-class methods
+- static-import provider returns imported static members
+- type-index provider returns importable indexed types
+- member provider respects receiver type
+- keyword provider respects syntactic context
+
+#### Ranker Tests
+
+Ranker tests should focus on fit and ordering.
+If assignability or javac accessibility is involved,
+create candidates from real compiled elements and type mirrors.
+
+Examples:
+
+- assignable candidates rank before non-assignable candidates
+- void methods are excluded in value contexts
+- Object methods are demoted or excluded according to context
+- `IN_SCOPE` ranks before `IMPORTABLE`
+- `NOT_ACCESSIBLE` is dropped
+- `ExpectedValue.NoSlot` drops value candidates
+
+#### Presenter Tests
+
+Presenter tests should focus only on LSP shape.
+They may use synthetic candidates when no javac type behavior is involved.
+
+Examples:
+
+- text edit range replaces the typed prefix
+- filter text is the symbol name
+- method insertion uses the expected insert text and snippet format
+- type kind maps to class, interface, enum, or record
+- import edits become `additionalTextEdits`
+
+#### End-To-End Completion Scenarios
+
+End-to-end tests should be fewer but high-value.
+They should exercise the full `CompletionEngine` with real compilation where needed.
+
+Examples:
+
+- `String s = §`
+- `return §`
+- `accept(§)`
+- `new Arr§`
+- `Objects.§`
+- `import java.util.§`
+- unimported `ArrayList` inserts an import
+- static member inserts a static import
+- JPMS unreadable candidate is absent
+
+### Test Naming
+
+Use names that encode the layer, condition, and expected result.
+
+Examples:
+
+```text
+site_lowercaseSimpleName_selectsValueMode
+expected_methodArgument_resolvesParameterType
+ranker_expectedString_assignableMethodRanksFirst
+presenter_importableType_addsImportEdit
+completion_variableInitializer_prefersAssignableValues
+```
+
+The fixture may make tests compact,
+but the method name should still say what behavior is protected.
+
+### Regression Tests
+
+Do not delete existing gap/regression tests just because they are ad hoc.
+During refactor work,
+move or rename them gradually into the systematic structure when doing so improves clarity.
+Weird bug tests are useful as long as the behavior they protect remains relevant.
 
 Add focused tests as each slice lands:
 
