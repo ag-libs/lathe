@@ -4,6 +4,8 @@
 
 ### Gap A — Static-import members not offered as simple names
 
+**Difficulty:** Medium
+
 **Symptom:** When a file has `import static java.util.Objects.requireNonNull`, typing `requireN`
 inside a method body returns no completions.  Local variables and type names work; only the
 statically-imported identifiers are missing.
@@ -17,12 +19,18 @@ inject "conf"    at 55  →  config  [Variable]   ← locals DO work
 
 **Root cause (suspected):** The simple-name candidate set is built from local variables, fields,
 and the type index, but does not consult the compilation unit's `import static` declarations.
-`Elements.getTypeElement` / `Trees` can enumerate the static members of each imported type;
-those should be added to the SIMPLE_NAME completion path.
+
+**Resolution idea:** Add `addStaticImportMembers()` to `SimpleNameProposalCollector`.  Walk
+`CompilationUnitTree.getImports()`, filter to static imports, parse the qualified identifier to
+extract the declaring type name and the member name (or `*` for wildcards), resolve the type via
+`getTypeElement`, then emit its static members filtered by the declared member name and the
+current prefix.  No new infrastructure needed — contained change in one class.
 
 ---
 
 ### Gap B — Member-access on an unimported simple type name returns nothing
+
+**Difficulty:** Medium
 
 **Symptom:** When `java.util.Objects` is not in the regular imports (only
 `import static java.util.Objects.requireNonNull` is present), typing `Objects.` returns no
@@ -39,13 +47,20 @@ inject "Objects"             at 55  →  java.util.Objects [Class]  ← type-ref
 
 **Root cause (suspected):** The member-access path resolves the receiver from the attributed
 AST.  When `Objects` is not a regular import, javac attributes it as an error node; the engine
-finds no declared type to reflect on.  A fallback could re-resolve the receiver token against
-the type index and complete on the resulting type's members when the attributed receiver is an
-error.
+finds no declared type to reflect on.
+
+**Resolution idea:** When the attributed receiver is an error node, extract the receiver token
+text from source (the characters before the `.`), feed it into the same `WorkspaceTypeIndex`
+prefix lookup that already powers TYPE_REFERENCE completions, then call `getTypeElement` on the
+top match and complete on its members exactly as `proposeMemberAccess` does today.  The
+TYPE_REFERENCE path resolves `Objects` → `java.util.Objects` purely by index scan (no import
+needed), so the same mechanism works here without any new infrastructure.
 
 ---
 
 ### Gap C — Variable offered as completion in its own initializer
+
+**Difficulty:** Easy
 
 **Symptom:** When declaring `String foo = ` and triggering completion, `foo` itself appears in
 the candidate list even though it is not yet in scope.  Only variables declared *before* the
@@ -58,14 +73,17 @@ inject "String foo = " at 55  →  foo [Variable]  appears among candidates
 ```
 
 **Root cause (suspected):** `SimpleNameProposalCollector.addMethodLocals` filters by
-`startPosition < cursorOffset`, but the variable tree's start position for `String foo = ` is
-the start of the declaration (the `S` of `String`), which is before the cursor.  The filter
-should use the *end* of the declarator — or exclude the variable whose declaration contains the
-cursor — so the name is only offered after the statement is fully written.
+`startPosition < cursorOffset`, but the variable tree's start position is the start of the
+declaration (before the cursor), so the name passes the filter.
+
+**Resolution idea:** Exclude the variable whose declaration *contains* the cursor — i.e. skip
+any `VariableTree` whose source range `[start, end]` brackets `cursorOffset`.
 
 ---
 
 ### Gap D — No type-based ranking after `=`
+
+**Difficulty:** Medium
 
 **Symptom:** When declaring `String foo = ` and triggering completion, items that return or are
 a `String` (`MAPPING_QUALIFIER [Field] String`, `dbType() [Method] String`,
@@ -84,18 +102,24 @@ inject "String foo = " at 55
 ```
 
 **Root cause (suspected):** `SimpleNameProposalCollector.addVariable()` already applies
-expected-type ranking (`0_` vs `1_` sort keys) for local variables, but
-`addClassMembers()` does not.  The expected-type signal needs to be propagated to the class
-member path so that type-compatible fields and methods sort before incompatible ones.
+expected-type ranking (`0_` vs `1_` sort keys) for local variables, but `addClassMembers()`
+does not.
+
+**Resolution idea:** Propagate the `expectedParamType` signal to `addClassMembers()` and apply
+the same `0_` / `1_` sort key logic — `0_` for members whose return/field type is assignable to
+the expected type, `1_` otherwise.  The expected type for a variable declarator is already
+available from `SimpleNameProposalContext`.
 
 ---
 
 ### Gap E — No type-index suggestions in expression context
 
+**Difficulty:** Medium
+
 **Symptom:** After `String foo = `, no type names from the type index are offered, so the user
 cannot start typing a class name (e.g. `String`, `StringBuilder`, `Optional`) to invoke a
 constructor or static factory.  Type-index candidates are only surfaced in TYPE_REFERENCE
-context (e.g. after `new`, in parameter position), not in bare expression position after `=`.
+context.
 
 **Verified on:** `MongoDbClient.java` (helidon mongodb module)
 
@@ -104,14 +128,19 @@ inject "String foo = " at 55  →  0 type-index candidates
 inject "Objects"       at 55  →  5 type-index candidates  ← TYPE_REFERENCE works
 ```
 
-**Root cause (suspected):** The completion engine does not classify the position after `=` as a
-context where type-index candidates are useful.  Extending the SIMPLE_NAME / expression path
-to also emit type-index entries (filtered to types assignable to the declared type where known)
-would cover this case.
+**Root cause (suspected):** The engine does not classify the position after `=` as a context
+where type-index candidates are useful.
+
+**Resolution idea:** Extend the SIMPLE_NAME / expression path to also emit type-index entries,
+optionally pre-filtered to types assignable to the declared type where the expected type is
+known.  The type-index lookup already exists; the change is to call it from the expression
+context in addition to the TYPE_REFERENCE context.
 
 ---
 
 ### Gap F — Import completions missing trailing semicolon
+
+**Difficulty:** Easy
 
 **Symptom:** After `import java.util.`, selecting a type suggestion (e.g. `Map`) produces
 `import java.util.Map` with no closing semicolon — the user must type `;` manually.
@@ -124,43 +153,39 @@ inject "import java.util." at 30
   → result after selection:  import java.util.Map   ← missing ;
 ```
 
-**Root cause (suspected):** The `ImportCompletionProvider` reuses the same `CompletionItem`
-factories as the regular type-index path and does not append `;` to the `newText`.  The fix is
-to set `newText = label + ";"` (or extend the `textEdit` range to cover an existing `;` if
-already present) when the completion context is an import declaration.
+**Resolution idea:** In `ImportCompletionProvider`, set `newText = simpleName + ";"` (or extend
+the `textEdit` range to cover an existing `;` if one is already present on the line).
 
 ---
 
 ### Gap G — Static import inserts method snippet instead of bare name
 
+**Difficulty:** Easy
+
 **Symptom:** After `import static java.util.Objects.`, selecting a method suggestion (e.g.
 `equals`) inserts `equals($1)` — a snippet with a parameter placeholder — instead of the bare
-identifier `equals`.  The resulting line becomes
-`import static java.util.Objects.equals($1)` which is a syntax error.
+identifier `equals`, producing a syntax error.
 
 **Verified on:** `MongoDbClient.java` (helidon mongodb module)
 
 ```
 inject "import static java.util.Objects." at 30
-  → label:      equals(Object, Object)
-  → insertText: "equals($1)"   ← snippet placeholder
-  → result after selection:  import static java.util.Objects.equals($1)  ← wrong
-  → expected:                import static java.util.Objects.equals;
+  → insertText: "equals($1)"   ← wrong
+  → expected:   "equals;"
 ```
 
-**Root cause (suspected):** The static-import position is handled by the same member-access
-`CompletionItemFactory` that produces call-site snippets.  When the position is inside an
-`import static` declaration, the item should use only the simple member name (no parentheses,
-no snippet) and append `;`.  The `ImportCompletionProvider` (or `SentinelContext`) needs to
-detect the `IMPORT` tree context and override the insert text accordingly.
+**Resolution idea:** In `ImportCompletionProvider`, detect the `import static` context and
+produce items with `newText = simpleName + ";"` (no parentheses, no snippet), overriding the
+call-site factory used elsewhere.
 
 ---
 
 ### Gap H — No subpackage navigation when typing a fully-qualified name
 
+**Difficulty:** Medium
+
 **Symptom:** Typing `java.` in a method body returns no completions.  The user cannot navigate
-from a package prefix to a subpackage or type incrementally — completions only appear once the
-full package path is present and a type name follows the final `.`.
+from a package prefix to a subpackage or type incrementally.
 
 **Verified on:** `MongoDbClient.java` (helidon mongodb module)
 
@@ -170,58 +195,52 @@ inject "java.util."               at 55  →  (no completions)
 inject "java.util.stream.Stream." at 55  →  9 static methods  ← works only at type level
 ```
 
-**Root cause (suspected):** The member-access path resolves the receiver from the attributed
-AST.  Package identifiers (`java`, `java.util`, …) are not types and produce no element to
-reflect on, so the engine returns nothing.  Supporting this would require recognising
-package-qualified prefixes and resolving them against the type index or
-`Elements.getPackageElement` to enumerate subpackages and types within the package.
+**Root cause (suspected):** The member-access path requires a type receiver.  Package
+identifiers produce no `TypeElement` to reflect on.
+
+**Resolution idea:** Use the type index as a package trie.  When the attributed receiver is a
+package (not a type), scan all type-index entries whose qualified name starts with the typed
+prefix, extract the next dot-segment, and deduplicate to produce subpackage and type
+candidates.  No new external API needed — purely a prefix scan over the existing index.
+`SentinelContext` already knows whether the receiver resolved to a `PackageElement`; that flag
+can trigger the index scan path.
 
 ---
 
 ### Gap I — Static methods offered in instance member-access context
 
+**Difficulty:** Easy
+
 **Symptom:** After an instance expression such as `Stream.of("").`, static methods of `Stream`
-(`builder()`, `empty()`, `of(T)`, `of(T[])`, `concat()`, `generate()`, `iterate()`,
-`ofNullable()`) are included in the completion list alongside instance methods.  Only instance
-members should be offered on an instance receiver.
+are included in the completion list alongside instance methods.
 
 **Verified on:** `MongoDbClient.java` (helidon mongodb module)
 
 ```
 inject "java.util.stream.Stream.of(\"\")." at 55
-  → of(T)          [Method]  Stream   ← static, should not appear
-  → of(T[])        [Method]  Stream   ← static, should not appear
-  → builder()      [Method]  Builder  ← static, should not appear
-  → filter(…)      [Method]  Stream   ← instance, correct
-  → map(…)         [Method]  Stream   ← instance, correct
+  → of(T), builder(), empty(), …  ← statics, should not appear
+  → filter(…), map(…), …          ← instance, correct
 ```
 
-**Root cause:** `ProposalGenerator.proposeMemberAccess` filters to statics when
-`isStaticAccess == true`, but when `isStaticAccess == false` (instance receiver) it passes
-all members through:
+**Root cause:** `ProposalGenerator.proposeMemberAccess` filter is one-sided — it excludes
+instance members on static access but not statics on instance access.
 
-```java
-.filter(el -> !isStaticAccess || el.getModifiers().contains(Modifier.STATIC))
-```
-
-The condition needs to be two-sided: exclude statics on instance access as well as excluding
-instance members on static access.  Fix: replace with
-
+**Resolution idea:** Make the filter two-sided:
 ```java
 .filter(el -> isStaticAccess
     ? el.getModifiers().contains(Modifier.STATIC)
     : !el.getModifiers().contains(Modifier.STATIC)
       || el.getKind() == ElementKind.ENUM_CONSTANT)
 ```
-
-(Enum constants are always offered regardless of access style.)
+Single-line change in `ProposalGenerator`.
 
 ---
 
 ### Gap J — No completions after `::` (method reference)
 
-**Symptom:** Typing `String::` (or any `Type::`) returns no completions.  The user cannot
-discover available method references by typing `::` and browsing candidates.
+**Difficulty:** Hard
+
+**Symptom:** Typing `String::` (or any `Type::`) returns no completions.
 
 **Verified on:** `MongoDbClient.java` (helidon mongodb module)
 
@@ -230,19 +249,20 @@ inject "…Stream.of("").map(z -> z.charAt(9)).map(String::" at 55
   →  (no completions)
 ```
 
-Context works correctly on both sides of the method reference — lambda parameter type
-inference and chain type propagation through the method reference both function — but the
-`::` position itself is not handled as a completion site.
+**Root cause (suspected):** The sentinel parser does not recognise the `MEMBER_REFERENCE` tree
+node as a completion context.
 
-**Root cause (suspected):** The sentinel parser does not recognise the `MEMBER_REFERENCE`
-tree node as a completion context.  Completing after `::` requires enumerating the static
-(or instance, for `instance::`) methods of the referenced type that are compatible with the
-functional interface expected at the call site.  This is a distinct context from plain
-member-access and requires its own handling in `SentinelContext` / `CompletionEngine`.
+**Resolution idea:** Extend `SentinelContext` to handle `MEMBER_REFERENCE` nodes.  The LHS
+type (e.g. `String`) can be resolved the same way as a static member-access receiver.  The hard
+part is filtering: candidates should be methods compatible with the functional interface expected
+at the call site, which requires matching the abstract method's arity and parameter types against
+each candidate.  Needs significant new infrastructure — no existing path to build on.
 
 ---
 
 ### Gap K — Keywords not filtered by syntactic context (low priority)
+
+**Difficulty:** Medium
 
 **Symptom:** In several positions the engine offers keywords that are syntactically impossible
 there.  Three confirmed cases:
@@ -259,20 +279,16 @@ expression-level keywords — so the infrastructure exists; it is just not appli
 **Verified on:** `MongoDbClient.java` (helidon mongodb module)
 
 ```
-inject "import "        at 30  →  [] keywords  (static missing)
-inject "        return " at 55  →  [if, for, while, do, switch, try,
-                                    synchronized, throw, break, continue,
-                                    final, var, assert, …]
+inject "import "               at 30  →  [] keywords  (static missing)
+inject "        return "       at 55  →  [if, for, while, do, switch, …]
 inject "        String foo = " at 55  →  same full set as above
-inject "        if ("   at 55  →  [new, null, true, false, this, super]  ✅
+inject "        if ("          at 55  →  [new, null, true, false, this, super]  ✅
 ```
 
-**Root cause (suspected):** `KeywordProvider` maintains a flat keyword set for
-statement-level contexts.  The context classifier (`SentinelContext`) knows the tree node at
-the cursor position but does not yet map all node types to their allowed keyword subsets.
-Fixing this requires extending the context classifier to recognise expression-position nodes
-(`ASSIGNMENT`, `RETURN`, `VARIABLE` initialiser, …) and narrowing the keyword list
-accordingly, and separately handling the `IMPORT` node to offer only `static`.
+**Resolution idea:** Extend `SentinelContext` to map additional tree-node positions to keyword
+subsets — expression-position nodes (`ASSIGNMENT`, `RETURN`, `VARIABLE` initialiser) get only
+expression-level keywords; the `IMPORT` node gets only `static`.  The keyword sets are finite
+and easy to enumerate.
 
 ---
 
