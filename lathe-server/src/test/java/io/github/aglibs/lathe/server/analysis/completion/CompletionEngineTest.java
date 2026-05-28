@@ -136,6 +136,35 @@ class CompletionEngineTest {
     assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("emptyList"));
   }
 
+  // gap I: static methods offered in instance member-access context ───────────────────────────────
+
+  @Test
+  void memberAccess_instanceReceiver_staticMethodsExcluded() {
+    // Stream.of("") is an instance expression; only instance methods of Stream should be offered.
+    // Regression: ProposalGenerator.proposeMemberAccess filter is one-sided — it excludes instance
+    // members on static access but passes all members (static + instance) on instance access.
+    // Use an empty prefix so all members are returned and the static ones are visible.
+    final var items =
+        complete(
+            """
+            class Test {
+                void m() {
+                    java.util.stream.Stream.of("").§
+                }
+            }""");
+    assertThat(items)
+        .as("instance access should offer instance methods")
+        .extracting(CompletionItem::getLabel)
+        .anyMatch(l -> l.startsWith("filter"));
+    assertThat(items)
+        .as("instance access should not offer static factory methods")
+        .noneMatch(
+            i ->
+                i.getLabel().startsWith("of(")
+                    || i.getLabel().startsWith("empty(")
+                    || i.getLabel().startsWith("builder("));
+  }
+
   // gap B: member-access on a simple name that is in the type index but not a regular import ──────
 
   @Test
@@ -193,6 +222,26 @@ class CompletionEngineTest {
                 void m(java.util.Map.En§ entry) {}
             }""");
     assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("Entry"));
+  }
+
+  // gap F: import completions missing trailing semicolon ─────────────────────────────────────────
+
+  @Test
+  void importDeclaration_typeCompletion_textEditIncludesTrailingSemicolon() {
+    // Selecting a type from `import java.util.§` must produce "Map;" so the import
+    // statement is syntactically complete after insertion.
+    // Regression: typeItem() sets only label="Map" with no insertText, so applyTextEdits
+    // uses the label as newText → "Map" with no semicolon, leaving the import broken.
+    final var items =
+        complete(
+            """
+            import java.util.§
+
+            class Test {
+            }""");
+    final var mapItem = items.stream().filter(i -> "Map".equals(i.getLabel())).findFirst();
+    assertThat(mapItem).isPresent();
+    assertThat(mapItem.get().getTextEdit().getLeft().getNewText()).isEqualTo("Map;");
   }
 
   @Test

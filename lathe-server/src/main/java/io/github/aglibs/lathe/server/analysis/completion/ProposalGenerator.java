@@ -51,7 +51,7 @@ final class ProposalGenerator {
                 el.getKind() == ElementKind.METHOD
                     || el.getKind() == ElementKind.FIELD
                     || el.getKind() == ElementKind.ENUM_CONSTANT)
-        .filter(el -> !isStaticAccess || el.getModifiers().contains(Modifier.STATIC))
+        .filter(el -> el.getModifiers().contains(Modifier.STATIC) == isStaticAccess)
         .filter(el -> isAccessible(el, declaredType, scope))
         .filter(el -> el.getSimpleName().toString().startsWith(prefix))
         .map(

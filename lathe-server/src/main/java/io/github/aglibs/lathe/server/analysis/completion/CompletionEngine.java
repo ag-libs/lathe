@@ -14,6 +14,7 @@ import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import org.eclipse.lsp4j.CompletionItem;
+import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
@@ -100,9 +101,19 @@ public final class CompletionEngine {
       return CompletionOutcome.of(List.of());
     }
 
-    return new CompletionOutcome(
-        new ImportCompletionProvider(analysis).propose(parsed.receiverText(), injected.prefix()),
-        req.cached() == null ? analysis : null);
+    final var items =
+        new ImportCompletionProvider(analysis).propose(parsed.receiverText(), injected.prefix());
+    final boolean hasSemicolon =
+        req.cursorOffset() < req.content().length()
+            && req.content().charAt(req.cursorOffset()) == ';';
+
+    if (!hasSemicolon) {
+      items.stream()
+          .filter(i -> i.getKind() == CompletionItemKind.Class)
+          .forEach(i -> i.setInsertText(i.getLabel() + ";"));
+    }
+
+    return new CompletionOutcome(items, req.cached() == null ? analysis : null);
   }
 
   private CompletionOutcome completeSimpleName(
