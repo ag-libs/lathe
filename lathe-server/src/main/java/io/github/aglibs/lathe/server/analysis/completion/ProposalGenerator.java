@@ -93,11 +93,10 @@ final class ProposalGenerator {
       final String enclosingMethod,
       final String prefix,
       final int cursorOffset,
-      final ExpectedValue expectedValue,
-      final boolean inValueContext) {
+      final SemanticCompletionContext semanticContext) {
     final var context =
         new SimpleNameProposalContext(
-            enclosingClass, enclosingMethod, prefix, cursorOffset, expectedValue, inValueContext);
+            enclosingClass, enclosingMethod, prefix, cursorOffset, semanticContext);
     return new SimpleNameProposalCollector(snapshot, itemFactory, context).collect();
   }
 

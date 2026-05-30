@@ -7,8 +7,7 @@ record SimpleNameProposalContext(
     String enclosingMethod,
     String prefix,
     int cursorOffset,
-    ExpectedValue expectedValue,
-    boolean inValueContext) {
+    SemanticCompletionContext semanticContext) {
 
   SimpleNameProposalContext {
     ValidCheck.check()
@@ -16,7 +15,7 @@ record SimpleNameProposalContext(
         .notNull(prefix, "prefix")
         .isNonNegative(cursorOffset, "cursorOffset")
         .nullOrNotBlank(enclosingMethod, "enclosingMethod")
-        .notNull(expectedValue, "expectedValue")
+        .notNull(semanticContext, "semanticContext")
         .validate();
   }
 }

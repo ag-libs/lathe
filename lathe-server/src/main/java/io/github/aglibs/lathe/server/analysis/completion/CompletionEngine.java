@@ -68,10 +68,10 @@ public final class CompletionEngine {
     final var outcome =
         switch (parsed.sentinelContext()) {
           case IMPORT -> completeImport(parsed, injected, req);
-          case SIMPLE_NAME, ARGUMENT_POSITION -> completeSimpleName(parsed, injected, req);
+          case SIMPLE_NAME, ARGUMENT_POSITION -> completeSimpleName(parsed, injected, req, site);
           case CONSTRUCTOR_CALL ->
               parsed.argIndex() >= 0
-                  ? completeSimpleName(parsed, injected, req)
+                  ? completeSimpleName(parsed, injected, req, site)
                   : mergeLangTypes(
                       injected.prefix(), req, completeSimpleNameTypeReference(injected, req));
           case TYPE_REFERENCE -> completeTypeReference(parsed, injected, req);
@@ -114,13 +114,17 @@ public final class CompletionEngine {
   }
 
   private CompletionOutcome completeSimpleName(
-      final ParsedSentinel parsed, final SentinelResult injected, final CompletionRequest req) {
-    final var expectedValue = resolveExpectedValue(parsed, req);
-    if (expectedValue instanceof ExpectedValue.NoSlot) {
+      final ParsedSentinel parsed,
+      final SentinelResult injected,
+      final CompletionRequest req,
+      final CompletionSite site) {
+    final var semanticContext = semanticContext(site, req);
+    if (semanticContext != null
+        && semanticContext.expectedValue() instanceof ExpectedValue.NoSlot) {
       return CompletionOutcome.of(List.of());
     }
 
-    final var javacItems = completeJavacSimpleName(parsed, injected, req, expectedValue);
+    final var javacItems = completeJavacSimpleName(parsed, injected, req, semanticContext);
     final var keywords = KeywordProvider.suggest(parsed, injected.prefix(), injected.context());
     final var items =
         keywords.isEmpty()
@@ -140,32 +144,27 @@ public final class CompletionEngine {
       final ParsedSentinel parsed,
       final SentinelResult injected,
       final CompletionRequest req,
-      final ExpectedValue expectedValue) {
-    if (parsed.enclosingClass() == null
-        || req.cached() == null
-        || req.cached().analysis() == null) {
+      final SemanticCompletionContext semanticContext) {
+    if (parsed.enclosingClass() == null || semanticContext == null) {
       return List.of();
     }
 
-    final var analysis = req.cached().analysis();
-    final boolean inValueContext = injected.context() == SentinelInjector.Context.EXPRESSION;
-    return new ProposalGenerator(analysis)
+    return new ProposalGenerator(semanticContext.analysis())
         .proposeSimpleName(
             parsed.enclosingClass(),
             parsed.enclosingMethod(),
             injected.prefix(),
             req.cursorOffset(),
-            expectedValue,
-            inValueContext);
+            semanticContext);
   }
 
-  private static ExpectedValue resolveExpectedValue(
-      final ParsedSentinel parsed, final CompletionRequest req) {
+  private static SemanticCompletionContext semanticContext(
+      final CompletionSite site, final CompletionRequest req) {
     if (req.cached() == null || req.cached().analysis() == null) {
-      return new ExpectedValue.Unknown();
+      return null;
     }
 
-    return TypeResolver.resolveExpectedValue(parsed, req.pos().getLine(), req.cached().analysis());
+    return SemanticCompletionContext.from(site, req, req.cached().analysis());
   }
 
   private CompletionOutcome completeTypeReference(

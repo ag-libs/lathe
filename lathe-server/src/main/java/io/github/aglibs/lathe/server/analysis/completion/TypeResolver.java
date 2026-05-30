@@ -34,31 +34,25 @@ final class TypeResolver {
   private TypeResolver() {}
 
   static ExpectedValue resolveExpectedValue(
-      final ParsedSentinel sentinel, final int cursorLine, final AttributedFileAnalysis snapshot) {
-    final int argIndex = sentinel.argIndex();
-    final String methodName = sentinel.enclosingMethodName();
+      final CompletionSite site, final int cursorLine, final AttributedFileAnalysis snapshot) {
+    final int argIndex = site.argIndex();
+    final String methodName = site.enclosingMethodName();
     if (snapshot.tree() == null || argIndex < 0 || methodName == null) {
       return new ExpectedValue.Unknown();
     }
 
-    final String receiver = sentinel.enclosingReceiver();
+    final String receiver = site.enclosingReceiver();
     final TypeElement ownerType;
     if (receiver == null || "this".equals(receiver)) {
-      ownerType = findClassElement(sentinel.enclosingClass(), snapshot);
+      ownerType = findClassElement(site.enclosingClass(), snapshot);
     } else if (receiver.indexOf('.') < 0
         && receiver.indexOf('(') < 0
         && receiver.indexOf(' ') < 0) {
       final var localType =
           scanForLocalDeclaration(
-              receiver,
-              sentinel.enclosingClass(),
-              sentinel.enclosingMethod(),
-              cursorLine,
-              snapshot);
+              receiver, site.enclosingClass(), site.enclosingMethod(), cursorLine, snapshot);
       final var receiverType =
-          localType != null
-              ? localType
-              : findFieldType(receiver, sentinel.enclosingClass(), snapshot);
+          localType != null ? localType : findFieldType(receiver, site.enclosingClass(), snapshot);
       final var el = receiverType != null ? snapshot.types().asElement(receiverType) : null;
       ownerType = el instanceof final TypeElement te ? te : null;
     } else {

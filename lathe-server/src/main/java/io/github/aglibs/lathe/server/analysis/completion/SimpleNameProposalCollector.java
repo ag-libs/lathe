@@ -42,7 +42,7 @@ final class SimpleNameProposalCollector {
   }
 
   List<CompletionItem> collect() {
-    if (context.expectedValue() instanceof ExpectedValue.NoSlot) {
+    if (context.semanticContext().expectedValue() instanceof ExpectedValue.NoSlot) {
       return List.of();
     }
 
@@ -121,7 +121,7 @@ final class SimpleNameProposalCollector {
 
   private void addMember(final Element el, final DeclaredType declaredType) {
     final var name = el.getSimpleName().toString();
-    if (effectiveExpectedType() != null || context.inValueContext()) {
+    if (effectiveExpectedType() != null || context.semanticContext().valueContext()) {
       if (ProposalGenerator.isDeclaredInObject(el)) {
         return;
       }
@@ -147,7 +147,7 @@ final class SimpleNameProposalCollector {
   }
 
   private TypeMirror effectiveExpectedType() {
-    return context.expectedValue() instanceof final ExpectedValue.Type expected
+    return context.semanticContext().expectedValue() instanceof final ExpectedValue.Type expected
         ? expected.type()
         : initializerExpectedType;
   }
