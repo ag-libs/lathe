@@ -230,6 +230,13 @@ public final class CompletionEngine {
 
   private static List<CompletionItem> proposeLangTypes(
       final String prefix, final AttributedFileAnalysis analysis) {
+    return proposeLangTypeCandidates(prefix, analysis).stream()
+        .map(CompletionItemPresenter::present)
+        .toList();
+  }
+
+  private static List<CompletionCandidate> proposeLangTypeCandidates(
+      final String prefix, final AttributedFileAnalysis analysis) {
     final var pkg = analysis.elements().getPackageElement("java.lang");
     if (pkg == null) {
       return List.of();
@@ -244,7 +251,7 @@ public final class CompletionEngine {
                     || el.getKind() == ElementKind.ANNOTATION_TYPE)
         .filter(el -> !el.getModifiers().contains(Modifier.PRIVATE))
         .filter(el -> el.getSimpleName().toString().startsWith(prefix))
-        .map(el -> CompletionItemFactory.typeElement((TypeElement) el))
+        .map(el -> CompletionItemFactory.typeElementCandidate((TypeElement) el))
         .toList();
   }
 
@@ -283,7 +290,8 @@ public final class CompletionEngine {
             .sorted(typeCandidateComparator(injected.prefix()))
             .filter(validator::isResolvable)
             .limit(TYPE_INDEX_RESULT_LIMIT)
-            .map(CompletionItemFactory::typeIndexEntry)
+            .map(CompletionItemFactory::typeIndexCandidate)
+            .map(CompletionItemPresenter::present)
             .toList();
     LOG.fine(() -> "[type-index] typeRef items=%d".formatted(items.size()));
     return CompletionOutcome.incomplete(items);

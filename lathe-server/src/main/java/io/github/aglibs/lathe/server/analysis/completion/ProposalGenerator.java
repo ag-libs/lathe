@@ -88,20 +88,6 @@ final class ProposalGenerator {
         .toList();
   }
 
-  List<CompletionItem> proposeSimpleName(
-      final String enclosingClass,
-      final String enclosingMethod,
-      final String prefix,
-      final int cursorOffset,
-      final SemanticCompletionContext semanticContext) {
-    final var candidates =
-        proposeSimpleNameCandidates(
-            enclosingClass, enclosingMethod, prefix, cursorOffset, semanticContext);
-    return CompletionCandidateRanker.rank(candidates, semanticContext).stream()
-        .map(CompletionItemPresenter::present)
-        .toList();
-  }
-
   List<CompletionCandidate> proposeSimpleNameCandidates(
       final String enclosingClass,
       final String enclosingMethod,

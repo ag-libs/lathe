@@ -4,5 +4,8 @@ enum CandidateKind {
   KEYWORD,
   LOCAL_VARIABLE,
   FIELD,
-  METHOD
+  METHOD,
+  TYPE_CLASS,
+  TYPE_INTERFACE,
+  TYPE_ENUM
 }

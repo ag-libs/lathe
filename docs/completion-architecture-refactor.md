@@ -87,6 +87,9 @@ Widening may include:
 Smart completion is expected-type driven.
 It should prioritize candidates that fit the semantic context.
 
+Smart completion is not just "more results".
+It is a different ranking/filtering mode based on semantic fit.
+
 Required smart contexts:
 
 - right side of assignments
@@ -116,6 +119,33 @@ Out of scope for this refactor:
 - arbitrary method-chain synthesis
 - collection/array conversion suggestions
 - data-flow-dependent expression construction
+
+### Automatic vs Smart
+
+Automatic completion is invoked while the user is typing.
+It should be fast, narrow, and driven primarily by syntactic context plus prefix shape.
+
+Examples:
+
+```text
+str§ -> visible values and keywords
+Str§ -> type-prioritized mixed results
+```
+
+Smart completion is explicitly requested in a context where javac can provide an expected type.
+It should prioritize candidates that produce a value assignable to that expected type.
+
+Examples:
+
+```text
+String s = § -> String-producing values first
+return § -> return-type matches first
+accept(§) -> parameter-type matches first
+```
+
+Broad or repeated completion is a separate axis.
+It widens candidate families.
+Smart completion changes ranking and filtering around expected type.
 
 ### Behavior Matrix
 
@@ -380,6 +410,53 @@ The core separation is:
 - providers: what symbols exist?
 - ranker: what fits and in what order?
 - presenter: how does LSP display and insert it?
+
+## Sharing With Hover And Definition
+
+Hover and definition already share a stable-source path in `SourceAnalysisSession`.
+Both resolve the current open document against the cached analysis,
+convert the LSP position to an offset,
+find the `TreePath` at that offset,
+and then use `SourceLocator` to resolve the element, type, parameter, declaration, source file, or Javadoc.
+
+Completion should not be forced onto the same model.
+Completion often runs in broken or partial code,
+and still needs `SentinelInjector` and `SentinelParser` to classify the cursor site from the live buffer.
+
+The useful shared piece is a lightweight cursor context resolver.
+
+Possible shape:
+
+```java
+record SourceCursorContext(
+    String uri,
+    String content,
+    Position position,
+    int offset,
+    CachedFileAnalysis cached,
+    AttributedFileAnalysis analysis,
+    TreePath path) {}
+```
+
+Responsibilities:
+
+- validate that cached analysis matches the current content
+- convert LSP position to source offset
+- find the attributed `TreePath` when cached analysis exists
+- expose the current analysis for semantic features
+
+Hover and definition can use this context directly.
+Completion can use it to build `SemanticCompletionContext`,
+while still using sentinel parsing to build `CompletionSite`.
+
+Do not share sentinel parsing with hover/definition.
+Do not make completion depend only on `TreePath pathAt(cursor)`.
+The intended split is:
+
+```text
+CompletionSite = live buffer + sentinel parse
+SemanticCompletionContext = SourceCursorContext + javac helpers + ExpectedValue
+```
 
 ## Target Data Model
 
@@ -666,6 +743,40 @@ Factory.user().name()
 One-hop derived-expression completion may be considered later as a separate feature with strict limits.
 
 ## Suggested Slice Plan
+
+## Implementation Progress
+
+Current branch: `completion-architecture-refactor`.
+
+Completed so far:
+
+- Slice 1: `CompletionSite` and `CompletionMode` exist,
+  and `CompletionEngine` uses `CompletionSite.replacementRange()` for simple text edits.
+- Slice 2: `ExpectedValue` and `SemanticCompletionContext` exist.
+  The zero-argument argument-position regression is enabled and passing.
+- Slice 3 partial: simple-name and keyword completions flow through `CompletionCandidate`,
+  `CompletionCandidateRanker`,
+  and `CompletionItemPresenter`.
+  `CompletionEngine` combines simple-name javac candidates and keyword candidates before ranking/presentation.
+- Slice 4 partial: `java.lang` and type-index type completions are represented as
+  `CompletionCandidate` before LSP presentation.
+- Simple-name ranker rules now own expected-type sort buckets,
+  Object-method demotion,
+  and value-context Object/void-method filtering.
+
+Known temporary compromises:
+
+- Typed initializer expected type is still discovered inside `SimpleNameProposalCollector`.
+  The collector preserves initializer-derived sort text,
+  and the ranker treats candidates with existing sort text as value-sensitive.
+  Later work should lift initializer expected type into `SemanticCompletionContext`.
+- Import and member-access paths still produce `CompletionItem` directly.
+- `CompletionItemFactory` still exists as a bridge for legacy item paths and candidate construction.
+
+Next likely slice:
+
+- Convert member-access candidates to `CompletionCandidate`,
+  then route them through the ranker and presenter while preserving current behavior.
 
 ### Slice 1 — Introduce `CompletionSite`
 

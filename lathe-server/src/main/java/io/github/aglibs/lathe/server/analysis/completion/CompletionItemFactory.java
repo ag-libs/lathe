@@ -16,7 +16,6 @@ import javax.lang.model.type.ExecutableType;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Types;
 import org.eclipse.lsp4j.CompletionItem;
-import org.eclipse.lsp4j.CompletionItemKind;
 
 final class CompletionItemFactory {
 
@@ -28,48 +27,47 @@ final class CompletionItemFactory {
     this.types = types;
   }
 
-  static CompletionItem typeIndexEntry(final TypeIndexEntry entry) {
-    final var item = new CompletionItem(entry.simpleName());
-    item.setInsertText(entry.simpleName());
-    item.setFilterText(entry.simpleName());
-    item.setDetail(entry.qualifiedName());
-    item.setKind(kindFor(entry.kind()));
-    return item;
+  static CompletionCandidate typeIndexCandidate(final TypeIndexEntry entry) {
+    return typeCandidate(entry.simpleName(), entry.qualifiedName(), kindFor(entry.kind()), null);
   }
 
-  private static CompletionItemKind kindFor(final TypeKind typeKind) {
+  private static CandidateKind kindFor(final TypeKind typeKind) {
     return switch (typeKind) {
-      case INTERFACE -> CompletionItemKind.Interface;
-      case ENUM -> CompletionItemKind.Enum;
-      case RECORD, CLASS, ANNOTATION, UNKNOWN -> CompletionItemKind.Class;
+      case INTERFACE -> CandidateKind.TYPE_INTERFACE;
+      case ENUM -> CandidateKind.TYPE_ENUM;
+      case RECORD, CLASS, ANNOTATION, UNKNOWN -> CandidateKind.TYPE_CLASS;
     };
   }
 
-  static CompletionItem typeElement(final TypeElement el) {
+  static CompletionCandidate typeElementCandidate(final TypeElement el) {
     final var simpleName = el.getSimpleName().toString();
-    final var item = new CompletionItem(simpleName);
-    item.setInsertText(simpleName);
-    item.setFilterText(simpleName);
-    item.setDetail(el.getQualifiedName().toString());
-    item.setKind(kindForElement(el.getKind()));
-    return item;
+    return typeCandidate(
+        simpleName, el.getQualifiedName().toString(), kindForElement(el.getKind()), el.asType());
   }
 
-  private static CompletionItemKind kindForElement(final ElementKind kind) {
+  private static CandidateKind kindForElement(final ElementKind kind) {
     return switch (kind) {
-      case INTERFACE, ANNOTATION_TYPE -> CompletionItemKind.Interface;
-      case ENUM -> CompletionItemKind.Enum;
-      default -> CompletionItemKind.Class;
+      case INTERFACE, ANNOTATION_TYPE -> CandidateKind.TYPE_INTERFACE;
+      case ENUM -> CandidateKind.TYPE_ENUM;
+      default -> CandidateKind.TYPE_CLASS;
     };
   }
 
-  CompletionItem variable(final String name) {
-    final var item = new CompletionItem();
-    item.setLabel(name);
-    item.setInsertText(name);
-    item.setFilterText(name);
-    item.setKind(CompletionItemKind.Variable);
-    return item;
+  private static CompletionCandidate typeCandidate(
+      final String simpleName,
+      final String qualifiedName,
+      final CandidateKind kind,
+      final TypeMirror valueType) {
+    return new CompletionCandidate(
+        simpleName,
+        simpleName,
+        kind,
+        qualifiedName,
+        simpleName,
+        false,
+        null,
+        valueType,
+        qualifiedName);
   }
 
   CompletionCandidate variableCandidate(final String name, final TypeMirror type) {
