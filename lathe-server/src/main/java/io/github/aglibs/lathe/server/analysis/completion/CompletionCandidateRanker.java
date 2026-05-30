@@ -21,6 +21,11 @@ final class CompletionCandidateRanker {
       return candidate.sortText();
     }
 
+    if (candidate.kind() == CandidateKind.METHOD
+        && "java.lang.Object".equals(candidate.declaringType())) {
+      return "9_%s".formatted(candidate.name());
+    }
+
     if (!(context.expectedValue() instanceof final ExpectedValue.Type expected)) {
       return null;
     }

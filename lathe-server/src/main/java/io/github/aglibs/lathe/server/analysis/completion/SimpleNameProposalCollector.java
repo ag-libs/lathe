@@ -131,7 +131,7 @@ final class SimpleNameProposalCollector {
 
     final var candidate = itemFactory.memberCandidate(el, declaredType);
     if (ProposalGenerator.isDeclaredInObject(el)) {
-      items.add(candidate.withSortText("9_%s".formatted(name)));
+      items.add(candidate);
     } else {
       final var memberType =
           el.getKind() == ElementKind.METHOD

@@ -83,7 +83,7 @@ final class CompletionItemFactory {
 
   CompletionCandidate variableCandidate(final String name, final TypeMirror type) {
     return new CompletionCandidate(
-        name, name, CandidateKind.LOCAL_VARIABLE, null, name, false, null, type);
+        name, name, CandidateKind.LOCAL_VARIABLE, null, name, false, null, type, null);
   }
 
   CompletionItem member(final Element el, final DeclaredType receiverType) {
@@ -113,7 +113,8 @@ final class CompletionItemFactory {
         snippet ? "%s($1)".formatted(name) : "%s()".formatted(name),
         snippet,
         null,
-        method.getReturnType());
+        method.getReturnType(),
+        declaringType(method));
   }
 
   private CompletionCandidate fieldCandidate(final Element field, final String name) {
@@ -125,7 +126,14 @@ final class CompletionItemFactory {
         name,
         false,
         null,
-        field.asType());
+        field.asType(),
+        declaringType(field));
+  }
+
+  private static String declaringType(final Element element) {
+    return element.getEnclosingElement() instanceof final TypeElement typeElement
+        ? typeElement.getQualifiedName().toString()
+        : null;
   }
 
   private List<? extends TypeMirror> resolveParamTypes(
