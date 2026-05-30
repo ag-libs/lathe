@@ -19,7 +19,7 @@ final class CompletionCandidateRanker {
 
   private static boolean valid(
       final CompletionCandidate candidate, final SemanticCompletionContext context) {
-    if (!valueSensitiveContext(candidate, context)) {
+    if (!valueSensitiveContext(context)) {
       return true;
     }
 
@@ -46,11 +46,8 @@ final class CompletionCandidateRanker {
     return "%d_%s".formatted(matches ? 0 : 1, candidate.name());
   }
 
-  private static boolean valueSensitiveContext(
-      final CompletionCandidate candidate, final SemanticCompletionContext context) {
-    return context.valueContext()
-        || context.expectedValue() instanceof ExpectedValue.Type
-        || candidate.valueSensitive();
+  private static boolean valueSensitiveContext(final SemanticCompletionContext context) {
+    return context.valueContext() || context.expectedValue() instanceof ExpectedValue.Type;
   }
 
   private static boolean objectMethod(final CompletionCandidate candidate) {

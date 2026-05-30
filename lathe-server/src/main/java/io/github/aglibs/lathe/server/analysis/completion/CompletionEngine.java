@@ -15,8 +15,6 @@ import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
-import org.eclipse.lsp4j.TextEdit;
-import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 public final class CompletionEngine {
 
@@ -83,7 +81,8 @@ public final class CompletionEngine {
               completeMemberAccess(parsed, injected, req);
           default -> CompletionOutcome.of(List.of());
         };
-    return applyTextEdits(outcome, site);
+    CompletionItemPresenter.applyReplacementRange(outcome.items(), site.replacementRange());
+    return outcome;
   }
 
   private CompletionOutcome completeImport(
@@ -324,23 +323,6 @@ public final class CompletionEngine {
     simpleNameItems.forEach(item -> merged.put(completionIdentity(item), item));
     typeIndexOutcome.items().forEach(item -> merged.putIfAbsent(completionIdentity(item), item));
     return new CompletionOutcome(List.copyOf(merged.values()), null, typeIndexOutcome.incomplete());
-  }
-
-  private static CompletionOutcome applyTextEdits(
-      final CompletionOutcome outcome, final CompletionSite site) {
-    if (outcome.items().isEmpty()) {
-      return outcome;
-    }
-
-    outcome
-        .items()
-        .forEach(
-            item -> {
-              final var newText =
-                  item.getInsertText() != null ? item.getInsertText() : item.getLabel();
-              item.setTextEdit(Either.forLeft(new TextEdit(site.replacementRange(), newText)));
-            });
-    return outcome;
   }
 
   private static String completionIdentity(final CompletionItem item) {

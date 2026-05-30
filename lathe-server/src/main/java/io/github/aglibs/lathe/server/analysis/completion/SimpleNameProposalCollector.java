@@ -28,7 +28,6 @@ final class SimpleNameProposalCollector {
   private final SimpleNameProposalContext context;
   private final Set<String> seen = new LinkedHashSet<>();
   private final List<CompletionCandidate> items = new ArrayList<>();
-  private TypeMirror initializerExpectedType;
 
   SimpleNameProposalCollector(
       final AttributedFileAnalysis snapshot,
@@ -94,11 +93,9 @@ final class SimpleNameProposalCollector {
             return;
           }
 
-          final var el = snapshot.trees().getElement(getCurrentPath());
           if (end < context.cursorOffset()) {
+            final var el = snapshot.trees().getElement(getCurrentPath());
             addVariable(node.getName().toString(), el != null ? el.asType() : null);
-          } else if (initializerExpectedType == null && el != null) {
-            initializerExpectedType = el.asType();
           }
         }
       }.scan(methodPath, null);
@@ -107,16 +104,12 @@ final class SimpleNameProposalCollector {
 
   private void addVariable(final String name, final TypeMirror type) {
     if (name.startsWith(context.prefix()) && seen.add(name)) {
-      items.add(withInitializerSortText(itemFactory.variableCandidate(name, type), name, type));
+      items.add(itemFactory.variableCandidate(name, type));
     }
   }
 
   private void addMember(final Element el, final DeclaredType declaredType) {
-    final var name = el.getSimpleName().toString();
-    final var candidate = itemFactory.memberCandidate(el, declaredType);
-    final var memberType =
-        el.getKind() == ElementKind.METHOD ? ((ExecutableElement) el).getReturnType() : el.asType();
-    items.add(withInitializerSortText(candidate, name, memberType));
+    items.add(itemFactory.memberCandidate(el, declaredType));
   }
 
   private void addClassMembers(final boolean staticMethod) {
@@ -132,18 +125,6 @@ final class SimpleNameProposalCollector {
         .filter(el -> el.getSimpleName().toString().startsWith(context.prefix()))
         .filter(el -> seen.add(el.getSimpleName().toString()))
         .forEach(el -> addMember(el, declaredType));
-  }
-
-  private CompletionCandidate withInitializerSortText(
-      final CompletionCandidate candidate, final String name, final TypeMirror type) {
-    if (initializerExpectedType == null
-        || context.semanticContext().expectedValue() instanceof ExpectedValue.Type) {
-      return candidate;
-    }
-
-    final boolean matches =
-        type != null && snapshot.types().isAssignable(type, initializerExpectedType);
-    return candidate.withSortText("%d_%s".formatted(matches ? 0 : 1, name)).asValueSensitive();
   }
 
   private TreePath findScopeMethodPath(

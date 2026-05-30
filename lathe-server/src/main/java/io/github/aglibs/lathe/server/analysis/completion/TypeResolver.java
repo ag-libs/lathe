@@ -35,12 +35,22 @@ final class TypeResolver {
 
   static ExpectedValue resolveExpectedValue(
       final CompletionSite site, final int cursorLine, final AttributedFileAnalysis snapshot) {
-    final int argIndex = site.argIndex();
-    final String methodName = site.enclosingMethodName();
-    if (snapshot.tree() == null || argIndex < 0 || methodName == null) {
+    if (snapshot.tree() == null) {
       return new ExpectedValue.Unknown();
     }
 
+    if (site.argIndex() >= 0 && site.enclosingMethodName() != null) {
+      final var argValue = resolveArgumentValue(site, cursorLine, snapshot);
+      if (!(argValue instanceof ExpectedValue.Unknown)) {
+        return argValue;
+      }
+    }
+
+    return resolveInitializerValue(site, snapshot);
+  }
+
+  private static ExpectedValue resolveArgumentValue(
+      final CompletionSite site, final int cursorLine, final AttributedFileAnalysis snapshot) {
     final String receiver = site.enclosingReceiver();
     final TypeElement ownerType;
     if (receiver == null || "this".equals(receiver)) {
@@ -69,20 +79,95 @@ final class TypeResolver {
         continue;
       }
 
-      if (!methodName.equals(el.getSimpleName().toString())) {
+      if (!site.enclosingMethodName().equals(el.getSimpleName().toString())) {
         continue;
       }
 
       methodFound = true;
       final var method = (ExecutableElement) el;
       final var params = method.getParameters();
-      final int idx = method.isVarArgs() ? Math.min(argIndex, params.size() - 1) : argIndex;
+      final int idx =
+          method.isVarArgs() ? Math.min(site.argIndex(), params.size() - 1) : site.argIndex();
       if (idx >= 0 && idx < params.size()) {
         return new ExpectedValue.Type(params.get(idx).asType());
       }
     }
 
     return methodFound ? new ExpectedValue.NoSlot() : new ExpectedValue.Unknown();
+  }
+
+  private static ExpectedValue resolveInitializerValue(
+      final CompletionSite site, final AttributedFileAnalysis snapshot) {
+    if (site.enclosingMethod() == null) {
+      return new ExpectedValue.Unknown();
+    }
+
+    final var methodPath =
+        findScopeMethodPath(
+            site.enclosingClass(), site.enclosingMethod(), site.cursorOffset(), snapshot);
+    if (methodPath == null || ((MethodTree) methodPath.getLeaf()).getBody() == null) {
+      return new ExpectedValue.Unknown();
+    }
+
+    final var result = new AtomicReference<TypeMirror>();
+    new TreePathScanner<Void, Void>() {
+      @Override
+      public Void visitVariable(final VariableTree node, final Void unused) {
+        if (result.get() != null || node.getInitializer() == null) {
+          return super.visitVariable(node, unused);
+        }
+
+        final var positions = snapshot.trees().getSourcePositions();
+        final long start = positions.getStartPosition(snapshot.tree(), node);
+        final long end = positions.getEndPosition(snapshot.tree(), node);
+        if (start >= 0 && start < site.cursorOffset() && end >= site.cursorOffset()) {
+          final var el = snapshot.trees().getElement(getCurrentPath());
+          if (el != null) {
+            result.set(el.asType());
+          }
+        }
+
+        return super.visitVariable(node, unused);
+      }
+    }.scan(methodPath, null);
+
+    return result.get() != null
+        ? new ExpectedValue.Type(result.get())
+        : new ExpectedValue.Unknown();
+  }
+
+  private static TreePath findScopeMethodPath(
+      final String className,
+      final String methodName,
+      final int cursorOffset,
+      final AttributedFileAnalysis snapshot) {
+    final var result = new AtomicReference<TreePath>();
+    new TreePathScanner<Void, Void>() {
+      @Override
+      public Void visitClass(final ClassTree node, final Void unused) {
+        return className != null && className.equals(node.getSimpleName().toString())
+            ? super.visitClass(node, unused)
+            : null;
+      }
+
+      @Override
+      public Void visitMethod(final MethodTree node, final Void unused) {
+        if (methodName.equals(node.getName().toString())) {
+          final var current = getCurrentPath();
+          final var pos = snapshot.trees().getSourcePositions();
+          final long start = pos.getStartPosition(snapshot.tree(), node);
+          final long end = pos.getEndPosition(snapshot.tree(), node);
+          if (cursorOffset >= start && cursorOffset <= end) {
+            result.set(current);
+          } else if (result.get() == null) {
+            result.set(current);
+          }
+        }
+
+        return null;
+      }
+    }.scan(snapshot.tree(), null);
+    return result.get();
   }
 
   static ResolvedReceiver resolveReceiver(

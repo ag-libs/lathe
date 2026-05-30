@@ -1,8 +1,12 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
+import java.util.List;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.InsertTextFormat;
+import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.TextEdit;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 final class CompletionItemPresenter {
 
@@ -27,6 +31,14 @@ final class CompletionItemPresenter {
     }
 
     return item;
+  }
+
+  static void applyReplacementRange(final List<CompletionItem> items, final Range range) {
+    items.forEach(
+        item -> {
+          final var newText = item.getInsertText() != null ? item.getInsertText() : item.getLabel();
+          item.setTextEdit(Either.forLeft(new TextEdit(range, newText)));
+        });
   }
 
   private static CompletionItemKind kindFor(final CandidateKind kind) {

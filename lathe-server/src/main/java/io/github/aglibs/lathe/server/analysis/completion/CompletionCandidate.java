@@ -12,8 +12,7 @@ record CompletionCandidate(
     boolean snippet,
     String sortText,
     TypeMirror valueType,
-    String declaringType,
-    boolean valueSensitive) {
+    String declaringType) {
 
   CompletionCandidate {
     ValidCheck.check()
@@ -28,34 +27,11 @@ record CompletionCandidate(
 
   CompletionCandidate withSortText(final String newSortText) {
     return new CompletionCandidate(
-        name,
-        label,
-        kind,
-        detail,
-        insertText,
-        snippet,
-        newSortText,
-        valueType,
-        declaringType,
-        valueSensitive);
+        name, label, kind, detail, insertText, snippet, newSortText, valueType, declaringType);
   }
 
   CompletionCandidate withValueType(final TypeMirror newValueType) {
     return new CompletionCandidate(
-        name,
-        label,
-        kind,
-        detail,
-        insertText,
-        snippet,
-        sortText,
-        newValueType,
-        declaringType,
-        valueSensitive);
-  }
-
-  CompletionCandidate asValueSensitive() {
-    return new CompletionCandidate(
-        name, label, kind, detail, insertText, snippet, sortText, valueType, declaringType, true);
+        name, label, kind, detail, insertText, snippet, sortText, newValueType, declaringType);
   }
 }

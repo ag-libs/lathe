@@ -92,8 +92,7 @@ final class KeywordProvider {
         false,
         "8_%s".formatted(keyword),
         null,
-        null,
-        false);
+        null);
   }
 
   private static List<String> selectKeywords(
