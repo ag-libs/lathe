@@ -8,6 +8,12 @@ final class CompletionItemPresenter {
 
   private CompletionItemPresenter() {}
 
+  static CompletionItem present(final RankedCompletionCandidate ranked) {
+    final var item = present(ranked.candidate());
+    item.setSortText(ranked.sortText());
+    return item;
+  }
+
   static CompletionItem present(final CompletionCandidate candidate) {
     final var item = new CompletionItem();
     item.setLabel(candidate.label());
