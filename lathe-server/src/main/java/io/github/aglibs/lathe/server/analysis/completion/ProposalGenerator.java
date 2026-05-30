@@ -97,7 +97,8 @@ final class ProposalGenerator {
     final var context =
         new SimpleNameProposalContext(
             enclosingClass, enclosingMethod, prefix, cursorOffset, semanticContext);
-    return new SimpleNameProposalCollector(snapshot, itemFactory, context).collect();
+    return new SimpleNameProposalCollector(snapshot, itemFactory, context)
+        .collect().stream().map(itemFactory::candidateItem).toList();
   }
 
   // Declaring-type check: true only for methods actually declared on Object (not overridden

@@ -82,37 +82,74 @@ final class CompletionItemFactory {
     return item;
   }
 
+  CompletionCandidate variableCandidate(final String name, final TypeMirror type) {
+    return new CompletionCandidate(
+        name, name, CandidateKind.LOCAL_VARIABLE, null, name, false, null, type);
+  }
+
   CompletionItem member(final Element el, final DeclaredType receiverType) {
-    final var item = new CompletionItem();
+    return candidateItem(memberCandidate(el, receiverType));
+  }
+
+  CompletionCandidate memberCandidate(final Element el, final DeclaredType receiverType) {
     final var name = el.getSimpleName().toString();
-    switch (el.getKind()) {
-      case METHOD -> {
-        final var method = (ExecutableElement) el;
-        final List<? extends TypeMirror> paramTypes = resolveParamTypes(method, receiverType);
-        final var params =
-            paramTypes.stream().map(this::simpleTypeName).collect(Collectors.joining(", "));
-        item.setLabel(name + "(" + params + ")");
-        item.setFilterText(name);
-        if (paramTypes.isEmpty()) {
-          item.setInsertText(name + "()");
-        } else {
-          item.setInsertText(name + "($1)");
-          item.setInsertTextFormat(InsertTextFormat.Snippet);
-        }
-        item.setDetail(simpleTypeName(method.getReturnType()));
-        item.setKind(CompletionItemKind.Method);
-      }
-      case FIELD, ENUM_CONSTANT -> {
-        item.setLabel(name);
-        item.setInsertText(name);
-        item.setFilterText(name);
-        item.setDetail(simpleTypeName(el.asType()));
-        item.setKind(CompletionItemKind.Field);
-      }
+    return switch (el.getKind()) {
+      case METHOD -> methodCandidate((ExecutableElement) el, receiverType, name);
+      case FIELD, ENUM_CONSTANT -> fieldCandidate(el, name);
       default -> throw new IllegalArgumentException("Unsupported completion element: " + el);
+    };
+  }
+
+  CompletionItem candidateItem(final CompletionCandidate candidate) {
+    final var item = new CompletionItem();
+    item.setLabel(candidate.label());
+    item.setInsertText(candidate.insertText());
+    item.setFilterText(candidate.name());
+    item.setDetail(candidate.detail());
+    item.setSortText(candidate.sortText());
+    item.setKind(kindFor(candidate.kind()));
+    if (candidate.snippet()) {
+      item.setInsertTextFormat(InsertTextFormat.Snippet);
     }
 
     return item;
+  }
+
+  private CompletionCandidate methodCandidate(
+      final ExecutableElement method, final DeclaredType receiverType, final String name) {
+    final List<? extends TypeMirror> paramTypes = resolveParamTypes(method, receiverType);
+    final var params =
+        paramTypes.stream().map(this::simpleTypeName).collect(Collectors.joining(", "));
+    final boolean snippet = !paramTypes.isEmpty();
+    return new CompletionCandidate(
+        name,
+        "%s(%s)".formatted(name, params),
+        CandidateKind.METHOD,
+        simpleTypeName(method.getReturnType()),
+        snippet ? "%s($1)".formatted(name) : "%s()".formatted(name),
+        snippet,
+        null,
+        method.getReturnType());
+  }
+
+  private CompletionCandidate fieldCandidate(final Element field, final String name) {
+    return new CompletionCandidate(
+        name,
+        name,
+        CandidateKind.FIELD,
+        simpleTypeName(field.asType()),
+        name,
+        false,
+        null,
+        field.asType());
+  }
+
+  private static CompletionItemKind kindFor(final CandidateKind kind) {
+    return switch (kind) {
+      case LOCAL_VARIABLE -> CompletionItemKind.Variable;
+      case FIELD -> CompletionItemKind.Field;
+      case METHOD -> CompletionItemKind.Method;
+    };
   }
 
   private List<? extends TypeMirror> resolveParamTypes(

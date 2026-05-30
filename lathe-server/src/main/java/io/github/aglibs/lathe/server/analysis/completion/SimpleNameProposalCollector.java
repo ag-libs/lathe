@@ -21,7 +21,6 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
-import org.eclipse.lsp4j.CompletionItem;
 
 final class SimpleNameProposalCollector {
 
@@ -29,7 +28,7 @@ final class SimpleNameProposalCollector {
   private final CompletionItemFactory itemFactory;
   private final SimpleNameProposalContext context;
   private final Set<String> seen = new LinkedHashSet<>();
-  private final List<CompletionItem> items = new ArrayList<>();
+  private final List<CompletionCandidate> items = new ArrayList<>();
   private TypeMirror initializerExpectedType;
 
   SimpleNameProposalCollector(
@@ -41,7 +40,7 @@ final class SimpleNameProposalCollector {
     this.context = context;
   }
 
-  List<CompletionItem> collect() {
+  List<CompletionCandidate> collect() {
     if (context.semanticContext().expectedValue() instanceof ExpectedValue.NoSlot) {
       return List.of();
     }
@@ -113,9 +112,8 @@ final class SimpleNameProposalCollector {
 
   private void addVariable(final String name, final TypeMirror type) {
     if (name.startsWith(context.prefix()) && seen.add(name)) {
-      final var item = itemFactory.variable(name);
-      applySortText(item, name, type);
-      items.add(item);
+      final var candidate = itemFactory.variableCandidate(name, type);
+      items.add(applySortText(candidate, name, type));
     }
   }
 
@@ -132,18 +130,16 @@ final class SimpleNameProposalCollector {
       }
     }
 
-    final var item = itemFactory.member(el, declaredType);
+    final var candidate = itemFactory.memberCandidate(el, declaredType);
     if (ProposalGenerator.isDeclaredInObject(el)) {
-      item.setSortText("9_" + name);
+      items.add(candidate.withSortText("9_%s".formatted(name)));
     } else {
       final var memberType =
           el.getKind() == ElementKind.METHOD
               ? ((ExecutableElement) el).getReturnType()
               : el.asType();
-      applySortText(item, name, memberType);
+      items.add(applySortText(candidate, name, memberType));
     }
-
-    items.add(item);
   }
 
   private TypeMirror effectiveExpectedType() {
@@ -167,14 +163,15 @@ final class SimpleNameProposalCollector {
         .forEach(el -> addMember(el, declaredType));
   }
 
-  private void applySortText(final CompletionItem item, final String name, final TypeMirror type) {
+  private CompletionCandidate applySortText(
+      final CompletionCandidate candidate, final String name, final TypeMirror type) {
     final var expected = effectiveExpectedType();
     if (expected == null) {
-      return;
+      return candidate;
     }
 
     final boolean matches = type != null && snapshot.types().isAssignable(type, expected);
-    item.setSortText(matches ? "0_" + name : "1_" + name);
+    return candidate.withSortText("%d_%s".formatted(matches ? 0 : 1, name));
   }
 
   private TreePath findScopeMethodPath(
