@@ -17,7 +17,6 @@ import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Types;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
-import org.eclipse.lsp4j.InsertTextFormat;
 
 final class CompletionItemFactory {
 
@@ -88,7 +87,7 @@ final class CompletionItemFactory {
   }
 
   CompletionItem member(final Element el, final DeclaredType receiverType) {
-    return candidateItem(memberCandidate(el, receiverType));
+    return CompletionItemPresenter.present(memberCandidate(el, receiverType));
   }
 
   CompletionCandidate memberCandidate(final Element el, final DeclaredType receiverType) {
@@ -98,21 +97,6 @@ final class CompletionItemFactory {
       case FIELD, ENUM_CONSTANT -> fieldCandidate(el, name);
       default -> throw new IllegalArgumentException("Unsupported completion element: " + el);
     };
-  }
-
-  CompletionItem candidateItem(final CompletionCandidate candidate) {
-    final var item = new CompletionItem();
-    item.setLabel(candidate.label());
-    item.setInsertText(candidate.insertText());
-    item.setFilterText(candidate.name());
-    item.setDetail(candidate.detail());
-    item.setSortText(candidate.sortText());
-    item.setKind(kindFor(candidate.kind()));
-    if (candidate.snippet()) {
-      item.setInsertTextFormat(InsertTextFormat.Snippet);
-    }
-
-    return item;
   }
 
   private CompletionCandidate methodCandidate(
@@ -142,14 +126,6 @@ final class CompletionItemFactory {
         false,
         null,
         field.asType());
-  }
-
-  private static CompletionItemKind kindFor(final CandidateKind kind) {
-    return switch (kind) {
-      case LOCAL_VARIABLE -> CompletionItemKind.Variable;
-      case FIELD -> CompletionItemKind.Field;
-      case METHOD -> CompletionItemKind.Method;
-    };
   }
 
   private List<? extends TypeMirror> resolveParamTypes(
