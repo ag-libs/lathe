@@ -40,10 +40,6 @@ final class SimpleNameProposalCollector {
   }
 
   List<CompletionCandidate> collect() {
-    if (context.semanticContext().expectedValue() instanceof ExpectedValue.NoSlot) {
-      return List.of();
-    }
-
     final var methodPath =
         context.enclosingMethod() != null
             ? findScopeMethodPath(
@@ -120,7 +116,7 @@ final class SimpleNameProposalCollector {
     final var candidate = itemFactory.memberCandidate(el, declaredType);
     final var memberType =
         el.getKind() == ElementKind.METHOD ? ((ExecutableElement) el).getReturnType() : el.asType();
-    items.add(withInitializerSortText(candidate.withValueType(memberType), name, memberType));
+    items.add(withInitializerSortText(candidate, name, memberType));
   }
 
   private void addClassMembers(final boolean staticMethod) {
