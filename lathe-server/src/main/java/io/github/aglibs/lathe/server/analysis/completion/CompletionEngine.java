@@ -191,7 +191,10 @@ public final class CompletionEngine {
     final var typeRefOutcome = withLangTypes(parsed, injected, req, typeIndexOutcome);
 
     if (parsed.enclosingMethod() == null && parsed.enclosingClass() != null) {
-      final var keywords = KeywordProvider.suggest(parsed, injected.prefix(), injected.context());
+      final List<CompletionItem> keywords =
+          KeywordProvider.suggestCandidates(parsed, injected.prefix(), injected.context()).stream()
+              .map(CompletionItemPresenter::present)
+              .toList();
       if (!keywords.isEmpty()) {
         return mergeSimpleNameAndTypeIndexItems(keywords, typeRefOutcome);
       }

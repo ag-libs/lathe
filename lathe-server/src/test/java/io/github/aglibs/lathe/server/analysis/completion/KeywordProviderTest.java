@@ -4,7 +4,6 @@ import static io.github.aglibs.lathe.server.analysis.completion.CursorFixture.cu
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.server.analysis.SourceParser;
-import org.eclipse.lsp4j.CompletionItem;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -29,8 +28,8 @@ class KeywordProviderTest {
     final var c = cursor(markedSource);
     final var injected = new SentinelInjector(c.content()).inject(c.offset());
     final var parsed = sentinelParser.parse(injected, c.lspLine(), 0);
-    return KeywordProvider.suggest(parsed, injected.prefix(), injected.context()).stream()
-        .map(CompletionItem::getLabel)
+    return KeywordProvider.suggestCandidates(parsed, injected.prefix(), injected.context()).stream()
+        .map(CompletionCandidate::label)
         .toList();
   }
 

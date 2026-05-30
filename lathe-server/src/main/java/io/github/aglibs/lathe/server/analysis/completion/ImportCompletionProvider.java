@@ -5,7 +5,6 @@ import java.util.List;
 import java.util.stream.Stream;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.PackageElement;
-import org.eclipse.lsp4j.CompletionItem;
 
 final class ImportCompletionProvider {
 
@@ -13,12 +12,6 @@ final class ImportCompletionProvider {
 
   ImportCompletionProvider(final AttributedFileAnalysis snapshot) {
     this.snapshot = snapshot;
-  }
-
-  List<CompletionItem> propose(final String packageName, final String prefix) {
-    return proposeCandidates(packageName, prefix).stream()
-        .map(CompletionItemPresenter::present)
-        .toList();
   }
 
   List<CompletionCandidate> proposeCandidates(final String packageName, final String prefix) {

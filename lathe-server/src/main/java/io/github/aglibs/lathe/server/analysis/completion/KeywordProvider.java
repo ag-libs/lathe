@@ -2,7 +2,6 @@ package io.github.aglibs.lathe.server.analysis.completion;
 
 import java.util.List;
 import java.util.stream.Stream;
-import org.eclipse.lsp4j.CompletionItem;
 
 /** Provides keyword completion items for a given sentinel context. */
 final class KeywordProvider {
@@ -46,26 +45,6 @@ final class KeywordProvider {
           "record");
 
   private KeywordProvider() {}
-
-  /**
-   * Returns keyword completion items appropriate for the given context.
-   *
-   * @param injectorContext whether the cursor is inside an open-paren/bracket expression ({@link
-   *     SentinelInjector.Context#EXPRESSION}) or at statement level ({@link
-   *     SentinelInjector.Context#STATEMENT}). This is the primary discriminator between "any value
-   *     expression" and "full statement keyword" sets, and is more reliable than inspecting the
-   *     character immediately before the prefix: it covers all argument positions including
-   *     second/third arguments separated by commas, not just positions immediately after {@code
-   *     '('}.
-   */
-  static List<CompletionItem> suggest(
-      final ParsedSentinel parsed,
-      final String prefix,
-      final SentinelInjector.Context injectorContext) {
-    return suggestCandidates(parsed, prefix, injectorContext).stream()
-        .map(CompletionItemPresenter::present)
-        .toList();
-  }
 
   static List<CompletionCandidate> suggestCandidates(
       final ParsedSentinel parsed,

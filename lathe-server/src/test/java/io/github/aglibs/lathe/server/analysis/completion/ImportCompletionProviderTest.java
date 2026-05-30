@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.analysis.TempSourceCompiler;
-import org.eclipse.lsp4j.CompletionItem;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -31,21 +30,21 @@ class ImportCompletionProviderTest {
 
   @Test
   void types_matchingPrefix_returned() {
-    final var items = provider.propose("java.util", "Col");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("Collections");
+    final var items = provider.proposeCandidates("java.util", "Col");
+    assertThat(items).extracting(CompletionCandidate::label).contains("Collections");
   }
 
   @Test
   void types_nonMatchingPrefix_excluded() {
-    final var items = provider.propose("java.util", "Col");
-    assertThat(items).noneMatch(i -> i.getLabel().equals("ArrayList"));
+    final var items = provider.proposeCandidates("java.util", "Col");
+    assertThat(items).noneMatch(i -> i.label().equals("ArrayList"));
   }
 
   @Test
   void types_emptyPrefix_allTypesReturned() {
-    final var items = provider.propose("java.util", "");
+    final var items = provider.proposeCandidates("java.util", "");
     assertThat(items)
-        .extracting(CompletionItem::getLabel)
+        .extracting(CompletionCandidate::label)
         .contains("ArrayList", "Collections", "HashMap");
   }
 
@@ -53,32 +52,32 @@ class ImportCompletionProviderTest {
 
   @Test
   void subPackages_immediateChild_returned() {
-    final var items = provider.propose("java.util", "");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("concurrent");
+    final var items = provider.proposeCandidates("java.util", "");
+    assertThat(items).extracting(CompletionCandidate::label).contains("concurrent");
   }
 
   @Test
   void subPackages_deepNested_excluded() {
     // java.util.concurrent.atomic is two levels deep — only "concurrent" is immediate
-    final var items = provider.propose("java.util", "");
-    assertThat(items).noneMatch(i -> i.getLabel().equals("atomic"));
+    final var items = provider.proposeCandidates("java.util", "");
+    assertThat(items).noneMatch(i -> i.label().equals("atomic"));
   }
 
   @Test
   void subPackages_matchingPrefix_filtered() {
-    final var items = provider.propose("java", "ut");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("util");
+    final var items = provider.proposeCandidates("java", "ut");
+    assertThat(items).extracting(CompletionCandidate::label).contains("util");
   }
 
   @Test
   void subPackages_nonMatchingPrefix_excluded() {
-    final var items = provider.propose("java", "ut");
-    assertThat(items).noneMatch(i -> i.getLabel().equals("io"));
+    final var items = provider.proposeCandidates("java", "ut");
+    assertThat(items).noneMatch(i -> i.label().equals("io"));
   }
 
   @Test
   void subPackages_topLevelPackage_immediateChildrenReturned() {
-    final var items = provider.propose("java", "");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("util", "io", "lang");
+    final var items = provider.proposeCandidates("java", "");
+    assertThat(items).extracting(CompletionCandidate::label).contains("util", "io", "lang");
   }
 }
