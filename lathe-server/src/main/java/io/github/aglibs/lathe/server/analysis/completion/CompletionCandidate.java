@@ -28,4 +28,9 @@ record CompletionCandidate(
     return new CompletionCandidate(
         name, label, kind, detail, insertText, snippet, newSortText, valueType);
   }
+
+  CompletionCandidate withValueType(final TypeMirror newValueType) {
+    return new CompletionCandidate(
+        name, label, kind, detail, insertText, snippet, sortText, newValueType);
+  }
 }

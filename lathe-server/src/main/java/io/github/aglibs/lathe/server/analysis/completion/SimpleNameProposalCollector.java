@@ -112,8 +112,7 @@ final class SimpleNameProposalCollector {
 
   private void addVariable(final String name, final TypeMirror type) {
     if (name.startsWith(context.prefix()) && seen.add(name)) {
-      final var candidate = itemFactory.variableCandidate(name, type);
-      items.add(applySortText(candidate, name, type));
+      items.add(withInitializerSortText(itemFactory.variableCandidate(name, type), name, type));
     }
   }
 
@@ -138,13 +137,13 @@ final class SimpleNameProposalCollector {
           el.getKind() == ElementKind.METHOD
               ? ((ExecutableElement) el).getReturnType()
               : el.asType();
-      items.add(applySortText(candidate, name, memberType));
+      items.add(withInitializerSortText(candidate.withValueType(memberType), name, memberType));
     }
   }
 
   private TypeMirror effectiveExpectedType() {
-    return context.semanticContext().expectedValue() instanceof final ExpectedValue.Type expected
-        ? expected.type()
+    return context.semanticContext().expectedValue() instanceof ExpectedValue.Type(TypeMirror type)
+        ? type
         : initializerExpectedType;
   }
 
@@ -163,14 +162,15 @@ final class SimpleNameProposalCollector {
         .forEach(el -> addMember(el, declaredType));
   }
 
-  private CompletionCandidate applySortText(
+  private CompletionCandidate withInitializerSortText(
       final CompletionCandidate candidate, final String name, final TypeMirror type) {
-    final var expected = effectiveExpectedType();
-    if (expected == null) {
+    if (initializerExpectedType == null
+        || context.semanticContext().expectedValue() instanceof ExpectedValue.Type) {
       return candidate;
     }
 
-    final boolean matches = type != null && snapshot.types().isAssignable(type, expected);
+    final boolean matches =
+        type != null && snapshot.types().isAssignable(type, initializerExpectedType);
     return candidate.withSortText("%d_%s".formatted(matches ? 0 : 1, name));
   }
 
