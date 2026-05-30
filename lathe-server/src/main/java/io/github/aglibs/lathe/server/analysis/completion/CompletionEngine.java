@@ -102,7 +102,8 @@ public final class CompletionEngine {
     final var candidates =
         new ImportCompletionProvider(analysis)
             .proposeCandidates(parsed.receiverText(), injected.prefix());
-    final List<CompletionItem> items = candidates.stream().map(CompletionItemPresenter::present).toList();
+    final List<CompletionItem> items =
+        candidates.stream().map(CompletionItemPresenter::present).toList();
     final boolean hasSemicolon = req.charAfterCursor() == ';';
 
     if (!hasSemicolon) {

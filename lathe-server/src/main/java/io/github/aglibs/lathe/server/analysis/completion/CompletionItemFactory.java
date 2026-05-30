@@ -58,7 +58,15 @@ final class CompletionItemFactory {
       final CandidateKind kind,
       final TypeMirror valueType) {
     return new CompletionCandidate(
-        simpleName, simpleName, kind, qualifiedName, simpleName, false, null, valueType, qualifiedName);
+        simpleName,
+        simpleName,
+        kind,
+        qualifiedName,
+        simpleName,
+        false,
+        null,
+        valueType,
+        qualifiedName);
   }
 
   CompletionCandidate variableCandidate(final String name, final TypeMirror type) {
