@@ -11,8 +11,6 @@ import javax.lang.model.element.*;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Types;
-import org.eclipse.lsp4j.CompletionItem;
-import org.eclipse.lsp4j.CompletionItemKind;
 
 final class ProposalGenerator {
 
@@ -62,7 +60,7 @@ final class ProposalGenerator {
         .toList();
   }
 
-  List<CompletionItem> proposeNestedTypes(final TypeElement outer, final String prefix) {
+  List<CompletionCandidate> proposeNestedTypes(final TypeElement outer, final String prefix) {
     return outer.getEnclosedElements().stream()
         .filter(
             el ->
@@ -71,19 +69,7 @@ final class ProposalGenerator {
                     || el.getKind() == ElementKind.ENUM
                     || el.getKind() == ElementKind.RECORD)
         .filter(el -> el.getSimpleName().toString().startsWith(prefix))
-        .map(
-            el -> {
-              final var name = el.getSimpleName().toString();
-              final var item = new CompletionItem();
-              item.setLabel(name);
-              item.setInsertText(name);
-              item.setFilterText(name);
-              item.setKind(
-                  el.getKind() == ElementKind.INTERFACE
-                      ? CompletionItemKind.Interface
-                      : CompletionItemKind.Class);
-              return item;
-            })
+        .map(el -> CompletionItemFactory.typeElementCandidate((TypeElement) el))
         .toList();
   }
 

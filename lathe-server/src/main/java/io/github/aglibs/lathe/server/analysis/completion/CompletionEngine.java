@@ -268,9 +268,14 @@ public final class CompletionEngine {
       return CompletionOutcome.of(List.of());
     }
 
-    return new CompletionOutcome(
-        new ProposalGenerator(req.cached().analysis()).proposeNestedTypes(outer, injected.prefix()),
-        null);
+    final var analysis = req.cached().analysis();
+    final var candidates =
+        new ProposalGenerator(analysis).proposeNestedTypes(outer, injected.prefix());
+    final var items =
+        CompletionCandidateRanker.rank(candidates, memberAccessSemanticContext(analysis)).stream()
+            .map(CompletionItemPresenter::present)
+            .toList();
+    return new CompletionOutcome(items, null);
   }
 
   private CompletionOutcome completeSimpleNameTypeReference(
