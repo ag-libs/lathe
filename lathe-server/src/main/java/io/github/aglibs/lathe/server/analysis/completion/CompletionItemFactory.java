@@ -27,7 +27,12 @@ final class CompletionItemFactory {
   }
 
   static CompletionCandidate typeIndexCandidate(final TypeIndexEntry entry) {
-    return typeCandidate(entry.simpleName(), entry.qualifiedName(), kindFor(entry.kind()), null);
+    final var importEdit =
+        "java.lang".equals(entry.packageName())
+            ? null
+            : new ImportEdit(entry.qualifiedName(), false);
+    return typeCandidate(
+        entry.simpleName(), entry.qualifiedName(), kindFor(entry.kind()), null, importEdit);
   }
 
   private static CandidateKind kindFor(final TypeKind typeKind) {
@@ -41,7 +46,11 @@ final class CompletionItemFactory {
   static CompletionCandidate typeElementCandidate(final TypeElement el) {
     final var simpleName = el.getSimpleName().toString();
     return typeCandidate(
-        simpleName, el.getQualifiedName().toString(), kindForElement(el.getKind()), el.asType());
+        simpleName,
+        el.getQualifiedName().toString(),
+        kindForElement(el.getKind()),
+        el.asType(),
+        null);
   }
 
   private static CandidateKind kindForElement(final ElementKind kind) {
@@ -56,7 +65,8 @@ final class CompletionItemFactory {
       final String simpleName,
       final String qualifiedName,
       final CandidateKind kind,
-      final TypeMirror valueType) {
+      final TypeMirror valueType,
+      final ImportEdit importEdit) {
     return new CompletionCandidate(
         simpleName,
         simpleName,
@@ -66,12 +76,13 @@ final class CompletionItemFactory {
         false,
         null,
         valueType,
-        qualifiedName);
+        qualifiedName,
+        importEdit);
   }
 
   CompletionCandidate variableCandidate(final String name, final TypeMirror type) {
     return new CompletionCandidate(
-        name, name, CandidateKind.LOCAL_VARIABLE, null, name, false, null, type, null);
+        name, name, CandidateKind.LOCAL_VARIABLE, null, name, false, null, type, null, null);
   }
 
   CompletionCandidate memberCandidate(final Element el, final DeclaredType receiverType) {
@@ -98,7 +109,8 @@ final class CompletionItemFactory {
         snippet,
         null,
         method.getReturnType(),
-        declaringType(method));
+        declaringType(method),
+        null);
   }
 
   private CompletionCandidate fieldCandidate(final Element field, final String name) {
@@ -111,7 +123,8 @@ final class CompletionItemFactory {
         false,
         null,
         field.asType(),
-        declaringType(field));
+        declaringType(field),
+        null);
   }
 
   private static String declaringType(final Element element) {

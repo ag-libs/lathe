@@ -292,14 +292,16 @@ public final class CompletionEngine {
             "[type-index] typeRef prefix=|%s| candidates=%d cached=%s"
                 .formatted(injected.prefix(), candidates.size(), analysis != null));
     final var validator = new TypeIndexValidator(analysis);
-    final List<CompletionItem> items =
+    final List<CompletionCandidate> typeCandidates =
         candidates.stream()
             .sorted(typeCandidateComparator(injected.prefix()))
             .filter(validator::isResolvable)
             .limit(TYPE_INDEX_RESULT_LIMIT)
             .map(CompletionItemFactory::typeIndexCandidate)
-            .map(CompletionItemPresenter::present)
             .toList();
+    final List<CompletionItem> items =
+        typeCandidates.stream().map(CompletionItemPresenter::present).toList();
+    CompletionItemPresenter.applyImportEdits(typeCandidates, items, analysis);
     LOG.fine(() -> "[type-index] typeRef items=%d".formatted(items.size()));
     return CompletionOutcome.incomplete(items);
   }

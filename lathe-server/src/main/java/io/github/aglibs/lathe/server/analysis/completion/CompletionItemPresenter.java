@@ -1,9 +1,13 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
+import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.InsertTextFormat;
+import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
@@ -33,12 +37,75 @@ final class CompletionItemPresenter {
     return item;
   }
 
+  static void applyImportEdits(
+      final List<CompletionCandidate> candidates,
+      final List<CompletionItem> items,
+      final AttributedFileAnalysis analysis) {
+    final var insertionRange = importInsertionRange(analysis);
+    if (insertionRange == null) {
+      return;
+    }
+
+    final var alreadyImported = importedQualifiedNames(analysis);
+    for (int i = 0; i < candidates.size(); i++) {
+      final var edit = candidates.get(i).importEdit();
+      if (edit != null && !alreadyImported.contains(edit.qualifiedName())) {
+        items
+            .get(i)
+            .setAdditionalTextEdits(
+                List.of(
+                    new TextEdit(insertionRange, "import %s;\n".formatted(edit.qualifiedName()))));
+      }
+    }
+  }
+
   static void applyReplacementRange(final List<CompletionItem> items, final Range range) {
     items.forEach(
         item -> {
           final var newText = item.getInsertText() != null ? item.getInsertText() : item.getLabel();
           item.setTextEdit(Either.forLeft(new TextEdit(range, newText)));
         });
+  }
+
+  static Range importInsertionRange(final AttributedFileAnalysis analysis) {
+    if (analysis == null || analysis.tree() == null) {
+      return null;
+    }
+
+    final var cu = analysis.tree();
+    final var positions = analysis.trees().getSourcePositions();
+    final var lineMap = cu.getLineMap();
+
+    final var imports = cu.getImports();
+    if (!imports.isEmpty()) {
+      final long endOffset = positions.getEndPosition(cu, imports.getLast());
+      if (endOffset >= 0) {
+        final int insertLine = (int) lineMap.getLineNumber(endOffset);
+        return new Range(new Position(insertLine, 0), new Position(insertLine, 0));
+      }
+    }
+
+    final var pkg = cu.getPackage();
+    if (pkg != null) {
+      final long endOffset = positions.getEndPosition(cu, pkg);
+      if (endOffset >= 0) {
+        final int insertLine = (int) lineMap.getLineNumber(endOffset);
+        return new Range(new Position(insertLine, 0), new Position(insertLine, 0));
+      }
+    }
+
+    return new Range(new Position(0, 0), new Position(0, 0));
+  }
+
+  private static Set<String> importedQualifiedNames(final AttributedFileAnalysis analysis) {
+    if (analysis == null || analysis.tree() == null) {
+      return Set.of();
+    }
+
+    return analysis.tree().getImports().stream()
+        .filter(imp -> !imp.isStatic())
+        .map(imp -> imp.getQualifiedIdentifier().toString())
+        .collect(Collectors.toUnmodifiableSet());
   }
 
   private static CompletionItemKind kindFor(final CandidateKind kind) {

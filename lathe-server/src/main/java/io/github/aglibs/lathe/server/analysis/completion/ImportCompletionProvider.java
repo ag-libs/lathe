@@ -75,6 +75,6 @@ final class ImportCompletionProvider {
   }
 
   private static CompletionCandidate importCandidate(final String name, final CandidateKind kind) {
-    return new CompletionCandidate(name, name, kind, null, name, false, null, null, null);
+    return new CompletionCandidate(name, name, kind, null, name, false, null, null, null, null);
   }
 }

@@ -12,7 +12,8 @@ record CompletionCandidate(
     boolean snippet,
     String sortText,
     TypeMirror valueType,
-    String declaringType) {
+    String declaringType,
+    ImportEdit importEdit) {
 
   CompletionCandidate {
     ValidCheck.check()
@@ -27,11 +28,15 @@ record CompletionCandidate(
 
   CompletionCandidate withSortText(final String newSortText) {
     return new CompletionCandidate(
-        name, label, kind, detail, insertText, snippet, newSortText, valueType, declaringType);
-  }
-
-  CompletionCandidate withValueType(final TypeMirror newValueType) {
-    return new CompletionCandidate(
-        name, label, kind, detail, insertText, snippet, sortText, newValueType, declaringType);
+        name,
+        label,
+        kind,
+        detail,
+        insertText,
+        snippet,
+        newSortText,
+        valueType,
+        declaringType,
+        importEdit);
   }
 }
