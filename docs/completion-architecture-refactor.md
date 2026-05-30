@@ -750,39 +750,35 @@ Current branch: `completion-architecture-refactor`.
 
 Completed so far:
 
-- Slice 1: `CompletionSite` and `CompletionMode` exist,
-  and `CompletionEngine` uses `CompletionSite.replacementRange()` for simple text edits.
+- Slice 1: `CompletionSite` and `CompletionMode` exist.
+  `CompletionEngine` uses `CompletionSite.replacementRange()` via `CompletionItemPresenter.applyReplacementRange`.
 - Slice 2: `ExpectedValue` and `SemanticCompletionContext` exist.
   The zero-argument argument-position regression is enabled and passing.
-- Slice 3 partial: simple-name and keyword completions flow through `CompletionCandidate`,
-  `CompletionCandidateRanker`,
-  and `CompletionItemPresenter`.
+  Variable-initializer expected type is resolved in `TypeResolver` and flows through
+  `SemanticCompletionContext`, removing the collector-level `initializerExpectedType` hack.
+- Slice 3: simple-name, keyword, and nested-type completions flow through `CompletionCandidate`,
+  `CompletionCandidateRanker`, and `CompletionItemPresenter`.
   `CompletionEngine` combines simple-name javac candidates and keyword candidates before ranking/presentation.
-- Slice 4 partial: `java.lang` and type-index type completions are represented as
-  `CompletionCandidate` before LSP presentation.
-- Slice 5 partial: `ProposalGenerator` exposes member-access candidates,
-  and `CompletionEngine` routes resolved member access and type-index member fallback
+  All keyword paths use `suggestCandidates`; `KeywordProvider.suggest()` is removed.
+- Slice 4: `java.lang` and type-index type completions are represented as `CompletionCandidate`
+  before LSP presentation.
+  Type-index candidates outside `java.lang` carry `ImportEdit` and receive `additionalTextEdits`
+  via `CompletionItemPresenter.applyImportEdits`.
+- Slice 5: `ProposalGenerator` exposes member-access candidates.
+  `CompletionEngine` routes resolved member access and type-index member fallback
   through candidates before ranking/presentation.
-- Slice 6 partial: `ImportCompletionProvider` exposes import candidates,
-  and the static-import package/type fallback presents those candidates at the engine boundary.
-- Simple-name ranker rules now own expected-type sort buckets,
-  Object-method demotion,
-  and value-context Object/void-method filtering.
+- Slice 6: All completion paths produce `CompletionItem` only through `CompletionItemPresenter`.
+  `ImportCompletionProvider.propose()` bridge is removed; tests use `proposeCandidates` directly.
+  `CompletionItemFactory` is a pure candidate-construction utility with no LSP dependencies.
+- Ranker owns expected-type sort buckets, Object-method demotion, and value-context filtering.
+  `valueSensitive` flag and `asValueSensitive()` are removed from `CompletionCandidate`.
+- `textEdit` application lives in `CompletionItemPresenter.applyReplacementRange`.
+- `additionalTextEdits` for type imports lives in `CompletionItemPresenter.applyImportEdits`.
+  Already-imported types are detected from the live AST and skipped.
 
-Known temporary compromises:
+No known temporary compromises remain for the completed slices.
 
-- Typed initializer expected type is still discovered inside `SimpleNameProposalCollector`.
-  The collector preserves initializer-derived sort text,
-  and the ranker treats candidates with existing sort text as value-sensitive.
-  Later work should lift initializer expected type into `SemanticCompletionContext`.
-- The `ImportCompletionProvider.propose(...)` item-returning bridge remains for existing direct tests.
-- Nested-type completions still produce `CompletionItem` directly.
-- `CompletionItemFactory` still exists as a bridge for legacy item paths and candidate construction.
-
-Next likely slice:
-
-- Convert nested-type completions to candidates,
-  then shrink `CompletionItemFactory` around the remaining candidate construction paths.
+Next: Slice 7 — direct static member fit.
 
 ### Slice 1 — Introduce `CompletionSite`
 
