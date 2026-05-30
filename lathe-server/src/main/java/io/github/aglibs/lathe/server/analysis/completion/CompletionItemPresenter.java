@@ -31,6 +31,7 @@ final class CompletionItemPresenter {
 
   private static CompletionItemKind kindFor(final CandidateKind kind) {
     return switch (kind) {
+      case KEYWORD -> CompletionItemKind.Keyword;
       case LOCAL_VARIABLE -> CompletionItemKind.Variable;
       case FIELD -> CompletionItemKind.Field;
       case METHOD -> CompletionItemKind.Method;

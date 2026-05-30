@@ -63,15 +63,6 @@ final class CompletionItemFactory {
     };
   }
 
-  static CompletionItem keyword(final String kw) {
-    final var item = new CompletionItem(kw);
-    item.setKind(CompletionItemKind.Keyword);
-    item.setInsertText(kw);
-    item.setFilterText(kw);
-    item.setSortText("8_" + kw);
-    return item;
-  }
-
   CompletionItem variable(final String name) {
     final var item = new CompletionItem();
     item.setLabel(name);

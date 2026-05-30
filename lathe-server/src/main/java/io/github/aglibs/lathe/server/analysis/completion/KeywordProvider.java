@@ -62,6 +62,15 @@ final class KeywordProvider {
       final ParsedSentinel parsed,
       final String prefix,
       final SentinelInjector.Context injectorContext) {
+    return suggestCandidates(parsed, prefix, injectorContext).stream()
+        .map(CompletionItemPresenter::present)
+        .toList();
+  }
+
+  static List<CompletionCandidate> suggestCandidates(
+      final ParsedSentinel parsed,
+      final String prefix,
+      final SentinelInjector.Context injectorContext) {
     final var keywords = selectKeywords(parsed, injectorContext);
     if (keywords.isEmpty()) {
       return List.of();
@@ -69,8 +78,21 @@ final class KeywordProvider {
 
     return keywords.stream()
         .filter(kw -> kw.startsWith(prefix))
-        .map(CompletionItemFactory::keyword)
+        .map(KeywordProvider::keywordCandidate)
         .toList();
+  }
+
+  private static CompletionCandidate keywordCandidate(final String keyword) {
+    return new CompletionCandidate(
+        keyword,
+        keyword,
+        CandidateKind.KEYWORD,
+        null,
+        keyword,
+        false,
+        "8_%s".formatted(keyword),
+        null,
+        null);
   }
 
   private static List<String> selectKeywords(
