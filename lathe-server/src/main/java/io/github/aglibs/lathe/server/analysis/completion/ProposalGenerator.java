@@ -94,14 +94,24 @@ final class ProposalGenerator {
       final String prefix,
       final int cursorOffset,
       final SemanticCompletionContext semanticContext) {
-    final var context =
-        new SimpleNameProposalContext(
-            enclosingClass, enclosingMethod, prefix, cursorOffset, semanticContext);
     final var candidates =
-        new SimpleNameProposalCollector(snapshot, itemFactory, context).collect();
+        proposeSimpleNameCandidates(
+            enclosingClass, enclosingMethod, prefix, cursorOffset, semanticContext);
     return CompletionCandidateRanker.rank(candidates, semanticContext).stream()
         .map(CompletionItemPresenter::present)
         .toList();
+  }
+
+  List<CompletionCandidate> proposeSimpleNameCandidates(
+      final String enclosingClass,
+      final String enclosingMethod,
+      final String prefix,
+      final int cursorOffset,
+      final SemanticCompletionContext semanticContext) {
+    final var context =
+        new SimpleNameProposalContext(
+            enclosingClass, enclosingMethod, prefix, cursorOffset, semanticContext);
+    return new SimpleNameProposalCollector(snapshot, itemFactory, context).collect();
   }
 
   // Declaring-type check: true only for methods actually declared on Object (not overridden
