@@ -115,7 +115,12 @@ public final class CompletionEngine {
 
   private CompletionOutcome completeSimpleName(
       final ParsedSentinel parsed, final SentinelResult injected, final CompletionRequest req) {
-    final var javacItems = completeJavacSimpleName(parsed, injected, req);
+    final var expectedValue = resolveExpectedValue(parsed, req);
+    if (expectedValue instanceof ExpectedValue.NoSlot) {
+      return CompletionOutcome.of(List.of());
+    }
+
+    final var javacItems = completeJavacSimpleName(parsed, injected, req, expectedValue);
     final var keywords = KeywordProvider.suggest(parsed, injected.prefix(), injected.context());
     final var items =
         keywords.isEmpty()
@@ -132,7 +137,10 @@ public final class CompletionEngine {
   }
 
   private List<CompletionItem> completeJavacSimpleName(
-      final ParsedSentinel parsed, final SentinelResult injected, final CompletionRequest req) {
+      final ParsedSentinel parsed,
+      final SentinelResult injected,
+      final CompletionRequest req,
+      final ExpectedValue expectedValue) {
     if (parsed.enclosingClass() == null
         || req.cached() == null
         || req.cached().analysis() == null) {
@@ -140,8 +148,6 @@ public final class CompletionEngine {
     }
 
     final var analysis = req.cached().analysis();
-    final var expectedParamType =
-        TypeResolver.resolveExpectedParamType(parsed, req.pos().getLine(), analysis);
     final boolean inValueContext = injected.context() == SentinelInjector.Context.EXPRESSION;
     return new ProposalGenerator(analysis)
         .proposeSimpleName(
@@ -149,8 +155,17 @@ public final class CompletionEngine {
             parsed.enclosingMethod(),
             injected.prefix(),
             req.cursorOffset(),
-            expectedParamType,
+            expectedValue,
             inValueContext);
+  }
+
+  private static ExpectedValue resolveExpectedValue(
+      final ParsedSentinel parsed, final CompletionRequest req) {
+    if (req.cached() == null || req.cached().analysis() == null) {
+      return new ExpectedValue.Unknown();
+    }
+
+    return TypeResolver.resolveExpectedValue(parsed, req.pos().getLine(), req.cached().analysis());
   }
 
   private CompletionOutcome completeTypeReference(

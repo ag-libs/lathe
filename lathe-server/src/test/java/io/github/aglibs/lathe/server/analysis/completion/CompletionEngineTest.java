@@ -1105,7 +1105,6 @@ class CompletionEngineTest {
    * should return nothing — there is no slot to fill. Currently the engine returns all visible
    * locals/members because it does not resolve the callee's arity.
    */
-  @Disabled
   @Test
   void argumentPosition_zeroParamMethod_suppressesCompletions() {
     final var items =

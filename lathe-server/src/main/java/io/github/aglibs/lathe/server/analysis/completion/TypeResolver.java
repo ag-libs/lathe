@@ -33,12 +33,12 @@ final class TypeResolver {
 
   private TypeResolver() {}
 
-  static TypeMirror resolveExpectedParamType(
+  static ExpectedValue resolveExpectedValue(
       final ParsedSentinel sentinel, final int cursorLine, final AttributedFileAnalysis snapshot) {
     final int argIndex = sentinel.argIndex();
     final String methodName = sentinel.enclosingMethodName();
     if (snapshot.tree() == null || argIndex < 0 || methodName == null) {
-      return null;
+      return new ExpectedValue.Unknown();
     }
 
     final String receiver = sentinel.enclosingReceiver();
@@ -62,13 +62,14 @@ final class TypeResolver {
       final var el = receiverType != null ? snapshot.types().asElement(receiverType) : null;
       ownerType = el instanceof final TypeElement te ? te : null;
     } else {
-      return null;
+      return new ExpectedValue.Unknown();
     }
 
     if (ownerType == null) {
-      return null;
+      return new ExpectedValue.Unknown();
     }
 
+    boolean methodFound = false;
     for (final var el : snapshot.elements().getAllMembers(ownerType)) {
       if (el.getKind() != ElementKind.METHOD) {
         continue;
@@ -78,15 +79,16 @@ final class TypeResolver {
         continue;
       }
 
+      methodFound = true;
       final var method = (ExecutableElement) el;
       final var params = method.getParameters();
       final int idx = method.isVarArgs() ? Math.min(argIndex, params.size() - 1) : argIndex;
       if (idx >= 0 && idx < params.size()) {
-        return params.get(idx).asType();
+        return new ExpectedValue.Type(params.get(idx).asType());
       }
     }
 
-    return null;
+    return methodFound ? new ExpectedValue.NoSlot() : new ExpectedValue.Unknown();
   }
 
   static ResolvedReceiver resolveReceiver(

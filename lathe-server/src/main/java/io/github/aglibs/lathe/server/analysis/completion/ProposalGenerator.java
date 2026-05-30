@@ -93,16 +93,11 @@ final class ProposalGenerator {
       final String enclosingMethod,
       final String prefix,
       final int cursorOffset,
-      final TypeMirror expectedParamType,
+      final ExpectedValue expectedValue,
       final boolean inValueContext) {
     final var context =
         new SimpleNameProposalContext(
-            enclosingClass,
-            enclosingMethod,
-            prefix,
-            cursorOffset,
-            expectedParamType,
-            inValueContext);
+            enclosingClass, enclosingMethod, prefix, cursorOffset, expectedValue, inValueContext);
     return new SimpleNameProposalCollector(snapshot, itemFactory, context).collect();
   }
 

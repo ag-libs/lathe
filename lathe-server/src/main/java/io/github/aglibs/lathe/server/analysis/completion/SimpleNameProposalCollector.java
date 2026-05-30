@@ -42,6 +42,10 @@ final class SimpleNameProposalCollector {
   }
 
   List<CompletionItem> collect() {
+    if (context.expectedValue() instanceof ExpectedValue.NoSlot) {
+      return List.of();
+    }
+
     final var methodPath =
         context.enclosingMethod() != null
             ? findScopeMethodPath(
@@ -143,8 +147,8 @@ final class SimpleNameProposalCollector {
   }
 
   private TypeMirror effectiveExpectedType() {
-    return context.expectedParamType() != null
-        ? context.expectedParamType()
+    return context.expectedValue() instanceof final ExpectedValue.Type expected
+        ? expected.type()
         : initializerExpectedType;
   }
 
