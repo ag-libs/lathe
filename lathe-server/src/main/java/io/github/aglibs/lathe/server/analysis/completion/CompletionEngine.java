@@ -1,18 +1,26 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
+import com.sun.source.tree.ImportTree;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Set;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.TypeKind;
+import javax.lang.model.type.TypeMirror;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
 
@@ -21,6 +29,7 @@ public final class CompletionEngine {
   private static final Logger LOG = Logger.getLogger(CompletionEngine.class.getName());
   private static final int TYPE_INDEX_RESULT_LIMIT = 50;
   private static final int TYPE_INDEX_VALIDATION_CANDIDATE_LIMIT = 1_000;
+  private static final int STATIC_MEMBER_FIT_LIMIT = 20;
 
   private final SentinelParser sentinelParser;
   private final JavaSourceCompiler compiler;
@@ -139,8 +148,31 @@ public final class CompletionEngine {
     }
 
     final var typeIndexOutcome = completeSimpleNameTypeReference(injected, req);
-    return mergeSimpleNameAndTypeIndexItems(
-        items, mergeLangTypes(injected.prefix(), req, typeIndexOutcome));
+    final CompletionOutcome merged =
+        mergeSimpleNameAndTypeIndexItems(
+            items, mergeLangTypes(injected.prefix(), req, typeIndexOutcome));
+
+    if (semanticContext == null) {
+      return merged;
+    }
+
+    final var staticFitCandidates = staticMemberFitCandidates(injected.prefix(), semanticContext);
+    if (staticFitCandidates.isEmpty()) {
+      return merged;
+    }
+
+    final var ranked = CompletionCandidateRanker.rank(staticFitCandidates, semanticContext);
+    final List<CompletionItem> staticFitItems =
+        ranked.stream().map(CompletionItemPresenter::present).toList();
+    CompletionItemPresenter.applyImportEdits(
+        ranked.stream().map(RankedCompletionCandidate::candidate).toList(),
+        staticFitItems,
+        semanticContext.analysis());
+
+    final var finalItems = new LinkedHashMap<String, CompletionItem>();
+    merged.items().forEach(i -> finalItems.put(completionIdentity(i), i));
+    staticFitItems.forEach(i -> finalItems.putIfAbsent(completionIdentity(i), i));
+    return new CompletionOutcome(List.copyOf(finalItems.values()), null, merged.incomplete());
   }
 
   private List<CompletionCandidate> completeJavacSimpleName(
@@ -440,6 +472,97 @@ public final class CompletionEngine {
     }
 
     return CompletionOutcome.of(List.of());
+  }
+
+  private List<CompletionCandidate> staticMemberFitCandidates(
+      final String prefix, final SemanticCompletionContext context) {
+    if (typeIndex == null) {
+      return List.of();
+    }
+
+    if (!(context.expectedValue() instanceof ExpectedValue.Type(final TypeMirror type))) {
+      return List.of();
+    }
+
+    final var validator = new TypeIndexValidator(context.analysis());
+    final Set<String> existingStaticImports =
+        context.analysis().tree() != null
+            ? context.analysis().tree().getImports().stream()
+                .filter(ImportTree::isStatic)
+                .map(imp -> imp.getQualifiedIdentifier().toString())
+                .collect(Collectors.toUnmodifiableSet())
+            : Set.of();
+
+    final List<CompletionCandidate> result = new ArrayList<>();
+    for (final var entry : typeIndex.search(prefix, 200)) {
+      if (!validator.isResolvable(entry)) {
+        continue;
+      }
+
+      final var typeEl = context.analysis().elements().getTypeElement(entry.qualifiedName());
+      if (typeEl == null) {
+        continue;
+      }
+
+      for (final var member : context.analysis().elements().getAllMembers(typeEl)) {
+        if (!member.getModifiers().contains(Modifier.PUBLIC)
+            || !member.getModifiers().contains(Modifier.STATIC)) {
+          continue;
+        }
+
+        if (member.getKind() != ElementKind.METHOD && member.getKind() != ElementKind.FIELD) {
+          continue;
+        }
+
+        final var returnType =
+            member.getKind() == ElementKind.METHOD
+                ? ((ExecutableElement) member).getReturnType()
+                : member.asType();
+
+        if (returnType.getKind() == TypeKind.VOID || returnType.getKind() == TypeKind.TYPEVAR) {
+          continue;
+        }
+
+        if (!context.analysis().types().isAssignable(returnType, type)) {
+          continue;
+        }
+
+        final var qualifiedMember = entry.qualifiedName() + "." + member.getSimpleName();
+        if (existingStaticImports.contains(qualifiedMember)) {
+          continue;
+        }
+
+        result.add(staticMemberFitCandidate(member, typeEl, entry.qualifiedName(), context));
+        if (result.size() >= STATIC_MEMBER_FIT_LIMIT) {
+          return result;
+        }
+      }
+    }
+
+    return result;
+  }
+
+  private static CompletionCandidate staticMemberFitCandidate(
+      final Element member,
+      final TypeElement declaringType,
+      final String typeQualifiedName,
+      final SemanticCompletionContext context) {
+    final var base =
+        new CompletionItemFactory(context.analysis().types())
+            .memberCandidate(member, (javax.lang.model.type.DeclaredType) declaringType.asType());
+    final var typeName = declaringType.getSimpleName().toString();
+    final var qualifiedMember = typeQualifiedName + "." + member.getSimpleName();
+    return new CompletionCandidate(
+        typeName + "." + member.getSimpleName(),
+        base.label(),
+        base.kind(),
+        typeName,
+        base.insertText(),
+        base.snippet(),
+        null,
+        base.valueType(),
+        typeQualifiedName,
+        new ImportEdit(qualifiedMember, true));
   }
 
   private static SemanticCompletionContext memberAccessSemanticContext(

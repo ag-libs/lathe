@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.analysis.completion;
 
 import java.util.List;
 import javax.lang.model.type.TypeKind;
+import javax.lang.model.type.TypeMirror;
 
 final class CompletionCandidateRanker {
 
@@ -36,13 +37,13 @@ final class CompletionCandidateRanker {
       return "9_%s".formatted(candidate.name());
     }
 
-    if (!(context.expectedValue() instanceof final ExpectedValue.Type expected)) {
+    if (!(context.expectedValue() instanceof ExpectedValue.Type(final TypeMirror type))) {
       return null;
     }
 
     final boolean matches =
         candidate.valueType() != null
-            && context.analysis().types().isAssignable(candidate.valueType(), expected.type());
+            && context.analysis().types().isAssignable(candidate.valueType(), type);
     return "%d_%s".formatted(matches ? 0 : 1, candidate.name());
   }
 

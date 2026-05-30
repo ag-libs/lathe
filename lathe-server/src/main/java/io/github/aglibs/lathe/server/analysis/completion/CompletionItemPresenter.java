@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
+import com.sun.source.tree.ImportTree;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import java.util.List;
 import java.util.Set;
@@ -47,15 +48,23 @@ final class CompletionItemPresenter {
     }
 
     final var alreadyImported = importedQualifiedNames(analysis);
+    final var alreadyStaticImported = importedStaticNames(analysis);
     for (int i = 0; i < candidates.size(); i++) {
       final var edit = candidates.get(i).importEdit();
-      if (edit != null && !alreadyImported.contains(edit.qualifiedName())) {
-        items
-            .get(i)
-            .setAdditionalTextEdits(
-                List.of(
-                    new TextEdit(insertionRange, "import %s;\n".formatted(edit.qualifiedName()))));
+      if (edit == null) {
+        continue;
       }
+
+      final var existing = edit.isStatic() ? alreadyStaticImported : alreadyImported;
+      if (existing.contains(edit.qualifiedName())) {
+        continue;
+      }
+
+      final var importText =
+          edit.isStatic()
+              ? "import static %s;\n".formatted(edit.qualifiedName())
+              : "import %s;\n".formatted(edit.qualifiedName());
+      items.get(i).setAdditionalTextEdits(List.of(new TextEdit(insertionRange, importText)));
     }
   }
 
@@ -104,6 +113,17 @@ final class CompletionItemPresenter {
 
     return analysis.tree().getImports().stream()
         .filter(imp -> !imp.isStatic())
+        .map(imp -> imp.getQualifiedIdentifier().toString())
+        .collect(Collectors.toUnmodifiableSet());
+  }
+
+  private static Set<String> importedStaticNames(final AttributedFileAnalysis analysis) {
+    if (analysis == null || analysis.tree() == null) {
+      return Set.of();
+    }
+
+    return analysis.tree().getImports().stream()
+        .filter(ImportTree::isStatic)
         .map(imp -> imp.getQualifiedIdentifier().toString())
         .collect(Collectors.toUnmodifiableSet());
   }
