@@ -124,12 +124,13 @@ public final class CompletionEngine {
       return CompletionOutcome.of(List.of());
     }
 
-    final var javacItems = completeJavacSimpleName(parsed, injected, req, semanticContext);
-    final var keywords = KeywordProvider.suggest(parsed, injected.prefix(), injected.context());
+    final var javacCandidates = completeJavacSimpleName(parsed, injected, req, semanticContext);
+    final var keywordCandidates =
+        KeywordProvider.suggestCandidates(parsed, injected.prefix(), injected.context());
     final var items =
-        keywords.isEmpty()
-            ? javacItems
-            : Stream.concat(javacItems.stream(), keywords.stream()).toList();
+        presentSimpleNameCandidates(
+            Stream.concat(javacCandidates.stream(), keywordCandidates.stream()).toList(),
+            semanticContext);
 
     if (!shouldOfferBareTypeReference(injected)) {
       return new CompletionOutcome(items, null);
@@ -140,7 +141,7 @@ public final class CompletionEngine {
         items, mergeLangTypes(injected.prefix(), req, typeIndexOutcome));
   }
 
-  private List<CompletionItem> completeJavacSimpleName(
+  private List<CompletionCandidate> completeJavacSimpleName(
       final ParsedSentinel parsed,
       final SentinelResult injected,
       final CompletionRequest req,
@@ -150,12 +151,23 @@ public final class CompletionEngine {
     }
 
     return new ProposalGenerator(semanticContext.analysis())
-        .proposeSimpleName(
+        .proposeSimpleNameCandidates(
             parsed.enclosingClass(),
             parsed.enclosingMethod(),
             injected.prefix(),
             req.cursorOffset(),
             semanticContext);
+  }
+
+  private static List<CompletionItem> presentSimpleNameCandidates(
+      final List<CompletionCandidate> candidates, final SemanticCompletionContext semanticContext) {
+    if (semanticContext == null) {
+      return candidates.stream().map(CompletionItemPresenter::present).toList();
+    }
+
+    return CompletionCandidateRanker.rank(candidates, semanticContext).stream()
+        .map(CompletionItemPresenter::present)
+        .toList();
   }
 
   private static SemanticCompletionContext semanticContext(
