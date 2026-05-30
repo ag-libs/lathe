@@ -103,7 +103,7 @@ public final class CompletionEngine {
     final var candidates =
         new ImportCompletionProvider(analysis)
             .proposeCandidates(parsed.receiverText(), injected.prefix());
-    final var items = candidates.stream().map(CompletionItemPresenter::present).toList();
+    final List<CompletionItem> items = candidates.stream().map(CompletionItemPresenter::present).toList();
     final boolean hasSemicolon = req.charAfterCursor() == ';';
 
     if (!hasSemicolon) {
@@ -129,7 +129,7 @@ public final class CompletionEngine {
     final var javacCandidates = completeJavacSimpleName(parsed, injected, req, semanticContext);
     final var keywordCandidates =
         KeywordProvider.suggestCandidates(parsed, injected.prefix(), injected.context());
-    final var items =
+    final List<CompletionItem> items =
         presentSimpleNameCandidates(
             Stream.concat(javacCandidates.stream(), keywordCandidates.stream()).toList(),
             semanticContext);
@@ -271,7 +271,7 @@ public final class CompletionEngine {
     final var analysis = req.cached().analysis();
     final var candidates =
         new ProposalGenerator(analysis).proposeNestedTypes(outer, injected.prefix());
-    final var items =
+    final List<CompletionItem> items =
         CompletionCandidateRanker.rank(candidates, memberAccessSemanticContext(analysis)).stream()
             .map(CompletionItemPresenter::present)
             .toList();
@@ -292,7 +292,7 @@ public final class CompletionEngine {
             "[type-index] typeRef prefix=|%s| candidates=%d cached=%s"
                 .formatted(injected.prefix(), candidates.size(), analysis != null));
     final var validator = new TypeIndexValidator(analysis);
-    final var items =
+    final List<CompletionItem> items =
         candidates.stream()
             .sorted(typeCandidateComparator(injected.prefix()))
             .filter(validator::isResolvable)
@@ -397,7 +397,7 @@ public final class CompletionEngine {
         new ProposalGenerator(snapshot)
             .proposeMemberAccessCandidates(
                 resolved.type(), injected.prefix(), isStaticAccess, scope);
-    final var items =
+    final List<CompletionItem> items =
         CompletionCandidateRanker.rank(candidates, memberAccessSemanticContext(snapshot)).stream()
             .map(CompletionItemPresenter::present)
             .toList();
@@ -442,7 +442,7 @@ public final class CompletionEngine {
       final var candidates =
           new ProposalGenerator(snapshot)
               .proposeMemberAccessCandidates(typeEl.asType(), injected.prefix(), true, scope);
-      final var items =
+      final List<CompletionItem> items =
           CompletionCandidateRanker.rank(candidates, memberAccessSemanticContext(snapshot)).stream()
               .map(CompletionItemPresenter::present)
               .toList();
