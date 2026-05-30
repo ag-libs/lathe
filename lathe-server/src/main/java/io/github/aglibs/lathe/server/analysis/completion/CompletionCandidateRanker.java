@@ -50,7 +50,7 @@ final class CompletionCandidateRanker {
       final CompletionCandidate candidate, final SemanticCompletionContext context) {
     return context.valueContext()
         || context.expectedValue() instanceof ExpectedValue.Type
-        || candidate.sortText() != null;
+        || candidate.valueSensitive();
   }
 
   private static boolean objectMethod(final CompletionCandidate candidate) {

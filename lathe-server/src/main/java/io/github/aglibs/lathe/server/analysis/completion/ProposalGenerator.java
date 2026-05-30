@@ -31,7 +31,7 @@ final class ProposalGenerator {
     this.itemFactory = new CompletionItemFactory(types);
   }
 
-  List<CompletionItem> proposeMemberAccess(
+  List<CompletionCandidate> proposeMemberAccessCandidates(
       final TypeMirror receiverType,
       final String prefix,
       final boolean isStaticAccess,
@@ -56,9 +56,8 @@ final class ProposalGenerator {
         .filter(el -> el.getSimpleName().toString().startsWith(prefix))
         .map(
             el -> {
-              final var item = itemFactory.member(el, declaredType);
-              item.setSortText(sortKey(el));
-              return item;
+              final var candidate = itemFactory.memberCandidate(el, declaredType);
+              return candidate.withSortText(sortKey(el));
             })
         .toList();
   }
@@ -98,15 +97,6 @@ final class ProposalGenerator {
         new SimpleNameProposalContext(
             enclosingClass, enclosingMethod, prefix, cursorOffset, semanticContext);
     return new SimpleNameProposalCollector(snapshot, itemFactory, context).collect();
-  }
-
-  // Declaring-type check: true only for methods actually declared on Object (not overridden
-  // copies).
-  // Used in simple-name context where an overriding equals/hashCode is a real domain method.
-  static boolean isDeclaredInObject(final Element el) {
-    return el.getKind() == ElementKind.METHOD
-        && el.getEnclosingElement() instanceof TypeElement te
-        && "java.lang.Object".equals(te.getQualifiedName().toString());
   }
 
   private static String sortKey(final Element el) {

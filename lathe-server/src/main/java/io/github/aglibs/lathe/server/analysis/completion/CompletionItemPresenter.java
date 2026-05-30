@@ -35,6 +35,7 @@ final class CompletionItemPresenter {
       case LOCAL_VARIABLE -> CompletionItemKind.Variable;
       case FIELD -> CompletionItemKind.Field;
       case METHOD -> CompletionItemKind.Method;
+      case PACKAGE -> CompletionItemKind.Module;
       case TYPE_CLASS -> CompletionItemKind.Class;
       case TYPE_INTERFACE -> CompletionItemKind.Interface;
       case TYPE_ENUM -> CompletionItemKind.Enum;

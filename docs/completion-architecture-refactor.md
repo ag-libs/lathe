@@ -760,6 +760,11 @@ Completed so far:
   `CompletionEngine` combines simple-name javac candidates and keyword candidates before ranking/presentation.
 - Slice 4 partial: `java.lang` and type-index type completions are represented as
   `CompletionCandidate` before LSP presentation.
+- Slice 5 partial: `ProposalGenerator` exposes member-access candidates,
+  and `CompletionEngine` routes resolved member access and type-index member fallback
+  through candidates before ranking/presentation.
+- Slice 6 partial: `ImportCompletionProvider` exposes import candidates,
+  and the static-import package/type fallback presents those candidates at the engine boundary.
 - Simple-name ranker rules now own expected-type sort buckets,
   Object-method demotion,
   and value-context Object/void-method filtering.
@@ -770,13 +775,14 @@ Known temporary compromises:
   The collector preserves initializer-derived sort text,
   and the ranker treats candidates with existing sort text as value-sensitive.
   Later work should lift initializer expected type into `SemanticCompletionContext`.
-- Import and member-access paths still produce `CompletionItem` directly.
+- The `ImportCompletionProvider.propose(...)` item-returning bridge remains for existing direct tests.
+- Nested-type completions still produce `CompletionItem` directly.
 - `CompletionItemFactory` still exists as a bridge for legacy item paths and candidate construction.
 
 Next likely slice:
 
-- Convert member-access candidates to `CompletionCandidate`,
-  then route them through the ranker and presenter while preserving current behavior.
+- Convert nested-type completions to candidates,
+  then shrink `CompletionItemFactory` around the remaining candidate construction paths.
 
 ### Slice 1 — Introduce `CompletionSite`
 

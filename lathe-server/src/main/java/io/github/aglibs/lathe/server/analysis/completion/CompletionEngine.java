@@ -100,8 +100,10 @@ public final class CompletionEngine {
       return CompletionOutcome.of(List.of());
     }
 
-    final var items =
-        new ImportCompletionProvider(analysis).propose(parsed.receiverText(), injected.prefix());
+    final var candidates =
+        new ImportCompletionProvider(analysis)
+            .proposeCandidates(parsed.receiverText(), injected.prefix());
+    final var items = candidates.stream().map(CompletionItemPresenter::present).toList();
     final boolean hasSemicolon = req.charAfterCursor() == ';';
 
     if (!hasSemicolon) {
@@ -352,10 +354,11 @@ public final class CompletionEngine {
         && initialResolved == null
         && initialSnapshot != null
         && parsed.receiverText() != null) {
-      return new CompletionOutcome(
+      final var candidates =
           new ImportCompletionProvider(initialSnapshot)
-              .propose(parsed.receiverText(), injected.prefix()),
-          null);
+              .proposeCandidates(parsed.receiverText(), injected.prefix());
+      return new CompletionOutcome(
+          candidates.stream().map(CompletionItemPresenter::present).toList(), null);
     }
 
     final var freshAnalysis =
@@ -385,9 +388,14 @@ public final class CompletionEngine {
     final boolean isStaticAccess =
         parsed.sentinelContext() == SentinelContext.STATIC_IMPORT || resolved.staticAccess();
     final var scope = TypeResolver.resolveScope(snapshot, req.cursorOffset());
-    final var items =
+    final var candidates =
         new ProposalGenerator(snapshot)
-            .proposeMemberAccess(resolved.type(), injected.prefix(), isStaticAccess, scope);
+            .proposeMemberAccessCandidates(
+                resolved.type(), injected.prefix(), isStaticAccess, scope);
+    final var items =
+        CompletionCandidateRanker.rank(candidates, memberAccessSemanticContext(snapshot)).stream()
+            .map(CompletionItemPresenter::present)
+            .toList();
     LOG.fine(
         () ->
             "[completion] proposals count=%d labels=%s"
@@ -426,14 +434,23 @@ public final class CompletionEngine {
         continue;
       }
 
-      final var items =
+      final var candidates =
           new ProposalGenerator(snapshot)
-              .proposeMemberAccess(typeEl.asType(), injected.prefix(), true, scope);
+              .proposeMemberAccessCandidates(typeEl.asType(), injected.prefix(), true, scope);
+      final var items =
+          CompletionCandidateRanker.rank(candidates, memberAccessSemanticContext(snapshot)).stream()
+              .map(CompletionItemPresenter::present)
+              .toList();
       if (!items.isEmpty()) {
         return CompletionOutcome.of(items);
       }
     }
 
     return CompletionOutcome.of(List.of());
+  }
+
+  private static SemanticCompletionContext memberAccessSemanticContext(
+      final AttributedFileAnalysis snapshot) {
+    return new SemanticCompletionContext(snapshot, new ExpectedValue.Unknown(), false);
   }
 }

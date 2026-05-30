@@ -5,6 +5,7 @@ enum CandidateKind {
   LOCAL_VARIABLE,
   FIELD,
   METHOD,
+  PACKAGE,
   TYPE_CLASS,
   TYPE_INTERFACE,
   TYPE_ENUM

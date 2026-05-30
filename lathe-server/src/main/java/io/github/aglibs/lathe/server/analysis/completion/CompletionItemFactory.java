@@ -15,7 +15,6 @@ import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.ExecutableType;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Types;
-import org.eclipse.lsp4j.CompletionItem;
 
 final class CompletionItemFactory {
 
@@ -67,16 +66,13 @@ final class CompletionItemFactory {
         false,
         null,
         valueType,
-        qualifiedName);
+        qualifiedName,
+        false);
   }
 
   CompletionCandidate variableCandidate(final String name, final TypeMirror type) {
     return new CompletionCandidate(
-        name, name, CandidateKind.LOCAL_VARIABLE, null, name, false, null, type, null);
-  }
-
-  CompletionItem member(final Element el, final DeclaredType receiverType) {
-    return CompletionItemPresenter.present(memberCandidate(el, receiverType));
+        name, name, CandidateKind.LOCAL_VARIABLE, null, name, false, null, type, null, false);
   }
 
   CompletionCandidate memberCandidate(final Element el, final DeclaredType receiverType) {
@@ -103,7 +99,8 @@ final class CompletionItemFactory {
         snippet,
         null,
         method.getReturnType(),
-        declaringType(method));
+        declaringType(method),
+        false);
   }
 
   private CompletionCandidate fieldCandidate(final Element field, final String name) {
@@ -116,7 +113,8 @@ final class CompletionItemFactory {
         false,
         null,
         field.asType(),
-        declaringType(field));
+        declaringType(field),
+        false);
   }
 
   private static String declaringType(final Element element) {

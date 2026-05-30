@@ -147,7 +147,7 @@ final class SimpleNameProposalCollector {
 
     final boolean matches =
         type != null && snapshot.types().isAssignable(type, initializerExpectedType);
-    return candidate.withSortText("%d_%s".formatted(matches ? 0 : 1, name));
+    return candidate.withSortText("%d_%s".formatted(matches ? 0 : 1, name)).asValueSensitive();
   }
 
   private TreePath findScopeMethodPath(

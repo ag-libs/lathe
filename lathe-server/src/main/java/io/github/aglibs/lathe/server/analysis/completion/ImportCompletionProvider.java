@@ -6,7 +6,6 @@ import java.util.stream.Stream;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.PackageElement;
 import org.eclipse.lsp4j.CompletionItem;
-import org.eclipse.lsp4j.CompletionItemKind;
 
 final class ImportCompletionProvider {
 
@@ -17,21 +16,28 @@ final class ImportCompletionProvider {
   }
 
   List<CompletionItem> propose(final String packageName, final String prefix) {
+    return proposeCandidates(packageName, prefix).stream()
+        .map(CompletionItemPresenter::present)
+        .toList();
+  }
+
+  List<CompletionCandidate> proposeCandidates(final String packageName, final String prefix) {
     return Stream.concat(typeStream(packageName, prefix), subPackageStream(packageName, prefix))
         .toList();
   }
 
-  private Stream<CompletionItem> typeStream(final String packageName, final String prefix) {
+  private Stream<CompletionCandidate> typeStream(final String packageName, final String prefix) {
     return snapshot.elements().getAllPackageElements(packageName).stream()
         .flatMap(pkg -> pkg.getEnclosedElements().stream())
         .filter(el -> isImportableType(el.getKind()))
         .map(el -> el.getSimpleName().toString())
         .filter(name -> name.startsWith(prefix))
         .distinct()
-        .map(ImportCompletionProvider::typeItem);
+        .map(ImportCompletionProvider::typeCandidate);
   }
 
-  private Stream<CompletionItem> subPackageStream(final String packageName, final String prefix) {
+  private Stream<CompletionCandidate> subPackageStream(
+      final String packageName, final String prefix) {
     final String pkgPrefix = packageName + ".";
     final int segmentStart = pkgPrefix.length();
     return snapshot.elements().getAllModuleElements().stream()
@@ -49,7 +55,7 @@ final class ImportCompletionProvider {
             })
         .filter(seg -> seg.startsWith(prefix))
         .distinct()
-        .map(ImportCompletionProvider::packageItem);
+        .map(ImportCompletionProvider::packageCandidate);
   }
 
   private static boolean isImportableType(final ElementKind kind) {
@@ -60,17 +66,15 @@ final class ImportCompletionProvider {
         || kind == ElementKind.ANNOTATION_TYPE;
   }
 
-  private static CompletionItem typeItem(final String name) {
-    final var item = new CompletionItem();
-    item.setLabel(name);
-    item.setKind(CompletionItemKind.Class);
-    return item;
+  private static CompletionCandidate typeCandidate(final String name) {
+    return importCandidate(name, CandidateKind.TYPE_CLASS);
   }
 
-  private static CompletionItem packageItem(final String name) {
-    final var item = new CompletionItem();
-    item.setLabel(name);
-    item.setKind(CompletionItemKind.Module);
-    return item;
+  private static CompletionCandidate packageCandidate(final String name) {
+    return importCandidate(name, CandidateKind.PACKAGE);
+  }
+
+  private static CompletionCandidate importCandidate(final String name, final CandidateKind kind) {
+    return new CompletionCandidate(name, name, kind, null, name, false, null, null, null, false);
   }
 }
