@@ -19,7 +19,6 @@ import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
-import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 
 final class SimpleNameProposalCollector {
@@ -118,33 +117,10 @@ final class SimpleNameProposalCollector {
 
   private void addMember(final Element el, final DeclaredType declaredType) {
     final var name = el.getSimpleName().toString();
-    if (effectiveExpectedType() != null || context.semanticContext().valueContext()) {
-      if (ProposalGenerator.isDeclaredInObject(el)) {
-        return;
-      }
-
-      if (el.getKind() == ElementKind.METHOD
-          && ((ExecutableElement) el).getReturnType().getKind() == TypeKind.VOID) {
-        return;
-      }
-    }
-
     final var candidate = itemFactory.memberCandidate(el, declaredType);
-    if (ProposalGenerator.isDeclaredInObject(el)) {
-      items.add(candidate);
-    } else {
-      final var memberType =
-          el.getKind() == ElementKind.METHOD
-              ? ((ExecutableElement) el).getReturnType()
-              : el.asType();
-      items.add(withInitializerSortText(candidate.withValueType(memberType), name, memberType));
-    }
-  }
-
-  private TypeMirror effectiveExpectedType() {
-    return context.semanticContext().expectedValue() instanceof ExpectedValue.Type(TypeMirror type)
-        ? type
-        : initializerExpectedType;
+    final var memberType =
+        el.getKind() == ElementKind.METHOD ? ((ExecutableElement) el).getReturnType() : el.asType();
+    items.add(withInitializerSortText(candidate.withValueType(memberType), name, memberType));
   }
 
   private void addClassMembers(final boolean staticMethod) {
