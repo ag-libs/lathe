@@ -15,8 +15,6 @@ import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
-import org.eclipse.lsp4j.Position;
-import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
@@ -66,6 +64,7 @@ public final class CompletionEngine {
       return CompletionOutcome.of(List.of());
     }
 
+    final var site = CompletionSite.from(req, injected, parsed);
     final var outcome =
         switch (parsed.sentinelContext()) {
           case IMPORT -> completeImport(parsed, injected, req);
@@ -84,7 +83,7 @@ public final class CompletionEngine {
               completeMemberAccess(parsed, injected, req);
           default -> CompletionOutcome.of(List.of());
         };
-    return applyTextEdits(outcome, req.pos(), injected.prefix());
+    return applyTextEdits(outcome, site);
   }
 
   private CompletionOutcome completeImport(
@@ -287,20 +286,18 @@ public final class CompletionEngine {
   }
 
   private static CompletionOutcome applyTextEdits(
-      final CompletionOutcome outcome, final Position cursor, final String prefix) {
+      final CompletionOutcome outcome, final CompletionSite site) {
     if (outcome.items().isEmpty()) {
       return outcome;
     }
 
-    final var start = new Position(cursor.getLine(), cursor.getCharacter() - prefix.length());
-    final var range = new Range(start, cursor);
     outcome
         .items()
         .forEach(
             item -> {
               final var newText =
                   item.getInsertText() != null ? item.getInsertText() : item.getLabel();
-              item.setTextEdit(Either.forLeft(new TextEdit(range, newText)));
+              item.setTextEdit(Either.forLeft(new TextEdit(site.replacementRange(), newText)));
             });
     return outcome;
   }
