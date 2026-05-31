@@ -10,6 +10,9 @@ import java.util.List;
 import java.util.Optional;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
+import org.eclipse.lsp4j.InsertTextFormat;
+import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.Range;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -34,7 +37,9 @@ class CompletionEngineTest {
                 CompletionFixture.typeEntry("Runnable", "java.lang.Runnable", TypeKind.INTERFACE),
                 CompletionFixture.typeEntry(
                     "StringBuilder", "java.lang.StringBuilder", TypeKind.CLASS),
-                CompletionFixture.typeEntry("String", "java.lang.String", TypeKind.CLASS)));
+                CompletionFixture.typeEntry("String", "java.lang.String", TypeKind.CLASS),
+                CompletionFixture.typeEntry(
+                    "TimeUnit", "java.util.concurrent.TimeUnit", TypeKind.ENUM)));
   }
 
   @AfterAll
@@ -381,6 +386,12 @@ class CompletionEngineTest {
     // non-static import path must not suggest static members
     assertThat(fixture.complete("import java.util.Collections.empty§;\n\nclass Test {}"))
         .noneMatch(i -> i.getLabel().startsWith("emptyList"));
+    // non-matching prefix: unrelated types must not appear
+    assertThat(fixture.complete("import java.util.Xyz§;\n\nclass Test {}"))
+        .noneMatch(i -> i.getLabel().equals("ArrayList"));
+    // deep-nested sub-package must not appear as immediate child of java.util
+    assertThat(labels(fixture.complete("import java.util.§;\n\nclass Test {}")))
+        .doesNotContain("atomic");
     // text edit includes trailing semicolon (source has no trailing ';' so engine adds one)
     final var mapItem = itemLabeled(fixture.complete("import java.util.§\n\nclass Test {}"), "Map");
     assertThat(mapItem).isPresent();
@@ -728,6 +739,22 @@ class CompletionEngineTest {
                 }"""))
         .isEmpty();
     assertThat(fixture.complete("class Test { void m() { .§ } }")).isEmpty();
+  }
+
+  @Test
+  void topLevel_suggestsPackageImportAndClassKeywords() {
+    assertThat(labels(fixture.complete("§\nclass Foo {}")))
+        .contains(
+            "package",
+            "import",
+            "class",
+            "interface",
+            "enum",
+            "record",
+            "public",
+            "final",
+            "abstract")
+        .doesNotContain("if", "for", "while", "return", "new", "var", "null", "private", "void");
   }
 
   @Test
@@ -1331,6 +1358,54 @@ class CompletionEngineTest {
                         }
                     }""")))
         .anyMatch(l -> l.startsWith("requireNonNull"));
+  }
+
+  // ── presentation details ─────────────────────────────────────────────────────
+
+  @Test
+  void completionItem_method_hasCorrectFilterTextAndSnippetInsertFormat() {
+    final var item =
+        fixture.complete("class Test { void m(java.util.ArrayList<String> l) { l.sub§ } }").stream()
+            .filter(i -> i.getLabel().startsWith("subList("))
+            .findFirst();
+    assertThat(item).isPresent();
+    assertThat(item.get().getFilterText()).isEqualTo("subList");
+    assertThat(item.get().getInsertTextFormat()).isEqualTo(InsertTextFormat.Snippet);
+    assertThat(item.get().getInsertText()).contains("$");
+  }
+
+  @Test
+  void typeIndex_itemKind_interfaceAndEnumMappedCorrectly() {
+    assertThat(itemLabeled(fixture.complete("class Test implements Runn§ {}"), "Runnable"))
+        .hasValueSatisfying(i -> assertThat(i.getKind()).isEqualTo(CompletionItemKind.Interface));
+    assertThat(itemLabeled(fixture.complete("class Test { TimeU§ field; }"), "TimeUnit"))
+        .hasValueSatisfying(i -> assertThat(i.getKind()).isEqualTo(CompletionItemKind.Enum));
+  }
+
+  @Test
+  void completionItem_importEdit_insertedAfterLastExistingImport() throws IOException {
+    localFixture =
+        new CompletionFixture(
+            CompletionFixture.typeIndex(
+                tmp.resolve("index.json"),
+                CompletionFixture.typeEntry("ArrayList", "java.util.ArrayList", TypeKind.CLASS)));
+    final var item =
+        itemLabeled(
+            localFixture.complete(
+                """
+                package example;
+
+                import java.util.List;
+
+                class Test {
+                  void accept(Object v) {}
+                  void m() { accept(new ArrayL§); }
+                }"""),
+            "ArrayList");
+    assertThat(item).isPresent();
+    final var edit = item.get().getAdditionalTextEdits().get(0);
+    assertThat(edit.getNewText()).isEqualTo("import java.util.ArrayList;\n");
+    assertThat(edit.getRange()).isEqualTo(new Range(new Position(3, 0), new Position(3, 0)));
   }
 
   // ── type index ────────────────────────────────────────────────────────────────
