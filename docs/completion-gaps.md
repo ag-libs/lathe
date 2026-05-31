@@ -8,8 +8,11 @@ Open gaps in priority order.
 |-----|-------|------------|------------|
 | K | Keywords not filtered by syntactic context | Medium | — |
 | H | No subpackage navigation for FQN in code | Medium | — |
-| E | No type-index suggestions in expression context | Medium | K |
+| L | Context-sensitive statement keywords | Medium | K |
+| M | Keyword ranking by semantic fit | Medium | K |
 | J | No completions after `::` | Hard | — |
+
+Gap E has been revised — see the Closed section.
 
 **K first** because the changes are contained in `KeywordProvider` and
 `SentinelParser`, have no dependencies, and fix obvious wrong behaviour
@@ -18,11 +21,9 @@ Open gaps in priority order.
 **H second** because it is self-contained inside `CompletionEngine.completeMemberAccess`
 and uses the existing `WorkspaceTypeIndex` without new infrastructure.
 
-**E third** because its natural implementation extends the expression path
-that K already touches — specifically, offering type-index candidates when
-`SemanticCompletionContext.expectedValue` is `ExpectedValue.Type` and the
-prefix is empty or lowercase, which overlaps with the expression-keyword
-filtering rule.
+**L and M third and fourth** because both depend on K landing first — L extends
+the syntactic context classification K introduces, and M adds ranking on top of
+the corrected keyword sets.
 
 **J last** because it requires a new `MEMBER_REFERENCE` sentinel context,
 functional-interface compatibility filtering, and no existing path to build on.
@@ -31,37 +32,60 @@ functional-interface compatibility filtering, and no existing path to build on.
 
 ## Open
 
-### Gap E — No type-index suggestions in expression context
+### Gap K — Keywords not filtered by syntactic context
 
 **Difficulty:** Medium
 
-**Symptom:** After `String foo = ` with no prefix or a lowercase prefix, no
-type names from the type index are offered.
-Uppercase prefixes already work because `shouldOfferBareTypeReference` fires for
-`STATEMENT` context + uppercase first character.
-The gap is empty-prefix and lowercase-prefix positions where an expected type
-is available.
+**Symptom:** In several positions the engine offers keywords that are
+syntactically invalid there.
 
-```
-String foo = §          →  0 type-index candidates
-String foo = Arr§       →  ArrayList, ArrayDeque, …  ← already works
-String foo = arr§       →  0 type-index candidates
-```
+| Position | Wrongly offered | Should be |
+|---|---|---|
+| `return §` | `if`, `for`, `while`, `do`, `switch`, `try`, `throw`, and the rest of the statement set | Expression keywords only: `new`, `null`, `true`, `false`, `this`, `super` |
+| `String foo = §` | Same full statement set | Expression keywords only: `new`, `null`, `true`, `false`, `this`, `super`, `var` |
+| `import §` | Nothing | `static` keyword + top-level package segments |
 
-**Root cause:** `shouldOfferBareTypeReference` guards on `!prefix.isEmpty() &&
-isUpperCase(prefix.charAt(0))`.
-Empty and lowercase prefixes never enter `completeSimpleNameTypeReference`.
+**IntelliJ behavior (reference):**
+Both JDT.LS and IntelliJ offer statement keywords only at genuine statement
+positions.
+In expression positions (`return`, variable initializer, argument) they restrict
+to expression keywords.
+IntelliJ includes `new` in the expression set; JDT does not.
+Lathe follows IntelliJ here — `new` belongs in expression positions because
+`return new Foo()` is common.
 
-**Resolution:** When `SemanticCompletionContext.expectedValue` is
-`ExpectedValue.Type`, query the type index with the current prefix regardless
-of case and filter candidates to those whose qualified name is assignable to the
-expected type.
-Unresolvable candidates (no snapshot yet) remain as incomplete/low-rank results.
-Guard the fallback with a non-empty prefix to avoid flooding the menu at `§`
-in an untyped statement.
+`var` must not appear in expression positions — it is only valid as a local
+variable type declaration.
 
-**Depends on:** Gap K (which extends the expression-context classification that
-this gap also touches).
+**Root cause — statement/expression mismatch:**
+The backward scan marks `return §` and `String s = §` as `STATEMENT` context
+because the scan crosses `{` or `;` before the cursor.
+`KeywordProvider` then offers the full statement keyword set.
+The actual position is an expression — `return` and `=` are both value
+consumers — but the backward scan cannot distinguish them from a bare statement.
+
+**Root cause — bare import:**
+`import §` with an empty receiver is not handled by `ImportCompletionProvider`,
+which requires a non-null receiver text.
+
+**Resolution — statement/expression mismatch:**
+The sentinel parent in the attributed tree already carries the answer:
+`ReturnTree` and `VariableTree` (initialiser) parents mean an expression
+position.
+Add two new cases in `SentinelParser.extractContext`:
+- Parent is `ReturnTree` → set `inExpression = true` on `ParsedSentinel`.
+- Parent is `VariableTree` where the sentinel is the initialiser → same flag.
+
+Make `KeywordProvider.suggestCandidates` check `inExpression` and
+restrict to the expression keyword set in those positions.
+
+**Resolution — bare import:**
+Handle `receiverText == null` in `ImportCompletionProvider` to emit:
+- the keyword `static` (filtered by prefix),
+- top-level package segments reachable from the type index (filtered by prefix).
+
+**Tests:** `keywords_returnPosition_expressionKeywordsOnly`,
+`keywords_variableInitializer_expressionKeywordsOnly`
 
 ---
 
@@ -93,8 +117,67 @@ Type entries at exactly one segment deeper get `CandidateKind.TYPE_*`.
 
 No new external API is needed — this is a self-contained extension in
 `CompletionEngine.completeMemberAccess`.
-When the reactor type index lands, it automatically extends coverage through
-the same `WorkspaceTypeIndex` scan.
+
+---
+
+### Gap L — Context-sensitive statement keywords
+
+**Difficulty:** Medium  
+**Depends on:** Gap K
+
+**Symptom:** Several statement keywords are offered unconditionally in all
+statement positions, even when they are syntactically invalid there.
+
+| Keyword | Should appear only when |
+|---|---|
+| `else` | Previous sibling statement is an `if` body |
+| `catch` | Previous sibling statement is a `try` or `catch` block |
+| `finally` | Previous sibling statement is a `try` or `catch` block |
+| `break` | Inside a loop (`for`, `while`, `do`) or `switch` |
+| `continue` | Inside a loop (`for`, `while`, `do`) |
+| `yield` | Inside a `switch` expression (not a `switch` statement) |
+
+**Root cause:** `KeywordProvider` emits context-sensitive keywords
+unconditionally — it does not inspect the surrounding AST to check whether
+the position allows them.
+
+**Resolution:** Use the `ParsedSentinel` ancestor chain to detect the
+enclosing construct.
+For each context-sensitive keyword, add a predicate that walks the sentinel
+parse tree to verify the required enclosing node or sibling is present.
+This is purely a `KeywordProvider` change — no sentinel context variants needed.
+
+---
+
+### Gap M — Keyword ranking by semantic fit
+
+**Difficulty:** Medium  
+**Depends on:** Gap K
+
+**Symptom:** All keyword candidates receive equal rank regardless of how well
+they fit the current semantic context.
+IntelliJ promotes certain keywords based on expected type and position:
+
+| Condition | Promoted keywords |
+|---|---|
+| Boolean type expected | `true`, `false` ranked first |
+| Equality comparison (`==`, `!=`) | `null` ranked high |
+| Last statement of a non-void method | `return` ranked high |
+
+**Root cause:** `CompletionCandidateRanker` does not have keyword-specific
+ranking rules.
+
+**Resolution:** Extend `CompletionCandidateRanker` to apply keyword sort
+buckets based on `SemanticCompletionContext`:
+- If `expectedValue` is `ExpectedValue.Type` where the type is `boolean` or
+  `Boolean`, promote `true` and `false` to the top bucket.
+- If the position is an equality comparison operand, promote `null`.
+- If the cursor is at the last statement of a method with a non-void return
+  type, promote `return`.
+
+The last two conditions may require additional sentinel context signals.
+Implement the boolean case first as it is the most common and easiest to detect
+from `ExpectedValue`.
 
 ---
 
@@ -127,60 +210,13 @@ Defer until the higher-priority gaps are closed.
 
 ---
 
-### Gap K — Keywords not filtered by syntactic context
-
-**Difficulty:** Medium
-
-**Symptom:** In several positions the engine offers keywords that are
-syntactically invalid there.
-
-| Position | Wrongly offered | Should be |
-|---|---|---|
-| `return §` | `if`, `for`, `while`, `do`, `switch`, `try`, `final`, `var`, … | expression keywords only (`new`, `null`, `true`, `false`, `this`, `super`) |
-| `String foo = §` | same full statement set | expression keywords only |
-| `import §` | nothing | `static` + top-level package segments |
-
-**Root cause — statement/expression mismatch:**
-The backward scan marks `return §` and `String s = §` as `STATEMENT` context
-because the scan crosses `{` or `;` before the cursor.
-`KeywordProvider` then offers the full statement keyword set.
-The actual position is an expression — `return` and `=` are both value
-consumers — but the backward scan cannot distinguish them from a bare statement.
-
-**Root cause — bare import:**
-`import §` with an empty receiver is not handled by `ImportCompletionProvider`,
-which requires a non-null receiver text.
-
-**Resolution — statement/expression mismatch:**
-The sentinel parent in the attributed tree already carries the answer:
-`ReturnTree` and `VariableTree` (initialiser) parents mean an expression
-position.
-Add two new cases in `SentinelParser.extractContext`:
-- Parent is `ReturnTree` → set a `RETURN_VALUE` sentinel context
-  (or reuse `ARGUMENT_POSITION`'s expression-keyword rule).
-- Parent is `VariableTree` where the sentinel is the initialiser → add
-  `valueContext = true` to `SemanticCompletionContext`.
-
-Then make `KeywordProvider.suggestCandidates` check `valueContext` (or the new
-context variant) and suppress statement keywords in those positions.
-
-**Resolution — bare import:**
-Handle `receiverText == null` in `ImportCompletionProvider` to emit:
-- the keyword `static` (filtered by prefix),
-- top-level package segments reachable from the type index (filtered by prefix).
-
-This mirrors the behaviour the engine already provides for `import java.§`
-but starting one level higher.
-
----
-
 ## Closed
 
-All gaps identified up to 2026-05-27 have been addressed.
+All gaps identified up to 2026-05-31 have been addressed.
 
 ### Gap A — Static-import members not offered as simple names
 
-**Resolution:** `SimpleNameProposalCollector` now walks `CompilationUnitTree.getImports()`,
+**Resolution:** `SimpleNameProvider` now walks `CompilationUnitTree.getImports()`,
 filters to static imports, resolves the declaring type via `getTypeElement`, and emits
 its static members filtered by the declared member name and current prefix.
 Wildcard static imports (`import static Foo.*`) emit all static members of the type.
@@ -201,7 +237,7 @@ receiver text, looks it up in `WorkspaceTypeIndex`, resolves the top match via
 
 ### Gap C — Variable offered as completion in its own initializer
 
-**Resolution:** `SimpleNameProposalCollector.addMethodLocals` now skips any
+**Resolution:** `SimpleNameProvider.addMethodLocals` now skips any
 `VariableTree` whose source range brackets the cursor offset, not just those
 whose start position is before the cursor.
 
@@ -216,6 +252,25 @@ whose start position is before the cursor.
 `SemanticCompletionContext.expectedValue` is `ExpectedValue.Type`.
 
 **Test:** `simpleName_classMember_matchingDeclaredType_rankedBeforeNonMatching`
+
+---
+
+### Gap E — Type-index suggestions in expression context (revised)
+
+**Original description:** After `String foo = ` with no prefix or a lowercase
+prefix, no type names from the type index are offered.
+
+**Revised:** This is not a basic-completion gap.
+IntelliJ and JDT.LS both restrict type-index candidates to uppercase prefixes
+in basic completion.
+Lowercase prefix in any position — including expression positions with a known
+expected type — does not trigger type-index lookup in basic completion.
+The current behaviour (`String foo = arr§` → no type candidates) is correct.
+
+Uppercase prefix already works: `String foo = Arr§` → `ArrayList`, `ArrayDeque`, …
+
+Type-index candidates for lowercase prefix belong to smart/explicit completion,
+which is out of scope until basic completion gaps are closed.
 
 ---
 
@@ -241,7 +296,7 @@ used for call-site completions.
 
 ### Gap I — Static methods offered in instance member-access context
 
-**Resolution:** `ProposalGenerator.proposeMemberAccess` now applies a two-sided
+**Resolution:** `ProposalGenerator.proposeMemberAccessCandidates` now applies a two-sided
 static/instance filter: static access receives only static members; instance access
 receives only instance members (plus enum constants).
 
