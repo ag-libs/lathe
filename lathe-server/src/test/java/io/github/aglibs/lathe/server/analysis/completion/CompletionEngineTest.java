@@ -479,8 +479,19 @@ class CompletionEngineTest {
     assertThat(items).contains("new", "null", "this", "super");
     assertThat(items)
         .doesNotContain(
-            "if", "for", "while", "do", "switch", "try", "throw",
-            "assert", "break", "continue", "final", "synchronized", "var");
+            "if",
+            "for",
+            "while",
+            "do",
+            "switch",
+            "try",
+            "throw",
+            "assert",
+            "break",
+            "continue",
+            "final",
+            "synchronized",
+            "var");
   }
 
   @Test
