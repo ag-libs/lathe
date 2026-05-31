@@ -466,6 +466,52 @@ class CompletionEngineTest {
   }
 
   @Test
+  @Disabled("Gap K — statement keywords leak into return expression position")
+  void keywords_returnPosition_expressionKeywordsOnly() {
+    final List<String> items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    String m() {
+                        return §
+                    }
+                }"""));
+    assertThat(items).contains("new", "null", "true", "false", "this", "super");
+    assertThat(items)
+        .doesNotContain(
+            "if", "for", "while", "do", "switch", "try", "throw",
+            "assert", "break", "continue", "final", "synchronized", "var");
+  }
+
+  @Test
+  @Disabled("Gap K — statement keywords leak into variable initializer position")
+  void keywords_variableInitializer_expressionKeywordsOnly() {
+    final List<String> items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    void m() {
+                        String s = §
+                    }
+                }"""));
+    assertThat(items).contains("new", "null", "true", "false", "this", "super");
+    assertThat(items)
+        .doesNotContain(
+            "if", "for", "while", "do", "switch", "try", "throw",
+            "assert", "break", "continue", "final", "synchronized", "var");
+  }
+
+  @Test
+  @Disabled("Gap K — bare import § returns nothing instead of static + top-level packages")
+  void keywords_bareImport_suggestsStaticAndTopLevelPackages() {
+    final List<String> items = labels(fixture.complete("import §;\n\nclass Test {}"));
+    assertThat(items).contains("static", "java");
+    assertThat(items).doesNotContain("if", "for", "while", "new", "null", "return");
+  }
+
+  @Test
   void methodBody_afterNew_suggestsConstructibleTypes() {
     assertThat(
             labels(

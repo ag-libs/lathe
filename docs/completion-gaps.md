@@ -42,7 +42,7 @@ syntactically invalid there.
 | Position | Wrongly offered | Should be |
 |---|---|---|
 | `return §` | `if`, `for`, `while`, `do`, `switch`, `try`, `throw`, and the rest of the statement set | Expression keywords only: `new`, `null`, `true`, `false`, `this`, `super` |
-| `String foo = §` | Same full statement set | Expression keywords only: `new`, `null`, `true`, `false`, `this`, `super`, `var` |
+| `String foo = §` | Same full statement set | Expression keywords only: `new`, `null`, `true`, `false`, `this`, `super` |
 | `import §` | Nothing | `static` keyword + top-level package segments |
 
 **IntelliJ behavior (reference):**
@@ -122,7 +122,7 @@ No new external API is needed — this is a self-contained extension in
 
 ### Gap L — Context-sensitive statement keywords
 
-**Difficulty:** Medium  
+**Difficulty:** Medium
 **Depends on:** Gap K
 
 **Symptom:** Several statement keywords are offered unconditionally in all
@@ -151,7 +151,7 @@ This is purely a `KeywordProvider` change — no sentinel context variants neede
 
 ### Gap M — Keyword ranking by semantic fit
 
-**Difficulty:** Medium  
+**Difficulty:** Medium
 **Depends on:** Gap K
 
 **Symptom:** All keyword candidates receive equal rank regardless of how well
