@@ -158,35 +158,32 @@ final class SentinelParser {
       return classifyVariableDeclaration(v);
     }
 
+    final boolean simpleName = !(sentinel instanceof MemberSelectTree);
+
     return switch (parent) {
-      case ReturnTree r
-          when r.getExpression() == sentinel && !(sentinel instanceof MemberSelectTree) ->
+      case ReturnTree r when simpleName && r.getExpression() == sentinel ->
           Classification.expression();
-      case ThrowTree t
-          when t.getExpression() == sentinel && !(sentinel instanceof MemberSelectTree) ->
+      case ThrowTree t when simpleName && t.getExpression() == sentinel ->
           Classification.expression();
-      case VariableTree v
-          when v.getInitializer() == sentinel && !(sentinel instanceof MemberSelectTree) ->
+      case VariableTree v when simpleName && v.getInitializer() == sentinel ->
           Classification.expression();
       case MethodInvocationTree m
-          when !(sentinel instanceof MemberSelectTree)
-              && m.getArguments().stream().anyMatch(a -> a == sentinel) ->
+          when simpleName && m.getArguments().stream().anyMatch(a -> a == sentinel) ->
           classifyMethodInvocation(sentinel, m);
       case LambdaExpressionTree lambda -> classifyLambda(sentinel, lambda);
-      case NewClassTree m when !(sentinel instanceof MemberSelectTree) ->
-          classifyConstructorCall(sentinel, m);
+      case NewClassTree m when simpleName -> classifyConstructorCall(sentinel, m);
       case AnnotationTree ignored -> Classification.of(SentinelContext.ANNOTATION_CONTEXT);
       case VariableTree v when v.getType() == sentinel ->
           Classification.of(SentinelContext.TYPE_REFERENCE);
       case MethodTree m when m.getReturnType() == sentinel ->
+          Classification.of(SentinelContext.TYPE_REFERENCE);
+      case TypeCastTree t when t.getType() == sentinel ->
           Classification.of(SentinelContext.TYPE_REFERENCE);
       case ParameterizedTypeTree ignored -> Classification.of(SentinelContext.TYPE_REFERENCE);
       case ClassTree ignored -> Classification.of(SentinelContext.TYPE_REFERENCE);
       case ArrayTypeTree ignored -> Classification.of(SentinelContext.TYPE_REFERENCE);
       case WildcardTree ignored -> Classification.of(SentinelContext.TYPE_REFERENCE);
       case TypeParameterTree ignored -> Classification.of(SentinelContext.TYPE_REFERENCE);
-      case TypeCastTree t when t.getType() == sentinel ->
-          Classification.of(SentinelContext.TYPE_REFERENCE);
       default -> classifyDefault(sentinel);
     };
   }
