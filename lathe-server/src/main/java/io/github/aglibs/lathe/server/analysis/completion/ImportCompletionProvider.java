@@ -1,10 +1,13 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.PackageElement;
+import javax.lang.model.element.TypeElement;
 
 final class ImportCompletionProvider {
 
@@ -23,10 +26,15 @@ final class ImportCompletionProvider {
     return snapshot.elements().getAllPackageElements(packageName).stream()
         .flatMap(pkg -> pkg.getEnclosedElements().stream())
         .filter(el -> isImportableType(el.getKind()))
-        .map(el -> el.getSimpleName().toString())
-        .filter(name -> name.startsWith(prefix))
-        .distinct()
-        .map(ImportCompletionProvider::typeCandidate);
+        .filter(el -> el.getSimpleName().toString().startsWith(prefix))
+        .collect(
+            Collectors.toMap(
+                el -> el.getSimpleName().toString(),
+                el -> CompletionItemFactory.typeElementCandidate((TypeElement) el),
+                (a, b) -> a,
+                LinkedHashMap::new))
+        .values()
+        .stream();
   }
 
   private Stream<CompletionCandidate> subPackageStream(
@@ -57,10 +65,6 @@ final class ImportCompletionProvider {
         || kind == ElementKind.ENUM
         || kind == ElementKind.RECORD
         || kind == ElementKind.ANNOTATION_TYPE;
-  }
-
-  private static CompletionCandidate typeCandidate(final String name) {
-    return importCandidate(name, CandidateKind.TYPE_CLASS);
   }
 
   private static CompletionCandidate packageCandidate(final String name) {

@@ -19,6 +19,7 @@ import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import org.eclipse.lsp4j.CompletionItem;
@@ -117,7 +118,7 @@ public final class CompletionEngine {
 
     if (!hasSemicolon) {
       items.stream()
-          .filter(i -> i.getKind() == CompletionItemKind.Class)
+          .filter(i -> i.getKind() != CompletionItemKind.Module)
           .forEach(i -> i.setInsertText(i.getLabel() + ";"));
     }
 
@@ -143,22 +144,27 @@ public final class CompletionEngine {
             Stream.concat(javacCandidates.stream(), keywordCandidates.stream()).toList(),
             semanticContext);
 
-    if (!shouldOfferBareTypeReference(injected)) {
+    if (!hasUppercasePrefix(injected)) {
       return new CompletionOutcome(items, null);
     }
 
-    final var typeIndexOutcome = completeSimpleNameTypeReference(injected, req);
-    final CompletionOutcome merged =
-        mergeSimpleNameAndTypeIndexItems(
-            items, mergeLangTypes(injected.prefix(), req, typeIndexOutcome));
+    // Type-index types: uppercase prefix in statement context only (avoids flooding arg lists)
+    final CompletionOutcome withTypes =
+        shouldOfferBareTypeReference(injected)
+            ? mergeSimpleNameAndTypeIndexItems(
+                items,
+                mergeLangTypes(
+                    injected.prefix(), req, completeSimpleNameTypeReference(injected, req)))
+            : new CompletionOutcome(items, null);
 
+    // Static member fit: uppercase prefix + expected type, works in both statement and expression
     if (semanticContext == null) {
-      return merged;
+      return withTypes;
     }
 
     final var staticFitCandidates = staticMemberFitCandidates(injected.prefix(), semanticContext);
     if (staticFitCandidates.isEmpty()) {
-      return merged;
+      return withTypes;
     }
 
     final var ranked = CompletionCandidateRanker.rank(staticFitCandidates, semanticContext);
@@ -169,10 +175,18 @@ public final class CompletionEngine {
         staticFitItems,
         semanticContext.analysis());
 
-    final var finalItems = new LinkedHashMap<String, CompletionItem>();
-    merged.items().forEach(i -> finalItems.put(completionIdentity(i), i));
-    staticFitItems.forEach(i -> finalItems.putIfAbsent(completionIdentity(i), i));
-    return new CompletionOutcome(List.copyOf(finalItems.values()), null, merged.incomplete());
+    final List<CompletionItem> finalItems =
+        Stream.concat(withTypes.items().stream(), staticFitItems.stream())
+            .collect(
+                Collectors.toMap(
+                    CompletionEngine::completionIdentity,
+                    i -> i,
+                    (existing, ignored) -> existing,
+                    LinkedHashMap::new))
+            .values()
+            .stream()
+            .toList();
+    return new CompletionOutcome(finalItems, null, withTypes.incomplete());
   }
 
   private List<CompletionCandidate> completeJavacSimpleName(
@@ -220,7 +234,12 @@ public final class CompletionEngine {
     }
 
     final var typeIndexOutcome = completeSimpleNameTypeReference(injected, req);
-    final var typeRefOutcome = withLangTypes(parsed, injected, req, typeIndexOutcome);
+    // Lang types merged only for TYPE_REFERENCE; VARIABLE_DECLARATION arrives here too but
+    // gets a bare type-index result.
+    final var typeRefOutcome =
+        parsed.sentinelContext() == SentinelContext.TYPE_REFERENCE
+            ? mergeLangTypes(injected.prefix(), req, typeIndexOutcome)
+            : typeIndexOutcome;
 
     if (parsed.enclosingMethod() == null && parsed.enclosingClass() != null) {
       final List<CompletionItem> keywords =
@@ -233,18 +252,6 @@ public final class CompletionEngine {
     }
 
     return typeRefOutcome;
-  }
-
-  private static CompletionOutcome withLangTypes(
-      final ParsedSentinel parsed,
-      final SentinelResult injected,
-      final CompletionRequest req,
-      final CompletionOutcome base) {
-    if (parsed.sentinelContext() != SentinelContext.TYPE_REFERENCE) {
-      return base;
-    }
-
-    return mergeLangTypes(injected.prefix(), req, base);
   }
 
   private static CompletionOutcome mergeLangTypes(
@@ -348,11 +355,14 @@ public final class CompletionEngine {
         .thenComparing(TypeIndexEntry::qualifiedName);
   }
 
+  private static boolean hasUppercasePrefix(final SentinelResult injected) {
+    return !injected.prefix().isEmpty()
+        && Character.isUpperCase(injected.prefix().charAt(0))
+        && injected.receiverText() == null;
+  }
+
   private static boolean shouldOfferBareTypeReference(final SentinelResult injected) {
-    return injected.context() == SentinelInjector.Context.STATEMENT
-        && injected.receiverText() == null
-        && !injected.prefix().isEmpty()
-        && Character.isUpperCase(injected.prefix().charAt(0));
+    return hasUppercasePrefix(injected) && injected.context() == SentinelInjector.Context.STATEMENT;
   }
 
   private static CompletionOutcome mergeSimpleNameAndTypeIndexItems(
@@ -549,7 +559,7 @@ public final class CompletionEngine {
       final SemanticCompletionContext context) {
     final var base =
         new CompletionItemFactory(context.analysis().types())
-            .memberCandidate(member, (javax.lang.model.type.DeclaredType) declaringType.asType());
+            .memberCandidate(member, (DeclaredType) declaringType.asType());
     final var typeName = declaringType.getSimpleName().toString();
     final var qualifiedMember = typeQualifiedName + "." + member.getSimpleName();
     return new CompletionCandidate(

@@ -109,7 +109,9 @@ final class SimpleNameProposalCollector {
   }
 
   private void addMember(final Element el, final DeclaredType declaredType) {
-    items.add(itemFactory.memberCandidate(el, declaredType));
+    if (seen.add(el.getSimpleName().toString())) {
+      items.add(itemFactory.memberCandidate(el, declaredType));
+    }
   }
 
   private void addClassMembers(final boolean staticMethod) {
@@ -123,7 +125,6 @@ final class SimpleNameProposalCollector {
         .filter(el -> el.getKind() == ElementKind.METHOD || el.getKind() == ElementKind.FIELD)
         .filter(el -> !staticMethod || el.getModifiers().contains(Modifier.STATIC))
         .filter(el -> el.getSimpleName().toString().startsWith(context.prefix()))
-        .filter(el -> seen.add(el.getSimpleName().toString()))
         .forEach(el -> addMember(el, declaredType));
   }
 
@@ -185,7 +186,6 @@ final class SimpleNameProposalCollector {
           .filter(el -> el.getKind() == ElementKind.METHOD || el.getKind() == ElementKind.FIELD)
           .filter(el -> wildcard || memberName.equals(el.getSimpleName().toString()))
           .filter(el -> el.getSimpleName().toString().startsWith(context.prefix()))
-          .filter(el -> seen.add(el.getSimpleName().toString()))
           .forEach(el -> addMember(el, declaredType));
     }
   }
