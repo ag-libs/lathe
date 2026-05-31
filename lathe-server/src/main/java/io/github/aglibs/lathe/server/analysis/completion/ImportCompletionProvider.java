@@ -30,7 +30,7 @@ final class ImportCompletionProvider {
         .collect(
             Collectors.toMap(
                 el -> el.getSimpleName().toString(),
-                el -> CompletionItemFactory.typeElementCandidate((TypeElement) el),
+                el -> CandidateFactory.typeElementCandidate((TypeElement) el),
                 (a, b) -> a,
                 LinkedHashMap::new))
         .values()
@@ -68,10 +68,7 @@ final class ImportCompletionProvider {
   }
 
   private static CompletionCandidate packageCandidate(final String name) {
-    return importCandidate(name, CandidateKind.PACKAGE);
-  }
-
-  private static CompletionCandidate importCandidate(final String name, final CandidateKind kind) {
-    return new CompletionCandidate(name, name, kind, null, name, false, null, null, null, null);
+    return new CompletionCandidate(
+        name, name, CandidateKind.PACKAGE, null, name, false, null, null, null, null);
   }
 }

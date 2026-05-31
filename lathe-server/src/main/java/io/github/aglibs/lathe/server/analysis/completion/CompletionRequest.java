@@ -37,15 +37,6 @@ public record CompletionRequest(
     return cached != null && content.equals(cached.content());
   }
 
-  String prefix() {
-    int end = cursorOffset();
-    int start = end;
-    while (start > 0 && Character.isJavaIdentifierPart(content.charAt(start - 1))) {
-      start--;
-    }
-    return content.substring(start, end);
-  }
-
   char charAfterCursor() {
     final int offset = cursorOffset();
     return offset < content.length() ? content.charAt(offset) : '\0';

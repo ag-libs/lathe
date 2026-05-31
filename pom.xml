@@ -26,7 +26,7 @@
     <google-java-format.version>1.35.0</google-java-format.version>
     <compiler.version>3.13.0</compiler.version>
     <surefire.version>3.5.5</surefire.version>
-    <jacoco.version>0.8.12</jacoco.version>
+    <jacoco.version>0.8.13</jacoco.version>
     <!-- default empty so @{argLine} resolves when JaCoCo agent is not active -->
     <argLine></argLine>
     <lsp4j.version>1.0.0</lsp4j.version>

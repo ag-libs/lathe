@@ -21,18 +21,18 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
 
-final class SimpleNameProposalCollector {
+final class SimpleNameProvider {
 
   private final AttributedFileAnalysis snapshot;
-  private final CompletionItemFactory itemFactory;
-  private final SimpleNameProposalContext context;
+  private final CandidateFactory itemFactory;
+  private final SimpleNameContext context;
   private final Set<String> seen = new LinkedHashSet<>();
   private final List<CompletionCandidate> items = new ArrayList<>();
 
-  SimpleNameProposalCollector(
+  SimpleNameProvider(
       final AttributedFileAnalysis snapshot,
-      final CompletionItemFactory itemFactory,
-      final SimpleNameProposalContext context) {
+      final CandidateFactory itemFactory,
+      final SimpleNameContext context) {
     this.snapshot = snapshot;
     this.itemFactory = itemFactory;
     this.context = context;

@@ -15,21 +15,21 @@ import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Types;
 
-final class ProposalGenerator {
+final class CandidateGenerator {
 
-  private static final Logger LOG = Logger.getLogger(ProposalGenerator.class.getName());
+  private static final Logger LOG = Logger.getLogger(CandidateGenerator.class.getName());
 
   private static final List<String> OBJECT_METHOD_NAMES =
       Arrays.stream(Object.class.getDeclaredMethods()).map(Method::getName).distinct().toList();
 
   private final AttributedFileAnalysis snapshot;
   private final Types types;
-  private final CompletionItemFactory itemFactory;
+  private final CandidateFactory itemFactory;
 
-  ProposalGenerator(final AttributedFileAnalysis snapshot) {
+  CandidateGenerator(final AttributedFileAnalysis snapshot) {
     this.snapshot = snapshot;
     this.types = snapshot.types();
-    this.itemFactory = new CompletionItemFactory(types);
+    this.itemFactory = new CandidateFactory(types);
   }
 
   List<CompletionCandidate> proposeMemberAccessCandidates(
@@ -72,7 +72,7 @@ final class ProposalGenerator {
                     || el.getKind() == ElementKind.ENUM
                     || el.getKind() == ElementKind.RECORD)
         .filter(el -> el.getSimpleName().toString().startsWith(prefix))
-        .map(el -> CompletionItemFactory.typeElementCandidate((TypeElement) el))
+        .map(el -> CandidateFactory.typeElementCandidate((TypeElement) el))
         .toList();
   }
 
@@ -83,9 +83,9 @@ final class ProposalGenerator {
       final int cursorOffset,
       final SemanticCompletionContext semanticContext) {
     final var context =
-        new SimpleNameProposalContext(
+        new SimpleNameContext(
             enclosingClass, enclosingMethod, prefix, cursorOffset, semanticContext);
-    return new SimpleNameProposalCollector(snapshot, itemFactory, context).collect();
+    return new SimpleNameProvider(snapshot, itemFactory, context).collect();
   }
 
   private static String sortKey(final Element el) {

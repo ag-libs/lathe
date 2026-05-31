@@ -198,7 +198,7 @@ public final class CompletionEngine {
       return List.of();
     }
 
-    return new ProposalGenerator(semanticContext.analysis())
+    return new CandidateGenerator(semanticContext.analysis())
         .proposeSimpleNameCandidates(
             parsed.enclosingClass(),
             parsed.enclosingMethod(),
@@ -295,7 +295,7 @@ public final class CompletionEngine {
                     || el.getKind() == ElementKind.ANNOTATION_TYPE)
         .filter(el -> !el.getModifiers().contains(Modifier.PRIVATE))
         .filter(el -> el.getSimpleName().toString().startsWith(prefix))
-        .map(el -> CompletionItemFactory.typeElementCandidate((TypeElement) el))
+        .map(el -> CandidateFactory.typeElementCandidate((TypeElement) el))
         .toList();
   }
 
@@ -312,7 +312,7 @@ public final class CompletionEngine {
 
     final var analysis = req.cached().analysis();
     final var candidates =
-        new ProposalGenerator(analysis).proposeNestedTypes(outer, injected.prefix());
+        new CandidateGenerator(analysis).proposeNestedTypes(outer, injected.prefix());
     final List<CompletionItem> items =
         CompletionCandidateRanker.rank(candidates, memberAccessSemanticContext(analysis)).stream()
             .map(CompletionItemPresenter::present)
@@ -339,7 +339,7 @@ public final class CompletionEngine {
             .sorted(typeCandidateComparator(injected.prefix()))
             .filter(validator::isResolvable)
             .limit(TYPE_INDEX_RESULT_LIMIT)
-            .map(CompletionItemFactory::typeIndexCandidate)
+            .map(CandidateFactory::typeIndexCandidate)
             .toList();
     final List<CompletionItem> items =
         typeCandidates.stream().map(CompletionItemPresenter::present).toList();
@@ -424,7 +424,7 @@ public final class CompletionEngine {
         parsed.sentinelContext() == SentinelContext.STATIC_IMPORT || resolved.staticAccess();
     final var scope = TypeResolver.resolveScope(snapshot, req.cursorOffset());
     final var candidates =
-        new ProposalGenerator(snapshot)
+        new CandidateGenerator(snapshot)
             .proposeMemberAccessCandidates(
                 resolved.type(), injected.prefix(), isStaticAccess, scope);
     final List<CompletionItem> items =
@@ -470,7 +470,7 @@ public final class CompletionEngine {
       }
 
       final var candidates =
-          new ProposalGenerator(snapshot)
+          new CandidateGenerator(snapshot)
               .proposeMemberAccessCandidates(typeEl.asType(), injected.prefix(), true, scope);
       final List<CompletionItem> items =
           CompletionCandidateRanker.rank(candidates, memberAccessSemanticContext(snapshot)).stream()
@@ -558,7 +558,7 @@ public final class CompletionEngine {
       final String typeQualifiedName,
       final SemanticCompletionContext context) {
     final var base =
-        new CompletionItemFactory(context.analysis().types())
+        new CandidateFactory(context.analysis().types())
             .memberCandidate(member, (DeclaredType) declaringType.asType());
     final var typeName = declaringType.getSimpleName().toString();
     final var qualifiedMember = typeQualifiedName + "." + member.getSimpleName();

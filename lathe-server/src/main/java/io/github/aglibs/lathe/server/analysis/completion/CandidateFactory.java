@@ -16,13 +16,13 @@ import javax.lang.model.type.ExecutableType;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Types;
 
-final class CompletionItemFactory {
+final class CandidateFactory {
 
-  private static final Logger LOG = Logger.getLogger(CompletionItemFactory.class.getName());
+  private static final Logger LOG = Logger.getLogger(CandidateFactory.class.getName());
 
   private final Types types;
 
-  CompletionItemFactory(final Types types) {
+  CandidateFactory(final Types types) {
     this.types = types;
   }
 
