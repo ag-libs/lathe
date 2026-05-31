@@ -2,32 +2,11 @@ package io.github.aglibs.lathe.server.analysis.completion;
 
 import org.assertj.core.api.AbstractAssert;
 import org.eclipse.lsp4j.CompletionItem;
-import org.eclipse.lsp4j.CompletionItemKind;
 
 final class CompletionItemAssert extends AbstractAssert<CompletionItemAssert, CompletionItem> {
 
   CompletionItemAssert(final CompletionItem item) {
     super(item, CompletionItemAssert.class);
-  }
-
-  CompletionItemAssert hasKind(final CompletionItemKind kind) {
-    isNotNull();
-    if (actual.getKind() != kind) {
-      failWithMessage(
-          "Expected item <%s> to have kind <%s> but was <%s>",
-          actual.getLabel(), kind, actual.getKind());
-    }
-    return this;
-  }
-
-  CompletionItemAssert hasFilterText(final String filterText) {
-    isNotNull();
-    if (!filterText.equals(actual.getFilterText())) {
-      failWithMessage(
-          "Expected item <%s> to have filterText <%s> but was <%s>",
-          actual.getLabel(), filterText, actual.getFilterText());
-    }
-    return this;
   }
 
   CompletionItemAssert hasImportEdit(final String qualifiedName) {

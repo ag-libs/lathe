@@ -32,28 +32,6 @@ final class CompletionResultAssert
     return this;
   }
 
-  CompletionResultAssert ordersBefore(final String first, final String second) {
-    isNotNull();
-    final var ls = labels();
-    final int i = ls.indexOf(first);
-    final int j = ls.indexOf(second);
-    if (i < 0) {
-      failWithMessage(
-          "Expected <%s> in results for ordersBefore check but not found. Labels: <%s>", first, ls);
-    }
-    if (j < 0) {
-      failWithMessage(
-          "Expected <%s> in results for ordersBefore check but not found. Labels: <%s>",
-          second, ls);
-    }
-    if (i >= j) {
-      failWithMessage(
-          "Expected <%s> (index %d) to appear before <%s> (index %d). Labels: <%s>",
-          first, i, second, j, ls);
-    }
-    return this;
-  }
-
   CompletionItemAssert item(final String label) {
     isNotNull();
     return actual.stream()

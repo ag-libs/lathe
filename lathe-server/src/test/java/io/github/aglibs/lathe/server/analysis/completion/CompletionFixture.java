@@ -10,7 +10,6 @@ import io.github.aglibs.lathe.server.TestCompiler;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.CachedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
-import io.github.aglibs.lathe.server.analysis.CompilerResult;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
 import io.github.aglibs.lathe.server.analysis.TempSourceCompiler;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
@@ -26,7 +25,6 @@ final class CompletionFixture implements AutoCloseable {
   private static final String TEST_URI = "file:///Test.java";
 
   private final SourceParser sourceParser;
-  private final SentinelParser sentinelParser;
   private final TempSourceCompiler compiler;
   private final CompletionEngine engine;
   private final Path tmpDir;
@@ -41,7 +39,6 @@ final class CompletionFixture implements AutoCloseable {
 
   CompletionFixture(final WorkspaceTypeIndex typeIndex, final Path tmpDir) {
     this.sourceParser = new SourceParser();
-    this.sentinelParser = new SentinelParser(sourceParser);
     this.compiler = new TempSourceCompiler();
     this.engine = new CompletionEngine(sourceParser, compiler, typeIndex);
     this.tmpDir = tmpDir;
@@ -53,15 +50,13 @@ final class CompletionFixture implements AutoCloseable {
 
   CompletionOutcome outcome(final String markedSource) {
     final var cursor = CursorFixture.cursor(markedSource);
-    final CompilerResult compiled = compile(cursor.content());
-    final var cached = new CachedFileAnalysis(cursor.content(), 0, compiled.fileAnalysis());
+    final var cached = new CachedFileAnalysis(cursor.content(), 0, compile(cursor.content()));
     return engine.complete(request(cursor, cached));
   }
 
   List<CompletionItem> completeWithCache(final String cachedSource, final String markedSource) {
     final var cursor = CursorFixture.cursor(markedSource);
-    final CompilerResult cachedCompiled = compile(cachedSource);
-    final var cached = new CachedFileAnalysis(cachedSource, 0, cachedCompiled.fileAnalysis());
+    final var cached = new CachedFileAnalysis(cachedSource, 0, compile(cachedSource));
     return engine.complete(request(cursor, cached)).items();
   }
 
@@ -71,21 +66,6 @@ final class CompletionFixture implements AutoCloseable {
     final var cached =
         new CachedFileAnalysis(cursor.content(), 0, jpmsAnalysis(cursor.content(), moduleInfo));
     return engine.complete(request(cursor, cached)).items();
-  }
-
-  SemanticCompletionContext semanticContext(final String markedSource) {
-    final var cursor = CursorFixture.cursor(markedSource);
-    final CompilerResult compiled = compile(cursor.content());
-    return SemanticCompletionContext.from(
-        site(cursor), request(cursor, null), compiled.fileAnalysis());
-  }
-
-  AttributedFileAnalysis analysis(final String source) {
-    return compile(source).fileAnalysis();
-  }
-
-  CompletionSite site(final String markedSource) {
-    return site(CursorFixture.cursor(markedSource));
   }
 
   static WorkspaceTypeIndex typeIndex(final Path shardPath, final TypeIndexEntry... entries)
@@ -107,14 +87,8 @@ final class CompletionFixture implements AutoCloseable {
     return new TypeIndexEntry(simpleName, qualifiedName, packageName, kind);
   }
 
-  private CompletionSite site(final CursorFixture.Cursor cursor) {
-    final SentinelResult injected = new SentinelInjector(cursor.content()).inject(cursor.offset());
-    final ParsedSentinel parsed = sentinelParser.parse(injected, cursor.lspLine(), 0);
-    return CompletionSite.from(request(cursor, null), injected, parsed);
-  }
-
-  private CompilerResult compile(final String source) {
-    return compiler.compile(TEST_URI, source, CompileMode.FULL);
+  private AttributedFileAnalysis compile(final String source) {
+    return compiler.compile(TEST_URI, source, CompileMode.FULL).fileAnalysis();
   }
 
   private AttributedFileAnalysis jpmsAnalysis(final String source, final String moduleInfo)

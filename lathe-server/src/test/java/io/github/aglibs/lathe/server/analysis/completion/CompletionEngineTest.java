@@ -1403,7 +1403,7 @@ class CompletionEngineTest {
                 }"""),
             "ArrayList");
     assertThat(item).isPresent();
-    final var edit = item.get().getAdditionalTextEdits().get(0);
+    final var edit = item.get().getAdditionalTextEdits().getFirst();
     assertThat(edit.getNewText()).isEqualTo("import java.util.ArrayList;\n");
     assertThat(edit.getRange()).isEqualTo(new Range(new Position(3, 0), new Position(3, 0)));
   }
