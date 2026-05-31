@@ -77,7 +77,8 @@ final class KeywordProvider {
 
   private static List<String> selectKeywords(
       final ParsedSentinel parsed, final SentinelInjector.Context injectorContext) {
-    final boolean inExpression = injectorContext == SentinelInjector.Context.EXPRESSION;
+    final boolean inExpression =
+        injectorContext == SentinelInjector.Context.EXPRESSION || parsed.inExpression();
     return switch (parsed.sentinelContext()) {
       case SIMPLE_NAME ->
           // When the injector determined that the cursor is inside a parenthesised expression

@@ -18,8 +18,43 @@ final class ImportCompletionProvider {
   }
 
   List<CompletionCandidate> proposeCandidates(final String packageName, final String prefix) {
+    if (packageName == null) {
+      return topLevelCandidates(prefix);
+    }
+
     return Stream.concat(typeStream(packageName, prefix), subPackageStream(packageName, prefix))
         .toList();
+  }
+
+  private List<CompletionCandidate> topLevelCandidates(final String prefix) {
+    final var packages =
+        snapshot.elements().getAllModuleElements().stream()
+            .flatMap(m -> m.getEnclosedElements().stream())
+            .filter(el -> el.getKind() == ElementKind.PACKAGE)
+            .map(el -> ((PackageElement) el).getQualifiedName().toString())
+            .filter(name -> !name.isEmpty())
+            .map(ImportCompletionProvider::firstSegment)
+            .filter(seg -> seg.startsWith(prefix))
+            .distinct()
+            .map(ImportCompletionProvider::packageCandidate);
+
+    final Stream<CompletionCandidate> staticKeyword =
+        "static".startsWith(prefix)
+            ? Stream.of(
+                new CompletionCandidate(
+                    "static",
+                    "static",
+                    CandidateKind.KEYWORD,
+                    null,
+                    "static",
+                    false,
+                    null,
+                    null,
+                    null,
+                    null))
+            : Stream.empty();
+
+    return Stream.concat(staticKeyword, packages).toList();
   }
 
   private Stream<CompletionCandidate> typeStream(final String packageName, final String prefix) {
@@ -65,6 +100,11 @@ final class ImportCompletionProvider {
         || kind == ElementKind.ENUM
         || kind == ElementKind.RECORD
         || kind == ElementKind.ANNOTATION_TYPE;
+  }
+
+  private static String firstSegment(final String qualifiedName) {
+    final int dot = qualifiedName.indexOf('.');
+    return dot < 0 ? qualifiedName : qualifiedName.substring(0, dot);
   }
 
   private static CompletionCandidate packageCandidate(final String name) {

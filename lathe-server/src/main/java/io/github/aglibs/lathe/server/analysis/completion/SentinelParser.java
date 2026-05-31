@@ -111,6 +111,7 @@ final class SentinelParser {
             cls.enclosingMethodName(),
             cls.lambdaParamIndex(),
             cls.declaredTypeText(),
+            cls.inExpression(),
             version);
 
     logValid(parsed);
@@ -140,10 +141,15 @@ final class SentinelParser {
       String enclosingReceiver,
       String enclosingMethodName,
       int lambdaParamIndex,
-      String declaredTypeText) {
+      String declaredTypeText,
+      boolean inExpression) {
 
     static Classification of(final SentinelContext ctx) {
-      return new Classification(ctx, -1, null, null, -1, null);
+      return new Classification(ctx, -1, null, null, -1, null, false);
+    }
+
+    static Classification expression() {
+      return new Classification(SentinelContext.SIMPLE_NAME, -1, null, null, -1, null, true);
     }
   }
 
@@ -153,6 +159,15 @@ final class SentinelParser {
     }
 
     return switch (parent) {
+      case ReturnTree r
+          when r.getExpression() == sentinel && !(sentinel instanceof MemberSelectTree) ->
+          Classification.expression();
+      case ThrowTree t
+          when t.getExpression() == sentinel && !(sentinel instanceof MemberSelectTree) ->
+          Classification.expression();
+      case VariableTree v
+          when v.getInitializer() == sentinel && !(sentinel instanceof MemberSelectTree) ->
+          Classification.expression();
       case MethodInvocationTree m
           when !(sentinel instanceof MemberSelectTree)
               && m.getArguments().stream().anyMatch(a -> a == sentinel) ->
@@ -184,7 +199,8 @@ final class SentinelParser {
         null,
         null,
         -1,
-        type != null ? type.toString() : null);
+        type != null ? type.toString() : null,
+        false);
   }
 
   private static Classification classifyMethodInvocation(
@@ -208,13 +224,14 @@ final class SentinelParser {
         enclosingReceiver,
         enclosingMethodName,
         -1,
-        null);
+        null,
+        false);
   }
 
   private static Classification classifyLambda(
       final Tree sentinel, final LambdaExpressionTree lambda) {
     if (!(sentinel instanceof final MemberSelectTree sel)) {
-      return new Classification(SentinelContext.LAMBDA_BODY, -1, null, null, -1, null);
+      return new Classification(SentinelContext.LAMBDA_BODY, -1, null, null, -1, null, false);
     }
 
     final var params = lambda.getParameters();
@@ -224,7 +241,8 @@ final class SentinelParser {
             .filter(j -> params.get(j).getName().toString().equals(receiver))
             .findFirst()
             .orElse(-1);
-    return new Classification(SentinelContext.LAMBDA_BODY, -1, null, null, lambdaParamIndex, null);
+    return new Classification(
+        SentinelContext.LAMBDA_BODY, -1, null, null, lambdaParamIndex, null, false);
   }
 
   private static Classification classifyConstructorCall(
@@ -232,7 +250,8 @@ final class SentinelParser {
     final var args = newClass.getArguments();
     final int argIndex =
         IntStream.range(0, args.size()).filter(j -> args.get(j) == sentinel).findFirst().orElse(-1);
-    return new Classification(SentinelContext.CONSTRUCTOR_CALL, argIndex, null, null, -1, null);
+    return new Classification(
+        SentinelContext.CONSTRUCTOR_CALL, argIndex, null, null, -1, null, false);
   }
 
   private static Classification classifyDefault(final Tree sentinel) {

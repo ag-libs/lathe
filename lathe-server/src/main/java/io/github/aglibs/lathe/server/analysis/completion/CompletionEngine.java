@@ -97,10 +97,6 @@ public final class CompletionEngine {
 
   private CompletionOutcome completeImport(
       final ParsedSentinel parsed, final SentinelResult injected, final CompletionRequest req) {
-    if (parsed.receiverText() == null) {
-      return CompletionOutcome.of(List.of());
-    }
-
     final var analysis =
         req.cached() != null
             ? req.cached().analysis()
@@ -119,6 +115,7 @@ public final class CompletionEngine {
     if (!hasSemicolon) {
       items.stream()
           .filter(i -> i.getKind() != CompletionItemKind.Module)
+          .filter(i -> i.getKind() != CompletionItemKind.Keyword)
           .forEach(i -> i.setInsertText(i.getLabel() + ";"));
     }
 

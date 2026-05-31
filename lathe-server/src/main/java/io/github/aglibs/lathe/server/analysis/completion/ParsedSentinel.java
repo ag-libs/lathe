@@ -15,6 +15,7 @@ record ParsedSentinel(
     String enclosingMethodName,
     int lambdaParamIndex,
     String declaredTypeText,
+    boolean inExpression,
     int docVersion) {
 
   ParsedSentinel {
@@ -34,7 +35,20 @@ record ParsedSentinel(
   static ParsedSentinel invalid(
       final String prefix, final String receiverText, final int docVersion) {
     return new ParsedSentinel(
-        false, prefix, receiverText, -1, null, null, null, -1, null, null, -1, null, docVersion);
+        false,
+        prefix,
+        receiverText,
+        -1,
+        null,
+        null,
+        null,
+        -1,
+        null,
+        null,
+        -1,
+        null,
+        false,
+        docVersion);
   }
 
   static ParsedSentinel valid(
@@ -43,7 +57,18 @@ record ParsedSentinel(
       final int receiverEndOffset,
       final int docVersion) {
     return valid(
-        injected, context, receiverEndOffset, null, null, -1, null, null, -1, null, docVersion);
+        injected,
+        context,
+        receiverEndOffset,
+        null,
+        null,
+        -1,
+        null,
+        null,
+        -1,
+        null,
+        false,
+        docVersion);
   }
 
   static ParsedSentinel valid(
@@ -57,6 +82,7 @@ record ParsedSentinel(
       final String enclosingMethodName,
       final int lambdaParamIndex,
       final String declaredTypeText,
+      final boolean inExpression,
       final int docVersion) {
     return new ParsedSentinel(
         true,
@@ -71,6 +97,7 @@ record ParsedSentinel(
         enclosingMethodName,
         lambdaParamIndex,
         declaredTypeText,
+        inExpression,
         docVersion);
   }
 }
