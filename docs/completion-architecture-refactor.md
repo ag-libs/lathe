@@ -776,9 +776,31 @@ Completed so far:
 - `additionalTextEdits` for type imports lives in `CompletionItemPresenter.applyImportEdits`.
   Already-imported types are detected from the live AST and skipped.
 
-No known temporary compromises remain for the completed slices.
+- Slice 7: Direct static member fit is implemented in `CompletionEngine.staticMemberFitCandidates`.
+  When the cursor is in a simple-name context with an expected type and an uppercase prefix, the engine
+  scans indexed types, resolves their static members, filters by assignability to the expected type,
+  and ranks them through `CompletionCandidateRanker`.
+  Static-fit candidates carry an `ImportEdit` and receive a static-import `additionalTextEdit` via the
+  presenter when the member is not already statically imported.
+- Slice 8: Required import edits are complete.
+  `CompletionItemPresenter.applyImportEdits` applies both regular and static import edits for
+  type-index and static-member-fit candidates.
+  Already-imported and already-statically-imported symbols are skipped.
 
-Next: Slice 7 — direct static member fit.
+No known temporary compromises remain.
+
+The refactor meets all completion criteria.
+Providers return `CompletionCandidate`; ranking is centralised in `CompletionCandidateRanker`;
+LSP construction is centralised in `CompletionItemPresenter`;
+expected-value context uses a sealed type with no nullable ambiguity;
+auto-import edits are in the initial `textDocument/completion` response.
+
+The remaining items from the target data model — `CompletionBreadth`, `MatchQuality` on
+`RankedCompletionCandidate`, `SymbolVisibility`, and explicit `CompletionCandidateProvider` interface
+— are not required for the current behavioral goals.
+They are reserved for a future phase when broader or multi-stage completion is introduced.
+
+Next work: close the open behavioral gaps in `docs/completion-gaps.md`.
 
 ### Slice 1 — Introduce `CompletionSite`
 
