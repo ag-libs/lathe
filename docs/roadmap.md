@@ -41,7 +41,7 @@ Architecture is documented in [lathe-server-data-flow-recipe.md](lathe-server-da
   constructor call, lambda body, and variable declaration contexts.
   Type index is built from JDK and dependency JARs during sync, filtered by package visibility.
   Keyword completion and argument-position type ranking are in place.
-  See [completion_engine_implementation_guide.md](completion_engine_implementation_guide.md).
+  See [completion-design.md](completion-design.md).
 - **Maven-managed server distribution** — `lathe:sync` resolves `lathe-server` and all transitive runtime deps via Aether,
   renders `lathe-launcher.sh` with colon-separated `--module-path` pointing at `.m2` JAR paths,
   writes it to `~/.cache/lathe/servers/<version>/`,
@@ -57,25 +57,19 @@ Architecture is documented in [lathe-server-data-flow-recipe.md](lathe-server-da
 
 ## Near-Term
 
-**Completion presentation (UX)**
+**Completion behavioural gaps**
 
-Design: [lathe-completion-presentation.md](lathe-completion-presentation.md)
-Current state and gap analysis: [completion-ux-findings.md](completion-ux-findings.md)
-Specific gaps from probe runs: [completion-gaps.md](completion-gaps.md)
+Design: [completion-design.md](completion-design.md)
+Open gaps: [completion-gaps.md](completion-gaps.md)
 
-The completion engine is functional. The next work is making item presentation IDE-grade.
-Gaps in priority order:
+The completion engine and presentation layer are complete.
+The next work is closing the remaining behavioural gaps in priority order:
 
-1. **`textEdit` with explicit prefix range** — highest impact; prevents prefix duplication on commit.
-   Range must cover `tokenStart..cursor`; use `InsertReplaceEdit` when completing inside an existing token.
-2. **`filterText` on all items** — method labels include signatures (`subList(int, int)`);
-   without `filterText = "subList"` some clients filter against the full label.
-3. **Object utility methods ranked below domain members** — `toString`, `equals`, `hashCode`, `getClass`
-   should sort to `7_` not `0_`; currently they appear at the top of every member-access list.
-4. **Import auto-insertion via `additionalTextEdits`** — type-index completions that introduce
-   an unimported type must add the import statement on commit.
-5. **Snippet insertion for method params** — `insertTextFormat: 2` with `${1:param}` tab stops,
-   conditional on client `snippetSupport`.
+1. **Gap K** — Keywords not filtered by syntactic context (`return §` and `String s = §` wrongly offer statement keywords).
+2. **Gap H** — No subpackage navigation when typing a fully-qualified name in code (`java.` returns nothing).
+3. **Gap L** — Context-sensitive statement keywords (`else`, `catch`/`finally`, `break`, `continue`, `yield`).
+4. **Gap M** — Keyword ranking by semantic fit (`true`/`false` when boolean expected, `null` at `==`/`!=`).
+5. **Gap J** — No completions after `::` (method references).
 
 ## Future Work
 

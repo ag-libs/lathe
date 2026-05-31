@@ -751,7 +751,7 @@ it is flushed after full passes and closed on workspace reload and server shutdo
 
 ### Member access completion
 
-> Full design: [completion_engine_implementation_guide.md](completion_engine_implementation_guide.md)
+> Full design: [completion-design.md](completion-design.md)
 
 Completion uses three layers kept strictly separate:
 
