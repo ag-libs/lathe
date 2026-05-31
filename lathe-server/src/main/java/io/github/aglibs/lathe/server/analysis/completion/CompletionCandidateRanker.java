@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
+import java.util.Comparator;
 import java.util.List;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
@@ -10,11 +11,18 @@ final class CompletionCandidateRanker {
 
   static List<RankedCompletionCandidate> rank(
       final List<CompletionCandidate> candidates, final SemanticCompletionContext context) {
+    if (context.expectedValue() instanceof ExpectedValue.NoSlot) {
+      return List.of();
+    }
+
     return candidates.stream()
         .filter(candidate -> valid(candidate, context))
         .map(
             candidate ->
                 new RankedCompletionCandidate(candidate, sortText(candidate, context), false))
+        .sorted(
+            Comparator.comparing(
+                RankedCompletionCandidate::sortText, Comparator.nullsFirst(String::compareTo)))
         .toList();
   }
 

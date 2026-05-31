@@ -1,0 +1,148 @@
+package io.github.aglibs.lathe.server.analysis.completion;
+
+import io.github.aglibs.lathe.core.Json;
+import io.github.aglibs.lathe.core.typeindex.DependencyTypeIndexOrigin;
+import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
+import io.github.aglibs.lathe.core.typeindex.TypeIndexFile;
+import io.github.aglibs.lathe.core.typeindex.TypeIndexOrigin;
+import io.github.aglibs.lathe.core.typeindex.TypeKind;
+import io.github.aglibs.lathe.server.TestCompiler;
+import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.server.analysis.CachedFileAnalysis;
+import io.github.aglibs.lathe.server.analysis.CompileMode;
+import io.github.aglibs.lathe.server.analysis.CompilerResult;
+import io.github.aglibs.lathe.server.analysis.SourceParser;
+import io.github.aglibs.lathe.server.analysis.TempSourceCompiler;
+import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import org.eclipse.lsp4j.CompletionItem;
+import org.eclipse.lsp4j.Position;
+
+final class CompletionFixture implements AutoCloseable {
+
+  private static final String TEST_URI = "file:///Test.java";
+
+  private final SourceParser sourceParser;
+  private final SentinelParser sentinelParser;
+  private final TempSourceCompiler compiler;
+  private final CompletionEngine engine;
+  private final Path tmpDir;
+
+  CompletionFixture() {
+    this(WorkspaceTypeIndex.empty(), null);
+  }
+
+  CompletionFixture(final WorkspaceTypeIndex typeIndex) {
+    this(typeIndex, null);
+  }
+
+  CompletionFixture(final WorkspaceTypeIndex typeIndex, final Path tmpDir) {
+    this.sourceParser = new SourceParser();
+    this.sentinelParser = new SentinelParser(sourceParser);
+    this.compiler = new TempSourceCompiler();
+    this.engine = new CompletionEngine(sourceParser, compiler, typeIndex);
+    this.tmpDir = tmpDir;
+  }
+
+  List<CompletionItem> complete(final String markedSource) {
+    return outcome(markedSource).items();
+  }
+
+  CompletionOutcome outcome(final String markedSource) {
+    final var cursor = CursorFixture.cursor(markedSource);
+    final CompilerResult compiled = compile(cursor.content());
+    final var cached = new CachedFileAnalysis(cursor.content(), 0, compiled.fileAnalysis());
+    return engine.complete(request(cursor, cached));
+  }
+
+  List<CompletionItem> completeWithCache(final String cachedSource, final String markedSource) {
+    final var cursor = CursorFixture.cursor(markedSource);
+    final CompilerResult cachedCompiled = compile(cachedSource);
+    final var cached = new CachedFileAnalysis(cachedSource, 0, cachedCompiled.fileAnalysis());
+    return engine.complete(request(cursor, cached)).items();
+  }
+
+  List<CompletionItem> completeWithJpms(final String markedSource, final String moduleInfo)
+      throws IOException {
+    final var cursor = CursorFixture.cursor(markedSource);
+    final var cached =
+        new CachedFileAnalysis(cursor.content(), 0, jpmsAnalysis(cursor.content(), moduleInfo));
+    return engine.complete(request(cursor, cached)).items();
+  }
+
+  SemanticCompletionContext semanticContext(final String markedSource) {
+    final var cursor = CursorFixture.cursor(markedSource);
+    final CompilerResult compiled = compile(cursor.content());
+    return SemanticCompletionContext.from(
+        site(cursor), request(cursor, null), compiled.fileAnalysis());
+  }
+
+  AttributedFileAnalysis analysis(final String source) {
+    return compile(source).fileAnalysis();
+  }
+
+  CompletionSite site(final String markedSource) {
+    return site(CursorFixture.cursor(markedSource));
+  }
+
+  static WorkspaceTypeIndex typeIndex(final Path shardPath, final TypeIndexEntry... entries)
+      throws IOException {
+    Json.write(
+        new TypeIndexFile(
+            "v1",
+            TypeIndexOrigin.dependency(
+                new DependencyTypeIndexOrigin("test:lib:1.0", "/lib.jar", 0L, 0L)),
+            List.of(entries)),
+        shardPath);
+    return WorkspaceTypeIndex.build(List.of(shardPath));
+  }
+
+  static TypeIndexEntry typeEntry(
+      final String simpleName, final String qualifiedName, final TypeKind kind) {
+    final int packageEnd = qualifiedName.lastIndexOf('.');
+    final String packageName = packageEnd >= 0 ? qualifiedName.substring(0, packageEnd) : "";
+    return new TypeIndexEntry(simpleName, qualifiedName, packageName, kind);
+  }
+
+  private CompletionSite site(final CursorFixture.Cursor cursor) {
+    final SentinelResult injected = new SentinelInjector(cursor.content()).inject(cursor.offset());
+    final ParsedSentinel parsed = sentinelParser.parse(injected, cursor.lspLine(), 0);
+    return CompletionSite.from(request(cursor, null), injected, parsed);
+  }
+
+  private CompilerResult compile(final String source) {
+    return compiler.compile(TEST_URI, source, CompileMode.FULL);
+  }
+
+  private AttributedFileAnalysis jpmsAnalysis(final String source, final String moduleInfo)
+      throws IOException {
+    final Path moduleDir = tmpDir.resolve("jpms");
+    final Path moduleInfoFile = moduleDir.resolve("module-info.java");
+    final Path sourceFile = moduleDir.resolve("com/example/app/Test.java");
+    Files.createDirectories(sourceFile.getParent());
+    Files.writeString(moduleInfoFile, moduleInfo);
+    Files.writeString(sourceFile, source);
+    final var parsed = TestCompiler.parse(sourceFile, List.of("-proc:none"), moduleInfoFile);
+    return new AttributedFileAnalysis(
+        parsed.trees(),
+        parsed.task().getElements(),
+        parsed.task().getTypes(),
+        parsed.cu(),
+        List.of());
+  }
+
+  private static CompletionRequest request(
+      final CursorFixture.Cursor cursor, final CachedFileAnalysis cached) {
+    return new CompletionRequest(
+        TEST_URI, cursor.content(), new Position(cursor.lspLine(), cursor.lspChar()), null, cached);
+  }
+
+  @Override
+  public void close() {
+    compiler.close();
+    sourceParser.close();
+  }
+}

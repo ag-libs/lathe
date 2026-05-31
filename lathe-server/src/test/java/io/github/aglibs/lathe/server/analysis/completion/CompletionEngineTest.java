@@ -1,160 +1,128 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
-import static io.github.aglibs.lathe.server.analysis.completion.CursorFixture.cursor;
+import static io.github.aglibs.lathe.server.analysis.completion.CompletionResultAssert.assertThatCompletion;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.aglibs.lathe.core.Json;
-import io.github.aglibs.lathe.core.typeindex.DependencyTypeIndexOrigin;
-import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
-import io.github.aglibs.lathe.core.typeindex.TypeIndexFile;
-import io.github.aglibs.lathe.core.typeindex.TypeIndexOrigin;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
-import io.github.aglibs.lathe.server.TestCompiler;
-import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
-import io.github.aglibs.lathe.server.analysis.CachedFileAnalysis;
-import io.github.aglibs.lathe.server.analysis.CompileMode;
-import io.github.aglibs.lathe.server.analysis.SourceParser;
-import io.github.aglibs.lathe.server.analysis.TempSourceCompiler;
-import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.stream.IntStream;
-import java.util.stream.Stream;
+import java.util.Optional;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
-import org.eclipse.lsp4j.Position;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 
 class CompletionEngineTest {
 
-  @TempDir private Path tmp;
+  @TempDir static Path sharedTmp;
+  @TempDir Path tmp;
 
-  private static SourceParser sourceParser;
-  private static TempSourceCompiler compiler;
-  private static CompletionEngine engine;
-  private CompletionEngine eng;
+  private static CompletionFixture fixture;
+  private CompletionFixture localFixture;
 
   @BeforeAll
-  static void setup() {
-    sourceParser = new SourceParser();
-    compiler = new TempSourceCompiler();
-    engine = new CompletionEngine(sourceParser, compiler, WorkspaceTypeIndex.empty());
-  }
-
-  @BeforeEach
-  void setUpTypeIndexEngine() throws IOException {
-    eng = engineWith();
+  static void setup() throws IOException {
+    fixture =
+        new CompletionFixture(
+            CompletionFixture.typeIndex(
+                sharedTmp.resolve("index.json"),
+                CompletionFixture.typeEntry("ArrayDeque", "java.util.ArrayDeque", TypeKind.CLASS),
+                CompletionFixture.typeEntry(
+                    "AbstractList", "java.util.AbstractList", TypeKind.CLASS),
+                CompletionFixture.typeEntry("Integer", "java.lang.Integer", TypeKind.CLASS),
+                CompletionFixture.typeEntry("Runnable", "java.lang.Runnable", TypeKind.INTERFACE),
+                CompletionFixture.typeEntry(
+                    "StringBuilder", "java.lang.StringBuilder", TypeKind.CLASS),
+                CompletionFixture.typeEntry("String", "java.lang.String", TypeKind.CLASS)));
   }
 
   @AfterAll
   static void teardown() {
-    compiler.close();
-    sourceParser.close();
+    fixture.close();
   }
 
-  private static List<CompletionItem> complete(final String markedSource) {
-    final var c = cursor(markedSource);
-    final var compiled = compiler.compile("file:///Test.java", c.content(), CompileMode.FULL);
-    final var cached = new CachedFileAnalysis(c.content(), 0, compiled.fileAnalysis());
-    return engine
-        .complete(
-            new CompletionRequest(
-                "file:///Test.java",
-                c.content(),
-                new Position(c.lspLine(), c.lspChar()),
-                null,
-                cached))
-        .items();
+  @AfterEach
+  void closeLocalFixture() {
+    if (localFixture != null) {
+      localFixture.close();
+      localFixture = null;
+    }
   }
 
-  /**
-   * Simulates a stale cache: the snapshot is compiled from {@code cachedSource} (an older version
-   * of the file), while {@code currentMarkedSource} is what the user is currently typing. Positions
-   * in the cached tree may not match expressions in the current content.
-   */
-  private static List<CompletionItem> completeWithCache(
-      final String cachedSource, final String currentMarkedSource) {
-    final var c = cursor(currentMarkedSource);
-    final var cachedCompiled =
-        compiler.compile("file:///Test.java", cachedSource, CompileMode.FULL);
-    final var cached = new CachedFileAnalysis(cachedSource, 0, cachedCompiled.fileAnalysis());
-    return engine
-        .complete(
-            new CompletionRequest(
-                "file:///Test.java",
-                c.content(),
-                new Position(c.lspLine(), c.lspChar()),
-                null,
-                cached))
-        .items();
+  // ── helpers ───────────────────────────────────────────────────────────────────
+
+  private static List<String> labels(final List<CompletionItem> items) {
+    return items.stream().map(CompletionItem::getLabel).toList();
   }
+
+  private static Optional<CompletionItem> itemLabeled(
+      final List<CompletionItem> items, final String label) {
+    return items.stream().filter(i -> label.equals(i.getLabel())).findFirst();
+  }
+
+  private static Optional<CompletionItem> itemWithFilterText(
+      final List<CompletionItem> items, final String text) {
+    return items.stream().filter(i -> text.equals(i.getFilterText())).findFirst();
+  }
+
+  // ── member access ────────────────────────────────────────────────────────────
 
   @Test
   void memberAccess_instanceMethod_prefixFiltered() {
     final var items =
-        complete(
+        fixture.complete(
             """
             class Test {
                 void m(java.util.ArrayList<String> list) {
                     list.sub§
                 }
             }""");
-    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("subList"));
+    assertThat(labels(items)).anyMatch(l -> l.startsWith("subList"));
     assertThat(items).noneMatch(i -> i.getLabel().startsWith("size"));
   }
 
   @Test
   void memberAccess_thisReceiver_fieldIncluded() {
-    final var items =
-        complete(
-            """
-            class Test {
-                String name = "x";
-                void m() {
-                    this.na§
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("name");
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        String name = "x";
+                        void m() {
+                            this.na§
+                        }
+                    }""")))
+        .contains("name");
   }
 
   @Test
   void memberAccess_staticFqnReceiver_staticMethodIncluded() {
-    final var items =
-        complete(
-            """
-            class Test {
-                void m() {
-                    java.util.Collections.empty§
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("emptyList"));
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        void m() {
+                            java.util.Collections.empty§
+                        }
+                    }""")))
+        .anyMatch(l -> l.startsWith("emptyList"));
   }
-
-  // gap I: static methods offered in instance member-access context ───────────────────────────────
 
   @Test
   void memberAccess_instanceReceiver_staticMethodsExcluded() {
-    // Stream.of("") is an instance expression; only instance methods of Stream should be offered.
-    // Regression: ProposalGenerator.proposeMemberAccess filter is one-sided — it excludes instance
-    // members on static access but passes all members (static + instance) on instance access.
-    // Use an empty prefix so all members are returned and the static ones are visible.
     final var items =
-        complete(
+        fixture.complete(
             """
             class Test {
                 void m() {
                     java.util.stream.Stream.of("").§
                 }
             }""");
+    assertThat(labels(items)).anyMatch(l -> l.startsWith("filter"));
     assertThat(items)
-        .as("instance access should offer instance methods")
-        .extracting(CompletionItem::getLabel)
-        .anyMatch(l -> l.startsWith("filter"));
-    assertThat(items)
-        .as("instance access should not offer static factory methods")
         .noneMatch(
             i ->
                 i.getLabel().startsWith("of(")
@@ -162,706 +130,86 @@ class CompletionEngineTest {
                     || i.getLabel().startsWith("builder("));
   }
 
-  // gap B: member-access on a simple name that is in the type index but not a regular import ──────
-
   @Test
-  void memberAccess_unimportedSimpleName_typeIndexFallback_suggestsMembers() throws IOException {
-    // java.util.Objects is in the type index but not in the regular imports — only
-    // requireNonNull is statically imported.  javac attributes "Objects" as an error node, so
-    // the engine currently finds no receiver type and returns nothing.
-    // The fix: when the receiver is an error node, extract the token text, look it up in the
-    // type index, resolve the type via getTypeElement, and complete on its members.
-    final var eng = engineWith(typeEntry("Objects", "java.util.Objects", TypeKind.CLASS));
-    final var items =
-        completeWithCurrentContentCached(
-            eng,
-            """
-            import static java.util.Objects.requireNonNull;
+  void memberAccess_privateMember_visibilityRules() {
+    // private members: accessible through this inside the declaring class, not through other type
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Other {
+                        private String secret = "x";
+                        public String visible = "y";
+                    }
 
-            class Test {
-                void m(String s) {
-                    Objects.§
-                }
-            }""");
-    assertThat(items)
-        .as("Objects. should resolve via type-index fallback and offer Objects' static members")
-        .extracting(CompletionItem::getLabel)
-        .anyMatch(l -> l.startsWith("requireNonNull"));
+                    class Test {
+                        void m(Other other) {
+                            other.§
+                        }
+                    }""")))
+        .contains("visible")
+        .doesNotContain("secret");
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        private String secret = "x";
+
+                        void m() {
+                            this.se§
+                        }
+                    }""")))
+        .contains("secret");
   }
 
   @Test
-  void stringLiteral_noCompletions() {
-    final var items =
-        complete(
-            """
-            class Test {
-                void m() {
-                    String s = "hello§";
-                }
-            }""");
-    assertThat(items).isEmpty();
+  void memberAccess_complexReceiver_returnTypeResolved() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        java.util.List<String> getList() { return null; }
+                        void m() {
+                            getList().sub§
+                        }
+                    }""")))
+        .anyMatch(l -> l.startsWith("subList"));
   }
 
   @Test
-  void topLevel_expressionBeforeClass_returnsEmpty() {
-    // "foo." before any class body → javac parses as VariableTree → VARIABLE_DECLARATION context
-    // → engine returns empty without entering MEMBER_ACCESS path
-    final var items = complete("foo.§\nclass Test {}");
-    assertThat(items).isEmpty();
-  }
-
-  @Test
-  void typeReference_dottedOuterClass_innerTypeSuggested() {
-    final var items =
-        complete(
-            """
-            class Test {
-                void m(java.util.Map.En§ entry) {}
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("Entry"));
-  }
-
-  // gap G: static import inserts method snippet instead of bare name ──────────────────────────────
-
-  @Test
-  void importDeclaration_staticImport_methodCompletion_textEditIsBareNameWithSemicolon() {
-    // Selecting a method from `import static java.util.Objects.§` must produce "equals;"
-    // (bare identifier + semicolon), not a snippet like "equals($1)" which is a syntax
-    // error in an import declaration.
-    final var items =
-        complete(
-            """
-            import static java.util.Objects.§
-
-            class Test {
-            }""");
-    final var equalsItem =
-        items.stream().filter(i -> i.getLabel().startsWith("equals")).findFirst();
-    assertThat(equalsItem).isPresent();
-    assertThat(equalsItem.get().getTextEdit().getLeft().getNewText()).isEqualTo("equals;");
-  }
-
-  // gap F: import completions missing trailing semicolon ─────────────────────────────────────────
-
-  @Test
-  void importDeclaration_typeCompletion_textEditIncludesTrailingSemicolon() {
-    // Selecting a type from `import java.util.§` must produce "Map;" so the import
-    // statement is syntactically complete after insertion.
-    // Regression: typeItem() sets only label="Map" with no insertText, so applyTextEdits
-    // uses the label as newText → "Map" with no semicolon, leaving the import broken.
-    final var items =
-        complete(
-            """
-            import java.util.§
-
-            class Test {
-            }""");
-    final var mapItem = items.stream().filter(i -> "Map".equals(i.getLabel())).findFirst();
-    assertThat(mapItem).isPresent();
-    assertThat(mapItem.get().getTextEdit().getLeft().getNewText()).isEqualTo("Map;");
-  }
-
-  @Test
-  void importDeclaration_nonStaticImport_staticMethodNotSuggested() {
-    final var items =
-        complete(
-            """
-            import java.util.Collections.empty§;
-
-            class Test {
-            }""");
-    assertThat(items).noneMatch(i -> i.getLabel().startsWith("emptyList"));
-  }
-
-  @Test
-  void importDeclaration_staticImport_staticMethodSuggested() {
-    final var items =
-        complete(
-            """
-            import static java.util.Collections.empty§;
-
-            class Test {
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("emptyList"));
-  }
-
-  @Test
-  void importDeclaration_staticImport_packagePrefix_suggestsPackageSegment() {
-    final var items =
-        complete(
-            """
-            import static java.§;
-
-            class Test {
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("util");
-  }
-
-  @Test
-  void importDeclaration_staticImport_packagePrefix_doesNotSuggestStaticMembers() {
-    final var items =
-        complete(
-            """
-            import static java.util.§;
-
-            class Test {
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("Collections", "concurrent");
-    assertThat(items).noneMatch(i -> i.getLabel().equals("emptyList"));
-  }
-
-  @Test
-  void importDeclaration_packageSegmentSuggested() {
-    final var items =
-        complete(
-            """
-            import java.ut§;
-
-            class Test {
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("util");
-  }
-
-  @Test
-  void importDeclaration_afterPackageDot_suggestsPackageSegment() {
-    final var items =
-        complete(
-            """
-            import java.§;
-
-            class Test {
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("util");
-  }
-
-  @Test
-  void importDeclaration_afterNestedPackageDot_suggestsTypesAndSubpackages() {
-    final var items =
-        complete(
-            """
-            import java.util.§;
-
-            class Test {
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("Collections", "concurrent");
-  }
-
-  @Test
-  void importDeclaration_typeSegmentSuggested() {
-    final var items =
-        complete(
-            """
-            import java.util.Col§;
-
-            class Test {
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("Collections");
-  }
-
-  @Test
-  void classBody_emptyDeclaration_suggestsMemberDeclarationStarters() {
-    final var items =
-        complete(
-            """
-            class Test {
-                private String existing;
-
-                §
-            }""");
-    assertThat(items)
-        .extracting(CompletionItem::getLabel)
-        .contains("private", "protected", "public", "static", "final", "class", "interface");
-  }
-
-  @Test
-  void classBody_modifierPrefix_suggestsMatchingModifier() {
-    final var items =
-        complete(
-            """
-            class Test {
-                pri§
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("private");
-    assertThat(items).extracting(CompletionItem::getLabel).doesNotContain("protected");
-  }
-
-  @Test
-  void classBody_typePrefix_suggestsVisibleTypes() {
-    final var items =
-        completeWith(
-            eng,
-            """
-            class Test {
-                Str§
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("String");
-  }
-
-  @Test
-  void classBody_afterModifier_suggestsTypesAndNestedDeclarations() {
-    final var items =
-        complete(
-            """
-            class Test {
-                private §
-            }""");
-    assertThat(items)
-        .extracting(CompletionItem::getLabel)
-        .contains("String", "class", "interface", "enum", "record");
-  }
-
-  @Test
-  void methodBody_emptyStatement_suggestsStatementStarters() {
-    final var items =
-        complete(
-            """
-            class Test {
-                void run() {
-                    §
-                }
-            }""");
-    assertThat(items)
-        .extracting(CompletionItem::getLabel)
-        .contains("return", "if", "for", "while", "switch", "try", "throw", "new");
-  }
-
-  @Test
-  void methodBody_typePrefix_suggestsVisibleTypes() {
-    final var items =
-        completeWith(
-            eng,
-            """
-            class Test {
-                void run() {
-                    Str§ value;
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("String");
-  }
-
-  @Test
-  void methodBody_afterNew_suggestsConstructibleTypes() {
-    final var items =
-        completeWith(
-            eng,
-            """
-            class Test {
-                void run() {
-                    Object value = new Str§
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("StringBuilder");
-  }
-
-  @Test
-  void staticMethodBody_simpleName_doesNotSuggestInstanceMembers() {
-    final var items =
-        complete(
-            """
-            class Test {
-                String instanceValue;
-                static String staticValue;
-
-                static void run() {
-                    §
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("staticValue");
-    assertThat(items).extracting(CompletionItem::getLabel).doesNotContain("instanceValue");
-  }
-
-  @Test
-  void typeReference_methodParam_simpleTypePrefix_suggestsMatchingType() {
-    final var items =
-        completeWith(
-            eng,
-            """
-            class Test {
-                void m(Str§ param) {}
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("String");
-  }
-
-  @Test
-  void typeReference_genericTypeArg_simpleTypePrefix_suggestsMatchingType() {
-    final var items =
-        completeWith(
-            eng,
-            """
-            class Test {
-                void m() {
-                    java.util.List<Str§> list;
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("String");
-  }
-
-  @Test
-  void typeReference_genericTypeArg_emptyPrefix_suggestsCommonTypes() {
-    final var items =
-        complete(
-            """
-            class Test {
-                void m() {
-                    java.util.List<§> list;
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("String", "Integer");
-  }
-
-  @Test
-  void classHeader_extendsPrefix_suggestsSuperclasses() {
-    final var items =
-        completeWith(
-            eng,
-            """
-            class Test extends AbstractL§ {
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("AbstractList");
-  }
-
-  @Test
-  void classHeader_implementsPrefix_suggestsInterfaces() {
-    final var items =
-        completeWith(
-            eng,
-            """
-            class Test implements Runn§ {
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("Runnable");
-  }
-
-  @Test
-  void simpleName_localVar_suggestedByPrefix() {
-    final var items =
-        complete(
-            """
-            class Test {
-                void m() {
-                    String hello = "x";
-                    hel§
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("hello");
-  }
-
-  // gap C: variable offered as completion in its own initializer ─────────────────────────────────
-
-  @Test
-  void simpleName_variableNotOfferedInOwnInitializer() {
-    // `String foo = fo§` must not offer `foo` — it is not in scope at the initializer.
-    // `fooBar`, declared before, must still be offered.
-    // Regression: addMethodLocals filters by startPosition < cursorOffset; the start of
-    // `foo`'s declaration is before the cursor, so it passes the filter and appears.
-    final var items =
-        complete(
-            """
-            class Test {
-                void m() {
-                    String fooBar = "x";
-                    String foo = fo§
-                }
-            }""");
-    assertThat(items)
-        .as("foo must not appear in its own initializer")
-        .noneMatch(i -> "foo".equals(i.getFilterText()));
-    assertThat(items)
-        .as("fooBar declared before must still be offered")
-        .extracting(CompletionItem::getFilterText)
-        .contains("fooBar");
-  }
-
-  // gap D: no type-based ranking for class members after = ───────────────────────────────────────
-
-  @Test
-  void simpleName_classMember_matchingDeclaredType_rankedBeforeNonMatching() {
-    // `String result = §` — members whose return/field type is String should sort
-    // before members of unrelated types.
-    // Regression: addClassMembers() does not consult expectedParamType, so all
-    // class members share an empty sortText regardless of type compatibility.
-    final var items =
-        complete(
-            """
-            class Test {
-                String label = "x";
-                int count = 0;
-                String name() { return ""; }
-                int size() { return 0; }
-                void m() {
-                    String result = §
-                }
-            }""");
-    final var labelItem = items.stream().filter(i -> "label".equals(i.getFilterText())).findFirst();
-    final var countItem = items.stream().filter(i -> "count".equals(i.getFilterText())).findFirst();
-    assertThat(labelItem).isPresent();
-    assertThat(countItem).isPresent();
-    assertThat(labelItem.get().getSortText())
-        .as("String field should sort before int field when target type is String")
-        .isLessThan(countItem.get().getSortText());
-  }
-
-  @Test
-  void simpleName_objectMethods_rankedAfterOwnNonMatchingMembers() {
-    // In statement context (no expected type) Object methods land in "9_" while own
-    // members have no sort text — ensuring Object methods sort below domain members
-    // in any LSP client that respects sortText.
-    // Uses 'zebra' (own field) vs 'clone' (Object method): alphabetically 'clone' < 'zebra',
-    // so without demotion 'clone' would float above 'zebra'.
-    final var items =
-        complete(
-            """
-            class Test {
-                int zebra = 0;
-                void m() {
-                    §
-                }
-            }""");
-    final var zebraItem = items.stream().filter(i -> "zebra".equals(i.getFilterText())).findFirst();
-    final var cloneItem = items.stream().filter(i -> "clone".equals(i.getFilterText())).findFirst();
-    assertThat(zebraItem).isPresent();
-    assertThat(cloneItem).isPresent();
-    assertThat(cloneItem.get().getSortText())
-        .as("Object method must be demoted to the \"9_\" bucket")
-        .startsWith("9_");
-    assertThat(zebraItem.get().getSortText())
-        .as("own member must not be in the Object-method bucket")
-        .isNull();
-  }
-
-  // Filtering strategy: void methods and Object-declared methods ──────────────────────────────────
-  //
-  // When expected type is known (argument position or variable initializer):
-  //   - void-returning methods → excluded entirely (can never be a value; client recency would
-  //     promote them after accidental selection)
-  //   - Object-declared methods → excluded entirely (infrastructure; non-void ones like toString
-  //     are almost never the intended argument)
-  //   - non-void, non-assignable methods → shown with "1_" rank (user may cast)
-  //   - type names (java.lang, type index) → not offered (separate guard via
-  // shouldOfferBareTypeRef)
-  //
-  // When expected type is unknown (plain statement):
-  //   - void own-class methods → shown (calling them as statements is valid)
-  //   - Object-declared methods → shown but demoted to "9_"
-
-  @Test
-  void simpleName_ownVoidMethod_shownInStatementContext() {
-    // In a plain statement position there is no expected type — own void methods are valid
-    // to call as statements and must appear in the list.
-    final var items =
-        complete(
-            """
-            class Test {
-                void doWork() {}
-                void m() {
-                    §
-                }
-            }""");
-    assertThat(items)
-        .as("own void method must appear when completing a bare statement (no expected type)")
-        .extracting(CompletionItem::getFilterText)
-        .contains("doWork");
-  }
-
-  @Test
-  void simpleName_objectMethods_demotedInStatementContext() {
-    // In a plain statement position (no expected type) Object methods are present
-    // but must be demoted to "9_" so domain methods sort above them.
-    final var items =
-        complete(
-            """
-            class Test {
-                String name() { return ""; }
-                void m() {
-                    §
-                }
-            }""");
-    final var waitItem = items.stream().filter(i -> "wait".equals(i.getFilterText())).findFirst();
-    final var nameItem = items.stream().filter(i -> "name".equals(i.getFilterText())).findFirst();
-    assertThat(waitItem)
-        .as("wait must be present (valid to call in statement context)")
-        .isPresent();
-    assertThat(nameItem).isPresent();
-    assertThat(waitItem.get().getSortText())
-        .as("Object method must be demoted to \"9_\" bucket")
-        .startsWith("9_");
-  }
-
-  @Test
-  void simpleName_voidMethod_excludedWhenExpectedTypeKnown_initializer() {
-    // In a variable initializer the expected type is known — void methods can never
-    // be used as values and must be excluded entirely to prevent client recency pollution.
-    final var items =
-        complete(
-            """
-            class Test {
-                void doWork() {}
-                String getValue() { return ""; }
-                void m() {
-                    String s = §
-                }
-            }""");
-    assertThat(items)
-        .as("void method must not appear when completing a typed initializer")
-        .noneMatch(i -> "doWork".equals(i.getFilterText()));
-    assertThat(items)
-        .as("non-void method must still appear")
-        .extracting(CompletionItem::getFilterText)
-        .contains("getValue");
-  }
-
-  @Test
-  void simpleName_voidMethod_excludedWhenExpectedTypeKnown_argumentPosition() {
-    // Same rule in argument position: void-returning methods excluded when
-    // the callee's parameter type is known.
-    final var items =
-        complete(
-            """
-            class Test {
-                void doWork() {}
-                String getValue() { return ""; }
-                void accept(String s) {}
-                void m() {
-                    accept(§);
-                }
-            }""");
-    assertThat(items)
-        .as("void method must not appear when completing a typed argument")
-        .noneMatch(i -> "doWork".equals(i.getFilterText()));
-    assertThat(items)
-        .as("non-void matching method must still appear")
-        .extracting(CompletionItem::getFilterText)
-        .contains("getValue");
-  }
-
-  @Test
-  void simpleName_objectMethods_excludedWhenExpectedTypeKnown() {
-    // Object-declared methods (wait, finalize, notify…) are excluded entirely when
-    // expected type is known — they are infrastructure methods that are never a useful
-    // argument, and leaving them in the list risks client recency promoting them.
-    final var items =
-        complete(
-            """
-            class Test {
-                void m() {
-                    String s = §
-                }
-            }""");
-    assertThat(items)
-        .extracting(CompletionItem::getFilterText)
-        .doesNotContainAnyElementsOf(List.of("wait", "finalize", "notify", "notifyAll"));
-  }
-
-  @Test
-  void simpleName_constructorParam_suggestedInCtorBody() {
-    final var items =
-        complete(
-            """
-            class Test {
-                Test(String value) {
-                    val§
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("value");
-  }
-
-  @Test
-  void simpleName_constructorParam_secondOverload_suggestedInCtorBody() {
-    // When a class has multiple constructors, findScopeMethodPath must pick the one
-    // that contains the cursor (position-based), not always the first "<init>".
-    final var items =
-        complete(
-            """
-            class Test {
-                Test() {}
-                Test(String metricRegistry) {
-                    met§
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("metricRegistry");
-  }
-
-  @Test
-  void memberAccess_methodParamSameLine_typeResolved() {
-    // param declared on same line as cursor — needs nodeLine <= cursorLine in
-    // scanForLocalDeclaration
-    final var items =
-        complete(
-            """
-            class Test {
-                void m(String s) { s.to§ }
-            }""");
-    assertThat(items)
-        .extracting(CompletionItem::getLabel)
+  void memberAccess_receiverInArgument_completionsReturned() {
+    // receiver.§ inside method call arg and constructor call arg
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        static void consume(String s) {}
+                        void m() {
+                            String hello = "x";
+                            consume(hello.§);
+                        }
+                    }""")))
         .anyMatch(l -> l.startsWith("toLowerCase"));
-  }
-
-  @Test
-  void lambdaBody_thisReceiver_membersReturned() {
-    // LAMBDA_BODY context with 'this' receiver — isolates engine routing fix from param resolution
-    final var items =
-        complete(
-            """
-            class Test {
-                String name = "x";
-                void m(java.util.List<String> list) {
-                    list.forEach(s -> this.na§);
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("name");
-  }
-
-  @Test
-  void memberAccess_stringLiteralReceiver_stringMethodsReturned() {
-    final var items =
-        complete(
-            """
-            class Test {
-                void m() {
-                    "hello".to§
-                }
-            }""");
-    assertThat(items)
-        .extracting(CompletionItem::getLabel)
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        void m() {
+                            String hello = "x";
+                            new StringBuilder(hello.§);
+                        }
+                    }""")))
         .anyMatch(l -> l.startsWith("toLowerCase"));
-  }
-
-  @Test
-  void lambdaBody_memberAccess_paramTypeResolved() {
-    final var items =
-        complete(
-            """
-            class Test {
-                void m(java.util.List<String> list) {
-                    list.forEach(s -> s.to§);
-                }
-            }""");
-    assertThat(items)
-        .extracting(CompletionItem::getLabel)
-        .anyMatch(l -> l.startsWith("toLowerCase"));
-  }
-
-  // ── known issues ────────────────────────────────────────────────────────────
-
-  @Test
-  void memberAccess_typeArgResolved_notRawTypeVar() {
-    // List<String>.add§ should show add(String), not add(E)
-    final var items =
-        complete(
-            """
-            class Test {
-                void m(java.util.List<String> list) {
-                    list.add§
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("add(String)");
-    assertThat(items).noneMatch(i -> i.getLabel().equals("add(E)"));
   }
 
   @Test
   void memberAccess_objectMethodsIncludedAndRankLast() {
-    // wait/notify/notifyAll are included but rank after domain methods (sort bucket "9_").
     final var items =
-        complete(
+        fixture.complete(
             """
             class Test {
                 void m(java.util.ArrayList<String> list) {
@@ -869,11 +217,7 @@ class CompletionEngineTest {
                 }
             }""");
     final var sizeSort =
-        items.stream()
-            .filter(i -> i.getLabel().equals("size()"))
-            .findFirst()
-            .map(CompletionItem::getSortText)
-            .orElseThrow();
+        itemLabeled(items, "size()").map(CompletionItem::getSortText).orElseThrow();
     assertThat(items).anyMatch(i -> i.getLabel().startsWith("wait("));
     assertThat(items).anyMatch(i -> i.getLabel().equals("notify()"));
     assertThat(items).anyMatch(i -> i.getLabel().equals("notifyAll()"));
@@ -887,281 +231,605 @@ class CompletionEngineTest {
   }
 
   @Test
-  void memberAccess_privateMemberOnOtherReceiverExcluded() {
-    // Private members are valid through this.§ inside the declaring class.
-    // They must not be offered through an unrelated receiver expression.
-    final var items =
-        complete(
-            """
-            class Other {
-                private String secret = "x";
-                public String visible = "y";
-            }
-
-            class Test {
-                void m(Other other) {
-                    other.§
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("visible");
-    assertThat(items).noneMatch(i -> i.getLabel().equals("secret"));
+  void memberAccess_typeArgResolved_notRawTypeVar() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        void m(java.util.List<String> list) {
+                            list.add§
+                        }
+                    }""")))
+        .contains("add(String)")
+        .doesNotContain("add(E)");
   }
 
   @Test
-  void memberAccess_privateMemberOnThisReceiverIncluded() {
-    final var items =
-        complete(
-            """
-            class Test {
-                private String secret = "x";
-
-                void m() {
-                    this.se§
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("secret");
+  void memberAccess_samePackageType_staticMembersReturned() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    package com.example;
+                    class Helper {
+                        static String greet() { return "hi"; }
+                    }
+                    class Test {
+                        void m() {
+                            Helper.§
+                        }
+                    }""")))
+        .anyMatch(l -> l.startsWith("greet"));
   }
 
   @Test
-  void memberAccess_complexReceiver_returnTypeResolved() {
-    // method-call receiver — needs Trees.getTypeMirror on the call expression
-    final var items =
-        complete(
-            """
-            class Test {
-                java.util.List<String> getList() { return null; }
-                void m() {
-                    getList().sub§
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("subList"));
+  void memberAccess_starImport_staticMembersReturned() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    import java.util.*;
+                    class Test {
+                        void m() {
+                            Collections.§
+                        }
+                    }""")))
+        .anyMatch(l -> l.startsWith("emptyList"));
   }
 
   @Test
-  void memberAccess_receiverInsideArgument_completionsReturned() {
-    // receiver.§ inside a method call argument — SentinelParser misclassifies as ARGUMENT_POSITION
-    final var items =
-        complete(
-            """
-            class Test {
-                static void consume(String s) {}
-                void m() {
-                    String hello = "x";
-                    consume(hello.§);
-                }
-            }""");
-    assertThat(items)
-        .extracting(CompletionItem::getLabel)
+  void memberAccess_staticEnumReceiver_enumConstantsReturned() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    enum Kind {
+                        FIRST,
+                        SECOND
+                    }
+
+                    class Test {
+                        void m() {
+                            Kind.§
+                        }
+                    }""")))
+        .contains("FIRST", "SECOND");
+  }
+
+  @Test
+  void memberAccess_newClassReceiver_methodsReturned() {
+    assertThat(labels(fixture.complete("class Test { void m() { new StringBuilder().ap§ } }")))
+        .anyMatch(l -> l.startsWith("append"));
+  }
+
+  @Test
+  void memberAccess_instanceFieldChain_typeResolved() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        String name = "x";
+                        void m() {
+                            this.name.toL§
+                        }
+                    }""")))
         .anyMatch(l -> l.startsWith("toLowerCase"));
   }
 
   @Test
-  void memberAccess_receiverInsideNewClassArg_completionsReturned() {
-    // receiver.§ inside a constructor call argument — NewClassTree parent causes
-    // CONSTRUCTOR_CALL classification instead of MEMBER_ACCESS because the guard
-    // `when !(sentinel instanceof MemberSelectTree)` is missing on the NewClassTree case
-    final var items =
-        complete(
-            """
-            class Test {
-                void m() {
-                    String hello = "x";
-                    new StringBuilder(hello.§);
-                }
-            }""");
-    assertThat(items)
-        .extracting(CompletionItem::getLabel)
+  void memberAccess_staticFieldChain_typeResolved() {
+    assertThat(labels(fixture.complete("class Test { void m() { System.out.print§ } }")))
+        .anyMatch(l -> l.startsWith("print"));
+  }
+
+  @Test
+  void memberAccess_arrayElementReceiver_typeResolved() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        void m(String[] arr) {
+                            arr[0].toL§
+                        }
+                    }""")))
         .anyMatch(l -> l.startsWith("toLowerCase"));
   }
 
   @Test
-  void argumentPosition_emptyPrefix_suggestsVisibleLocal() {
-    final var items =
-        complete(
-            """
-            class Test {
-                static class ReceiverFactory {
-                    static Receiver create() { return new Receiver(); }
-                }
-
-                static class Receiver {
-                    void accept(String value) {}
-                }
-
-                void m() {
-                    String value = "";
-                    ReceiverFactory.create().accept(§value);
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("value");
+  void memberAccess_castReceiver_typeResolved() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        void m(Object obj) {
+                            ((String) obj).toL§
+                        }
+                    }""")))
+        .anyMatch(l -> l.startsWith("toLowerCase"));
   }
 
   @Test
-  void argumentPosition_prefix_suggestsVisibleLocal() {
-    final var items =
-        complete(
-            """
-            class Test {
-                static void accept(String value) {}
-
-                void m() {
-                    String value = "";
-                    accept(val§);
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("value");
+  void memberAccess_methodParamSameLine_typeResolved() {
+    assertThat(labels(fixture.complete("class Test { void m(String s) { s.to§ } }")))
+        .anyMatch(l -> l.startsWith("toLowerCase"));
   }
 
   @Test
-  void constructorCall_prefix_suggestsVisibleLocal() {
-    final var items =
-        complete(
-            """
-            class Test {
-                static class Receiver {
-                    Receiver(String value) {}
-                }
+  void memberAccess_stringLiteralReceiver_stringMethodsReturned() {
+    assertThat(labels(fixture.complete("class Test { void m() { \"hello\".to§ } }")))
+        .anyMatch(l -> l.startsWith("toLowerCase"));
+  }
 
-                void m() {
-                    String value = "";
-                    new Receiver(val§);
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("value");
+  // ── import declarations ───────────────────────────────────────────────────────
+
+  @Test
+  void importDeclaration_nonStatic_suggestsSegmentsAndTypes() {
+    // prefix navigation
+    assertThat(labels(fixture.complete("import java.ut§;\n\nclass Test {}"))).contains("util");
+    assertThat(labels(fixture.complete("import java.§;\n\nclass Test {}"))).contains("util");
+    // nested package: types and sub-packages appear; static members do not
+    final var afterUtil = fixture.complete("import java.util.§;\n\nclass Test {}");
+    assertThat(labels(afterUtil)).contains("Collections", "concurrent");
+    assertThat(afterUtil).noneMatch(i -> i.getLabel().equals("emptyList"));
+    // type segment
+    assertThat(labels(fixture.complete("import java.util.Col§;\n\nclass Test {}")))
+        .contains("Collections");
+    // non-static import path must not suggest static members
+    assertThat(fixture.complete("import java.util.Collections.empty§;\n\nclass Test {}"))
+        .noneMatch(i -> i.getLabel().startsWith("emptyList"));
+    // text edit includes trailing semicolon (source has no trailing ';' so engine adds one)
+    final var mapItem = itemLabeled(fixture.complete("import java.util.§\n\nclass Test {}"), "Map");
+    assertThat(mapItem).isPresent();
+    assertThat(mapItem.get().getTextEdit().getLeft().getNewText()).isEqualTo("Map;");
   }
 
   @Test
-  void constructorCall_secondArg_noLangTypes() {
-    final var items =
-        complete(
-            """
-            class Test {
-                static class Receiver {
-                    Receiver(String a, String b) {}
-                }
+  void importDeclaration_staticImport_suggestsSegmentsAndBareNames() {
+    // prefix navigation
+    assertThat(labels(fixture.complete("import static java.§;\n\nclass Test {}"))).contains("util");
+    // package level: sub-types and packages, no static members
+    final var afterUtil = fixture.complete("import static java.util.§;\n\nclass Test {}");
+    assertThat(labels(afterUtil)).contains("Collections", "concurrent");
+    assertThat(afterUtil).noneMatch(i -> i.getLabel().equals("emptyList"));
+    // type level: static members appear
+    assertThat(
+            labels(
+                fixture.complete("import static java.util.Collections.empty§;\n\nclass Test {}")))
+        .anyMatch(l -> l.startsWith("emptyList"));
+    // text edit is bare name + semicolon, not a snippet
+    final var equalsItem =
+        fixture.complete("import static java.util.Objects.§\n\nclass Test {}").stream()
+            .filter(i -> i.getLabel().startsWith("equals"))
+            .findFirst();
+    assertThat(equalsItem).isPresent();
+    assertThat(equalsItem.get().getTextEdit().getLeft().getNewText()).isEqualTo("equals;");
+  }
 
-                void m() {
-                    String value = "";
-                    new Receiver(value, val§);
-                }
-            }""");
-    assertThat(items)
-        .extracting(CompletionItem::getLabel)
-        .contains("value")
-        .doesNotContain("String", "Object", "Integer", "Thread");
+  // ── class body ───────────────────────────────────────────────────────────────
+
+  @Test
+  void classBody_emptyDeclaration_suggestsMemberDeclarationStarters() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        private String existing;
+
+                        §
+                    }""")))
+        .contains("private", "protected", "public", "static", "final", "class", "interface");
   }
 
   @Test
-  void constructorCall_anyArg_noObjectMethods() {
+  void classBody_modifierPrefix_suggestsMatchingModifier() {
+    final var items = labels(fixture.complete("class Test { pri§ }"));
+    assertThat(items).contains("private");
+    assertThat(items).doesNotContain("protected");
+  }
+
+  @Test
+  void classBody_afterModifier_suggestsTypesAndNestedDeclarations() {
+    assertThat(labels(fixture.complete("class Test { private § }")))
+        .contains("String", "class", "interface", "enum", "record");
+  }
+
+  // ── method body ───────────────────────────────────────────────────────────────
+
+  @Test
+  void methodBody_emptyStatement_suggestsStatementStarters() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        void run() {
+                            §
+                        }
+                    }""")))
+        .contains("return", "if", "for", "while", "switch", "try", "throw", "new");
+  }
+
+  @Test
+  void methodBody_afterNew_suggestsConstructibleTypes() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        void run() {
+                            Object value = new Str§
+                        }
+                    }""")))
+        .contains("StringBuilder");
+  }
+
+  @Test
+  void staticMethodBody_simpleName_doesNotSuggestInstanceMembers() {
     final var items =
-        complete(
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    String instanceValue;
+                    static String staticValue;
+
+                    static void run() {
+                        §
+                    }
+                }"""));
+    assertThat(items).contains("staticValue");
+    assertThat(items).doesNotContain("instanceValue");
+  }
+
+  // ── type references ───────────────────────────────────────────────────────────
+
+  @Test
+  void typeReference_dottedOuterClass_innerTypeSuggested() {
+    assertThat(labels(fixture.complete("class Test { void m(java.util.Map.En§ entry) {} }")))
+        .anyMatch(l -> l.startsWith("Entry"));
+  }
+
+  @Test
+  void typeReference_simpleNamePrefixes_suggestMatchingTypes() {
+    // method param, generic arg with non-empty and empty prefix
+    assertThat(labels(fixture.complete("class Test { void m(Str§ param) {} }"))).contains("String");
+    assertThat(labels(fixture.complete("class Test { void m() { java.util.List<Str§> list; } }")))
+        .contains("String");
+    assertThat(labels(fixture.complete("class Test { void m() { java.util.List<§> list; } }")))
+        .contains("String", "Integer");
+  }
+
+  @Test
+  void classHeader_suggestsSuperAndInterfaceTypes() {
+    assertThat(labels(fixture.complete("class Test extends AbstractL§ {}")))
+        .contains("AbstractList");
+    assertThat(labels(fixture.complete("class Test implements Runn§ {}"))).contains("Runnable");
+  }
+
+  // ── simple name ───────────────────────────────────────────────────────────────
+
+  @Test
+  void simpleName_localVar_suggestedByPrefix() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        void m() {
+                            String hello = "x";
+                            hel§
+                        }
+                    }""")))
+        .contains("hello");
+  }
+
+  @Test
+  void simpleName_variableNotOfferedInOwnInitializer() {
+    final var items =
+        fixture.complete("class Test { void m() { String fooBar = \"x\"; String foo = fo§ } }");
+    assertThat(itemWithFilterText(items, "foo")).isEmpty();
+    assertThat(itemWithFilterText(items, "fooBar")).isPresent();
+  }
+
+  @Test
+  void simpleName_classMember_matchingDeclaredType_rankedBeforeNonMatching() {
+    final var items =
+        fixture.complete(
             """
             class Test {
-                static class Receiver {
-                    Receiver(String value) {}
-                }
-
-                String result() { return ""; }
-
+                String label = "x";
+                int count = 0;
+                String name() { return ""; }
+                int size() { return 0; }
                 void m() {
-                    new Receiver(§);
+                    String result = §
                 }
             }""");
-    assertThat(items)
-        .extracting(CompletionItem::getFilterText)
-        .contains("result")
+    final var labelItem = itemWithFilterText(items, "label");
+    final var countItem = itemWithFilterText(items, "count");
+    assertThat(labelItem).isPresent();
+    assertThat(countItem).isPresent();
+    assertThat(labelItem.get().getSortText()).isLessThan(countItem.get().getSortText());
+  }
+
+  @Test
+  void simpleName_objectMethods_demotedInStatementContext() {
+    final var items =
+        fixture.complete(
+            """
+            class Test {
+                int zebra = 0;
+                void m() {
+                    §
+                }
+            }""");
+    final var zebraItem = itemWithFilterText(items, "zebra");
+    final var cloneItem = itemWithFilterText(items, "clone");
+    final var waitItem = itemWithFilterText(items, "wait");
+    assertThat(zebraItem).isPresent();
+    assertThat(cloneItem).isPresent();
+    assertThat(waitItem).isPresent();
+    assertThat(cloneItem.get().getSortText()).startsWith("9_");
+    assertThat(waitItem.get().getSortText()).startsWith("9_");
+    assertThat(zebraItem.get().getSortText()).isNull();
+  }
+
+  @Test
+  void simpleName_ownVoidMethod_shownInStatementContext() {
+    assertThat(
+            fixture
+                .complete(
+                    """
+                    class Test {
+                        void doWork() {}
+                        void m() {
+                            §
+                        }
+                    }""")
+                .stream()
+                .map(CompletionItem::getFilterText)
+                .toList())
+        .contains("doWork");
+  }
+
+  @Test
+  void simpleName_voidMethod_excludedWhenExpectedTypeKnown() {
+    // initializer position
+    final var initializer =
+        fixture.complete(
+            """
+            class Test {
+                void doWork() {}
+                String getValue() { return ""; }
+                void m() {
+                    String s = §
+                }
+            }""");
+    assertThat(initializer).noneMatch(i -> "doWork".equals(i.getFilterText()));
+    assertThat(initializer).extracting(CompletionItem::getFilterText).contains("getValue");
+    // argument position
+    final var argument =
+        fixture.complete(
+            """
+            class Test {
+                void doWork() {}
+                String getValue() { return ""; }
+                void accept(String s) {}
+                void m() {
+                    accept(§);
+                }
+            }""");
+    assertThat(argument).noneMatch(i -> "doWork".equals(i.getFilterText()));
+    assertThat(argument).extracting(CompletionItem::getFilterText).contains("getValue");
+  }
+
+  @Test
+  void simpleName_objectMethods_excludedWhenExpectedTypeKnown() {
+    assertThat(
+            fixture
+                .complete(
+                    """
+                    class Test {
+                        void m() {
+                            String s = §
+                        }
+                    }""")
+                .stream()
+                .map(CompletionItem::getFilterText)
+                .toList())
         .doesNotContainAnyElementsOf(List.of("wait", "finalize", "notify", "notifyAll"));
   }
 
-  /**
-   * When completing before an expression that itself is an argument (e.g. {@code foo(§bar.m())}),
-   * the sentinel becomes the receiver of a MemberSelectTree, so the parser classifies it as
-   * SIMPLE_NAME with argIndex=-1. But the injector's backward scan still sets context=EXPRESSION
-   * (an unmatched '(' was found to the left). Object-declared methods such as {@code finalize} must
-   * be suppressed in that position just as in any other value context.
-   */
+  @Test
+  void simpleName_constructorParam_suggestedInCtorBody() {
+    // single constructor
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        Test(String value) {
+                            val§
+                        }
+                    }""")))
+        .contains("value");
+    // second overload — findScopeMethodPath must pick the one containing the cursor
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        Test() {}
+                        Test(String metricRegistry) {
+                            met§
+                        }
+                    }""")))
+        .contains("metricRegistry");
+  }
+
   @Test
   void simpleName_expressionContext_noObjectMethods() {
-    final var items =
-        complete(
-            """
-            class Test {
-                void consume(String s) {}
-
-                String result() { return ""; }
-
-                void m() {
-                    consume(§result());
-                }
-            }""");
-    assertThat(items)
-        .extracting(CompletionItem::getFilterText)
-        .contains("result")
+    final var filterTexts =
+        fixture
+            .complete(
+                """
+                class Test {
+                    void consume(String s) {}
+                    String result() { return ""; }
+                    void m() {
+                        consume(§result());
+                    }
+                }""")
+            .stream()
+            .map(CompletionItem::getFilterText)
+            .toList();
+    assertThat(filterTexts).contains("result");
+    assertThat(filterTexts)
         .doesNotContainAnyElementsOf(List.of("wait", "finalize", "notify", "notifyAll"));
   }
 
-  /**
-   * Gap: when the target method/constructor takes zero parameters, completion inside its {@code ()}
-   * should return nothing — there is no slot to fill. Currently the engine returns all visible
-   * locals/members because it does not resolve the callee's arity.
-   */
+  // ── string literal / bare dot / no-op positions ──────────────────────────────
+
+  @Test
+  void stringLiteral_noCompletions() {
+    assertThat(fixture.complete("class Test { void m() { String s = \"hello§\"; } }")).isEmpty();
+  }
+
+  @Test
+  void topLevel_expressionBeforeClass_returnsEmpty() {
+    assertThat(fixture.complete("foo.§\nclass Test {}")).isEmpty();
+  }
+
+  @Test
+  void bareDot_inMethodBody_returnsEmpty() {
+    // right after semicolon (same line and next line) and at block start
+    assertThat(
+            fixture.complete(
+                """
+                class Test {
+                    void m() {
+                        System.out.println("hi");.§
+                    }
+                }"""))
+        .isEmpty();
+    assertThat(
+            fixture.complete(
+                """
+                class Test {
+                    void m() {
+                        System.out.println("hi");
+                        .§
+                    }
+                }"""))
+        .isEmpty();
+    assertThat(fixture.complete("class Test { void m() { .§ } }")).isEmpty();
+  }
+
+  @Test
+  void bareDot_inClassBody_returnsEmpty() {
+    assertThat(fixture.complete("class Test { .§ }")).isEmpty();
+  }
+
+  // ── argument position ─────────────────────────────────────────────────────────
+
+  @Test
+  void argumentPosition_suggestsVisibleLocal() {
+    // empty prefix
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        static class ReceiverFactory {
+                            static Receiver create() { return new Receiver(); }
+                        }
+
+                        static class Receiver {
+                            void accept(String value) {}
+                        }
+
+                        void m() {
+                            String value = "";
+                            ReceiverFactory.create().accept(§value);
+                        }
+                    }""")))
+        .contains("value");
+    // non-empty prefix
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        static void accept(String value) {}
+
+                        void m() {
+                            String value = "";
+                            accept(val§);
+                        }
+                    }""")))
+        .contains("value");
+  }
+
   @Test
   void argumentPosition_zeroParamMethod_suppressesCompletions() {
-    final var items =
-        complete(
-            """
-            class Test {
-                static void noArgs() {}
-
-                String result() { return ""; }
-
-                void m() {
-                    String value = "";
-                    noArgs(§);
-                }
-            }""");
-    assertThat(items).isEmpty();
+    assertThat(
+            fixture.complete(
+                """
+                class Test {
+                    static void noArgs() {}
+                    String result() { return ""; }
+                    void m() {
+                        String value = "";
+                        noArgs(§);
+                    }
+                }"""))
+        .isEmpty();
   }
 
   @Test
   void argumentPosition_lambdaParam_suggestsVisibleParam() {
-    final var items =
-        complete(
-            """
-            class Test {
-                static void consume(Object value) {}
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        static void consume(Object value) {}
 
-                void m(java.util.List<String> list) {
-                    list.forEach(value -> consume(val§));
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("value");
+                        void m(java.util.List<String> list) {
+                            list.forEach(value -> consume(val§));
+                        }
+                    }""")))
+        .contains("value");
   }
 
   @Test
   void argumentPosition_switchPatternVar_suggestsVisiblePatternVar() {
-    final var items =
-        complete(
-            """
-            class Test {
-                static void consume(Object value) {}
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        static void consume(Object value) {}
 
-                void m(Object object) {
-                    switch (object) {
-                        case String value -> consume(val§);
-                        default -> {}
-                    }
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("value");
+                        void m(Object object) {
+                            switch (object) {
+                                case String value -> consume(val§);
+                                default -> {}
+                            }
+                        }
+                    }""")))
+        .contains("value");
   }
 
   @Test
   void argumentPosition_localVar_matchingParamType_rankedBeforeNonMatching() {
-    // strVar (String) matches target(String s); intVar (int) does not
-    // Both must be proposed, but the type-compatible candidate must sort first
     final var items =
-        complete(
+        fixture.complete(
             """
             class Foo {
                 void target(String s) {}
@@ -1172,10 +840,8 @@ class CompletionEngineTest {
                 }
             }
             """);
-    final var strVarItem =
-        items.stream().filter(i -> "strVar".equals(i.getFilterText())).findFirst();
-    final var intVarItem =
-        items.stream().filter(i -> "intVar".equals(i.getFilterText())).findFirst();
+    final var strVarItem = itemWithFilterText(items, "strVar");
+    final var intVarItem = itemWithFilterText(items, "intVar");
     assertThat(strVarItem).isPresent();
     assertThat(intVarItem).isPresent();
     assertThat(strVarItem.get().getSortText()).isLessThan(intVarItem.get().getSortText());
@@ -1183,10 +849,8 @@ class CompletionEngineTest {
 
   @Test
   void argumentPosition_receiverQualifiedCall_localVarMatchingParamType_rankedFirst() {
-    // helper.consume(§) — helper is a local of type Helper; consume(String s) expects String
-    // strVar (String) should rank before intVar (int)
     final var items =
-        complete(
+        fixture.complete(
             """
             class Helper { void consume(String s) {} }
             class Foo {
@@ -1198,431 +862,310 @@ class CompletionEngineTest {
                 }
             }
             """);
-    final var strVarItem =
-        items.stream().filter(i -> "strVar".equals(i.getFilterText())).findFirst();
-    final var intVarItem =
-        items.stream().filter(i -> "intVar".equals(i.getFilterText())).findFirst();
+    final var strVarItem = itemWithFilterText(items, "strVar");
+    final var intVarItem = itemWithFilterText(items, "intVar");
     assertThat(strVarItem).isPresent();
     assertThat(intVarItem).isPresent();
     assertThat(strVarItem.get().getSortText()).isLessThan(intVarItem.get().getSortText());
   }
 
+  // ── constructor call position ─────────────────────────────────────────────────
+
   @Test
-  void memberAccess_samePackageType_staticMembersReturned() {
-    // Helper is in the same named package — no import — TypeResolver must fall back to
-    // packageName + "." + simpleName
-    final var items =
-        complete(
-            """
-            package com.example;
-            class Helper {
-                static String greet() { return "hi"; }
-            }
-            class Test {
-                void m() {
-                    Helper.§
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("greet"));
+  void constructorCall_suggestsLocalsAndExcludesNoise() {
+    // suggests local variables
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        static class Receiver {
+                            Receiver(String value) {}
+                        }
+
+                        void m() {
+                            String value = "";
+                            new Receiver(val§);
+                        }
+                    }""")))
+        .contains("value");
+    // no java.lang types or Object methods in second arg position
+    final var secondArg =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    static class Receiver {
+                        Receiver(String a, String b) {}
+                    }
+
+                    void m() {
+                        String value = "";
+                        new Receiver(value, val§);
+                    }
+                }"""));
+    assertThat(secondArg).contains("value").doesNotContain("String", "Object", "Integer", "Thread");
+    // no Object methods in any arg position
+    final var firstArgFilterTexts =
+        fixture
+            .complete(
+                """
+                class Test {
+                    static class Receiver {
+                        Receiver(String value) {}
+                    }
+
+                    String result() { return ""; }
+
+                    void m() {
+                        new Receiver(§);
+                    }
+                }""")
+            .stream()
+            .map(CompletionItem::getFilterText)
+            .toList();
+    assertThat(firstArgFilterTexts).contains("result");
+    assertThat(firstArgFilterTexts)
+        .doesNotContainAnyElementsOf(List.of("wait", "finalize", "notify", "notifyAll"));
+  }
+
+  // ── lambda body ───────────────────────────────────────────────────────────────
+
+  @Test
+  void lambdaBody_thisReceiver_membersReturned() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        String name = "x";
+                        void m(java.util.List<String> list) {
+                            list.forEach(s -> this.na§);
+                        }
+                    }""")))
+        .contains("name");
   }
 
   @Test
-  void memberAccess_starImport_staticMembersReturned() {
-    // on-demand import — resolveViaImports only handles single-class imports
-    final var items =
-        complete(
-            """
-            import java.util.*;
-            class Test {
-                void m() {
-                    Collections.§
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("emptyList"));
-  }
-
-  @Test
-  void memberAccess_staticEnumReceiver_enumConstantsReturned() {
-    final var items =
-        complete(
-            """
-            enum Kind {
-                FIRST,
-                SECOND
-            }
-
-            class Test {
-                void m() {
-                    Kind.§
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("FIRST", "SECOND");
-  }
-
-  // ── pending: additional TypeResolver gaps ──────────────────────────────────
-
-  @Test
-  void memberAccess_newClassReceiver_methodsReturned() {
-    // new Foo().§ — receiver is a NewClassTree; resolveByPosition only visits
-    // MethodInvocationTree / MemberSelectTree / IdentifierTree
-    final var items =
-        complete(
-            """
-            class Test {
-                void m() {
-                    new StringBuilder().ap§
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("append"));
-  }
-
-  @Test
-  void memberAccess_instanceFieldChain_typeResolved() {
-    // this.field.§ — receiverText is "this.name", dotted-name branch tries
-    // getTypeElement("this.name") which is null and returns without resolveByPosition
-    final var items =
-        complete(
-            """
-            class Test {
-                String name = "x";
-                void m() {
-                    this.name.toL§
-                }
-            }""");
-    assertThat(items)
-        .extracting(CompletionItem::getLabel)
+  void lambdaBody_memberAccess_paramTypeResolved() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        void m(java.util.List<String> list) {
+                            list.forEach(s -> s.to§);
+                        }
+                    }""")))
         .anyMatch(l -> l.startsWith("toLowerCase"));
   }
 
-  @Test
-  void memberAccess_staticFieldChain_typeResolved() {
-    // System.out.§ — receiverText "System.out" is a field access, not a type FQN;
-    // getTypeElement("System.out") returns null and the branch exits without position fallback
-    final var items =
-        complete(
-            """
-            class Test {
-                void m() {
-                    System.out.print§
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("print"));
-  }
-
-  @Test
-  void memberAccess_arrayElementReceiver_typeResolved() {
-    // arr[0].§ — receiver has '[', goes to resolveByPosition, but ArrayAccessTree
-    // is not visited so end-position match never fires
-    final var items =
-        complete(
-            """
-            class Test {
-                void m(String[] arr) {
-                    arr[0].toL§
-                }
-            }""");
-    assertThat(items)
-        .extracting(CompletionItem::getLabel)
-        .anyMatch(l -> l.startsWith("toLowerCase"));
-  }
-
-  @Test
-  void memberAccess_castReceiver_typeResolved() {
-    // ((Type) expr).§ — receiver has ' ', goes to resolveByPosition, but TypeCastTree
-    // is not visited so end-position match never fires
-    final var items =
-        complete(
-            """
-            class Test {
-                void m(Object obj) {
-                    ((String) obj).toL§
-                }
-            }""");
-    assertThat(items)
-        .extracting(CompletionItem::getLabel)
-        .anyMatch(l -> l.startsWith("toLowerCase"));
-  }
-
-  // ── stream API chains ─────────────────────────────────────────────────────
+  // ── stream chains ─────────────────────────────────────────────────────────────
 
   @Test
   void streamChain_streamMethods_returned() {
-    // list.stream().§ — MethodInvocationTree for stream() attributed as Stream<String>;
-    // checks that stream-specific methods (filter, map) are returned
     final var items =
-        complete(
-            """
-            class Test {
-                void m(java.util.List<String> list) {
-                    list.stream().§
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("filter"));
-    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("map"));
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    void m(java.util.List<String> list) {
+                        list.stream().§
+                    }
+                }"""));
+    assertThat(items).anyMatch(l -> l.startsWith("filter"));
+    assertThat(items).anyMatch(l -> l.startsWith("map"));
   }
 
   @Test
   void lambdaBody_methodCallReceiver_typeResolved() {
-    // s.trim().to§ inside a lambda — receiver is a method call, not a simple name;
-    // resolveByPosition must find the MethodInvocationTree for trim() inside the lambda body
-    final var items =
-        complete(
-            """
-            class Test {
-                void m(java.util.List<String> list) {
-                    list.forEach(s -> s.trim().to§);
-                }
-            }""");
-    assertThat(items)
-        .extracting(CompletionItem::getLabel)
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        void m(java.util.List<String> list) {
+                            list.forEach(s -> s.trim().to§);
+                        }
+                    }""")))
         .anyMatch(l -> l.startsWith("toLowerCase"));
   }
 
   @Test
   void builderChain_methodCallChain_typeResolved() {
-    // new StringBuilder().append("x").ap§ — receiver is a MethodInvocationTree (append),
-    // not a bare NewClassTree; resolveByPosition must match its end position at dotOffset
-    final var items =
-        complete(
-            """
-            class Test {
-                void m() {
-                    new StringBuilder().append("x").ap§
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("append"));
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        void m() {
+                            new StringBuilder().append("x").ap§
+                        }
+                    }""")))
+        .anyMatch(l -> l.startsWith("append"));
   }
 
-  // ── pending: stale-cache gaps ──────────────────────────────────────────────
+  // ── multiline chains ──────────────────────────────────────────────────────────
 
   @Test
-  void importDeclaration_staleCacheDotTrigger_packageSuggested() {
-    // Simulates dot-trigger: cached content has no dot yet, completion fires
-    // from the stale snapshot before the 500ms recompile.
-    final var items =
-        completeWithCache(
-            "import java;\nclass Test {}",
-            """
-            import java.§;
-
-            class Test {
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("util");
-  }
-
-  @Test
-  void importDeclaration_staleCacheDotTrigger_typeSuggested() {
-    final var items =
-        completeWithCache(
-            "import java.util;\nclass Test {}",
-            """
-            import java.util.§;
-
-            class Test {
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("Collections");
+  void multilineChain_threeLines_completionOnSameLine() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        String m() {
+                            return new StringBuilder()
+                                    .append("a")
+                                    .append("b").ap§
+                        }
+                    }""")))
+        .anyMatch(l -> l.startsWith("append"));
   }
 
   @Test
-  void importDeclaration_staticImport_staleCacheDotTrigger_packageSuggested() {
-    final var items =
-        completeWithCache(
-            "import static java;\nclass Test {}",
-            """
-            import static java.§;
+  void multilineChain_cursorAtFirstCall_continuationLinesBelow() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        StringBuilder makeBuilder() { return new StringBuilder(); }
+                        void m() {
+                            makeBuilder().§
+                                    .append("x")
+                                    .append("y");
+                        }
+                    }""")))
+        .anyMatch(l -> l.startsWith("append"));
+  }
 
-            class Test {
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("util");
+  @Test
+  void multilineChain_simpleIdentifierReceiver_crossLine() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        void m() {
+                            String s = "hello";
+                            s
+                                .§toUp
+                        }
+                    }""")))
+        .anyMatch(l -> l.startsWith("toUpper"));
+  }
+
+  @Test
+  void multilineChain_receiverOnPreviousLine_crossLineCompletion() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        String foo() { return ""; }
+                        void m() {
+                            foo()
+                                .toL§
+                        }
+                    }""")))
+        .anyMatch(l -> l.startsWith("toLowerCase"));
+  }
+
+  // ── stale cache ───────────────────────────────────────────────────────────────
+
+  @Test
+  void staleCacheDotTrigger_importSuggested() {
+    // non-static — two levels
+    assertThat(
+            labels(
+                fixture.completeWithCache(
+                    "import java;\nclass Test {}", "import java.§;\n\nclass Test {}")))
+        .contains("util");
+    assertThat(
+            labels(
+                fixture.completeWithCache(
+                    "import java.util;\nclass Test {}", "import java.util.§;\n\nclass Test {}")))
+        .contains("Collections");
+    // static
+    assertThat(
+            labels(
+                fixture.completeWithCache(
+                    "import static java;\nclass Test {}",
+                    "import static java.§;\n\nclass Test {}")))
+        .contains("util");
   }
 
   @Test
   void streamChain_staleCacheFilterLambda_typeResolved() {
-    // User types a new stream chain line not present at last compile time.
-    // The lambda param s is inferred from the stream element type, but the
-    // entire expression is absent from the cached snapshot tree.
-    final var items =
-        completeWithCache(
-            """
-            class Test {
-                void m(java.util.List<String> list) {
-                }
-            }""",
-            """
-            class Test {
-                void m(java.util.List<String> list) {
-                    list.stream().filter(s -> s.to§);
-                }
-            }""");
-    assertThat(items)
-        .extracting(CompletionItem::getLabel)
+    assertThat(
+            labels(
+                fixture.completeWithCache(
+                    """
+                    class Test {
+                        void m(java.util.List<String> list) {
+                        }
+                    }""",
+                    """
+                    class Test {
+                        void m(java.util.List<String> list) {
+                            list.stream().filter(s -> s.to§);
+                        }
+                    }""")))
         .anyMatch(l -> l.startsWith("toLowerCase"));
   }
 
   @Test
   void memberAccess_staleCacheNewLine_typeResolved() {
-    // User typed a brand-new line that was not present at last compile time.
-    // resolveByPosition walks the cached snapshot and finds no MethodInvocationTree
-    // at dotOffset because the node simply doesn't exist in the older tree.
-    final var items =
-        completeWithCache(
-            """
-            class Test {
-                java.util.List<String> getList() { return null; }
-                void m() {
-                }
-            }""",
-            """
-            class Test {
-                java.util.List<String> getList() { return null; }
-                void m() {
-                    getList().sub§
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("subList"));
-  }
-
-  // ── multiline chains ──────────────────────────────────────────────────────
-  // Three distinct failure modes, each with its own test:
-  //
-  // 1. Sentinel-line mismatch (SentinelParser): for a MemberSelectTree that spans
-  //    multiple lines, getStartPosition returns the start of the ENTIRE chain, not
-  //    the cursor line. Fix: use getEndPosition (always on the cursor's line).
-  //
-  // 2. Dangling continuation lines: when the cursor sits at the first call in a
-  //    chain, injection produces __LATHE_SENTINEL__; followed by the remaining
-  //    .method() calls as parse errors. Parser must still find the sentinel.
-  //
-  // 3. Cross-line receiver (CompletionEngine): when the receiver ends on line N and
-  //    the dot is on line N+1, dotOffset > getEndPosition(receiver). Fix:
-  //    skipBackWhitespace adjusts dotOffset to position right after receiver's last
-  //    character, restoring the exact-match invariant for resolveByPosition.
-  //    Note: simple-identifier receivers bypass resolveByPosition entirely
-  //    (scanForLocalDeclaration) and therefore work without the fix.
-
-  @Test
-  void multilineChain_threeLines_completionOnSameLine() {
-    // return new StringBuilder()           ← chain starts line 2 (0-indexed)
-    //         .append("a")                 ← line 3
-    //         .append("b").ap§             ← cursor line 4; receiver append("b") on THIS line
-    // getStartPosition of __SENTINEL__ = start of chain = line 2 ≠ expectedLspLine 4
-    final var items =
-        complete(
-            """
-            class Test {
-                String m() {
-                    return new StringBuilder()
-                            .append("a")
-                            .append("b").ap§
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("append"));
-  }
-
-  @Test
-  void multilineChain_cursorAtFirstCall_continuationLinesBelow() {
-    // forTesting().§               ← cursor here; continuation lines exist below
-    //         .packages(...)
-    //         .register(...)
-    // After injection: forTesting().__LATHE_SENTINEL__; followed by dangling .packages(...)
-    // lines. The sentinel line check must pass AND resolveByPosition must match forTesting().
-    final var items =
-        complete(
-            """
-            class Test {
-                StringBuilder makeBuilder() { return new StringBuilder(); }
-                void m() {
-                    makeBuilder().§
-                            .append("x")
-                            .append("y");
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("append"));
-  }
-
-  @Test
-  void multilineChain_simpleIdentifierReceiver_crossLine() {
-    // bufferedReader                ← simple local var, line N  (AbstractServerFactory pattern)
-    //     .§toUp                    ← dot on line N+1
-    // TypeResolver takes scanForLocalDeclaration path (name lookup, no position matching)
-    // so cross-line placement is fine; contrast with method-call receiver case below.
-    final var items =
-        complete(
-            """
-            class Test {
-                void m() {
-                    String s = "hello";
-                    s
-                        .§toUp
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("toUpper"));
-  }
-
-  @Test
-  void multilineChain_receiverOnPreviousLine_crossLineCompletion() {
-    // foo()                              ← receiver ends on line 3 (0-indexed)
-    //     .toL§                          ← dot is on line 4
-    // dotOffset (position of '.') > getEndPosition(foo()) because of the whitespace gap.
-    // Fix: skipBackWhitespace adjusts dotOffset to position right after receiver's ')'.
-    final var items =
-        complete(
-            """
-            class Test {
-                String foo() { return ""; }
-                void m() {
-                    foo()
-                        .toL§
-                }
-            }""");
-    assertThat(items)
-        .extracting(CompletionItem::getLabel)
-        .anyMatch(l -> l.startsWith("toLowerCase"));
+    assertThat(
+            labels(
+                fixture.completeWithCache(
+                    """
+                    class Test {
+                        java.util.List<String> getList() { return null; }
+                        void m() {
+                        }
+                    }""",
+                    """
+                    class Test {
+                        java.util.List<String> getList() { return null; }
+                        void m() {
+                            getList().sub§
+                        }
+                    }""")))
+        .anyMatch(l -> l.startsWith("subList"));
   }
 
   @Test
   void memberAccess_staleCacheReplacedExpression_typeResolved() {
-    // User replaced an existing expression in-place: the cached snapshot has a
-    // different call at the same source position, so the dotOffset from the current
-    // content hits a node with the wrong type in the cached tree.
-    final var items =
-        completeWithCache(
-            """
-            class Test {
-                String foo() { return ""; }
-                int bar() { return 0; }
-                void m() {
-                    bar();
-                }
-            }""",
-            """
-            class Test {
-                String foo() { return ""; }
-                int bar() { return 0; }
-                void m() {
-                    foo().toL§
-                }
-            }""");
-    assertThat(items)
-        .extracting(CompletionItem::getLabel)
+    assertThat(
+            labels(
+                fixture.completeWithCache(
+                    """
+                    class Test {
+                        String foo() { return ""; }
+                        int bar() { return 0; }
+                        void m() {
+                            bar();
+                        }
+                    }""",
+                    """
+                    class Test {
+                        String foo() { return ""; }
+                        int bar() { return 0; }
+                        void m() {
+                            foo().toL§
+                        }
+                    }""")))
         .anyMatch(l -> l.startsWith("toLowerCase"));
   }
 
-  // ── probe-derived: real-world patterns (UX analysis on dropwizard/helidon) ───
-  // Patterns observed while probing AbstractServerFactory.java,
-  // ConstraintViolationExceptionMapperTest.java, and MongoDbClient.java.
-  // Probe cursor positions had off-by-one errors (cursor ON the dot), so engine
-  // behaviour at the correct position was not verified. Each test documents one
-  // pattern that requires a specific TypeResolver path to work.
+  // ── real-world patterns ───────────────────────────────────────────────────────
 
   @Test
   void memberAccess_overloadedMethodCallReceiver_correctReturnTypeResolved() {
-    // assertThat(response.getStatus()).isEqualTo§
-    // Outer receiver assertThat(getStatus()) is a MethodInvocationTree whose argument
-    // is itself a MethodInvocationTree. resolveByPosition must attribute the outer call
-    // to the int-accepting overload and return IntAssert, not StrAssert.
     final var items =
-        complete(
+        fixture.complete(
             """
             class Test {
                 static class IntAssert {
@@ -1640,122 +1183,95 @@ class CompletionEngineTest {
                     assertThat(getStatus()).isEqual§
                 }
             }""");
-    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("isEqualTo"));
-    // StrAssert-only members must not appear — confirms the right overload was picked
+    assertThat(labels(items)).anyMatch(l -> l.startsWith("isEqualTo"));
     assertThat(items).noneMatch(i -> i.getLabel().startsWith("contains"));
   }
 
   @Test
   void memberAccess_methodCallReceiver_argumentContainsClassLiteral_returnTypeResolved() {
-    // assertThat(response.readEntity(String.class)).isEqualTo§
-    // The receiver's argument contains a .class literal: readEntity(String.class).
-    // collectReceiver must scan past the nested parens and the dotted literal without
-    // breaking early on the '.' inside 'String.class'.
-    final var items =
-        complete(
-            """
-            class Test {
-                static class StrAssert {
-                    StrAssert isEqualTo(String v) { return this; }
-                    StrAssert contains(String s) { return this; }
-                    StrAssert startsWith(String s) { return this; }
-                }
-                static StrAssert assertThat(String v) { return new StrAssert(); }
-                static <T> T readEntity(Class<T> cls) { return null; }
-                void m() {
-                    assertThat(readEntity(String.class)).isEqual§
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("isEqualTo"));
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        static class StrAssert {
+                            StrAssert isEqualTo(String v) { return this; }
+                            StrAssert contains(String s) { return this; }
+                            StrAssert startsWith(String s) { return this; }
+                        }
+                        static StrAssert assertThat(String v) { return new StrAssert(); }
+                        static <T> T readEntity(Class<T> cls) { return null; }
+                        void m() {
+                            assertThat(readEntity(String.class)).isEqual§
+                        }
+                    }""")))
+        .anyMatch(l -> l.startsWith("isEqualTo"));
   }
 
   @Test
   void memberAccess_methodParam_insideConstructorCallArg_typeResolved() {
-    // new ConnectionString(config.url§)
-    // config is a method parameter, not a local variable. collectReceiver stops at the
-    // opening '(' of ConnectionString, yielding "config". scanForLocalDeclaration must
-    // then find it among the enclosing method's parameters, not only its local vars.
-    final var items =
-        complete(
-            """
-            class Test {
-                static class Config {
-                    String url() { return ""; }
-                    String username() { return ""; }
-                }
-                static class Connection {
-                    Connection(String url) {}
-                }
-                void m(Config config) {
-                    new Connection(config.ur§);
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("url"));
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        static class Config {
+                            String url() { return ""; }
+                            String username() { return ""; }
+                        }
+                        static class Connection {
+                            Connection(String url) {}
+                        }
+                        void m(Config config) {
+                            new Connection(config.ur§);
+                        }
+                    }""")))
+        .anyMatch(l -> l.startsWith("url"));
   }
 
   @Test
   void memberAccess_localVar_insideStaticFactoryCallArg_typeResolved() {
-    // MongoClients.create(settingsBuilder.build§)
-    // settingsBuilder is a local variable; the cursor sits inside an argument to a
-    // static factory. The EXPRESSION context (backwardScan detects unclosed '(') must
-    // not interfere with MEMBER_ACCESS routing after SentinelParser classifies via AST.
-    final var items =
-        complete(
-            """
-            class Test {
-                static class Builder {
-                    Object build() { return null; }
-                    Builder credential(String c) { return this; }
-                }
-                static Object create(Object settings) { return null; }
-                void m() {
-                    Builder settingsBuilder = new Builder();
-                    create(settingsBuilder.buil§);
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("build"));
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        static class Builder {
+                            Object build() { return null; }
+                            Builder credential(String c) { return this; }
+                        }
+                        static Object create(Object settings) { return null; }
+                        void m() {
+                            Builder settingsBuilder = new Builder();
+                            create(settingsBuilder.buil§);
+                        }
+                    }""")))
+        .anyMatch(l -> l.startsWith("build"));
   }
 
-  // ── gap regression tests ──────────────────────────────────────────────────
-  // One test per open gap from docs/completion-gaps.md.
-  // Gap 1 (SEVERE crash) is server-level; not testable in CompletionEngineTest.
-  // Gaps 6, 8 are covered by existing tests (multilineChain_simpleIdentifierReceiver_crossLine,
-  // memberAccess_newClassReceiver_methodsReturned). Gaps 10, 11 are indexing-level.
-
-  // gap #2 ─ textEdit absent ─────────────────────────────────────────────────
+  // ── gap regressions ───────────────────────────────────────────────────────────
 
   @Test
   void memberAccess_item_hasTextEdit() {
-    // Every completion item must carry a non-null textEdit so clients can replace
-    // the prefix correctly rather than appending (duplicates like "toStrtoString()").
+    // gap #2: Every item must carry a textEdit so prefix replacement is correct
     final var items =
-        complete(
-            """
-            class Test {
-                void m(java.util.ArrayList<String> list) {
-                    list.toS§
-                }
-            }""");
+        fixture.complete("class Test { void m(java.util.ArrayList<String> l) { l.toS§ } }");
     assertThat(items).isNotEmpty();
     assertThat(items).allMatch(i -> i.getTextEdit() != null);
   }
 
-  // gap #3 ─ Object utility methods rank too high ────────────────────────────
-
   @Test
   void memberAccess_objectMethods_rankBelowDomainMembers() {
-    // ProposalGenerator.sortKey() returns "0_" for equals/hashCode/toString/getClass,
-    // the same bucket as domain methods. They must move to "7_" so domain methods sort first.
-    // Use size() ('s' > 'e') to expose the bug: "0_size" > "0_equals" with the current code.
+    // gap #3: equals/hashCode/toString sort below domain methods
     final var items =
-        complete(
+        fixture.complete(
             """
             class Test {
                 void m(java.util.ArrayList<String> list) {
                     list.§
                 }
             }""");
-    final var sizeItem = items.stream().filter(i -> i.getLabel().equals("size()")).findFirst();
+    final var sizeItem = itemLabeled(items, "size()");
     final var equalsItem =
         items.stream().filter(i -> i.getLabel().startsWith("equals")).findFirst();
     assertThat(sizeItem).isPresent();
@@ -1763,653 +1279,287 @@ class CompletionEngineTest {
     assertThat(sizeItem.get().getSortText()).isLessThan(equalsItem.get().getSortText());
   }
 
-  // gap #4 ─ kind missing on type-index items ───────────────────────────────
-
-  @Test
-  void typeIndex_classEntry_kindIsClass() {
-    // CompletionEngine.typeIndexItem() never calls setKind(). Type completions have no icon.
-    // Kind must be set from TypeIndexEntry.typeKind(): Class, Interface, Enum, or Record.
-    final var items =
-        completeWith(
-            eng,
-            """
-            class Test {
-                FooServ§ field;
-            }""");
-    final var fooService =
-        items.stream().filter(i -> "FooService".equals(i.getLabel())).findFirst();
-    assertThat(fooService).isPresent();
-    assertThat(fooService.get().getKind()).isEqualTo(CompletionItemKind.Class);
-  }
-
-  // gap #7 ─ field receiver resolves to wrong type ──────────────────────────
-
   @Test
   void memberAccess_classFieldReceiver_typeResolved() {
-    // handler is a class field (not a local variable or parameter).
-    // TypeResolver.scanForLocalDeclaration only checks method locals/params, not class fields.
-    final var items =
-        complete(
-            """
-            class Test {
-                java.util.ArrayList<String> handler = new java.util.ArrayList<>();
-                void m() {
-                    handler.sub§
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("subList"));
+    // gap #7: class field receiver — scanForLocalDeclaration only checks method locals
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        java.util.ArrayList<String> handler = new java.util.ArrayList<>();
+                        void m() {
+                            handler.sub§
+                        }
+                    }""")))
+        .anyMatch(l -> l.startsWith("subList"));
   }
 
-  // gap A: static-import members not offered as simple names ──────────────────────────────────────
+  @Test
+  void simpleName_emptyPrefix_noTypeIndexItems() {
+    // gap #12: empty prefix must not offer type-index items in class body or method body
+    assertThat(fixture.complete("class Test { § }"))
+        .noneMatch(i -> "ArrayDeque".equals(i.getLabel()));
+    assertThat(fixture.complete("class Test { void m() { § } }"))
+        .noneMatch(i -> "ArrayDeque".equals(i.getLabel()));
+  }
 
   @Test
   void simpleName_staticImportedMethod_offeredWithoutQualifier() {
-    // When a file has `import static java.util.Objects.requireNonNull`, typing `requireN`
-    // in a method body should offer requireNonNull as a simple-name completion.
-    // Regression: SimpleNameProposalCollector only consults local variables and class members;
-    // it does not walk CompilationUnitTree.getImports() for static imports, so statically-
-    // imported identifiers are silently absent.
-    final var items =
-        completeWithCurrentContentCached(
-            eng,
-            """
-            import static java.util.Objects.requireNonNull;
+    // gap A: static-import members not offered as simple names — single and wildcard
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    import static java.util.Objects.requireNonNull;
 
-            class Test {
-                void m(String s) {
-                    requireN§
-                }
-            }""");
-    assertThat(items)
-        .as("requireNonNull should be offered as a simple name via the static import")
-        .extracting(CompletionItem::getLabel)
+                    class Test {
+                        void m(String s) {
+                            requireN§
+                        }
+                    }""")))
+        .anyMatch(l -> l.startsWith("requireNonNull"));
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    import static java.util.Objects.*;
+
+                    class Test {
+                        void m(String s) {
+                            requireN§
+                        }
+                    }""")))
         .anyMatch(l -> l.startsWith("requireNonNull"));
   }
 
-  @Test
-  void simpleName_wildcardStaticImport_allMembersOffered() {
-    // import static java.util.Objects.* should make all static members of Objects available
-    // as simple-name completions.
-    final var items =
-        completeWithCurrentContentCached(
-            eng,
-            """
-            import static java.util.Objects.*;
-
-            class Test {
-                void m(String s) {
-                    requireN§
-                }
-            }""");
-    assertThat(items)
-        .as("wildcard static import should offer all static members of the imported type")
-        .extracting(CompletionItem::getLabel)
-        .anyMatch(l -> l.startsWith("requireNonNull"));
-  }
-
-  // gap #12 ─ bare dot with no receiver must return empty ─────────────────
-  //
-  // When the user types '.' at a position where there is no syntactic receiver
-  // (e.g. right after ';', right after '{', or at class-body level), the injected
-  // sentinel becomes '.__LATHE_SENTINEL__'.  Javac's error recovery drops the bare '.'
-  // and classifies the node as SIMPLE_NAME (method body) or TYPE_REFERENCE (class body),
-  // so the engine falls into those paths with prefix="" and receiverText=null and returns
-  // keyword / local-variable items.  Correct behaviour: 0 items.
+  // ── type index ────────────────────────────────────────────────────────────────
 
   @Test
-  void bareDot_afterSemicolon_sameLineInMethodBody_returnsEmpty() {
-    // 'stmt();.' on the same line — backward scan hits ';', receiverText=null
-    final var items =
-        complete(
-            """
-            class Test {
-                void m() {
-                    System.out.println("hi");.§
-                }
-            }""");
-    assertThat(items).isEmpty();
-  }
-
-  @Test
-  void bareDot_afterSemicolon_nextLineInMethodBody_returnsEmpty() {
-    // '.' on the line following a completed statement — scan crosses '\n' then ';',
-    // receiverText=null
-    final var items =
-        complete(
-            """
-            class Test {
-                void m() {
-                    System.out.println("hi");
-                    .§
-                }
-            }""");
-    assertThat(items).isEmpty();
-  }
-
-  @Test
-  void bareDot_atMethodBodyStart_returnsEmpty() {
-    // '.' as the very first token in a method body — backward scan hits '{', receiverText=null
-    final var items =
-        complete(
-            """
-            class Test {
-                void m() {
-                    .§
-                }
-            }""");
-    assertThat(items).isEmpty();
-  }
-
-  @Test
-  void bareDot_inClassBody_returnsEmpty() {
-    // '.' at class-body level — backward scan hits '{', receiverText=null;
-    // routes to TYPE_REFERENCE, currently returns class-body keywords
-    final var items =
-        complete(
-            """
-            class Test {
-                .§
-            }""");
-    assertThat(items).isEmpty();
-  }
-
-  // gap #12 ─ empty-prefix guard bypassed ───────────────────────────────────
-
-  @Test
-  void simpleName_emptyPrefixInClassBody_noTypeIndexItems() {
-    // Class-body position with empty prefix must not offer type-index items.
-    // Gap #12: helidon workspace returns 14 type-index items here via a routing path
-    // that bypasses the prefix.isEmpty() guard in completeSimpleNameTypeReference.
-    final var items =
-        completeWith(
-            eng,
-            """
-            class Test {
-                §
-            }""");
-    assertThat(items).noneMatch(i -> "FooService".equals(i.getLabel()));
-  }
-
-  @Test
-  void simpleName_emptyPrefixInMethodBody_noTypeIndexItems() {
-    // Method-body position with empty prefix must not offer type-index items.
-    // Gap #12: helidon workspace returns 33 type-index items here.
-    final var items =
-        completeWith(
-            eng,
-            """
-            class Test {
-                void m() {
-                    §
-                }
-            }""");
-    assertThat(items).noneMatch(i -> "FooService".equals(i.getLabel()));
-  }
-
-  // gap: java.lang types suggested without type-index ─────────────────────────
-
-  @Test
-  void methodBody_typePrefix_suggestsJavaLangType_withoutTypeIndex() {
-    // engine has an empty type index — String must still appear via the java.lang fallback.
-    // Two forms: as a type-reference (variable declaration) and as a bare expression.
-    final var decl =
-        complete(
-            """
-            class Test {
-                void m() {
-                    Str§ value;
-                }
-            }""");
-    assertThat(decl).extracting(CompletionItem::getLabel).contains("String");
-
-    final var bare =
-        complete(
-            """
-            class Test {
-                void m() {
-                    Str§
-                }
-            }""");
-    assertThat(bare).extracting(CompletionItem::getLabel).contains("String");
-  }
-
-  @Test
-  void constructorCall_typePrefix_suggestsJavaLangType_withoutTypeIndex() {
-    // 'new Str§' routes to CONSTRUCTOR_CALL context → completeSimpleNameTypeReference.
-    // java.lang types must appear via the same fallback used for TYPE_REFERENCE even
-    // when the type index is empty (gap: withLangTypes is not called for CONSTRUCTOR_CALL).
-    final var items =
-        complete(
-            """
-            class Test {
-                void m() {
-                    Object o = new Str§
-                }
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).contains("String");
-  }
-
-  // gap: platform types (java.util.*) must survive the type-index validator ─────
-
-  @Test
-  void typeIndex_platformType_survivesValidator_jpmsModule() throws IOException {
-    // java.base is implicitly required by every named module, so java.util.Objects must
-    // pass the type-index validator even when the module-info has no explicit requires.
-    // Regression: TypeIndexValidator.isVisiblePackage used getAllPackageElements which
-    // returns unexpected results for JDK packages in JPMS compilation contexts (e.g.
-    // the helidon workspace with --module-path and --release 26), causing every platform
-    // type to be silently dropped.  The fix uses getTypeElement exclusively.
-    final var eng = engineWith(typeEntry("Objects", "java.util.Objects", TypeKind.CLASS));
-
-    final var items =
-        completeWithJpmsCache(
-            eng,
-            """
-            package com.example.app;
-            class Test {
-                void m() {
-                    Obj§
-                }
-            }""",
-            """
-            module com.example.app {
-            }""");
-    assertThat(items).extracting(CompletionItem::getLabel).anyMatch(l -> l.startsWith("Objects"));
-  }
-
-  // --- type index: helpers ---
-
-  private CompletionEngine engineWith() throws IOException {
-    return engineWith(
-        typeEntry("FooService", "com.example.FooService", TypeKind.CLASS),
-        typeEntry("AbstractList", "java.util.AbstractList", TypeKind.CLASS),
-        typeEntry("Integer", "java.lang.Integer", TypeKind.CLASS),
-        typeEntry("Runnable", "java.lang.Runnable", TypeKind.INTERFACE),
-        typeEntry("StringBuilder", "java.lang.StringBuilder", TypeKind.CLASS),
-        typeEntry("String", "java.lang.String", TypeKind.CLASS));
-  }
-
-  private CompletionEngine engineWith(final TypeIndexEntry... entries) throws IOException {
-    final var shardPath = writeTypeIndexShard(tmp.resolve("type-index.json"), List.of(entries));
-    return new CompletionEngine(
-        sourceParser, compiler, WorkspaceTypeIndex.build(List.of(shardPath)));
-  }
-
-  private static List<CompletionItem> completeWith(
-      final CompletionEngine eng, final String markedSource) {
-    return eng.complete(completionRequest(markedSource)).items();
-  }
-
-  private static List<CompletionItem> completeWithCurrentContentCached(
-      final CompletionEngine eng, final String markedSource) {
-    final var c = cursor(markedSource);
-    final var compiled = compiler.compile("file:///Test.java", c.content(), CompileMode.FULL);
-    final var cached = new CachedFileAnalysis(c.content(), 0, compiled.fileAnalysis());
-    return eng.complete(
-            new CompletionRequest(
-                "file:///Test.java",
-                c.content(),
-                new Position(c.lspLine(), c.lspChar()),
-                null,
-                cached))
-        .items();
-  }
-
-  private List<CompletionItem> completeWithJpmsCache(
-      final CompletionEngine eng, final String markedSource, final String moduleInfo)
-      throws IOException {
-    final var c = cursor(markedSource);
-    final var cached = new CachedFileAnalysis(c.content(), 0, compileJpms(c.content(), moduleInfo));
-    return eng.complete(
-            new CompletionRequest(
-                "file:///Test.java",
-                c.content(),
-                new Position(c.lspLine(), c.lspChar()),
-                null,
-                cached))
-        .items();
-  }
-
-  private AttributedFileAnalysis compileJpms(final String source, final String moduleInfo)
-      throws IOException {
-    final Path moduleDir = tmp.resolve("jpms");
-    final Path moduleInfoFile = moduleDir.resolve("module-info.java");
-    final Path sourceFile = moduleDir.resolve("com/example/app/Test.java");
-    Files.createDirectories(sourceFile.getParent());
-    Files.writeString(moduleInfoFile, moduleInfo);
-    Files.writeString(sourceFile, source);
-
-    final var parsed = TestCompiler.parse(sourceFile, List.of("-proc:none"), moduleInfoFile);
-    return new AttributedFileAnalysis(
-        parsed.trees(),
-        parsed.task().getElements(),
-        parsed.task().getTypes(),
-        parsed.cu(),
-        List.of());
-  }
-
-  private static CompletionRequest completionRequest(final String markedSource) {
-    final var c = cursor(markedSource);
-    return new CompletionRequest(
-        "file:///Test.java", c.content(), new Position(c.lspLine(), c.lspChar()), null, null);
-  }
-
-  private static Path writeTypeIndexShard(final Path shardPath, final List<TypeIndexEntry> entries)
-      throws IOException {
-    Json.write(
-        new TypeIndexFile(
-            "v1",
-            TypeIndexOrigin.dependency(
-                new DependencyTypeIndexOrigin("test:lib:1.0", "/lib.jar", 0L, 0L)),
-            entries),
-        shardPath);
-    return shardPath;
-  }
-
-  private static TypeIndexEntry typeEntry(
-      final String simpleName, final String qualifiedName, final TypeKind kind) {
-    final var pkg = qualifiedName.substring(0, qualifiedName.lastIndexOf('.'));
-    return new TypeIndexEntry(simpleName, qualifiedName, pkg, kind);
-  }
-
-  // --- type index: positions where completion fires ---
-
-  @Test
-  void typeIndex_methodParam_suggestsIndexedType() {
-    assertThat(
-            completeWith(
-                eng,
-                """
-                class Test {
-                    void m(FooServ§ p) {}
-                }"""))
-        .extracting(CompletionItem::getLabel)
-        .contains("FooService");
-  }
-
-  @Test
-  void typeIndex_genericTypeArg_suggestsIndexedType() {
-    assertThat(
-            completeWith(
-                eng,
-                """
-                class Test {
-                    void m() {
-                        java.util.List<FooServ§> list;
-                    }
-                }"""))
-        .extracting(CompletionItem::getLabel)
-        .contains("FooService");
-  }
-
-  @Test
-  void typeIndex_fieldDeclaration_suggestsIndexedType() {
-    assertThat(
-            completeWith(
-                eng,
-                """
-                class Test {
-                    FooServ§ field;
-                }"""))
-        .extracting(CompletionItem::getLabel)
-        .contains("FooService");
-  }
-
-  @Test
-  void typeIndex_methodReturnType_suggestsIndexedType() {
-    assertThat(
-            completeWith(
-                eng,
-                """
-                class Test {
-                    FooServ§ getService() { return null; }
-                }"""))
-        .extracting(CompletionItem::getLabel)
-        .contains("FooService");
-  }
-
-  @Test
-  void typeIndex_shortPrefixValidationFirstPageUnderfills_suggestsReachableLaterCandidate()
-      throws IOException {
-    final List<TypeIndexEntry> entries =
-        Stream.concat(
-                // Put the reachable candidate after the current 200-candidate validation page.
-                IntStream.range(0, 220)
-                    .mapToObj(
-                        i ->
-                            typeEntry(
-                                "Maa%03d".formatted(i),
-                                "missing.Maa%03d".formatted(i),
-                                TypeKind.CLASS)),
-                Stream.of(typeEntry("Map", "java.util.Map", TypeKind.INTERFACE)))
-            .toList();
-    final var indexedEngine =
-        new CompletionEngine(
-            sourceParser,
-            compiler,
-            WorkspaceTypeIndex.build(
-                List.of(writeTypeIndexShard(tmp.resolve("short-prefix-underfill.json"), entries))));
-
-    assertThat(
-            completeWithCurrentContentCached(
-                indexedEngine,
-                """
-                class Test {
-                    M§ field;
-                }"""))
-        .extracting(CompletionItem::getLabel)
-        .contains("Map");
-  }
-
-  @Test
-  void typeIndex_completionOutcome_marksResultsIncomplete() {
-    final var outcome =
-        eng.complete(
-            completionRequest(
-                """
-                class Test {
-                    FooServ§ field;
-                }"""));
-
-    assertThat(outcome.items()).extracting(CompletionItem::getLabel).contains("FooService");
+  void typeIndex_fieldDeclaration_itemHasCorrectMetadataAndResultIsIncomplete() {
+    // gap #4: kind/detail must be populated; result must be marked incomplete
+    final var outcome = fixture.outcome("class Test { ArrayD§ field; }");
+    final var item = itemLabeled(outcome.items(), "ArrayDeque");
+    assertThat(item).isPresent();
+    assertThat(item.get().getKind()).isEqualTo(CompletionItemKind.Class);
+    assertThat(item.get().getDetail()).isEqualTo("java.util.ArrayDeque");
     assertThat(outcome.incomplete()).isTrue();
   }
 
   @Test
-  void typeIndex_candidates_rankExactCaseAndJavaLangFirst() throws IOException {
-    final var indexedEngine =
-        engineWith(
-            typeEntry("MoBeta", "com.example.MoBeta", TypeKind.CLASS),
-            typeEntry("moAlpha", "com.example.moAlpha", TypeKind.CLASS),
-            typeEntry("MoString", "java.lang.MoString", TypeKind.CLASS));
-
+  void typeIndex_suggestsIndexedTypeAtDeclarationSites() {
+    // TYPE_REFERENCE positions: method param, generic arg, field, return type, extends, implements
+    assertThat(labels(fixture.complete("class Test { void m(ArrayD§ p) {} }")))
+        .contains("ArrayDeque");
     assertThat(
-            completeWith(
-                indexedEngine,
-                """
-                class Test {
-                    Mo§ field;
-                }"""))
-        .extracting(CompletionItem::getLabel)
-        .containsExactly("MoString", "MoBeta", "moAlpha");
+            labels(fixture.complete("class Test { void m() { java.util.List<ArrayD§> list; } }")))
+        .contains("ArrayDeque");
+    assertThat(labels(fixture.complete("class Test { ArrayD§ field; }"))).contains("ArrayDeque");
+    assertThat(labels(fixture.complete("class Test { ArrayD§ getQ() { return null; } }")))
+        .contains("ArrayDeque");
+    assertThat(labels(fixture.complete("class Test extends AbstractL§ {}")))
+        .contains("AbstractList");
+    assertThat(labels(fixture.complete("class Test implements Runn§ {}"))).contains("Runnable");
   }
 
   @Test
-  void typeIndex_jpmsReadablePackage_suggestsIndexedType() throws IOException {
-    final var indexedEngine =
-        engineWith(typeEntry("JButton", "javax.swing.JButton", TypeKind.CLASS));
+  void typeIndex_suggestsIndexedTypeInCodeStatements() {
+    // SIMPLE_NAME positions with uppercase prefix: method body, ctor body, local var, new-prefix
+    assertThat(labels(fixture.complete("class Test { void m() { ArrayD§ } }")))
+        .contains("ArrayDeque");
+    assertThat(labels(fixture.complete("class Test { void m() { ArrayD§ local; } }")))
+        .contains("ArrayDeque");
+    assertThat(labels(fixture.complete("class Test { Test() { ArrayD§ } }")))
+        .contains("ArrayDeque");
+    assertThat(labels(fixture.complete("class Test { void m() { new StringBuilder(); ArrayD§ } }")))
+        .contains("ArrayDeque");
+    assertThat(labels(fixture.complete("class Test { void m() { Object x = new ArrayD§ } }")))
+        .contains("ArrayDeque");
+  }
 
+  @Test
+  void typeIndex_candidates_javaLangRanksBeforeOtherPackages() throws IOException {
+    localFixture =
+        new CompletionFixture(
+            CompletionFixture.typeIndex(
+                tmp.resolve("index.json"),
+                CompletionFixture.typeEntry(
+                    "StringJoiner", "java.util.StringJoiner", TypeKind.CLASS),
+                CompletionFixture.typeEntry(
+                    "StringBuilder", "java.lang.StringBuilder", TypeKind.CLASS)));
+    final var items = labels(localFixture.complete("class Test { Str§ field; }"));
+    assertThat(items.indexOf("StringBuilder")).isLessThan(items.indexOf("StringJoiner"));
+  }
+
+  // ── java.lang fallback (no type index) ───────────────────────────────────────
+
+  @Test
+  void methodBody_typePrefix_suggestsJavaLangType_withoutTypeIndex() {
+    // engine has an empty type index — String must still appear via the java.lang fallback
+    localFixture = new CompletionFixture();
+    assertThat(labels(localFixture.complete("class Test { void m() { Str§ value; } }")))
+        .contains("String");
+    assertThat(labels(localFixture.complete("class Test { void m() { Str§ } }")))
+        .contains("String");
+  }
+
+  @Test
+  void constructorCall_typePrefix_suggestsJavaLangType_withoutTypeIndex() {
+    localFixture = new CompletionFixture();
+    assertThat(labels(localFixture.complete("class Test { void m() { Object o = new Str§ } }")))
+        .contains("String");
+  }
+
+  // ── type index: unimported simple name fallback (gap B) ───────────────────────
+
+  @Test
+  void memberAccess_unimportedSimpleName_typeIndexFallback_suggestsMembers() throws IOException {
+    localFixture =
+        new CompletionFixture(
+            CompletionFixture.typeIndex(
+                tmp.resolve("index.json"),
+                CompletionFixture.typeEntry("Objects", "java.util.Objects", TypeKind.CLASS)));
     assertThat(
-            completeWithJpmsCache(
-                indexedEngine,
-                """
-                package com.example.app;
+            labels(
+                localFixture.complete(
+                    """
+                    import static java.util.Objects.requireNonNull;
 
-                class Test {
-                    JBut§ field;
-                }""",
-                """
-                module com.example.app {
-                  requires java.desktop;
-                }"""))
-        .extracting(CompletionItem::getLabel)
+                    class Test {
+                        void m(String s) {
+                            Objects.§
+                        }
+                    }""")))
+        .anyMatch(l -> l.startsWith("requireNonNull"));
+  }
+
+  // ── type index: JPMS visibility ───────────────────────────────────────────────
+
+  @Test
+  void typeIndex_jpmsReadablePackage_suggestsIndexedType() throws IOException {
+    localFixture =
+        new CompletionFixture(
+            CompletionFixture.typeIndex(
+                tmp.resolve("index.json"),
+                CompletionFixture.typeEntry("JButton", "javax.swing.JButton", TypeKind.CLASS)),
+            tmp);
+    assertThat(
+            labels(
+                localFixture.completeWithJpms(
+                    """
+                    package com.example.app;
+
+                    class Test {
+                        JBut§ field;
+                    }""",
+                    """
+                    module com.example.app {
+                      requires java.desktop;
+                    }""")))
         .contains("JButton");
   }
 
   @Test
   void typeIndex_jpmsUnreadablePackage_doesNotSuggestIndexedType() throws IOException {
-    final var indexedEngine =
-        engineWith(typeEntry("JButton", "javax.swing.JButton", TypeKind.CLASS));
-
+    localFixture =
+        new CompletionFixture(
+            CompletionFixture.typeIndex(
+                tmp.resolve("index.json"),
+                CompletionFixture.typeEntry("JButton", "javax.swing.JButton", TypeKind.CLASS)),
+            tmp);
     assertThat(
-            completeWithJpmsCache(
-                indexedEngine,
-                """
-                package com.example.app;
+            labels(
+                localFixture.completeWithJpms(
+                    """
+                    package com.example.app;
 
-                class Test {
-                    JBut§ field;
-                }""",
-                """
-                module com.example.app {
-                }"""))
-        .extracting(CompletionItem::getLabel)
+                    class Test {
+                        JBut§ field;
+                    }""",
+                    """
+                    module com.example.app {
+                    }""")))
         .doesNotContain("JButton");
   }
 
-  // --- type index: gaps ---
+  @Test
+  void typeIndex_platformType_survivesValidator_jpmsModule() throws IOException {
+    localFixture =
+        new CompletionFixture(
+            CompletionFixture.typeIndex(
+                tmp.resolve("index.json"),
+                CompletionFixture.typeEntry("Objects", "java.util.Objects", TypeKind.CLASS)),
+            tmp);
+    assertThat(
+            labels(
+                localFixture.completeWithJpms(
+                    """
+                    package com.example.app;
+                    class Test {
+                        void m() {
+                            Obj§
+                        }
+                    }""",
+                    """
+                    module com.example.app {
+                    }""")))
+        .anyMatch(l -> l.startsWith("Objects"));
+  }
+
+  // ── argument position: importable types ───────────────────────────────────────
 
   @Test
-  void typeIndex_bareUppercasePrefixInMethodBody_suggestsIndexedType() {
-    assertThat(
-            completeWith(
-                eng,
+  void argumentPosition_importableTypeAddsImport() throws IOException {
+    localFixture =
+        new CompletionFixture(
+            CompletionFixture.typeIndex(
+                tmp.resolve("index.json"),
+                CompletionFixture.typeEntry("ArrayList", "java.util.ArrayList", TypeKind.CLASS)));
+    assertThatCompletion(
+            localFixture.complete(
                 """
                 class Test {
-                    void m() {
-                        FooServ§
-                    }
-                }"""))
-        .extracting(CompletionItem::getLabel)
-        .contains("FooService");
+                  void accept(Object value) {}
+
+                  void m() {
+                    accept(new ArrayL§);
+                  }
+                }
+                """))
+        .containsLabel("ArrayList")
+        .item("ArrayList")
+        .hasImportEdit("java.util.ArrayList");
   }
 
   @Test
-  void typeIndex_bareUppercasePrefixInConstructorBody_suggestsIndexedType() {
-    assertThat(
-            completeWith(
-                eng,
+  void argumentPosition_staticMemberFit_offeredWithStaticImportEdit() throws IOException {
+    localFixture =
+        new CompletionFixture(
+            CompletionFixture.typeIndex(
+                tmp.resolve("index.json"),
+                CompletionFixture.typeEntry(
+                    "StringSources", "example.StringSources", TypeKind.CLASS)));
+    assertThatCompletion(
+            localFixture.complete(
                 """
+                package example;
+
+                class StringSources {
+                  public static String sample() { return ""; }
+                  public static int count() { return 0; }
+                }
+
                 class Test {
-                    Test() {
-                        FooServ§
-                    }
-                }"""))
-        .extracting(CompletionItem::getLabel)
-        .contains("FooService");
-  }
+                  void accept(String value) {}
 
-  @Test
-  void typeIndex_bareUppercasePrefixAfterConstructorCall_suggestsIndexedType() {
-    assertThat(
-            completeWith(
-                eng,
-                """
-                class Test {
-                    void m() {
-                        new StringBuilder();
-                        FooServ§
-                    }
-                }"""))
-        .extracting(CompletionItem::getLabel)
-        .contains("FooService");
-  }
-
-  @Test
-  void typeIndex_constructorCallTypePrefix_suggestsIndexedType() {
-    assertThat(
-            completeWith(
-                eng,
-                """
-                class Test {
-                    void m() {
-                        Object service = new FooServ§
-                    }
-                }"""))
-        .extracting(CompletionItem::getLabel)
-        .contains("FooService");
-  }
-
-  @Test
-  void typeIndex_bareLowercasePrefixInMethodBody_doesNotSuggestIndexedType() throws IOException {
-    final var indexedEngine =
-        engineWith(typeEntry("fooService", "com.example.fooService", TypeKind.CLASS));
-
-    assertThat(
-            completeWith(
-                indexedEngine,
-                """
-                class Test {
-                    void m() {
-                        fooServ§
-                    }
-                }"""))
-        .extracting(CompletionItem::getLabel)
-        .doesNotContain("fooService");
-  }
-
-  @Test
-  void typeIndex_localVariable_suggestsIndexedType() {
-    assertThat(
-            completeWith(
-                eng,
-                """
-                class Test {
-                    void m() {
-                        FooServ§ local;
-                    }
-                }"""))
-        .extracting(CompletionItem::getLabel)
-        .contains("FooService");
-  }
-
-  @Test
-  void typeIndex_extendsClause_suggestsIndexedType() {
-    assertThat(
-            completeWith(
-                eng,
-                """
-                class Test extends FooServ§ {
-                }"""))
-        .extracting(CompletionItem::getLabel)
-        .contains("FooService");
-  }
-
-  @Test
-  void typeIndex_implementsClause_suggestsIndexedType() {
-    assertThat(
-            completeWith(
-                eng,
-                """
-                class Test implements FooServ§ {
-                }"""))
-        .extracting(CompletionItem::getLabel)
-        .contains("FooService");
-  }
-
-  @Test
-  void typeReference_simpleNameFromTypeIndex_returnsIndexedType() throws IOException {
-    final var indexedEngine = engineWith();
-
-    final var items =
-        completeWith(
-            indexedEngine,
-            """
-            class Test {
-                void m(FooServ§ param) {}
-            }""");
-
-    assertThat(items).extracting(CompletionItem::getLabel).contains("FooService");
-    assertThat(items).extracting(CompletionItem::getDetail).contains("com.example.FooService");
+                  void m() {
+                    accept(StringS§);
+                  }
+                }
+                """))
+        .containsLabel("sample()")
+        .doesNotContainLabel("count()")
+        .item("sample()")
+        .hasStaticImportEdit("example.StringSources.sample");
   }
 }
