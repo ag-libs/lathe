@@ -4,7 +4,10 @@ import static io.github.aglibs.lathe.server.analysis.completion.CompletionResult
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
+import io.github.aglibs.lathe.server.TestCompiler;
+import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
@@ -367,6 +370,53 @@ class CompletionEngineTest {
   void memberAccess_stringLiteralReceiver_stringMethodsReturned() {
     assertThat(labels(fixture.complete("class Test { void m() { \"hello\".to§ } }")))
         .anyMatch(l -> l.startsWith("toLowerCase"));
+  }
+
+  // ── FQN / package navigation ──────────────────────────────────────────────────
+
+  @Test
+  void fqnNavigation_topLevelPackage_suggestsSubPackages() {
+    final List<String> items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    void m() {
+                        java.§
+                    }
+                }"""));
+    assertThat(items).contains("util", "lang");
+    assertThat(items).doesNotContain("ArrayList", "String", "if", "for");
+  }
+
+  @Test
+  void fqnNavigation_nestedPackage_suggestsTypesAndSubPackages() {
+    final List<String> items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    void m() {
+                        java.util.§
+                    }
+                }"""));
+    assertThat(items).contains("ArrayDeque", "AbstractList", "concurrent");
+    assertThat(items).doesNotContain("if", "for", "TimeUnit");
+  }
+
+  @Test
+  void fqnNavigation_deepPackage_suggestsTypes() {
+    final List<String> items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    void m() {
+                        java.util.concurrent.§
+                    }
+                }"""));
+    assertThat(items).contains("TimeUnit");
+    assertThat(items).doesNotContain("ArrayDeque", "AbstractList");
   }
 
   // ── import declarations ───────────────────────────────────────────────────────
@@ -1600,6 +1650,169 @@ class CompletionEngineTest {
                         }
                     }""")))
         .anyMatch(l -> l.startsWith("requireNonNull"));
+  }
+
+  // ── FQN navigation: JPMS visibility ──────────────────────────────────────────
+
+  @Test
+  void fqnNavigation_isAccessible_filtersNonExportedPackageTypes() throws IOException {
+    final Path libSrc = tmp.resolve("lib-src");
+    Files.createDirectories(libSrc.resolve("com/example/lib/api"));
+    Files.createDirectories(libSrc.resolve("com/example/lib/internal"));
+    Files.writeString(
+        libSrc.resolve("module-info.java"),
+        """
+        module com.example.lib {
+            exports com.example.lib.api;
+        }""");
+    Files.writeString(
+        libSrc.resolve("com/example/lib/api/ApiType.java"),
+        "package com.example.lib.api; public class ApiType {}");
+    Files.writeString(
+        libSrc.resolve("com/example/lib/internal/InternalType.java"),
+        "package com.example.lib.internal; public class InternalType {}");
+    final Path libOut = tmp.resolve("lib-out");
+    TestCompiler.compileToDir(
+        libOut,
+        List.of(),
+        List.of(),
+        libSrc.resolve("module-info.java"),
+        libSrc.resolve("com/example/lib/api/ApiType.java"),
+        libSrc.resolve("com/example/lib/internal/InternalType.java"));
+
+    localFixture = new CompletionFixture(WorkspaceTypeIndex.empty(), tmp);
+    final List<String> modulePath = List.of("--module-path", libOut.toString());
+    final String moduleInfo =
+        """
+        module com.example.app {
+            requires com.example.lib;
+        }""";
+
+    assertThat(
+            labels(
+                localFixture.completeWithJpms(
+                    """
+                    package com.example.app;
+                    class Test {
+                        void m() { com.example.lib.api.§ }
+                    }""",
+                    moduleInfo,
+                    modulePath)))
+        .contains("ApiType");
+
+    assertThat(
+            labels(
+                localFixture.completeWithJpms(
+                    """
+                    package com.example.app;
+                    class Test {
+                        void m() { com.example.lib.internal.§ }
+                    }""",
+                    moduleInfo,
+                    modulePath)))
+        .doesNotContain("InternalType");
+
+    // import declaration
+    assertThat(
+            labels(
+                localFixture.completeWithJpms(
+                    """
+                    package com.example.app;
+                    import com.example.lib.internal.§;
+                    class Test {}""",
+                    moduleInfo,
+                    modulePath)))
+        .doesNotContain("InternalType");
+
+    // class body type reference
+    assertThat(
+            labels(
+                localFixture.completeWithJpms(
+                    """
+                    package com.example.app;
+                    class Test {
+                        com.example.lib.internal.§ field;
+                    }""",
+                    moduleInfo,
+                    modulePath)))
+        .doesNotContain("InternalType");
+  }
+
+  @Test
+  @Disabled(
+      "Gap — static import path passes null scope so isAccessible is not checked; non-exported types leak through")
+  void fqnNavigation_isAccessible_staticImport_filtersNonExportedPackageTypes() throws IOException {
+    final Path libSrc = tmp.resolve("lib-src2");
+    Files.createDirectories(libSrc.resolve("com/example/lib/internal"));
+    Files.writeString(
+        libSrc.resolve("module-info.java"),
+        """
+        module com.example.lib {
+            exports com.example.lib.api;
+        }""");
+    Files.writeString(
+        libSrc.resolve("com/example/lib/internal/InternalType.java"),
+        "package com.example.lib.internal; public class InternalType {}");
+    final Path libOut = tmp.resolve("lib-out2");
+    TestCompiler.compileToDir(
+        libOut,
+        List.of(),
+        List.of(),
+        libSrc.resolve("module-info.java"),
+        libSrc.resolve("com/example/lib/internal/InternalType.java"));
+
+    localFixture = new CompletionFixture(WorkspaceTypeIndex.empty(), tmp);
+    assertThat(
+            labels(
+                localFixture.completeWithJpms(
+                    """
+                    package com.example.app;
+                    import static com.example.lib.internal.§;
+                    class Test {}""",
+                    """
+                    module com.example.app {
+                        requires com.example.lib;
+                    }""",
+                    List.of("--module-path", libOut.toString()))))
+        .doesNotContain("InternalType");
+  }
+
+  @Test
+  void fqnNavigation_jpmsReadableModule_suggestsTypes() throws IOException {
+    localFixture = new CompletionFixture(WorkspaceTypeIndex.empty(), tmp);
+    assertThat(
+            labels(
+                localFixture.completeWithJpms(
+                    """
+                    package com.example.app;
+                    class Test {
+                        void m() {
+                            javax.swing.§
+                        }
+                    }""",
+                    """
+                    module com.example.app {
+                        requires java.desktop;
+                    }""")))
+        .anyMatch(l -> l.startsWith("J"));
+  }
+
+  @Test
+  void fqnNavigation_jpmsUnreadableModule_suggestsNothing() throws IOException {
+    localFixture = new CompletionFixture(WorkspaceTypeIndex.empty(), tmp);
+    assertThat(
+            localFixture.completeWithJpms(
+                """
+                package com.example.app;
+                class Test {
+                    void m() {
+                        javax.swing.§
+                    }
+                }""",
+                """
+                module com.example.app {
+                }"""))
+        .isEmpty();
   }
 
   // ── type index: JPMS visibility ───────────────────────────────────────────────

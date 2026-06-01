@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
+import com.sun.source.tree.Scope;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -12,9 +13,11 @@ import javax.lang.model.element.TypeElement;
 final class ImportCompletionProvider {
 
   private final AttributedFileAnalysis snapshot;
+  private final Scope scope;
 
-  ImportCompletionProvider(final AttributedFileAnalysis snapshot) {
+  ImportCompletionProvider(final AttributedFileAnalysis snapshot, final Scope scope) {
     this.snapshot = snapshot;
+    this.scope = scope;
   }
 
   List<CompletionCandidate> proposeCandidates(final String packageName, final String prefix) {
@@ -22,8 +25,9 @@ final class ImportCompletionProvider {
       return topLevelCandidates(prefix);
     }
 
-    return Stream.concat(typeStream(packageName, prefix), subPackageStream(packageName, prefix))
-        .toList();
+    final var typeStream = typeStream(packageName, prefix);
+    final var subPackageStream = subPackageStream(packageName, prefix);
+    return Stream.concat(typeStream, subPackageStream).toList();
   }
 
   private List<CompletionCandidate> topLevelCandidates(final String prefix) {
@@ -62,6 +66,7 @@ final class ImportCompletionProvider {
         .flatMap(pkg -> pkg.getEnclosedElements().stream())
         .filter(el -> isImportableType(el.getKind()))
         .filter(el -> el.getSimpleName().toString().startsWith(prefix))
+        .filter(el -> scope == null || snapshot.trees().isAccessible(scope, (TypeElement) el))
         .collect(
             Collectors.toMap(
                 el -> el.getSimpleName().toString(),

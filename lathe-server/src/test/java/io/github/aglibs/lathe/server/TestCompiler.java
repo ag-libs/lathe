@@ -30,11 +30,20 @@ public final class TestCompiler {
   private TestCompiler() {}
 
   public static void compileToDir(final Path classDir, final Path... sources) throws IOException {
-    compileToDir(classDir, List.of(), sources);
+    compileToDir(classDir, List.of(), List.of(), sources);
   }
 
   public static void compileToDir(
       final Path classDir, final List<Path> classpath, final Path... sources) throws IOException {
+    compileToDir(classDir, classpath, List.of(), sources);
+  }
+
+  public static void compileToDir(
+      final Path classDir,
+      final List<Path> classpath,
+      final List<String> options,
+      final Path... sources)
+      throws IOException {
     final var fm = JavaSourceCompiler.createFileManager();
     Files.createDirectories(classDir);
     fm.setLocationFromPaths(StandardLocation.CLASS_OUTPUT, List.of(classDir));
@@ -42,7 +51,13 @@ public final class TestCompiler {
       fm.setLocationFromPaths(StandardLocation.CLASS_PATH, classpath);
     }
     JavaSourceCompiler.COMPILER
-        .getTask(null, fm, null, null, null, fm.getJavaFileObjects(sources))
+        .getTask(
+            null,
+            fm,
+            null,
+            options.isEmpty() ? null : options,
+            null,
+            fm.getJavaFileObjects(sources))
         .call();
   }
 

@@ -17,6 +17,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.stream.Stream;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.Position;
 
@@ -62,9 +63,16 @@ final class CompletionFixture implements AutoCloseable {
 
   List<CompletionItem> completeWithJpms(final String markedSource, final String moduleInfo)
       throws IOException {
+    return completeWithJpms(markedSource, moduleInfo, List.of());
+  }
+
+  List<CompletionItem> completeWithJpms(
+      final String markedSource, final String moduleInfo, final List<String> extraOptions)
+      throws IOException {
     final var cursor = CursorFixture.cursor(markedSource);
     final var cached =
-        new CachedFileAnalysis(cursor.content(), 0, jpmsAnalysis(cursor.content(), moduleInfo));
+        new CachedFileAnalysis(
+            cursor.content(), 0, jpmsAnalysis(cursor.content(), moduleInfo, extraOptions));
     return engine.complete(request(cursor, cached)).items();
   }
 
@@ -91,7 +99,8 @@ final class CompletionFixture implements AutoCloseable {
     return compiler.compile(TEST_URI, source, CompileMode.FULL).fileAnalysis();
   }
 
-  private AttributedFileAnalysis jpmsAnalysis(final String source, final String moduleInfo)
+  private AttributedFileAnalysis jpmsAnalysis(
+      final String source, final String moduleInfo, final List<String> extraOptions)
       throws IOException {
     final Path moduleDir = tmpDir.resolve("jpms");
     final Path moduleInfoFile = moduleDir.resolve("module-info.java");
@@ -99,7 +108,9 @@ final class CompletionFixture implements AutoCloseable {
     Files.createDirectories(sourceFile.getParent());
     Files.writeString(moduleInfoFile, moduleInfo);
     Files.writeString(sourceFile, source);
-    final var parsed = TestCompiler.parse(sourceFile, List.of("-proc:none"), moduleInfoFile);
+    final List<String> options =
+        Stream.concat(Stream.of("-proc:none"), extraOptions.stream()).toList();
+    final var parsed = TestCompiler.parse(sourceFile, options, moduleInfoFile);
     return new AttributedFileAnalysis(
         parsed.trees(),
         parsed.task().getElements(),

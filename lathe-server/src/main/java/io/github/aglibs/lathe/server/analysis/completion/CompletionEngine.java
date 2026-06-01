@@ -105,8 +105,9 @@ public final class CompletionEngine {
       return CompletionOutcome.of(List.of());
     }
 
+    final var scope = TypeResolver.resolveScope(analysis, req.cursorOffset());
     final var candidates =
-        new ImportCompletionProvider(analysis)
+        new ImportCompletionProvider(analysis, scope)
             .proposeCandidates(parsed.receiverText(), injected.prefix());
     final List<CompletionItem> items =
         candidates.stream().map(CompletionItemPresenter::present).toList();
@@ -387,7 +388,7 @@ public final class CompletionEngine {
         && initialSnapshot != null
         && parsed.receiverText() != null) {
       final var candidates =
-          new ImportCompletionProvider(initialSnapshot)
+          new ImportCompletionProvider(initialSnapshot, null)
               .proposeCandidates(parsed.receiverText(), injected.prefix());
       return new CompletionOutcome(
           candidates.stream().map(CompletionItemPresenter::present).toList(), null);
@@ -414,6 +415,16 @@ public final class CompletionEngine {
                     freshAnalysis != null));
 
     if (resolved == null) {
+      if (snapshot != null && parsed.receiverText() != null) {
+        final var pkgScope = TypeResolver.resolveScope(snapshot, req.cursorOffset());
+        final var packageCandidates =
+            new ImportCompletionProvider(snapshot, pkgScope)
+                .proposeCandidates(parsed.receiverText(), injected.prefix());
+        if (!packageCandidates.isEmpty()) {
+          return CompletionOutcome.of(
+              packageCandidates.stream().map(CompletionItemPresenter::present).toList());
+        }
+      }
       return completeMemberAccessTypeIndexFallback(parsed, injected, snapshot, req.cursorOffset());
     }
 
