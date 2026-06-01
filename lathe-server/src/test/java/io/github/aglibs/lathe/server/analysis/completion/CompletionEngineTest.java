@@ -74,6 +74,116 @@ class CompletionEngineTest {
     return items.stream().filter(i -> text.equals(i.getFilterText())).findFirst();
   }
 
+  private record CompletionSemanticCase(
+      String site, String source, List<String> expectedLabels, List<String> forbiddenLabels) {}
+
+  @Disabled("Gap discovery matrix; promote reviewed rows into active tests before fixing.")
+  @Test
+  void completionSemantics_gapDiscoveryMatrix() {
+    final List<CompletionSemanticCase> cases =
+        List.of(
+            new CompletionSemanticCase(
+                "constructor type excludes private-constructor class",
+                "class Test { void m() { Object value = new Mat§ } }",
+                List.of(),
+                List.of("Math")),
+            new CompletionSemanticCase(
+                "constructor type excludes interface",
+                "class Test { void m() { Object value = new Runn§ } }",
+                List.of(),
+                List.of("Runnable")),
+            new CompletionSemanticCase(
+                "constructor type excludes enum",
+                "class Test { void m() { Object value = new TimeU§ } }",
+                List.of(),
+                List.of("TimeUnit")),
+            new CompletionSemanticCase(
+                "class extends excludes interface",
+                "class Test extends Runn§ {}",
+                List.of(),
+                List.of("Runnable")),
+            new CompletionSemanticCase(
+                "class implements excludes class",
+                "class Test implements ArrayD§ {}",
+                List.of(),
+                List.of("ArrayDeque")),
+            new CompletionSemanticCase(
+                "string initializer excludes boolean literals",
+                """
+                class Test {
+                    String getValue() { return ""; }
+                    void m() {
+                        String s = §
+                    }
+                }""",
+                List.of("getValue"),
+                List.of("true", "false")),
+            new CompletionSemanticCase(
+                "boolean initializer includes boolean literals",
+                """
+                class Test {
+                    boolean getFlag() { return true; }
+                    void m() {
+                        boolean flag = §
+                    }
+                }""",
+                List.of("true", "false", "getFlag"),
+                List.of("null")),
+            new CompletionSemanticCase(
+                "static-imported enum constant as simple name",
+                """
+                import static java.util.concurrent.TimeUnit.SECONDS;
+
+                class Test {
+                    void m() {
+                        SE§
+                    }
+                }""",
+                List.of("SECONDS"),
+                List.of()),
+            new CompletionSemanticCase(
+                "throws clause excludes non-throwable class",
+                "class Test { void m() throws Str§ {} }",
+                List.of(),
+                List.of("String")),
+            new CompletionSemanticCase(
+                "annotation context excludes ordinary class",
+                "@Str§ class Test {}",
+                List.of(),
+                List.of("String")),
+            new CompletionSemanticCase(
+                "annotation named element suggests only element names",
+                "@SuppressWarnings(va§ = \"\") class Test {}",
+                List.of("value"),
+                List.of("String", "class", "true", "false")),
+            new CompletionSemanticCase(
+                "annotation enum value excludes unrelated values",
+                "@java.lang.annotation.Retention(§) class Test {}",
+                List.of(),
+                List.of("String", "true", "false", "class")),
+            new CompletionSemanticCase(
+                "annotation declaration body excludes value and statement keywords",
+                "@interface Marker { § }",
+                List.of(),
+                List.of("if", "return", "true", "false")),
+            new CompletionSemanticCase(
+                "annotation element return type excludes illegal value keywords",
+                "@interface Marker { Str§ value(); }",
+                List.of("String"),
+                List.of("true", "false")),
+            new CompletionSemanticCase(
+                "declaration name slot excludes type candidates",
+                "class Test { String §; }",
+                List.of(),
+                List.of("String", "ArrayDeque")));
+
+    for (final CompletionSemanticCase c : cases) {
+      final List<String> labels = labels(fixture.complete(c.source()));
+      assertThat(labels).as(c.site()).containsAll(c.expectedLabels());
+      assertThat(labels).as(c.site()).doesNotContainAnyElementsOf(c.forbiddenLabels());
+    }
+  }
+
   // ── member access ────────────────────────────────────────────────────────────
 
   @Test
@@ -303,7 +413,8 @@ class CompletionEngineTest {
                         }
                     }""")))
         .contains("FIRST", "SECOND");
-    assertThat(labels(fixture.complete("class Test { void m() { java.util.concurrent.TimeUnit.§ } }")))
+    assertThat(
+            labels(fixture.complete("class Test { void m() { java.util.concurrent.TimeUnit.§ } }")))
         .contains("SECONDS");
     assertThat(
             labels(
@@ -475,7 +586,9 @@ class CompletionEngineTest {
             .findFirst();
     assertThat(equalsItem).isPresent();
     assertThat(equalsItem.get().getTextEdit().getLeft().getNewText()).isEqualTo("equals;");
-    assertThat(labels(fixture.complete("import static java.util.concurrent.TimeUnit.§\nclass Test {}")))
+    assertThat(
+            labels(
+                fixture.complete("import static java.util.concurrent.TimeUnit.§\nclass Test {}")))
         .contains("SECONDS");
   }
 
@@ -537,7 +650,7 @@ class CompletionEngineTest {
                         throw §
                     }
                 }"""));
-    assertThat(items).contains("new", "null", "this", "super");
+    assertThat(items).contains("new", "null", "true", "false", "this", "super");
     assertThat(items)
         .doesNotContain(
             "if",
@@ -571,7 +684,7 @@ class CompletionEngineTest {
                         return §
                     }
                 }"""));
-    assertThat(items).contains("new", "null", "true", "false", "this", "super");
+    assertThat(items).contains("new", "null", "this", "super");
     assertThat(items)
         .doesNotContain(
             "if",
@@ -600,7 +713,7 @@ class CompletionEngineTest {
                         String s = §
                     }
                 }"""));
-    assertThat(items).contains("new", "null", "true", "false", "this", "super");
+    assertThat(items).contains("new", "null", "this", "super");
     assertThat(items)
         .doesNotContain(
             "if",
@@ -615,7 +728,9 @@ class CompletionEngineTest {
             "continue",
             "final",
             "synchronized",
-            "var");
+            "var",
+            "true",
+            "false");
   }
 
   @Test
@@ -680,6 +795,12 @@ class CompletionEngineTest {
     assertThat(labels(fixture.complete("class Test { void m() { java.util.List<§> list; } }")))
         .contains("String", "Integer")
         .doesNotContain("if", "return", "new", "var", "class", "interface");
+    assertThat(labels(fixture.complete("class Test { void m() throws RuntimeEx§ {} }")))
+        .contains("RuntimeException");
+    assertThat(labels(fixture.complete("class Test { void m() throws Str§ {} }")))
+        .doesNotContain("String");
+    assertThat(labels(fixture.complete("@Over§ class Test {}"))).contains("Override");
+    assertThat(labels(fixture.complete("@Str§ class Test {}"))).doesNotContain("String");
   }
 
   @Test
@@ -815,7 +936,22 @@ class CompletionEngineTest {
             }""");
     assertThat(initializer).noneMatch(i -> "doWork".equals(i.getFilterText()));
     assertThat(initializer).extracting(CompletionItem::getFilterText).contains("getValue");
-    assertThat(initializer).extracting(CompletionItem::getFilterText).doesNotContain("true", "false");
+    assertThat(initializer)
+        .extracting(CompletionItem::getFilterText)
+        .doesNotContain("true", "false");
+    final var booleanInitializer =
+        fixture.complete(
+            """
+            class Test {
+                boolean getFlag() { return true; }
+                void m() {
+                    boolean flag = §
+                }
+            }""");
+    assertThat(booleanInitializer)
+        .extracting(CompletionItem::getFilterText)
+        .contains("getFlag", "true", "false")
+        .doesNotContain("null");
     // argument position
     final var argument =
         fixture.complete(

@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.analysis.completion;
 
 import java.util.Comparator;
 import java.util.List;
+import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 
@@ -32,7 +33,9 @@ final class CompletionCandidateRanker {
       return true;
     }
 
-    return !objectMethod(candidate) && !voidMethod(candidate);
+    return !objectMethod(candidate)
+        && !voidMethod(candidate)
+        && compatibleKeyword(candidate, context);
   }
 
   private static String sortText(
@@ -57,6 +60,33 @@ final class CompletionCandidateRanker {
 
   private static boolean valueSensitiveContext(final SemanticCompletionContext context) {
     return context.valueContext() || context.expectedValue() instanceof ExpectedValue.Type;
+  }
+
+  private static boolean compatibleKeyword(
+      final CompletionCandidate candidate, final SemanticCompletionContext context) {
+    if (candidate.kind() != CandidateKind.KEYWORD) {
+      return true;
+    }
+
+    if (!(context.expectedValue() instanceof ExpectedValue.Type(final TypeMirror type))) {
+      return true;
+    }
+
+    return switch (candidate.name()) {
+      case "true", "false" -> booleanCompatible(type, context);
+      case "null" -> !type.getKind().isPrimitive();
+      default -> true;
+    };
+  }
+
+  private static boolean booleanCompatible(
+      final TypeMirror type, final SemanticCompletionContext context) {
+    if (type.getKind() == TypeKind.BOOLEAN) {
+      return true;
+    }
+
+    return context.analysis().types().asElement(type) instanceof final TypeElement typeElement
+        && "java.lang.Boolean".equals(typeElement.getQualifiedName().toString());
   }
 
   private static boolean objectMethod(final CompletionCandidate candidate) {

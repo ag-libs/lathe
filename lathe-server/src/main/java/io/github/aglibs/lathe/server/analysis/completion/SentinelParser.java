@@ -77,7 +77,7 @@ final class SentinelParser {
     final var parentPath = sentinelPath.getParentPath();
     final Classification cls =
         parentPath != null
-            ? classifySentinel(sentinelPath.getLeaf(), parentPath.getLeaf())
+            ? classifySentinel(sentinelPath.getLeaf(), parentPath)
             : Classification.of(SentinelContext.SIMPLE_NAME);
 
     String enclosingClass = null;
@@ -111,6 +111,7 @@ final class SentinelParser {
             cls.enclosingMethodName(),
             cls.lambdaParamIndex(),
             cls.declaredTypeText(),
+            cls.typeReferenceRole(),
             cls.inExpression(),
             version);
 
@@ -142,23 +143,52 @@ final class SentinelParser {
       String enclosingMethodName,
       int lambdaParamIndex,
       String declaredTypeText,
+      TypeReferenceRole typeReferenceRole,
       boolean inExpression) {
 
     static Classification of(final SentinelContext ctx) {
-      return new Classification(ctx, -1, null, null, -1, null, false);
+      return new Classification(ctx, -1, null, null, -1, null, TypeReferenceRole.ORDINARY, false);
+    }
+
+    static Classification typeReference(final TypeReferenceRole role) {
+      return new Classification(
+          SentinelContext.TYPE_REFERENCE, -1, null, null, -1, null, role, false);
+    }
+
+    static Classification annotation() {
+      return new Classification(
+          SentinelContext.ANNOTATION_CONTEXT,
+          -1,
+          null,
+          null,
+          -1,
+          null,
+          TypeReferenceRole.ANNOTATION,
+          false);
     }
 
     static Classification expression() {
-      return new Classification(SentinelContext.SIMPLE_NAME, -1, null, null, -1, null, true);
+      return new Classification(
+          SentinelContext.SIMPLE_NAME, -1, null, null, -1, null, TypeReferenceRole.ORDINARY, true);
     }
   }
 
-  private static Classification classifySentinel(final Tree sentinel, final Tree parent) {
+  private static Classification classifySentinel(final Tree sentinel, final TreePath parentPath) {
     if (sentinel instanceof VariableTree v) {
       return classifyVariableDeclaration(v);
     }
 
+    final Tree parent = parentPath.getLeaf();
     final boolean simpleName = !(sentinel instanceof MemberSelectTree);
+    final TypeReferenceRole inferredRole = inferTypeReferenceRole(sentinel, parentPath);
+
+    if (inferredRole == TypeReferenceRole.ANNOTATION) {
+      return Classification.annotation();
+    }
+
+    if (inferredRole != TypeReferenceRole.ORDINARY) {
+      return Classification.typeReference(inferredRole);
+    }
 
     return switch (parent) {
       case ReturnTree r when simpleName && r.getExpression() == sentinel ->
@@ -172,18 +202,18 @@ final class SentinelParser {
           classifyMethodInvocation(sentinel, m);
       case LambdaExpressionTree lambda -> classifyLambda(sentinel, lambda);
       case NewClassTree m when simpleName -> classifyConstructorCall(sentinel, m);
-      case AnnotationTree ignored -> Classification.of(SentinelContext.ANNOTATION_CONTEXT);
+      case AnnotationTree ignored -> Classification.annotation();
       case VariableTree v when v.getType() == sentinel ->
-          Classification.of(SentinelContext.TYPE_REFERENCE);
+          Classification.typeReference(inferredRole);
       case MethodTree m when m.getReturnType() == sentinel ->
-          Classification.of(SentinelContext.TYPE_REFERENCE);
+          Classification.typeReference(inferredRole);
       case TypeCastTree t when t.getType() == sentinel ->
-          Classification.of(SentinelContext.TYPE_REFERENCE);
-      case ParameterizedTypeTree ignored -> Classification.of(SentinelContext.TYPE_REFERENCE);
-      case ClassTree ignored -> Classification.of(SentinelContext.TYPE_REFERENCE);
-      case ArrayTypeTree ignored -> Classification.of(SentinelContext.TYPE_REFERENCE);
-      case WildcardTree ignored -> Classification.of(SentinelContext.TYPE_REFERENCE);
-      case TypeParameterTree ignored -> Classification.of(SentinelContext.TYPE_REFERENCE);
+          Classification.typeReference(inferredRole);
+      case ParameterizedTypeTree ignored -> Classification.typeReference(inferredRole);
+      case ClassTree ignored -> Classification.typeReference(inferredRole);
+      case ArrayTypeTree ignored -> Classification.typeReference(inferredRole);
+      case WildcardTree ignored -> Classification.typeReference(inferredRole);
+      case TypeParameterTree ignored -> Classification.typeReference(inferredRole);
       default -> classifyDefault(sentinel);
     };
   }
@@ -197,6 +227,7 @@ final class SentinelParser {
         null,
         -1,
         type != null ? type.toString() : null,
+        TypeReferenceRole.ORDINARY,
         false);
   }
 
@@ -222,13 +253,15 @@ final class SentinelParser {
         enclosingMethodName,
         -1,
         null,
+        TypeReferenceRole.ORDINARY,
         false);
   }
 
   private static Classification classifyLambda(
       final Tree sentinel, final LambdaExpressionTree lambda) {
     if (!(sentinel instanceof final MemberSelectTree sel)) {
-      return new Classification(SentinelContext.LAMBDA_BODY, -1, null, null, -1, null, false);
+      return new Classification(
+          SentinelContext.LAMBDA_BODY, -1, null, null, -1, null, TypeReferenceRole.ORDINARY, false);
     }
 
     final var params = lambda.getParameters();
@@ -239,7 +272,14 @@ final class SentinelParser {
             .findFirst()
             .orElse(-1);
     return new Classification(
-        SentinelContext.LAMBDA_BODY, -1, null, null, lambdaParamIndex, null, false);
+        SentinelContext.LAMBDA_BODY,
+        -1,
+        null,
+        null,
+        lambdaParamIndex,
+        null,
+        TypeReferenceRole.ORDINARY,
+        false);
   }
 
   private static Classification classifyConstructorCall(
@@ -248,7 +288,59 @@ final class SentinelParser {
     final int argIndex =
         IntStream.range(0, args.size()).filter(j -> args.get(j) == sentinel).findFirst().orElse(-1);
     return new Classification(
-        SentinelContext.CONSTRUCTOR_CALL, argIndex, null, null, -1, null, false);
+        SentinelContext.CONSTRUCTOR_CALL,
+        argIndex,
+        null,
+        null,
+        -1,
+        null,
+        argIndex < 0 ? TypeReferenceRole.CONSTRUCTOR : TypeReferenceRole.ORDINARY,
+        false);
+  }
+
+  private static TypeReferenceRole inferTypeReferenceRole(
+      final Tree sentinel, final TreePath parentPath) {
+    Tree child = sentinel;
+    for (TreePath path = parentPath; path != null; path = path.getParentPath()) {
+      final Tree parent = path.getLeaf();
+      final Tree currentChild = child;
+
+      if (parent instanceof AnnotationTree) {
+        return TypeReferenceRole.ANNOTATION;
+      }
+
+      if (parent instanceof final MethodTree method
+          && method.getThrows().stream().anyMatch(t -> t == currentChild)) {
+        return TypeReferenceRole.THROWS;
+      }
+
+      if (parent instanceof final ClassTree cls) {
+        final TypeReferenceRole role = inferClassHeaderRole(currentChild, cls);
+        if (role != TypeReferenceRole.ORDINARY) {
+          return role;
+        }
+      }
+
+      child = parent;
+    }
+
+    return TypeReferenceRole.ORDINARY;
+  }
+
+  private static TypeReferenceRole inferClassHeaderRole(final Tree child, final ClassTree cls) {
+    if (cls.getExtendsClause() == child) {
+      return cls.getKind() == Tree.Kind.INTERFACE
+          ? TypeReferenceRole.INTERFACE_EXTENDS
+          : TypeReferenceRole.CLASS_EXTENDS;
+    }
+
+    if (cls.getImplementsClause().stream().anyMatch(t -> t == child)) {
+      return cls.getKind() == Tree.Kind.RECORD
+          ? TypeReferenceRole.RECORD_IMPLEMENTS
+          : TypeReferenceRole.CLASS_IMPLEMENTS;
+    }
+
+    return TypeReferenceRole.ORDINARY;
   }
 
   private static Classification classifyDefault(final Tree sentinel) {

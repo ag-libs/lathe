@@ -182,12 +182,24 @@ final class SimpleNameProvider {
       final boolean wildcard = "*".equals(memberName);
       final var declaredType = (DeclaredType) typeEl.asType();
       snapshot.elements().getAllMembers(typeEl).stream()
-          .filter(el -> el.getModifiers().contains(Modifier.STATIC))
-          .filter(el -> el.getKind() == ElementKind.METHOD || el.getKind() == ElementKind.FIELD)
-          .filter(el -> wildcard || memberName.equals(el.getSimpleName().toString()))
+          .filter(el -> staticImportAllows(el, wildcard, memberName))
           .filter(el -> el.getSimpleName().toString().startsWith(context.prefix()))
           .forEach(el -> addMember(el, declaredType));
     }
+  }
+
+  private static boolean staticImportAllows(
+      final Element el, final boolean wildcard, final String memberName) {
+    return staticImportableMember(el)
+        && (wildcard || memberName.equals(el.getSimpleName().toString()));
+  }
+
+  private static boolean staticImportableMember(final Element el) {
+    return switch (el.getKind()) {
+      case ENUM_CONSTANT -> true;
+      case METHOD, FIELD -> el.getModifiers().contains(Modifier.STATIC);
+      default -> false;
+    };
   }
 
   private TypeElement findScopeClassElement(final String simpleName) {

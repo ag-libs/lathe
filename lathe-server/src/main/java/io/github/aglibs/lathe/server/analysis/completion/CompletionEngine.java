@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
 import com.sun.source.tree.ImportTree;
+import com.sun.source.tree.Scope;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
@@ -80,9 +81,11 @@ public final class CompletionEngine {
           case CONSTRUCTOR_CALL ->
               parsed.argIndex() >= 0
                   ? completeSimpleName(parsed, injected, req, site)
-                  : mergeLangTypes(
-                      injected.prefix(), req, completeSimpleNameTypeReference(injected, req));
+                  : completeSimpleNameTypeReferenceWithLang(
+                      injected, req, parsed.typeReferenceRole());
           case TYPE_REFERENCE -> completeTypeReference(parsed, injected, req);
+          case ANNOTATION_CONTEXT ->
+              completeSimpleNameTypeReferenceWithLang(injected, req, parsed.typeReferenceRole());
           case VARIABLE_DECLARATION ->
               parsed.enclosingMethod() == null
                   ? completeTypeReference(parsed, injected, req)
@@ -151,8 +154,7 @@ public final class CompletionEngine {
         shouldOfferBareTypeReference(injected)
             ? mergeSimpleNameAndTypeIndexItems(
                 items,
-                mergeLangTypes(
-                    injected.prefix(), req, completeSimpleNameTypeReference(injected, req)))
+                completeSimpleNameTypeReferenceWithLang(injected, req, TypeReferenceRole.ORDINARY))
             : new CompletionOutcome(items, null);
 
     // Static member fit: uppercase prefix + expected type, works in both statement and expression
@@ -231,15 +233,18 @@ public final class CompletionEngine {
       return completeNestedTypes(parsed, injected, req);
     }
 
-    final var typeIndexOutcome = completeSimpleNameTypeReference(injected, req);
+    final var typeIndexOutcome =
+        completeSimpleNameTypeReference(injected, req, parsed.typeReferenceRole());
     // Lang types merged only for TYPE_REFERENCE; VARIABLE_DECLARATION arrives here too but
     // gets a bare type-index result.
     final var typeRefOutcome =
         parsed.sentinelContext() == SentinelContext.TYPE_REFERENCE
-            ? mergeLangTypes(injected.prefix(), req, typeIndexOutcome)
+            ? mergeLangTypes(injected.prefix(), req, typeIndexOutcome, parsed.typeReferenceRole())
             : typeIndexOutcome;
 
-    if (parsed.enclosingMethod() == null && parsed.enclosingClass() != null) {
+    if (parsed.typeReferenceRole() == TypeReferenceRole.ORDINARY
+        && parsed.enclosingMethod() == null
+        && parsed.enclosingClass() != null) {
       final List<CompletionItem> keywords =
           KeywordProvider.suggestCandidates(parsed, injected.prefix(), injected.context()).stream()
               .map(CompletionItemPresenter::present)
@@ -253,12 +258,16 @@ public final class CompletionEngine {
   }
 
   private static CompletionOutcome mergeLangTypes(
-      final String prefix, final CompletionRequest req, final CompletionOutcome base) {
+      final String prefix,
+      final CompletionRequest req,
+      final CompletionOutcome base,
+      final TypeReferenceRole role) {
     if (req.cached() == null || req.cached().analysis() == null) {
       return base;
     }
 
-    final var langItems = proposeLangTypes(prefix, req.cached().analysis());
+    final var langItems =
+        proposeLangTypes(prefix, req.cached().analysis(), req.cursorOffset(), role);
     if (langItems.isEmpty()) {
       return base;
     }
@@ -271,19 +280,26 @@ public final class CompletionEngine {
   }
 
   private static List<CompletionItem> proposeLangTypes(
-      final String prefix, final AttributedFileAnalysis analysis) {
-    return proposeLangTypeCandidates(prefix, analysis).stream()
+      final String prefix,
+      final AttributedFileAnalysis analysis,
+      final int cursorOffset,
+      final TypeReferenceRole role) {
+    return proposeLangTypeCandidates(prefix, analysis, cursorOffset, role).stream()
         .map(CompletionItemPresenter::present)
         .toList();
   }
 
   private static List<CompletionCandidate> proposeLangTypeCandidates(
-      final String prefix, final AttributedFileAnalysis analysis) {
+      final String prefix,
+      final AttributedFileAnalysis analysis,
+      final int cursorOffset,
+      final TypeReferenceRole role) {
     final var pkg = analysis.elements().getPackageElement("java.lang");
     if (pkg == null) {
       return List.of();
     }
 
+    final var scope = TypeResolver.resolveScope(analysis, cursorOffset);
     return pkg.getEnclosedElements().stream()
         .filter(
             el ->
@@ -293,6 +309,7 @@ public final class CompletionEngine {
                     || el.getKind() == ElementKind.ANNOTATION_TYPE)
         .filter(el -> !el.getModifiers().contains(Modifier.PRIVATE))
         .filter(el -> el.getSimpleName().toString().startsWith(prefix))
+        .filter(el -> typeReferenceRoleAllows((TypeElement) el, analysis, scope, role))
         .map(el -> CandidateFactory.typeElementCandidate((TypeElement) el))
         .toList();
   }
@@ -324,7 +341,7 @@ public final class CompletionEngine {
   }
 
   private CompletionOutcome completeSimpleNameTypeReference(
-      final SentinelResult injected, final CompletionRequest req) {
+      final SentinelResult injected, final CompletionRequest req, final TypeReferenceRole role) {
     if (typeIndex == null || injected.prefix().isEmpty()) {
       return CompletionOutcome.of(List.of());
     }
@@ -337,10 +354,13 @@ public final class CompletionEngine {
             "[type-index] typeRef prefix=|%s| candidates=%d cached=%s"
                 .formatted(injected.prefix(), candidates.size(), analysis != null));
     final var validator = new TypeIndexValidator(analysis);
+    final var scope =
+        analysis != null ? TypeResolver.resolveScope(analysis, req.cursorOffset()) : null;
     final List<CompletionCandidate> typeCandidates =
         candidates.stream()
             .sorted(typeCandidateComparator(injected.prefix()))
             .filter(validator::isResolvable)
+            .filter(entry -> typeIndexRoleAllows(entry, analysis, scope, role))
             .limit(TYPE_INDEX_RESULT_LIMIT)
             .map(CandidateFactory::typeIndexCandidate)
             .toList();
@@ -349,6 +369,86 @@ public final class CompletionEngine {
     CompletionItemPresenter.applyImportEdits(typeCandidates, items, analysis);
     LOG.fine(() -> "[type-index] typeRef items=%d".formatted(items.size()));
     return CompletionOutcome.incomplete(items);
+  }
+
+  private CompletionOutcome completeSimpleNameTypeReferenceWithLang(
+      final SentinelResult injected, final CompletionRequest req, final TypeReferenceRole role) {
+    return mergeLangTypes(
+        injected.prefix(), req, completeSimpleNameTypeReference(injected, req, role), role);
+  }
+
+  private static boolean typeIndexRoleAllows(
+      final TypeIndexEntry entry,
+      final AttributedFileAnalysis analysis,
+      final Scope scope,
+      final TypeReferenceRole role) {
+    if (analysis == null || role == TypeReferenceRole.ORDINARY) {
+      return true;
+    }
+
+    final var typeEl = analysis.elements().getTypeElement(entry.qualifiedName());
+    return typeEl == null || typeReferenceRoleAllows(typeEl, analysis, scope, role);
+  }
+
+  private static boolean typeReferenceRoleAllows(
+      final TypeElement typeEl,
+      final AttributedFileAnalysis analysis,
+      final Scope scope,
+      final TypeReferenceRole role) {
+    return switch (role) {
+      case ORDINARY -> true;
+      case CONSTRUCTOR -> constructibleType(typeEl, analysis, scope);
+      case CLASS_EXTENDS -> extendableClass(typeEl);
+      case CLASS_IMPLEMENTS, INTERFACE_EXTENDS, RECORD_IMPLEMENTS ->
+          typeEl.getKind() == ElementKind.INTERFACE;
+      case THROWS -> throwableType(typeEl, analysis);
+      case ANNOTATION -> typeEl.getKind() == ElementKind.ANNOTATION_TYPE;
+    };
+  }
+
+  private static boolean constructibleType(
+      final TypeElement typeEl, final AttributedFileAnalysis analysis, final Scope scope) {
+    if (typeEl.getKind() != ElementKind.CLASS && typeEl.getKind() != ElementKind.RECORD) {
+      return false;
+    }
+
+    if (typeEl.getModifiers().contains(Modifier.ABSTRACT)) {
+      return false;
+    }
+
+    if (!(typeEl.asType() instanceof final DeclaredType declaredType)) {
+      return true;
+    }
+
+    return typeEl.getEnclosedElements().stream()
+        .filter(el -> el.getKind() == ElementKind.CONSTRUCTOR)
+        .anyMatch(el -> accessibleConstructor(el, declaredType, analysis, scope));
+  }
+
+  private static boolean accessibleConstructor(
+      final Element el,
+      final DeclaredType declaredType,
+      final AttributedFileAnalysis analysis,
+      final Scope scope) {
+    if (scope == null) {
+      return true;
+    }
+
+    try {
+      return analysis.trees().isAccessible(scope, el, declaredType);
+    } catch (final IllegalArgumentException ignored) {
+      return true;
+    }
+  }
+
+  private static boolean extendableClass(final TypeElement typeEl) {
+    return typeEl.getKind() == ElementKind.CLASS && !typeEl.getModifiers().contains(Modifier.FINAL);
+  }
+
+  private static boolean throwableType(
+      final TypeElement typeEl, final AttributedFileAnalysis analysis) {
+    final var throwable = analysis.elements().getTypeElement("java.lang.Throwable");
+    return throwable != null && analysis.types().isAssignable(typeEl.asType(), throwable.asType());
   }
 
   private static Comparator<TypeIndexEntry> typeCandidateComparator(final String prefix) {

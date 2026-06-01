@@ -6,24 +6,18 @@ Open gaps in priority order.
 
 | Gap | Title | Difficulty | Depends on |
 |-----|-------|------------|------------|
-| K | Keywords not filtered by syntactic context | Medium | — |
-| H | No subpackage navigation for FQN in code | Medium | — |
 | L | Context-sensitive statement keywords | Medium | K |
 | M | Keyword ranking by semantic fit | Medium | K |
+| U | Annotation element completion is under-specified | Medium | — |
+| T | Declaration name slots are under-specified | Medium | — |
 | J | No completions after `::` | Hard | — |
 
 Gap E has been revised — see the Closed section.
 
-**K first** because the changes are contained in `KeywordProvider` and
-`SentinelParser`, have no dependencies, and fix obvious wrong behaviour
-(statement keywords leaking into return and initializer positions).
+Gap discovery now starts from [completion-semantics-audit.md](completion-semantics-audit.md).
+That matrix records syntax-site behavior before fixes are made.
 
-**H second** because it is self-contained inside `CompletionEngine.completeMemberAccess`
-and uses the existing `WorkspaceTypeIndex` without new infrastructure.
-
-**L and M third and fourth** because both depend on K landing first — L extends
-the syntactic context classification K introduces, and M adds ranking on top of
-the corrected keyword sets.
+**L and M remain open** because they cover broader keyword context and ordering.
 
 **J last** because it requires a new `MEMBER_REFERENCE` sentinel context,
 functional-interface compatibility filtering, and no existing path to build on.
@@ -31,94 +25,6 @@ functional-interface compatibility filtering, and no existing path to build on.
 ---
 
 ## Open
-
-### Gap K — Keywords not filtered by syntactic context
-
-**Difficulty:** Medium
-
-**Symptom:** In several positions the engine offers keywords that are
-syntactically invalid there.
-
-| Position | Wrongly offered | Should be |
-|---|---|---|
-| `return §` | `if`, `for`, `while`, `do`, `switch`, `try`, `throw`, and the rest of the statement set | Expression keywords only: `new`, `null`, `true`, `false`, `this`, `super` |
-| `String foo = §` | Same full statement set | Expression keywords only: `new`, `null`, `true`, `false`, `this`, `super` |
-| `import §` | Nothing | `static` keyword + top-level package segments |
-
-**IntelliJ behavior (reference):**
-Both JDT.LS and IntelliJ offer statement keywords only at genuine statement
-positions.
-In expression positions (`return`, variable initializer, argument) they restrict
-to expression keywords.
-IntelliJ includes `new` in the expression set; JDT does not.
-Lathe follows IntelliJ here — `new` belongs in expression positions because
-`return new Foo()` is common.
-
-`var` must not appear in expression positions — it is only valid as a local
-variable type declaration.
-
-**Root cause — statement/expression mismatch:**
-The backward scan marks `return §` and `String s = §` as `STATEMENT` context
-because the scan crosses `{` or `;` before the cursor.
-`KeywordProvider` then offers the full statement keyword set.
-The actual position is an expression — `return` and `=` are both value
-consumers — but the backward scan cannot distinguish them from a bare statement.
-
-**Root cause — bare import:**
-`import §` with an empty receiver is not handled by `ImportCompletionProvider`,
-which requires a non-null receiver text.
-
-**Resolution — statement/expression mismatch:**
-The sentinel parent in the attributed tree already carries the answer:
-`ReturnTree` and `VariableTree` (initialiser) parents mean an expression
-position.
-Add two new cases in `SentinelParser.extractContext`:
-- Parent is `ReturnTree` → set `inExpression = true` on `ParsedSentinel`.
-- Parent is `VariableTree` where the sentinel is the initialiser → same flag.
-
-Make `KeywordProvider.suggestCandidates` check `inExpression` and
-restrict to the expression keyword set in those positions.
-
-**Resolution — bare import:**
-Handle `receiverText == null` in `ImportCompletionProvider` to emit:
-- the keyword `static` (filtered by prefix),
-- top-level package segments reachable from the type index (filtered by prefix).
-
-**Tests:** `keywords_returnPosition_expressionKeywordsOnly`,
-`keywords_variableInitializer_expressionKeywordsOnly`
-
----
-
-### Gap H — No subpackage navigation when typing a fully-qualified name
-
-**Difficulty:** Medium
-
-**Symptom:** Typing `java.` in a method body returns no completions.
-Navigation from a package prefix to a sub-package or type is impossible
-through a member-access chain in code.
-
-```
-inject "java."                    at method body  →  (no completions)
-inject "java.util."               at method body  →  (no completions)
-inject "java.util.stream.Stream." at method body  →  9 static methods  ← works only at type level
-```
-
-**Root cause:** The member-access path requires a `TypeElement` receiver.
-When the attributed receiver is a `PackageElement`, the engine returns nothing.
-
-**Resolution:** After `TypeResolver` fails to find a `TypeElement` for the
-receiver text, check whether `elements.getPackageElement(receiverText)` returns
-non-null.
-If it does, switch to a package-navigation path: scan all `WorkspaceTypeIndex`
-entries whose `qualifiedName` starts with `receiverText + "."`, extract the
-next dot-segment, deduplicate, and return each unique segment as a
-`CompletionCandidate` with `CandidateKind.PACKAGE`.
-Type entries at exactly one segment deeper get `CandidateKind.TYPE_*`.
-
-No new external API is needed — this is a self-contained extension in
-`CompletionEngine.completeMemberAccess`.
-
----
 
 ### Gap L — Context-sensitive statement keywords
 
@@ -181,6 +87,90 @@ from `ExpectedValue`.
 
 ---
 
+### Gap T — Declaration name slots are under-specified
+
+**Difficulty:** Medium
+
+**Symptom:** Name positions need explicit semantics so type/value candidates do
+not leak into places where the user is declaring a new symbol.
+
+Examples from the discovery matrix:
+
+```
+class §
+class Test { String §; }
+class Test { void m() { String §; } }
+```
+
+**Expected behavior:** Declaration name slots should generally suppress normal
+symbol completion.
+If snippets are later added, they should be explicit declaration snippets rather
+than imported types, local values, or statement keywords.
+
+**Likely root cause:** `VARIABLE_DECLARATION` exists, but declaration-name
+semantics are not documented across class, method, field, and local-variable
+name slots.
+
+**Discovery test:** `completionSemantics_gapDiscoveryMatrix`
+
+---
+
+### Gap U — Annotation element completion is under-specified
+
+**Difficulty:** Medium
+
+**Symptom:** The current completion design now covers annotation type names
+after `@`, but not the rest of the annotation surface.
+
+Examples from the discovery matrix:
+
+```
+@Deprecated(§)
+@SuppressWarnings(§)
+@SuppressWarnings(va§ = "")
+@SuppressWarnings(value = §)
+@Retention(§)
+@Target({§})
+@interface A { § }
+@interface A { Str§ value(); }
+@interface A { int value() default § }
+```
+
+**Expected behavior:** Annotation completion needs site-specific semantics:
+- Empty argument lists should offer annotation element names.
+  For `@Deprecated(§)`, this means `since` and `forRemoval`, not annotation
+  types such as `Override` or `SuppressWarnings`.
+- Annotation element name positions should offer element names only.
+- Element value positions should use the annotation method return type as the
+  expected value.
+- Enum-valued elements should prefer compatible enum constants.
+- Array-valued elements should use the component type inside `{ ... }`.
+- Annotation declaration bodies should offer annotation member declarations,
+  not method-body statements or value keywords.
+- Annotation element return types should be restricted to legal Java annotation
+  element types.
+
+**Likely root cause:** `ANNOTATION_CONTEXT` currently means only “type after
+`@`”.
+There is no parsed site model for annotation argument names, argument values,
+array values, declaration bodies, or default values.
+
+**Reproduction:** On Helidon
+`dbclient/mongodb/src/main/java/io/helidon/dbclient/mongodb/MongoDbClient.java`,
+run:
+
+```bash
+python3 dev/explore.py /home/ag-libs/git/helidon/dbclient/mongodb/src/main/java/io/helidon/dbclient/mongodb/MongoDbClient.java inject '@Deprecated('
+```
+
+The current result returns annotation type names:
+`SuppressWarnings`, `Deprecated`, `SafeVarargs`, `Override`, and
+`FunctionalInterface`.
+
+**Discovery test:** `completionSemantics_gapDiscoveryMatrix`
+
+---
+
 ### Gap J — No completions after `::` (method reference)
 
 **Difficulty:** Hard
@@ -213,6 +203,75 @@ Defer until the higher-priority gaps are closed.
 ## Closed
 
 All gaps identified up to 2026-05-31 have been addressed.
+
+### Gap K — Keywords not filtered by syntactic context
+
+**Resolution:** `SentinelParser` now marks return, throw, and variable-initializer
+sentinel positions as expression contexts.
+`KeywordProvider` restricts those positions to expression keywords.
+Bare import completion now emits `static` and top-level package candidates.
+
+**Tests:** `keywords_returnPosition_expressionKeywordsOnly`,
+`keywords_throwPosition_expressionKeywordsOnly`,
+`keywords_variableInitializer_expressionKeywordsOnly`,
+`keywords_bareImport_suggestsStaticAndTopLevelPackages`
+
+---
+
+### Gap Q — Static-imported enum constants are not offered as simple names
+
+**Resolution:** `SimpleNameProvider.addStaticImportMembers` now includes
+`ElementKind.ENUM_CONSTANT` when collecting static-imported members.
+
+**Test:** `simpleName_staticImportedMethod_offeredWithoutQualifier`
+
+---
+
+### Gap P — Keyword literals are not filtered by expected type
+
+**Resolution:** `CompletionCandidateRanker` now filters keyword literals when
+an expected type is available.
+`true` and `false` are retained only for `boolean` and `Boolean` expected types.
+`null` is suppressed for primitive expected types.
+
+**Test:** `simpleName_voidMethod_excludedWhenExpectedTypeKnown`
+
+---
+
+### Gaps N, O, R, S — Type-reference role filtering
+
+**Resolution:** `ParsedSentinel` now carries a `TypeReferenceRole` for ordinary
+types, constructor type positions, class/interface/record headers, `throws`
+clauses, and annotation sites.
+`CompletionEngine` applies role-specific type filtering to both type-index
+results and `java.lang` fallback candidates when semantic analysis is
+available.
+
+`new` now suppresses interfaces, enums, abstract classes, and classes without
+an accessible constructor.
+Header roles filter extends/implements candidates by Java kind.
+`throws` filters to `Throwable` subtypes.
+Annotation sites filter to annotation types.
+
+**Tests:** `methodBody_afterNew_suggestsConstructibleTypes`,
+`classHeader_suggestsSuperAndInterfaceTypes`,
+`typeReference_simpleNamePrefixes_suggestMatchingTypes`
+
+---
+
+### Gap H — No subpackage navigation when typing a fully-qualified name
+
+**Resolution:** FQN package-prefix completion now falls back to package
+navigation when no type receiver can be resolved.
+This works in method bodies, imports, static imports, and class-body type
+references, with JPMS accessibility filtering.
+
+**Tests:** `fqnNavigation_topLevelPackage_suggestsSubPackages`,
+`fqnNavigation_nestedPackage_suggestsTypesAndSubPackages`,
+`fqnNavigation_deepPackage_suggestsTypes`,
+`fqnNavigation_classBody_packagePrefix_suggestsSubPackages`
+
+---
 
 ### Gap A — Static-import members not offered as simple names
 
