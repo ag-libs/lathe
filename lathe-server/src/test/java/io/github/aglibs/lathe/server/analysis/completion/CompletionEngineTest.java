@@ -865,6 +865,26 @@ class CompletionEngineTest {
   }
 
   @Test
+  void declarationName_fieldNameSlot_suppressesAllCandidates() {
+    assertThat(labels(fixture.complete("class Test { String S§; }"))).isEmpty();
+    assertThat(labels(fixture.complete("class Test { String §; }"))).isEmpty();
+  }
+
+  @Test
+  void declarationName_localVarNameSlot_suppressesAllCandidates() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        void m() {
+                            String S§;
+                        }
+                    }""")))
+        .isEmpty();
+  }
+
+  @Test
   void methodBody_afterNew_suggestsConstructibleTypes() {
     assertThat(
             labels(

@@ -324,13 +324,15 @@ final class SentinelParser {
 
   private static Classification classifyVariableDeclaration(final VariableTree v) {
     final var type = v.getType();
+    // Treat an erroneous type as absent so the position is not flagged as a typed name slot.
+    final boolean realType = type != null && type.getKind() != Tree.Kind.ERRONEOUS;
     return new Classification(
         SentinelContext.VARIABLE_DECLARATION,
         -1,
         null,
         null,
         -1,
-        type != null ? type.toString() : null,
+        realType ? type.toString() : null,
         null,
         TypeReferenceRole.ORDINARY,
         false);

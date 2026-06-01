@@ -7,7 +7,6 @@ Open gaps in priority order.
 | Gap | Title | Difficulty | Depends on |
 |-----|-------|------------|------------|
 | U | Annotation element completion is under-specified | Medium | — |
-| T | Declaration name slots are under-specified | Medium | — |
 | J | No completions after `::` | Hard | — |
 
 Gap E has been revised — see the Closed section.
@@ -21,34 +20,6 @@ functional-interface compatibility filtering, and no existing path to build on.
 ---
 
 ## Open
-
-### Gap T — Declaration name slots are under-specified
-
-**Difficulty:** Medium
-
-**Symptom:** Name positions need explicit semantics so type/value candidates do
-not leak into places where the user is declaring a new symbol.
-
-Examples from the discovery matrix:
-
-```
-class §
-class Test { String §; }
-class Test { void m() { String §; } }
-```
-
-**Expected behavior:** Declaration name slots should generally suppress normal
-symbol completion.
-If snippets are later added, they should be explicit declaration snippets rather
-than imported types, local values, or statement keywords.
-
-**Likely root cause:** `VARIABLE_DECLARATION` exists, but declaration-name
-semantics are not documented across class, method, field, and local-variable
-name slots.
-
-**Discovery test:** `completionSemantics_gapDiscoveryMatrix`
-
----
 
 ### Gap U — Annotation element completion is under-specified
 
@@ -122,6 +93,25 @@ Defer until the higher-priority gaps are closed.
 ---
 
 ## Closed
+
+### Gap T — Declaration name slots suppress completions
+
+**Resolution:** `SentinelParser.classifyVariableDeclaration` now sets `declaredTypeText` to null
+when the variable's type tree is erroneous (javac error-recovery artifact).
+`CompletionEngine` and `KeywordProvider` use `isRealNameSlot` — true when `declaredTypeText` is
+non-null and differs from the enclosing class name — to distinguish real name slots (user typed
+an explicit type) from error-recovery artifacts (javac invented a synthetic type using the
+enclosing class name).
+
+Real name slots return empty completions in both the engine and the keyword provider.
+Method-scope name slots already returned empty; class-scope field name slots now do too.
+Ambiguous positions (bare `§` in class/enum body, where javac's recovery uses the class name as
+a synthetic type) continue to offer class-body keywords unchanged.
+
+**Tests:** `declarationName_fieldNameSlot_suppressesAllCandidates`,
+`declarationName_localVarNameSlot_suppressesAllCandidates`
+
+---
 
 ### Gap M — Keyword ranking by semantic fit
 

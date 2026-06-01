@@ -89,9 +89,11 @@ public final class CompletionEngine {
           case ANNOTATION_ARGUMENT -> completeAnnotationArgument(parsed, injected, req);
           case ANNOTATION_ARGUMENT_VALUE -> CompletionOutcome.of(List.of());
           case VARIABLE_DECLARATION ->
-              parsed.enclosingMethod() == null
-                  ? completeTypeReference(parsed, injected, req)
-                  : CompletionOutcome.of(List.of());
+              isRealNameSlot(parsed)
+                  ? CompletionOutcome.of(List.of())
+                  : (parsed.enclosingMethod() == null
+                      ? completeTypeReference(parsed, injected, req)
+                      : CompletionOutcome.of(List.of()));
           case MEMBER_ACCESS, LAMBDA_BODY, STATIC_IMPORT ->
               completeMemberAccess(parsed, injected, req);
           default -> CompletionOutcome.of(List.of());
@@ -798,5 +800,15 @@ public final class CompletionEngine {
       final AttributedFileAnalysis snapshot) {
     return new SemanticCompletionContext(
         snapshot, new ExpectedValue.Unknown(), false, false, false);
+  }
+
+  /**
+   * Returns true when the VARIABLE_DECLARATION sentinel is a real name slot (the user has already
+   * typed an explicit type before the cursor). Returns false for javac error-recovery artifacts
+   * where the parser invents a synthetic type using the enclosing class name.
+   */
+  private static boolean isRealNameSlot(final ParsedSentinel parsed) {
+    return parsed.declaredTypeText() != null
+        && !parsed.declaredTypeText().equals(parsed.enclosingClass());
   }
 }

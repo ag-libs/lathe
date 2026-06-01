@@ -79,7 +79,9 @@ final class KeywordProvider {
       final ParsedSentinel parsed, final SentinelInjector.Context injectorContext) {
     return switch (parsed.sentinelContext()) {
       case SIMPLE_NAME -> parsed.inExpression() ? VALUE_EXPRESSIONS : selectByScope(parsed);
-      case TYPE_REFERENCE, VARIABLE_DECLARATION -> classBodyKeywordsIfApplicable(parsed);
+      case TYPE_REFERENCE -> classBodyKeywordsIfApplicable(parsed);
+      case VARIABLE_DECLARATION ->
+          isRealNameSlot(parsed) ? List.of() : classBodyKeywordsIfApplicable(parsed);
       case ARGUMENT_POSITION, LAMBDA_BODY -> VALUE_EXPRESSIONS;
       case CONSTRUCTOR_CALL ->
           // EXPRESSION == cursor is in the argument list; STATEMENT == cursor is on the type name.
@@ -128,5 +130,10 @@ final class KeywordProvider {
     return Stream.of(ACCESS_MODIFIERS, OTHER_MODIFIERS, TYPE_DECLARATIONS)
         .flatMap(List::stream)
         .toList();
+  }
+
+  private static boolean isRealNameSlot(final ParsedSentinel parsed) {
+    return parsed.declaredTypeText() != null
+        && !parsed.declaredTypeText().equals(parsed.enclosingClass());
   }
 }
