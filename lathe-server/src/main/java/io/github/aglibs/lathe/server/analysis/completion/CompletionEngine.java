@@ -796,6 +796,7 @@ public final class CompletionEngine {
 
   private static SemanticCompletionContext memberAccessSemanticContext(
       final AttributedFileAnalysis snapshot) {
-    return new SemanticCompletionContext(snapshot, new ExpectedValue.Unknown(), false, false, false);
+    return new SemanticCompletionContext(
+        snapshot, new ExpectedValue.Unknown(), false, false, false);
   }
 }
