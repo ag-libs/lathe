@@ -1656,37 +1656,8 @@ class CompletionEngineTest {
 
   @Test
   void fqnNavigation_isAccessible_filtersNonExportedPackageTypes() throws IOException {
-    final Path libSrc = tmp.resolve("lib-src");
-    Files.createDirectories(libSrc.resolve("com/example/lib/api"));
-    Files.createDirectories(libSrc.resolve("com/example/lib/internal"));
-    Files.writeString(
-        libSrc.resolve("module-info.java"),
-        """
-        module com.example.lib {
-            exports com.example.lib.api;
-        }""");
-    Files.writeString(
-        libSrc.resolve("com/example/lib/api/ApiType.java"),
-        "package com.example.lib.api; public class ApiType {}");
-    Files.writeString(
-        libSrc.resolve("com/example/lib/internal/InternalType.java"),
-        "package com.example.lib.internal; public class InternalType {}");
-    final Path libOut = tmp.resolve("lib-out");
-    TestCompiler.compileToDir(
-        libOut,
-        List.of(),
-        List.of(),
-        libSrc.resolve("module-info.java"),
-        libSrc.resolve("com/example/lib/api/ApiType.java"),
-        libSrc.resolve("com/example/lib/internal/InternalType.java"));
-
+    final var lib = buildExampleLib();
     localFixture = new CompletionFixture(WorkspaceTypeIndex.empty(), tmp);
-    final List<String> modulePath = List.of("--module-path", libOut.toString());
-    final String moduleInfo =
-        """
-        module com.example.app {
-            requires com.example.lib;
-        }""";
 
     assertThat(
             labels(
@@ -1696,8 +1667,8 @@ class CompletionEngineTest {
                     class Test {
                         void m() { com.example.lib.api.§ }
                     }""",
-                    moduleInfo,
-                    modulePath)))
+                    lib.moduleInfo(),
+                    lib.modulePath())))
         .contains("ApiType");
 
     assertThat(
@@ -1708,8 +1679,8 @@ class CompletionEngineTest {
                     class Test {
                         void m() { com.example.lib.internal.§ }
                     }""",
-                    moduleInfo,
-                    modulePath)))
+                    lib.moduleInfo(),
+                    lib.modulePath())))
         .doesNotContain("InternalType");
 
     // import declaration
@@ -1720,8 +1691,8 @@ class CompletionEngineTest {
                     package com.example.app;
                     import com.example.lib.internal.§;
                     class Test {}""",
-                    moduleInfo,
-                    modulePath)))
+                    lib.moduleInfo(),
+                    lib.modulePath())))
         .doesNotContain("InternalType");
 
     // class body type reference
@@ -1733,8 +1704,8 @@ class CompletionEngineTest {
                     class Test {
                         com.example.lib.internal.§ field;
                     }""",
-                    moduleInfo,
-                    modulePath)))
+                    lib.moduleInfo(),
+                    lib.modulePath())))
         .doesNotContain("InternalType");
   }
 
@@ -1742,25 +1713,7 @@ class CompletionEngineTest {
   @Disabled(
       "Gap — static import path passes null scope so isAccessible is not checked; non-exported types leak through")
   void fqnNavigation_isAccessible_staticImport_filtersNonExportedPackageTypes() throws IOException {
-    final Path libSrc = tmp.resolve("lib-src2");
-    Files.createDirectories(libSrc.resolve("com/example/lib/internal"));
-    Files.writeString(
-        libSrc.resolve("module-info.java"),
-        """
-        module com.example.lib {
-            exports com.example.lib.api;
-        }""");
-    Files.writeString(
-        libSrc.resolve("com/example/lib/internal/InternalType.java"),
-        "package com.example.lib.internal; public class InternalType {}");
-    final Path libOut = tmp.resolve("lib-out2");
-    TestCompiler.compileToDir(
-        libOut,
-        List.of(),
-        List.of(),
-        libSrc.resolve("module-info.java"),
-        libSrc.resolve("com/example/lib/internal/InternalType.java"));
-
+    final var lib = buildExampleLib();
     localFixture = new CompletionFixture(WorkspaceTypeIndex.empty(), tmp);
     assertThat(
             labels(
@@ -1769,12 +1722,50 @@ class CompletionEngineTest {
                     package com.example.app;
                     import static com.example.lib.internal.§;
                     class Test {}""",
-                    """
-                    module com.example.app {
-                        requires com.example.lib;
-                    }""",
-                    List.of("--module-path", libOut.toString()))))
+                    lib.moduleInfo(),
+                    lib.modulePath())))
         .doesNotContain("InternalType");
+  }
+
+  @Test
+  void fqnNavigation_subPackageStream_filtersNonExportedSubPackages() throws IOException {
+    final var lib = buildExampleLib();
+    localFixture = new CompletionFixture(WorkspaceTypeIndex.empty(), tmp);
+
+    final List<String> segments =
+        labels(
+            localFixture.completeWithJpms(
+                """
+                package com.example.app;
+                import com.example.lib.§;
+                class Test {}""",
+                lib.moduleInfo(),
+                lib.modulePath()));
+
+    assertThat(segments).contains("api");
+    assertThat(segments).doesNotContain("internal");
+  }
+
+  @Test
+  @Disabled(
+      "Gap — FQN package prefix in class body type reference position returns no sub-package segments")
+  void fqnNavigation_classBody_packagePrefix_suggestsSubPackages() throws IOException {
+    final var lib = buildExampleLib();
+    localFixture = new CompletionFixture(WorkspaceTypeIndex.empty(), tmp);
+
+    final List<String> segments =
+        labels(
+            localFixture.completeWithJpms(
+                """
+                package com.example.app;
+                class Test {
+                    com.example.lib.§ field;
+                }""",
+                lib.moduleInfo(),
+                lib.modulePath()));
+
+    assertThat(segments).contains("api");
+    assertThat(segments).doesNotContain("internal");
   }
 
   @Test
@@ -1943,5 +1934,39 @@ class CompletionEngineTest {
         .doesNotContainLabel("count()")
         .item("sample()")
         .hasStaticImportEdit("example.StringSources.sample");
+  }
+
+  record ExampleLib(List<String> modulePath, String moduleInfo) {}
+
+  private ExampleLib buildExampleLib() throws IOException {
+    final Path libSrc = tmp.resolve("lib-src");
+    Files.createDirectories(libSrc.resolve("com/example/lib/api"));
+    Files.createDirectories(libSrc.resolve("com/example/lib/internal"));
+    Files.writeString(
+        libSrc.resolve("module-info.java"),
+        """
+        module com.example.lib {
+            exports com.example.lib.api;
+        }""");
+    Files.writeString(
+        libSrc.resolve("com/example/lib/api/ApiType.java"),
+        "package com.example.lib.api; public class ApiType {}");
+    Files.writeString(
+        libSrc.resolve("com/example/lib/internal/InternalType.java"),
+        "package com.example.lib.internal; public class InternalType {}");
+    final Path libOut = tmp.resolve("lib-out");
+    TestCompiler.compileToDir(
+        libOut,
+        List.of(),
+        List.of(),
+        libSrc.resolve("module-info.java"),
+        libSrc.resolve("com/example/lib/api/ApiType.java"),
+        libSrc.resolve("com/example/lib/internal/InternalType.java"));
+    return new ExampleLib(
+        List.of("--module-path", libOut.toString()),
+        """
+        module com.example.app {
+            requires com.example.lib;
+        }""");
   }
 }
