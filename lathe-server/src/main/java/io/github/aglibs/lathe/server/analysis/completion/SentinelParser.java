@@ -91,6 +91,27 @@ final class SentinelParser {
       }
     }
 
+    boolean enclosedByLoop = false;
+    boolean enclosedBySwitchStatement = false;
+    boolean enclosedBySwitchExpression = false;
+    for (final Tree node : sentinelPath) {
+      if (node instanceof MethodTree
+          || node instanceof LambdaExpressionTree
+          || node instanceof ClassTree) {
+        break;
+      }
+      if (node instanceof ForLoopTree
+          || node instanceof EnhancedForLoopTree
+          || node instanceof WhileLoopTree
+          || node instanceof DoWhileLoopTree) {
+        enclosedByLoop = true;
+      } else if (node instanceof SwitchExpressionTree) {
+        enclosedBySwitchExpression = true;
+      } else if (node instanceof SwitchTree) {
+        enclosedBySwitchStatement = true;
+      }
+    }
+
     if (enclosingClass == null && cu.getModule() != null) {
       final var parsed =
           ParsedSentinel.valid(
@@ -113,6 +134,9 @@ final class SentinelParser {
             cls.declaredTypeText(),
             cls.annotationTypeText(),
             cls.typeReferenceRole(),
+            enclosedByLoop,
+            enclosedBySwitchStatement,
+            enclosedBySwitchExpression,
             cls.inExpression(),
             version);
 
@@ -238,18 +262,44 @@ final class SentinelParser {
     }
 
     return switch (parent) {
+      // --- statement-level expression positions ---
       case ReturnTree r when simpleName && r.getExpression() == sentinel ->
           Classification.expression();
       case ThrowTree t when simpleName && t.getExpression() == sentinel ->
           Classification.expression();
       case VariableTree v when simpleName && v.getInitializer() == sentinel ->
           Classification.expression();
+      // --- expression-tree parents: sentinel is a sub-expression ---
+      case ConditionalExpressionTree ignored -> Classification.expression();
+      case BinaryTree ignored -> Classification.expression();
+      case UnaryTree ignored -> Classification.expression();
+      case ParenthesizedTree ignored -> Classification.expression();
+      case InstanceOfTree i when i.getExpression() == sentinel -> Classification.expression();
+      case TypeCastTree t when t.getExpression() == sentinel -> Classification.expression();
+      case AssignmentTree a when a.getExpression() == sentinel -> Classification.expression();
+      case CompoundAssignmentTree a when a.getExpression() == sentinel ->
+          Classification.expression();
+      case ArrayAccessTree a when a.getIndex() == sentinel -> Classification.expression();
+      case NewArrayTree n when n.getDimensions().stream().anyMatch(d -> d == sentinel) ->
+          Classification.expression();
+      case MemberSelectTree m when m.getExpression() == sentinel -> Classification.expression();
+      // --- control-flow condition / selector positions ---
+      case IfTree i when i.getCondition() == sentinel -> Classification.expression();
+      case WhileLoopTree w when w.getCondition() == sentinel -> Classification.expression();
+      case DoWhileLoopTree d when d.getCondition() == sentinel -> Classification.expression();
+      case ForLoopTree f when f.getCondition() == sentinel -> Classification.expression();
+      case EnhancedForLoopTree e when e.getExpression() == sentinel -> Classification.expression();
+      case SynchronizedTree s when s.getExpression() == sentinel -> Classification.expression();
+      case SwitchTree s when s.getExpression() == sentinel -> Classification.expression();
+      case SwitchExpressionTree s when s.getExpression() == sentinel -> Classification.expression();
+      // --- method-call / constructor / lambda / annotation: existing paths ---
       case MethodInvocationTree m
           when simpleName && m.getArguments().stream().anyMatch(a -> a == sentinel) ->
           classifyMethodInvocation(sentinel, m);
       case LambdaExpressionTree lambda -> classifyLambda(sentinel, lambda);
       case NewClassTree m when simpleName -> classifyConstructorCall(sentinel, m);
       case AnnotationTree ignored -> Classification.annotation();
+      // --- type-reference positions ---
       case VariableTree v when v.getType() == sentinel ->
           Classification.typeReference(inferredRole);
       case MethodTree m when m.getReturnType() == sentinel ->

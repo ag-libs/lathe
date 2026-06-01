@@ -6,7 +6,6 @@ Open gaps in priority order.
 
 | Gap | Title | Difficulty | Depends on |
 |-----|-------|------------|------------|
-| L | Context-sensitive statement keywords | Medium | K |
 | M | Keyword ranking by semantic fit | Medium | K |
 | U | Annotation element completion is under-specified | Medium | — |
 | T | Declaration name slots are under-specified | Medium | — |
@@ -17,43 +16,12 @@ Gap E has been revised — see the Closed section.
 Gap discovery now starts from [completion-semantics-audit.md](completion-semantics-audit.md).
 That matrix records syntax-site behavior before fixes are made.
 
-**L and M remain open** because they cover broader keyword context and ordering.
-
 **J last** because it requires a new `MEMBER_REFERENCE` sentinel context,
 functional-interface compatibility filtering, and no existing path to build on.
 
 ---
 
 ## Open
-
-### Gap L — Context-sensitive statement keywords
-
-**Difficulty:** Medium
-**Depends on:** Gap K
-
-**Symptom:** Several statement keywords are offered unconditionally in all
-statement positions, even when they are syntactically invalid there.
-
-| Keyword | Should appear only when |
-|---|---|
-| `else` | Previous sibling statement is an `if` body |
-| `catch` | Previous sibling statement is a `try` or `catch` block |
-| `finally` | Previous sibling statement is a `try` or `catch` block |
-| `break` | Inside a loop (`for`, `while`, `do`) or `switch` |
-| `continue` | Inside a loop (`for`, `while`, `do`) |
-| `yield` | Inside a `switch` expression (not a `switch` statement) |
-
-**Root cause:** `KeywordProvider` emits context-sensitive keywords
-unconditionally — it does not inspect the surrounding AST to check whether
-the position allows them.
-
-**Resolution:** Use the `ParsedSentinel` ancestor chain to detect the
-enclosing construct.
-For each context-sensitive keyword, add a predicate that walks the sentinel
-parse tree to verify the required enclosing node or sibling is present.
-This is purely a `KeywordProvider` change — no sentinel context variants needed.
-
----
 
 ### Gap M — Keyword ranking by semantic fit
 
@@ -188,7 +156,28 @@ Defer until the higher-priority gaps are closed.
 
 ## Closed
 
-All gaps identified up to 2026-05-31 have been addressed.
+### Gap L — Context-sensitive statement keywords
+
+**Resolution:** `SentinelParser` now computes three boolean flags from the sentinel's javac
+tree ancestor chain: `enclosedByLoop`, `enclosedBySwitchStatement`, `enclosedBySwitchExpression`.
+`KeywordProvider.methodBodyKeywords` uses these to gate `break` (loop or switch statement),
+`continue` (loop only), and `yield` (switch expression only).
+
+`SentinelParser.classifySentinel` was extended with explicit expression-parent cases
+(`ConditionalExpressionTree`, `BinaryTree`, `IfTree` condition, `MemberSelectTree` receiver, etc.)
+so `parsed.inExpression()` is set purely from the javac tree. The `SIMPLE_NAME` keyword path
+no longer consults the injector context, eliminating the false-EXPRESSION classification that
+the backward scanner produced for switch-case label colons.
+
+`else`, `catch`, and `finally` remain deferred — they require previous-sibling detection
+rather than ancestor-chain inspection.
+
+**Tests:** `keywords_breakAndContinue_suppressedInBareMethodBody`,
+`keywords_breakAndContinue_offeredInsideLoop`,
+`keywords_break_offeredInsideSwitchStatement`,
+`keywords_yield_offeredInsideSwitchExpression`
+
+---
 
 ### Gap K — Keywords not filtered by syntactic context
 

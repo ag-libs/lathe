@@ -17,6 +17,9 @@ record ParsedSentinel(
     String declaredTypeText,
     String annotationTypeText,
     TypeReferenceRole typeReferenceRole,
+    boolean enclosedByLoop,
+    boolean enclosedBySwitchStatement,
+    boolean enclosedBySwitchExpression,
     boolean inExpression,
     int docVersion) {
 
@@ -53,6 +56,9 @@ record ParsedSentinel(
         null,
         TypeReferenceRole.ORDINARY,
         false,
+        false,
+        false,
+        false,
         docVersion);
   }
 
@@ -75,6 +81,9 @@ record ParsedSentinel(
         null,
         TypeReferenceRole.ORDINARY,
         false,
+        false,
+        false,
+        false,
         docVersion);
   }
 
@@ -91,6 +100,9 @@ record ParsedSentinel(
       final String declaredTypeText,
       final String annotationTypeText,
       final TypeReferenceRole typeReferenceRole,
+      final boolean enclosedByLoop,
+      final boolean enclosedBySwitchStatement,
+      final boolean enclosedBySwitchExpression,
       final boolean inExpression,
       final int docVersion) {
     return new ParsedSentinel(
@@ -108,6 +120,9 @@ record ParsedSentinel(
         declaredTypeText,
         annotationTypeText,
         typeReferenceRole,
+        enclosedByLoop,
+        enclosedBySwitchStatement,
+        enclosedBySwitchExpression,
         inExpression,
         docVersion);
   }

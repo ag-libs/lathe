@@ -14,8 +14,8 @@ final class KeywordProvider {
   private static final List<String> CONTROL_FLOW =
       List.of("if", "for", "while", "do", "switch", "try", "synchronized");
 
-  // Statement terminators
-  private static final List<String> TERMINATORS = List.of("return", "throw", "break", "continue");
+  // Unconditional statement terminators
+  private static final List<String> STATEMENT_TERMINATORS = List.of("return", "throw");
 
   // Local declaration starters
   private static final List<String> DECLARATION_STARTERS = List.of("var", "final", "assert");
@@ -77,29 +77,20 @@ final class KeywordProvider {
 
   private static List<String> selectKeywords(
       final ParsedSentinel parsed, final SentinelInjector.Context injectorContext) {
-    final boolean inExpression =
-        injectorContext == SentinelInjector.Context.EXPRESSION || parsed.inExpression();
     return switch (parsed.sentinelContext()) {
-      case SIMPLE_NAME ->
-          // When the injector determined that the cursor is inside a parenthesised expression
-          // (EXPRESSION context), statement-level keywords are syntactically invalid.  This
-          // also handles the case where the sentinel replaces an existing identifier that is
-          // the start of a member-select chain (e.g. super(§Foo.bar())) — javac classifies
-          // that as SIMPLE_NAME, but the injector context correctly tells us we are inside
-          // an argument list.
-          inExpression ? VALUE_EXPRESSIONS : selectByScope(parsed);
+      case SIMPLE_NAME -> parsed.inExpression() ? VALUE_EXPRESSIONS : selectByScope(parsed);
       case TYPE_REFERENCE, VARIABLE_DECLARATION -> classBodyKeywordsIfApplicable(parsed);
       case ARGUMENT_POSITION, LAMBDA_BODY -> VALUE_EXPRESSIONS;
       case CONSTRUCTOR_CALL ->
           // EXPRESSION == cursor is in the argument list; STATEMENT == cursor is on the type name.
-          inExpression ? VALUE_EXPRESSIONS : List.of();
+          injectorContext == SentinelInjector.Context.EXPRESSION ? VALUE_EXPRESSIONS : List.of();
       default -> List.of();
     };
   }
 
   private static List<String> selectByScope(final ParsedSentinel parsed) {
     if (parsed.enclosingMethod() != null) {
-      return methodBodyKeywords();
+      return methodBodyKeywords(parsed);
     }
 
     if (parsed.enclosingClass() != null) {
@@ -118,8 +109,17 @@ final class KeywordProvider {
     return List.of();
   }
 
-  private static List<String> methodBodyKeywords() {
-    return Stream.of(CONTROL_FLOW, TERMINATORS, VALUE_EXPRESSIONS, DECLARATION_STARTERS)
+  private static List<String> methodBodyKeywords(final ParsedSentinel parsed) {
+    return Stream.of(
+            CONTROL_FLOW,
+            STATEMENT_TERMINATORS,
+            VALUE_EXPRESSIONS,
+            DECLARATION_STARTERS,
+            parsed.enclosedByLoop() || parsed.enclosedBySwitchStatement()
+                ? List.of("break")
+                : List.<String>of(),
+            parsed.enclosedByLoop() ? List.of("continue") : List.<String>of(),
+            parsed.enclosedBySwitchExpression() ? List.of("yield") : List.<String>of())
         .flatMap(List::stream)
         .toList();
   }

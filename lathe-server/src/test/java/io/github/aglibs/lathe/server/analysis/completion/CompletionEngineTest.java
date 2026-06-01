@@ -746,6 +746,75 @@ class CompletionEngineTest {
   }
 
   @Test
+  void keywords_breakAndContinue_suppressedInBareMethodBody() {
+    final List<String> items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    void m() {
+                        §
+                    }
+                }"""));
+    assertThat(items).doesNotContain("break", "continue", "yield");
+    assertThat(items).contains("return", "if", "for", "while", "switch", "try", "throw", "new");
+  }
+
+  @Test
+  void keywords_breakAndContinue_offeredInsideLoop() {
+    final List<String> items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    void m() {
+                        for (int i = 0; i < 10; i++) {
+                            §
+                        }
+                    }
+                }"""));
+    assertThat(items).contains("break", "continue");
+    assertThat(items).doesNotContain("yield");
+  }
+
+  @Test
+  void keywords_break_offeredInsideSwitchStatement() {
+    final List<String> items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    void m(int x) {
+                        switch (x) {
+                            case 1: §
+                        }
+                    }
+                }"""));
+    assertThat(items).contains("break");
+    assertThat(items).doesNotContain("continue", "yield");
+  }
+
+  @Test
+  void keywords_yield_offeredInsideSwitchExpression() {
+    final List<String> items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    void m(int x) {
+                        int r = switch (x) {
+                            case 1 -> {
+                                §
+                            }
+                            default -> 0;
+                        };
+                    }
+                }"""));
+    assertThat(items).contains("yield");
+    assertThat(items).doesNotContain("break", "continue");
+  }
+
+  @Test
   void methodBody_afterNew_suggestsConstructibleTypes() {
     assertThat(
             labels(
