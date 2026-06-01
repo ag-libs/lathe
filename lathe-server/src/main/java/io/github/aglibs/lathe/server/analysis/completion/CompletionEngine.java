@@ -388,7 +388,8 @@ public final class CompletionEngine {
         && initialSnapshot != null
         && parsed.receiverText() != null) {
       final var candidates =
-          new ImportCompletionProvider(initialSnapshot, null)
+          new ImportCompletionProvider(
+                  initialSnapshot, TypeResolver.resolveScope(initialSnapshot, req.cursorOffset()))
               .proposeCandidates(parsed.receiverText(), injected.prefix());
       return new CompletionOutcome(
           candidates.stream().map(CompletionItemPresenter::present).toList(), null);

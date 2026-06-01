@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.ModuleElement;
 import javax.lang.model.element.PackageElement;
 import javax.lang.model.element.TypeElement;
 
@@ -77,11 +78,31 @@ final class ImportCompletionProvider {
         .stream();
   }
 
+  private boolean isModuleAccessible(final ModuleElement m) {
+    if (scope == null) {
+      return true;
+    }
+    for (final var el : m.getEnclosedElements()) {
+      if (el.getKind() != ElementKind.PACKAGE) {
+        continue;
+      }
+
+      for (final var member : el.getEnclosedElements()) {
+        if (isImportableType(member.getKind())) {
+          return snapshot.trees().isAccessible(scope, (TypeElement) member);
+        }
+      }
+    }
+
+    return false;
+  }
+
   private Stream<CompletionCandidate> subPackageStream(
       final String packageName, final String prefix) {
     final String pkgPrefix = packageName + ".";
     final int segmentStart = pkgPrefix.length();
     return snapshot.elements().getAllModuleElements().stream()
+        .filter(this::isModuleAccessible)
         .flatMap(m -> m.getEnclosedElements().stream())
         .filter(el -> el.getKind() == ElementKind.PACKAGE)
         .map(el -> ((PackageElement) el).getQualifiedName().toString())

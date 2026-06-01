@@ -1710,8 +1710,6 @@ class CompletionEngineTest {
   }
 
   @Test
-  @Disabled(
-      "Gap — static import path passes null scope so isAccessible is not checked; non-exported types leak through")
   void fqnNavigation_isAccessible_staticImport_filtersNonExportedPackageTypes() throws IOException {
     final var lib = buildExampleLib();
     localFixture = new CompletionFixture(WorkspaceTypeIndex.empty(), tmp);
@@ -1747,6 +1745,27 @@ class CompletionEngineTest {
   }
 
   @Test
+  void fqnNavigation_subPackageStream_methodBody_filtersNonExportedSubPackages()
+      throws IOException {
+    final var lib = buildExampleLib();
+    localFixture = new CompletionFixture(WorkspaceTypeIndex.empty(), tmp);
+
+    final List<String> segments =
+        labels(
+            localFixture.completeWithJpms(
+                """
+                package com.example.app;
+                class Test {
+                    void m() { com.example.lib.§ }
+                }""",
+                lib.moduleInfo(),
+                lib.modulePath()));
+
+    assertThat(segments).contains("api");
+    assertThat(segments).doesNotContain("internal");
+  }
+
+  @Test
   @Disabled(
       "Gap — FQN package prefix in class body type reference position returns no sub-package segments")
   void fqnNavigation_classBody_packagePrefix_suggestsSubPackages() throws IOException {
@@ -1766,6 +1785,25 @@ class CompletionEngineTest {
 
     assertThat(segments).contains("api");
     assertThat(segments).doesNotContain("internal");
+  }
+
+  @Test
+  void fqnNavigation_subPackageStream_filtersNonTransitiveModuleSubPackages() throws IOException {
+    final var lib = buildLibWithHiddenDep();
+    localFixture = new CompletionFixture(WorkspaceTypeIndex.empty(), tmp);
+
+    final List<String> segments =
+        labels(
+            localFixture.completeWithJpms(
+                """
+                package com.example.app;
+                import com.example.§;
+                class Test {}""",
+                lib.moduleInfo(),
+                lib.modulePath()));
+
+    assertThat(segments).contains("lib");
+    assertThat(segments).doesNotContain("other");
   }
 
   @Test
@@ -1964,6 +2002,51 @@ class CompletionEngineTest {
         libSrc.resolve("com/example/lib/internal/InternalType.java"));
     return new ExampleLib(
         List.of("--module-path", libOut.toString()),
+        """
+        module com.example.app {
+            requires com.example.lib;
+        }""");
+  }
+
+  private ExampleLib buildLibWithHiddenDep() throws IOException {
+    final Path otherSrc = tmp.resolve("other-src");
+    Files.createDirectories(otherSrc.resolve("com/example/other"));
+    Files.writeString(
+        otherSrc.resolve("module-info.java"),
+        "module com.example.other { exports com.example.other; }");
+    Files.writeString(
+        otherSrc.resolve("com/example/other/OtherType.java"),
+        "package com.example.other; public class OtherType {}");
+    final Path otherOut = tmp.resolve("other-out");
+    TestCompiler.compileToDir(
+        otherOut,
+        List.of(),
+        List.of(),
+        otherSrc.resolve("module-info.java"),
+        otherSrc.resolve("com/example/other/OtherType.java"));
+
+    final Path libSrc = tmp.resolve("lib-src");
+    Files.createDirectories(libSrc.resolve("com/example/lib"));
+    Files.writeString(
+        libSrc.resolve("module-info.java"),
+        """
+        module com.example.lib {
+            requires com.example.other;
+            exports com.example.lib;
+        }""");
+    Files.writeString(
+        libSrc.resolve("com/example/lib/LibType.java"),
+        "package com.example.lib; public class LibType {}");
+    final Path libOut = tmp.resolve("lib-out");
+    TestCompiler.compileToDir(
+        libOut,
+        List.of(),
+        List.of("--module-path", otherOut.toString()),
+        libSrc.resolve("module-info.java"),
+        libSrc.resolve("com/example/lib/LibType.java"));
+
+    return new ExampleLib(
+        List.of("--module-path", libOut + ":" + otherOut),
         """
         module com.example.app {
             requires com.example.lib;
