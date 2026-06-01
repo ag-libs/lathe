@@ -40,6 +40,10 @@ final class CompletionCandidateRanker {
 
   private static String sortText(
       final CompletionCandidate candidate, final SemanticCompletionContext context) {
+    if (candidate.kind() == CandidateKind.KEYWORD) {
+      return keywordSortText(candidate, context);
+    }
+
     if (candidate.sortText() != null) {
       return candidate.sortText();
     }
@@ -56,6 +60,23 @@ final class CompletionCandidateRanker {
         candidate.valueType() != null
             && context.analysis().types().isAssignable(candidate.valueType(), type);
     return "%d_%s".formatted(matches ? 0 : 1, candidate.name());
+  }
+
+  private static String keywordSortText(
+      final CompletionCandidate candidate, final SemanticCompletionContext context) {
+    if (context.expectedValue() instanceof ExpectedValue.Type(final TypeMirror type)) {
+      if (("true".equals(candidate.name()) || "false".equals(candidate.name()))
+          && booleanCompatible(type, context)) {
+        return "0_%s".formatted(candidate.name());
+      }
+    }
+    if ("null".equals(candidate.name()) && context.inEqualityComparison()) {
+      return "0_null";
+    }
+    if ("return".equals(candidate.name()) && context.inNonVoidMethod()) {
+      return "0_return";
+    }
+    return candidate.sortText();
   }
 
   private static boolean valueSensitiveContext(final SemanticCompletionContext context) {

@@ -133,7 +133,7 @@ public final class CompletionEngine {
       final SentinelResult injected,
       final CompletionRequest req,
       final CompletionSite site) {
-    final var semanticContext = semanticContext(site, req);
+    final var semanticContext = semanticContext(site, req, parsed);
     if (semanticContext != null
         && semanticContext.expectedValue() instanceof ExpectedValue.NoSlot) {
       return CompletionOutcome.of(List.of());
@@ -221,12 +221,12 @@ public final class CompletionEngine {
   }
 
   private static SemanticCompletionContext semanticContext(
-      final CompletionSite site, final CompletionRequest req) {
+      final CompletionSite site, final CompletionRequest req, final ParsedSentinel parsed) {
     if (req.cached() == null || req.cached().analysis() == null) {
       return null;
     }
 
-    return SemanticCompletionContext.from(site, req, req.cached().analysis());
+    return SemanticCompletionContext.from(site, req, parsed, req.cached().analysis());
   }
 
   private CompletionOutcome completeTypeReference(
@@ -796,6 +796,6 @@ public final class CompletionEngine {
 
   private static SemanticCompletionContext memberAccessSemanticContext(
       final AttributedFileAnalysis snapshot) {
-    return new SemanticCompletionContext(snapshot, new ExpectedValue.Unknown(), false);
+    return new SemanticCompletionContext(snapshot, new ExpectedValue.Unknown(), false, false, false);
   }
 }

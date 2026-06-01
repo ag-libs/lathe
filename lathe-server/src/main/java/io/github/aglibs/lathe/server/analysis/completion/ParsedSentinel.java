@@ -20,6 +20,7 @@ record ParsedSentinel(
     boolean enclosedByLoop,
     boolean enclosedBySwitchStatement,
     boolean enclosedBySwitchExpression,
+    boolean inEqualityComparison,
     boolean inExpression,
     int docVersion) {
 
@@ -59,6 +60,7 @@ record ParsedSentinel(
         false,
         false,
         false,
+        false,
         docVersion);
   }
 
@@ -84,6 +86,7 @@ record ParsedSentinel(
         false,
         false,
         false,
+        false,
         docVersion);
   }
 
@@ -103,6 +106,7 @@ record ParsedSentinel(
       final boolean enclosedByLoop,
       final boolean enclosedBySwitchStatement,
       final boolean enclosedBySwitchExpression,
+      final boolean inEqualityComparison,
       final boolean inExpression,
       final int docVersion) {
     return new ParsedSentinel(
@@ -123,6 +127,7 @@ record ParsedSentinel(
         enclosedByLoop,
         enclosedBySwitchStatement,
         enclosedBySwitchExpression,
+        inEqualityComparison,
         inExpression,
         docVersion);
   }

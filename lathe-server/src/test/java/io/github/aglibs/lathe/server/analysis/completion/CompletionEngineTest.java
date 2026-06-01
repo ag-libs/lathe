@@ -116,7 +116,7 @@ class CompletionEngineTest {
                         String s = §
                     }
                 }""",
-                List.of("getValue"),
+                List.of("getValue()"),
                 List.of("true", "false")),
             new CompletionSemanticCase(
                 "boolean initializer includes boolean literals",
@@ -127,7 +127,7 @@ class CompletionEngineTest {
                         boolean flag = §
                     }
                 }""",
-                List.of("true", "false", "getFlag"),
+                List.of("true", "false", "getFlag()"),
                 List.of("null")),
             new CompletionSemanticCase(
                 "static-imported enum constant as simple name",
@@ -184,8 +184,12 @@ class CompletionEngineTest {
 
     for (final CompletionSemanticCase c : cases) {
       final List<String> labels = labels(fixture.complete(c.source()));
-      assertThat(labels).as(c.site()).containsAll(c.expectedLabels());
-      assertThat(labels).as(c.site()).doesNotContainAnyElementsOf(c.forbiddenLabels());
+      if (!c.expectedLabels().isEmpty()) {
+        assertThat(labels).as(c.site()).containsAll(c.expectedLabels());
+      }
+      if (!c.forbiddenLabels().isEmpty()) {
+        assertThat(labels).as(c.site()).doesNotContainAnyElementsOf(c.forbiddenLabels());
+      }
     }
   }
 
@@ -705,6 +709,19 @@ class CompletionEngineTest {
             "final",
             "synchronized",
             "var");
+
+    final var returnItem =
+        itemLabeled(
+            fixture.complete(
+                """
+                class Test {
+                    String m() {
+                        §
+                    }
+                }"""),
+            "return");
+    assertThat(returnItem).isPresent();
+    assertThat(returnItem.get().getSortText()).isEqualTo("0_return");
   }
 
   @Test
@@ -812,6 +829,39 @@ class CompletionEngineTest {
                 }"""));
     assertThat(items).contains("yield");
     assertThat(items).doesNotContain("break", "continue");
+  }
+
+  @Test
+  void keywords_trueAndFalse_rankedFirstForBooleanExpectedType() {
+    final List<CompletionItem> items =
+        fixture.complete(
+            """
+            class Test {
+                void m() {
+                    boolean b = §
+                }
+            }""");
+    final var trueItem = itemLabeled(items, "true");
+    final var falseItem = itemLabeled(items, "false");
+    assertThat(trueItem).isPresent();
+    assertThat(falseItem).isPresent();
+    assertThat(trueItem.get().getSortText()).isEqualTo("0_true");
+    assertThat(falseItem.get().getSortText()).isEqualTo("0_false");
+  }
+
+  @Test
+  void keywords_null_rankedFirstInEqualityComparison() {
+    final List<CompletionItem> items =
+        fixture.complete(
+            """
+            class Test {
+                void m(String s) {
+                    if (s == §) {}
+                }
+            }""");
+    final var nullItem = itemLabeled(items, "null");
+    assertThat(nullItem).isPresent();
+    assertThat(nullItem.get().getSortText()).isEqualTo("0_null");
   }
 
   @Test

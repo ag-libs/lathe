@@ -6,7 +6,6 @@ Open gaps in priority order.
 
 | Gap | Title | Difficulty | Depends on |
 |-----|-------|------------|------------|
-| M | Keyword ranking by semantic fit | Medium | K |
 | U | Annotation element completion is under-specified | Medium | — |
 | T | Declaration name slots are under-specified | Medium | — |
 | J | No completions after `::` | Hard | — |
@@ -22,38 +21,6 @@ functional-interface compatibility filtering, and no existing path to build on.
 ---
 
 ## Open
-
-### Gap M — Keyword ranking by semantic fit
-
-**Difficulty:** Medium
-**Depends on:** Gap K
-
-**Symptom:** All keyword candidates receive equal rank regardless of how well
-they fit the current semantic context.
-IntelliJ promotes certain keywords based on expected type and position:
-
-| Condition | Promoted keywords |
-|---|---|
-| Boolean type expected | `true`, `false` ranked first |
-| Equality comparison (`==`, `!=`) | `null` ranked high |
-| Last statement of a non-void method | `return` ranked high |
-
-**Root cause:** `CompletionCandidateRanker` does not have keyword-specific
-ranking rules.
-
-**Resolution:** Extend `CompletionCandidateRanker` to apply keyword sort
-buckets based on `SemanticCompletionContext`:
-- If `expectedValue` is `ExpectedValue.Type` where the type is `boolean` or
-  `Boolean`, promote `true` and `false` to the top bucket.
-- If the position is an equality comparison operand, promote `null`.
-- If the cursor is at the last statement of a method with a non-void return
-  type, promote `return`.
-
-The last two conditions may require additional sentinel context signals.
-Implement the boolean case first as it is the most common and easiest to detect
-from `ExpectedValue`.
-
----
 
 ### Gap T — Declaration name slots are under-specified
 
@@ -155,6 +122,25 @@ Defer until the higher-priority gaps are closed.
 ---
 
 ## Closed
+
+### Gap M — Keyword ranking by semantic fit
+
+**Resolution:** `ParsedSentinel` gains `inEqualityComparison` (set in `SentinelParser` when the
+sentinel's ancestor chain contains a `BinaryTree` with kind `EQUAL_TO` or `NOT_EQUAL_TO`).
+`SemanticCompletionContext` gains `inEqualityComparison` and `inNonVoidMethod` (the latter
+computed in `TypeResolver.isNonVoidMethod` from the attributed snapshot).
+`CompletionCandidateRanker.sortText` routes keyword candidates through `keywordSortText`, which
+promotes `true`/`false` to `0_` when the expected type is boolean, `null` to `0_null` inside
+equality comparisons, and `return` to `0_return` inside non-void methods.
+`SentinelParser.classifySentinel` was also extended with a comprehensive set of expression-parent
+cases so `parsed.inExpression()` is fully derived from the javac tree, removing the dependency on
+the injector backward-scanner for the `SIMPLE_NAME` keyword path.
+
+**Tests:** `keywords_trueAndFalse_rankedFirstForBooleanExpectedType`,
+`keywords_null_rankedFirstInEqualityComparison`,
+`keywords_returnPosition_expressionKeywordsOnly` (extended with bare-method-body return ranking)
+
+---
 
 ### Gap L — Context-sensitive statement keywords
 

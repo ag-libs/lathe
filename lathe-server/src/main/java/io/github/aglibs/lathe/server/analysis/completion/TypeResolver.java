@@ -33,6 +33,23 @@ final class TypeResolver {
 
   private TypeResolver() {}
 
+  static boolean isNonVoidMethod(
+      final String className, final String methodName, final AttributedFileAnalysis snapshot) {
+    if (className == null || methodName == null || snapshot.tree() == null) {
+      return false;
+    }
+
+    final var classEl = findClassElement(className, snapshot);
+    if (classEl == null) {
+      return false;
+    }
+
+    return snapshot.elements().getAllMembers(classEl).stream()
+        .filter(el -> el.getKind() == ElementKind.METHOD)
+        .filter(el -> methodName.equals(el.getSimpleName().toString()))
+        .anyMatch(el -> ((ExecutableElement) el).getReturnType().getKind() != TypeKind.VOID);
+  }
+
   static ExpectedValue resolveExpectedValue(
       final CompletionSite site, final int cursorLine, final AttributedFileAnalysis snapshot) {
     if (snapshot.tree() == null) {

@@ -94,6 +94,7 @@ final class SentinelParser {
     boolean enclosedByLoop = false;
     boolean enclosedBySwitchStatement = false;
     boolean enclosedBySwitchExpression = false;
+    boolean inEqualityComparison = false;
     for (final Tree node : sentinelPath) {
       if (node instanceof MethodTree
           || node instanceof LambdaExpressionTree
@@ -109,6 +110,11 @@ final class SentinelParser {
         enclosedBySwitchExpression = true;
       } else if (node instanceof SwitchTree) {
         enclosedBySwitchStatement = true;
+      } else if (node instanceof final BinaryTree binary) {
+        final var kind = binary.getKind();
+        if (kind == Tree.Kind.EQUAL_TO || kind == Tree.Kind.NOT_EQUAL_TO) {
+          inEqualityComparison = true;
+        }
       }
     }
 
@@ -137,6 +143,7 @@ final class SentinelParser {
             enclosedByLoop,
             enclosedBySwitchStatement,
             enclosedBySwitchExpression,
+            inEqualityComparison,
             cls.inExpression(),
             version);
 
