@@ -303,12 +303,17 @@ public final class CompletionEngine {
       return CompletionOutcome.of(List.of());
     }
 
-    final var outer = req.cached().analysis().elements().getTypeElement(parsed.receiverText());
+    final var analysis = req.cached().analysis();
+    final var outer = analysis.elements().getTypeElement(parsed.receiverText());
     if (outer == null) {
-      return CompletionOutcome.of(List.of());
+      final var pkgScope = TypeResolver.resolveScope(analysis, req.cursorOffset());
+      final var packageCandidates =
+          new ImportCompletionProvider(analysis, pkgScope)
+              .proposeCandidates(parsed.receiverText(), injected.prefix());
+      return CompletionOutcome.of(
+          packageCandidates.stream().map(CompletionItemPresenter::present).toList());
     }
 
-    final var analysis = req.cached().analysis();
     final var candidates =
         new CandidateGenerator(analysis).proposeNestedTypes(outer, injected.prefix());
     final List<CompletionItem> items =

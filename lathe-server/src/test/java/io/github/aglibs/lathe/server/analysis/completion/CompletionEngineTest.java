@@ -1766,8 +1766,6 @@ class CompletionEngineTest {
   }
 
   @Test
-  @Disabled(
-      "Gap — FQN package prefix in class body type reference position returns no sub-package segments")
   void fqnNavigation_classBody_packagePrefix_suggestsSubPackages() throws IOException {
     final var lib = buildExampleLib();
     localFixture = new CompletionFixture(WorkspaceTypeIndex.empty(), tmp);
