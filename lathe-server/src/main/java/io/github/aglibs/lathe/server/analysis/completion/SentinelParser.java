@@ -111,6 +111,7 @@ final class SentinelParser {
             cls.enclosingMethodName(),
             cls.lambdaParamIndex(),
             cls.declaredTypeText(),
+            cls.annotationTypeText(),
             cls.typeReferenceRole(),
             cls.inExpression(),
             version);
@@ -143,16 +144,18 @@ final class SentinelParser {
       String enclosingMethodName,
       int lambdaParamIndex,
       String declaredTypeText,
+      String annotationTypeText,
       TypeReferenceRole typeReferenceRole,
       boolean inExpression) {
 
     static Classification of(final SentinelContext ctx) {
-      return new Classification(ctx, -1, null, null, -1, null, TypeReferenceRole.ORDINARY, false);
+      return new Classification(
+          ctx, -1, null, null, -1, null, null, TypeReferenceRole.ORDINARY, false);
     }
 
     static Classification typeReference(final TypeReferenceRole role) {
       return new Classification(
-          SentinelContext.TYPE_REFERENCE, -1, null, null, -1, null, role, false);
+          SentinelContext.TYPE_REFERENCE, -1, null, null, -1, null, null, role, false);
     }
 
     static Classification annotation() {
@@ -163,13 +166,48 @@ final class SentinelParser {
           null,
           -1,
           null,
+          null,
           TypeReferenceRole.ANNOTATION,
+          false);
+    }
+
+    static Classification annotationArgument(final String annotationTypeText) {
+      return new Classification(
+          SentinelContext.ANNOTATION_ARGUMENT,
+          -1,
+          null,
+          null,
+          -1,
+          null,
+          annotationTypeText,
+          TypeReferenceRole.ORDINARY,
+          false);
+    }
+
+    static Classification annotationArgumentValue() {
+      return new Classification(
+          SentinelContext.ANNOTATION_ARGUMENT_VALUE,
+          -1,
+          null,
+          null,
+          -1,
+          null,
+          null,
+          TypeReferenceRole.ORDINARY,
           false);
     }
 
     static Classification expression() {
       return new Classification(
-          SentinelContext.SIMPLE_NAME, -1, null, null, -1, null, TypeReferenceRole.ORDINARY, true);
+          SentinelContext.SIMPLE_NAME,
+          -1,
+          null,
+          null,
+          -1,
+          null,
+          null,
+          TypeReferenceRole.ORDINARY,
+          true);
     }
   }
 
@@ -180,6 +218,15 @@ final class SentinelParser {
 
     final Tree parent = parentPath.getLeaf();
     final boolean simpleName = !(sentinel instanceof MemberSelectTree);
+    if (isAnnotationArgumentValue(sentinel, parentPath)) {
+      return Classification.annotationArgumentValue();
+    }
+
+    final String annotationArgumentType = annotationArgumentType(sentinel, parentPath);
+    if (annotationArgumentType != null) {
+      return Classification.annotationArgument(annotationArgumentType);
+    }
+
     final TypeReferenceRole inferredRole = inferTypeReferenceRole(sentinel, parentPath);
 
     if (inferredRole == TypeReferenceRole.ANNOTATION) {
@@ -227,6 +274,7 @@ final class SentinelParser {
         null,
         -1,
         type != null ? type.toString() : null,
+        null,
         TypeReferenceRole.ORDINARY,
         false);
   }
@@ -253,6 +301,7 @@ final class SentinelParser {
         enclosingMethodName,
         -1,
         null,
+        null,
         TypeReferenceRole.ORDINARY,
         false);
   }
@@ -261,7 +310,15 @@ final class SentinelParser {
       final Tree sentinel, final LambdaExpressionTree lambda) {
     if (!(sentinel instanceof final MemberSelectTree sel)) {
       return new Classification(
-          SentinelContext.LAMBDA_BODY, -1, null, null, -1, null, TypeReferenceRole.ORDINARY, false);
+          SentinelContext.LAMBDA_BODY,
+          -1,
+          null,
+          null,
+          -1,
+          null,
+          null,
+          TypeReferenceRole.ORDINARY,
+          false);
     }
 
     final var params = lambda.getParameters();
@@ -277,6 +334,7 @@ final class SentinelParser {
         null,
         null,
         lambdaParamIndex,
+        null,
         null,
         TypeReferenceRole.ORDINARY,
         false);
@@ -294,8 +352,54 @@ final class SentinelParser {
         null,
         -1,
         null,
+        null,
         argIndex < 0 ? TypeReferenceRole.CONSTRUCTOR : TypeReferenceRole.ORDINARY,
         false);
+  }
+
+  private static String annotationArgumentType(final Tree sentinel, final TreePath parentPath) {
+    Tree child = sentinel;
+    for (TreePath path = parentPath; path != null; path = path.getParentPath()) {
+      final Tree parent = path.getLeaf();
+      final Tree currentChild = child;
+
+      if (parent instanceof final AnnotationTree annotationTree) {
+        return annotationTree.getAnnotationType() == currentChild
+            ? null
+            : annotationTree.getAnnotationType().toString();
+      }
+
+      child = parent;
+    }
+
+    return null;
+  }
+
+  private static boolean isAnnotationArgumentValue(final Tree sentinel, final TreePath parentPath) {
+    Tree child = sentinel;
+    for (TreePath path = parentPath; path != null; path = path.getParentPath()) {
+      final Tree parent = path.getLeaf();
+      final Tree currentChild = child;
+
+      if (parent instanceof final AssignmentTree assignmentTree
+          && assignmentTree.getExpression() == currentChild) {
+        return enclosingAnnotation(path.getParentPath());
+      }
+
+      child = parent;
+    }
+
+    return false;
+  }
+
+  private static boolean enclosingAnnotation(final TreePath path) {
+    for (TreePath p = path; p != null; p = p.getParentPath()) {
+      if (p.getLeaf() instanceof AnnotationTree) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   private static TypeReferenceRole inferTypeReferenceRole(
@@ -305,7 +409,8 @@ final class SentinelParser {
       final Tree parent = path.getLeaf();
       final Tree currentChild = child;
 
-      if (parent instanceof AnnotationTree) {
+      if (parent instanceof final AnnotationTree annotationTree
+          && annotationTree.getAnnotationType() == currentChild) {
         return TypeReferenceRole.ANNOTATION;
       }
 

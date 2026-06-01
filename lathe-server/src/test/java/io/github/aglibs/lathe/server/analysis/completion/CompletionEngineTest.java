@@ -162,6 +162,11 @@ class CompletionEngineTest {
                 List.of(),
                 List.of("String", "true", "false", "class")),
             new CompletionSemanticCase(
+                "annotation named value excludes annotation element names",
+                "@Deprecated(since = §) class Test {}",
+                List.of(),
+                List.of("since", "forRemoval")),
+            new CompletionSemanticCase(
                 "annotation declaration body excludes value and statement keywords",
                 "@interface Marker { § }",
                 List.of(),
@@ -801,6 +806,18 @@ class CompletionEngineTest {
         .doesNotContain("String");
     assertThat(labels(fixture.complete("@Over§ class Test {}"))).contains("Override");
     assertThat(labels(fixture.complete("@Str§ class Test {}"))).doesNotContain("String");
+  }
+
+  @Test
+  void annotationArgument_emptyList_suggestsElementNames() {
+    assertThat(labels(fixture.complete("@Deprecated(§) class Test {}")))
+        .contains("since", "forRemoval")
+        .doesNotContain("Override", "SuppressWarnings", "true", "false", "class");
+    assertThat(labels(fixture.complete("@Deprecated(si§) class Test {}")))
+        .contains("since")
+        .doesNotContain("forRemoval");
+    assertThat(labels(fixture.complete("@Deprecated(since = §) class Test {}")))
+        .doesNotContain("since", "forRemoval");
   }
 
   @Test

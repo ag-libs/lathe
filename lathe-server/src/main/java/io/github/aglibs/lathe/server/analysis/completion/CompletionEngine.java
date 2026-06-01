@@ -86,6 +86,8 @@ public final class CompletionEngine {
           case TYPE_REFERENCE -> completeTypeReference(parsed, injected, req);
           case ANNOTATION_CONTEXT ->
               completeSimpleNameTypeReferenceWithLang(injected, req, parsed.typeReferenceRole());
+          case ANNOTATION_ARGUMENT -> completeAnnotationArgument(parsed, injected, req);
+          case ANNOTATION_ARGUMENT_VALUE -> CompletionOutcome.of(List.of());
           case VARIABLE_DECLARATION ->
               parsed.enclosingMethod() == null
                   ? completeTypeReference(parsed, injected, req)
@@ -255,6 +257,109 @@ public final class CompletionEngine {
     }
 
     return typeRefOutcome;
+  }
+
+  private CompletionOutcome completeAnnotationArgument(
+      final ParsedSentinel parsed, final SentinelResult injected, final CompletionRequest req) {
+    final var analysis =
+        req.cached() != null
+            ? req.cached().analysis()
+            : (compiler != null ? compiler.reattribute(req.uri(), req.content()) : null);
+    if (analysis == null) {
+      return CompletionOutcome.of(List.of());
+    }
+
+    final var annotationType = resolveAnnotationType(parsed.annotationTypeText(), analysis);
+    if (annotationType == null) {
+      return CompletionOutcome.of(List.of());
+    }
+
+    final List<CompletionItem> items =
+        annotationType.getEnclosedElements().stream()
+            .filter(el -> el.getKind() == ElementKind.METHOD)
+            .map(ExecutableElement.class::cast)
+            .filter(el -> el.getParameters().isEmpty())
+            .filter(el -> el.getSimpleName().toString().startsWith(injected.prefix()))
+            .map(CompletionEngine::annotationElementItem)
+            .toList();
+    return new CompletionOutcome(items, req.cached() == null ? analysis : null);
+  }
+
+  private static CompletionItem annotationElementItem(final ExecutableElement element) {
+    final var name = element.getSimpleName().toString();
+    final var item = new CompletionItem(name);
+    item.setKind(CompletionItemKind.Property);
+    item.setFilterText(name);
+    item.setDetail(element.getReturnType().toString());
+    item.setInsertText("%s = ".formatted(name));
+    return item;
+  }
+
+  private static TypeElement resolveAnnotationType(
+      final String typeText, final AttributedFileAnalysis analysis) {
+    if (typeText == null || typeText.isBlank()) {
+      return null;
+    }
+
+    if (typeText.indexOf('.') >= 0) {
+      return analysis.elements().getTypeElement(typeText);
+    }
+
+    final var samePackage = samePackageType(typeText, analysis);
+    if (samePackage != null) {
+      return samePackage;
+    }
+
+    final var imported = importedType(typeText, analysis);
+    if (imported != null) {
+      return imported;
+    }
+
+    return analysis.elements().getTypeElement("java.lang." + typeText);
+  }
+
+  private static TypeElement samePackageType(
+      final String simpleName, final AttributedFileAnalysis analysis) {
+    if (analysis.tree() == null || analysis.tree().getPackageName() == null) {
+      return null;
+    }
+
+    return analysis
+        .elements()
+        .getTypeElement("%s.%s".formatted(analysis.tree().getPackageName(), simpleName));
+  }
+
+  private static TypeElement importedType(
+      final String simpleName, final AttributedFileAnalysis analysis) {
+    if (analysis.tree() == null) {
+      return null;
+    }
+
+    for (final var imp : analysis.tree().getImports()) {
+      if (imp.isStatic()) {
+        continue;
+      }
+
+      final var importedName = imp.getQualifiedIdentifier().toString();
+      if (importedName.endsWith("." + simpleName)) {
+        return analysis.elements().getTypeElement(importedName);
+      }
+
+      if (importedName.endsWith(".*")) {
+        final var type =
+            analysis
+                .elements()
+                .getTypeElement(
+                    "%s.%s"
+                        .formatted(
+                            importedName.substring(0, importedName.length() - 2), simpleName));
+        if (type != null) {
+          return type;
+        }
+      }
+    }
+
+    return null;
   }
 
   private static CompletionOutcome mergeLangTypes(

@@ -125,10 +125,9 @@ after `@`, but not the rest of the annotation surface.
 Examples from the discovery matrix:
 
 ```
-@Deprecated(§)
 @SuppressWarnings(§)
 @SuppressWarnings(va§ = "")
-@SuppressWarnings(value = §)
+@Deprecated(since = §)
 @Retention(§)
 @Target({§})
 @interface A { § }
@@ -137,12 +136,11 @@ Examples from the discovery matrix:
 ```
 
 **Expected behavior:** Annotation completion needs site-specific semantics:
-- Empty argument lists should offer annotation element names.
-  For `@Deprecated(§)`, this means `since` and `forRemoval`, not annotation
-  types such as `Override` or `SuppressWarnings`.
 - Annotation element name positions should offer element names only.
 - Element value positions should use the annotation method return type as the
   expected value.
+  For `@Deprecated(since = §)`, completion must not offer annotation element
+  names such as `since` or `forRemoval`.
 - Enum-valued elements should prefer compatible enum constants.
 - Array-valued elements should use the component type inside `{ ... }`.
 - Annotation declaration bodies should offer annotation member declarations,
@@ -154,18 +152,6 @@ Examples from the discovery matrix:
 `@`”.
 There is no parsed site model for annotation argument names, argument values,
 array values, declaration bodies, or default values.
-
-**Reproduction:** On Helidon
-`dbclient/mongodb/src/main/java/io/helidon/dbclient/mongodb/MongoDbClient.java`,
-run:
-
-```bash
-python3 dev/explore.py /home/ag-libs/git/helidon/dbclient/mongodb/src/main/java/io/helidon/dbclient/mongodb/MongoDbClient.java inject '@Deprecated('
-```
-
-The current result returns annotation type names:
-`SuppressWarnings`, `Deprecated`, `SafeVarargs`, `Override`, and
-`FunctionalInterface`.
 
 **Discovery test:** `completionSemantics_gapDiscoveryMatrix`
 

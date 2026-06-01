@@ -15,6 +15,7 @@ record ParsedSentinel(
     String enclosingMethodName,
     int lambdaParamIndex,
     String declaredTypeText,
+    String annotationTypeText,
     TypeReferenceRole typeReferenceRole,
     boolean inExpression,
     int docVersion) {
@@ -49,6 +50,7 @@ record ParsedSentinel(
         null,
         -1,
         null,
+        null,
         TypeReferenceRole.ORDINARY,
         false,
         docVersion);
@@ -70,6 +72,7 @@ record ParsedSentinel(
         null,
         -1,
         null,
+        null,
         TypeReferenceRole.ORDINARY,
         false,
         docVersion);
@@ -86,6 +89,7 @@ record ParsedSentinel(
       final String enclosingMethodName,
       final int lambdaParamIndex,
       final String declaredTypeText,
+      final String annotationTypeText,
       final TypeReferenceRole typeReferenceRole,
       final boolean inExpression,
       final int docVersion) {
@@ -102,6 +106,7 @@ record ParsedSentinel(
         enclosingMethodName,
         lambdaParamIndex,
         declaredTypeText,
+        annotationTypeText,
         typeReferenceRole,
         inExpression,
         docVersion);

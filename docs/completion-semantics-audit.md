@@ -41,10 +41,10 @@ Each row should eventually map to active tests, a documented gap, or a deliberat
 | Record implements | `record R() implements §` | interfaces | classes, enums, records | strong | covered |
 | Throws clause | `throws IOEx§` | `Throwable` subtypes | non-Throwable types, interfaces, enums | partial | covered |
 | Annotation type | `@Over§` | annotation types | ordinary classes, interfaces, enums | partial | covered |
-| Annotation empty argument list | `@Deprecated(§)` | annotation element names: `since`, `forRemoval` | annotation types such as `Override`, `SuppressWarnings`; statement/value keywords | none | discovery |
+| Annotation empty argument list | `@Deprecated(§)` | annotation element names: `since`, `forRemoval` | annotation types such as `Override`, `SuppressWarnings`; statement/value keywords | partial | covered |
 | Annotation single value | `@SuppressWarnings(§)` | values assignable to the annotation's `value` element | statement keywords, unrelated types, void methods | none | discovery |
 | Annotation named element | `@SuppressWarnings(va§ = "")` | annotation element names | local variables, fields, methods, types | none | discovery |
-| Annotation named value | `@SuppressWarnings(value = §)` | values assignable to the named element | statement keywords, unrelated types, void methods | none | discovery |
+| Annotation named value | `@Deprecated(since = §)` | values assignable to the named element | annotation element names such as `since`, `forRemoval`; statement keywords, unrelated types, void methods | none | discovery |
 | Annotation enum value | `@Retention(§)` | `RetentionPolicy` constants or assignable enum values | unrelated enum constants, booleans, arbitrary values | none | discovery |
 | Annotation array value | `@Target({§})` | values assignable to the array component type | unrelated values and statement keywords | none | discovery |
 | Annotation declaration body | `@interface A { § }` | annotation element/member declaration starters | method-body statements, value keywords | none | discovery |
@@ -62,11 +62,7 @@ These cases are represented in the disabled `completionSemantics_gapDiscoveryMat
 The test is intentionally disabled so the normal suite remains usable while gaps are triaged.
 
 - Enum expected-value completion.
-- Annotation element names, values, declaration bodies, and default values.
-  Reproduced with `dev/explore.py` on Helidon `MongoDbClient.java` by injecting
-  `@Deprecated(`.
-  The current result incorrectly returns annotation types such as `Override`
-  and `SuppressWarnings` instead of `since` and `forRemoval`.
+- Annotation values, declaration bodies, and default values.
 - Declaration-name-slot suppression.
 
 ## Next Step
