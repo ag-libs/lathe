@@ -303,6 +303,13 @@ class CompletionEngineTest {
                         }
                     }""")))
         .contains("FIRST", "SECOND");
+    assertThat(labels(fixture.complete("class Test { void m() { java.util.concurrent.TimeUnit.§ } }")))
+        .contains("SECONDS");
+    assertThat(
+            labels(
+                fixture.complete(
+                    "class Test { void m() { java.util.concurrent.TimeUnit.SECONDS.to§ } }")))
+        .anyMatch(l -> l.startsWith("toMillis"));
   }
 
   @Test
@@ -468,6 +475,8 @@ class CompletionEngineTest {
             .findFirst();
     assertThat(equalsItem).isPresent();
     assertThat(equalsItem.get().getTextEdit().getLeft().getNewText()).isEqualTo("equals;");
+    assertThat(labels(fixture.complete("import static java.util.concurrent.TimeUnit.§\nclass Test {}")))
+        .contains("SECONDS");
   }
 
   // ── class body ───────────────────────────────────────────────────────────────
@@ -484,6 +493,8 @@ class CompletionEngineTest {
                         §
                     }""")))
         .contains("private", "protected", "public", "static", "final", "class", "interface");
+    assertThat(labels(fixture.complete("enum Outer { FIRST; § }")))
+        .contains("class", "interface", "enum", "record");
   }
 
   @Test
@@ -542,6 +553,11 @@ class CompletionEngineTest {
             "final",
             "synchronized",
             "var");
+    final List<String> enumConstructorArgumentItems =
+        labels(fixture.complete("enum Kind { FIRST(§); Kind(String value) {} }"));
+    assertThat(enumConstructorArgumentItems).contains("new", "null", "true", "false");
+    assertThat(enumConstructorArgumentItems)
+        .doesNotContain("if", "for", "while", "switch", "return", "throw", "var");
   }
 
   @Test
@@ -621,6 +637,12 @@ class CompletionEngineTest {
                         }
                     }""")))
         .contains("StringBuilder");
+    assertThat(labels(fixture.complete("class Test { void m() { Object value = new Mat§ } }")))
+        .doesNotContain("Math");
+    assertThat(labels(fixture.complete("class Test { void m() { Object value = new Runn§ } }")))
+        .doesNotContain("Runnable");
+    assertThat(labels(fixture.complete("class Test { void m() { Object value = new TimeU§ } }")))
+        .doesNotContain("TimeUnit");
   }
 
   @Test
@@ -656,7 +678,8 @@ class CompletionEngineTest {
     assertThat(labels(fixture.complete("class Test { void m() { java.util.List<Str§> list; } }")))
         .contains("String");
     assertThat(labels(fixture.complete("class Test { void m() { java.util.List<§> list; } }")))
-        .contains("String", "Integer");
+        .contains("String", "Integer")
+        .doesNotContain("if", "return", "new", "var", "class", "interface");
   }
 
   @Test
@@ -664,6 +687,31 @@ class CompletionEngineTest {
     assertThat(labels(fixture.complete("class Test extends AbstractL§ {}")))
         .contains("AbstractList");
     assertThat(labels(fixture.complete("class Test implements Runn§ {}"))).contains("Runnable");
+
+    assertThat(labels(fixture.complete("class Test extends Runn§ {}"))).doesNotContain("Runnable");
+    assertThat(labels(fixture.complete("class Test extends Str§ {}"))).doesNotContain("String");
+    assertThat(labels(fixture.complete("class Test extends TimeU§ {}"))).doesNotContain("TimeUnit");
+
+    assertThat(labels(fixture.complete("class Test implements ArrayD§ {}")))
+        .doesNotContain("ArrayDeque");
+    assertThat(labels(fixture.complete("class Test implements Str§ {}"))).doesNotContain("String");
+    assertThat(labels(fixture.complete("class Test implements TimeU§ {}")))
+        .doesNotContain("TimeUnit");
+
+    assertThat(labels(fixture.complete("interface Test extends Runn§ {}"))).contains("Runnable");
+    assertThat(labels(fixture.complete("interface Test extends ArrayD§ {}")))
+        .doesNotContain("ArrayDeque");
+    assertThat(labels(fixture.complete("interface Test extends TimeU§ {}")))
+        .doesNotContain("TimeUnit");
+
+    assertThat(labels(fixture.complete("record Test() implements Runn§ {}"))).contains("Runnable");
+    assertThat(labels(fixture.complete("record Test() implements ArrayD§ {}")))
+        .doesNotContain("ArrayDeque");
+
+    assertThat(labels(fixture.complete("class Test extends § {}")))
+        .doesNotContain("if", "return", "new", "var", "class", "interface");
+    assertThat(labels(fixture.complete("class Test implements § {}")))
+        .doesNotContain("if", "return", "new", "var", "class", "interface");
   }
 
   // ── simple name ───────────────────────────────────────────────────────────────
@@ -767,6 +815,7 @@ class CompletionEngineTest {
             }""");
     assertThat(initializer).noneMatch(i -> "doWork".equals(i.getFilterText()));
     assertThat(initializer).extracting(CompletionItem::getFilterText).contains("getValue");
+    assertThat(initializer).extracting(CompletionItem::getFilterText).doesNotContain("true", "false");
     // argument position
     final var argument =
         fixture.complete(
@@ -1502,6 +1551,18 @@ class CompletionEngineTest {
                         }
                     }""")))
         .anyMatch(l -> l.startsWith("requireNonNull"));
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    import static java.util.concurrent.TimeUnit.SECONDS;
+
+                    class Test {
+                        void m() {
+                            SE§
+                        }
+                    }""")))
+        .contains("SECONDS");
   }
 
   // ── presentation details ─────────────────────────────────────────────────────
