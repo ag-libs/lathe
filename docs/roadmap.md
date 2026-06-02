@@ -25,7 +25,7 @@ open-document snapshots, routing, stale-result checks, and client publishing.
 One module worker thread per javac-backed `SourceAnalysisSession`.
 LSP4J threads capture immutable request data and enqueue work.
 Compile results cross back to `lathe-worker` before diagnostics or semantic-token refreshes are published.
-Architecture is documented in [lathe-server-data-flow-recipe.md](lathe-server-data-flow-recipe.md).
+Architecture is documented in [lathe-server-data-flow-recipe.md](done/lathe-server-data-flow-recipe.md).
 
 ## Completed
 
@@ -41,7 +41,7 @@ Architecture is documented in [lathe-server-data-flow-recipe.md](lathe-server-da
   constructor call, lambda body, and variable declaration contexts.
   Type index is built from JDK and dependency JARs during sync, filtered by package visibility.
   Keyword completion and argument-position type ranking are in place.
-  See [completion-design.md](completion-design.md).
+  See [completion-design.md](done/completion-design.md).
 - **Maven-managed server distribution** — `lathe:sync` resolves `lathe-server` and all transitive runtime deps via Aether,
   renders `lathe-launcher.sh` with colon-separated `--module-path` pointing at `.m2` JAR paths,
   writes it to `~/.cache/lathe/servers/<version>/`,
@@ -59,8 +59,8 @@ Architecture is documented in [lathe-server-data-flow-recipe.md](lathe-server-da
 
 **Completion behavioural gaps**
 
-Design: [completion-design.md](completion-design.md)
-Gaps: [completion-gaps.md](completion-gaps.md)
+Design: [completion-design.md](done/completion-design.md)
+Gaps: [completion-gaps.md](done/completion-gaps.md)
 
 All planned completion gaps for this version are closed.
 Gap J (method references after `::`) is deferred to a future version —
@@ -105,7 +105,7 @@ detection logic in every editor plugin.
 Replace with a `lathe-source://` scheme: one line in `SourceAnalysisSession.definition()`;
 editors read the file from the path embedded in the URI and open it as a read-only
 `nofile` buffer — no server round-trip, no per-editor path heuristics.
-See [lathe-source-uri-scheme.md](lathe-source-uri-scheme.md) for the full design.
+See [lathe-source-uri-scheme.md](planned/lathe-source-uri-scheme.md) for the full design.
 
 **Semantic token coverage for VS Code**
 VS Code uses TextMate grammars rather than tree-sitter, so it relies on the LSP for all
@@ -113,7 +113,7 @@ identifier-level highlighting. The current `TokenScanner` legend only covers sta
 methods and fields, enum constants, type parameters, and annotations.
 Full VS Code parity requires adding `class`, `parameter`, and `variable` token types and
 widening `method`/`property` to emit for all instances.
-See [lathe-vscode-semantic-tokens.md](lathe-vscode-semantic-tokens.md) for the implementation plan.
+See [lathe-vscode-semantic-tokens.md](planned/lathe-vscode-semantic-tokens.md) for the implementation plan.
 
 **Post-v1 language features**
 Rename, inlay hints, signature help, and richer code actions,

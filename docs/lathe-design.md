@@ -751,7 +751,7 @@ it is flushed after full passes and closed on workspace reload and server shutdo
 
 ### Member access completion
 
-> Full design: [completion-design.md](completion-design.md)
+> Full design: [completion-design.md](done/completion-design.md)
 
 Completion uses three layers kept strictly separate:
 
@@ -889,7 +889,7 @@ grammars rather than tree-sitter.
 
 Full VS Code coverage requires adding `class`, `parameter`, and `variable` token types and widening `method` and
 `property` to cover all instances, not just static or deprecated ones.
-See [lathe-vscode-semantic-tokens.md](lathe-vscode-semantic-tokens.md) for the detailed plan.
+See [lathe-vscode-semantic-tokens.md](planned/lathe-vscode-semantic-tokens.md) for the detailed plan.
 
 ### Formatting
 
@@ -984,7 +984,7 @@ Reuses the sentinel technique.
 ### Run, test, and debug (post-v1)
 
 Editor-driven run/test/debug by spawning `mvnd` from the LS and attaching DAP to JDWP —
-see [lathe-run-test-debug.md](lathe-run-test-debug.md).
+see [lathe-run-test-debug.md](planned/lathe-run-test-debug.md).
 
 ---
 

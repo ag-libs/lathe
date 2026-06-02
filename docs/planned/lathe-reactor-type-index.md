@@ -3,7 +3,7 @@
 This document describes the focused server-side slice for adding reactor type candidates to
 `WorkspaceTypeIndex`.
 It builds on [lathe-type-index.md](lathe-type-index.md) and uses the current server worker model from
-[lathe-server-data-flow-recipe.md](lathe-server-data-flow-recipe.md).
+[lathe-server-data-flow-recipe.md](../done/lathe-server-data-flow-recipe.md).
 
 ---
 

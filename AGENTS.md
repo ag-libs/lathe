@@ -8,7 +8,7 @@ Before making non-trivial changes, read the relevant design document first:
 
 - Overall design: `docs/lathe-design.md`
 - Roadmap: `docs/roadmap.md`
-- Run/test/debug design: `docs/lathe-run-test-debug.md`
+- Run/test/debug design: `docs/planned/lathe-run-test-debug.md`
 
 ## Working style
 
