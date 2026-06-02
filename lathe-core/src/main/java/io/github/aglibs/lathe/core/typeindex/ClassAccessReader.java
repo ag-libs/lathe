@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.maven.typeindex;
+package io.github.aglibs.lathe.core.typeindex;
 
 import java.io.DataInputStream;
 import java.io.IOException;

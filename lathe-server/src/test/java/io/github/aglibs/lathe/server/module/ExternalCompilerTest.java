@@ -49,7 +49,7 @@ class ExternalCompilerTest {
         usesJar, usesSourceRoot, List.of(helperJar), helperJar, helperSourceRoot);
     final WorkspaceManifest manifest = WorkspaceManifest.load(tmp);
 
-    try (final var ctx = new SourceAnalysisSession(new ExternalCompiler(manifest), null)) {
+    try (final var ctx = new SourceAnalysisSession(new ExternalCompiler(manifest))) {
       final List<org.eclipse.lsp4j.Diagnostic> diagnostics =
           ctx.compile(usesSource.toUri().toString(), usesContent, 0, CompileMode.OPEN);
       final Position helperPos =
@@ -92,7 +92,7 @@ class ExternalCompilerTest {
     final Position helperPos =
         SourceLocator.offsetToPosition(usesContent, usesContent.indexOf("Helper"));
 
-    try (final var ctx = new SourceAnalysisSession(new ExternalCompiler(manifest), null)) {
+    try (final var ctx = new SourceAnalysisSession(new ExternalCompiler(manifest))) {
       ctx.compile(usesUri, usesContent, 0, CompileMode.OPEN);
 
       // Hover over Helper: JavadocLocator finds helperSource via manifest.externalSourceDirs()
@@ -132,13 +132,13 @@ class ExternalCompilerTest {
     writeWorkspaceManifest(
         usesJar, usesSourceRoot, List.of(helperJar), helperJar, helperSourceRoot);
     try (final var ctx =
-        new SourceAnalysisSession(new ExternalCompiler(WorkspaceManifest.load(tmp)), null)) {
+        new SourceAnalysisSession(new ExternalCompiler(WorkspaceManifest.load(tmp)))) {
       assertThat(ctx.compile(uri, usesContent, 0, CompileMode.OPEN)).isEmpty();
     }
 
     writeWorkspaceManifestWithoutHelper(usesJar, usesSourceRoot);
     try (final var ctx =
-        new SourceAnalysisSession(new ExternalCompiler(WorkspaceManifest.load(tmp)), null)) {
+        new SourceAnalysisSession(new ExternalCompiler(WorkspaceManifest.load(tmp)))) {
       final List<Diagnostic> diagnostics = ctx.compile(uri, usesContent, 0, CompileMode.OPEN);
       assertThat(diagnostics)
           .extracting(d -> d.getMessage().getLeft())
@@ -166,7 +166,7 @@ class ExternalCompilerTest {
     writeWorkspaceManifest(usesJar, usesSourceRoot, List.of(), helperJar, helperSourceRoot);
 
     try (final var ctx =
-        new SourceAnalysisSession(new ExternalCompiler(WorkspaceManifest.load(tmp)), null)) {
+        new SourceAnalysisSession(new ExternalCompiler(WorkspaceManifest.load(tmp)))) {
       final List<Diagnostic> diagnostics =
           ctx.compile(usesSource.toUri().toString(), usesContent, 0, CompileMode.OPEN);
       assertThat(diagnostics).isEmpty();
@@ -186,7 +186,7 @@ class ExternalCompilerTest {
     writeJdkWorkspaceManifest(sourceRoot);
 
     try (final var ctx =
-        new SourceAnalysisSession(new ExternalCompiler(WorkspaceManifest.load(tmp)), null)) {
+        new SourceAnalysisSession(new ExternalCompiler(WorkspaceManifest.load(tmp)))) {
       assertThat(ctx.compile(source.toUri().toString(), content, 0, CompileMode.OPEN)).isEmpty();
       assertThat(ctx.compile(secondSource.toUri().toString(), secondContent, 0, CompileMode.OPEN))
           .isEmpty();

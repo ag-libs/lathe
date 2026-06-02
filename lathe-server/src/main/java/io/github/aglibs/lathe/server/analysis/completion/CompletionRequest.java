@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
 import io.github.aglibs.lathe.server.analysis.CachedFileAnalysis;
+import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.validcheck.ValidCheck;
 import org.eclipse.lsp4j.CompletionContext;
 import org.eclipse.lsp4j.Position;
@@ -10,7 +11,8 @@ public record CompletionRequest(
     String content,
     Position pos,
     CompletionContext context,
-    CachedFileAnalysis cached) {
+    CachedFileAnalysis cached,
+    WorkspaceTypeIndex typeIndex) {
 
   public CompletionRequest {
     ValidCheck.check()

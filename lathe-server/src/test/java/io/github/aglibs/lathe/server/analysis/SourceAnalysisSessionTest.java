@@ -109,8 +109,7 @@ class SourceAnalysisSessionTest {
     final var pos =
         SourceLocator.offsetToPosition(currentContent, currentContent.indexOf("Integer"));
 
-    try (var ctx =
-        new SourceAnalysisSession(new TempSourceCompiler(), WorkspaceTypeIndex.empty())) {
+    try (var ctx = new SourceAnalysisSession(new TempSourceCompiler())) {
       ctx.compile(uri, cachedContent, 1, CompileMode.OPEN);
 
       assertThat(ctx.hover(new SourceFeatureRequest(uri, currentContent, pos, List.of(), manifest)))

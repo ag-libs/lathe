@@ -1,6 +1,4 @@
-package io.github.aglibs.lathe.maven.typeindex;
-
-import io.github.aglibs.lathe.core.typeindex.TypeKind;
+package io.github.aglibs.lathe.core.typeindex;
 
 record ClassAccess(int flags) {
 

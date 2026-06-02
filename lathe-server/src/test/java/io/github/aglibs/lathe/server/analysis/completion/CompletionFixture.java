@@ -28,6 +28,7 @@ final class CompletionFixture implements AutoCloseable {
   private final SourceParser sourceParser;
   private final TempSourceCompiler compiler;
   private final CompletionEngine engine;
+  private final WorkspaceTypeIndex typeIndex;
   private final Path tmpDir;
 
   CompletionFixture() {
@@ -41,7 +42,8 @@ final class CompletionFixture implements AutoCloseable {
   CompletionFixture(final WorkspaceTypeIndex typeIndex, final Path tmpDir) {
     this.sourceParser = new SourceParser();
     this.compiler = new TempSourceCompiler();
-    this.engine = new CompletionEngine(sourceParser, compiler, typeIndex);
+    this.engine = new CompletionEngine(sourceParser, compiler);
+    this.typeIndex = typeIndex;
     this.tmpDir = tmpDir;
   }
 
@@ -119,10 +121,15 @@ final class CompletionFixture implements AutoCloseable {
         List.of());
   }
 
-  private static CompletionRequest request(
+  private CompletionRequest request(
       final CursorFixture.Cursor cursor, final CachedFileAnalysis cached) {
     return new CompletionRequest(
-        TEST_URI, cursor.content(), new Position(cursor.lspLine(), cursor.lspChar()), null, cached);
+        TEST_URI,
+        cursor.content(),
+        new Position(cursor.lspLine(), cursor.lspChar()),
+        null,
+        cached,
+        typeIndex);
   }
 
   @Override

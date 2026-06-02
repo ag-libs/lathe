@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.maven.typeindex;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.Stopwatch;
+import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.DependencyTypeIndexOrigin;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexFile;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexOrigin;
@@ -68,7 +69,6 @@ public final class DependencyTypeIndexSync {
       return false;
     }
 
-    final ClassFileTypeScanner scanner = new ClassFileTypeScanner();
     final TypeIndexFile file =
         new TypeIndexFile(
             LatheLayout.SCHEMA_VERSION,
@@ -78,7 +78,7 @@ public final class DependencyTypeIndexSync {
                     jar.toString(),
                     Files.size(jar),
                     Files.getLastModifiedTime(jar).toMillis())),
-            scanner.scanJar(jar));
+            ClassFileTypeScanner.scanJar(jar));
     TypeIndexFiles.write(index, file);
     log.debug(
         "[type-index] scanned %s %dms types=%d".formatted(jar, t.elapsedMs(), file.types().size()));

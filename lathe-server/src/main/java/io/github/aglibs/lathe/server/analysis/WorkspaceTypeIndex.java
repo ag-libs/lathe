@@ -6,6 +6,7 @@ import io.github.aglibs.lathe.core.typeindex.TypeIndexFile;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.NavigableMap;
@@ -30,14 +31,20 @@ public final class WorkspaceTypeIndex {
   }
 
   public static WorkspaceTypeIndex build(final List<Path> shardPaths) {
+    return build(shardPaths, List.of());
+  }
+
+  public static WorkspaceTypeIndex build(
+      final List<Path> shardPaths, final Collection<List<TypeIndexEntry>> reactorEntries) {
     final List<TypeIndexFile> files =
         shardPaths.stream()
             .filter(WorkspaceTypeIndex::shardExists)
             .flatMap(WorkspaceTypeIndex::loadFile)
             .toList();
     final TreeMap<String, List<TypeIndexEntry>> mutable =
-        files.stream()
-            .flatMap(f -> f.types().stream())
+        Stream.concat(
+                files.stream().flatMap(f -> f.types().stream()),
+                reactorEntries.stream().flatMap(List::stream))
             .collect(
                 Collectors.groupingBy(
                     e -> e.simpleName().toLowerCase(), TreeMap::new, Collectors.toList()));
@@ -46,8 +53,8 @@ public final class WorkspaceTypeIndex {
         Collections.unmodifiableNavigableMap(mutable);
     LOG.fine(
         () ->
-            "[type-index] built index: %d simple names from %d/%d shard(s)"
-                .formatted(map.size(), files.size(), shardPaths.size()));
+            "[type-index] built index: %d simple names from %d/%d shard(s) + %d reactor shard(s)"
+                .formatted(map.size(), files.size(), shardPaths.size(), reactorEntries.size()));
     return new WorkspaceTypeIndex(map);
   }
 

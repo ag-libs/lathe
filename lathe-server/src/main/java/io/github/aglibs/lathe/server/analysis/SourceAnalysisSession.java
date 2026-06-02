@@ -36,11 +36,10 @@ public final class SourceAnalysisSession implements AutoCloseable {
   private final Map<String, CachedFileAnalysis> cache = new HashMap<>();
   private final SourceParser parser;
 
-  public SourceAnalysisSession(
-      final JavaSourceCompiler compiler, final WorkspaceTypeIndex typeIndex) {
+  public SourceAnalysisSession(final JavaSourceCompiler compiler) {
     this.compiler = compiler;
     this.parser = new SourceParser();
-    this.completionEngine = new CompletionEngine(parser, compiler, typeIndex);
+    this.completionEngine = new CompletionEngine(parser, compiler);
     this.definitionLocator = new DefinitionLocator(parser);
     this.javadocLocator = new JavadocLocator(parser);
   }
@@ -65,9 +64,11 @@ public final class SourceAnalysisSession implements AutoCloseable {
       final String content,
       final int version,
       final Position pos,
-      final CompletionContext context) {
+      final CompletionContext context,
+      final WorkspaceTypeIndex typeIndex) {
     final var t = Stopwatch.start();
-    final var request = new CompletionRequest(uri, content, pos, context, cache.get(uri));
+    final var request =
+        new CompletionRequest(uri, content, pos, context, cache.get(uri), typeIndex);
     final var outcome = completionEngine.complete(request);
     if (outcome.freshAnalysis() != null) {
       cache.put(uri, new CachedFileAnalysis(content, version, outcome.freshAnalysis()));

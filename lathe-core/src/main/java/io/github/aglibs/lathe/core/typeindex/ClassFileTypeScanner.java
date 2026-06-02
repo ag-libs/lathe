@@ -1,6 +1,5 @@
-package io.github.aglibs.lathe.maven.typeindex;
+package io.github.aglibs.lathe.core.typeindex;
 
-import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -18,7 +17,9 @@ public final class ClassFileTypeScanner {
   private static final String META_INF = "META-INF/";
   private static final String META_INF_VERSIONS = "META-INF/versions/";
 
-  public List<TypeIndexEntry> scanJar(final Path jar) throws IOException {
+  private ClassFileTypeScanner() {}
+
+  public static List<TypeIndexEntry> scanJar(final Path jar) throws IOException {
     try (final JarFile jarFile =
         new JarFile(jar.toFile(), false, JarFile.OPEN_READ, Runtime.version())) {
       final boolean multiRelease = jarFile.isMultiRelease();
@@ -29,18 +30,22 @@ public final class ClassFileTypeScanner {
     }
   }
 
-  public List<TypeIndexEntry> scanDirectory(final Path root) throws IOException {
+  public static List<TypeIndexEntry> scanDirectory(final Path root) throws IOException {
+    if (!Files.isDirectory(root)) {
+      return List.of();
+    }
+
     try (final Stream<Path> files = Files.walk(root)) {
       return sorted(
           files.filter(Files::isRegularFile).flatMap(path -> scanClassFile(root, path).stream()));
     }
   }
 
-  private Stream<JarEntry> entries(final JarFile jarFile) {
+  private static Stream<JarEntry> entries(final JarFile jarFile) {
     return jarFile.isMultiRelease() ? jarFile.versionedStream() : jarFile.stream();
   }
 
-  private Optional<TypeIndexEntry> scanJarEntry(
+  private static Optional<TypeIndexEntry> scanJarEntry(
       final JarFile jarFile, final JarEntry entry, final boolean multiRelease) {
     final Optional<String> className = standardClassEntryName(entry, multiRelease);
     if (className.isEmpty()) {
@@ -54,7 +59,7 @@ public final class ClassFileTypeScanner {
     }
   }
 
-  private Optional<TypeIndexEntry> scanClassFile(final Path root, final Path file) {
+  private static Optional<TypeIndexEntry> scanClassFile(final Path root, final Path file) {
     final Optional<String> className = standardClassEntryName(classEntryName(root, file), false);
     if (className.isEmpty()) {
       return Optional.empty();
@@ -67,8 +72,8 @@ public final class ClassFileTypeScanner {
     }
   }
 
-  private Optional<TypeIndexEntry> scanClassEntry(final String className, final InputStream in)
-      throws IOException {
+  private static Optional<TypeIndexEntry> scanClassEntry(
+      final String className, final InputStream in) throws IOException {
     final Optional<ClassAccess> access = ClassAccessReader.read(in);
     if (access.isEmpty() || !access.get().isPublicTopLevelType()) {
       return Optional.empty();
@@ -77,15 +82,15 @@ public final class ClassFileTypeScanner {
     return Optional.of(toEntry(className, access.get()));
   }
 
-  private String classEntryName(final Path root, final Path file) {
+  private static String classEntryName(final Path root, final Path file) {
     return root.relativize(file).toString().replace('\\', '/');
   }
 
-  private List<TypeIndexEntry> sorted(final Stream<TypeIndexEntry> entries) {
+  private static List<TypeIndexEntry> sorted(final Stream<TypeIndexEntry> entries) {
     return entries.sorted(Comparator.comparing(TypeIndexEntry::qualifiedName)).toList();
   }
 
-  private Optional<String> standardClassEntryName(
+  private static Optional<String> standardClassEntryName(
       final JarEntry entry, final boolean multiRelease) {
     if (entry.isDirectory()) {
       return Optional.empty();
@@ -94,7 +99,7 @@ public final class ClassFileTypeScanner {
     return standardClassEntryName(entry.getName(), multiRelease);
   }
 
-  private Optional<String> standardClassEntryName(
+  private static Optional<String> standardClassEntryName(
       final String rawName, final boolean multiRelease) {
     final String name = multiRelease ? normalizeMultiReleaseName(rawName) : rawName;
     if (name.startsWith(META_INF)
@@ -108,7 +113,7 @@ public final class ClassFileTypeScanner {
     return Optional.of(name);
   }
 
-  private String normalizeMultiReleaseName(final String name) {
+  private static String normalizeMultiReleaseName(final String name) {
     if (!name.startsWith(META_INF_VERSIONS)) {
       return name;
     }
@@ -122,11 +127,11 @@ public final class ClassFileTypeScanner {
     return rest.substring(versionEnd + 1);
   }
 
-  private boolean isVersionNumber(final String text) {
+  private static boolean isVersionNumber(final String text) {
     return !text.isBlank() && text.chars().allMatch(Character::isDigit);
   }
 
-  private TypeIndexEntry toEntry(final String classEntryName, final ClassAccess access) {
+  private static TypeIndexEntry toEntry(final String classEntryName, final ClassAccess access) {
     final String qualifiedName =
         classEntryName
             .substring(0, classEntryName.length() - CLASS_SUFFIX.length())

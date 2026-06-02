@@ -35,15 +35,10 @@ public final class CompletionEngine {
 
   private final SentinelParser sentinelParser;
   private final JavaSourceCompiler compiler;
-  private final WorkspaceTypeIndex typeIndex;
 
-  public CompletionEngine(
-      final SourceParser parser,
-      final JavaSourceCompiler compiler,
-      final WorkspaceTypeIndex typeIndex) {
+  public CompletionEngine(final SourceParser parser, final JavaSourceCompiler compiler) {
     this.sentinelParser = new SentinelParser(parser);
     this.compiler = compiler;
-    this.typeIndex = typeIndex;
   }
 
   public CompletionOutcome complete(final CompletionRequest req) {
@@ -166,7 +161,8 @@ public final class CompletionEngine {
       return withTypes;
     }
 
-    final var staticFitCandidates = staticMemberFitCandidates(injected.prefix(), semanticContext);
+    final var staticFitCandidates =
+        staticMemberFitCandidates(injected.prefix(), semanticContext, req.typeIndex());
     if (staticFitCandidates.isEmpty()) {
       return withTypes;
     }
@@ -498,12 +494,12 @@ public final class CompletionEngine {
 
   private CompletionOutcome completeSimpleNameTypeReference(
       final SentinelResult injected, final CompletionRequest req, final TypeReferenceRole role) {
-    if (typeIndex == null || injected.prefix().isEmpty()) {
+    if (req.typeIndex() == null || injected.prefix().isEmpty()) {
       return CompletionOutcome.of(List.of());
     }
 
     final var candidates =
-        typeIndex.search(injected.prefix(), TYPE_INDEX_VALIDATION_CANDIDATE_LIMIT);
+        req.typeIndex().search(injected.prefix(), TYPE_INDEX_VALIDATION_CANDIDATE_LIMIT);
     final var analysis = req.cached() != null ? req.cached().analysis() : null;
     LOG.fine(
         () ->
@@ -687,7 +683,8 @@ public final class CompletionEngine {
               packageCandidates.stream().map(CompletionItemPresenter::present).toList());
         }
       }
-      return completeMemberAccessTypeIndexFallback(parsed, injected, snapshot, req.cursorOffset());
+      return completeMemberAccessTypeIndexFallback(
+          parsed, injected, snapshot, req.cursorOffset(), req.typeIndex());
     }
 
     final boolean isStaticAccess =
@@ -722,7 +719,8 @@ public final class CompletionEngine {
       final ParsedSentinel parsed,
       final SentinelResult injected,
       final AttributedFileAnalysis snapshot,
-      final int cursorOffset) {
+      final int cursorOffset,
+      final WorkspaceTypeIndex typeIndex) {
     if (typeIndex == null || snapshot == null || parsed.receiverText() == null) {
       return CompletionOutcome.of(List.of());
     }
@@ -755,7 +753,9 @@ public final class CompletionEngine {
   }
 
   private List<CompletionCandidate> staticMemberFitCandidates(
-      final String prefix, final SemanticCompletionContext context) {
+      final String prefix,
+      final SemanticCompletionContext context,
+      final WorkspaceTypeIndex typeIndex) {
     if (typeIndex == null) {
       return List.of();
     }

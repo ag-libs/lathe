@@ -32,16 +32,15 @@ public final class ModuleSourceWorker {
   private boolean closed;
   private CompletableFuture<Void> closeFuture;
 
-  static ModuleSourceWorker module(
-      final ModuleSourceConfig config, final WorkspaceTypeIndex typeIndex) {
+  static ModuleSourceWorker module(final ModuleSourceConfig config) {
     return new ModuleSourceWorker(
         "lathe-module-" + config.moduleDir().getFileName() + "-" + config.sourceTree(),
-        () -> new SourceAnalysisSession(new ModuleSourceCompiler(config), typeIndex));
+        () -> new SourceAnalysisSession(new ModuleSourceCompiler(config)));
   }
 
   static ModuleSourceWorker external(final WorkspaceManifest manifest) {
     return new ModuleSourceWorker(
-        "lathe-external", () -> new SourceAnalysisSession(new ExternalCompiler(manifest), null));
+        "lathe-external", () -> new SourceAnalysisSession(new ExternalCompiler(manifest)));
   }
 
   ModuleSourceWorker(final String name, final Supplier<SourceAnalysisSession> contextFactory) {
@@ -108,8 +107,9 @@ public final class ModuleSourceWorker {
       final String content,
       final int version,
       final Position position,
-      final CompletionContext context) {
-    return submit(ctx -> ctx.complete(uri, content, version, position, context));
+      final CompletionContext context,
+      final WorkspaceTypeIndex typeIndex) {
+    return submit(ctx -> ctx.complete(uri, content, version, position, context, typeIndex));
   }
 
   public CompletableFuture<List<SemanticToken>> semanticTokens(

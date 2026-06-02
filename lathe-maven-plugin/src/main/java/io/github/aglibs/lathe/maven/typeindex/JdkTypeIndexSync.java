@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.maven.typeindex;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.Stopwatch;
+import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.JdkTypeIndexOrigin;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexFile;
@@ -73,11 +74,12 @@ public final class JdkTypeIndexSync {
   private static List<TypeIndexEntry> scanJdk() throws IOException {
     final FileSystem jrt = FileSystems.getFileSystem(URI.create("jrt:/"));
     final Path modules = jrt.getPath("/modules");
-    final ClassFileTypeScanner scanner = new ClassFileTypeScanner();
     try (final Stream<Path> moduleRoots = Files.list(modules)) {
       return moduleRoots
           .filter(Files::isDirectory)
-          .flatMap(moduleRoot -> IOUtil.unchecked(() -> scanner.scanDirectory(moduleRoot)).stream())
+          .flatMap(
+              moduleRoot ->
+                  IOUtil.unchecked(() -> ClassFileTypeScanner.scanDirectory(moduleRoot)).stream())
           .sorted(Comparator.comparing(TypeIndexEntry::qualifiedName))
           .toList();
     }

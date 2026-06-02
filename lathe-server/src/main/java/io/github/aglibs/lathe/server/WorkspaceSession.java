@@ -2,6 +2,8 @@ package io.github.aglibs.lathe.server;
 
 import static java.util.logging.Level.SEVERE;
 
+import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
+import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
 import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
@@ -14,13 +16,16 @@ import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.lathe.server.module.ModuleSourceWorker;
 import io.github.aglibs.lathe.server.module.WorkspaceModules;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
+import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.IntStream;
 import org.eclipse.lsp4j.CompletionContext;
@@ -48,6 +53,8 @@ final class WorkspaceSession {
   private Path workspaceRoot;
   private WorkspaceManifest manifest = WorkspaceManifest.empty();
   private WorkspaceModules workspace = WorkspaceModules.empty();
+  private WorkspaceTypeIndex typeIndex = WorkspaceTypeIndex.empty();
+  private final Map<ModuleSourceConfig, List<TypeIndexEntry>> reactorShards = new LinkedHashMap<>();
   private WorkspaceWatcher watcher;
   private final Map<String, OpenDocument> openDocuments = new HashMap<>();
   private long nextGeneration;
@@ -61,8 +68,9 @@ final class WorkspaceSession {
   void initialize(final Path root) {
     this.workspaceRoot = root;
     manifest = WorkspaceManifest.load(root);
-    final var typeIndex = WorkspaceTypeIndex.build(manifest.typeIndexShardPaths());
-    workspace = WorkspaceModules.scan(root, manifest, typeIndex);
+    workspace = WorkspaceModules.scan(root, manifest);
+    scanReactorShards();
+    typeIndex = WorkspaceTypeIndex.build(manifest.typeIndexShardPaths(), reactorShards.values());
     watcher = new WorkspaceWatcher(root);
     worker.scheduleAtFixedRate(2_000L, this::checkForChanges);
   }
@@ -118,6 +126,7 @@ final class WorkspaceSession {
                   () -> {
                     scheduleAstRefresh(uri);
                     scheduleOpenFilesInModule(uri, module.config());
+                    refreshReactorShard(module.config());
                   });
           case CompilerRoute.External ignored ->
               publishIfCurrentThen(() -> scheduleAstRefresh(uri));
@@ -174,11 +183,12 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(CompletionOutcome.of(List.of()));
     }
 
+    final var indexSnapshot = typeIndex;
     return routeFeature(
         uri,
         moduleWorker ->
             moduleWorker
-                .complete(uri, openFile.content(), openFile.version(), pos, context)
+                .complete(uri, openFile.content(), openFile.version(), pos, context, indexSnapshot)
                 .exceptionally(
                     ex ->
                         logAndReturn(
@@ -209,6 +219,27 @@ final class WorkspaceSession {
     return JavaFormatter.format(openFile != null ? openFile.content() : null);
   }
 
+  private void scanReactorShards() {
+    for (final var config : workspace.allConfigs()) {
+      reactorShards.put(config, scanReactorDir(config));
+    }
+  }
+
+  private void refreshReactorShard(final ModuleSourceConfig config) {
+    reactorShards.put(config, scanReactorDir(config));
+    typeIndex = WorkspaceTypeIndex.build(manifest.typeIndexShardPaths(), reactorShards.values());
+  }
+
+  private static List<TypeIndexEntry> scanReactorDir(final ModuleSourceConfig config) {
+    try {
+      return ClassFileTypeScanner.scanDirectory(config.latheClassesDir());
+    } catch (final IOException e) {
+      LOG.log(
+          Level.WARNING, e, () -> "[type-index] reactor scan failed: " + config.latheClassesDir());
+      return List.of();
+    }
+  }
+
   private void checkForChanges() {
     if (watcher != null && watcher.poll()) {
       reload();
@@ -218,11 +249,13 @@ final class WorkspaceSession {
   private void reload() {
     LOG.info(() -> "[reload] workspace changed, reloading");
     final var newManifest = WorkspaceManifest.load(workspaceRoot);
-    final var newTypeIndex = WorkspaceTypeIndex.build(newManifest.typeIndexShardPaths());
-    final var newWorkspace = WorkspaceModules.scan(workspaceRoot, newManifest, newTypeIndex);
+    final var newWorkspace = WorkspaceModules.scan(workspaceRoot, newManifest);
     final var old = workspace;
     workspace = newWorkspace;
     manifest = newManifest;
+    reactorShards.clear();
+    scanReactorShards();
+    typeIndex = WorkspaceTypeIndex.build(newManifest.typeIndexShardPaths(), reactorShards.values());
     List.copyOf(openDocuments.keySet())
         .forEach(
             uri -> {

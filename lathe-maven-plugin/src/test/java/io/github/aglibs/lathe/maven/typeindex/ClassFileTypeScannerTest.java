@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.maven.typeindex;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import io.github.aglibs.lathe.maven.ZipFixture;
@@ -25,7 +26,7 @@ class ClassFileTypeScannerTest {
   void scanJar_standardClassEntries_returnsPublicTopLevelTypes() throws Exception {
     final Path jar = fixtureJar();
 
-    final List<TypeIndexEntry> entries = new ClassFileTypeScanner().scanJar(jar);
+    final List<TypeIndexEntry> entries = ClassFileTypeScanner.scanJar(jar);
 
     assertFixtureEntries(entries);
   }
@@ -37,9 +38,16 @@ class ClassFileTypeScannerTest {
     Files.write(classes.resolve("module-info.class"), new byte[] {0, 1, 2});
     Files.write(classes.resolve("com/example/package-info.class"), new byte[] {0, 1, 2});
 
-    final List<TypeIndexEntry> entries = new ClassFileTypeScanner().scanDirectory(classes);
+    final List<TypeIndexEntry> entries = ClassFileTypeScanner.scanDirectory(classes);
 
     assertFixtureEntries(entries);
+  }
+
+  @Test
+  void scanDirectory_missingDirectory_returnsEmpty() throws Exception {
+    final List<TypeIndexEntry> entries = ClassFileTypeScanner.scanDirectory(tmp.resolve("missing"));
+
+    assertThat(entries).isEmpty();
   }
 
   private void assertFixtureEntries(final List<TypeIndexEntry> entries) {

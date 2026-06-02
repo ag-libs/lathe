@@ -111,4 +111,15 @@ class WorkspaceTypeIndexTest {
     assertThat(index.search("Al", 10)).extracting(TypeIndexEntry::simpleName).contains("Alpha");
     assertThat(index.search("Be", 10)).extracting(TypeIndexEntry::simpleName).contains("Beta");
   }
+
+  @Test
+  void build_reactorEntries_mergedWithShardEntries() throws IOException {
+    final var shard = writeShard(tmp, "shard.json", shard(entry("Alpha", "com.a")));
+
+    final var index =
+        WorkspaceTypeIndex.build(List.of(shard), List.of(List.of(entry("Beta", "com.reactor"))));
+
+    assertThat(index.search("Al", 10)).extracting(TypeIndexEntry::simpleName).contains("Alpha");
+    assertThat(index.search("Be", 10)).extracting(TypeIndexEntry::simpleName).contains("Beta");
+  }
 }
