@@ -1973,6 +1973,15 @@ class CompletionEngineTest {
   }
 
   @Test
+  void typeIndex_classLiteral_suggestsIndexedType() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    "class Test { void register(Class<?> c) {} void m() { register(ArrayD§.class); } }")))
+        .contains("ArrayDeque");
+  }
+
+  @Test
   void typeIndex_candidates_javaLangRanksBeforeOtherPackages() throws IOException {
     localFixture =
         new CompletionFixture(

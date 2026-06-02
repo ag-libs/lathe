@@ -292,6 +292,8 @@ final class SentinelParser {
       case ArrayAccessTree a when a.getIndex() == sentinel -> Classification.expression();
       case NewArrayTree n when n.getDimensions().stream().anyMatch(d -> d == sentinel) ->
           Classification.expression();
+      case MemberSelectTree m when m.getExpression() == sentinel && isClassLiteral(m) ->
+          Classification.typeReference(inferredRole);
       case MemberSelectTree m when m.getExpression() == sentinel -> Classification.expression();
       // --- control-flow condition / selector positions ---
       case IfTree i when i.getCondition() == sentinel -> Classification.expression();
@@ -491,6 +493,10 @@ final class SentinelParser {
     }
 
     return TypeReferenceRole.ORDINARY;
+  }
+
+  private static boolean isClassLiteral(final MemberSelectTree memberSelect) {
+    return "class".contentEquals(memberSelect.getIdentifier());
   }
 
   private static TypeReferenceRole inferClassHeaderRole(final Tree child, final ClassTree cls) {
