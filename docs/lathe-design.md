@@ -779,6 +779,7 @@ in EXPRESSION context the tail provides the necessary closing tokens.
 Fallback: when sentinel parse fails or the receiver type cannot be resolved from the snapshot,
 index-backed type-name proposals are returned when the type index is available, otherwise an empty list.
 The fallback never returns an error — always a possibly-empty list.
+See [lathe-type-index.md](planned/lathe-type-index.md) for the index design.
 
 ### Go-to-definition
 
@@ -819,6 +820,7 @@ The VS Code extension can translate returned cache `file://` locations to `lathe
 A later server capability can let clients advertise `lathe.externalSourceUriScheme=lathe-source`,
 after which the server may return `lathe-source://` directly for dependency/JDK source locations.
 The storage model stays unchanged until Lathe can read source archives lazily.
+See [lathe-source-uri-scheme.md](planned/lathe-source-uri-scheme.md) for the full design.
 
 ### Find-references
 
@@ -914,7 +916,8 @@ During fast passes, AP-derived diagnostics remain frozen at the state from the l
 
 ### Code actions
 
-**Add missing import** — when a type name is unresolved, search the type index for candidates (depends on type index, future work).
+**Add missing import** — when a type name is unresolved, search the type index for candidates.
+The type index is in place; the code action itself is future work.
 User selects one, import statement inserted.
 
 **Organize imports** — sort and remove unused imports.
@@ -928,7 +931,8 @@ Walk the file's `CompilationUnitTree`, emit `DocumentSymbol` for each class, met
 
 Prefix search on the type index — JDK types, reactor types, and JAR dependency types — regardless of
 which modules are currently open.
-Depends on the type index (future work).
+The type index is in place for dependency and JDK types; reactor types are future work.
+The workspace-symbol LSP capability and query surface are not yet implemented.
 
 ### Refactoring strategy
 

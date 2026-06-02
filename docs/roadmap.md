@@ -39,9 +39,15 @@ Architecture is documented in [lathe-server-data-flow-recipe.md](done/lathe-serv
   and `TypeResolver` are implemented and tested.
   Handles member access, simple name, argument position, type reference, import, static import,
   constructor call, lambda body, and variable declaration contexts.
-  Type index is built from JDK and dependency JARs during sync, filtered by package visibility.
   Keyword completion and argument-position type ranking are in place.
+  All planned behavioural gaps are closed; Gap J (method references) is deferred.
   See [completion-design.md](done/completion-design.md).
+- **Type index (dependency and JDK shards)** — `lathe:sync` builds static type-index shards for
+  dependency JARs and the JDK runtime image (`jrt:/`), writes shard paths into `workspace.json`,
+  and the server loads and merges them into an in-memory `WorkspaceTypeIndex` on startup.
+  `CompletionEngine` queries the index for type-name prefix matches and validates candidates through
+  `elements.getTypeElement()` and `elements.isAccessible()`.
+  See [lathe-type-index.md](planned/lathe-type-index.md).
 - **Maven-managed server distribution** — `lathe:sync` resolves `lathe-server` and all transitive runtime deps via Aether,
   renders `lathe-launcher.sh` with colon-separated `--module-path` pointing at `.m2` JAR paths,
   writes it to `~/.cache/lathe/servers/<version>/`,
@@ -55,17 +61,6 @@ Architecture is documented in [lathe-server-data-flow-recipe.md](done/lathe-serv
 - **Stale-result guard** — `publishIfCurrent` compares the content that triggered a compile against the latest open content before publishing diagnostics,
   so rapid edits never overwrite newer results with an older compile's output.
 
-## Near-Term
-
-**Completion behavioural gaps**
-
-Design: [completion-design.md](done/completion-design.md)
-Gaps: [completion-gaps.md](done/completion-gaps.md)
-
-All planned completion gaps for this version are closed.
-Gap J (method references after `::`) is deferred to a future version —
-see the Deferred section in `completion-gaps.md`.
-
 ## Future Work
 
 **Stale-POM detection**
@@ -75,12 +70,13 @@ When `WorkspaceWatcher` sees a POM change after the last sync timestamp,
 `WorkspaceManifestData`, `WorkspaceManifestWriter`, and `WorkspaceWatcher` all need additions;
 `didChangeWatchedFiles` is currently empty.
 
-**Type indexes**
-Build the shared JAR/JDK/reactor type index described in the design doc,
-giving the server a fast lookup over all known types without scanning source on every request.
-This unlocks reliable missing-import suggestions, workspace symbols, and broader classpath type discovery for non-JPMS projects.
-There is no type-index package or cache writer yet,
-and `LatheLanguageServer` does not advertise workspace-symbol or code-action capabilities.
+**Reactor type index**
+Static dependency and JDK shards are in place.
+The remaining work is scanning reactor module output directories (`.lathe/<module>/classes/` and
+`.lathe/<module>/test-classes/`) to include project-local types in the index,
+and refreshing affected shards after save-time compiles and source deletions.
+This also unlocks missing-import suggestions and workspace symbols once the reactor candidates are present.
+See [lathe-type-index.md](planned/lathe-type-index.md) and [lathe-reactor-type-index.md](planned/lathe-reactor-type-index.md).
 
 **Module metadata in the manifest**
 Add reactor module entries to `workspace.json` after the params-file model is stable,
@@ -89,7 +85,7 @@ to support staleness detection, UX hints, and faster server startup without dupl
 `WorkspaceModules` still discovers modules by scanning `lsp-params-*.json` at startup.
 
 **Run, test, and debug**
-Adopt the design in `lathe-run-test-debug.md` to let the server manage Maven test/run executions
+Adopt the design in [lathe-run-test-debug.md](planned/lathe-run-test-debug.md) to let the server manage Maven test/run executions
 and stream results back to the editor as LSP notifications.
 Depends on distribution and stale-workspace handling being solid first.
 

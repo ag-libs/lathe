@@ -774,50 +774,43 @@ Add unit tests for public, package-private, nested, module-info, package-info, a
 
 ### Slice 2 — Static Dependency Shards + Server Load + `getTypeElement` Validation
 
-The dependency shard infrastructure in `lathe-maven-plugin` is nearly complete after Slice 1.
-This slice finishes the end-to-end dependency pipeline before the reactor slice, because it unblocks
-testing the full type-completion path with real JAR types:
+End-to-end dependency pipeline: `SyncMojo` builds a shard per dependency JAR via
+`DependencyTypeIndexSync`, enriches each `DependencySource` with the shard path, writes it to
+`workspace.json`, `WorkspaceManifest` collects the paths, and `WorkspaceSession` builds
+`WorkspaceTypeIndex` from them on startup. `CompletionEngine` queries the index for type-name
+prefix matches and validates candidates through `elements.getTypeElement()`.
 
-1. Fix `ClassAccess.kind()` to return `TypeKind.CLASS` for plain classes (was `UNKNOWN`).
-2. Add `typeIndex` field to `DependencyData` and `DependencySource`; update `toData()` and factory
-   methods.
-3. Make `DependencyTypeIndexSync.indexPath()` public.
-4. In `SyncMojo`, build a `jar → typeIndex path` map from `externalArtifacts` after calling
-   `DependencyTypeIndexSync.index()`; enrich each `DependencySource` with its path via
-   `withTypeIndex()` before writing the manifest.
-5. In `WorkspaceManifest.load()`, collect `typeIndex` paths from `DependencyData`; expose via
-   `typeIndexShardPaths()`.
-6. Add `WorkspaceTypeIndex` in the `analysis` package with `build(List<Path>)`, `empty()`, and
-   `search(prefix, limit)` backed by a `NavigableMap<String, List<TypeIndexEntry>>`.
-7. Thread `WorkspaceTypeIndex` through `WorkspaceModules` → `ModuleSourceWorker` → `SourceAnalysisSession` →
-   `CompletionEngine`.
-8. In `CompletionEngine.completeTypeReference` when `receiverText == null`: query the index for
-   prefix matches, filter through `elements.getTypeElement(fqn) != null`, and return items with
-   `label = simpleName` and `detail = qualifiedName`.
-9. In `WorkspaceSession.initialize()`, build `WorkspaceTypeIndex` from
-   `manifest.typeIndexShardPaths()` and pass to `WorkspaceModules.scan()`.
+**Status: done.**
 
-### Slice 3 — Reactor Index and Unvalidated Completion
+### Slice 3 — JDK `jrt:/` Shard
+
+Scan the JDK runtime image (`jrt:/modules`) using the same classfile access-flags reader.
+`JdkTypeIndexSync` writes the shard, `workspace.json` records its path, and the server merges
+it into `WorkspaceTypeIndex` alongside dependency shards.
+
+**Status: done.**
+
+### Slice 4 — `isAccessible` Validation
+
+Extend candidate validation to include `Elements.isAccessible()` once `enclosingType` resolution
+is wired. Cap validation work and keep fallback behavior permissive.
+Structured timing fields (checked/resolved/accessible/elapsed) are deferred.
+
+**Status: done** (`isAccessible` validation is in place; structured timing is deferred).
+
+### Slice 5 — Reactor Index and Unvalidated Completion
 
 Scan reactor `.lathe/` output directories on server startup/reload.
 Merge reactor candidates into `WorkspaceTypeIndex` alongside static dependency candidates.
-
-### Slice 4 — `isAccessible` Validation and Timing
-
-Extend validation to include `Elements.isAccessible` once `enclosingType` resolution is wired.
-Cap validation work, add structured timing, and keep fallback behavior permissive.
+See [lathe-reactor-type-index.md](lathe-reactor-type-index.md) for the detailed design.
 
 ### Slice 6 — Save-Time Reactor Shard Refresh
 
 After full save compiles and source deletions, refresh only the affected reactor module/source-tree shard.
 Coalesce refreshes by `ModuleSourceKey`.
+Depends on Slice 5.
 
-### Slice 7 — JDK `jrt:/` Shard
-
-Add JDK type candidates by scanning the `jrt:/` filesystem under `/modules`.
-Reuse the same classfile access-flags reader.
-
-### Slice 8 — Optional JPMS Metadata
+### Slice 7 — Optional JPMS Metadata
 
 If fallback results are too noisy, add module metadata through `ModuleDescriptor` and `ModuleFinder`.
 Use it only as an optimization.
