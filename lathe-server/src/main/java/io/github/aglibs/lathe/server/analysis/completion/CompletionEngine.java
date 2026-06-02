@@ -314,7 +314,9 @@ public final class CompletionEngine {
   }
 
   private static TypeMirror resolveAnnotationElementType(
-      final String annotationType, final String elementName, final AttributedFileAnalysis analysis) {
+      final String annotationType,
+      final String elementName,
+      final AttributedFileAnalysis analysis) {
     if (elementName == null) {
       return null;
     }

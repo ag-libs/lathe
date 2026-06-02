@@ -957,6 +957,15 @@ class CompletionEngineTest {
         .doesNotContain("forRemoval");
     assertThat(labels(fixture.complete("@Deprecated(since = §) class Test {}")))
         .doesNotContain("since", "forRemoval");
+    assertThat(labels(fixture.complete("class Test { @Deprecated(§) @Override void foo() {} }")))
+        .contains("since", "forRemoval")
+        .doesNotContain("Override", "SuppressWarnings", "true", "false", "class");
+    assertThat(labels(fixture.complete("class Test { @Deprecated(§ @Override void foo() {} }")))
+        .contains("since", "forRemoval")
+        .doesNotContain("Override", "SuppressWarnings", "true", "false", "class");
+    assertThat(labels(fixture.complete("class Test { @Deprecated(si§ @Override void foo() {} }")))
+        .contains("since")
+        .doesNotContain("forRemoval");
   }
 
   @Test

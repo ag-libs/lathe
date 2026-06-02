@@ -41,9 +41,9 @@ final class SentinelInjector {
     final var injected =
         content.substring(0, back.tokenStart())
             + SENTINEL
+            + ")".repeat(fwd.unclosedParens())
             + semicolon
             + content.substring(suffixStart)
-            + ")".repeat(fwd.unclosedParens())
             + "}".repeat(fwd.unclosedBraces());
 
     return new SentinelResult(
