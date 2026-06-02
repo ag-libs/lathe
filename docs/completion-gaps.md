@@ -6,7 +6,6 @@ Open gaps in priority order.
 
 | Gap | Title | Difficulty | Depends on |
 |-----|-------|------------|------------|
-| U | Annotation element completion is under-specified | Medium | — |
 | J | No completions after `::` | Hard | — |
 
 Gap E has been revised — see the Closed section.
@@ -20,48 +19,6 @@ functional-interface compatibility filtering, and no existing path to build on.
 ---
 
 ## Open
-
-### Gap U — Annotation element completion is under-specified
-
-**Difficulty:** Medium
-
-**Symptom:** The current completion design now covers annotation type names
-after `@`, but not the rest of the annotation surface.
-
-Examples from the discovery matrix:
-
-```
-@SuppressWarnings(§)
-@SuppressWarnings(va§ = "")
-@Deprecated(since = §)
-@Retention(§)
-@Target({§})
-@interface A { § }
-@interface A { Str§ value(); }
-@interface A { int value() default § }
-```
-
-**Expected behavior:** Annotation completion needs site-specific semantics:
-- Annotation element name positions should offer element names only.
-- Element value positions should use the annotation method return type as the
-  expected value.
-  For `@Deprecated(since = §)`, completion must not offer annotation element
-  names such as `since` or `forRemoval`.
-- Enum-valued elements should prefer compatible enum constants.
-- Array-valued elements should use the component type inside `{ ... }`.
-- Annotation declaration bodies should offer annotation member declarations,
-  not method-body statements or value keywords.
-- Annotation element return types should be restricted to legal Java annotation
-  element types.
-
-**Likely root cause:** `ANNOTATION_CONTEXT` currently means only “type after
-`@`”.
-There is no parsed site model for annotation argument names, argument values,
-array values, declaration bodies, or default values.
-
-**Discovery test:** `completionSemantics_gapDiscoveryMatrix`
-
----
 
 ### Gap J — No completions after `::` (method reference)
 
@@ -93,6 +50,30 @@ Defer until the higher-priority gaps are closed.
 ---
 
 ## Closed
+
+### Gap U — Annotation element value completion
+
+**Resolution:** `SentinelParser` now extracts both the annotation type name and the element name
+when the sentinel is the value side of an `AssignmentTree` inside an `AnnotationTree` (named
+annotation argument: `@Deprecated(since = §)`). Both are stored in `ParsedSentinel` via
+`annotationTypeText` (annotation type) and `enclosingMethodName` (element name, repurposed for
+this context).
+
+`CompletionEngine.completeAnnotationArgumentValue` resolves the element's return type from the
+attributed snapshot, constructs a `SemanticCompletionContext` with that type as the expected
+value, and passes value-expression keyword candidates through `CompletionCandidateRanker`. The
+ranker's existing type-filtering logic then keeps `true`/`false` only for boolean elements and
+suppresses them for String or other reference types, while `null` is offered for all non-primitive
+element types.
+
+Remaining open within Gap U: enum-valued elements (e.g. `@Retention(§)` shorthand offering
+`RetentionPolicy` constants), array-valued element positions (`@Target({§})`), annotation
+declaration bodies (`@interface A { § }`), and annotation element default values.
+
+**Tests:** `annotationArgumentValue_booleanElement_offersTrueAndFalse`,
+`annotationArgumentValue_stringElement_offersNullNotBooleans`
+
+---
 
 ### Gap T — Declaration name slots suppress completions
 

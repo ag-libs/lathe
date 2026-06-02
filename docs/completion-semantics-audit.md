@@ -43,14 +43,14 @@ Each row should eventually map to active tests, a documented gap, or a deliberat
 | Annotation type | `@Over§` | annotation types | ordinary classes, interfaces, enums | partial | covered |
 | Annotation empty argument list | `@Deprecated(§)` | annotation element names: `since`, `forRemoval` | annotation types such as `Override`, `SuppressWarnings`; statement/value keywords | partial | covered |
 | Annotation single value | `@SuppressWarnings(§)` | values assignable to the annotation's `value` element | statement keywords, unrelated types, void methods | none | discovery |
-| Annotation named element | `@SuppressWarnings(va§ = "")` | annotation element names | local variables, fields, methods, types | none | discovery |
-| Annotation named value | `@Deprecated(since = §)` | values assignable to the named element | annotation element names such as `since`, `forRemoval`; statement keywords, unrelated types, void methods | none | discovery |
+| Annotation named element | `@SuppressWarnings(va§ = "")` | annotation element names | local variables, fields, methods, types | partial | covered |
+| Annotation named value | `@Deprecated(since = §)` | values assignable to the named element | annotation element names such as `since`, `forRemoval`; statement keywords, unrelated types, void methods | partial | covered |
 | Annotation enum value | `@Retention(§)` | `RetentionPolicy` constants or assignable enum values | unrelated enum constants, booleans, arbitrary values | none | discovery |
 | Annotation array value | `@Target({§})` | values assignable to the array component type | unrelated values and statement keywords | none | discovery |
 | Annotation declaration body | `@interface A { § }` | annotation element/member declaration starters | method-body statements, value keywords | none | discovery |
 | Annotation element return type | `@interface A { Str§ value(); }` | legal annotation element return types | value keywords, illegal return types | none | discovery |
 | Annotation element default value | `@interface A { int value() default § }` | values assignable to the element return type | statement keywords, unrelated values | none | discovery |
-| Declaration name slot | `class §`, `String §` | none or narrowly scoped name snippets | types, values, statement keywords | weak | discovery |
+| Declaration name slot | `class §`, `String §` | none or narrowly scoped name snippets | types, values, statement keywords | partial | covered |
 | Method reference | `String::§` | compatible methods | incompatible members | none | open gap |
 | Switch enum case | `case §` | enum constants of selector type | unrelated values | none | discovery |
 | Module directive | `requires §`, `exports §` | directive-specific modules/packages/types | unrelated symbols | none | discovery |

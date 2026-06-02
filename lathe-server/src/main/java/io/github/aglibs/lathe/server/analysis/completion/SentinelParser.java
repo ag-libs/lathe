@@ -215,15 +215,16 @@ final class SentinelParser {
           false);
     }
 
-    static Classification annotationArgumentValue() {
+    static Classification annotationArgumentValue(
+        final String annotationTypeName, final String elementName) {
       return new Classification(
           SentinelContext.ANNOTATION_ARGUMENT_VALUE,
           -1,
           null,
-          null,
+          elementName, // enclosingMethodName repurposed: stores the element name
           -1,
           null,
-          null,
+          annotationTypeName,
           TypeReferenceRole.ORDINARY,
           false);
     }
@@ -249,8 +250,10 @@ final class SentinelParser {
 
     final Tree parent = parentPath.getLeaf();
     final boolean simpleName = !(sentinel instanceof MemberSelectTree);
-    if (isAnnotationArgumentValue(sentinel, parentPath)) {
-      return Classification.annotationArgumentValue();
+    final AnnotationValueInfo annotationValue = annotationArgumentValue(sentinel, parentPath);
+    if (annotationValue != null) {
+      return Classification.annotationArgumentValue(
+          annotationValue.annotationType(), annotationValue.elementName());
     }
 
     final String annotationArgumentType = annotationArgumentType(sentinel, parentPath);
@@ -434,7 +437,10 @@ final class SentinelParser {
     return null;
   }
 
-  private static boolean isAnnotationArgumentValue(final Tree sentinel, final TreePath parentPath) {
+  private record AnnotationValueInfo(String annotationType, String elementName) {}
+
+  private static AnnotationValueInfo annotationArgumentValue(
+      final Tree sentinel, final TreePath parentPath) {
     Tree child = sentinel;
     for (TreePath path = parentPath; path != null; path = path.getParentPath()) {
       final Tree parent = path.getLeaf();
@@ -442,23 +448,19 @@ final class SentinelParser {
 
       if (parent instanceof final AssignmentTree assignmentTree
           && assignmentTree.getExpression() == currentChild) {
-        return enclosingAnnotation(path.getParentPath());
+        for (TreePath p = path.getParentPath(); p != null; p = p.getParentPath()) {
+          if (p.getLeaf() instanceof final AnnotationTree annotationTree) {
+            return new AnnotationValueInfo(
+                annotationTree.getAnnotationType().toString(),
+                assignmentTree.getVariable().toString());
+          }
+        }
       }
 
       child = parent;
     }
 
-    return false;
-  }
-
-  private static boolean enclosingAnnotation(final TreePath path) {
-    for (TreePath p = path; p != null; p = p.getParentPath()) {
-      if (p.getLeaf() instanceof AnnotationTree) {
-        return true;
-      }
-    }
-
-    return false;
+    return null;
   }
 
   private static TypeReferenceRole inferTypeReferenceRole(

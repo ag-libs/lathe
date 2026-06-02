@@ -87,7 +87,7 @@ public final class CompletionEngine {
           case ANNOTATION_CONTEXT ->
               completeSimpleNameTypeReferenceWithLang(injected, req, parsed.typeReferenceRole());
           case ANNOTATION_ARGUMENT -> completeAnnotationArgument(parsed, injected, req);
-          case ANNOTATION_ARGUMENT_VALUE -> CompletionOutcome.of(List.of());
+          case ANNOTATION_ARGUMENT_VALUE -> completeAnnotationArgumentValue(parsed, injected, req);
           case VARIABLE_DECLARATION ->
               isRealNameSlot(parsed)
                   ? CompletionOutcome.of(List.of())
@@ -285,6 +285,53 @@ public final class CompletionEngine {
             .map(CompletionEngine::annotationElementItem)
             .toList();
     return new CompletionOutcome(items, req.cached() == null ? analysis : null);
+  }
+
+  private CompletionOutcome completeAnnotationArgumentValue(
+      final ParsedSentinel parsed, final SentinelResult injected, final CompletionRequest req) {
+    final var analysis =
+        req.cached() != null
+            ? req.cached().analysis()
+            : (compiler != null ? compiler.reattribute(req.uri(), req.content()) : null);
+    if (analysis == null) {
+      return CompletionOutcome.of(List.of());
+    }
+
+    final TypeMirror elementType =
+        resolveAnnotationElementType(
+            parsed.annotationTypeText(), parsed.enclosingMethodName(), analysis);
+    if (elementType == null) {
+      return CompletionOutcome.of(List.of());
+    }
+
+    final var semanticContext =
+        new SemanticCompletionContext(
+            analysis, new ExpectedValue.Type(elementType), true, false, false);
+    final List<CompletionCandidate> keywords =
+        KeywordProvider.suggestCandidates(parsed, injected.prefix(), injected.context());
+    final List<CompletionItem> items = presentSimpleNameCandidates(keywords, semanticContext);
+    return new CompletionOutcome(items, req.cached() == null ? analysis : null);
+  }
+
+  private static TypeMirror resolveAnnotationElementType(
+      final String annotationType, final String elementName, final AttributedFileAnalysis analysis) {
+    if (elementName == null) {
+      return null;
+    }
+
+    final var typeEl = resolveAnnotationType(annotationType, analysis);
+    if (typeEl == null) {
+      return null;
+    }
+
+    return typeEl.getEnclosedElements().stream()
+        .filter(el -> el.getKind() == ElementKind.METHOD)
+        .map(ExecutableElement.class::cast)
+        .filter(el -> el.getParameters().isEmpty())
+        .filter(el -> el.getSimpleName().toString().equals(elementName))
+        .findFirst()
+        .map(ExecutableElement::getReturnType)
+        .orElse(null);
   }
 
   private static CompletionItem annotationElementItem(final ExecutableElement element) {

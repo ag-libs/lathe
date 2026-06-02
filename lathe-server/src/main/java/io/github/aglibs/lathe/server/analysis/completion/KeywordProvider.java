@@ -82,7 +82,7 @@ final class KeywordProvider {
       case TYPE_REFERENCE -> classBodyKeywordsIfApplicable(parsed);
       case VARIABLE_DECLARATION ->
           isRealNameSlot(parsed) ? List.of() : classBodyKeywordsIfApplicable(parsed);
-      case ARGUMENT_POSITION, LAMBDA_BODY -> VALUE_EXPRESSIONS;
+      case ARGUMENT_POSITION, LAMBDA_BODY, ANNOTATION_ARGUMENT_VALUE -> VALUE_EXPRESSIONS;
       case CONSTRUCTOR_CALL ->
           // EXPRESSION == cursor is in the argument list; STATEMENT == cursor is on the type name.
           injectorContext == SentinelInjector.Context.EXPRESSION ? VALUE_EXPRESSIONS : List.of();

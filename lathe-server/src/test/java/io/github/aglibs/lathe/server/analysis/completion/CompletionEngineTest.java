@@ -960,6 +960,21 @@ class CompletionEngineTest {
   }
 
   @Test
+  void annotationArgumentValue_booleanElement_offersTrueAndFalse() {
+    final List<String> items =
+        labels(fixture.complete("@Deprecated(forRemoval = §) class Test {}"));
+    assertThat(items).contains("true", "false");
+    assertThat(items).doesNotContain("since", "forRemoval", "if", "for", "class");
+  }
+
+  @Test
+  void annotationArgumentValue_stringElement_offersNullNotBooleans() {
+    final List<String> items = labels(fixture.complete("@Deprecated(since = §) class Test {}"));
+    assertThat(items).contains("null");
+    assertThat(items).doesNotContain("true", "false", "since", "forRemoval");
+  }
+
+  @Test
   void classHeader_suggestsSuperAndInterfaceTypes() {
     assertThat(labels(fixture.complete("class Test extends AbstractL§ {}")))
         .contains("AbstractList");
