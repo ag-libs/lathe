@@ -294,6 +294,8 @@ final class SentinelParser {
           Classification.expression();
       case MemberSelectTree m when m.getExpression() == sentinel && isClassLiteral(m) ->
           Classification.typeReference(inferredRole);
+      case MemberSelectTree m when m.getExpression() == sentinel && !simpleName ->
+          Classification.of(SentinelContext.MEMBER_ACCESS);
       case MemberSelectTree m when m.getExpression() == sentinel -> Classification.expression();
       // --- control-flow condition / selector positions ---
       case IfTree i when i.getCondition() == sentinel -> Classification.expression();

@@ -499,6 +499,41 @@ class CompletionEngineTest {
         .anyMatch(l -> l.startsWith("toLowerCase"));
   }
 
+  @Test
+  void memberAccess_midChainFollowedByNextCall_returnTypeResolved() {
+    // Standalone statement: backward scan hits { → STATEMENT context → semicolon injected.
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        void m() {
+                            new StringBuilder()
+                                    .append("a")
+                                    .§
+                                    .append("b");
+                        }
+                    }""")))
+        .anyMatch(l -> l.startsWith("append"));
+    // Chain inside a method call argument: backward scan hits ( → EXPRESSION context → no
+    // semicolon. Sentinel becomes the receiver of the following .append(), which was wrongly
+    // classified as SIMPLE_NAME instead of MEMBER_ACCESS.
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        static void consume(Object o) {}
+                        void m() {
+                            consume(new StringBuilder()
+                                    .append("a")
+                                    .§
+                                    .append("b"));
+                        }
+                    }""")))
+        .anyMatch(l -> l.startsWith("append"));
+  }
+
   // ── FQN / package navigation ──────────────────────────────────────────────────
 
   @Test
