@@ -42,13 +42,8 @@ rebuild it.
 Each `ModuleSourceWorker` owns one `SourceAnalysisSession` and one `ModuleSourceCompiler` for a single module source
 tree.
 
-A module source tree is identified by:
-
-```java
-record ModuleSourceKey(String moduleRel, String sourceTree) {}
-```
-
-Examples:
+A module source tree is represented by one loaded `ModuleSourceConfig`.
+Examples of the logical module/source-tree identity:
 
 ```text
 app/classes
@@ -56,7 +51,7 @@ app/test-classes
 platform/core/classes
 ```
 
-The current implementation uses `ModuleSourceConfig` directly as the shard key because each loaded config already
+The implementation uses `ModuleSourceConfig` directly as the shard key because each loaded config already
 represents one module/source-tree pair and carries `relativePath`, `sourceTree`, and `latheClassesDir()`.
 No separate `ModuleSourceKey` record was needed.
 
@@ -300,7 +295,7 @@ Unit tests:
 Server tests:
 
 - startup/reload scans reactor `.lathe/<module>/<sourceTree>`
-- main/test source trees produce separate `ModuleSourceKey`s
+- main/test source trees produce separate `ModuleSourceConfig` shards
 - static dependency shards and reactor shards merge
 - completion gets reactor type candidate
 - javac validation drops inaccessible/unreachable reactor candidate

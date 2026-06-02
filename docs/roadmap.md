@@ -42,9 +42,9 @@ Architecture is documented in [lathe-server-data-flow-recipe.md](done/lathe-serv
   Keyword completion and argument-position type ranking are in place.
   All planned behavioural gaps are closed; Gap J (method references) is deferred.
   See [completion-design.md](done/completion-design.md).
-- **Type index (dependency and JDK shards)** — `lathe:sync` builds static type-index shards for
-  dependency JARs and the JDK runtime image (`jrt:/`), writes shard paths into `workspace.json`,
-  and the server loads and merges them into an in-memory `WorkspaceTypeIndex` on startup.
+- **Type index** — `lathe:sync` builds static type-index shards for dependency JARs and the JDK runtime image
+  (`jrt:/`), writes shard paths into `workspace.json`,
+  and the server loads and merges them with in-memory reactor output shards in `WorkspaceTypeIndex`.
   `CompletionEngine` queries the index for type-name prefix matches and validates candidates through
   `elements.getTypeElement()` and `elements.isAccessible()`.
   See [lathe-type-index.md](planned/lathe-type-index.md).
@@ -71,7 +71,7 @@ command.
 `WorkspaceManifestData`, `WorkspaceManifestWriter`, and `WorkspaceWatcher` all need additions;
 `didChangeWatchedFiles` currently handles deleted Java source files only.
 
-**Reactor type index**
+**Reactor type-index follow-up**
 Static dependency, JDK, and reactor output shards are in place.
 The server scans loaded reactor module output directories (`.lathe/<module>/classes/` and
 `.lathe/<module>/test-classes/`) on startup/reload,

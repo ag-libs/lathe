@@ -19,7 +19,7 @@ JPMS projects define Lathe's primary correctness target,
 especially reactor type discovery, exported-package visibility, and module-aware completion.
 Ordinary classpath Maven projects are still supported for the core features that replay Maven's exact javac invocation:
 diagnostics, hover, semantic tokens, formatting, and many definition cases.
-Full non-JPMS type discovery is left as a focused future contribution based on classpath scanning.
+Type-name completion also uses the type index for dependency, JDK, and reactor candidates.
 Lathe does not try to support split-package behavior beyond whatever javac accepts from the captured Maven invocation.
 Lathe does not support Lombok.
 It operates on source as written.
@@ -173,10 +173,10 @@ The bound `lathe:sync` goal then resolves external dependency source JARs,
 refreshes extracted dependency sources under `~/.cache/lathe/deps/`,
 writes the minimal dependency-source manifest to `.lathe/workspace.json`,
 and installs the server launcher into `~/.cache/lathe/servers/<version>/` (idempotent).
-Stale-POM fingerprints and type indexes are later sync slices.
+Stale-POM fingerprints are a later sync slice.
 The LS currently reads shim params on startup and registry reload;
 it also reads the workspace manifest for dependency/JDK source roots, external-source classpaths,
-and hover origin labels.
+type-index shard paths, and hover origin labels.
 
 If a module has no params file yet (first checkout, new module added), the LS surfaces:
 "Run `mvn process-test-classes` to activate module `<relativePath>`."
@@ -240,7 +240,7 @@ Never needs to be gitignored.
 ├── deps/                                ← dependency source jars extracted by lathe:sync
 │   └── com.google.guava:guava:32.0.0-jre/
 │       └── com/google/common/collect/ImmutableList.java
-└── type-index/                           ← future shared type indexes
+└── type-index/                           ← shared dependency/JDK type indexes
     └── jars/
         └── com.google.guava/
             └── guava/
@@ -933,7 +933,7 @@ Walk the file's `CompilationUnitTree`, emit `DocumentSymbol` for each class, met
 
 Prefix search on the type index — JDK types, reactor types, and JAR dependency types — regardless of
 which modules are currently open.
-The type index is in place for dependency and JDK types; reactor types are future work.
+The type index has dependency, JDK, and reactor candidates.
 The workspace-symbol LSP capability and query surface are not yet implemented.
 
 ### Refactoring strategy
@@ -1250,14 +1250,12 @@ jobs:
 
 ## 11. What's Not Supported
 
-**Full non-JPMS type discovery** — core classpath Maven projects work for features that replay captured javac params:
-diagnostics, hover, semantic tokens, formatting, and many definition/member-access cases.
-The deliberate gap is type-name completion and add-missing-import for reactor and dependency types.
-Without `module-info.java`, `getModuleElement()` cannot enumerate a module's exported types because there is no named
-module or JPMS exports boundary.
-A fallback using `fileManager.list()` on `.lathe/<rel>/classes/` and dependency classpath entries would close this gap
-by indexing public top-level classes.
-That fallback is a focused community contribution target.
+**Full non-JPMS workspace intelligence** — core classpath Maven projects work for features that replay captured javac
+params:
+diagnostics, hover, semantic tokens, formatting, many definition/member-access cases, and type-name completion.
+Missing-import code actions and workspace-symbol queries are not implemented yet.
+Without `module-info.java`, Lathe still relies on javac validation and public top-level type indexes rather than JPMS
+export metadata.
 
 **Split-package support** — Lathe does not try to model or repair split-package behavior.
 It relies on the captured Maven javac invocation and accepts what javac accepts.

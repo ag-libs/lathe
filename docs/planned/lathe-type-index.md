@@ -494,14 +494,13 @@ refreshed.
 
 ### Coalescing Refreshes
 
-Shard refreshes should be coalesced:
+Shard refreshes may be coalesced if profiling shows repeated scans during save storms:
 
 ```java
-Set<ModuleSourceKey> pendingIndexRefreshes;
+Set<ModuleSourceConfig> pendingIndexRefreshes;
 ```
 
-If the same module/source-tree key is already pending, do not schedule another scan.
-This prevents repeated scans during save storms.
+If the same module/source-tree config is already pending, do not schedule another scan.
 
 ---
 
@@ -552,7 +551,6 @@ Internal shape:
 final class WorkspaceTypeIndex {
   private final NavigableMap<String, List<TypeCandidate>> bySimpleNameLower;
   private final Map<String, TypeCandidate> byQualifiedName;
-  private final Map<ModuleSourceKey, ModuleTypeIndex> reactorShards;
 }
 ```
 
@@ -610,11 +608,10 @@ for (TypeCandidate candidate : rankedCandidates) {
 }
 ```
 
-For the first simple-name type-reference slice, only `getTypeElement` is used as the classpath gate.
-`enclosingType` is not yet determined, so `isAccessible` is skipped.
-`getTypeElement` alone is still meaningful: it runs inside the current module/classpath context, so types
-not on the module's classpath return `null` and are dropped.
-`isAccessible` can be layered in once `enclosingType` resolution is wired.
+Type-index candidates are validated with javac before presentation.
+`getTypeElement` runs inside the current module/classpath context, so types not on the module's classpath return
+`null` and are dropped.
+`Elements.isAccessible()` is also used when the enclosing context is available.
 
 If validation yields too few items, completion may validate another page of candidates.
 
@@ -737,8 +734,8 @@ detect this between Maven sync runs and rebuild the shard autonomously.
 The current path is: re-run `mvn process-test-classes` → `lathe:sync` detects the mtime/size change →
 rebuilds the shard → writes the updated path into `workspace.json` → server reloads on next file-watcher
 tick.
-Server-side autonomous rebuild would require `ClassFileTypeScanner` to move to `lathe-core` and a
-`WorkspaceWatcher` extension to monitor JAR mtimes.
+Server-side autonomous rebuild would require a `WorkspaceWatcher` extension to monitor JAR mtimes and trigger a
+`ClassFileTypeScanner` rebuild from `lathe-core`.
 This is deferred.
 
 ### Missing Shard
@@ -809,7 +806,7 @@ See [lathe-reactor-type-index.md](lathe-reactor-type-index.md) for the detailed 
 ### Slice 6 — Save-Time Reactor Shard Refresh
 
 After full save compiles and source deletions, refresh only the affected reactor module/source-tree shard.
-Coalesce refreshes by `ModuleSourceKey`.
+Optional future coalescing can key by `ModuleSourceConfig`.
 Depends on Slice 5.
 
 **Status: partial.**
