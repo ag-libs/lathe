@@ -2,23 +2,17 @@
 
 ## Plan
 
-Open gaps in priority order.
-
-| Gap | Title | Difficulty | Depends on |
-|-----|-------|------------|------------|
-| J | No completions after `::` | Hard | — |
+All planned gaps for this version are closed.
+Gap J (method references) is deferred to a future version.
 
 Gap E has been revised — see the Closed section.
 
 Gap discovery now starts from [completion-semantics-audit.md](completion-semantics-audit.md).
 That matrix records syntax-site behavior before fixes are made.
 
-**J last** because it requires a new `MEMBER_REFERENCE` sentinel context,
-functional-interface compatibility filtering, and no existing path to build on.
-
 ---
 
-## Open
+## Deferred (future version)
 
 ### Gap J — No completions after `::` (method reference)
 
@@ -34,18 +28,14 @@ inject "Stream.of("").map(String::" at method body  →  (no completions)
 completion context.
 The sentinel lands on the wrong node and the context is invalid.
 
-**Resolution:** Add `MEMBER_REFERENCE` to `SentinelContext`.
+**Resolution sketch:** Add `MEMBER_REFERENCE` to `SentinelContext`.
 In `SentinelParser.extractContext`, handle `MemberReferenceTree` as a parent
 with the LHS as receiver text.
 In `CompletionEngine`, route `MEMBER_REFERENCE` through the member-access path
 to get LHS members.
-
-The hard part is filtering: candidates should be methods compatible with the
-functional interface expected at the call site, which requires resolving the
-SAM type of the target parameter and matching arity and parameter types against
-each candidate.
-This needs significant new resolution logic — no existing path to build on.
-Defer until the higher-priority gaps are closed.
+Filtering requires resolving the SAM type of the target parameter and matching
+arity and parameter types against each candidate — significant new resolution
+logic with no existing path to build on.
 
 ---
 

@@ -51,7 +51,7 @@ Each row should eventually map to active tests, a documented gap, or a deliberat
 | Annotation element return type | `@interface A { Str§ value(); }` | legal annotation element return types | value keywords, illegal return types | none | discovery |
 | Annotation element default value | `@interface A { int value() default § }` | values assignable to the element return type | statement keywords, unrelated values | none | discovery |
 | Declaration name slot | `class §`, `String §` | none or narrowly scoped name snippets | types, values, statement keywords | partial | covered |
-| Method reference | `String::§` | compatible methods | incompatible members | none | open gap |
+| Method reference | `String::§` | compatible methods | incompatible members | none | deferred |
 | Switch enum case | `case §` | enum constants of selector type | unrelated values | none | discovery |
 | Module directive | `requires §`, `exports §` | directive-specific modules/packages/types | unrelated symbols | none | discovery |
 | In-token completion | `accept(§connectionString)` | insert/replace-safe candidates | duplicate suffix insertion | future work | open |

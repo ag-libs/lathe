@@ -60,16 +60,11 @@ Architecture is documented in [lathe-server-data-flow-recipe.md](lathe-server-da
 **Completion behavioural gaps**
 
 Design: [completion-design.md](completion-design.md)
-Open gaps: [completion-gaps.md](completion-gaps.md)
+Gaps: [completion-gaps.md](completion-gaps.md)
 
-The completion engine and presentation layer are complete.
-The next work is closing the remaining behavioural gaps in priority order:
-
-1. **Gap K** — Keywords not filtered by syntactic context (`return §` and `String s = §` wrongly offer statement keywords).
-2. **Gap H** — No subpackage navigation when typing a fully-qualified name in code (`java.` returns nothing).
-3. **Gap L** — Context-sensitive statement keywords (`else`, `catch`/`finally`, `break`, `continue`, `yield`).
-4. **Gap M** — Keyword ranking by semantic fit (`true`/`false` when boolean expected, `null` at `==`/`!=`).
-5. **Gap J** — No completions after `::` (method references).
+All planned completion gaps for this version are closed.
+Gap J (method references after `::`) is deferred to a future version —
+see the Deferred section in `completion-gaps.md`.
 
 ## Future Work
 
