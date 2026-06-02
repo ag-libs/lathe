@@ -18,7 +18,9 @@ import io.github.aglibs.lathe.server.module.WorkspaceModules;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
 import java.net.URI;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -135,6 +137,24 @@ final class WorkspaceSession {
     submitCompile(route, snapshot, CompileMode.FULL, afterCompile);
   }
 
+  void onDeletedFile(final String uri) {
+    LOG.info(() -> "[delete] %s".formatted(uri));
+    worker.cancel(uri);
+    openDocuments.remove(uri);
+    workspace.dropFromAllCaches(uri);
+    client.publishDiagnostics(new PublishDiagnosticsParams(uri, List.of()));
+
+    final var deletedFile = toPath(uri);
+    workspace
+        .moduleSourceFor(deletedFile)
+        .ifPresent(
+            config -> {
+              deleteClassOutputs(config, deletedFile);
+              refreshReactorShard(config);
+              scheduleOpenFilesInModule(uri, config);
+            });
+  }
+
   CompletableFuture<Hover> hoverFuture(final String uri, final Position pos) {
     final var openFile = openDocuments.get(uri);
     if (openFile == null) {
@@ -238,6 +258,55 @@ final class WorkspaceSession {
           Level.WARNING, e, () -> "[type-index] reactor scan failed: " + config.latheClassesDir());
       return List.of();
     }
+  }
+
+  static int deleteClassOutputs(final ModuleSourceConfig config, final Path deletedSource) {
+    if (!deletedSource.getFileName().toString().endsWith(".java")) {
+      return 0;
+    }
+
+    final var sourceRoot = sourceRootFor(config, deletedSource);
+    if (sourceRoot == null) {
+      return 0;
+    }
+
+    final var rel = sourceRoot.relativize(deletedSource);
+    final var packageRel = rel.getParent();
+    final var classDir =
+        packageRel != null
+            ? config.latheClassesDir().resolve(packageRel)
+            : config.latheClassesDir();
+    if (!Files.isDirectory(classDir)) {
+      return 0;
+    }
+
+    final var sourceName = deletedSource.getFileName().toString();
+    final var typeName = sourceName.substring(0, sourceName.length() - ".java".length());
+    try (final var stream = Files.list(classDir)) {
+      final var matchingClassFiles =
+          stream.filter(path -> deletedClassFile(typeName, path)).toList();
+      for (final var classFile : matchingClassFiles) {
+        Files.deleteIfExists(classFile);
+      }
+      return matchingClassFiles.size();
+    } catch (final IOException e) {
+      LOG.log(
+          Level.WARNING, e, () -> "[delete] class cleanup failed for %s".formatted(deletedSource));
+      return 0;
+    }
+  }
+
+  private static Path sourceRootFor(final ModuleSourceConfig config, final Path file) {
+    return config.sourceRoots().stream()
+        .filter(file::startsWith)
+        .max(Comparator.comparingInt(Path::getNameCount))
+        .orElse(null);
+  }
+
+  private static boolean deletedClassFile(final String typeName, final Path path) {
+    final var name = path.getFileName().toString();
+    return name.equals(typeName + ".class")
+        || (name.startsWith(typeName + "$") && name.endsWith(".class"));
   }
 
   private void checkForChanges() {

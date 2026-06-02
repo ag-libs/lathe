@@ -66,9 +66,10 @@ Architecture is documented in [lathe-server-data-flow-recipe.md](done/lathe-serv
 **Stale-POM detection**
 Record POM fingerprints in `workspace.json` during `lathe:sync`.
 When `WorkspaceWatcher` sees a POM change after the last sync timestamp,
-`StubWorkspaceService.didChangeWatchedFiles` prompts the user in the editor to re-run the documented Maven lifecycle command.
+`LatheWorkspaceService.didChangeWatchedFiles` prompts the user in the editor to re-run the documented Maven lifecycle
+command.
 `WorkspaceManifestData`, `WorkspaceManifestWriter`, and `WorkspaceWatcher` all need additions;
-`didChangeWatchedFiles` is currently empty.
+`didChangeWatchedFiles` currently handles deleted Java source files only.
 
 **Reactor type index**
 Static dependency, JDK, and reactor output shards are in place.
@@ -76,8 +77,8 @@ The server scans loaded reactor module output directories (`.lathe/<module>/clas
 `.lathe/<module>/test-classes/`) on startup/reload,
 merges them into the in-memory `WorkspaceTypeIndex`,
 and refreshes the affected reactor shard after successful save-time full compiles.
-The remaining reactor-index work is source-deletion cleanup and any later performance optimization if startup scanning
-becomes measurable.
+Deleted Java sources also remove matching `.class`/nested `.class` outputs and refresh the affected reactor shard.
+The remaining reactor-index work is any later performance optimization if startup scanning becomes measurable.
 This also unlocks missing-import suggestions and workspace symbols once those features query the reactor candidates.
 See [lathe-type-index.md](planned/lathe-type-index.md) and [lathe-reactor-type-index.md](planned/lathe-reactor-type-index.md).
 

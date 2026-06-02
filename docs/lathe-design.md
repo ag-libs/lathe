@@ -58,9 +58,10 @@ Neovim headless e2e (Layer 3) is a planned test layer, not yet implemented.
 Reads params files written by the shim and the workspace manifest written by the Maven plugin, builds a fresh
 `JavacTask` per compilation pass, and serves LSP requests.
 It reads dependency/JDK sources from `~/.cache/lathe/`.
-Stale-POM detection (watching POM changes and prompting the user to re-sync) is a planned feature,
-not yet implemented — `StubWorkspaceService.didChangeWatchedFiles` is currently empty.
-Type indexes are a later slice.
+Stale-POM detection (watching POM changes and prompting the user to re-sync) is a planned feature.
+`LatheWorkspaceService.didChangeWatchedFiles` currently handles deleted Java source files;
+POM-change handling is still future work.
+Type indexes back dependency, JDK, and reactor type-name completion.
 
 ```
 lathe-core
@@ -612,7 +613,8 @@ Same logic applies to `.lathe/<rel>/generated-sources/` for AP outputs.
 **Source file deletion** (via `didChangeWatchedFiles`):
 walk `.lathe/<rel>/classes/<package>/` for class files matching the deleted source's basename (including `$Inner`
 variants) and delete them.
-Walk `.lathe/<rel>/generated-sources/` for matching generated sources and delete them.
+Refresh the affected reactor type-index shard after class cleanup.
+Generated-source cleanup is deferred until a concrete annotation-processor stale-file case appears.
 
 **Maven recompiles the module** (lock file deleted):
 the shim has already copied fresh bytecode to `.lathe/<rel>/classes/` and generated sources to
@@ -714,11 +716,11 @@ Cached file managers remain bounded by the LRU and are closed on eviction or reg
 
 `workspace/didChangeWatchedFiles` with a deleted event:
 
-1. Remove from `CustomFileManager` in-memory tracking
-2. Drop result cache entry
+1. Remove the deleted URI from open documents
+2. Drop result cache entries
 3. Delete corresponding `.class` files from `.lathe/<rel>/classes/` or `.lathe/<rel>/test-classes/`
-4. For any other open file in the module, the next `didChange` or read-cache miss will compile against current state
-   automatically
+4. Refresh the affected reactor type-index shard
+5. Schedule other open files in the module to compile against current state
 
 ### Threading
 

@@ -814,7 +814,7 @@ Depends on Slice 5.
 
 **Status: partial.**
 Save-time full compile refresh is done for the routed `ModuleSourceConfig`.
-Source deletion refresh is still future work.
+Deleted Java sources remove matching `.class` outputs and refresh the routed `ModuleSourceConfig`.
 The implementation keeps `reactorShards` keyed by `ModuleSourceConfig`, so no separate `ModuleSourceKey` was needed.
 
 ### Slice 7 — Optional JPMS Metadata

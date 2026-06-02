@@ -87,7 +87,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
 
   @Override
   public WorkspaceService getWorkspaceService() {
-    return new StubWorkspaceService();
+    return new LatheWorkspaceService(textDocumentService);
   }
 
   private static String rootUri(final InitializeParams params) {

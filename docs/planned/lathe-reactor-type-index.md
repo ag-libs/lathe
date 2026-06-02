@@ -27,7 +27,8 @@ the server.
 merges the resulting entries with static dependency/JDK shards,
 and refreshes the routed reactor shard after successful save-time full compiles.
 
-Source-deletion refresh remains future work.
+Deleted Java sources remove matching top-level and nested `.class` outputs and refresh the routed reactor shard.
+Generated-source cleanup remains future work.
 
 ---
 
@@ -245,19 +246,21 @@ It should skip:
 
 ## Source Deletion
 
-When source deletion support removes class files from `.lathe/<moduleRel>/<sourceTree>`, refresh the affected reactor
-shard.
+When Java source deletion support removes class files from `.lathe/<moduleRel>/<sourceTree>`, refresh the affected
+reactor shard.
 
-Initial flow can stay server-worker-owned:
+The implemented flow stays server-worker-owned:
 
 ```text
 lathe-worker handles deletion
   identify ModuleSourceConfig
-  delete matching class/generated files
+  delete matching top-level and nested class files
   scan config.latheClassesDir()
   replace reactor shard
   rebuild WorkspaceTypeIndex snapshot
 ```
+
+Generated-source cleanup is deferred until a concrete annotation-processor stale-file case appears.
 
 ---
 
@@ -302,6 +305,7 @@ Server tests:
 - completion gets reactor type candidate
 - javac validation drops inaccessible/unreachable reactor candidate
 - save-time full compile refreshes exactly one routed module source shard
+- Java source deletion removes matching class files and refreshes the routed module source shard
 
 Current committed coverage includes:
 
@@ -328,5 +332,5 @@ Threading tests:
 3. Add reactor shard state and merged snapshot rebuild.
 4. Add reactor scanning on startup/reload.
 5. Add save-time refresh on `lathe-worker` after successful full save compile.
-6. Add source-deletion refresh.
+6. Add Java source-deletion refresh.
 7. Add SNAPSHOT dependency freshness detection.
