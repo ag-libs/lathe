@@ -10,6 +10,9 @@ final class KeywordProvider {
   private static final List<String> VALUE_EXPRESSIONS =
       List.of("new", "null", "true", "false", "this", "super");
 
+  // Annotation element values: new/this/super are not legal in annotation contexts
+  private static final List<String> ANNOTATION_VALUE_KEYWORDS = List.of("null", "true", "false");
+
   // Statement-level control flow
   private static final List<String> CONTROL_FLOW =
       List.of("if", "for", "while", "do", "switch", "try", "synchronized");
@@ -82,7 +85,8 @@ final class KeywordProvider {
       case TYPE_REFERENCE -> classBodyKeywordsIfApplicable(parsed);
       case VARIABLE_DECLARATION ->
           isRealNameSlot(parsed) ? List.of() : classBodyKeywordsIfApplicable(parsed);
-      case ARGUMENT_POSITION, LAMBDA_BODY, ANNOTATION_ARGUMENT_VALUE -> VALUE_EXPRESSIONS;
+      case ARGUMENT_POSITION, LAMBDA_BODY -> VALUE_EXPRESSIONS;
+      case ANNOTATION_ARGUMENT_VALUE -> ANNOTATION_VALUE_KEYWORDS;
       case CONSTRUCTOR_CALL ->
           // EXPRESSION == cursor is in the argument list; STATEMENT == cursor is on the type name.
           injectorContext == SentinelInjector.Context.EXPRESSION ? VALUE_EXPRESSIONS : List.of();

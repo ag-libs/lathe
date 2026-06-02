@@ -979,8 +979,7 @@ class CompletionEngineTest {
   @Test
   void annotationArgumentValue_stringElement_offersNullNotBooleans() {
     final List<String> items = labels(fixture.complete("@Deprecated(since = §) class Test {}"));
-    assertThat(items).contains("null");
-    assertThat(items).doesNotContain("true", "false", "since", "forRemoval");
+    assertThat(items).containsOnly("null");
   }
 
   @Test
