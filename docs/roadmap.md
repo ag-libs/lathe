@@ -63,6 +63,24 @@ Architecture is documented in [lathe-server-data-flow-recipe.md](done/lathe-serv
 
 ## Future Work
 
+## Planned Design Documents
+
+Designs for future or follow-up work live in `docs/planned/`.
+Use these as the starting point when reprioritizing or slicing new work:
+
+- [lathe-google-indent.md](planned/lathe-google-indent.md) — conservative `textDocument/onTypeFormatting`
+  indentation hints using google-java-format.
+- [lathe-reactor-type-index.md](planned/lathe-reactor-type-index.md) — implemented reactor type-index design and
+  remaining follow-ups such as generated-source cleanup and SNAPSHOT freshness.
+- [lathe-run-test-debug.md](planned/lathe-run-test-debug.md) — Maven-delegated run, test, debug commands and streamed
+  session events.
+- [lathe-source-uri-scheme.md](planned/lathe-source-uri-scheme.md) — `lathe-source://` URIs for read-only external
+  JDK/dependency source files.
+- [lathe-type-index.md](planned/lathe-type-index.md) — implemented type-index design and remaining work such as
+  missing-import suggestions, package-prefix completion, workspace symbols, and freshness checks.
+- [lathe-vscode-semantic-tokens.md](planned/lathe-vscode-semantic-tokens.md) — expanded semantic-token coverage for
+  VS Code parity.
+
 **Stale-POM detection**
 Record POM fingerprints in `workspace.json` during `lathe:sync`.
 When `WorkspaceWatcher` sees a POM change after the last sync timestamp,
