@@ -17,12 +17,17 @@ Javac remains the authority for dependency scope, JPMS readability, exports, and
 
 ---
 
-## Current State
+## Implementation Status
 
 Static dependency and JDK shards are produced during `lathe:sync` and loaded from `.lathe/workspace.json`.
 
-The server currently builds `WorkspaceTypeIndex` from manifest shard paths only.
-Reactor classes under `.lathe/<moduleRel>/classes` and `.lathe/<moduleRel>/test-classes` are not indexed.
+Reactor classes under `.lathe/<moduleRel>/classes` and `.lathe/<moduleRel>/test-classes` are now indexed in memory by
+the server.
+`WorkspaceSession` scans loaded `ModuleSourceConfig.latheClassesDir()` directories on startup/reload,
+merges the resulting entries with static dependency/JDK shards,
+and refreshes the routed reactor shard after successful save-time full compiles.
+
+Source-deletion refresh remains future work.
 
 ---
 
@@ -50,6 +55,10 @@ app/test-classes
 platform/core/classes
 ```
 
+The current implementation uses `ModuleSourceConfig` directly as the shard key because each loaded config already
+represents one module/source-tree pair and carries `relativePath`, `sourceTree`, and `latheClassesDir()`.
+No separate `ModuleSourceKey` record was needed.
+
 ---
 
 ## Index State
@@ -59,8 +68,7 @@ Keep `WorkspaceTypeIndex` immutable.
 `WorkspaceSession` owns mutable index state:
 
 ```java
-private List<TypeIndexFile> staticTypeIndexShards;
-private Map<ModuleSourceKey, TypeIndexFile> reactorTypeIndexShards;
+private Map<ModuleSourceConfig, List<TypeIndexEntry>> reactorShards;
 private WorkspaceTypeIndex typeIndex;
 ```
 
@@ -82,10 +90,9 @@ On initialize/reload:
 lathe-worker:
   load WorkspaceManifest
   scan WorkspaceModules from .lathe/lsp-params-*.json
-  load static type-index shards from manifest
   scan reactor output dir for each ModuleSourceConfig
-  build merged WorkspaceTypeIndex
-  create/swap WorkspaceModules with the index snapshot
+  build merged WorkspaceTypeIndex from manifest shard paths + reactor entries
+  create/swap WorkspaceModules and WorkspaceTypeIndex snapshot
 ```
 
 For each `ModuleSourceConfig`, scan only:
@@ -122,10 +129,10 @@ didSave
   -> javac writes .class files under config.latheClassesDir()
   -> CompileResponse returns to lathe-worker
   -> lathe-worker publishIfCurrent(...)
-  -> lathe-worker scans config.latheClassesDir()
-  -> lathe-worker replaces reactor shard for ModuleSourceKey
-  -> lathe-worker rebuilds immutable WorkspaceTypeIndex snapshot
   -> lathe-worker schedules existing AST/open-document refreshes
+  -> lathe-worker scans config.latheClassesDir()
+  -> lathe-worker replaces reactor shard for ModuleSourceConfig
+  -> lathe-worker rebuilds immutable WorkspaceTypeIndex snapshot
 ```
 
 This means save-time scanning is simple and server-worker-owned.
@@ -181,6 +188,11 @@ elements.getTypeElement(candidate.qualifiedName()) != null
 Because the current `SourceAnalysisSession` was built from the current `ModuleSourceConfig`,
 javac sees the exact classpath/modulepath for that source tree.
 
+The module compiler also places `config.latheClassesDir()` on `CLASS_PATH`.
+`CLASS_OUTPUT` controls where javac writes fresh `.class` files,
+but it is not enough for later completion validation to resolve already-compiled reactor classes.
+Putting the Lathe classes directory on `CLASS_PATH` lets `TypeIndexValidator` resolve same-module reactor candidates.
+
 This respects:
 
 - main vs test classpaths
@@ -208,6 +220,10 @@ ClassAccessReader
 ```
 
 from plugin package to core type-index package or nearby core package.
+
+**Status: done.**
+`ClassFileTypeScanner`, `ClassAccess`, and `ClassAccessReader` now live in `lathe-core`.
+`ClassFileTypeScanner.scanDirectory(...)` returns an empty list when the output directory does not exist yet.
 
 The scanner should include:
 
@@ -287,6 +303,16 @@ Server tests:
 - javac validation drops inaccessible/unreachable reactor candidate
 - save-time full compile refreshes exactly one routed module source shard
 
+Current committed coverage includes:
+
+- `WorkspaceTypeIndex` merging static and reactor entries
+- module compiler completion resolving a reactor-only type scanned from `latheClassesDir`
+- class-literal completion at a Dropwizard-style `SomeType.class` site
+
+Manual validation also confirmed that a saved new source file is compiled,
+the routed reactor shard is refreshed,
+and completion in the same running LSP process then suggests the new type.
+
 Threading tests:
 
 - `CompileMode.FULL` save path triggers reactor shard refresh on `lathe-worker`
@@ -299,7 +325,7 @@ Threading tests:
 
 1. Pass request-local `WorkspaceTypeIndex` snapshot through completion.
 2. Move classfile scanner to `lathe-core`.
-3. Add `ModuleSourceKey`, reactor shard state, and merged snapshot rebuild.
+3. Add reactor shard state and merged snapshot rebuild.
 4. Add reactor scanning on startup/reload.
 5. Add save-time refresh on `lathe-worker` after successful full save compile.
 6. Add source-deletion refresh.

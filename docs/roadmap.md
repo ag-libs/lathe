@@ -71,11 +71,14 @@ When `WorkspaceWatcher` sees a POM change after the last sync timestamp,
 `didChangeWatchedFiles` is currently empty.
 
 **Reactor type index**
-Static dependency and JDK shards are in place.
-The remaining work is scanning reactor module output directories (`.lathe/<module>/classes/` and
-`.lathe/<module>/test-classes/`) to include project-local types in the index,
-and refreshing affected shards after save-time compiles and source deletions.
-This also unlocks missing-import suggestions and workspace symbols once the reactor candidates are present.
+Static dependency, JDK, and reactor output shards are in place.
+The server scans loaded reactor module output directories (`.lathe/<module>/classes/` and
+`.lathe/<module>/test-classes/`) on startup/reload,
+merges them into the in-memory `WorkspaceTypeIndex`,
+and refreshes the affected reactor shard after successful save-time full compiles.
+The remaining reactor-index work is source-deletion cleanup and any later performance optimization if startup scanning
+becomes measurable.
+This also unlocks missing-import suggestions and workspace symbols once those features query the reactor candidates.
 See [lathe-type-index.md](planned/lathe-type-index.md) and [lathe-reactor-type-index.md](planned/lathe-reactor-type-index.md).
 
 **Module metadata in the manifest**

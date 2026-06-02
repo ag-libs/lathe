@@ -804,11 +804,18 @@ Scan reactor `.lathe/` output directories on server startup/reload.
 Merge reactor candidates into `WorkspaceTypeIndex` alongside static dependency candidates.
 See [lathe-reactor-type-index.md](lathe-reactor-type-index.md) for the detailed design.
 
+**Status: done.**
+
 ### Slice 6 — Save-Time Reactor Shard Refresh
 
 After full save compiles and source deletions, refresh only the affected reactor module/source-tree shard.
 Coalesce refreshes by `ModuleSourceKey`.
 Depends on Slice 5.
+
+**Status: partial.**
+Save-time full compile refresh is done for the routed `ModuleSourceConfig`.
+Source deletion refresh is still future work.
+The implementation keeps `reactorShards` keyed by `ModuleSourceConfig`, so no separate `ModuleSourceKey` was needed.
 
 ### Slice 7 — Optional JPMS Metadata
 
@@ -858,6 +865,7 @@ Server unit/integration tests should verify:
 - static and reactor candidates merge correctly
 - reload replaces the index snapshot
 - main/test source-tree filtering works
+- save-time full compile refreshes the affected reactor shard
 
 ### Completion Tests
 
