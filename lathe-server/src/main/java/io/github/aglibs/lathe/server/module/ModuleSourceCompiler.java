@@ -14,6 +14,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Stream;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
@@ -104,7 +105,10 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
     fm.setLocation(StandardLocation.SOURCE_OUTPUT, List.of(genSourcesDir.toFile()));
     LOG.fine(() -> "[cache] SOURCE_OUTPUT=%s".formatted(genSourcesDir));
 
-    final var classpath = config.remappedClasspath();
+    final var classpath =
+        Stream.concat(Stream.of(classesDir), config.remappedClasspath().stream())
+            .distinct()
+            .toList();
     if (!classpath.isEmpty()) {
       fm.setLocation(StandardLocation.CLASS_PATH, classpath.stream().map(Path::toFile).toList());
       LOG.fine(() -> "[cache] CLASS_PATH=%s".formatted(classpath));

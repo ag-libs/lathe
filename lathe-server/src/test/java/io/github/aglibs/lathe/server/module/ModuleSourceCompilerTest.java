@@ -2,10 +2,16 @@ package io.github.aglibs.lathe.server.module;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
+import io.github.aglibs.lathe.server.TestCompiler;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
+import io.github.aglibs.lathe.server.analysis.SourceAnalysisSession;
+import io.github.aglibs.lathe.server.analysis.SourceLocator;
+import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import org.eclipse.lsp4j.CompletionItem;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -79,5 +85,57 @@ class ModuleSourceCompilerTest {
       assertThat(result.fileAnalysis().elements()).isNull();
       assertThat(config.latheClassesDir().resolve("Sample.class")).exists();
     }
+  }
+
+  @Test
+  void complete_reactorOutputTypeInSameModule_suggestsIndexedType() throws Exception {
+    final Path sourceRoot = td.resolve("module/src/main/java");
+    final Path reactorSource = sourceRoot.resolve("example/ReactorOnlyType.java");
+    Files.createDirectories(reactorSource.getParent());
+    Files.writeString(reactorSource, "package example; public class ReactorOnlyType {}");
+
+    final var config = config(sourceRoot);
+    TestCompiler.compileToDir(config.latheClassesDir(), reactorSource);
+    final var typeIndex =
+        WorkspaceTypeIndex.build(
+            List.of(), List.of(ClassFileTypeScanner.scanDirectory(config.latheClassesDir())));
+
+    final String content = "package example; class Test { ReactorOnlyT field; }";
+    final String markedContent = "package example; class Test { ReactorOnlyT§ field; }";
+    final int cursor = markedContent.indexOf('§');
+    final Path sourceFile = sourceRoot.resolve("example/Test.java");
+
+    try (final var ctx = new SourceAnalysisSession(new ModuleSourceCompiler(config))) {
+      ctx.compile(sourceFile.toUri().toString(), content, 1, CompileMode.OPEN);
+
+      final var outcome =
+          ctx.complete(
+              sourceFile.toUri().toString(),
+              content,
+              1,
+              SourceLocator.offsetToPosition(content, cursor),
+              null,
+              typeIndex);
+
+      assertThat(outcome.items()).extracting(CompletionItem::getLabel).contains("ReactorOnlyType");
+    }
+  }
+
+  private ModuleSourceConfig config(final Path sourceRoot) {
+    return new ModuleSourceConfig(
+        td.resolve(".lathe/module"),
+        "classes",
+        td.resolve("module/target/classes"),
+        null,
+        List.of(sourceRoot),
+        List.of(),
+        List.of(),
+        List.of(),
+        null,
+        "UTF-8",
+        false,
+        false,
+        null,
+        List.of());
   }
 }
