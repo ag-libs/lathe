@@ -10,8 +10,6 @@ import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
@@ -19,8 +17,6 @@ import javax.tools.StandardJavaFileManager;
 import javax.tools.ToolProvider;
 
 public final class TempSourceCompiler implements JavaSourceCompiler {
-
-  private static final Logger LOG = Logger.getLogger(TempSourceCompiler.class.getName());
 
   private final Path td;
   private final JavaCompiler compiler;
@@ -59,15 +55,7 @@ public final class TempSourceCompiler implements JavaSourceCompiler {
                   null,
                   fm.getJavaFileObjects(tempFile));
 
-      final var it = task.parse().iterator();
-      final CompilationUnitTree cu = it.hasNext() ? it.next() : null;
-      try {
-        task.analyze();
-      } catch (final IllegalStateException e) {
-        // javac bug: certain sentinel-injected patterns (e.g. sentinel inside @SuppressWarnings)
-        // trigger a NullPointerException inside Lint.suppressionsFrom — return the partial result.
-        LOG.log(Level.SEVERE, e, () -> "javac bug: analyze() crashed on sentinel-injected source");
-      }
+      final CompilationUnitTree cu = JavaSourceCompiler.safeCompile(task);
 
       final Trees trees = Trees.instance(task);
       final AttributedFileAnalysis fileAnalysis;
