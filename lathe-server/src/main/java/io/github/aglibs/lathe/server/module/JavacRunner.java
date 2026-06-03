@@ -12,11 +12,15 @@ import io.github.aglibs.lathe.server.analysis.TokenScanner;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 
 final class JavacRunner {
+
+  private static final Logger LOG = Logger.getLogger(JavacRunner.class.getName());
 
   private final StandardJavaFileManager fm;
 
@@ -53,7 +57,13 @@ final class JavacRunner {
     try {
       final var it = task.parse().iterator();
       final CompilationUnitTree cu = it.hasNext() ? it.next() : null;
-      task.analyze();
+      try {
+        task.analyze();
+      } catch (final IllegalStateException e) {
+        // javac bug: certain sentinel-injected patterns (e.g. sentinel inside @SuppressWarnings)
+        // trigger a NullPointerException inside Lint.suppressionsFrom — return the partial result.
+        LOG.log(Level.SEVERE, e, () -> "javac bug: analyze() crashed on sentinel-injected source");
+      }
       final Trees trees = Trees.instance(task);
       final var elements = task.getElements();
       final var types = task.getTypes();
