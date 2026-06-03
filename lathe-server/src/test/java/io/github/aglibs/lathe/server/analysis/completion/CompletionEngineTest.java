@@ -74,125 +74,6 @@ class CompletionEngineTest {
     return items.stream().filter(i -> text.equals(i.getFilterText())).findFirst();
   }
 
-  private record CompletionSemanticCase(
-      String site, String source, List<String> expectedLabels, List<String> forbiddenLabels) {}
-
-  @Disabled("Gap discovery matrix; promote reviewed rows into active tests before fixing.")
-  @Test
-  void completionSemantics_gapDiscoveryMatrix() {
-    final List<CompletionSemanticCase> cases =
-        List.of(
-            new CompletionSemanticCase(
-                "constructor type excludes private-constructor class",
-                "class Test { void m() { Object value = new Mat§ } }",
-                List.of(),
-                List.of("Math")),
-            new CompletionSemanticCase(
-                "constructor type excludes interface",
-                "class Test { void m() { Object value = new Runn§ } }",
-                List.of(),
-                List.of("Runnable")),
-            new CompletionSemanticCase(
-                "constructor type excludes enum",
-                "class Test { void m() { Object value = new TimeU§ } }",
-                List.of(),
-                List.of("TimeUnit")),
-            new CompletionSemanticCase(
-                "class extends excludes interface",
-                "class Test extends Runn§ {}",
-                List.of(),
-                List.of("Runnable")),
-            new CompletionSemanticCase(
-                "class implements excludes class",
-                "class Test implements ArrayD§ {}",
-                List.of(),
-                List.of("ArrayDeque")),
-            new CompletionSemanticCase(
-                "string initializer excludes boolean literals",
-                """
-                class Test {
-                    String getValue() { return ""; }
-                    void m() {
-                        String s = §
-                    }
-                }""",
-                List.of("getValue()"),
-                List.of("true", "false")),
-            new CompletionSemanticCase(
-                "boolean initializer includes boolean literals",
-                """
-                class Test {
-                    boolean getFlag() { return true; }
-                    void m() {
-                        boolean flag = §
-                    }
-                }""",
-                List.of("true", "false", "getFlag()"),
-                List.of("null")),
-            new CompletionSemanticCase(
-                "static-imported enum constant as simple name",
-                """
-                import static java.util.concurrent.TimeUnit.SECONDS;
-
-                class Test {
-                    void m() {
-                        SE§
-                    }
-                }""",
-                List.of("SECONDS"),
-                List.of()),
-            new CompletionSemanticCase(
-                "throws clause excludes non-throwable class",
-                "class Test { void m() throws Str§ {} }",
-                List.of(),
-                List.of("String")),
-            new CompletionSemanticCase(
-                "annotation context excludes ordinary class",
-                "@Str§ class Test {}",
-                List.of(),
-                List.of("String")),
-            new CompletionSemanticCase(
-                "annotation named element suggests only element names",
-                "@SuppressWarnings(va§ = \"\") class Test {}",
-                List.of("value"),
-                List.of("String", "class", "true", "false")),
-            new CompletionSemanticCase(
-                "annotation enum value excludes unrelated values",
-                "@java.lang.annotation.Retention(§) class Test {}",
-                List.of(),
-                List.of("String", "true", "false", "class")),
-            new CompletionSemanticCase(
-                "annotation named value excludes annotation element names",
-                "@Deprecated(since = §) class Test {}",
-                List.of(),
-                List.of("since", "forRemoval")),
-            new CompletionSemanticCase(
-                "annotation declaration body excludes value and statement keywords",
-                "@interface Marker { § }",
-                List.of(),
-                List.of("if", "return", "true", "false")),
-            new CompletionSemanticCase(
-                "annotation element return type excludes illegal value keywords",
-                "@interface Marker { Str§ value(); }",
-                List.of("String"),
-                List.of("true", "false")),
-            new CompletionSemanticCase(
-                "declaration name slot excludes type candidates",
-                "class Test { String §; }",
-                List.of(),
-                List.of("String", "ArrayDeque")));
-
-    for (final CompletionSemanticCase c : cases) {
-      final List<String> labels = labels(fixture.complete(c.source()));
-      if (!c.expectedLabels().isEmpty()) {
-        assertThat(labels).as(c.site()).containsAll(c.expectedLabels());
-      }
-      if (!c.forbiddenLabels().isEmpty()) {
-        assertThat(labels).as(c.site()).doesNotContainAnyElementsOf(c.forbiddenLabels());
-      }
-    }
-  }
-
   // ── member access ────────────────────────────────────────────────────────────
 
   @Test
@@ -759,6 +640,40 @@ class CompletionEngineTest {
     assertThat(returnItem.get().getSortText()).isEqualTo("0_return");
   }
 
+  @Disabled
+  @Test
+  void variableInitializer_nonAssignableLocal_excluded() {
+    final var items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    void m() {
+                        StringBuilder sb = new StringBuilder();
+                        String text = "";
+                        String result = §
+                    }
+                }"""));
+    assertThat(items).contains("text").doesNotContain("sb");
+  }
+
+  @Disabled
+  @Test
+  void returnPosition_nonAssignableLocal_excluded() {
+    final var items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    StringBuilder sb = new StringBuilder();
+                    String text = "";
+                    String getValue() {
+                        return §;
+                    }
+                }"""));
+    assertThat(items).contains("text").doesNotContain("sb");
+  }
+
   @Test
   void keywords_variableInitializer_expressionKeywordsOnly() {
     final List<String> items =
@@ -788,6 +703,39 @@ class CompletionEngineTest {
             "var",
             "true",
             "false");
+  }
+
+  @Disabled
+  @Test
+  void keywords_variableInitializer_afterCompleteExpression_noStatementKeywords() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        String m() { return ""; }
+                        void caller() {
+                            String s = m()§;
+                        }
+                    }""")))
+        .doesNotContain("if", "for", "while", "do", "switch", "try", "throw", "assert");
+  }
+
+  @Disabled
+  @Test
+  void keywords_methodCallArgument_afterCompleteExpression_noStatementKeywords() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        static void consume(String s) {}
+                        String m() { return ""; }
+                        void caller() {
+                            consume(m()§);
+                        }
+                    }""")))
+        .doesNotContain("if", "for", "while", "do", "switch", "try", "throw", "assert");
   }
 
   @Test
@@ -1015,6 +963,21 @@ class CompletionEngineTest {
   void annotationArgumentValue_stringElement_offersNullNotBooleans() {
     final List<String> items = labels(fixture.complete("@Deprecated(since = §) class Test {}"));
     assertThat(items).containsOnly("null");
+  }
+
+  @Test
+  void annotationArgument_namedElementPrefix_beforeEquals_suggestsElementName() {
+    // cursor is in the name slot with "= value" already written: va§ = ""
+    assertThat(labels(fixture.complete("@SuppressWarnings(va§ = \"\") class Test {}")))
+        .contains("value")
+        .doesNotContain("String", "class", "true", "false");
+  }
+
+  @Test
+  void annotationDeclarationBody_elementReturnType_suggestsType() {
+    assertThat(labels(fixture.complete("@interface Marker { Str§ value(); }")))
+        .contains("String")
+        .doesNotContain("true", "false");
   }
 
   @Test
@@ -1439,6 +1402,43 @@ class CompletionEngineTest {
     assertThat(strVarItem.get().getSortText()).isLessThan(intVarItem.get().getSortText());
   }
 
+  @Disabled
+  @Test
+  void argumentPosition_nonAssignableLocal_excluded() {
+    final var items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    void accept(String s) {}
+                    void m() {
+                        StringBuilder sb = new StringBuilder();
+                        String text = "";
+                        accept(§);
+                    }
+                }"""));
+    assertThat(items).contains("text").doesNotContain("sb");
+  }
+
+  @Disabled
+  @Test
+  void argumentPosition_nonAssignableLocal_excludedInReceiverQualifiedCall() {
+    final var items =
+        labels(
+            fixture.complete(
+                """
+                class Helper { void consume(String s) {} }
+                class Test {
+                    void m() {
+                        Helper helper = new Helper();
+                        StringBuilder sb = new StringBuilder();
+                        String text = "";
+                        helper.consume(§);
+                    }
+                }"""));
+    assertThat(items).contains("text").doesNotContain("sb");
+  }
+
   // ── constructor call position ─────────────────────────────────────────────────
 
   @Test
@@ -1497,6 +1497,26 @@ class CompletionEngineTest {
     assertThat(firstArgFilterTexts).contains("result");
     assertThat(firstArgFilterTexts)
         .doesNotContainAnyElementsOf(List.of("wait", "finalize", "notify", "notifyAll"));
+  }
+
+  @Disabled
+  @Test
+  void constructorCallArgument_nonAssignableLocal_excluded() {
+    final var items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    static class Receiver {
+                        Receiver(String s) {}
+                    }
+                    void m() {
+                        StringBuilder sb = new StringBuilder();
+                        String text = "";
+                        new Receiver(§);
+                    }
+                }"""));
+    assertThat(items).contains("text").doesNotContain("sb");
   }
 
   // ── lambda body ───────────────────────────────────────────────────────────────
