@@ -65,8 +65,9 @@ Architecture is documented in [lathe-server-data-flow-recipe.md](done/lathe-serv
   `LatheTextDocumentService` is a thin LSP dispatcher.
 - **Stale-result guard** — `publishIfCurrent` compares the content that triggered a compile against the latest open content before publishing diagnostics,
   so rapid edits never overwrite newer results with an older compile's output.
-
-## Future Work
+- **`textDocument/onTypeFormatting` stub** — server advertises `onTypeFormatting` support for `\n` triggers and dispatches the LSP request;
+  the handler currently returns no edits.
+  Actual google-java-format indentation is deferred; see [lathe-google-indent.md](planned/lathe-google-indent.md).
 
 ## Planned Design Documents
 
