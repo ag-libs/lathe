@@ -1913,6 +1913,44 @@ class CompletionEngineTest {
   }
 
   @Test
+  void constructorCall_expectedInterfaceArgument_ranksInterfaceFirst() {
+    final var items =
+        fixture.complete(
+            """
+            class Test {
+                interface Listener {
+                    default void started() {}
+                }
+                static class Builder {
+                    void addListener(Listener listener) {}
+                }
+                void m(Builder builder) {
+                    builder.addListener(new §);
+                }
+            }""");
+    assertThat(items).isNotEmpty();
+    assertThat(items.getFirst().getLabel()).isEqualTo("Listener");
+  }
+
+  @Test
+  void constructorCall_unqualifiedExpectedInterfaceArgument_ranksInterfaceFirst() {
+    final var items =
+        fixture.complete(
+            """
+            class Test {
+                interface Listener {
+                    default void started() {}
+                }
+                void addListener(Listener listener) {}
+                void m() {
+                    addListener(new §);
+                }
+            }""");
+    assertThat(items).isNotEmpty();
+    assertThat(items.getFirst().getLabel()).isEqualTo("Listener");
+  }
+
+  @Test
   void multilineChain_simpleIdentifierReceiver_crossLine() {
     assertThat(
             labels(

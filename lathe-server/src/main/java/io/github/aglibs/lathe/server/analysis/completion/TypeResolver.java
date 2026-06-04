@@ -20,7 +20,6 @@ import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -67,6 +66,80 @@ final class TypeResolver {
     }
 
     return resolveInitializerValue(site, snapshot);
+  }
+
+  static ExpectedValue resolveExpectedArgumentValue(
+      final int cursorOffset, final AttributedFileAnalysis snapshot) {
+    if (snapshot.tree() == null) {
+      return new ExpectedValue.Unknown();
+    }
+
+    final var result = new AtomicReference<ExpectedValue>();
+    new TreePathScanner<Void, Void>() {
+      @Override
+      public Void visitMethodInvocation(final MethodInvocationTree node, final Void unused) {
+        super.visitMethodInvocation(node, unused);
+        if (result.get() != null || cursorOutside(snapshot, node, cursorOffset)) {
+          return null;
+        }
+
+        final int argIndex = argumentIndex(node, cursorOffset);
+        if (argIndex < 0) {
+          return null;
+        }
+
+        final String methodName = methodSelectName(node.getMethodSelect());
+        final var receiverTypeEl =
+            node.getMethodSelect() instanceof final MemberSelectTree ms
+                ? receiverType(getCurrentPath(), ms, snapshot)
+                : enclosingClass(getCurrentPath(), snapshot);
+        if (receiverTypeEl == null) {
+          return null;
+        }
+
+        result.set(expectedMethodArgumentValue(receiverTypeEl, methodName, argIndex, snapshot));
+
+        return null;
+      }
+
+      private int argumentIndex(final MethodInvocationTree node, final int cursorOffset) {
+        final var args = node.getArguments();
+        for (int i = 0; i < args.size(); i++) {
+          if (!cursorOutside(snapshot, args.get(i), cursorOffset)) {
+            return i;
+          }
+        }
+
+        return -1;
+      }
+    }.scan(snapshot.tree(), null);
+    return result.get() != null ? result.get() : new ExpectedValue.Unknown();
+  }
+
+  private static TypeElement receiverType(
+      final TreePath invocationPath,
+      final MemberSelectTree methodSelect,
+      final AttributedFileAnalysis snapshot) {
+    final var receiverPath = new TreePath(invocationPath, methodSelect.getExpression());
+    final TypeMirror receiverType = snapshot.trees().getTypeMirror(receiverPath);
+    if (receiverType == null || receiverType.getKind() != TypeKind.DECLARED) {
+      return null;
+    }
+
+    final var receiverEl = snapshot.types().asElement(receiverType);
+    return receiverEl instanceof final TypeElement receiverTypeEl ? receiverTypeEl : null;
+  }
+
+  private static TypeElement enclosingClass(
+      final TreePath path, final AttributedFileAnalysis snapshot) {
+    for (TreePath current = path; current != null; current = current.getParentPath()) {
+      if (current.getLeaf() instanceof ClassTree) {
+        final var el = snapshot.trees().getElement(current);
+        return el instanceof final TypeElement typeElement ? typeElement : null;
+      }
+    }
+
+    return null;
   }
 
   static ResolvedReceiver resolveReceiver(
@@ -191,17 +264,12 @@ final class TypeResolver {
       return new ExpectedValue.Unknown();
     }
 
-    final TypeMirror pt =
-        findMethodParamType(ownerType, site.enclosingMethodName(), site.argIndex(), snapshot);
-    if (pt != null) {
-      return new ExpectedValue.Type(pt);
-    }
-
-    if (hasMethodByName(ownerType, site.enclosingMethodName(), snapshot)) {
-      return new ExpectedValue.NoSlot();
-    }
-
-    return resolveConstructorArgumentValue(site, snapshot);
+    final var expected =
+        expectedMethodArgumentValue(
+            ownerType, site.enclosingMethodName(), site.argIndex(), snapshot);
+    return expected instanceof ExpectedValue.Unknown
+        ? resolveConstructorArgumentValue(site, snapshot)
+        : expected;
   }
 
   private static ExpectedValue resolveConstructorArgumentValue(
@@ -237,12 +305,11 @@ final class TypeResolver {
       return new ExpectedValue.Unknown();
     }
 
-    final var result = new AtomicReference<TypeMirror>();
-    final var noSlot = new AtomicBoolean();
+    final var result = new AtomicReference<ExpectedValue>();
     new TreePathScanner<Void, Void>() {
       @Override
       public Void visitMethodInvocation(final MethodInvocationTree node, final Void unused) {
-        if (result.get() != null || noSlot.get()) {
+        if (result.get() != null) {
           return super.visitMethodInvocation(node, unused);
         }
 
@@ -258,27 +325,16 @@ final class TypeResolver {
           return super.visitMethodInvocation(node, unused);
         }
 
-        final var receiverPath = new TreePath(getCurrentPath(), ms.getExpression());
-        final TypeMirror receiverType = snapshot.trees().getTypeMirror(receiverPath);
-        if (receiverType == null || receiverType.getKind() != TypeKind.DECLARED) {
+        final var receiverTypeEl = receiverType(getCurrentPath(), ms, snapshot);
+        if (receiverTypeEl == null) {
           return super.visitMethodInvocation(node, unused);
         }
 
-        final var receiverEl = snapshot.types().asElement(receiverType);
-        if (!(receiverEl instanceof final TypeElement receiverTypeEl)) {
-          return super.visitMethodInvocation(node, unused);
-        }
-
-        final TypeMirror pt =
-            findMethodParamType(
+        final var expected =
+            expectedMethodArgumentValue(
                 receiverTypeEl, site.enclosingMethodName(), site.argIndex(), snapshot);
-        if (pt != null) {
-          result.set(pt);
-          return null;
-        }
-
-        if (hasMethodByName(receiverTypeEl, site.enclosingMethodName(), snapshot)) {
-          noSlot.set(true);
+        if (!(expected instanceof ExpectedValue.Unknown)) {
+          result.set(expected);
           return null;
         }
 
@@ -286,11 +342,7 @@ final class TypeResolver {
       }
     }.scan(methodPath, null);
 
-    if (result.get() != null) {
-      return new ExpectedValue.Type(result.get());
-    }
-
-    return noSlot.get() ? new ExpectedValue.NoSlot() : new ExpectedValue.Unknown();
+    return result.get() != null ? result.get() : new ExpectedValue.Unknown();
   }
 
   private static ExpectedValue resolveInitializerValue(
@@ -425,6 +477,21 @@ final class TypeResolver {
     }
 
     return null;
+  }
+
+  private static ExpectedValue expectedMethodArgumentValue(
+      final TypeElement owner,
+      final String methodName,
+      final int argIndex,
+      final AttributedFileAnalysis snapshot) {
+    final var paramType = findMethodParamType(owner, methodName, argIndex, snapshot);
+    if (paramType != null) {
+      return new ExpectedValue.Type(paramType);
+    }
+
+    return hasMethodByName(owner, methodName, snapshot)
+        ? new ExpectedValue.NoSlot()
+        : new ExpectedValue.Unknown();
   }
 
   private static boolean hasMethodByName(

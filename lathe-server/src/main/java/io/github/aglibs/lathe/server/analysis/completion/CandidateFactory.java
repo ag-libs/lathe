@@ -44,13 +44,18 @@ final class CandidateFactory {
   }
 
   static CompletionCandidate typeElementCandidate(final TypeElement el) {
+    return typeElementCandidate(el, null);
+  }
+
+  static CompletionCandidate typeElementCandidate(
+      final TypeElement el, final ImportEdit importEdit) {
     final var simpleName = el.getSimpleName().toString();
     return typeCandidate(
         simpleName,
         el.getQualifiedName().toString(),
         kindForElement(el.getKind()),
         el.asType(),
-        null);
+        importEdit);
   }
 
   private static CandidateKind kindForElement(final ElementKind kind) {

@@ -78,8 +78,7 @@ public final class CompletionEngine {
           case CONSTRUCTOR_CALL ->
               parsed.argIndex() >= 0
                   ? completeSimpleName(parsed, injected, req, site)
-                  : completeSimpleNameTypeReferenceWithLang(
-                      injected, req, parsed.typeReferenceRole());
+                  : completeConstructorTypeReference(injected, req, parsed.typeReferenceRole());
           case TYPE_REFERENCE -> completeTypeReference(parsed, injected, req);
           case ANNOTATION_CONTEXT ->
               completeSimpleNameTypeReferenceWithLang(injected, req, parsed.typeReferenceRole());
@@ -554,6 +553,84 @@ public final class CompletionEngine {
     final var typeIndexOutcome = completeSimpleNameTypeReference(injected, req, role);
     final var withLang = mergeLangTypes(injected.prefix(), req, typeIndexOutcome, role);
     return mergeInFileTypes(injected.prefix(), req, withLang, role);
+  }
+
+  private CompletionOutcome completeConstructorTypeReference(
+      final SentinelResult injected, final CompletionRequest req, final TypeReferenceRole role) {
+    final var base = completeSimpleNameTypeReferenceWithLang(injected, req, role);
+    final var initialAnalysis = req.cached() != null ? req.cached().analysis() : null;
+    final var initialExpected =
+        expectedConstructorTypeCandidates(injected.prefix(), req.cursorOffset(), initialAnalysis);
+    final AttributedFileAnalysis freshAnalysis =
+        initialExpected.isEmpty() && compiler != null && !req.noDiff()
+            ? compiler.reattribute(req.uri(), req.content())
+            : null;
+    final var analysis = freshAnalysis != null ? freshAnalysis : initialAnalysis;
+    final var expected =
+        freshAnalysis != null
+            ? expectedConstructorTypeCandidates(
+                injected.prefix(), req.cursorOffset(), freshAnalysis)
+            : initialExpected;
+    if (expected.isEmpty()) {
+      return base;
+    }
+
+    final List<CompletionItem> expectedItems =
+        expected.stream().map(CompletionItemPresenter::present).toList();
+    CompletionItemPresenter.applyImportEdits(expected, expectedItems, analysis);
+
+    final var merged = new LinkedHashMap<String, CompletionItem>();
+    expectedItems.forEach(i -> merged.put(completionIdentity(i), i));
+    base.items().forEach(i -> merged.putIfAbsent(completionIdentity(i), i));
+    return new CompletionOutcome(
+        List.copyOf(merged.values()),
+        freshAnalysis != null ? freshAnalysis : base.freshAnalysis(),
+        base.incomplete());
+  }
+
+  private static List<CompletionCandidate> expectedConstructorTypeCandidates(
+      final String prefix, final int cursorOffset, final AttributedFileAnalysis analysis) {
+    if (analysis == null) {
+      return List.of();
+    }
+
+    final var expected = TypeResolver.resolveExpectedArgumentValue(cursorOffset, analysis);
+    if (!(expected instanceof ExpectedValue.Type(final TypeMirror type))) {
+      return List.of();
+    }
+
+    if (!(analysis.types().asElement(type) instanceof final TypeElement typeEl)) {
+      return List.of();
+    }
+
+    final String simpleName = typeEl.getSimpleName().toString();
+    if (!simpleName.startsWith(prefix)) {
+      return List.of();
+    }
+
+    return List.of(CandidateFactory.typeElementCandidate(typeEl, importEdit(typeEl, analysis)));
+  }
+
+  private static ImportEdit importEdit(
+      final TypeElement typeElement, final AttributedFileAnalysis analysis) {
+    final String qualifiedName = typeElement.getQualifiedName().toString();
+    final int packageEnd = qualifiedName.lastIndexOf('.');
+    if (packageEnd < 0) {
+      return null;
+    }
+
+    final String packageName = qualifiedName.substring(0, packageEnd);
+    if ("java.lang".equals(packageName)) {
+      return null;
+    }
+
+    if (analysis.tree() != null
+        && analysis.tree().getPackageName() != null
+        && packageName.equals(analysis.tree().getPackageName().toString())) {
+      return null;
+    }
+
+    return new ImportEdit(qualifiedName, false);
   }
 
   private CompletionOutcome mergeInFileTypes(
