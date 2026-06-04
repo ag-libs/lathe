@@ -76,6 +76,8 @@ Use these as the starting point when reprioritizing or slicing new work:
 
 - [lathe-google-indent.md](planned/lathe-google-indent.md) — conservative `textDocument/onTypeFormatting`
   indentation hints using google-java-format.
+- [lathe-completion-presentation.md](planned/lathe-completion-presentation.md) —
+  JDT LS-style completion `labelDetails` and generic type display.
 - [lathe-import-optimization.md](planned/lathe-import-optimization.md) —
   semantic import cleanup before full-document formatting,
   including unused import removal and conservative wildcard expansion.
@@ -132,6 +134,17 @@ remove unused explicit imports,
 sort normal/static groups,
 and replace wildcard imports with direct imports when javac can prove the used symbols.
 See [lathe-import-optimization.md](planned/lathe-import-optimization.md).
+
+**Completion presentation**
+Adopt JDT LS-style completion rows:
+type labels stay simple while package names move into `labelDetails.description`,
+method labels become bare method names,
+parameter lists move into `labelDetails.detail`,
+and return types move into `labelDetails.description`.
+Add a display-only `TypeMirror` formatter so method,
+field,
+and generic receiver-substituted types render as concise Java types without changing semantic filtering.
+See [lathe-completion-presentation.md](planned/lathe-completion-presentation.md).
 
 **Editor integrations**
 Keep Neovim/VS Code clients thin: they launch `~/.cache/lathe/current/lathe-launcher.sh`
