@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.CompletionOptions;
+import org.eclipse.lsp4j.DocumentOnTypeFormattingOptions;
 import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.InitializeResult;
 import org.eclipse.lsp4j.InitializedParams;
@@ -58,6 +59,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     capabilities.setSemanticTokensProvider(semanticTokensOptions);
     capabilities.setDocumentFormattingProvider(true);
     capabilities.setDocumentRangeFormattingProvider(true);
+    capabilities.setDocumentOnTypeFormattingProvider(new DocumentOnTypeFormattingOptions("\n"));
     capabilities.setDefinitionProvider(true);
     return capabilities;
   }

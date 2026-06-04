@@ -4,6 +4,7 @@ import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.logging.Logger;
 import org.eclipse.lsp4j.*;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.LanguageClient;
@@ -11,6 +12,7 @@ import org.eclipse.lsp4j.services.TextDocumentService;
 
 final class LatheTextDocumentService implements TextDocumentService {
 
+  private static final Logger LOG = Logger.getLogger(LatheTextDocumentService.class.getName());
   private static final long DEFAULT_DEBOUNCE_MS = 500;
 
   private final ServerWorker worker = new ServerWorker();
@@ -138,5 +140,21 @@ final class LatheTextDocumentService implements TextDocumentService {
       final DocumentRangeFormattingParams params) {
     final var uri = params.getTextDocument().getUri();
     return worker.submit(() -> session.format("rangeFormat", uri));
+  }
+
+  @Override
+  public CompletableFuture<List<? extends TextEdit>> onTypeFormatting(
+      final DocumentOnTypeFormattingParams params) {
+    final var uri = params.getTextDocument().getUri();
+    final var pos = params.getPosition();
+    final String ch = params.getCh();
+    final String chCode = ch == null || ch.isEmpty() ? "null" : "0x%X".formatted(ch.codePointAt(0));
+    LOG.info(
+        () ->
+            "[onTypeFormatting] %s line=%d character=%d ch=%s"
+                .formatted(uri, pos.getLine(), pos.getCharacter(), chCode));
+
+    // TODO Implement conservative indentation edits for supported on-type triggers.
+    return CompletableFuture.completedFuture(List.of());
   }
 }

@@ -110,6 +110,92 @@ They are resolved on demand by Maven instead of being guessed from POM text.
 The write is skipped when the content is unchanged, so a no-op build does not trigger
 a server reload.
 
+## Neovim Setup
+
+Lathe works with Neovim through the built-in LSP client.
+Lathe provides Java language-server features and formatting.
+Neovim still owns local editing behavior such as immediate indentation,
+cursor placement, and paired brace insertion.
+
+Configure Lathe as a normal Neovim LSP server:
+
+```lua
+vim.lsp.config("lathe", {
+  cmd = { vim.fn.expand("~/.cache/lathe/current/lathe-launcher.sh") },
+  filetypes = { "java" },
+  root_markers = { ".lathe" },
+})
+
+vim.lsp.enable("lathe")
+```
+
+For debugging, run the launcher with `LATHE_DEBUG=1`:
+
+```lua
+vim.lsp.config("lathe", {
+  cmd = {
+    "env",
+    "LATHE_DEBUG=1",
+    vim.fn.expand("~/.cache/lathe/current/lathe-launcher.sh"),
+  },
+  filetypes = { "java" },
+  root_markers = { ".lathe" },
+})
+```
+
+Neovim logs LSP traffic to its normal LSP log.
+For example:
+
+```bash
+tail -f ~/.local/state/nvim/lsp.log
+```
+
+Lathe may advertise `textDocument/onTypeFormatting` for indentation hints.
+Enable Neovim's native on-type formatting when the Lathe client attaches:
+
+```lua
+vim.api.nvim_create_autocmd("LspAttach", {
+  callback = function(event)
+    local client = vim.lsp.get_client_by_id(event.data.client_id)
+
+    if client and client.name == "lathe" then
+      vim.lsp.on_type_formatting.enable(true, { client_id = client.id })
+    end
+  end,
+})
+```
+
+On-type formatting is triggered when the user types a configured trigger character,
+such as pressing Enter in insert mode.
+Normal-mode commands such as `o` and `O` are handled by Neovim indentation,
+not by LSP on-type formatting.
+
+For users who want Google Java Style indentation while editing,
+use `google-java-indent.nvim` or another Java indentation plugin that sets Neovim's `indentexpr`.
+Lathe formatting remains the authoritative formatter;
+the indentation plugin only controls where Neovim places the cursor while editing.
+
+With `lazy.nvim`, a local checkout can be loaded like this:
+
+```lua
+{
+  dir = vim.fn.expand("~/git/google-java-indent.nvim"),
+  ft = "java",
+}
+```
+
+For paired braces, use a local editing plugin such as `nvim-autopairs`:
+
+```lua
+{
+  "windwp/nvim-autopairs",
+  event = "InsertEnter",
+  opts = {
+    check_ts = true,
+  },
+}
+```
+
 ## Opt-out and CI
 
 Lathe is active by default and skips automatically in CI environments:
