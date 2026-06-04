@@ -760,7 +760,6 @@ class CompletionEngineTest {
             "false");
   }
 
-  @Disabled
   @Test
   void keywords_variableInitializer_afterCompleteExpression_noStatementKeywords() {
     assertThat(
@@ -776,7 +775,6 @@ class CompletionEngineTest {
         .doesNotContain("if", "for", "while", "do", "switch", "try", "throw", "assert");
   }
 
-  @Disabled
   @Test
   void keywords_methodCallArgument_afterCompleteExpression_noStatementKeywords() {
     assertThat(

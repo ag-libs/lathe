@@ -62,6 +62,14 @@ final class SentinelParser {
       return ParsedSentinel.invalid(injected.prefix(), injected.receiverText(), version);
     }
 
+    if (injected.prefix().isEmpty() && !injected.hasDot()) {
+      final long sentinelStart = sourcePositions.getStartPosition(cu, sentinelPath.getLeaf());
+      if (sentinelStart >= 0
+          && expressionEndsBefore(sentinelStart, cu, sourcePositions, injected.injectedContent())) {
+        return ParsedSentinel.invalid(injected.prefix(), injected.receiverText(), version);
+      }
+    }
+
     final var importTree = enclosingImport(sentinelPath);
     if (importTree != null) {
       final var parsed =
@@ -156,6 +164,47 @@ final class SentinelParser {
         () ->
             "[sentinel-parse] valid ctx=%s prefix=|%s| receiver=|%s|"
                 .formatted(parsed.sentinelContext(), parsed.prefix(), parsed.receiverText()));
+  }
+
+  private static boolean expressionEndsBefore(
+      final long sentinelStart,
+      final CompilationUnitTree cu,
+      final SourcePositions positions,
+      final String source) {
+    final var found = new java.util.concurrent.atomic.AtomicBoolean();
+    new TreePathScanner<Void, Void>() {
+      @Override
+      public Void visitMethodInvocation(final MethodInvocationTree node, final Void unused) {
+        checkEnd(node);
+        return super.visitMethodInvocation(node, unused);
+      }
+
+      @Override
+      public Void visitArrayAccess(final ArrayAccessTree node, final Void unused) {
+        checkEnd(node);
+        return super.visitArrayAccess(node, unused);
+      }
+
+      private void checkEnd(final Tree node) {
+        if (found.get()) {
+          return;
+        }
+
+        final long end = positions.getEndPosition(cu, node);
+        if (end <= 0 || end > sentinelStart) {
+          return;
+        }
+
+        for (long i = end; i < sentinelStart; i++) {
+          if (!Character.isWhitespace(source.charAt((int) i))) {
+            return;
+          }
+        }
+
+        found.set(true);
+      }
+    }.scan(cu, null);
+    return found.get();
   }
 
   private static ImportTree enclosingImport(final TreePath path) {
