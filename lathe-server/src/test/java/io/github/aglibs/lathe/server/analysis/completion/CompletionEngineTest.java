@@ -704,6 +704,75 @@ class CompletionEngineTest {
         .contains("Math");
   }
 
+  @Disabled
+  @Test
+  void typeReference_constructorCall_innerClassFromSameFile() {
+    // Inner classes defined in the same compilation unit should appear for new I§
+    final var items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    static class Inner {}
+                    static class IrrelevantOther {}
+                    void m() {
+                        new I§
+                    }
+                }"""));
+    assertThat(items).contains("Inner");
+  }
+
+  @Disabled
+  @Test
+  void typeReference_constructorCall_privateStaticInnerClass() {
+    // Private inner classes are still valid in new§ within the same top-level class
+    final var items =
+        labels(
+            fixture.complete(
+                """
+                class Outer {
+                    private static class Builder {}
+                    void m() {
+                        new B§
+                    }
+                }"""));
+    assertThat(items).contains("Builder");
+  }
+
+  @Disabled
+  @Test
+  void equalityComparison_enumLhs_suggestsEnumConstants() {
+    final var items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    enum Status { ACTIVE, INACTIVE, PENDING }
+                    void m(Status s) {
+                        if (s == §) {}
+                    }
+                }"""));
+    assertThat(items).contains("Status.ACTIVE", "Status.INACTIVE", "Status.PENDING");
+    assertThat(items).doesNotContain("if", "for", "while");
+  }
+
+  @Disabled
+  @Test
+  void equalityComparison_enumLhs_suggestsUnqualifiedConstantsWithStaticImport() {
+    // When the enum is in scope, constants should also appear unqualified
+    final var items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    enum Status { ACTIVE, INACTIVE }
+                    void m(Status s) {
+                        if (s == S§) {}
+                    }
+                }"""));
+    assertThat(items).contains("Status.ACTIVE", "Status.INACTIVE");
+  }
+
   @Test
   void returnPosition_nonAssignableLocal_excluded() {
     final var items =
@@ -718,6 +787,73 @@ class CompletionEngineTest {
                     }
                 }"""));
     assertThat(items).contains("text").doesNotContain("sb");
+  }
+
+  @Disabled
+  @Test
+  void simpleName_innerClassMethod_localsVisible() {
+    // Locals declared in an inner class method must appear at usage sites within that method
+    final var items =
+        labels(
+            fixture.complete(
+                """
+                class Outer {
+                    private static class Inner {
+                        static void accept(String s) {}
+                        void process(int x) {
+                            switch (x) {
+                                case 1:
+                                    final String localVar = "hello";
+                                    accept(loc§);
+                                    break;
+                            }
+                        }
+                    }
+                }"""));
+    assertThat(items).contains("localVar");
+  }
+
+  @Test
+  void simpleName_switchCaseLocal_visibleAtUsageSite() {
+    // Local declared inside a switch-case arm must appear in completions at the usage site
+    final var items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    static void accept(String s) {}
+                    void m(int x) {
+                        switch (x) {
+                            case 1:
+                                final String result = "hello";
+                                accept(res§);
+                                break;
+                        }
+                    }
+                }"""));
+    assertThat(items).contains("result");
+  }
+
+  @Test
+  void simpleName_switchCaseLocal_forLoopNestedInSwitch() {
+    // Local declared inside for-loop inside switch-case arm must be visible
+    final var items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    static void accept(String s) {}
+                    void m(int x) {
+                        switch (x) {
+                            case 1:
+                                for (String item : java.util.List.of("a")) {
+                                    accept(it§);
+                                }
+                                break;
+                        }
+                    }
+                }"""));
+    assertThat(items).contains("item");
   }
 
   @Test
