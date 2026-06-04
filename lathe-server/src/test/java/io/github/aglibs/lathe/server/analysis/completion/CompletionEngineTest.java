@@ -657,6 +657,25 @@ class CompletionEngineTest {
   }
 
   @Test
+  void assignment_nonAssignableType_excluded() {
+    final var items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    static class Foo {}
+                    Foo getFoo() { return null; }
+                    boolean isReady() { return true; }
+                    void m() {
+                        Foo x = new Foo();
+                        x = §
+                    }
+                }"""));
+    assertThat(items).contains("getFoo()");
+    assertThat(items).doesNotContain("isReady()", "true", "false");
+  }
+
+  @Test
   void returnPosition_nonAssignableLocal_excluded() {
     final var items =
         labels(
@@ -670,6 +689,44 @@ class CompletionEngineTest {
                     }
                 }"""));
     assertThat(items).contains("text").doesNotContain("sb");
+  }
+
+  @Test
+  void variableInitializer_userDefinedReferenceType_nonAssignableCandidatesExcluded() {
+    final var items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    static class Foo {}
+                    Foo getFoo() { return null; }
+                    void doSomething() {}
+                    boolean isReady() { return true; }
+                    String getString() { return ""; }
+                    StringBuilder getSb() { return null; }
+                    void m() {
+                        Foo x = §
+                    }
+                }"""));
+    assertThat(items).contains("getFoo()");
+    assertThat(items)
+        .doesNotContain("doSomething()", "isReady()", "true", "false", "getString()", "getSb()");
+  }
+
+  @Test
+  void variableInitializer_unresolvedReferenceType_voidMethodAndBooleansExcluded() {
+    final var items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    void doSomething() {}
+                    boolean isReady() { return true; }
+                    void m() {
+                        UnknownFoo x = §
+                    }
+                }"""));
+    assertThat(items).doesNotContain("doSomething()", "isReady()", "true", "false");
   }
 
   @Test
@@ -1435,6 +1492,25 @@ class CompletionEngineTest {
     assertThat(items).contains("text").doesNotContain("sb");
   }
 
+  @Test
+  void argumentPosition_referenceTypeParam_booleansExcluded() {
+    final var items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    static class Foo {}
+                    Foo getFoo() { return null; }
+                    boolean isReady() { return true; }
+                    void accept(Foo f) {}
+                    void m() {
+                        accept(§);
+                    }
+                }"""));
+    assertThat(items).contains("getFoo()");
+    assertThat(items).doesNotContain("isReady()", "true", "false");
+  }
+
   // ── constructor call position ─────────────────────────────────────────────────
 
   @Test
@@ -1623,6 +1699,34 @@ class CompletionEngineTest {
                         }
                     }""")))
         .anyMatch(l -> l.startsWith("append"));
+  }
+
+  @Test
+  void argumentPosition_insideChainInsideSuper_booleansExcluded() {
+    final var items =
+        labels(
+            fixture.complete(
+                """
+                class Base {
+                    Base(String s) {}
+                }
+                class Child extends Base {
+                    static class Builder {
+                        Builder value(String s) { return this; }
+                        String build() { return ""; }
+                    }
+                    static Builder builder() { return new Builder(); }
+                    String getStr() { return ""; }
+                    boolean isReady() { return true; }
+                    Child(String input) {
+                        super(
+                            builder()
+                                .value(§)
+                                .build());
+                    }
+                }"""));
+    assertThat(items).contains("getStr()");
+    assertThat(items).doesNotContain("isReady()", "true", "false");
   }
 
   @Test

@@ -122,10 +122,15 @@ final class CompletionCandidateRanker {
     }
 
     final TypeMirror vt = c.valueType();
-    if (vt == null
-        || vt.getKind().isPrimitive()
-        || vt.getKind() == TypeKind.ERROR
-        || vt.getKind() == TypeKind.NONE) {
+    if (vt == null || vt.getKind() == TypeKind.ERROR || vt.getKind() == TypeKind.NONE) {
+      return true;
+    }
+
+    if (vt.getKind() == TypeKind.BOOLEAN) {
+      return booleanCompatible(expected, ctx);
+    }
+
+    if (vt.getKind().isPrimitive()) {
       return true;
     }
 

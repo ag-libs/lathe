@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
 import com.sun.source.tree.ArrayAccessTree;
+import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.ErroneousTree;
 import com.sun.source.tree.IdentifierTree;
@@ -77,6 +78,11 @@ final class TypeResolver {
       final var argValue = resolveArgumentValue(site, cursorLine, snapshot);
       if (!(argValue instanceof ExpectedValue.Unknown)) {
         return argValue;
+      }
+
+      final var posValue = resolveArgumentValueByPosition(site, snapshot);
+      if (!(posValue instanceof ExpectedValue.Unknown)) {
+        return posValue;
       }
     }
 
@@ -158,6 +164,89 @@ final class TypeResolver {
     return new ExpectedValue.Unknown();
   }
 
+  private static ExpectedValue resolveArgumentValueByPosition(
+      final CompletionSite site, final AttributedFileAnalysis snapshot) {
+    final var methodPath =
+        findScopeMethodPath(
+            site.enclosingClass(), site.enclosingMethod(), site.cursorOffset(), snapshot);
+    if (methodPath == null) {
+      return new ExpectedValue.Unknown();
+    }
+
+    final var result = new AtomicReference<TypeMirror>();
+    new TreePathScanner<Void, Void>() {
+      @Override
+      public Void visitMethodInvocation(final MethodInvocationTree node, final Void unused) {
+        if (result.get() != null) {
+          return super.visitMethodInvocation(node, unused);
+        }
+
+        if (!site.enclosingMethodName().equals(methodSelectName(node.getMethodSelect()))) {
+          return super.visitMethodInvocation(node, unused);
+        }
+
+        final var positions = snapshot.trees().getSourcePositions();
+        final long start = positions.getStartPosition(snapshot.tree(), node);
+        final long end = positions.getEndPosition(snapshot.tree(), node);
+        if (start < 0 || start >= site.cursorOffset() || end < site.cursorOffset()) {
+          return super.visitMethodInvocation(node, unused);
+        }
+
+        if (!(node.getMethodSelect() instanceof final MemberSelectTree ms)) {
+          return super.visitMethodInvocation(node, unused);
+        }
+
+        final var receiverPath = new TreePath(getCurrentPath(), ms.getExpression());
+        final TypeMirror receiverType = snapshot.trees().getTypeMirror(receiverPath);
+        if (receiverType == null || receiverType.getKind() != TypeKind.DECLARED) {
+          return super.visitMethodInvocation(node, unused);
+        }
+
+        final var receiverEl = snapshot.types().asElement(receiverType);
+        if (!(receiverEl instanceof final TypeElement receiverTypeEl)) {
+          return super.visitMethodInvocation(node, unused);
+        }
+
+        for (final var el : snapshot.elements().getAllMembers(receiverTypeEl)) {
+          if (el.getKind() != ElementKind.METHOD) {
+            continue;
+          }
+
+          if (!site.enclosingMethodName().equals(el.getSimpleName().toString())) {
+            continue;
+          }
+
+          final var method = (ExecutableElement) el;
+          final var params = method.getParameters();
+          final int idx =
+              method.isVarArgs() ? Math.min(site.argIndex(), params.size() - 1) : site.argIndex();
+          if (idx >= 0 && idx < params.size()) {
+            result.set(params.get(idx).asType());
+            return null;
+          }
+        }
+
+        return super.visitMethodInvocation(node, unused);
+      }
+    }.scan(methodPath, null);
+
+    return result.get() != null
+        ? new ExpectedValue.Type(result.get())
+        : new ExpectedValue.Unknown();
+  }
+
+  private static String methodSelectName(final Tree methodSelect) {
+    if (methodSelect instanceof final IdentifierTree id) {
+      return id.getName().toString();
+    }
+
+    if (methodSelect instanceof final MemberSelectTree ms) {
+      return ms.getIdentifier().toString();
+    }
+
+    return null;
+  }
+
   private static ExpectedValue resolveInitializerValue(
       final CompletionSite site, final AttributedFileAnalysis snapshot) {
     if (site.enclosingMethod() == null) {
@@ -210,6 +299,28 @@ final class TypeResolver {
         }
 
         return super.visitReturn(node, unused);
+      }
+
+      @Override
+      public Void visitAssignment(final AssignmentTree node, final Void unused) {
+        if (result.get() != null) {
+          return super.visitAssignment(node, unused);
+        }
+
+        final var positions = snapshot.trees().getSourcePositions();
+        final long start = positions.getStartPosition(snapshot.tree(), node);
+        final long end = positions.getEndPosition(snapshot.tree(), node);
+
+        if (start >= 0 && start < site.cursorOffset() && end >= site.cursorOffset()) {
+          final var lhsPath = new TreePath(getCurrentPath(), node.getVariable());
+          final TypeMirror tm = snapshot.trees().getTypeMirror(lhsPath);
+
+          if (tm != null && tm.getKind() != TypeKind.ERROR && tm.getKind() != TypeKind.NONE) {
+            result.set(tm);
+          }
+        }
+
+        return super.visitAssignment(node, unused);
       }
     }.scan(methodPath, null);
 
