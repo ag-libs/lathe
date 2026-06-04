@@ -704,7 +704,6 @@ class CompletionEngineTest {
         .contains("Math");
   }
 
-  @Disabled
   @Test
   void typeReference_constructorCall_innerClassFromSameFile() {
     // Inner classes defined in the same compilation unit should appear for new I§
@@ -722,7 +721,6 @@ class CompletionEngineTest {
     assertThat(items).contains("Inner");
   }
 
-  @Disabled
   @Test
   void typeReference_constructorCall_privateStaticInnerClass() {
     // Private inner classes are still valid in new§ within the same top-level class
@@ -739,7 +737,6 @@ class CompletionEngineTest {
     assertThat(items).contains("Builder");
   }
 
-  @Disabled
   @Test
   void equalityComparison_enumLhs_suggestsEnumConstants() {
     final var items =
@@ -756,7 +753,6 @@ class CompletionEngineTest {
     assertThat(items).doesNotContain("if", "for", "while");
   }
 
-  @Disabled
   @Test
   void equalityComparison_enumLhs_suggestsUnqualifiedConstantsWithStaticImport() {
     // When the enum is in scope, constants should also appear unqualified
@@ -789,7 +785,6 @@ class CompletionEngineTest {
     assertThat(items).contains("text").doesNotContain("sb");
   }
 
-  @Disabled
   @Test
   void simpleName_innerClassMethod_localsVisible() {
     // Locals declared in an inner class method must appear at usage sites within that method

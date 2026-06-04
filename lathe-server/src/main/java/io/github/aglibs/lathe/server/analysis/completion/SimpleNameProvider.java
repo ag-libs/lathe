@@ -134,24 +134,31 @@ final class SimpleNameProvider {
     new TreePathScanner<Void, Void>() {
       @Override
       public Void visitClass(final ClassTree node, final Void unused) {
-        return className.equals(node.getSimpleName().toString())
-            ? super.visitClass(node, unused)
-            : null;
+        return super.visitClass(node, unused);
       }
 
       @Override
       public Void visitMethod(final MethodTree node, final Void unused) {
-        if (methodName.equals(node.getName().toString())) {
-          final var current = getCurrentPath();
-          final var pos = snapshot.trees().getSourcePositions();
-          final long start = pos.getStartPosition(snapshot.tree(), node);
-          final long end = pos.getEndPosition(snapshot.tree(), node);
-          if (cursorOffset >= start && cursorOffset <= end) {
-            result.set(current);
-          } else if (result.get() == null) {
-            result.set(current);
-          }
+        if (!methodName.equals(node.getName().toString())) {
+          return null;
         }
+
+        final var parentLeaf = getCurrentPath().getParentPath().getLeaf();
+        if (!(parentLeaf instanceof final ClassTree cls)
+            || !className.equals(cls.getSimpleName().toString())) {
+          return null;
+        }
+
+        final var current = getCurrentPath();
+        final var pos = snapshot.trees().getSourcePositions();
+        final long start = pos.getStartPosition(snapshot.tree(), node);
+        final long end = pos.getEndPosition(snapshot.tree(), node);
+        if (cursorOffset >= start && cursorOffset <= end) {
+          result.set(current);
+        } else if (result.get() == null) {
+          result.set(current);
+        }
+
         return null;
       }
     }.scan(snapshot.tree(), null);

@@ -1,7 +1,9 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
+import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.ImportTree;
 import com.sun.source.tree.Scope;
+import com.sun.source.util.TreePathScanner;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
@@ -137,11 +139,14 @@ public final class CompletionEngine {
     }
 
     final var javacCandidates = completeJavacSimpleName(parsed, injected, req, semanticContext);
+    final var enumCandidates = enumEqualityCandidates(parsed, injected.prefix(), semanticContext);
     final var keywordCandidates =
         KeywordProvider.suggestCandidates(parsed, injected.prefix(), injected.context());
     final List<CompletionItem> items =
         presentSimpleNameCandidates(
-            Stream.concat(javacCandidates.stream(), keywordCandidates.stream()).toList(),
+            Stream.of(javacCandidates, enumCandidates, keywordCandidates)
+                .flatMap(List::stream)
+                .toList(),
             semanticContext);
 
     if (!hasUppercasePrefix(injected)) {
@@ -205,6 +210,27 @@ public final class CompletionEngine {
             injected.prefix(),
             req.cursorOffset(),
             semanticContext);
+  }
+
+  private static List<CompletionCandidate> enumEqualityCandidates(
+      final ParsedSentinel parsed,
+      final String prefix,
+      final SemanticCompletionContext semanticContext) {
+    if (!parsed.inEqualityComparison() || semanticContext == null) {
+      return List.of();
+    }
+
+    if (!(semanticContext.expectedValue() instanceof ExpectedValue.Type(final TypeMirror type))) {
+      return List.of();
+    }
+
+    final var el = semanticContext.analysis().types().asElement(type);
+    if (!(el instanceof final TypeElement typeEl) || typeEl.getKind() != ElementKind.ENUM) {
+      return List.of();
+    }
+
+    return new CandidateGenerator(semanticContext.analysis())
+        .proposeEnumConstantCandidates(typeEl, prefix);
   }
 
   private static List<CompletionItem> presentSimpleNameCandidates(
@@ -525,8 +551,60 @@ public final class CompletionEngine {
 
   private CompletionOutcome completeSimpleNameTypeReferenceWithLang(
       final SentinelResult injected, final CompletionRequest req, final TypeReferenceRole role) {
-    return mergeLangTypes(
-        injected.prefix(), req, completeSimpleNameTypeReference(injected, req, role), role);
+    final var typeIndexOutcome = completeSimpleNameTypeReference(injected, req, role);
+    final var withLang = mergeLangTypes(injected.prefix(), req, typeIndexOutcome, role);
+    return mergeInFileTypes(injected.prefix(), req, withLang, role);
+  }
+
+  private CompletionOutcome mergeInFileTypes(
+      final String prefix,
+      final CompletionRequest req,
+      final CompletionOutcome base,
+      final TypeReferenceRole role) {
+    if (req.cached() == null || req.cached().analysis() == null) {
+      return base;
+    }
+
+    final List<CompletionCandidate> candidates =
+        proposeInFileTypeCandidates(prefix, req.cached().analysis(), req.cursorOffset(), role);
+    if (candidates.isEmpty()) {
+      return base;
+    }
+
+    final List<CompletionItem> inFileItems =
+        candidates.stream().map(CompletionItemPresenter::present).toList();
+    final var merged = new LinkedHashMap<String, CompletionItem>();
+    base.items().forEach(i -> merged.put(completionIdentity(i), i));
+    inFileItems.forEach(i -> merged.putIfAbsent(completionIdentity(i), i));
+    return new CompletionOutcome(
+        List.copyOf(merged.values()), base.freshAnalysis(), base.incomplete());
+  }
+
+  private static List<CompletionCandidate> proposeInFileTypeCandidates(
+      final String prefix,
+      final AttributedFileAnalysis analysis,
+      final int cursorOffset,
+      final TypeReferenceRole role) {
+    if (analysis.tree() == null) {
+      return List.of();
+    }
+
+    final var scope = TypeResolver.resolveScope(analysis, cursorOffset);
+    final List<CompletionCandidate> result = new ArrayList<>();
+    new TreePathScanner<Void, Void>() {
+      @Override
+      public Void visitClass(final ClassTree node, final Void unused) {
+        final var el = analysis.trees().getElement(getCurrentPath());
+        if (el instanceof final TypeElement te
+            && te.getSimpleName().toString().startsWith(prefix)
+            && typeReferenceRoleAllows(te, analysis, scope, role)) {
+          result.add(CandidateFactory.typeElementCandidate(te));
+        }
+
+        return super.visitClass(node, unused);
+      }
+    }.scan(analysis.tree(), null);
+    return result;
   }
 
   private static boolean typeIndexRoleAllows(

@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.analysis.completion;
 
 import com.sun.source.tree.ArrayAccessTree;
 import com.sun.source.tree.AssignmentTree;
+import com.sun.source.tree.BinaryTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.ErroneousTree;
 import com.sun.source.tree.IdentifierTree;
@@ -353,6 +354,36 @@ final class TypeResolver {
 
         return super.visitAssignment(node, unused);
       }
+
+      @Override
+      public Void visitBinary(final BinaryTree node, final Void unused) {
+        if (result.get() != null) {
+          return super.visitBinary(node, unused);
+        }
+
+        final var kind = node.getKind();
+        if (kind != Tree.Kind.EQUAL_TO && kind != Tree.Kind.NOT_EQUAL_TO) {
+          return super.visitBinary(node, unused);
+        }
+
+        if (cursorOutside(snapshot, node, site.cursorOffset())) {
+          return super.visitBinary(node, unused);
+        }
+
+        final var lhs = node.getLeftOperand();
+        final long lhsEnd =
+            snapshot.trees().getSourcePositions().getEndPosition(snapshot.tree(), lhs);
+        final Tree other = site.cursorOffset() > lhsEnd ? lhs : node.getRightOperand();
+        final var otherPath = new TreePath(getCurrentPath(), other);
+        final TypeMirror otherType = snapshot.trees().getTypeMirror(otherPath);
+        if (otherType != null
+            && otherType.getKind() != TypeKind.ERROR
+            && otherType.getKind() != TypeKind.NONE) {
+          result.set(otherType);
+        }
+
+        return super.visitBinary(node, unused);
+      }
     }.scan(methodPath, null);
 
     return result.get() != null
@@ -441,23 +472,30 @@ final class TypeResolver {
     new TreePathScanner<Void, Void>() {
       @Override
       public Void visitClass(final ClassTree node, final Void unused) {
-        return className != null && className.equals(node.getSimpleName().toString())
-            ? super.visitClass(node, unused)
-            : null;
+        return super.visitClass(node, unused);
       }
 
       @Override
       public Void visitMethod(final MethodTree node, final Void unused) {
-        if (methodName.equals(node.getName().toString())) {
-          final var current = getCurrentPath();
-          final var pos = snapshot.trees().getSourcePositions();
-          final long start = pos.getStartPosition(snapshot.tree(), node);
-          final long end = pos.getEndPosition(snapshot.tree(), node);
-          if (cursorOffset >= start && cursorOffset <= end) {
-            result.set(current);
-          } else if (result.get() == null) {
-            result.set(current);
-          }
+        if (!methodName.equals(node.getName().toString())) {
+          return null;
+        }
+
+        final var parentLeaf = getCurrentPath().getParentPath().getLeaf();
+        if (className != null
+            && !(parentLeaf instanceof final ClassTree cls
+                && className.equals(cls.getSimpleName().toString()))) {
+          return null;
+        }
+
+        final var current = getCurrentPath();
+        final var pos = snapshot.trees().getSourcePositions();
+        final long start = pos.getStartPosition(snapshot.tree(), node);
+        final long end = pos.getEndPosition(snapshot.tree(), node);
+        if (cursorOffset >= start && cursorOffset <= end) {
+          result.set(current);
+        } else if (result.get() == null) {
+          result.set(current);
         }
 
         return null;
@@ -495,19 +533,22 @@ final class TypeResolver {
     new TreePathScanner<Void, Void>() {
       @Override
       public Void visitClass(final ClassTree node, final Void unused) {
-        if (className.equals(node.getSimpleName().toString())) {
-          return super.visitClass(node, unused);
-        }
-
-        return null;
+        return super.visitClass(node, unused);
       }
 
       @Override
       public Void visitMethod(final MethodTree node, final Void unused) {
-        if (result.get() == null && methodName.equals(node.getName().toString())) {
-          result.set(getCurrentPath());
+        if (result.get() != null || !methodName.equals(node.getName().toString())) {
+          return null;
         }
 
+        final var parentLeaf = getCurrentPath().getParentPath().getLeaf();
+        if (!(parentLeaf instanceof final ClassTree cls)
+            || !className.equals(cls.getSimpleName().toString())) {
+          return null;
+        }
+
+        result.set(getCurrentPath());
         return null;
       }
     }.scan(snapshot.tree(), null);
