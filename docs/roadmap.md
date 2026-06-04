@@ -70,6 +70,9 @@ Use these as the starting point when reprioritizing or slicing new work:
 
 - [lathe-google-indent.md](planned/lathe-google-indent.md) — conservative `textDocument/onTypeFormatting`
   indentation hints using google-java-format.
+- [lathe-import-optimization.md](planned/lathe-import-optimization.md) —
+  semantic import cleanup before full-document formatting,
+  including unused import removal and conservative wildcard expansion.
 - [lathe-missing-import-code-action.md](planned/lathe-missing-import-code-action.md) —
   LSP quick-fix code actions for unresolved types,
   reusing the existing completion import insertion behavior without replacing completion-side edits.
@@ -115,6 +118,14 @@ Add `textDocument/codeAction` quick fixes for unresolved types that return the s
 `WorkspaceEdit`.
 Users can then invoke "Import ..." from diagnostics without changing completion behavior.
 See [lathe-missing-import-code-action.md](planned/lathe-missing-import-code-action.md).
+
+**Import optimization**
+Run conservative semantic import cleanup before full-document formatting:
+deduplicate imports,
+remove unused explicit imports,
+sort normal/static groups,
+and replace wildcard imports with direct imports when javac can prove the used symbols.
+See [lathe-import-optimization.md](planned/lathe-import-optimization.md).
 
 **Editor integrations**
 Keep Neovim/VS Code clients thin: they launch `~/.cache/lathe/current/lathe-launcher.sh`
