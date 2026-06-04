@@ -40,8 +40,13 @@ Architecture is documented in [lathe-server-data-flow-recipe.md](done/lathe-serv
   Handles member access, simple name, argument position, type reference, import, static import,
   constructor call, lambda body, and variable declaration contexts.
   Keyword completion and argument-position type ranking are in place.
+  Typed-slot filtering excludes candidates not assignable to the expected type across variable
+  initializers, return positions, assignment RHS, method arguments (including chained receivers),
+  and constructor arguments; boolean candidates follow the same gate as `true`/`false` keywords.
+  Completions are suppressed when the cursor sits immediately after a complete expression with no
+  new token started (`m()§`), detected via AST source positions in `SentinelParser`.
   All planned behavioural gaps are closed; Gap J (method references) is deferred.
-  See [completion-design.md](done/completion-design.md).
+  See [completion-design.md](done/completion-design.md) and [completion-gap-fixes.md](done/completion-gap-fixes.md).
 - **Type index** — `lathe:sync` builds static type-index shards for dependency JARs and the JDK runtime image
   (`jrt:/`), writes shard paths into `workspace.json`,
   and the server loads and merges them with in-memory reactor output shards in `WorkspaceTypeIndex`.
