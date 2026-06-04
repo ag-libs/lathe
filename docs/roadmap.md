@@ -70,6 +70,9 @@ Use these as the starting point when reprioritizing or slicing new work:
 
 - [lathe-google-indent.md](planned/lathe-google-indent.md) — conservative `textDocument/onTypeFormatting`
   indentation hints using google-java-format.
+- [lathe-missing-import-code-action.md](planned/lathe-missing-import-code-action.md) —
+  LSP quick-fix code actions for unresolved types,
+  reusing the existing completion import insertion behavior without replacing completion-side edits.
 - [lathe-reactor-type-index.md](planned/lathe-reactor-type-index.md) — implemented reactor type-index design and
   remaining follow-ups such as generated-source cleanup and SNAPSHOT freshness.
 - [lathe-run-test-debug.md](planned/lathe-run-test-debug.md) — Maven-delegated run, test, debug commands and streamed
@@ -106,15 +109,22 @@ to support staleness detection, UX hints, and faster server startup without dupl
 `WorkspaceManifestData` currently holds only schema version, workspace root, JDK source, and dependency sources;
 `WorkspaceModules` still discovers modules by scanning `lsp-params-*.json` at startup.
 
-**Run, test, and debug**
-Adopt the design in [lathe-run-test-debug.md](planned/lathe-run-test-debug.md) to let the server manage Maven test/run executions
-and stream results back to the editor as LSP notifications.
-Depends on distribution and stale-workspace handling being solid first.
+**Missing-import code action**
+Completion already inserts imports through completion item `additionalTextEdits`.
+Add `textDocument/codeAction` quick fixes for unresolved types that return the same import insertion as a
+`WorkspaceEdit`.
+Users can then invoke "Import ..." from diagnostics without changing completion behavior.
+See [lathe-missing-import-code-action.md](planned/lathe-missing-import-code-action.md).
 
 **Editor integrations**
 Keep Neovim/VS Code clients thin: they launch `~/.cache/lathe/current/lathe-launcher.sh`
 and ask the server for Lathe-specific state via custom LSP requests.
 No client-side project model parsing.
+
+**Run, test, and debug**
+Adopt the design in [lathe-run-test-debug.md](planned/lathe-run-test-debug.md) to let the server manage Maven test/run executions
+and stream results back to the editor as LSP notifications.
+Depends on distribution and stale-workspace handling being solid first.
 
 **`lathe-source://` URI scheme for external sources**
 Definition jumps into JDK and dependency sources currently return `file://` URIs pointing
