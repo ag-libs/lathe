@@ -593,9 +593,9 @@ class CompletionEngineTest {
             "var");
     final List<String> enumConstructorArgumentItems =
         labels(fixture.complete("enum Kind { FIRST(§); Kind(String value) {} }"));
-    assertThat(enumConstructorArgumentItems).contains("new", "null", "true", "false");
+    assertThat(enumConstructorArgumentItems).contains("new", "null");
     assertThat(enumConstructorArgumentItems)
-        .doesNotContain("if", "for", "while", "switch", "return", "throw", "var");
+        .doesNotContain("if", "for", "while", "switch", "return", "throw", "var", "true", "false");
   }
 
   @Test
@@ -640,7 +640,6 @@ class CompletionEngineTest {
     assertThat(returnItem.get().getSortText()).isEqualTo("0_return");
   }
 
-  @Disabled
   @Test
   void variableInitializer_nonAssignableLocal_excluded() {
     final var items =
@@ -657,7 +656,6 @@ class CompletionEngineTest {
     assertThat(items).contains("text").doesNotContain("sb");
   }
 
-  @Disabled
   @Test
   void returnPosition_nonAssignableLocal_excluded() {
     final var items =
@@ -1402,7 +1400,6 @@ class CompletionEngineTest {
     assertThat(strVarItem.get().getSortText()).isLessThan(intVarItem.get().getSortText());
   }
 
-  @Disabled
   @Test
   void argumentPosition_nonAssignableLocal_excluded() {
     final var items =
@@ -1420,7 +1417,6 @@ class CompletionEngineTest {
     assertThat(items).contains("text").doesNotContain("sb");
   }
 
-  @Disabled
   @Test
   void argumentPosition_nonAssignableLocal_excludedInReceiverQualifiedCall() {
     final var items =
@@ -1499,7 +1495,6 @@ class CompletionEngineTest {
         .doesNotContainAnyElementsOf(List.of("wait", "finalize", "notify", "notifyAll"));
   }
 
-  @Disabled
   @Test
   void constructorCallArgument_nonAssignableLocal_excluded() {
     final var items =

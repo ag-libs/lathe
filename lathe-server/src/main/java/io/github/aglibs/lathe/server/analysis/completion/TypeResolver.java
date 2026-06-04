@@ -10,6 +10,7 @@ import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.ParenthesizedTree;
+import com.sun.source.tree.ReturnTree;
 import com.sun.source.tree.Scope;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
@@ -48,6 +49,22 @@ final class TypeResolver {
         .filter(el -> el.getKind() == ElementKind.METHOD)
         .filter(el -> methodName.equals(el.getSimpleName().toString()))
         .anyMatch(el -> ((ExecutableElement) el).getReturnType().getKind() != TypeKind.VOID);
+  }
+
+  private static TypeMirror resolveMethodReturnType(
+      final String className, final String methodName, final AttributedFileAnalysis snapshot) {
+    final var classEl = findClassElement(className, snapshot);
+    if (classEl == null) {
+      return null;
+    }
+
+    return snapshot.elements().getAllMembers(classEl).stream()
+        .filter(el -> el.getKind() == ElementKind.METHOD)
+        .filter(el -> methodName.equals(el.getSimpleName().toString()))
+        .map(el -> ((ExecutableElement) el).getReturnType())
+        .filter(t -> t.getKind() != TypeKind.VOID)
+        .findFirst()
+        .orElse(null);
   }
 
   static ExpectedValue resolveExpectedValue(
@@ -110,7 +127,35 @@ final class TypeResolver {
       }
     }
 
-    return methodFound ? new ExpectedValue.NoSlot() : new ExpectedValue.Unknown();
+    if (methodFound) {
+      return new ExpectedValue.NoSlot();
+    }
+
+    return resolveConstructorArgumentValue(site, snapshot);
+  }
+
+  private static ExpectedValue resolveConstructorArgumentValue(
+      final CompletionSite site, final AttributedFileAnalysis snapshot) {
+    final var classEl = findClassElement(site.enclosingMethodName(), snapshot);
+    if (classEl == null) {
+      return new ExpectedValue.Unknown();
+    }
+
+    for (final var el : classEl.getEnclosedElements()) {
+      if (el.getKind() != ElementKind.CONSTRUCTOR) {
+        continue;
+      }
+
+      final var ctor = (ExecutableElement) el;
+      final var params = ctor.getParameters();
+      final int idx =
+          ctor.isVarArgs() ? Math.min(site.argIndex(), params.size() - 1) : site.argIndex();
+      if (idx >= 0 && idx < params.size()) {
+        return new ExpectedValue.Type(params.get(idx).asType());
+      }
+    }
+
+    return new ExpectedValue.Unknown();
   }
 
   private static ExpectedValue resolveInitializerValue(
@@ -145,6 +190,26 @@ final class TypeResolver {
         }
 
         return super.visitVariable(node, unused);
+      }
+
+      @Override
+      public Void visitReturn(final ReturnTree node, final Void unused) {
+        if (result.get() != null) {
+          return super.visitReturn(node, unused);
+        }
+
+        final var positions = snapshot.trees().getSourcePositions();
+        final long start = positions.getStartPosition(snapshot.tree(), node);
+        final long end = positions.getEndPosition(snapshot.tree(), node);
+        if (start >= 0 && start < site.cursorOffset() && end >= site.cursorOffset()) {
+          final TypeMirror ret =
+              resolveMethodReturnType(site.enclosingClass(), site.enclosingMethod(), snapshot);
+          if (ret != null && ret.getKind() != TypeKind.VOID) {
+            result.set(ret);
+          }
+        }
+
+        return super.visitReturn(node, unused);
       }
     }.scan(methodPath, null);
 

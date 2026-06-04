@@ -411,11 +411,12 @@ final class SentinelParser {
     final var args = newClass.getArguments();
     final int argIndex =
         IntStream.range(0, args.size()).filter(j -> args.get(j) == sentinel).findFirst().orElse(-1);
+    final String constructorClassName = argIndex >= 0 ? newClass.getIdentifier().toString() : null;
     return new Classification(
         SentinelContext.CONSTRUCTOR_CALL,
         argIndex,
         null,
-        null,
+        constructorClassName,
         -1,
         null,
         null,
