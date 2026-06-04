@@ -617,7 +617,7 @@ public final class CompletionEngine {
   }
 
   private static boolean shouldOfferBareTypeReference(final SentinelResult injected) {
-    return hasUppercasePrefix(injected) && injected.context() == SentinelInjector.Context.STATEMENT;
+    return hasUppercasePrefix(injected);
   }
 
   private static CompletionOutcome mergeSimpleNameAndTypeIndexItems(

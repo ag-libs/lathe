@@ -676,6 +676,35 @@ class CompletionEngineTest {
   }
 
   @Test
+  void typeReference_variableInitializer_uppercasePrefixSuggestsTypes() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        void m() {
+                            Object x = M§
+                        }
+                    }""")))
+        .contains("Math");
+  }
+
+  @Test
+  void typeReference_methodArgument_uppercasePrefixSuggestsTypes() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        void accept(Object o) {}
+                        void m() {
+                            accept(M§);
+                        }
+                    }""")))
+        .contains("Math");
+  }
+
+  @Test
   void returnPosition_nonAssignableLocal_excluded() {
     final var items =
         labels(
