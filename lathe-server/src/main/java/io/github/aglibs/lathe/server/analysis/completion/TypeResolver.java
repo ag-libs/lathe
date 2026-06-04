@@ -35,37 +35,15 @@ final class TypeResolver {
 
   private TypeResolver() {}
 
+  // ── public API ────────────────────────────────────────────────────────────────
+
   static boolean isNonVoidMethod(
       final String className, final String methodName, final AttributedFileAnalysis snapshot) {
     if (className == null || methodName == null || snapshot.tree() == null) {
       return false;
     }
 
-    final var classEl = findClassElement(className, snapshot);
-    if (classEl == null) {
-      return false;
-    }
-
-    return snapshot.elements().getAllMembers(classEl).stream()
-        .filter(el -> el.getKind() == ElementKind.METHOD)
-        .filter(el -> methodName.equals(el.getSimpleName().toString()))
-        .anyMatch(el -> ((ExecutableElement) el).getReturnType().getKind() != TypeKind.VOID);
-  }
-
-  private static TypeMirror resolveMethodReturnType(
-      final String className, final String methodName, final AttributedFileAnalysis snapshot) {
-    final var classEl = findClassElement(className, snapshot);
-    if (classEl == null) {
-      return null;
-    }
-
-    return snapshot.elements().getAllMembers(classEl).stream()
-        .filter(el -> el.getKind() == ElementKind.METHOD)
-        .filter(el -> methodName.equals(el.getSimpleName().toString()))
-        .map(el -> ((ExecutableElement) el).getReturnType())
-        .filter(t -> t.getKind() != TypeKind.VOID)
-        .findFirst()
-        .orElse(null);
+    return resolveMethodReturnType(className, methodName, snapshot) != null;
   }
 
   static ExpectedValue resolveExpectedValue(
@@ -87,280 +65,6 @@ final class TypeResolver {
     }
 
     return resolveInitializerValue(site, snapshot);
-  }
-
-  private static ExpectedValue resolveArgumentValue(
-      final CompletionSite site, final int cursorLine, final AttributedFileAnalysis snapshot) {
-    final String receiver = site.enclosingReceiver();
-    final TypeElement ownerType;
-    if (receiver == null || "this".equals(receiver)) {
-      ownerType = findClassElement(site.enclosingClass(), snapshot);
-    } else if (receiver.indexOf('.') < 0
-        && receiver.indexOf('(') < 0
-        && receiver.indexOf(' ') < 0) {
-      final var localType =
-          scanForLocalDeclaration(
-              receiver, site.enclosingClass(), site.enclosingMethod(), cursorLine, snapshot);
-      final var receiverType =
-          localType != null ? localType : findFieldType(receiver, site.enclosingClass(), snapshot);
-      final var el = receiverType != null ? snapshot.types().asElement(receiverType) : null;
-      ownerType = el instanceof final TypeElement te ? te : null;
-    } else {
-      return new ExpectedValue.Unknown();
-    }
-
-    if (ownerType == null) {
-      return new ExpectedValue.Unknown();
-    }
-
-    boolean methodFound = false;
-    for (final var el : snapshot.elements().getAllMembers(ownerType)) {
-      if (el.getKind() != ElementKind.METHOD) {
-        continue;
-      }
-
-      if (!site.enclosingMethodName().equals(el.getSimpleName().toString())) {
-        continue;
-      }
-
-      methodFound = true;
-      final var method = (ExecutableElement) el;
-      final var params = method.getParameters();
-      final int idx =
-          method.isVarArgs() ? Math.min(site.argIndex(), params.size() - 1) : site.argIndex();
-      if (idx >= 0 && idx < params.size()) {
-        return new ExpectedValue.Type(params.get(idx).asType());
-      }
-    }
-
-    if (methodFound) {
-      return new ExpectedValue.NoSlot();
-    }
-
-    return resolveConstructorArgumentValue(site, snapshot);
-  }
-
-  private static ExpectedValue resolveConstructorArgumentValue(
-      final CompletionSite site, final AttributedFileAnalysis snapshot) {
-    final var classEl = findClassElement(site.enclosingMethodName(), snapshot);
-    if (classEl == null) {
-      return new ExpectedValue.Unknown();
-    }
-
-    for (final var el : classEl.getEnclosedElements()) {
-      if (el.getKind() != ElementKind.CONSTRUCTOR) {
-        continue;
-      }
-
-      final var ctor = (ExecutableElement) el;
-      final var params = ctor.getParameters();
-      final int idx =
-          ctor.isVarArgs() ? Math.min(site.argIndex(), params.size() - 1) : site.argIndex();
-      if (idx >= 0 && idx < params.size()) {
-        return new ExpectedValue.Type(params.get(idx).asType());
-      }
-    }
-
-    return new ExpectedValue.Unknown();
-  }
-
-  private static ExpectedValue resolveArgumentValueByPosition(
-      final CompletionSite site, final AttributedFileAnalysis snapshot) {
-    final var methodPath =
-        findScopeMethodPath(
-            site.enclosingClass(), site.enclosingMethod(), site.cursorOffset(), snapshot);
-    if (methodPath == null) {
-      return new ExpectedValue.Unknown();
-    }
-
-    final var result = new AtomicReference<TypeMirror>();
-    new TreePathScanner<Void, Void>() {
-      @Override
-      public Void visitMethodInvocation(final MethodInvocationTree node, final Void unused) {
-        if (result.get() != null) {
-          return super.visitMethodInvocation(node, unused);
-        }
-
-        if (!site.enclosingMethodName().equals(methodSelectName(node.getMethodSelect()))) {
-          return super.visitMethodInvocation(node, unused);
-        }
-
-        final var positions = snapshot.trees().getSourcePositions();
-        final long start = positions.getStartPosition(snapshot.tree(), node);
-        final long end = positions.getEndPosition(snapshot.tree(), node);
-        if (start < 0 || start >= site.cursorOffset() || end < site.cursorOffset()) {
-          return super.visitMethodInvocation(node, unused);
-        }
-
-        if (!(node.getMethodSelect() instanceof final MemberSelectTree ms)) {
-          return super.visitMethodInvocation(node, unused);
-        }
-
-        final var receiverPath = new TreePath(getCurrentPath(), ms.getExpression());
-        final TypeMirror receiverType = snapshot.trees().getTypeMirror(receiverPath);
-        if (receiverType == null || receiverType.getKind() != TypeKind.DECLARED) {
-          return super.visitMethodInvocation(node, unused);
-        }
-
-        final var receiverEl = snapshot.types().asElement(receiverType);
-        if (!(receiverEl instanceof final TypeElement receiverTypeEl)) {
-          return super.visitMethodInvocation(node, unused);
-        }
-
-        for (final var el : snapshot.elements().getAllMembers(receiverTypeEl)) {
-          if (el.getKind() != ElementKind.METHOD) {
-            continue;
-          }
-
-          if (!site.enclosingMethodName().equals(el.getSimpleName().toString())) {
-            continue;
-          }
-
-          final var method = (ExecutableElement) el;
-          final var params = method.getParameters();
-          final int idx =
-              method.isVarArgs() ? Math.min(site.argIndex(), params.size() - 1) : site.argIndex();
-          if (idx >= 0 && idx < params.size()) {
-            result.set(params.get(idx).asType());
-            return null;
-          }
-        }
-
-        return super.visitMethodInvocation(node, unused);
-      }
-    }.scan(methodPath, null);
-
-    return result.get() != null
-        ? new ExpectedValue.Type(result.get())
-        : new ExpectedValue.Unknown();
-  }
-
-  private static String methodSelectName(final Tree methodSelect) {
-    if (methodSelect instanceof final IdentifierTree id) {
-      return id.getName().toString();
-    }
-
-    if (methodSelect instanceof final MemberSelectTree ms) {
-      return ms.getIdentifier().toString();
-    }
-
-    return null;
-  }
-
-  private static ExpectedValue resolveInitializerValue(
-      final CompletionSite site, final AttributedFileAnalysis snapshot) {
-    if (site.enclosingMethod() == null) {
-      return new ExpectedValue.Unknown();
-    }
-
-    final var methodPath =
-        findScopeMethodPath(
-            site.enclosingClass(), site.enclosingMethod(), site.cursorOffset(), snapshot);
-    if (methodPath == null || ((MethodTree) methodPath.getLeaf()).getBody() == null) {
-      return new ExpectedValue.Unknown();
-    }
-
-    final var result = new AtomicReference<TypeMirror>();
-    new TreePathScanner<Void, Void>() {
-      @Override
-      public Void visitVariable(final VariableTree node, final Void unused) {
-        if (result.get() != null || node.getInitializer() == null) {
-          return super.visitVariable(node, unused);
-        }
-
-        final var positions = snapshot.trees().getSourcePositions();
-        final long start = positions.getStartPosition(snapshot.tree(), node);
-        final long end = positions.getEndPosition(snapshot.tree(), node);
-        if (start >= 0 && start < site.cursorOffset() && end >= site.cursorOffset()) {
-          final var el = snapshot.trees().getElement(getCurrentPath());
-          if (el != null) {
-            result.set(el.asType());
-          }
-        }
-
-        return super.visitVariable(node, unused);
-      }
-
-      @Override
-      public Void visitReturn(final ReturnTree node, final Void unused) {
-        if (result.get() != null) {
-          return super.visitReturn(node, unused);
-        }
-
-        final var positions = snapshot.trees().getSourcePositions();
-        final long start = positions.getStartPosition(snapshot.tree(), node);
-        final long end = positions.getEndPosition(snapshot.tree(), node);
-        if (start >= 0 && start < site.cursorOffset() && end >= site.cursorOffset()) {
-          final TypeMirror ret =
-              resolveMethodReturnType(site.enclosingClass(), site.enclosingMethod(), snapshot);
-          if (ret != null && ret.getKind() != TypeKind.VOID) {
-            result.set(ret);
-          }
-        }
-
-        return super.visitReturn(node, unused);
-      }
-
-      @Override
-      public Void visitAssignment(final AssignmentTree node, final Void unused) {
-        if (result.get() != null) {
-          return super.visitAssignment(node, unused);
-        }
-
-        final var positions = snapshot.trees().getSourcePositions();
-        final long start = positions.getStartPosition(snapshot.tree(), node);
-        final long end = positions.getEndPosition(snapshot.tree(), node);
-
-        if (start >= 0 && start < site.cursorOffset() && end >= site.cursorOffset()) {
-          final var lhsPath = new TreePath(getCurrentPath(), node.getVariable());
-          final TypeMirror tm = snapshot.trees().getTypeMirror(lhsPath);
-
-          if (tm != null && tm.getKind() != TypeKind.ERROR && tm.getKind() != TypeKind.NONE) {
-            result.set(tm);
-          }
-        }
-
-        return super.visitAssignment(node, unused);
-      }
-    }.scan(methodPath, null);
-
-    return result.get() != null
-        ? new ExpectedValue.Type(result.get())
-        : new ExpectedValue.Unknown();
-  }
-
-  private static TreePath findScopeMethodPath(
-      final String className,
-      final String methodName,
-      final int cursorOffset,
-      final AttributedFileAnalysis snapshot) {
-    final var result = new AtomicReference<TreePath>();
-    new TreePathScanner<Void, Void>() {
-      @Override
-      public Void visitClass(final ClassTree node, final Void unused) {
-        return className != null && className.equals(node.getSimpleName().toString())
-            ? super.visitClass(node, unused)
-            : null;
-      }
-
-      @Override
-      public Void visitMethod(final MethodTree node, final Void unused) {
-        if (methodName.equals(node.getName().toString())) {
-          final var current = getCurrentPath();
-          final var pos = snapshot.trees().getSourcePositions();
-          final long start = pos.getStartPosition(snapshot.tree(), node);
-          final long end = pos.getEndPosition(snapshot.tree(), node);
-          if (cursorOffset >= start && cursorOffset <= end) {
-            result.set(current);
-          } else if (result.get() == null) {
-            result.set(current);
-          }
-        }
-
-        return null;
-      }
-    }.scan(snapshot.tree(), null);
-    return result.get();
   }
 
   static ResolvedReceiver resolveReceiver(
@@ -458,81 +162,307 @@ final class TypeResolver {
     }
   }
 
-  private static ResolvedReceiver resolveByPosition(
-      final int dotOffset, final AttributedFileAnalysis snapshot) {
-    if (dotOffset < 0 || snapshot.tree() == null) {
-      return null;
+  // ── expected value resolution ─────────────────────────────────────────────────
+
+  private static ExpectedValue resolveArgumentValue(
+      final CompletionSite site, final int cursorLine, final AttributedFileAnalysis snapshot) {
+    final String receiver = site.enclosingReceiver();
+    final TypeElement ownerType;
+    if (receiver == null || "this".equals(receiver)) {
+      ownerType = findClassElement(site.enclosingClass(), snapshot);
+
+    } else if (receiver.indexOf('.') < 0
+        && receiver.indexOf('(') < 0
+        && receiver.indexOf(' ') < 0) {
+      final var localType =
+          scanForLocalDeclaration(
+              receiver, site.enclosingClass(), site.enclosingMethod(), cursorLine, snapshot);
+      final var receiverType =
+          localType != null ? localType : findFieldType(receiver, site.enclosingClass(), snapshot);
+      final var el = receiverType != null ? snapshot.types().asElement(receiverType) : null;
+      ownerType = el instanceof final TypeElement te ? te : null;
+    } else {
+      return new ExpectedValue.Unknown();
     }
 
-    final var sourcePositions = snapshot.trees().getSourcePositions();
-    final var cu = snapshot.tree();
-    final var result = new AtomicReference<ResolvedReceiver>();
+    if (ownerType == null) {
+      return new ExpectedValue.Unknown();
+    }
+
+    final TypeMirror pt =
+        findMethodParamType(ownerType, site.enclosingMethodName(), site.argIndex(), snapshot);
+    if (pt != null) {
+      return new ExpectedValue.Type(pt);
+    }
+
+    if (hasMethodByName(ownerType, site.enclosingMethodName(), snapshot)) {
+      return new ExpectedValue.NoSlot();
+    }
+
+    return resolveConstructorArgumentValue(site, snapshot);
+  }
+
+  private static ExpectedValue resolveConstructorArgumentValue(
+      final CompletionSite site, final AttributedFileAnalysis snapshot) {
+    final var classEl = findClassElement(site.enclosingMethodName(), snapshot);
+    if (classEl == null) {
+      return new ExpectedValue.Unknown();
+    }
+
+    for (final var el : classEl.getEnclosedElements()) {
+      if (el.getKind() != ElementKind.CONSTRUCTOR) {
+        continue;
+      }
+
+      final var ctor = (ExecutableElement) el;
+      final var params = ctor.getParameters();
+      final int idx =
+          ctor.isVarArgs() ? Math.min(site.argIndex(), params.size() - 1) : site.argIndex();
+      if (idx >= 0 && idx < params.size()) {
+        return new ExpectedValue.Type(params.get(idx).asType());
+      }
+    }
+
+    return new ExpectedValue.Unknown();
+  }
+
+  private static ExpectedValue resolveArgumentValueByPosition(
+      final CompletionSite site, final AttributedFileAnalysis snapshot) {
+    final var methodPath =
+        findScopeMethodPath(
+            site.enclosingClass(), site.enclosingMethod(), site.cursorOffset(), snapshot);
+    if (methodPath == null) {
+      return new ExpectedValue.Unknown();
+    }
+
+    final var result = new AtomicReference<TypeMirror>();
     new TreePathScanner<Void, Void>() {
       @Override
       public Void visitMethodInvocation(final MethodInvocationTree node, final Void unused) {
-        check(node);
+        if (result.get() != null) {
+          return super.visitMethodInvocation(node, unused);
+        }
+
+        if (!site.enclosingMethodName().equals(methodSelectName(node.getMethodSelect()))) {
+          return super.visitMethodInvocation(node, unused);
+        }
+
+        if (cursorOutside(snapshot, node, site.cursorOffset())) {
+          return super.visitMethodInvocation(node, unused);
+        }
+
+        if (!(node.getMethodSelect() instanceof final MemberSelectTree ms)) {
+          return super.visitMethodInvocation(node, unused);
+        }
+
+        final var receiverPath = new TreePath(getCurrentPath(), ms.getExpression());
+        final TypeMirror receiverType = snapshot.trees().getTypeMirror(receiverPath);
+        if (receiverType == null || receiverType.getKind() != TypeKind.DECLARED) {
+          return super.visitMethodInvocation(node, unused);
+        }
+
+        final var receiverEl = snapshot.types().asElement(receiverType);
+        if (!(receiverEl instanceof final TypeElement receiverTypeEl)) {
+          return super.visitMethodInvocation(node, unused);
+        }
+
+        final TypeMirror pt =
+            findMethodParamType(
+                receiverTypeEl, site.enclosingMethodName(), site.argIndex(), snapshot);
+        if (pt != null) {
+          result.set(pt);
+          return null;
+        }
+
         return super.visitMethodInvocation(node, unused);
       }
+    }.scan(methodPath, null);
 
-      @Override
-      public Void visitMemberSelect(final MemberSelectTree node, final Void unused) {
-        check(node);
-        return super.visitMemberSelect(node, unused);
-      }
+    return result.get() != null
+        ? new ExpectedValue.Type(result.get())
+        : new ExpectedValue.Unknown();
+  }
 
-      @Override
-      public Void visitIdentifier(final IdentifierTree node, final Void unused) {
-        check(node);
-        return super.visitIdentifier(node, unused);
-      }
+  private static ExpectedValue resolveInitializerValue(
+      final CompletionSite site, final AttributedFileAnalysis snapshot) {
+    if (site.enclosingMethod() == null) {
+      return new ExpectedValue.Unknown();
+    }
 
-      @Override
-      public Void visitNewClass(final NewClassTree node, final Void unused) {
-        check(node);
-        return super.visitNewClass(node, unused);
-      }
+    final var methodPath =
+        findScopeMethodPath(
+            site.enclosingClass(), site.enclosingMethod(), site.cursorOffset(), snapshot);
+    if (methodPath == null || ((MethodTree) methodPath.getLeaf()).getBody() == null) {
+      return new ExpectedValue.Unknown();
+    }
 
+    final var result = new AtomicReference<TypeMirror>();
+    new TreePathScanner<Void, Void>() {
       @Override
-      public Void visitArrayAccess(final ArrayAccessTree node, final Void unused) {
-        check(node);
-        return super.visitArrayAccess(node, unused);
-      }
-
-      @Override
-      public Void visitParenthesized(final ParenthesizedTree node, final Void unused) {
-        check(node);
-        return super.visitParenthesized(node, unused);
-      }
-
-      @Override
-      public Void visitLiteral(final LiteralTree node, final Void unused) {
-        check(node);
-        return super.visitLiteral(node, unused);
-      }
-
-      @Override
-      public Void visitErroneous(final ErroneousTree node, final Void unused) {
-        for (final var e : node.getErrorTrees()) {
-          scan(e, unused);
+      public Void visitVariable(final VariableTree node, final Void unused) {
+        if (result.get() != null || node.getInitializer() == null) {
+          return super.visitVariable(node, unused);
         }
-        return null;
+
+        if (cursorOutside(snapshot, node, site.cursorOffset())) {
+          return super.visitVariable(node, unused);
+        }
+
+        final var el = snapshot.trees().getElement(getCurrentPath());
+        if (el != null) {
+          result.set(el.asType());
+        }
+
+        return super.visitVariable(node, unused);
       }
 
-      private void check(final Tree node) {
-        if (sourcePositions.getEndPosition(cu, node) == dotOffset) {
-          final var type = snapshot.trees().getTypeMirror(getCurrentPath());
-          if (type != null && type.getKind() == TypeKind.DECLARED) {
-            final var element = snapshot.trees().getElement(getCurrentPath());
-            final boolean isStatic =
-                element instanceof TypeElement
-                    && !(node instanceof final IdentifierTree id
-                        && (id.getName().contentEquals("this")
-                            || id.getName().contentEquals("super")));
-            result.compareAndSet(null, new ResolvedReceiver(type, isStatic));
+      @Override
+      public Void visitReturn(final ReturnTree node, final Void unused) {
+        if (result.get() != null) {
+          return super.visitReturn(node, unused);
+        }
+
+        if (cursorOutside(snapshot, node, site.cursorOffset())) {
+          return super.visitReturn(node, unused);
+        }
+
+        final TypeMirror ret =
+            resolveMethodReturnType(site.enclosingClass(), site.enclosingMethod(), snapshot);
+        if (ret != null && ret.getKind() != TypeKind.VOID) {
+          result.set(ret);
+        }
+
+        return super.visitReturn(node, unused);
+      }
+
+      @Override
+      public Void visitAssignment(final AssignmentTree node, final Void unused) {
+        if (result.get() != null) {
+          return super.visitAssignment(node, unused);
+        }
+
+        if (cursorOutside(snapshot, node, site.cursorOffset())) {
+          return super.visitAssignment(node, unused);
+        }
+
+        final var lhsPath = new TreePath(getCurrentPath(), node.getVariable());
+        final TypeMirror tm = snapshot.trees().getTypeMirror(lhsPath);
+        if (tm != null && tm.getKind() != TypeKind.ERROR && tm.getKind() != TypeKind.NONE) {
+          result.set(tm);
+        }
+
+        return super.visitAssignment(node, unused);
+      }
+    }.scan(methodPath, null);
+
+    return result.get() != null
+        ? new ExpectedValue.Type(result.get())
+        : new ExpectedValue.Unknown();
+  }
+
+  // ── shared primitives ─────────────────────────────────────────────────────────
+
+  private static TypeMirror findMethodParamType(
+      final TypeElement owner,
+      final String methodName,
+      final int argIndex,
+      final AttributedFileAnalysis snapshot) {
+    for (final var el : snapshot.elements().getAllMembers(owner)) {
+      if (el.getKind() != ElementKind.METHOD) {
+        continue;
+      }
+
+      if (!methodName.equals(el.getSimpleName().toString())) {
+        continue;
+      }
+
+      final var method = (ExecutableElement) el;
+      final var params = method.getParameters();
+      final int idx = method.isVarArgs() ? Math.min(argIndex, params.size() - 1) : argIndex;
+      if (idx >= 0 && idx < params.size()) {
+        return params.get(idx).asType();
+      }
+    }
+
+    return null;
+  }
+
+  private static boolean hasMethodByName(
+      final TypeElement owner, final String methodName, final AttributedFileAnalysis snapshot) {
+    return snapshot.elements().getAllMembers(owner).stream()
+        .anyMatch(
+            el ->
+                el.getKind() == ElementKind.METHOD
+                    && methodName.equals(el.getSimpleName().toString()));
+  }
+
+  private static TypeMirror resolveMethodReturnType(
+      final String className, final String methodName, final AttributedFileAnalysis snapshot) {
+    final var classEl = findClassElement(className, snapshot);
+    if (classEl == null) {
+      return null;
+    }
+
+    return snapshot.elements().getAllMembers(classEl).stream()
+        .filter(el -> el.getKind() == ElementKind.METHOD)
+        .filter(el -> methodName.equals(el.getSimpleName().toString()))
+        .map(el -> ((ExecutableElement) el).getReturnType())
+        .filter(t -> t.getKind() != TypeKind.VOID)
+        .findFirst()
+        .orElse(null);
+  }
+
+  private static String methodSelectName(final Tree methodSelect) {
+    if (methodSelect instanceof final IdentifierTree id) {
+      return id.getName().toString();
+    }
+
+    if (methodSelect instanceof final MemberSelectTree ms) {
+      return ms.getIdentifier().toString();
+    }
+
+    return null;
+  }
+
+  private static boolean cursorOutside(
+      final AttributedFileAnalysis snapshot, final Tree node, final int cursorOffset) {
+    final var positions = snapshot.trees().getSourcePositions();
+    final long start = positions.getStartPosition(snapshot.tree(), node);
+    final long end = positions.getEndPosition(snapshot.tree(), node);
+    return start < 0 || start >= cursorOffset || end < cursorOffset;
+  }
+
+  private static TreePath findScopeMethodPath(
+      final String className,
+      final String methodName,
+      final int cursorOffset,
+      final AttributedFileAnalysis snapshot) {
+    final var result = new AtomicReference<TreePath>();
+    new TreePathScanner<Void, Void>() {
+      @Override
+      public Void visitClass(final ClassTree node, final Void unused) {
+        return className != null && className.equals(node.getSimpleName().toString())
+            ? super.visitClass(node, unused)
+            : null;
+      }
+
+      @Override
+      public Void visitMethod(final MethodTree node, final Void unused) {
+        if (methodName.equals(node.getName().toString())) {
+          final var current = getCurrentPath();
+          final var pos = snapshot.trees().getSourcePositions();
+          final long start = pos.getStartPosition(snapshot.tree(), node);
+          final long end = pos.getEndPosition(snapshot.tree(), node);
+          if (cursorOffset >= start && cursorOffset <= end) {
+            result.set(current);
+          } else if (result.get() == null) {
+            result.set(current);
           }
         }
+
+        return null;
       }
-    }.scan(cu, null);
+    }.scan(snapshot.tree(), null);
     return result.get();
   }
 
@@ -639,5 +569,83 @@ final class TypeResolver {
         .findFirst()
         .map(Element::asType)
         .orElse(null);
+  }
+
+  private static ResolvedReceiver resolveByPosition(
+      final int dotOffset, final AttributedFileAnalysis snapshot) {
+    if (dotOffset < 0 || snapshot.tree() == null) {
+      return null;
+    }
+
+    final var sourcePositions = snapshot.trees().getSourcePositions();
+    final var cu = snapshot.tree();
+    final var result = new AtomicReference<ResolvedReceiver>();
+    new TreePathScanner<Void, Void>() {
+      @Override
+      public Void visitMethodInvocation(final MethodInvocationTree node, final Void unused) {
+        check(node);
+        return super.visitMethodInvocation(node, unused);
+      }
+
+      @Override
+      public Void visitMemberSelect(final MemberSelectTree node, final Void unused) {
+        check(node);
+        return super.visitMemberSelect(node, unused);
+      }
+
+      @Override
+      public Void visitIdentifier(final IdentifierTree node, final Void unused) {
+        check(node);
+        return super.visitIdentifier(node, unused);
+      }
+
+      @Override
+      public Void visitNewClass(final NewClassTree node, final Void unused) {
+        check(node);
+        return super.visitNewClass(node, unused);
+      }
+
+      @Override
+      public Void visitArrayAccess(final ArrayAccessTree node, final Void unused) {
+        check(node);
+        return super.visitArrayAccess(node, unused);
+      }
+
+      @Override
+      public Void visitParenthesized(final ParenthesizedTree node, final Void unused) {
+        check(node);
+        return super.visitParenthesized(node, unused);
+      }
+
+      @Override
+      public Void visitLiteral(final LiteralTree node, final Void unused) {
+        check(node);
+        return super.visitLiteral(node, unused);
+      }
+
+      @Override
+      public Void visitErroneous(final ErroneousTree node, final Void unused) {
+        for (final var e : node.getErrorTrees()) {
+          scan(e, unused);
+        }
+        return null;
+      }
+
+      private void check(final Tree node) {
+        if (sourcePositions.getEndPosition(cu, node) == dotOffset) {
+          final var type = snapshot.trees().getTypeMirror(getCurrentPath());
+          if (type != null && type.getKind() == TypeKind.DECLARED) {
+            final var element = snapshot.trees().getElement(getCurrentPath());
+            final boolean isStatic =
+                element instanceof TypeElement
+                    && !(node instanceof final IdentifierTree id
+                        && (id.getName().contentEquals("this")
+                            || id.getName().contentEquals("super")));
+            result.compareAndSet(null, new ResolvedReceiver(type, isStatic));
+          }
+        }
+      }
+    }.scan(cu, null);
+    return result.get();
   }
 }
