@@ -1888,6 +1888,31 @@ class CompletionEngineTest {
   }
 
   @Test
+  void argumentPosition_zeroParamMethodInsideChain_suppressesCompletions() {
+    assertThat(
+            fixture.complete(
+                """
+                class Base {
+                    Base(String s) {}
+                }
+                class Child extends Base {
+                    static class Builder {
+                        Builder value(String s) { return this; }
+                        String build() { return ""; }
+                    }
+                    static Builder builder() { return new Builder(); }
+                    String getStr() { return ""; }
+                    Child() {
+                        super(
+                            builder()
+                                .value(getStr())
+                                .build(§));
+                    }
+                }"""))
+        .isEmpty();
+  }
+
+  @Test
   void multilineChain_simpleIdentifierReceiver_crossLine() {
     assertThat(
             labels(

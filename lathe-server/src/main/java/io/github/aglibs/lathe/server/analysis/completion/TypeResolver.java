@@ -20,6 +20,7 @@ import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -237,10 +238,11 @@ final class TypeResolver {
     }
 
     final var result = new AtomicReference<TypeMirror>();
+    final var noSlot = new AtomicBoolean();
     new TreePathScanner<Void, Void>() {
       @Override
       public Void visitMethodInvocation(final MethodInvocationTree node, final Void unused) {
-        if (result.get() != null) {
+        if (result.get() != null || noSlot.get()) {
           return super.visitMethodInvocation(node, unused);
         }
 
@@ -275,13 +277,20 @@ final class TypeResolver {
           return null;
         }
 
+        if (hasMethodByName(receiverTypeEl, site.enclosingMethodName(), snapshot)) {
+          noSlot.set(true);
+          return null;
+        }
+
         return super.visitMethodInvocation(node, unused);
       }
     }.scan(methodPath, null);
 
-    return result.get() != null
-        ? new ExpectedValue.Type(result.get())
-        : new ExpectedValue.Unknown();
+    if (result.get() != null) {
+      return new ExpectedValue.Type(result.get());
+    }
+
+    return noSlot.get() ? new ExpectedValue.NoSlot() : new ExpectedValue.Unknown();
   }
 
   private static ExpectedValue resolveInitializerValue(
