@@ -105,8 +105,8 @@ class ReferenceLocatorTest {
       final List<Location> withoutDecl = refs(analysis, target, false);
 
       assertThat(withDecl).hasSize(withoutDecl.size() + 1);
-      assertThat(withDecl).anyMatch(
-          l -> l.getRange().getStart().equals(posOf(SOURCE, "String name", "name")));
+      assertThat(withDecl)
+          .anyMatch(l -> l.getRange().getStart().equals(posOf(SOURCE, "String name", "name")));
     }
 
     @Test
@@ -195,8 +195,8 @@ class ReferenceLocatorTest {
       final List<Location> withoutDecl = refs(analysis, target, false);
 
       assertThat(withDecl).hasSize(withoutDecl.size() + 1);
-      assertThat(withDecl).anyMatch(
-          l -> l.getRange().getStart().equals(posOf(SOURCE, "void run()", "run")));
+      assertThat(withDecl)
+          .anyMatch(l -> l.getRange().getStart().equals(posOf(SOURCE, "void run()", "run")));
     }
   }
 
@@ -220,10 +220,10 @@ class ReferenceLocatorTest {
       final List<Location> result = refs(analysis, target, false);
 
       assertThat(result).hasSize(2);
-      assertThat(result).anyMatch(
-          l -> l.getRange().getStart().equals(posOf(source, "Item create", "Item")));
-      assertThat(result).anyMatch(
-          l -> l.getRange().getStart().equals(posOf(source, "new Item()", "Item")));
+      assertThat(result)
+          .anyMatch(l -> l.getRange().getStart().equals(posOf(source, "Item create", "Item")));
+      assertThat(result)
+          .anyMatch(l -> l.getRange().getStart().equals(posOf(source, "new Item()", "Item")));
     }
   }
 

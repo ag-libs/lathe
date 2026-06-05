@@ -133,8 +133,7 @@ final class ReferenceLocator extends TreePathScanner<Void, Void> {
         final var element = trees.getElement(getCurrentPath());
         if (element != null && element.equals(target)) {
           final long namePos =
-              SourceLocator.findIdentifierFrom(
-                  content, positions.getStartPosition(cu, node), name);
+              SourceLocator.findIdentifierFrom(content, positions.getStartPosition(cu, node), name);
           if (namePos >= 0) {
             addLocation(namePos, name.length());
           }
