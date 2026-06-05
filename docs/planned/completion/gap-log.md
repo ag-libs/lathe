@@ -57,7 +57,7 @@ Implementation order:
 2. `CQ-0001` — fix second.
    Annotation enum and array value completion is accepted Java semantics,
    but it needs a more careful parser/engine slice.
-3. `CQ-0002` — keep deferred.
+3. `CQ-0002` — keep deferred until after v1.
    Method-reference completion is valid IDE behavior,
    but it should remain a separate design and implementation slice.
 
@@ -183,6 +183,23 @@ method-reference completion should offer compatible methods for the receiver and
 Accepted edit, if relevant:
 Accepting `of` after `List::` should produce `List::of`.
 Accepting `url` after `this::` should produce `this::url`.
+
+Future design:
+Method-reference completion is post-v1 work.
+The first implementation slice should be basic receiver-member listing,
+not full smart compatibility filtering.
+Add a `METHOD_REFERENCE` sentinel site,
+detect `::`,
+capture receiver text similarly to member access,
+and route simple cases through member candidate generation.
+`TypeName::` should offer static methods such as `List::of`;
+`this::` should offer visible instance methods such as `this::url`;
+ordinary expression receivers such as `service::` should offer instance methods.
+Expected functional-interface filtering should be a later slice,
+because robust compatibility needs the target type from contexts such as `orElseGet`,
+`ifPresent`,
+and `stream.map`.
+Constructor references such as `TypeName::new` and array constructor references are also later slices.
 
 Regression target:
 Future method-reference completion test class or `CompletionEngineTest` method-reference section.
