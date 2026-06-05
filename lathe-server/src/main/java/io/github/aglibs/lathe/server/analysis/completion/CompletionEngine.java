@@ -715,18 +715,15 @@ public final class CompletionEngine {
 
   private static boolean constructibleType(
       final TypeElement typeEl, final AttributedFileAnalysis analysis, final Scope scope) {
+    if (typeEl.getKind() == ElementKind.INTERFACE) {
+      return true;
+    }
+
     if (typeEl.getKind() != ElementKind.CLASS && typeEl.getKind() != ElementKind.RECORD) {
       return false;
     }
 
-    if (typeEl.getModifiers().contains(Modifier.ABSTRACT)) {
-      return false;
-    }
-
-    if (!(typeEl.asType() instanceof final DeclaredType declaredType)) {
-      return true;
-    }
-
+    final var declaredType = (DeclaredType) typeEl.asType();
     return typeEl.getEnclosedElements().stream()
         .filter(el -> el.getKind() == ElementKind.CONSTRUCTOR)
         .anyMatch(el -> accessibleConstructor(el, declaredType, analysis, scope));

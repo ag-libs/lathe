@@ -1095,9 +1095,26 @@ class CompletionEngineTest {
     assertThat(labels(fixture.complete("class Test { void m() { Object value = new Mat§ } }")))
         .doesNotContain("Math");
     assertThat(labels(fixture.complete("class Test { void m() { Object value = new Runn§ } }")))
-        .doesNotContain("Runnable");
+        .contains("Runnable");
     assertThat(labels(fixture.complete("class Test { void m() { Object value = new TimeU§ } }")))
         .doesNotContain("TimeUnit");
+  }
+
+  @Test
+  void methodBody_afterNew_suggestsInFileInterfaceForAnonymousClass() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        interface XListener {
+                            void event();
+                        }
+                        void m() {
+                            Object value = new XL§
+                        }
+                    }""")))
+        .contains("XListener");
   }
 
   @Test
