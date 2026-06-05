@@ -12,7 +12,8 @@ import com.sun.source.util.Trees;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import javax.lang.model.element.Element;
+import javax.lang.model.util.Elements;
+import javax.lang.model.util.Types;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
@@ -23,7 +24,9 @@ final class ReferenceLocator extends TreePathScanner<Void, Void> {
   private final CompilationUnitTree cu;
   private final SourcePositions positions;
   private final String content;
-  private final Element target;
+  private final ReferenceTarget target;
+  private final Types types;
+  private final Elements elements;
   private final String uri;
   private final boolean includeDeclaration;
   private final List<Location> results = new ArrayList<>();
@@ -32,7 +35,9 @@ final class ReferenceLocator extends TreePathScanner<Void, Void> {
       final Trees trees,
       final CompilationUnitTree cu,
       final String content,
-      final Element target,
+      final ReferenceTarget target,
+      final Types types,
+      final Elements elements,
       final String uri,
       final boolean includeDeclaration) {
     this.trees = trees;
@@ -40,13 +45,15 @@ final class ReferenceLocator extends TreePathScanner<Void, Void> {
     this.positions = trees.getSourcePositions();
     this.content = content;
     this.target = target;
+    this.types = types;
+    this.elements = elements;
     this.uri = uri;
     this.includeDeclaration = includeDeclaration;
   }
 
   static List<Location> references(
       final AttributedFileAnalysis analysis,
-      final Element target,
+      final ReferenceTarget target,
       final String uri,
       final boolean includeDeclaration)
       throws IOException {
@@ -57,7 +64,14 @@ final class ReferenceLocator extends TreePathScanner<Void, Void> {
     final var content = analysis.tree().getSourceFile().getCharContent(true).toString();
     final var locator =
         new ReferenceLocator(
-            analysis.trees(), analysis.tree(), content, target, uri, includeDeclaration);
+            analysis.trees(),
+            analysis.tree(),
+            content,
+            target,
+            analysis.types(),
+            analysis.elements(),
+            uri,
+            includeDeclaration);
     locator.scan(analysis.tree(), null);
     return List.copyOf(locator.results);
   }
@@ -67,7 +81,7 @@ final class ReferenceLocator extends TreePathScanner<Void, Void> {
     final var name = node.getName().toString();
     if (!name.equals("this") && !name.equals("super")) {
       final var element = trees.getElement(getCurrentPath());
-      if (element != null && element.equals(target)) {
+      if (target.matches(element, types, elements)) {
         addLocation(positions.getStartPosition(cu, node), name.length());
       }
     }
@@ -79,7 +93,7 @@ final class ReferenceLocator extends TreePathScanner<Void, Void> {
   public Void visitMemberSelect(final MemberSelectTree node, final Void ignored) {
     scan(node.getExpression(), null);
     final var element = SourceLocator.elementAt(trees, getCurrentPath());
-    if (element != null && element.equals(target)) {
+    if (target.matches(element, types, elements)) {
       final long endPos = positions.getEndPosition(cu, node);
       final var name = node.getIdentifier().toString();
       final long nameStart = endPos - name.length();
@@ -95,7 +109,7 @@ final class ReferenceLocator extends TreePathScanner<Void, Void> {
   public Void visitMethod(final MethodTree node, final Void ignored) {
     if (includeDeclaration) {
       final var element = trees.getElement(getCurrentPath());
-      if (element != null && element.equals(target)) {
+      if (target.matches(element, types, elements)) {
         final var name = SourceLocator.declarationName(element).toString();
         final long namePos =
             SourceLocator.findIdentifierFrom(content, positions.getStartPosition(cu, node), name);
@@ -112,7 +126,7 @@ final class ReferenceLocator extends TreePathScanner<Void, Void> {
   public Void visitVariable(final VariableTree node, final Void ignored) {
     if (includeDeclaration) {
       final var element = trees.getElement(getCurrentPath());
-      if (element != null && element.equals(target)) {
+      if (target.matches(element, types, elements)) {
         final var name = node.getName().toString();
         final long namePos =
             SourceLocator.findIdentifierFrom(content, positions.getStartPosition(cu, node), name);
@@ -131,7 +145,7 @@ final class ReferenceLocator extends TreePathScanner<Void, Void> {
       final var name = node.getSimpleName().toString();
       if (!name.isEmpty()) {
         final var element = trees.getElement(getCurrentPath());
-        if (element != null && element.equals(target)) {
+        if (target.matches(element, types, elements)) {
           final long namePos =
               SourceLocator.findIdentifierFrom(content, positions.getStartPosition(cu, node), name);
           if (namePos >= 0) {

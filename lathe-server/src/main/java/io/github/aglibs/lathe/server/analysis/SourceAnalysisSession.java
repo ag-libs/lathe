@@ -127,31 +127,65 @@ public final class SourceAnalysisSession implements AutoCloseable {
         .orElse(null);
   }
 
-  public List<Location> references(
-      final SourceFeatureRequest request, final boolean includeDeclaration) {
-    final var t = Stopwatch.start();
+  public ReferenceTarget resolveTarget(final SourceFeatureRequest request) {
     final var cur = resolve(request);
     if (cur == null) {
-      return List.of();
+      return null;
     }
 
     final var element = SourceLocator.elementAt(cur.ctx().trees(), cur.path());
     if (element == null) {
+      return null;
+    }
+
+    return ReferenceTarget.from(element, cur.ctx().types(), cur.ctx().elements());
+  }
+
+  public List<Location> searchReferences(
+      final String uri,
+      final String content,
+      final int version,
+      final ReferenceTarget target,
+      final boolean includeDeclaration) {
+    var cached = currentCache(uri, content);
+    if (cached == null || cached.analysis().tree() == null) {
+      compile(uri, content, version, CompileMode.OPEN);
+      cached = cache.get(uri);
+    }
+
+    if (cached == null) {
       return List.of();
     }
 
     try {
       final var results =
-          ReferenceLocator.references(cur.ctx(), element, request.uri(), includeDeclaration);
+          ReferenceLocator.references(cached.analysis(), target, uri, includeDeclaration);
       LOG.fine(
           () ->
-              "[references] %dms element=%s hits=%d"
-                  .formatted(t.elapsedMs(), element, results.size()));
+              "[references] uri=%s element=%s hits=%d"
+                  .formatted(uri, target.simpleName(), results.size()));
       return results;
     } catch (final IOException e) {
-      LOG.log(Level.WARNING, e, () -> "[references] failed to read source for " + request.uri());
+      LOG.log(Level.WARNING, e, () -> "[references] failed to read source for " + uri);
       return List.of();
     }
+  }
+
+  public List<Location> references(
+      final SourceFeatureRequest request, final boolean includeDeclaration) {
+    final var t = Stopwatch.start();
+    final var target = resolveTarget(request);
+    if (target == null) {
+      return List.of();
+    }
+
+    final var results =
+        searchReferences(request.uri(), request.content(), 0, target, includeDeclaration);
+    LOG.fine(
+        () ->
+            "[references] %dms element=%s hits=%d"
+                .formatted(t.elapsedMs(), target.simpleName(), results.size()));
+    return results;
   }
 
   public Optional<Location> definition(final SourceFeatureRequest request) {

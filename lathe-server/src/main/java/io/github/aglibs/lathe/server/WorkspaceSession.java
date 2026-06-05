@@ -30,6 +30,7 @@ import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import org.eclipse.lsp4j.CompletionContext;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
@@ -165,12 +166,51 @@ final class WorkspaceSession {
     final var request =
         new SourceFeatureRequest(
             openFile.uri(), openFile.content(), pos, workspace.allSourceRoots(), manifest);
-    return routeFeature(
-        uri,
-        w ->
-            w.references(request, includeDeclaration)
-                .exceptionally(ex -> logAndReturn(ex, "[references] failed for " + uri, List.of())),
-        List.of());
+
+    // Collect open files in same module synchronously while on lathe-worker thread
+    final var cursorConfig = workspace.moduleSourceFor(toPath(uri));
+    final List<OpenDocument> candidates =
+        openDocuments.values().stream()
+            .filter(
+                doc ->
+                    cursorConfig.isPresent()
+                        && workspace
+                            .moduleSourceFor(toPath(doc.uri()))
+                            .map(c -> c.moduleDir().equals(cursorConfig.get().moduleDir()))
+                            .orElse(false))
+            .toList();
+    final var searchDocs = candidates.isEmpty() ? List.of(openFile) : candidates;
+
+    final var moduleWorker =
+        switch (routeCompiler(uri)) {
+          case CompilerRoute.Module m -> m.worker();
+          case CompilerRoute.External e -> e.worker();
+          case CompilerRoute.Missing ignored -> null;
+        };
+    if (moduleWorker == null) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
+    return moduleWorker
+        .resolveTarget(request)
+        .thenCompose(
+            target -> {
+              if (target == null) {
+                return CompletableFuture.completedFuture(List.of());
+              }
+
+              return searchDocs.stream()
+                  .map(
+                      doc ->
+                          moduleWorker.searchReferences(
+                              doc.uri(), doc.content(), doc.version(), target, includeDeclaration))
+                  .reduce(
+                      CompletableFuture.completedFuture(List.of()),
+                      (f1, f2) ->
+                          f1.thenCombine(
+                              f2, (a, b) -> Stream.concat(a.stream(), b.stream()).toList()));
+            })
+        .exceptionally(ex -> logAndReturn(ex, "[references] failed for " + uri, List.of()));
   }
 
   CompletableFuture<Hover> hoverFuture(final String uri, final Position pos) {
