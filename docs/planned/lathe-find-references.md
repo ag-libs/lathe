@@ -1,0 +1,619 @@
+# Lathe — Find References Design
+
+Working design draft.
+This document describes `textDocument/references` and the foundation it should leave for later rename/refactor work.
+
+---
+
+## 1. Goal
+
+Find references should answer the editor question:
+
+> Where is this exact Java symbol referenced in the workspace?
+
+The first implementation should be exact for symbols it searches,
+including sibling reactor modules that can legally reference the target through Maven/JPMS relationships.
+It should prefer returning fewer correct results over broad textual matches.
+
+The feature uses javac attribution as the source of truth.
+Text scanning is only a candidate-discovery optimization.
+
+---
+
+## 2. Non-Goals
+
+Find references v1 does not implement rename,
+but it should produce the symbol identity,
+candidate discovery,
+scope planning,
+and reference-location machinery that rename can reuse.
+Rename still needs additional policy around comments,
+strings,
+file names,
+constructors,
+imports,
+overrides,
+and generated sources.
+
+Find references v1 does not return references inside dependency or JDK sources.
+Lathe may later support source browsing references for external sources, but normal project editing should focus on reactor source first.
+
+Find references v1 does not implement hierarchy-aware semantic expansion.
+For example, references to an interface method and references to overriding implementation methods are separate exact symbols unless a later
+"find implementations" or rename design intentionally links them.
+This is especially important for rename,
+where hierarchy expansion must be an explicit policy decision rather than an accidental side effect of find references.
+
+Find references v1 does not search comments, string literals, resource files, XML, or generated source output.
+
+---
+
+## 3. Existing Architecture
+
+Current symbol features already have the important first step:
+
+```text
+LSP cursor position
+  -> WorkspaceSession routes to the owning ModuleSourceWorker
+  -> SourceAnalysisSession resolves the cached attributed file
+  -> SourceLocator.elementAt(...) returns the javac Element at the cursor
+```
+
+Definition then maps that element to one declaration location.
+Find references should reuse the same cursor-element resolution and add a workspace search phase.
+
+The current server threading model matters:
+
+- `lathe-worker` owns workspace state, open documents, routing, and stale checks.
+- each `ModuleSourceWorker` owns one javac-backed `SourceAnalysisSession`.
+- feature requests must not read `openDocuments` from module workers.
+
+Find references therefore needs workspace-level orchestration in `WorkspaceSession`,
+with per-module attribution work delegated to the relevant module workers.
+
+The current `workspace.json` does not yet contain enough reactor module relationship metadata.
+Find references v1 should add that metadata rather than defer sibling-module search,
+because the same relationship graph is needed to make later rename practical.
+
+---
+
+## 4. Symbol Identity
+
+The first step of every references request is resolving a stable target identity from the cursor.
+
+Proposed model:
+
+```java
+record ReferenceTarget(
+    String displayName,
+    ElementKind kind,
+    String declaringModuleRel,
+    String declaringPackageName,
+    String ownerBinaryName,
+    String erasedDescriptor,
+    String qualifiedName,
+    SearchScope scope) {}
+```
+
+The concrete fields can be refined during implementation.
+The important property is that the identity is derived from javac `Element` data,
+not from source text.
+
+### Type Symbols
+
+For classes, interfaces, enums, records, annotation types, and type parameters:
+
+- use the qualified name for top-level and member types
+- use the declaring element path for local and anonymous types when needed
+- search references by comparing attributed `Element` equality where possible
+
+### Executables
+
+For methods and constructors:
+
+- include the owning type
+- include name, parameter count, and erased parameter types
+- treat constructors as the constructor symbol, not only the class symbol
+
+Overloads must not collapse together.
+`foo(String)` and `foo(Integer)` are different reference targets even when the source token is the same.
+
+### Variables
+
+For fields, enum constants, parameters, resources, exception parameters, lambda parameters, and locals:
+
+- include the enclosing executable or type identity
+- restrict locals and parameters to the declaring source file
+- keep field searches wider according to accessibility
+
+---
+
+## 5. Search Scope
+
+Search scope should be conservative and cheap before it becomes broad.
+
+### Scope Rules
+
+| Target | v1 Scope |
+|---|---|
+| local variable | declaring file only |
+| parameter | declaring file only |
+| lambda parameter | declaring file only |
+| private field/method/type | declaring top-level source file only |
+| package-private member/type | same package in the owning module source tree |
+| protected/public member/type | owning module plus downstream reactor modules that can read or depend on it |
+| exported dependency/JDK symbol | open files only, then no reactor-wide scan in v1 |
+
+The sibling/downstream rule is intentionally part of v1.
+Without it,
+find references works for small single-module cases but fails the first time a public API is consumed by a neighboring module.
+That would also make rename design suspect,
+because rename needs the same search planning to know which files are even eligible for edits.
+
+For public and protected symbols,
+search the declaring module and all reactor modules whose captured Maven model can see the declaring module output.
+In JPMS modules,
+the candidate module must also read the declaring Java module and the declaring package must be exported when the target is outside the
+declaring module.
+Javac attribution remains the final authority,
+so the relationship graph only decides where to spend search work.
+
+Package-private symbols stay in the declaring package and declaring module.
+Private members stay in the declaring top-level source file.
+
+---
+
+## 6. Reactor Relationship Metadata
+
+Find references v1 needs the server to know which reactor modules can reference another reactor module.
+
+Add baseline reactor module entries to `workspace.json` during `lathe:sync`:
+
+```java
+record WorkspaceModuleData(
+    String moduleRel,
+    SourceTree sourceTree,
+    List<String> sourceRoots,
+    List<String> directReactorDependencies,
+    String javaModuleName,
+    List<RequiresData> requires,
+    List<String> exportedPackages) {}
+
+record RequiresData(String moduleName, RequiresKind kind) {}
+
+enum RequiresKind {
+  DIRECT,
+  TRANSITIVE,
+  STATIC
+}
+```
+
+The exact schema can be refined,
+but it must answer two questions cheaply:
+
+1. which Lathe module-source configs belong to this reactor module?
+2. which reactor module-source configs are legal search targets for a symbol declared in another reactor module?
+
+For classpath projects,
+`directReactorDependencies` is enough to search downstream modules.
+For JPMS projects,
+`requires` and `exportedPackages` narrow the candidate set before javac validation.
+
+The plugin should write direct relationship facts,
+not precomputed transitive closures.
+The server should compute transitive downstream scopes from the direct graph so reloads and live overlays can update the answer without
+rerunning Maven.
+
+The server should build an immutable relationship graph on workspace load:
+
+```java
+final class WorkspaceModuleGraph {
+  List<ModuleSourceConfig> referenceSearchScope(ReferenceTarget target);
+}
+```
+
+The graph is a planning aid,
+not a semantic authority.
+Every reported reference must still pass javac element matching in the candidate file.
+
+### Transitive Downstream Search
+
+For classpath projects,
+search the declaring module and every transitive downstream reactor module.
+
+Example:
+
+```text
+app -> service -> api
+```
+
+For a public symbol declared in `api`,
+the search scope is:
+
+```text
+api, service, app
+```
+
+For JPMS projects,
+the server should use Java module readability rather than only Maven dependency edges.
+`requires transitive` contributes readability through intermediate modules.
+`requires static` counts when the dependency is present in the captured compile module path,
+which is the normal Lathe compile-input case.
+
+This graph still only selects candidate files.
+If the graph is too broad,
+javac element matching filters false positives.
+If the graph is too narrow,
+find references and rename can miss legal references,
+so relationship metadata and the live JPMS overlay are part of v1 rather than a follow-up.
+
+### Live JPMS Overlay
+
+Changing only `module-info.java` should not require `mvn process-test-classes` before reference search reflects the edit.
+
+The plugin-provided graph is the baseline for Maven reactor identity,
+source roots,
+output directories,
+classpath/modulepath relationships,
+and initial JPMS metadata.
+The server should maintain a live JPMS overlay from current `module-info.java` source:
+
+- parse module name,
+  `requires`,
+  `requires transitive`,
+  `requires static`,
+  and exported packages from module-info sources on workspace load
+- prefer open-document content over disk content for an open `module-info.java`
+- refresh the overlay on open/change/save/close of `module-info.java`
+- fall back to plugin metadata or compiled module descriptors only when source is unavailable
+
+Maven sync is still required when Maven structure changes:
+dependencies,
+profiles,
+source roots,
+generated sources,
+or reactor module membership.
+For ordinary `module-info.java` `requires` and `exports` edits,
+the server overlay should be enough to update reference and rename search planning.
+
+---
+
+## 7. Candidate Discovery
+
+Javac attribution is too expensive to run over every source file on every request.
+Candidate discovery should be a text prefilter that only decides which files might contain references.
+
+For each target:
+
+1. derive one or more spelling candidates
+2. scan source files in the planned search scope for those tokens
+3. include open-document content from `openDocuments` instead of disk content
+4. send only candidate files to module workers for attribution
+
+Spelling candidates include the simple type name,
+method name,
+field name,
+constructor type name,
+and imported simple name where relevant.
+
+The text scanner must be token-aware enough to avoid obvious substring noise.
+`Customer` should not match `CustomerId` unless the searched name is actually `CustomerId`.
+
+It does not need to parse Java.
+False positives are acceptable because javac validation filters them out.
+
+### Live Candidate Index
+
+Reference search should maintain a lightweight live candidate index,
+but not a second semantic compiler instance.
+
+The useful live cache is textual and planning-oriented:
+
+```java
+record ReferenceCandidateIndex(
+    Map<String, Set<String>> tokenToUris,
+    Map<String, SourceFingerprint> fingerprints) {}
+```
+
+The index maps Java identifier tokens to files that currently contain them.
+Open documents update the index from in-memory content.
+Closed files can be indexed from disk and refreshed by file watchers or workspace reload.
+
+This cache helps both references and future rename:
+
+- quickly find files containing a type,
+  method,
+  field,
+  or constructor spelling
+- avoid disk-wide scans during every request
+- keep open-document edits visible before save
+
+It must not decide correctness.
+The final result still comes from javac attribution and element matching.
+
+The index is owned by `WorkspaceSession` and lives on the `lathe-worker` thread.
+All reads and writes go through the `lathe-worker` executor.
+LSP events (`didOpen`, `didChange`, `didClose`) dispatch debounced update tasks to `lathe-worker`.
+File watcher events do the same.
+`ModuleSourceWorker`s never access the index directly;
+they receive immutable `ReferenceSearchFile` inputs and return matches.
+
+### Background Warming
+
+The server may warm reference planning in the background after edits:
+
+1. update the current file's token index immediately
+2. debounce a background task
+3. identify likely symbol spellings near the cursor or edited token
+4. compute likely candidate files from `ReferenceCandidateIndex`
+5. optionally ask existing `ModuleSourceWorker`s to attribute candidate files lazily
+
+Do not create a second full module source instance just for references.
+The existing module workers should remain the single semantic authority for each module source.
+
+If semantic reference matches are cached later,
+the cache key must include at least:
+
+- target identity
+- candidate file URI
+- candidate file content fingerprint or open-document version
+- module source config identity
+- module graph or live JPMS overlay version
+- classpath/modulepath config version
+
+For v1,
+the required cache is the token candidate index.
+Background semantic result caching should wait until synchronous references are correct and performance data shows it is needed.
+
+---
+
+## 8. Reference Matching
+
+Each candidate file is attributed with the same javac invocation shape Lathe already uses for diagnostics and hover.
+Then a scanner walks the `CompilationUnitTree` and compares resolved elements against the `ReferenceTarget`.
+
+Proposed helper:
+
+```java
+final class ReferenceLocator {
+  List<Location> references(AttributedFileAnalysis analysis, ReferenceTarget target, boolean includeDeclaration);
+}
+```
+
+The scanner should visit the syntax forms that map to user-visible reference tokens:
+
+- identifiers
+- member selects
+- method invocations
+- constructor calls
+- class declarations when `includeDeclaration=true`
+- method and variable declarations when `includeDeclaration=true`
+- imports, including static imports
+- annotations
+- method references, when completion gap J is eventually addressed
+
+The returned range should cover the symbol name token,
+not the whole expression.
+
+For example:
+
+```java
+foo.bar().baz()
+```
+
+A reference to `bar` should cover only `bar`.
+
+---
+
+## 9. Open Documents
+
+Open documents are authoritative.
+If a candidate file is open, the search must use the in-memory content and version from `openDocuments`.
+
+WorkspaceSession should create immutable search inputs on `lathe-worker`:
+
+```java
+record ReferenceSearchFile(String uri, String content, int version, ModuleSourceConfig config) {}
+```
+
+Module workers receive only these immutable values.
+They do not read workspace state.
+
+Stale protection is different from diagnostics:
+
+- references are request/response, not published later
+- if an open document changes while search is running, the result may be stale
+- v1 can accept this race because the next user request will use the newer content
+- a later cancellation design can drop work by request id
+
+---
+
+## 10. Rename Fit
+
+Rename should build on this design,
+but it must not be implemented as "find references plus text replacement".
+
+Find references provides reusable pieces:
+
+- `ReferenceTarget` for exact symbol identity
+- `WorkspaceModuleGraph` for relationship-aware search planning
+- token-aware candidate discovery
+- javac-backed `ReferenceLocator` for exact source ranges
+- open-document snapshot handling
+
+Rename adds policy:
+
+- validate that the target kind is renameable
+- validate the new Java identifier or type name
+- decide whether class rename also renames the file
+- decide whether constructor declarations are renamed with type declarations
+- decide whether imports are edited directly or left to import optimization
+- decide whether overridden/overriding methods participate
+- detect conflicts in the target scopes before producing a `WorkspaceEdit`
+- return edits for open documents and disk-backed files through one consistent workspace edit builder
+
+The design should therefore keep reference discovery result objects richer than plain `Location` internally:
+
+```java
+record ReferenceMatch(
+    String uri,
+    Range range,
+    ReferenceRole role,
+    ReferenceTarget resolvedTarget) {}
+
+enum ReferenceRole {
+  DECLARATION,
+  READ,
+  WRITE,
+  INVOCATION,
+  IMPORT,
+  TYPE_USE
+}
+```
+
+`textDocument/references` can map `ReferenceMatch` to `Location`.
+Rename can use the same matches plus role information to decide which edits are legal.
+
+---
+
+## 11. LSP Shape
+
+Advertise:
+
+```java
+capabilities.setReferencesProvider(true);
+```
+
+Add:
+
+```java
+LatheTextDocumentService.references(ReferenceParams params)
+WorkspaceSession.referencesFuture(String uri, Position pos, boolean includeDeclaration)
+ModuleSourceWorker.references(...)
+SourceAnalysisSession.references(...)
+```
+
+Return `List<? extends Location>`.
+Return an empty list when:
+
+- the file is not open
+- no module route exists
+- no element exists at the cursor
+- the target kind is unsupported
+- no candidate files validate
+
+Log at `FINE`:
+
+```text
+[references] file:///... 37ms target=foo candidates=12 hits=4
+```
+
+Do not log source lines or source content.
+
+---
+
+## 12. Implementation Slices
+
+### Slice 1 — Exact Same-File References
+
+Implement cursor target resolution and `ReferenceLocator` for the current attributed file only.
+This proves element matching, token ranges, declaration inclusion, overloaded methods, fields, locals, parameters, and types.
+
+`ReferenceTarget` is not needed for same-file matching.
+Use javac `Element` equality directly;
+all elements are resolved in the same `SourceAnalysisSession` javac context so identity comparison is reliable.
+`ReferenceTarget` becomes necessary in Slice 2 when the scanner crosses `ModuleSourceWorker` boundaries.
+
+### Slice 2 — Open Files in Same Module
+
+Search all currently open files in the same module.
+This makes the feature useful during active edits without requiring disk-wide work.
+
+### Slice 3 — Same-Module Disk Search
+
+Add token prefilter over same-module source roots.
+Attribute only matching files and merge the results with open-file results.
+
+### Slice 4 — Reactor Relationship Graph
+
+Add reactor module metadata to `workspace.json`.
+Build `WorkspaceModuleGraph` on server load.
+Search transitive downstream sibling reactor modules that can reference the declaring module.
+
+### Slice 5 — Live JPMS Overlay
+
+Parse current `module-info.java` source in the server.
+Refresh module readability/export planning on open/change/save/close without requiring Maven sync for ordinary JPMS metadata edits.
+
+### Slice 6 — Live Candidate Index
+
+Maintain a token-to-file candidate index for open and disk-backed source files.
+Use it for references and future rename candidate discovery.
+
+### Slice 7 — Scope Tightening and Performance Caps
+
+Add scope rules for locals, private members, package-private members, and same-package searches.
+Add caps and partial-result behavior if a search would touch too many files.
+
+### Slice 8 — Rename Foundation
+
+Keep internal results as `ReferenceMatch` values with roles.
+This lets `textDocument/references` stay simple while preserving the data rename will need.
+
+---
+
+## 13. Tests
+
+Unit coverage should start at `ReferenceLocator` level with attributed fixture sources:
+
+- type declaration and type-use references
+- field declaration, reads, writes, and member selects
+- overloaded methods
+- constructors and `new`
+- local variables and parameters scoped to one file
+- imports and static imports
+- `includeDeclaration=true` and `false`
+
+Workspace-level tests should cover:
+
+- open-file content overriding disk content
+- same-module multi-file search
+- sibling reactor module search through module relationships
+- transitive downstream reactor module search
+- no sibling search when the reactor module cannot depend on or read the declaring module
+- live `module-info.java` overlay updates search scope without Maven sync
+- JPMS package export filtering before javac validation
+- open-document token index content overriding disk token index content
+- private member scope staying in the declaring source file
+- package-private scope staying in the same package
+- empty result for missing route or unsupported cursor position
+
+Rename-fit tests should not implement rename,
+but should verify that internal `ReferenceMatch` roles distinguish declarations,
+imports,
+type uses,
+reads,
+writes,
+and invocations where the syntax supports it.
+
+Regression tests should prefer small source fixtures over large integration projects.
+Large project checks can use `dev/explorer` manually when troubleshooting performance or sorting behavior.
+
+---
+
+## 14. Open Questions
+
+- Should public type references in sibling reactor modules be v1 or post-v1?
+  This design makes them v1 by adding relationship metadata first.
+- Should references include import statements by default?
+  LSP clients generally expect semantic references, and imports are source references, so the design includes them.
+- Should constructor references be returned when invoking find references on the class name?
+  v1 should keep class and constructor targets separate.
+  Rename can revisit constructor/class coupling later.
+- Should overridden methods be grouped?
+  No for exact find references.
+  That belongs in a separate hierarchy-aware feature or rename design.
+- Should the server keep a semantic reference cache live?
+  Not for v1.
+  Keep the live cache textual and planning-oriented first,
+  then add semantic match caching only if measured performance requires it.

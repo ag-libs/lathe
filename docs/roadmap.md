@@ -78,6 +78,11 @@ Use these as the starting point when reprioritizing or slicing new work:
   indentation hints using google-java-format.
 - [lathe-completion-presentation.md](planned/lathe-completion-presentation.md) —
   JDT LS-style completion `labelDetails` and generic type display.
+- [lathe-find-references.md](planned/lathe-find-references.md) —
+  exact javac-backed `textDocument/references` with reactor relationship-aware sibling-module search,
+  live JPMS metadata overlay,
+  a lightweight candidate index,
+  and reusable rename foundations.
 - [lathe-import-optimization.md](planned/lathe-import-optimization.md) —
   semantic import cleanup before full-document formatting,
   including unused import removal and conservative wildcard expansion.
@@ -145,6 +150,18 @@ Add a display-only `TypeMirror` formatter so method,
 field,
 and generic receiver-substituted types render as concise Java types without changing semantic filtering.
 See [lathe-completion-presentation.md](planned/lathe-completion-presentation.md).
+
+**Find references**
+Add exact javac-backed `textDocument/references`.
+The practical first path is same-file references,
+then open files in the same module,
+then token-prefiltered same-module disk search,
+then sibling reactor modules selected by Maven/JPMS relationship metadata.
+Use server-side `module-info.java` parsing as a live overlay so ordinary `requires`/`exports` edits do not require Maven sync.
+Keep the live cache textual and planning-oriented first;
+do not add a second semantic compiler instance for references.
+Keep internal matches rich enough for later rename policy and workspace edits.
+See [lathe-find-references.md](planned/lathe-find-references.md).
 
 **Editor integrations**
 Keep Neovim/VS Code clients thin: they launch `~/.cache/lathe/current/lathe-launcher.sh`
