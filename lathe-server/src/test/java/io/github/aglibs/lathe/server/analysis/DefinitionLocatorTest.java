@@ -132,6 +132,37 @@ class DefinitionLocatorTest extends SampleFixture {
     }
 
     @Test
+    void methodName_notConfusedByAnnotationValueContainingName(@TempDir final Path tempDir)
+        throws IOException {
+      final var source =
+          """
+          public class Widget {
+              @SuppressWarnings("getter")
+              public String get() { return ""; }
+          }
+          """;
+      final var sourceFile = tempDir.resolve("Widget.java");
+      Files.writeString(sourceFile, source);
+      final var parsed = TestCompiler.parse(sourceFile);
+      final var widgetType = parsed.task().getElements().getTypeElement("Widget");
+      final var getMethod =
+          widgetType.getEnclosedElements().stream()
+              .filter(e -> e.getSimpleName().contentEquals("get"))
+              .findFirst()
+              .orElseThrow();
+
+      final var location =
+          new DefinitionLocator(parsed.parser())
+              .locate(getMethod, parsed.trees(), List.of(), sourceFile.toUri().toString());
+
+      assertThat(location).isPresent();
+      // line 2 (0-based), col 18: "    public String get()"
+      // indexOf("get") wrongly lands inside "getter" in the annotation string on line 1
+      assertThat(location.get().getRange().getStart().getLine()).isEqualTo(2);
+      assertThat(location.get().getRange().getStart().getCharacter()).isEqualTo(18);
+    }
+
+    @Test
     void enumConstantArgumentInMethodCall(@TempDir final Path tempDir) throws IOException {
       final var sourceFile = tempDir.resolve("EnumArgument.java");
       Files.writeString(sourceFile, ENUM_ARGUMENT_SOURCE);

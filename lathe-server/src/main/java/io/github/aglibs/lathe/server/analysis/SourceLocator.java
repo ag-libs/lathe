@@ -95,7 +95,7 @@ public final class SourceLocator {
       return Optional.empty();
     }
     final CharSequence content = cu.getSourceFile().getCharContent(false);
-    final int idx = content.toString().indexOf(name, (int) declStart);
+    final long idx = findIdentifierFrom(content.toString(), declStart, name);
     final long nameOffset = idx >= 0 ? idx : declStart;
     return Optional.of(offsetToPosition(cu, nameOffset));
   }
@@ -232,6 +232,25 @@ public final class SourceLocator {
       case ANNOTATION_TYPE, CLASS, ENUM, ENUM_CONSTANT, FIELD, INTERFACE, RECORD -> true;
       default -> false;
     };
+  }
+
+  static long findIdentifierFrom(final String content, final long fromOffset, final String name) {
+    final int nameLen = name.length();
+    final int limit = content.length() - nameLen;
+    for (int i = (int) fromOffset; i <= limit; i++) {
+      if (!content.regionMatches(i, name, 0, nameLen)) {
+        continue;
+      }
+
+      final boolean leftBound = i == 0 || !Character.isJavaIdentifierPart(content.charAt(i - 1));
+      final boolean rightBound =
+          i + nameLen >= content.length()
+              || !Character.isJavaIdentifierPart(content.charAt(i + nameLen));
+      if (leftBound && rightBound) {
+        return i;
+      }
+    }
+    return -1;
   }
 
   private static int indexIn(final List<? extends Tree> list, final Tree target) {

@@ -88,7 +88,7 @@ public final class TokenScanner extends TreePathScanner<Void, Void> {
     }
     final long annotationStart = positions.getStartPosition(cu, node);
     if (annotationStart >= 0) {
-      final long namePos = findIdentifierFrom(annotationStart, simpleName);
+      final long namePos = SourceLocator.findIdentifierFrom(content, annotationStart, simpleName);
       if (namePos >= 0) {
         addToken(namePos, simpleName.length(), "annotation", Set.of());
       }
@@ -117,7 +117,8 @@ public final class TokenScanner extends TreePathScanner<Void, Void> {
     final var mods = interestingModifiers(element);
     if (!mods.isEmpty()) {
       final String name = node.getName().toString();
-      final long namePos = findIdentifierFrom(positions.getStartPosition(cu, node), name);
+      final long namePos =
+          SourceLocator.findIdentifierFrom(content, positions.getStartPosition(cu, node), name);
       if (namePos >= 0) {
         mods.add("declaration");
         addToken(namePos, name.length(), "method", mods);
@@ -140,7 +141,8 @@ public final class TokenScanner extends TreePathScanner<Void, Void> {
         kind == ElementKind.ENUM_CONSTANT ? new HashSet<String>() : interestingModifiers(element);
     if (kind == ElementKind.ENUM_CONSTANT || !mods.isEmpty()) {
       final String name = node.getName().toString();
-      final long namePos = findIdentifierFrom(positions.getStartPosition(cu, node), name);
+      final long namePos =
+          SourceLocator.findIdentifierFrom(content, positions.getStartPosition(cu, node), name);
       if (namePos >= 0) {
         final String type = kind == ElementKind.ENUM_CONSTANT ? "enumMember" : "property";
         mods.add("declaration");
@@ -215,24 +217,5 @@ public final class TokenScanner extends TreePathScanner<Void, Void> {
     }
     final Position lspPos = SourceLocator.offsetToPosition(cu, absoluteOffset);
     tokens.add(new SemanticToken(lspPos.getLine(), lspPos.getCharacter(), length, type, modifiers));
-  }
-
-  private long findIdentifierFrom(final long fromOffset, final String name) {
-    final int nameLen = name.length();
-    final int limit = content.length() - nameLen;
-    for (int i = (int) fromOffset; i <= limit; i++) {
-      if (!content.regionMatches(i, name, 0, nameLen)) {
-        continue;
-      }
-
-      final boolean leftBound = i == 0 || !Character.isJavaIdentifierPart(content.charAt(i - 1));
-      final boolean rightBound =
-          i + nameLen >= content.length()
-              || !Character.isJavaIdentifierPart(content.charAt(i + nameLen));
-      if (leftBound && rightBound) {
-        return i;
-      }
-    }
-    return -1;
   }
 }
