@@ -1,7 +1,10 @@
 # Completion Semantics Audit
 
-This document is a gap-discovery aid for completion behavior.
-It is not yet the normative design.
+This document is a historical gap-discovery aid for completion behavior.
+It is not the normative design.
+
+Current completion expectations and active gap tracking live in
+[`../planned/completion/`](../planned/completion/).
 
 The goal is to make Java syntax-site behavior explicit before implementation fixes are made.
 Each row should eventually map to active tests, a documented gap, or a deliberate non-goal.
@@ -56,16 +59,9 @@ Each row should eventually map to active tests, a documented gap, or a deliberat
 | Module directive | `requires §`, `exports §` | directive-specific modules/packages/types | unrelated symbols | none | discovery |
 | In-token completion | `accept(§connectionString)` | insert/replace-safe candidates | duplicate suffix insertion | future work | open |
 
-## Immediate Discovery Cases
+## Current Use
 
-These cases are represented in the disabled `completionSemantics_gapDiscoveryMatrix` test.
-The test is intentionally disabled so the normal suite remains usable while gaps are triaged.
-
-- Enum expected-value completion.
-- Annotation values, declaration bodies, and default values.
-- Declaration-name-slot suppression.
-
-## Next Step
-
-After review, promote one row at a time into active tests or `completion-gaps.md`.
-Implementation should wait until the corresponding site semantics are approved.
+Use this matrix as historical context when expanding
+[`../planned/completion/expectations.md`](../planned/completion/expectations.md).
+New discrepancies should be recorded as `CQ-*` entries in
+[`../planned/completion/gap-log.md`](../planned/completion/gap-log.md).

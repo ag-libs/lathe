@@ -76,6 +76,10 @@ Use these as the starting point when reprioritizing or slicing new work:
 
 - [lathe-google-indent.md](planned/lathe-google-indent.md) — conservative `textDocument/onTypeFormatting`
   indentation hints using google-java-format.
+- [completion/](planned/completion/) —
+  active completion expectations,
+  explorer-based gap discovery,
+  and current completion-quality gap log.
 - [lathe-completion-presentation.md](planned/lathe-completion-presentation.md) —
   JDT LS-style completion `labelDetails` and generic type display.
 - [lathe-find-references.md](planned/lathe-find-references.md) —
@@ -150,6 +154,8 @@ Add a display-only `TypeMirror` formatter so method,
 field,
 and generic receiver-substituted types render as concise Java types without changing semantic filtering.
 See [lathe-completion-presentation.md](planned/lathe-completion-presentation.md).
+General completion expectations and gap-discovery workflow live in
+[completion/](planned/completion/).
 
 **Find references**
 Add exact javac-backed `textDocument/references`.
