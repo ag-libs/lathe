@@ -61,6 +61,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     capabilities.setDocumentRangeFormattingProvider(true);
     capabilities.setDocumentOnTypeFormattingProvider(new DocumentOnTypeFormattingOptions("\n"));
     capabilities.setDefinitionProvider(true);
+    capabilities.setReferencesProvider(true);
     return capabilities;
   }
 

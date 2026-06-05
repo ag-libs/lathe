@@ -155,6 +155,24 @@ final class WorkspaceSession {
             });
   }
 
+  CompletableFuture<List<Location>> referencesFuture(
+      final String uri, final Position pos, final boolean includeDeclaration) {
+    final var openFile = openDocuments.get(uri);
+    if (openFile == null) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
+    final var request =
+        new SourceFeatureRequest(
+            openFile.uri(), openFile.content(), pos, workspace.allSourceRoots(), manifest);
+    return routeFeature(
+        uri,
+        w ->
+            w.references(request, includeDeclaration)
+                .exceptionally(ex -> logAndReturn(ex, "[references] failed for " + uri, List.of())),
+        List.of());
+  }
+
   CompletableFuture<Hover> hoverFuture(final String uri, final Position pos) {
     final var openFile = openDocuments.get(uri);
     if (openFile == null) {

@@ -5,11 +5,13 @@ import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionEngine;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionRequest;
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
 import javax.lang.model.element.Element;
@@ -123,6 +125,33 @@ public final class SourceAnalysisSession implements AutoCloseable {
     return HoverFormatter.format(element, type, javadoc, origin)
         .map(md -> new Hover(new MarkupContent("markdown", md)))
         .orElse(null);
+  }
+
+  public List<Location> references(
+      final SourceFeatureRequest request, final boolean includeDeclaration) {
+    final var t = Stopwatch.start();
+    final var cur = resolve(request);
+    if (cur == null) {
+      return List.of();
+    }
+
+    final var element = SourceLocator.elementAt(cur.ctx().trees(), cur.path());
+    if (element == null) {
+      return List.of();
+    }
+
+    try {
+      final var results =
+          ReferenceLocator.references(cur.ctx(), element, request.uri(), includeDeclaration);
+      LOG.fine(
+          () ->
+              "[references] %dms element=%s hits=%d"
+                  .formatted(t.elapsedMs(), element, results.size()));
+      return results;
+    } catch (final IOException e) {
+      LOG.log(Level.WARNING, e, () -> "[references] failed to read source for " + request.uri());
+      return List.of();
+    }
   }
 
   public Optional<Location> definition(final SourceFeatureRequest request) {

@@ -98,6 +98,11 @@ public final class ModuleSourceWorker {
     return submit(ctx -> ctx.hover(request));
   }
 
+  public CompletableFuture<List<Location>> references(
+      final SourceFeatureRequest request, final boolean includeDeclaration) {
+    return submit(ctx -> ctx.references(request, includeDeclaration));
+  }
+
   public CompletableFuture<Optional<Location>> definition(final SourceFeatureRequest request) {
     return submit(ctx -> ctx.definition(request));
   }

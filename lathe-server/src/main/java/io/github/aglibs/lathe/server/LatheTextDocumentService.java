@@ -114,6 +114,17 @@ final class LatheTextDocumentService implements TextDocumentService {
   }
 
   @Override
+  public CompletableFuture<List<? extends Location>> references(final ReferenceParams params) {
+    final var uri = params.getTextDocument().getUri();
+    final var pos = params.getPosition();
+    final var incl = params.getContext().isIncludeDeclaration();
+    return worker
+        .submit(() -> session.referencesFuture(uri, pos, incl))
+        .thenCompose(f -> f)
+        .thenApply(r -> r);
+  }
+
+  @Override
   public CompletableFuture<Hover> hover(final HoverParams params) {
     final var uri = params.getTextDocument().getUri();
     final var pos = params.getPosition();
