@@ -59,6 +59,20 @@ class ModuleSourceConfigTest {
   }
 
   @Test
+  void remapPath_reactorTestJar_remappedToLatheTestClasses() {
+    final var jar = WORKSPACE.resolve("module-a/target/module-a-1.0-tests.jar");
+    assertThat(ModuleSourceConfig.remapPath(jar, WORKSPACE, LATHE_DIR))
+        .isEqualTo(LATHE_DIR.resolve("module-a/test-classes"));
+  }
+
+  @Test
+  void remapPath_reactorTestJar_nestedModule_remappedToLatheTestClasses() {
+    final var jar = WORKSPACE.resolve("platform/core/target/core-2.0-tests.jar");
+    assertThat(ModuleSourceConfig.remapPath(jar, WORKSPACE, LATHE_DIR))
+        .isEqualTo(LATHE_DIR.resolve("platform/core/test-classes"));
+  }
+
+  @Test
   void remapPath_tooShortRelativePath_passesThrough() {
     final var shallow = WORKSPACE.resolve("classes");
     assertThat(ModuleSourceConfig.remapPath(shallow, WORKSPACE, LATHE_DIR)).isEqualTo(shallow);
