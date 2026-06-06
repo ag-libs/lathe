@@ -75,7 +75,8 @@ printf 'grep setAttribute\ncomplete after "handler.getServletContext()."\n' \
 | `hover <line>:<col>` | Hover info (type, docs) at the given 0-based position |
 | `hover <text>` | Hover info at the first occurrence of `<text>` |
 | `definition <line>:<col>` | Declaration site of the symbol (alias: `def`) |
-| `refs <line>:<col>` | Known call/use sites of the symbol |
+| `refs <line>:<col>` | Known call/use sites of the symbol (alias: `refs <text>`) |
+| `refs <text>` | Find first occurrence of `<text>`, request references there |
 | `diagnostics` | Compiler errors and warnings (alias: `diag`) |
 | `inject <code> [at <line>]` | Insert a temporary line, complete at its end |
 | `reset` | Discard injected content, restore original server view |
@@ -85,8 +86,10 @@ printf 'grep setAttribute\ncomplete after "handler.getServletContext()."\n' \
 
 ### Assertion qualifiers
 
-Append to any `complete` or `inject` command to turn observation into a
+Append to `complete`, `inject`, or `refs` commands to turn observation into a
 pass/fail check.  Multiple qualifiers may be combined freely.
+
+**Completion / injection assertions** (match against completion item labels):
 
 | Qualifier | Meaning |
 |---|---|
@@ -94,6 +97,14 @@ pass/fail check.  Multiple qualifiers may be combined freely.
 | `min <n>` | At least `n` items must be returned |
 | `max <n>` | At most `n` items may be returned |
 | `filter <prefix>` | Every item's label must start with `prefix` (case-insensitive) |
+
+**Reference assertions** (match against result file paths):
+
+| Qualifier | Meaning |
+|---|---|
+| `expect <substr> [<substr> …]` | Each substring must appear in at least one result's file path |
+| `min <n>` | At least `n` references required |
+| `max <n>` | At most `n` references allowed |
 
 On success the output line reads `[PASS]`.  On failure it reads `[FAIL]` with
 a reason, and the process exits with code 1.  This makes assertions composable
@@ -111,7 +122,37 @@ python3 dev/explore.py MongoDbClient.java \
 # assert that a bare-dot with no receiver returns nothing
 python3 dev/explore.py MongoDbClient.java \
     inject "." max 0
+
+# assert that a public method has at least one cross-module reference
+python3 dev/explore.py StringUtils.java refs "upper" min 1 expect "Main.java"
+
+# assert that a private member has no references outside its file
+python3 dev/explore.py StringUtils.java refs "StringUtils()" max 0
+
+# pipe multiple reference checks in one server session
+printf 'refs "upper" min 1 expect Main.java\nrefs "StringUtils()" max 0\n' \
+    | python3 dev/explore.py StringUtils.java
 ```
+
+### Probing find-references
+
+`refs <text>` is the primary tool for exploring and verifying reference behaviour.
+Position the cursor by naming a token — no need to know the exact line and column.
+
+**What to probe:**
+
+- **Public methods** — expect cross-module hits (`expect <filename>`), exact count (`min`/`max`)
+- **Private members** — scope must not leave the file (`max 0`)
+- **Package-private members** — scope must not leave the module
+- **Imports** — the import statement itself should count as one reference
+- **Enum constants** — `refs "CONSTANT_NAME"` should find all qualified uses
+- **Annotations** — `refs "MyAnnotation"` should find annotation use sites
+- **Overloaded methods** — two overloads must not bleed into each other
+
+**Known gaps** (do not probe these yet):
+
+- **Constructor call sites** — `new Foo(...)` call sites are not found; cursor on a constructor returns 0 results (`visitNewClass` not implemented in `ReferenceLocator`)
+- **Method references** — `ClassName::method` and `this::method` syntax is not scanned (Gap J)
 
 ### Typical workflow
 

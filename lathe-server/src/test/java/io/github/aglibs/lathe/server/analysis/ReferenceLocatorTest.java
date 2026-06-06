@@ -195,6 +195,85 @@ class ReferenceLocatorTest {
         .anyMatch(l -> l.range().getStart().equals(posOf(METHOD_SOURCE, "void run()", "run")));
   }
 
+  // --- constructors ---
+
+  @Test
+  void constructor_newExpression_callSiteFound() throws IOException {
+    final var source =
+        """
+        class Box {
+            Box() {}
+            static Box make() { return new Box(); }
+        }
+        """;
+    final var analysis = compile(source);
+    final var target = targetAt(analysis, "Box() {}", "Box");
+
+    final List<ReferenceMatch> result = refs(analysis, target, false);
+
+    assertThat(result).hasSize(1);
+    assertThat(result.getFirst().range().getStart())
+        .isEqualTo(posOf(source, "new Box()", "Box"));
+  }
+
+  @Test
+  void constructor_overload_doesNotMatchSibling() throws IOException {
+    final var source =
+        """
+        class Box {
+            Box() {}
+            Box(String s) {}
+            static void make() { new Box(); new Box("x"); }
+        }
+        """;
+    final var analysis = compile(source);
+    final var noArgTarget = targetAt(analysis, "Box() {}", "Box");
+
+    final List<ReferenceMatch> result = refs(analysis, noArgTarget, false);
+
+    assertThat(result).hasSize(1);
+    assertThat(result.getFirst().range().getStart())
+        .isEqualTo(posOf(source, "new Box();", "Box"));
+  }
+
+  // --- method references ---
+
+  @Test
+  void methodReference_thisMethodRef_callSiteFound() throws IOException {
+    final var source =
+        """
+        import java.util.function.Supplier;
+        class Test {
+            String value() { return "x"; }
+            Supplier<String> ref() { return this::value; }
+        }
+        """;
+    final var analysis = compile(source);
+    final var target = targetAt(analysis, "String value()", "value");
+
+    final List<ReferenceMatch> result = refs(analysis, target, false);
+
+    assertThat(result).hasSize(1);
+  }
+
+  @Test
+  void methodReference_staticMethodRef_callSiteFound() throws IOException {
+    final var source =
+        """
+        import java.util.function.Supplier;
+        class Test {
+            static String produce() { return "x"; }
+            Supplier<String> ref() { return Test::produce; }
+        }
+        """;
+    final var analysis = compile(source);
+    final var target = targetAt(analysis, "static String produce()", "produce");
+
+    final List<ReferenceMatch> result = refs(analysis, target, false);
+
+    assertThat(result).hasSize(1);
+  }
+
   // --- imports ---
 
   @Test
