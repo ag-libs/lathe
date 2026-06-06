@@ -157,16 +157,13 @@ See [lathe-completion-presentation.md](planned/lathe-completion-presentation.md)
 General completion expectations and gap-discovery workflow live in
 [completion/](planned/completion/).
 
-**Find references**
-Add exact javac-backed `textDocument/references`.
-The practical first path is same-file references,
-then open files in the same module,
-then token-prefiltered same-module disk search,
-then sibling reactor modules selected by Maven/JPMS relationship metadata.
-Use server-side `module-info.java` parsing as a live overlay so ordinary `requires`/`exports` edits do not require Maven sync.
-Keep the live cache textual and planning-oriented first;
-do not add a second semantic compiler instance for references.
-Keep internal matches rich enough for later rename policy and workspace edits.
+**Find references** ✅
+Exact javac-backed `textDocument/references` is implemented across all planned slices.
+Same-file, open-file, same-module disk, and transitive reactor-module search are all live.
+`ReferenceCandidateIndex` replaces per-request disk scanning with an O(1) token lookup.
+Scope tightening routes private/local symbols to the declaring file only and restricts
+package-private to the same package directory.
+`ReferenceMatch` with `ReferenceRole` provides the rename-ready internal result type.
 See [lathe-find-references.md](planned/lathe-find-references.md).
 
 **Editor integrations**
