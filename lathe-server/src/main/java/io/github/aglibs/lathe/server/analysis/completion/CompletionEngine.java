@@ -142,7 +142,8 @@ public final class CompletionEngine {
       final CompletionRequest req,
       final CompletionSite site) {
     final var semanticContext = semanticContext(site, req, parsed);
-    final boolean recoveredMixedStatement = shouldTreatTypeReferenceAsMixedSimpleName(parsed, injected);
+    final boolean recoveredMixedStatement =
+        shouldTreatTypeReferenceAsMixedSimpleName(parsed, injected);
     if (semanticContext != null
         && semanticContext.expectedValue() instanceof ExpectedValue.NoSlot
         && !hasUppercasePrefix(injected)) {
@@ -163,8 +164,8 @@ public final class CompletionEngine {
                     semanticContext != null ? semanticContext.expectedValue() : null));
     final var rankingContext =
         recoveredMixedStatement
-                || semanticContext != null
-                    && semanticContext.expectedValue() instanceof ExpectedValue.NoSlot
+                || (semanticContext != null
+                    && semanticContext.expectedValue() instanceof ExpectedValue.NoSlot)
             ? null
             : semanticContext;
     final List<CompletionItem> items =

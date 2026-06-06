@@ -10,14 +10,15 @@ import org.junit.jupiter.api.Test;
 class CompletionSimpleNameTest extends CompletionTestSupport {
 
   @Test
-  void simpleName_uppercasePrefix_inMethodBodyIncludesVisibleValuesAndTypes() throws Exception {
+  void simpleName_uppercasePrefix_inRecoveredStatementsIncludesVisibleValuesAndTypes()
+      throws Exception {
     localFixture =
         new CompletionFixture(
             CompletionFixture.typeIndex(
                 tmp.resolve("index.json"),
                 CompletionFixture.typeEntry("Logger", "java.util.logging.Logger", TypeKind.CLASS)));
 
-    final List<String> items =
+    final List<String> methodBodyItems =
         labels(
             localFixture.complete(
                 """
@@ -30,19 +31,7 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
                         }
                     }
                 }"""));
-
-    assertThat(items).contains("LOGGER", "Logger");
-  }
-
-  @Test
-  void simpleName_uppercasePrefix_inIfBodyIncludesEnclosingStaticValuesAndTypes() throws Exception {
-    localFixture =
-        new CompletionFixture(
-            CompletionFixture.typeIndex(
-                tmp.resolve("index.json"),
-                CompletionFixture.typeEntry("Logger", "java.util.logging.Logger", TypeKind.CLASS)));
-
-    final List<String> items =
+    final List<String> ifBodyItems =
         labels(
             localFixture.complete(
                 """
@@ -58,7 +47,8 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
                     }
                 }"""));
 
-    assertThat(items).contains("LOGGER", "Logger");
+    assertThat(methodBodyItems).contains("LOGGER", "Logger");
+    assertThat(ifBodyItems).contains("LOGGER", "Logger");
   }
 
   @Test

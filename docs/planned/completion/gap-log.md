@@ -46,19 +46,19 @@ Notes:
 
 ## Current Triage
 
-Four accepted completion-quality gaps are currently open from the
+Three accepted completion-quality gaps are currently open from the
 `DropwizardResourceConfig` explorer pass.
 
 `CQ-0006`,
 `CQ-0008`,
-`CQ-0009`,
 and `CQ-0010` are documented probe gaps and need tests before implementation.
 
 `CQ-0001`,
 `CQ-0003`,
 `CQ-0004`,
 `CQ-0005`,
-and `CQ-0007` are fixed and covered by regression tests.
+`CQ-0007`,
+and `CQ-0009` are fixed and covered by regression tests.
 The follow-up Dropwizard/Helidon explorer pass covered expected-type ranking,
 static member fit,
 constructor type completion,
@@ -354,7 +354,7 @@ but the expected type comes from a binary comparison instead of an annotation el
 ## CQ-0009 — Uppercase simple-name completion hides visible static fields in method bodies
 
 ID: CQ-0009
-Status: accepted
+Status: fixed
 Tier: typed
 Failure mode: missing-candidate
 Owner component: SentinelParser / CompletionEngine
@@ -388,7 +388,8 @@ Expected IDE behavior is mixed simple-name completion in expression/statement po
 including visible fields and matching types.
 
 Lathe behavior:
-The `LOG` and `LOGGER` probes return type-index entries such as `Logger` and `LoggerFactory`,
+Before the fix,
+the `LOG` and `LOGGER` probes returned type-index entries such as `Logger` and `LoggerFactory`,
 but they do not return the visible static field `LOGGER`.
 The log shows `sentinelCtx=TYPE_REFERENCE`.
 
@@ -400,11 +401,13 @@ Accepted edit, if relevant:
 Accepting `LOGGER` should insert `LOGGER` without an import edit.
 
 Regression target:
-Future simple-name or mixed-mode completion test.
+`CompletionSimpleNameTest.simpleName_uppercasePrefix_inRecoveredStatementsIncludesVisibleValuesAndTypes`.
 
 Notes:
-The dotted receiver path works once `LOGGER.` is already typed.
-The gap is in simple-name classification or mixed-mode merge before the dot exists.
+Fixed by routing uppercase,
+receiverless statement sites recovered as ordinary type references through mixed simple-name completion.
+That path intentionally skips expected-value ranking,
+because recovery can borrow a following assignment's expected type and incorrectly filter visible values.
 
 ## CQ-0010 — Method label details can render without a separator before the return type
 

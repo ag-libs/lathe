@@ -238,8 +238,8 @@ imports,
 constructors,
 and other syntactically typed sites should still use their normal site-specific candidate families.
 
-`CQ-0009` tracks the concrete regression where `LOG§` in a method body returns type-index results
-but hides the visible static field `LOGGER`.
+`CQ-0009` is the regression guard for `LOG§` in a method body returning type-index results
+while also preserving the visible static field `LOGGER`.
 
 Insertion:
 
