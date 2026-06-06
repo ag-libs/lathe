@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server.module;
 
+import io.github.aglibs.lathe.server.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
 import io.github.aglibs.lathe.server.analysis.SourceAnalysisSession;
@@ -103,18 +104,13 @@ public final class ModuleSourceWorker {
     return submit(ctx -> ctx.resolveTarget(request));
   }
 
-  public CompletableFuture<List<Location>> searchReferences(
+  public CompletableFuture<List<ReferenceMatch>> searchReferences(
       final String uri,
       final String content,
       final int version,
       final ReferenceTarget target,
       final boolean includeDeclaration) {
     return submit(ctx -> ctx.searchReferences(uri, content, version, target, includeDeclaration));
-  }
-
-  public CompletableFuture<List<Location>> references(
-      final SourceFeatureRequest request, final boolean includeDeclaration) {
-    return submit(ctx -> ctx.references(request, includeDeclaration));
   }
 
   public CompletableFuture<Optional<Location>> definition(final SourceFeatureRequest request) {
