@@ -144,6 +144,8 @@ class CompletionPresentationTest extends CompletionTestSupport {
         .hasValueSatisfying(
             i -> {
               assertThat(i.getDetail()).isEqualTo("List<String>");
+              assertThat(i.getLabelDetails()).isNotNull();
+              assertThat(i.getLabelDetails().getDescription()).isEqualTo("List<String>");
               assertThat(i.getInsertText()).isEqualTo("names");
             });
   }

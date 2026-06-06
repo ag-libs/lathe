@@ -128,14 +128,17 @@ final class CandidateFactory {
   }
 
   private CompletionCandidate fieldCandidate(final Element field, final String name) {
+    final String type = typeDisplayFormatter.format(field.asType());
     return new CompletionCandidate(
         name,
         name,
         CandidateKind.FIELD,
-        typeDisplayFormatter.format(field.asType()),
+        type,
         name,
         false,
         null,
+        null,
+        type,
         field.asType(),
         declaringType(field),
         null);

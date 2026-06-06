@@ -473,11 +473,17 @@ Accepted edit, if relevant:
 Not applicable.
 
 Regression target:
-`CompletionPresentationTest`.
+Client-side completion menu rendering probe.
 
 Notes:
 This is presentation-only.
 `detail` already contains the full fallback string `Logger.debug(String) : void`.
+JDT LS sends the same label-details shape:
+method parameters in `labelDetails.detail`,
+return type alone in `labelDetails.description`,
+and the ` : ` separator only in the fallback `detail` string.
+The spacing should be handled by the Neovim completion renderer,
+not by changing Lathe's server-side LSP data away from the JDT LS shape.
 
 ## CQ-0001 — Annotation enum value completion routes to element-name completion
 
