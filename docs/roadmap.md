@@ -165,6 +165,9 @@ Scope tightening routes private/local symbols to the declaring file only and res
 package-private to the same package directory.
 `ReferenceMatch` with `ReferenceRole` provides the rename-ready internal result type.
 See [lathe-find-references.md](planned/lathe-find-references.md).
+Known gap: JDK and third-party dependency symbols are not yet restricted to open files only —
+they trigger a full reactor scan, attributing hundreds of files for common types like `String`.
+Fix is documented in section 15 of the design doc.
 
 **Editor integrations**
 Keep Neovim/VS Code clients thin: they launch `~/.cache/lathe/current/lathe-launcher.sh`

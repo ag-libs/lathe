@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import static java.util.logging.Level.SEVERE;
 
+import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
@@ -31,6 +32,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -194,6 +196,8 @@ final class WorkspaceSession {
     // Capture declaring module synchronously on the lathe-worker thread before any async hand-off
     final var cursorConfig = workspace.moduleSourceFor(toPath(uri));
 
+    final var t = Stopwatch.start();
+    final var targetName = new AtomicReference<String>();
     return cursorWorker
         .resolveTarget(request)
         .thenCompose(
@@ -201,6 +205,8 @@ final class WorkspaceSession {
               if (target == null) {
                 return CompletableFuture.completedFuture(List.of());
               }
+
+              targetName.set(target.simpleName());
 
               if (target.scope() == ReferenceTarget.SearchScope.DECLARING_FILE) {
                 return cursorWorker
@@ -232,6 +238,17 @@ final class WorkspaceSession {
                       (f1, f2) ->
                           f1.thenCombine(
                               f2, (a, b) -> Stream.concat(a.stream(), b.stream()).toList()));
+            })
+        .thenApply(
+            locations -> {
+              final var name = targetName.get();
+              if (name != null) {
+                LOG.fine(
+                    () ->
+                        "[references] %s %dms target=%s hits=%d"
+                            .formatted(uri, t.elapsedMs(), name, locations.size()));
+              }
+              return locations;
             })
         .exceptionally(ex -> logAndReturn(ex, "[references] failed for " + uri, List.of()));
   }

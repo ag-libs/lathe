@@ -149,11 +149,6 @@ Position the cursor by naming a token — no need to know the exact line and col
 - **Annotations** — `refs "MyAnnotation"` should find annotation use sites
 - **Overloaded methods** — two overloads must not bleed into each other
 
-**Known gaps** (do not probe these yet):
-
-- **Constructor call sites** — `new Foo(...)` call sites are not found; cursor on a constructor returns 0 results (`visitNewClass` not implemented in `ReferenceLocator`)
-- **Method references** — `ClassName::method` and `this::method` syntax is not scanned (Gap J)
-
 ### Typical workflow
 
 ```

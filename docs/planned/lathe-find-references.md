@@ -598,6 +598,66 @@ Large project checks can use `dev/explorer` manually when troubleshooting perfor
 
 ---
 
+## 15. Known Performance Issue — JDK and Dependency Symbols
+
+### Observation
+
+Probed against `DropwizardResourceConfig.java` in the dropwizard workspace (916 source files, 36 modules):
+
+| Symbol | Source | Hits |
+|---|---|---|
+| `String` | `java.lang` | 2355 |
+| `Collections` | `java.util` | 210 |
+| `Objects` | `java.util` | 111 |
+| `ArrayList` | `java.util` | 51 |
+| `UUID` | `java.util` | 29 |
+| `Pattern` | `java.util.regex` | 24 |
+
+For comparison, reactor-module symbols from the same file (`forTesting`, `getUrlPattern`) returned 5–31 hits — appropriate and fast.
+
+### Root cause
+
+Section 5 specifies that JDK and dependency symbols should be restricted to **open files only**,
+with no reactor-wide scan.
+This restriction was never implemented.
+
+`ReferenceTarget.scopeFor` assigns `REACTOR_MODULES` to any `public` element regardless of whether
+it comes from the reactor or from an external JAR.
+`WorkspaceSession.referencesFuture` then plans the search using the cursor file's declaring module
+as the root of the downstream graph.
+For a file in a central module like `dropwizard-jersey`,
+that graph includes most of the project.
+The candidate index finds the token in nearly every source file,
+and every file is attributed by javac.
+
+`String` alone causes ~900 javac attributions per request.
+
+### Proposed fix
+
+Detect at search-planning time whether the target element belongs to a reactor module.
+The simplest signal: the target's `qualifiedName` (the declaring class's binary name) can be resolved
+against the reactor type index — if `WorkspaceTypeIndex` or the reactor shard map contains a matching
+entry, the element is from the reactor; otherwise treat it as external.
+
+If external, skip the candidate index lookup and the module-worker scan entirely.
+Search only the currently open documents, matching the design doc's scope rule.
+
+The fix lives in `WorkspaceSession.referencesFuture`, after the target is resolved,
+before `searchFutures` is called.
+`ReferenceTarget` does not need a new field;
+the reactor-vs-external check is a planning-layer concern.
+
+### Probe artifact — `Set` and `HashSet` returning identical results
+
+`refs "Set"` in `explore.py` does a text substring search.
+The first occurrence of `"Set"` in `DropwizardResourceConfig.java` falls inside a larger identifier,
+causing the cursor to land on `HashSet` rather than `Set`.
+Both probes therefore target the same element and produce the same results.
+This is a probe usability gap, not a defect in the reference engine.
+Use a more specific context string (e.g., `refs "import java.util.Set"`) to target the exact symbol.
+
+---
+
 ## 14. Resolved Questions
 
 - **Public type references in sibling reactor modules — v1 or post-v1?**

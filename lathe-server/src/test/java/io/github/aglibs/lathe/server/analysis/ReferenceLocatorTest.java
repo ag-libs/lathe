@@ -212,8 +212,7 @@ class ReferenceLocatorTest {
     final List<ReferenceMatch> result = refs(analysis, target, false);
 
     assertThat(result).hasSize(1);
-    assertThat(result.getFirst().range().getStart())
-        .isEqualTo(posOf(source, "new Box()", "Box"));
+    assertThat(result.getFirst().range().getStart()).isEqualTo(posOf(source, "new Box()", "Box"));
   }
 
   @Test
@@ -232,8 +231,7 @@ class ReferenceLocatorTest {
     final List<ReferenceMatch> result = refs(analysis, noArgTarget, false);
 
     assertThat(result).hasSize(1);
-    assertThat(result.getFirst().range().getStart())
-        .isEqualTo(posOf(source, "new Box();", "Box"));
+    assertThat(result.getFirst().range().getStart()).isEqualTo(posOf(source, "new Box();", "Box"));
   }
 
   // --- method references ---

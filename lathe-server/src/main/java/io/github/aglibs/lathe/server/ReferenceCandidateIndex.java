@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.io.IOException;
@@ -30,6 +31,7 @@ final class ReferenceCandidateIndex {
   private final Map<String, Set<String>> uriToTokens = new HashMap<>();
 
   static ReferenceCandidateIndex build(final List<ModuleSourceConfig> allConfigs) {
+    final var t = Stopwatch.start();
     final var index = new ReferenceCandidateIndex();
     allConfigs.stream()
         .flatMap(config -> config.sourceRoots().stream())
@@ -38,8 +40,8 @@ final class ReferenceCandidateIndex {
         .forEach(index::indexRoot);
     LOG.fine(
         () ->
-            "[candidate-index] built: %d file(s), %d token(s)"
-                .formatted(index.uriToTokens.size(), index.tokenToUris.size()));
+            "[candidate-index] built: %d file(s), %d token(s) %dms"
+                .formatted(index.uriToTokens.size(), index.tokenToUris.size(), t.elapsedMs()));
     return index;
   }
 
