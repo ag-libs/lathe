@@ -193,7 +193,7 @@ class CompletionArgumentTest extends CompletionTestSupport {
                         accept(§);
                     }
                 }"""));
-    assertThat(items).contains("getFoo()");
+    assertThat(items).contains("getFoo");
     assertThat(items).doesNotContain("isReady()", "true", "false");
   }
 
@@ -302,7 +302,7 @@ class CompletionArgumentTest extends CompletionTestSupport {
                                 .build());
                     }
                 }"""));
-    assertThat(items).contains("getStr()");
+    assertThat(items).contains("getStr");
     assertThat(items).doesNotContain("isReady()", "true", "false");
   }
 
@@ -380,9 +380,9 @@ class CompletionArgumentTest extends CompletionTestSupport {
                   }
                 }
                 """))
-        .containsLabel("sample()")
-        .doesNotContainLabel("count()")
-        .item("sample()")
+        .containsLabel("sample")
+        .doesNotContainLabel("count")
+        .item("sample")
         .hasStaticImportEdit("example.StringSources.sample");
   }
 }

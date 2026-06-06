@@ -39,7 +39,7 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
                         x = §
                     }
                 }"""));
-    assertThat(items).contains("getFoo()");
+    assertThat(items).contains("getFoo");
     assertThat(items).doesNotContain("isReady()", "true", "false");
   }
 
@@ -174,7 +174,7 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
                         Foo x = §
                     }
                 }"""));
-    assertThat(items).contains("getFoo()");
+    assertThat(items).contains("getFoo");
     assertThat(items)
         .doesNotContain("doSomething()", "isReady()", "true", "false", "getString()", "getSb()");
   }

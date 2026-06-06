@@ -37,7 +37,7 @@ class CompletionPresentationTest extends CompletionTestSupport {
     final var cursor = CursorFixture.cursor(markedSource);
     final var item =
         fixture.complete(markedSource).stream()
-            .filter(i -> i.getLabel().startsWith("setFieldPath("))
+            .filter(i -> "setFieldPath".equals(i.getFilterText()))
             .findFirst();
 
     assertThat(item).isPresent();
@@ -49,9 +49,10 @@ class CompletionPresentationTest extends CompletionTestSupport {
   void completionItem_method_hasCorrectFilterTextAndSnippetInsertFormat() {
     final var item =
         fixture.complete("class Test { void m(java.util.ArrayList<String> l) { l.sub§ } }").stream()
-            .filter(i -> i.getLabel().startsWith("subList("))
+            .filter(i -> "subList".equals(i.getFilterText()))
             .findFirst();
     assertThat(item).isPresent();
+    assertThat(item.get().getLabel()).isEqualTo("subList");
     assertThat(item.get().getFilterText()).isEqualTo("subList");
     assertThat(item.get().getInsertTextFormat()).isEqualTo(InsertTextFormat.Snippet);
     assertThat(item.get().getInsertText()).contains("$");
@@ -97,8 +98,35 @@ class CompletionPresentationTest extends CompletionTestSupport {
                 "get"))
         .hasValueSatisfying(
             i -> {
-              assertThat(i.getLabel()).isEqualTo("get(int)");
-              assertThat(i.getDetail()).isEqualTo("String");
+              assertThat(i.getLabel()).isEqualTo("get");
+              assertThat(i.getLabelDetails()).isNotNull();
+              assertThat(i.getLabelDetails().getDetail()).isEqualTo("(int)");
+              assertThat(i.getLabelDetails().getDescription()).isEqualTo("String");
+              assertThat(i.getDetail()).isEqualTo("List.get(int) : String");
+            });
+  }
+
+  @Test
+  void completionItem_method_usesLabelDetailsForSignatureAndReturn() {
+    assertThat(
+            itemWithFilterText(
+                fixture.complete(
+                    """
+                    class Test {
+                      static class Builder {
+                        Builder setFieldPath(java.util.List<String> path) { return this; }
+                      }
+                      void m(Builder builder) { builder.set§ }
+                    }"""),
+                "setFieldPath"))
+        .hasValueSatisfying(
+            i -> {
+              assertThat(i.getLabel()).isEqualTo("setFieldPath");
+              assertThat(i.getLabelDetails()).isNotNull();
+              assertThat(i.getLabelDetails().getDetail()).isEqualTo("(List<String> path)");
+              assertThat(i.getLabelDetails().getDescription()).isEqualTo("Builder");
+              assertThat(i.getDetail())
+                  .isEqualTo("Builder.setFieldPath(List<String> path) : Builder");
             });
   }
 

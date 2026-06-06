@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
@@ -107,17 +108,20 @@ final class CandidateFactory {
       final ExecutableElement method, final DeclaredType receiverType, final String name) {
     final ExecutableType executableType = resolveExecutableType(method, receiverType);
     final List<? extends TypeMirror> paramTypes = executableType.getParameterTypes();
-    final var params =
-        paramTypes.stream().map(typeDisplayFormatter::format).collect(Collectors.joining(", "));
+    final String paramsWithNames = paramsWithNames(method, paramTypes);
     final boolean snippet = !paramTypes.isEmpty();
+    final String returnType = typeDisplayFormatter.format(executableType.getReturnType());
+    final String declaringType = declaringTypeSimpleName(method);
     return new CompletionCandidate(
         name,
-        "%s(%s)".formatted(name, params),
+        name,
         CandidateKind.METHOD,
-        typeDisplayFormatter.format(executableType.getReturnType()),
+        "%s.%s(%s) : %s".formatted(declaringType, name, paramsWithNames, returnType),
         snippet ? "%s($1)".formatted(name) : "%s()".formatted(name),
         snippet,
         null,
+        "(%s)".formatted(paramsWithNames),
+        returnType,
         executableType.getReturnType(),
         declaringType(method),
         null);
@@ -141,6 +145,35 @@ final class CandidateFactory {
     return element.getEnclosingElement() instanceof final TypeElement typeElement
         ? typeElement.getQualifiedName().toString()
         : null;
+  }
+
+  private static String declaringTypeSimpleName(final Element element) {
+    return element.getEnclosingElement() instanceof final TypeElement typeElement
+        ? typeElement.getSimpleName().toString()
+        : "";
+  }
+
+  private String paramsWithNames(
+      final ExecutableElement method, final List<? extends TypeMirror> paramTypes) {
+    final var parameters = method.getParameters();
+    return IntStream.range(0, paramTypes.size())
+        .mapToObj(
+            index -> {
+              final String paramName =
+                  index < parameters.size() ? parameters.get(index).getSimpleName().toString() : "";
+              final TypeMirror type = paramTypes.get(index);
+              final String typeText = typeDisplayFormatter.format(type);
+              return displayParameter(typeText, paramName);
+            })
+        .collect(Collectors.joining(", "));
+  }
+
+  private static String displayParameter(final String typeText, final String name) {
+    if (name.isBlank() || name.matches("arg\\d+")) {
+      return typeText;
+    }
+
+    return "%s %s".formatted(typeText, name);
   }
 
   private ExecutableType resolveExecutableType(

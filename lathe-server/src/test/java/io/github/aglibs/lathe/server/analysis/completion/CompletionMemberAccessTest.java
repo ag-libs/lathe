@@ -156,32 +156,43 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
                 }
             }""");
     final var sizeSort =
-        itemLabeled(items, "size()").map(CompletionItem::getSortText).orElseThrow();
-    assertThat(items).anyMatch(i -> i.getLabel().startsWith("wait("));
-    assertThat(items).anyMatch(i -> i.getLabel().equals("notify()"));
-    assertThat(items).anyMatch(i -> i.getLabel().equals("notifyAll()"));
+        itemWithFilterText(items, "size").map(CompletionItem::getSortText).orElseThrow();
+    assertThat(items).anyMatch(i -> "wait".equals(i.getFilterText()));
+    assertThat(items).anyMatch(i -> "notify".equals(i.getFilterText()));
+    assertThat(items).anyMatch(i -> "notifyAll".equals(i.getFilterText()));
     items.stream()
         .filter(
             i ->
-                i.getLabel().startsWith("wait(")
-                    || i.getLabel().equals("notify()")
-                    || i.getLabel().equals("notifyAll()"))
+                "wait".equals(i.getFilterText())
+                    || "notify".equals(i.getFilterText())
+                    || "notifyAll".equals(i.getFilterText()))
         .forEach(i -> assertThat(i.getSortText()).isGreaterThan(sizeSort));
   }
 
   @Test
   void memberAccess_typeArgResolved_notRawTypeVar() {
-    assertThat(
-            labels(
-                fixture.complete(
-                    """
-                    class Test {
-                        void m(java.util.List<String> list) {
-                            list.add§
-                        }
-                    }""")))
-        .contains("add(String)")
-        .doesNotContain("add(E)");
+    final var items =
+        fixture.complete(
+            """
+            class Test {
+                void m(java.util.List<String> list) {
+                    list.add§
+                }
+            }""");
+    assertThat(items)
+        .anySatisfy(
+            i -> {
+              assertThat(i.getLabel()).isEqualTo("add");
+              assertThat(i.getLabelDetails()).isNotNull();
+              assertThat(i.getLabelDetails().getDetail()).isEqualTo("(String)");
+            });
+    assertThat(items)
+        .noneSatisfy(
+            i -> {
+              assertThat(i.getLabel()).isEqualTo("add");
+              assertThat(i.getLabelDetails()).isNotNull();
+              assertThat(i.getLabelDetails().getDetail()).isEqualTo("(E)");
+            });
   }
 
   @Test
@@ -657,9 +668,9 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
                     list.§
                 }
             }""");
-    final var sizeItem = itemLabeled(items, "size()");
+    final var sizeItem = itemWithFilterText(items, "size");
     final var equalsItem =
-        items.stream().filter(i -> i.getLabel().startsWith("equals")).findFirst();
+        items.stream().filter(i -> "equals".equals(i.getFilterText())).findFirst();
     assertThat(sizeItem).isPresent();
     assertThat(equalsItem).isPresent();
     assertThat(sizeItem.get().getSortText()).isLessThan(equalsItem.get().getSortText());
