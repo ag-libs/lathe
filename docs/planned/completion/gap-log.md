@@ -46,14 +46,15 @@ Notes:
 
 ## Current Triage
 
-Five accepted completion-quality gaps are currently open from the
+Six accepted completion-quality gaps are currently open from the
 `DropwizardResourceConfig` explorer pass.
 
 `CQ-0006`,
 `CQ-0008`,
 `CQ-0010`,
 `CQ-0011`,
-and `CQ-0012` are documented probe gaps and need tests before implementation.
+`CQ-0012`,
+and `CQ-0013` are documented probe gaps and need tests before implementation.
 
 `CQ-0001`,
 `CQ-0003`,
@@ -614,6 +615,95 @@ followed immediately by a receiver-qualified member completion.
 Notes:
 This is not an overload acceptance issue.
 The later control probe confirms the selected method item itself edits correctly.
+
+## CQ-0013 — Simple-name method completion drops overloads with the same name
+
+ID: CQ-0013
+Status: accepted
+Tier: semantic
+Failure mode: missing-candidate
+Owner component: SimpleNameProvider
+
+Project/file:
+`/home/ag-libs/git/dropwizard/dropwizard-jersey/src/main/java/io/dropwizard/jersey/DropwizardResourceConfig.java`
+
+Probe command:
+```bash
+printf 'inject "forT" at 63\nlog 30\n' \
+  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-jersey/src/main/java/io/dropwizard/jersey/DropwizardResourceConfig.java
+```
+
+Control probe:
+```bash
+printf 'inject "DropwizardResourceConfig.forT" at 63\nlog 30\n' \
+  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-jersey/src/main/java/io/dropwizard/jersey/DropwizardResourceConfig.java
+```
+
+Accepted-edit control:
+```bash
+python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-jersey/src/main/java/io/dropwizard/jersey/DropwizardResourceConfig.java \
+  accept inject 'DropwizardResourceConfig.forT' at 63 label forTesting index 1
+```
+
+Cursor context:
+```java
+public DropwizardResourceConfig(@Nullable MetricRegistry metricRegistry) {
+    super();
+
+    forT§
+    if (metricRegistry == null) {
+        metricRegistry = new MetricRegistry();
+    }
+}
+
+public static DropwizardResourceConfig forTesting() {
+    return forTesting(null);
+}
+
+public static DropwizardResourceConfig forTesting(@Nullable MetricRegistry metricRegistry) {
+    ...
+}
+```
+
+IntelliJ or JDT behavior:
+Expected IDE behavior is to offer both `forTesting()` and `forTesting(MetricRegistry)`.
+Overloads are separate selectable method candidates even when their simple-name label is the same.
+
+Lathe behavior:
+Simple-name completion returns only:
+
+```text
+forTesting  [Method]  DropwizardResourceConfig.forTesting() : DropwizardResourceConfig
+```
+
+The debug log shows `simple-name candidates javac=1`.
+The type-qualified control probe returns both overloads:
+
+```text
+forTesting  [Method]  DropwizardResourceConfig.forTesting() : DropwizardResourceConfig
+forTesting  [Method]  DropwizardResourceConfig.forTesting(MetricRegistry metricRegistry) : DropwizardResourceConfig
+```
+
+Expected Lathe behavior:
+Simple-name completion should keep method overloads as distinct candidates.
+Deduplication should not use only the simple name for methods.
+Fields, variables, and methods with the same visible name still need Java shadowing rules,
+but overloaded methods must survive long enough for presentation and selection.
+
+Accepted edit, if relevant:
+The type-qualified control confirms the parameterized overload item edits correctly:
+`textEdit.newText` is `forTesting($1)`,
+the replacement range covers only the typed `forT`,
+and accepting the item produces `DropwizardResourceConfig.forTesting(§)`.
+
+Regression target:
+Simple-name completion test where a class declares two visible overloads with the same name.
+Both overloads should be returned with distinct `labelDetails.detail` values.
+
+Notes:
+Inspection points at `SimpleNameProvider`.
+It keeps a `seen` set keyed by `el.getSimpleName().toString()`,
+so the first method overload suppresses later overloads before presentation.
 
 ## CQ-0001 — Annotation enum value completion routes to element-name completion
 
