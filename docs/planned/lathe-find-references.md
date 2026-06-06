@@ -174,18 +174,7 @@ record WorkspaceModuleData(
     String moduleRel,
     SourceTree sourceTree,
     List<String> sourceRoots,
-    List<String> directReactorDependencies,
-    String javaModuleName,
-    List<RequiresData> requires,
-    List<String> exportedPackages) {}
-
-record RequiresData(String moduleName, RequiresKind kind) {}
-
-enum RequiresKind {
-  DIRECT,
-  TRANSITIVE,
-  STATIC
-}
+    List<String> directReactorDependencies) {}
 ```
 
 The exact schema can be refined,
@@ -194,10 +183,8 @@ but it must answer two questions cheaply:
 1. which Lathe module-source configs belong to this reactor module?
 2. which reactor module-source configs are legal search targets for a symbol declared in another reactor module?
 
-For classpath projects,
-`directReactorDependencies` is enough to search downstream modules.
-For JPMS projects,
-`requires` and `exportedPackages` narrow the candidate set before javac validation.
+`directReactorDependencies` is sufficient to identify downstream modules for both classpath and JPMS projects.
+JPMS `requires`/`exportedPackages` narrowing can be added post-v1 if search scope proves too broad in practice.
 
 The plugin should write direct relationship facts,
 not precomputed transitive closures.
@@ -234,47 +221,34 @@ the search scope is:
 api, service, app
 ```
 
-For JPMS projects,
-the server should use Java module readability rather than only Maven dependency edges.
-`requires transitive` contributes readability through intermediate modules.
-`requires static` counts when the dependency is present in the captured compile module path,
-which is the normal Lathe compile-input case.
+For v1,
+JPMS projects use the same Maven dependency edges as classpath projects.
+Finer-grained narrowing using `requires transitive` and `exportedPackages` is post-v1.
 
 This graph still only selects candidate files.
 If the graph is too broad,
 javac element matching filters false positives.
 If the graph is too narrow,
 find references and rename can miss legal references,
-so relationship metadata and the live JPMS overlay are part of v1 rather than a follow-up.
+so relationship metadata is part of v1.
 
-### Live JPMS Overlay
+For v1,
+Maven dependency edges alone are sufficient for scope planning.
+JPMS `requires`/`exportedPackages` narrowing is deferred post-v1 (see dropped Slice 5 note below).
 
-Changing only `module-info.java` should not require `mvn process-test-classes` before reference search reflects the edit.
+### Live module-info.java (not needed)
 
-The plugin-provided graph is the baseline for Maven reactor identity,
-source roots,
-output directories,
-classpath/modulepath relationships,
-and initial JPMS metadata.
-The server should maintain a live JPMS overlay from current `module-info.java` source:
+A live server overlay for `module-info.java` edits is not required.
+`ModuleSourceCompiler` uses `--patch-module` to compile each file,
+writing the source to a persistent temp directory shared across all compilations for a module worker.
+When `module-info.java` is opened or edited,
+it is written to the patch directory and javac reads it as the live module descriptor for all subsequent compilations in that module.
+Attribution therefore already reflects `module-info.java` edits without any server-side parsing or overlay.
 
-- parse module name,
-  `requires`,
-  `requires transitive`,
-  `requires static`,
-  and exported packages from module-info sources on workspace load
-- prefer open-document content over disk content for an open `module-info.java`
-- refresh the overlay on open/change/save/close of `module-info.java`
-- fall back to plugin metadata or compiled module descriptors only when source is unavailable
-
-Maven sync is still required when Maven structure changes:
-dependencies,
-profiles,
-source roots,
-generated sources,
-or reactor module membership.
-For ordinary `module-info.java` `requires` and `exports` edits,
-the server overlay should be enough to update reference and rename search planning.
+The scope planning graph (which modules to search) still comes from the plugin-provided Maven edges and does not update automatically when `module-info.java` changes.
+This is an acceptable limitation:
+newly added `requires` declarations usually mean new code that does not yet have references to find,
+and the search scope errs on the side of broad rather than narrow.
 
 ---
 
@@ -540,10 +514,13 @@ Add reactor module metadata to `workspace.json`.
 Build `WorkspaceModuleGraph` on server load.
 Search transitive downstream sibling reactor modules that can reference the declaring module.
 
-### Slice 5 — Live JPMS Overlay
+### Slice 5 — Live JPMS Overlay (dropped)
 
-Parse current `module-info.java` source in the server.
-Refresh module readability/export planning on open/change/save/close without requiring Maven sync for ordinary JPMS metadata edits.
+Not required.
+`ModuleSourceCompiler` already reads live `module-info.java` source via `--patch-module`,
+so attribution reflects edits without any server-side parsing overlay.
+Scope planning uses Maven edges from `workspace.json` and does not need an overlay for v1 correctness.
+See section 6 for details.
 
 ### Slice 6 — Live Candidate Index
 
