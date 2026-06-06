@@ -632,20 +632,77 @@ and every file is attributed by javac.
 
 `String` alone causes ~900 javac attributions per request.
 
-### Proposed fix
+### Approaches — recommended order
+
+The following options are ordered from highest value / lowest effort to most complete.
+They are not mutually exclusive; the first two together cover the practical cases well.
+
+**1. Import-based candidate pre-filtering (recommended first step)**
+
+For external types that require an explicit `import` statement,
+the candidate index token lookup massively over-selects.
+`candidateUris("ArrayList")` returns every file that mentions `ArrayList` anywhere;
+`candidateUris("java.util.ArrayList")` would return only files that import it.
+
+The candidate index already stores full file content on build.
+Adding a secondary lookup keyed on the fully-qualified import spelling
+(e.g. `"java.util.ArrayList"`) alongside the simple name
+would reduce the candidate set for most non-`java.lang` external types by an order of magnitude —
+from hundreds of files to exactly the files that imported the type.
+
+This does not help for `java.lang.*` types (`String`, `Object`, etc.) which need no import,
+but those are a small minority of external symbols.
+No UX change is required.
+
+**2. Restrict external symbols to open files only (design doc intent)**
 
 Detect at search-planning time whether the target element belongs to a reactor module.
-The simplest signal: the target's `qualifiedName` (the declaring class's binary name) can be resolved
-against the reactor type index — if `WorkspaceTypeIndex` or the reactor shard map contains a matching
-entry, the element is from the reactor; otherwise treat it as external.
+The simplest signal: check the target's `qualifiedName` against `WorkspaceTypeIndex` or the
+reactor shard map.
+If not found, the element is from a JDK or third-party JAR.
 
-If external, skip the candidate index lookup and the module-worker scan entirely.
-Search only the currently open documents, matching the design doc's scope rule.
+If external, skip the candidate index lookup and the module-worker disk scan entirely.
+Search only the currently open documents, matching the scope rule in section 5.
 
 The fix lives in `WorkspaceSession.referencesFuture`, after the target is resolved,
 before `searchFutures` is called.
 `ReferenceTarget` does not need a new field;
 the reactor-vs-external check is a planning-layer concern.
+
+This does limit results to open files for external symbols,
+which may surprise users who expect workspace-wide hits for types like `String`.
+Options 3 and 4 below address that expectation.
+
+**3. LSP partial results — stream hits as they arrive**
+
+`textDocument/references` supports a `partialResultToken` parameter (LSP 3.17).
+When present, the server sends incremental results via `$/progress` notifications
+as each module worker finishes attribution,
+and returns an empty final response.
+The editor populates the reference list progressively;
+users see hits within ~100ms and can cancel early if they have seen enough.
+
+This is the most correct long-term solution for large result sets:
+no cap, no scope restriction, and the user is never blocked waiting for all results.
+Requires coordinating cancellation across the futures chain in `referencesFuture`.
+
+**4. Candidate cap with a `window/showMessage` warning**
+
+If the candidate count after index lookup exceeds a threshold (e.g. 200 files),
+send a `window/showMessage` notification before starting attribution:
+*"Found N candidate files for Symbol — results may take a moment."*
+The user is informed and can cancel the pending LSP request.
+The search still completes fully.
+
+Simple to implement, zero protocol changes beyond the notification call.
+Pairs well with option 3 once partial results are in place.
+
+**5. Result cap with a marker item (last resort)**
+
+Return the first N results and append a synthetic `Location` pointing to a known
+"results truncated" position, or log a warning.
+Blunt — loses real data — but trivial to add as a temporary safety valve
+if a very large result set causes editor hangs before options 3 or 4 land.
 
 ### Probe artifact — `Set` and `HashSet` returning identical results
 
