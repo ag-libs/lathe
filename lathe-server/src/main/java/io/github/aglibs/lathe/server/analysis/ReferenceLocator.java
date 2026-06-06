@@ -6,9 +6,11 @@ import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.CompoundAssignmentTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.ImportTree;
+import com.sun.source.tree.MemberReferenceTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
+import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.UnaryTree;
 import com.sun.source.tree.VariableTree;
@@ -95,6 +97,32 @@ final class ReferenceLocator extends TreePathScanner<Void, Void> {
     }
 
     return super.visitIdentifier(node, ignored);
+  }
+
+  @Override
+  public Void visitMemberReference(final MemberReferenceTree node, final Void ignored) {
+    scan(node.getQualifierExpression(), null);
+    final var element = trees.getElement(getCurrentPath());
+    if (target.matches(element, types, elements)) {
+      addMatchAtIdentifier(node, node.getName().toString(), ReferenceRole.INVOCATION);
+    }
+    return null;
+  }
+
+  @Override
+  public Void visitNewClass(final NewClassTree node, final Void ignored) {
+    final var element = trees.getElement(getCurrentPath());
+    if (target.matches(element, types, elements)) {
+      final var id = node.getIdentifier();
+      final String name =
+          id instanceof final MemberSelectTree mst
+              ? mst.getIdentifier().toString()
+              : id instanceof final IdentifierTree it ? it.getName().toString() : null;
+      if (name != null) {
+        addMatchAtIdentifier(id, name, ReferenceRole.INVOCATION);
+      }
+    }
+    return super.visitNewClass(node, ignored);
   }
 
   @Override
