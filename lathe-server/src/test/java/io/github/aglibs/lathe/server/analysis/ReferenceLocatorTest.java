@@ -326,17 +326,17 @@ class ReferenceLocatorTest {
   }
 
   @Test
-  void searchScope_privateField_declaringModule() {
+  void searchScope_privateField_declaringFile() {
     final var analysis = compile("class Test { private String x; }");
     final var target = targetAt(analysis, "private String x", "x");
-    assertThat(target.scope()).isEqualTo(ReferenceTarget.SearchScope.DECLARING_MODULE);
+    assertThat(target.scope()).isEqualTo(ReferenceTarget.SearchScope.DECLARING_FILE);
   }
 
   @Test
-  void searchScope_localVariable_declaringModule() {
+  void searchScope_localVariable_declaringFile() {
     final var analysis = compile("class Test { void run() { int x = 1; } }");
     final var target = targetAt(analysis, "int x", "x");
-    assertThat(target.scope()).isEqualTo(ReferenceTarget.SearchScope.DECLARING_MODULE);
+    assertThat(target.scope()).isEqualTo(ReferenceTarget.SearchScope.DECLARING_FILE);
   }
 
   @Test

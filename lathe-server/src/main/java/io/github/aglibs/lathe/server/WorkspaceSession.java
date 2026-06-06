@@ -201,6 +201,20 @@ final class WorkspaceSession {
                 return CompletableFuture.completedFuture(List.of());
               }
 
+              if (target.scope() == ReferenceTarget.SearchScope.DECLARING_FILE) {
+                return cursorWorker.searchReferences(
+                    openFile.uri(),
+                    openFile.content(),
+                    openFile.version(),
+                    target,
+                    includeDeclaration);
+              }
+
+              final Path packageRel =
+                  target.scope() == ReferenceTarget.SearchScope.DECLARING_MODULE
+                      ? declaringPackageRel(toPath(uri), cursorConfig.orElse(null))
+                      : null;
+
               final List<ModuleSourceConfig> configs =
                   target.scope() == ReferenceTarget.SearchScope.REACTOR_MODULES
                       ? cursorConfig.map(moduleGraph::referenceSearchScope).orElse(List.of())
@@ -209,7 +223,7 @@ final class WorkspaceSession {
                           .orElse(List.of());
 
               return configs.stream()
-                  .flatMap(config -> searchFutures(config, target, includeDeclaration))
+                  .flatMap(config -> searchFutures(config, target, includeDeclaration, packageRel))
                   .reduce(
                       CompletableFuture.completedFuture(List.of()),
                       (f1, f2) ->
@@ -222,7 +236,8 @@ final class WorkspaceSession {
   private Stream<CompletableFuture<List<Location>>> searchFutures(
       final ModuleSourceConfig config,
       final ReferenceTarget target,
-      final boolean includeDeclaration) {
+      final boolean includeDeclaration,
+      final Path packageRel) {
     final var worker = workspace.workerFor(config);
     final List<OpenDocument> openForConfig =
         openDocuments.values().stream()
@@ -232,6 +247,7 @@ final class WorkspaceSession {
                         .moduleSourceFor(toPath(doc.uri()))
                         .map(c -> c.equals(config))
                         .orElse(false))
+            .filter(doc -> isInPackageScope(toPath(doc.uri()), config.sourceRoots(), packageRel))
             .toList();
     final Set<String> openUrisForConfig =
         openForConfig.stream().map(OpenDocument::uri).collect(Collectors.toUnmodifiableSet());
@@ -239,7 +255,7 @@ final class WorkspaceSession {
     final List<DiskCandidate> diskFiles =
         candidateIndex.candidateUris(target.simpleName()).stream()
             .filter(uri -> !openUrisForConfig.contains(uri))
-            .filter(uri -> sourceRoots.stream().anyMatch(toPath(uri)::startsWith))
+            .filter(uri -> isInPackageScope(toPath(uri), sourceRoots, packageRel))
             .flatMap(uri -> readDiskCandidate(uri).stream())
             .toList();
     return Stream.concat(
@@ -251,6 +267,27 @@ final class WorkspaceSession {
         diskFiles.stream()
             .map(
                 d -> worker.searchReferences(d.uri(), d.content(), 0, target, includeDeclaration)));
+  }
+
+  private static Path declaringPackageRel(final Path cursorPath, final ModuleSourceConfig config) {
+    if (config == null) {
+      return null;
+    }
+
+    return config.sourceRoots().stream()
+        .filter(cursorPath::startsWith)
+        .map(root -> root.relativize(cursorPath.getParent()))
+        .findFirst()
+        .orElse(null);
+  }
+
+  private static boolean isInPackageScope(
+      final Path path, final List<Path> sourceRoots, final Path packageRel) {
+    if (packageRel == null) {
+      return sourceRoots.stream().anyMatch(path::startsWith);
+    }
+
+    return sourceRoots.stream().anyMatch(root -> path.startsWith(root.resolve(packageRel)));
   }
 
   private void reindexFromDisk(final String uri) {

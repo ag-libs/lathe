@@ -19,6 +19,7 @@ public record ReferenceTarget(
     SearchScope scope) {
 
   public enum SearchScope {
+    DECLARING_FILE,
     DECLARING_MODULE,
     REACTOR_MODULES
   }
@@ -69,10 +70,14 @@ public record ReferenceTarget(
         || kind == ElementKind.PARAMETER
         || kind == ElementKind.EXCEPTION_PARAMETER
         || kind == ElementKind.RESOURCE_VARIABLE) {
-      return SearchScope.DECLARING_MODULE;
+      return SearchScope.DECLARING_FILE;
     }
 
     final Set<Modifier> mods = element.getModifiers();
+    if (mods.contains(Modifier.PRIVATE)) {
+      return SearchScope.DECLARING_FILE;
+    }
+
     if (mods.contains(Modifier.PUBLIC) || mods.contains(Modifier.PROTECTED)) {
       return SearchScope.REACTOR_MODULES;
     }
