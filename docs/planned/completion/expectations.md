@@ -220,6 +220,27 @@ Forbidden:
 - void methods when a value is required;
 - unrelated type-index results for lowercase value prefixes.
 
+Casing:
+
+- Casing is a ranking hint,
+not a hard semantic filter.
+- Uppercase prefixes in method bodies should use mixed completion:
+visible values remain eligible,
+and importable type candidates may be merged in.
+- Visible values that match the prefix,
+such as constants and static fields,
+should rank before importable type-index candidates when both are legal.
+- Lowercase prefixes in ordinary value positions should avoid unrelated type-index candidates
+unless the surrounding syntax requires a type.
+- Type positions,
+member access,
+imports,
+constructors,
+and other syntactically typed sites should still use their normal site-specific candidate families.
+
+`CQ-0009` tracks the concrete regression where `LOG§` in a method body returns type-index results
+but hides the visible static field `LOGGER`.
+
 Insertion:
 
 - accepted method candidates insert a call expression,
