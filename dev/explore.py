@@ -49,8 +49,15 @@ hover <text>
 definition <line>:<col>   (alias: def <line>:<col>)
     Show the declaration site of the symbol at the given 0-based position.
 
-refs <line>:<col>
+refs <line>:<col> [assertions]
     List known call/use sites of the symbol at the given 0-based position.
+
+refs <text> [assertions]
+    Find the first occurrence of <text> in the file and request references there.
+    Supports the same assertion qualifiers as complete, except filter:
+      expect <substr>  at least one result path must contain substr
+      min <n>          at least n references required
+      max <n>          at most n references allowed
 
 diagnostics   (alias: diag)
     List errors and warnings the compiler reports for this file.
@@ -183,6 +190,38 @@ def _parse_assertions(args: list[str]) -> tuple[list[str], dict]:
             i += 1  # skip unknown token
 
     return pre, assertions
+
+
+def _check_refs_assertions(refs: list[dict], assertions: dict) -> list[str]:
+    """Return failure messages for ref-location assertions (empty → all pass).
+
+    expect <substr>  — at least one ref URI must contain substr.
+    min <n>          — at least n references required.
+    max <n>          — at most n references allowed.
+    """
+    if not assertions:
+        return []
+
+    failures: list[str] = []
+    paths = [ref.get("uri", "").removeprefix("file://") for ref in refs]
+
+    for expected in assertions.get("expect", []):
+        if not any(expected in p for p in paths):
+            failures.append(
+                f"expected a reference whose path contains {expected!r} — not found"
+            )
+
+    if "min" in assertions and len(refs) < assertions["min"]:
+        failures.append(
+            f"expected ≥{assertions['min']} reference(s), got {len(refs)}"
+        )
+
+    if "max" in assertions and len(refs) > assertions["max"]:
+        failures.append(
+            f"expected ≤{assertions['max']} reference(s), got {len(refs)}"
+        )
+
+    return failures
 
 
 def _check_assertions(items: list[dict], assertions: dict) -> list[str]:
@@ -477,13 +516,30 @@ class ExploreShell:
 
     def _cmd_refs(self, args: list[str]) -> None:
         if not args:
-            print("usage: refs <line>:<col>")
+            print("usage: refs <line>:<col> [assertions]")
+            print("       refs <text>        [assertions]")
             return
-        try:
-            line, col = (int(x) for x in args[0].split(":", 1))
-        except (ValueError, TypeError):
-            print(f"  expected line:col (0-based), got {args[0]!r}")
+
+        pre, assertions = _parse_assertions(args)
+
+        if not pre:
+            print("usage: refs <line>:<col> [assertions]")
+            print("       refs <text>        [assertions]")
             return
+
+        if ":" in pre[0] and pre[0][0].isdigit():
+            try:
+                line, col = (int(x) for x in pre[0].split(":", 1))
+            except (ValueError, TypeError):
+                print(f"  expected line:col (0-based) or text, got {pre[0]!r}")
+                return
+        else:
+            pos = self._find_text(pre[0])
+            if pos is None:
+                print(f"  text not found: {pre[0]!r}")
+                return
+            line, col = pos
+            print(f"  found {pre[0]!r} at {line}:{col}")
 
         try:
             refs = self._client.references(self._file, line, col)
@@ -493,10 +549,15 @@ class ExploreShell:
 
         if not refs:
             print("  (no references found)")
+            if assertions:
+                passed = _print_assertion_result(_check_refs_assertions([], assertions))
+                if not passed:
+                    self.any_failure = True
             return
 
         print(f"  {len(refs)} reference(s):")
-        for ref in refs[:15]:
+        limit = len(refs) if assertions else 15
+        for ref in refs[:limit]:
             uri   = ref.get("uri", "?")
             r     = ref.get("range", {})
             start = r.get("start", {})
@@ -505,8 +566,13 @@ class ExploreShell:
             ch    = start.get("character", "?")
             print(f"    {path}:{ln + 1 if isinstance(ln, int) else ln}"
                   f":{ch + 1 if isinstance(ch, int) else ch}")
-        if len(refs) > 15:
-            print(f"    … {len(refs) - 15} more")
+        if len(refs) > limit:
+            print(f"    … {len(refs) - limit} more")
+
+        if assertions:
+            passed = _print_assertion_result(_check_refs_assertions(refs, assertions))
+            if not passed:
+                self.any_failure = True
 
     def _cmd_diagnostics(self, args: list[str]) -> None:
         try:
