@@ -1,5 +1,23 @@
 # Lathe — Completion Presentation
 
+## Status
+
+Implemented:
+
+- Slice 1 — type rows use `CompletionItem.labelDetails.description` for package display.
+- Slice 2 — method and field presentation use a UI-only `TypeMirror` display formatter.
+- Slice 3 — method labels are bare names,
+  with parameters in `labelDetails.detail`,
+  return type in `labelDetails.description`,
+  and richer method summaries in `detail`.
+- Slice 4 — annotation element completions route through `CompletionCandidate` and `CompletionItemPresenter`.
+
+Deferred:
+
+- Slice 5 — client-capability fallback for older clients.
+  Lathe is unreleased,
+  so the server currently always emits the modern `labelDetails` shape.
+
 ## Problem
 
 Lathe completion candidates already carry enough semantic information to insert the right text,
