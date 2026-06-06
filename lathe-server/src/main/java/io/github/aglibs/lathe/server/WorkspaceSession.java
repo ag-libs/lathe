@@ -5,6 +5,7 @@ import static java.util.logging.Level.SEVERE;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
+import io.github.aglibs.lathe.server.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
 import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
@@ -202,12 +203,14 @@ final class WorkspaceSession {
               }
 
               if (target.scope() == ReferenceTarget.SearchScope.DECLARING_FILE) {
-                return cursorWorker.searchReferences(
-                    openFile.uri(),
-                    openFile.content(),
-                    openFile.version(),
-                    target,
-                    includeDeclaration);
+                return cursorWorker
+                    .searchReferences(
+                        openFile.uri(),
+                        openFile.content(),
+                        openFile.version(),
+                        target,
+                        includeDeclaration)
+                    .thenApply(WorkspaceSession::toLocations);
               }
 
               final Path packageRel =
@@ -262,11 +265,20 @@ final class WorkspaceSession {
         openForConfig.stream()
             .map(
                 doc ->
-                    worker.searchReferences(
-                        doc.uri(), doc.content(), doc.version(), target, includeDeclaration)),
+                    worker
+                        .searchReferences(
+                            doc.uri(), doc.content(), doc.version(), target, includeDeclaration)
+                        .thenApply(WorkspaceSession::toLocations)),
         diskFiles.stream()
             .map(
-                d -> worker.searchReferences(d.uri(), d.content(), 0, target, includeDeclaration)));
+                d ->
+                    worker
+                        .searchReferences(d.uri(), d.content(), 0, target, includeDeclaration)
+                        .thenApply(WorkspaceSession::toLocations)));
+  }
+
+  private static List<Location> toLocations(final List<ReferenceMatch> matches) {
+    return matches.stream().map(ReferenceMatch::toLocation).toList();
   }
 
   private static Path declaringPackageRel(final Path cursorPath, final ModuleSourceConfig config) {

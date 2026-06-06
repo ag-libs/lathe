@@ -141,7 +141,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
     return ReferenceTarget.from(element, cur.ctx().types(), cur.ctx().elements());
   }
 
-  public List<Location> searchReferences(
+  public List<ReferenceMatch> searchReferences(
       final String uri,
       final String content,
       final int version,
@@ -169,23 +169,6 @@ public final class SourceAnalysisSession implements AutoCloseable {
       LOG.log(Level.WARNING, e, () -> "[references] failed to read source for " + uri);
       return List.of();
     }
-  }
-
-  public List<Location> references(
-      final SourceFeatureRequest request, final boolean includeDeclaration) {
-    final var t = Stopwatch.start();
-    final var target = resolveTarget(request);
-    if (target == null) {
-      return List.of();
-    }
-
-    final var results =
-        searchReferences(request.uri(), request.content(), 0, target, includeDeclaration);
-    LOG.fine(
-        () ->
-            "[references] %dms element=%s hits=%d"
-                .formatted(t.elapsedMs(), target.simpleName(), results.size()));
-    return results;
   }
 
   public Optional<Location> definition(final SourceFeatureRequest request) {
