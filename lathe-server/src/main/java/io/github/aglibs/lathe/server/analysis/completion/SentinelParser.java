@@ -299,13 +299,17 @@ final class SentinelParser {
 
     final Tree parent = parentPath.getLeaf();
     final boolean simpleName = !(sentinel instanceof MemberSelectTree);
+    final String annotationArgumentType = annotationArgumentType(sentinel, parentPath);
+    if (!simpleName && annotationArgumentType != null) {
+      return Classification.of(SentinelContext.MEMBER_ACCESS);
+    }
+
     final AnnotationValueInfo annotationValue = annotationArgumentValue(sentinel, parentPath);
     if (annotationValue != null) {
       return Classification.annotationArgumentValue(
           annotationValue.annotationType(), annotationValue.elementName());
     }
 
-    final String annotationArgumentType = annotationArgumentType(sentinel, parentPath);
     if (annotationArgumentType != null) {
       return Classification.annotationArgument(annotationArgumentType);
     }

@@ -43,6 +43,22 @@ class CompletionAnnotationTest extends CompletionTestSupport {
   }
 
   @Test
+  void annotationArgumentValue_enumMemberAccess_offersEnumConstants() {
+    final List<String> items =
+        labels(
+            fixture.complete(
+                """
+                import java.lang.annotation.Retention;
+                import java.lang.annotation.RetentionPolicy;
+
+                @Retention(RetentionPolicy.§)
+                class Test {}
+                """));
+
+    assertThat(items).contains("RUNTIME");
+  }
+
+  @Test
   void annotationArgument_namedElementPrefix_beforeEquals_suggestsElementName() {
     // cursor is in the name slot with "= value" already written: va§ = ""
     assertThat(labels(fixture.complete("@SuppressWarnings(va§ = \"\") class Test {}")))
