@@ -167,37 +167,45 @@ Private members stay in the declaring top-level source file.
 
 Find references v1 needs the server to know which reactor modules can reference another reactor module.
 
-Add baseline reactor module entries to `workspace.json` during `lathe:sync`:
+The relationship graph is derived entirely on the server from the existing `lsp-params-*.json` files.
+No changes to `workspace.json` or the Maven plugin are required.
 
-```java
-record WorkspaceModuleData(
-    String moduleRel,
-    SourceTree sourceTree,
-    List<String> sourceRoots,
-    List<String> directReactorDependencies) {}
-```
+### Derivation from classpath entries
 
-The exact schema can be refined,
-but it must answer two questions cheaply:
+Each `ModuleSourceConfig` records the raw classpath and modulepath written by the compiler.
+`ModuleSourceConfig.remappedClasspath()` converts entries that live under the workspace root to their
+`.lathe/` mirrors:
 
-1. which Lathe module-source configs belong to this reactor module?
-2. which reactor module-source configs are legal search targets for a symbol declared in another reactor module?
+- `<module>/target/classes` → `.lathe/<module>/classes`
+- `<module>/target/<artifact>.jar` → `.lathe/<module>/classes`
+- `<module>/target/<artifact>-tests.jar` → `.lathe/<module>/test-classes`
 
-`directReactorDependencies` is sufficient to identify downstream modules for both classpath and JPMS projects.
-JPMS `requires`/`exportedPackages` narrowing can be added post-v1 if search scope proves too broad in practice.
+Every `ModuleSourceConfig.latheClassesDir()` returns exactly one of those mirror paths.
+The direct reactor dependencies of a config are therefore the remapped classpath entries that match
+a known `latheClassesDir()` value from another config (self-references excluded).
 
-The plugin should write direct relationship facts,
-not precomputed transitive closures.
-The server should compute transitive downstream scopes from the direct graph so reloads and live overlays can update the answer without
-rerunning Maven.
+This inference is always current because the compiler rewrites the lsp-params files on every build,
+including incremental ones.
+The one case it misses — a reactor module resolving from `~/.m2` during a partial build — is also the
+case where `workspace.json` is not updated, so both approaches degrade equally there.
 
-The server should build an immutable relationship graph on workspace load:
+### Graph structure
+
+The server builds an immutable relationship graph on workspace load:
 
 ```java
 final class WorkspaceModuleGraph {
-  List<ModuleSourceConfig> referenceSearchScope(ReferenceTarget target);
+  static WorkspaceModuleGraph build(List<ModuleSourceConfig> allConfigs);
+  List<ModuleSourceConfig> referenceSearchScope(ModuleSourceConfig declaring);
 }
 ```
+
+`build` derives direct dependencies from `remappedClasspath()` and `remappedModulepath()`,
+then precomputes the transitive downstream set for each module dir.
+
+`referenceSearchScope` returns all configs whose module dir is the declaring module dir or is
+transitively downstream of it.
+The declaring module's own configs are always included.
 
 The graph is a planning aid,
 not a semantic authority.
@@ -510,16 +518,19 @@ Attribute only matching files and merge the results with open-file results.
 
 ### Slice 4 — Reactor Relationship Graph
 
-Add reactor module metadata to `workspace.json`.
-Build `WorkspaceModuleGraph` on server load.
-Search transitive downstream sibling reactor modules that can reference the declaring module.
+Build `WorkspaceModuleGraph` on server load by deriving direct reactor dependencies from the
+remapped classpath entries already present in each `ModuleSourceConfig`.
+No plugin or schema changes are needed.
+Extend `referencesFuture` to search transitive downstream modules for public and protected symbols.
+Add `SearchScope` to `ReferenceTarget` so the search orchestrator knows whether to widen beyond
+the declaring module.
 
 ### Slice 5 — Live JPMS Overlay (dropped)
 
 Not required.
 `ModuleSourceCompiler` already reads live `module-info.java` source via `--patch-module`,
 so attribution reflects edits without any server-side parsing overlay.
-Scope planning uses Maven edges from `workspace.json` and does not need an overlay for v1 correctness.
+Scope planning uses classpath-derived reactor edges and does not need an overlay for v1 correctness.
 See section 6 for details.
 
 ### Slice 6 — Live Candidate Index
