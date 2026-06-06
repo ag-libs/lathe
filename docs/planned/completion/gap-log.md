@@ -46,12 +46,14 @@ Notes:
 
 ## Current Triage
 
-Three accepted completion-quality gaps are currently open from the
+Five accepted completion-quality gaps are currently open from the
 `DropwizardResourceConfig` explorer pass.
 
 `CQ-0006`,
 `CQ-0008`,
-and `CQ-0010` are documented probe gaps and need tests before implementation.
+`CQ-0010`,
+`CQ-0011`,
+and `CQ-0012` are documented probe gaps and need tests before implementation.
 
 `CQ-0001`,
 `CQ-0003`,
@@ -484,6 +486,134 @@ return type alone in `labelDetails.description`,
 and the ` : ` separator only in the fallback `detail` string.
 The spacing should be handled by the Neovim completion renderer,
 not by changing Lathe's server-side LSP data away from the JDT LS shape.
+
+## CQ-0011 — Constructor invocation keywords can be offered when an explicit invocation already exists
+
+ID: CQ-0011
+Status: accepted
+Tier: semantic
+Failure mode: invalid-keyword-candidate
+Owner component: KeywordProvider / SentinelParser
+
+Project/file:
+`/home/ag-libs/git/dropwizard/dropwizard-jersey/src/main/java/io/dropwizard/jersey/DropwizardResourceConfig.java`
+
+Probe command:
+```bash
+printf 'inject "this" at 63\nlog 20\n' \
+  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-jersey/src/main/java/io/dropwizard/jersey/DropwizardResourceConfig.java
+```
+
+Cursor context:
+```java
+public DropwizardResourceConfig(@Nullable MetricRegistry metricRegistry) {
+    this§
+    super();
+    ...
+}
+```
+
+IntelliJ or JDT behavior:
+Expected IDE behavior is to avoid suggesting an explicit constructor invocation
+when the constructor body already contains one.
+Java permits at most one explicit constructor invocation,
+and it must be the first statement in the constructor body.
+
+Lathe behavior:
+Lathe offers the `this` keyword at the first statement slot before an existing `super();`.
+Accepting it as a constructor invocation starter would leave both `this...` and `super();`
+in the same constructor body.
+
+Expected Lathe behavior:
+`this` and `super` constructor-invocation keyword candidates should be offered only when the current
+constructor does not already contain an explicit `this(...)` or `super(...)` invocation.
+They should also be constrained to the first-statement position.
+
+Accepted edit, if relevant:
+Not applicable until constructor-invocation completion adds call-shape snippets.
+
+Regression target:
+Future keyword completion test for constructor first-statement rules.
+
+Notes:
+This gap is about `this` and `super` as explicit constructor invocation starters.
+It should not block ordinary `this` expression completion,
+`this.member` access,
+or `super.member` access where those are otherwise legal.
+
+## CQ-0012 — Member completion after assignment can be misclassified as a type reference
+
+ID: CQ-0012
+Status: accepted
+Tier: semantic
+Failure mode: missing-candidate
+Owner component: SentinelParser / CompletionEngine
+
+Project/file:
+`/home/ag-libs/git/dropwizard/dropwizard-jersey/src/main/java/io/dropwizard/jersey/DropwizardResourceConfig.java`
+
+Probe command:
+```bash
+printf 'inject "LOGGER.de" at 239\nlog 30\n' \
+  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-jersey/src/main/java/io/dropwizard/jersey/DropwizardResourceConfig.java
+```
+
+Control probe:
+```bash
+printf 'inject "LOGGER.de" at 249\nlog 20\n' \
+  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-jersey/src/main/java/io/dropwizard/jersey/DropwizardResourceConfig.java
+```
+
+Cursor context:
+```java
+public void onEvent(ApplicationEvent event) {
+    if (event.getType() == ApplicationEvent.Type.INITIALIZATION_APP_FINISHED) {
+        resources = event.getResourceModel().getResources();
+        LOGGER.de§
+        providers = event.getProviders();
+        ...
+        LOGGER.debug("resources = {}", resourceClasses);
+    }
+}
+```
+
+IntelliJ or JDT behavior:
+Expected IDE behavior is to offer `Logger.debug(...)` overloads for `LOGGER.de§`
+at both positions.
+
+Lathe behavior:
+At line 239,
+Lathe returns no completions.
+The debug log shows:
+
+```text
+[completion] inject prefix=|de| receiver=|LOGGER| ctx=STATEMENT hasDot=true
+[completion] parsed valid=true sentinelCtx=TYPE_REFERENCE receiver=|LOGGER| class=ComponentLoggingListener method=onEvent role=ORDINARY
+```
+
+At line 249 in the same method,
+the same `LOGGER.de§` probe is classified as `MEMBER_ACCESS`
+and returns the expected ten `debug` overloads.
+
+Expected Lathe behavior:
+Receiver-qualified expression completion should remain `MEMBER_ACCESS`
+after ordinary assignment statements in a method body.
+The preceding `resources = ...;` statement should not cause `LOGGER.de§`
+to route through type-reference completion.
+
+Accepted edit, if relevant:
+For `Logger.debug(String)`,
+`textEdit.newText` is `debug($1)`,
+the replacement range covers only the typed `de`,
+and accepting the item should produce `LOGGER.debug(§)`.
+
+Regression target:
+Sentinel parsing test with a method body containing an assignment statement
+followed immediately by a receiver-qualified member completion.
+
+Notes:
+This is not an overload acceptance issue.
+The later control probe confirms the selected method item itself edits correctly.
 
 ## CQ-0001 — Annotation enum value completion routes to element-name completion
 

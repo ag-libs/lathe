@@ -72,6 +72,9 @@ printf 'grep setAttribute\ncomplete after "handler.getServletContext()."\n' \
 | `grep <pattern>` | Show every line containing `<pattern>` with its line number |
 | `complete <line>:<col>` | Completions at the given 0-based position |
 | `complete after <text>` | Find first occurrence of `<text>`, complete right after it |
+| `accept <line>:<col> <selector>` | Select one completion item and show the accepted edit |
+| `accept after <text> <selector>` | Accept a completion right after the first matching text |
+| `accept inject <code> [at <line>] <selector>` | Inject a temporary line, accept one completion, and show the edit |
 | `hover <line>:<col>` | Hover info (type, docs) at the given 0-based position |
 | `hover <text>` | Hover info at the first occurrence of `<text>` |
 | `definition <line>:<col>` | Declaration site of the symbol (alias: `def`) |
@@ -132,6 +135,38 @@ python3 dev/explore.py StringUtils.java refs "StringUtils()" max 0
 # pipe multiple reference checks in one server session
 printf 'refs "upper" min 1 expect Main.java\nrefs "StringUtils()" max 0\n' \
     | python3 dev/explore.py StringUtils.java
+```
+
+### Probing accepted completion edits
+
+`accept` inspects what selecting one completion item would do.
+It prints the raw selected `CompletionItem`,
+applies `textEdit` and `additionalTextEdits` in memory,
+and marks the inferred post-accept cursor with `§`.
+
+Selectors can be combined:
+
+| Selector | Meaning |
+|---|---|
+| `label <label>` | Item label must equal `<label>` |
+| `filter-text <text>` | Item `filterText` must equal `<text>` |
+| `label-detail <detail>` | Item `labelDetails.detail` must equal `<detail>` |
+| `detail-contains <text>` | Item `detail` must contain `<text>` |
+| `index <n>` | Choose the nth item after filters, default `0` |
+
+For `accept inject`,
+the injected code may contain `§` to place the completion cursor before trailing text.
+The marker is removed from the temporary content.
+
+```bash
+python3 dev/explore.py /path/to/File.java \
+    accept inject 'LOGGER.de' at 63 filter-text debug label-detail '(String)'
+
+python3 dev/explore.py /path/to/File.java \
+    accept inject 'import static java.util.Collections.emptyL' at 43 label emptyList
+
+python3 dev/explore.py /path/to/File.java \
+    accept inject 'import static java.util.Collections.emptyL§;' at 43 label emptyList
 ```
 
 ### Probing find-references
@@ -196,7 +231,7 @@ and `hover <text>` handle the conversion automatically.
 
 ## lsp.py — LSP client library
 
-`lsp.py` is the shared foundation for both `explore.py` and `probe.py`.  It
+`lsp.py` is the shared foundation for `explore.py` and ad-hoc probes.  It
 wraps the Lathe server process in a synchronous Python API.
 
 ### CLI — print diagnostics for a file

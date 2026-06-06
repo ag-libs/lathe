@@ -179,18 +179,8 @@ class CompletionPresentationTest extends CompletionTestSupport {
   // ── type index ────────────────────────────────────────────────────────────────
 
   private static String textInRange(final String content, final Range range) {
-    final int start = offset(content, range.getStart());
-    final int end = offset(content, range.getEnd());
+    final int start = CursorFixture.offset(content, range.getStart());
+    final int end = CursorFixture.offset(content, range.getEnd());
     return content.substring(start, end);
-  }
-
-  private static int offset(final String content, final Position position) {
-    final String[] lines = content.split("\\n", -1);
-    int offset = 0;
-    for (int line = 0; line < position.getLine(); line++) {
-      offset += lines[line].length() + 1; // "\n"
-    }
-
-    return offset + position.getCharacter();
   }
 }

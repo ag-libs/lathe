@@ -66,6 +66,15 @@ abstract class CompletionTestSupport {
     return items.stream().filter(i -> text.equals(i.getFilterText())).findFirst();
   }
 
+  protected static Optional<CompletionItem> itemWithLabelDetail(
+      final List<CompletionItem> items, final String label, final String labelDetail) {
+    return items.stream()
+        .filter(item -> label.equals(item.getLabel()))
+        .filter(item -> item.getLabelDetails() != null)
+        .filter(item -> labelDetail.equals(item.getLabelDetails().getDetail()))
+        .findFirst();
+  }
+
   protected record ExampleLib(List<String> modulePath, String moduleInfo) {}
 
   protected ExampleLib buildExampleLib() throws IOException {

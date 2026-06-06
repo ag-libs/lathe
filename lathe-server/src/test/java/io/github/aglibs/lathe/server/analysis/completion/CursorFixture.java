@@ -1,5 +1,7 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
+import org.eclipse.lsp4j.Position;
+
 final class CursorFixture {
   static final char MARKER = '§';
 
@@ -22,5 +24,15 @@ final class CursorFixture {
     }
 
     return new Cursor(source.replace(String.valueOf(MARKER), ""), offset);
+  }
+
+  static int offset(final String content, final Position position) {
+    final String[] lines = content.split("\\n", -1);
+    int offset = 0;
+    for (int line = 0; line < position.getLine(); line++) {
+      offset += lines[line].length() + 1; // "\n"
+    }
+
+    return offset + position.getCharacter();
   }
 }

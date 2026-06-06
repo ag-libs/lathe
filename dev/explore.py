@@ -18,6 +18,7 @@ Single inline command (remaining argv joined as one command line):
     python3 dev/explore.py <file> complete after "config.url()"
     python3 dev/explore.py <file> complete after "MongoClients." expect create min 1
     python3 dev/explore.py <file> inject "MongoClients." expect create
+    python3 dev/explore.py <file> accept inject "LOGGER.de" at 63 filter-text debug label-detail "(String)"
 
 Piped / sub-agent (one command per line on stdin):
     printf 'grep setAttribute\\ncomplete after "getServletContext()." expect setAttribute\\n' \\
@@ -69,6 +70,23 @@ inject <code> [at <line>] [<assertions>]
     The file on disk is never modified.  Any previous injection is discarded
     first.
 
+accept <line>:<col> <selector>
+accept after <text> <selector>
+accept inject <code> [at <line>] <selector>
+    Request completion, select one item, print its raw CompletionItem, apply
+    textEdit/additionalTextEdits in memory, and show the resulting text with
+    the inferred post-accept cursor marked as §.
+
+    Selectors:
+      label <label>              item label must equal label
+      filter-text <text>         item filterText must equal text
+      label-detail <detail>      item labelDetails.detail must equal detail
+      detail-contains <text>     item detail must contain text
+      index <n>                  choose the nth item after filters, default 0
+
+    For accept inject, <code> may contain § to place the completion cursor
+    before trailing text.  The marker is removed from the temporary content.
+
 reset
     Discard any injected content and restore the server's view to the
     original file content.
@@ -108,6 +126,8 @@ When any qualifier fails the line starts with  [FAIL]  and the exit code is 1.
 When there are no qualifiers the result is printed without a status badge.
 """
 
+import json
+import re
 import shlex
 import sys
 import time
@@ -141,6 +161,9 @@ _LOG_KEYWORDS = (
 )
 
 _ASSERTION_KEYWORDS = frozenset(("expect", "min", "max", "filter"))
+_ACCEPT_SELECTOR_KEYWORDS = frozenset((
+    "label", "filter-text", "label-detail", "detail-contains", "index",
+))
 
 
 # ── assertion helpers ─────────────────────────────────────────────────────────
@@ -265,6 +288,104 @@ def _print_assertion_result(failures: list[str]) -> bool:
     return True
 
 
+def _offset_at(content: str, line: int, col: int) -> int:
+    lines = content.splitlines(keepends=True)
+    return sum(len(lines[i]) for i in range(line)) + col
+
+
+def _position_at(content: str, offset: int) -> tuple[int, int]:
+    before = content[:offset]
+    line = before.count("\n")
+    line_start = before.rfind("\n") + 1
+    return line, offset - line_start
+
+
+def _edit_range(edit: dict) -> dict:
+    if "range" in edit:
+        return edit["range"]
+    if "replace" in edit:
+        return edit["replace"]
+    if "insert" in edit:
+        return edit["insert"]
+    raise ValueError(f"unsupported text edit shape: {edit}")
+
+
+def _snippet_text_and_cursor(text: str) -> tuple[str, int | None]:
+    cursor = None
+    out = []
+    index = 0
+    pattern = re.compile(r"\$(\d+)|\$\{(\d+):([^}]*)\}")
+    for match in pattern.finditer(text):
+        out.append(text[index:match.start()])
+        number = int(match.group(1) or match.group(2))
+        default = match.group(3) or ""
+        if cursor is None and number in (1, 0):
+            cursor = sum(len(part) for part in out)
+        out.append(default)
+        index = match.end()
+    out.append(text[index:])
+    return "".join(out), cursor
+
+
+def _apply_completion(content: str, item: dict) -> tuple[str, int]:
+    text_edit = item.get("textEdit")
+    if not text_edit:
+        raise ValueError("selected completion item has no textEdit")
+
+    primary_range = _edit_range(text_edit)
+    new_text = text_edit.get(
+        "newText",
+        item.get("textEditText", item.get("insertText", item["label"])),
+    )
+    if item.get("insertTextFormat") == 2:
+        applied_text, cursor_in_new_text = _snippet_text_and_cursor(new_text)
+    else:
+        applied_text = new_text
+        cursor_in_new_text = len(applied_text)
+
+    primary_start = _offset_at(
+        content,
+        primary_range["start"]["line"],
+        primary_range["start"]["character"],
+    )
+    primary_end = _offset_at(
+        content,
+        primary_range["end"]["line"],
+        primary_range["end"]["character"],
+    )
+
+    edits = []
+    for edit in item.get("additionalTextEdits") or []:
+        rng = _edit_range(edit)
+        edits.append((
+            _offset_at(content, rng["start"]["line"], rng["start"]["character"]),
+            _offset_at(content, rng["end"]["line"], rng["end"]["character"]),
+            edit.get("newText", ""),
+            None,
+        ))
+    edits.append((primary_start, primary_end, applied_text, cursor_in_new_text))
+
+    result = content
+    cursor = None
+    for start, end, replacement, cursor_in_edit in sorted(edits, key=lambda e: e[0], reverse=True):
+        result = result[:start] + replacement + result[end:]
+        if cursor_in_edit is not None:
+            cursor = start + cursor_in_edit
+
+    if cursor is None:
+        cursor = primary_start + len(applied_text)
+    return result, cursor
+
+
+def _line_context(content: str, cursor: int, radius: int = 2) -> str:
+    marked = content[:cursor] + "§" + content[cursor:]
+    line, _ = _position_at(marked, cursor)
+    lines = marked.splitlines()
+    start = max(0, line - radius)
+    end = min(len(lines), line + radius + 1)
+    return "\n".join(f"{i + 1:5d}  {lines[i]}" for i in range(start, end))
+
+
 # ── shell ─────────────────────────────────────────────────────────────────────
 
 class ExploreShell:
@@ -301,6 +422,7 @@ class ExploreShell:
             "show":        self._cmd_show,
             "grep":        self._cmd_grep,
             "complete":    self._cmd_complete,
+            "accept":      self._cmd_accept,
             "hover":       self._cmd_hover,
             "definition":  self._cmd_definition,
             "def":         self._cmd_definition,
@@ -376,6 +498,77 @@ class ExploreShell:
             if not passed:
                 self.any_failure = True
 
+    def _injected_content(self, code: str, target_0: int | None) -> tuple[str, int, int, str]:
+        lines = self._original.splitlines()
+
+        if target_0 is None:
+            for i, ln in enumerate(lines):
+                s = ln.strip()
+                if s.endswith("{") and not s.startswith("//") and i + 1 < len(lines):
+                    indent_str = " " * (len(ln) - len(ln.lstrip()) + 4)
+                    target_0 = i + 1
+                    break
+            else:
+                raise ValueError("could not locate a method body — use: inject <code> at <line>")
+        else:
+            indent_str = " " * (len(lines[target_0]) - len(lines[target_0].lstrip()))
+
+        injected_line = code if code.startswith((" ", "\t")) else indent_str + code
+        col = injected_line.index("§") if "§" in injected_line else len(injected_line)
+        injected_line = injected_line.replace("§", "")
+        new_lines = list(lines)
+        new_lines.insert(target_0, injected_line)
+        return "\n".join(new_lines), target_0, col, injected_line
+
+    @staticmethod
+    def _parse_accept_selector(args: list[str]) -> dict:
+        selector = {"index": 0}
+        i = 0
+        while i < len(args):
+            key = args[i].lower()
+            if key not in _ACCEPT_SELECTOR_KEYWORDS:
+                raise ValueError(f"unknown accept selector token: {args[i]!r}")
+            if key == "index":
+                if i + 1 >= len(args):
+                    raise ValueError("index requires a value")
+                selector["index"] = int(args[i + 1])
+                i += 2
+                continue
+            if i + 1 >= len(args):
+                raise ValueError(f"{key} requires a value")
+            selector[key] = args[i + 1]
+            i += 2
+        return selector
+
+    @staticmethod
+    def _select_accept_item(items: list[dict], selector: dict) -> dict:
+        matches = items
+        if "label" in selector:
+            matches = [item for item in matches if item.get("label") == selector["label"]]
+        if "filter-text" in selector:
+            matches = [
+                item for item in matches if item.get("filterText") == selector["filter-text"]
+            ]
+        if "label-detail" in selector:
+            matches = [
+                item
+                for item in matches
+                if (item.get("labelDetails") or {}).get("detail") == selector["label-detail"]
+            ]
+        if "detail-contains" in selector:
+            matches = [
+                item
+                for item in matches
+                if selector["detail-contains"] in (item.get("detail") or "")
+            ]
+
+        index = selector["index"]
+        if not matches:
+            raise ValueError("no completion item matched the selection filters")
+        if index >= len(matches):
+            raise ValueError(f"index {index} out of range for {len(matches)} match(es)")
+        return matches[index]
+
     # ── commands ──────────────────────────────────────────────────────────────
 
     def _cmd_show(self, args: list[str]) -> None:
@@ -445,6 +638,95 @@ class ExploreShell:
             return
 
         self._evaluate(items, assertions)
+
+    def _cmd_accept(self, args: list[str]) -> None:
+        if not args:
+            print("usage: accept <line>:<col> <selector>")
+            print("       accept after <text> <selector>")
+            print("       accept inject <code> [at <line>] <selector>")
+            return
+
+        content = self._current
+        selector_args: list[str]
+
+        if args[0].lower() == "after":
+            if len(args) < 3:
+                print("usage: accept after <text> <selector>")
+                return
+            text = args[1]
+            pos = self._find_text(text)
+            if pos is None:
+                print(f"  text not found: {text!r}")
+                return
+            line, col = pos[0], pos[1] + len(text)
+            selector_args = args[2:]
+            print(f"  accepting after {text!r}  →  {line}:{col}")
+        elif args[0].lower() == "inject":
+            if len(args) < 3:
+                print("usage: accept inject <code> [at <line>] <selector>")
+                return
+            code = args[1]
+            target_0: int | None = None
+            selector_start = 2
+            if len(args) >= 4 and args[2].lower() == "at":
+                try:
+                    target_0 = int(args[3]) - 1
+                except ValueError:
+                    print(f"  invalid line number: {args[3]!r}")
+                    return
+                selector_start = 4
+            try:
+                content, line, col, injected_line = self._injected_content(code, target_0)
+            except ValueError as exc:
+                print(f"  {exc}")
+                return
+            self._current = content
+            self._version += 1
+            self._injected = True
+            self._client.change(self._file, content, self._version)
+            time.sleep(0.05)
+            selector_args = args[selector_start:]
+            print(f"  injected at line {line + 1}:  {injected_line!r}")
+            print(f"  accepting at {line}:{col}")
+        elif ":" in args[0]:
+            try:
+                line, col = (int(x) for x in args[0].split(":", 1))
+            except (ValueError, TypeError):
+                print(f"  expected line:col (0-based), got {args[0]!r}")
+                return
+            selector_args = args[1:]
+        else:
+            print(f"  expected line:col, 'after <text>', or 'inject <code>', got {args[0]!r}")
+            return
+
+        try:
+            selector = self._parse_accept_selector(selector_args)
+        except ValueError as exc:
+            print(f"  {exc}")
+            return
+
+        print(_SEP)
+        self._print_context(content.splitlines(), line)
+        print(_SEP)
+
+        try:
+            items = self._client.completion(self._file, line, col)
+            item = self._select_accept_item(items, selector)
+            accepted, cursor = _apply_completion(content, item)
+        except TimeoutError:
+            print("  TIMEOUT")
+            return
+        except ValueError as exc:
+            print(f"  {exc}")
+            return
+
+        print(f"  completion site: {line}:{col}")
+        print(f"  matched items: {len(items)} total")
+        print("  selected item:")
+        for ln in json.dumps(item, indent=2, sort_keys=True).splitlines():
+            print(f"  {ln}")
+        print("  accepted content around cursor:")
+        print(_line_context(accepted, cursor))
 
     def _cmd_hover(self, args: list[str]) -> None:
         if not args:
@@ -608,26 +890,11 @@ class ExploreShell:
                 print(f"  invalid line number: {pre[2]!r}")
                 return
 
-        # Always inject into original content so injections do not stack.
-        lines = self._original.splitlines()
-
-        if target_0 is None:
-            for i, ln in enumerate(lines):
-                s = ln.strip()
-                if s.endswith("{") and not s.startswith("//") and i + 1 < len(lines):
-                    indent_str = " " * (len(ln) - len(ln.lstrip()) + 4)
-                    target_0 = i + 1
-                    break
-            else:
-                print("  could not locate a method body — use: inject <code> at <line>")
-                return
-        else:
-            indent_str = " " * (len(lines[target_0]) - len(lines[target_0].lstrip()))
-
-        injected_line = indent_str + code
-        new_lines = list(lines)
-        new_lines.insert(target_0, injected_line)
-        new_content = "\n".join(new_lines)
+        try:
+            new_content, target_0, col, injected_line = self._injected_content(code, target_0)
+        except ValueError as exc:
+            print(f"  {exc}")
+            return
 
         self._current = new_content
         self._version += 1
@@ -635,7 +902,6 @@ class ExploreShell:
         self._client.change(self._file, new_content, self._version)
         time.sleep(0.05)
 
-        col = len(injected_line)
         print(f"  injected at line {target_0 + 1}:  {injected_line!r}")
         print(f"  completing at {target_0}:{col}")
         print(_SEP)
@@ -687,7 +953,7 @@ def main() -> None:
         print(f"error: file not found: {file}", file=sys.stderr)
         sys.exit(1)
 
-    inline_cmd = " ".join(sys.argv[2:]) if len(sys.argv) > 2 else None
+    inline_cmd = shlex.join(sys.argv[2:]) if len(sys.argv) > 2 else None
 
     try:
         workspace = find_workspace_root(file)

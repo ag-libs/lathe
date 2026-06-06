@@ -315,6 +315,9 @@ not method-call syntax.
 When a discrepancy is about accepted text,
 record both the menu item and the edit payload.
 The menu item can be correct while the accepted source text is wrong.
+Use `dev/explore.py accept ...` to select a completion item,
+apply its edits in memory,
+and record the resulting source text with the inferred cursor position.
 
 ## Regression Targets
 
