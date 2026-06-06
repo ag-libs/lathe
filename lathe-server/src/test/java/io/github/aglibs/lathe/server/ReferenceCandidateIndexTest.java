@@ -121,4 +121,22 @@ class ReferenceCandidateIndexTest {
 
     assertThat(index.candidateUris("nonexistent")).isEmpty();
   }
+
+  @Test
+  void update_extractsFullyQualifiedImports() throws IOException {
+    final var src = Files.createDirectories(root.resolve("src"));
+    final var file =
+        Files.writeString(
+            src.resolve("A.java"),
+            """
+            import java.util.List;
+            import static java.util.Collections.emptyList;
+            import java.util.concurrent.*;
+            class A {}""");
+    final var index = ReferenceCandidateIndex.build(List.of(configWithRoot(src)));
+
+    assertThat(index.candidateUris("java.util.List")).containsExactly(uri(file));
+    assertThat(index.candidateUris("java.util.Collections.emptyList")).containsExactly(uri(file));
+    assertThat(index.candidateUris("java.util.concurrent.*")).containsExactly(uri(file));
+  }
 }

@@ -272,8 +272,9 @@ final class WorkspaceSession {
     final Set<String> openUrisForConfig =
         openForConfig.stream().map(OpenDocument::uri).collect(Collectors.toUnmodifiableSet());
     final List<Path> sourceRoots = config.sourceRoots();
+    final var planner = new ReferenceCandidatePlanner(candidateIndex);
     final List<DiskCandidate> diskFiles =
-        candidateIndex.candidateUris(target.simpleName()).stream()
+        planner.planCandidates(config, target).stream()
             .filter(uri -> !openUrisForConfig.contains(uri))
             .filter(uri -> isInPackageScope(toPath(uri), sourceRoots, packageRel))
             .flatMap(uri -> readDiskCandidate(uri).stream())

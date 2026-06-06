@@ -1,7 +1,6 @@
 package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.core.Stopwatch;
-import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -93,16 +92,40 @@ final class ReferenceCandidateIndex {
 
   private static Set<String> extractTokens(final String content) {
     final var tokens = new HashSet<String>();
+
+    // 1. Extract all simple Java identifiers
     int i = 0;
-    while (i < content.length()) {
+    final int len = content.length();
+    while (i < len) {
       if (Character.isJavaIdentifierStart(content.charAt(i))) {
-        final int end = SourceLocator.identifierEnd(content, i);
-        tokens.add(content.substring(i, end));
-        i = end;
+        final int start = i;
+        i++;
+        while (i < len && Character.isJavaIdentifierPart(content.charAt(i))) {
+          i++;
+        }
+        tokens.add(content.substring(start, i));
       } else {
         i++;
       }
     }
-    return tokens;
+
+    // 2. Extract fully qualified imports (e.g. java.util.List, java.util.concurrent.*)
+    int importIdx = content.indexOf("import ");
+    while (importIdx >= 0) {
+      final int endSemi = content.indexOf(';', importIdx);
+      if (endSemi > importIdx && endSemi - importIdx < 200) {
+        var imp = content.substring(importIdx + 7, endSemi).trim();
+        if (imp.startsWith("static ")) {
+          imp = imp.substring(7).trim();
+        }
+        imp = imp.replace(" ", "").replace("\t", "").replace("\n", "").replace("\r", "");
+        if (!imp.isEmpty()) {
+          tokens.add(imp);
+        }
+      }
+      importIdx = content.indexOf("import ", importIdx + 7);
+    }
+
+    return Set.copyOf(tokens);
   }
 }
