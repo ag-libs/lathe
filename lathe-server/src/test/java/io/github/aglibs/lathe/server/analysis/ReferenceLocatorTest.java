@@ -199,6 +199,31 @@ class ReferenceLocatorTest {
         .anyMatch(l -> l.getRange().getStart().equals(posOf(METHOD_SOURCE, "void run()", "run")));
   }
 
+  // --- imports ---
+
+  @Test
+  void import_reportsTypeNamePosition_notIntermediatePackageSegments() throws IOException {
+    final var source =
+        """
+        import java.util.ArrayList;
+        class Test {
+            ArrayList<String> x;
+        }
+        """;
+    final var analysis = compile(source);
+    final var target = targetAt(analysis, "ArrayList<String>", "ArrayList");
+
+    final List<Location> result = refs(analysis, target, false);
+
+    // import + field type = 2; "util" must not appear as a third false-positive hit
+    assertThat(result).hasSize(2);
+    assertThat(result)
+        .anyMatch(
+            l -> l.getRange().getStart().equals(posOf(source, "java.util.ArrayList", "ArrayList")));
+    assertThat(result)
+        .noneMatch(l -> l.getRange().getStart().equals(posOf(source, "java.util", "util")));
+  }
+
   // --- types ---
 
   @Test

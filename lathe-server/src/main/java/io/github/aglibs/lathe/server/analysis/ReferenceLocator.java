@@ -3,15 +3,19 @@ package io.github.aglibs.lathe.server.analysis;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.IdentifierTree;
+import com.sun.source.tree.ImportTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodTree;
+import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.SourcePositions;
+import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import javax.lang.model.element.Element;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 import org.eclipse.lsp4j.Location;
@@ -90,52 +94,49 @@ final class ReferenceLocator extends TreePathScanner<Void, Void> {
   }
 
   @Override
-  public Void visitMemberSelect(final MemberSelectTree node, final Void ignored) {
-    scan(node.getExpression(), null);
-    final var element = SourceLocator.elementAt(trees, getCurrentPath());
+  public Void visitImport(final ImportTree node, final Void ignored) {
+    final var qualId = node.getQualifiedIdentifier();
+    final var qualIdPath = new TreePath(getCurrentPath(), qualId);
+    // For regular imports: resolve directly — avoids false positives at intermediate package
+    // segments that SourceLocator.elementAt would produce by walking up through PACKAGE elements.
+    // For static imports: elementAt is needed to resolve the member through the enclosing type.
+    final var element =
+        node.isStatic() ? SourceLocator.elementAt(trees, qualIdPath) : trees.getElement(qualIdPath);
     if (target.matches(element, types, elements)) {
-      final long endPos = positions.getEndPosition(cu, node);
-      final var name = node.getIdentifier().toString();
-      final long nameStart = endPos - name.length();
-      if (endPos >= 0 && nameStart >= 0) {
-        addLocation(nameStart, name.length());
+      if (qualId instanceof final MemberSelectTree mst) {
+        addLocationAtIdentifier(qualId, mst.getIdentifier().toString());
+      } else if (qualId instanceof final IdentifierTree it) {
+        addLocation(positions.getStartPosition(cu, qualId), it.getName().length());
       }
     }
+    return null; // don't recurse — prevents visitMemberSelect from seeing import segments
+  }
 
+  @Override
+  public Void visitMemberSelect(final MemberSelectTree node, final Void ignored) {
+    scan(node.getExpression(), null);
+    if (target.matches(SourceLocator.elementAt(trees, getCurrentPath()), types, elements)) {
+      addLocationAtIdentifier(node, node.getIdentifier().toString());
+    }
     return null;
   }
 
   @Override
   public Void visitMethod(final MethodTree node, final Void ignored) {
     if (includeDeclaration) {
-      final var element = trees.getElement(getCurrentPath());
-      if (target.matches(element, types, elements)) {
-        final var name = SourceLocator.declarationName(element).toString();
-        final long namePos =
-            SourceLocator.findIdentifierFrom(content, positions.getStartPosition(cu, node), name);
-        if (namePos >= 0) {
-          addLocation(namePos, name.length());
-        }
+      final var element = matchedElement();
+      if (element != null) {
+        addDeclarationLocation(node, SourceLocator.declarationName(element).toString());
       }
     }
-
     return super.visitMethod(node, ignored);
   }
 
   @Override
   public Void visitVariable(final VariableTree node, final Void ignored) {
-    if (includeDeclaration) {
-      final var element = trees.getElement(getCurrentPath());
-      if (target.matches(element, types, elements)) {
-        final var name = node.getName().toString();
-        final long namePos =
-            SourceLocator.findIdentifierFrom(content, positions.getStartPosition(cu, node), name);
-        if (namePos >= 0) {
-          addLocation(namePos, name.length());
-        }
-      }
+    if (includeDeclaration && matchedElement() != null) {
+      addDeclarationLocation(node, node.getName().toString());
     }
-
     return super.visitVariable(node, ignored);
   }
 
@@ -143,19 +144,32 @@ final class ReferenceLocator extends TreePathScanner<Void, Void> {
   public Void visitClass(final ClassTree node, final Void ignored) {
     if (includeDeclaration) {
       final var name = node.getSimpleName().toString();
-      if (!name.isEmpty()) {
-        final var element = trees.getElement(getCurrentPath());
-        if (target.matches(element, types, elements)) {
-          final long namePos =
-              SourceLocator.findIdentifierFrom(content, positions.getStartPosition(cu, node), name);
-          if (namePos >= 0) {
-            addLocation(namePos, name.length());
-          }
-        }
+      if (!name.isEmpty() && matchedElement() != null) {
+        addDeclarationLocation(node, name);
       }
     }
-
     return super.visitClass(node, ignored);
+  }
+
+  private Element matchedElement() {
+    final var element = trees.getElement(getCurrentPath());
+    return target.matches(element, types, elements) ? element : null;
+  }
+
+  private void addLocationAtIdentifier(final Tree node, final String name) {
+    final long endPos = positions.getEndPosition(cu, node);
+    final long nameStart = endPos - name.length();
+    if (endPos >= 0 && nameStart >= 0) {
+      addLocation(nameStart, name.length());
+    }
+  }
+
+  private void addDeclarationLocation(final Tree node, final String name) {
+    final long namePos =
+        SourceLocator.findIdentifierFrom(content, positions.getStartPosition(cu, node), name);
+    if (namePos >= 0) {
+      addLocation(namePos, name.length());
+    }
   }
 
   private void addLocation(final long startOffset, final int nameLength) {
