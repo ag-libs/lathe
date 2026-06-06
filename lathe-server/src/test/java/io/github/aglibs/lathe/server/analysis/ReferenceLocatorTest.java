@@ -246,7 +246,7 @@ class ReferenceLocatorTest {
   // --- disk search (searchReferences on uncached file) ---
 
   @Test
-  void searchReferences_compilesUncachedFile() throws IOException {
+  void searchReferences_compilesUncachedFile() {
     final var analysis = compile(URI, METHOD_SOURCE);
     final var target = targetAt(analysis, "void run()", "run");
 
@@ -275,6 +275,50 @@ class ReferenceLocatorTest {
     final List<Location> results = ReferenceLocator.references(analysisB, target, URI_B, false);
 
     assertThat(results).hasSize(1);
+  }
+
+  // --- search scope ---
+
+  @Test
+  void searchScope_packagePrivateField_declaringModule() {
+    final var analysis = compile(FIELD_SOURCE);
+    final var target = targetAt(analysis, "String name", "name");
+    assertThat(target.scope()).isEqualTo(ReferenceTarget.SearchScope.DECLARING_MODULE);
+  }
+
+  @Test
+  void searchScope_publicMethod_reactorModules() {
+    final var analysis = compile("class Test { public void run() {} }");
+    final var target = targetAt(analysis, "public void run()", "run");
+    assertThat(target.scope()).isEqualTo(ReferenceTarget.SearchScope.REACTOR_MODULES);
+  }
+
+  @Test
+  void searchScope_protectedMethod_reactorModules() {
+    final var analysis = compile("class Test { protected void run() {} }");
+    final var target = targetAt(analysis, "protected void run()", "run");
+    assertThat(target.scope()).isEqualTo(ReferenceTarget.SearchScope.REACTOR_MODULES);
+  }
+
+  @Test
+  void searchScope_privateField_declaringModule() {
+    final var analysis = compile("class Test { private String x; }");
+    final var target = targetAt(analysis, "private String x", "x");
+    assertThat(target.scope()).isEqualTo(ReferenceTarget.SearchScope.DECLARING_MODULE);
+  }
+
+  @Test
+  void searchScope_localVariable_declaringModule() {
+    final var analysis = compile("class Test { void run() { int x = 1; } }");
+    final var target = targetAt(analysis, "int x", "x");
+    assertThat(target.scope()).isEqualTo(ReferenceTarget.SearchScope.DECLARING_MODULE);
+  }
+
+  @Test
+  void searchScope_publicClass_reactorModules() {
+    final var analysis = compile("public class Test {}");
+    final var target = targetAt(analysis, "public class Test", "Test");
+    assertThat(target.scope()).isEqualTo(ReferenceTarget.SearchScope.REACTOR_MODULES);
   }
 
   // --- edge cases ---

@@ -5,6 +5,7 @@ import static java.util.logging.Level.SEVERE;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
+import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
 import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.server.analysis.TokenScanner;
@@ -14,6 +15,7 @@ import io.github.aglibs.lathe.server.module.CompileRequest;
 import io.github.aglibs.lathe.server.module.CompileResponse;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.lathe.server.module.ModuleSourceWorker;
+import io.github.aglibs.lathe.server.module.WorkspaceModuleGraph;
 import io.github.aglibs.lathe.server.module.WorkspaceModules;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
@@ -58,6 +60,7 @@ final class WorkspaceSession {
   private Path workspaceRoot;
   private WorkspaceManifest manifest = WorkspaceManifest.empty();
   private WorkspaceModules workspace = WorkspaceModules.empty();
+  private WorkspaceModuleGraph moduleGraph = WorkspaceModuleGraph.build(List.of());
   private WorkspaceTypeIndex typeIndex = WorkspaceTypeIndex.empty();
   private final Map<ModuleSourceConfig, List<TypeIndexEntry>> reactorShards = new LinkedHashMap<>();
   private WorkspaceWatcher watcher;
@@ -74,6 +77,7 @@ final class WorkspaceSession {
     this.workspaceRoot = root;
     manifest = WorkspaceManifest.load(root);
     workspace = WorkspaceModules.scan(root, manifest);
+    moduleGraph = WorkspaceModuleGraph.build(workspace.allConfigs());
     scanReactorShards();
     typeIndex = WorkspaceTypeIndex.build(manifest.typeIndexShardPaths(), reactorShards.values());
     watcher = new WorkspaceWatcher(root);
@@ -169,37 +173,20 @@ final class WorkspaceSession {
         new SourceFeatureRequest(
             openFile.uri(), openFile.content(), pos, workspace.allSourceRoots(), manifest);
 
-    // Capture all candidates synchronously on the lathe-worker thread
-    final var cursorConfig = workspace.moduleSourceFor(toPath(uri));
-    final List<OpenDocument> openInModule =
-        cursorConfig
-            .map(
-                moduleSourceConfig ->
-                    openDocuments.values().stream()
-                        .filter(
-                            doc ->
-                                workspace
-                                    .moduleSourceFor(toPath(doc.uri()))
-                                    .map(c -> c.moduleDir().equals(moduleSourceConfig.moduleDir()))
-                                    .orElse(false))
-                        .toList())
-            .orElseGet(() -> List.of(openFile));
-    final Set<String> openUris =
-        openInModule.stream().map(OpenDocument::uri).collect(Collectors.toUnmodifiableSet());
-    final List<Path> moduleSourceRoots =
-        cursorConfig.map(ModuleSourceConfig::sourceRoots).orElse(List.of());
-
-    final var moduleWorker =
+    final var cursorWorker =
         switch (routeCompiler(uri)) {
           case CompilerRoute.Module m -> m.worker();
           case CompilerRoute.External e -> e.worker();
           case CompilerRoute.Missing ignored -> null;
         };
-    if (moduleWorker == null) {
+    if (cursorWorker == null) {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    return moduleWorker
+    // Capture declaring module synchronously on the lathe-worker thread before any async hand-off
+    final var cursorConfig = workspace.moduleSourceFor(toPath(uri));
+
+    return cursorWorker
         .resolveTarget(request)
         .thenCompose(
             target -> {
@@ -207,25 +194,15 @@ final class WorkspaceSession {
                 return CompletableFuture.completedFuture(List.of());
               }
 
-              final List<SourceFileScanner.Candidate> diskFiles =
-                  SourceFileScanner.findCandidates(
-                      moduleSourceRoots, openUris, target.simpleName());
+              final List<ModuleSourceConfig> configs =
+                  target.scope() == ReferenceTarget.SearchScope.REACTOR_MODULES
+                      ? cursorConfig.map(moduleGraph::referenceSearchScope).orElse(List.of())
+                      : cursorConfig
+                          .map(c -> moduleGraph.configsForModule(c.moduleDir()))
+                          .orElse(List.of());
 
-              return Stream.concat(
-                      openInModule.stream()
-                          .map(
-                              doc ->
-                                  moduleWorker.searchReferences(
-                                      doc.uri(),
-                                      doc.content(),
-                                      doc.version(),
-                                      target,
-                                      includeDeclaration)),
-                      diskFiles.stream()
-                          .map(
-                              d ->
-                                  moduleWorker.searchReferences(
-                                      d.uri(), d.content(), 0, target, includeDeclaration)))
+              return configs.stream()
+                  .flatMap(config -> searchFutures(config, target, includeDeclaration))
                   .reduce(
                       CompletableFuture.completedFuture(List.of()),
                       (f1, f2) ->
@@ -233,6 +210,36 @@ final class WorkspaceSession {
                               f2, (a, b) -> Stream.concat(a.stream(), b.stream()).toList()));
             })
         .exceptionally(ex -> logAndReturn(ex, "[references] failed for " + uri, List.of()));
+  }
+
+  private Stream<CompletableFuture<List<Location>>> searchFutures(
+      final ModuleSourceConfig config,
+      final ReferenceTarget target,
+      final boolean includeDeclaration) {
+    final var worker = workspace.workerFor(config);
+    final List<OpenDocument> openForConfig =
+        openDocuments.values().stream()
+            .filter(
+                doc ->
+                    workspace
+                        .moduleSourceFor(toPath(doc.uri()))
+                        .map(c -> c.equals(config))
+                        .orElse(false))
+            .toList();
+    final Set<String> openUrisForConfig =
+        openForConfig.stream().map(OpenDocument::uri).collect(Collectors.toUnmodifiableSet());
+    final List<SourceFileScanner.Candidate> diskFiles =
+        SourceFileScanner.findCandidates(
+            config.sourceRoots(), openUrisForConfig, target.simpleName());
+    return Stream.concat(
+        openForConfig.stream()
+            .map(
+                doc ->
+                    worker.searchReferences(
+                        doc.uri(), doc.content(), doc.version(), target, includeDeclaration)),
+        diskFiles.stream()
+            .map(
+                d -> worker.searchReferences(d.uri(), d.content(), 0, target, includeDeclaration)));
   }
 
   CompletableFuture<Hover> hoverFuture(final String uri, final Position pos) {
@@ -402,6 +409,7 @@ final class WorkspaceSession {
     final var old = workspace;
     workspace = newWorkspace;
     manifest = newManifest;
+    moduleGraph = WorkspaceModuleGraph.build(workspace.allConfigs());
     reactorShards.clear();
     scanReactorShards();
     typeIndex = WorkspaceTypeIndex.build(newManifest.typeIndexShardPaths(), reactorShards.values());
