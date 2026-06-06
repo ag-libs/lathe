@@ -533,20 +533,35 @@ so attribution reflects edits without any server-side parsing overlay.
 Scope planning uses classpath-derived reactor edges and does not need an overlay for v1 correctness.
 See section 6 for details.
 
-### Slice 6 — Live Candidate Index
+### Slice 6 — Live Candidate Index ✅
 
-Maintain a token-to-file candidate index for open and disk-backed source files.
-Use it for references and future rename candidate discovery.
+`ReferenceCandidateIndex` maintains a token → `Set<URI>` map built synchronously from all source
+roots on workspace load.
+`update(uri, content)` keeps it current on `didOpen` and `didChange`;
+`remove(uri)` handles close and delete.
+`SourceFileScanner` was deleted — the index lookup replaces the per-request disk scan entirely.
 
-### Slice 7 — Scope Tightening and Performance Caps
+### Slice 7 — Scope Tightening ✅
 
-Add scope rules for locals, private members, package-private members, and same-package searches.
-Add caps and partial-result behavior if a search would touch too many files.
+`SearchScope` has three values: `DECLARING_FILE`, `DECLARING_MODULE`, and `REACTOR_MODULES`.
+Locals, parameters, and private members use `DECLARING_FILE` and short-circuit to the cursor file
+only, with no index lookup and no disk reads.
+Package-private symbols (`DECLARING_MODULE`) filter candidates to the declaring package directory
+across all source trees of the module.
+Performance caps (partial results, file-count limits) are deferred post-v1.
 
-### Slice 8 — Rename Foundation
+### Slice 8 — Rename Foundation ✅
 
-Keep internal results as `ReferenceMatch` values with roles.
-This lets `textDocument/references` stay simple while preserving the data rename will need.
+`ReferenceLocator` returns `List<ReferenceMatch>` instead of `List<Location>`.
+Each match carries a `ReferenceRole`: `DECLARATION`, `IMPORT`, `INVOCATION`, `TYPE_USE`, `READ`,
+or `WRITE`.
+Roles are derived from the AST context: assignment LHS → `WRITE`, method-select of a
+`MethodInvocationTree` → `INVOCATION`, type element kinds → `TYPE_USE`, import trees → `IMPORT`,
+declaration visitors → `DECLARATION`.
+`ReferenceMatch` validates its invariants (non-blank URI, non-null range and role, non-negative
+positions, start not after end) via `ValidCheck`.
+`textDocument/references` maps matches to `Location` at the `WorkspaceSession` boundary;
+rename will use the richer internal type directly.
 
 ---
 
@@ -562,46 +577,42 @@ Unit coverage should start at `ReferenceLocator` level with attributed fixture s
 - imports and static imports
 - `includeDeclaration=true` and `false`
 
-Workspace-level tests should cover:
+Workspace-level tests implemented:
 
-- open-file content overriding disk content
-- same-module multi-file search
-- sibling reactor module search through module relationships
-- transitive downstream reactor module search
-- no sibling search when the reactor module cannot depend on or read the declaring module
+- `WorkspaceModuleGraphTest` — graph derivation, direct/transitive downstream, self-reference exclusion, multi-source-tree modules
+- `ReferenceCandidateIndexTest` — build, update, remove, open-file override, deduplication
+- `ReferenceLocatorTest` — roles (READ, WRITE, INVOCATION, IMPORT, DECLARATION, TYPE_USE), scope assignment, import false-positive regression
+
+Workspace-level tests deferred post-v1:
+
 - live `module-info.java` overlay updates search scope without Maven sync
 - JPMS package export filtering before javac validation
-- open-document token index content overriding disk token index content
-- private member scope staying in the declaring source file
-- package-private scope staying in the same package
-- empty result for missing route or unsupported cursor position
+- full integration test for private-member file scope and package-private package scope at the `WorkspaceSession` level
+- empty result for missing route or unsupported cursor position (covered informally by explorer probes)
 
-Rename-fit tests should not implement rename,
-but should verify that internal `ReferenceMatch` roles distinguish declarations,
-imports,
-type uses,
-reads,
-writes,
-and invocations where the syntax supports it.
+Rename-fit coverage is met: `ReferenceMatch` roles are tested at unit level.
+`textDocument/references` behaviour is verified manually via `dev/explore.py`.
 
 Regression tests should prefer small source fixtures over large integration projects.
 Large project checks can use `dev/explorer` manually when troubleshooting performance or sorting behavior.
 
 ---
 
-## 14. Open Questions
+## 14. Resolved Questions
 
-- Should public type references in sibling reactor modules be v1 or post-v1?
-  This design makes them v1 by adding relationship metadata first.
-- Should references include import statements by default?
-  LSP clients generally expect semantic references, and imports are source references, so the design includes them.
-- Should constructor references be returned when invoking find references on the class name?
-  v1 should keep class and constructor targets separate.
-  Rename can revisit constructor/class coupling later.
-- Should overridden methods be grouped?
-  No for exact find references.
-  That belongs in a separate hierarchy-aware feature or rename design.
-- Should the server keep a semantic reference cache live?
-  Not for v1.
-  Keep the live cache textual and planning-oriented first,
-  then add semantic match caching only if measured performance requires it.
+- **Public type references in sibling reactor modules — v1 or post-v1?**
+  Resolved as v1. `WorkspaceModuleGraph` derives reactor scope from classpath entries.
+
+- **Should references include import statements?**
+  Yes. `ReferenceLocator.visitImport` reports the final type name with role `IMPORT`.
+
+- **Should constructor references be returned when finding references on the class name?**
+  No. Class and constructor targets remain separate.
+  `ReferenceTarget.from` produces distinct targets for `CLASS` vs `CONSTRUCTOR` element kinds.
+
+- **Should overridden methods be grouped?**
+  No. Exact find references only. Hierarchy-aware grouping belongs in a separate feature.
+
+- **Should the server keep a semantic reference cache live?**
+  Not for v1. `ReferenceCandidateIndex` is the live textual cache.
+  Semantic result caching is deferred until performance data shows it is needed.
