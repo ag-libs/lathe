@@ -234,6 +234,22 @@ public final class SourceLocator {
     };
   }
 
+  public static int identifierEnd(final String content, final int start) {
+    int i = start;
+    while (i < content.length() && Character.isJavaIdentifierPart(content.charAt(i))) {
+      i++;
+    }
+    return i;
+  }
+
+  public static int identifierStart(final String content, final int end) {
+    int i = end;
+    while (i > 0 && Character.isJavaIdentifierPart(content.charAt(i - 1))) {
+      i--;
+    }
+    return i;
+  }
+
   public static long findIdentifierFrom(
       final String content, final long fromOffset, final String name) {
     final int nameLen = name.length();

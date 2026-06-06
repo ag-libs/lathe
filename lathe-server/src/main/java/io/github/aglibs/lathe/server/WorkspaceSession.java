@@ -27,6 +27,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
@@ -61,6 +62,7 @@ final class WorkspaceSession {
   private WorkspaceManifest manifest = WorkspaceManifest.empty();
   private WorkspaceModules workspace = WorkspaceModules.empty();
   private WorkspaceModuleGraph moduleGraph = WorkspaceModuleGraph.build(List.of());
+  private ReferenceCandidateIndex candidateIndex = ReferenceCandidateIndex.build(List.of());
   private WorkspaceTypeIndex typeIndex = WorkspaceTypeIndex.empty();
   private final Map<ModuleSourceConfig, List<TypeIndexEntry>> reactorShards = new LinkedHashMap<>();
   private WorkspaceWatcher watcher;
@@ -78,6 +80,7 @@ final class WorkspaceSession {
     manifest = WorkspaceManifest.load(root);
     workspace = WorkspaceModules.scan(root, manifest);
     moduleGraph = WorkspaceModuleGraph.build(workspace.allConfigs());
+    candidateIndex = ReferenceCandidateIndex.build(workspace.allConfigs());
     scanReactorShards();
     typeIndex = WorkspaceTypeIndex.build(manifest.typeIndexShardPaths(), reactorShards.values());
     watcher = new WorkspaceWatcher(root);
@@ -91,12 +94,14 @@ final class WorkspaceSession {
   void onOpen(final String uri, final String content, final int version) {
     final var snapshot = putOpenFile(uri, content, version);
     LOG.info(() -> "[open] %s".formatted(uri));
+    candidateIndex.update(uri, content);
     compileAndPublish(snapshot, CompileMode.OPEN);
   }
 
   void onChange(final String uri, final String content, final int version) {
     putOpenFile(uri, content, version);
     LOG.fine(() -> "[change] %s".formatted(uri));
+    candidateIndex.update(uri, content);
     client.publishDiagnostics(new PublishDiagnosticsParams(uri, List.of()));
     worker.cancel(uri);
     worker.schedule(
@@ -116,6 +121,7 @@ final class WorkspaceSession {
     worker.cancel(uri);
     workspace.dropFromAllCaches(uri);
     client.publishDiagnostics(new PublishDiagnosticsParams(uri, List.of()));
+    reindexFromDisk(uri);
   }
 
   void onSave(final String uri, final String savedContent) {
@@ -149,6 +155,7 @@ final class WorkspaceSession {
     worker.cancel(uri);
     openDocuments.remove(uri);
     workspace.dropFromAllCaches(uri);
+    candidateIndex.remove(uri);
     client.publishDiagnostics(new PublishDiagnosticsParams(uri, List.of()));
 
     final var deletedFile = toPath(uri);
@@ -228,9 +235,13 @@ final class WorkspaceSession {
             .toList();
     final Set<String> openUrisForConfig =
         openForConfig.stream().map(OpenDocument::uri).collect(Collectors.toUnmodifiableSet());
-    final List<SourceFileScanner.Candidate> diskFiles =
-        SourceFileScanner.findCandidates(
-            config.sourceRoots(), openUrisForConfig, target.simpleName());
+    final List<Path> sourceRoots = config.sourceRoots();
+    final List<DiskCandidate> diskFiles =
+        candidateIndex.candidateUris(target.simpleName()).stream()
+            .filter(uri -> !openUrisForConfig.contains(uri))
+            .filter(uri -> sourceRoots.stream().anyMatch(toPath(uri)::startsWith))
+            .flatMap(uri -> readDiskCandidate(uri).stream())
+            .toList();
     return Stream.concat(
         openForConfig.stream()
             .map(
@@ -241,6 +252,31 @@ final class WorkspaceSession {
             .map(
                 d -> worker.searchReferences(d.uri(), d.content(), 0, target, includeDeclaration)));
   }
+
+  private void reindexFromDisk(final String uri) {
+    final var path = toPath(uri);
+    if (Files.exists(path)) {
+      try {
+        candidateIndex.update(uri, Files.readString(path));
+      } catch (final IOException e) {
+        LOG.log(Level.WARNING, e, () -> "[candidate-index] re-index failed for " + uri);
+        candidateIndex.remove(uri);
+      }
+    } else {
+      candidateIndex.remove(uri);
+    }
+  }
+
+  private static Optional<DiskCandidate> readDiskCandidate(final String uri) {
+    try {
+      return Optional.of(new DiskCandidate(uri, Files.readString(toPath(uri))));
+    } catch (final IOException e) {
+      LOG.log(Level.FINE, e, () -> "[references] failed to read candidate: " + uri);
+      return Optional.empty();
+    }
+  }
+
+  private record DiskCandidate(String uri, String content) {}
 
   CompletableFuture<Hover> hoverFuture(final String uri, final Position pos) {
     final var openFile = openDocuments.get(uri);
@@ -410,6 +446,7 @@ final class WorkspaceSession {
     workspace = newWorkspace;
     manifest = newManifest;
     moduleGraph = WorkspaceModuleGraph.build(workspace.allConfigs());
+    candidateIndex = ReferenceCandidateIndex.build(workspace.allConfigs());
     reactorShards.clear();
     scanReactorShards();
     typeIndex = WorkspaceTypeIndex.build(newManifest.typeIndexShardPaths(), reactorShards.values());
