@@ -46,28 +46,23 @@ Notes:
 
 ## Current Triage
 
-Pause further explorer discovery until the accepted gaps below have been reduced and fixed.
+No accepted completion-quality gaps are currently open.
 
-Implementation order:
-
-1. `CQ-0003` — fix first.
-   In-token accepted-edit correctness is narrow,
-   highly visible,
-   and independent of deeper Java semantic modeling.
-2. `CQ-0001` — fix second.
-   Annotation enum and array value completion is accepted Java semantics,
-   but it needs a more careful parser/engine slice.
-3. `CQ-0002` — keep deferred until after v1.
-   Method-reference completion is valid IDE behavior,
-   but it should remain a separate design and implementation slice.
-
-After `CQ-0003` and `CQ-0001` are fixed and covered by tests,
-run a second Dropwizard/Helidon explorer pass with a different focus:
-expected-type ranking,
+`CQ-0001` and `CQ-0003` are fixed and covered by regression tests.
+The follow-up Dropwizard/Helidon explorer pass covered expected-type ranking,
 static member fit,
 constructor type completion,
 import edits,
-and accepted method-call insertion shape.
+and accepted method-call insertion shape without finding a new high-confidence gap.
+
+`CQ-0002` remains deferred.
+Method-reference completion is valid IDE behavior,
+but it should remain a separate post-v1 design and implementation slice.
+
+Next completion work should either:
+
+- start the planned completion-presentation work in `docs/planned/lathe-completion-presentation.md`;
+- or run a new explorer pass with a different focus area and record any confirmed discrepancies as new `CQ-*` entries.
 
 ## CQ-0001 — Annotation enum value completion routes to element-name completion
 

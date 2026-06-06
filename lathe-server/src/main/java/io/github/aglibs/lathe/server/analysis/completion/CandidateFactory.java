@@ -10,7 +10,6 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
-import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.ExecutableType;
 import javax.lang.model.type.TypeMirror;
@@ -21,9 +20,11 @@ final class CandidateFactory {
   private static final Logger LOG = Logger.getLogger(CandidateFactory.class.getName());
 
   private final Types types;
+  private final TypeDisplayFormatter typeDisplayFormatter;
 
   CandidateFactory(final Types types) {
     this.types = types;
+    this.typeDisplayFormatter = new TypeDisplayFormatter(types);
   }
 
   static CompletionCandidate typeIndexCandidate(final TypeIndexEntry entry) {
@@ -72,6 +73,7 @@ final class CandidateFactory {
       final CandidateKind kind,
       final TypeMirror valueType,
       final ImportEdit importEdit) {
+    final String packageName = QualifiedNames.packageName(qualifiedName).orElse(null);
     return new CompletionCandidate(
         simpleName,
         simpleName,
@@ -80,6 +82,8 @@ final class CandidateFactory {
         simpleName,
         false,
         null,
+        null,
+        packageName,
         valueType,
         qualifiedName,
         importEdit);
@@ -101,19 +105,20 @@ final class CandidateFactory {
 
   private CompletionCandidate methodCandidate(
       final ExecutableElement method, final DeclaredType receiverType, final String name) {
-    final List<? extends TypeMirror> paramTypes = resolveParamTypes(method, receiverType);
+    final ExecutableType executableType = resolveExecutableType(method, receiverType);
+    final List<? extends TypeMirror> paramTypes = executableType.getParameterTypes();
     final var params =
-        paramTypes.stream().map(this::simpleTypeName).collect(Collectors.joining(", "));
+        paramTypes.stream().map(typeDisplayFormatter::format).collect(Collectors.joining(", "));
     final boolean snippet = !paramTypes.isEmpty();
     return new CompletionCandidate(
         name,
         "%s(%s)".formatted(name, params),
         CandidateKind.METHOD,
-        simpleTypeName(method.getReturnType()),
+        typeDisplayFormatter.format(executableType.getReturnType()),
         snippet ? "%s($1)".formatted(name) : "%s()".formatted(name),
         snippet,
         null,
-        method.getReturnType(),
+        executableType.getReturnType(),
         declaringType(method),
         null);
   }
@@ -123,7 +128,7 @@ final class CandidateFactory {
         name,
         name,
         CandidateKind.FIELD,
-        simpleTypeName(field.asType()),
+        typeDisplayFormatter.format(field.asType()),
         name,
         false,
         null,
@@ -138,10 +143,10 @@ final class CandidateFactory {
         : null;
   }
 
-  private List<? extends TypeMirror> resolveParamTypes(
+  private ExecutableType resolveExecutableType(
       final ExecutableElement method, final DeclaredType receiverType) {
     try {
-      return ((ExecutableType) types.asMemberOf(receiverType, method)).getParameterTypes();
+      return (ExecutableType) types.asMemberOf(receiverType, method);
     } catch (final IllegalArgumentException e) {
       LOG.log(
           Level.FINE,
@@ -149,12 +154,7 @@ final class CandidateFactory {
           () ->
               "[completion-item] asMemberOf failed for %s on %s"
                   .formatted(method.getSimpleName(), receiverType));
-      return method.getParameters().stream().map(VariableElement::asType).toList();
+      return (ExecutableType) method.asType();
     }
-  }
-
-  private String simpleTypeName(final TypeMirror type) {
-    final var el = types.asElement(type);
-    return el != null ? el.getSimpleName().toString() : type.toString();
   }
 }

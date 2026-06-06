@@ -7,6 +7,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
+import org.eclipse.lsp4j.CompletionItemLabelDetails;
 import org.eclipse.lsp4j.InsertTextFormat;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
@@ -31,11 +32,24 @@ final class CompletionItemPresenter {
     item.setDetail(candidate.detail());
     item.setSortText(candidate.sortText());
     item.setKind(kindFor(candidate.kind()));
+    applyLabelDetails(candidate, item);
     if (candidate.snippet()) {
       item.setInsertTextFormat(InsertTextFormat.Snippet);
     }
 
     return item;
+  }
+
+  private static void applyLabelDetails(
+      final CompletionCandidate candidate, final CompletionItem item) {
+    if (candidate.labelDetail() == null && candidate.labelDescription() == null) {
+      return;
+    }
+
+    final var labelDetails = new CompletionItemLabelDetails();
+    labelDetails.setDetail(candidate.labelDetail());
+    labelDetails.setDescription(candidate.labelDescription());
+    item.setLabelDetails(labelDetails);
   }
 
   static void applyImportEdits(

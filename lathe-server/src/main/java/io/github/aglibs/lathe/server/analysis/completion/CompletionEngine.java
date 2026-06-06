@@ -661,19 +661,18 @@ public final class CompletionEngine {
   private static ImportEdit importEdit(
       final TypeElement typeElement, final AttributedFileAnalysis analysis) {
     final String qualifiedName = typeElement.getQualifiedName().toString();
-    final int packageEnd = qualifiedName.lastIndexOf('.');
-    if (packageEnd < 0) {
+    final var packageName = QualifiedNames.packageName(qualifiedName);
+    if (packageName.isEmpty()) {
       return null;
     }
 
-    final String packageName = qualifiedName.substring(0, packageEnd);
-    if ("java.lang".equals(packageName)) {
+    if ("java.lang".equals(packageName.get())) {
       return null;
     }
 
     if (analysis.tree() != null
         && analysis.tree().getPackageName() != null
-        && packageName.equals(analysis.tree().getPackageName().toString())) {
+        && packageName.get().equals(analysis.tree().getPackageName().toString())) {
       return null;
     }
 
@@ -1039,6 +1038,8 @@ public final class CompletionEngine {
         base.insertText(),
         base.snippet(),
         null,
+        base.labelDetail(),
+        base.labelDescription(),
         base.valueType(),
         typeQualifiedName,
         new ImportEdit(qualifiedMember, true));

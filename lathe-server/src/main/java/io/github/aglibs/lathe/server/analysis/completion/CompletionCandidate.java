@@ -11,9 +11,37 @@ record CompletionCandidate(
     String insertText,
     boolean snippet,
     String sortText,
+    String labelDetail,
+    String labelDescription,
     TypeMirror valueType,
     String declaringType,
     ImportEdit importEdit) {
+
+  CompletionCandidate(
+      final String name,
+      final String label,
+      final CandidateKind kind,
+      final String detail,
+      final String insertText,
+      final boolean snippet,
+      final String sortText,
+      final TypeMirror valueType,
+      final String declaringType,
+      final ImportEdit importEdit) {
+    this(
+        name,
+        label,
+        kind,
+        detail,
+        insertText,
+        snippet,
+        sortText,
+        null,
+        null,
+        valueType,
+        declaringType,
+        importEdit);
+  }
 
   CompletionCandidate {
     ValidCheck.check()
@@ -23,6 +51,8 @@ record CompletionCandidate(
         .nullOrNotBlank(detail, "detail")
         .notBlank(insertText, "insertText")
         .nullOrNotBlank(sortText, "sortText")
+        .nullOrNotBlank(labelDetail, "labelDetail")
+        .nullOrNotBlank(labelDescription, "labelDescription")
         .validate();
   }
 
@@ -35,6 +65,8 @@ record CompletionCandidate(
         insertText,
         snippet,
         newSortText,
+        labelDetail,
+        labelDescription,
         valueType,
         declaringType,
         importEdit);

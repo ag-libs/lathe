@@ -66,6 +66,61 @@ class CompletionPresentationTest extends CompletionTestSupport {
   }
 
   @Test
+  void completionItem_typeIndexType_hasPackageLabelDescription() {
+    assertThat(itemLabeled(fixture.complete("class Test { ArrayD§ field; }"), "ArrayDeque"))
+        .hasValueSatisfying(
+            i -> {
+              assertThat(i.getLabelDetails()).isNotNull();
+              assertThat(i.getLabelDetails().getDescription()).isEqualTo("java.util");
+              assertThat(i.getLabel()).isEqualTo("ArrayDeque");
+              assertThat(i.getFilterText()).isEqualTo("ArrayDeque");
+              assertThat(i.getInsertText()).isEqualTo("ArrayDeque");
+              assertThat(i.getDetail()).isEqualTo("java.util.ArrayDeque");
+            });
+  }
+
+  @Test
+  void completionItem_javaLangType_hasPackageLabelDescription() {
+    assertThat(itemLabeled(fixture.complete("class Test { Str§ field; }"), "String"))
+        .hasValueSatisfying(
+            i -> {
+              assertThat(i.getLabelDetails()).isNotNull();
+              assertThat(i.getLabelDetails().getDescription()).isEqualTo("java.lang");
+            });
+  }
+
+  @Test
+  void completionItem_genericReceiverMethod_usesSubstitutedReturnDetail() {
+    assertThat(
+            itemWithFilterText(
+                fixture.complete("class Test { void m(java.util.List<String> list) { list.ge§ } }"),
+                "get"))
+        .hasValueSatisfying(
+            i -> {
+              assertThat(i.getLabel()).isEqualTo("get(int)");
+              assertThat(i.getDetail()).isEqualTo("String");
+            });
+  }
+
+  @Test
+  void completionItem_genericField_usesFormattedTypeDetail() {
+    assertThat(
+            itemLabeled(
+                fixture.complete(
+                    """
+                    class Test {
+                      static class Box { java.util.List<String> names; }
+                      void m(Box b) { b.na§ }
+                    }"""),
+                "names"))
+        .hasValueSatisfying(
+            i -> {
+              assertThat(i.getDetail()).isEqualTo("List<String>");
+              assertThat(i.getInsertText()).isEqualTo("names");
+            });
+  }
+
+  @Test
   void completionItem_importEdit_insertedAfterLastExistingImport() throws IOException {
     localFixture =
         new CompletionFixture(
