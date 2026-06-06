@@ -120,10 +120,23 @@ final class SimpleNameProvider {
       return;
     }
 
+    addClassMembers(classEl, staticMethod);
+    addEnclosingStaticMembers(classEl);
+  }
+
+  private void addEnclosingStaticMembers(final TypeElement classEl) {
+    for (Element owner = classEl.getEnclosingElement();
+        owner instanceof final TypeElement typeElement;
+        owner = owner.getEnclosingElement()) {
+      addClassMembers(typeElement, true);
+    }
+  }
+
+  private void addClassMembers(final TypeElement classEl, final boolean staticOnly) {
     final var declaredType = (DeclaredType) classEl.asType();
     snapshot.elements().getAllMembers(classEl).stream()
         .filter(el -> el.getKind() == ElementKind.METHOD || el.getKind() == ElementKind.FIELD)
-        .filter(el -> !staticMethod || el.getModifiers().contains(Modifier.STATIC))
+        .filter(el -> !staticOnly || el.getModifiers().contains(Modifier.STATIC))
         .filter(el -> el.getSimpleName().toString().startsWith(context.prefix()))
         .forEach(el -> addMember(el, declaredType));
   }

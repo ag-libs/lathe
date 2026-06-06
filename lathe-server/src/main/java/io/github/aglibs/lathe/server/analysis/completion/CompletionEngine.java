@@ -64,8 +64,14 @@ public final class CompletionEngine {
     final var parsed = sentinelParser.parse(injected, req.pos().getLine(), version);
     LOG.fine(
         () ->
-            "[completion] parsed valid=%s sentinelCtx=%s receiver=|%s|"
-                .formatted(parsed.valid(), parsed.sentinelContext(), parsed.receiverText()));
+            "[completion] parsed valid=%s sentinelCtx=%s receiver=|%s| class=%s method=%s role=%s"
+                .formatted(
+                    parsed.valid(),
+                    parsed.sentinelContext(),
+                    parsed.receiverText(),
+                    parsed.enclosingClass(),
+                    parsed.enclosingMethod(),
+                    parsed.typeReferenceRole()));
 
     if (!parsed.valid()) {
       return CompletionOutcome.of(List.of());
@@ -80,7 +86,10 @@ public final class CompletionEngine {
               parsed.argIndex() >= 0
                   ? completeSimpleName(parsed, injected, req, site)
                   : completeConstructorTypeReference(injected, req, parsed.typeReferenceRole());
-          case TYPE_REFERENCE -> completeTypeReference(parsed, injected, req);
+          case TYPE_REFERENCE ->
+              shouldTreatTypeReferenceAsMixedSimpleName(parsed, injected)
+                  ? completeSimpleName(parsed, injected, req, site)
+                  : completeTypeReference(parsed, injected, req);
           case ANNOTATION_CONTEXT ->
               completeSimpleNameTypeReferenceWithLang(injected, req, parsed.typeReferenceRole());
           case ANNOTATION_ARGUMENT -> completeAnnotationArgument(parsed, injected, req);
@@ -133,8 +142,10 @@ public final class CompletionEngine {
       final CompletionRequest req,
       final CompletionSite site) {
     final var semanticContext = semanticContext(site, req, parsed);
+    final boolean recoveredMixedStatement = shouldTreatTypeReferenceAsMixedSimpleName(parsed, injected);
     if (semanticContext != null
-        && semanticContext.expectedValue() instanceof ExpectedValue.NoSlot) {
+        && semanticContext.expectedValue() instanceof ExpectedValue.NoSlot
+        && !hasUppercasePrefix(injected)) {
       return CompletionOutcome.of(List.of());
     }
 
@@ -142,12 +153,26 @@ public final class CompletionEngine {
     final var enumCandidates = enumEqualityCandidates(parsed, injected.prefix(), semanticContext);
     final var keywordCandidates =
         KeywordProvider.suggestCandidates(parsed, injected.prefix(), injected.context());
+    LOG.fine(
+        () ->
+            "[completion] simple-name candidates javac=%d enum=%d keywords=%d semantic=%s"
+                .formatted(
+                    javacCandidates.size(),
+                    enumCandidates.size(),
+                    keywordCandidates.size(),
+                    semanticContext != null ? semanticContext.expectedValue() : null));
+    final var rankingContext =
+        recoveredMixedStatement
+                || semanticContext != null
+                    && semanticContext.expectedValue() instanceof ExpectedValue.NoSlot
+            ? null
+            : semanticContext;
     final List<CompletionItem> items =
         presentSimpleNameCandidates(
             Stream.of(javacCandidates, enumCandidates, keywordCandidates)
                 .flatMap(List::stream)
                 .toList(),
-            semanticContext);
+            rankingContext);
 
     if (!hasUppercasePrefix(injected)) {
       return new CompletionOutcome(items, null);
@@ -162,7 +187,9 @@ public final class CompletionEngine {
             : new CompletionOutcome(items, null);
 
     // Static member fit: uppercase prefix + expected type, works in both statement and expression
-    if (semanticContext == null) {
+    if (semanticContext == null
+        || recoveredMixedStatement
+        || semanticContext.expectedValue() instanceof ExpectedValue.NoSlot) {
       return withTypes;
     }
 
@@ -861,6 +888,14 @@ public final class CompletionEngine {
 
   private static boolean shouldOfferBareTypeReference(final SentinelResult injected) {
     return hasUppercasePrefix(injected);
+  }
+
+  private static boolean shouldTreatTypeReferenceAsMixedSimpleName(
+      final ParsedSentinel parsed, final SentinelResult injected) {
+    return parsed.receiverText() == null
+        && parsed.typeReferenceRole() == TypeReferenceRole.ORDINARY
+        && injected.context() == SentinelInjector.Context.STATEMENT
+        && hasUppercasePrefix(injected);
   }
 
   private static CompletionOutcome mergeSimpleNameAndTypeIndexItems(

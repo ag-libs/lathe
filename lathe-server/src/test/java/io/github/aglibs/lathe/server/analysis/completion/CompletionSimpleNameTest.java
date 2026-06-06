@@ -2,11 +2,64 @@ package io.github.aglibs.lathe.server.analysis.completion;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import java.util.List;
 import org.eclipse.lsp4j.CompletionItem;
 import org.junit.jupiter.api.Test;
 
 class CompletionSimpleNameTest extends CompletionTestSupport {
+
+  @Test
+  void simpleName_uppercasePrefix_inMethodBodyIncludesVisibleValuesAndTypes() throws Exception {
+    localFixture =
+        new CompletionFixture(
+            CompletionFixture.typeIndex(
+                tmp.resolve("index.json"),
+                CompletionFixture.typeEntry("Logger", "java.util.logging.Logger", TypeKind.CLASS)));
+
+    final List<String> items =
+        labels(
+            localFixture.complete(
+                """
+                class Test {
+                    static final Object LOGGER = new Object();
+
+                    static class Nested {
+                        void m() {
+                            LOG§
+                        }
+                    }
+                }"""));
+
+    assertThat(items).contains("LOGGER", "Logger");
+  }
+
+  @Test
+  void simpleName_uppercasePrefix_inIfBodyIncludesEnclosingStaticValuesAndTypes() throws Exception {
+    localFixture =
+        new CompletionFixture(
+            CompletionFixture.typeIndex(
+                tmp.resolve("index.json"),
+                CompletionFixture.typeEntry("Logger", "java.util.logging.Logger", TypeKind.CLASS)));
+
+    final List<String> items =
+        labels(
+            localFixture.complete(
+                """
+                class Test {
+                    static final Object LOGGER = new Object();
+
+                    static class Nested {
+                        void m(boolean ready) {
+                            if (ready) {
+                                LOG§
+                            }
+                        }
+                    }
+                }"""));
+
+    assertThat(items).contains("LOGGER", "Logger");
+  }
 
   @Test
   void variableInitializer_nonAssignableLocal_excluded() {
