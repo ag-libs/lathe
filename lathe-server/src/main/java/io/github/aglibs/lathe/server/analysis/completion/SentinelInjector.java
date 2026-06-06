@@ -49,6 +49,7 @@ final class SentinelInjector {
     return new SentinelResult(
         back.prefix(),
         back.tokenStart(),
+        suffixStart,
         back.receiverText(),
         back.context(),
         back.hasDot(),

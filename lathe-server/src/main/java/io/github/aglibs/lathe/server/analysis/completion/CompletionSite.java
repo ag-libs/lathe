@@ -40,7 +40,8 @@ record CompletionSite(
         request.uri(),
         injected.prefix(),
         request.cursorOffset(),
-        replacementRange(request.pos(), injected.prefix()),
+        replacementRange(
+            request.pos(), injected.prefix(), injected.tokenEnd() - request.cursorOffset()),
         parsed.sentinelContext(),
         mode(injected, parsed),
         injected.context(),
@@ -54,9 +55,11 @@ record CompletionSite(
         parsed.declaredTypeText());
   }
 
-  private static Range replacementRange(final Position cursor, final String prefix) {
+  private static Range replacementRange(
+      final Position cursor, final String prefix, final int suffixLength) {
     final var start = new Position(cursor.getLine(), cursor.getCharacter() - prefix.length());
-    return new Range(start, cursor);
+    final var end = new Position(cursor.getLine(), cursor.getCharacter() + suffixLength);
+    return new Range(start, end);
   }
 
   private static CompletionMode mode(final SentinelResult injected, final ParsedSentinel parsed) {

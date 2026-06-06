@@ -210,7 +210,7 @@ This matches the existing deferred method-reference gap in the historical comple
 ## CQ-0003 — In-token method completion does not replace the suffix
 
 ID: CQ-0003
-Status: accepted
+Status: fixed
 Tier: presentation
 Failure mode: bad-replacement-range
 Owner component: CompletionSite / CompletionItemPresenter
@@ -254,10 +254,11 @@ Accepted edit, if relevant:
 The accepted edit should not produce `setFieldPath($1)FieldPath(e.getPath())`.
 
 Regression target:
-`CompletionInsertionTest` or the current `CompletionEngineTest` insertion/replacement section.
+`CompletionPresentationTest.memberAccess_inTokenCompletion_replacesWholeIdentifier`.
 
 Notes:
 This is a real Dropwizard probe with no diagnostics.
+Fixed by extending completion text-edit replacement ranges over the current Java identifier suffix.
 
 For the current discovery phase,
 new entries should come only from Dropwizard or Helidon explorer probes.

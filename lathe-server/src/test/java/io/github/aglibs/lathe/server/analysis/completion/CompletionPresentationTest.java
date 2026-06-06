@@ -22,6 +22,30 @@ class CompletionPresentationTest extends CompletionTestSupport {
   }
 
   @Test
+  void memberAccess_inTokenCompletion_replacesWholeIdentifier() {
+    final String markedSource =
+        """
+        class Test {
+            static class Builder {
+                Builder setFieldPath(java.util.List<String> path) { return this; }
+            }
+
+            void m(Builder builder) {
+                builder.set§FieldPath(null);
+            }
+        }""";
+    final var cursor = CursorFixture.cursor(markedSource);
+    final var item =
+        fixture.complete(markedSource).stream()
+            .filter(i -> i.getLabel().startsWith("setFieldPath("))
+            .findFirst();
+
+    assertThat(item).isPresent();
+    assertThat(textInRange(cursor.content(), item.get().getTextEdit().getLeft().getRange()))
+        .isEqualTo("setFieldPath");
+  }
+
+  @Test
   void completionItem_method_hasCorrectFilterTextAndSnippetInsertFormat() {
     final var item =
         fixture.complete("class Test { void m(java.util.ArrayList<String> l) { l.sub§ } }").stream()
@@ -68,4 +92,20 @@ class CompletionPresentationTest extends CompletionTestSupport {
   }
 
   // ── type index ────────────────────────────────────────────────────────────────
+
+  private static String textInRange(final String content, final Range range) {
+    final int start = offset(content, range.getStart());
+    final int end = offset(content, range.getEnd());
+    return content.substring(start, end);
+  }
+
+  private static int offset(final String content, final Position position) {
+    final String[] lines = content.split("\\n", -1);
+    int offset = 0;
+    for (int line = 0; line < position.getLine(); line++) {
+      offset += lines[line].length() + 1; // "\n"
+    }
+
+    return offset + position.getCharacter();
+  }
 }
