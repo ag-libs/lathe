@@ -72,7 +72,7 @@ and accepted method-call insertion shape.
 ## CQ-0001 — Annotation enum value completion routes to element-name completion
 
 ID: CQ-0001
-Status: accepted
+Status: fixed
 Tier: typed
 Failure mode: missing-candidate
 Owner component: SentinelParser / CompletionEngine
@@ -132,10 +132,13 @@ Accepting a shorthand enum constant after `@Retention(` can be revisited during 
 the first required behavior is not to route the value expression to annotation element-name completion.
 
 Regression target:
-`CompletionAnnotationTest` or the current `CompletionEngineTest` annotation-value section.
+`CompletionAnnotationTest`.
 
 Notes:
 This is a real Dropwizard probe with no diagnostics.
+Fixed for enum member access,
+unnamed enum `value()` elements,
+and unnamed enum-array `value()` elements.
 
 ## CQ-0002 — Method-reference completion returns no candidates
 

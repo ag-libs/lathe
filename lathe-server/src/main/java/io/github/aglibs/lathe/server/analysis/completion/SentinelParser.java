@@ -515,6 +515,12 @@ final class SentinelParser {
         }
       }
 
+      if (parent instanceof final AnnotationTree annotationTree
+          && !(currentChild instanceof AssignmentTree)
+          && annotationTree.getArguments().stream().anyMatch(arg -> arg == currentChild)) {
+        return new AnnotationValueInfo(annotationTree.getAnnotationType().toString(), "value");
+      }
+
       child = parent;
     }
 

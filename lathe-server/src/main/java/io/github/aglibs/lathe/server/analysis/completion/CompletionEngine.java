@@ -22,6 +22,7 @@ import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
@@ -322,16 +323,62 @@ public final class CompletionEngine {
         resolveAnnotationElementType(
             parsed.annotationTypeText(), parsed.enclosingMethodName(), analysis);
     if (elementType == null) {
-      return CompletionOutcome.of(List.of());
+      return completeAnnotationArgument(parsed, injected, req);
     }
 
+    final TypeMirror expectedType = annotationValueCompletionType(elementType);
     final var semanticContext =
         new SemanticCompletionContext(
-            analysis, new ExpectedValue.Type(elementType), true, false, false);
-    final List<CompletionCandidate> keywords =
-        KeywordProvider.suggestCandidates(parsed, injected.prefix(), injected.context());
-    final List<CompletionItem> items = presentSimpleNameCandidates(keywords, semanticContext);
+            analysis, new ExpectedValue.Type(expectedType), true, false, false);
+    final List<CompletionCandidate> candidates =
+        Stream.concat(
+                KeywordProvider.suggestCandidates(parsed, injected.prefix(), injected.context())
+                    .stream(),
+                annotationEnumConstantCandidates(expectedType, injected.prefix()).stream())
+            .toList();
+    final List<CompletionItem> items = presentSimpleNameCandidates(candidates, semanticContext);
     return new CompletionOutcome(items, req.cached() == null ? analysis : null);
+  }
+
+  private static TypeMirror annotationValueCompletionType(final TypeMirror elementType) {
+    return elementType instanceof final ArrayType arrayType
+        ? arrayType.getComponentType()
+        : elementType;
+  }
+
+  private static List<CompletionCandidate> annotationEnumConstantCandidates(
+      final TypeMirror expectedType, final String prefix) {
+    if (!(expectedType instanceof final DeclaredType declaredType)) {
+      return List.of();
+    }
+
+    final var typeElement = declaredType.asElement();
+    if (!(typeElement instanceof final TypeElement enumType)
+        || enumType.getKind() != ElementKind.ENUM) {
+      return List.of();
+    }
+
+    return enumType.getEnclosedElements().stream()
+        .filter(el -> el.getKind() == ElementKind.ENUM_CONSTANT)
+        .filter(el -> el.getSimpleName().toString().startsWith(prefix))
+        .map(el -> annotationEnumConstantCandidate(enumType, el))
+        .toList();
+  }
+
+  private static CompletionCandidate annotationEnumConstantCandidate(
+      final TypeElement enumType, final Element constant) {
+    final var name = constant.getSimpleName().toString();
+    return new CompletionCandidate(
+        name,
+        name,
+        CandidateKind.FIELD,
+        enumType.getSimpleName().toString(),
+        name,
+        false,
+        null,
+        enumType.asType(),
+        enumType.getQualifiedName().toString(),
+        null);
   }
 
   private static TypeMirror resolveAnnotationElementType(
