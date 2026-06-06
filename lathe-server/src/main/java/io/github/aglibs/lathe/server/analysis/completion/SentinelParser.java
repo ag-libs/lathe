@@ -83,10 +83,11 @@ final class SentinelParser {
     }
 
     final var parentPath = sentinelPath.getParentPath();
-    final Classification cls =
+    final Classification classified =
         parentPath != null
             ? classifySentinel(sentinelPath.getLeaf(), parentPath)
             : Classification.of(SentinelContext.SIMPLE_NAME);
+    final Classification cls = correctExplicitDotRecovery(injected, classified);
 
     String enclosingClass = null;
     String enclosingMethod = null;
@@ -164,6 +165,17 @@ final class SentinelParser {
         () ->
             "[sentinel-parse] valid ctx=%s prefix=|%s| receiver=|%s|"
                 .formatted(parsed.sentinelContext(), parsed.prefix(), parsed.receiverText()));
+  }
+
+  private static Classification correctExplicitDotRecovery(
+      final SentinelResult injected, final Classification classified) {
+    if (injected.hasDot()
+        && injected.receiverText() != null
+        && classified.context() == SentinelContext.SIMPLE_NAME) {
+      return Classification.of(SentinelContext.MEMBER_ACCESS);
+    }
+
+    return classified;
   }
 
   private static boolean expressionEndsBefore(

@@ -112,6 +112,11 @@ class CompletionTypeReferenceTest extends CompletionTestSupport {
   }
 
   @Test
+  void typeReference_typeDot_suggestsClassLiteral() {
+    assertThat(labels(fixture.complete("class Test { void m() { Object.§ } }"))).contains("class");
+  }
+
+  @Test
   void typeReference_simpleNamePrefixes_suggestMatchingTypes() {
     // method param, generic arg with non-empty and empty prefix
     assertThat(labels(fixture.complete("class Test { void m(Str§ param) {} }"))).contains("String");

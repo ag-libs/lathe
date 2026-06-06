@@ -64,8 +64,8 @@ public final class CompletionEngine {
     final var parsed = sentinelParser.parse(injected, req.pos().getLine(), version);
     LOG.fine(
         () ->
-            "[completion] parsed valid=%s sentinelCtx=%s"
-                .formatted(parsed.valid(), parsed.sentinelContext()));
+            "[completion] parsed valid=%s sentinelCtx=%s receiver=|%s|"
+                .formatted(parsed.valid(), parsed.sentinelContext(), parsed.receiverText()));
 
     if (!parsed.valid()) {
       return CompletionOutcome.of(List.of());
@@ -256,7 +256,15 @@ public final class CompletionEngine {
   private CompletionOutcome completeTypeReference(
       final ParsedSentinel parsed, final SentinelResult injected, final CompletionRequest req) {
     if (parsed.receiverText() != null) {
-      return completeNestedTypes(parsed, injected, req);
+      final var nestedTypes = completeNestedTypes(parsed, injected, req);
+      if (!nestedTypes.items().isEmpty() || !typeLikeReceiver(parsed.receiverText())) {
+        return nestedTypes;
+      }
+
+      return CompletionOutcome.of(
+          classLiteralCandidates(injected.prefix()).stream()
+              .map(CompletionItemPresenter::present)
+              .toList());
     }
 
     final var typeIndexOutcome =
@@ -574,6 +582,31 @@ public final class CompletionEngine {
             .map(CompletionItemPresenter::present)
             .toList();
     return new CompletionOutcome(items, null);
+  }
+
+  private static List<CompletionCandidate> classLiteralCandidates(final String prefix) {
+    if (!"class".startsWith(prefix)) {
+      return List.of();
+    }
+
+    return List.of(
+        new CompletionCandidate(
+            "class",
+            "class",
+            CandidateKind.KEYWORD,
+            "Class",
+            "class",
+            false,
+            "8_class",
+            null,
+            null,
+            null));
+  }
+
+  private static boolean typeLikeReceiver(final String receiverText) {
+    final int dot = receiverText.lastIndexOf('.');
+    final String simpleName = dot >= 0 ? receiverText.substring(dot + 1) : receiverText;
+    return !simpleName.isEmpty() && Character.isUpperCase(simpleName.codePointAt(0));
   }
 
   private CompletionOutcome completeSimpleNameTypeReference(
@@ -900,10 +933,14 @@ public final class CompletionEngine {
     final boolean isStaticAccess =
         parsed.sentinelContext() == SentinelContext.STATIC_IMPORT || resolved.staticAccess();
     final var scope = TypeResolver.resolveScope(snapshot, req.cursorOffset());
-    final var candidates =
-        new CandidateGenerator(snapshot)
-            .proposeMemberAccessCandidates(
-                resolved.type(), injected.prefix(), isStaticAccess, scope);
+    final List<CompletionCandidate> candidates =
+        Stream.concat(
+                new CandidateGenerator(snapshot)
+                        .proposeMemberAccessCandidates(
+                            resolved.type(), injected.prefix(), isStaticAccess, scope)
+                        .stream(),
+                isStaticAccess ? classLiteralCandidates(injected.prefix()).stream() : Stream.of())
+            .toList();
     final List<CompletionItem> items =
         CompletionCandidateRanker.rank(candidates, memberAccessSemanticContext(snapshot)).stream()
             .map(CompletionItemPresenter::present)

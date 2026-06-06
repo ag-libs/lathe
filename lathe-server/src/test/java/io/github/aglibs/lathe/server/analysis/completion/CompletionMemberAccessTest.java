@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.analysis.completion;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.List;
 import org.eclipse.lsp4j.CompletionItem;
 import org.junit.jupiter.api.Test;
 
@@ -100,6 +101,28 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
                         }
                     }""")))
         .contains("secret");
+  }
+
+  @Test
+  void memberAccess_inIncompleteAssignment_doesNotLeakSimpleNameCandidates() {
+    final var items =
+        fixture.complete(
+            """
+            class Test {
+                static class Event {
+                    String getResourceModel() { return ""; }
+                }
+
+                java.util.List<String> resources;
+
+                void onEvent(Event event) {
+                    resources = event.§
+                }
+            }""");
+
+    assertThat(labels(items))
+        .contains("getResourceModel")
+        .doesNotContain("resources", "new", "this");
   }
 
   @Test
@@ -253,6 +276,28 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
                 fixture.complete(
                     "class Test { void m() { java.util.concurrent.TimeUnit.SECONDS.to§ } }")))
         .anyMatch(l -> l.startsWith("toMillis"));
+  }
+
+  @Test
+  void memberAccess_nestedEnumReceiver_usesConstantLabels() {
+    final List<String> items =
+        labels(
+            fixture.complete(
+                """
+                class Event {
+                    enum Type {
+                        INITIALIZED,
+                        IDLE
+                    }
+                }
+
+                class Test {
+                    void m() {
+                        Event.Type.I§
+                    }
+                }"""));
+
+    assertThat(items).contains("INITIALIZED", "IDLE").doesNotContain("Type.INITIALIZED");
   }
 
   @Test
