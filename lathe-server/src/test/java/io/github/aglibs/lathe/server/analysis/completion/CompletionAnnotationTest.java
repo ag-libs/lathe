@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.analysis.completion;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
+import org.eclipse.lsp4j.CompletionItemKind;
 import org.junit.jupiter.api.Test;
 
 class CompletionAnnotationTest extends CompletionTestSupport {
@@ -26,6 +27,18 @@ class CompletionAnnotationTest extends CompletionTestSupport {
     assertThat(labels(fixture.complete("class Test { @Deprecated(si§ @Override void foo() {} }")))
         .contains("since")
         .doesNotContain("forRemoval");
+  }
+
+  @Test
+  void annotationArgument_elementItem_hasPropertyPresentation() {
+    assertThat(itemLabeled(fixture.complete("@Deprecated(si§) class Test {}"), "since"))
+        .hasValueSatisfying(
+            i -> {
+              assertThat(i.getKind()).isEqualTo(CompletionItemKind.Property);
+              assertThat(i.getFilterText()).isEqualTo("since");
+              assertThat(i.getDetail()).isEqualTo("java.lang.String");
+              assertThat(i.getInsertText()).isEqualTo("since = ");
+            });
   }
 
   @Test

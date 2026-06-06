@@ -304,7 +304,8 @@ public final class CompletionEngine {
             .map(ExecutableElement.class::cast)
             .filter(el -> el.getParameters().isEmpty())
             .filter(el -> el.getSimpleName().toString().startsWith(injected.prefix()))
-            .map(CompletionEngine::annotationElementItem)
+            .map(CompletionEngine::annotationElementCandidate)
+            .map(CompletionItemPresenter::present)
             .toList();
     return new CompletionOutcome(items, req.cached() == null ? analysis : null);
   }
@@ -404,14 +405,25 @@ public final class CompletionEngine {
         .orElse(null);
   }
 
-  private static CompletionItem annotationElementItem(final ExecutableElement element) {
+  private static CompletionCandidate annotationElementCandidate(final ExecutableElement element) {
     final var name = element.getSimpleName().toString();
-    final var item = new CompletionItem(name);
-    item.setKind(CompletionItemKind.Property);
-    item.setFilterText(name);
-    item.setDetail(element.getReturnType().toString());
-    item.setInsertText("%s = ".formatted(name));
-    return item;
+    return new CompletionCandidate(
+        name,
+        name,
+        CandidateKind.PROPERTY,
+        element.getReturnType().toString(),
+        "%s = ".formatted(name),
+        false,
+        null,
+        element.getReturnType(),
+        declaringType(element),
+        null);
+  }
+
+  private static String declaringType(final Element element) {
+    return element.getEnclosingElement() instanceof final TypeElement typeElement
+        ? typeElement.getQualifiedName().toString()
+        : null;
   }
 
   private static TypeElement resolveAnnotationType(

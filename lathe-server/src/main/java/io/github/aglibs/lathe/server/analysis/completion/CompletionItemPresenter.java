@@ -147,6 +147,7 @@ final class CompletionItemPresenter {
       case KEYWORD -> CompletionItemKind.Keyword;
       case LOCAL_VARIABLE -> CompletionItemKind.Variable;
       case FIELD -> CompletionItemKind.Field;
+      case PROPERTY -> CompletionItemKind.Property;
       case METHOD -> CompletionItemKind.Method;
       case PACKAGE -> CompletionItemKind.Module;
       case TYPE_CLASS -> CompletionItemKind.Class;

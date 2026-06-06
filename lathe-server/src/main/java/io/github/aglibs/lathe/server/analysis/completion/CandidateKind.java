@@ -4,6 +4,7 @@ enum CandidateKind {
   KEYWORD,
   LOCAL_VARIABLE,
   FIELD,
+  PROPERTY,
   METHOD,
   PACKAGE,
   TYPE_CLASS,
