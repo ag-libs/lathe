@@ -25,10 +25,12 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.eclipse.lsp4j.CompletionContext;
@@ -167,19 +169,25 @@ final class WorkspaceSession {
         new SourceFeatureRequest(
             openFile.uri(), openFile.content(), pos, workspace.allSourceRoots(), manifest);
 
-    // Collect open files in same module synchronously while on lathe-worker thread
+    // Capture all candidates synchronously on the lathe-worker thread
     final var cursorConfig = workspace.moduleSourceFor(toPath(uri));
-    final List<OpenDocument> candidates =
-        openDocuments.values().stream()
-            .filter(
-                doc ->
-                    cursorConfig.isPresent()
-                        && workspace
-                            .moduleSourceFor(toPath(doc.uri()))
-                            .map(c -> c.moduleDir().equals(cursorConfig.get().moduleDir()))
-                            .orElse(false))
-            .toList();
-    final var searchDocs = candidates.isEmpty() ? List.of(openFile) : candidates;
+    final List<OpenDocument> openInModule =
+        cursorConfig
+            .map(
+                moduleSourceConfig ->
+                    openDocuments.values().stream()
+                        .filter(
+                            doc ->
+                                workspace
+                                    .moduleSourceFor(toPath(doc.uri()))
+                                    .map(c -> c.moduleDir().equals(moduleSourceConfig.moduleDir()))
+                                    .orElse(false))
+                        .toList())
+            .orElseGet(() -> List.of(openFile));
+    final Set<String> openUris =
+        openInModule.stream().map(OpenDocument::uri).collect(Collectors.toUnmodifiableSet());
+    final List<Path> moduleSourceRoots =
+        cursorConfig.map(ModuleSourceConfig::sourceRoots).orElse(List.of());
 
     final var moduleWorker =
         switch (routeCompiler(uri)) {
@@ -199,11 +207,25 @@ final class WorkspaceSession {
                 return CompletableFuture.completedFuture(List.of());
               }
 
-              return searchDocs.stream()
-                  .map(
-                      doc ->
-                          moduleWorker.searchReferences(
-                              doc.uri(), doc.content(), doc.version(), target, includeDeclaration))
+              final List<SourceFileScanner.Candidate> diskFiles =
+                  SourceFileScanner.findCandidates(
+                      moduleSourceRoots, openUris, target.simpleName());
+
+              return Stream.concat(
+                      openInModule.stream()
+                          .map(
+                              doc ->
+                                  moduleWorker.searchReferences(
+                                      doc.uri(),
+                                      doc.content(),
+                                      doc.version(),
+                                      target,
+                                      includeDeclaration)),
+                      diskFiles.stream()
+                          .map(
+                              d ->
+                                  moduleWorker.searchReferences(
+                                      d.uri(), d.content(), 0, target, includeDeclaration)))
                   .reduce(
                       CompletableFuture.completedFuture(List.of()),
                       (f1, f2) ->

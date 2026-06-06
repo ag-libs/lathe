@@ -243,6 +243,20 @@ class ReferenceLocatorTest {
     assertThat(result).hasSize(2);
   }
 
+  // --- disk search (searchReferences on uncached file) ---
+
+  @Test
+  void searchReferences_compilesUncachedFile() throws IOException {
+    final var analysis = compile(URI, METHOD_SOURCE);
+    final var target = targetAt(analysis, "void run()", "run");
+
+    try (final var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      final List<Location> results = session.searchReferences(URI, METHOD_SOURCE, 0, target, false);
+
+      assertThat(results).hasSize(1);
+    }
+  }
+
   // --- cross-file ---
 
   @Test

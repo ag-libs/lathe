@@ -234,7 +234,8 @@ public final class SourceLocator {
     };
   }
 
-  static long findIdentifierFrom(final String content, final long fromOffset, final String name) {
+  public static long findIdentifierFrom(
+      final String content, final long fromOffset, final String name) {
     final int nameLen = name.length();
     final int limit = content.length() - nameLen;
     for (int i = (int) fromOffset; i <= limit; i++) {
