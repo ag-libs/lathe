@@ -112,6 +112,78 @@ class CompletionAcceptanceTest extends CompletionTestSupport {
         .isEqualTo(overloadedPingSource("r.ping(§)"));
   }
 
+  @Test
+  void accept_noArgMethod_inVariableInitializer_withoutSemicolon_appendsSemicolon() {
+    final CompletionItem item =
+        itemWithLabelDetail(
+                fixture.complete(
+                    """
+                    class Test {
+                        void m() {
+                            boolean x = Boolean.TRUE.booleanV§
+                        }
+                    }
+                    """),
+                "booleanValue",
+                "()")
+            .orElseThrow();
+
+    assertThat(
+            accept(
+                """
+                class Test {
+                    void m() {
+                        boolean x = Boolean.TRUE.booleanV§
+                    }
+                }
+                """,
+                item))
+        .isEqualTo(
+            """
+            class Test {
+                void m() {
+                    boolean x = Boolean.TRUE.booleanValue();§
+                }
+            }
+            """);
+  }
+
+  @Test
+  void accept_noArgMethod_inVariableInitializer_withSemicolon_preservesSemicolon() {
+    final CompletionItem item =
+        itemWithLabelDetail(
+                fixture.complete(
+                    """
+                    class Test {
+                        void m() {
+                            boolean x = Boolean.TRUE.booleanV§;
+                        }
+                    }
+                    """),
+                "booleanValue",
+                "()")
+            .orElseThrow();
+
+    assertThat(
+            accept(
+                """
+                class Test {
+                    void m() {
+                        boolean x = Boolean.TRUE.booleanV§;
+                    }
+                }
+                """,
+                item))
+        .isEqualTo(
+            """
+            class Test {
+                void m() {
+                    boolean x = Boolean.TRUE.booleanValue()§;
+                }
+            }
+            """);
+  }
+
   private static String overloadedPingSource(final String callLine) {
     return """
         class Test {
