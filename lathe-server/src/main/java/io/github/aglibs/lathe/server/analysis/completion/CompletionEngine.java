@@ -152,7 +152,8 @@ public final class CompletionEngine {
     }
 
     final var javacCandidates = completeJavacSimpleName(parsed, injected, req, semanticContext);
-    final var enumCandidates = enumEqualityCandidates(parsed, injected.prefix(), semanticContext);
+    final var enumCandidates =
+        enumEqualityCandidates(parsed, injected.prefix(), semanticContext, req);
     final var enumCaseCandidates =
         enumCaseLabelCandidates(parsed, injected.prefix(), semanticContext);
     final var keywordCandidates =
@@ -253,7 +254,8 @@ public final class CompletionEngine {
   private static List<CompletionCandidate> enumEqualityCandidates(
       final ParsedSentinel parsed,
       final String prefix,
-      final SemanticCompletionContext semanticContext) {
+      final SemanticCompletionContext semanticContext,
+      final CompletionRequest req) {
     if (!parsed.inEqualityComparison()) {
       return List.of();
     }
@@ -264,7 +266,7 @@ public final class CompletionEngine {
     }
 
     return new CandidateGenerator(semanticContext.analysis())
-        .proposeEnumConstantCandidates(typeEl, prefix);
+        .proposeEnumConstantCandidates(typeEl, prefix, req.cursorOffset());
   }
 
   private static List<CompletionCandidate> enumCaseLabelCandidates(
@@ -1017,12 +1019,12 @@ public final class CompletionEngine {
     final var members =
         generator.proposeMemberAccessCandidates(
             resolved.type(), injected.prefix(), isStaticAccess, scope);
-    Stream<CompletionCandidate> nestedTypes = Stream.of();
-    if (isStaticAccess
-        && resolved.type() instanceof DeclaredType dt
-        && dt.asElement() instanceof TypeElement te) {
-      nestedTypes = generator.proposeNestedTypes(te, injected.prefix()).stream();
-    }
+    final Stream<CompletionCandidate> nestedTypes =
+        isStaticAccess
+                && resolved.type() instanceof DeclaredType dt
+                && dt.asElement() instanceof TypeElement te
+            ? generator.proposeNestedTypes(te, injected.prefix()).stream()
+            : Stream.empty();
 
     final List<CompletionCandidate> candidates =
         Stream.concat(

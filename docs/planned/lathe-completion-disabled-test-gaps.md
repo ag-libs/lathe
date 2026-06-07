@@ -55,14 +55,19 @@ When the binary operator is `EQUAL_TO` or `NOT_EQUAL_TO` and the cursor lies wit
 determine which operand does not contain the cursor and resolve its type via `snapshot.trees().getTypeMirror(otherPath)`.
 Set that as the result, giving the semantic context an `ExpectedValue.Type` pointing at the other operand's type (e.g. `Status`).
 
-**Part B — generate qualified enum constant candidates.**
-Add `proposeEnumConstantCandidates(TypeElement enumType, String prefix)` to `CandidateGenerator`.
-It enumerates `ENUM_CONSTANT` members of the enum type and creates candidates whose `filterText`, `label`, and `insertText` are all `EnumType.CONSTANT`.
-Prefix matching uses the full qualified label (so prefix `"S"` matches `"Status.ACTIVE"`).
-The candidate's `valueType` is set to the enum type so the ranker can score it against the expected value.
+**Part B — generate qualified enum constant candidates with dynamic qualification.**
+Add `proposeEnumConstantCandidates(TypeElement enumType, String prefix, int cursorOffset)` to `CandidateGenerator`.
+It enumerates `ENUM_CONSTANT` members of the enum type and creates candidates whose labels are the qualified enum constant name, determined dynamically based on the cursor scope.
+
+Specifically, to qualify the enum constant:
+- We collect all enclosing types of the enum element.
+- We sort them by the length of their fully qualified names (which orders them from outermost to innermost).
+- We find the innermost enclosing type that is in scope (either physically enclosing the cursor, or imported/in the same package).
+- We slice the enclosing type chain starting from the first out-of-scope type, and join their simple names to build the qualifier.
+- If the entire enclosing type chain is in scope, we offer the constant unqualified.
 
 **Part C — wire into `completeSimpleName`.**
-Add `enumEqualityCandidates` in `CompletionEngine` that gates on `parsed.inEqualityComparison()` and `semanticContext.expectedValue()` being an enum type, then delegates to `CandidateGenerator.proposeEnumConstantCandidates`.
+Add `enumEqualityCandidates` in `CompletionEngine` that gates on `parsed.inEqualityComparison()` and `semanticContext.expectedValue()` being an enum type, then delegates to `CandidateGenerator.proposeEnumConstantCandidates` passing the request's `cursorOffset`.
 Merge the result into the stream alongside the javac and keyword candidates.
 
 **Files changed**: `TypeResolver.java`, `CandidateGenerator.java`, `CompletionEngine.java`.
