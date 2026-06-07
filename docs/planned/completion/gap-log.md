@@ -46,7 +46,7 @@ Notes:
 
 ## Current Triage
 
-Six accepted completion-quality gaps are currently open from the
+Nine accepted completion-quality gaps are currently open from the
 `DropwizardResourceConfig` explorer pass.
 
 `CQ-0006`,
@@ -54,7 +54,10 @@ Six accepted completion-quality gaps are currently open from the
 `CQ-0010`,
 `CQ-0011`,
 `CQ-0012`,
-and `CQ-0014` are documented probe gaps and need tests before implementation.
+`CQ-0014`,
+`CQ-0015`,
+`CQ-0016`,
+and `CQ-0017` are documented probe gaps and need tests before implementation.
 
 `CQ-0001`,
 `CQ-0003`,
@@ -800,6 +803,241 @@ methods,
 enum constants,
 and `class`,
 but not nested types.
+
+## CQ-0015 — Member-access completion does not rank candidates by assignment expected type
+
+ID: CQ-0015
+Status: accepted
+Tier: typed
+Failure mode: poor-ranking
+Owner component: CompletionEngine / CompletionCandidateRanker / SemanticCompletionContext
+
+Project/file:
+`/home/ag-libs/git/dropwizard/dropwizard-jersey/src/main/java/io/dropwizard/jersey/DropwizardResourceConfig.java`
+
+Probe command:
+```bash
+printf 'inject "boolean x = Providers." at 153\nlog 30\n' \
+  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-jersey/src/main/java/io/dropwizard/jersey/DropwizardResourceConfig.java
+```
+
+Cursor context:
+```java
+boolean x = Providers.§
+```
+
+IntelliJ or JDT behavior:
+Expected IDE behavior is to use the assignment target type as a ranking signal.
+For `boolean x = Providers.§`,
+static methods returning `boolean` should appear before collection-returning or `void` methods.
+
+Lathe behavior:
+Lathe returns `Providers` static methods in member order.
+`checkProviderRuntime(...) : boolean` appears first,
+but `isJaxRsProvider(...) : boolean`,
+`isProvider(...) : boolean`,
+and `isSupportedContract(...) : boolean` are below many non-boolean `get*` methods.
+
+The debug log shows the receiver resolves correctly:
+
+```text
+[completion] parsed valid=true sentinelCtx=MEMBER_ACCESS receiver=|Providers| class=DropwizardResourceConfig method=register role=ORDINARY
+[completion] resolve receiver=|Providers| type=org.glassfish.jersey.internal.inject.Providers static=true reattributed=true
+```
+
+Inspection shows member-access completion currently ranks with
+`memberAccessSemanticContext(snapshot)`,
+which always uses `ExpectedValue.Unknown`.
+
+Expected Lathe behavior:
+Member-access completion should derive the expected value for expression slots,
+including assignment right-hand sides and variable initializers.
+The expected type should affect ranking,
+and possibly filtering where the completion contract already allows value-sensitive filtering.
+
+Accepted edit, if relevant:
+Not applicable.
+
+Regression target:
+Member-access completion test for `boolean value = Providers.§`
+or an equivalent local static receiver fixture.
+Assert boolean-returning methods sort before non-boolean methods.
+
+Notes:
+This is not a receiver-resolution problem.
+The candidate set includes the expected boolean methods;
+only ranking is missing expected-type awareness.
+
+## CQ-0016 — No-arg method accepted in assignment initializer does not insert a semicolon
+
+ID: CQ-0016
+Status: accepted
+Tier: presentation
+Failure mode: bad-accepted-edit
+Owner component: CompletionItemPresenter / CompletionSite / SemanticCompletionContext
+
+Project/file:
+`/home/ag-libs/git/dropwizard/dropwizard-jersey/src/main/java/io/dropwizard/jersey/DropwizardResourceConfig.java`
+
+Probe command:
+```bash
+python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-jersey/src/main/java/io/dropwizard/jersey/DropwizardResourceConfig.java \
+  accept inject 'boolean x = Boolean.TRUE.booleanV' at 153 label booleanValue
+```
+
+Related no-arg member probe:
+```bash
+python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-jersey/src/main/java/io/dropwizard/jersey/DropwizardResourceConfig.java \
+  accept inject 'Object x = LOGGER.atI' at 63 label atInfo
+```
+
+Cursor context:
+```java
+boolean x = Boolean.TRUE.booleanV§
+Object x = LOGGER.atI§
+```
+
+IntelliJ or JDT behavior:
+Expected editor behavior is to complete a no-argument method in a declaration/assignment
+initializer to a finished statement when no semicolon is already present:
+
+```java
+boolean x = Boolean.TRUE.booleanValue();§
+```
+
+Lathe behavior:
+Lathe inserts the method call only and places the cursor after `)`:
+
+```java
+boolean x = Boolean.TRUE.booleanValue()§
+Object x = LOGGER.atInfo()§
+```
+
+Expected Lathe behavior:
+In declaration or assignment initializer contexts,
+accepting a no-arg method completion at the end of a statement should insert `();`
+and place the cursor after the semicolon.
+If a semicolon or suffix already exists,
+the edit should avoid duplicating it.
+Parameterized methods need a separate snippet shape,
+likely `method($1);$0`,
+and should be handled deliberately rather than accidentally.
+
+Accepted edit, if relevant:
+Current item for `booleanValue`:
+
+```json
+"insertText": "booleanValue()",
+"textEdit": {
+  "newText": "booleanValue()"
+}
+```
+
+Desired accepted source:
+
+```java
+boolean x = Boolean.TRUE.booleanValue();§
+```
+
+Regression target:
+Acceptance test for no-arg method completion in a variable initializer,
+with and without an existing semicolon after the cursor.
+
+Notes:
+This intentionally narrows the current general expectation that zero-argument methods place
+the cursor after `()`.
+That remains correct for chained calls and unfinished expressions.
+The semicolon behavior applies only when completion can identify a statement-ending initializer
+or assignment context.
+
+## CQ-0017 — Argument expected-type filtering hides useful chain receiver locals
+
+ID: CQ-0017
+Status: accepted
+Tier: typed
+Failure mode: missing-candidate
+Owner component: CompletionCandidateRanker / SemanticCompletionContext
+
+Project/file:
+`/home/ag-libs/git/dropwizard/dropwizard-jersey/src/main/java/io/dropwizard/jersey/DropwizardResourceConfig.java`
+
+Probe commands:
+```bash
+printf 'inject "cc.setSuperclass(" at 165\nlog 40\n' \
+  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-jersey/src/main/java/io/dropwizard/jersey/DropwizardResourceConfig.java
+
+printf 'inject "cc.setSuperclass(p" at 165\nlog 40\n' \
+  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-jersey/src/main/java/io/dropwizard/jersey/DropwizardResourceConfig.java
+```
+
+Control probes:
+```bash
+printf 'inject "cc.setSuperclass(pool." at 165\nlog 40\n' \
+  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-jersey/src/main/java/io/dropwizard/jersey/DropwizardResourceConfig.java
+
+python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-jersey/src/main/java/io/dropwizard/jersey/DropwizardResourceConfig.java \
+  accept inject 'cc.setSuperclass(pool.g' at 165 label get
+```
+
+Cursor context:
+```java
+final ClassPool pool = ClassPool.getDefault();
+final CtClass cc = pool.makeClass(...);
+cc.setSuperclass(§
+cc.setSuperclass(p§
+```
+
+IntelliJ or JDT behavior:
+Expected IDE behavior is to include `pool` as a useful local variable candidate,
+even though `pool` itself is not assignable to the `CtClass` parameter.
+The user can continue with `pool.get(...)`,
+which does return the expected `CtClass`.
+
+Lathe behavior:
+At the empty argument slot,
+Lathe returns `cc` and other expression starters but not `pool`.
+With prefix `p`,
+Lathe returns no completions.
+
+The debug log shows the slot and expected type are detected:
+
+```text
+[completion] parsed valid=true sentinelCtx=ARGUMENT_POSITION receiver=|null| class=DropwizardResourceConfig method=register role=ORDINARY
+[completion] simple-name candidates javac=5 enum=0 keywords=0 semantic=Type[type=javassist.CtClass]
+```
+
+The `pool.` control probe confirms the chain is useful:
+`ClassPool.get(String) : CtClass`,
+`getCtClass(String) : CtClass`,
+`makeClass(String) : CtClass`,
+and related methods are available from `pool`.
+
+Expected Lathe behavior:
+Expected-type filtering in argument positions should not hide all non-assignable locals
+that are useful as chain receivers.
+Lathe should either:
+
+- rank assignable candidates first while still showing visible locals like `pool`;
+- or provide a conservative chain-receiver rule that keeps local variables and parameters
+  when they have members returning the expected type.
+
+Accepted edit, if relevant:
+Accepting `pool.get` currently produces:
+
+```java
+cc.setSuperclass(pool.get(§)
+```
+
+Regression target:
+Argument-position completion test where the expected type is `Target`,
+the visible local is `Factory`,
+and `Factory.create()` returns `Target`.
+The local `factory` should remain visible with prefix `f`.
+
+Notes:
+This is a typed-completion tradeoff.
+Filtering by expected type is useful,
+but the current filter is too aggressive for first-step expression construction.
 
 ## CQ-0001 — Annotation enum value completion routes to element-name completion
 
