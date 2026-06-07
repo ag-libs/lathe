@@ -46,14 +46,7 @@ Notes:
 
 ## Current Triage
 
-Five accepted completion-quality gaps are currently open from the
-`DropwizardResourceConfig` explorer pass.
-
-`CQ-0008`,
-`CQ-0010`,
-`CQ-0011`,
-`CQ-0014`,
-and `CQ-0016` are documented probe gaps and need tests before implementation.
+All accepted completion-quality gaps from the `DropwizardResourceConfig` explorer pass have been resolved or triaged.
 
 `CQ-0001`,
 `CQ-0003`,
@@ -61,20 +54,24 @@ and `CQ-0016` are documented probe gaps and need tests before implementation.
 `CQ-0005`,
 `CQ-0006`,
 `CQ-0007`,
+`CQ-0008`,
 `CQ-0009`,
 `CQ-0012`,
 `CQ-0013`,
+`CQ-0014`,
 `CQ-0015`,
-and `CQ-0017` are fixed and covered by regression tests.
+`CQ-0016`,
+`CQ-0017`,
+`CQ-0018`,
+and `CQ-0019` are fixed and covered by regression tests.
 The follow-up Dropwizard/Helidon explorer pass covered expected-type ranking,
 static member fit,
 constructor type completion,
 import edits,
 and accepted method-call insertion shape without finding a new high-confidence gap.
 
-`CQ-0002` remains deferred.
-Method-reference completion is valid IDE behavior,
-but it should remain a separate post-v1 design and implementation slice.
+`CQ-0002` and `CQ-0011` remain deferred.
+`CQ-0010` is closed as an editor-side capability gap.
 
 Next completion work should either:
 
