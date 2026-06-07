@@ -17,9 +17,15 @@ import javax.lang.model.type.TypeMirror;
 final class LambdaExpectedReturnTypeResolver {
 
   private enum ResultShape {
-    INVOCATION_ITSELF,
-    RECEIVER_OF_TOLIST,
-    RECEIVER_OF_COLLECT
+    INVOCATION_ITSELF(null),
+    RECEIVER_OF_TOLIST("toList"),
+    RECEIVER_OF_COLLECT("collect");
+
+    private final String methodName;
+
+    ResultShape(final String methodName) {
+      this.methodName = methodName;
+    }
   }
 
   private enum Projection {
@@ -276,7 +282,7 @@ final class LambdaExpectedReturnTypeResolver {
       return invocationPath;
     }
 
-    if (resultShape == ResultShape.RECEIVER_OF_TOLIST) {
+    if (resultShape.methodName != null) {
       final TreePath selectPath = invocationPath.getParentPath();
       if (selectPath == null || !(selectPath.getLeaf() instanceof final MemberSelectTree select)) {
         return null;
@@ -291,27 +297,7 @@ final class LambdaExpectedReturnTypeResolver {
 
       if (select.getExpression() == invocationPath.getLeaf()
           && parentInvocation.getMethodSelect() == selectPath.getLeaf()
-          && "toList".equals(select.getIdentifier().toString())) {
-        return parentInvocationPath;
-      }
-    }
-
-    if (resultShape == ResultShape.RECEIVER_OF_COLLECT) {
-      final TreePath selectPath = invocationPath.getParentPath();
-      if (selectPath == null || !(selectPath.getLeaf() instanceof final MemberSelectTree select)) {
-        return null;
-      }
-
-      final TreePath parentInvocationPath = selectPath.getParentPath();
-      if (parentInvocationPath == null
-          || !(parentInvocationPath.getLeaf()
-              instanceof final MethodInvocationTree parentInvocation)) {
-        return null;
-      }
-
-      if (select.getExpression() == invocationPath.getLeaf()
-          && parentInvocation.getMethodSelect() == selectPath.getLeaf()
-          && "collect".equals(select.getIdentifier().toString())) {
+          && resultShape.methodName.equals(select.getIdentifier().toString())) {
         return parentInvocationPath;
       }
     }
