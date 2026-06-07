@@ -886,7 +886,7 @@ only ranking was missing expected-type awareness.
 ## CQ-0016 — No-arg method accepted in assignment initializer does not insert a semicolon
 
 ID: CQ-0016
-Status: accepted
+Status: fixed
 Tier: presentation
 Failure mode: bad-accepted-edit
 Owner component: CompletionItemPresenter / CompletionSite / SemanticCompletionContext

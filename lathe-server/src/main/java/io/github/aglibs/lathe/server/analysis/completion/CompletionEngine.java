@@ -1,12 +1,18 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
+import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.ImportTree;
+import com.sun.source.tree.ParenthesizedTree;
 import com.sun.source.tree.Scope;
+import com.sun.source.tree.Tree;
+import com.sun.source.tree.VariableTree;
+import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
+import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import java.util.ArrayList;
@@ -28,6 +34,7 @@ import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
+import org.eclipse.lsp4j.InsertTextFormat;
 
 public final class CompletionEngine {
 
@@ -109,6 +116,11 @@ public final class CompletionEngine {
           default -> CompletionOutcome.of(List.of());
         };
     CompletionItemPresenter.applyReplacementRange(outcome.items(), site.replacementRange());
+    final AttributedFileAnalysis analysis =
+        req.cached() != null
+            ? req.cached().analysis()
+            : (compiler != null ? compiler.reattribute(req.uri(), req.content()) : null);
+    applyStatementSemicolonEdits(outcome.items(), site, analysis, req);
     return outcome;
   }
 
@@ -1203,5 +1215,92 @@ public final class CompletionEngine {
   private static boolean isRealNameSlot(final ParsedSentinel parsed) {
     return parsed.declaredTypeText() != null
         && !parsed.declaredTypeText().equals(parsed.enclosingClass());
+  }
+
+  private static void applyStatementSemicolonEdits(
+      final List<CompletionItem> items,
+      final CompletionSite site,
+      final AttributedFileAnalysis analysis,
+      final CompletionRequest req) {
+    if (analysis == null) {
+      return;
+    }
+
+    final int offset = req.cursorOffset() > 0 ? req.cursorOffset() - 1 : req.cursorOffset();
+    final TreePath cursorPath = SourceLocator.pathAt(analysis.trees(), analysis.tree(), offset);
+    if (cursorPath == null) {
+      return;
+    }
+
+    boolean isInitializerContext = false;
+    TreePath previous = cursorPath;
+    for (TreePath path = cursorPath.getParentPath(); path != null; path = path.getParentPath()) {
+      final Tree leaf = path.getLeaf();
+      if (leaf instanceof final VariableTree variable) {
+        if (variable.getInitializer() == previous.getLeaf()) {
+          isInitializerContext = true;
+        }
+        break;
+      }
+      if (leaf instanceof final AssignmentTree assignment) {
+        if (assignment.getExpression() == previous.getLeaf()) {
+          isInitializerContext = true;
+        }
+        break;
+      }
+      if (leaf instanceof ParenthesizedTree) {
+        previous = path;
+        continue;
+      }
+      break;
+    }
+
+    if (!isInitializerContext) {
+      return;
+    }
+
+    boolean hasSemicolon = false;
+    final String content = req.content();
+    final int startOffset = req.cursorOffset();
+    for (int i = startOffset; i < content.length(); i++) {
+      final char c = content.charAt(i);
+      if (c == ';') {
+        hasSemicolon = true;
+        break;
+      }
+      if (!Character.isWhitespace(c)) {
+        break;
+      }
+    }
+
+    if (hasSemicolon) {
+      return;
+    }
+
+    for (final CompletionItem item : items) {
+      if (item.getKind() != CompletionItemKind.Method) {
+        continue;
+      }
+
+      final String insertText = item.getInsertText();
+      if (insertText == null) {
+        continue;
+      }
+
+      if (insertText.endsWith("()") && item.getInsertTextFormat() != InsertTextFormat.Snippet) {
+        final String newInsertText = insertText + ";";
+        item.setInsertText(newInsertText);
+        if (item.getTextEdit() != null && item.getTextEdit().isLeft()) {
+          item.getTextEdit().getLeft().setNewText(newInsertText);
+        }
+      } else if (insertText.endsWith("($1)")
+          && item.getInsertTextFormat() == InsertTextFormat.Snippet) {
+        final String newInsertText = insertText.replace("($1)", "($1);$0");
+        item.setInsertText(newInsertText);
+        if (item.getTextEdit() != null && item.getTextEdit().isLeft()) {
+          item.getTextEdit().getLeft().setNewText(newInsertText);
+        }
+      }
+    }
   }
 }
