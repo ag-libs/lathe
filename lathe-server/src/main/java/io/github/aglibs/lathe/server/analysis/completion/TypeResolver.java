@@ -185,7 +185,8 @@ final class TypeResolver {
       return el != null ? new ResolvedReceiver(el.asType(), true) : null;
     }
 
-    // Capitalized simple name — type reference (static access)
+    // Capitalized simple name — type reference (static access); if no type found, fall through
+    // to field lookup, since all-uppercase names like LOGGER are common static field names.
     if (Character.isUpperCase(text.charAt(0))) {
       final var el = snapshot.elements().getTypeElement(text);
       if (el != null) {
@@ -196,8 +197,6 @@ final class TypeResolver {
       if (langEl != null) {
         return new ResolvedReceiver(langEl.asType(), true);
       }
-
-      return null;
     }
 
     // Simple name — local variable, parameter, or field (instance access)
@@ -362,11 +361,16 @@ final class TypeResolver {
     new TreePathScanner<Void, Void>() {
       @Override
       public Void visitVariable(final VariableTree node, final Void unused) {
-        if (result.get() != null || node.getInitializer() == null) {
+        if (result.get() != null) {
           return super.visitVariable(node, unused);
         }
 
         if (cursorOutside(snapshot, node, site.cursorOffset())) {
+          return super.visitVariable(node, unused);
+        }
+
+        if (node.getType() != null
+            && !cursorOutside(snapshot, node.getType(), site.cursorOffset())) {
           return super.visitVariable(node, unused);
         }
 
@@ -404,6 +408,11 @@ final class TypeResolver {
         }
 
         if (cursorOutside(snapshot, node, site.cursorOffset())) {
+          return super.visitAssignment(node, unused);
+        }
+
+        if (node.getVariable() != null
+            && !cursorOutside(snapshot, node.getVariable(), site.cursorOffset())) {
           return super.visitAssignment(node, unused);
         }
 

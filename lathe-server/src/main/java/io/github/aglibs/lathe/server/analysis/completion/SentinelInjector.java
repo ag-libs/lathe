@@ -223,11 +223,11 @@ final class SentinelInjector {
    */
   private static boolean shouldSuppressSemicolon(final String content, final int suffixStart) {
     int i = suffixStart;
-    while (i < content.length() && Character.isWhitespace(content.charAt(i))) {
+    while (i < content.length() && (content.charAt(i) == ' ' || content.charAt(i) == '\t')) {
       i++;
     }
 
-    if (i >= content.length()) {
+    if (i >= content.length() || Character.isWhitespace(content.charAt(i))) {
       return false;
     }
 

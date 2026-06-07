@@ -46,14 +46,13 @@ Notes:
 
 ## Current Triage
 
-Seven accepted completion-quality gaps are currently open from the
+Six accepted completion-quality gaps are currently open from the
 `DropwizardResourceConfig` explorer pass.
 
 `CQ-0006`,
 `CQ-0008`,
 `CQ-0010`,
 `CQ-0011`,
-`CQ-0012`,
 `CQ-0014`,
 and `CQ-0016` are documented probe gaps and need tests before implementation.
 
@@ -63,6 +62,7 @@ and `CQ-0016` are documented probe gaps and need tests before implementation.
 `CQ-0005`,
 `CQ-0007`,
 `CQ-0009`,
+`CQ-0012`,
 `CQ-0013`,
 `CQ-0015`,
 and `CQ-0017` are fixed and covered by regression tests.
@@ -549,7 +549,7 @@ or `super.member` access where those are otherwise legal.
 ## CQ-0012 — Member completion after assignment can be misclassified as a type reference
 
 ID: CQ-0012
-Status: accepted
+Status: fixed
 Tier: semantic
 Failure mode: missing-candidate
 Owner component: SentinelParser / CompletionEngine
@@ -613,12 +613,12 @@ the replacement range covers only the typed `de`,
 and accepting the item should produce `LOGGER.debug(§)`.
 
 Regression target:
-Sentinel parsing test with a method body containing an assignment statement
-followed immediately by a receiver-qualified member completion.
+`CompletionMemberAccessTest.memberAccess_afterAssignmentStatement_remainsMemberAccess`.
 
 Notes:
-This is not an overload acceptance issue.
-The later control probe confirms the selected method item itself edits correctly.
+Fixed in two parts:
+1. Updated `SentinelInjector.shouldSuppressSemicolon` to only skip horizontal whitespace (space/tab), stopping at newlines to prevent crossing statements.
+2. Refined `TypeResolver.resolveExpectedValue` to bypass expected type resolution if the cursor is completing a variable type or assignment assignee target (LHS).
 
 ## CQ-0013 — Simple-name method completion drops overloads with the same name
 

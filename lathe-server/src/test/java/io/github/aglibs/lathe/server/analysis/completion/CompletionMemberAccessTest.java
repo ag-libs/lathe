@@ -126,6 +126,34 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
   }
 
   @Test
+  void memberAccess_afterAssignmentStatement_remainsMemberAccess() {
+    final String source =
+        """
+        class Test {
+            static final Logger LOGGER = new Logger();
+            java.util.List<String> resources;
+
+            void onEvent(Event event) {
+                resources = event.resources();
+                LOGGER.de§
+                resources = event.resources();
+            }
+
+            static class Event {
+                java.util.List<String> resources() { return java.util.List.of(); }
+            }
+
+            static class Logger {
+                void debug(String message) {}
+            }
+        }""";
+    final var items = fixture.complete(source);
+
+    assertThat(labels(items)).contains("debug");
+    assertThat(labels(items)).doesNotContain("resources");
+  }
+
+  @Test
   void memberAccess_staticReceiver_booleanExpectedType_ranksBooleanMembersFirst() {
     final var items =
         fixture.complete(
