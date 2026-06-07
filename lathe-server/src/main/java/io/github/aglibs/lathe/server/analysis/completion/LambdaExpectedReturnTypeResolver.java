@@ -18,7 +18,7 @@ final class LambdaExpectedReturnTypeResolver {
 
   private enum ResultShape {
     INVOCATION_ITSELF(null),
-    RECEIVER_OF_TOLIST("toList"),
+    RECEIVER_OF_TO_LIST("toList"),
     RECEIVER_OF_COLLECT("collect");
 
     private final String methodName;
@@ -73,19 +73,19 @@ final class LambdaExpectedReturnTypeResolver {
               "java.util.stream.Stream",
               "map",
               0,
-              ResultShape.RECEIVER_OF_TOLIST,
+              ResultShape.RECEIVER_OF_TO_LIST,
               Projection.FIRST_TYPE_ARGUMENT),
           new Rule(
               "java.util.stream.Stream",
               "flatMap",
               0,
-              ResultShape.RECEIVER_OF_TOLIST,
+              ResultShape.RECEIVER_OF_TO_LIST,
               Projection.FIRST_TYPE_ARGUMENT),
           new Rule(
               "java.util.stream.Stream",
               "mapToObj",
               0,
-              ResultShape.RECEIVER_OF_TOLIST,
+              ResultShape.RECEIVER_OF_TO_LIST,
               Projection.FIRST_TYPE_ARGUMENT),
 
           // Stream rules mapping to collect
