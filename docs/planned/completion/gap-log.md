@@ -312,7 +312,7 @@ simple-name recovery.
 ## CQ-0008 — Enum comparison RHS does not use the expected enum type
 
 ID: CQ-0008
-Status: accepted
+Status: fixed
 Tier: typed
 Failure mode: missing-candidate
 Owner component: CompletionEngine
@@ -419,7 +419,7 @@ because recovery can borrow a following assignment's expected type and incorrect
 ## CQ-0010 — Method label details can render without a separator before the return type
 
 ID: CQ-0010
-Status: accepted
+Status: closed (editor capability)
 Tier: presentation
 Failure mode: bad-label-details
 Owner component: CandidateFactory / CompletionItemPresenter
@@ -725,7 +725,7 @@ so the first method overload suppresses later overloads before presentation.
 ## CQ-0014 — Nested classes are missing from simple-name and type-dot suggestions
 
 ID: CQ-0014
-Status: accepted
+Status: fixed
 Tier: semantic
 Failure mode: missing-candidate
 Owner component: CompletionEngine / CandidateGenerator / SimpleNameProvider
