@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import java.io.IOException;
+import java.util.List;
+import org.eclipse.lsp4j.CompletionItem;
 import org.junit.jupiter.api.Test;
 
 class CompletionArgumentTest extends CompletionTestSupport {
@@ -418,7 +420,7 @@ class CompletionArgumentTest extends CompletionTestSupport {
 
   @Test
   void lambdaBody_mapReturnExpectedType_ranksStringHigher() {
-    final var items =
+    assertRanksStringHigherThanInt(
         fixture.complete(
             """
             class Test {
@@ -427,11 +429,7 @@ class CompletionArgumentTest extends CompletionTestSupport {
                 }
                 String getStr() { return ""; }
                 int getInt() { return 0; }
-            }""");
-    assertThat(labels(items)).contains("getStr", "getInt");
-    final var strItem = itemWithFilterText(items, "getStr").orElseThrow();
-    final var intItem = itemWithFilterText(items, "getInt").orElseThrow();
-    assertThat(strItem.getSortText()).isLessThan(intItem.getSortText());
+            }"""));
   }
 
   @Test
@@ -447,8 +445,73 @@ class CompletionArgumentTest extends CompletionTestSupport {
                 String getStr() { return ""; }
             }""");
     assertThat(labels(items)).contains("isReady", "getStr");
-    final var readyItem = itemWithFilterText(items, "isReady").orElseThrow();
-    final var strItem = itemWithFilterText(items, "getStr").orElseThrow();
+    final CompletionItem readyItem = itemWithFilterText(items, "isReady").orElseThrow();
+    final CompletionItem strItem = itemWithFilterText(items, "getStr").orElseThrow();
     assertThat(readyItem.getSortText()).isLessThan(strItem.getSortText());
+  }
+
+  @Test
+  void lambdaBody_optionalMapExpectedType_ranksStringHigher() {
+    assertRanksStringHigherThanInt(
+        fixture.complete(
+            """
+            class Test {
+                void m(java.util.Optional<String> opt) {
+                    java.util.Optional<String> mapped = opt.map(s -> §);
+                }
+                String getStr() { return ""; }
+                int getInt() { return 0; }
+            }"""));
+  }
+
+  @Test
+  void lambdaBody_collectToListExpectedType_ranksStringHigher() {
+    assertRanksStringHigherThanInt(
+        fixture.complete(
+            """
+            class Test {
+                void m(java.util.List<String> list) {
+                    java.util.List<String> mapped = list.stream().map(s -> §).collect(java.util.stream.Collectors.toList());
+                }
+                String getStr() { return ""; }
+                int getInt() { return 0; }
+            }"""));
+  }
+
+  @Test
+  void lambdaBody_blockReturnExpectedType_ranksStringHigher() {
+    assertRanksStringHigherThanInt(
+        fixture.complete(
+            """
+            class Test {
+                void m(java.util.List<String> list) {
+                    java.util.List<String> mapped = list.stream().map(s -> {
+                        return §
+                    }).toList();
+                }
+                String getStr() { return ""; }
+                int getInt() { return 0; }
+            }"""));
+  }
+
+  @Test
+  void lambdaBody_methodReturnExpectedType_ranksStringHigher() {
+    assertRanksStringHigherThanInt(
+        fixture.complete(
+            """
+            class Test {
+                java.util.List<String> m(java.util.List<String> list) {
+                    return list.stream().map(s -> §).toList();
+                }
+                String getStr() { return ""; }
+                int getInt() { return 0; }
+            }"""));
+  }
+
+  private void assertRanksStringHigherThanInt(final List<CompletionItem> items) {
+    assertThat(labels(items)).contains("getStr", "getInt");
+    final CompletionItem strItem = itemWithFilterText(items, "getStr").orElseThrow();
+    final CompletionItem intItem = itemWithFilterText(items, "getInt").orElseThrow();
+    assertThat(strItem.getSortText()).isLessThan(intItem.getSortText());
   }
 }
