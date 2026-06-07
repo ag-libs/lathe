@@ -495,7 +495,7 @@ not by changing Lathe's server-side LSP data away from the JDT LS shape.
 ## CQ-0011 — Constructor invocation keywords can be offered when an explicit invocation already exists
 
 ID: CQ-0011
-Status: accepted
+Status: deferred
 Tier: semantic
 Failure mode: invalid-keyword-candidate
 Owner component: KeywordProvider / SentinelParser
