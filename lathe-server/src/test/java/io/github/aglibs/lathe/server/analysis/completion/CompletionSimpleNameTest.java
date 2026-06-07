@@ -598,5 +598,59 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
     assertThat(items).contains("ComponentLoggingListener");
   }
 
+  @Test
+  void throwStatement_simpleName_ranksThrowablesHigher() {
+    final var items =
+        fixture.complete(
+            """
+            class Test {
+                void m() {
+                    throw §
+                }
+                IllegalArgumentException getException() { return new IllegalArgumentException(); }
+                String getStr() { return ""; }
+            }""");
+    assertThat(labels(items)).contains("getException", "getStr");
+    final var exceptionItem = itemWithFilterText(items, "getException").orElseThrow();
+    final var strItem = itemWithFilterText(items, "getStr").orElseThrow();
+    assertThat(exceptionItem.getSortText()).isLessThan(strItem.getSortText());
+  }
+
+  @Test
+  void throwStatement_constructorCall_ranksThrowablesHigher() {
+    final var items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    void m() {
+                        throw new §
+                    }
+                }"""));
+    assertThat(items).contains("IllegalArgumentException", "RuntimeException");
+    assertThat(items).doesNotContain("String", "StringBuilder");
+  }
+
+  @Test
+  void precedence_localsFieldsMethodsMatchesPriority() {
+    final var items =
+        fixture.complete(
+            """
+            class Test {
+                String fieldString;
+                String methodString() { return ""; }
+                void m(String paramString) {
+                    String x = §
+                }
+            }""");
+    assertThat(labels(items)).contains("paramString", "fieldString", "methodString");
+    final var paramItem = itemWithFilterText(items, "paramString").orElseThrow();
+    final var fieldItem = itemWithFilterText(items, "fieldString").orElseThrow();
+    final var methodItem = itemWithFilterText(items, "methodString").orElseThrow();
+
+    assertThat(paramItem.getSortText()).isLessThan(fieldItem.getSortText());
+    assertThat(fieldItem.getSortText()).isLessThan(methodItem.getSortText());
+  }
+
   // ── presentation details ─────────────────────────────────────────────────────
 }

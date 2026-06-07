@@ -421,4 +421,40 @@ class CompletionArgumentTest extends CompletionTestSupport {
         .item("sample")
         .hasStaticImportEdit("example.StringSources.sample");
   }
+
+  @Test
+  void lambdaBody_mapReturnExpectedType_ranksStringHigher() {
+    final var items =
+        fixture.complete(
+            """
+            class Test {
+                void m(java.util.List<String> list) {
+                    java.util.List<String> mapped = list.stream().map(s -> §).toList();
+                }
+                String getStr() { return ""; }
+                int getInt() { return 0; }
+            }""");
+    assertThat(labels(items)).contains("getStr", "getInt");
+    final var strItem = itemWithFilterText(items, "getStr").orElseThrow();
+    final var intItem = itemWithFilterText(items, "getInt").orElseThrow();
+    assertThat(strItem.getSortText()).isLessThan(intItem.getSortText());
+  }
+
+  @Test
+  void lambdaBody_filterExpectedType_ranksBooleanHigher() {
+    final var items =
+        fixture.complete(
+            """
+            class Test {
+                void m(java.util.List<String> list) {
+                    list.stream().filter(s -> §);
+                }
+                boolean isReady() { return true; }
+                String getStr() { return ""; }
+            }""");
+    assertThat(labels(items)).contains("isReady", "getStr");
+    final var readyItem = itemWithFilterText(items, "isReady").orElseThrow();
+    final var strItem = itemWithFilterText(items, "getStr").orElseThrow();
+    assertThat(readyItem.getSortText()).isLessThan(strItem.getSortText());
+  }
 }

@@ -1259,3 +1259,72 @@ Fixed by extending completion text-edit replacement ranges over the current Java
 
 For the current discovery phase,
 new entries should come only from Dropwizard or Helidon explorer probes.
+
+## CQ-0018 — Expected return type inside lambda bodies is not resolved
+
+ID: CQ-0018
+Status: accepted
+Tier: typed
+Failure mode: wrong-candidate-set
+Owner component: TypeResolver
+
+Project/file:
+`/home/ag-libs/git/dropwizard/dropwizard-jersey/src/main/java/io/dropwizard/jersey/DropwizardResourceConfig.java`
+
+Cursor context:
+```java
+Stream.of("").map(s -> §)
+```
+
+IntelliJ or JDT behavior:
+Expected IDE behavior is to recognize that the expected return type of the lambda body is String (or boolean for filter), and rank compatible candidates higher.
+
+Lathe behavior:
+Lathe does not resolve the expected type of a lambda body, returning ExpectedValue.Unknown.
+
+Expected Lathe behavior:
+Lathe should resolve the expected return type of a lambda body by finding its enclosing LambdaExpressionTree, determining its target functional interface type, locating its Single Abstract Method (SAM), and resolving the SAM's return type parameterization.
+
+Accepted edit, if relevant:
+Not applicable.
+
+Regression target:
+`CompletionArgumentTest.lambdaBody_mapReturnExpectedType_ranksStringHigher` and `CompletionArgumentTest.lambdaBody_filterExpectedType_ranksBooleanHigher`
+
+Notes:
+This helps prioritize correct return values inside lambda bodies (e.g. map, filter, etc.).
+
+## CQ-0019 — Throwables not ranked higher/filtered in throw statements
+
+ID: CQ-0019
+Status: accepted
+Tier: typed
+Failure mode: wrong-candidate-set
+Owner component: TypeResolver / CompletionEngine
+
+Project/file:
+`/home/ag-libs/git/dropwizard/dropwizard-jersey/src/main/java/io/dropwizard/jersey/DropwizardResourceConfig.java`
+
+Cursor context:
+```java
+throw §
+throw new §
+```
+
+IntelliJ or JDT behavior:
+Expected IDE behavior is to rank local variables/methods returning Throwables higher for throw statement simple names, and to restrict constructible type completions to Throwable subclasses in throw statement constructor calls.
+
+Lathe behavior:
+Lathe does not recognize that a throw statement expects java.lang.Throwable, leaving the expected value as Unknown.
+
+Expected Lathe behavior:
+Lathe should resolve the expected type of a ThrowTree expression to java.lang.Throwable, and use this to filter constructor completions and rank simple name completions.
+
+Accepted edit, if relevant:
+Not applicable.
+
+Regression target:
+`CompletionSimpleNameTest.throwStatement_simpleName_ranksThrowablesHigher` and `CompletionSimpleNameTest.throwStatement_constructorCall_ranksThrowablesHigher`
+
+Notes:
+Requires overriding visitThrow in TypeResolver's scanners.
