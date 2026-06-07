@@ -100,6 +100,7 @@ final class CandidateFactory {
     return switch (el.getKind()) {
       case METHOD -> methodCandidate((ExecutableElement) el, receiverType, name);
       case FIELD, ENUM_CONSTANT -> fieldCandidate(el, name);
+      case CLASS, INTERFACE, ENUM, RECORD -> typeElementCandidate((TypeElement) el);
       default -> throw new IllegalArgumentException("Unsupported completion element: " + el);
     };
   }

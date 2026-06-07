@@ -122,6 +122,26 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
   }
 
   @Test
+  void equalityComparison_methodCallLhs_suggestsEnumConstants() {
+    final var items =
+        labels(
+            fixture.complete(
+                """
+                class External {
+                    interface Event {
+                        enum Status { ACTIVE, INACTIVE }
+                        Status getStatus();
+                    }
+                }
+                class Test {
+                    void m(External.Event event) {
+                        if (event.getStatus() == §) {}
+                    }
+                }"""));
+    assertThat(items).contains("External.Event.Status.ACTIVE", "External.Event.Status.INACTIVE");
+  }
+
+  @Test
   void returnPosition_referenceLocal_rankedAfterAssignableLocal() {
     final var items =
         fixture.complete(
@@ -559,6 +579,23 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
                 }"""));
 
     assertThat(items).contains("RESOURCE_METHOD", "SUB_RESOURCE_LOCATOR");
+  }
+
+  @Test
+  void simpleName_nestedClass_suggestsNestedClass() {
+    final var items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    void m() {
+                        Com§
+                    }
+
+                    private static class ComponentLoggingListener {}
+                }"""));
+
+    assertThat(items).contains("ComponentLoggingListener");
   }
 
   // ── presentation details ─────────────────────────────────────────────────────

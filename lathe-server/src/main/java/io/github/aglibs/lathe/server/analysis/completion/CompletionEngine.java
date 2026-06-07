@@ -1013,12 +1013,20 @@ public final class CompletionEngine {
         parsed.sentinelContext() == SentinelContext.STATIC_IMPORT || resolved.staticAccess();
     final var scope = TypeResolver.resolveScope(snapshot, req.cursorOffset());
     final var semanticContext = SemanticCompletionContext.from(site, req, parsed, snapshot);
+    final var generator = new CandidateGenerator(snapshot);
+    final var members =
+        generator.proposeMemberAccessCandidates(
+            resolved.type(), injected.prefix(), isStaticAccess, scope);
+    Stream<CompletionCandidate> nestedTypes = Stream.of();
+    if (isStaticAccess
+        && resolved.type() instanceof DeclaredType dt
+        && dt.asElement() instanceof TypeElement te) {
+      nestedTypes = generator.proposeNestedTypes(te, injected.prefix()).stream();
+    }
+
     final List<CompletionCandidate> candidates =
         Stream.concat(
-                new CandidateGenerator(snapshot)
-                        .proposeMemberAccessCandidates(
-                            resolved.type(), injected.prefix(), isStaticAccess, scope)
-                        .stream(),
+                Stream.concat(members.stream(), nestedTypes),
                 isStaticAccess ? classLiteralCandidates(injected.prefix()).stream() : Stream.of())
             .toList();
     final List<CompletionItem> items =
@@ -1064,9 +1072,11 @@ public final class CompletionEngine {
         continue;
       }
 
-      final var candidates =
-          new CandidateGenerator(snapshot)
-              .proposeMemberAccessCandidates(typeEl.asType(), injected.prefix(), true, scope);
+      final var generator = new CandidateGenerator(snapshot);
+      final var members =
+          generator.proposeMemberAccessCandidates(typeEl.asType(), injected.prefix(), true, scope);
+      final var nestedTypes = generator.proposeNestedTypes(typeEl, injected.prefix());
+      final var candidates = Stream.concat(members.stream(), nestedTypes.stream()).toList();
       final List<CompletionItem> items =
           CompletionCandidateRanker.rank(candidates, memberAccessSemanticContext(snapshot)).stream()
               .map(CompletionItemPresenter::present)

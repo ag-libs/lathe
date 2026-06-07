@@ -145,7 +145,14 @@ final class SimpleNameProvider {
   private void addClassMembers(final TypeElement classEl, final boolean staticOnly) {
     final var declaredType = (DeclaredType) classEl.asType();
     snapshot.elements().getAllMembers(classEl).stream()
-        .filter(el -> el.getKind() == ElementKind.METHOD || el.getKind() == ElementKind.FIELD)
+        .filter(
+            el ->
+                el.getKind() == ElementKind.METHOD
+                    || el.getKind() == ElementKind.FIELD
+                    || el.getKind() == ElementKind.CLASS
+                    || el.getKind() == ElementKind.INTERFACE
+                    || el.getKind() == ElementKind.ENUM
+                    || el.getKind() == ElementKind.RECORD)
         .filter(el -> !staticOnly || el.getModifiers().contains(Modifier.STATIC))
         .filter(el -> el.getSimpleName().toString().startsWith(context.prefix()))
         .forEach(el -> addMember(el, declaredType));

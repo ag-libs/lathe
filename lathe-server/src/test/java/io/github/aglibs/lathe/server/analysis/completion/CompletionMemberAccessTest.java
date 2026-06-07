@@ -812,4 +812,44 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
                     }""")))
         .anyMatch(l -> l.startsWith("subList"));
   }
+
+  @Test
+  void memberAccess_typeReceiver_suggestsStaticNestedClass() {
+    final var items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    private static class ComponentLoggingListener {}
+
+                    void m() {
+                        Test.Com§
+                    }
+                }"""));
+
+    assertThat(items).contains("ComponentLoggingListener");
+  }
+
+  @Test
+  void memberAccess_typeReceiver_excludesInstanceMembers() {
+    final var items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    String instanceField = "";
+                    void instanceMethod() {}
+
+                    static String staticField = "";
+                    static void staticMethod() {}
+
+                    void m() {
+                        Test.§
+                    }
+                }"""));
+
+    assertThat(items)
+        .contains("staticField", "staticMethod")
+        .doesNotContain("instanceField", "instanceMethod");
+  }
 }
