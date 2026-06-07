@@ -66,7 +66,9 @@ record CompletionSite(
     return switch (parsed.sentinelContext()) {
       case IMPORT -> CompletionMode.IMPORT;
       case STATIC_IMPORT -> CompletionMode.STATIC_IMPORT;
-      case MEMBER_ACCESS, LAMBDA_BODY -> CompletionMode.MEMBER;
+      case MEMBER_ACCESS -> CompletionMode.MEMBER;
+      case LAMBDA_BODY ->
+          parsed.receiverText() != null ? CompletionMode.MEMBER : simpleNameMode(injected);
       case TYPE_REFERENCE, VARIABLE_DECLARATION -> CompletionMode.TYPE;
       case CONSTRUCTOR_CALL ->
           parsed.argIndex() >= 0 ? simpleNameMode(injected) : CompletionMode.TYPE;

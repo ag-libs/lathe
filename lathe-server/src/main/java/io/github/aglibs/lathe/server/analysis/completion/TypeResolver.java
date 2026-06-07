@@ -17,19 +17,25 @@ import com.sun.source.tree.ReturnTree;
 import com.sun.source.tree.Scope;
 import com.sun.source.tree.SwitchExpressionTree;
 import com.sun.source.tree.SwitchTree;
+import com.sun.source.tree.ThrowTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.ExecutableType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 
@@ -60,6 +66,13 @@ final class TypeResolver {
       final ExpectedValue expected = resolveSwitchSelectorValue(site, snapshot);
       if (!(expected instanceof ExpectedValue.Unknown)) {
         return expected;
+      }
+    }
+
+    if (site.sentinelContext() == SentinelContext.LAMBDA_BODY) {
+      final ExpectedValue lambdaValue = resolveLambdaBodyExpectedValue(site, snapshot);
+      if (!(lambdaValue instanceof ExpectedValue.Unknown)) {
+        return lambdaValue;
       }
     }
 
@@ -371,10 +384,6 @@ final class TypeResolver {
     new TreePathScanner<Void, Void>() {
       @Override
       public Void visitVariable(final VariableTree node, final Void unused) {
-        if (result.get() != null) {
-          return super.visitVariable(node, unused);
-        }
-
         if (cursorOutside(snapshot, node, site.cursorOffset())) {
           return super.visitVariable(node, unused);
         }
@@ -394,16 +403,11 @@ final class TypeResolver {
 
       @Override
       public Void visitReturn(final ReturnTree node, final Void unused) {
-        if (result.get() != null) {
-          return super.visitReturn(node, unused);
-        }
-
         if (cursorOutside(snapshot, node, site.cursorOffset())) {
           return super.visitReturn(node, unused);
         }
 
-        final TypeMirror ret =
-            resolveMethodReturnType(site.enclosingClass(), site.enclosingMethod(), snapshot);
+        final var ret = findReturnTargetType(getCurrentPath(), snapshot);
         if (ret != null && ret.getKind() != TypeKind.VOID) {
           result.set(ret);
         }
@@ -412,11 +416,21 @@ final class TypeResolver {
       }
 
       @Override
-      public Void visitAssignment(final AssignmentTree node, final Void unused) {
-        if (result.get() != null) {
-          return super.visitAssignment(node, unused);
+      public Void visitThrow(final ThrowTree node, final Void unused) {
+        if (cursorOutside(snapshot, node, site.cursorOffset())) {
+          return super.visitThrow(node, unused);
         }
 
+        final TypeElement throwable = snapshot.elements().getTypeElement("java.lang.Throwable");
+        if (throwable != null) {
+          result.set(throwable.asType());
+        }
+
+        return super.visitThrow(node, unused);
+      }
+
+      @Override
+      public Void visitAssignment(final AssignmentTree node, final Void unused) {
         if (cursorOutside(snapshot, node, site.cursorOffset())) {
           return super.visitAssignment(node, unused);
         }
@@ -437,12 +451,7 @@ final class TypeResolver {
 
       @Override
       public Void visitBinary(final BinaryTree node, final Void unused) {
-        if (result.get() != null) {
-          return super.visitBinary(node, unused);
-        }
-
-        final var kind = node.getKind();
-        if (kind != Tree.Kind.EQUAL_TO && kind != Tree.Kind.NOT_EQUAL_TO) {
+        if (node.getKind() != Tree.Kind.EQUAL_TO && node.getKind() != Tree.Kind.NOT_EQUAL_TO) {
           return super.visitBinary(node, unused);
         }
 
@@ -817,5 +826,138 @@ final class TypeResolver {
     }
 
     return new ExpectedValue.Unknown();
+  }
+
+  private static ExpectedValue resolveLambdaBodyExpectedValue(
+      final CompletionSite site, final AttributedFileAnalysis snapshot) {
+    final TreePath lambdaPath = findLambdaPathAtOffset(site.cursorOffset(), snapshot);
+    if (lambdaPath == null) {
+      return new ExpectedValue.Unknown();
+    }
+
+    final Optional<TypeMirror> projected =
+        LambdaExpectedReturnTypeResolver.resolve(lambdaPath, snapshot);
+    if (projected.isPresent()) {
+      return new ExpectedValue.Type(projected.get());
+    }
+
+    final TypeMirror samReturnType = resolveLambdaSamReturnType(lambdaPath, snapshot);
+    return completeType(samReturnType)
+        ? new ExpectedValue.Type(samReturnType)
+        : new ExpectedValue.Unknown();
+  }
+
+  private static TreePath findLambdaPathAtOffset(
+      final int cursorOffset, final AttributedFileAnalysis snapshot) {
+    final var positions = snapshot.trees().getSourcePositions();
+    final var cu = snapshot.tree();
+    final var result = new AtomicReference<TreePath>();
+    final var size = new AtomicLong(Long.MAX_VALUE);
+    new TreePathScanner<Void, Void>() {
+      @Override
+      public Void visitLambdaExpression(final LambdaExpressionTree node, final Void unused) {
+        final long start = positions.getStartPosition(cu, node);
+        final long end = positions.getEndPosition(cu, node);
+        final long span = end - start;
+        if (start <= cursorOffset && cursorOffset <= end && span <= size.get()) {
+          size.set(span);
+          result.set(getCurrentPath());
+        }
+        return super.visitLambdaExpression(node, unused);
+      }
+
+      @Override
+      public Void visitErroneous(final ErroneousTree node, final Void unused) {
+        for (final var e : node.getErrorTrees()) {
+          scan(e, unused);
+        }
+        return null;
+      }
+    }.scan(cu, null);
+    return result.get();
+  }
+
+  private static TypeMirror resolveLambdaSamReturnType(
+      final TreePath lambdaPath, final AttributedFileAnalysis snapshot) {
+    final TypeMirror lambdaType = snapshot.trees().getTypeMirror(lambdaPath);
+    if (lambdaType != null && lambdaType.getKind() == TypeKind.DECLARED) {
+      final DeclaredType declared = (DeclaredType) lambdaType;
+      final ExecutableElement sam = findFunctionalInterfaceMethod(declared, snapshot);
+      if (sam != null) {
+        final ExecutableType memberType =
+            (ExecutableType) snapshot.types().asMemberOf(declared, sam);
+        return memberType.getReturnType();
+      }
+    }
+    return null;
+  }
+
+  private static boolean completeType(final TypeMirror type) {
+    return type != null
+        && type.getKind() != TypeKind.VOID
+        && type.getKind() != TypeKind.NONE
+        && type.getKind() != TypeKind.ERROR;
+  }
+
+  private static ExecutableElement findFunctionalInterfaceMethod(
+      final DeclaredType declared, final AttributedFileAnalysis snapshot) {
+    if (!(declared.asElement() instanceof final TypeElement element)) {
+      return null;
+    }
+
+    ExecutableElement result = null;
+    for (final Element member : snapshot.elements().getAllMembers(element)) {
+      if (!(member instanceof final ExecutableElement method)) {
+        continue;
+      }
+
+      if (!method.getModifiers().contains(Modifier.ABSTRACT)
+          || overridesObjectMethod(method, element, snapshot)) {
+        continue;
+      }
+
+      if (result != null) {
+        return null;
+      }
+
+      result = method;
+    }
+
+    return result;
+  }
+
+  private static boolean overridesObjectMethod(
+      final ExecutableElement method,
+      final TypeElement functionalInterface,
+      final AttributedFileAnalysis snapshot) {
+    final TypeElement objectType = snapshot.elements().getTypeElement("java.lang.Object");
+    if (objectType == null) {
+      return false;
+    }
+
+    return snapshot.elements().getAllMembers(objectType).stream()
+        .filter(member -> member.getKind() == ElementKind.METHOD)
+        .map(ExecutableElement.class::cast)
+        .anyMatch(
+            objectMethod ->
+                snapshot.elements().overrides(method, objectMethod, functionalInterface));
+  }
+
+  private static TypeMirror findReturnTargetType(
+      final TreePath returnPath, final AttributedFileAnalysis snapshot) {
+    for (var current = returnPath.getParentPath();
+        current != null;
+        current = current.getParentPath()) {
+      if (current.getLeaf() instanceof LambdaExpressionTree) {
+        return LambdaExpectedReturnTypeResolver.resolve(current, snapshot).orElse(null);
+      }
+
+      if (current.getLeaf() instanceof MethodTree) {
+        final var el = snapshot.trees().getElement(current);
+        return el instanceof final ExecutableElement exec ? exec.getReturnType() : null;
+      }
+    }
+
+    return null;
   }
 }

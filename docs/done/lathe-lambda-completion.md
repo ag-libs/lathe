@@ -73,7 +73,7 @@ private static TypeMirror enclosingExpectedType(
       return snapshot.trees().getTypeMirror(lhsPath);
     }
 
-    if (leaf instanceof final ReturnTree ret 
+    if (leaf instanceof final ReturnTree ret
         && ret.getExpression() == previous.getLeaf()) {
       return findEnclosingReturnTargetType(current, snapshot);
     }
@@ -93,7 +93,7 @@ private static TypeMirror findEnclosingReturnTargetType(
   for (TreePath current = path.getParentPath();
       current != null;
       current = current.getParentPath()) {
-    
+
     if (current.getLeaf() instanceof LambdaExpressionTree) {
       return resolve(current, snapshot).orElse(null);
     }

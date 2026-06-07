@@ -52,7 +52,20 @@ final class CompletionCandidateRanker {
         candidate.valueType() != null
             && context.analysis().types().isAssignable(candidate.valueType(), type);
     final String base = baseSortText(candidate);
-    return "%d_%s".formatted(matches ? 0 : 1, base != null ? base : candidate.name());
+    return "%d_%d_%s"
+        .formatted(
+            matches ? 0 : 1,
+            kindPriority(candidate.kind()),
+            base != null ? base : candidate.name());
+  }
+
+  private static int kindPriority(final CandidateKind kind) {
+    return switch (kind) {
+      case LOCAL_VARIABLE -> 0;
+      case FIELD -> 1;
+      case METHOD -> 2;
+      default -> 3;
+    };
   }
 
   private static String baseSortText(final CompletionCandidate candidate) {
@@ -98,11 +111,21 @@ final class CompletionCandidateRanker {
       return true;
     }
 
+    if (isThrowable(type, context)) {
+      return true;
+    }
+
     return switch (candidate.name()) {
       case "true", "false" -> booleanCompatible(type, context);
       case "null" -> !type.getKind().isPrimitive();
       default -> true;
     };
+  }
+
+  private static boolean isThrowable(
+      final TypeMirror type, final SemanticCompletionContext context) {
+    return context.analysis().types().asElement(type) instanceof final TypeElement typeElement
+        && "java.lang.Throwable".equals(typeElement.getQualifiedName().toString());
   }
 
   private static boolean booleanCompatible(
@@ -132,10 +155,6 @@ final class CompletionCandidateRanker {
 
     if (vt.getKind() == TypeKind.BOOLEAN) {
       return booleanCompatible(expected, ctx);
-    }
-
-    if (vt.getKind().isPrimitive()) {
-      return true;
     }
 
     return true;

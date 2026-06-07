@@ -101,8 +101,11 @@ public final class CompletionEngine {
                   : (parsed.enclosingMethod() == null
                       ? completeTypeReference(parsed, injected, req)
                       : CompletionOutcome.of(List.of()));
-          case MEMBER_ACCESS, LAMBDA_BODY, STATIC_IMPORT ->
-              completeMemberAccess(parsed, injected, req, site);
+          case MEMBER_ACCESS, STATIC_IMPORT -> completeMemberAccess(parsed, injected, req, site);
+          case LAMBDA_BODY ->
+              parsed.receiverText() != null
+                  ? completeMemberAccess(parsed, injected, req, site)
+                  : completeSimpleName(parsed, injected, req, site);
           default -> CompletionOutcome.of(List.of());
         };
     CompletionItemPresenter.applyReplacementRange(outcome.items(), site.replacementRange());

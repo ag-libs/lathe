@@ -1263,7 +1263,7 @@ new entries should come only from Dropwizard or Helidon explorer probes.
 ## CQ-0018 — Expected return type inside lambda bodies is not resolved
 
 ID: CQ-0018
-Status: accepted
+Status: fixed
 Tier: typed
 Failure mode: wrong-candidate-set
 Owner component: TypeResolver
@@ -1297,7 +1297,7 @@ This helps prioritize correct return values inside lambda bodies (e.g. map, filt
 ## CQ-0019 — Throwables not ranked higher/filtered in throw statements
 
 ID: CQ-0019
-Status: accepted
+Status: fixed
 Tier: typed
 Failure mode: wrong-candidate-set
 Owner component: TypeResolver / CompletionEngine

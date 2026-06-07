@@ -557,6 +557,12 @@ final class SentinelParser {
         return TypeReferenceRole.THROWS;
       }
 
+      if (parent instanceof final ThrowTree throwTree
+          && throwTree.getExpression() == currentChild
+          && currentChild != sentinel) {
+        return TypeReferenceRole.THROWS;
+      }
+
       if (parent instanceof final ClassTree cls) {
         final TypeReferenceRole role = inferClassHeaderRole(currentChild, cls);
         if (role != TypeReferenceRole.ORDINARY) {
