@@ -52,23 +52,26 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
   }
 
   @Test
-  void variableInitializer_nonAssignableLocal_excluded() {
+  void variableInitializer_referenceLocal_rankedAfterAssignableLocal() {
     final var items =
-        labels(
-            fixture.complete(
-                """
-                class Test {
-                    void m() {
-                        StringBuilder sb = new StringBuilder();
-                        String text = "";
-                        String result = §
-                    }
-                }"""));
-    assertThat(items).contains("text").doesNotContain("sb");
+        fixture.complete(
+            """
+            class Test {
+                void m() {
+                    StringBuilder sb = new StringBuilder();
+                    String text = "";
+                    String result = §
+                }
+            }""");
+    final var textItem = itemWithFilterText(items, "text");
+    final var sbItem = itemWithFilterText(items, "sb");
+    assertThat(textItem).isPresent();
+    assertThat(sbItem).isPresent();
+    assertThat(textItem.get().getSortText()).isLessThan(sbItem.get().getSortText());
   }
 
   @Test
-  void assignment_nonAssignableType_excluded() {
+  void assignment_referenceType_booleanCandidatesExcluded() {
     final var items =
         labels(
             fixture.complete(
@@ -119,19 +122,22 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
   }
 
   @Test
-  void returnPosition_nonAssignableLocal_excluded() {
+  void returnPosition_referenceLocal_rankedAfterAssignableLocal() {
     final var items =
-        labels(
-            fixture.complete(
-                """
-                class Test {
-                    StringBuilder sb = new StringBuilder();
-                    String text = "";
-                    String getValue() {
-                        return §;
-                    }
-                }"""));
-    assertThat(items).contains("text").doesNotContain("sb");
+        fixture.complete(
+            """
+            class Test {
+                StringBuilder sb = new StringBuilder();
+                String text = "";
+                String getValue() {
+                    return §;
+                }
+            }""");
+    final var textItem = itemWithFilterText(items, "text");
+    final var sbItem = itemWithFilterText(items, "sb");
+    assertThat(textItem).isPresent();
+    assertThat(sbItem).isPresent();
+    assertThat(textItem.get().getSortText()).isLessThan(sbItem.get().getSortText());
   }
 
   @Test
@@ -201,25 +207,30 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
   }
 
   @Test
-  void variableInitializer_userDefinedReferenceType_nonAssignableCandidatesExcluded() {
+  void variableInitializer_referenceMethod_rankedAfterAssignableMethod() {
     final var items =
-        labels(
-            fixture.complete(
-                """
-                class Test {
-                    static class Foo {}
-                    Foo getFoo() { return null; }
-                    void doSomething() {}
-                    boolean isReady() { return true; }
-                    String getString() { return ""; }
-                    StringBuilder getSb() { return null; }
-                    void m() {
-                        Foo x = §
-                    }
-                }"""));
-    assertThat(items).contains("getFoo");
-    assertThat(items)
-        .doesNotContain("doSomething()", "isReady()", "true", "false", "getString()", "getSb()");
+        fixture.complete(
+            """
+            class Test {
+                static class Foo {}
+                Foo getFoo() { return null; }
+                void doSomething() {}
+                boolean isReady() { return true; }
+                String getString() { return ""; }
+                StringBuilder getSb() { return null; }
+                void m() {
+                    Foo x = §
+                }
+            }""");
+    final var fooItem = itemWithFilterText(items, "getFoo");
+    final var stringItem = itemWithFilterText(items, "getString");
+    final var sbItem = itemWithFilterText(items, "getSb");
+    assertThat(fooItem).isPresent();
+    assertThat(stringItem).isPresent();
+    assertThat(sbItem).isPresent();
+    assertThat(fooItem.get().getSortText()).isLessThan(stringItem.get().getSortText());
+    assertThat(fooItem.get().getSortText()).isLessThan(sbItem.get().getSortText());
+    assertThat(labels(items)).doesNotContain("doSomething()", "isReady()", "true", "false");
   }
 
   @Test
@@ -413,20 +424,23 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
   }
 
   @Test
-  void simpleName_objectMethods_excludedWhenExpectedTypeKnown() {
-    assertThat(
-            fixture
-                .complete(
-                    """
-                    class Test {
-                        void m() {
-                            String s = §
-                        }
-                    }""")
-                .stream()
-                .map(CompletionItem::getFilterText)
-                .toList())
-        .doesNotContainAnyElementsOf(List.of("wait", "finalize", "notify", "notifyAll"));
+  void simpleName_referenceField_rankedAfterAssignableFieldWhenExpectedTypeKnown() {
+    final var items =
+        fixture.complete(
+            """
+            class Test {
+                String text = "";
+                Object object = new Object();
+
+                void m() {
+                    String s = §
+                }
+            }""");
+    final var textItem = itemWithFilterText(items, "text");
+    final var objectItem = itemWithFilterText(items, "object");
+    assertThat(textItem).isPresent();
+    assertThat(objectItem).isPresent();
+    assertThat(textItem.get().getSortText()).isLessThan(objectItem.get().getSortText());
   }
 
   @Test
@@ -457,10 +471,10 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
   }
 
   @Test
-  void simpleName_expressionContext_noObjectMethods() {
-    final var filterTexts =
-        fixture
-            .complete(
+  void simpleName_expressionContext_voidMethodsExcluded() {
+    final var items =
+        labels(
+            fixture.complete(
                 """
                 class Test {
                     void consume(String s) {}
@@ -468,13 +482,9 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
                     void m() {
                         consume(§result());
                     }
-                }""")
-            .stream()
-            .map(CompletionItem::getFilterText)
-            .toList();
-    assertThat(filterTexts).contains("result");
-    assertThat(filterTexts)
-        .doesNotContainAnyElementsOf(List.of("wait", "finalize", "notify", "notifyAll"));
+                }"""));
+    assertThat(items).contains("result");
+    assertThat(items).doesNotContain("wait", "finalize", "notify", "notifyAll");
   }
 
   // ── string literal / bare dot / no-op positions ──────────────────────────────

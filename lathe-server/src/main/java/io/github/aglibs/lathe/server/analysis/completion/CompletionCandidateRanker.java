@@ -33,10 +33,9 @@ final class CompletionCandidateRanker {
       return true;
     }
 
-    return !objectMethod(candidate)
-        && !voidMethod(candidate)
+    return !voidMethod(candidate)
         && compatibleKeyword(candidate, context)
-        && assignableToExpected(candidate, context);
+        && expectedTypeAllows(candidate, context);
   }
 
   private static String sortText(
@@ -45,6 +44,18 @@ final class CompletionCandidateRanker {
       return keywordSortText(candidate, context);
     }
 
+    if (!(context.expectedValue() instanceof ExpectedValue.Type(final TypeMirror type))) {
+      return baseSortText(candidate);
+    }
+
+    final boolean matches =
+        candidate.valueType() != null
+            && context.analysis().types().isAssignable(candidate.valueType(), type);
+    final String base = baseSortText(candidate);
+    return "%d_%s".formatted(matches ? 0 : 1, base != null ? base : candidate.name());
+  }
+
+  private static String baseSortText(final CompletionCandidate candidate) {
     if (candidate.sortText() != null) {
       return candidate.sortText();
     }
@@ -53,14 +64,7 @@ final class CompletionCandidateRanker {
       return "9_%s".formatted(candidate.name());
     }
 
-    if (!(context.expectedValue() instanceof ExpectedValue.Type(final TypeMirror type))) {
-      return null;
-    }
-
-    final boolean matches =
-        candidate.valueType() != null
-            && context.analysis().types().isAssignable(candidate.valueType(), type);
-    return "%d_%s".formatted(matches ? 0 : 1, candidate.name());
+    return null;
   }
 
   private static String keywordSortText(
@@ -111,7 +115,7 @@ final class CompletionCandidateRanker {
         && "java.lang.Boolean".equals(typeElement.getQualifiedName().toString());
   }
 
-  private static boolean assignableToExpected(
+  private static boolean expectedTypeAllows(
       final CompletionCandidate c, final SemanticCompletionContext ctx) {
     if (c.kind() == CandidateKind.KEYWORD) {
       return true;
@@ -134,7 +138,7 @@ final class CompletionCandidateRanker {
       return true;
     }
 
-    return ctx.analysis().types().isAssignable(vt, expected);
+    return true;
   }
 
   private static boolean objectMethod(final CompletionCandidate candidate) {

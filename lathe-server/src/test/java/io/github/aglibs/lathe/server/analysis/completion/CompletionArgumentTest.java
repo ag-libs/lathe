@@ -5,8 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import java.io.IOException;
-import java.util.List;
-import org.eclipse.lsp4j.CompletionItem;
 import org.junit.jupiter.api.Test;
 
 class CompletionArgumentTest extends CompletionTestSupport {
@@ -144,38 +142,79 @@ class CompletionArgumentTest extends CompletionTestSupport {
   }
 
   @Test
-  void argumentPosition_nonAssignableLocal_excluded() {
+  void argumentPosition_referenceLocal_rankedAfterAssignableLocal() {
     final var items =
-        labels(
-            fixture.complete(
-                """
-                class Test {
-                    void accept(String s) {}
-                    void m() {
-                        StringBuilder sb = new StringBuilder();
-                        String text = "";
-                        accept(§);
-                    }
-                }"""));
-    assertThat(items).contains("text").doesNotContain("sb");
+        fixture.complete(
+            """
+            class Test {
+                void accept(String s) {}
+                void m() {
+                    StringBuilder sb = new StringBuilder();
+                    String text = "";
+                    accept(§);
+                }
+            }""");
+    final var textItem = itemWithFilterText(items, "text");
+    final var sbItem = itemWithFilterText(items, "sb");
+    assertThat(textItem).isPresent();
+    assertThat(sbItem).isPresent();
+    assertThat(textItem.get().getSortText()).isLessThan(sbItem.get().getSortText());
   }
 
   @Test
-  void argumentPosition_nonAssignableLocal_excludedInReceiverQualifiedCall() {
+  void argumentPosition_referenceLocal_rankedAfterAssignableLocalInReceiverQualifiedCall() {
     final var items =
-        labels(
-            fixture.complete(
-                """
-                class Helper { void consume(String s) {} }
-                class Test {
-                    void m() {
-                        Helper helper = new Helper();
-                        StringBuilder sb = new StringBuilder();
-                        String text = "";
-                        helper.consume(§);
-                    }
-                }"""));
-    assertThat(items).contains("text").doesNotContain("sb");
+        fixture.complete(
+            """
+            class Helper { void consume(String s) {} }
+            class Test {
+                void m() {
+                    Helper helper = new Helper();
+                    StringBuilder sb = new StringBuilder();
+                    String text = "";
+                    helper.consume(§);
+                }
+            }""");
+    final var textItem = itemWithFilterText(items, "text");
+    final var sbItem = itemWithFilterText(items, "sb");
+    assertThat(textItem).isPresent();
+    assertThat(sbItem).isPresent();
+    assertThat(textItem.get().getSortText()).isLessThan(sbItem.get().getSortText());
+  }
+
+  @Test
+  void argumentPosition_chainReceiverLocal_visibleWhenItCanProduceExpectedType() {
+    final var items = fixture.complete(chainReceiverSource("accept(§);"));
+
+    final var factoryItem = itemWithFilterText(items, "factory");
+    final var targetItem = itemWithFilterText(items, "target");
+    assertThat(factoryItem).isPresent();
+    assertThat(targetItem).isPresent();
+    assertThat(targetItem.get().getSortText()).isLessThan(factoryItem.get().getSortText());
+
+    assertThat(labels(fixture.complete(chainReceiverSource("accept(f§);")))).contains("factory");
+  }
+
+  private static String chainReceiverSource(final String callLine) {
+    return """
+        class Test {
+            static class Target {}
+
+            static class Factory {
+                Target create() {
+                    return new Target();
+                }
+            }
+
+            void accept(Target target) {}
+
+            void m() {
+                Factory factory = new Factory();
+                Target target = new Target();
+                %s
+            }
+        }"""
+        .formatted(callLine);
   }
 
   @Test
@@ -217,7 +256,7 @@ class CompletionArgumentTest extends CompletionTestSupport {
                         }
                     }""")))
         .contains("value");
-    // no java.lang types or Object methods in second arg position
+    // no type-name noise in second arg position
     final var secondArg =
         labels(
             fixture.complete(
@@ -233,47 +272,44 @@ class CompletionArgumentTest extends CompletionTestSupport {
                     }
                 }"""));
     assertThat(secondArg).contains("value").doesNotContain("String", "Object", "Integer", "Thread");
-    // no Object methods in any arg position
-    final var firstArgFilterTexts =
-        fixture
-            .complete(
-                """
-                class Test {
-                    static class Receiver {
-                        Receiver(String value) {}
-                    }
+    // directly assignable methods remain visible in constructor arguments
+    final var firstArg =
+        fixture.complete(
+            """
+            class Test {
+                static class Receiver {
+                    Receiver(String value) {}
+                }
 
-                    String result() { return ""; }
+                String result() { return ""; }
 
-                    void m() {
-                        new Receiver(§);
-                    }
-                }""")
-            .stream()
-            .map(CompletionItem::getFilterText)
-            .toList();
-    assertThat(firstArgFilterTexts).contains("result");
-    assertThat(firstArgFilterTexts)
-        .doesNotContainAnyElementsOf(List.of("wait", "finalize", "notify", "notifyAll"));
+                void m() {
+                    new Receiver(§);
+                }
+            }""");
+    assertThat(itemWithFilterText(firstArg, "result")).isPresent();
   }
 
   @Test
-  void constructorCallArgument_nonAssignableLocal_excluded() {
+  void constructorCallArgument_referenceLocal_rankedAfterAssignableLocal() {
     final var items =
-        labels(
-            fixture.complete(
-                """
-                class Test {
-                    static class Receiver {
-                        Receiver(String s) {}
-                    }
-                    void m() {
-                        StringBuilder sb = new StringBuilder();
-                        String text = "";
-                        new Receiver(§);
-                    }
-                }"""));
-    assertThat(items).contains("text").doesNotContain("sb");
+        fixture.complete(
+            """
+            class Test {
+                static class Receiver {
+                    Receiver(String s) {}
+                }
+                void m() {
+                    StringBuilder sb = new StringBuilder();
+                    String text = "";
+                    new Receiver(§);
+                }
+            }""");
+    final var textItem = itemWithFilterText(items, "text");
+    final var sbItem = itemWithFilterText(items, "sb");
+    assertThat(textItem).isPresent();
+    assertThat(sbItem).isPresent();
+    assertThat(textItem.get().getSortText()).isLessThan(sbItem.get().getSortText());
   }
 
   // ── lambda body ───────────────────────────────────────────────────────────────

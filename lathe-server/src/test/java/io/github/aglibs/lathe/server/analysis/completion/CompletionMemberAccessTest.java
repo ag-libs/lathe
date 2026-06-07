@@ -126,6 +126,54 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
   }
 
   @Test
+  void memberAccess_staticReceiver_booleanExpectedType_ranksBooleanMembersFirst() {
+    final var items =
+        fixture.complete(
+            """
+            class Test {
+                static class Providers {
+                    static boolean isProvider(Class<?> type) { return true; }
+                    static boolean isSupportedContract(Class<?> type) { return true; }
+                    static void ensureContract(Class<?> type) {}
+                    static Iterable<Object> getProviders() { return null; }
+                }
+
+                void m() {
+                    boolean supported = Providers.§
+                }
+            }""");
+
+    assertThat(items.getFirst().getFilterText()).isEqualTo("isProvider");
+    assertThat(itemWithFilterText(items, "isSupportedContract")).isPresent();
+    assertThat(labels(items)).doesNotContain("ensureContract");
+    assertThat(itemWithFilterText(items, "isProvider").orElseThrow().getSortText())
+        .isLessThan(itemWithFilterText(items, "getProviders").orElseThrow().getSortText());
+  }
+
+  @Test
+  void memberAccess_instanceReceiver_booleanExpectedType_ranksBooleanMembersFirst() {
+    final var items =
+        fixture.complete(
+            """
+            class Test {
+                static class Provider {
+                    boolean isProvider() { return true; }
+                    void ensureContract() {}
+                    String getName() { return ""; }
+                }
+
+                void m(Provider provider) {
+                    boolean supported = provider.§
+                }
+            }""");
+
+    assertThat(items.getFirst().getFilterText()).isEqualTo("isProvider");
+    assertThat(labels(items)).doesNotContain("ensureContract");
+    assertThat(itemWithFilterText(items, "isProvider").orElseThrow().getSortText())
+        .isLessThan(itemWithFilterText(items, "getName").orElseThrow().getSortText());
+  }
+
+  @Test
   void memberAccess_complexReceiver_returnTypeResolved() {
     assertThat(
             labels(

@@ -78,7 +78,9 @@ Typed completion applies especially to:
 - enum equality and switch cases;
 - constructor type selection after `new`.
 
-Typed behavior may either filter candidates or rank better candidates first.
+Typed behavior should rank directly assignable candidates first.
+Reference-typed values should remain visible even when they are not directly assignable,
+because they can still be used as receivers for a chained expression.
 The expected type must not make completion disappear unless the position has no valid slot,
 such as an argument inside a zero-argument call.
 
@@ -211,7 +213,8 @@ methods,
 and static-imported members matching the prefix;
 - legal expression keywords;
 - uppercase prefixes may offer importable types;
-- typed slots rank or filter by expected value type.
+- typed slots rank directly assignable value candidates first,
+while keeping reference candidates visible as possible chain receivers.
 
 Forbidden:
 

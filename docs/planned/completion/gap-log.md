@@ -46,7 +46,7 @@ Notes:
 
 ## Current Triage
 
-Nine accepted completion-quality gaps are currently open from the
+Seven accepted completion-quality gaps are currently open from the
 `DropwizardResourceConfig` explorer pass.
 
 `CQ-0006`,
@@ -55,9 +55,7 @@ Nine accepted completion-quality gaps are currently open from the
 `CQ-0011`,
 `CQ-0012`,
 `CQ-0014`,
-`CQ-0015`,
-`CQ-0016`,
-and `CQ-0017` are documented probe gaps and need tests before implementation.
+and `CQ-0016` are documented probe gaps and need tests before implementation.
 
 `CQ-0001`,
 `CQ-0003`,
@@ -65,7 +63,9 @@ and `CQ-0017` are documented probe gaps and need tests before implementation.
 `CQ-0005`,
 `CQ-0007`,
 `CQ-0009`,
-and `CQ-0013` are fixed and covered by regression tests.
+`CQ-0013`,
+`CQ-0015`,
+and `CQ-0017` are fixed and covered by regression tests.
 The follow-up Dropwizard/Helidon explorer pass covered expected-type ranking,
 static member fit,
 constructor type completion,
@@ -807,7 +807,7 @@ but not nested types.
 ## CQ-0015 — Member-access completion does not rank candidates by assignment expected type
 
 ID: CQ-0015
-Status: accepted
+Status: fixed
 Tier: typed
 Failure mode: poor-ranking
 Owner component: CompletionEngine / CompletionCandidateRanker / SemanticCompletionContext
@@ -832,11 +832,11 @@ For `boolean x = Providers.§`,
 static methods returning `boolean` should appear before collection-returning or `void` methods.
 
 Lathe behavior:
-Lathe returns `Providers` static methods in member order.
-`checkProviderRuntime(...) : boolean` appears first,
+Lathe returned `Providers` static methods in member order.
+`checkProviderRuntime(...) : boolean` appeared first,
 but `isJaxRsProvider(...) : boolean`,
 `isProvider(...) : boolean`,
-and `isSupportedContract(...) : boolean` are below many non-boolean `get*` methods.
+and `isSupportedContract(...) : boolean` were below many non-boolean `get*` methods.
 
 The debug log shows the receiver resolves correctly:
 
@@ -863,10 +863,25 @@ Member-access completion test for `boolean value = Providers.§`
 or an equivalent local static receiver fixture.
 Assert boolean-returning methods sort before non-boolean methods.
 
+Fixed by:
+`CompletionMemberAccessTest.memberAccess_staticReceiver_booleanExpectedType_ranksBooleanMembersFirst`,
+`CompletionMemberAccessTest.memberAccess_instanceReceiver_booleanExpectedType_ranksBooleanMembersFirst`,
+member-access completion using the real semantic completion context,
+and expected-type sort buckets that wrap existing member sort keys.
+
+Verification:
+```bash
+mvn -pl lathe-server -Dtest='Completion*Test' test
+mvn spotless:check -pl lathe-server
+mvn install -pl lathe-server -am -DskipTests
+printf 'inject "boolean x = Providers." at 153\nlog 30\n' \
+  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-jersey/src/main/java/io/dropwizard/jersey/DropwizardResourceConfig.java
+```
+
 Notes:
 This is not a receiver-resolution problem.
 The candidate set includes the expected boolean methods;
-only ranking is missing expected-type awareness.
+only ranking was missing expected-type awareness.
 
 ## CQ-0016 — No-arg method accepted in assignment initializer does not insert a semicolon
 
@@ -953,7 +968,7 @@ or assignment context.
 ## CQ-0017 — Argument expected-type filtering hides useful chain receiver locals
 
 ID: CQ-0017
-Status: accepted
+Status: fixed
 Tier: typed
 Failure mode: missing-candidate
 Owner component: CompletionCandidateRanker / SemanticCompletionContext
@@ -1013,13 +1028,9 @@ The `pool.` control probe confirms the chain is useful:
 and related methods are available from `pool`.
 
 Expected Lathe behavior:
-Expected-type filtering in argument positions should not hide all non-assignable locals
-that are useful as chain receivers.
-Lathe should either:
-
-- rank assignable candidates first while still showing visible locals like `pool`;
-- or provide a conservative chain-receiver rule that keeps local variables and parameters
-  when they have members returning the expected type.
+Expected-type ranking in argument positions should not hide non-assignable reference values.
+Directly assignable candidates should rank first,
+while reference-typed values remain visible as possible chain receivers.
 
 Accepted edit, if relevant:
 Accepting `pool.get` currently produces:
@@ -1034,10 +1045,23 @@ the visible local is `Factory`,
 and `Factory.create()` returns `Target`.
 The local `factory` should remain visible with prefix `f`.
 
+Fixed by:
+`CompletionArgumentTest.argumentPosition_chainReceiverLocal_visibleWhenItCanProduceExpectedType`
+and a ranker policy that keeps reference-typed candidates visible in typed value slots.
+
+Verification:
+```bash
+mvn -pl lathe-server -Dtest='Completion*Test' test
+mvn spotless:check -pl lathe-server
+mvn install -pl lathe-server -am -DskipTests
+printf 'inject "cc.setSuperclass(p" at 165\nlog 30\n' \
+  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-jersey/src/main/java/io/dropwizard/jersey/DropwizardResourceConfig.java
+```
+
 Notes:
 This is a typed-completion tradeoff.
-Filtering by expected type is useful,
-but the current filter is too aggressive for first-step expression construction.
+The fix intentionally favors ranking over filtering for reference values,
+because references can become receivers for chained expression construction.
 
 ## CQ-0001 — Annotation enum value completion routes to element-name completion
 

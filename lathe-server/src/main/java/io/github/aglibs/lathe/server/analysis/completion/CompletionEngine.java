@@ -101,7 +101,7 @@ public final class CompletionEngine {
                       ? completeTypeReference(parsed, injected, req)
                       : CompletionOutcome.of(List.of()));
           case MEMBER_ACCESS, LAMBDA_BODY, STATIC_IMPORT ->
-              completeMemberAccess(parsed, injected, req);
+              completeMemberAccess(parsed, injected, req, site);
           default -> CompletionOutcome.of(List.of());
         };
     CompletionItemPresenter.applyReplacementRange(outcome.items(), site.replacementRange());
@@ -912,7 +912,10 @@ public final class CompletionEngine {
   }
 
   private CompletionOutcome completeMemberAccess(
-      final ParsedSentinel parsed, final SentinelResult injected, final CompletionRequest req) {
+      final ParsedSentinel parsed,
+      final SentinelResult injected,
+      final CompletionRequest req,
+      final CompletionSite site) {
     final var initialSnapshot = req.cached() != null ? req.cached().analysis() : null;
     final var initialResolved =
         initialSnapshot != null
@@ -969,6 +972,7 @@ public final class CompletionEngine {
     final boolean isStaticAccess =
         parsed.sentinelContext() == SentinelContext.STATIC_IMPORT || resolved.staticAccess();
     final var scope = TypeResolver.resolveScope(snapshot, req.cursorOffset());
+    final var semanticContext = SemanticCompletionContext.from(site, req, parsed, snapshot);
     final List<CompletionCandidate> candidates =
         Stream.concat(
                 new CandidateGenerator(snapshot)
@@ -978,7 +982,7 @@ public final class CompletionEngine {
                 isStaticAccess ? classLiteralCandidates(injected.prefix()).stream() : Stream.of())
             .toList();
     final List<CompletionItem> items =
-        CompletionCandidateRanker.rank(candidates, memberAccessSemanticContext(snapshot)).stream()
+        CompletionCandidateRanker.rank(candidates, semanticContext).stream()
             .map(CompletionItemPresenter::present)
             .toList();
     LOG.fine(
