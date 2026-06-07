@@ -109,9 +109,19 @@ final class SimpleNameProvider {
   }
 
   private void addMember(final Element el, final DeclaredType declaredType) {
-    if (seen.add(el.getSimpleName().toString())) {
+    if (seen.add(memberKey(el))) {
       items.add(itemFactory.memberCandidate(el, declaredType));
     }
+  }
+
+  private static String memberKey(final Element el) {
+    if (el instanceof final ExecutableElement executable) {
+      final var params =
+          executable.getParameters().stream().map(param -> param.asType().toString()).toList();
+      return "%s(%s)".formatted(executable.getSimpleName(), String.join(",", params));
+    }
+
+    return el.getSimpleName().toString();
   }
 
   private void addClassMembers(final boolean staticMethod) {

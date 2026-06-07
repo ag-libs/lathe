@@ -343,6 +343,29 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
   }
 
   @Test
+  void simpleName_overloadedMethods_preservesEachOverload() {
+    final List<CompletionItem> items =
+        fixture.complete(
+            """
+            class Test {
+                static Test forTesting() {
+                    return null;
+                }
+
+                static Test forTesting(String value) {
+                    return null;
+                }
+
+                void m() {
+                    forT§
+                }
+            }""");
+
+    assertThat(itemWithLabelDetail(items, "forTesting", "()")).isPresent();
+    assertThat(itemWithLabelDetail(items, "forTesting", "(String value)")).isPresent();
+  }
+
+  @Test
   void simpleName_voidMethod_excludedWhenExpectedTypeKnown() {
     // initializer position
     final var initializer =

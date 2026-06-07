@@ -54,14 +54,15 @@ Six accepted completion-quality gaps are currently open from the
 `CQ-0010`,
 `CQ-0011`,
 `CQ-0012`,
-and `CQ-0013` are documented probe gaps and need tests before implementation.
+and `CQ-0014` are documented probe gaps and need tests before implementation.
 
 `CQ-0001`,
 `CQ-0003`,
 `CQ-0004`,
 `CQ-0005`,
 `CQ-0007`,
-and `CQ-0009` are fixed and covered by regression tests.
+`CQ-0009`,
+and `CQ-0013` are fixed and covered by regression tests.
 The follow-up Dropwizard/Helidon explorer pass covered expected-type ranking,
 static member fit,
 constructor type completion,
@@ -619,7 +620,7 @@ The later control probe confirms the selected method item itself edits correctly
 ## CQ-0013 — Simple-name method completion drops overloads with the same name
 
 ID: CQ-0013
-Status: accepted
+Status: fixed
 Tier: semantic
 Failure mode: missing-candidate
 Owner component: SimpleNameProvider
@@ -700,10 +701,105 @@ Regression target:
 Simple-name completion test where a class declares two visible overloads with the same name.
 Both overloads should be returned with distinct `labelDetails.detail` values.
 
+Fixed by:
+`CompletionSimpleNameTest.simpleName_overloadedMethods_preservesEachOverload`
+and a `SimpleNameProvider` dedupe key that preserves method overload signatures.
+
+Verification:
+```bash
+mvn -pl lathe-server -Dtest='Completion*Test' test
+mvn spotless:check -pl lathe-server
+mvn install -pl lathe-server -am -DskipTests
+printf 'inject "forT" at 63\nlog 20\n' \
+  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-jersey/src/main/java/io/dropwizard/jersey/DropwizardResourceConfig.java
+```
+
 Notes:
 Inspection points at `SimpleNameProvider`.
 It keeps a `seen` set keyed by `el.getSimpleName().toString()`,
 so the first method overload suppresses later overloads before presentation.
+
+## CQ-0014 — Nested classes are missing from simple-name and type-dot suggestions
+
+ID: CQ-0014
+Status: accepted
+Tier: semantic
+Failure mode: missing-candidate
+Owner component: CompletionEngine / CandidateGenerator / SimpleNameProvider
+
+Project/file:
+`/home/ag-libs/git/dropwizard/dropwizard-jersey/src/main/java/io/dropwizard/jersey/DropwizardResourceConfig.java`
+
+Probe commands:
+```bash
+printf 'inject "Com" at 63\nlog 20\n' \
+  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-jersey/src/main/java/io/dropwizard/jersey/DropwizardResourceConfig.java
+
+printf 'inject "DropwizardResourceConfig.Com" at 63\nlog 20\n' \
+  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-jersey/src/main/java/io/dropwizard/jersey/DropwizardResourceConfig.java
+```
+
+Cursor context:
+```java
+public class DropwizardResourceConfig extends ResourceConfig {
+    private static class ComponentLoggingListener implements ApplicationEventListener {
+        ...
+    }
+
+    public DropwizardResourceConfig(@Nullable MetricRegistry metricRegistry) {
+        super();
+
+        Com§
+        DropwizardResourceConfig.Com§
+    }
+}
+```
+
+IntelliJ or JDT behavior:
+Expected IDE behavior is to offer reachable nested classes where a type can be written.
+For the Dropwizard probe,
+`ComponentLoggingListener` should be available as an in-file nested type.
+The qualified form `DropwizardResourceConfig.Com§` should also suggest
+`ComponentLoggingListener`.
+
+Lathe behavior:
+Bare `Com§` returns external type-index and `java.lang` suggestions such as `Comparable`,
+but it does not include `ComponentLoggingListener`.
+The debug log shows `simple-name candidates javac=0`.
+
+Qualified `DropwizardResourceConfig.Com§` returns no completions.
+The debug log shows the request routes through `MEMBER_ACCESS`,
+resolves the receiver type,
+and then proposes zero field/method/enum candidates.
+
+Expected Lathe behavior:
+Nested type candidates should be included in type-capable simple-name contexts.
+For type-qualified access,
+static nested classes should be offered alongside static members when the receiver is a type.
+Candidate presentation should use the existing type item shape,
+with a type kind and the containing type/package detail.
+
+Accepted edit, if relevant:
+Not yet probed through acceptance because no candidate is returned.
+Expected insertion is the nested simple name,
+for example `ComponentLoggingListener`.
+
+Regression target:
+Type-reference and method-body completion tests for:
+
+- bare nested class simple-name completion inside the enclosing top-level class;
+- qualified nested class completion after `Outer.Nes§`;
+- no instance-only member pollution in the qualified type context.
+
+Notes:
+`CandidateGenerator.proposeNestedTypes(...)` exists,
+but it is currently reached from qualified `TYPE_REFERENCE` paths.
+The Dropwizard qualified probe is classified as `MEMBER_ACCESS`,
+whose candidate stream includes fields,
+methods,
+enum constants,
+and `class`,
+but not nested types.
 
 ## CQ-0001 — Annotation enum value completion routes to element-name completion
 
