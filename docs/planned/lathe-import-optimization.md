@@ -10,11 +10,17 @@ The next import feature is optimization:
 deduplicate imports,
 sort import groups,
 remove unused imports,
-and replace wildcard imports with direct imports when javac can prove which symbols are used.
+and (in post-v1) replace wildcard imports with direct imports.
 
 ## Goal
 
-Run conservative import optimization before full-document formatting.
+For v1, run a syntactic import optimization using the built-in capabilities of google-java-format before full-document formatting.
+Specifically:
+- Remove unused imports syntactically using `com.google.googlejavaformat.java.RemoveUnusedImports`.
+- Sort import groups natively using `com.google.googlejavaformat.java.Formatter`.
+
+In post-v1, we will introduce a semantic import optimizer that leverages compiler attribution to handle wildcard expansion and robust static import resolution.
+
 The editor still invokes normal `textDocument/formatting`,
 but Lathe transforms the source in memory before passing it to google-java-format.
 
@@ -36,16 +42,20 @@ Full-document formatting should become:
 
 ```text
 current source
-  -> semantic import optimization when a current attributed tree is available
-  -> google-java-format
+  -> syntactic import optimization (RemoveUnusedImports)
+  -> google-java-format (Formatter)
   -> one full-document TextEdit
 ```
 
-If semantic import optimization cannot run confidently, Lathe should skip it and still run google-java-format.
+If syntactic import optimization fails due to a syntax error or a FormatterException, Lathe should fall back to standard formatting of the original source.
 
 Range formatting and on-type formatting should continue to call google-java-format without import optimization.
 
-## Javac Inputs
+## Post-v1: Semantic Import Optimization (Future Scope)
+
+These features are deferred to post-v1 as they require compiler attribution and classpath information.
+
+### Javac Inputs
 
 Use the cached `AttributedFileAnalysis` when it matches the current document content/version.
 The optimizer needs:
@@ -59,7 +69,7 @@ The optimizer needs:
 If the cached analysis is missing, stale, or failed attribution around imports/names,
 return the source unchanged.
 
-## Used Symbol Collection
+### Used Symbol Collection
 
 Walk the attributed tree with `TreePathScanner`.
 The optimizer should collect symbols from `IdentifierTree` nodes,
@@ -101,7 +111,7 @@ java.time.DayOfWeek.MONDAY
 Method overloads intentionally collapse to the same key.
 One direct static import covers all overloads with the same member name.
 
-## Explicit Import Removal
+### Explicit Import Removal
 
 For an explicit normal import:
 
@@ -121,7 +131,7 @@ keep it only when `java.util.Objects.requireNonNull` appears in the used static-
 
 Duplicate explicit imports should be removed.
 
-## Wildcard Expansion
+### Wildcard Expansion
 
 For a normal wildcard import:
 
@@ -139,6 +149,8 @@ import java.util.Map;
 
 Do not import `java.lang` types.
 Do not expand a wildcard when diagnostics indicate unresolved or ambiguous names.
+
+### Static Wildcard Expansion
 
 For a static wildcard import:
 
@@ -165,7 +177,7 @@ may become:
 import static java.time.DayOfWeek.MONDAY;
 ```
 
-## Ordering
+### Ordering
 
 Render the optimized import block as:
 
@@ -176,7 +188,7 @@ Render the optimized import block as:
 google-java-format runs afterward and can normalize whitespace.
 The optimizer should still render a clean block so tests do not depend on formatter side effects.
 
-## Conservative Guards
+### Conservative Guards
 
 Skip semantic optimization and return the original source when:
 
@@ -196,17 +208,15 @@ for example:
 
 ```java
 final class ImportOptimizer {
-  static String optimize(String source, AttributedFileAnalysis analysis) { ... }
+  static String optimize(String source) {
+    try {
+      return RemoveUnusedImports.removeUnusedImports(source);
+    } catch (FormatterException e) {
+      return source;
+    }
+  }
 }
 ```
-
-The helper should:
-
-1. read imports and source ranges from the compilation unit
-2. collect used type and static-member keys with a scanner
-3. derive the optimized normal and static import sets
-4. replace only the import block in the source string
-5. return the original source unchanged when any guard fails
 
 Formatting integration should apply the optimizer only for full-document formatting before calling
 `JavaFormatter.format(...)`.
@@ -216,16 +226,12 @@ Formatting integration should apply the optimizer only for full-document formatt
 Unit tests should cover:
 
 - duplicate explicit imports are removed
-- normal imports are sorted
-- static imports are sorted separately
-- unused explicit normal imports are removed
-- unused explicit static imports are removed
-- normal wildcard imports are expanded to direct imports
-- static wildcard imports are expanded to direct imports
-- enum constants from static wildcards are expanded
-- qualified source references are not shortened or imported
-- comments inside the import block cause optimization to be skipped
-- missing or stale analysis leaves source unchanged
+- normal imports are sorted (via Formatter)
+- static imports are sorted separately (via Formatter)
+- unused explicit normal imports are removed (via RemoveUnusedImports)
+- unused explicit static imports are removed (via RemoveUnusedImports)
+- normal wildcard imports are NOT expanded in v1 (retained as-is)
+- static wildcard imports are NOT expanded in v1 (retained as-is)
 
 Formatting integration tests should verify:
 
