@@ -390,6 +390,7 @@ final class SentinelParser {
       case ArrayTypeTree ignored -> Classification.typeReference(inferredRole);
       case WildcardTree ignored -> Classification.typeReference(inferredRole);
       case TypeParameterTree ignored -> Classification.typeReference(inferredRole);
+      case CaseLabelTree ignored -> Classification.of(SentinelContext.CASE_LABEL);
       default -> classifyDefault(sentinel);
     };
   }

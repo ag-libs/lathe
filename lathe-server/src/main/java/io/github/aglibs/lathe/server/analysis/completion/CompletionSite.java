@@ -70,7 +70,7 @@ record CompletionSite(
       case TYPE_REFERENCE, VARIABLE_DECLARATION -> CompletionMode.TYPE;
       case CONSTRUCTOR_CALL ->
           parsed.argIndex() >= 0 ? simpleNameMode(injected) : CompletionMode.TYPE;
-      case SIMPLE_NAME, ARGUMENT_POSITION -> simpleNameMode(injected);
+      case SIMPLE_NAME, ARGUMENT_POSITION, CASE_LABEL -> simpleNameMode(injected);
       default -> CompletionMode.KEYWORD_ONLY;
     };
   }

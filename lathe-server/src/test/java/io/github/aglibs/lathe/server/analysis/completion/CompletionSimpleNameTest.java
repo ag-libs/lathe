@@ -539,5 +539,27 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
         .contains("SECONDS");
   }
 
+  @Test
+  void simpleName_switchCaseLabel_suggestsEnumConstants() {
+    final var items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    enum Type {
+                        RESOURCE_METHOD,
+                        SUB_RESOURCE_LOCATOR
+                    }
+
+                    void m(Type type) {
+                        switch (type) {
+                            case §
+                        }
+                    }
+                }"""));
+
+    assertThat(items).contains("RESOURCE_METHOD", "SUB_RESOURCE_LOCATOR");
+  }
+
   // ── presentation details ─────────────────────────────────────────────────────
 }

@@ -6,6 +6,7 @@ import com.sun.source.tree.BinaryTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.ErroneousTree;
 import com.sun.source.tree.IdentifierTree;
+import com.sun.source.tree.LambdaExpressionTree;
 import com.sun.source.tree.LiteralTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
@@ -14,6 +15,8 @@ import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.ParenthesizedTree;
 import com.sun.source.tree.ReturnTree;
 import com.sun.source.tree.Scope;
+import com.sun.source.tree.SwitchExpressionTree;
+import com.sun.source.tree.SwitchTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
@@ -51,6 +54,13 @@ final class TypeResolver {
       final CompletionSite site, final int cursorLine, final AttributedFileAnalysis snapshot) {
     if (snapshot.tree() == null) {
       return new ExpectedValue.Unknown();
+    }
+
+    if (site.sentinelContext() == SentinelContext.CASE_LABEL) {
+      final ExpectedValue expected = resolveSwitchSelectorValue(site, snapshot);
+      if (!(expected instanceof ExpectedValue.Unknown)) {
+        return expected;
+      }
     }
 
     if (site.argIndex() >= 0 && site.enclosingMethodName() != null) {
@@ -773,5 +783,39 @@ final class TypeResolver {
       }
     }.scan(cu, null);
     return result.get();
+  }
+
+  private static ExpectedValue resolveSwitchSelectorValue(
+      final CompletionSite site, final AttributedFileAnalysis snapshot) {
+    final TreePath path =
+        SourceLocator.pathAt(snapshot.trees(), snapshot.tree(), site.cursorOffset());
+    if (path == null) {
+      return new ExpectedValue.Unknown();
+    }
+
+    for (TreePath current = path; current != null; current = current.getParentPath()) {
+      final Tree leaf = current.getLeaf();
+      if (leaf instanceof ClassTree
+          || leaf instanceof MethodTree
+          || leaf instanceof LambdaExpressionTree) {
+        break;
+      }
+
+      final Tree selector =
+          switch (leaf) {
+            case final SwitchTree s -> s.getExpression();
+            case final SwitchExpressionTree s -> s.getExpression();
+            default -> null;
+          };
+      if (selector != null) {
+        final TreePath selectorPath = new TreePath(current, selector);
+        final TypeMirror type = snapshot.trees().getTypeMirror(selectorPath);
+        if (type != null && type.getKind() != TypeKind.ERROR && type.getKind() != TypeKind.NONE) {
+          return new ExpectedValue.Type(type);
+        }
+      }
+    }
+
+    return new ExpectedValue.Unknown();
   }
 }

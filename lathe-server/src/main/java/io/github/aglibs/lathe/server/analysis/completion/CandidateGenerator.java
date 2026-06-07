@@ -78,22 +78,30 @@ final class CandidateGenerator {
 
   List<CompletionCandidate> proposeEnumConstantCandidates(
       final TypeElement enumType, final String prefix) {
-    final var typeName = enumType.getSimpleName().toString();
+    final String typeName = enumType.getSimpleName().toString();
     return enumType.getEnclosedElements().stream()
         .filter(el -> el.getKind() == ElementKind.ENUM_CONSTANT)
         .filter(el -> (typeName + "." + el.getSimpleName()).startsWith(prefix))
-        .map(el -> enumConstantCandidate(enumType, el, typeName))
+        .map(el -> enumConstantCandidate(enumType, el, typeName + "." + el.getSimpleName()))
+        .toList();
+  }
+
+  List<CompletionCandidate> proposeUnqualifiedEnumConstantCandidates(
+      final TypeElement enumType, final String prefix) {
+    return enumType.getEnclosedElements().stream()
+        .filter(el -> el.getKind() == ElementKind.ENUM_CONSTANT)
+        .filter(el -> el.getSimpleName().toString().startsWith(prefix))
+        .map(el -> enumConstantCandidate(enumType, el, el.getSimpleName().toString()))
         .toList();
   }
 
   private static CompletionCandidate enumConstantCandidate(
-      final TypeElement enumType, final Element constant, final String typeName) {
-    final var label = typeName + "." + constant.getSimpleName();
+      final TypeElement enumType, final Element constant, final String label) {
     return new CompletionCandidate(
         label,
         label,
         CandidateKind.FIELD,
-        typeName,
+        enumType.getSimpleName().toString(),
         label,
         false,
         null,

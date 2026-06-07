@@ -46,10 +46,9 @@ Notes:
 
 ## Current Triage
 
-Six accepted completion-quality gaps are currently open from the
+Five accepted completion-quality gaps are currently open from the
 `DropwizardResourceConfig` explorer pass.
 
-`CQ-0006`,
 `CQ-0008`,
 `CQ-0010`,
 `CQ-0011`,
@@ -60,6 +59,7 @@ and `CQ-0016` are documented probe gaps and need tests before implementation.
 `CQ-0003`,
 `CQ-0004`,
 `CQ-0005`,
+`CQ-0006`,
 `CQ-0007`,
 `CQ-0009`,
 `CQ-0012`,
@@ -201,7 +201,7 @@ type-like receiver.
 ## CQ-0006 — Enum switch case labels do not use the selector enum type
 
 ID: CQ-0006
-Status: accepted
+Status: fixed
 Tier: typed
 Failure mode: wrong-candidate-set
 Owner component: SentinelParser / CompletionEngine

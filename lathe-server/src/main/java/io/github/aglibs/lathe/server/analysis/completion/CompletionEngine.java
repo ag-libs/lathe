@@ -81,7 +81,8 @@ public final class CompletionEngine {
     final var outcome =
         switch (parsed.sentinelContext()) {
           case IMPORT -> completeImport(parsed, injected, req);
-          case SIMPLE_NAME, ARGUMENT_POSITION -> completeSimpleName(parsed, injected, req, site);
+          case SIMPLE_NAME, ARGUMENT_POSITION, CASE_LABEL ->
+              completeSimpleName(parsed, injected, req, site);
           case CONSTRUCTOR_CALL ->
               parsed.argIndex() >= 0
                   ? completeSimpleName(parsed, injected, req, site)
@@ -152,14 +153,17 @@ public final class CompletionEngine {
 
     final var javacCandidates = completeJavacSimpleName(parsed, injected, req, semanticContext);
     final var enumCandidates = enumEqualityCandidates(parsed, injected.prefix(), semanticContext);
+    final var enumCaseCandidates =
+        enumCaseLabelCandidates(parsed, injected.prefix(), semanticContext);
     final var keywordCandidates =
         KeywordProvider.suggestCandidates(parsed, injected.prefix(), injected.context());
     LOG.fine(
         () ->
-            "[completion] simple-name candidates javac=%d enum=%d keywords=%d semantic=%s"
+            "[completion] simple-name candidates javac=%d enum=%d enumCase=%d keywords=%d semantic=%s"
                 .formatted(
                     javacCandidates.size(),
                     enumCandidates.size(),
+                    enumCaseCandidates.size(),
                     keywordCandidates.size(),
                     semanticContext != null ? semanticContext.expectedValue() : null));
     final var rankingContext =
@@ -168,12 +172,18 @@ public final class CompletionEngine {
                     && semanticContext.expectedValue() instanceof ExpectedValue.NoSlot)
             ? null
             : semanticContext;
-    final List<CompletionItem> items =
-        presentSimpleNameCandidates(
-            Stream.of(javacCandidates, enumCandidates, keywordCandidates)
-                .flatMap(List::stream)
-                .toList(),
-            rankingContext);
+
+    final List<CompletionCandidate> candidates;
+    if (parsed.sentinelContext() == SentinelContext.CASE_LABEL && !enumCaseCandidates.isEmpty()) {
+      candidates = enumCaseCandidates;
+    } else {
+      candidates =
+          Stream.of(javacCandidates, enumCandidates, keywordCandidates)
+              .flatMap(List::stream)
+              .toList();
+    }
+
+    final List<CompletionItem> items = presentSimpleNameCandidates(candidates, rankingContext);
 
     if (!hasUppercasePrefix(injected)) {
       return new CompletionOutcome(items, null);
@@ -244,21 +254,51 @@ public final class CompletionEngine {
       final ParsedSentinel parsed,
       final String prefix,
       final SemanticCompletionContext semanticContext) {
-    if (!parsed.inEqualityComparison() || semanticContext == null) {
+    if (!parsed.inEqualityComparison()) {
       return List.of();
     }
 
-    if (!(semanticContext.expectedValue() instanceof ExpectedValue.Type(final TypeMirror type))) {
-      return List.of();
-    }
-
-    final var el = semanticContext.analysis().types().asElement(type);
-    if (!(el instanceof final TypeElement typeEl) || typeEl.getKind() != ElementKind.ENUM) {
+    final TypeElement typeEl = expectedEnumType(semanticContext);
+    if (typeEl == null) {
       return List.of();
     }
 
     return new CandidateGenerator(semanticContext.analysis())
         .proposeEnumConstantCandidates(typeEl, prefix);
+  }
+
+  private static List<CompletionCandidate> enumCaseLabelCandidates(
+      final ParsedSentinel parsed,
+      final String prefix,
+      final SemanticCompletionContext semanticContext) {
+    if (parsed.sentinelContext() != SentinelContext.CASE_LABEL) {
+      return List.of();
+    }
+
+    final TypeElement typeEl = expectedEnumType(semanticContext);
+    if (typeEl == null) {
+      return List.of();
+    }
+
+    return new CandidateGenerator(semanticContext.analysis())
+        .proposeUnqualifiedEnumConstantCandidates(typeEl, prefix);
+  }
+
+  private static TypeElement expectedEnumType(final SemanticCompletionContext semanticContext) {
+    if (semanticContext == null) {
+      return null;
+    }
+
+    if (!(semanticContext.expectedValue() instanceof ExpectedValue.Type(final TypeMirror type))) {
+      return null;
+    }
+
+    final var el = semanticContext.analysis().types().asElement(type);
+    if (el instanceof final TypeElement typeEl && typeEl.getKind() == ElementKind.ENUM) {
+      return typeEl;
+    }
+
+    return null;
   }
 
   private static List<CompletionItem> presentSimpleNameCandidates(
