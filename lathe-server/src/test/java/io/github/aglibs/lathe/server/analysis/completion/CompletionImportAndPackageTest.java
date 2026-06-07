@@ -78,9 +78,10 @@ class CompletionImportAndPackageTest extends CompletionTestSupport {
     assertThat(labels(fixture.complete("import java.util.§;\n\nclass Test {}")))
         .doesNotContain("atomic");
     // text edit includes trailing semicolon (source has no trailing ';' so engine adds one)
-    final var mapItem = itemLabeled(fixture.complete("import java.util.§\n\nclass Test {}"), "Map");
-    assertThat(mapItem).isPresent();
-    assertThat(mapItem.get().getTextEdit().getLeft().getNewText()).isEqualTo("Map;");
+    final var items = fixture.complete("import java.util.§\n\nclass Test {}");
+    assertThat(labels(items)).contains("Map");
+    final var mapItem = itemLabeled(items, "Map").orElseThrow();
+    assertThat(mapItem.getTextEdit().getLeft().getNewText()).isEqualTo("Map;");
   }
 
   @Test
@@ -97,12 +98,11 @@ class CompletionImportAndPackageTest extends CompletionTestSupport {
                 fixture.complete("import static java.util.Collections.empty§;\n\nclass Test {}")))
         .anyMatch(l -> l.startsWith("emptyList"));
     // text edit is bare name + semicolon, not a snippet
+    final var items = fixture.complete("import static java.util.Objects.§\n\nclass Test {}");
+    assertThat(labels(items)).anyMatch(l -> l.startsWith("equals"));
     final var equalsItem =
-        fixture.complete("import static java.util.Objects.§\n\nclass Test {}").stream()
-            .filter(i -> i.getLabel().startsWith("equals"))
-            .findFirst();
-    assertThat(equalsItem).isPresent();
-    assertThat(equalsItem.get().getTextEdit().getLeft().getNewText()).isEqualTo("equals;");
+        items.stream().filter(i -> i.getLabel().startsWith("equals")).findFirst().orElseThrow();
+    assertThat(equalsItem.getTextEdit().getLeft().getNewText()).isEqualTo("equals;");
     assertThat(
             labels(
                 fixture.complete("import static java.util.concurrent.TimeUnit.§\nclass Test {}")))

@@ -63,11 +63,10 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
                     String result = §
                 }
             }""");
-    final var textItem = itemWithFilterText(items, "text");
-    final var sbItem = itemWithFilterText(items, "sb");
-    assertThat(textItem).isPresent();
-    assertThat(sbItem).isPresent();
-    assertThat(textItem.get().getSortText()).isLessThan(sbItem.get().getSortText());
+    assertThat(labels(items)).contains("text", "sb");
+    final var textItem = itemWithFilterText(items, "text").orElseThrow();
+    final var sbItem = itemWithFilterText(items, "sb").orElseThrow();
+    assertThat(textItem.getSortText()).isLessThan(sbItem.getSortText());
   }
 
   @Test
@@ -153,11 +152,10 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
                     return §;
                 }
             }""");
-    final var textItem = itemWithFilterText(items, "text");
-    final var sbItem = itemWithFilterText(items, "sb");
-    assertThat(textItem).isPresent();
-    assertThat(sbItem).isPresent();
-    assertThat(textItem.get().getSortText()).isLessThan(sbItem.get().getSortText());
+    assertThat(labels(items)).contains("text", "sb");
+    final var textItem = itemWithFilterText(items, "text").orElseThrow();
+    final var sbItem = itemWithFilterText(items, "sb").orElseThrow();
+    assertThat(textItem.getSortText()).isLessThan(sbItem.getSortText());
   }
 
   @Test
@@ -242,14 +240,12 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
                     Foo x = §
                 }
             }""");
-    final var fooItem = itemWithFilterText(items, "getFoo");
-    final var stringItem = itemWithFilterText(items, "getString");
-    final var sbItem = itemWithFilterText(items, "getSb");
-    assertThat(fooItem).isPresent();
-    assertThat(stringItem).isPresent();
-    assertThat(sbItem).isPresent();
-    assertThat(fooItem.get().getSortText()).isLessThan(stringItem.get().getSortText());
-    assertThat(fooItem.get().getSortText()).isLessThan(sbItem.get().getSortText());
+    assertThat(labels(items)).contains("getFoo", "getString", "getSb");
+    final var fooItem = itemWithFilterText(items, "getFoo").orElseThrow();
+    final var stringItem = itemWithFilterText(items, "getString").orElseThrow();
+    final var sbItem = itemWithFilterText(items, "getSb").orElseThrow();
+    assertThat(fooItem.getSortText()).isLessThan(stringItem.getSortText());
+    assertThat(fooItem.getSortText()).isLessThan(sbItem.getSortText());
     assertThat(labels(items)).doesNotContain("doSomething()", "isReady()", "true", "false");
   }
 
@@ -309,7 +305,7 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
     final var items =
         fixture.complete("class Test { void m() { String fooBar = \"x\"; String foo = fo§ } }");
     assertThat(itemWithFilterText(items, "foo")).isEmpty();
-    assertThat(itemWithFilterText(items, "fooBar")).isPresent();
+    assertThat(labels(items)).contains("fooBar");
   }
 
   @Test
@@ -326,11 +322,10 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
                     String result = §
                 }
             }""");
-    final var labelItem = itemWithFilterText(items, "label");
-    final var countItem = itemWithFilterText(items, "count");
-    assertThat(labelItem).isPresent();
-    assertThat(countItem).isPresent();
-    assertThat(labelItem.get().getSortText()).isLessThan(countItem.get().getSortText());
+    assertThat(labels(items)).contains("label", "count");
+    final var labelItem = itemWithFilterText(items, "label").orElseThrow();
+    final var countItem = itemWithFilterText(items, "count").orElseThrow();
+    assertThat(labelItem.getSortText()).isLessThan(countItem.getSortText());
   }
 
   @Test
@@ -344,15 +339,13 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
                     §
                 }
             }""");
-    final var zebraItem = itemWithFilterText(items, "zebra");
-    final var cloneItem = itemWithFilterText(items, "clone");
-    final var waitItem = itemWithFilterText(items, "wait");
-    assertThat(zebraItem).isPresent();
-    assertThat(cloneItem).isPresent();
-    assertThat(waitItem).isPresent();
-    assertThat(cloneItem.get().getSortText()).startsWith("9_");
-    assertThat(waitItem.get().getSortText()).startsWith("9_");
-    assertThat(zebraItem.get().getSortText()).isNull();
+    assertThat(labels(items)).contains("zebra", "clone", "wait");
+    final var zebraItem = itemWithFilterText(items, "zebra").orElseThrow();
+    final var cloneItem = itemWithFilterText(items, "clone").orElseThrow();
+    final var waitItem = itemWithFilterText(items, "wait").orElseThrow();
+    assertThat(cloneItem.getSortText()).startsWith("9_");
+    assertThat(waitItem.getSortText()).startsWith("9_");
+    assertThat(zebraItem.getSortText()).isNull();
   }
 
   @Test
@@ -392,8 +385,9 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
                 }
             }""");
 
-    assertThat(itemWithLabelDetail(items, "forTesting", "()")).isPresent();
-    assertThat(itemWithLabelDetail(items, "forTesting", "(String value)")).isPresent();
+    assertThat(labels(items)).contains("forTesting");
+    final var item1 = itemWithLabelDetail(items, "forTesting", "()").orElseThrow();
+    final var item2 = itemWithLabelDetail(items, "forTesting", "(String value)").orElseThrow();
   }
 
   @Test
@@ -456,11 +450,10 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
                     String s = §
                 }
             }""");
-    final var textItem = itemWithFilterText(items, "text");
-    final var objectItem = itemWithFilterText(items, "object");
-    assertThat(textItem).isPresent();
-    assertThat(objectItem).isPresent();
-    assertThat(textItem.get().getSortText()).isLessThan(objectItem.get().getSortText());
+    assertThat(labels(items)).contains("text", "object");
+    final var textItem = itemWithFilterText(items, "text").orElseThrow();
+    final var objectItem = itemWithFilterText(items, "object").orElseThrow();
+    assertThat(textItem.getSortText()).isLessThan(objectItem.getSortText());
   }
 
   @Test

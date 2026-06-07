@@ -13,10 +13,10 @@ class CompletionTypeIndexTest extends CompletionTestSupport {
   void typeIndex_fieldDeclaration_itemHasCorrectMetadataAndResultIsIncomplete() {
     // gap #4: kind/detail must be populated; result must be marked incomplete
     final var outcome = fixture.outcome("class Test { ArrayD§ field; }");
-    final var item = itemLabeled(outcome.items(), "ArrayDeque");
-    assertThat(item).isPresent();
-    assertThat(item.get().getKind()).isEqualTo(CompletionItemKind.Class);
-    assertThat(item.get().getDetail()).isEqualTo("java.util.ArrayDeque");
+    assertThat(labels(outcome.items())).contains("ArrayDeque");
+    final var item = itemLabeled(outcome.items(), "ArrayDeque").orElseThrow();
+    assertThat(item.getKind()).isEqualTo(CompletionItemKind.Class);
+    assertThat(item.getDetail()).isEqualTo("java.util.ArrayDeque");
     assertThat(outcome.incomplete()).isTrue();
   }
 

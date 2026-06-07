@@ -35,27 +35,29 @@ class CompletionPresentationTest extends CompletionTestSupport {
             }
         }""";
     final var cursor = CursorFixture.cursor(markedSource);
+    final var items = fixture.complete(markedSource);
+    assertThat(labels(items)).contains("setFieldPath");
     final var item =
-        fixture.complete(markedSource).stream()
+        items.stream()
             .filter(i -> "setFieldPath".equals(i.getFilterText()))
-            .findFirst();
+            .findFirst()
+            .orElseThrow();
 
-    assertThat(item).isPresent();
-    assertThat(textInRange(cursor.content(), item.get().getTextEdit().getLeft().getRange()))
+    assertThat(textInRange(cursor.content(), item.getTextEdit().getLeft().getRange()))
         .isEqualTo("setFieldPath");
   }
 
   @Test
   void completionItem_method_hasCorrectFilterTextAndSnippetInsertFormat() {
+    final var items =
+        fixture.complete("class Test { void m(java.util.ArrayList<String> l) { l.sub§ } }");
+    assertThat(labels(items)).contains("subList");
     final var item =
-        fixture.complete("class Test { void m(java.util.ArrayList<String> l) { l.sub§ } }").stream()
-            .filter(i -> "subList".equals(i.getFilterText()))
-            .findFirst();
-    assertThat(item).isPresent();
-    assertThat(item.get().getLabel()).isEqualTo("subList");
-    assertThat(item.get().getFilterText()).isEqualTo("subList");
-    assertThat(item.get().getInsertTextFormat()).isEqualTo(InsertTextFormat.Snippet);
-    assertThat(item.get().getInsertText()).contains("$");
+        items.stream().filter(i -> "subList".equals(i.getFilterText())).findFirst().orElseThrow();
+    assertThat(item.getLabel()).isEqualTo("subList");
+    assertThat(item.getFilterText()).isEqualTo("subList");
+    assertThat(item.getInsertTextFormat()).isEqualTo(InsertTextFormat.Snippet);
+    assertThat(item.getInsertText()).contains("$");
   }
 
   @Test
@@ -157,21 +159,20 @@ class CompletionPresentationTest extends CompletionTestSupport {
             CompletionFixture.typeIndex(
                 tmp.resolve("index.json"),
                 CompletionFixture.typeEntry("ArrayList", "java.util.ArrayList", TypeKind.CLASS)));
-    final var item =
-        itemLabeled(
-            localFixture.complete(
-                """
-                package example;
+    final var items =
+        localFixture.complete(
+            """
+            package example;
 
-                import java.util.List;
+            import java.util.List;
 
-                class Test {
-                  void accept(Object v) {}
-                  void m() { accept(new ArrayL§); }
-                }"""),
-            "ArrayList");
-    assertThat(item).isPresent();
-    final var edit = item.get().getAdditionalTextEdits().getFirst();
+            class Test {
+              void accept(Object v) {}
+              void m() { accept(new ArrayL§); }
+            }""");
+    assertThat(labels(items)).contains("ArrayList");
+    final var item = itemLabeled(items, "ArrayList").orElseThrow();
+    final var edit = item.getAdditionalTextEdits().getFirst();
     assertThat(edit.getNewText()).isEqualTo("import java.util.ArrayList;\n");
     assertThat(edit.getRange()).isEqualTo(new Range(new Position(3, 0), new Position(3, 0)));
   }

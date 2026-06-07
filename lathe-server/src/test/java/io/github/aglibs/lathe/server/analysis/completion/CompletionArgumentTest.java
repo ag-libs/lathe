@@ -112,11 +112,10 @@ class CompletionArgumentTest extends CompletionTestSupport {
                 }
             }
             """);
-    final var strVarItem = itemWithFilterText(items, "strVar");
-    final var intVarItem = itemWithFilterText(items, "intVar");
-    assertThat(strVarItem).isPresent();
-    assertThat(intVarItem).isPresent();
-    assertThat(strVarItem.get().getSortText()).isLessThan(intVarItem.get().getSortText());
+    assertThat(labels(items)).contains("strVar", "intVar");
+    final var strVarItem = itemWithFilterText(items, "strVar").orElseThrow();
+    final var intVarItem = itemWithFilterText(items, "intVar").orElseThrow();
+    assertThat(strVarItem.getSortText()).isLessThan(intVarItem.getSortText());
   }
 
   @Test
@@ -134,11 +133,10 @@ class CompletionArgumentTest extends CompletionTestSupport {
                 }
             }
             """);
-    final var strVarItem = itemWithFilterText(items, "strVar");
-    final var intVarItem = itemWithFilterText(items, "intVar");
-    assertThat(strVarItem).isPresent();
-    assertThat(intVarItem).isPresent();
-    assertThat(strVarItem.get().getSortText()).isLessThan(intVarItem.get().getSortText());
+    assertThat(labels(items)).contains("strVar", "intVar");
+    final var strVarItem = itemWithFilterText(items, "strVar").orElseThrow();
+    final var intVarItem = itemWithFilterText(items, "intVar").orElseThrow();
+    assertThat(strVarItem.getSortText()).isLessThan(intVarItem.getSortText());
   }
 
   @Test
@@ -154,11 +152,10 @@ class CompletionArgumentTest extends CompletionTestSupport {
                     accept(§);
                 }
             }""");
-    final var textItem = itemWithFilterText(items, "text");
-    final var sbItem = itemWithFilterText(items, "sb");
-    assertThat(textItem).isPresent();
-    assertThat(sbItem).isPresent();
-    assertThat(textItem.get().getSortText()).isLessThan(sbItem.get().getSortText());
+    assertThat(labels(items)).contains("text", "sb");
+    final var textItem = itemWithFilterText(items, "text").orElseThrow();
+    final var sbItem = itemWithFilterText(items, "sb").orElseThrow();
+    assertThat(textItem.getSortText()).isLessThan(sbItem.getSortText());
   }
 
   @Test
@@ -175,22 +172,20 @@ class CompletionArgumentTest extends CompletionTestSupport {
                     helper.consume(§);
                 }
             }""");
-    final var textItem = itemWithFilterText(items, "text");
-    final var sbItem = itemWithFilterText(items, "sb");
-    assertThat(textItem).isPresent();
-    assertThat(sbItem).isPresent();
-    assertThat(textItem.get().getSortText()).isLessThan(sbItem.get().getSortText());
+    assertThat(labels(items)).contains("text", "sb");
+    final var textItem = itemWithFilterText(items, "text").orElseThrow();
+    final var sbItem = itemWithFilterText(items, "sb").orElseThrow();
+    assertThat(textItem.getSortText()).isLessThan(sbItem.getSortText());
   }
 
   @Test
   void argumentPosition_chainReceiverLocal_visibleWhenItCanProduceExpectedType() {
     final var items = fixture.complete(chainReceiverSource("accept(§);"));
 
-    final var factoryItem = itemWithFilterText(items, "factory");
-    final var targetItem = itemWithFilterText(items, "target");
-    assertThat(factoryItem).isPresent();
-    assertThat(targetItem).isPresent();
-    assertThat(targetItem.get().getSortText()).isLessThan(factoryItem.get().getSortText());
+    assertThat(labels(items)).contains("factory", "target");
+    final var factoryItem = itemWithFilterText(items, "factory").orElseThrow();
+    final var targetItem = itemWithFilterText(items, "target").orElseThrow();
+    assertThat(targetItem.getSortText()).isLessThan(factoryItem.getSortText());
 
     assertThat(labels(fixture.complete(chainReceiverSource("accept(f§);")))).contains("factory");
   }
@@ -287,7 +282,7 @@ class CompletionArgumentTest extends CompletionTestSupport {
                     new Receiver(§);
                 }
             }""");
-    assertThat(itemWithFilterText(firstArg, "result")).isPresent();
+    assertThat(labels(firstArg)).contains("result");
   }
 
   @Test
@@ -305,11 +300,10 @@ class CompletionArgumentTest extends CompletionTestSupport {
                     new Receiver(§);
                 }
             }""");
-    final var textItem = itemWithFilterText(items, "text");
-    final var sbItem = itemWithFilterText(items, "sb");
-    assertThat(textItem).isPresent();
-    assertThat(sbItem).isPresent();
-    assertThat(textItem.get().getSortText()).isLessThan(sbItem.get().getSortText());
+    assertThat(labels(items)).contains("text", "sb");
+    final var textItem = itemWithFilterText(items, "text").orElseThrow();
+    final var sbItem = itemWithFilterText(items, "sb").orElseThrow();
+    assertThat(textItem.getSortText()).isLessThan(sbItem.getSortText());
   }
 
   // ── lambda body ───────────────────────────────────────────────────────────────

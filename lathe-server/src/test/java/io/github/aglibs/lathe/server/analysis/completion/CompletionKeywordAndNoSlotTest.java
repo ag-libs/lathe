@@ -115,18 +115,17 @@ class CompletionKeywordAndNoSlotTest extends CompletionTestSupport {
             "synchronized",
             "var");
 
-    final var returnItem =
-        itemLabeled(
-            fixture.complete(
-                """
-                class Test {
-                    String m() {
-                        §
-                    }
-                }"""),
-            "return");
-    assertThat(returnItem).isPresent();
-    assertThat(returnItem.get().getSortText()).isEqualTo("0_return");
+    final var retItems =
+        fixture.complete(
+            """
+            class Test {
+                String m() {
+                    §
+                }
+            }""");
+    assertThat(labels(retItems)).contains("return");
+    final var returnItem = itemLabeled(retItems, "return").orElseThrow();
+    assertThat(returnItem.getSortText()).isEqualTo("0_return");
   }
 
   @Test
@@ -277,12 +276,11 @@ class CompletionKeywordAndNoSlotTest extends CompletionTestSupport {
                     boolean b = §
                 }
             }""");
-    final var trueItem = itemLabeled(items, "true");
-    final var falseItem = itemLabeled(items, "false");
-    assertThat(trueItem).isPresent();
-    assertThat(falseItem).isPresent();
-    assertThat(trueItem.get().getSortText()).isEqualTo("0_true");
-    assertThat(falseItem.get().getSortText()).isEqualTo("0_false");
+    assertThat(labels(items)).contains("true", "false");
+    final var trueItem = itemLabeled(items, "true").orElseThrow();
+    final var falseItem = itemLabeled(items, "false").orElseThrow();
+    assertThat(trueItem.getSortText()).isEqualTo("0_true");
+    assertThat(falseItem.getSortText()).isEqualTo("0_false");
   }
 
   @Test
@@ -295,9 +293,9 @@ class CompletionKeywordAndNoSlotTest extends CompletionTestSupport {
                     if (s == §) {}
                 }
             }""");
-    final var nullItem = itemLabeled(items, "null");
-    assertThat(nullItem).isPresent();
-    assertThat(nullItem.get().getSortText()).isEqualTo("0_null");
+    assertThat(labels(items)).contains("null");
+    final var nullItem = itemLabeled(items, "null").orElseThrow();
+    assertThat(nullItem.getSortText()).isEqualTo("0_null");
   }
 
   @Test

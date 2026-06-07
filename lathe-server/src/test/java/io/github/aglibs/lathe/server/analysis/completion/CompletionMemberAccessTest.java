@@ -172,7 +172,7 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
             }""");
 
     assertThat(items.getFirst().getFilterText()).isEqualTo("isProvider");
-    assertThat(itemWithFilterText(items, "isSupportedContract")).isPresent();
+    assertThat(labels(items)).contains("isSupportedContract");
     assertThat(labels(items)).doesNotContain("ensureContract");
     assertThat(itemWithFilterText(items, "isProvider").orElseThrow().getSortText())
         .isLessThan(itemWithFilterText(items, "getProviders").orElseThrow().getSortText());
@@ -789,12 +789,11 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
                     list.§
                 }
             }""");
-    final var sizeItem = itemWithFilterText(items, "size");
+    assertThat(labels(items)).contains("size", "equals");
+    final var sizeItem = itemWithFilterText(items, "size").orElseThrow();
     final var equalsItem =
-        items.stream().filter(i -> "equals".equals(i.getFilterText())).findFirst();
-    assertThat(sizeItem).isPresent();
-    assertThat(equalsItem).isPresent();
-    assertThat(sizeItem.get().getSortText()).isLessThan(equalsItem.get().getSortText());
+        items.stream().filter(i -> "equals".equals(i.getFilterText())).findFirst().orElseThrow();
+    assertThat(sizeItem.getSortText()).isLessThan(equalsItem.getSortText());
   }
 
   @Test
