@@ -95,6 +95,7 @@ Use these as the starting point when reprioritizing or slicing new work:
   reusing the existing completion import insertion behavior without replacing completion-side edits.
 - [lathe-reactor-type-index.md](planned/lathe-reactor-type-index.md) — implemented reactor type-index design and
   remaining follow-ups such as generated-source cleanup and SNAPSHOT freshness.
+- [lathe-refactoring-renaming.md](planned/lathe-refactoring-renaming.md) — planned codebase and test suite refactorings (DRY, KISS, renamings, and package alignment).
 - [lathe-run-test-debug.md](planned/lathe-run-test-debug.md) — Maven-delegated run, test, debug commands and streamed
   session events.
 - [lathe-source-uri-scheme.md](planned/lathe-source-uri-scheme.md) — `lathe-source://` URIs for read-only external
