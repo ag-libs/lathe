@@ -19,6 +19,7 @@ Before making non-trivial changes, read the relevant design document first:
   implementation.
 - **Never commit or push without explicit user approval** — always show what will be committed and ask before running
   `git commit` or `git push`.
+- **Comprehensive Commit Messages** — all commit messages must be comprehensive and clear, describing both the "what" and the "why" of the changes, listing the affected classes/components, and following standard prefix naming (e.g., `refactor:`, `test:`, `docs:`, `feat:`).
 - **No backward compatibility requirement** — the tool has no external adopters yet;
   schema changes, format changes, and API changes may break existing files without migration support.
 
@@ -99,9 +100,12 @@ After a large Java change, agents may run `mvn spotless:apply` before tests to n
   For timing, use `Stopwatch`.
   For filesystem helpers, prefer `FileUtil`.
   For checked `IOException` lambdas, use `IOUtil`.
+  New shared helper methods should be added as `public static` methods in existing `lathe-core` utility classes (`FileUtil`, `IOUtil`) if they are shared across modules, or kept Package-Private if they are only utilized inside specific modules.
 - Do not create constants for one-off string literals.
   Constants are for names with domain meaning, file-format keys used in multiple places,
   public/shared values, or values where a typo would be costly.
+  Shared directory and file names (e.g., `.lathe/`, `workspace.json`, `lsp-params-*.json`) must reside in `LatheLayout.java` or `LatheFlags.java` as constants to prevent typos and centralize layout paths.
+- **Spotless Formatting & Verification** — always run `mvn spotless:apply` to format all changed files and run tests to verify correctness before staging or proposing any commits.
 - Keep Maven Mojo classes as orchestration-first code.
   Extract helper methods when they separate Maven discovery, resolution, cache decisions,
   file IO, and logging.
