@@ -63,20 +63,29 @@ All accepted completion-quality gaps from the `DropwizardResourceConfig` explore
 `CQ-0016`,
 `CQ-0017`,
 `CQ-0018`,
-and `CQ-0019` are fixed and covered by regression tests.
-The follow-up Dropwizard/Helidon explorer pass covered expected-type ranking,
-static member fit,
-constructor type completion,
-import edits,
-and accepted method-call insertion shape without finding a new high-confidence gap.
+`CQ-0019`,
+and `CQ-0021` are fixed and covered by regression tests.
+A second explorer pass covering `LoomServer`, `DropwizardTestSupport`, `BaseConfigurationFactory`,
+`ProxyProtocolHandler`, and `Environment` confirmed that lambda body member access,
+fluent builder chains,
+catch block exception types,
+instanceof pattern variables,
+static import completion,
+multi-catch second type,
+ternary branch member access,
+stream map lambda parameter types,
+and record accessor member access all work correctly.
+
+Two new high-confidence gaps were found and recorded as `CQ-0020` and `CQ-0021`.
 
 `CQ-0002` and `CQ-0011` remain deferred.
 `CQ-0010` is closed as an editor-side capability gap.
 
 Next completion work should either:
 
-- fix the accepted `DropwizardResourceConfig` gaps below;
-- or run a new explorer pass with a different focus area and record any confirmed discrepancies as new `CQ-*` entries.
+- fix `CQ-0020` (static member access inside argument not ranked by expected type);
+- fix `CQ-0021` (type-pattern switch case label with no prefix returns simple names);
+- or run a new explorer pass with a different focus area.
 
 ## CQ-0004 — Dotted member access can fall back to simple-name completion in incomplete assignments
 
@@ -1325,3 +1334,116 @@ Regression target:
 
 Notes:
 Requires overriding visitThrow in TypeResolver's scanners.
+
+## CQ-0020 — Static member access inside argument not ranked by expected type
+
+ID: CQ-0020
+Status: new
+Tier: typed
+Failure mode: poor-ranking
+Owner component: TypeResolver / CompletionEngine
+
+Project/file:
+`/home/ag-libs/git/dropwizard/dropwizard-configuration/src/main/java/io/dropwizard/configuration/BaseConfigurationFactory.java`
+
+Probe command:
+```bash
+printf 'inject "List<String> ps = e.getKnownPropertyIds().stream().map(Object::toString).collect(Collectors." at 152\nlog 20\n' \
+  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-configuration/src/main/java/io/dropwizard/configuration/BaseConfigurationFactory.java 2>&1
+```
+
+Cursor context:
+```java
+List<String> ps = e.getKnownPropertyIds().stream().map(Object::toString).collect(Collectors.§)
+```
+
+IntelliJ or JDT behavior:
+Expected IDE behavior is to rank `toList()` (and other `List`-returning collectors) first,
+because the outer `collect()` call's argument type is `Collector<String, ?, List<String>>`.
+
+Lathe behavior:
+Returns 45 items in alphabetical order.
+`toList` appears at position 36.
+The `sentinelCtx=MEMBER_ACCESS` path routes through `Collectors` static members but no semantic expected type is applied.
+
+Expected Lathe behavior:
+When a static member access (`Collectors.§`) is the argument to a call (`collect(§)`),
+the expected type from the argument position should flow into the member access ranking.
+`toList()` returning `Collector<T, ?, List<T>>` should rank first for a `Stream<String>.collect(§)` context expecting `List<String>`.
+
+Accepted edit, if relevant:
+`toList` accepted edit is correct: inserts `toList()` at the position, producing `Collectors.toList()`.
+
+Regression target:
+Member-access completion test for `stream.collect(Collectors.§)`
+where stream element type is `String` and the result is `List<String>`.
+Assert `toList` ranks before `groupingBy` and `joining`.
+
+Notes:
+The accepted edit for `toList` is correct.
+The gap is ranking only, not insertion.
+The fix requires propagating the outer argument's expected type into the nested member-access ranking context.
+Related to CQ-0015 (member-access expected type from assignment),
+but that fix addressed only the direct-assignment context, not the nested-argument context.
+
+## CQ-0021 — Type-pattern switch `case §` (no prefix) returns simple-name candidates instead of types
+
+ID: CQ-0021
+Status: fixed
+Tier: typed
+Failure mode: wrong-candidate-set
+Owner component: CompletionEngine / CandidateGenerator
+
+Project/file:
+`/home/ag-libs/git/helidon/webserver/webserver/src/main/java/io/helidon/webserver/ProxyProtocolHandler.java`
+
+Probe command:
+```bash
+printf 'inject "case " at 512\nlog 20\n' \
+  | python3 dev/explore.py /home/ag-libs/git/helidon/webserver/webserver/src/main/java/io/helidon/webserver/ProxyProtocolHandler.java 2>&1
+```
+
+Control (prefix shows types correctly):
+```bash
+printf 'inject "case Inet" at 512\nlog 20\n' \
+  | python3 dev/explore.py /home/ag-libs/git/helidon/webserver/webserver/src/main/java/io/helidon/webserver/ProxyProtocolHandler.java 2>&1
+```
+
+Cursor context:
+```java
+return switch (sourceSocketAddress) {
+    case InetSocketAddress socket -> socket.getHostString();
+    case §
+```
+
+IntelliJ or JDT behavior:
+Expected IDE behavior is to offer type names that are compatible with the switch selector type (`SocketAddress`).
+`InetSocketAddress`, `UnixDomainSocketAddress`, and other `SocketAddress` subtypes should appear as top candidates.
+
+Lathe behavior:
+Without a prefix, returns 46 simple-name candidates (fields, variables, methods).
+No `[Class]` or `[Interface]` type candidates appear.
+Log shows `sentinelCtx=CASE_LABEL` and `semantic=Type[type=java.net.SocketAddress]` are correctly detected,
+but `simple-name candidates javac=59` dominates and type-index is not queried.
+
+With prefix `case Inet§`, returns 6 type-index candidates (`InetSocketAddress`, `InetAddress`, etc.) correctly.
+
+Expected Lathe behavior:
+For a `CASE_LABEL` site in a type-pattern switch, the no-prefix path should query the type-index
+and return type candidates rather than falling through to javac's simple-name candidates.
+Simple-name candidates (fields, variables, methods) are not valid type-pattern case labels
+and should be suppressed or ranked after type candidates.
+
+Accepted edit, if relevant:
+Not yet probed.
+Expected: accepting `InetSocketAddress` should insert `InetSocketAddress ` (with trailing space for the binding variable name).
+
+Regression target:
+`CompletionSimpleNameTest.simpleName_switchCaseLabel_typePatternSubject_suggestsTypes`
+
+Notes:
+CQ-0006 fixed enum-switch case labels (routing through `enumCase` candidates).
+This gap is the parallel fix for type-pattern-switch case labels.
+The enum case fix detects enum selector type and adds enum constants.
+The type-pattern fix needs to detect non-enum selector types and route through the type-index.
+Subtype filtering (only `SocketAddress` subtypes) would be ideal but is not required in the first slice.

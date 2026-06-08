@@ -574,6 +574,25 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
     assertThat(items).contains("RESOURCE_METHOD", "SUB_RESOURCE_LOCATOR");
   }
 
+  // CQ-0021
+  @Test
+  void simpleName_switchCaseLabel_typePatternSubject_suggestsTypes() {
+    final var items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    void m(Object obj) {
+                        switch (obj) {
+                            case §
+                        }
+                    }
+                }"""));
+
+    assertThat(items).contains("String", "Integer");
+    assertThat(items).doesNotContain("obj");
+  }
+
   @Test
   void simpleName_nestedClass_suggestsNestedClass() {
     final var items =

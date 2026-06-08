@@ -27,6 +27,8 @@ LSP4J threads capture immutable request data and enqueue work.
 Compile results cross back to `lathe-worker` before diagnostics or semantic-token refreshes are published.
 Architecture is documented in [lathe-server-data-flow-recipe.md](done/lathe-server-data-flow-recipe.md).
 
+---
+
 ## Completed
 
 - **JSON state format** — params and workspace state moved from ad hoc property files to shared JSON schema records in `lathe-core`.
@@ -68,6 +70,18 @@ Architecture is documented in [lathe-server-data-flow-recipe.md](done/lathe-serv
 - **`textDocument/onTypeFormatting` stub** — server advertises `onTypeFormatting` support for `\n` triggers and dispatches the LSP request;
   the handler currently returns no edits.
   Actual google-java-format indentation is deferred; see [lathe-google-indent.md](planned/lathe-google-indent.md).
+- **Find references** — Exact javac-backed `textDocument/references` is implemented across all planned slices.
+  Same-file, open-file, same-module disk, and transitive reactor-module search are all live.
+  `ReferenceCandidateIndex` replaces per-request disk scanning with an O(1) token lookup.
+  Scope tightening routes private/local symbols to the declaring file only and restricts
+  package-private to the same package directory.
+  `ReferenceMatch` with `ReferenceRole` provides the rename-ready internal result type.
+  See [lathe-find-references.md](planned/lathe-find-references.md).
+  Known gap: JDK and third-party dependency symbols are not yet restricted to open files only —
+  they trigger a full reactor scan, attributing hundreds of files for common types like `String`.
+  Fix is documented in section 15 of the design doc.
+
+---
 
 ## Planned Design Documents
 
@@ -82,14 +96,11 @@ Use these as the starting point when reprioritizing or slicing new work:
   and current completion-quality gap log.
 - [lathe-completion-presentation.md](planned/lathe-completion-presentation.md) —
   JDT LS-style completion `labelDetails` and generic type display.
-- [lathe-find-references.md](planned/lathe-find-references.md) —
-  exact javac-backed `textDocument/references` with reactor relationship-aware sibling-module search,
-  live JPMS metadata overlay,
-  a lightweight candidate index,
-  and reusable rename foundations.
 - [lathe-import-optimization.md](planned/lathe-import-optimization.md) —
   semantic import cleanup before full-document formatting,
   including unused import removal and conservative wildcard expansion.
+- [lathe-lightweight-watcher.md](planned/lathe-lightweight-watcher.md) —
+  lightweight module-targeted workspace watcher to replace recursive directory walking.
 - [lathe-missing-import-code-action.md](planned/lathe-missing-import-code-action.md) —
   LSP quick-fix code actions for unresolved types,
   reusing the existing completion import insertion behavior without replacing completion-side edits.
@@ -105,7 +116,11 @@ Use these as the starting point when reprioritizing or slicing new work:
 - [lathe-vscode-semantic-tokens.md](planned/lathe-vscode-semantic-tokens.md) — expanded semantic-token coverage for
   VS Code parity.
 
-**Stale-POM detection**
+---
+
+## Milestone: v1.0.0 (Release Scope)
+
+### Stale-POM detection
 Record POM fingerprints in `workspace.json` during `lathe:sync`.
 When `WorkspaceWatcher` sees a POM change after the last sync timestamp,
 `LatheWorkspaceService.didChangeWatchedFiles` prompts the user in the editor to re-run the documented Maven lifecycle
@@ -113,7 +128,19 @@ command.
 `WorkspaceManifestData`, `WorkspaceManifestWriter`, and `WorkspaceWatcher` all need additions;
 `didChangeWatchedFiles` currently handles deleted Java source files only.
 
-**Reactor type-index follow-up**
+### Lightweight Watcher
+Replace `Files.walk` with targeted polling to eliminate disk I/O spikes.
+See [lathe-lightweight-watcher.md](planned/lathe-lightweight-watcher.md).
+
+### Pre-v1 Codebase Cleanups
+Clean up codebase redundancies and conceptual naming before the v1.0.0 release.
+Consolidate duplicate temp file writing and rethrow exception helpers.
+Replace path-to-file conversions with modern `setLocationFromPaths` APIs.
+Limit `.lathe` walk depths to protect large project performance.
+Align test files to matching target packages, and strictly enforce the refined `var` rule (explicit types required after chained API calls).
+See [lathe-refactoring-renaming.md](planned/lathe-refactoring-renaming.md).
+
+### Reactor type-index follow-up
 Static dependency, JDK, and reactor output shards are in place.
 The server scans loaded reactor module output directories (`.lathe/<module>/classes/` and
 `.lathe/<module>/test-classes/`) on startup/reload,
@@ -124,28 +151,13 @@ The remaining reactor-index work is any later performance optimization if startu
 This also unlocks missing-import suggestions and workspace symbols once those features query the reactor candidates.
 See [lathe-type-index.md](planned/lathe-type-index.md) and [lathe-reactor-type-index.md](planned/lathe-reactor-type-index.md).
 
-**Module metadata in the manifest**
+### Module metadata in the manifest
 Add reactor module entries to `workspace.json` after the params-file model is stable,
 to support staleness detection, UX hints, and faster server startup without duplicating classpaths.
 `WorkspaceManifestData` currently holds only schema version, workspace root, JDK source, and dependency sources;
 `WorkspaceModules` still discovers modules by scanning `lsp-params-*.json` at startup.
 
-**Missing-import code action**
-Completion already inserts imports through completion item `additionalTextEdits`.
-Add `textDocument/codeAction` quick fixes for unresolved types that return the same import insertion as a
-`WorkspaceEdit`.
-Users can then invoke "Import ..." from diagnostics without changing completion behavior.
-See [lathe-missing-import-code-action.md](planned/lathe-missing-import-code-action.md).
-
-**Import optimization**
-Run conservative semantic import cleanup before full-document formatting:
-deduplicate imports,
-remove unused explicit imports,
-sort normal/static groups,
-and replace wildcard imports with direct imports when javac can prove the used symbols.
-See [lathe-import-optimization.md](planned/lathe-import-optimization.md).
-
-**Completion presentation**
+### Completion presentation
 Adopt JDT LS-style completion rows:
 type labels stay simple while package names move into `labelDetails.description`,
 method labels become bare method names,
@@ -155,32 +167,31 @@ Add a display-only `TypeMirror` formatter so method,
 field,
 and generic receiver-substituted types render as concise Java types without changing semantic filtering.
 See [lathe-completion-presentation.md](planned/lathe-completion-presentation.md).
-General completion expectations and gap-discovery workflow live in
-[completion/](planned/completion/).
+General completion expectations and gap-discovery workflow live in [completion/](planned/completion/).
 
-**Find references** ✅
-Exact javac-backed `textDocument/references` is implemented across all planned slices.
-Same-file, open-file, same-module disk, and transitive reactor-module search are all live.
-`ReferenceCandidateIndex` replaces per-request disk scanning with an O(1) token lookup.
-Scope tightening routes private/local symbols to the declaring file only and restricts
-package-private to the same package directory.
-`ReferenceMatch` with `ReferenceRole` provides the rename-ready internal result type.
-See [lathe-find-references.md](planned/lathe-find-references.md).
-Known gap: JDK and third-party dependency symbols are not yet restricted to open files only —
-they trigger a full reactor scan, attributing hundreds of files for common types like `String`.
-Fix is documented in section 15 of the design doc.
-
-**Editor integrations**
+### Editor integrations
 Keep Neovim/VS Code clients thin: they launch `~/.cache/lathe/current/lathe-launcher.sh`
 and ask the server for Lathe-specific state via custom LSP requests.
 No client-side project model parsing.
 
-**Run, test, and debug**
+### Semantic token coverage for VS Code
+VS Code uses TextMate grammars rather than tree-sitter, so it relies on the LSP for all
+identifier-level highlighting.
+The current `TokenScanner` legend only covers static/deprecated methods and fields, enum constants, type parameters, and annotations.
+Full VS Code parity requires adding `class`, `parameter`, and `variable` token types and
+widening `method`/`property` to emit for all instances.
+See [lathe-vscode-semantic-tokens.md](planned/lathe-vscode-semantic-tokens.md) for the implementation plan.
+
+---
+
+## Milestone: Post-v1 Backlog
+
+### Run, test, and debug
 Adopt the design in [lathe-run-test-debug.md](planned/lathe-run-test-debug.md) to let the server manage Maven test/run executions
 and stream results back to the editor as LSP notifications.
 Depends on distribution and stale-workspace handling being solid first.
 
-**`lathe-source://` URI scheme for external sources**
+### `lathe-source://` URI scheme for external sources
 Definition jumps into JDK and dependency sources currently return `file://` URIs pointing
 into `~/.cache/lathe/`, causing swap file dialogs in Neovim and requiring path-based
 detection logic in every editor plugin.
@@ -189,14 +200,21 @@ editors read the file from the path embedded in the URI and open it as a read-on
 `nofile` buffer — no server round-trip, no per-editor path heuristics.
 See [lathe-source-uri-scheme.md](planned/lathe-source-uri-scheme.md) for the full design.
 
-**Semantic token coverage for VS Code**
-VS Code uses TextMate grammars rather than tree-sitter, so it relies on the LSP for all
-identifier-level highlighting. The current `TokenScanner` legend only covers static/deprecated
-methods and fields, enum constants, type parameters, and annotations.
-Full VS Code parity requires adding `class`, `parameter`, and `variable` token types and
-widening `method`/`property` to emit for all instances.
-See [lathe-vscode-semantic-tokens.md](planned/lathe-vscode-semantic-tokens.md) for the implementation plan.
+### Missing-import code action
+Completion already inserts imports through completion item `additionalTextEdits`.
+Add `textDocument/codeAction` quick fixes for unresolved types that return the same import insertion as a
+`WorkspaceEdit`.
+Users can then invoke "Import ..." from diagnostics without changing completion behavior.
+See [lathe-missing-import-code-action.md](planned/lathe-missing-import-code-action.md).
 
-**Post-v1 language features**
+### Import optimization
+Run conservative semantic import cleanup before full-document formatting:
+deduplicate imports,
+remove unused explicit imports,
+sort normal/static groups,
+and replace wildcard imports with direct imports when javac can prove the used symbols.
+See [lathe-import-optimization.md](planned/lathe-import-optimization.md).
+
+### Post-v1 language features
 Rename, inlay hints, signature help, and richer code actions,
 after the sync/distribution/type-index foundation is in place.

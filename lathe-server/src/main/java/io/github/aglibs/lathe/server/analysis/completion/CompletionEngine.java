@@ -176,6 +176,11 @@ public final class CompletionEngine {
         enumEqualityCandidates(parsed, injected.prefix(), semanticContext, req);
     final var enumCaseCandidates =
         enumCaseLabelCandidates(parsed, injected.prefix(), semanticContext);
+
+    if (isCaseLabelTypePattern(parsed, enumCaseCandidates, semanticContext)) {
+      return completeSimpleNameTypeReferenceWithLang(injected, req, TypeReferenceRole.ORDINARY);
+    }
+
     final var keywordCandidates =
         KeywordProvider.suggestCandidates(parsed, injected.prefix(), injected.context());
     LOG.fine(
@@ -304,6 +309,26 @@ public final class CompletionEngine {
 
     return new CandidateGenerator(semanticContext.analysis())
         .proposeUnqualifiedEnumConstantCandidates(typeEl, prefix);
+  }
+
+  private static boolean isCaseLabelTypePattern(
+      final ParsedSentinel parsed,
+      final List<CompletionCandidate> enumCaseCandidates,
+      final SemanticCompletionContext semanticContext) {
+    if (parsed.sentinelContext() != SentinelContext.CASE_LABEL) {
+      return false;
+    }
+
+    if (!enumCaseCandidates.isEmpty()) {
+      return false;
+    }
+
+    if (semanticContext == null) {
+      return false;
+    }
+
+    return semanticContext.expectedValue() instanceof ExpectedValue.Type(final TypeMirror t)
+        && t.getKind() == TypeKind.DECLARED;
   }
 
   private static TypeElement expectedEnumType(final SemanticCompletionContext semanticContext) {
