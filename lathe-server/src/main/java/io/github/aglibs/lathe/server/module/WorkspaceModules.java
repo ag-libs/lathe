@@ -40,10 +40,10 @@ public final class WorkspaceModules implements AutoCloseable {
       return new WorkspaceModules(List.of(), manifest);
     }
 
-    final var moduleSources = new ArrayList<ModuleSourceConfig>();
-    try (final var stream = Files.walk(latheDir)) {
+    final List<ModuleSourceConfig> moduleSources = new ArrayList<>();
+    try (final Stream<Path> stream = Files.walk(latheDir, 2)) {
       stream
-          .filter(WorkspaceModules::isParamsFile)
+          .filter(LatheLayout::isParamsFile)
           .forEach(
               paramsFile -> {
                 try {
@@ -102,10 +102,5 @@ public final class WorkspaceModules implements AutoCloseable {
             .toArray(CompletableFuture[]::new);
     CompletableFuture.allOf(closeFutures).join();
     workers.clear();
-  }
-
-  private static boolean isParamsFile(final Path p) {
-    final var name = p.getFileName().toString();
-    return name.startsWith("lsp-params-") && name.endsWith(".json");
   }
 }

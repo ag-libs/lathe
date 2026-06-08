@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.core.IOUtil;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.Callable;
@@ -39,7 +40,7 @@ final class ServerWorker {
             future.complete(task.call());
           } catch (final Throwable t) {
             future.completeExceptionally(t);
-            rethrowError(t);
+            IOUtil.rethrowIfError(t);
           }
         });
     return future;
@@ -100,13 +101,7 @@ final class ServerWorker {
       task.run();
     } catch (final Throwable t) {
       LOG.log(Level.SEVERE, t, () -> "[worker] task failed");
-      rethrowError(t);
-    }
-  }
-
-  private static void rethrowError(final Throwable t) {
-    if (t instanceof final Error error) {
-      throw error;
+      IOUtil.rethrowIfError(t);
     }
   }
 }

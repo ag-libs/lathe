@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server.module;
 
+import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.server.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
@@ -75,7 +76,7 @@ public final class ModuleSourceWorker {
           } catch (final Throwable t) {
             LOG.log(Level.SEVERE, t, () -> "[module] failed to close");
             closeFuture.completeExceptionally(t);
-            rethrowError(t);
+            IOUtil.rethrowIfError(t);
           } finally {
             executor.shutdown();
           }
@@ -163,18 +164,12 @@ public final class ModuleSourceWorker {
               future.complete(fn.apply(context));
             } catch (final Throwable t) {
               future.completeExceptionally(t);
-              rethrowError(t);
+              IOUtil.rethrowIfError(t);
             }
           });
     } catch (final RejectedExecutionException e) {
       future.completeExceptionally(e);
     }
     return future;
-  }
-
-  private static void rethrowError(final Throwable t) {
-    if (t instanceof final Error error) {
-      throw error;
-    }
   }
 }

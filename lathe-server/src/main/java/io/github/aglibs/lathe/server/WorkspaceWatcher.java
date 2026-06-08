@@ -4,7 +4,9 @@ import io.github.aglibs.lathe.core.LatheLayout;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.logging.Logger;
+import java.util.stream.Stream;
 
 final class WorkspaceWatcher {
 
@@ -67,18 +69,13 @@ final class WorkspaceWatcher {
       return Fingerprint.EMPTY;
     }
 
-    try (final var stream = Files.walk(latheDir)) {
-      final var files = stream.filter(WorkspaceWatcher::isParamsFile).toList();
+    try (final Stream<Path> stream = Files.walk(latheDir)) {
+      final List<Path> files = stream.filter(LatheLayout::isParamsFile).toList();
       final long maxMtime = files.stream().mapToLong(WorkspaceWatcher::mtime).max().orElse(0L);
       return new Fingerprint(files.size(), maxMtime);
     } catch (final IOException e) {
       return Fingerprint.EMPTY;
     }
-  }
-
-  private static boolean isParamsFile(final Path p) {
-    final var name = p.getFileName().toString();
-    return name.startsWith("lsp-params-") && name.endsWith(".json");
   }
 
   private static long mtime(final Path path) {

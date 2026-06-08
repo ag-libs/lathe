@@ -58,15 +58,11 @@ public final class ExternalCompiler implements JavaSourceCompiler {
           List.of(), new AttributedFileAnalysis(null, null, null, null, null));
     }
 
-    final var rel = sourceRoot.get().relativize(filePath);
-    final var tempFile = td.resolve(rel);
-
     try {
-      Files.createDirectories(tempFile.getParent());
-      Files.writeString(tempFile, content);
+      final var tempFile = FileUtil.writeTempSourceFile(td, sourceRoot.get(), filePath, content);
 
       final var classpath = manifest.depClasspathForFile(filePath);
-      fm.setLocation(StandardLocation.CLASS_PATH, classpath.stream().map(Path::toFile).toList());
+      fm.setLocationFromPaths(StandardLocation.CLASS_PATH, classpath);
 
       final JavaFileObject jfo = fm.getJavaFileObjects(tempFile).iterator().next();
       final List<String> options = buildOptions(filePath);

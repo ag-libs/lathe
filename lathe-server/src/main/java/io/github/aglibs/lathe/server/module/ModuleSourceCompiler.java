@@ -58,11 +58,8 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
             .max(Comparator.comparingInt(Path::getNameCount))
             .orElseThrow(() -> new IllegalStateException("no source root for " + uri));
 
-    final var tempFile = td.resolve(sourceRoot.relativize(filePath));
-
     try {
-      Files.createDirectories(tempFile.getParent());
-      Files.writeString(tempFile, content);
+      final var tempFile = FileUtil.writeTempSourceFile(td, sourceRoot, filePath, content);
 
       final var options = buildOptions(config, compilerArgs, mode);
       LOG.fine(
@@ -97,12 +94,12 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
   private void initLocations() throws IOException {
     final var classesDir = config.latheClassesDir();
     Files.createDirectories(classesDir);
-    fm.setLocation(StandardLocation.CLASS_OUTPUT, List.of(classesDir.toFile()));
+    fm.setLocationFromPaths(StandardLocation.CLASS_OUTPUT, List.of(classesDir));
     LOG.fine(() -> "[cache] CLASS_OUTPUT=%s".formatted(classesDir));
 
     final var genSourcesDir = config.generatedSourcesDir();
     Files.createDirectories(genSourcesDir);
-    fm.setLocation(StandardLocation.SOURCE_OUTPUT, List.of(genSourcesDir.toFile()));
+    fm.setLocationFromPaths(StandardLocation.SOURCE_OUTPUT, List.of(genSourcesDir));
     LOG.fine(() -> "[cache] SOURCE_OUTPUT=%s".formatted(genSourcesDir));
 
     final var classpath =
@@ -110,21 +107,19 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
             .distinct()
             .toList();
     if (!classpath.isEmpty()) {
-      fm.setLocation(StandardLocation.CLASS_PATH, classpath.stream().map(Path::toFile).toList());
+      fm.setLocationFromPaths(StandardLocation.CLASS_PATH, classpath);
       LOG.fine(() -> "[cache] CLASS_PATH=%s".formatted(classpath));
     }
 
     final var modulepath = config.remappedModulepath();
     if (!modulepath.isEmpty()) {
-      fm.setLocation(StandardLocation.MODULE_PATH, modulepath.stream().map(Path::toFile).toList());
+      fm.setLocationFromPaths(StandardLocation.MODULE_PATH, modulepath);
       LOG.fine(() -> "[cache] MODULE_PATH=%s".formatted(modulepath));
     }
 
     if (!config.processorPath().isEmpty()) {
       final var processorPath = config.remappedProcessorPath();
-      fm.setLocation(
-          StandardLocation.ANNOTATION_PROCESSOR_PATH,
-          processorPath.stream().map(Path::toFile).toList());
+      fm.setLocationFromPaths(StandardLocation.ANNOTATION_PROCESSOR_PATH, processorPath);
       LOG.fine(() -> "[cache] ANNOTATION_PROCESSOR_PATH=%s".formatted(processorPath));
     }
   }

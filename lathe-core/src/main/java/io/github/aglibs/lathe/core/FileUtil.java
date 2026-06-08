@@ -15,6 +15,15 @@ public final class FileUtil {
 
   private FileUtil() {}
 
+  public static Path writeTempSourceFile(
+      final Path tempDir, final Path sourceRoot, final Path filePath, final String content)
+      throws IOException {
+    final Path tempFile = tempDir.resolve(sourceRoot.relativize(filePath));
+    Files.createDirectories(tempFile.getParent());
+    Files.writeString(tempFile, content);
+    return tempFile;
+  }
+
   public static void replaceDir(final Path src, final Path dest) throws IOException {
     if (Files.exists(dest)) {
       deleteDir(dest);

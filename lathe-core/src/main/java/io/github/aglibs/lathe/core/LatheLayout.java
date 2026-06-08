@@ -40,4 +40,9 @@ public final class LatheLayout {
   public static String cacheName(final String value) {
     return value.replaceAll("[^A-Za-z0-9._-]", "-").replaceAll("-+", "-");
   }
+
+  public static boolean isParamsFile(final Path path) {
+    final String name = path.getFileName().toString();
+    return name.startsWith("lsp-params-") && name.endsWith(".json");
+  }
 }

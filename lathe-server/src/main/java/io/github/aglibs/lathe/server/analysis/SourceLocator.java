@@ -140,7 +140,8 @@ public final class SourceLocator {
       public Void visitMethod(final MethodTree tree, final Void unused) {
         if ((target.getKind() == ElementKind.METHOD || target.getKind() == ElementKind.CONSTRUCTOR)
             && tree.getName().contentEquals(declarationName(target))
-            && tree.getParameters().size() == ((ExecutableElement) target).getParameters().size()) {
+            && matchParameters(
+                tree.getParameters(), ((ExecutableElement) target).getParameters())) {
           result.set(getCurrentPath());
         }
         return super.visitMethod(tree, unused);
@@ -157,6 +158,26 @@ public final class SourceLocator {
       }
     }.scan(cu, null);
     return result.get();
+  }
+
+  private static boolean matchParameters(
+      final List<? extends VariableTree> treeParams,
+      final List<? extends VariableElement> targetParams) {
+    if (treeParams.size() != targetParams.size()) {
+      return false;
+    }
+
+    return IntStream.range(0, treeParams.size())
+        .allMatch(
+            i -> {
+              final String treeType = simplifyType(treeParams.get(i).getType().toString());
+              final String targetType = simplifyType(targetParams.get(i).asType().toString());
+              return treeType.equals(targetType);
+            });
+  }
+
+  private static String simplifyType(final String typeStr) {
+    return typeStr.replaceAll("[a-zA-Z0-9_]+\\.", "").replaceAll("\\s+", "").replace("...", "[]");
   }
 
   public static CharSequence declarationName(final Element element) {

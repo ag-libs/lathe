@@ -19,7 +19,7 @@ Before making non-trivial changes, read the relevant design document first:
   implementation.
 - **Never commit or push without explicit user approval** — always show what will be committed and ask before running
   `git commit` or `git push`.
-- **Comprehensive Commit Messages** — all commit messages must be comprehensive and clear, describing both the "what" and the "why" of the changes, listing the affected classes/components, and following standard prefix naming (e.g., `refactor:`, `test:`, `docs:`, `feat:`).
+- **Comprehensive Commit Messages** — all commit messages must be comprehensive and clear, describing both the "what" and the "why" of the changes, and following standard prefix naming (e.g., `refactor:`, `test:`, `docs:`, `feat:`).
 - **No backward compatibility requirement** — the tool has no external adopters yet;
   schema changes, format changes, and API changes may break existing files without migration support.
 
@@ -71,11 +71,13 @@ After a large Java change, agents may run `mvn spotless:apply` before tests to n
 - Keep string literal lines within 100 columns where practical;
   split long messages across multiple lines instead of relying on very long literals.
 - `final` on all fields, local variables, and parameters — omit only when reassignment is needed
-- `var` MUST only be used when:
-  * RHS has an explicit constructor or obvious factory (e.g. `new HashMap()`, `Path.of()`)
-  * Terminal method of a builder/stream is self-evident (e.g. `.build()`, `.toList()`)
-  * Variable name explicitly includes the concept/type (e.g. `final var workspaceRoot`)
-  Otherwise, ALWAYS use explicit types (especially for non-obvious helper returns or generic names like `var result`).
+- Use `var` for local variables to reduce boilerplate and keep code readable when the type is obvious:
+  * DO use `var` when:
+    - The RHS has a constructor call or obvious factory (e.g., `new HashMap()`, `Path.of()`, `List.of()`).
+    - The RHS is a self-evident stream/builder terminal method (e.g., `.toList()`, `.build()`).
+    - The variable name clearly conveys the concept/type (e.g., `workspaceRoot`, `classesDir`, `classpath`, `tempFile`, `filePath`).
+  * ALWAYS use explicit types when:
+    - The RHS is a helper/third-party method return where the type isn't self-evident from the variable name or assignment context (e.g., avoid `var outcome = service.compute()`).
 - Always use `{}` braces on `if`/`else`, even for single-line bodies
 - Leave a blank line after the closing `}` of every `if`/`else` block when another statement follows in the same scope.
 - Document magic numbers with an inline comment, for example `final int openLen = 3; // "/**"`.

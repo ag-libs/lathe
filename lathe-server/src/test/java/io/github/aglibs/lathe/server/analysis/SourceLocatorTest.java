@@ -79,6 +79,39 @@ class SourceLocatorTest extends SampleFixture {
     }
 
     @Test
+    void declarationPath_resolves_correct_overload() {
+      // String overload of "overloaded" (0-based line 62)
+      final var stringElement = elementAt(62, 16);
+      final var stringPath = SourceLocator.declarationPath(compiled.cu(), stringElement);
+      assertThat(stringPath).isNotNull();
+      assertThat(
+              compiled
+                  .trees()
+                  .getSourcePositions()
+                  .getStartPosition(compiled.cu(), stringPath.getLeaf()))
+          .isEqualTo(
+              compiled
+                  .trees()
+                  .getSourcePositions()
+                  .getStartPosition(compiled.cu(), pathAt(62, 16).getLeaf()));
+
+      // int overload of "overloaded" (0-based line 66)
+      final var intElement = elementAt(66, 13);
+      final var intPath = SourceLocator.declarationPath(compiled.cu(), intElement);
+      assertThat(intPath).isNotNull();
+      assertThat(
+              compiled
+                  .trees()
+                  .getSourcePositions()
+                  .getStartPosition(compiled.cu(), intPath.getLeaf()))
+          .isEqualTo(
+              compiled
+                  .trees()
+                  .getSourcePositions()
+                  .getStartPosition(compiled.cu(), pathAt(66, 13).getLeaf()));
+    }
+
+    @Test
     void constructorDeclaration_resolves_to_constructor_element() {
       // "Sample" in "  public Sample(String name) {"
       final var element = elementAt(32, 9);

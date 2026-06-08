@@ -23,6 +23,12 @@ public final class IOUtil {
     }
   }
 
+  public static void rethrowIfError(final Throwable t) {
+    if (t instanceof final Error error) {
+      throw error;
+    }
+  }
+
   @FunctionalInterface
   public interface IORunnable {
     void run() throws IOException;
