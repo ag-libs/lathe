@@ -186,9 +186,10 @@ Users can then invoke "Import ..." from diagnostics without changing completion 
 See [lathe-missing-import-code-action.md](planned/lathe-missing-import-code-action.md).
 
 ### Editor integrations
-Keep Neovim/VS Code clients thin: they launch `~/.cache/lathe/current/lathe-launcher.sh`
+Keep Neovim clients thin: they launch `~/.cache/lathe/current/lathe-launcher.sh`
 and ask the server for Lathe-specific state via custom LSP requests.
 No client-side project model parsing.
+VS Code plugin and tooling integration is deferred to post-beta.
 
 ---
 
