@@ -109,6 +109,7 @@ Use these as the starting point when reprioritizing or slicing new work:
 - [lathe-refactoring-renaming.md](planned/lathe-refactoring-renaming.md) — planned codebase and test suite refactorings (DRY, KISS, renamings, and package alignment).
 - [lathe-run-test-debug.md](planned/lathe-run-test-debug.md) — Maven-delegated run, test, debug commands and streamed
   session events.
+- [lathe-signature-help.md](planned/lathe-signature-help.md) — parameter types and names display during method/constructor invocation.
 - [lathe-source-uri-scheme.md](planned/lathe-source-uri-scheme.md) — `lathe-source://` URIs for read-only external
   JDK/dependency source files.
 - [lathe-type-index.md](planned/lathe-type-index.md) — implemented type-index design and remaining work such as
@@ -118,7 +119,7 @@ Use these as the starting point when reprioritizing or slicing new work:
 
 ---
 
-## Milestone: v1.0.0 (Release Scope)
+## Milestone: v0.1.0-beta (Release Scope)
 
 ### Stale-POM detection
 Record POM fingerprints in `workspace.json` during `lathe:sync`.
@@ -132,8 +133,8 @@ command.
 Replace `Files.walk` with targeted polling to eliminate disk I/O spikes.
 See [lathe-lightweight-watcher.md](planned/lathe-lightweight-watcher.md).
 
-### Pre-v1 Codebase Cleanups
-Clean up codebase redundancies and conceptual naming before the v1.0.0 release.
+### Pre-beta Codebase Cleanups
+Clean up codebase redundancies and conceptual naming before the v0.1.0-beta release.
 Consolidate duplicate temp file writing and rethrow exception helpers.
 Replace path-to-file conversions with modern `setLocationFromPaths` APIs.
 Limit `.lathe` walk depths to protect large project performance.
@@ -151,12 +152,6 @@ The remaining reactor-index work is any later performance optimization if startu
 This also unlocks missing-import suggestions and workspace symbols once those features query the reactor candidates.
 See [lathe-type-index.md](planned/lathe-type-index.md) and [lathe-reactor-type-index.md](planned/lathe-reactor-type-index.md).
 
-### Module metadata in the manifest
-Add reactor module entries to `workspace.json` after the params-file model is stable,
-to support staleness detection, UX hints, and faster server startup without duplicating classpaths.
-`WorkspaceManifestData` currently holds only schema version, workspace root, JDK source, and dependency sources;
-`WorkspaceModules` still discovers modules by scanning `lsp-params-*.json` at startup.
-
 ### Completion presentation
 Adopt JDT LS-style completion rows:
 type labels stay simple while package names move into `labelDetails.description`,
@@ -169,28 +164,6 @@ and generic receiver-substituted types render as concise Java types without chan
 See [lathe-completion-presentation.md](planned/lathe-completion-presentation.md).
 General completion expectations and gap-discovery workflow live in [completion/](planned/completion/).
 
-### Editor integrations
-Keep Neovim/VS Code clients thin: they launch `~/.cache/lathe/current/lathe-launcher.sh`
-and ask the server for Lathe-specific state via custom LSP requests.
-No client-side project model parsing.
-
-### Semantic token coverage for VS Code
-VS Code uses TextMate grammars rather than tree-sitter, so it relies on the LSP for all
-identifier-level highlighting.
-The current `TokenScanner` legend only covers static/deprecated methods and fields, enum constants, type parameters, and annotations.
-Full VS Code parity requires adding `class`, `parameter`, and `variable` token types and
-widening `method`/`property` to emit for all instances.
-See [lathe-vscode-semantic-tokens.md](planned/lathe-vscode-semantic-tokens.md) for the implementation plan.
-
----
-
-## Milestone: Post-v1 Backlog
-
-### Run, test, and debug
-Adopt the design in [lathe-run-test-debug.md](planned/lathe-run-test-debug.md) to let the server manage Maven test/run executions
-and stream results back to the editor as LSP notifications.
-Depends on distribution and stale-workspace handling being solid first.
-
 ### `lathe-source://` URI scheme for external sources
 Definition jumps into JDK and dependency sources currently return `file://` URIs pointing
 into `~/.cache/lathe/`, causing swap file dialogs in Neovim and requiring path-based
@@ -200,12 +173,45 @@ editors read the file from the path embedded in the URI and open it as a read-on
 `nofile` buffer — no server round-trip, no per-editor path heuristics.
 See [lathe-source-uri-scheme.md](planned/lathe-source-uri-scheme.md) for the full design.
 
+### Signature Help
+Display method and constructor parameter names and types during argument entry.
+Parse enclosing invocation contexts and count commas at the cursor's nesting level to highlight the active parameter.
+See [lathe-signature-help.md](planned/lathe-signature-help.md).
+
 ### Missing-import code action
 Completion already inserts imports through completion item `additionalTextEdits`.
 Add `textDocument/codeAction` quick fixes for unresolved types that return the same import insertion as a
 `WorkspaceEdit`.
 Users can then invoke "Import ..." from diagnostics without changing completion behavior.
 See [lathe-missing-import-code-action.md](planned/lathe-missing-import-code-action.md).
+
+### Editor integrations
+Keep Neovim/VS Code clients thin: they launch `~/.cache/lathe/current/lathe-launcher.sh`
+and ask the server for Lathe-specific state via custom LSP requests.
+No client-side project model parsing.
+
+---
+
+## Milestone: Post-Beta Backlog
+
+### Run, test, and debug
+Adopt the design in [lathe-run-test-debug.md](planned/lathe-run-test-debug.md) to let the server manage Maven test/run executions
+and stream results back to the editor as LSP notifications.
+Depends on distribution and stale-workspace handling being solid first.
+
+### Module metadata in the manifest
+Add reactor module entries to `workspace.json` after the params-file model is stable,
+to support staleness detection, UX hints, and faster server startup without duplicating classpaths.
+`WorkspaceManifestData` currently holds only schema version, workspace root, JDK source, and dependency sources;
+`WorkspaceModules` still discovers modules by scanning `lsp-params-*.json` at startup.
+
+### Semantic token coverage for VS Code
+VS Code uses TextMate grammars rather than tree-sitter, so it relies on the LSP for all
+identifier-level highlighting.
+The current `TokenScanner` legend only covers static/deprecated methods and fields, enum constants, type parameters, and annotations.
+Full VS Code parity requires adding `class`, `parameter`, and `variable` token types and
+widening `method`/`property` to emit for all instances.
+See [lathe-vscode-semantic-tokens.md](planned/lathe-vscode-semantic-tokens.md) for the implementation plan.
 
 ### Import optimization
 Run conservative semantic import cleanup before full-document formatting:
@@ -215,6 +221,6 @@ sort normal/static groups,
 and replace wildcard imports with direct imports when javac can prove the used symbols.
 See [lathe-import-optimization.md](planned/lathe-import-optimization.md).
 
-### Post-v1 language features
+### Post-beta language features
 Rename, inlay hints, signature help, and richer code actions,
 after the sync/distribution/type-index foundation is in place.
