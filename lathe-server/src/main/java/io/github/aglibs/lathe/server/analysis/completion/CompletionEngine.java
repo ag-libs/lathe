@@ -1059,7 +1059,7 @@ public final class CompletionEngine {
     final boolean isStaticAccess =
         parsed.sentinelContext() == SentinelContext.STATIC_IMPORT || resolved.staticAccess();
     final var scope = TypeResolver.resolveScope(snapshot, req.cursorOffset());
-    final var semanticContext = SemanticCompletionContext.from(site, req, parsed, snapshot);
+    final var semanticContext = memberAccessSemanticContext(site, req, parsed, snapshot);
     final var generator = new CandidateGenerator(snapshot);
     final var members =
         generator.proposeMemberAccessCandidates(
@@ -1229,6 +1229,29 @@ public final class CompletionEngine {
         base.valueType(),
         typeQualifiedName,
         new ImportEdit(qualifiedMember, true));
+  }
+
+  private static SemanticCompletionContext memberAccessSemanticContext(
+      final CompletionSite site,
+      final CompletionRequest req,
+      final ParsedSentinel parsed,
+      final AttributedFileAnalysis snapshot) {
+    final var base = SemanticCompletionContext.from(site, req, parsed, snapshot);
+    if (!(base.expectedValue() instanceof ExpectedValue.Unknown)) {
+      return base;
+    }
+
+    final var outerValue = TypeResolver.resolveExpectedArgumentValue(site.cursorOffset(), snapshot);
+    if (outerValue instanceof ExpectedValue.Unknown) {
+      return base;
+    }
+
+    return new SemanticCompletionContext(
+        base.analysis(),
+        outerValue,
+        base.valueContext(),
+        base.inEqualityComparison(),
+        base.inNonVoidMethod());
   }
 
   private static SemanticCompletionContext memberAccessSemanticContext(

@@ -829,6 +829,50 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
     assertThat(items).contains("ComponentLoggingListener");
   }
 
+  // CQ-0020
+  @Test
+  void memberAccess_staticReceiverInArgumentPosition_rankedByOuterArgumentExpectedType() {
+    final var items =
+        fixture.complete(
+            """
+            class Test {
+                static class Factory {
+                    static Factory create() { return new Factory(); }
+                    static String label() { return ""; }
+                    static int count() { return 0; }
+                }
+
+                void consume(Factory f) {}
+
+                void m() {
+                    consume(Factory.§)
+                }
+            }""");
+
+    assertThat(itemWithFilterText(items, "create").orElseThrow().getSortText())
+        .isLessThan(itemWithFilterText(items, "label").orElseThrow().getSortText());
+    assertThat(itemWithFilterText(items, "create").orElseThrow().getSortText())
+        .isLessThan(itemWithFilterText(items, "count").orElseThrow().getSortText());
+  }
+
+  @Test
+  void memberAccess_collectorsReceiverInsideCollectArgument_suggestsCollectorMethods() {
+    final var items =
+        labels(
+            fixture.complete(
+                """
+                import java.util.List;
+                import java.util.stream.Collectors;
+                import java.util.stream.Stream;
+                class Test {
+                    void m(Stream<String> stream) {
+                        List<String> ps = stream.collect(Collectors.§)
+                    }
+                }"""));
+
+    assertThat(items).contains("toList", "groupingBy", "joining");
+  }
+
   @Test
   void memberAccess_typeReceiver_excludesInstanceMembers() {
     final var items =

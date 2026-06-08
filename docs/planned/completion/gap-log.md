@@ -64,6 +64,7 @@ All accepted completion-quality gaps from the `DropwizardResourceConfig` explore
 `CQ-0017`,
 `CQ-0018`,
 `CQ-0019`,
+`CQ-0020`,
 and `CQ-0021` are fixed and covered by regression tests.
 A second explorer pass covering `LoomServer`, `DropwizardTestSupport`, `BaseConfigurationFactory`,
 `ProxyProtocolHandler`, and `Environment` confirmed that lambda body member access,
@@ -1338,7 +1339,7 @@ Requires overriding visitThrow in TypeResolver's scanners.
 ## CQ-0020 — Static member access inside argument not ranked by expected type
 
 ID: CQ-0020
-Status: new
+Status: fixed
 Tier: typed
 Failure mode: poor-ranking
 Owner component: TypeResolver / CompletionEngine
@@ -1375,9 +1376,8 @@ Accepted edit, if relevant:
 `toList` accepted edit is correct: inserts `toList()` at the position, producing `Collectors.toList()`.
 
 Regression target:
-Member-access completion test for `stream.collect(Collectors.§)`
-where stream element type is `String` and the result is `List<String>`.
-Assert `toList` ranks before `groupingBy` and `joining`.
+`CompletionMemberAccessTest.memberAccess_staticReceiverInArgumentPosition_rankedByOuterArgumentExpectedType`
+`CompletionMemberAccessTest.memberAccess_collectorsReceiverInsideCollectArgument_suggestsCollectorMethods`
 
 Notes:
 The accepted edit for `toList` is correct.
