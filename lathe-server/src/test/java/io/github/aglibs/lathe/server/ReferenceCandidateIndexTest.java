@@ -2,7 +2,6 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,24 +13,6 @@ class ReferenceCandidateIndexTest {
 
   @TempDir Path root;
 
-  private ModuleSourceConfig configWithRoot(final Path sourceRoot) {
-    return new ModuleSourceConfig(
-        root.resolve(".lathe/module"),
-        "classes",
-        root.resolve("target/classes"),
-        null,
-        List.of(sourceRoot),
-        List.of(),
-        List.of(),
-        List.of(),
-        "21",
-        "UTF-8",
-        false,
-        false,
-        null,
-        List.of());
-  }
-
   private String uri(final Path file) {
     return file.toUri().toString();
   }
@@ -42,7 +23,7 @@ class ReferenceCandidateIndexTest {
     final var foo = Files.writeString(src.resolve("Foo.java"), "class Foo { void bar() {} }");
     final var baz = Files.writeString(src.resolve("Baz.java"), "class Baz { Foo field; }");
 
-    final var index = ReferenceCandidateIndex.build(List.of(configWithRoot(src)));
+    final var index = ReferenceCandidateIndex.build(List.of(TestCompiler.moduleConfig(root, src)));
 
     assertThat(index.candidateUris("bar")).containsExactly(uri(foo));
     assertThat(index.candidateUris("Foo")).containsExactlyInAnyOrder(uri(foo), uri(baz));
@@ -55,7 +36,7 @@ class ReferenceCandidateIndexTest {
     Files.writeString(src.resolve("README.txt"), "class NotJava { void myMethod() {} }");
     Files.writeString(src.resolve("Real.java"), "class Real {}");
 
-    final var index = ReferenceCandidateIndex.build(List.of(configWithRoot(src)));
+    final var index = ReferenceCandidateIndex.build(List.of(TestCompiler.moduleConfig(root, src)));
 
     assertThat(index.candidateUris("myMethod")).isEmpty();
   }
@@ -64,7 +45,7 @@ class ReferenceCandidateIndexTest {
   void update_replacesOldTokensWithNewContent() throws IOException {
     final var src = Files.createDirectories(root.resolve("src"));
     final var file = Files.writeString(src.resolve("A.java"), "class A { void oldMethod() {} }");
-    final var index = ReferenceCandidateIndex.build(List.of(configWithRoot(src)));
+    final var index = ReferenceCandidateIndex.build(List.of(TestCompiler.moduleConfig(root, src)));
 
     assertThat(index.candidateUris("oldMethod")).containsExactly(uri(file));
 
@@ -78,7 +59,7 @@ class ReferenceCandidateIndexTest {
   void remove_cleansUpAllTokensForUri() throws IOException {
     final var src = Files.createDirectories(root.resolve("src"));
     final var file = Files.writeString(src.resolve("A.java"), "class Alpha { void beta() {} }");
-    final var index = ReferenceCandidateIndex.build(List.of(configWithRoot(src)));
+    final var index = ReferenceCandidateIndex.build(List.of(TestCompiler.moduleConfig(root, src)));
 
     assertThat(index.candidateUris("Alpha")).isNotEmpty();
 
@@ -92,7 +73,7 @@ class ReferenceCandidateIndexTest {
   void update_openFileContentOverridesDiskTokens() throws IOException {
     final var src = Files.createDirectories(root.resolve("src"));
     final var file = Files.writeString(src.resolve("A.java"), "class A { void diskMethod() {} }");
-    final var index = ReferenceCandidateIndex.build(List.of(configWithRoot(src)));
+    final var index = ReferenceCandidateIndex.build(List.of(TestCompiler.moduleConfig(root, src)));
 
     // Simulate open document with unsaved edits
     index.update(uri(file), "class A { void liveMethod() {} }");
@@ -105,7 +86,7 @@ class ReferenceCandidateIndexTest {
   void build_deduplicatesSourceRootsAcrossConfigs() throws IOException {
     final var src = Files.createDirectories(root.resolve("src"));
     Files.writeString(src.resolve("A.java"), "class A {}");
-    final var config = configWithRoot(src);
+    final var config = TestCompiler.moduleConfig(root, src);
 
     // Same source root in two configs — file should appear only once
     final var index = ReferenceCandidateIndex.build(List.of(config, config));
@@ -117,7 +98,7 @@ class ReferenceCandidateIndexTest {
   void candidateUris_returnsEmptyForUnknownToken() throws IOException {
     final var src = Files.createDirectories(root.resolve("src"));
     Files.writeString(src.resolve("A.java"), "class A {}");
-    final var index = ReferenceCandidateIndex.build(List.of(configWithRoot(src)));
+    final var index = ReferenceCandidateIndex.build(List.of(TestCompiler.moduleConfig(root, src)));
 
     assertThat(index.candidateUris("nonexistent")).isEmpty();
   }
@@ -133,7 +114,7 @@ class ReferenceCandidateIndexTest {
             import static java.util.Collections.emptyList;
             import java.util.concurrent.*;
             class A {}""");
-    final var index = ReferenceCandidateIndex.build(List.of(configWithRoot(src)));
+    final var index = ReferenceCandidateIndex.build(List.of(TestCompiler.moduleConfig(root, src)));
 
     assertThat(index.candidateUris("java.util.List")).containsExactly(uri(file));
     assertThat(index.candidateUris("java.util.Collections.emptyList")).containsExactly(uri(file));

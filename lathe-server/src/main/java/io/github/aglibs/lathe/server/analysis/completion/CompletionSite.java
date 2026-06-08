@@ -35,7 +35,9 @@ record CompletionSite(
   }
 
   static CompletionSite from(
-      final CompletionRequest request, final SentinelResult injected, final ParsedSentinel parsed) {
+      final CompletionRequest request,
+      final SentinelInjectionResult injected,
+      final ParsedSentinel parsed) {
     return new CompletionSite(
         request.uri(),
         injected.prefix(),
@@ -62,7 +64,8 @@ record CompletionSite(
     return new Range(start, end);
   }
 
-  private static CompletionMode mode(final SentinelResult injected, final ParsedSentinel parsed) {
+  private static CompletionMode mode(
+      final SentinelInjectionResult injected, final ParsedSentinel parsed) {
     return switch (parsed.sentinelContext()) {
       case IMPORT -> CompletionMode.IMPORT;
       case STATIC_IMPORT -> CompletionMode.STATIC_IMPORT;
@@ -77,7 +80,7 @@ record CompletionSite(
     };
   }
 
-  private static CompletionMode simpleNameMode(final SentinelResult injected) {
+  private static CompletionMode simpleNameMode(final SentinelInjectionResult injected) {
     return !injected.prefix().isEmpty() && Character.isUpperCase(injected.prefix().charAt(0))
         ? CompletionMode.MIXED
         : CompletionMode.VALUE;

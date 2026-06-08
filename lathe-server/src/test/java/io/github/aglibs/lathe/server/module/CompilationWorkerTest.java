@@ -12,11 +12,11 @@ import org.eclipse.lsp4j.Diagnostic;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
-class ModuleSourceWorkerTest {
+class CompilationWorkerTest {
 
   private final SourceAnalysisSession context = mock(SourceAnalysisSession.class);
-  private final ModuleSourceWorker worker =
-      new ModuleSourceWorker("lathe-module-test", () -> context);
+  private final CompilationWorker worker =
+      new CompilationWorker("lathe-module-test", () -> context);
 
   @AfterEach
   void close() {

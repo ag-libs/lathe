@@ -125,7 +125,7 @@ public final class DefinitionLocator {
   }
 
   public static TypeElement topLevelClass(final Element element) {
-    var e = element;
+    Element e = element;
     while (e != null) {
       if (e instanceof final TypeElement te
           && e.getEnclosingElement() != null

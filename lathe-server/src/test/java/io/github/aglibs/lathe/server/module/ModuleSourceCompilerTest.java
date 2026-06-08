@@ -57,21 +57,7 @@ class ModuleSourceCompilerTest {
     Files.createDirectories(sourceFile.getParent());
 
     final var config =
-        new ModuleSourceConfig(
-            td.resolve(".lathe"),
-            "classes",
-            td.resolve("target/classes"),
-            null,
-            List.of(sourceRoot),
-            List.of(),
-            List.of(),
-            List.of(),
-            null,
-            "UTF-8",
-            false,
-            false,
-            null,
-            List.of());
+        TestCompiler.moduleConfig(td.resolve(".lathe"), td.resolve("target/classes"), sourceRoot);
 
     try (var compiler = new ModuleSourceCompiler(config)) {
       final var result =
@@ -94,7 +80,9 @@ class ModuleSourceCompilerTest {
     Files.createDirectories(reactorSource.getParent());
     Files.writeString(reactorSource, "package example; public class ReactorOnlyType {}");
 
-    final var config = config(sourceRoot);
+    final var config =
+        TestCompiler.moduleConfig(
+            td.resolve(".lathe/module"), td.resolve("module/target/classes"), sourceRoot);
     TestCompiler.compileToDir(config.latheClassesDir(), reactorSource);
     final var typeIndex =
         WorkspaceTypeIndex.build(
@@ -119,23 +107,5 @@ class ModuleSourceCompilerTest {
 
       assertThat(outcome.items()).extracting(CompletionItem::getLabel).contains("ReactorOnlyType");
     }
-  }
-
-  private ModuleSourceConfig config(final Path sourceRoot) {
-    return new ModuleSourceConfig(
-        td.resolve(".lathe/module"),
-        "classes",
-        td.resolve("module/target/classes"),
-        null,
-        List.of(sourceRoot),
-        List.of(),
-        List.of(),
-        List.of(),
-        null,
-        "UTF-8",
-        false,
-        false,
-        null,
-        List.of());
   }
 }

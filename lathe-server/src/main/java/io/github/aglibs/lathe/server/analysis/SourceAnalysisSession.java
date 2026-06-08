@@ -147,7 +147,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
       final int version,
       final ReferenceTarget target,
       final boolean includeDeclaration) {
-    var cached = currentCache(uri, content);
+    CachedFileAnalysis cached = currentCache(uri, content);
     if (cached == null || cached.analysis().tree() == null) {
       compile(uri, content, version, CompileMode.OPEN);
       cached = cache.get(uri);
@@ -179,7 +179,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
     }
 
     final var element = SourceLocator.elementAt(cur.ctx().trees(), cur.path());
-    var result =
+    Optional<Location> result =
         definitionLocator.locate(element, cur.ctx().trees(), request.sourceRoots(), request.uri());
     if (result.isEmpty()) {
       result =

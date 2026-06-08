@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -52,20 +51,7 @@ class WorkspaceSessionTest {
   }
 
   private ModuleSourceConfig config(final Path sourceRoot) {
-    return new ModuleSourceConfig(
-        tmp.resolve(".lathe/module"),
-        "classes",
-        tmp.resolve("module/target/classes"),
-        null,
-        List.of(sourceRoot),
-        List.of(),
-        List.of(),
-        List.of(),
-        null,
-        "UTF-8",
-        false,
-        false,
-        null,
-        List.of());
+    return TestCompiler.moduleConfig(
+        tmp.resolve(".lathe/module"), tmp.resolve("module/target/classes"), sourceRoot);
   }
 }

@@ -17,7 +17,7 @@ This document provides a professional, honest critique of Lathe's architectural 
    By choosing to hold no long-lived cross-module `javac` symbol cache and rebuilding `JavacTask` on each pass, Lathe avoids a massive class of memory leak and cache staleness bugs. The target performance budget (500ms p95 for `< 500` LOC files) is realistic for everyday development.
 
 3. **Confined Threading Model**
-   All mutable server state is restricted to a single event thread (`lathe-worker`). Workers (`ModuleSourceWorker`) manage their own single-threaded `SourceAnalysisSession` thread. This prevents race conditions, lock contention, and eliminates the need for synchronization blocks.
+   All mutable server state is restricted to a single event thread (`lathe-worker`). Workers (`CompilationWorker`) manage their own single-threaded `SourceAnalysisSession` thread. This prevents race conditions, lock contention, and eliminates the need for synchronization blocks.
 
 ---
 
@@ -73,7 +73,7 @@ fm.setLocation(StandardLocation.MODULE_PATH, modulepath.stream().map(Path::toFil
 * **Recommendation:** Define a helper method `fm.setLocation(Location, Collection<Path>)` or a utility helper `toFileList(List<Path>)` to reduce boilerplate.
 
 #### 3. Exact Duplicate Exception Handler Helper
-Both [ModuleSourceWorker.java](file:///home/ag-libs/git/lathe/lathe-server/src/main/java/io/github/aglibs/lathe/server/module/ModuleSourceWorker.java) and [ServerWorker.java](file:///home/ag-libs/git/lathe/lathe-server/src/main/java/io/github/aglibs/lathe/server/ServerWorker.java) declare an identical helper:
+Both [CompilationWorker.java](file:///home/ag-libs/git/lathe/lathe-server/src/main/java/io/github/aglibs/lathe/server/module/CompilationWorker.java) and [ServerEventLoop.java](file:///home/ag-libs/git/lathe/lathe-server/src/main/java/io/github/aglibs/lathe/server/ServerEventLoop.java) declare an identical helper:
 ```java
 private static void rethrowError(final Throwable t) {
   if (t instanceof final Error error) {
@@ -93,7 +93,7 @@ While it is fast, the complexity of stateful manual scanning (`inLineComment`, `
 * **Critique:** While this manually crafted scanner is very fast, it introduces minor maintenance overhead as Java syntax additions arrive (e.g., raw string literals, newer switch formats). However, keeping it lightweight is preferable to parsing the entire file using a full parser. It strikes a good balance for KISS given the scope.
 
 #### 2. Synchronization-Free Event Loop
-The `ServerWorker` wraps a single-threaded executor:
+The `ServerEventLoop` wraps a single-threaded executor:
 ```java
 private final ScheduledExecutorService executor =
     Executors.newSingleThreadScheduledExecutor(...);

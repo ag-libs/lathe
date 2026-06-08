@@ -17,20 +17,20 @@ class FormattingTest {
   }
 
   @Test
-  void formatsViolationBackToOriginal() throws IOException, FormatterException {
+  void formatSource_violation_reformatsToOriginal() throws IOException, FormatterException {
     final var original = sampleSource();
     final var unformatted = original.replace("public String getName()", "public String  getName()");
     assertThat(new Formatter().formatSource(unformatted)).isEqualTo(original);
   }
 
   @Test
-  void alreadyFormattedProducesNoEdit() throws IOException {
+  void format_alreadyFormatted_returnsEmpty() throws IOException {
     final var original = sampleSource();
     assertThat(JavaFormatter.format(original)).isEmpty();
   }
 
   @Test
-  void syntaxErrorProducesNoEdit() {
+  void format_syntaxError_returnsEmpty() {
     assertThat(JavaFormatter.format("class { broken")).isEmpty();
   }
 }

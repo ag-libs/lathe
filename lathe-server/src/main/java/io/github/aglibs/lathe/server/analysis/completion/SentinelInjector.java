@@ -22,7 +22,7 @@ final class SentinelInjector {
     this.content = content;
   }
 
-  SentinelResult inject(final int cursorOffset) {
+  SentinelInjectionResult inject(final int cursorOffset) {
     final BackwardResult back = backwardScan(cursorOffset);
     final ForwardResult fwd = forwardScan();
 
@@ -44,7 +44,7 @@ final class SentinelInjector {
             + content.substring(suffixStart)
             + "}".repeat(fwd.unclosedBraces());
 
-    return new SentinelResult(
+    return new SentinelInjectionResult(
         back.prefix(),
         back.tokenStart(),
         suffixStart,

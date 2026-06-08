@@ -3,7 +3,6 @@ package io.github.aglibs.lathe.server;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
-import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -16,24 +15,6 @@ import org.junit.jupiter.api.io.TempDir;
 class ReferenceCandidatePlannerTest {
 
   @TempDir Path root;
-
-  private ModuleSourceConfig configWithRoot(final Path sourceRoot) {
-    return new ModuleSourceConfig(
-        root.resolve(".lathe/module"),
-        "classes",
-        root.resolve("target/classes"),
-        null,
-        List.of(sourceRoot),
-        List.of(),
-        List.of(),
-        List.of(),
-        "21",
-        "UTF-8",
-        false,
-        false,
-        null,
-        List.of());
-  }
 
   private String uri(final Path file) {
     return file.toUri().toString();
@@ -51,7 +32,7 @@ class ReferenceCandidatePlannerTest {
             class A { List list; }
             """);
 
-    final var index = ReferenceCandidateIndex.build(List.of(configWithRoot(src)));
+    final var index = ReferenceCandidateIndex.build(List.of(TestCompiler.moduleConfig(root, src)));
     final var planner = new ReferenceCandidatePlanner(index);
 
     final var target =
@@ -62,7 +43,8 @@ class ReferenceCandidatePlannerTest {
             null,
             ReferenceTarget.SearchScope.REACTOR_MODULES);
 
-    final Set<String> candidates = planner.planCandidates(configWithRoot(src), target);
+    final Set<String> candidates =
+        planner.planCandidates(TestCompiler.moduleConfig(root, src), target);
     assertThat(candidates).containsExactly(uri(fileA));
   }
 
@@ -78,7 +60,7 @@ class ReferenceCandidatePlannerTest {
             class B { List list; }
             """);
 
-    final var index = ReferenceCandidateIndex.build(List.of(configWithRoot(src)));
+    final var index = ReferenceCandidateIndex.build(List.of(TestCompiler.moduleConfig(root, src)));
     final var planner = new ReferenceCandidatePlanner(index);
 
     final var target =
@@ -89,7 +71,8 @@ class ReferenceCandidatePlannerTest {
             null,
             ReferenceTarget.SearchScope.REACTOR_MODULES);
 
-    final Set<String> candidates = planner.planCandidates(configWithRoot(src), target);
+    final Set<String> candidates =
+        planner.planCandidates(TestCompiler.moduleConfig(root, src), target);
     assertThat(candidates).containsExactly(uri(fileB));
   }
 
@@ -105,7 +88,7 @@ class ReferenceCandidatePlannerTest {
         }
         """);
 
-    final var index = ReferenceCandidateIndex.build(List.of(configWithRoot(src)));
+    final var index = ReferenceCandidateIndex.build(List.of(TestCompiler.moduleConfig(root, src)));
     final var planner = new ReferenceCandidatePlanner(index);
 
     final var target =
@@ -116,7 +99,8 @@ class ReferenceCandidatePlannerTest {
             null,
             ReferenceTarget.SearchScope.REACTOR_MODULES);
 
-    final Set<String> candidates = planner.planCandidates(configWithRoot(src), target);
+    final Set<String> candidates =
+        planner.planCandidates(TestCompiler.moduleConfig(root, src), target);
     assertThat(candidates).isEmpty();
   }
 
@@ -132,7 +116,7 @@ class ReferenceCandidatePlannerTest {
             class D { List list; }
             """);
 
-    final var index = ReferenceCandidateIndex.build(List.of(configWithRoot(src)));
+    final var index = ReferenceCandidateIndex.build(List.of(TestCompiler.moduleConfig(root, src)));
     final var planner = new ReferenceCandidatePlanner(index);
 
     final var target =
@@ -143,7 +127,8 @@ class ReferenceCandidatePlannerTest {
             null,
             ReferenceTarget.SearchScope.REACTOR_MODULES);
 
-    final Set<String> candidates = planner.planCandidates(configWithRoot(src), target);
+    final Set<String> candidates =
+        planner.planCandidates(TestCompiler.moduleConfig(root, src), target);
     assertThat(candidates).containsExactly(uri(fileD));
   }
 
@@ -159,7 +144,7 @@ class ReferenceCandidatePlannerTest {
             class E { void run() { emptyList(); } }
             """);
 
-    final var index = ReferenceCandidateIndex.build(List.of(configWithRoot(src)));
+    final var index = ReferenceCandidateIndex.build(List.of(TestCompiler.moduleConfig(root, src)));
     final var planner = new ReferenceCandidatePlanner(index);
 
     final var target =
@@ -170,7 +155,8 @@ class ReferenceCandidatePlannerTest {
             "()",
             ReferenceTarget.SearchScope.REACTOR_MODULES);
 
-    final Set<String> candidates = planner.planCandidates(configWithRoot(src), target);
+    final Set<String> candidates =
+        planner.planCandidates(TestCompiler.moduleConfig(root, src), target);
     assertThat(candidates).containsExactly(uri(fileE));
   }
 
@@ -186,7 +172,7 @@ class ReferenceCandidatePlannerTest {
             class F { void run() { Collections.emptyList(); } }
             """);
 
-    final var index = ReferenceCandidateIndex.build(List.of(configWithRoot(src)));
+    final var index = ReferenceCandidateIndex.build(List.of(TestCompiler.moduleConfig(root, src)));
     final var planner = new ReferenceCandidatePlanner(index);
 
     final var target =
@@ -197,7 +183,8 @@ class ReferenceCandidatePlannerTest {
             "()",
             ReferenceTarget.SearchScope.REACTOR_MODULES);
 
-    final Set<String> candidates = planner.planCandidates(configWithRoot(src), target);
+    final Set<String> candidates =
+        planner.planCandidates(TestCompiler.moduleConfig(root, src), target);
     assertThat(candidates).containsExactly(uri(fileF));
   }
 
@@ -212,7 +199,7 @@ class ReferenceCandidatePlannerTest {
             class G { String name; }
             """);
 
-    final var index = ReferenceCandidateIndex.build(List.of(configWithRoot(src)));
+    final var index = ReferenceCandidateIndex.build(List.of(TestCompiler.moduleConfig(root, src)));
     final var planner = new ReferenceCandidatePlanner(index);
 
     final var target =
@@ -223,7 +210,8 @@ class ReferenceCandidatePlannerTest {
             null,
             ReferenceTarget.SearchScope.REACTOR_MODULES);
 
-    final Set<String> candidates = planner.planCandidates(configWithRoot(src), target);
+    final Set<String> candidates =
+        planner.planCandidates(TestCompiler.moduleConfig(root, src), target);
     assertThat(candidates).containsExactly(uri(fileG));
   }
 }

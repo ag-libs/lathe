@@ -14,7 +14,8 @@ import org.junit.jupiter.api.io.TempDir;
 class JavadocLocatorTest {
 
   @Test
-  void crossFileJavadoc(@TempDir final Path tempDir) throws IOException {
+  void locate_externalElement_returnsJavadocFromSourceRoot(@TempDir final Path tempDir)
+      throws IOException {
     final var srcDir = tempDir.resolve("src");
     Files.createDirectories(srcDir);
     final var classDir = tempDir.resolve("classes");

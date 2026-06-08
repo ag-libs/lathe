@@ -6,12 +6,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
-class ServerWorkerTest {
+class ServerEventLoopTest {
 
   private static final String URI = "file:///Foo.java";
   private static final long DELAY_MS = 50;
 
-  private final ServerWorker worker = new ServerWorker();
+  private final ServerEventLoop worker = new ServerEventLoop();
 
   @AfterEach
   void close() {

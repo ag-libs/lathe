@@ -114,7 +114,7 @@ final class ReferenceCandidateIndex {
     while (importIdx >= 0) {
       final int endSemi = content.indexOf(';', importIdx);
       if (endSemi > importIdx && endSemi - importIdx < 200) {
-        var imp = content.substring(importIdx + 7, endSemi).trim();
+        String imp = content.substring(importIdx + 7, endSemi).trim();
         if (imp.startsWith("static ")) {
           imp = imp.substring(7).trim();
         }

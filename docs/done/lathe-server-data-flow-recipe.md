@@ -8,7 +8,7 @@ The server uses one workspace worker for LSP/session state and one worker per co
 | Thread | Owns | Does not own |
 |---|---|---|
 | LSP4J receive thread | immutable request data extracted from LSP params | workspace state, javac state |
-| `lathe-worker` | `WorkspaceSession`, `WorkspaceModules`, `WorkspaceManifest`, `WorkspaceWatcher`, `openDocuments`, routing, stale checks, client publishing | javac-backed `SourceAnalysisSession` |
+| `lathe-worker` | `WorkspaceSession`, `WorkspaceModuleRegistry`, `WorkspaceManifest`, `WorkspaceWatcher`, `openDocuments`, routing, stale checks, client publishing | javac-backed `SourceAnalysisSession` |
 | `lathe-module-<name>` | one module-source `SourceAnalysisSession` and `JavaSourceCompiler` | workspace routing state, `openDocuments`, client publishing |
 | `lathe-external` | one external-source `SourceAnalysisSession` and `JavaSourceCompiler` | workspace routing state, `openDocuments`, client publishing |
 
@@ -21,17 +21,17 @@ Compilation results always hop back to `lathe-worker` before stale checks or pub
 ## Main Types
 
 `LatheTextDocumentService` is the LSP adapter.
-It extracts request data and submits work to `ServerWorker`.
+It extracts request data and submits work to `ServerEventLoop`.
 It owns the `WorkspaceSession` reference, but does not mutate session state directly after construction.
 
-`ServerWorker` is the server event loop.
+`ServerEventLoop` is the server event loop.
 It serializes workspace state changes, keyed debounced tasks, watcher polling, and LSP request routing.
 
 `WorkspaceSession` owns workspace-level state:
 
 ```java
 private WorkspaceManifest manifest;
-private WorkspaceModules workspace;
+private WorkspaceModuleRegistry workspace;
 private WorkspaceWatcher watcher;
 private final Map<String, OpenDocument> openDocuments = new HashMap<>();
 ```
@@ -45,10 +45,10 @@ record OpenDocument(String uri, String content, int version, long generation) {}
 The single `generation` value is incremented for every open-document snapshot.
 Reload refreshes all open-document generations, so old compile results are stale even when text is unchanged.
 
-`WorkspaceModules` owns discovered module source configs and lazy workers.
+`WorkspaceModuleRegistry` owns discovered module source configs and lazy workers.
 It also owns the external-source worker for the current manifest.
 
-`ModuleSourceWorker` owns a single-thread executor and a lazy `SourceAnalysisSession`.
+`CompilationWorker` owns a single-thread executor and a lazy `SourceAnalysisSession`.
 It exposes domain-specific methods: `compile`, `hover`, `definition`, `complete`, `semanticTokens`, and `dropFromCache`.
 Its `close()` waits for context cleanup to finish.
 
@@ -95,9 +95,9 @@ This drops results for closed files, later edits, saves with newer content, and 
 
 ```java
 sealed interface CompilerRoute {
-  record Module(ModuleSourceWorker worker, ModuleSourceConfig config) implements CompilerRoute {}
+  record Module(CompilationWorker worker, ModuleSourceConfig config) implements CompilerRoute {}
 
-  record External(ModuleSourceWorker worker) implements CompilerRoute {}
+  record External(CompilationWorker worker) implements CompilerRoute {}
 
   record Missing(String uri, String message) implements CompilerRoute {}
 }
@@ -115,7 +115,7 @@ Missing files produce a warning diagnostic for compile requests and empty/null r
 ```text
 LSP didOpen(uri, content)
   -> LatheTextDocumentService captures uri/content
-  -> ServerWorker.execute(session.onOpen(uri, content))
+  -> ServerEventLoop.execute(session.onOpen(uri, content))
 
 lathe-worker:
   snapshot = putOpenFile(uri, content)
@@ -133,7 +133,7 @@ lathe-worker:
 
 ```text
 LSP didChange(uri, content)
-  -> ServerWorker.execute(session.onChange(uri, content))
+  -> ServerEventLoop.execute(session.onChange(uri, content))
 
 lathe-worker:
   putOpenFile(uri, content)
@@ -151,7 +151,7 @@ debounce task on lathe-worker:
 
 ```text
 LSP didSave(uri, optionalContent)
-  -> ServerWorker.execute(session.onSave(uri, optionalContent))
+  -> ServerEventLoop.execute(session.onSave(uri, optionalContent))
 
 lathe-worker:
   snapshot = current open file, or saved content if supplied
@@ -176,7 +176,7 @@ Save does not read from disk and does not create pseudo-open files.
 
 ```text
 LSP didClose(uri)
-  -> ServerWorker.execute(session.onClose(uri))
+  -> ServerEventLoop.execute(session.onClose(uri))
 
 lathe-worker:
   openDocuments.remove(uri)
@@ -194,7 +194,7 @@ module workers:
 lathe-worker watcher poll:
   if changed:
     newManifest = WorkspaceManifest.load(root)
-    newWorkspace = WorkspaceModules.scan(root, newManifest)
+    newWorkspace = WorkspaceModuleRegistry.scan(root, newManifest)
     oldWorkspace = workspace
     workspace = newWorkspace
     manifest = newManifest
@@ -209,7 +209,7 @@ Any old compile result that returns after reload is dropped by the refreshed ope
 ## Feature Flows
 
 Hover, definition, completion, semantic tokens, and formatting all enter through `LatheTextDocumentService`.
-The service submits a small routing operation to `ServerWorker`.
+The service submits a small routing operation to `ServerEventLoop`.
 
 Hover and definition snapshot source roots and manifest on `lathe-worker`, then query the routed module worker.
 Completion uses the current open-document content from `openDocuments`.
@@ -224,17 +224,17 @@ Server shutdown closes through the server worker:
 
 ```text
 LatheTextDocumentService.close()
-  -> ServerWorker.submit(session.close()).join()
-  -> ServerWorker.close()
+  -> ServerEventLoop.submit(session.close()).join()
+  -> ServerEventLoop.close()
 
 WorkspaceSession.close()
-  -> WorkspaceModules.close()
+  -> WorkspaceModuleRegistry.close()
 
-WorkspaceModules.close()
+WorkspaceModuleRegistry.close()
   -> close all module workers and external worker
   -> wait for all close futures
 
-ModuleSourceWorker.close()
+CompilationWorker.close()
   -> close SourceAnalysisSession on the module worker thread
   -> complete close future
   -> shutdown executor
@@ -243,8 +243,8 @@ ModuleSourceWorker.close()
 ## Cleanup Notes
 
 Keep `WorkspaceSession` as the orchestration point unless it becomes clearly too large.
-Do not introduce a generic worker abstraction just to share executor boilerplate between `ServerWorker` and `ModuleSourceWorker`.
+Do not introduce a generic worker abstraction just to share executor boilerplate between `ServerEventLoop` and `CompilationWorker`.
 The two classes have different domain roles.
 
 Keep `CompilerRoute`, `AfterCompile`, and `OpenDocument` private to `WorkspaceSession`.
-Keep `CompileRequest` and `CompileResponse` in the `module` package because they are the public value boundary for `ModuleSourceWorker.compile`.
+Keep `CompileRequest` and `CompileResponse` in the `module` package because they are the public value boundary for `CompilationWorker.compile`.

@@ -65,7 +65,7 @@ record ParsedSentinel(
   }
 
   static ParsedSentinel valid(
-      final SentinelResult injected,
+      final SentinelInjectionResult injected,
       final SentinelContext context,
       final int receiverEndOffset,
       final int docVersion) {
@@ -91,7 +91,7 @@ record ParsedSentinel(
   }
 
   static ParsedSentinel valid(
-      final SentinelResult injected,
+      final SentinelInjectionResult injected,
       final SentinelContext context,
       final int receiverEndOffset,
       final String enclosingClass,

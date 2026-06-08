@@ -521,7 +521,7 @@ If a module directory has no params files: "Run `mvn process-test-classes` to ac
 The LS watches `workspace.json` and `lsp-params-*.json` files.
 Manifest or params changes trigger a full LS reload:
 module source configs are re-scanned from `.lathe/`,
-all `ModuleSourceWorker` instances and result caches are dropped,
+all `CompilationWorker` instances and result caches are dropped,
 and open files are re-attributed.
 The user sees a brief "Workspace reloaded" notification.
 
@@ -538,7 +538,7 @@ Those references are dropped when the cached context is replaced, invalidated, o
 The only durable per-module-source state is:
 
 - **Parsed params** — read from disk on startup and re-read after the module's `lathe.lock` disappears.
-- **`ModuleSourceWorker`** — one lazy worker per `ModuleSourceConfig`, which means main and test params get
+- **`CompilationWorker`** — one lazy worker per `ModuleSourceConfig`, which means main and test params get
   separate workers.
   The worker owns one long-lived `SourceAnalysisSession`.
 - **`SourceAnalysisSession`** — owns one `JavaSourceCompiler`, feature helpers, and the per-file analysis cache.
@@ -548,7 +548,7 @@ The only durable per-module-source state is:
   (`CLASS_OUTPUT` → `.lathe/<rel>/classes`, `SOURCE_OUTPUT` → `.lathe/<rel>/generated-sources`),
   and holds no attributed javac task state.
   `ModuleSourceCompiler` is closed when its `SourceAnalysisSession` closes during workspace reload or server shutdown.
-  There is no LRU — workers are created on demand and live for the duration of the current `WorkspaceModules` snapshot.
+  There is no LRU — workers are created on demand and live for the duration of the current `WorkspaceModuleRegistry` snapshot.
 
 _v1 simplification — the temp-dir approach is straightforward to implement and test.
 A future version may replace it with in-memory `JavaFileObject` serving to avoid the disk round-trip._
@@ -726,9 +726,9 @@ Cached file managers remain bounded by the LRU and are closed on eviction or reg
 
 Lathe uses one server worker thread for all work that touches mutable server state or javac-backed objects.
 LSP4J message threads and the workspace watcher capture immutable request data, enqueue work, and return futures.
-The server worker owns `WorkspaceSession`, `WorkspaceModules`, open-document snapshots, routing, stale checks,
+The server worker owns `WorkspaceSession`, `WorkspaceModuleRegistry`, open-document snapshots, routing, stale checks,
 client publishing, debounced compilation, and workspace reload.
-Each `ModuleSourceWorker` or external worker owns its `SourceAnalysisSession`, `JavaSourceCompiler`,
+Each `CompilationWorker` or external worker owns its `SourceAnalysisSession`, `JavaSourceCompiler`,
 and javac-backed analysis cache on a single worker thread.
 This keeps javac file managers thread-confined and avoids method-level synchronization around compiler internals.
 If profiling later shows this is too restrictive, the worker boundary can split into per-module or project/external

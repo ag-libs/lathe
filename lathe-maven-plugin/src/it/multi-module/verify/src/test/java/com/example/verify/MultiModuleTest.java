@@ -32,26 +32,26 @@ class MultiModuleTest {
   // --- init ---
 
   @Test
-  void latheDirectoryCreated() {
+  void init_latheDirectory_created() {
     assertThat(ROOT.resolve(".lathe")).isDirectory();
   }
 
   // --- sync: server distribution ---
 
   @Test
-  void launcherInstalled() {
+  void sync_serverLauncher_installed() {
     final var launcher =
         LATHE_CACHE.resolve("servers").resolve(LATHE_VERSION).resolve("lathe-launcher.sh");
     assertThat(launcher).exists().isExecutable();
   }
 
   @Test
-  void currentSymlinkCreated() {
+  void sync_currentSymlink_created() {
     assertThat(LATHE_CACHE.resolve("current")).isSymbolicLink();
   }
 
   @Test
-  void launcherContentValid() throws IOException {
+  void sync_launcherContent_containsRequiredJvmArgs() throws IOException {
     final var launcher =
         LATHE_CACHE.resolve("servers").resolve(LATHE_VERSION).resolve("lathe-launcher.sh");
     final var content = read(launcher);
@@ -67,7 +67,7 @@ class MultiModuleTest {
   // --- sync: workspace.json ---
 
   @Test
-  void workspaceJsonWritten() throws IOException {
+  void sync_workspaceJson_written() throws IOException {
     final var ws = lathe("workspace.json");
     assertThat(ws).exists();
     final var content = read(ws);
@@ -84,7 +84,7 @@ class MultiModuleTest {
   }
 
   @Test
-  void typeIndexShardCreated() throws IOException {
+  void sync_depTypeIndexShard_created() throws IOException {
     final var shard =
         LATHE_CACHE
             .resolve("type-index")
@@ -100,7 +100,7 @@ class MultiModuleTest {
   }
 
   @Test
-  void jdkTypeIndexShardCreated() throws IOException {
+  void sync_jdkTypeIndexShard_created() throws IOException {
     final var jdkTypeIndexes = LATHE_CACHE.resolve("type-index").resolve("jdks");
     assertThat(jdkTypeIndexes).isDirectory();
     try (final var files = Files.walk(jdkTypeIndexes)) {
@@ -116,21 +116,21 @@ class MultiModuleTest {
   // --- core module ---
 
   @Test
-  void coreParamsWritten() {
+  void sync_coreModuleParams_written() {
     assertThat(lathe("core/lsp-params-classes.json")).exists();
   }
 
   // --- app module: cross-module dep + annotation processing ---
 
   @Test
-  void appParamsWritten() throws IOException {
+  void sync_appModuleParams_written() throws IOException {
     final var params = lathe("app/lsp-params-classes.json");
     assertThat(params).exists();
     assertThat(read(params)).contains("record-companion-builder");
   }
 
   @Test
-  void appGeneratedSourcesWritten() {
+  void sync_appGeneratedSources_written() {
     assertThat(lathe("app/generated-sources/com/example/app/UserBuilder.java")).exists();
     assertThat(lathe("app/generated-sources/com/example/app/UserUpdater.java")).exists();
   }
@@ -138,7 +138,7 @@ class MultiModuleTest {
   // --- jpms module: JPMS + test compilation ---
 
   @Test
-  void jpmsParamsWritten() throws IOException {
+  void sync_jpmsModuleParams_written() throws IOException {
     final var params = lathe("jpms/lsp-params-classes.json");
     assertThat(params).exists();
     final var content = read(params);
@@ -148,7 +148,7 @@ class MultiModuleTest {
   }
 
   @Test
-  void jpmsTestParamsWritten() throws IOException {
+  void sync_jpmsTestParams_written() throws IOException {
     final var params = lathe("jpms/lsp-params-test-classes.json");
     assertThat(params).exists();
     final var content = read(params);

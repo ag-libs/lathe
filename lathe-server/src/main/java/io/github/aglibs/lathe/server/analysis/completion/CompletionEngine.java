@@ -130,7 +130,9 @@ public final class CompletionEngine {
   }
 
   private CompletionOutcome completeImport(
-      final ParsedSentinel parsed, final SentinelResult injected, final CompletionRequest req) {
+      final ParsedSentinel parsed,
+      final SentinelInjectionResult injected,
+      final CompletionRequest req) {
     final var analysis =
         req.cached() != null
             ? req.cached().analysis()
@@ -159,7 +161,7 @@ public final class CompletionEngine {
 
   private CompletionOutcome completeSimpleName(
       final ParsedSentinel parsed,
-      final SentinelResult injected,
+      final SentinelInjectionResult injected,
       final CompletionRequest req,
       final CompletionSite site) {
     final var semanticContext = semanticContext(site, req, parsed);
@@ -260,7 +262,7 @@ public final class CompletionEngine {
 
   private List<CompletionCandidate> completeJavacSimpleName(
       final ParsedSentinel parsed,
-      final SentinelResult injected,
+      final SentinelInjectionResult injected,
       final CompletionRequest req,
       final SemanticCompletionContext semanticContext) {
     if (parsed.enclosingClass() == null || semanticContext == null) {
@@ -369,7 +371,9 @@ public final class CompletionEngine {
   }
 
   private CompletionOutcome completeTypeReference(
-      final ParsedSentinel parsed, final SentinelResult injected, final CompletionRequest req) {
+      final ParsedSentinel parsed,
+      final SentinelInjectionResult injected,
+      final CompletionRequest req) {
     if (parsed.receiverText() != null) {
       final var nestedTypes = completeNestedTypes(parsed, injected, req);
       if (!nestedTypes.items().isEmpty() || !typeLikeReceiver(parsed.receiverText())) {
@@ -407,7 +411,9 @@ public final class CompletionEngine {
   }
 
   private CompletionOutcome completeAnnotationArgument(
-      final ParsedSentinel parsed, final SentinelResult injected, final CompletionRequest req) {
+      final ParsedSentinel parsed,
+      final SentinelInjectionResult injected,
+      final CompletionRequest req) {
     final var analysis =
         req.cached() != null
             ? req.cached().analysis()
@@ -434,7 +440,9 @@ public final class CompletionEngine {
   }
 
   private CompletionOutcome completeAnnotationArgumentValue(
-      final ParsedSentinel parsed, final SentinelResult injected, final CompletionRequest req) {
+      final ParsedSentinel parsed,
+      final SentinelInjectionResult injected,
+      final CompletionRequest req) {
     final var analysis =
         req.cached() != null
             ? req.cached().analysis()
@@ -674,7 +682,9 @@ public final class CompletionEngine {
   }
 
   private CompletionOutcome completeNestedTypes(
-      final ParsedSentinel parsed, final SentinelResult injected, final CompletionRequest req) {
+      final ParsedSentinel parsed,
+      final SentinelInjectionResult injected,
+      final CompletionRequest req) {
     if (req.cached() == null || req.cached().analysis() == null) {
       return CompletionOutcome.of(List.of());
     }
@@ -725,7 +735,9 @@ public final class CompletionEngine {
   }
 
   private CompletionOutcome completeSimpleNameTypeReference(
-      final SentinelResult injected, final CompletionRequest req, final TypeReferenceRole role) {
+      final SentinelInjectionResult injected,
+      final CompletionRequest req,
+      final TypeReferenceRole role) {
     if (req.typeIndex() == null || injected.prefix().isEmpty()) {
       return CompletionOutcome.of(List.of());
     }
@@ -756,14 +768,18 @@ public final class CompletionEngine {
   }
 
   private CompletionOutcome completeSimpleNameTypeReferenceWithLang(
-      final SentinelResult injected, final CompletionRequest req, final TypeReferenceRole role) {
+      final SentinelInjectionResult injected,
+      final CompletionRequest req,
+      final TypeReferenceRole role) {
     final var typeIndexOutcome = completeSimpleNameTypeReference(injected, req, role);
     final var withLang = mergeLangTypes(injected.prefix(), req, typeIndexOutcome, role);
     return mergeInFileTypes(injected.prefix(), req, withLang, role);
   }
 
   private CompletionOutcome completeConstructorTypeReference(
-      final SentinelResult injected, final CompletionRequest req, final TypeReferenceRole role) {
+      final SentinelInjectionResult injected,
+      final CompletionRequest req,
+      final TypeReferenceRole role) {
     final var base = completeSimpleNameTypeReferenceWithLang(injected, req, role);
     final var initialAnalysis = req.cached() != null ? req.cached().analysis() : null;
     final var initialExpected =
@@ -968,18 +984,18 @@ public final class CompletionEngine {
         .thenComparing(TypeIndexEntry::qualifiedName);
   }
 
-  private static boolean hasUppercasePrefix(final SentinelResult injected) {
+  private static boolean hasUppercasePrefix(final SentinelInjectionResult injected) {
     return !injected.prefix().isEmpty()
         && Character.isUpperCase(injected.prefix().charAt(0))
         && injected.receiverText() == null;
   }
 
-  private static boolean shouldOfferBareTypeReference(final SentinelResult injected) {
+  private static boolean shouldOfferBareTypeReference(final SentinelInjectionResult injected) {
     return hasUppercasePrefix(injected);
   }
 
   private static boolean shouldTreatTypeReferenceAsMixedSimpleName(
-      final ParsedSentinel parsed, final SentinelResult injected) {
+      final ParsedSentinel parsed, final SentinelInjectionResult injected) {
     return parsed.receiverText() == null
         && parsed.typeReferenceRole() == TypeReferenceRole.ORDINARY
         && injected.context() == SentinelInjector.Context.STATEMENT
@@ -1000,7 +1016,7 @@ public final class CompletionEngine {
 
   private CompletionOutcome completeMemberAccess(
       final ParsedSentinel parsed,
-      final SentinelResult injected,
+      final SentinelInjectionResult injected,
       final CompletionRequest req,
       final CompletionSite site) {
     final var initialSnapshot = req.cached() != null ? req.cached().analysis() : null;
@@ -1099,7 +1115,7 @@ public final class CompletionEngine {
 
   private CompletionOutcome completeMemberAccessTypeIndexFallback(
       final ParsedSentinel parsed,
-      final SentinelResult injected,
+      final SentinelInjectionResult injected,
       final AttributedFileAnalysis snapshot,
       final int cursorOffset,
       final WorkspaceTypeIndex typeIndex) {

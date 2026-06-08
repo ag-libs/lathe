@@ -54,7 +54,7 @@ Current symbol features already have the important first step:
 
 ```text
 LSP cursor position
-  -> WorkspaceSession routes to the owning ModuleSourceWorker
+  -> WorkspaceSession routes to the owning CompilationWorker
   -> SourceAnalysisSession resolves the cached attributed file
   -> SourceLocator.elementAt(...) returns the javac Element at the cursor
 ```
@@ -65,7 +65,7 @@ Find references should reuse the same cursor-element resolution and add a worksp
 The current server threading model matters:
 
 - `lathe-worker` owns workspace state, open documents, routing, and stale checks.
-- each `ModuleSourceWorker` owns one javac-backed `SourceAnalysisSession`.
+- each `CompilationWorker` owns one javac-backed `SourceAnalysisSession`.
 - feature requests must not read `openDocuments` from module workers.
 
 Find references therefore needs workspace-level orchestration in `WorkspaceSession`,
@@ -317,7 +317,7 @@ The index is owned by `WorkspaceSession` and lives on the `lathe-worker` thread.
 All reads and writes go through the `lathe-worker` executor.
 LSP events (`didOpen`, `didChange`, `didClose`) dispatch debounced update tasks to `lathe-worker`.
 File watcher events do the same.
-`ModuleSourceWorker`s never access the index directly;
+`CompilationWorker`s never access the index directly;
 they receive immutable `ReferenceSearchFile` inputs and return matches.
 
 ### Background Warming
@@ -328,7 +328,7 @@ The server may warm reference planning in the background after edits:
 2. debounce a background task
 3. identify likely symbol spellings near the cursor or edited token
 4. compute likely candidate files from `ReferenceCandidateIndex`
-5. optionally ask existing `ModuleSourceWorker`s to attribute candidate files lazily
+5. optionally ask existing `CompilationWorker`s to attribute candidate files lazily
 
 Do not create a second full module source instance just for references.
 The existing module workers should remain the single semantic authority for each module source.
@@ -471,7 +471,7 @@ Add:
 ```java
 LatheTextDocumentService.references(ReferenceParams params)
 WorkspaceSession.referencesFuture(String uri, Position pos, boolean includeDeclaration)
-ModuleSourceWorker.references(...)
+CompilationWorker.references(...)
 SourceAnalysisSession.references(...)
 ```
 
@@ -504,7 +504,7 @@ This proves element matching, token ranges, declaration inclusion, overloaded me
 `ReferenceTarget` is not needed for same-file matching.
 Use javac `Element` equality directly;
 all elements are resolved in the same `SourceAnalysisSession` javac context so identity comparison is reliable.
-`ReferenceTarget` becomes necessary in Slice 2 when the scanner crosses `ModuleSourceWorker` boundaries.
+`ReferenceTarget` becomes necessary in Slice 2 when the scanner crosses `CompilationWorker` boundaries.
 
 ### Slice 2 — Open Files in Same Module ✅
 

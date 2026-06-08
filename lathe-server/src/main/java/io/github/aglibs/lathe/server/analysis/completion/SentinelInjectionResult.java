@@ -2,7 +2,7 @@ package io.github.aglibs.lathe.server.analysis.completion;
 
 import io.github.aglibs.validcheck.ValidCheck;
 
-record SentinelResult(
+record SentinelInjectionResult(
     String prefix,
     int tokenStart,
     int tokenEnd,
@@ -11,7 +11,7 @@ record SentinelResult(
     boolean hasDot,
     String injectedContent) {
 
-  SentinelResult {
+  SentinelInjectionResult {
     ValidCheck.check()
         .notNull(prefix, "prefix")
         .isNonNegative(tokenStart, "tokenStart")

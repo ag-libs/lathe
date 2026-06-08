@@ -101,7 +101,7 @@ public final class SourceLocator {
   }
 
   public static Element elementAt(final Trees trees, final TreePath path) {
-    var p = path;
+    TreePath p = path;
     while (p != null) {
       final var element = trees.getElement(p);
       if (element != null && element.getKind() != ElementKind.PACKAGE) {
@@ -213,8 +213,8 @@ public final class SourceLocator {
     if (leafElement != null && masksParameterContext(leafElement.getKind())) {
       return null;
     }
-    var argPath = path;
-    var parent = path.getParentPath();
+    TreePath argPath = path;
+    TreePath parent = path.getParentPath();
     while (parent != null) {
       final var leaf = parent.getLeaf();
       if (leaf instanceof final MethodInvocationTree inv) {

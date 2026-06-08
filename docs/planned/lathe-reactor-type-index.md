@@ -37,9 +37,9 @@ Generated-source cleanup remains future work.
 `WorkspaceSession` owns the current immutable `WorkspaceTypeIndex` snapshot and the mutable shard state used to
 rebuild it.
 
-`WorkspaceModules` owns loaded `ModuleSourceConfig` entries and lazy `ModuleSourceWorker`s.
+`WorkspaceModuleRegistry` owns loaded `ModuleSourceConfig` entries and lazy `CompilationWorker`s.
 
-Each `ModuleSourceWorker` owns one `SourceAnalysisSession` and one `ModuleSourceCompiler` for a single module source
+Each `CompilationWorker` owns one `SourceAnalysisSession` and one `ModuleSourceCompiler` for a single module source
 tree.
 
 A module source tree is represented by one loaded `ModuleSourceConfig`.
@@ -85,10 +85,10 @@ On initialize/reload:
 ```text
 lathe-worker:
   load WorkspaceManifest
-  scan WorkspaceModules from .lathe/lsp-params-*.json
+  scan WorkspaceModuleRegistry from .lathe/lsp-params-*.json
   scan reactor output dir for each ModuleSourceConfig
   build merged WorkspaceTypeIndex from manifest shard paths + reactor entries
-  create/swap WorkspaceModules and WorkspaceTypeIndex snapshot
+  create/swap WorkspaceModuleRegistry and WorkspaceTypeIndex snapshot
 ```
 
 For each `ModuleSourceConfig`, scan only:
@@ -120,7 +120,7 @@ Flow:
 ```text
 didSave
   -> lathe-worker routes saved document to ModuleSourceConfig
-  -> lathe-worker submits FULL CompileRequest to ModuleSourceWorker
+  -> lathe-worker submits FULL CompileRequest to CompilationWorker
   -> module-source worker compiles the saved document
   -> javac writes .class files under config.latheClassesDir()
   -> CompileResponse returns to lathe-worker
@@ -154,7 +154,7 @@ WorkspaceTypeIndex indexSnapshot = typeIndex;
 Then passes it through:
 
 ```java
-ModuleSourceWorker.complete(..., indexSnapshot)
+CompilationWorker.complete(..., indexSnapshot)
 SourceAnalysisSession.complete(..., indexSnapshot)
 CompletionRequest(..., indexSnapshot)
 ```

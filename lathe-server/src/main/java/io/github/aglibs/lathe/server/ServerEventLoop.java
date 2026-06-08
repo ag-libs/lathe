@@ -13,9 +13,9 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-final class ServerWorker {
+final class ServerEventLoop {
 
-  private static final Logger LOG = Logger.getLogger(ServerWorker.class.getName());
+  private static final Logger LOG = Logger.getLogger(ServerEventLoop.class.getName());
 
   private final AtomicReference<Thread> workerThread = new AtomicReference<>();
   private final ScheduledExecutorService executor =

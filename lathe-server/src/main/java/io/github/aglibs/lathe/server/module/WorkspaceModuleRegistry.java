@@ -15,29 +15,30 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
 
-public final class WorkspaceModules implements AutoCloseable {
+public final class WorkspaceModuleRegistry implements AutoCloseable {
 
-  private static final Logger LOG = Logger.getLogger(WorkspaceModules.class.getName());
+  private static final Logger LOG = Logger.getLogger(WorkspaceModuleRegistry.class.getName());
 
   private final List<ModuleSourceConfig> moduleSources;
-  private final Map<String, ModuleSourceWorker> workers = new HashMap<>();
-  private final ModuleSourceWorker externalWorker;
+  private final Map<String, CompilationWorker> workers = new HashMap<>();
+  private final CompilationWorker externalWorker;
 
-  private WorkspaceModules(
+  private WorkspaceModuleRegistry(
       final List<ModuleSourceConfig> moduleSources, final WorkspaceManifest manifest) {
     this.moduleSources = moduleSources;
-    this.externalWorker = ModuleSourceWorker.external(manifest);
+    this.externalWorker = CompilationWorker.external(manifest);
   }
 
-  public static WorkspaceModules empty() {
-    return new WorkspaceModules(List.of(), WorkspaceManifest.empty());
+  public static WorkspaceModuleRegistry empty() {
+    return new WorkspaceModuleRegistry(List.of(), WorkspaceManifest.empty());
   }
 
-  public static WorkspaceModules scan(final Path workspaceRoot, final WorkspaceManifest manifest) {
+  public static WorkspaceModuleRegistry scan(
+      final Path workspaceRoot, final WorkspaceManifest manifest) {
     final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
     if (!Files.isDirectory(latheDir)) {
       LOG.warning(() -> "[workspace] .lathe/ not found at " + workspaceRoot);
-      return new WorkspaceModules(List.of(), manifest);
+      return new WorkspaceModuleRegistry(List.of(), manifest);
     }
 
     final List<ModuleSourceConfig> moduleSources = new ArrayList<>();
@@ -63,7 +64,7 @@ public final class WorkspaceModules implements AutoCloseable {
         () ->
             "[workspace] loaded %d module source config(s) from %s"
                 .formatted(moduleSources.size(), workspaceRoot));
-    return new WorkspaceModules(List.copyOf(moduleSources), manifest);
+    return new WorkspaceModuleRegistry(List.copyOf(moduleSources), manifest);
   }
 
   public List<ModuleSourceConfig> allConfigs() {
@@ -80,12 +81,12 @@ public final class WorkspaceModules implements AutoCloseable {
     return moduleSources.stream().flatMap(m -> m.sourceRoots().stream()).toList();
   }
 
-  public ModuleSourceWorker workerFor(final ModuleSourceConfig config) {
+  public CompilationWorker workerFor(final ModuleSourceConfig config) {
     return workers.computeIfAbsent(
-        config.latheClassesDir().toString(), key -> ModuleSourceWorker.module(config));
+        config.latheClassesDir().toString(), key -> CompilationWorker.module(config));
   }
 
-  public ModuleSourceWorker externalWorker() {
+  public CompilationWorker externalWorker() {
     return externalWorker;
   }
 
@@ -98,7 +99,7 @@ public final class WorkspaceModules implements AutoCloseable {
   public void close() {
     final var closeFutures =
         Stream.concat(workers.values().stream(), Stream.of(externalWorker))
-            .map(ModuleSourceWorker::closeAsync)
+            .map(CompilationWorker::closeAsync)
             .toArray(CompletableFuture[]::new);
     CompletableFuture.allOf(closeFutures).join();
     workers.clear();

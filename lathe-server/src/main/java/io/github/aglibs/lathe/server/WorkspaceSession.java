@@ -13,12 +13,12 @@ import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.server.analysis.TokenScanner;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
+import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.module.CompileRequest;
 import io.github.aglibs.lathe.server.module.CompileResponse;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
-import io.github.aglibs.lathe.server.module.ModuleSourceWorker;
 import io.github.aglibs.lathe.server.module.WorkspaceModuleGraph;
-import io.github.aglibs.lathe.server.module.WorkspaceModules;
+import io.github.aglibs.lathe.server.module.WorkspaceModuleRegistry;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
 import java.net.URI;
@@ -53,17 +53,17 @@ import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.LanguageClient;
 
-/** Not thread-safe. All methods must be called from the {@link ServerWorker} thread. */
+/** Not thread-safe. All methods must be called from the {@link ServerEventLoop} thread. */
 final class WorkspaceSession {
 
   private static final Logger LOG = Logger.getLogger(WorkspaceSession.class.getName());
 
   private final LanguageClient client;
-  private final ServerWorker worker;
+  private final ServerEventLoop worker;
   private final long debounceMs;
   private Path workspaceRoot;
   private WorkspaceManifest manifest = WorkspaceManifest.empty();
-  private WorkspaceModules workspace = WorkspaceModules.empty();
+  private WorkspaceModuleRegistry workspace = WorkspaceModuleRegistry.empty();
   private WorkspaceModuleGraph moduleGraph = WorkspaceModuleGraph.build(List.of());
   private ReferenceCandidateIndex candidateIndex = ReferenceCandidateIndex.build(List.of());
   private WorkspaceTypeIndex typeIndex = WorkspaceTypeIndex.empty();
@@ -72,7 +72,8 @@ final class WorkspaceSession {
   private final Map<String, OpenDocument> openDocuments = new HashMap<>();
   private long nextGeneration;
 
-  WorkspaceSession(final LanguageClient client, final ServerWorker worker, final long debounceMs) {
+  WorkspaceSession(
+      final LanguageClient client, final ServerEventLoop worker, final long debounceMs) {
     this.client = client;
     this.worker = worker;
     this.debounceMs = debounceMs;
@@ -81,7 +82,7 @@ final class WorkspaceSession {
   void initialize(final Path root) {
     this.workspaceRoot = root;
     manifest = WorkspaceManifest.load(root);
-    workspace = WorkspaceModules.scan(root, manifest);
+    workspace = WorkspaceModuleRegistry.scan(root, manifest);
     moduleGraph = WorkspaceModuleGraph.build(workspace.allConfigs());
     candidateIndex = ReferenceCandidateIndex.build(workspace.allConfigs());
     scanReactorShards();
@@ -508,7 +509,7 @@ final class WorkspaceSession {
   private void reload() {
     LOG.info(() -> "[reload] workspace changed, reloading");
     final var newManifest = WorkspaceManifest.load(workspaceRoot);
-    final var newWorkspace = WorkspaceModules.scan(workspaceRoot, newManifest);
+    final var newWorkspace = WorkspaceModuleRegistry.scan(workspaceRoot, newManifest);
     final var old = workspace;
     workspace = newWorkspace;
     manifest = newManifest;
@@ -550,7 +551,7 @@ final class WorkspaceSession {
   }
 
   private void submitTo(
-      final ModuleSourceWorker moduleWorker,
+      final CompilationWorker moduleWorker,
       final OpenDocument snapshot,
       final CompileMode mode,
       final AfterCompile afterCompile) {
@@ -585,7 +586,7 @@ final class WorkspaceSession {
 
   private <T> CompletableFuture<T> routeFeature(
       final String uri,
-      final Function<ModuleSourceWorker, CompletableFuture<T>> operation,
+      final Function<CompilationWorker, CompletableFuture<T>> operation,
       final T missingFallback) {
     return switch (routeCompiler(uri)) {
       case CompilerRoute.Module module -> operation.apply(module.worker());
@@ -743,9 +744,9 @@ final class WorkspaceSession {
   }
 
   private sealed interface CompilerRoute {
-    record Module(ModuleSourceWorker worker, ModuleSourceConfig config) implements CompilerRoute {}
+    record Module(CompilationWorker worker, ModuleSourceConfig config) implements CompilerRoute {}
 
-    record External(ModuleSourceWorker worker) implements CompilerRoute {}
+    record External(CompilationWorker worker) implements CompilerRoute {}
 
     record Missing(String uri, String message) implements CompilerRoute {}
   }

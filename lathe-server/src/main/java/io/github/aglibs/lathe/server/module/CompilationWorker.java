@@ -24,10 +24,10 @@ import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 
-/** Called from the server worker; executes all compilation work on its own module thread. */
-public final class ModuleSourceWorker {
+/** Called from the server event loop; executes all compilation work on its own module thread. */
+public final class CompilationWorker {
 
-  private static final Logger LOG = Logger.getLogger(ModuleSourceWorker.class.getName());
+  private static final Logger LOG = Logger.getLogger(CompilationWorker.class.getName());
 
   private final ExecutorService executor;
   private final Supplier<SourceAnalysisSession> contextFactory;
@@ -35,18 +35,18 @@ public final class ModuleSourceWorker {
   private boolean closed;
   private CompletableFuture<Void> closeFuture;
 
-  static ModuleSourceWorker module(final ModuleSourceConfig config) {
-    return new ModuleSourceWorker(
+  static CompilationWorker module(final ModuleSourceConfig config) {
+    return new CompilationWorker(
         "lathe-module-" + config.moduleDir().getFileName() + "-" + config.sourceTree(),
         () -> new SourceAnalysisSession(new ModuleSourceCompiler(config)));
   }
 
-  static ModuleSourceWorker external(final WorkspaceManifest manifest) {
-    return new ModuleSourceWorker(
+  static CompilationWorker external(final WorkspaceManifest manifest) {
+    return new CompilationWorker(
         "lathe-external", () -> new SourceAnalysisSession(new ExternalCompiler(manifest)));
   }
 
-  ModuleSourceWorker(final String name, final Supplier<SourceAnalysisSession> contextFactory) {
+  CompilationWorker(final String name, final Supplier<SourceAnalysisSession> contextFactory) {
     this.contextFactory = contextFactory;
     this.executor =
         Executors.newSingleThreadExecutor(

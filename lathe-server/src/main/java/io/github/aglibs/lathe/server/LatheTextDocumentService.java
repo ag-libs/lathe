@@ -15,7 +15,7 @@ final class LatheTextDocumentService implements TextDocumentService {
   private static final Logger LOG = Logger.getLogger(LatheTextDocumentService.class.getName());
   private static final long DEFAULT_DEBOUNCE_MS = 500;
 
-  private final ServerWorker worker = new ServerWorker();
+  private final ServerEventLoop worker = new ServerEventLoop();
   private final long debounceMs;
   private WorkspaceSession session;
 

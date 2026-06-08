@@ -20,7 +20,7 @@ final class SentinelParser {
   }
 
   ParsedSentinel parse(
-      final SentinelResult injected, final int expectedLspLine, final int version) {
+      final SentinelInjectionResult injected, final int expectedLspLine, final int version) {
     return sourceParser
         .parseContent(
             "sentinel://completion.java",
@@ -33,7 +33,7 @@ final class SentinelParser {
   private static ParsedSentinel findSentinel(
       final Trees trees,
       final CompilationUnitTree cu,
-      final SentinelResult injected,
+      final SentinelInjectionResult injected,
       final int expectedLspLine,
       final int version) {
 
@@ -168,7 +168,7 @@ final class SentinelParser {
   }
 
   private static Classification correctExplicitDotRecovery(
-      final SentinelResult injected, final Classification classified) {
+      final SentinelInjectionResult injected, final Classification classified) {
     if (injected.hasDot()
         && injected.receiverText() != null
         && classified.context() == SentinelContext.SIMPLE_NAME) {

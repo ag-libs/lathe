@@ -17,7 +17,7 @@ final class FileUtilTest {
   @TempDir private Path tempDir;
 
   @Test
-  void unzipExtractsNestedFiles() throws IOException {
+  void unzip_nestedFiles_extractsToDestination() throws IOException {
     final Path zip = tempDir.resolve("sources.jar");
     zip(zip, "com/example/Hello.java", "class Hello {}");
 
@@ -28,7 +28,7 @@ final class FileUtilTest {
   }
 
   @Test
-  void unzipRejectsUnsafePaths() throws IOException {
+  void unzip_unsafePath_throwsIOException() throws IOException {
     final Path zip = tempDir.resolve("bad.jar");
     zip(zip, "../escape.java", "bad");
 
@@ -38,7 +38,7 @@ final class FileUtilTest {
   }
 
   @Test
-  void deleteDirDeletesNestedTree() throws IOException {
+  void deleteDir_nestedTree_deletesRecursively() throws IOException {
     final Path nested = tempDir.resolve("tree/a/b");
     Files.createDirectories(nested);
     Files.writeString(nested.resolve("file.txt"), "content");
@@ -49,7 +49,7 @@ final class FileUtilTest {
   }
 
   @Test
-  void moveReplacingReplacesFile() throws IOException {
+  void moveReplacing_existingDest_replacesFile() throws IOException {
     final Path src = tempDir.resolve("src.txt");
     final Path dest = tempDir.resolve("dest.txt");
     Files.writeString(src, "new");

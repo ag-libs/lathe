@@ -54,7 +54,7 @@ Recompiling callers must happen in the background and not block direct editor fe
   - `WorkspaceSession` receives the list of dirty sibling URIs.
   - It schedules a debounced job (e.g., `1000ms` delay) on the `lathe-worker` event loop.
 * **Execution:**
-  - When the debounce timer fires, submit a single-file compile pass to the `ModuleSourceWorker` for each dirty sibling file.
+  - When the debounce timer fires, submit a single-file compile pass to the `CompilationWorker` for each dirty sibling file.
   - Because the edited file's new `.class` files were written to `.lathe/<rel>/classes/` during its `FULL` compile pass, sibling compiles will naturally resolve symbols against the new API signature.
 * **Interruption:**
   - If the user makes a new edit (triggers a `didChange` event) while sibling recompilations are queued or running, cancel all pending sibling compiles immediately to preserve CPU cycles.
@@ -74,7 +74,7 @@ LSP didSave(File A)
 
 No synchronization primitives are introduced:
 * Event scheduling, index queries, and dirty-file queue management occur entirely on the `lathe-worker` thread.
-* Compilation tasks are executed by the existing thread-confined `ModuleSourceWorker` executors.
+* Compilation tasks are executed by the existing thread-confined `CompilationWorker` executors.
 * Diagnostics publish from the `lathe-worker` thread upon receiving compilation responses, maintaining consistency.
 
 ## Verification & Tests

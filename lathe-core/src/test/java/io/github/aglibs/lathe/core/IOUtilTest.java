@@ -10,12 +10,12 @@ import org.junit.jupiter.api.Test;
 final class IOUtilTest {
 
   @Test
-  void uncheckedSupplierReturnsValue() {
+  void unchecked_supplierSucceeds_returnsValue() {
     assertThat(IOUtil.unchecked(() -> "ok")).isEqualTo("ok");
   }
 
   @Test
-  void uncheckedWrapsIOException() {
+  void unchecked_supplierThrowsIOException_wrapsAsUnchecked() {
     assertThatThrownBy(
             () ->
                 IOUtil.unchecked(

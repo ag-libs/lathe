@@ -160,7 +160,7 @@ final class LambdaExpectedReturnTypeResolver {
       return Optional.empty();
     }
 
-    var current = lambdaPath;
+    TreePath current = lambdaPath;
     while (current != null
         && current.getParentPath() != null
         && !(current.getParentPath().getLeaf() instanceof MethodInvocationTree)) {

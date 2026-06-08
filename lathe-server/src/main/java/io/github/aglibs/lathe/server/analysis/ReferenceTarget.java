@@ -122,7 +122,7 @@ public record ReferenceTarget(
   }
 
   private static String enclosingBinaryName(final Element element, final Elements elements) {
-    var e = element.getEnclosingElement();
+    Element e = element.getEnclosingElement();
     while (e != null && !(e instanceof TypeElement)) {
       e = e.getEnclosingElement();
     }

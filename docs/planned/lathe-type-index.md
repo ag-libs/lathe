@@ -459,7 +459,7 @@ module/classpath context.
 On startup and workspace reload, the server:
 
 1. loads `.lathe/workspace.json`
-2. scans params files and builds `WorkspaceModules`
+2. scans params files and builds `WorkspaceModuleRegistry`
 3. loads static dependency shards referenced by the manifest
 4. scans reactor output directories
 5. builds a merged immutable `WorkspaceTypeIndex`
@@ -559,7 +559,7 @@ A trie is unnecessary until measurement proves otherwise.
 
 ### Replacement on Reload
 
-`WorkspaceSession` owns the current index snapshot together with the current `WorkspaceModules`.
+`WorkspaceSession` owns the current index snapshot together with the current `WorkspaceModuleRegistry`.
 Reload builds a new workspace and a new index from the same manifest/params snapshot.
 
 ---

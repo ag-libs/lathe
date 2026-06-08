@@ -50,7 +50,7 @@ public record ModuleSourceConfig(
   }
 
   private Path latheDir() {
-    var p = moduleDir;
+    Path p = moduleDir;
     while (p != null && !LatheLayout.LATHE_DIR.equals(p.getFileName().toString())) {
       p = p.getParent();
     }

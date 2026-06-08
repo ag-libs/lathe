@@ -5,6 +5,7 @@ import com.sun.source.util.JavacTask;
 import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
+import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -28,6 +29,32 @@ public final class TestCompiler {
       SourceParser parser) {}
 
   private TestCompiler() {}
+
+  public static ModuleSourceConfig moduleConfig(final Path workspaceRoot, final Path sourceRoot) {
+    return moduleConfig(
+        workspaceRoot.resolve(".lathe/module"),
+        workspaceRoot.resolve("target/classes"),
+        sourceRoot);
+  }
+
+  public static ModuleSourceConfig moduleConfig(
+      final Path moduleDir, final Path outputDir, final Path sourceRoot) {
+    return new ModuleSourceConfig(
+        moduleDir,
+        "classes",
+        outputDir,
+        null,
+        List.of(sourceRoot),
+        List.of(),
+        List.of(),
+        List.of(),
+        "21",
+        "UTF-8",
+        false,
+        false,
+        null,
+        List.of());
+  }
 
   public static void compileToDir(final Path classDir, final Path... sources) throws IOException {
     compileToDir(classDir, List.of(), List.of(), sources);
