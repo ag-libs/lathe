@@ -58,8 +58,8 @@ Lathe should adopt that protocol shape while keeping the implementation small an
   Lathe is unreleased,
   and the initial implementation may always emit `labelDetails`.
 - Signature help.
-  Completion labels can display generic parameter types,
-  but signature-help request handling is separate future work.
+  Signature-help request handling is implemented alongside this work as a beta release scope feature.
+  The type formatting, parameter rendering, and generic substitution logic are shared directly between completion presentation and signature help to ensure presentation parity.
 - Full JDT LS internal architecture parity.
   Lathe should match the response contract,
   not copy JDT LS provider structure.
