@@ -20,7 +20,7 @@ Current lifecycle shape:
   and compiles opened files — including external dependency/JDK sources.
 - Editors launch `~/.cache/lathe/current/lathe-launcher.sh`.
 
-Threading model: one server worker thread (`lathe-worker`) owns `WorkspaceSession`, `WorkspaceModules`,
+Threading model: one server worker thread (`lathe-worker`) owns `WorkspaceSession`, `WorkspaceModuleRegistry`,
 open-document snapshots, routing, stale-result checks, and client publishing.
 One module worker thread per javac-backed `SourceAnalysisSession`.
 LSP4J threads capture immutable request data and enqueue work.
@@ -121,6 +121,15 @@ Use these as the starting point when reprioritizing or slicing new work:
 
 ## Milestone: v0.1.0-beta (Release Scope)
 
+### Installation and Neovim setup documentation
+Write user-facing setup documentation for the build-from-source beta.
+Cover Maven POM configuration (compiler shim + plugin executions),
+building Lathe from source (`mvn install`),
+the `mvn process-test-classes` workflow,
+Neovim LSP client configuration (native `vim.lsp.config` for Neovim 0.11+),
+and basic troubleshooting (`LATHE_DEBUG=1`, missing `.lathe/`, missing params).
+The beta is distributed as source only — users clone the repo and build locally.
+
 ### Stale-POM detection
 Record POM fingerprints in `workspace.json` during `lathe:sync`.
 When `WorkspaceWatcher` sees a POM change after the last sync timestamp,
@@ -129,10 +138,6 @@ command.
 `WorkspaceManifestData`, `WorkspaceManifestWriter`, and `WorkspaceWatcher` all need additions;
 `didChangeWatchedFiles` currently handles deleted Java source files only.
 
-### Lightweight Watcher
-Replace `Files.walk` with targeted polling to eliminate disk I/O spikes.
-See [lathe-lightweight-watcher.md](planned/lathe-lightweight-watcher.md).
-
 ### Pre-beta Codebase Cleanups
 Clean up codebase redundancies and conceptual naming before the v0.1.0-beta release.
 Consolidate duplicate temp file writing and rethrow exception helpers.
@@ -140,17 +145,6 @@ Replace path-to-file conversions with modern `setLocationFromPaths` APIs.
 Limit `.lathe` walk depths to protect large project performance.
 Align test files to matching target packages, and strictly enforce the refined `var` rule (explicit types required after chained API calls).
 See [lathe-refactoring-renaming.md](planned/lathe-refactoring-renaming.md).
-
-### Reactor type-index follow-up
-Static dependency, JDK, and reactor output shards are in place.
-The server scans loaded reactor module output directories (`.lathe/<module>/classes/` and
-`.lathe/<module>/test-classes/`) on startup/reload,
-merges them into the in-memory `WorkspaceTypeIndex`,
-and refreshes the affected reactor shard after successful save-time full compiles.
-Deleted Java sources also remove matching `.class`/nested `.class` outputs and refresh the affected reactor shard.
-The remaining reactor-index work is any later performance optimization if startup scanning becomes measurable.
-This also unlocks missing-import suggestions and workspace symbols once those features query the reactor candidates.
-See [lathe-type-index.md](planned/lathe-type-index.md) and [lathe-reactor-type-index.md](planned/lathe-reactor-type-index.md).
 
 ### Completion presentation
 Adopt JDT LS-style completion rows:
@@ -173,11 +167,6 @@ editors read the file from the path embedded in the URI and open it as a read-on
 `nofile` buffer — no server round-trip, no per-editor path heuristics.
 See [lathe-source-uri-scheme.md](planned/lathe-source-uri-scheme.md) for the full design.
 
-### Signature Help
-Display method and constructor parameter names and types during argument entry.
-Parse enclosing invocation contexts and count commas at the cursor's nesting level to highlight the active parameter.
-See [lathe-signature-help.md](planned/lathe-signature-help.md).
-
 ### Missing-import code action
 Completion already inserts imports through completion item `additionalTextEdits`.
 Add `textDocument/codeAction` quick fixes for unresolved types that return the same import insertion as a
@@ -185,15 +174,44 @@ Add `textDocument/codeAction` quick fixes for unresolved types that return the s
 Users can then invoke "Import ..." from diagnostics without changing completion behavior.
 See [lathe-missing-import-code-action.md](planned/lathe-missing-import-code-action.md).
 
-### Editor integrations
-Keep Neovim clients thin: they launch `~/.cache/lathe/current/lathe-launcher.sh`
-and ask the server for Lathe-specific state via custom LSP requests.
-No client-side project model parsing.
+### Capability advertisement cleanup
+Stop advertising `documentRangeFormattingProvider` — the current implementation
+delegates to full-document formatting and does not restrict edits to the requested range.
+`documentOnTypeFormattingProvider` is also advertised but stubbed (returns no edits);
+remove it from advertised capabilities until the conservative indentation implementation
+lands post-beta.
+Both should be re-advertised once their implementations are complete.
+See [lathe-google-indent.md](planned/lathe-google-indent.md) for the onTypeFormatting design.
+
+### Neovim plugin packaging
+Package the existing `dev/nvim.lua` integration as an installable Neovim plugin.
+The beta plugin launches `~/.cache/lathe/current/lathe-launcher.sh`
+and keeps the client thin — no client-side project model parsing.
 VS Code plugin and tooling integration is deferred to post-beta.
 
 ---
 
 ## Milestone: Post-Beta Backlog
+
+### Lightweight Watcher
+Replace `Files.walk` with targeted polling to eliminate disk I/O spikes.
+See [lathe-lightweight-watcher.md](planned/lathe-lightweight-watcher.md).
+
+### Reactor type-index follow-up
+Static dependency, JDK, and reactor output shards are in place.
+The remaining reactor-index work is any later performance optimization if startup scanning becomes measurable.
+This also unlocks missing-import suggestions and workspace symbols once those features query the reactor candidates.
+See [lathe-type-index.md](planned/lathe-type-index.md) and [lathe-reactor-type-index.md](planned/lathe-reactor-type-index.md).
+
+### Signature Help
+Display method and constructor parameter names and types during argument entry.
+Parse enclosing invocation contexts and count commas at the cursor's nesting level to highlight the active parameter.
+See [lathe-signature-help.md](planned/lathe-signature-help.md).
+
+### onTypeFormatting
+Implement conservative `textDocument/onTypeFormatting` indentation hints for newline triggers.
+Currently stubbed and removed from advertised capabilities for the beta.
+See [lathe-google-indent.md](planned/lathe-google-indent.md).
 
 ### Run, test, and debug
 Adopt the design in [lathe-run-test-debug.md](planned/lathe-run-test-debug.md) to let the server manage Maven test/run executions
@@ -204,7 +222,7 @@ Depends on distribution and stale-workspace handling being solid first.
 Add reactor module entries to `workspace.json` after the params-file model is stable,
 to support staleness detection, UX hints, and faster server startup without duplicating classpaths.
 `WorkspaceManifestData` currently holds only schema version, workspace root, JDK source, and dependency sources;
-`WorkspaceModules` still discovers modules by scanning `lsp-params-*.json` at startup.
+`WorkspaceModuleRegistry` still discovers modules by scanning `lsp-params-*.json` at startup.
 
 ### Semantic token coverage for VS Code
 VS Code uses TextMate grammars rather than tree-sitter, so it relies on the LSP for all
@@ -223,5 +241,5 @@ and replace wildcard imports with direct imports when javac can prove the used s
 See [lathe-import-optimization.md](planned/lathe-import-optimization.md).
 
 ### Post-beta language features
-Rename, inlay hints, signature help, and richer code actions,
+Rename, inlay hints, and richer code actions,
 after the sync/distribution/type-index foundation is in place.
