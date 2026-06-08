@@ -80,6 +80,13 @@ Architecture is documented in [lathe-server-data-flow-recipe.md](done/lathe-serv
   Known gap: JDK and third-party dependency symbols are not yet restricted to open files only —
   they trigger a full reactor scan, attributing hundreds of files for common types like `String`.
   Fix is documented in section 15 of the design doc.
+- **Completion presentation** — JDT LS-style completion rows are implemented across four slices.
+  Type labels show simple names with package in `labelDetails.description`.
+  Method labels are bare names with parameter list in `labelDetails.detail` and return type in `labelDetails.description`.
+  The `TypeMirror` display formatter handles generic, array, wildcard, and primitive types.
+  Generic receiver substitution via `types.asMemberOf()` is in place for member-access completions.
+  Annotation-element completions route through `CompletionItemPresenter`.
+  See [lathe-completion-presentation.md](planned/lathe-completion-presentation.md).
 
 ---
 
@@ -145,18 +152,6 @@ Replace path-to-file conversions with modern `setLocationFromPaths` APIs.
 Limit `.lathe` walk depths to protect large project performance.
 Align test files to matching target packages, and strictly enforce the refined `var` rule (explicit types required after chained API calls).
 See [lathe-refactoring-renaming.md](planned/lathe-refactoring-renaming.md).
-
-### Completion presentation
-Adopt JDT LS-style completion rows:
-type labels stay simple while package names move into `labelDetails.description`,
-method labels become bare method names,
-parameter lists move into `labelDetails.detail`,
-and return types move into `labelDetails.description`.
-Add a display-only `TypeMirror` formatter so method,
-field,
-and generic receiver-substituted types render as concise Java types without changing semantic filtering.
-See [lathe-completion-presentation.md](planned/lathe-completion-presentation.md).
-General completion expectations and gap-discovery workflow live in [completion/](planned/completion/).
 
 ### `lathe-source://` URI scheme for external sources
 Definition jumps into JDK and dependency sources currently return `file://` URIs pointing
