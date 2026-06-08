@@ -70,8 +70,11 @@ After a large Java change, agents may run `mvn spotless:apply` before tests to n
 - Keep string literal lines within 100 columns where practical;
   split long messages across multiple lines instead of relying on very long literals.
 - `final` on all fields, local variables, and parameters — omit only when reassignment is needed
-- `var` only when the type is obvious from the right-hand side.
-  Use the explicit type otherwise, for example `JavaCompiler compiler = ToolProvider.getSystemJavaCompiler()`.
+- `var` MUST only be used when:
+  * RHS has an explicit constructor or obvious factory (e.g. `new HashMap()`, `Path.of()`)
+  * Terminal method of a builder/stream is self-evident (e.g. `.build()`, `.toList()`)
+  * Variable name explicitly includes the concept/type (e.g. `final var workspaceRoot`)
+  Otherwise, ALWAYS use explicit types (especially for non-obvious helper returns or generic names like `var result`).
 - Always use `{}` braces on `if`/`else`, even for single-line bodies
 - Leave a blank line after the closing `}` of every `if`/`else` block when another statement follows in the same scope.
 - Document magic numbers with an inline comment, for example `final int openLen = 3; // "/**"`.
@@ -89,6 +92,9 @@ After a large Java change, agents may run `mvn spotless:apply` before tests to n
 - Prefer KISS and DRY, but do not introduce abstractions before there is a clear repeated pattern.
 - Favor functional style for collection transformations and stream pipelines.
   Avoid mutable counters inside streams when a collector expresses the result clearly.
+- Functional vs. Imperative boundaries:
+  * DO use functional streams/lambdas for data transformation, mapping, filtering, and collectors.
+  * DO NOT use streams for stateful parsing/lexing (e.g. character scanning), queue-based/graph traversals, or operations with heavy side-effects. Prefer clean `for`/`while` loops and local state variables.
 - Use existing core utilities before adding local helpers.
   For timing, use `Stopwatch`.
   For filesystem helpers, prefer `FileUtil`.
