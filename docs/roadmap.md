@@ -121,6 +121,8 @@ Use these as the starting point when reprioritizing or slicing new work:
   JDK/dependency source files.
 - [lathe-type-index.md](planned/lathe-type-index.md) — implemented type-index design and remaining work such as
   missing-import suggestions, package-prefix completion, workspace symbols, and freshness checks.
+- [lathe-sibling-recompilation.md](planned/lathe-sibling-recompilation.md) — reference-index guided background
+  recompilation of closed intra-module callers after an API signature change.
 - [lathe-vscode-semantic-tokens.md](planned/lathe-vscode-semantic-tokens.md) — expanded semantic-token coverage for
   VS Code parity.
 
@@ -234,6 +236,13 @@ remove unused explicit imports,
 sort normal/static groups,
 and replace wildcard imports with direct imports when javac can prove the used symbols.
 See [lathe-import-optimization.md](planned/lathe-import-optimization.md).
+
+### Sibling recompilation
+When a saved file's public API changes, recompile closed intra-module callers in the background
+and publish diagnostics for them.
+Deferred because closed-file diagnostics have low visibility in Neovim without a workspace-diagnostics
+plugin (e.g. `trouble.nvim`); the primary beneficiary is VS Code.
+See [lathe-sibling-recompilation.md](planned/lathe-sibling-recompilation.md).
 
 ### Post-beta language features
 Rename, inlay hints, and richer code actions,
