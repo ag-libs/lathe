@@ -119,6 +119,8 @@ Use these as the starting point when reprioritizing or slicing new work:
 - [lathe-signature-help.md](planned/lathe-signature-help.md) — parameter types and names display during method/constructor invocation.
 - [lathe-source-uri-scheme.md](planned/lathe-source-uri-scheme.md) — `lathe-source://` URIs for read-only external
   JDK/dependency source files.
+- [lathe-stale-pom-detection.md](planned/lathe-stale-pom-detection.md) — POM fingerprint recording,
+  `WorkspaceWatcher` simplification, and `showMessageRequest`-based Neovim sync prompt.
 - [lathe-type-index.md](planned/lathe-type-index.md) — implemented type-index design and remaining work such as
   missing-import suggestions, package-prefix completion, workspace symbols, and freshness checks.
 - [lathe-sibling-recompilation.md](planned/lathe-sibling-recompilation.md) — reference-index guided background
@@ -140,12 +142,14 @@ and basic troubleshooting (`LATHE_DEBUG=1`, missing `.lathe/`, missing params).
 The beta is distributed as source only — users clone the repo and build locally.
 
 ### Stale-POM detection
-Record POM fingerprints in `workspace.json` during `lathe:sync`.
-When `WorkspaceWatcher` sees a POM change after the last sync timestamp,
-`LatheWorkspaceService.didChangeWatchedFiles` prompts the user in the editor to re-run the documented Maven lifecycle
-command.
-`WorkspaceManifestData`, `WorkspaceManifestWriter`, and `WorkspaceWatcher` all need additions;
-`didChangeWatchedFiles` currently handles deleted Java source files only.
+Record all reactor POM mtimes in `workspace.json` during `lathe:sync`.
+On each workspace reload `WorkspaceSession` compares stored POM mtimes against current
+disk values; if any differ, send `window/showMessageRequest` prompting the user to
+re-run `mvn process-test-classes`.
+The Neovim plugin handles the "Sync" response by running the command locally via `jobstart`.
+Also simplifies `WorkspaceWatcher`: remove params-file polling, watch only `workspace.json`
+mtime, eliminating spurious reloads on every Maven compilation.
+See [lathe-stale-pom-detection.md](planned/lathe-stale-pom-detection.md) for the full design.
 
 ### Pre-beta Codebase Cleanups
 Clean up codebase redundancies and conceptual naming before the v0.1.0-beta release.
