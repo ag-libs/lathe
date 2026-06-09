@@ -48,8 +48,8 @@ Remove params file polling entirely.
 `poll()` returns a `PollResult` enum distinguishing three outcomes:
 
 - `NO_CHANGE` — nothing to do
-- `RELOAD` — `workspace.json` mtime changed; server must reload workspace state
-- `POM_STALE` — one or more reactor POM files changed since the last sync baseline;
+- `WORKSPACE_CHANGED` — `workspace.json` mtime changed; server must reload workspace state
+- `POM_CHANGED` — one or more reactor POM files changed since the last sync baseline;
   server must prompt the user to re-sync
 
 `workspace.json` is written by `lathe:sync` as its final step, atomically, and only when
@@ -69,7 +69,7 @@ unnecessary — the server's existing state is correct.
 `.lathe/workspace.json` does not exist yet.
 The server starts with no manifest and shows the "Run `mvn process-test-classes`" prompt.
 After the first sync, `workspace.json` appears and the watcher detects the new mtime
-(from zero), returning `RELOAD`. Covered.
+(from zero), returning `WORKSPACE_CHANGED`. Covered.
 
 ### POM fingerprint tracking inside `WorkspaceWatcher`
 
@@ -96,12 +96,12 @@ a POM without changing its content (e.g. `touch pom.xml`, certain git operations
 The baseline is updated by `WorkspaceWatcher.updatePomPaths(List<Path>)`, called after
 every workspace reload with the POM path list read from the new manifest.
 On the initial call the watcher records the current disk fingerprint as the starting
-baseline — so no spurious `POM_STALE` fires immediately after a sync.
+baseline — so no spurious `POM_CHANGED` fires immediately after a sync.
 
 ### `WorkspaceWatcher` changes summary
 
 - Remove `lastParams` field, `Fingerprint` record, and `paramsFingerprint()` method.
-- `poll()` returns `PollResult` (enum: `NO_CHANGE`, `RELOAD`, `POM_STALE`).
+- `poll()` returns `PollResult` (enum: `NO_CHANGE`, `WORKSPACE_CHANGED`, `POM_CHANGED`).
 - Add `updatePomPaths(List<Path> absPomPaths)` — replaces the baseline map and records
   current disk fingerprints as the new starting point.
 - `detectPomStaleness()` iterates `pomBaseline`, compares each path's current
@@ -156,14 +156,14 @@ independent of whether `workspace.json` changed.
 This means branch switching is detected as soon as the watcher's next 2-second poll fires —
 no sync is required to trigger the check.
 
-Priority: `RELOAD` takes precedence over `POM_STALE` in the same poll cycle.
-If `workspace.json` changed (a sync just ran), the watcher returns `RELOAD`;
+Priority: `WORKSPACE_CHANGED` takes precedence over `POM_CHANGED` in the same poll cycle.
+If `workspace.json` changed (a sync just ran), the watcher returns `WORKSPACE_CHANGED`;
 `WorkspaceSession` reloads and calls `updatePomPaths()` with the new list,
-resetting the baseline. No `POM_STALE` notification fires for the just-completed sync.
+resetting the baseline. No `POM_CHANGED` notification fires for the just-completed sync.
 
 ### Notification
 
-When `WorkspaceSession.checkForChanges()` receives `POM_STALE`:
+When `WorkspaceSession.checkForChanges()` receives `POM_CHANGED`:
 
 Send `window/showMessageRequest` at `WARNING` level:
 
@@ -174,7 +174,7 @@ Maven project changed. Run 'mvn process-test-classes' to refresh Lathe.
 with two actions: `"Sync"` and `"Later"`.
 
 Send at most once per staleness detection cycle.
-After the user responds (either action), the watcher suppresses further `POM_STALE`
+After the user responds (either action), the watcher suppresses further `POM_CHANGED`
 returns until the POM baseline is reset by the next `updatePomPaths()` call
 (i.e., after the next sync and reload).
 
@@ -223,10 +223,10 @@ When the job completes, the tracking state is cleared.
 1. Compilation phases — shim writes params files for each module.
    Params file changes do **not** trigger server reloads (Part 1 removed params watching).
 2. `process-test-classes` — `lathe:sync` writes new `workspace.json` atomically.
-3. `WorkspaceWatcher` detects `workspace.json` mtime change → returns `RELOAD`.
+3. `WorkspaceWatcher` detects `workspace.json` mtime change → returns `WORKSPACE_CHANGED`.
 4. `WorkspaceSession` reloads, then calls `watcher.updatePomPaths(newManifest.pomPaths())`.
 5. `updatePomPaths()` records fresh disk fingerprints as the new baseline →
-   watcher's next poll sees no difference → no `POM_STALE`.
+   watcher's next poll sees no difference → no `POM_CHANGED`.
 
 Exactly one reload, at the end of the sync. No partial reloads mid-build.
 No lock files, no debounce, no inter-process coordination.
@@ -242,8 +242,8 @@ git switch feature-branch
   → workspace.json mtime unchanged
 
   At next WorkspaceWatcher poll (within 2s):
-  → workspace.json unchanged → not RELOAD
-  → POM mtime/size differs from baseline → POM_STALE
+  → workspace.json unchanged → not WORKSPACE_CHANGED
+  → POM mtime/size differs from baseline → POM_CHANGED
   → WorkspaceSession sends showMessageRequest
 
   [user picks "Sync"]
@@ -251,9 +251,9 @@ git switch feature-branch
 
   [sync completes]
   → lathe:sync writes new workspace.json
-  → watcher returns RELOAD
+  → watcher returns WORKSPACE_CHANGED
   → WorkspaceSession reloads, calls updatePomPaths()
-  → baseline reset → no further POM_STALE
+  → baseline reset → no further POM_CHANGED
 ```
 
 If the user switched to a branch with identical POM content (same size and same mtime —
@@ -269,18 +269,18 @@ no notification fires — the workspace is already correct.
 | `WorkspaceWatcher` | Remove params fingerprint; add `PollResult` enum; add per-POM `(mtime, size)` baseline; add `updatePomPaths()`  |
 | `WorkspaceManifestData` | Add `List<String> pomPaths` (optional field, no mtimes) |
 | `WorkspaceManifestWriter` (SyncMojo) | Populate `pomPaths` from Maven reactor project list |
-| `WorkspaceSession` | Switch on `PollResult`; call `watcher.updatePomPaths()` after reload; send `showMessageRequest` on `POM_STALE` |
+| `WorkspaceSession` | Switch on `PollResult`; call `watcher.updatePomPaths()` after reload; send `showMessageRequest` on `POM_CHANGED` |
 | Neovim plugin | Handle `showMessageRequest` response; run `mvn process-test-classes` via `jobstart`; suppress duplicate dialogs |
 
 ## Tests
 
 - `WorkspaceWatcher`: params file mtime change alone returns `NO_CHANGE`.
-- `WorkspaceWatcher`: `workspace.json` mtime change returns `RELOAD`.
-- `WorkspaceWatcher`: POM mtime change after `updatePomPaths()` returns `POM_STALE`.
+- `WorkspaceWatcher`: `workspace.json` mtime change returns `WORKSPACE_CHANGED`.
+- `WorkspaceWatcher`: POM mtime change after `updatePomPaths()` returns `POM_CHANGED`.
 - `WorkspaceWatcher`: POM size-only change (same mtime) returns `NO_CHANGE` (touch simulation).
 - `WorkspaceWatcher`: after `updatePomPaths()` resets baseline, previously stale POM
   returns `NO_CHANGE`.
 - `WorkspaceManifestData`: round-trip JSON serialization of `pomPaths`; missing field
   deserializes as empty list.
-- `WorkspaceSession`: `POM_STALE` result triggers `showMessageRequest`; second `POM_STALE`
+- `WorkspaceSession`: `POM_CHANGED` result triggers `showMessageRequest`; second `POM_CHANGED`
   in same cycle is suppressed after user responds.
