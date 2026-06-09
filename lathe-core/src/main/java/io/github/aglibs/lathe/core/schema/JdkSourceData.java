@@ -22,22 +22,4 @@ public record JdkSourceData(
             v -> v.notNull(home, "home").notNull(sourceDir, "sourceDir"))
         .validate();
   }
-
-  public static JdkSourceData present(
-      final String vendor,
-      final String version,
-      final Path home,
-      final Path sourceZip,
-      final Path sourceDir) {
-    return new JdkSourceData(
-        vendor, version, SourceStatus.PRESENT, home, sourceZip, sourceDir, null);
-  }
-
-  public static JdkSourceData missing(final String vendor, final String version, final Path home) {
-    return new JdkSourceData(vendor, version, SourceStatus.MISSING, home, null, null, null);
-  }
-
-  public boolean isPresent() {
-    return status == SourceStatus.PRESENT;
-  }
 }

@@ -45,6 +45,8 @@ import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.LocationLink;
+import org.eclipse.lsp4j.MessageParams;
+import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.Range;
@@ -197,7 +199,7 @@ final class WorkspaceSession {
     // Capture declaring module synchronously on the lathe-worker thread before any async hand-off
     final var cursorConfig = workspace.moduleSourceFor(toPath(uri));
 
-    final var t = Stopwatch.start();
+    final Stopwatch t = Stopwatch.start();
     final var targetName = new AtomicReference<String>();
     return cursorWorker
         .resolveTarget(request)
@@ -526,6 +528,7 @@ final class WorkspaceSession {
             });
     old.close();
     scheduleAllOpenFiles();
+    client.showMessage(new MessageParams(MessageType.Info, "Lathe: workspace reloaded."));
   }
 
   private void compileAndPublish(final OpenDocument snapshot, final CompileMode mode) {
