@@ -91,6 +91,7 @@ Architecture is documented in [lathe-server-data-flow-recipe.md](done/lathe-serv
   `WorkspaceSession` polls every 2 seconds, displaying a `window/showMessageRequest` when POM changes are detected, protected by an event-loop-safe pending guard.
   `SyncMojo` writes reactor POM relative paths into `workspace.json` during `lathe:sync`.
   See [lathe-stale-pom-detection.md](done/lathe-stale-pom-detection.md).
+- **Capability advertisement cleanup** — stopped advertising `documentRangeFormattingProvider` (stubbed to format full-document) and `documentOnTypeFormattingProvider` (stubbed to return empty edits list) to prevent incorrect editor behavior.
 
 ---
 
@@ -171,14 +172,7 @@ Add `textDocument/codeAction` quick fixes for unresolved types that return the s
 Users can then invoke "Import ..." from diagnostics without changing completion behavior.
 See [lathe-missing-import-code-action.md](planned/lathe-missing-import-code-action.md).
 
-### Capability advertisement cleanup
-Stop advertising `documentRangeFormattingProvider` — the current implementation
-delegates to full-document formatting and does not restrict edits to the requested range.
-`documentOnTypeFormattingProvider` is also advertised but stubbed (returns no edits);
-remove it from advertised capabilities until the conservative indentation implementation
-lands post-beta.
-Both should be re-advertised once their implementations are complete.
-See [lathe-google-indent.md](planned/lathe-google-indent.md) for the onTypeFormatting design.
+
 
 ### Neovim plugin packaging
 Package the existing `dev/nvim.lua` integration as an installable Neovim plugin.
