@@ -39,6 +39,9 @@ import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
+import org.eclipse.lsp4j.CodeAction;
+import org.eclipse.lsp4j.CodeActionContext;
+import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.CompletionContext;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
@@ -411,6 +414,23 @@ final class WorkspaceSession {
                         logAndReturn(
                             ex, "[completion] failed for " + uri, CompletionOutcome.of(List.of()))),
         CompletionOutcome.of(List.of()));
+  }
+
+  CompletableFuture<List<Either<Command, CodeAction>>> codeActionFuture(
+      final String uri, final CodeActionContext context) {
+    final var openFile = openDocuments.get(uri);
+    if (openFile == null) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
+    final var indexSnapshot = typeIndex;
+    return routeFeature(
+        uri,
+        moduleWorker ->
+            moduleWorker
+                .codeAction(uri, openFile.content(), openFile.version(), context, indexSnapshot)
+                .exceptionally(ex -> logAndReturn(ex, "[codeAction] failed for " + uri, List.of())),
+        List.of());
   }
 
   CompletableFuture<SemanticTokens> semanticTokensFuture(final String uri) {

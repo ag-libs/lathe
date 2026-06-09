@@ -2,15 +2,18 @@ package io.github.aglibs.lathe.server.analysis;
 
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.core.Stopwatch;
+import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionEngine;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionRequest;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
@@ -18,6 +21,10 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.JavaFileObject;
+import org.eclipse.lsp4j.CodeAction;
+import org.eclipse.lsp4j.CodeActionContext;
+import org.eclipse.lsp4j.CodeActionKind;
+import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.CompletionContext;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
@@ -26,6 +33,9 @@ import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.TextEdit;
+import org.eclipse.lsp4j.WorkspaceEdit;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 public final class SourceAnalysisSession implements AutoCloseable {
 
@@ -150,19 +160,13 @@ public final class SourceAnalysisSession implements AutoCloseable {
       final int version,
       final ReferenceTarget target,
       final boolean includeDeclaration) {
-    CachedFileAnalysis cached = currentCache(uri, content);
-    if (cached == null || cached.analysis().tree() == null) {
-      compile(uri, content, version, CompileMode.OPEN);
-      cached = cache.get(uri);
-    }
-
-    if (cached == null) {
+    final var analysis = ensureAttributedAnalysis(uri, content, version);
+    if (analysis == null) {
       return List.of();
     }
 
     try {
-      final var results =
-          ReferenceLocator.references(cached.analysis(), target, uri, includeDeclaration);
+      final var results = ReferenceLocator.references(analysis, target, uri, includeDeclaration);
       LOG.fine(
           () ->
               "[references] uri=%s element=%s hits=%d"
@@ -209,6 +213,113 @@ public final class SourceAnalysisSession implements AutoCloseable {
                         .map(l -> "%s:%d".formatted(l.getUri(), l.getRange().getStart().getLine()))
                         .orElse("not found")));
     return result;
+  }
+
+  public List<Either<Command, CodeAction>> codeAction(
+      final String uri,
+      final String content,
+      final int version,
+      final CodeActionContext context,
+      final WorkspaceTypeIndex typeIndex) {
+    final var diagnostics = context.getDiagnostics();
+    if (diagnostics == null || diagnostics.isEmpty()) {
+      return List.of();
+    }
+
+    final var analysis = ensureAttributedAnalysis(uri, content, version);
+    if (analysis == null) {
+      return List.of();
+    }
+
+    final var importAnalyzer = new ImportAnalyzer(analysis);
+    final var insertionRange = importAnalyzer.insertionRange();
+    if (insertionRange == null) {
+      return List.of();
+    }
+
+    final var alreadyImported = importAnalyzer.importedQualifiedNames();
+    final var actions = new ArrayList<Either<Command, CodeAction>>();
+
+    for (final var diag : diagnostics) {
+      if (!(diag.getData() instanceof String simpleName) || simpleName.isEmpty()) {
+        continue;
+      }
+
+      for (final var entry : typeIndex.search(simpleName, 100)) {
+        if (!entry.simpleName().equals(simpleName)) {
+          continue;
+        }
+
+        buildQuickFix(uri, diag, entry, analysis, alreadyImported, insertionRange)
+            .map(Either::<Command, CodeAction>forRight)
+            .ifPresent(actions::add);
+      }
+    }
+
+    return actions;
+  }
+
+  private AttributedFileAnalysis ensureAttributedAnalysis(
+      final String uri, final String content, final int version) {
+    final var existing = currentCache(uri, content);
+    if (existing == null || existing.analysis().tree() == null) {
+      compile(uri, content, version, CompileMode.OPEN);
+    }
+
+    final var cached = cache.get(uri);
+    return cached != null ? cached.analysis() : null;
+  }
+
+  private Optional<CodeAction> buildQuickFix(
+      final String uri,
+      final Diagnostic diag,
+      final TypeIndexEntry entry,
+      final AttributedFileAnalysis analysis,
+      final Set<String> alreadyImported,
+      final Range insertionRange) {
+    if (entry.packageName().isEmpty()) {
+      return Optional.empty();
+    }
+
+    final String fqName = entry.packageName() + "." + entry.simpleName();
+    if (alreadyImported.contains(fqName)) {
+      return Optional.empty();
+    }
+
+    final var typeEl = analysis.elements().getTypeElement(fqName);
+    if (typeEl == null) {
+      return Optional.empty();
+    }
+
+    final long offset =
+        SourceLocator.toOffset(
+            analysis.tree(),
+            diag.getRange().getStart().getLine(),
+            diag.getRange().getStart().getCharacter());
+    final var path = SourceLocator.pathAt(analysis.trees(), analysis.tree(), offset);
+    final var scope = path != null ? analysis.trees().getScope(path) : null;
+    if (scope != null) {
+      try {
+        if (!analysis.trees().isAccessible(scope, typeEl)) {
+          return Optional.empty();
+        }
+      } catch (final IllegalArgumentException ignored) {
+        // defaults to accessible on unexpected compiler states
+      }
+    }
+
+    final var action = new CodeAction();
+    action.setTitle("Import '" + fqName + "'");
+    action.setKind(CodeActionKind.QuickFix);
+    action.setDiagnostics(List.of(diag));
+
+    final var edit = new WorkspaceEdit();
+    final var importText = "import " + fqName + ";\n";
+    final var textEdit = new TextEdit(insertionRange, importText);
+    edit.setChanges(Map.of(uri, List.of(textEdit)));
+    action.setEdit(edit);
+
+    return Optional.of(action);
   }
 
   public void close() {
@@ -280,6 +391,18 @@ public final class SourceAnalysisSession implements AutoCloseable {
       end = new Position(line, col + 1);
     }
 
-    return new Diagnostic(new Range(start, end), d.getMessage(Locale.ENGLISH), severity, "lathe");
+    final var diagnostic =
+        new Diagnostic(new Range(start, end), d.getMessage(Locale.ENGLISH), severity, "lathe");
+    if (d.getCode() != null) {
+      diagnostic.setCode(d.getCode());
+      if (d.getCode().startsWith("compiler.err.cant.resolve")
+          && startOffset != javax.tools.Diagnostic.NOPOS
+          && endOffset > startOffset
+          && endOffset <= content.length()) {
+        diagnostic.setData(content.substring((int) startOffset, (int) endOffset));
+      }
+    }
+
+    return diagnostic;
   }
 }

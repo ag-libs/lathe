@@ -108,6 +108,14 @@ final class LatheTextDocumentService implements TextDocumentService {
   }
 
   @Override
+  public CompletableFuture<List<Either<Command, CodeAction>>> codeAction(
+      final CodeActionParams params) {
+    final var uri = params.getTextDocument().getUri();
+    final var context = params.getContext();
+    return worker.submit(() -> session.codeActionFuture(uri, context)).thenCompose(f -> f);
+  }
+
+  @Override
   public CompletableFuture<SemanticTokens> semanticTokensFull(final SemanticTokensParams params) {
     final var uri = params.getTextDocument().getUri();
     return worker.submit(() -> session.semanticTokensFuture(uri)).thenCompose(f -> f);

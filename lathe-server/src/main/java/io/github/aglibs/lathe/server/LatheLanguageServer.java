@@ -6,6 +6,8 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.logging.Logger;
+import org.eclipse.lsp4j.CodeActionKind;
+import org.eclipse.lsp4j.CodeActionOptions;
 import org.eclipse.lsp4j.CompletionOptions;
 import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.InitializeResult;
@@ -59,6 +61,8 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     capabilities.setDocumentFormattingProvider(true);
     capabilities.setDefinitionProvider(true);
     capabilities.setReferencesProvider(true);
+    final var codeActionOptions = new CodeActionOptions(List.of(CodeActionKind.QuickFix));
+    capabilities.setCodeActionProvider(codeActionOptions);
     return capabilities;
   }
 

@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.analysis.completion;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
+import io.github.aglibs.lathe.server.analysis.TempSourceCompiler;
 import java.io.IOException;
 import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.InsertTextFormat;
@@ -156,7 +157,7 @@ class CompletionPresentationTest extends CompletionTestSupport {
   void completionItem_importEdit_insertedAfterLastExistingImport() throws IOException {
     localFixture =
         new CompletionFixture(
-            CompletionFixture.typeIndex(
+            TempSourceCompiler.typeIndex(
                 tmp.resolve("index.json"),
                 CompletionFixture.typeEntry("ArrayList", "java.util.ArrayList", TypeKind.CLASS)));
     final var items =

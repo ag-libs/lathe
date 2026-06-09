@@ -4,6 +4,11 @@ import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.core.Json;
+import io.github.aglibs.lathe.core.typeindex.DependencyTypeIndexOrigin;
+import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
+import io.github.aglibs.lathe.core.typeindex.TypeIndexFile;
+import io.github.aglibs.lathe.core.typeindex.TypeIndexOrigin;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
@@ -72,6 +77,18 @@ public final class TempSourceCompiler implements JavaSourceCompiler {
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }
+  }
+
+  public static WorkspaceTypeIndex typeIndex(final Path shardPath, final TypeIndexEntry... entries)
+      throws IOException {
+    Json.write(
+        new TypeIndexFile(
+            "v1",
+            TypeIndexOrigin.dependency(
+                new DependencyTypeIndexOrigin("test:lib:1.0", "/lib.jar", 0L, 0L)),
+            List.of(entries)),
+        shardPath);
+    return WorkspaceTypeIndex.build(List.of(shardPath));
   }
 
   @Override

@@ -19,10 +19,14 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import org.eclipse.lsp4j.CodeAction;
+import org.eclipse.lsp4j.CodeActionContext;
+import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.CompletionContext;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 /** Called from the server event loop; executes all compilation work on its own module thread. */
 public final class CompilationWorker {
@@ -126,6 +130,15 @@ public final class CompilationWorker {
       final CompletionContext context,
       final WorkspaceTypeIndex typeIndex) {
     return submit(ctx -> ctx.complete(uri, content, version, position, context, typeIndex));
+  }
+
+  public CompletableFuture<List<Either<Command, CodeAction>>> codeAction(
+      final String uri,
+      final String content,
+      final int version,
+      final CodeActionContext context,
+      final WorkspaceTypeIndex typeIndex) {
+    return submit(ctx -> ctx.codeAction(uri, content, version, context, typeIndex));
   }
 
   public CompletableFuture<List<SemanticToken>> semanticTokens(

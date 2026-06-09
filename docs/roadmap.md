@@ -92,6 +92,7 @@ Architecture is documented in [lathe-server-data-flow-recipe.md](done/lathe-serv
   `SyncMojo` writes reactor POM relative paths into `workspace.json` during `lathe:sync`.
   See [lathe-stale-pom-detection.md](done/lathe-stale-pom-detection.md).
 - **Capability advertisement cleanup** — stopped advertising `documentRangeFormattingProvider` (stubbed to format full-document) and `documentOnTypeFormattingProvider` (stubbed to return empty edits list) to prevent incorrect editor behavior.
+- **Missing-import code action** — quick-fix code actions (`window/codeAction`) for unresolved type symbols query the type index and insert the appropriate `import` statement. Reuses the existing completion import insertion range and checks. Tested with various file package/import structures and end-to-end integration tests. See [lathe-missing-import-code-action.md](done/lathe-missing-import-code-action.md).
 
 ---
 
@@ -113,7 +114,7 @@ Use these as the starting point when reprioritizing or slicing new work:
   including unused import removal and conservative wildcard expansion.
 - [lathe-lightweight-watcher.md](planned/lathe-lightweight-watcher.md) —
   lightweight module-targeted workspace watcher to replace recursive directory walking.
-- [lathe-missing-import-code-action.md](planned/lathe-missing-import-code-action.md) —
+- [lathe-missing-import-code-action.md](done/lathe-missing-import-code-action.md) —
   LSP quick-fix code actions for unresolved types,
   reusing the existing completion import insertion behavior without replacing completion-side edits.
 - [lathe-reactor-type-index.md](planned/lathe-reactor-type-index.md) — implemented reactor type-index design and
@@ -164,13 +165,6 @@ Replace with a `lathe-source://` scheme: one line in `SourceAnalysisSession.defi
 editors read the file from the path embedded in the URI and open it as a read-only
 `nofile` buffer — no server round-trip, no per-editor path heuristics.
 See [lathe-source-uri-scheme.md](planned/lathe-source-uri-scheme.md) for the full design.
-
-### Missing-import code action
-Completion already inserts imports through completion item `additionalTextEdits`.
-Add `textDocument/codeAction` quick fixes for unresolved types that return the same import insertion as a
-`WorkspaceEdit`.
-Users can then invoke "Import ..." from diagnostics without changing completion behavior.
-See [lathe-missing-import-code-action.md](planned/lathe-missing-import-code-action.md).
 
 
 

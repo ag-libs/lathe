@@ -1,10 +1,6 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
-import io.github.aglibs.lathe.core.Json;
-import io.github.aglibs.lathe.core.typeindex.DependencyTypeIndexOrigin;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
-import io.github.aglibs.lathe.core.typeindex.TypeIndexFile;
-import io.github.aglibs.lathe.core.typeindex.TypeIndexOrigin;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import io.github.aglibs.lathe.server.TestCompiler;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
@@ -80,14 +76,7 @@ final class CompletionFixture implements AutoCloseable {
 
   static WorkspaceTypeIndex typeIndex(final Path shardPath, final TypeIndexEntry... entries)
       throws IOException {
-    Json.write(
-        new TypeIndexFile(
-            "v1",
-            TypeIndexOrigin.dependency(
-                new DependencyTypeIndexOrigin("test:lib:1.0", "/lib.jar", 0L, 0L)),
-            List.of(entries)),
-        shardPath);
-    return WorkspaceTypeIndex.build(List.of(shardPath));
+    return TempSourceCompiler.typeIndex(shardPath, entries);
   }
 
   static TypeIndexEntry typeEntry(
