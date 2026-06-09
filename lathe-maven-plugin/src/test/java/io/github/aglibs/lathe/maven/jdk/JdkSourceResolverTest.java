@@ -1,9 +1,7 @@
-package io.github.aglibs.lathe.maven;
+package io.github.aglibs.lathe.maven.jdk;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.aglibs.lathe.maven.jdk.JdkSource;
-import io.github.aglibs.lathe.maven.jdk.JdkSourceResolver;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -39,7 +37,6 @@ class JdkSourceResolverTest {
     assertThat(result.isPresent()).isTrue();
     assertThat(result.home()).isEqualTo(tmp);
     assertThat(result.sourceZip()).isEqualTo(tmp.resolve("lib/src.zip"));
-    // sourceDir is <cacheRoot>/jdks/<sanitizedVendor>/<sanitizedVersion>
     assertThat(result.sourceDir().getParent().getParent().getFileName().toString())
         .isEqualTo("jdks");
     assertThat(result.sourceDir().toString()).doesNotContain(" ");

@@ -1,6 +1,7 @@
 # Lathe — Refactoring & Renaming (Completed)
 
-All items below were completed across commits `789c663` and the subsequent refactoring session.
+All items below were completed across commits `789c663`, the subsequent refactoring session,
+and the pre-beta test co-location pass.
 
 ---
 
@@ -71,3 +72,17 @@ All four renamings completed:
 - **`ModuleSourceWorker` → `CompilationWorker`**: avoids confusion with the external compilation path.
 - **`ServerWorker` → `ServerEventLoop`**: matches its single-threaded event-loop behaviour.
 - **`SentinelResult` → `SentinelInjectionResult`**: disambiguates from the AST-level `ParsedSentinel`.
+
+---
+
+## 5. Test Package & Module Co-Location
+
+### `SyncMojoTest` → `LatheFlagsTest` in `lathe-core`
+`SyncMojoTest` tested only `LatheFlags` (a `lathe-core` class).
+Moved to `lathe-core` and renamed `LatheFlagsTest`; test method names updated to
+`methodName_condition_result` style.
+
+### Package Structure Alignment
+`DependencySourceTest`, `DependencySourceSyncTest`, and `JdkSourceResolverTest` relocated from
+root package `io.github.aglibs.lathe.maven` to their matching production subpackages
+(`io.github.aglibs.lathe.maven.dependency` and `io.github.aglibs.lathe.maven.jdk`).

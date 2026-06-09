@@ -93,6 +93,8 @@ Architecture is documented in [lathe-server-data-flow-recipe.md](done/lathe-serv
   See [lathe-stale-pom-detection.md](done/lathe-stale-pom-detection.md).
 - **Capability advertisement cleanup** — stopped advertising `documentRangeFormattingProvider` (stubbed to format full-document) and `documentOnTypeFormattingProvider` (stubbed to return empty edits list) to prevent incorrect editor behavior.
 - **Missing-import code action** — quick-fix code actions (`window/codeAction`) for unresolved type symbols query the type index and insert the appropriate `import` statement. Reuses the existing completion import insertion range and checks. Tested with various file package/import structures and end-to-end integration tests. See [lathe-missing-import-code-action.md](done/lathe-missing-import-code-action.md).
+- **Pre-beta codebase cleanups** — all items in the refactoring/renaming plan completed: DRY/KISS helpers, `setLocationFromPaths` migration, walk depth limit, `var` rule enforcement, test naming and `@Nested` flattening, four conceptual renamings, and test co-location fixes (`SyncMojoTest` → `LatheFlagsTest` in `lathe-core`; `DependencySourceTest`, `DependencySourceSyncTest`, `JdkSourceResolverTest` moved to matching subpackages).
+  See [lathe-refactoring-renaming.md](done/lathe-refactoring-renaming.md).
 
 ---
 
@@ -148,14 +150,6 @@ and basic troubleshooting (`LATHE_DEBUG=1`, missing `.lathe/`, missing params).
 The beta is distributed as source only — users clone the repo and build locally.
 
 
-
-### Pre-beta Codebase Cleanups
-Clean up codebase redundancies and conceptual naming before the v0.1.0-beta release.
-Consolidate duplicate temp file writing and rethrow exception helpers.
-Replace path-to-file conversions with modern `setLocationFromPaths` APIs.
-Limit `.lathe` walk depths to protect large project performance.
-Align test files to matching target packages, and strictly enforce the refined `var` rule (explicit types required after chained API calls).
-See [lathe-refactoring-renaming.md](planned/lathe-refactoring-renaming.md).
 
 ### `lathe-source://` URI scheme for external sources
 Definition jumps into JDK and dependency sources currently return `file://` URIs pointing

@@ -1,11 +1,10 @@
-package io.github.aglibs.lathe.maven;
+package io.github.aglibs.lathe.maven.dependency;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
-import io.github.aglibs.lathe.maven.dependency.DependencySource;
-import io.github.aglibs.lathe.maven.dependency.DependencySourceSync;
+import io.github.aglibs.lathe.maven.ZipFixture;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;

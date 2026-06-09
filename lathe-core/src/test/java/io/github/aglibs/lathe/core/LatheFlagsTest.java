@@ -1,12 +1,11 @@
-package io.github.aglibs.lathe.maven;
+package io.github.aglibs.lathe.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.aglibs.lathe.core.LatheFlags;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
-class SyncMojoTest {
+class LatheFlagsTest {
 
   @AfterEach
   void clearProperty() {
@@ -14,18 +13,18 @@ class SyncMojoTest {
   }
 
   @Test
-  void latheFlags_notDisabledByDefault() {
+  void isDisabled_notDisabledByDefault() {
     assertThat(LatheFlags.isDisabled()).isFalse();
   }
 
   @Test
-  void latheFlags_disabledWhenSkipTrue() {
+  void isDisabled_trueWhenSkipPropertyIsTrue() {
     System.setProperty("lathe.skip", "true");
     assertThat(LatheFlags.isDisabled()).isTrue();
   }
 
   @Test
-  void latheFlags_enabledWhenSkipFalse() {
+  void isDisabled_falseWhenSkipPropertyIsFalse() {
     System.setProperty("lathe.skip", "false");
     assertThat(LatheFlags.isDisabled()).isFalse();
   }
