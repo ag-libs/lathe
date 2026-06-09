@@ -83,13 +83,16 @@ private Map<Path, PomFingerprint> pomBaseline = Map.of();
 This is the same pattern as `lastManifestMtime` for `workspace.json` — a lightweight
 in-memory snapshot compared against current disk state on each poll.
 
-Size is included alongside mtime to reduce false positives from operations that touch
-a POM without changing its content (e.g. `touch pom.xml`, certain git operations):
+Size and mtime are both tracked. For simplicity (KISS) and correctness,
+the watcher detects a change if either the modification time or the size differs
+from the baseline. This ensures same-length edits (such as version bumps) are
+reliably detected, even though it means a manual `touch pom.xml` will trigger a
+false positive.
 
 | Change | mtime | size | detected? |
 |---|---|---|---|
 | Branch switch (real dep change) | ✅ | ✅ | ✅ |
-| `touch pom.xml` (no content change) | ✅ | ❌ | ❌ no false positive |
+| `touch pom.xml` (no content change) | ✅ | ❌ | ✅ (accepted false positive) |
 | Same-length edit (e.g. version bump) | ✅ | ❌ | ✅ via mtime |
 | No change | ❌ | ❌ | ❌ correct |
 
@@ -301,7 +304,7 @@ no notification fires — the workspace is already correct.
 - `WorkspaceWatcher`: params file mtime change alone returns `NO_CHANGE`.
 - `WorkspaceWatcher`: `workspace.json` mtime change returns `WORKSPACE_CHANGED`.
 - `WorkspaceWatcher`: POM mtime+size change after `updatePomPaths()` returns `POM_CHANGED`.
-- `WorkspaceWatcher`: mtime-only change (same size, touch simulation) returns `NO_CHANGE`.
+- `WorkspaceWatcher`: mtime-only change (same size, touch simulation) returns `POM_CHANGED`.
 - `WorkspaceWatcher`: `updatePomPaths()` with current disk state resets baseline;
   subsequent poll returns `NO_CHANGE`.
 - `WorkspaceWatcher`: `WORKSPACE_CHANGED` takes priority over `POM_CHANGED`

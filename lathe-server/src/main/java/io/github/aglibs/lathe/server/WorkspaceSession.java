@@ -45,12 +45,14 @@ import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.LocationLink;
+import org.eclipse.lsp4j.MessageActionItem;
 import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.SemanticTokens;
+import org.eclipse.lsp4j.ShowMessageRequestParams;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.LanguageClient;
@@ -71,6 +73,7 @@ final class WorkspaceSession {
   private WorkspaceTypeIndex typeIndex = WorkspaceTypeIndex.empty();
   private final Map<ModuleSourceConfig, List<TypeIndexEntry>> reactorShards = new LinkedHashMap<>();
   private WorkspaceWatcher watcher;
+  private boolean pomNotificationPending;
   private final Map<String, OpenDocument> openDocuments = new HashMap<>();
   private long nextGeneration;
 
@@ -90,6 +93,7 @@ final class WorkspaceSession {
     scanReactorShards();
     typeIndex = WorkspaceTypeIndex.build(manifest.typeIndexShardPaths(), reactorShards.values());
     watcher = new WorkspaceWatcher(root);
+    watcher.updatePomPaths(manifest.pomPaths());
     worker.scheduleAtFixedRate(2_000L, this::checkForChanges);
   }
 
@@ -503,14 +507,38 @@ final class WorkspaceSession {
   }
 
   private void checkForChanges() {
-    if (watcher != null && watcher.poll()) {
-      reload();
+    if (watcher == null) {
+      return;
+    }
+
+    switch (watcher.poll()) {
+      case WORKSPACE_CHANGED -> reload();
+      case POM_CHANGED -> {
+        if (!pomNotificationPending) {
+          pomNotificationPending = true;
+          final var request =
+              new ShowMessageRequestParams(
+                  List.of(new MessageActionItem("Sync"), new MessageActionItem("Later")));
+          request.setMessage(
+              "Maven project changed. Run 'mvn process-test-classes' to refresh Lathe.");
+          request.setType(MessageType.Warning);
+          client
+              .showMessageRequest(request)
+              .thenAccept(action -> worker.execute(() -> pomNotificationPending = false));
+        }
+      }
+      case NO_CHANGE -> {}
     }
   }
 
   private void reload() {
     LOG.info(() -> "[reload] workspace changed, reloading");
     final var newManifest = WorkspaceManifest.load(workspaceRoot);
+    if (watcher != null) {
+      watcher.updatePomPaths(newManifest.pomPaths());
+      pomNotificationPending = false;
+    }
+
     final var newWorkspace = WorkspaceModuleRegistry.scan(workspaceRoot, newManifest);
     final var old = workspace;
     workspace = newWorkspace;

@@ -35,6 +35,7 @@ public final class WorkspaceManifest {
   private final Path jdkSourceDir;
   private final Map<Path, List<Path>> sourceDirToClasspath;
   private final List<Path> typeIndexShardPaths;
+  private final List<Path> pomPaths;
 
   private WorkspaceManifest(
       final Map<Path, String> jarToGav,
@@ -43,7 +44,8 @@ public final class WorkspaceManifest {
       final String jdkVersion,
       final Path jdkSourceDir,
       final Map<Path, List<Path>> sourceDirToClasspath,
-      final List<Path> typeIndexShardPaths) {
+      final List<Path> typeIndexShardPaths,
+      final List<Path> pomPaths) {
     this.jarToGav = jarToGav;
     this.jarToSourceDir = jarToSourceDir;
     this.sourceDirToJar = sourceDirToJar;
@@ -51,10 +53,12 @@ public final class WorkspaceManifest {
     this.jdkSourceDir = jdkSourceDir;
     this.sourceDirToClasspath = sourceDirToClasspath;
     this.typeIndexShardPaths = typeIndexShardPaths;
+    this.pomPaths = pomPaths;
   }
 
   public static WorkspaceManifest empty() {
-    return new WorkspaceManifest(Map.of(), Map.of(), Map.of(), null, null, Map.of(), List.of());
+    return new WorkspaceManifest(
+        Map.of(), Map.of(), Map.of(), null, null, Map.of(), List.of(), List.of());
   }
 
   public static WorkspaceManifest load(final Path workspaceRoot) {
@@ -103,6 +107,7 @@ public final class WorkspaceManifest {
                       ? Stream.of(jdk.typeIndex())
                       : Stream.empty())
               .toList();
+      final var resolvedPomPaths = data.pomPaths().stream().map(workspaceRoot::resolve).toList();
       return new WorkspaceManifest(
           jarToGav,
           jarToSourceDir,
@@ -110,7 +115,8 @@ public final class WorkspaceManifest {
           jdk != null ? jdk.version() : null,
           jdk != null ? jdk.sourceDir() : null,
           sourceDirToClasspath,
-          typeIndexShardPaths);
+          typeIndexShardPaths,
+          resolvedPomPaths);
     } catch (final Exception e) {
       LOG.log(Level.WARNING, e, () -> "[manifest] failed to load workspace manifest");
       return empty();
@@ -144,6 +150,10 @@ public final class WorkspaceManifest {
 
   public List<Path> typeIndexShardPaths() {
     return typeIndexShardPaths;
+  }
+
+  public List<Path> pomPaths() {
+    return pomPaths;
   }
 
   public List<Path> externalSourceDirs() {

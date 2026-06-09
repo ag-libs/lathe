@@ -25,14 +25,16 @@ final class WorkspaceManifestWriter {
       final Path workspaceRoot,
       final List<DependencySource> dependencySources,
       final JdkSource jdkSource,
-      final String serverVersion) {
+      final String serverVersion,
+      final List<String> pomPaths) {
     final var data =
         new WorkspaceManifestData(
             LatheLayout.SCHEMA_VERSION,
             workspaceRoot.toString(),
             serverVersion,
             jdkSource.toData(),
-            dependencySources.stream().map(DependencySource::toData).toList());
+            dependencySources.stream().map(DependencySource::toData).toList(),
+            pomPaths);
     final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
     final var manifestPath = latheDir.resolve(LatheLayout.WORKSPACE_JSON);
     final var newContent = Json.toJson(data);

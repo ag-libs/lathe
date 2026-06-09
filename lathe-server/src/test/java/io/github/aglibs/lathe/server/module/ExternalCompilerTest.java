@@ -219,7 +219,8 @@ class ExternalCompilerTest {
                 List.of(),
                 null));
     Json.write(
-        new WorkspaceManifestData(LatheLayout.SCHEMA_VERSION, tmp.toString(), null, null, deps),
+        new WorkspaceManifestData(
+            LatheLayout.SCHEMA_VERSION, tmp.toString(), null, null, deps, List.of()),
         latheDir.resolve(LatheLayout.WORKSPACE_JSON));
   }
 
@@ -237,7 +238,8 @@ class ExternalCompilerTest {
                 List.of(),
                 null));
     Json.write(
-        new WorkspaceManifestData(LatheLayout.SCHEMA_VERSION, tmp.toString(), null, null, deps),
+        new WorkspaceManifestData(
+            LatheLayout.SCHEMA_VERSION, tmp.toString(), null, null, deps, List.of()),
         latheDir.resolve(LatheLayout.WORKSPACE_JSON));
   }
 
@@ -248,7 +250,8 @@ class ExternalCompilerTest {
         new JdkSourceData(
             "test", "26", SourceStatus.PRESENT, Path.of("/opt/jdk"), null, sourceRoot, null);
     Json.write(
-        new WorkspaceManifestData(LatheLayout.SCHEMA_VERSION, tmp.toString(), null, jdk, List.of()),
+        new WorkspaceManifestData(
+            LatheLayout.SCHEMA_VERSION, tmp.toString(), null, jdk, List.of(), List.of()),
         latheDir.resolve(LatheLayout.WORKSPACE_JSON));
   }
 

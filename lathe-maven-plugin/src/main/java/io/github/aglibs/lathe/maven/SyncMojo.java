@@ -90,8 +90,13 @@ public final class SyncMojo extends AbstractMojo {
       if (isPartialReactor() && !LatheFlags.isForcedSync()) {
         getLog().debug("[sync] partial reactor (-pl) — skipping workspace.json write");
       } else {
+        final var pomPaths =
+            projects.stream()
+                .map(p -> workspaceRoot.relativize(p.getFile().toPath()).toString())
+                .toList();
         new WorkspaceManifestWriter(getLog())
-            .write(workspaceRoot, enrichedSources, enrichedJdkSource, PluginProps.version());
+            .write(
+                workspaceRoot, enrichedSources, enrichedJdkSource, PluginProps.version(), pomPaths);
       }
     } catch (final SyncException e) {
       throw new MojoExecutionException(e.getMessage(), e);

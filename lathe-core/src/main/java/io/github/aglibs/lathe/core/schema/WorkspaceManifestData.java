@@ -9,7 +9,8 @@ public record WorkspaceManifestData(
     String workspaceRoot,
     String serverVersion,
     JdkSourceData jdk,
-    List<DependencyData> dependencySources) {
+    List<DependencyData> dependencySources,
+    List<String> pomPaths) {
 
   public WorkspaceManifestData {
     ValidCheck.check()
@@ -17,5 +18,6 @@ public record WorkspaceManifestData(
         .notBlank(workspaceRoot, "workspaceRoot")
         .validate();
     dependencySources = Objects.requireNonNullElse(dependencySources, List.of());
+    pomPaths = Objects.requireNonNullElse(pomPaths, List.of());
   }
 }
