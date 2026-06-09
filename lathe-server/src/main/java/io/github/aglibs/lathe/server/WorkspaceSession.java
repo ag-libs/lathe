@@ -98,6 +98,7 @@ final class WorkspaceSession {
     watcher = new WorkspaceWatcher(root);
     watcher.updatePomPaths(manifest.pomPaths());
     worker.scheduleAtFixedRate(2_000L, this::checkForChanges);
+    client.showMessage(new MessageParams(MessageType.Info, "Lathe: workspace reloaded."));
   }
 
   void close() {

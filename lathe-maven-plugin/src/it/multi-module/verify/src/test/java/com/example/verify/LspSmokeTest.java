@@ -3,7 +3,9 @@ package com.example.verify;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
@@ -47,7 +49,25 @@ class LspSmokeTest {
   static void startServer() throws Exception {
     originalPomMtime = Files.getLastModifiedTime(ROOT.resolve("pom.xml"));
     client = new CapturingClient();
-    serverProcess = new ProcessBuilder(LAUNCHER.toString()).start();
+    final var pb = new ProcessBuilder(LAUNCHER.toString());
+    pb.environment().put("LATHE_DEBUG", "1");
+    serverProcess = pb.start();
+
+    final var stderrThread =
+        new Thread(
+            () -> {
+              try (var reader =
+                  new BufferedReader(new InputStreamReader(serverProcess.getErrorStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                  System.out.println("[server] " + line);
+                }
+              } catch (final IOException ignored) {
+              }
+            },
+            "server-stderr");
+    stderrThread.setDaemon(true);
+    stderrThread.start();
 
     final Launcher<LanguageServer> launcher =
         LSPLauncher.createClientLauncher(
@@ -62,7 +82,11 @@ class LspSmokeTest {
     server.initialized(new InitializedParams());
 
     final var reload = client.messages.poll(10, SECONDS);
-    assertThat(reload).isNotNull();
+    assertThat(reload)
+        .as(
+            "no showMessage received within 10s after initialized; server alive=%s",
+            serverProcess.isAlive())
+        .isNotNull();
     assertThat(reload.getMessage()).contains("workspace reloaded");
   }
 
@@ -119,6 +143,7 @@ class LspSmokeTest {
 
     @Override
     public void showMessage(final MessageParams params) {
+      System.out.println("[showMessage] " + params.getType() + ": " + params.getMessage());
       messages.add(params);
     }
 
@@ -130,7 +155,9 @@ class LspSmokeTest {
     }
 
     @Override
-    public void logMessage(final MessageParams params) {}
+    public void logMessage(final MessageParams params) {
+      System.out.println("[logMessage] " + params.getType() + ": " + params.getMessage());
+    }
 
     @Override
     public void publishDiagnostics(final PublishDiagnosticsParams params) {}
