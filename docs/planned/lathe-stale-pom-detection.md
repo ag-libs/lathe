@@ -173,16 +173,40 @@ Maven project changed. Run 'mvn process-test-classes' to refresh Lathe.
 
 with two actions: `"Sync"` and `"Later"`.
 
-Send at most once per staleness detection cycle.
-After the user responds (either action), the watcher suppresses further `POM_CHANGED`
-returns until the POM baseline is reset by the next `updatePomPaths()` call
-(i.e., after the next sync and reload).
+### Pending-request guard
+
+`showMessageRequest` returns a `CompletableFuture<MessageActionItem>`.
+Because the poll cycle runs every 2 seconds and the user may not respond immediately,
+`WorkspaceSession` tracks a `pomNotificationPending` boolean to ensure only one
+request is in flight at a time:
+
+```java
+private boolean pomNotificationPending = false;
+
+// in checkForChanges():
+case POM_CHANGED -> {
+    if (!pomNotificationPending) {
+        pomNotificationPending = true;
+        client.showMessageRequest(...)
+              .thenAccept(action -> worker.execute(() -> pomNotificationPending = false));
+    }
+}
+```
+
+The response callback enqueues the flag reset back onto the `lathe-worker` thread
+(via `worker.execute()`), so the flag is read and written only on the event loop —
+no synchronization needed.
+
+`pomNotificationPending` is also cleared in `reload()` when `updatePomPaths()` resets
+the POM baseline. After a sync the workspace is current; any previous pending dialog
+becomes irrelevant.
 
 ### "Later" response
 
-Server acknowledges; watcher marks the current staleness as acknowledged.
-No further notification until a POM changes again (new mtime/size) or a sync resets
-the baseline.
+The `pomNotificationPending` flag clears on any response, including `"Later"`.
+No further notification fires until the watcher detects a new POM change
+(new mtime+size pair that differs from the current baseline).
+This means if the user edits a POM again after dismissing, they get notified again.
 
 ---
 
@@ -266,21 +290,26 @@ no notification fires — the workspace is already correct.
 
 | Component | Change |
 |---|---|
-| `WorkspaceWatcher` | Remove params fingerprint; add `PollResult` enum; add per-POM `(mtime, size)` baseline; add `updatePomPaths()`  |
+| `WorkspaceWatcher` | Remove params fingerprint; add `PollResult` enum; add per-POM `(mtime, size)` baseline; add `updatePomPaths()` |
 | `WorkspaceManifestData` | Add `List<String> pomPaths` (optional field, no mtimes) |
 | `WorkspaceManifestWriter` (SyncMojo) | Populate `pomPaths` from Maven reactor project list |
-| `WorkspaceSession` | Switch on `PollResult`; call `watcher.updatePomPaths()` after reload; send `showMessageRequest` on `POM_CHANGED` |
+| `WorkspaceSession` | Switch on `PollResult`; `pomNotificationPending` guard; call `watcher.updatePomPaths()` after reload; clear flag on reload and on response |
 | Neovim plugin | Handle `showMessageRequest` response; run `mvn process-test-classes` via `jobstart`; suppress duplicate dialogs |
 
 ## Tests
 
 - `WorkspaceWatcher`: params file mtime change alone returns `NO_CHANGE`.
 - `WorkspaceWatcher`: `workspace.json` mtime change returns `WORKSPACE_CHANGED`.
-- `WorkspaceWatcher`: POM mtime change after `updatePomPaths()` returns `POM_CHANGED`.
-- `WorkspaceWatcher`: POM size-only change (same mtime) returns `NO_CHANGE` (touch simulation).
-- `WorkspaceWatcher`: after `updatePomPaths()` resets baseline, previously stale POM
-  returns `NO_CHANGE`.
-- `WorkspaceManifestData`: round-trip JSON serialization of `pomPaths`; missing field
-  deserializes as empty list.
-- `WorkspaceSession`: `POM_CHANGED` result triggers `showMessageRequest`; second `POM_CHANGED`
-  in same cycle is suppressed after user responds.
+- `WorkspaceWatcher`: POM mtime+size change after `updatePomPaths()` returns `POM_CHANGED`.
+- `WorkspaceWatcher`: mtime-only change (same size, touch simulation) returns `NO_CHANGE`.
+- `WorkspaceWatcher`: `updatePomPaths()` with current disk state resets baseline;
+  subsequent poll returns `NO_CHANGE`.
+- `WorkspaceWatcher`: `WORKSPACE_CHANGED` takes priority over `POM_CHANGED`
+  when both signals fire in the same poll cycle.
+- `WorkspaceManifestData`: round-trip JSON serialization of `pomPaths`;
+  missing field deserializes as empty list.
+- `WorkspaceSession`: `POM_CHANGED` with no pending notification → sends `showMessageRequest`
+  and sets `pomNotificationPending`.
+- `WorkspaceSession`: `POM_CHANGED` while `pomNotificationPending` is true → no second request.
+- `WorkspaceSession`: response callback clears `pomNotificationPending` on `lathe-worker` thread.
+- `WorkspaceSession`: `reload()` clears `pomNotificationPending` via `updatePomPaths()`.
