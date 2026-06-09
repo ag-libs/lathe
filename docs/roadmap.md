@@ -87,6 +87,10 @@ Architecture is documented in [lathe-server-data-flow-recipe.md](done/lathe-serv
   Generic receiver substitution via `types.asMemberOf()` is in place for member-access completions.
   Annotation-element completions route through `CompletionItemPresenter`.
   See [lathe-completion-presentation.md](planned/lathe-completion-presentation.md).
+- **Stale-POM detection** — `WorkspaceWatcher` simplified to watch `workspace.json` and reactor POM file modification times and sizes, returning `PollResult` facts.
+  `WorkspaceSession` polls every 2 seconds, displaying a `window/showMessageRequest` when POM changes are detected, protected by an event-loop-safe pending guard.
+  `SyncMojo` writes reactor POM relative paths into `workspace.json` during `lathe:sync`.
+  See [lathe-stale-pom-detection.md](done/lathe-stale-pom-detection.md).
 
 ---
 
@@ -119,7 +123,7 @@ Use these as the starting point when reprioritizing or slicing new work:
 - [lathe-signature-help.md](planned/lathe-signature-help.md) — parameter types and names display during method/constructor invocation.
 - [lathe-source-uri-scheme.md](planned/lathe-source-uri-scheme.md) — `lathe-source://` URIs for read-only external
   JDK/dependency source files.
-- [lathe-stale-pom-detection.md](planned/lathe-stale-pom-detection.md) — POM fingerprint recording,
+- [lathe-stale-pom-detection.md](done/lathe-stale-pom-detection.md) — POM fingerprint recording,
   `WorkspaceWatcher` simplification, and `showMessageRequest`-based Neovim sync prompt.
 - [lathe-type-index.md](planned/lathe-type-index.md) — implemented type-index design and remaining work such as
   missing-import suggestions, package-prefix completion, workspace symbols, and freshness checks.
@@ -141,15 +145,7 @@ Neovim LSP client configuration (native `vim.lsp.config` for Neovim 0.11+),
 and basic troubleshooting (`LATHE_DEBUG=1`, missing `.lathe/`, missing params).
 The beta is distributed as source only — users clone the repo and build locally.
 
-### Stale-POM detection
-Record all reactor POM mtimes in `workspace.json` during `lathe:sync`.
-On each workspace reload `WorkspaceSession` compares stored POM mtimes against current
-disk values; if any differ, send `window/showMessageRequest` prompting the user to
-re-run `mvn process-test-classes`.
-The Neovim plugin handles the "Sync" response by running the command locally via `jobstart`.
-Also simplifies `WorkspaceWatcher`: remove params-file polling, watch only `workspace.json`
-mtime, eliminating spurious reloads on every Maven compilation.
-See [lathe-stale-pom-detection.md](planned/lathe-stale-pom-detection.md) for the full design.
+
 
 ### Pre-beta Codebase Cleanups
 Clean up codebase redundancies and conceptual naming before the v0.1.0-beta release.
