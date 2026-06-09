@@ -25,6 +25,12 @@
       <version>@assertj.version@</version>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>org.eclipse.lsp4j</groupId>
+      <artifactId>org.eclipse.lsp4j</artifactId>
+      <version>@lsp4j.version@</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
