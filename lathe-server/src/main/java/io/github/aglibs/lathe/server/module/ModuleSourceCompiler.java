@@ -28,17 +28,17 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
   private final ModuleSourceConfig config;
   private final StandardJavaFileManager fm;
   private final JavacRunner runner;
-  private final Path td;
+  private final Path tempDir;
   private final List<String> compilerArgs;
 
   ModuleSourceCompiler(final ModuleSourceConfig config) {
     this.config = config;
     try {
-      this.td = Files.createTempDirectory("lathe-");
+      this.tempDir = Files.createTempDirectory("lathe-");
       this.fm = JavaSourceCompiler.createFileManager();
       this.runner = new JavacRunner(fm);
       initLocations();
-      this.compilerArgs = processPatchModules(config.compilerArgs(), fm, td);
+      this.compilerArgs = processPatchModules(config.compilerArgs(), fm, tempDir);
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }
@@ -59,11 +59,13 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
             .orElseThrow(() -> new IllegalStateException("no source root for " + uri));
 
     try {
-      final var tempFile = FileUtil.writeTempSourceFile(td, sourceRoot, filePath, content);
+      final var tempFile = FileUtil.writeTempSourceFile(tempDir, sourceRoot, filePath, content);
 
       final var options = buildOptions(config, compilerArgs, mode);
       LOG.fine(
-          () -> "[compile:%s] td=%s root=%s opts=%s".formatted(mode.tag, td, sourceRoot, options));
+          () ->
+              "[compile:%s] tempDir=%s root=%s opts=%s"
+                  .formatted(mode.tag, tempDir, sourceRoot, options));
       final JavaFileObject jfo = fm.getJavaFileObjects(tempFile).iterator().next();
       try {
         return runner.run(jfo, options, mode);
@@ -85,9 +87,9 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
       LOG.log(Level.WARNING, e, () -> "[cache] failed to close file manager");
     }
     try {
-      FileUtil.deleteDir(td);
+      FileUtil.deleteDir(tempDir);
     } catch (final IOException e) {
-      LOG.log(Level.WARNING, e, () -> "[cache] failed to delete temp dir %s".formatted(td));
+      LOG.log(Level.WARNING, e, () -> "[cache] failed to delete temp dir %s".formatted(tempDir));
     }
   }
 
@@ -125,7 +127,7 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
   }
 
   private static List<String> processPatchModules(
-      final List<String> args, final StandardJavaFileManager fm, final Path td) {
+      final List<String> args, final StandardJavaFileManager fm, final Path tempDir) {
     final var normalized = new ArrayList<String>(args.size());
     final var it = args.iterator();
     while (it.hasNext()) {
@@ -139,7 +141,8 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
         .forEach(
             v ->
                 fm.handleOption(
-                    PATCH_MODULE, List.of(v.substring(0, v.indexOf('=')) + "=" + td).iterator()));
+                    PATCH_MODULE,
+                    List.of(v.substring(0, v.indexOf('=')) + "=" + tempDir).iterator()));
     return normalized.stream().filter(a -> !a.startsWith(PATCH_MODULE_EQ)).toList();
   }
 

@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.compiler;
 
 import io.github.aglibs.lathe.core.Json;
+import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -31,7 +32,7 @@ final class ParamsWriter {
             enablePreview(config),
             config.getProc(),
             compilerArgs(config));
-    Json.write(moduleConfig, latheModuleDir.resolve("lsp-params-" + sourceTree + ".json"));
+    Json.write(moduleConfig, latheModuleDir.resolve(LatheLayout.paramsFileName(sourceTree)));
   }
 
   private static List<String> compilerArgs(final CompilerConfiguration config) {

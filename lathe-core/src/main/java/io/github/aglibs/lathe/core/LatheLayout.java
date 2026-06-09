@@ -17,6 +17,7 @@ public final class LatheLayout {
   public static final String WORKSPACE_JSON = "workspace.json";
   public static final String LOCK_FILE = "lathe.lock";
   public static final String GENERATED_SOURCES = "generated-sources";
+  public static final String PARAMS_FILE_PREFIX = "lsp-params-";
 
   private LatheLayout() {}
 
@@ -41,8 +42,12 @@ public final class LatheLayout {
     return value.replaceAll("[^A-Za-z0-9._-]", "-").replaceAll("-+", "-");
   }
 
+  public static String paramsFileName(final String sourceTree) {
+    return PARAMS_FILE_PREFIX + sourceTree + ".json";
+  }
+
   public static boolean isParamsFile(final Path path) {
     final String name = path.getFileName().toString();
-    return name.startsWith("lsp-params-") && name.endsWith(".json");
+    return name.startsWith(PARAMS_FILE_PREFIX) && name.endsWith(".json");
   }
 }

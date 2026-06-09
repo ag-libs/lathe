@@ -17,7 +17,7 @@ public final class JdkSourceSync {
       return;
     }
 
-    final var t = Stopwatch.start();
+    final Stopwatch t = Stopwatch.start();
     try {
       if (Files.exists(source.sourceDir())) {
         log.info("[sync] jdk sources already cached in %dms".formatted(t.elapsedMs()));

@@ -145,7 +145,7 @@ final class CandidateFactory {
         null);
   }
 
-  private static String declaringType(final Element element) {
+  static String declaringType(final Element element) {
     return element.getEnclosingElement() instanceof final TypeElement typeElement
         ? typeElement.getQualifiedName().toString()
         : null;

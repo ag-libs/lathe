@@ -48,7 +48,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
 
   public List<Diagnostic> compile(
       final String uri, final String content, final int version, final CompileMode mode) {
-    final var t = Stopwatch.start();
+    final Stopwatch t = Stopwatch.start();
     final var run = compiler.compile(uri, content, mode);
     if (mode != CompileMode.FULL) {
       cache.put(uri, new CachedFileAnalysis(content, version, run.fileAnalysis()));
@@ -68,7 +68,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
       final Position pos,
       final CompletionContext context,
       final WorkspaceTypeIndex typeIndex) {
-    final var t = Stopwatch.start();
+    final Stopwatch t = Stopwatch.start();
     final var request =
         new CompletionRequest(uri, content, pos, context, cache.get(uri), typeIndex);
     final var outcome = completionEngine.complete(request);
@@ -98,25 +98,28 @@ public final class SourceAnalysisSession implements AutoCloseable {
   }
 
   public Hover hover(final SourceFeatureRequest request) {
-    final var t = Stopwatch.start();
+    final Stopwatch t = Stopwatch.start();
     final CursorContext cur = resolve(request);
     if (cur == null) {
       return null;
     }
 
-    final VariableElement param = SourceLocator.parameterElementAt(cur.ctx().trees(), cur.path());
+    final VariableElement param =
+        SourceLocator.parameterElementAt(cur.analysis().trees(), cur.path());
     if (param != null) {
       LOG.fine(() -> "[hover] param=%s %dms".formatted(param, t.elapsedMs()));
       return new Hover(new MarkupContent("markdown", HoverFormatter.formatParameter(param)));
     }
 
-    final Element element = SourceLocator.elementAt(cur.ctx().trees(), cur.path());
-    final TypeMirror type = cur.path() != null ? cur.ctx().trees().getTypeMirror(cur.path()) : null;
+    final Element element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
+    final TypeMirror type =
+        cur.path() != null ? cur.analysis().trees().getTypeMirror(cur.path()) : null;
     final var allRoots =
         Stream.concat(
                 request.sourceRoots().stream(), request.manifest().externalSourceDirs().stream())
             .toList();
-    final var javadoc = javadocLocator.locate(element, cur.ctx().trees(), allRoots).orElse(null);
+    final var javadoc =
+        javadocLocator.locate(element, cur.analysis().trees(), allRoots).orElse(null);
     final var origin = request.manifest().originLabel(element, compiler.fileManager()).orElse(null);
     LOG.fine(
         () ->
@@ -133,12 +136,12 @@ public final class SourceAnalysisSession implements AutoCloseable {
       return null;
     }
 
-    final var element = SourceLocator.elementAt(cur.ctx().trees(), cur.path());
+    final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
     if (element == null) {
       return null;
     }
 
-    return ReferenceTarget.from(element, cur.ctx().types(), cur.ctx().elements());
+    return ReferenceTarget.from(element, cur.analysis().types(), cur.analysis().elements());
   }
 
   public List<ReferenceMatch> searchReferences(
@@ -172,15 +175,16 @@ public final class SourceAnalysisSession implements AutoCloseable {
   }
 
   public Optional<Location> definition(final SourceFeatureRequest request) {
-    final var t = Stopwatch.start();
+    final Stopwatch t = Stopwatch.start();
     final var cur = resolve(request);
     if (cur == null) {
       return Optional.empty();
     }
 
-    final var element = SourceLocator.elementAt(cur.ctx().trees(), cur.path());
+    final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
     Optional<Location> result =
-        definitionLocator.locate(element, cur.ctx().trees(), request.sourceRoots(), request.uri());
+        definitionLocator.locate(
+            element, cur.analysis().trees(), request.sourceRoots(), request.uri());
     if (result.isEmpty()) {
       result =
           request
@@ -213,7 +217,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
     compiler.close();
   }
 
-  private record CursorContext(AttributedFileAnalysis ctx, TreePath path) {}
+  private record CursorContext(AttributedFileAnalysis analysis, TreePath path) {}
 
   private CachedFileAnalysis currentCache(final String uri, final String content) {
     final var cached = cache.get(uri);

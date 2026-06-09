@@ -92,7 +92,7 @@ public final class LatheCompiler implements Compiler {
       final Path moduleDir,
       final Path moduleRel,
       final CompilerResult result) {
-    final var sw = Stopwatch.start();
+    final Stopwatch sw = Stopwatch.start();
     try {
       if (!result.isSuccess() && result.getCompilerMessages().isEmpty()) {
         throw new IOException("javac returned failure with no diagnostics");
@@ -120,9 +120,9 @@ public final class LatheCompiler implements Compiler {
               final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
               final var moduleRel = workspaceRoot.relativize(moduleRoot);
               final var moduleDir = latheDir.resolve(moduleRel);
-              return new LatheContext(latheDir, moduleDir, moduleRel);
+              return new LatheContext(moduleDir, moduleRel);
             });
   }
 
-  private record LatheContext(Path latheDir, Path moduleDir, Path moduleRel) {}
+  private record LatheContext(Path moduleDir, Path moduleRel) {}
 }

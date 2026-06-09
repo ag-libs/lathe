@@ -41,7 +41,7 @@ public final class DependencySourceResolver {
     log.info(
         "[sync] sources %d dependency entries, %d with sources"
             .formatted(
-                dependencySources.size(), DependencySource.present(dependencySources).size()));
+                dependencySources.size(), DependencySource.withSources(dependencySources).size()));
     return dependencySources;
   }
 

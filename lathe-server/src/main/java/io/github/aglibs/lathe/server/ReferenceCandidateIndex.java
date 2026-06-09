@@ -30,7 +30,7 @@ final class ReferenceCandidateIndex {
   private final Map<String, Set<String>> uriToTokens = new HashMap<>();
 
   static ReferenceCandidateIndex build(final List<ModuleSourceConfig> allConfigs) {
-    final var t = Stopwatch.start();
+    final Stopwatch t = Stopwatch.start();
     final var index = new ReferenceCandidateIndex();
     allConfigs.stream()
         .flatMap(config -> config.sourceRoots().stream())

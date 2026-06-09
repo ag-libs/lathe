@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
 class DependencySourceTest {
 
   @Test
-  void present_filtersPresentEntries() {
+  void withSources_filtersPresentEntries() {
     final DependencySource present =
         DependencySource.present(
             "com.example:present:1",
@@ -22,7 +22,7 @@ class DependencySourceTest {
     final DependencySource missing =
         DependencySource.missing("com.example:missing:1", Path.of("/repo/missing.jar"), List.of());
 
-    assertThat(DependencySource.present(List.of(present, missing))).containsExactly(present);
+    assertThat(DependencySource.withSources(List.of(present, missing))).containsExactly(present);
   }
 
   @Test

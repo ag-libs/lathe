@@ -80,18 +80,19 @@ public final class ReactorProjects {
   }
 
   public static String gav(final MavenProject project) {
-    return "%s:%s:%s"
-        .formatted(project.getGroupId(), project.getArtifactId(), project.getVersion());
+    return gav(project.getGroupId(), project.getArtifactId(), project.getVersion());
   }
 
   public static String gav(final Artifact artifact) {
-    return "%s:%s:%s"
-        .formatted(artifact.getGroupId(), artifact.getArtifactId(), artifact.getVersion());
+    return gav(artifact.getGroupId(), artifact.getArtifactId(), artifact.getVersion());
   }
 
   public static String gav(final org.eclipse.aether.artifact.Artifact artifact) {
-    return "%s:%s:%s"
-        .formatted(artifact.getGroupId(), artifact.getArtifactId(), artifact.getVersion());
+    return gav(artifact.getGroupId(), artifact.getArtifactId(), artifact.getVersion());
+  }
+
+  private static String gav(final String g, final String a, final String v) {
+    return "%s:%s:%s".formatted(g, a, v);
   }
 
   private static Set<String> reactorProjects(final List<MavenProject> projects) {

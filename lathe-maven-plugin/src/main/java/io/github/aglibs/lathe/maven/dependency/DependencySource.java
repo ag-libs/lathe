@@ -41,7 +41,7 @@ public record DependencySource(
     return new DependencySource(gav, jar, SourceStatus.MISSING, null, null, classpath, null);
   }
 
-  public static List<DependencySource> present(final List<DependencySource> sources) {
+  public static List<DependencySource> withSources(final List<DependencySource> sources) {
     return sources.stream().filter(s -> s.status() == SourceStatus.PRESENT).toList();
   }
 

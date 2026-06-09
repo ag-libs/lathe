@@ -24,7 +24,7 @@ public final class DependencySourceSync {
   private DependencySourceSync() {}
 
   public static void extract(final Collection<DependencySource> sources, final Log log) {
-    final var t = Stopwatch.start();
+    final Stopwatch t = Stopwatch.start();
     try {
       final Map<Boolean, Long> counts =
           sources.stream()

@@ -65,7 +65,7 @@ public final class SyncMojo extends AbstractMojo {
       final var dependencySources =
           resolver.resolve(
               externalArtifacts, ReactorProjects.artifactClasspaths(projects), remoteRepos);
-      DependencySourceSync.extract(DependencySource.present(dependencySources), getLog());
+      DependencySourceSync.extract(DependencySource.withSources(dependencySources), getLog());
       DependencyTypeIndexSync.index(externalArtifacts.values(), getLog());
       final Map<Path, Path> jarToTypeIndex =
           externalArtifacts.values().stream()

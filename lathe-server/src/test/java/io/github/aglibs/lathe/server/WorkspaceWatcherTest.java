@@ -43,25 +43,25 @@ class WorkspaceWatcherTest {
   @Test
   void poll_paramsFileAdded_returnsTrue() throws IOException {
     final var watcher = new WorkspaceWatcher(workspaceRoot);
-    Files.writeString(latheDir.resolve("lsp-params-module-a.json"), "{}");
+    Files.writeString(latheDir.resolve(LatheLayout.paramsFileName("module-a")), "{}");
     assertThat(watcher.poll()).isTrue();
   }
 
   @Test
   void poll_paramsFileChanged_returnsTrue() throws IOException {
-    writeOld("lsp-params-module-a.json", "{}");
+    writeOld(LatheLayout.paramsFileName("module-a"), "{}");
     final var watcher = new WorkspaceWatcher(workspaceRoot);
-    Files.writeString(latheDir.resolve("lsp-params-module-a.json"), "{updated}");
+    Files.writeString(latheDir.resolve(LatheLayout.paramsFileName("module-a")), "{updated}");
     assertThat(watcher.poll()).isTrue();
   }
 
   @Test
   void poll_bothSignalsChange_returnsTrue() throws IOException {
     writeOld(LatheLayout.WORKSPACE_JSON, "{}");
-    writeOld("lsp-params-module-a.json", "{}");
+    writeOld(LatheLayout.paramsFileName("module-a"), "{}");
     final var watcher = new WorkspaceWatcher(workspaceRoot);
     Files.writeString(latheDir.resolve(LatheLayout.WORKSPACE_JSON), "{updated}");
-    Files.writeString(latheDir.resolve("lsp-params-module-a.json"), "{updated}");
+    Files.writeString(latheDir.resolve(LatheLayout.paramsFileName("module-a")), "{updated}");
     assertThat(watcher.poll()).isTrue();
   }
 

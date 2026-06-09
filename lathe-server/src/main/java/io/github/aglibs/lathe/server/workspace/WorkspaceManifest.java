@@ -74,10 +74,7 @@ public final class WorkspaceManifest {
         return empty();
       }
 
-      final var rawEntries = data.dependencySources();
-      final var entries =
-          (rawEntries != null ? rawEntries : List.<DependencyData>of())
-              .stream().filter(e -> e.jar() != null).toList();
+      final var entries = data.dependencySources().stream().filter(e -> e.jar() != null).toList();
       final var jarToGav =
           entries.stream()
               .collect(Collectors.toUnmodifiableMap(e -> Path.of(e.jar()), DependencyData::gav));

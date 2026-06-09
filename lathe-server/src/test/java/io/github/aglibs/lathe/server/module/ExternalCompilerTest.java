@@ -244,7 +244,9 @@ class ExternalCompilerTest {
   private void writeJdkWorkspaceManifest(final Path sourceRoot) throws Exception {
     final Path latheDir = tmp.resolve(LatheLayout.LATHE_DIR);
     Files.createDirectories(latheDir);
-    final var jdk = JdkSourceData.present("test", "26", Path.of("/opt/jdk"), null, sourceRoot);
+    final var jdk =
+        new JdkSourceData(
+            "test", "26", SourceStatus.PRESENT, Path.of("/opt/jdk"), null, sourceRoot, null);
     Json.write(
         new WorkspaceManifestData(LatheLayout.SCHEMA_VERSION, tmp.toString(), null, jdk, List.of()),
         latheDir.resolve(LatheLayout.WORKSPACE_JSON));

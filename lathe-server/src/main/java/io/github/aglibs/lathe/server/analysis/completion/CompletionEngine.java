@@ -121,11 +121,8 @@ public final class CompletionEngine {
           default -> CompletionOutcome.of(List.of());
         };
     CompletionItemPresenter.applyReplacementRange(outcome.items(), site.replacementRange());
-    final AttributedFileAnalysis analysis =
-        req.cached() != null
-            ? req.cached().analysis()
-            : (compiler != null ? compiler.reattribute(req.uri(), req.content()) : null);
-    applyStatementSemicolonEdits(outcome.items(), site, analysis, req, injected.tokenStart());
+    applyStatementSemicolonEdits(
+        outcome.items(), site, resolveAnalysis(req), req, injected.tokenStart());
     return outcome;
   }
 
@@ -133,10 +130,7 @@ public final class CompletionEngine {
       final ParsedSentinel parsed,
       final SentinelInjectionResult injected,
       final CompletionRequest req) {
-    final var analysis =
-        req.cached() != null
-            ? req.cached().analysis()
-            : (compiler != null ? compiler.reattribute(req.uri(), req.content()) : null);
+    final AttributedFileAnalysis analysis = resolveAnalysis(req);
     if (analysis == null) {
       return CompletionOutcome.of(List.of());
     }
@@ -219,7 +213,7 @@ public final class CompletionEngine {
 
     // Type-index types: uppercase prefix in statement context only (avoids flooding arg lists)
     final CompletionOutcome withTypes =
-        shouldOfferBareTypeReference(injected)
+        hasUppercasePrefix(injected)
             ? mergeSimpleNameAndTypeIndexItems(
                 items,
                 completeSimpleNameTypeReferenceWithLang(injected, req, TypeReferenceRole.ORDINARY))
@@ -414,10 +408,7 @@ public final class CompletionEngine {
       final ParsedSentinel parsed,
       final SentinelInjectionResult injected,
       final CompletionRequest req) {
-    final var analysis =
-        req.cached() != null
-            ? req.cached().analysis()
-            : (compiler != null ? compiler.reattribute(req.uri(), req.content()) : null);
+    final AttributedFileAnalysis analysis = resolveAnalysis(req);
     if (analysis == null) {
       return CompletionOutcome.of(List.of());
     }
@@ -443,10 +434,7 @@ public final class CompletionEngine {
       final ParsedSentinel parsed,
       final SentinelInjectionResult injected,
       final CompletionRequest req) {
-    final var analysis =
-        req.cached() != null
-            ? req.cached().analysis()
-            : (compiler != null ? compiler.reattribute(req.uri(), req.content()) : null);
+    final AttributedFileAnalysis analysis = resolveAnalysis(req);
     if (analysis == null) {
       return CompletionOutcome.of(List.of());
     }
@@ -547,14 +535,8 @@ public final class CompletionEngine {
         false,
         null,
         element.getReturnType(),
-        declaringType(element),
+        CandidateFactory.declaringType(element),
         null);
-  }
-
-  private static String declaringType(final Element element) {
-    return element.getEnclosingElement() instanceof final TypeElement typeElement
-        ? typeElement.getQualifiedName().toString()
-        : null;
   }
 
   private static TypeElement resolveAnnotationType(
@@ -639,11 +621,7 @@ public final class CompletionEngine {
       return base;
     }
 
-    final var merged = new LinkedHashMap<String, CompletionItem>();
-    base.items().forEach(i -> merged.put(completionIdentity(i), i));
-    langItems.forEach(i -> merged.putIfAbsent(completionIdentity(i), i));
-    return new CompletionOutcome(
-        List.copyOf(merged.values()), base.freshAnalysis(), base.incomplete());
+    return mergeOutcomes(base.items(), langItems, base.freshAnalysis(), base.incomplete());
   }
 
   private static List<CompletionItem> proposeLangTypes(
@@ -802,11 +780,9 @@ public final class CompletionEngine {
         expected.stream().map(CompletionItemPresenter::present).toList();
     CompletionItemPresenter.applyImportEdits(expected, expectedItems, analysis);
 
-    final var merged = new LinkedHashMap<String, CompletionItem>();
-    expectedItems.forEach(i -> merged.put(completionIdentity(i), i));
-    base.items().forEach(i -> merged.putIfAbsent(completionIdentity(i), i));
-    return new CompletionOutcome(
-        List.copyOf(merged.values()),
+    return mergeOutcomes(
+        expectedItems,
+        base.items(),
         freshAnalysis != null ? freshAnalysis : base.freshAnalysis(),
         base.incomplete());
   }
@@ -872,11 +848,7 @@ public final class CompletionEngine {
 
     final List<CompletionItem> inFileItems =
         candidates.stream().map(CompletionItemPresenter::present).toList();
-    final var merged = new LinkedHashMap<String, CompletionItem>();
-    base.items().forEach(i -> merged.put(completionIdentity(i), i));
-    inFileItems.forEach(i -> merged.putIfAbsent(completionIdentity(i), i));
-    return new CompletionOutcome(
-        List.copyOf(merged.values()), base.freshAnalysis(), base.incomplete());
+    return mergeOutcomes(base.items(), inFileItems, base.freshAnalysis(), base.incomplete());
   }
 
   private static List<CompletionCandidate> proposeInFileTypeCandidates(
@@ -984,14 +956,16 @@ public final class CompletionEngine {
         .thenComparing(TypeIndexEntry::qualifiedName);
   }
 
+  private AttributedFileAnalysis resolveAnalysis(final CompletionRequest req) {
+    return req.cached() != null
+        ? req.cached().analysis()
+        : (compiler != null ? compiler.reattribute(req.uri(), req.content()) : null);
+  }
+
   private static boolean hasUppercasePrefix(final SentinelInjectionResult injected) {
     return !injected.prefix().isEmpty()
         && Character.isUpperCase(injected.prefix().charAt(0))
         && injected.receiverText() == null;
-  }
-
-  private static boolean shouldOfferBareTypeReference(final SentinelInjectionResult injected) {
-    return hasUppercasePrefix(injected);
   }
 
   private static boolean shouldTreatTypeReferenceAsMixedSimpleName(
@@ -1004,10 +978,23 @@ public final class CompletionEngine {
 
   private static CompletionOutcome mergeSimpleNameAndTypeIndexItems(
       final List<CompletionItem> simpleNameItems, final CompletionOutcome typeIndexOutcome) {
+    return mergeOutcomes(
+        simpleNameItems, typeIndexOutcome.items(), null, typeIndexOutcome.incomplete());
+  }
+
+  private static CompletionOutcome mergeOutcomes(
+      final List<CompletionItem> primary,
+      final List<CompletionItem> secondary,
+      final AttributedFileAnalysis freshAnalysis,
+      final boolean incomplete) {
+    if (secondary.isEmpty()) {
+      return new CompletionOutcome(primary, freshAnalysis, incomplete);
+    }
+
     final var merged = new LinkedHashMap<String, CompletionItem>();
-    simpleNameItems.forEach(item -> merged.put(completionIdentity(item), item));
-    typeIndexOutcome.items().forEach(item -> merged.putIfAbsent(completionIdentity(item), item));
-    return new CompletionOutcome(List.copyOf(merged.values()), null, typeIndexOutcome.incomplete());
+    primary.forEach(i -> merged.put(completionIdentity(i), i));
+    secondary.forEach(i -> merged.putIfAbsent(completionIdentity(i), i));
+    return new CompletionOutcome(List.copyOf(merged.values()), freshAnalysis, incomplete);
   }
 
   private static String completionIdentity(final CompletionItem item) {
