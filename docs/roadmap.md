@@ -103,6 +103,7 @@ Architecture is documented in [lathe-server-data-flow-recipe.md](done/lathe-serv
 Designs for future or follow-up work live in `docs/planned/`.
 Use these as the starting point when reprioritizing or slicing new work:
 
+- [lathe-class-import-semantic-highlighting.md](planned/lathe-class-import-semantic-highlighting.md) — semantic token highlighting for class, interface, and enum type references in import statements and code bodies.
 - [lathe-google-indent.md](planned/lathe-google-indent.md) — conservative `textDocument/onTypeFormatting`
   indentation hints using google-java-format.
 - [completion/](planned/completion/) —

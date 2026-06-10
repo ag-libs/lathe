@@ -24,8 +24,9 @@ Moved `isParamsFile` to `LatheLayout.isParamsFile(Path)` in `lathe-core`.
 `WorkspaceWatcher` and `WorkspaceModuleRegistry` both use the shared predicate.
 
 ### Restricting Directory Walks
-`WorkspaceModuleRegistry.scan()` now uses `Files.walk(latheDir, 2)` to avoid scanning
-deeply into `target/` directories.
+`WorkspaceModuleRegistry.scan()` uses an unbounded `Files.walk(latheDir)`.
+The `.lathe/` directory is a controlled structure that mirrors the Maven module hierarchy
+and contains only params files — no `target/` directories or other deep noise.
 
 ### Overload Match Integrity in Declaration Locating
 `SourceLocator.declarationPath` now verifies simplified parameter types (via `matchParameters`

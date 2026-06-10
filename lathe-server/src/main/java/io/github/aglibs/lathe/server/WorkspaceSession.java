@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import static java.util.logging.Level.SEVERE;
 
+import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
@@ -89,6 +90,7 @@ final class WorkspaceSession {
 
   void initialize(final Path root) {
     this.workspaceRoot = root;
+    final boolean configured = Files.isDirectory(root.resolve(LatheLayout.LATHE_DIR));
     manifest = WorkspaceManifest.load(root);
     workspace = WorkspaceModuleRegistry.scan(root, manifest);
     moduleGraph = WorkspaceModuleGraph.build(workspace.allConfigs());
@@ -98,7 +100,14 @@ final class WorkspaceSession {
     watcher = new WorkspaceWatcher(root);
     watcher.updatePomPaths(manifest.pomPaths());
     worker.scheduleAtFixedRate(2_000L, this::checkForChanges);
-    client.showMessage(new MessageParams(MessageType.Info, "Lathe: workspace reloaded."));
+    if (configured) {
+      client.showMessage(new MessageParams(MessageType.Info, "Lathe: workspace ready."));
+    } else {
+      client.showMessage(
+          new MessageParams(
+              MessageType.Warning,
+              "Lathe: not configured — run `mvn process-test-classes` to set up this project."));
+    }
   }
 
   void close() {

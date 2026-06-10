@@ -87,7 +87,7 @@ class LspSmokeTest {
             "no showMessage received within 10s after initialized; server alive=%s",
             serverProcess.isAlive())
         .isNotNull();
-    assertThat(reload.getMessage()).contains("workspace reloaded");
+    assertThat(reload.getMessage()).contains("workspace ready");
   }
 
   @AfterAll

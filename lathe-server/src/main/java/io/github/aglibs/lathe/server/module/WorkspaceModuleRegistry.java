@@ -42,7 +42,7 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
     }
 
     final List<ModuleSourceConfig> moduleSources = new ArrayList<>();
-    try (final Stream<Path> stream = Files.walk(latheDir, 2)) {
+    try (final Stream<Path> stream = Files.walk(latheDir)) {
       stream
           .filter(LatheLayout::isParamsFile)
           .forEach(
