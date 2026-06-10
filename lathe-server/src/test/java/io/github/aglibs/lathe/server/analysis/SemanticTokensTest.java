@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.IOException;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 // Sample.java (0-based lines):
@@ -140,6 +141,46 @@ class SemanticTokensTest extends SampleFixture {
   void type_reference_has_no_token() {
     // "String" return type of getName
     assertNoToken(37, 9);
+  }
+
+  @Test
+  @Disabled("Class and import semantic highlighting is planned but not yet implemented")
+  void class_declaration_has_class_token_with_declaration_modifier() {
+    // public class Sample { ... }
+    // Line 15 (0-based line 14), "Sample" at column 13 (length 6)
+    assertToken(14, 13, "class", "declaration");
+  }
+
+  @Test
+  @Disabled("Class and import semantic highlighting is planned but not yet implemented")
+  void enum_declaration_has_enum_token_with_declaration_modifier() {
+    // enum Status { ... }
+    // Line 23 (0-based line 22), "Status" at column 7 (length 6)
+    assertToken(22, 7, "enum", "declaration");
+  }
+
+  @Test
+  @Disabled("Class and import semantic highlighting is planned but not yet implemented")
+  void type_references_in_code_body_receive_correct_semantic_tokens() {
+    // String return type of getName()
+    // Line 38 (0-based line 37), "String" at column 9 (length 6)
+    assertToken(37, 9, "class");
+  }
+
+  @Test
+  @Disabled("Class and import semantic highlighting is planned but not yet implemented")
+  void class_import_has_class_token_on_simple_type_name() {
+    // import java.util.Objects;
+    // Line 8 (0-based line 7), "Objects" at column 16 (length 7)
+    assertToken(7, 16, "class");
+  }
+
+  @Test
+  @Disabled("Class and import semantic highlighting is planned but not yet implemented")
+  void interface_import_has_interface_token_on_simple_type_name() {
+    // import java.util.List;
+    // Line 5 (0-based line 4), "List" at column 16 (length 4)
+    assertToken(4, 16, "interface");
   }
 
   @Test
