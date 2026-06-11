@@ -14,6 +14,6 @@ if [ ! -x "$LAUNCHER" ]; then
 fi
 
 exec nvim \
-  --cmd "lua package.path = package.path .. ';$REPO_ROOT/neovim/?.lua'" \
+  --cmd "set rtp^=$REPO_ROOT/neovim" \
   --cmd "lua require('lathe').setup()" \
   "$@"
