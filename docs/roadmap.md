@@ -164,8 +164,8 @@ See [lathe-source-uri-scheme.md](planned/lathe-source-uri-scheme.md) for the ful
 
 
 ### Neovim plugin packaging
-Package the existing `dev/nvim.lua` integration as an installable Neovim plugin.
-The beta plugin launches `~/.cache/lathe/current/lathe-launcher.sh`
+Package the `neovim/lathe.lua` plugin for distribution.
+The plugin launches `~/.cache/lathe/current/lathe-launcher.sh`
 and keeps the client thin — no client-side project model parsing.
 VS Code plugin and tooling integration is deferred to post-beta.
 

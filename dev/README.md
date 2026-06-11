@@ -10,7 +10,6 @@ All files live in `dev/` and are never shipped with the distribution.
 | File | Purpose |
 |---|---|
 | `nvim.sh` | Build server + open Neovim with Lathe attached |
-| `nvim.lua` | Neovim config loaded by `nvim.sh` (not used directly) |
 | `lsp.py` | Python LSP client library and CLI diagnostics tool |
 | `explore.py` | Interactive LSP shell — explore any file like an engineer would |
 

@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.analysis;
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
+import io.github.aglibs.lathe.server.LatheUri;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionEngine;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionRequest;
@@ -198,7 +199,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
               .map(
                   file -> {
                     final var lspPos = definitionLocator.parsePosition(file, element);
-                    return new Location(file.toUri().toString(), new Range(lspPos, lspPos));
+                    return new Location(LatheUri.fromPath(file), new Range(lspPos, lspPos));
                   });
     }
 

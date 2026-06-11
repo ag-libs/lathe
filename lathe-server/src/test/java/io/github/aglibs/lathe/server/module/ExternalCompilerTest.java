@@ -62,7 +62,7 @@ class ExternalCompilerTest {
 
       assertThat(diagnostics).isEmpty();
       assertThat(definition).isPresent();
-      assertThat(definition.get().getUri()).isEqualTo(helperSource.toUri().toString());
+      assertThat(definition.get().getUri()).isEqualTo("lathe-source://" + helperSource);
       assertThat(definition.get().getRange().getStart()).isEqualTo(new Position(0, 24));
     }
   }
@@ -105,7 +105,7 @@ class ExternalCompilerTest {
               new SourceFeatureRequest(usesUri, usesContent, helperPos, List.of(), manifest));
 
       assertThat(definition).isPresent();
-      assertThat(definition.get().getUri()).isEqualTo(helperSource.toUri().toString());
+      assertThat(definition.get().getUri()).isEqualTo("lathe-source://" + helperSource);
     }
   }
 

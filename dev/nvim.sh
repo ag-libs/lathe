@@ -13,6 +13,7 @@ if [ ! -x "$LAUNCHER" ]; then
   exit 1
 fi
 
-export LATHE_LAUNCHER="$LAUNCHER"
-
-exec nvim -c "luafile $SCRIPT_DIR/nvim.lua" "$@"
+exec nvim \
+  --cmd "lua package.path = package.path .. ';$REPO_ROOT/neovim/?.lua'" \
+  --cmd "lua require('lathe').setup()" \
+  "$@"
