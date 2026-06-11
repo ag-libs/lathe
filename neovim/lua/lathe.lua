@@ -8,9 +8,11 @@
 -- Override the cache location by setting LATHE_CACHE in your environment.
 --
 -- Options (all optional):
---   capabilities  LSP capabilities table; defaults to vim.lsp.protocol.make_client_capabilities()
+--   capabilities     LSP capabilities table; defaults to vim.lsp.protocol.make_client_capabilities()
+--   format_on_save   boolean; format buffer on write via lathe (default: true)
 --
 -- Set LATHE_DEBUG=1 in the environment to enable debug logging in the server process.
+-- Requires the Java Treesitter parser for indentation (:TSInstall java).
 
 local M = {}
 
@@ -74,6 +76,23 @@ function M.setup(opts)
     capabilities = opts.capabilities or vim.lsp.protocol.make_client_capabilities(),
   })
   vim.lsp.enable('lathe')
+
+  local format_on_save = opts.format_on_save ~= false
+  if format_on_save then
+    vim.api.nvim_create_autocmd('LspAttach', {
+      callback = function(args)
+        local client = vim.lsp.get_client_by_id(args.data.client_id)
+        if client and client.name == 'lathe' then
+          vim.api.nvim_create_autocmd('BufWritePre', {
+            buffer = args.buf,
+            callback = function()
+              vim.lsp.buf.format({ bufnr = args.buf, id = args.data.client_id, async = false })
+            end,
+          })
+        end
+      end,
+    })
+  end
 
   vim.api.nvim_create_autocmd('BufReadCmd', {
     pattern = SCHEME .. '*',
