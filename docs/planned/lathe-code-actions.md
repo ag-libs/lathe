@@ -31,246 +31,245 @@ No code actions are ever returned from a real editor session.
 
 Unit tests pass because they compile and call `codeAction` in the same JVM with no JSON round-trip.
 
-### Why the current `diagnostic.data` encoding is insufficient
-
-Even after fixing the type check, the bare string carries only the unresolved name.
-It cannot distinguish a type reference (`List<String> items`) from a variable reference
-(`result = compute()`). Both produce `compiler.err.cant.resolve.location`.
-Any future provider needs to know the intent at the point the diagnostic was created.
-
 ---
 
 ## 2. Design
 
-### 2.1 Structured `diagnostic.data` payload
+### 2.1 `DiagnosticPayload`
 
-Replace the bare string with a `JsonObject` set directly on `diagnostic.data`:
-
-```json
-{"simpleName": "List",   "kind": "TYPE_REF"}
-{"simpleName": "result", "kind": "VARIABLE_REF"}
-```
-
-Using `JsonObject` (not a Java record) gives a stable identity through the LSP round-trip:
-`JsonObject` → serialized as JSON object → LSP4J deserializes back as `JsonObject`.
-No conversion surprises regardless of whether there was a round-trip.
+A single record with a `Kind` enum and a `String name` field.
+`name` carries the symbol the diagnostic is about — a type name, variable name, exception FQN,
+or class name depending on kind.
 
 ```java
-JsonObject payload = new JsonObject();
-payload.addProperty("simpleName", simpleName);
-payload.addProperty("kind", kind);  // "TYPE_REF" or "VARIABLE_REF"
-diagnostic.setData(payload);
+record DiagnosticPayload(Kind kind, String name) {
+    enum Kind { TYPE_REF, VARIABLE_REF, UNREPORTED_EXCEPTION, MISSING_METHOD_IMPL }
+}
 ```
 
-At `codeAction` time: `diag.getData() instanceof JsonObject jo` — works identically whether
-the diagnostic arrived from the client (round-trip) or was passed directly in a test.
+Wire format: `{"kind":"TYPE_REF","name":"List"}` — flat, unambiguous, trivial to deserialize.
 
-### 2.2 Classification: post-processing in `compile()`
+This record lives in the `analysis` package with zero JSON dependencies.
+JSON conversion is handled exclusively in `WorkspaceSession` (the LSP boundary).
 
-`toLsp()` stays static and unchanged — it does position mapping and extracts the raw name from the
-source span. A new post-processing step `enrichWithContext()` is called after `filterAndMap()` in
-`compile()`, where the attributed analysis is available:
+### 2.2 Classification: `enrichWithContext()` post-pass in `compile()`
+
+`toLsp()` stays static and unchanged. A new post-processing step `enrichWithContext()` is called
+after `filterAndMap()` in `compile()`, where the attributed analysis is available.
 
 ```
 compile()
-  → compiler.compile()            // raw javac diagnostics + fileAnalysis
-  → filterAndMap(raw, content)    // toLsp: position mapping, raw name in data (unchanged)
-  → enrichWithContext(diags, run.fileAnalysis())  // NEW: replaces data with JsonObject payload
+  → compiler.compile()             // raw javac diagnostics + fileAnalysis
+  → filterAndMap(raw, content)     // toLsp: position mapping (unchanged)
+  → enrichWithContext(diags, analysis)  // NEW: sets DiagnosticPayload on relevant diagnostics
   → return enriched diags
 ```
 
-`enrichWithContext` iterates the diagnostics. For each `compiler.err.cant.resolve` with a valid
-position, it uses `SourceLocator.pathAt` to get the `TreePath` at the diagnostic offset and
-inspects the parent node to classify:
+`enrichWithContext` switches on diagnostic code:
+
+| Diagnostic code | Classification | Data source |
+|---|---|---|
+| `compiler.err.cant.resolve.location` | `TYPE_REF` or `VARIABLE_REF` | AST parent inspection |
+| `compiler.err.unreported.exception.*` | `UNREPORTED_EXCEPTION` | Message string extraction |
+| `compiler.err.does.not.override.abstract` | `MISSING_METHOD_IMPL` | Class name from AST |
+
+For `cant.resolve`, the AST parent of the `IdentifierTree` at the diagnostic position determines the kind:
 
 ```
-leaf   = path.getLeaf()                 // IdentifierTree for the unresolved name
-parent = path.getParentPath().getLeaf()
-
-parent is VariableTree  and parent.getType() == leaf  → TYPE_REF
-parent is MethodTree    and parent.getReturnType() == leaf  → TYPE_REF
-parent is ClassTree     (extends/implements clause)  → TYPE_REF
-parent is ParameterizedTypeTree  → TYPE_REF
-null path or any other parent  → VARIABLE_REF  (safe fallback: no spurious import offered)
+parent is VariableTree  (type position)  → TYPE_REF
+parent is MethodTree    (return type)    → TYPE_REF
+parent is ClassTree     (extends/implements) → TYPE_REF
+parent is ParameterizedTypeTree          → TYPE_REF
+null path or any other parent            → VARIABLE_REF (safe fallback)
 ```
 
-This is AST-based, not message-string parsing — reliable across javac versions and locales.
+### 2.3 JSON codec in `WorkspaceSession`
 
-### 2.3 Stale source
+`WorkspaceSession` owns both directions:
 
-By `codeAction` time the file may have been edited since the diagnostic was published.
-This is solved the same way as JDT.LS and rust-analyzer: `ensureAttributedAnalysis` recompiles
-from the current document content at `codeAction` time. The payload carries only semantic
-context (kind + name), not offsets or version-specific positions. The fix is computed fresh
-against the current analysis. If the diagnostic no longer applies, the provider returns nothing.
+**Write** — before `publishDiagnostics`, convert `DiagnosticPayload` → `JsonObject`:
+```java
+// {"kind":"TYPE_REF","name":"List"}
+JsonObject toJson(DiagnosticPayload p) {
+    JsonObject jo = new JsonObject();
+    jo.addProperty("kind", p.kind().name());
+    jo.addProperty("name", p.name());
+    return jo;
+}
+```
 
-### 2.4 `CodeActionProvider` interface
+**Read** — in `codeActionFuture`, extract payloads from `CodeActionContext` before passing to session:
+```java
+DiagnosticPayload fromJson(Object data) {
+    if (data instanceof DiagnosticPayload dp) return dp;  // in-process / test
+    if (data instanceof JsonObject jo) return new DiagnosticPayload(
+        Kind.valueOf(jo.get("kind").getAsString()),
+        jo.get("name").getAsString());
+    return null;
+}
+```
+
+`SourceAnalysisSession.codeAction()` signature changes to accept `List<DiagnosticPayload>` directly —
+no JSON in the analysis layer.
+
+### 2.4 Stale source
+
+By `codeAction` time the file may have been edited. `ensureAttributedAnalysis` recompiles from
+current document content — the same approach used by JDT.LS and rust-analyzer.
+The payload carries only semantic context (kind + name), not offsets or version-specific positions.
+
+### 2.5 `CodeActionProvider` interface
 
 ```java
 interface CodeActionProvider {
     List<Either<Command, CodeAction>> provide(
         String uri,
         Diagnostic diag,
-        String simpleName,
+        DiagnosticPayload payload,
         AttributedFileAnalysis analysis,
         WorkspaceTypeIndex typeIndex);
 }
 ```
 
-`SourceAnalysisSession.codeAction` becomes a dispatcher:
+`SourceAnalysisSession.codeAction()` becomes a dispatcher: extract payloads (via `WorkspaceSession`),
+call the matching provider, deduplicate results by title.
 
+```java
+switch (payload.kind()) {
+    case TYPE_REF             -> importProvider.provide(...)
+    case VARIABLE_REF         -> declareProvider.provide(...)
+    case UNREPORTED_EXCEPTION -> throwsProvider.provide(...)
+    case MISSING_METHOD_IMPL  -> methodProvider.provide(...)
+}
 ```
-for diag in diagnostics:
-    if diag.getData() is not JsonObject → skip
-    simpleName = jo["simpleName"]
-    kind       = jo["kind"]
 
-    TYPE_REF     → ImportQuickFixProvider
-    VARIABLE_REF → DeclareVariableProvider
-```
+### 2.6 Shared utilities: `CodeActionSupport`
 
-Each provider is independently testable. New fix kinds add a new class with no changes to
-existing ones.
+Package-private static utility class in the `analysis` package. Used by multiple providers:
 
-### 2.5 Selection flow
+- **Type name formatter** — converts `DeclaredType` to simple-name string
+  (e.g. `java.util.stream.Stream<java.lang.String>` → `Stream<String>`).
+  Handles declared types, primitives, arrays, wildcards, and type variables.
+- **Enclosing method finder** — returns the `MethodTree` and its `TreePath` that encloses
+  a given source offset. Used by `AddThrowsProvider`.
+- **Class body end position** — returns the source offset just before the closing `}` of a
+  `ClassTree`. Used by `MissingMethodImplProvider`.
 
-Actions are returned with a fully-populated `WorkspaceEdit` (eager). When the user selects
-an action in Neovim:
+### 2.7 Providers
 
-1. Neovim reads `action.edit` and calls `vim.lsp.util.apply_workspace_edit()`
-2. The `WorkspaceEdit` contains a `TextEdit` inserting `"import java.util.List;\n"` at the
-   insertion range computed by `ImportAnalyzer`
-3. The import appears in the buffer — no further LSP round-trip, no `codeAction/resolve` needed
+Each provider constructs its own `ImportAnalyzer` when it needs to add imports.
+All providers may emit compound `WorkspaceEdit` objects (primary edit + import insertions).
 
----
+#### `ImportQuickFixProvider` — `TYPE_REF`
 
-## 3. Providers
-
-### 3.1 `ImportQuickFixProvider` (TYPE_REF)
-
-Direct extraction of the existing `buildQuickFix` logic into a standalone class.
-Queries the type index with `simpleName`, filters already-imported types and inaccessible types,
+Extracts the existing `buildQuickFix` logic from `SourceAnalysisSession`.
+Queries the type index with `payload.name()`, filters already-imported and inaccessible types,
 returns one `CodeAction` per candidate with an import `WorkspaceEdit`.
 
-### 3.2 `DeclareVariableProvider` (VARIABLE_REF)
+#### `DeclareVariableProvider` — `VARIABLE_REF`
 
-For an unresolved name on the left-hand side of an assignment (`result = expr`):
+At `codeAction` time, finds the `AssignmentTree` at the diagnostic range position and
+attempts to infer the RHS type via `trees().getTypeMirror(rhsPath)`.
 
-1. Walk the AST from the unresolved name up to the enclosing `ExpressionStatementTree`
-2. Get the start offset of that statement and convert to an LSP `Position`
-3. Use `trees().getTypeMirror(rhsPath)` to infer the type of the right-hand side expression
-4. If type resolves to a concrete named type → emit `TypeName result = `
-5. If type is unavailable or error → emit `var result = ` as fallback
-6. `TextEdit` inserts the declaration prefix at the statement start
+- If type is a concrete `DeclaredType` or `PrimitiveType` → `TypeName x = ...` + import if needed
+- If type is error/null, or context is not a local variable → `var x = ...`
 
-For a variable used in a non-assignment position (argument, operand): declare on a new line
-before the enclosing statement, initialized to `null` or a zero value.
+Only valid in method body context; action is suppressed for field-level assignments.
+
+#### `AddThrowsProvider` — `UNREPORTED_EXCEPTION`
+
+Finds the enclosing method via `CodeActionSupport.enclosingMethod()`.
+Appends the exception simple name to the `throws` clause (or creates it).
+Adds an import for the exception type if not already present and not in `java.lang`.
+
+#### `MissingMethodImplProvider` — `MISSING_METHOD_IMPL`
+
+Finds the `ClassTree` via `payload.name()` in the attributed analysis.
+Collects all abstract methods from supertypes using `elements().getAllMembers()`,
+filters already-implemented ones, generates `@Override` stubs for all remaining methods.
+Inserts all stubs before the closing `}` of the class body.
+Adds imports for all parameter and return types not already present.
+Multiple diagnostics for the same class produce the same action — deduplicated by title in the dispatcher.
+
+### 2.8 Selection flow
+
+Actions are returned with fully-populated `WorkspaceEdit` objects (eager, no `codeAction/resolve`).
+Neovim applies the edit directly via `vim.lsp.util.apply_workspace_edit()`.
 
 ---
 
-## 4. Logging
+## 3. Logging
 
-Two levels: INFO for the per-request summary (always visible), FINE for the per-diagnostic detail
-(enabled when debugging).
+**`SourceAnalysisSession.codeAction` — INFO**
 
-### `SourceAnalysisSession.codeAction` — INFO
-
-One summary line in, one out, matching the pattern of `compile` and `completion`:
-
+One summary line in, one out:
 ```
 [codeAction] file:///Foo.java diags=3
 [codeAction] file:///Foo.java 12ms actions=2
 ```
 
-### Per-diagnostic routing — FINE
-
-One line per diagnostic showing the decoded payload and which provider was selected (or skipped):
+**Per-diagnostic routing — FINE**
 
 ```
 [codeAction:diag] code=compiler.err.cant.resolve.location kind=TYPE_REF name=List
-[codeAction:diag] code=compiler.err.cant.resolve.location kind=VARIABLE_REF name=result → no provider
+[codeAction:diag] code=compiler.err.unreported.exception kind=UNREPORTED_EXCEPTION name=java.io.IOException
 ```
 
-Surfaces `kind=null` or missing-payload cases that would otherwise silently produce zero actions.
-
-### Per-candidate decisions inside `ImportQuickFixProvider` — FINE
-
-One line per type index candidate with the skip reason:
+**Per-candidate decisions inside providers — FINE**
 
 ```
 [codeAction:import] java.util.List → added
 [codeAction:import] com.example.List → already imported, skipped
-[codeAction:import] com.internal.List → inaccessible, skipped
-[codeAction:import] com.other.List → not in elements, skipped
 ```
-
-The temporary `LOG.info` currently in `SourceAnalysisSession` for `diag data type=...` is removed
-once the design lands — the per-diagnostic routing log above replaces it.
 
 ---
 
-## 5. Testing Strategy
+## 4. Testing Strategy
 
-### Layer 1 — Classification tests (new, in `CodeActionTest`)
+**Layer 1 — Classification tests**
 
-Call `session.compile()` and inspect the `data` field of the returned diagnostics.
-Assert `JsonObject` with correct `kind` for each AST position:
+Call `session.compile()`, inspect `diagnostic.getData()`, assert `DiagnosticPayload` with correct
+`kind` and `name` for each AST position and diagnostic code.
 
-| Source pattern | Expected kind |
-|---|---|
-| `ArrayList list;` (field type) | `TYPE_REF` |
-| `ArrayList<String> m()` (return type) | `TYPE_REF` |
-| `result = 1;` (LHS assignment) | `VARIABLE_REF` |
-| `new Foo(result)` (argument) | `VARIABLE_REF` |
+**Layer 2 — Updated existing tests**
 
-### Layer 2 — Updated existing tests
+After `enrichWithContext` is wired in, existing tests automatically go through the `DiagnosticPayload`
+path. No structural changes needed.
 
-After `enrichWithContext` is wired in, `session.compile()` produces `JsonObject` data.
-The existing four tests in `CodeActionTest` automatically exercise the `JsonObject` path —
-no structural changes needed beyond any assertion updates on `data` type.
+**Layer 3 — Round-trip test (regression guard)**
 
-### Layer 3 — Explicit round-trip test (regression guard)
-
-One test that manually constructs a `JsonObject` payload without going through `compile()`,
-simulating exactly what the client sends back after the LSP round-trip:
-
+Manually construct a `JsonObject` payload simulating the client round-trip:
 ```java
-// populate analysis cache
-session.compile(uri, source, 1, CompileMode.OPEN);
-
-// simulate client round-trip: data arrives as JsonObject, not String
-JsonObject payload = new JsonObject();
-payload.addProperty("simpleName", "ArrayList");
-payload.addProperty("kind", "TYPE_REF");
-Diagnostic diag = new Diagnostic(range, "cannot find symbol", Error, "lathe");
-diag.setData(payload);
-
-var actions = session.codeAction(uri, source, 1, new CodeActionContext(List.of(diag)), typeIndex);
-assertThat(actions).hasSize(1);
+JsonObject jo = new JsonObject();
+jo.addProperty("kind", "TYPE_REF");
+jo.addProperty("name", "ArrayList");
+diag.setData(jo);
+// assert actions returned
 ```
 
-This is the test that would have caught the original `JsonPrimitive` bug.
-Its existence documents that the round-trip path is consciously tested.
+**Layer 4 — Headless Neovim probe (manual, pre-ship)**
 
-### Layer 4 — Headless Neovim probe (manual, pre-ship)
-
-The existing `dev/` capture script run against a real workspace.
-After the implementation, the script must return `got N action(s)` with N > 0.
-Not part of the automated test suite — requires a live workspace and installed server.
+Re-run the existing capture script. Must return `got N action(s)` with N > 0.
 
 ---
 
-## 6. Work Items
+## 5. Work Items
 
-| # | Item | Scope | Status |
-|---|---|---|---|
-| 1 | `enrichWithContext()` post-pass in `compile()` | New method, AST classification | Planned |
-| 2 | `CodeActionProvider` interface + dispatcher in `codeAction()` | Refactor, no behaviour change | Planned |
-| 3 | `ImportQuickFixProvider` — extract from `buildQuickFix` | Refactor | Planned |
-| 4 | Round-trip test: `JsonObject` payload through `codeAction` | Closes the test gap | Planned |
-| 5 | `DeclareVariableProvider` — LHS-assignment case | New feature | Planned |
-| 6 | `DeclareVariableProvider` — argument-position case | New feature (follow-on) | Planned |
+| # | Item | Scope |
+|---|---|---|
+| 1 | `DiagnosticPayload` record + `Kind` enum | New file, `analysis` package |
+| 2 | `enrichWithContext()` post-pass in `compile()` | Multi-code classification |
+| 3 | JSON codec in `WorkspaceSession` (write + read) | LSP boundary |
+| 4 | `CodeActionProvider` interface | New file |
+| 5 | `ImportQuickFixProvider` | Extract from `buildQuickFix` |
+| 6 | Dispatcher in `codeAction()` + deduplication | Replaces flat loop |
+| 7 | Replace `CodeActionTest` | Classification + round-trip + provider tests |
+| 8 | `DeclareVariableProvider` | Type inference + `var` fallback |
+| 9 | `AddThrowsProvider` | Throws clause + import |
+| 10 | `CodeActionSupport` utilities | Type formatter + method/class finders |
+| 11 | `MissingMethodImplProvider` | Stub generation |
 
-Items 1–4 are a single coherent change: the `JsonPrimitive` bug is fixed as a side-effect of
-switching to `JsonObject` payload, and the provider framework is established.
-Items 5–6 add behaviour without touching items 1–4.
+Items 1–7 are one coherent change: infrastructure + first working provider.
+Items 8–9 each add one provider with no changes to items 1–7.
+Item 10 is introduced when needed by items 8–9 or 11.
+Item 11 is the most complex, stands alone.
