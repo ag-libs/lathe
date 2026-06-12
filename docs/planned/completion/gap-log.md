@@ -44,9 +44,721 @@ Notes:
 
 ## Open Entries
 
+## CQ-0022 — String switch `case §` offers type-index classes
+
+ID: CQ-0022
+Status: new
+Tier: basic
+Failure mode: wrong-candidate-set
+Owner component: CompletionEngine / TypeResolver
+
+Project/file:
+`/home/ag-libs/git/helidon/dbclient/metrics/src/main/java/io/helidon/dbclient/metrics/DbClientMetricsProvider.java`
+
+Probe command:
+```bash
+printf 'diagnostics\ninject "return switch (type) { case " at 55\nlog 30\n' \
+  | python3 dev/explore.py /home/ag-libs/git/helidon/dbclient/metrics/src/main/java/io/helidon/dbclient/metrics/DbClientMetricsProvider.java
+```
+
+Cursor context:
+```java
+String type = config.get("type").asString().orElse("COUNTER");
+return switch (type) { case §
+```
+
+IntelliJ or JDT behavior:
+Expected IDE behavior is not to offer arbitrary type names in a `String` switch label.
+Useful candidates would be visible constant `String` values or no basic candidates.
+
+Lathe behavior:
+Returns 112 type-index candidates such as `Thread`,
+`String`,
+`Process`,
+`Object`,
+and `Math`.
+The log shows `sentinelCtx=CASE_LABEL`.
+
+Expected Lathe behavior:
+For a `CASE_LABEL` site whose selector type is `String`,
+Lathe should suppress unrelated type-index classes.
+Type names are not syntactically useful case constants in this context.
+
+Accepted edit, if relevant:
+Not probed.
+Accepting `Thread` would produce an invalid or irrelevant `case Thread` label.
+
+Regression target:
+`CompletionSimpleNameTest.simpleName_switchCaseLabel_stringSubject_suppressesTypeIndexClasses`
+
+Notes:
+This is separate from enum switch labels (`CQ-0006`) and type-pattern switch labels (`CQ-0021`).
+The case-label path should branch by selector type:
+enum selectors use enum constants,
+non-enum reference selectors may use type-pattern candidates where pattern matching applies,
+and `String` selectors should not fall through to broad type-index completion.
+
+## CQ-0023 — Member-access in-token method completion still duplicates existing calls
+
+ID: CQ-0023
+Status: new
+Tier: presentation
+Failure mode: bad-replacement-range
+Owner component: CompletionSite / CompletionItemPresenter
+
+Project/file:
+`/home/ag-libs/git/dropwizard/dropwizard-lifecycle/src/main/java/io/dropwizard/lifecycle/setup/ExecutorServiceBuilder.java`
+
+Probe command:
+```bash
+printf 'diagnostics\ncomplete after "Duration.s"\naccept after "Duration.s" label seconds\nlog 50\n' \
+  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-lifecycle/src/main/java/io/dropwizard/lifecycle/setup/ExecutorServiceBuilder.java
+```
+
+Related probes:
+```bash
+printf 'diagnostics\naccept inject "DbClientService svc = DbClientMetrics.c§ounter()" at 55 label counter\nlog 60\n' \
+  | python3 dev/explore.py /home/ag-libs/git/helidon/dbclient/metrics/src/main/java/io/helidon/dbclient/metrics/DbClientMetricsProvider.java
+
+printf 'diagnostics\naccept inject "Entity.j§son(\"{}\")" at 91 label json\nlog 60\n' \
+  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-testing/src/test/java/io/dropwizard/testing/junit5/PersonResourceTest.java
+```
+
+Cursor context:
+```java
+this.keepAliveTime = Duration.s§econds(60);
+DbClientService svc = DbClientMetrics.c§ounter()
+Entity.j§son("{}")
+```
+
+IntelliJ or JDT behavior:
+Expected IDE behavior is insert/replace-safe in-token completion.
+Accepting `seconds` should not duplicate the already-present suffix.
+
+Lathe behavior:
+The menu correctly returns `seconds`.
+The selected completion item has:
+```text
+insertText: seconds($1)
+textEdit.range: 43:38-43:45
+```
+
+The accepted source becomes:
+```java
+this.keepAliveTime = Duration.seconds(§)(60);
+DbClientService svc = DbClientMetrics.counter()§()
+Entity.json(§)("{}")
+```
+
+Expected Lathe behavior:
+Completion at `Duration.s§econds(60)` should replace the whole existing method call target,
+or otherwise use insert/replace semantics so the accepted text remains:
+```java
+this.keepAliveTime = Duration.seconds(§60);
+DbClientService svc = DbClientMetrics.counter()§
+Entity.json(§"{}")
+```
+
+Accepted edit, if relevant:
+The accepted edit must not produce `Duration.seconds()(60)`,
+`counter()()`,
+or `json()("{}")`.
+
+Regression target:
+`CompletionPresentationTest.memberAccess_inTokenExistingCall_replacesSuffixWithoutDuplicatingCall`
+
+Notes:
+`CQ-0003` fixed a similar in-token suffix problem for another member-access probe,
+but these real Helidon/Dropwizard probes show the method-call form still duplicates existing calls.
+
+## CQ-0025 — Nested type completion after unimported outer type lacks an import edit
+
+ID: CQ-0025
+Status: new
+Tier: presentation
+Failure mode: bad-import-edit
+Owner component: CompletionEngine / CompletionItemPresenter
+
+Project/file:
+`/home/ag-libs/git/helidon/dbclient/metrics/src/main/java/io/helidon/dbclient/metrics/DbClientMetricsProvider.java`
+
+Probe command:
+```bash
+printf 'diagnostics\naccept inject "Map.En" at 55 label Entry\nlog 40\n' \
+  | python3 dev/explore.py /home/ag-libs/git/helidon/dbclient/metrics/src/main/java/io/helidon/dbclient/metrics/DbClientMetricsProvider.java
+```
+
+Cursor context:
+```java
+Map.En§try
+```
+
+IntelliJ or JDT behavior:
+Expected IDE behavior is for accepting `Entry` through an unimported outer type to leave compilable source,
+either by importing `java.util.Map` or by preserving a fully qualified receiver.
+
+Lathe behavior:
+The selected item is:
+```text
+label: Entry
+detail: java.util.Map.Entry
+insertText: Entry
+additionalTextEdits: none
+```
+
+The accepted source remains:
+```java
+Map.Entry§
+```
+
+`DbClientMetricsProvider.java` imports `java.util.Collection`,
+`java.util.LinkedList`,
+and `java.util.List`,
+but does not import `java.util.Map`,
+so the accepted source leaves the outer type unresolved.
+
+Expected Lathe behavior:
+When a nested type candidate depends on an unimported outer type,
+the completion item should add a deterministic import edit for the outer type,
+for example:
+```java
+import java.util.Map;
+```
+
+Accepted edit, if relevant:
+Accepting `Entry` after `Map.En` should produce source equivalent to:
+```java
+import java.util.Map;
+
+Map.Entry§
+```
+
+Regression target:
+`CompletionPresentationTest.completionItem_nestedType_addsOuterTypeImportEdit`
+
+Notes:
+The fully qualified control probe `java.util.Map.En§` accepts to `java.util.Map.Entry§`,
+which is self-contained and does not need an import.
+
+## CQ-0024 — Enum type completion ranks nested type before enum constants
+
+ID: CQ-0024
+Status: new
+Tier: basic
+Failure mode: poor-ranking
+Owner component: CandidateGenerator / CompletionCandidateRanker
+
+Project/file:
+`/home/ag-libs/git/dropwizard/dropwizard-testing/src/test/java/io/dropwizard/testing/junit5/PersonResourceTest.java`
+
+Probe command:
+```bash
+printf 'diagnostics\ninject "Response.Status." at 72\ninject "Response.Status.B" at 72\nlog 30\n' \
+  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-testing/src/test/java/io/dropwizard/testing/junit5/PersonResourceTest.java
+```
+
+Cursor context:
+```java
+Response.Status.§
+```
+
+IntelliJ or JDT behavior:
+Expected IDE behavior is to rank enum constants first after an enum type receiver.
+
+Lathe behavior:
+`Response.Status.` returns `Family` first,
+then enum constants such as `ACCEPTED`,
+`BAD_GATEWAY`,
+and `BAD_REQUEST`.
+With prefix `B`,
+only the enum constants remain and sorting is useful.
+
+Expected Lathe behavior:
+After an enum type receiver with no prefix,
+enum constants should rank before nested types,
+static methods,
+and the `class` literal.
+`Family` is syntactically valid,
+but it is a less likely completion than `OK`,
+`BAD_REQUEST`,
+or another status constant.
+
+Accepted edit, if relevant:
+Not probed.
+
+Regression target:
+`CompletionMemberAccessTest.memberAccess_enumTypeReceiver_ranksConstantsBeforeNestedTypes`
+
+Notes:
+This is a ranking-only issue.
+The candidate set is valid,
+and prefix filtering behaves correctly for `Response.Status.B`.
+
+## CQ-0026 — Class-body completion after modifiers offers invalid modifier keywords
+
+ID: CQ-0026
+Status: new
+Tier: basic
+Failure mode: wrong-candidate-set
+Owner component: KeywordCompletion / SentinelParser
+
+Project/file:
+`/home/ag-libs/git/helidon/health/health/src/main/java/io/helidon/health/HealthCheck.java`
+
+Probe command:
+```bash
+printf 'diagnostics\ninject "public " at 30\ninject "private final " at 30\nlog 80\n' \
+  | python3 dev/explore.py /home/ag-libs/git/helidon/health/health/src/main/java/io/helidon/health/HealthCheck.java
+```
+
+Cursor context:
+```java
+public §
+private final §
+```
+
+IntelliJ or JDT behavior:
+Expected IDE behavior is member-declaration completion appropriate to the modifiers already typed.
+After `private final `,
+useful candidates are field types,
+`class`,
+`interface`,
+`enum`,
+or `record` where legal.
+Repeating access modifiers should not be offered.
+
+Lathe behavior:
+Both probes return 125 items.
+The first items are modifier keywords:
+```text
+public
+private
+protected
+static
+final
+abstract
+synchronized
+transient
+volatile
+class
+interface
+enum
+record
+void
+```
+
+For `private final §`,
+accepting `public`,
+`private`,
+`protected`,
+`final`,
+`abstract`,
+or several other modifier candidates would produce an invalid declaration.
+The log shows `sentinelCtx=TYPE_REFERENCE`.
+
+Expected Lathe behavior:
+Class-body completion should account for already-typed declaration modifiers.
+It should suppress duplicate or mutually exclusive modifiers and prefer legal declaration continuations.
+For `private final §`,
+type candidates such as `String`,
+`Map`,
+or project types should remain available for field declarations.
+
+Accepted edit, if relevant:
+Not probed.
+The issue is candidate validity before acceptance.
+
+Regression target:
+`CompletionKeywordAndNoSlotTest.classBody_afterPrivateFinal_suppressesInvalidModifiers`
+
+Notes:
+This was found while simulating a developer adding a new class member by typing modifiers first.
+The empty class-body case is broader and can still offer member declaration starters;
+the gap is the modifier-sensitive filtering after the user has already committed part of the declaration.
+
+## CQ-0027 — `Collectors.` inside return-stream `collect` is not ranked by result type
+
+ID: CQ-0027
+Status: new
+Tier: typed
+Failure mode: poor-ranking
+Owner component: TypeResolver / CompletionCandidateRanker
+
+Project/file:
+`/home/ag-libs/git/dropwizard/dropwizard-migrations/src/main/java/io/dropwizard/migrations/DbMigrateCommand.java`
+
+Probe command:
+```bash
+printf 'diagnostics\ninject "return contexts.stream().map(Object::toString).collect(Collectors." at 76\nlog 80\n' \
+  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-migrations/src/main/java/io/dropwizard/migrations/DbMigrateCommand.java
+```
+
+Related probes:
+```bash
+printf 'diagnostics\ninject "return headers.entrySet().stream().collect(Collectors." at 91\nlog 80\n' \
+  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-json-logging/src/main/java/io/dropwizard/logging/json/layout/AccessJsonLayout.java
+
+printf 'diagnostics\ninject "return names.stream().map(healthStateAggregator::healthStateView).flatMap(Optional::stream).collect(Collectors." at 90\nlog 80\n' \
+  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-health/src/main/java/io/dropwizard/health/response/JsonHealthResponseProvider.java
+```
+
+Cursor context:
+```java
+private String getContext(...) {
+    return contexts.stream().map(Object::toString).collect(Collectors.§
+}
+
+private Map<String, String> filterHeaders(...) {
+    return headers.entrySet().stream().collect(Collectors.§
+}
+
+private List<HealthStateView> getViews(...) {
+    return names.stream()
+        .map(healthStateAggregator::healthStateView)
+        .flatMap(Optional::stream)
+        .collect(Collectors.§
+}
+```
+
+IntelliJ or JDT behavior:
+Expected IDE behavior is to use the enclosing return type and the `Stream.collect` target type
+to rank compatible collector factories first.
+For these probes,
+`joining`,
+`toMap`,
+and `toUnmodifiableList` or `toList` should be near the top respectively.
+
+Lathe behavior:
+All three probes return 45 `Collectors` members in alphabetical order:
+```text
+averagingDouble
+averagingInt
+averagingLong
+collectingAndThen
+counting
+filtering
+flatMapping
+groupingBy
+...
+joining
+...
+toList
+toMap
+toSet
+toUnmodifiableList
+...
+```
+
+The log shows `sentinelCtx=MEMBER_ACCESS` and resolves `Collectors` correctly,
+but the candidate ranking does not reflect the expected result type of the surrounding return expression.
+
+Expected Lathe behavior:
+When `Collectors.§` is the argument to `Stream.collect(...)`,
+Lathe should propagate the expected result type from the enclosing expression.
+Collectors whose result type matches that expected type should rank before unrelated collectors.
+Examples:
+
+- `String` return: rank `joining(...)` before numeric summarizing and grouping collectors.
+- `Map<String, String>` return: rank `toMap(...)` before `toList`, `joining`, and numeric collectors.
+- `List<HealthStateView>` return: rank `toUnmodifiableList()` or `toList()` before `toMap` and grouping collectors.
+
+Accepted edit, if relevant:
+Parameterized collector methods correctly place the cursor inside their argument list,
+for example accepting `toMap` produces `Collectors.toMap(§)`.
+The gap is ranking,
+not insertion.
+
+Regression target:
+`CompletionMemberAccessTest.memberAccess_collectorsReceiverInsideReturnCollect_rankedByReturnType`
+
+Notes:
+This is related to `CQ-0020`,
+but it was found through return statements rather than assignment initializers.
+The same exploration also reconfirmed deferred `CQ-0002`:
+method-reference completion such as `Map.Entry::getV§` and `Object::to§` still returns no candidates.
+
+## CQ-0028 — Fresh local declaration and assignment sites borrow enclosing return type
+
+ID: CQ-0028
+Status: new
+Tier: typed
+Failure mode: poor-ranking
+Owner component: TypeResolver
+
+Project/file:
+`/home/ag-libs/git/helidon/dbclient/metrics/src/main/java/io/helidon/dbclient/metrics/DbClientMetricsProvider.java`
+
+Probe command:
+```bash
+printf 'diagnostics\ninject "var value = " at 55\ninject "String value = \"\"; value = " at 55\nlog 80\n' \
+  | python3 dev/explore.py /home/ag-libs/git/helidon/dbclient/metrics/src/main/java/io/helidon/dbclient/metrics/DbClientMetricsProvider.java
+```
+
+Control probes:
+```bash
+printf 'diagnostics\ninject "var value = " at 76\ninject "String value = \"\"; value = " at 76\nlog 80\n' \
+  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-migrations/src/main/java/io/dropwizard/migrations/DbMigrateCommand.java
+
+printf 'diagnostics\ninject "var value = " at 91\ninject "var value = java.util.Collections.emptyMap(); value = " at 91\nlog 80\n' \
+  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-json-logging/src/main/java/io/dropwizard/logging/json/layout/AccessJsonLayout.java
+```
+
+Cursor context:
+```java
+// inside DbClientMetricsProvider.fromConfig(...), whose return type is DbClientService
+var value = §
+String value = ""; value = §
+
+// inside DbMigrateCommand.getContext(...), whose return type is String
+var value = §
+
+// inside AccessJsonLayout.filterHeaders(...), whose return type is Map<String, String>
+var value = §
+```
+
+IntelliJ or JDT behavior:
+Expected IDE behavior is that a `var` initializer has no declared expected type;
+the initializer determines the local variable type.
+For assignment to an already declared local,
+the assignee type should be used as the expected type.
+
+Lathe behavior:
+In all probes,
+the debug log shows the expected type comes from the enclosing method return type:
+```text
+semantic=Type[type=io.helidon.dbclient.DbClientService]
+semantic=Type[type=java.lang.String]
+semantic=Type[type=java.util.Map<java.lang.String,java.lang.String>]
+```
+
+This affects ranking.
+Inside `fromConfig`, `var value = §` ranks `fromConfig` first because it returns `DbClientService`,
+even though a `var` initializer should not be constrained by the method return type.
+In the same method,
+`String value = ""; value = §` also uses `DbClientService` instead of the local variable's `String` type.
+
+Expected Lathe behavior:
+`var value = §` should use `ExpectedValue.Unknown` or an equivalent unconstrained value slot.
+`String value = ""; value = §` should use `String` as the expected type,
+even when the enclosing method returns some other type.
+
+Accepted edit, if relevant:
+No bad edit payload was found.
+This gap is about ranking and semantic context.
+
+Regression target:
+`CompletionSimpleNameTest.varInitializer_doesNotUseEnclosingMethodReturnType`
+`CompletionSimpleNameTest.assignmentToFreshLocal_usesAssigneeTypeNotEnclosingReturnType`
+
+Notes:
+The same pass confirmed useful `var` behavior elsewhere:
+`var list = List.of("a"); list.§`,
+`var map = new java.util.HashMap<String, String>(); map.§`,
+and `var service = fromConfig(config); service.§` all resolve the inferred local variable type for subsequent member access.
+Editing `var list = List.o§f("a")` still duplicates the existing call suffix,
+which is already covered by `CQ-0023`.
+
+## CQ-0029 — Wildcard generic receivers do not expose usable bound members
+
+ID: CQ-0029
+Status: new
+Tier: typed
+Failure mode: missing-candidates
+Owner component: TypeResolver / CompletionEngine
+
+Project/file:
+`/home/ag-libs/git/dropwizard/dropwizard-e2e/src/main/java/com/example/app1/App1Resource.java`
+
+Probe command:
+```bash
+printf 'diagnostics\ninject "final java.util.Collection<? extends Number> numbers = java.util.List.of(1); numbers.iterator().next()." at 37\nlog 45\n' \
+  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-e2e/src/main/java/com/example/app1/App1Resource.java
+```
+
+Related probes:
+```bash
+printf 'diagnostics\ninject "final java.util.List<? extends Number> numbers = java.util.List.of(1); numbers.get(0)." at 37\nlog 45\n' \
+  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-e2e/src/main/java/com/example/app1/App1Resource.java
+
+printf 'diagnostics\ninject "final java.util.Map<String, ? extends Number> numbers = java.util.Map.of(\"x\", 1); numbers.get(\"x\")." at 37\nlog 45\n' \
+  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-e2e/src/main/java/com/example/app1/App1Resource.java
+
+printf 'diagnostics\ninject "final java.util.Collection<?> values = java.util.List.of(\"a\"); values.iterator().next()." at 37\nlog 45\n' \
+  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-e2e/src/main/java/com/example/app1/App1Resource.java
+```
+
+Cursor context:
+```java
+final java.util.Collection<? extends Number> numbers = java.util.List.of(1);
+numbers.iterator().next().§
+
+final java.util.List<? extends Number> numbers = java.util.List.of(1);
+numbers.get(0).§
+
+final java.util.Map<String, ? extends Number> numbers = java.util.Map.of("x", 1);
+numbers.get("x").§
+
+final java.util.Collection<?> values = java.util.List.of("a");
+values.iterator().next().§
+```
+
+IntelliJ or JDT behavior:
+Expected IDE behavior is to expose members from the capture's usable upper bound.
+For `? extends Number`,
+member completion should show `Number` methods such as `intValue`,
+`longValue`,
+and `doubleValue`.
+For unbounded `?`,
+member completion should at least show `Object` methods.
+
+Lathe behavior:
+All wildcard probes return no completion items.
+The log shows `sentinelCtx=MEMBER_ACCESS` but receiver resolution fails:
+```text
+resolve receiver=|numbers.iterator().next()| type=null static=null reattributed=true
+resolve receiver=|numbers.get(0)| type=null static=null reattributed=true
+resolve receiver=|numbers.get("x")| type=null static=null reattributed=true
+resolve receiver=|values.iterator().next()| type=null static=null reattributed=true
+```
+
+Expected Lathe behavior:
+When a generic member returns a captured wildcard,
+Lathe should use the capture's upper bound for completion.
+Examples:
+
+- `Collection<? extends Number>.iterator().next().§` should complete as `Number`.
+- `List<? extends Number>.get(0).§` should complete as `Number`.
+- `Map<String, ? extends Number>.get("x").§` should complete as `Number`.
+- `Collection<?>.iterator().next().§` should complete as `Object`.
+
+Accepted edit, if relevant:
+Not applicable.
+No candidate is returned.
+
+Regression target:
+`CompletionMemberAccessTest.memberAccess_wildcardExtendsCollectionElement_usesUpperBound`
+`CompletionMemberAccessTest.memberAccess_unboundedWildcardCollectionElement_usesObjectBound`
+
+Notes:
+Non-wildcard generic controls work correctly:
+`Map<String, String>.entrySet().iterator().next().§` returns `Entry.getKey() : String`
+and `Entry.getValue() : String`;
+`Map<String, List<String>>.get("x").§` returns `List<String>` methods;
+`Map<String, List<String>>.get("x").get(0).§` returns `String` methods;
+and `Collection<String>.iterator().next().§` returns `String` methods.
+
+## CQ-0030 — Type-variable receivers do not expose declared bounds
+
+ID: CQ-0030
+Status: new
+Tier: typed
+Failure mode: missing-candidates
+Owner component: TypeResolver / CompletionEngine
+
+Project/file:
+`/home/ag-libs/git/dropwizard/dropwizard-core/src/main/java/io/dropwizard/core/setup/Bootstrap.java`
+
+Probe command:
+```bash
+printf 'diagnostics\ninject "configuration." at 199\nlog 45\n' \
+  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-core/src/main/java/io/dropwizard/core/setup/Bootstrap.java
+```
+
+Related probes:
+```bash
+printf 'diagnostics\ninject "public <T extends java.util.Collection<String>> void use(T value) { value.§ }" at 40\nlog 50\n' \
+  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-e2e/src/main/java/com/example/app1/App1Resource.java
+
+printf 'diagnostics\ninject "return call.call()." at 181\nlog 45\n' \
+  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-testing/src/main/java/io/dropwizard/testing/common/DAOTest.java
+```
+
+Cursor context:
+```java
+public class Bootstrap<T extends Configuration> {
+    public void run(T configuration, Environment environment) throws Exception {
+        configuration.§
+    }
+}
+
+public <T extends java.util.Collection<String>> void use(T value) {
+    value.§
+}
+
+public <T> T inTransaction(Callable<T> call) {
+    return call.call().§
+}
+```
+
+IntelliJ or JDT behavior:
+Expected IDE behavior is to expose members available through the type variable's declared bound.
+For `T extends Configuration`,
+completion should show `Configuration` and `Object` members.
+For `T extends Collection<String>`,
+completion should show `Collection<String>` members.
+For unbounded `T`,
+completion should at least show `Object` members.
+
+Lathe behavior:
+Bounded type-variable receivers return no completion items.
+The log preserves the type variable but does not expand its bound:
+```text
+resolve receiver=|configuration| type=T static=false reattributed=false
+proposals count=0 labels=[]
+
+resolve receiver=|value| type=T static=false reattributed=true
+proposals count=0 labels=[]
+```
+
+For the generic method return probe,
+`Callable<T>.call().§` also returns no items:
+```text
+resolve receiver=|call.call()| type=null static=null reattributed=true
+```
+
+Expected Lathe behavior:
+Type-variable member completion should use the effective upper bound.
+If the bound is parameterized,
+the substituted type should be used for method signatures:
+for `T extends Collection<String>`,
+`iterator()` should be shown as returning `Iterator<String>`,
+`stream()` as `Stream<String>`,
+and `forEach` as accepting `Consumer<? super String>`.
+
+Accepted edit, if relevant:
+Not applicable.
+No candidate is returned.
+
+Regression target:
+`CompletionMemberAccessTest.memberAccess_classTypeVariable_usesDeclaredBound`
+`CompletionMemberAccessTest.memberAccess_methodTypeVariable_usesDeclaredBound`
+`CompletionMemberAccessTest.memberAccess_unboundedMethodTypeVariable_usesObjectBound`
+
+Notes:
+Generic type-reference completion while declaring bounds works:
+`public <T extends RuntimeEx§> T identity(T value) { return value; }`
+offers `RuntimeException` and accepts to
+`public <T extends RuntimeException§> T identity(T value) { return value; }`.
+Local generic class bounds also work for
+`class Local<T extends RuntimeEx§`.
+
 ## Current Triage
 
 All accepted completion-quality gaps from the `DropwizardResourceConfig` explorer pass have been resolved or triaged.
+
+The latest Helidon/Dropwizard explorer pass added `CQ-0022`,
+`CQ-0023`,
+`CQ-0024`,
+`CQ-0025`,
+`CQ-0026`,
+`CQ-0027`,
+`CQ-0028`,
+`CQ-0029`,
+and `CQ-0030`.
+It also reconfirmed deferred `CQ-0002` with additional method-reference probes on
+`List::stream`,
+`Duration::toMilliseconds`,
+and `poolConfig::setValidationQuery`.
 
 `CQ-0001`,
 `CQ-0003`,

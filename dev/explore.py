@@ -328,6 +328,7 @@ def _snippet_text_and_cursor(text: str) -> tuple[str, int | None]:
 
 
 def _apply_completion(content: str, item: dict) -> tuple[str, int]:
+    cursor_marker = "\ufff0LATHE_CURSOR\ufff0"
     text_edit = item.get("textEdit")
     if not text_edit:
         raise ValueError("selected completion item has no textEdit")
@@ -342,6 +343,10 @@ def _apply_completion(content: str, item: dict) -> tuple[str, int]:
     else:
         applied_text = new_text
         cursor_in_new_text = len(applied_text)
+    cursor_in_new_text = len(applied_text) if cursor_in_new_text is None else cursor_in_new_text
+    marked_applied_text = (
+        applied_text[:cursor_in_new_text] + cursor_marker + applied_text[cursor_in_new_text:]
+    )
 
     primary_start = _offset_at(
         content,
@@ -361,19 +366,15 @@ def _apply_completion(content: str, item: dict) -> tuple[str, int]:
             _offset_at(content, rng["start"]["line"], rng["start"]["character"]),
             _offset_at(content, rng["end"]["line"], rng["end"]["character"]),
             edit.get("newText", ""),
-            None,
         ))
-    edits.append((primary_start, primary_end, applied_text, cursor_in_new_text))
+    edits.append((primary_start, primary_end, marked_applied_text))
 
     result = content
-    cursor = None
-    for start, end, replacement, cursor_in_edit in sorted(edits, key=lambda e: e[0], reverse=True):
+    for start, end, replacement in sorted(edits, key=lambda e: e[0], reverse=True):
         result = result[:start] + replacement + result[end:]
-        if cursor_in_edit is not None:
-            cursor = start + cursor_in_edit
 
-    if cursor is None:
-        cursor = primary_start + len(applied_text)
+    cursor = result.index(cursor_marker)
+    result = result[:cursor] + result[cursor + len(cursor_marker) :]
     return result, cursor
 
 
