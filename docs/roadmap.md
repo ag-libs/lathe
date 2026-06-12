@@ -110,6 +110,10 @@ Use these as the starting point when reprioritizing or slicing new work:
   active completion expectations,
   explorer-based gap discovery,
   and current completion-quality gap log.
+- [lathe-code-quality-refactoring.md](planned/lathe-code-quality-refactoring.md) —
+  verified refactoring plan for completion internals,
+  worker-confined workspace coordination,
+  and stale code-review findings that should not drive work.
 - [lathe-completion-presentation.md](planned/lathe-completion-presentation.md) —
   JDT LS-style completion `labelDetails` and generic type display.
 - [lathe-import-optimization.md](planned/lathe-import-optimization.md) —
