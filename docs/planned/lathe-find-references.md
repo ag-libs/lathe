@@ -598,6 +598,311 @@ Large project checks can use `dev/explorer` manually when troubleshooting perfor
 
 ---
 
+## 14. Manual Probe Gaps
+
+### FR-0001 — Constructor declarations do not find constructor call sites in the workspace
+
+Status: new
+Failure mode: missing-candidates / wrong-target-kind
+Owner component: SourceLocator / WorkspaceSession / ReferenceLocator
+
+Project/file:
+`/home/ag-libs/git/helidon/dbclient/mongodb/src/main/java/io/helidon/dbclient/mongodb/MongoDbClient.java`
+
+Probe command:
+
+```bash
+printf 'diagnostics\nrefs 42:2\nrefs 81:2\nlog 100\n' \
+  | python3 dev/explore.py /home/ag-libs/git/helidon/dbclient/mongodb/src/main/java/io/helidon/dbclient/mongodb/MongoDbClient.java
+```
+
+Control probes:
+
+```bash
+python3 - <<'PY'
+import sys
+from pathlib import Path
+sys.path.insert(0, "dev")
+from lsp import LatheClient, find_workspace_root
+
+file = Path("/home/ag-libs/git/helidon/dbclient/mongodb/src/main/java/io/helidon/dbclient/mongodb/MongoDbClient.java")
+with LatheClient.start(find_workspace_root(file)) as client:
+    client.open(file)
+    for label, line, col in [
+        ("one-arg constructor", 42, 2),
+        ("test constructor", 81, 2),
+        ("class", 33, 13),
+    ]:
+        refs = client.references(file, line, col, include_declaration=True)
+        print(label, len(refs))
+        for ref in refs[:8]:
+            start = ref["range"]["start"]
+            print(ref["uri"], start["line"] + 1, start["character"] + 1)
+PY
+```
+
+Cursor context:
+
+```java
+public class MongoDbClient extends DbClientBase implements DbClient {
+  MongoDbClient(MongoDbClientBuilder builder) {
+      ...
+  }
+
+  MongoDbClient(MongoDbClientBuilder builder, MongoClient client, MongoDatabase db) {
+      ...
+  }
+}
+```
+
+Expected Lathe behavior:
+Finding references from a constructor declaration should return matching `new MongoDbClient(...)` call sites.
+The one-argument constructor should find:
+
+```java
+return new MongoDbClient(this);
+```
+
+The three-argument constructor should find:
+
+```java
+return new MongoDbClient(builder, client, db);
+```
+
+Finding references from the class declaration should not include constructor invocations when the target is the class symbol.
+This matches the resolved design question:
+"Class and constructor targets remain separate."
+
+Lathe behavior:
+`refs 42:2` and `refs 81:2` return no references with the default `includeDeclaration=false`.
+With `includeDeclaration=true`,
+each returns only the constructor declaration itself.
+
+From the call side,
+`refs 53:19` in `MongoDbClientBuilder.java` and `refs 458:19` in `MongoDbClientTest.java`
+return class references,
+not exact constructor references.
+The result set includes the class declaration when `includeDeclaration=true`,
+and includes all `MongoDbClient` type uses in tests.
+
+Notes:
+`ReferenceLocatorTest.constructor_newExpression_callSiteFound` covers same-file constructor matching,
+so this appears to be an LSP/workspace-level target-resolution or cross-file identity gap rather than a missing
+`ReferenceLocator.visitNewClass` case.
+The large-project probe is useful because the class is package-private,
+has two overloaded constructors,
+and has main/test source-tree call sites.
+
+### FR-0002 — Nested and generic type references can be returned twice at the same range
+
+Status: new
+Failure mode: duplicate-results
+Owner component: ReferenceLocator / WorkspaceSession result merge
+
+Project/file:
+`/home/ag-libs/git/helidon/config/metadata/docs/src/main/java/io/helidon/config/metadata/docs/CmPage.java`
+
+Probe command:
+
+```bash
+python3 - <<'PY'
+import sys
+from pathlib import Path
+sys.path.insert(0, "dev")
+from lsp import LatheClient, find_workspace_root
+
+file = Path("/home/ag-libs/git/helidon/config/metadata/docs/src/main/java/io/helidon/config/metadata/docs/CmPage.java")
+with LatheClient.start(find_workspace_root(file)) as client:
+    client.open(file)
+    for label, line, col in [
+        ("Kind component", 24, 14),
+        ("Kind declaration", 34, 9),
+        ("Row declaration", 41, 11),
+        ("Row generic use", 52, 22),
+    ]:
+        refs = client.references(file, line, col, include_declaration=False)
+        locs = [
+            (r["uri"], r["range"]["start"]["line"] + 1, r["range"]["start"]["character"] + 1)
+            for r in refs
+        ]
+        print(label, "count", len(locs), "duplicates", len(locs) - len(set(locs)))
+        for loc in locs[:12]:
+            print(" ", loc)
+PY
+```
+
+Cursor context:
+
+```java
+record CmPage(Kind kind, ...) {
+    enum Kind {
+        ROOT,
+        CONFIG,
+        CONTRACT,
+        ENUM
+    }
+
+    record Row(...) {
+    }
+
+    record Table(List<Row> rows, ...) {
+    }
+}
+```
+
+Expected Lathe behavior:
+`textDocument/references` should return unique `Location` entries.
+If multiple AST paths resolve to the same symbol at the same token range,
+the final LSP result should still contain that range only once.
+
+Lathe behavior:
+Several nested type references are duplicated:
+
+- `Kind kind` at `CmPage.java:25:15` appears twice.
+- Each `Kind` enum constant token (`ROOT`, `CONFIG`, `CONTRACT`, `ENUM`) appears twice when searching the `Kind` type.
+- `List<Row>` at `CmPage.java:53:23` appears twice when searching the nested `Row` record.
+
+The same pattern appears whether the request starts from the type declaration or from a type-use site.
+
+Notes:
+Record component accessor references do not show this issue.
+For example,
+searching the `rows` record component returns only the declaration and `rows.isEmpty()` when `includeDeclaration=true`,
+with no duplicates.
+This points to type-use scanning or cross-file result merging rather than a generic LSP serialization issue.
+
+### FR-0003 — Enum type references include enum constant declarations
+
+Status: new
+Failure mode: wrong-candidate-set / duplicate-results
+Owner component: ReferenceLocator
+
+Project/file:
+`/home/ag-libs/git/dropwizard/dropwizard-db/src/main/java/io/dropwizard/db/DataSourceFactory.java`
+
+Probe command:
+
+```bash
+python3 - <<'PY'
+import sys
+from pathlib import Path
+sys.path.insert(0, "dev")
+from lsp import LatheClient, find_workspace_root
+
+file = Path("/home/ag-libs/git/dropwizard/dropwizard-db/src/main/java/io/dropwizard/db/DataSourceFactory.java")
+with LatheClient.start(find_workspace_root(file)) as client:
+    client.open(file)
+    for label, line, col in [
+        ("enum declaration", 315, 16),
+        ("field type", 369, 12),
+        ("DEFAULT constant", 369, 59),
+        ("READ_UNCOMMITTED declaration", 318, 8),
+    ]:
+        refs = client.references(file, line, col, include_declaration=True)
+        print(label, len(refs))
+        for ref in refs[:14]:
+            start = ref["range"]["start"]
+            print(ref["uri"], start["line"] + 1, start["character"] + 1)
+PY
+```
+
+Cursor context:
+
+```java
+public enum TransactionIsolation {
+    NONE(...),
+    DEFAULT(...),
+    READ_UNCOMMITTED(...),
+    READ_COMMITTED(...),
+    REPEATABLE_READ(...),
+    SERIALIZABLE(...);
+}
+
+private TransactionIsolation defaultTransactionIsolation = TransactionIsolation.DEFAULT;
+```
+
+Expected Lathe behavior:
+Finding references on the enum type `TransactionIsolation` should return type-use sites,
+plus the enum declaration when `includeDeclaration=true`.
+It should not return enum constant declarations as references to the enum type.
+Finding references on an enum constant should remain separate and exact.
+
+Lathe behavior:
+Finding references on the `TransactionIsolation` enum type returns every enum constant declaration,
+and each constant appears twice:
+
+```text
+DataSourceFactory.java:317:9
+DataSourceFactory.java:317:9
+DataSourceFactory.java:318:9
+DataSourceFactory.java:318:9
+...
+```
+
+The correct type-use sites are also present,
+for example `private TransactionIsolation defaultTransactionIsolation`.
+Finding references on `TransactionIsolation.DEFAULT` is exact and separate:
+it returns `DEFAULT` usages and the `DEFAULT` declaration when `includeDeclaration=true`.
+
+Related probe:
+The same issue appears with the nested Helidon enum `CmPage.Kind`.
+Searching the `Kind` type returns `ROOT`,
+`CONFIG`,
+`CONTRACT`,
+and `ENUM` constant declarations,
+each duplicated.
+
+Notes:
+This looks like enum constant declarations are being treated as both a variable declaration and a constructor/type-use match
+for the enclosing enum type.
+The result should either suppress those matches for enum-type targets or classify them only when the target is the enum constant.
+
+### FR-0004 — External symbols are still searched workspace-wide despite the open-file-only design
+
+Status: known
+Failure mode: excessive-scope / performance-risk
+Owner component: WorkspaceSession / ReferenceCandidatePlanner
+
+Project/file:
+`/home/ag-libs/git/dropwizard/dropwizard-db/src/main/java/io/dropwizard/db/ManagedPooledDataSource.java`
+
+Probe command:
+
+```bash
+printf 'diagnostics\nrefs 37:32\nrefs 38:45\nlog 120\n' \
+  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-db/src/main/java/io/dropwizard/db/ManagedPooledDataSource.java
+```
+
+Cursor context:
+
+```java
+import static com.codahale.metrics.MetricRegistry.name;
+
+metricRegistry.register(name(getClass(), connectionPool.getName(), "active"),
+    (Gauge<Integer>) connectionPool::getActive);
+```
+
+Expected Lathe behavior:
+Section 5 says exported dependency and JDK symbols should search open files only in v1.
+The same rule should apply to external static methods and method references.
+
+Lathe behavior:
+External symbols are searched across the workspace.
+For example:
+
+- `MetricRegistry.name(Class<?>, String...)` returns all 11 matching calls in `ManagedPooledDataSource.java`.
+- `ConnectionPool.getActive()` returns the method-reference site in `ManagedPooledDataSource.java`
+  plus two closed-file call sites in `CloseableLiquibaseTest.java`.
+
+Notes:
+This confirms the existing known performance/design issue in a different source shape:
+static method calls and method-reference targets,
+not only external types such as `String` or `LoggerFactory`.
+Correctness is preserved by javac element matching,
+but the scope is broader than the design currently promises.
+
+---
+
 ## 15. Known Performance Issue — JDK and Dependency Symbols
 
 ### Observation
