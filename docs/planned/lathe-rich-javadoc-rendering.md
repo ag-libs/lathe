@@ -35,7 +35,7 @@ Key mappings:
 
 ## 3. Prior Art & Constraints
 
-This implementation is inspired by George Fraser's `java-language-server`, which proved that `DocTreeScanner` can generate comprehensive Markdown in under 300 lines of code. 
+This implementation is inspired by George Fraser's `java-language-server`, which proved that `DocTreeScanner` can generate comprehensive Markdown in under 300 lines of code.
 
 **Constraints:**
 - No external libraries (e.g., `commonmark-java`) are permitted. The entire transformation must remain within `lathe-server` and rely exclusively on the `jdk.compiler` module.

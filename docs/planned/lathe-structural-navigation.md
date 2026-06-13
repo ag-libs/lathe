@@ -21,10 +21,10 @@ Both features will be fulfilled by using `SourceParser.parseContent(...)` to obt
 ### 2.2 Document Symbol Scanner
 Implement `DocumentSymbolScanner` extending `TreePathScanner<Void, Void>`.
 - **Visit `ClassTree`**: Emit `SymbolKind.Class`, `SymbolKind.Interface`, or `SymbolKind.Enum`.
-- **Visit `MethodTree`**: Emit `SymbolKind.Method` or `SymbolKind.Constructor`. 
+- **Visit `MethodTree`**: Emit `SymbolKind.Method` or `SymbolKind.Constructor`.
 - **Visit `VariableTree`**: Emit `SymbolKind.Field` when the parent is a `ClassTree`.
 
-**Range Calculation**: 
+**Range Calculation**:
 Use `SourcePositions` from `JavacTrees` to get the start and end positions of each tree node. The LSP `DocumentSymbol` requires two ranges:
 - `range`: The full range of the symbol (including body and Javadoc).
 - `selectionRange`: The range of the identifier name itself. We can derive the identifier range using the tree's start position offset by annotations/modifiers.
