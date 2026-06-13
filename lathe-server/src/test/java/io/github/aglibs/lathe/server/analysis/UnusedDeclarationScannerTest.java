@@ -8,10 +8,8 @@ import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.DiagnosticTag;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
-@Disabled("UnusedDeclarationScanner not yet implemented")
 class UnusedDeclarationScannerTest {
 
   private static final String URI = "file:///Test.java";

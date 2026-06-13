@@ -60,8 +60,13 @@ public final class SourceAnalysisSession implements AutoCloseable {
       cache.put(uri, new CachedFileAnalysis(content, version, run.fileAnalysis()));
     }
 
-    final var diags = filterAndMap(run.diagnostics(), content);
-    enrichWithContext(diags, run.fileAnalysis());
+    final var compiled = filterAndMap(run.diagnostics(), content);
+    enrichWithContext(compiled, run.fileAnalysis());
+    final List<Diagnostic> unusedDiags = UnusedDeclarationScanner.scan(run.fileAnalysis(), content);
+    final List<Diagnostic> diags =
+        unusedDiags.isEmpty()
+            ? compiled
+            : Stream.concat(compiled.stream(), unusedDiags.stream()).toList();
     LOG.info(
         () ->
             "[compile:%s] %s %dms diags=%d".formatted(mode.tag, uri, t.elapsedMs(), diags.size()));
