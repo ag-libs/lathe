@@ -54,7 +54,7 @@ public final class JdkSourceResolver {
     final var implementor = release.get(IMPLEMENTOR);
     final var javaVersion = release.get(JAVA_VERSION);
     if (implementor != null && javaVersion != null) {
-      return sanitize(stripLegalSuffix(implementor) + "-" + javaVersion);
+      return sanitize("%s-%s".formatted(stripLegalSuffix(implementor), javaVersion));
     }
 
     final var vendorVersion = System.getProperty("java.vendor.version");
@@ -62,7 +62,7 @@ public final class JdkSourceResolver {
       return sanitize(vendorVersion);
     }
 
-    return sanitize(stripLegalSuffix(vendor) + "-" + version);
+    return sanitize("%s-%s".formatted(stripLegalSuffix(vendor), version));
   }
 
   private static String stripLegalSuffix(final String implementor) {

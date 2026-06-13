@@ -63,7 +63,7 @@ public final class WorkspaceTypeIndex {
       return true;
     }
 
-    LOG.fine(() -> "[type-index] shard not found: " + shard);
+    LOG.fine(() -> "[type-index] shard not found: %s".formatted(shard));
     return false;
   }
 
@@ -71,7 +71,7 @@ public final class WorkspaceTypeIndex {
     try {
       return Stream.of(Json.read(shard, TypeIndexFile.class));
     } catch (final IOException e) {
-      LOG.log(Level.WARNING, e, () -> "[type-index] failed to load shard " + shard);
+      LOG.log(Level.WARNING, e, () -> "[type-index] failed to load shard %s".formatted(shard));
       return Stream.empty();
     }
   }

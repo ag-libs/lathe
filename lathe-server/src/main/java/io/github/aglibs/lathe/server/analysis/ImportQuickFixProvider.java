@@ -60,7 +60,7 @@ final class ImportQuickFixProvider implements CodeActionProvider {
       return Optional.empty();
     }
 
-    final String fqName = entry.packageName() + "." + entry.simpleName();
+    final String fqName = "%s.%s".formatted(entry.packageName(), entry.simpleName());
     if (alreadyImported.contains(fqName)) {
       LOG.fine(() -> "[codeAction:import] %s already imported, skipped".formatted(fqName));
       return Optional.empty();
@@ -90,13 +90,15 @@ final class ImportQuickFixProvider implements CodeActionProvider {
     }
 
     final var action = new CodeAction();
-    action.setTitle("Import '" + fqName + "'");
+    action.setTitle("Import '%s'".formatted(fqName));
     action.setKind(CodeActionKind.QuickFix);
     action.setDiagnostics(List.of(diag));
 
     final var edit = new WorkspaceEdit();
     edit.setChanges(
-        Map.of(request.uri(), List.of(new TextEdit(insertionRange, "import " + fqName + ";\n"))));
+        Map.of(
+            request.uri(),
+            List.of(new TextEdit(insertionRange, "import %s;\n".formatted(fqName)))));
     action.setEdit(edit);
 
     LOG.fine(() -> "[codeAction:import] %s → added".formatted(fqName));

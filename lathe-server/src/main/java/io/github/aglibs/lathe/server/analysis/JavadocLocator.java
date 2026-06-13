@@ -29,16 +29,6 @@ public final class JavadocLocator {
       return Optional.ofNullable(trees.getDocComment(samePath));
     }
 
-    return DefinitionLocator.findSourceFile(element, sourceRoots)
-        .flatMap(
-            file -> {
-              LOG.fine(() -> "[javadoc] reactor %s → %s".formatted(element, file));
-              return parser.parseFile(
-                  file,
-                  (parsedTrees, cu) -> {
-                    final var path = SourceLocator.declarationPath(cu, element);
-                    return path != null ? parsedTrees.getDocComment(path) : null;
-                  });
-            });
+    return parser.parseDeclaration(element, sourceRoots, Trees::getDocComment);
   }
 }

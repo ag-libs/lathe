@@ -97,12 +97,12 @@ public final class ReactorProjects {
 
   private static Set<String> reactorProjects(final List<MavenProject> projects) {
     return projects.stream()
-        .map(project -> project.getGroupId() + ":" + project.getArtifactId())
+        .map(project -> "%s:%s".formatted(project.getGroupId(), project.getArtifactId()))
         .collect(Collectors.toSet());
   }
 
   private static String ga(final Artifact artifact) {
-    return artifact.getGroupId() + ":" + artifact.getArtifactId();
+    return "%s:%s".formatted(artifact.getGroupId(), artifact.getArtifactId());
   }
 
   public static String artifactKey(final Artifact artifact) {
@@ -116,7 +116,7 @@ public final class ReactorProjects {
   }
 
   private static String repositoryKey(final RemoteRepository repository) {
-    return repository.getId() + " " + repository.getUrl();
+    return "%s %s".formatted(repository.getId(), repository.getUrl());
   }
 
   private static boolean isCompileClasspathScope(final String scope) {

@@ -13,7 +13,8 @@ class HoverFormatterTest extends SampleFixture {
   @Test
   void format_withOrigin_appendsSourceFooter() {
     final var element = elementAt(DOC_HELPER_LINE, DOC_HELPER_COL);
-    final var result = HoverFormatter.format(element, null, null, "com.example:lib:1.0");
+    final var result =
+        HoverFormatter.format(element, null, null, "com.example:lib:1.0", null, null);
     assertThat(result).isPresent();
     assertThat(result.get()).endsWith("*source: com.example:lib:1.0*");
   }
@@ -21,7 +22,7 @@ class HoverFormatterTest extends SampleFixture {
   @Test
   void format_withoutOrigin_omitsSourceFooter() {
     final var element = elementAt(DOC_HELPER_LINE, DOC_HELPER_COL);
-    final var result = HoverFormatter.format(element, null, null, null);
+    final var result = HoverFormatter.format(element, null, null, null, null, null);
     assertThat(result).isPresent();
     assertThat(result.get()).doesNotContain("*source:");
   }

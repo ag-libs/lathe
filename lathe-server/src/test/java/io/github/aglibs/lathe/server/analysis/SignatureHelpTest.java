@@ -11,7 +11,6 @@ import javax.tools.ToolProvider;
 import org.eclipse.lsp4j.SignatureHelp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -185,28 +184,29 @@ class SignatureHelpTest {
 
   // --- class-file dependency ---
 
-  @Disabled("parameter names from class files without -parameters not yet supported")
   @Test
-  void signatureHelp_classFileDependency_showsSourceParameterNames(@TempDir final Path libDir)
+  void signatureHelp_classFileDependency_showsSourceParameterNames(@TempDir final Path tmpDir)
       throws Exception {
+    final var srcDir = Files.createDirectory(tmpDir.resolve("src"));
+    final var classDir = Files.createDirectory(tmpDir.resolve("classes"));
+
     final var libCompiler = ToolProvider.getSystemJavaCompiler();
     try (final var libFm = libCompiler.getStandardFileManager(null, null, null)) {
       final var src =
           Files.writeString(
-              libDir.resolve("Greeter.java"),
+              srcDir.resolve("Greeter.java"),
               """
               public class Greeter {
                   public void greet(String name, int count) {}
               }
               """);
-      libFm.setLocationFromPaths(StandardLocation.CLASS_OUTPUT, List.of(libDir));
+      libFm.setLocationFromPaths(StandardLocation.CLASS_OUTPUT, List.of(classDir));
       libCompiler
           .getTask(null, libFm, null, List.of("-proc:none"), null, libFm.getJavaFileObjects(src))
           .call();
     }
-    Files.delete(libDir.resolve("Greeter.java"));
 
-    try (final var s = new SourceAnalysisSession(new TempSourceCompiler(List.of(libDir)))) {
+    try (final var s = new SourceAnalysisSession(new TempSourceCompiler(List.of(classDir)))) {
       final var rawSource =
           """
           class Test {
@@ -218,7 +218,7 @@ class SignatureHelpTest {
       s.compile(URI, source, 1, CompileMode.OPEN);
       final var pos = SourceLocator.offsetToPosition(source, markerOffset);
       final var request =
-          new SourceFeatureRequest(URI, source, pos, List.of(), WorkspaceManifest.empty());
+          new SourceFeatureRequest(URI, source, pos, List.of(srcDir), WorkspaceManifest.empty());
       final var help = s.signatureHelp(request);
 
       assertThat(help).isNotNull();

@@ -6,6 +6,7 @@ import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Logger;
@@ -26,7 +27,11 @@ final class SignatureHelpResolver {
   private SignatureHelpResolver() {}
 
   static SignatureHelp resolve(
-      final AttributedFileAnalysis analysis, final TreePath cursorPath, final long cursorOffset) {
+      final AttributedFileAnalysis analysis,
+      final TreePath cursorPath,
+      final long cursorOffset,
+      final SourceParser parser,
+      final List<Path> sourceRoots) {
     if (cursorPath == null) {
       return null;
     }
@@ -82,7 +87,7 @@ final class SignatureHelpResolver {
     final int activeParam = activeParamFromArgs(args, positions, cu, cursorOffset);
 
     final List<SignatureInformation> signatures =
-        overloads.stream().map(m -> buildSignature(m, fmt, callName)).toList();
+        overloads.stream().map(m -> buildSignature(m, fmt, callName, parser, sourceRoots)).toList();
     final int activeSignature =
         IntStream.range(0, overloads.size())
             .filter(i -> overloads.get(i).equals(resolved))
@@ -147,9 +152,15 @@ final class SignatureHelpResolver {
   }
 
   private static SignatureInformation buildSignature(
-      final ExecutableElement method, final TypeDisplayFormatter fmt, final String callName) {
+      final ExecutableElement method,
+      final TypeDisplayFormatter fmt,
+      final String callName,
+      final SourceParser parser,
+      final List<Path> sourceRoots) {
     final var params = method.getParameters();
     final var label = new StringBuilder();
+
+    final List<String> sourceNames = parser.resolveParamNames(method, sourceRoots);
 
     if (method.getKind() != ElementKind.CONSTRUCTOR) {
       label.append(fmt.format(method.getReturnType())).append(' ');
@@ -161,7 +172,10 @@ final class SignatureHelpResolver {
     for (int i = 0; i < params.size(); i++) {
       final var param = params.get(i);
       final int start = label.length();
-      final String name = param.getSimpleName().toString();
+      final String name =
+          (sourceNames != null && i < sourceNames.size())
+              ? sourceNames.get(i)
+              : param.getSimpleName().toString();
       label.append(fmt.format(param.asType()));
       if (!name.isBlank() && !name.matches("arg\\d+")) {
         label.append(' ').append(name);

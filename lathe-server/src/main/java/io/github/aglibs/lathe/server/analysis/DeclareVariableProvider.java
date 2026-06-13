@@ -82,21 +82,21 @@ final class DeclareVariableProvider implements CodeActionProvider {
     final Position startPos = SourceLocator.offsetToPosition(cu, lhsStart);
     final Position endPos = SourceLocator.offsetToPosition(cu, lhsEnd);
     final var edits = new ArrayList<TextEdit>();
-    edits.add(new TextEdit(new Range(startPos, endPos), typePart + " " + varName));
+    edits.add(new TextEdit(new Range(startPos, endPos), "%s %s".formatted(typePart, varName)));
 
     if (fqn != null && !fqn.startsWith("java.lang.")) {
       final var importAnalyzer = new ImportAnalyzer(analysis);
       if (!importAnalyzer.importedQualifiedNames().contains(fqn)) {
         final Range insertionRange = importAnalyzer.insertionRange();
         if (insertionRange != null) {
-          edits.add(new TextEdit(insertionRange, "import " + fqn + ";\n"));
+          edits.add(new TextEdit(insertionRange, "import %s;\n".formatted(fqn)));
         }
       }
     }
 
     final Diagnostic diag = request.diag();
     final var action = new CodeAction();
-    action.setTitle("Declare local variable '" + varName + "'");
+    action.setTitle("Declare local variable '%s'".formatted(varName));
     action.setKind(CodeActionKind.QuickFix);
     action.setDiagnostics(List.of(diag));
 

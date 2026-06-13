@@ -43,7 +43,8 @@ public abstract class SampleFixture {
         new JavadocLocator(compiled.parser())
             .locate(element, compiled.trees(), List.of())
             .orElse(null);
-    return HoverFormatter.format(element, type, javadoc, null);
+    final var fmt = new TypeDisplayFormatter(compiled.task().getTypes());
+    return HoverFormatter.format(element, type, javadoc, null, fmt, null);
   }
 
   Element elementAt(final int line, final int character) {

@@ -78,13 +78,13 @@ final class AddThrowsProvider implements CodeActionProvider {
       if (!importAnalyzer.importedQualifiedNames().contains(fqn)) {
         final Range insertionRange = importAnalyzer.insertionRange();
         if (insertionRange != null) {
-          edits.add(new TextEdit(insertionRange, "import " + fqn + ";\n"));
+          edits.add(new TextEdit(insertionRange, "import %s;\n".formatted(fqn)));
         }
       }
     }
 
     final var action = new CodeAction();
-    action.setTitle("Add 'throws " + simpleName + "' to method");
+    action.setTitle("Add 'throws %s' to method".formatted(simpleName));
     action.setKind(CodeActionKind.QuickFix);
     action.setDiagnostics(List.of(diag));
 
@@ -110,7 +110,7 @@ final class AddThrowsProvider implements CodeActionProvider {
       }
 
       final Position pos = SourceLocator.offsetToPosition(cu, lastEnd);
-      return new TextEdit(new Range(pos, pos), ", " + simpleName);
+      return new TextEdit(new Range(pos, pos), ", %s".formatted(simpleName));
     }
 
     if (methodTree.getBody() == null) {
@@ -128,6 +128,6 @@ final class AddThrowsProvider implements CodeActionProvider {
     }
 
     final Position pos = SourceLocator.offsetToPosition(cu, insertOffset);
-    return new TextEdit(new Range(pos, pos), " throws " + simpleName);
+    return new TextEdit(new Range(pos, pos), " throws %s".formatted(simpleName));
   }
 }

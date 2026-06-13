@@ -102,7 +102,7 @@ public final class FileUtil {
       final Path destDir, final ZipInputStream in, final ZipEntry entry) throws IOException {
     final Path target = destDir.resolve(entry.getName()).normalize();
     if (!target.startsWith(destDir)) {
-      throw new IOException("zip contains unsafe path " + entry.getName());
+      throw new IOException("zip contains unsafe path %s".formatted(entry.getName()));
     }
 
     if (entry.isDirectory()) {
@@ -117,19 +117,19 @@ public final class FileUtil {
 
   private static void setReadOnly(final Path path) throws IOException {
     if (!path.toFile().setReadOnly()) {
-      throw new IOException("Failed to set read-only: " + path);
+      throw new IOException("Failed to set read-only: %s".formatted(path));
     }
   }
 
   private static void setWritable(final Path path) throws IOException {
     if (!path.toFile().setWritable(true)) {
-      throw new IOException("Failed to set writable: " + path);
+      throw new IOException("Failed to set writable: %s".formatted(path));
     }
   }
 
   private static void setExecutable(final Path path) throws IOException {
     if (!path.toFile().setExecutable(true, false)) {
-      throw new IOException("Failed to set executable: " + path);
+      throw new IOException("Failed to set executable: %s".formatted(path));
     }
   }
 }

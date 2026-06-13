@@ -42,7 +42,7 @@ public final class CompilationWorker {
 
   static CompilationWorker module(final ModuleSourceConfig config) {
     return new CompilationWorker(
-        "lathe-module-" + config.moduleDir().getFileName() + "-" + config.sourceTree(),
+        "lathe-module-%s-%s".formatted(config.moduleDir().getFileName(), config.sourceTree()),
         () -> new SourceAnalysisSession(new ModuleSourceCompiler(config)));
   }
 

@@ -267,7 +267,8 @@ final class WorkspaceSession {
               }
               return locations;
             })
-        .exceptionally(ex -> logAndReturn(ex, "[references] failed for " + uri, List.of()));
+        .exceptionally(
+            ex -> logAndReturn(ex, "[references] failed for %s".formatted(uri), List.of()));
   }
 
   private Stream<CompletableFuture<List<Location>>> searchFutures(
@@ -343,7 +344,7 @@ final class WorkspaceSession {
       try {
         candidateIndex.update(uri, Files.readString(path));
       } catch (final IOException e) {
-        LOG.log(Level.WARNING, e, () -> "[candidate-index] re-index failed for " + uri);
+        LOG.log(Level.WARNING, e, () -> "[candidate-index] re-index failed for %s".formatted(uri));
         candidateIndex.remove(uri);
       }
     } else {
@@ -355,7 +356,7 @@ final class WorkspaceSession {
     try {
       return Optional.of(new DiskCandidate(uri, Files.readString(toPath(uri))));
     } catch (final IOException e) {
-      LOG.log(Level.FINE, e, () -> "[references] failed to read candidate: " + uri);
+      LOG.log(Level.FINE, e, () -> "[references] failed to read candidate: %s".formatted(uri));
       return Optional.empty();
     }
   }
@@ -376,7 +377,8 @@ final class WorkspaceSession {
         moduleWorker ->
             moduleWorker
                 .hover(request)
-                .exceptionally(ex -> logAndReturn(ex, "[hover] failed for " + uri, null)),
+                .exceptionally(
+                    ex -> logAndReturn(ex, "[hover] failed for %s".formatted(uri), null)),
         null);
   }
 
@@ -394,7 +396,8 @@ final class WorkspaceSession {
         moduleWorker ->
             moduleWorker
                 .signatureHelp(request)
-                .exceptionally(ex -> logAndReturn(ex, "[signatureHelp] failed for " + uri, null)),
+                .exceptionally(
+                    ex -> logAndReturn(ex, "[signatureHelp] failed for %s".formatted(uri), null)),
         null);
   }
 
@@ -417,7 +420,9 @@ final class WorkspaceSession {
                 .exceptionally(
                     ex ->
                         logAndReturn(
-                            ex, "[definition] failed for " + uri, Either.forLeft(List.of()))),
+                            ex,
+                            "[definition] failed for %s".formatted(uri),
+                            Either.forLeft(List.of()))),
         Either.forLeft(List.of()));
   }
 
@@ -437,7 +442,9 @@ final class WorkspaceSession {
                 .exceptionally(
                     ex ->
                         logAndReturn(
-                            ex, "[completion] failed for " + uri, CompletionOutcome.of(List.of()))),
+                            ex,
+                            "[completion] failed for %s".formatted(uri),
+                            CompletionOutcome.of(List.of()))),
         CompletionOutcome.of(List.of()));
   }
 
@@ -463,7 +470,8 @@ final class WorkspaceSession {
         moduleWorker ->
             moduleWorker
                 .codeAction(uri, openFile.content(), openFile.version(), requests, indexSnapshot)
-                .exceptionally(ex -> logAndReturn(ex, "[codeAction] failed for " + uri, List.of())),
+                .exceptionally(
+                    ex -> logAndReturn(ex, "[codeAction] failed for %s".formatted(uri), List.of())),
         List.of());
   }
 
@@ -485,7 +493,8 @@ final class WorkspaceSession {
             moduleWorker
                 .semanticTokens(uri, version)
                 .thenApply(WorkspaceSession::encodeTokensOrNull)
-                .exceptionally(ex -> logAndReturn(ex, "[semanticTokens] failed for " + uri, null)),
+                .exceptionally(
+                    ex -> logAndReturn(ex, "[semanticTokens] failed for %s".formatted(uri), null)),
         null);
   }
 
@@ -511,7 +520,9 @@ final class WorkspaceSession {
       return ClassFileTypeScanner.scanDirectory(config.latheClassesDir());
     } catch (final IOException e) {
       LOG.log(
-          Level.WARNING, e, () -> "[type-index] reactor scan failed: " + config.latheClassesDir());
+          Level.WARNING,
+          e,
+          () -> "[type-index] reactor scan failed: %s".formatted(config.latheClassesDir()));
       return List.of();
     }
   }
@@ -799,7 +810,7 @@ final class WorkspaceSession {
     LOG.log(SEVERE, ex, () -> "[compile:%s] failed for %s".formatted(mode.tag, snapshot.uri()));
     final var msg = ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
     client.publishDiagnostics(
-        singleDiag(snapshot.uri(), "Lathe: " + msg, DiagnosticSeverity.Error));
+        singleDiag(snapshot.uri(), "Lathe: %s".formatted(msg), DiagnosticSeverity.Error));
   }
 
   private static <T> T logAndReturn(final Throwable ex, final String msg, final T fallback) {

@@ -1,7 +1,9 @@
 package io.github.aglibs.lathe.server.analysis;
 
 import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.MethodTree;
 import com.sun.source.util.JavacTask;
+import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -13,6 +15,8 @@ import java.util.function.BiFunction;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
+import javax.lang.model.element.Element;
+import javax.lang.model.element.ExecutableElement;
 import javax.tools.Diagnostic;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaFileObject;
@@ -32,6 +36,48 @@ public final class SourceParser implements AutoCloseable {
   <T> Optional<T> parseFile(
       final Path sourceFile, final BiFunction<Trees, CompilationUnitTree, T> fn) {
     return parse(fm.getJavaFileObjects(sourceFile).iterator().next(), fn);
+  }
+
+  static boolean isSyntheticName(final String name) {
+    return name.matches("arg\\d+");
+  }
+
+  List<String> resolveParamNames(final ExecutableElement method, final List<Path> sourceRoots) {
+    final boolean anySynthetic =
+        method.getParameters().stream()
+            .anyMatch(p -> isSyntheticName(p.getSimpleName().toString()));
+    if (!anySynthetic) {
+      return null;
+    }
+
+    return parseDeclaration(
+            method,
+            sourceRoots,
+            (trees, path) -> {
+              if (!(path.getLeaf() instanceof MethodTree mt)) {
+                return null;
+              }
+
+              return mt.getParameters().stream().map(v -> v.getName().toString()).toList();
+            })
+        .orElse(null);
+  }
+
+  <T> Optional<T> parseDeclaration(
+      final Element element,
+      final List<Path> sourceRoots,
+      final BiFunction<Trees, TreePath, T> fn) {
+    return DefinitionLocator.findSourceFile(element, sourceRoots)
+        .flatMap(
+            file -> {
+              LOG.fine(() -> "[source] %s → %s".formatted(element, file));
+              return parseFile(
+                  file,
+                  (trees, cu) -> {
+                    final var path = SourceLocator.declarationPath(cu, element);
+                    return path != null ? fn.apply(trees, path) : null;
+                  });
+            });
   }
 
   public <T> Optional<T> parseContent(

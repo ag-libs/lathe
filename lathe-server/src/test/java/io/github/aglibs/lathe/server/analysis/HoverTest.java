@@ -11,7 +11,13 @@ package io.github.aglibs.lathe.server.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.server.TestCompiler;
+import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class HoverTest extends SampleFixture {
 
@@ -93,5 +99,43 @@ class HoverTest extends SampleFixture {
     final var md = hoverAt(102, 18);
     assertThat(md).isPresent();
     assertThat(md.get()).contains("Status").contains("ACTIVE");
+  }
+
+  // --- class-file dependency ---
+
+  @Test
+  void hover_classFileDependency_showsSourceParameterNames(@TempDir final Path tmpDir)
+      throws Exception {
+    final var srcDir = Files.createDirectory(tmpDir.resolve("src"));
+    final var classDir = Files.createDirectory(tmpDir.resolve("classes"));
+
+    final var src =
+        Files.writeString(
+            srcDir.resolve("Greeter.java"),
+            """
+            public class Greeter {
+                public void greet(String name, int count) {}
+            }
+            """);
+    TestCompiler.compileToDir(classDir, src);
+
+    try (final var s = new SourceAnalysisSession(new TempSourceCompiler(List.of(classDir)))) {
+      final var source =
+          """
+          class Test {
+              void caller() { new Greeter().greet("x", 1); }
+          }
+          """;
+      s.compile("file:///Test.java", source, 1, CompileMode.OPEN);
+      final int greetOffset = source.indexOf("greet");
+      final var pos = SourceLocator.offsetToPosition(source, greetOffset);
+      final var request =
+          new SourceFeatureRequest(
+              "file:///Test.java", source, pos, List.of(srcDir), WorkspaceManifest.empty());
+      final var hover = s.hover(request);
+
+      assertThat(hover).isNotNull();
+      assertThat(hover.getContents().getRight().getValue()).contains("String name", "int count");
+    }
   }
 }

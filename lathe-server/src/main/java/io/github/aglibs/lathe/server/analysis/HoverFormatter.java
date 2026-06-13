@@ -1,8 +1,10 @@
 package io.github.aglibs.lathe.server.analysis;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
@@ -14,18 +16,36 @@ public final class HoverFormatter {
   private HoverFormatter() {}
 
   public static Optional<String> format(
-      final Element element, final TypeMirror type, final String javadoc, final String origin) {
+      final Element element,
+      final TypeMirror type,
+      final String javadoc,
+      final String origin,
+      final TypeDisplayFormatter fmt,
+      final List<String> sourceParamNames) {
     if (element == null && type == null) {
       return Optional.empty();
     }
 
     final String sig;
     if (element instanceof final ExecutableElement exe) {
-      final var params =
-          exe.getParameters().stream()
-              .map(p -> p.asType() + " " + p.getSimpleName())
+      final var params = exe.getParameters();
+      final String paramStr =
+          IntStream.range(0, params.size())
+              .mapToObj(
+                  i -> {
+                    final var p = params.get(i);
+                    final String typeName =
+                        fmt != null ? fmt.format(p.asType()) : p.asType().toString();
+                    final String name =
+                        (sourceParamNames != null && i < sourceParamNames.size())
+                            ? sourceParamNames.get(i)
+                            : p.getSimpleName().toString();
+                    return name.matches("arg\\d+") ? typeName : "%s %s".formatted(typeName, name);
+                  })
               .collect(Collectors.joining(", "));
-      sig = exe.getReturnType() + " " + exe.getSimpleName() + "(" + params + ")";
+      final String returnType =
+          fmt != null ? fmt.format(exe.getReturnType()) : exe.getReturnType().toString();
+      sig = "%s %s(%s)".formatted(returnType, exe.getSimpleName(), paramStr);
     } else if (element instanceof final TypeElement te) {
       final var kind =
           switch (te.getKind()) {
@@ -35,9 +55,9 @@ public final class HoverFormatter {
             case INTERFACE -> "interface";
             default -> "class";
           };
-      sig = kind + " " + te.getSimpleName();
+      sig = "%s %s".formatted(kind, te.getSimpleName());
     } else if (element != null && type != null) {
-      sig = type + " " + element.getSimpleName();
+      sig = "%s %s".formatted(type, element.getSimpleName());
     } else if (type != null) {
       sig = type.toString();
     } else {
@@ -55,7 +75,7 @@ public final class HoverFormatter {
   }
 
   public static String formatParameter(final VariableElement param) {
-    return "```java\n" + param.asType() + " " + param.getSimpleName() + "\n```";
+    return "```java\n%s %s\n```".formatted(param.asType(), param.getSimpleName());
   }
 
   private static String cleanDoc(final String raw) {

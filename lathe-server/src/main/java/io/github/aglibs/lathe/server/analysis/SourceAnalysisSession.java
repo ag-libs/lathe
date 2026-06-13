@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.server.analysis.completion.CompletionEngine;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionRequest;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -18,6 +19,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
 import javax.lang.model.element.Element;
+import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.JavaFileObject;
@@ -115,10 +117,12 @@ public final class SourceAnalysisSession implements AutoCloseable {
     if (cur == null) {
       return null;
     }
+
     final long offset =
         SourceLocator.toOffset(
             cur.analysis().tree(), request.pos().getLine(), request.pos().getCharacter());
-    return SignatureHelpResolver.resolve(cur.analysis(), cur.path(), offset);
+    return SignatureHelpResolver.resolve(
+        cur.analysis(), cur.path(), offset, parser, allRoots(request));
   }
 
   public Hover hover(final SourceFeatureRequest request) {
@@ -138,20 +142,26 @@ public final class SourceAnalysisSession implements AutoCloseable {
     final Element element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
     final TypeMirror type =
         cur.path() != null ? cur.analysis().trees().getTypeMirror(cur.path()) : null;
-    final var allRoots =
-        Stream.concat(
-                request.sourceRoots().stream(), request.manifest().externalSourceDirs().stream())
-            .toList();
+    final List<Path> allRoots = allRoots(request);
     final var javadoc =
         javadocLocator.locate(element, cur.analysis().trees(), allRoots).orElse(null);
     final var origin = request.manifest().originLabel(element, compiler.fileManager()).orElse(null);
+    final var fmt = new TypeDisplayFormatter(cur.analysis().types());
+    final List<String> sourceParamNames =
+        element instanceof ExecutableElement exe ? parser.resolveParamNames(exe, allRoots) : null;
     LOG.fine(
         () ->
             "[hover] %dms element=%s type=%s doc=%s origin=%s"
                 .formatted(t.elapsedMs(), element, type, javadoc != null, origin));
-    return HoverFormatter.format(element, type, javadoc, origin)
+    return HoverFormatter.format(element, type, javadoc, origin, fmt, sourceParamNames)
         .map(md -> new Hover(new MarkupContent("markdown", md)))
         .orElse(null);
+  }
+
+  private static List<Path> allRoots(final SourceFeatureRequest request) {
+    return Stream.concat(
+            request.sourceRoots().stream(), request.manifest().externalSourceDirs().stream())
+        .toList();
   }
 
   public ReferenceTarget resolveTarget(final SourceFeatureRequest request) {
