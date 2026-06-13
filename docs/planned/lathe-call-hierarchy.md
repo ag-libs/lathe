@@ -11,7 +11,7 @@ Call hierarchy answers the editor questions:
 > "Who calls this method?" (Incoming Calls)
 > "What methods does this method call?" (Outgoing Calls)
 
-The feature relies on Lathe's existing `ReferenceTarget` symbol identity and the `ReferenceCandidateIndex` architecture used by "Find References". 
+The feature relies on Lathe's existing `ReferenceTarget` symbol identity and the `ReferenceCandidateIndex` architecture used by "Find References".
 Like find-references, Call Hierarchy v1 focuses on exact method matches (no hierarchy-aware semantic expansion to overrides/implementations) and leverages `javac` attribution as the single source of truth.
 
 ---
