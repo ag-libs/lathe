@@ -101,6 +101,9 @@ Architecture is documented in [lathe-server-data-flow-recipe.md](done/lathe-serv
   See [lathe-import-optimization.md](done/lathe-import-optimization.md).
 - **Pre-beta codebase cleanups** — all items in the refactoring/renaming plan completed: DRY/KISS helpers, `setLocationFromPaths` migration, walk depth limit, `var` rule enforcement, test naming and `@Nested` flattening, four conceptual renamings, and test co-location fixes (`SyncMojoTest` → `LatheFlagsTest` in `lathe-core`; `DependencySourceTest`, `DependencySourceSyncTest`, `JdkSourceResolverTest` moved to matching subpackages).
   See [lathe-refactoring-renaming.md](done/lathe-refactoring-renaming.md).
+- **JDK cache key unification** — `JdkSource` carries a single `cacheKey` computed once in `JdkSourceResolver` from `$JAVA_HOME/release` (`IMPLEMENTOR_VERSION` → `IMPLEMENTOR`+`JAVA_VERSION` with legal-suffix stripping → `java.vendor.version` → `java.vendor`+`java.version`).
+  Both JDK source extraction and type-index shard paths derive from the same key, eliminating the duplicated vendor/version path construction.
+  See [lathe-jdk-cache-key.md](done/lathe-jdk-cache-key.md).
 
 ---
 
@@ -115,7 +118,7 @@ Use these docs as the starting point when reprioritizing or slicing new work:
 - [lathe-class-import-semantic-highlighting.md](planned/lathe-class-import-semantic-highlighting.md) — semantic token highlighting for class, interface, and enum type references in import statements and code bodies.
 - [lathe-google-indent.md](planned/lathe-google-indent.md) — conservative `textDocument/onTypeFormatting`
   indentation hints using google-java-format.
-- [lathe-jdk-cache-key.md](planned/lathe-jdk-cache-key.md) — unified JDK source and type-index cache pathing.
+- [lathe-jdk-cache-key.md](done/lathe-jdk-cache-key.md) — unified JDK source and type-index cache pathing (implemented).
 - [lathe-launcher-jvm-opts.md](planned/lathe-launcher-jvm-opts.md) — generated launcher support for
   user-provided `LATHE_JVM_OPTS`.
 - [lathe-architecture-test-improvements.md](planned/lathe-architecture-test-improvements.md) —
@@ -202,11 +205,6 @@ See [lathe-unused-code-diagnostics.md](planned/lathe-unused-code-diagnostics.md)
 Display method and constructor parameter names and types during argument entry.
 Parse enclosing invocation contexts and count commas at the cursor's nesting level to highlight the active parameter.
 See [lathe-signature-help.md](planned/lathe-signature-help.md).
-
-### JDK Cache Key Unification
-Simplify and unify the caching paths for JDK sources and type-index shards so they use a single, stable key (e.g. `corretto-26.0.0.35.2`).
-This improves DRYness and prevents version collisions for minor JDK updates.
-See [lathe-jdk-cache-key.md](planned/lathe-jdk-cache-key.md).
 
 ### Architecture and Test Improvements
 Land the narrowly-scoped maintainability improvements documented in
