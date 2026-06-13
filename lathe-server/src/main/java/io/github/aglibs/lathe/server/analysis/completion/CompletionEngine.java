@@ -173,6 +173,10 @@ public final class CompletionEngine {
     final var enumCaseCandidates =
         enumCaseLabelCandidates(parsed, injected.prefix(), semanticContext);
 
+    if (isStringCaseLabel(parsed, semanticContext)) {
+      return CompletionOutcome.of(List.of());
+    }
+
     if (isCaseLabelTypePattern(parsed, enumCaseCandidates, semanticContext)) {
       return completeSimpleNameTypeReferenceWithLang(injected, req, TypeReferenceRole.ORDINARY);
     }
@@ -324,7 +328,28 @@ public final class CompletionEngine {
     }
 
     return semanticContext.expectedValue() instanceof ExpectedValue.Type(final TypeMirror t)
-        && t.getKind() == TypeKind.DECLARED;
+        && t.getKind() == TypeKind.DECLARED
+        && !isExpectedString(semanticContext);
+  }
+
+  private static boolean isStringCaseLabel(
+      final ParsedSentinel parsed, final SemanticCompletionContext semanticContext) {
+    return parsed.sentinelContext() == SentinelContext.CASE_LABEL
+        && isExpectedString(semanticContext);
+  }
+
+  private static boolean isExpectedString(final SemanticCompletionContext semanticContext) {
+    if (semanticContext == null) {
+      return false;
+    }
+
+    if (!(semanticContext.expectedValue() instanceof ExpectedValue.Type(final TypeMirror type))) {
+      return false;
+    }
+
+    final var element = semanticContext.analysis().types().asElement(type);
+    return element instanceof final TypeElement typeElement
+        && "java.lang.String".equals(typeElement.getQualifiedName().toString());
   }
 
   private static TypeElement expectedEnumType(final SemanticCompletionContext semanticContext) {

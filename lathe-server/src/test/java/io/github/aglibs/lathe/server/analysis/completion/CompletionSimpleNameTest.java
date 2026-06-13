@@ -225,6 +225,31 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
   }
 
   @Test
+  void simpleName_switchCaseLabel_stringSubject_suppressesTypeIndexClasses() {
+    final var items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    String m(String type) {
+                        return switch (type) {
+                            case §
+                        };
+                    }
+                }"""));
+
+    assertThat(items)
+        .doesNotContain(
+            "ArrayDeque",
+            "AbstractList",
+            "Integer",
+            "Runnable",
+            "String",
+            "StringBuilder",
+            "TimeUnit");
+  }
+
+  @Test
   void variableInitializer_referenceMethod_rankedAfterAssignableMethod() {
     final var items =
         fixture.complete(
@@ -386,8 +411,8 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
             }""");
 
     assertThat(labels(items)).contains("forTesting");
-    final var item1 = itemWithLabelDetail(items, "forTesting", "()").orElseThrow();
-    final var item2 = itemWithLabelDetail(items, "forTesting", "(String value)").orElseThrow();
+    assertThat(itemWithLabelDetail(items, "forTesting", "()")).isPresent();
+    assertThat(itemWithLabelDetail(items, "forTesting", "(String value)")).isPresent();
   }
 
   @Test

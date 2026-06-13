@@ -47,7 +47,7 @@ Notes:
 ## CQ-0022 — String switch `case §` offers type-index classes
 
 ID: CQ-0022
-Status: new
+Status: fixed
 Tier: basic
 Failure mode: wrong-candidate-set
 Owner component: CompletionEngine / TypeResolver
@@ -72,7 +72,14 @@ Expected IDE behavior is not to offer arbitrary type names in a `String` switch 
 Useful candidates would be visible constant `String` values or no basic candidates.
 
 Lathe behavior:
-Returns 112 type-index candidates such as `Thread`,
+Fixed.
+Lathe now treats `String` switch case labels as value-label sites and suppresses broad
+type-index/type-reference candidates.
+Enum case labels still use enum constants,
+and non-`String` declared selectors still route to type-pattern completion.
+
+Before the fix,
+Lathe returned 112 type-index candidates such as `Thread`,
 `String`,
 `Process`,
 `Object`,
@@ -92,6 +99,9 @@ Regression target:
 `CompletionSimpleNameTest.simpleName_switchCaseLabel_stringSubject_suppressesTypeIndexClasses`
 
 Notes:
+Fixed by adding an explicit `java.lang.String` case-label guard in `CompletionEngine`
+before the type-pattern fallback.
+
 This is separate from enum switch labels (`CQ-0006`) and type-pattern switch labels (`CQ-0021`).
 The case-label path should branch by selector type:
 enum selectors use enum constants,
@@ -379,7 +389,7 @@ the gap is the modifier-sensitive filtering after the user has already committed
 ## CQ-0027 — `Collectors.` inside return-stream `collect` is not ranked by result type
 
 ID: CQ-0027
-Status: new
+Status: fixed
 Tier: typed
 Failure mode: poor-ranking
 Owner component: TypeResolver / CompletionCandidateRanker
@@ -429,7 +439,14 @@ For these probes,
 and `toUnmodifiableList` or `toList` should be near the top respectively.
 
 Lathe behavior:
-All three probes return 45 `Collectors` members in alphabetical order:
+Fixed.
+Lathe now recognizes the configured static-member result rule for
+`Collectors.§` inside `Stream.collect(...)`,
+propagates the expected result type from the enclosing expression,
+and ranks compatible collector factories before unrelated collectors.
+
+Before the fix,
+all three probes returned 45 `Collectors` members in alphabetical order:
 ```text
 averagingDouble
 averagingInt
@@ -472,7 +489,17 @@ Regression target:
 `CompletionMemberAccessTest.memberAccess_collectorsReceiverInsideReturnCollect_rankedByReturnType`
 
 Notes:
-This is related to `CQ-0020`,
+Fixed by commit `6896d2c`.
+The implementation deliberately keeps Java-library-specific method and type names in
+`CompletionLibraryRules`,
+alongside the existing lambda projection rules for `Optional`,
+`Stream`,
+and `CompletionStage`.
+`TypeResolver` resolves a generic static-member result context from the rule table,
+and `CompletionCandidateRanker` ranks candidates through that context without hardcoding
+`Collectors` or `Collector`.
+
+This remains related to `CQ-0020`,
 but it was found through return statements rather than assignment initializers.
 The same exploration also reconfirmed deferred `CQ-0002`:
 method-reference completion such as `Map.Entry::getV§` and `Object::to§` still returns no candidates.
@@ -746,12 +773,10 @@ Local generic class bounds also work for
 
 All accepted completion-quality gaps from the `DropwizardResourceConfig` explorer pass have been resolved or triaged.
 
-The latest Helidon/Dropwizard explorer pass added `CQ-0022`,
-`CQ-0023`,
+The latest Helidon/Dropwizard explorer pass added `CQ-0023`,
 `CQ-0024`,
 `CQ-0025`,
 `CQ-0026`,
-`CQ-0027`,
 `CQ-0028`,
 `CQ-0029`,
 and `CQ-0030`.
@@ -2075,9 +2100,17 @@ Expected IDE behavior is to rank `toList()` (and other `List`-returning collecto
 because the outer `collect()` call's argument type is `Collector<String, ?, List<String>>`.
 
 Lathe behavior:
-Returns 45 items in alphabetical order.
+Fixed.
+Lathe now uses the shared static-member result rule path for `Collectors.§` inside
+`Stream.collect(...)`.
+It derives the expected result type from the enclosing assignment or initializer context and
+ranks compatible collector factories before unrelated collectors.
+
+Before the fix,
+the probe returned 45 items in alphabetical order.
 `toList` appears at position 36.
-The `sentinelCtx=MEMBER_ACCESS` path routes through `Collectors` static members but no semantic expected type is applied.
+The `sentinelCtx=MEMBER_ACCESS` path routed through `Collectors` static members,
+but no semantic expected type was applied.
 
 Expected Lathe behavior:
 When a static member access (`Collectors.§`) is the argument to a call (`collect(§)`),
@@ -2093,8 +2126,9 @@ Regression target:
 
 Notes:
 The accepted edit for `toList` is correct.
-The gap is ranking only, not insertion.
-The fix requires propagating the outer argument's expected type into the nested member-access ranking context.
+The gap was ranking only, not insertion.
+The fix propagates the outer argument's expected type into the nested member-access ranking context
+through the centralized `CompletionLibraryRules` table.
 Related to CQ-0015 (member-access expected type from assignment),
 but that fix addressed only the direct-assignment context, not the nested-argument context.
 
