@@ -149,6 +149,7 @@ Use these docs as the starting point when reprioritizing or slicing new work:
 - [lathe-run-test-debug.md](planned/lathe-run-test-debug.md) — Maven-delegated run, test, debug commands and streamed
   session events.
 - [lathe-signature-help.md](planned/lathe-signature-help.md) — parameter types and names display during method/constructor invocation.
+- [lathe-structural-navigation.md](planned/lathe-structural-navigation.md) — Document symbols (outline view) and folding ranges.
 - [lathe-source-uri-scheme.md](done/lathe-source-uri-scheme.md) — superseded; `file://` approach implemented instead, see [lathe-file-uri-scheme.md](done/lathe-file-uri-scheme.md).
 - [lathe-unused-code-diagnostics.md](done/lathe-unused-code-diagnostics.md) — unused private methods, fields, and locals (implemented).
 - [lathe-stale-pom-detection.md](done/lathe-stale-pom-detection.md) — POM fingerprint recording,
@@ -211,6 +212,11 @@ See [lathe-signature-help.md](planned/lathe-signature-help.md).
 Upgrade `textDocument/hover` and completion item documentation to render Javadoc as formatted Markdown instead of raw text.
 Replaces regex-based comment stripping with `DocTreeScanner` AST walking to support HTML tags, inline links, and block tags natively.
 See [lathe-rich-javadoc-rendering.md](planned/lathe-rich-javadoc-rendering.md).
+
+### Structural Navigation
+Add `textDocument/documentSymbol` and `textDocument/foldingRange` using read-only `SourceParser` AST passes.
+Powers the editor "Outline" view, breadcrumbs, and code folding for classes, methods, and imports.
+See [lathe-structural-navigation.md](planned/lathe-structural-navigation.md).
 
 ### Architecture and Test Improvements
 Land the narrowly-scoped maintainability improvements documented in
