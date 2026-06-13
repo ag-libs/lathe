@@ -47,6 +47,13 @@ hover <line>:<col>
 hover <text>
     Show hover information at the first occurrence of <text>.
 
+sig <line>:<col>
+    Show signature help (overloads, active parameter) at the given 0-based position.
+
+sig after <text>
+    Find the first occurrence of <text> and show signature help immediately after it.
+    Typical use: sig after "methodName("
+
 definition <line>:<col>   (alias: def <line>:<col>)
     Show the declaration site of the symbol at the given 0-based position.
 
@@ -157,7 +164,7 @@ _KIND_NAMES = {
 
 _LOG_KEYWORDS = (
     "inject prefix", "sentinelCtx", "resolve receiver",
-    "type-index", "typeRef", "proposals", "WARN", "ERROR", "completion",
+    "type-index", "typeRef", "proposals", "WARN", "ERROR", "completion", "signatureHelp",
 )
 
 _ASSERTION_KEYWORDS = frozenset(("expect", "min", "max", "filter"))
@@ -286,6 +293,23 @@ def _print_assertion_result(failures: list[str]) -> bool:
         return False
     print("  [PASS]")
     return True
+
+
+def _format_sig_label(sig: dict, active_param: int) -> str:
+    """Return the signature label with the active parameter wrapped in [...], if any."""
+    label = sig["label"]
+    params = sig.get("parameters") or []
+    if active_param < 0 or active_param >= len(params):
+        return label
+    pl = params[active_param].get("label")
+    if isinstance(pl, list) and len(pl) == 2:
+        start, end = pl
+        return label[:start] + "[" + label[start:end] + "]" + label[end:]
+    if isinstance(pl, str):
+        idx = label.find(pl)
+        if idx >= 0:
+            return label[:idx] + "[" + pl + "]" + label[idx + len(pl):]
+    return label
 
 
 def _offset_at(content: str, line: int, col: int) -> int:
@@ -425,6 +449,7 @@ class ExploreShell:
             "complete":    self._cmd_complete,
             "accept":      self._cmd_accept,
             "hover":       self._cmd_hover,
+            "sig":         self._cmd_sig,
             "definition":  self._cmd_definition,
             "def":         self._cmd_definition,
             "refs":        self._cmd_refs,
@@ -766,6 +791,50 @@ class ExploreShell:
         )
         for ln in value.strip().splitlines():
             print(f"  {ln}")
+
+    def _cmd_sig(self, args: list[str]) -> None:
+        if not args:
+            print("usage: sig <line>:<col>")
+            print("       sig after <text>")
+            return
+
+        if len(args) >= 2 and args[0].lower() == "after":
+            text = args[1]
+            pos = self._find_text(text)
+            if pos is None:
+                print(f"  text not found: {text!r}")
+                return
+            line, col = pos[0], pos[1] + len(text)
+            print(f"  sig after {text!r}  →  {line}:{col}")
+        elif ":" in args[0]:
+            try:
+                line, col = (int(x) for x in args[0].split(":", 1))
+            except (ValueError, TypeError):
+                print(f"  expected line:col (0-based), got {args[0]!r}")
+                return
+        else:
+            print(f"  expected line:col (0-based) or 'after <text>', got {args[0]!r}")
+            return
+
+        try:
+            result = self._client.signature_help(self._file, line, col)
+        except TimeoutError:
+            print("  TIMEOUT")
+            return
+
+        if result is None or not result.get("signatures"):
+            print("  (no signature help)")
+            return
+
+        sigs = result["signatures"]
+        active_sig = result.get("activeSignature") or 0
+        active_param = result.get("activeParameter") or 0
+
+        print(f"  {len(sigs)} signature(s)  active={active_sig}  param={active_param}")
+        for i, sig in enumerate(sigs):
+            marker = ">>>" if i == active_sig else "   "
+            active = active_param if i == active_sig else -1
+            print(f"  {marker} {_format_sig_label(sig, active)}")
 
     def _cmd_definition(self, args: list[str]) -> None:
         if not args:

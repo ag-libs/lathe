@@ -133,6 +133,13 @@ final class LatheTextDocumentService implements TextDocumentService {
   }
 
   @Override
+  public CompletableFuture<SignatureHelp> signatureHelp(final SignatureHelpParams params) {
+    final var uri = params.getTextDocument().getUri();
+    final var pos = params.getPosition();
+    return worker.submit(() -> session.signatureHelpFuture(uri, pos)).thenCompose(f -> f);
+  }
+
+  @Override
   public CompletableFuture<Hover> hover(final HoverParams params) {
     final var uri = params.getTextDocument().getUri();
     final var pos = params.getPosition();

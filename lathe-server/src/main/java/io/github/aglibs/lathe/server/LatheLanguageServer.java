@@ -15,6 +15,7 @@ import org.eclipse.lsp4j.InitializedParams;
 import org.eclipse.lsp4j.SemanticTokensLegend;
 import org.eclipse.lsp4j.SemanticTokensWithRegistrationOptions;
 import org.eclipse.lsp4j.ServerCapabilities;
+import org.eclipse.lsp4j.SignatureHelpOptions;
 import org.eclipse.lsp4j.TextDocumentSyncKind;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.LanguageClientAware;
@@ -53,6 +54,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     capabilities.setTextDocumentSync(TextDocumentSyncKind.Full);
     capabilities.setCompletionProvider(new CompletionOptions(false, List.of(".")));
     capabilities.setHoverProvider(true);
+    capabilities.setSignatureHelpProvider(new SignatureHelpOptions(List.of("(", ",")));
     final var legend =
         new SemanticTokensLegend(TokenScanner.TOKEN_TYPES, TokenScanner.TOKEN_MODIFIERS);
     final var semanticTokensOptions = new SemanticTokensWithRegistrationOptions(legend);

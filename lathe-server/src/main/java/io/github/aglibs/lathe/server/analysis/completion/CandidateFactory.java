@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.analysis.completion;
 
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
+import io.github.aglibs.lathe.server.analysis.TypeDisplayFormatter;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;

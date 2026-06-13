@@ -109,6 +109,15 @@ Architecture is documented in [lathe-server-data-flow-recipe.md](done/lathe-serv
   Diagnostics are emitted as `DiagnosticSeverity.Hint` + `DiagnosticTag.Unnecessary` with a range covering only the declaration name,
   which Neovim uses to fade out unused code.
   See [lathe-unused-code-diagnostics.md](done/lathe-unused-code-diagnostics.md).
+- **Signature help** — `textDocument/signatureHelp` implemented with trigger characters `(` and `,`.
+  `SignatureHelpResolver` locates the enclosing `MethodInvocationTree` or `NewClassTree`, discovers all
+  overloads via `elements.getAllMembers`, resolves the exact overload javac chose, and computes the
+  active parameter index from AST argument source positions (no raw source scanning).
+  `TypeDisplayFormatter` moved to `analysis/` package for shared use.
+  `dev/explore.py` gains a `sig` command.
+  Known limitation: parameter names for class-file dependencies compiled without `-parameters` are
+  suppressed (showing type only); on-demand source parsing is planned.
+  See [lathe-signature-help.md](done/lathe-signature-help.md).
 
 ---
 
@@ -148,7 +157,7 @@ Use these docs as the starting point when reprioritizing or slicing new work:
 - [lathe-rich-javadoc-rendering.md](planned/lathe-rich-javadoc-rendering.md) — AST-backed Markdown formatting for Javadoc using DocTreeScanner.
 - [lathe-run-test-debug.md](planned/lathe-run-test-debug.md) — Maven-delegated run, test, debug commands and streamed
   session events.
-- [lathe-signature-help.md](planned/lathe-signature-help.md) — parameter types and names display during method/constructor invocation.
+- [lathe-signature-help.md](done/lathe-signature-help.md) — parameter types and names display during method/constructor invocation (implemented; on-demand source parsing for class-file deps planned).
 - [lathe-structural-navigation.md](planned/lathe-structural-navigation.md) — Document symbols (outline view) and folding ranges.
 - [lathe-source-uri-scheme.md](done/lathe-source-uri-scheme.md) — superseded; `file://` approach implemented instead, see [lathe-file-uri-scheme.md](done/lathe-file-uri-scheme.md).
 - [lathe-unused-code-diagnostics.md](done/lathe-unused-code-diagnostics.md) — unused private methods, fields, and locals (implemented).
@@ -202,11 +211,6 @@ the remaining beta scope is:
 - **Gap 4 — type-index freshness for new reactor types**: ensure newly-created project types become available to
   missing-import code actions without requiring a manual full `mvn process-test-classes` round trip when Lathe already
   has enough local source or reactor-index information to answer safely.
-
-### Signature Help
-Display method and constructor parameter names and types during argument entry.
-Parse enclosing invocation contexts and count commas at the cursor's nesting level to highlight the active parameter.
-See [lathe-signature-help.md](planned/lathe-signature-help.md).
 
 ### Rich Javadoc Rendering
 Upgrade `textDocument/hover` and completion item documentation to render Javadoc as formatted Markdown instead of raw text.

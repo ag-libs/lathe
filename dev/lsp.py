@@ -100,6 +100,7 @@ class LatheClient:
                     "definition": {},
                     "references": {},
                     "completion": {"completionItem": {"snippetSupport": False}},
+                    "signatureHelp": {},
                     "semanticTokens": {
                         "requests": {"full": True},
                         "tokenTypes": [],
@@ -264,6 +265,13 @@ class LatheClient:
     def close(self, file: str | Path):
         uri = Path(file).resolve().as_uri()
         self.notify("textDocument/didClose", {"textDocument": {"uri": uri}})
+
+    def signature_help(self, file: str | Path, line: int, col: int) -> dict | None:
+        """Signature help at 0-based line/col. Returns LSP SignatureHelp result or None."""
+        return self.request("textDocument/signatureHelp", {
+            "textDocument": {"uri": Path(file).resolve().as_uri()},
+            "position": {"line": line, "character": col},
+        })
 
     def hover(self, file: str | Path, line: int, col: int) -> dict | None:
         """Hover at 0-based line/col. Returns LSP Hover result or None."""

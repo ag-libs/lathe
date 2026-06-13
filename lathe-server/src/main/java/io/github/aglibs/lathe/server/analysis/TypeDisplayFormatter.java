@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.server.analysis.completion;
+package io.github.aglibs.lathe.server.analysis;
 
 import java.util.stream.Collectors;
 import javax.lang.model.element.TypeElement;
@@ -9,15 +9,15 @@ import javax.lang.model.type.TypeVariable;
 import javax.lang.model.type.WildcardType;
 import javax.lang.model.util.Types;
 
-final class TypeDisplayFormatter {
+public final class TypeDisplayFormatter {
 
   private final Types types;
 
-  TypeDisplayFormatter(final Types types) {
+  public TypeDisplayFormatter(final Types types) {
     this.types = types;
   }
 
-  String format(final TypeMirror type) {
+  public String format(final TypeMirror type) {
     return switch (type) {
       case DeclaredType declaredType -> formatDeclaredType(declaredType);
       case ArrayType arrayType -> "%s[]".formatted(format(arrayType.getComponentType()));

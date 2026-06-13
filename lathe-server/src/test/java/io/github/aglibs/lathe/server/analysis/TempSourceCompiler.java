@@ -19,6 +19,7 @@ import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
+import javax.tools.StandardLocation;
 import javax.tools.ToolProvider;
 
 public final class TempSourceCompiler implements JavaSourceCompiler {
@@ -28,10 +29,17 @@ public final class TempSourceCompiler implements JavaSourceCompiler {
   private final StandardJavaFileManager fm;
 
   public TempSourceCompiler() {
+    this(List.of());
+  }
+
+  public TempSourceCompiler(final List<Path> extraClasspath) {
     try {
       this.compiler = ToolProvider.getSystemJavaCompiler();
       this.fm = compiler.getStandardFileManager(null, null, null);
       this.td = Files.createTempDirectory("lathe-test-");
+      if (!extraClasspath.isEmpty()) {
+        fm.setLocationFromPaths(StandardLocation.CLASS_PATH, extraClasspath);
+      }
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }

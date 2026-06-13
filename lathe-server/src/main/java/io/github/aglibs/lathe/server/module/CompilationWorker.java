@@ -26,6 +26,7 @@ import org.eclipse.lsp4j.CompletionContext;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.SignatureHelp;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 /** Called from the server event loop; executes all compilation work on its own module thread. */
@@ -99,6 +100,10 @@ public final class CompilationWorker {
                 request.uri(),
                 request.generation(),
                 ctx.compile(request.uri(), request.content(), request.version(), request.mode())));
+  }
+
+  public CompletableFuture<SignatureHelp> signatureHelp(final SourceFeatureRequest request) {
+    return submit(ctx -> ctx.signatureHelp(request));
   }
 
   public CompletableFuture<Hover> hover(final SourceFeatureRequest request) {

@@ -31,6 +31,7 @@ import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.SignatureHelp;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 public final class SourceAnalysisSession implements AutoCloseable {
@@ -107,6 +108,17 @@ public final class SourceAnalysisSession implements AutoCloseable {
     }
 
     return ctx.analysis().semanticTokens();
+  }
+
+  public SignatureHelp signatureHelp(final SourceFeatureRequest request) {
+    final var cur = resolve(request);
+    if (cur == null) {
+      return null;
+    }
+    final long offset =
+        SourceLocator.toOffset(
+            cur.analysis().tree(), request.pos().getLine(), request.pos().getCharacter());
+    return SignatureHelpResolver.resolve(cur.analysis(), cur.path(), offset);
   }
 
   public Hover hover(final SourceFeatureRequest request) {

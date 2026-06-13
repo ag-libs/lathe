@@ -53,6 +53,7 @@ import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.SemanticTokens;
 import org.eclipse.lsp4j.ShowMessageRequestParams;
+import org.eclipse.lsp4j.SignatureHelp;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.LanguageClient;
@@ -376,6 +377,24 @@ final class WorkspaceSession {
             moduleWorker
                 .hover(request)
                 .exceptionally(ex -> logAndReturn(ex, "[hover] failed for " + uri, null)),
+        null);
+  }
+
+  CompletableFuture<SignatureHelp> signatureHelpFuture(final String uri, final Position pos) {
+    final var openFile = openDocuments.get(uri);
+    if (openFile == null) {
+      return CompletableFuture.completedFuture(null);
+    }
+
+    final var request =
+        new SourceFeatureRequest(
+            openFile.uri(), openFile.content(), pos, workspace.allSourceRoots(), manifest);
+    return routeFeature(
+        uri,
+        moduleWorker ->
+            moduleWorker
+                .signatureHelp(request)
+                .exceptionally(ex -> logAndReturn(ex, "[signatureHelp] failed for " + uri, null)),
         null);
   }
 
