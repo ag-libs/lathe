@@ -38,7 +38,7 @@ public final class FileUtil {
     try {
       Files.writeString(tmp, content, StandardCharsets.UTF_8);
       if (executable) {
-        tmp.toFile().setExecutable(true, false);
+        setExecutable(tmp);
       }
       moveReplacing(tmp, target);
     } finally {
@@ -65,7 +65,13 @@ public final class FileUtil {
   public static void deleteDir(final Path dir) throws IOException {
     try (final var walk = Files.walk(dir)) {
       walk.sorted(Comparator.reverseOrder())
-          .forEach(path -> IOUtil.unchecked(() -> Files.delete(path)));
+          .forEach(
+              path ->
+                  IOUtil.unchecked(
+                      () -> {
+                        setWritable(path);
+                        Files.delete(path);
+                      }));
     } catch (final UncheckedIOException e) {
       throw e.getCause();
     }
@@ -106,5 +112,24 @@ public final class FileUtil {
 
     Files.createDirectories(target.getParent());
     Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
+    setReadOnly(target);
+  }
+
+  private static void setReadOnly(final Path path) throws IOException {
+    if (!path.toFile().setReadOnly()) {
+      throw new IOException("Failed to set read-only: " + path);
+    }
+  }
+
+  private static void setWritable(final Path path) throws IOException {
+    if (!path.toFile().setWritable(true)) {
+      throw new IOException("Failed to set writable: " + path);
+    }
+  }
+
+  private static void setExecutable(final Path path) throws IOException {
+    if (!path.toFile().setExecutable(true, false)) {
+      throw new IOException("Failed to set executable: " + path);
+    }
   }
 }

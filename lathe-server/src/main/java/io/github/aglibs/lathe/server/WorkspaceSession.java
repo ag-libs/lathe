@@ -24,6 +24,7 @@ import io.github.aglibs.lathe.server.module.WorkspaceModuleGraph;
 import io.github.aglibs.lathe.server.module.WorkspaceModuleRegistry;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
@@ -802,7 +803,7 @@ final class WorkspaceSession {
   }
 
   private static Path toPath(final String uri) {
-    return LatheUri.toPath(uri);
+    return Path.of(URI.create(uri));
   }
 
   private static PublishDiagnosticsParams singleDiag(

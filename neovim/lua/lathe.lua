@@ -16,30 +16,8 @@
 
 local M = {}
 
-local SCHEME = 'lathe-source://'
-
 local function cache_root()
   return vim.fs.normalize(vim.env.LATHE_CACHE or (vim.fn.expand('~') .. '/.cache/lathe'))
-end
-
-local function open_lathe_source(args)
-  local uri = args.match
-  local path = uri:sub(#SCHEME + 1)
-  local buf = args.buf
-
-  vim.bo[buf].swapfile = false
-  vim.bo[buf].buftype = 'nofile'
-  vim.bo[buf].modifiable = true
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.fn.readfile(path))
-  vim.bo[buf].modifiable = false
-  vim.bo[buf].filetype = 'java'
-
-  for _, client in ipairs(vim.lsp.get_clients({ name = 'lathe' })) do
-    if not vim.lsp.buf_is_attached(buf, client.id) then
-      vim.lsp.buf_attach_client(buf, client.id)
-    end
-    break
-  end
 end
 
 function M.setup(opts)
@@ -94,9 +72,19 @@ function M.setup(opts)
     })
   end
 
-  vim.api.nvim_create_autocmd('BufReadCmd', {
-    pattern = SCHEME .. '*',
-    callback = open_lathe_source,
+  local cache_pattern = root .. '/**'
+  vim.api.nvim_create_autocmd('BufReadPre', {
+    pattern = cache_pattern,
+    callback = function(ev)
+      vim.bo[ev.buf].swapfile = false
+    end,
+  })
+  vim.api.nvim_create_autocmd('BufReadPost', {
+    pattern = cache_pattern,
+    callback = function(ev)
+      vim.bo[ev.buf].readonly = true
+      vim.bo[ev.buf].modifiable = false
+    end,
   })
 end
 

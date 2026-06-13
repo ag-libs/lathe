@@ -173,6 +173,25 @@ The plugin launches `~/.cache/lathe/current/lathe-launcher.sh`
 and keeps the client thin — no client-side project model parsing.
 VS Code plugin and tooling integration is deferred to post-beta.
 
+### Completion Engine Gaps
+Close the known gaps in the completion engine documented in `lathe-completion-disabled-test-gaps.md`.
+This includes inner-class constructor completion, enum constants in equality comparisons, and local variables inside inner-class methods.
+These are highly visible to Neovim users relying on accurate completions.
+
+### Code Action Gaps
+Close the known gaps in code actions documented in `lathe-code-actions-gaps.md`.
+This includes try-catch wrapping for `UNREPORTED_EXCEPTION`, variable declaration for `VARIABLE_REF`, and missing method implementations.
+
+### Unused Code Diagnostics
+Provide real-time editor feedback for unused code elements (private methods, fields, locals).
+Lathe will publish them with `DiagnosticTag.Unnecessary`, which Neovim natively uses to fade out unused code, significantly improving the developer experience.
+See `lathe-unused-code-diagnostics.md`.
+
+### Signature Help
+Display method and constructor parameter names and types during argument entry.
+Parse enclosing invocation contexts and count commas at the cursor's nesting level to highlight the active parameter.
+See [lathe-signature-help.md](planned/lathe-signature-help.md).
+
 ---
 
 ## Milestone: Post-Beta Backlog
@@ -186,11 +205,6 @@ Static dependency, JDK, and reactor output shards are in place.
 The remaining reactor-index work is any later performance optimization if startup scanning becomes measurable.
 This also unlocks missing-import suggestions and workspace symbols once those features query the reactor candidates.
 See [lathe-type-index.md](planned/lathe-type-index.md) and [lathe-reactor-type-index.md](planned/lathe-reactor-type-index.md).
-
-### Signature Help
-Display method and constructor parameter names and types during argument entry.
-Parse enclosing invocation contexts and count commas at the cursor's nesting level to highlight the active parameter.
-See [lathe-signature-help.md](planned/lathe-signature-help.md).
 
 ### onTypeFormatting
 Implement conservative `textDocument/onTypeFormatting` indentation hints for newline triggers.

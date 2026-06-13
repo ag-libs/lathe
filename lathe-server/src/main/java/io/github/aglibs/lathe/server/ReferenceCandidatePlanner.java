@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
+import java.net.URI;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
@@ -92,7 +93,7 @@ final class ReferenceCandidatePlanner {
   }
 
   private static Path toPath(final String uri) {
-    return LatheUri.toPath(uri);
+    return Path.of(URI.create(uri));
   }
 
   private static boolean isInPackage(
