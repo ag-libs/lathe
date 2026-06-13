@@ -51,16 +51,17 @@ Delegates to real javac unchanged, then writes compilation parameters to `.lathe
 It runs silently before compilation so the shim always finds `.lathe/` on the very first build.
 `sync` auto-binds to `process-test-classes`; it refreshes shared dependency/JDK sources,
 writes `workspace.json` (skipped when content is unchanged or when Maven is invoked with `-pl`),
-and owns all integration tests via maven-invoker.
-Neovim headless e2e (Layer 3) is a planned test layer, not yet implemented.
+installs the server launcher,
+builds dependency and JDK type-index shards,
+and owns integration tests via maven-invoker.
 
 **`lathe-server`** — the LSP server.
 Reads params files written by the shim and the workspace manifest written by the Maven plugin, builds a fresh
 `JavacTask` per compilation pass, and serves LSP requests.
 It reads dependency/JDK sources from `~/.cache/lathe/`.
-Stale-POM detection (watching POM changes and prompting the user to re-sync) is a planned feature.
-`LatheWorkspaceService.didChangeWatchedFiles` currently handles deleted Java source files;
-POM-change handling is still future work.
+`WorkspaceWatcher` watches `workspace.json` and reactor POM fingerprints,
+prompting the user to re-sync when Maven project files change.
+`LatheWorkspaceService.didChangeWatchedFiles` handles deleted Java source files.
 Type indexes back dependency, JDK, and reactor type-name completion.
 
 ```
@@ -171,17 +172,19 @@ ordinary `mvnd package` and `mvnd install` runs also reach this phase and refres
 The shim updates `lsp-params-classes.json` and `lsp-params-test-classes.json` for every module it compiles.
 The bound `lathe:sync` goal then resolves external dependency source JARs,
 refreshes extracted dependency sources under `~/.cache/lathe/deps/`,
-writes the minimal dependency-source manifest to `.lathe/workspace.json`,
+extracts JDK sources when available,
+builds dependency and JDK type-index shards,
+writes `.lathe/workspace.json`,
 and installs the server launcher into `~/.cache/lathe/servers/<version>/` (idempotent).
-Stale-POM fingerprints are a later sync slice.
-The LS currently reads shim params on startup and registry reload;
+The LS reads shim params on startup and registry reload;
 it also reads the workspace manifest for dependency/JDK source roots, external-source classpaths,
-type-index shard paths, and hover origin labels.
+type-index shard paths, reactor POM paths, server version, and hover origin labels.
 
 If a module has no params file yet (first checkout, new module added), the LS surfaces:
 "Run `mvn process-test-classes` to activate module `<relativePath>`."
 
-Future stale-POM detection will compare watched POM content against hashes in the workspace manifest and surface:
+Stale-POM detection compares watched POM modification time and size against the baseline loaded from
+`workspace.json` and surfaces:
 "Maven project changed. Run `mvn process-test-classes` to refresh Lathe."
 
 Re-run `lathe:init` when setting up a checkout or after changing Lathe POM configuration.
@@ -189,12 +192,10 @@ The next `process-test-classes`, `package`, or `install` run refreshes params an
 
 ### JVM customization
 
-```bash
-export LATHE_JVM_OPTS="-Xmx4g -Xms512m -XX:+UseZGC"
-```
-
-Set in `.bashrc` or `.zshrc`.
-Nothing committed to the project.
+JVM customization should stay outside project files and generated launcher edits.
+Launcher support for user-provided `LATHE_JVM_OPTS` is described in
+[lathe-launcher-jvm-opts.md](planned/lathe-launcher-jvm-opts.md);
+its status is tracked in the roadmap.
 
 ### Javac API Boundary
 
@@ -223,8 +224,7 @@ each module's subdirectory is keyed by its path relative to the workspace root a
 and output files for that module.
 
 **`~/.cache/lathe/`** — user-level cache, shared across all projects on the machine.
-JDK sources and dependency sources are written by `lathe:sync`.
-Server distributions and indexes are later sync slices.
+JDK sources, dependency sources, server launchers, and shared type-index shards are written by `lathe:sync`.
 Never needs to be gitignored.
 
 ```
@@ -233,7 +233,7 @@ Never needs to be gitignored.
 │   └── 0.1.0/
 │       └── lathe-launcher.sh            ← generated; --module-path points at absolute .m2 paths
 ├── current -> servers/0.1.0/
-├── jdks/                                ← JDK sources extracted by lathe:sync, once per vendor/version
+├── jdks/                                ← JDK sources extracted by lathe:sync
 │   └── Eclipse-Adoptium/
 │       └── 21.0.7/
 │           └── java/lang/String.java
@@ -241,10 +241,15 @@ Never needs to be gitignored.
 │   └── com.google.guava:guava:32.0.0-jre/
 │       └── com/google/common/collect/ImmutableList.java
 └── type-index/                           ← shared dependency/JDK type indexes
-    └── jars/
-        └── com.google.guava/
-            └── guava/
-                └── 32.0.0-jre.index
+    ├── deps/
+    │   └── com.google.guava/
+    │       └── guava/
+    │           └── 32.0.0-jre/
+    │               └── index.json
+    └── jdks/
+        └── Eclipse-Adoptium/
+            └── 21.0.7/
+                └── index.json
 
 .lathe/
 ├── workspace.json                                 ← written by lathe:sync
@@ -280,8 +285,8 @@ Never needs to be gitignored.
 **Nothing committed to the repo.** `.lathe/` is gitignored and fully regenerated.
 `~/.cache/lathe/` is outside the project entirely.
 
-**Shared across projects.** JDK sources and dependency sources are shared across all projects on the machine.
-Future server distributions and type indexes will be shared the same way.
+**Shared across projects.** JDK sources, dependency sources, server distributions, and type indexes are shared across
+all projects on the machine.
 Extracted or built once per version, reused everywhere.
 
 **Survives `mvn clean`.** Both directories are outside Maven's build output management.
@@ -290,7 +295,7 @@ and `.lathe/<rel>/generated-sources/` survive intact.
 
 **Concurrent safety.** `lathe:sync` writes extracted sources to a temp directory first,
 then atomically renames into the shared cache where the platform supports it.
-Future server distribution and index writes should use the same pattern.
+Server launchers and workspace manifests are written atomically.
 
 ### Workspace manifest
 
@@ -305,13 +310,15 @@ while `workspace.json` is a disposable synchronized snapshot that may be missing
 {
   "schemaVersion": "1",
   "workspaceRoot": "/workspace",
+  "serverVersion": "0.1.0",
   "jdk": {
     "vendor": "Eclipse-Adoptium",
     "version": "21.0.7",
     "status": "PRESENT",
     "home": "/usr/lib/jvm/temurin-21",
     "sourceZip": "/usr/lib/jvm/temurin-21/lib/src.zip",
-    "sourceDir": "/home/user/.cache/lathe/jdks/Eclipse-Adoptium/21.0.7"
+    "sourceDir": "/home/user/.cache/lathe/jdks/Eclipse-Adoptium/21.0.7",
+    "typeIndex": "/home/user/.cache/lathe/type-index/jdks/Eclipse-Adoptium/21.0.7/index.json"
   },
   "dependencySources": [
     {
@@ -321,15 +328,21 @@ while `workspace.json` is a disposable synchronized snapshot that may be missing
       "dir": "/home/user/.cache/lathe/deps/com.google.guava/guava/32.0.0-jre",
       "classpath": [
         "/home/user/.m2/repository/com/google/guava/failureaccess/1.0.2/failureaccess-1.0.2.jar"
-      ]
+      ],
+      "typeIndex": "/home/user/.cache/lathe/type-index/deps/com.google.guava/guava/32.0.0-jre/index.json"
     },
     {
       "gav": "org.example:no-sources:1.0",
       "jar": "/home/user/.m2/repository/org/example/no-sources/1.0/no-sources-1.0.jar",
       "status": "MISSING",
       "dir": null,
-      "classpath": []
+      "classpath": [],
+      "typeIndex": null
     }
+  ],
+  "pomPaths": [
+    "pom.xml",
+    "module-a/pom.xml"
   ]
 }
 ```
@@ -340,11 +353,16 @@ then move it over `workspace.json`.
 The LS therefore sees either the previous complete manifest or the next complete manifest,
 never a partially written file.
 
-The first manifest format is intentionally minimal.
-It records the workspace root and external dependency source lookup entries.
+The manifest records the workspace root,
+server version,
+external dependency source lookup entries,
+JDK source lookup,
+type-index shard paths,
+and reactor POM paths for stale-project detection.
 It does not describe the full Maven reactor yet.
 The server still discovers modules from the shim-written `lsp-params-*.json` files.
-Later manifest slices may add `module.N.*` blocks, POM hashes, server distribution paths, and stale-project fingerprints.
+Later manifest slices may add module metadata,
+but they must not duplicate per-module classpath or test dependency lists.
 
 For dependency source lookup,
 the server matches absolute classpath and modulepath JAR paths from the params files against `dependencySources[].jar`.
@@ -357,16 +375,23 @@ The server uses those entries, plus the dependency's own JAR, when compiling ope
 but the JAR path is the lookup key.
 Missing source JARs are recorded with `status` set to `missing` and no `dir`.
 
-JDK sources are the implemented sync slice after dependency sources.
+JDK source lookup follows the same manifest-backed model.
 `lathe:sync` reads `JAVA_HOME`, extracts `$JAVA_HOME/lib/src.zip` to
 `~/.cache/lathe/jdks/<sanitizedVendor>/<sanitizedVersion>/` when present,
-and records `jdk.home`, `jdk.vendor`, `jdk.version`, `jdk.status`, `jdk.sourceZip`, and `jdk.sourceDir` in the manifest.
+builds a JDK type-index shard,
+and records `jdk.home`,
+`jdk.vendor`,
+`jdk.version`,
+`jdk.status`,
+`jdk.sourceZip`,
+`jdk.sourceDir`,
+and `jdk.typeIndex` in the manifest.
 The server uses `jdk.sourceDir` directly and does not derive or rediscover the JDK source cache path.
 
 When reactor module metadata is added to the manifest,
 module identity will be the path relative to the workspace root,
 for example `module-a` or `platform/core`.
-Those future module blocks will point at the main and test params files produced by the shim.
+Those module blocks would point at the main and test params files produced by the shim.
 The params files remain the compile source of truth:
 main dependencies live in `lsp-params-classes.json`,
 and test dependencies live in `lsp-params-test-classes.json`.
@@ -376,11 +401,14 @@ The LS loads the manifest into an immutable `WorkspaceManifest` snapshot during 
 `WorkspaceManifest.load(workspaceRoot)` reads `.lathe/workspace.json`,
 builds binary-JAR to source-root maps,
 builds source-root to per-dependency classpath maps,
-and reads `jdk.sourceDir` and `jdk.version`.
+reads `jdk.sourceDir` and `jdk.version`,
+collects dependency/JDK type-index shard paths,
+and resolves reactor POM paths.
 The snapshot is also reloaded whenever `workspace.json` or params-file changes are detected.
 Reloading the snapshot clears cached external source analyses so definition and hover use the new source/classpath map.
 Feature handlers read that snapshot directly; handlers do not re-read `workspace.json` on every request.
-Future slices will add stale-POM checks and module-to-params metadata.
+Stale-POM polling uses the manifest's reactor POM paths.
+Future slices may add module-to-params metadata.
 
 ---
 
@@ -493,7 +521,7 @@ Copy duration is logged when `LATHE_DEBUG=1`.
 
 ### Startup
 
-The LS currently scans `.lathe/` at the workspace root,
+The LS scans `.lathe/` at the workspace root,
 finds all `lsp-params-*.json` files,
 and derives the module registry from them.
 `workspace.json` is written by sync and read for dependency/JDK source lookup,
@@ -550,8 +578,8 @@ The only durable per-module-source state is:
   `ModuleSourceCompiler` is closed when its `SourceAnalysisSession` closes during workspace reload or server shutdown.
   There is no LRU — workers are created on demand and live for the duration of the current `WorkspaceModuleRegistry` snapshot.
 
-_v1 simplification — the temp-dir approach is straightforward to implement and test.
-A future version may replace it with in-memory `JavaFileObject` serving to avoid the disk round-trip._
+_The temp-dir approach is straightforward to implement and test.
+An in-memory `JavaFileObject` implementation could replace it later to avoid the disk round-trip._
 - **Per-file result cache** — `Map<Path, CompileResponse>` keyed by document content hash.
   Holds the post-attribution `AttributedFileAnalysis` from the most recent pass for each open file.
   The analysis includes `Trees`, `CompilationUnitTree`, and pre-computed semantic tokens.
@@ -749,7 +777,7 @@ it is flushed after full passes and closed on workspace reload and server shutdo
 
 ---
 
-## 7. Language Server — Features
+## 7. Language Server — Feature Mechanics
 
 ### Member access completion
 
@@ -807,29 +835,19 @@ The LS uses that state:
 
 Extracted sources are shared across all projects.
 
-The baseline protocol result is a plain `file://` URI under the extracted cache directory.
+The protocol result is a plain `file://` URI under the extracted cache directory.
 This keeps Neovim and simple LSP clients working without extension-specific URI support.
-Clients that support virtual read-only documents may present the same target through a Lathe-owned URI scheme:
-
-```text
-lathe-source://dep/io/grpc/grpc-api/1.73.0/io/grpc/DecompressorRegistry.java
-lathe-source://jdk/Amazon.com-Inc./26/java.base/java/util/Collection.java
-```
-
-In the first implementation, `lathe-source://` is only a presentation layer backed by the already-extracted source
-file.
-The VS Code extension can translate returned cache `file://` locations to `lathe-source://` before opening them.
-A later server capability can let clients advertise `lathe.externalSourceUriScheme=lathe-source`,
-after which the server may return `lathe-source://` directly for dependency/JDK source locations.
-The storage model stays unchanged until Lathe can read source archives lazily.
-See [lathe-source-uri-scheme.md](planned/lathe-source-uri-scheme.md) for the full design.
+Extracted source files are marked read-only on disk,
+and editor integrations may add path-pattern handling for cache files.
+Lathe does not use a custom external-source URI scheme.
+See [lathe-file-uri-scheme.md](done/lathe-file-uri-scheme.md) for the implemented design.
 
 ### Find-references
 
 **Open-file AST scan** — scan the cached `CompilationUnitTree` of each open file across all modules with open files.
 Trigger a compilation pass for files with empty cache.
-In the current single-worker model, scans that read javac-backed cached analysis run on the server worker.
-Parallel per-module scans are a future optimization if profiling shows find-references latency needs it.
+Scans that read javac-backed cached analysis run on the server worker.
+The request boundary permits per-module parallelism if profiling shows find-references latency needs it.
 
 **Closed-module Class-File API scan** — parallel scan of `.class` files in both `.lathe/<rel>/classes/` and
 `.lathe/<rel>/test-classes/` across all reactor modules with no currently-open files, using virtual threads.
@@ -850,7 +868,7 @@ Modules with no `.lathe/<rel>/classes/` are silently skipped.
 ### Opening dependency source files
 
 `ExternalCompiler` handles source files outside any reactor module when their path is under a manifest
-dependency source root, `jdk.sourceDir`, or a client virtual URI that resolves to one of those extracted files.
+dependency source root or `jdk.sourceDir`.
 It owns a reusable `StandardJavaFileManager`, a temp source root, and a `ModuleAnalysis`.
 For dependency sources it sets `CLASS_PATH` from the manifest's per-dependency classpath entries plus the dependency's
 own JAR;
@@ -879,21 +897,21 @@ If cache is empty, trigger a pass first.
   segment after `.lathe/` extracted → `dropwizard-jetty`
 - If no origin can be determined, the footer is omitted.
 
+### Diagnostics publishing
+
+Diagnostics are published through `textDocument/publishDiagnostics` after compilation passes.
+Fast passes publish parser and attribution diagnostics for the current source without annotation processing.
+Full passes replay Maven's annotation-processing configuration and refresh AP-derived diagnostics.
+`didClose` publishes an empty diagnostic array so clients clear stale messages for closed documents.
+
 ### Semantic tokens
 
 `TreeScanner` walk over the cached `CompilationUnitTree`.
 Computed once per compilation pass and cached alongside the `CompilationUnitTree`.
 Invalidated on next `didChange`.
 
-The v1 legend covers tokens that require javac attribution to classify: enum constants, type parameters, annotations,
-and methods or fields that carry `static` or `@Deprecated`.
-Plain instance methods, instance fields, parameters, local variables, and type name references are not yet covered
-and are a known gap — VS Code relies on semantic tokens for identifier-level highlighting because it uses TextMate
-grammars rather than tree-sitter.
-
-Full VS Code coverage requires adding `class`, `parameter`, and `variable` token types and widening `method` and
-`property` to cover all instances, not just static or deprecated ones.
-See [lathe-vscode-semantic-tokens.md](planned/lathe-vscode-semantic-tokens.md) for the detailed plan.
+Coverage is intentionally driven by attributed javac facts rather than text heuristics.
+Token coverage is tracked in the roadmap and the feature-specific semantic-token design docs.
 
 ### Formatting
 
@@ -901,96 +919,69 @@ See [lathe-vscode-semantic-tokens.md](planned/lathe-vscode-semantic-tokens.md) f
 Full file and range formatting.
 `FormatterException` caught gracefully on syntax errors.
 
----
+Import optimization uses google-java-format's import-fixing formatter.
+This keeps format-on-save and organize-import behavior in the same formatting backend.
 
-## 8. Remaining Features
+### Code action dispatch
 
-The following features build naturally on the model established in sections 6 and 7.
+Compiler diagnostics are enriched with a small `DiagnosticPayload` before they are serialized to the client.
+The payload records the diagnostic kind and relevant symbol/type name so `textDocument/codeAction` can route without
+parsing human-readable javac messages again.
 
-### Diagnostics
+Code-action providers are small classes behind a shared `CodeActionProvider` interface.
+They receive the current attributed analysis,
+the diagnostic payload,
+and the workspace type index when type lookup is needed.
+The dispatcher lives in `SourceAnalysisSession`,
+keeping provider logic close to the javac-backed analysis state while the LSP service remains a thin transport layer.
 
-Pushed via `textDocument/publishDiagnostics` after every compilation pass —
-fast pass on `didChange`, full pass on `didSave` and `didOpen`.
-On `didClose` — publish empty array to clear client display.
-
-AP processor diagnostics are only updated by full passes.
-During fast passes, AP-derived diagnostics remain frozen at the state from the last full pass.
-
-### Code actions
-
-**Add missing import** — when a type name is unresolved, search the type index for candidates.
-The type index is in place; the code action itself is future work.
-User selects one, import statement inserted.
-
-**Organize imports** — sort and remove unused imports.
-Pure source text manipulation.
+Feature-specific provider coverage is tracked in the roadmap and code-action design docs.
 
 ### Document symbols
 
-Walk the file's `CompilationUnitTree`, emit `DocumentSymbol` for each class, method, and field declaration.
+Document symbols are derived from the current file's `CompilationUnitTree`.
+The server emits classes, methods, and field declarations as LSP `DocumentSymbol` entries without running a separate
+indexing pipeline.
 
-### Workspace symbols
-
-Prefix search on the type index — JDK types, reactor types, and JAR dependency types — regardless of
-which modules are currently open.
-The type index has dependency, JDK, and reactor candidates.
-The workspace-symbol LSP capability and query surface are not yet implemented.
-
-### Refactoring strategy
+### Refactoring boundary
 
 Lathe should not try to clone the full Eclipse JDT refactoring stack.
 Its core responsibility is to provide compiler-accurate facts from Maven's real javac state:
-symbol identity, diagnostics, definitions, references, module ownership, source roots, test roots,
-dependency/JDK source locations, and stale-workspace state.
+symbol identity,
+diagnostics,
+definitions,
+references,
+module ownership,
+source roots,
+test roots,
+dependency/JDK source locations,
+and stale-workspace state.
 
-Native LSP refactorings are limited to deterministic, fast edits where Lathe can produce a precise `WorkspaceEdit`
-without design judgment or long-running iteration:
-
-- rename local variables, parameters, private members, and tightly scoped in-module symbols
-- add missing import
-- organize imports
-- simple file-local or module-local source rewrites with clear symbol identity
-
-Large or design-sensitive refactorings are delegated to agentic tools that can plan,
-edit multiple files, run Maven/tests, interpret failures, and ask the user when architectural choices are needed:
-
-- public API rename across JPMS reactor modules
-- move type or split package/module boundaries
-- migrate test frameworks or dependency APIs
-- broad generated-source/AP-sensitive rewrites
-- change-signature, extract-method, and inline operations when they affect multiple modules
-
-To support those tools, Lathe exposes refactoring facts rather than trying to own every refactoring workflow:
-
-- `lathe/symbolAt` — stable symbol identity at a position
-- `lathe/references` — source and bytecode-backed references with known limitations
-- `lathe/moduleGraph` — Maven reactor/module ownership and dependency edges
-- `lathe/affectedModules` — modules likely affected by a symbol or file change
-- `lathe/compileState` — stale manifest, missing params, diagnostics, and source availability
-- `lathe/runTestsForSymbol` — post-v1 test selection built on the run/test/debug design
+Native LSP refactorings should stay limited to deterministic,
+fast edits where Lathe can produce a precise `WorkspaceEdit` without design judgment or long-running iteration.
+Large or design-sensitive refactorings belong in agentic workflows that can plan,
+edit multiple files,
+run Maven/tests,
+interpret failures,
+and ask the user when architectural choices are needed.
 
 This makes Lathe a JPMS/Maven-accurate Java backend for editors and coding agents,
 not a feature-for-feature clone of JDT LS.
 
-### Rename (post-v1)
+---
 
-Native rename starts with local and in-module symbols.
-Cross-module public API rename is an agent-oriented workflow that consumes Lathe reference/module facts,
-applies edits, runs verification, and iterates.
+## 8. Feature Status and Roadmap
 
-### Inlay hints (post-v1)
+This document describes Lathe's stable architecture and mechanics.
+It intentionally does not track feature completion status.
 
-Parameter name hints on method call arguments via `MethodInvocationTree` and `ExecutableElement.getParameters()`.
-
-### Signature help (post-v1)
-
-Enumerate overloads when cursor is inside method call parentheses.
-Reuses the sentinel technique.
-
-### Run, test, and debug (post-v1)
-
-Editor-driven run/test/debug by spawning `mvnd` from the LS and attaching DAP to JDWP —
-see [lathe-run-test-debug.md](planned/lathe-run-test-debug.md).
+Current release scope,
+completed work,
+planned work,
+and links to detailed design documents are tracked in [roadmap.md](roadmap.md).
+Feature-specific designs live under [docs/done/](done/) and [docs/planned/](planned/).
+When feature status in this document appears to conflict with the roadmap,
+the roadmap is authoritative.
 
 ---
 
@@ -1012,14 +1003,13 @@ they launch `~/.cache/lathe/current/lathe-launcher.sh` and let Maven keep that t
 
 ### Server upgrade and restart
 
-When server distribution sync is implemented,
 `lathe:sync` is the only component that installs server distributions and moves `~/.cache/lathe/current`.
 The launcher does not poll for updates and does not run a restart loop.
 It starts exactly one server process using the module path from the `current` distribution at process start.
 
 The running server records its own implementation version.
-When manifest server-version fields are implemented and the server reads `.lathe/workspace.json`,
-it compares that version with `server.version` from the manifest.
+The workspace manifest records the server version that wrote it.
+The server can compare its running version with that manifest version and warn when they differ.
 If they differ, the server reports that the workspace was synced with a different Lathe server version.
 The server should continue serving requests when the manifest schema is compatible,
 but features that require a newer manifest schema may degrade with a clear message.
@@ -1076,7 +1066,7 @@ exec java \
 
 The module path is a colon-separated list of absolute `.m2` JAR paths rendered by `ServerInstaller` at install time;
 no staging `lib/` directory is created.
-`LATHE_JVM_OPTS` support is a planned addition for users who need heap or GC tuning.
+Launcher JVM options are described in [lathe-launcher-jvm-opts.md](planned/lathe-launcher-jvm-opts.md).
 
 ### Neovim
 
@@ -1095,10 +1085,10 @@ Static personal configuration — never project-specific, never committed.
 The `current` symlink means this config does not need version-specific edits.
 
 For dependency and JDK source files opened from the extracted cache,
-the Neovim integration should mark buffers read-only at the editor layer rather than changing filesystem permissions.
+the Neovim integration marks buffers read-only at the editor layer.
 It should also attach the already-running Lathe client silently so hover, definition, diagnostics, and semantic tokens
 continue to work without prompting on each dependency source buffer.
-The first version keeps `file://` buffers for maximum compatibility:
+Lathe keeps `file://` buffers for maximum compatibility:
 
 ```lua
 local function lathe_readonly_external_sources(args)
@@ -1117,40 +1107,17 @@ vim.api.nvim_create_autocmd({ 'BufReadPost', 'BufNewFile' }, {
 })
 ```
 
-A later Neovim plugin may also support `lathe-source://` buffers by resolving URI content through a Lathe command and
-attaching the already-running LSP client.
-That is optional because editor-local read-only `file://` buffers already solve accidental edits.
+The extracted files are also read-only on disk,
+so accidental edits fail even outside Neovim.
 
-### VS Code (post-v1)
+### VS Code
 
-A minimal `vscode-lathe` extension starts the launcher script and connects via LSP.
-It surfaces `LATHE_JVM_OPTS` as a VS Code setting.
+A minimal `vscode-lathe` extension would start the launcher script and connect via LSP.
+It can surface `LATHE_JVM_OPTS` as a VS Code setting once launcher support exists.
 It requires disabling `vscjava.vscode-java-pack` — documented as a prerequisite.
 
-VS Code should present dependency/JDK sources as read-only virtual documents using a `TextDocumentContentProvider`
-registered for `lathe-source`.
-The first implementation can be extension-local and still use the server's current extracted `file://` locations:
-
-1. request definition from Lathe;
-2. if the returned URI is under `~/.cache/lathe/deps/` or `~/.cache/lathe/jdks/`, convert it to `lathe-source://`;
-3. open the virtual document;
-4. map `lathe-source://` back to the extracted file path inside `provideTextDocumentContent()`.
-
-The extension should set the document language to Java after opening the virtual document.
-VS Code treats provider-backed documents as read-only, so no filesystem permission changes are needed.
-
-When this behavior is proven, the extension can advertise a Lathe client capability:
-
-```json
-{
-  "lathe": {
-    "externalSourceUriScheme": "lathe-source"
-  }
-}
-```
-
-The server can then return `lathe-source://` locations directly for supporting clients while continuing to return
-`file://` for clients that do not advertise the capability.
+VS Code should also consume standard `file://` locations for extracted dependency and JDK sources.
+Read-only presentation is an editor concern backed by the read-only extracted files on disk.
 
 ---
 
@@ -1164,52 +1131,36 @@ Fast — milliseconds per test.
 
 ### Layer 2 — Integration (maven-invoker)
 
-`lathe-maven-plugin` owns all integration and e2e tests.
-Invoker runs `lathe:init` and `mvn process-test-classes` against real test projects under `src/it/`:
+`lathe-maven-plugin` owns Maven integration tests.
+Invoker runs `lathe:init` and `mvn process-test-classes` against real test projects under `src/it/`.
+The main fixture is a multi-module reactor with a verifier JUnit submodule:
 
 ```
 lathe-maven-plugin/src/it/
-├── simple-module/
-├── jpms-project/
-│   ├── module-a/
-│   └── platform/
-│       └── core/
-└── annotation-processing/
+└── multi-module/
+    ├── app/
+    ├── core/
+    ├── jpms/
+    └── verify/
 ```
 
-Each project has an `invoker.properties` declaring the goals to run and a `post-build.sh` verifying the output —
-checking `.lathe/` was created, params files were written, class files copied to `.lathe/<rel>/classes/` and
-`.lathe/<rel>/test-classes/`.
-No Groovy scripts.
-
-### Layer 3 — Neovim headless e2e
-
-Bound to `post-integration-test` via the exec plugin.
-Runs after all invoker tests succeed.
-Neovim 0.11+ built-in LSP — no plugins required.
-
-```
-lathe-maven-plugin/src/it/neovim/
-├── minimal_init.lua
-├── harness.lua
-├── run_tests.lua
-└── tests/
-    ├── diagnostics_spec.lua
-    ├── definition_spec.lua
-    └── references_spec.lua
-```
-
-Tests open files from the invoker-prepared `target/it/jpms-project/`, send LSP requests, assert responses using
-`vim.wait()` polling — no fixed sleeps.
-Exit code propagates to Maven.
+The verifier submodule runs as part of the normal invoker build.
+It checks `.lathe/` creation,
+params files,
+class copies,
+workspace manifest contents,
+server launcher installation,
+type-index shards,
+and LSP smoke behavior.
+Neovim headless tests are outside this testing strategy;
+the distributable Neovim plugin is exercised through normal development and manual smoke testing.
 
 ### Running locally
 
 ```bash
 mvn install -DskipTests                                          # build and install
-mvn verify -pl lathe-maven-plugin                                # all layers
-mvn verify -pl lathe-maven-plugin -DskipNeovimTests              # invoker only
-mvn verify -pl lathe-maven-plugin -Dinvoker.test=jpms-project    # one project
+mvn verify -pl lathe-maven-plugin                                # invoker + verifier
+mvn verify -pl lathe-maven-plugin -Dinvoker.test=multi-module    # one invoker project
 ```
 
 ### CI — GitHub Actions
@@ -1229,12 +1180,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - invoker-test: simple-module
-            skip-neovim: true
-          - invoker-test: jpms-project
-            skip-neovim: false
-          - invoker-test: annotation-processing
-            skip-neovim: true
+          - invoker-test: multi-module
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -1242,8 +1188,7 @@ jobs:
           path: ~/.m2/repository/io/github/ag-libs
       - run: |
           mvn verify -pl lathe-maven-plugin \
-            -Dinvoker.test=${{ matrix.invoker-test }} \
-            -DskipNeovimTests=${{ matrix.skip-neovim }}
+            -Dinvoker.test=${{ matrix.invoker-test }}
 ```
 
 ---
@@ -1253,7 +1198,8 @@ jobs:
 **Full non-JPMS workspace intelligence** — core classpath Maven projects work for features that replay captured javac
 params:
 diagnostics, hover, semantic tokens, formatting, many definition/member-access cases, and type-name completion.
-Missing-import code actions and workspace-symbol queries are not implemented yet.
+Workspace-wide intelligence remains centered on captured javac params and type-index facts rather than a full Maven
+project model.
 Without `module-info.java`, Lathe still relies on javac validation and public top-level type indexes rather than JPMS
 export metadata.
 

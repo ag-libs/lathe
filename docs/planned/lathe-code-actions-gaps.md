@@ -138,12 +138,15 @@ in the same project but not yet indexed by `lathe:sync`).
 
 ### Impact
 
-Low: the gap only manifests when a custom exception class is created but `lathe:sync`
-has not run since its creation.
-Running `mvn process-test-classes` re-indexes the module and the action appears immediately.
+Medium for beta: this appears when a project type is created or renamed and Lathe has not yet refreshed the reactor
+type index through a full sync.
+Running `mvn process-test-classes` restores the action,
+but the beta goal is to avoid requiring that round trip when Lathe already has enough local source or reactor-index
+information to answer safely.
 
-### Note
+### Proposed beta direction
 
-No code-action change is needed.
-This is a type-index freshness issue, not a provider bug.
-Document here for completeness.
+Treat this as a type-index freshness problem rather than an `ImportQuickFixProvider` provider bug.
+The fix should make newly-created project types available to missing-import code actions from current reactor source or
+fresh in-memory reactor index state,
+without weakening the provider's existing type-index validation path for dependencies and JDK types.

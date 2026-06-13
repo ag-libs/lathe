@@ -118,6 +118,8 @@ Use these docs as the starting point when reprioritizing or slicing new work:
 - [lathe-jdk-cache-key.md](planned/lathe-jdk-cache-key.md) — unified JDK source and type-index cache pathing.
 - [lathe-launcher-jvm-opts.md](planned/lathe-launcher-jvm-opts.md) — generated launcher support for
   user-provided `LATHE_JVM_OPTS`.
+- [lathe-architecture-test-improvements.md](planned/lathe-architecture-test-improvements.md) —
+  beta workspace and test-fixture cleanup.
 - [completion/](planned/completion/) —
   active completion expectations,
   explorer-based gap discovery,
@@ -153,8 +155,9 @@ Use these docs as the starting point when reprioritizing or slicing new work:
 ## Milestone: v0.1.0-beta (Release Scope)
 
 The beta is a build-from-source release focused on making the current Neovim workflow installable,
-filling the most visible completion and code-action holes,
-and adding small high-value editor feedback features.
+closing the known completion and code-action gaps found so far,
+adding small high-value editor feedback features,
+and landing narrow maintainability improvements that reduce beta risk.
 The beta is distributed as source only;
 users clone the repo and build locally.
 
@@ -174,9 +177,9 @@ and local variables inside inner-class methods.
 These are highly visible to Neovim users relying on accurate completions.
 
 ### Code Action Gaps
-Close the remaining beta gaps documented in `lathe-code-actions-gaps.md`.
+Close the remaining gaps documented in `lathe-code-actions-gaps.md`.
 `VARIABLE_REF` assignment-LHS declaration is already implemented through `DeclareVariableProvider`;
-the beta scope is the two remaining user-visible correctness gaps:
+the remaining beta scope is:
 
 - **Gap 1 — lambda/closure** (`UNREPORTED_EXCEPTION` in a lambda body): suppress `AddThrowsProvider`
   when the throw site is inside a `LambdaExpressionTree` or anonymous class; implement
@@ -185,8 +188,9 @@ the beta scope is the two remaining user-visible correctness gaps:
 - **Gap 3 — `MISSING_METHOD_IMPL`**: add `compiler.err.does.not.override.abstract` classification
   in `enrichWithContext()`; implement `MissingMethodImplProvider` to generate `@Override` stubs
   for all unimplemented abstract methods using `elements().getAllMembers()`.
-Gap 4 remains a type-index freshness limitation rather than a code-action provider bug;
-running `mvn process-test-classes` restores the missing-import action for newly-created types.
+- **Gap 4 — type-index freshness for new reactor types**: ensure newly-created project types become available to
+  missing-import code actions without requiring a manual full `mvn process-test-classes` round trip when Lathe already
+  has enough local source or reactor-index information to answer safely.
 
 ### Unused Code Diagnostics
 Provide real-time editor feedback for unused code elements (private methods, fields, locals).
@@ -203,6 +207,12 @@ See [lathe-signature-help.md](planned/lathe-signature-help.md).
 Simplify and unify the caching paths for JDK sources and type-index shards so they use a single, stable key (e.g. `corretto-26.0.0.35.2`).
 This improves DRYness and prevents version collisions for minor JDK updates.
 See [lathe-jdk-cache-key.md](planned/lathe-jdk-cache-key.md).
+
+### Architecture and Test Improvements
+Land the narrowly-scoped maintainability improvements documented in
+[lathe-architecture-test-improvements.md](planned/lathe-architecture-test-improvements.md).
+Beta scope is limited to worker-confined `WorkspaceSession` extractions that keep `WorkspaceSession` as owner,
+plus shared test-only compiler and zip/JAR fixtures.
 
 ---
 
