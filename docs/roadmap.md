@@ -145,6 +145,7 @@ Use these docs as the starting point when reprioritizing or slicing new work:
   reusing the existing completion import insertion behavior without replacing completion-side edits.
 - [lathe-reactor-type-index.md](planned/lathe-reactor-type-index.md) — implemented reactor type-index design and
   remaining follow-ups such as generated-source cleanup and SNAPSHOT freshness.
+- [lathe-rich-javadoc-rendering.md](planned/lathe-rich-javadoc-rendering.md) — AST-backed Markdown formatting for Javadoc using DocTreeScanner.
 - [lathe-run-test-debug.md](planned/lathe-run-test-debug.md) — Maven-delegated run, test, debug commands and streamed
   session events.
 - [lathe-signature-help.md](planned/lathe-signature-help.md) — parameter types and names display during method/constructor invocation.
@@ -205,6 +206,11 @@ the remaining beta scope is:
 Display method and constructor parameter names and types during argument entry.
 Parse enclosing invocation contexts and count commas at the cursor's nesting level to highlight the active parameter.
 See [lathe-signature-help.md](planned/lathe-signature-help.md).
+
+### Rich Javadoc Rendering
+Upgrade `textDocument/hover` and completion item documentation to render Javadoc as formatted Markdown instead of raw text.
+Replaces regex-based comment stripping with `DocTreeScanner` AST walking to support HTML tags, inline links, and block tags natively.
+See [lathe-rich-javadoc-rendering.md](planned/lathe-rich-javadoc-rendering.md).
 
 ### Architecture and Test Improvements
 Land the narrowly-scoped maintainability improvements documented in
