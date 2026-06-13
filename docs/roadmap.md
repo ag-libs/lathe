@@ -93,6 +93,9 @@ Architecture is documented in [lathe-server-data-flow-recipe.md](done/lathe-serv
   See [lathe-stale-pom-detection.md](done/lathe-stale-pom-detection.md).
 - **Capability advertisement cleanup** — stopped advertising `documentRangeFormattingProvider` (stubbed to format full-document) and `documentOnTypeFormattingProvider` (stubbed to return empty edits list) to prevent incorrect editor behavior.
 - **Missing-import code action** — quick-fix code actions (`window/codeAction`) for unresolved type symbols query the type index and insert the appropriate `import` statement. Reuses the existing completion import insertion range and checks. Tested with various file package/import structures and end-to-end integration tests. See [lathe-missing-import-code-action.md](done/lathe-missing-import-code-action.md).
+- **Code actions infrastructure + providers** — `DiagnosticPayload` record with JSON codec, `enrichWithContext()` classification pass, `CodeActionProvider` interface, dispatcher, and three providers: `ImportQuickFixProvider` (TYPE_REF), `AddThrowsProvider` (UNREPORTED_EXCEPTION), `DeclareVariableProvider` (VARIABLE_REF assignment LHS). Gap regression tests cover lambda/closure and MISSING_METHOD_IMPL gaps. Items 10–11 deferred to post-beta. See [lathe-code-actions.md](done/lathe-code-actions.md).
+- **Standard `file://` URIs for external sources** — reverted `lathe-source://` custom scheme back to standard `file://` URIs. Extracted source files in `~/.cache/lathe/` are now marked read-only (`444`) at extraction time; `deleteDir` clears write permission before deletion. `LatheUri` deleted; call sites inlined. Neovim plugin uses `BufReadPre`/`BufReadPost` path-pattern autocommands instead of a `BufReadCmd` virtual-buffer handler. See [lathe-file-uri-scheme.md](done/lathe-file-uri-scheme.md).
+- **Neovim plugin packaging** — `neovim/` contains a complete distributable plugin: `lua/lathe.lua` (LSP config, format-on-save, cache autocommands), `lua/lathe/` submodules, `ftplugin/java.lua`, and `after/indent/` for indentation. Plugin launches `~/.cache/lathe/current/lathe-launcher.sh` with no client-side project model.
 - **Import optimization on formatting** — full-document formatting now uses google-java-format's import-fixing formatter,
   so format-on-save can reorder imports and remove unused imports.
   See [lathe-import-optimization.md](done/lathe-import-optimization.md).
@@ -103,12 +106,18 @@ Architecture is documented in [lathe-server-data-flow-recipe.md](done/lathe-serv
 
 ## Planned Design Documents
 
-Designs for future or follow-up work live in `docs/planned/`.
-Use these as the starting point when reprioritizing or slicing new work:
+Designs for future, beta, and follow-up work live in `docs/planned/`.
+Some planned docs also describe work that has since been implemented;
+the status in this roadmap is the source of truth when the two disagree.
+Use these docs as the starting point when reprioritizing or slicing new work:
 
+- [lathe-call-hierarchy.md](planned/lathe-call-hierarchy.md) — exact-match method call tree exploration (incoming and outgoing calls).
 - [lathe-class-import-semantic-highlighting.md](planned/lathe-class-import-semantic-highlighting.md) — semantic token highlighting for class, interface, and enum type references in import statements and code bodies.
 - [lathe-google-indent.md](planned/lathe-google-indent.md) — conservative `textDocument/onTypeFormatting`
   indentation hints using google-java-format.
+- [lathe-jdk-cache-key.md](planned/lathe-jdk-cache-key.md) — unified JDK source and type-index cache pathing.
+- [lathe-launcher-jvm-opts.md](planned/lathe-launcher-jvm-opts.md) — generated launcher support for
+  user-provided `LATHE_JVM_OPTS`.
 - [completion/](planned/completion/) —
   active completion expectations,
   explorer-based gap discovery,
@@ -126,12 +135,10 @@ Use these as the starting point when reprioritizing or slicing new work:
   reusing the existing completion import insertion behavior without replacing completion-side edits.
 - [lathe-reactor-type-index.md](planned/lathe-reactor-type-index.md) — implemented reactor type-index design and
   remaining follow-ups such as generated-source cleanup and SNAPSHOT freshness.
-- [lathe-refactoring-renaming.md](planned/lathe-refactoring-renaming.md) — planned codebase and test suite refactorings (DRY, KISS, renamings, and package alignment).
 - [lathe-run-test-debug.md](planned/lathe-run-test-debug.md) — Maven-delegated run, test, debug commands and streamed
   session events.
 - [lathe-signature-help.md](planned/lathe-signature-help.md) — parameter types and names display during method/constructor invocation.
-- [lathe-source-uri-scheme.md](planned/lathe-source-uri-scheme.md) — `lathe-source://` URIs for read-only external
-  JDK/dependency source files.
+- [lathe-source-uri-scheme.md](done/lathe-source-uri-scheme.md) — superseded; `file://` approach implemented instead, see [lathe-file-uri-scheme.md](done/lathe-file-uri-scheme.md).
 - [lathe-stale-pom-detection.md](done/lathe-stale-pom-detection.md) — POM fingerprint recording,
   `WorkspaceWatcher` simplification, and `showMessageRequest`-based Neovim sync prompt.
 - [lathe-type-index.md](planned/lathe-type-index.md) — implemented type-index design and remaining work such as
@@ -145,6 +152,12 @@ Use these as the starting point when reprioritizing or slicing new work:
 
 ## Milestone: v0.1.0-beta (Release Scope)
 
+The beta is a build-from-source release focused on making the current Neovim workflow installable,
+filling the most visible completion and code-action holes,
+and adding small high-value editor feedback features.
+The beta is distributed as source only;
+users clone the repo and build locally.
+
 ### Installation and Neovim setup documentation
 Write user-facing setup documentation for the build-from-source beta.
 Cover Maven POM configuration (compiler shim + plugin executions),
@@ -152,49 +165,53 @@ building Lathe from source (`mvn install`),
 the `mvn process-test-classes` workflow,
 Neovim LSP client configuration (native `vim.lsp.config` for Neovim 0.11+),
 and basic troubleshooting (`LATHE_DEBUG=1`, missing `.lathe/`, missing params).
-The beta is distributed as source only — users clone the repo and build locally.
-
-
-
-### `lathe-source://` URI scheme for external sources
-Definition jumps into JDK and dependency sources currently return `file://` URIs pointing
-into `~/.cache/lathe/`, causing swap file dialogs in Neovim and requiring path-based
-detection logic in every editor plugin.
-Replace with a `lathe-source://` scheme: one line in `SourceAnalysisSession.definition()`;
-editors read the file from the path embedded in the URI and open it as a read-only
-`nofile` buffer — no server round-trip, no per-editor path heuristics.
-See [lathe-source-uri-scheme.md](planned/lathe-source-uri-scheme.md) for the full design.
-
-
-
-### Neovim plugin packaging
-Package the `neovim/` plugin for distribution.
-The plugin launches `~/.cache/lathe/current/lathe-launcher.sh`
-and keeps the client thin — no client-side project model parsing.
-VS Code plugin and tooling integration is deferred to post-beta.
 
 ### Completion Engine Gaps
 Close the known gaps in the completion engine documented in `lathe-completion-disabled-test-gaps.md`.
-This includes inner-class constructor completion, enum constants in equality comparisons, and local variables inside inner-class methods.
+This includes inner-class constructor completion,
+enum constants in equality comparisons,
+and local variables inside inner-class methods.
 These are highly visible to Neovim users relying on accurate completions.
 
 ### Code Action Gaps
-Close the known gaps in code actions documented in `lathe-code-actions-gaps.md`.
-This includes try-catch wrapping for `UNREPORTED_EXCEPTION`, variable declaration for `VARIABLE_REF`, and missing method implementations.
+Close the remaining beta gaps documented in `lathe-code-actions-gaps.md`.
+`VARIABLE_REF` assignment-LHS declaration is already implemented through `DeclareVariableProvider`;
+the beta scope is the two remaining user-visible correctness gaps:
+
+- **Gap 1 — lambda/closure** (`UNREPORTED_EXCEPTION` in a lambda body): suppress `AddThrowsProvider`
+  when the throw site is inside a `LambdaExpressionTree` or anonymous class; implement
+  `TryCatchWrapProvider` to wrap the enclosing statement in `try { } catch (E e) { }`.
+  Requires completing `CodeActionSupport` with the enclosing-method and enclosing-statement finders.
+- **Gap 3 — `MISSING_METHOD_IMPL`**: add `compiler.err.does.not.override.abstract` classification
+  in `enrichWithContext()`; implement `MissingMethodImplProvider` to generate `@Override` stubs
+  for all unimplemented abstract methods using `elements().getAllMembers()`.
+Gap 4 remains a type-index freshness limitation rather than a code-action provider bug;
+running `mvn process-test-classes` restores the missing-import action for newly-created types.
 
 ### Unused Code Diagnostics
 Provide real-time editor feedback for unused code elements (private methods, fields, locals).
-Lathe will publish them with `DiagnosticTag.Unnecessary`, which Neovim natively uses to fade out unused code, significantly improving the developer experience.
-See `lathe-unused-code-diagnostics.md`.
+Lathe will publish them as hint diagnostics with `DiagnosticTag.Unnecessary`,
+which Neovim natively uses to fade out unused code.
+See [lathe-unused-code-diagnostics.md](planned/lathe-unused-code-diagnostics.md).
 
 ### Signature Help
 Display method and constructor parameter names and types during argument entry.
 Parse enclosing invocation contexts and count commas at the cursor's nesting level to highlight the active parameter.
 See [lathe-signature-help.md](planned/lathe-signature-help.md).
 
+### JDK Cache Key Unification
+Simplify and unify the caching paths for JDK sources and type-index shards so they use a single, stable key (e.g. `corretto-26.0.0.35.2`).
+This improves DRYness and prevents version collisions for minor JDK updates.
+See [lathe-jdk-cache-key.md](planned/lathe-jdk-cache-key.md).
+
 ---
 
 ## Milestone: Post-Beta Backlog
+
+### Call Hierarchy
+Implement `textDocument/prepareCallHierarchy`, `callHierarchy/incomingCalls`, and `callHierarchy/outgoingCalls` to allow users to navigate method call trees.
+This heavily reuses the existing "Find References" infrastructure (AST scanning and Candidate Index) to answer "Who calls this?" and "What does this call?" on-demand.
+See [lathe-call-hierarchy.md](planned/lathe-call-hierarchy.md).
 
 ### Lightweight Watcher
 Replace `Files.walk` with targeted polling to eliminate disk I/O spikes.
@@ -203,7 +220,7 @@ See [lathe-lightweight-watcher.md](planned/lathe-lightweight-watcher.md).
 ### Reactor type-index follow-up
 Static dependency, JDK, and reactor output shards are in place.
 The remaining reactor-index work is any later performance optimization if startup scanning becomes measurable.
-This also unlocks missing-import suggestions and workspace symbols once those features query the reactor candidates.
+This also unlocks package-prefix completion and workspace symbols once those features query the reactor candidates.
 See [lathe-type-index.md](planned/lathe-type-index.md) and [lathe-reactor-type-index.md](planned/lathe-reactor-type-index.md).
 
 ### onTypeFormatting
@@ -216,10 +233,19 @@ Adopt the design in [lathe-run-test-debug.md](planned/lathe-run-test-debug.md) t
 and stream results back to the editor as LSP notifications.
 Depends on distribution and stale-workspace handling being solid first.
 
+### Launcher JVM options
+Honor `LATHE_JVM_OPTS` in the generated launcher so users can set heap and GC options without editing generated files.
+See [lathe-launcher-jvm-opts.md](planned/lathe-launcher-jvm-opts.md).
+
 ### Module metadata in the manifest
 Add reactor module entries to `workspace.json` after the params-file model is stable,
 to support staleness detection, UX hints, and faster server startup without duplicating classpaths.
-`WorkspaceManifestData` currently holds only schema version, workspace root, JDK source, and dependency sources;
+`WorkspaceManifestData` currently holds schema version,
+workspace root,
+server version,
+JDK source,
+dependency sources,
+and reactor POM paths;
 `WorkspaceModuleRegistry` still discovers modules by scanning `lsp-params-*.json` at startup.
 
 ### Semantic token coverage for VS Code
