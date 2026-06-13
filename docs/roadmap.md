@@ -104,6 +104,11 @@ Architecture is documented in [lathe-server-data-flow-recipe.md](done/lathe-serv
 - **JDK cache key unification** — `JdkSource` carries a single `cacheKey` computed once in `JdkSourceResolver` from `$JAVA_HOME/release` (`IMPLEMENTOR_VERSION` → `IMPLEMENTOR`+`JAVA_VERSION` with legal-suffix stripping → `java.vendor.version` → `java.vendor`+`java.version`).
   Both JDK source extraction and type-index shard paths derive from the same key, eliminating the duplicated vendor/version path construction.
   See [lathe-jdk-cache-key.md](done/lathe-jdk-cache-key.md).
+- **Unused code diagnostics** — `UnusedDeclarationScanner` (single-pass `TreePathScanner`) detects unused private methods, fields, and local variables.
+  Private method reachability uses BFS through a private-to-private call graph, correctly handling mutual recursion and self-recursion.
+  Diagnostics are emitted as `DiagnosticSeverity.Hint` + `DiagnosticTag.Unnecessary` with a range covering only the declaration name,
+  which Neovim uses to fade out unused code.
+  See [lathe-unused-code-diagnostics.md](done/lathe-unused-code-diagnostics.md).
 
 ---
 
@@ -144,6 +149,7 @@ Use these docs as the starting point when reprioritizing or slicing new work:
   session events.
 - [lathe-signature-help.md](planned/lathe-signature-help.md) — parameter types and names display during method/constructor invocation.
 - [lathe-source-uri-scheme.md](done/lathe-source-uri-scheme.md) — superseded; `file://` approach implemented instead, see [lathe-file-uri-scheme.md](done/lathe-file-uri-scheme.md).
+- [lathe-unused-code-diagnostics.md](done/lathe-unused-code-diagnostics.md) — unused private methods, fields, and locals (implemented).
 - [lathe-stale-pom-detection.md](done/lathe-stale-pom-detection.md) — POM fingerprint recording,
   `WorkspaceWatcher` simplification, and `showMessageRequest`-based Neovim sync prompt.
 - [lathe-type-index.md](planned/lathe-type-index.md) — implemented type-index design and remaining work such as
@@ -194,12 +200,6 @@ the remaining beta scope is:
 - **Gap 4 — type-index freshness for new reactor types**: ensure newly-created project types become available to
   missing-import code actions without requiring a manual full `mvn process-test-classes` round trip when Lathe already
   has enough local source or reactor-index information to answer safely.
-
-### Unused Code Diagnostics
-Provide real-time editor feedback for unused code elements (private methods, fields, locals).
-Lathe will publish them as hint diagnostics with `DiagnosticTag.Unnecessary`,
-which Neovim natively uses to fade out unused code.
-See [lathe-unused-code-diagnostics.md](planned/lathe-unused-code-diagnostics.md).
 
 ### Signature Help
 Display method and constructor parameter names and types during argument entry.
