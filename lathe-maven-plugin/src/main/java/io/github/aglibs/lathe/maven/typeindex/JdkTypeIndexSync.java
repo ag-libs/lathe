@@ -66,8 +66,7 @@ public final class JdkTypeIndexSync {
     return LatheLayout.userCacheRoot()
         .resolve(LatheLayout.TYPE_INDEX_DIR)
         .resolve(LatheLayout.CACHE_JDKS_DIR)
-        .resolve(LatheLayout.cacheName(source.vendor()))
-        .resolve(LatheLayout.cacheName(source.version()))
+        .resolve(source.cacheKey())
         .resolve(TypeIndexFiles.INDEX_JSON);
   }
 

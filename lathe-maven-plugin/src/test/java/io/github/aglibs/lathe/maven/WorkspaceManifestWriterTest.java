@@ -37,10 +37,11 @@ class WorkspaceManifestWriterTest {
         JdkSource.present(
                 "Example Vendor",
                 "21.0.1",
+                "example-vendor-21.0.1",
                 Path.of("/jdk"),
                 Path.of("/jdk/lib/src.zip"),
-                Path.of("/cache/jdks/Example-Vendor/21.0.1"))
-            .withTypeIndex(Path.of("/cache/type-index/jdks/Example-Vendor/21.0.1/index.json"));
+                Path.of("/cache/jdks/example-vendor-21.0.1"))
+            .withTypeIndex(Path.of("/cache/type-index/jdks/example-vendor-21.0.1/index.json"));
 
     writer().write(workspaceRoot, List.of(dep), jdk, null, List.of("pom.xml"));
 
@@ -53,9 +54,9 @@ class WorkspaceManifestWriterTest {
     assertThat(data.jdk().vendor()).isEqualTo("Example Vendor");
     assertThat(data.jdk().version()).isEqualTo("21.0.1");
     assertThat(data.jdk().status()).isEqualTo(SourceStatus.PRESENT);
-    assertThat(data.jdk().sourceDir().toString()).isEqualTo("/cache/jdks/Example-Vendor/21.0.1");
+    assertThat(data.jdk().sourceDir().toString()).isEqualTo("/cache/jdks/example-vendor-21.0.1");
     assertThat(data.jdk().typeIndex().toString())
-        .isEqualTo("/cache/type-index/jdks/Example-Vendor/21.0.1/index.json");
+        .isEqualTo("/cache/type-index/jdks/example-vendor-21.0.1/index.json");
     assertThat(data.dependencySources()).hasSize(1);
     final var entry = data.dependencySources().getFirst();
     assertThat(entry.gav()).isEqualTo("com.example:dep:1");
@@ -68,7 +69,8 @@ class WorkspaceManifestWriterTest {
 
   @Test
   void write_missingJdkSource_hasNullSourceDir() throws Exception {
-    final var jdk = JdkSource.missing("Example Vendor", "21.0.1", Path.of("/jdk"));
+    final var jdk =
+        JdkSource.missing("Example Vendor", "21.0.1", "example-vendor-21.0.1", Path.of("/jdk"));
 
     writer().write(workspaceRoot, List.of(), jdk, null, List.of("pom.xml"));
 
@@ -82,7 +84,7 @@ class WorkspaceManifestWriterTest {
 
   @Test
   void write_sameContent_skipsWrite() throws Exception {
-    final var jdk = JdkSource.missing("Vendor", "21", Path.of("/jdk"));
+    final var jdk = JdkSource.missing("Vendor", "21", "vendor-21", Path.of("/jdk"));
     writer().write(workspaceRoot, List.of(), jdk, null, List.of("pom.xml"));
 
     final var manifest =
@@ -105,7 +107,12 @@ class WorkspaceManifestWriterTest {
                 "com.example:b:2", Path.of("/repo/b.jar"), Path.of("/cache/b"), null, List.of()));
     final var jdk =
         JdkSource.present(
-            "Vendor", "21", Path.of("/jdk"), Path.of("/jdk/src.zip"), Path.of("/cache/jdk"));
+            "Vendor",
+            "21",
+            "vendor-21",
+            Path.of("/jdk"),
+            Path.of("/jdk/src.zip"),
+            Path.of("/cache/jdk"));
 
     writer().write(workspaceRoot, deps, jdk, null, List.of("pom.xml"));
 

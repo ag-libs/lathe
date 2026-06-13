@@ -4,13 +4,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexFile;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexOriginKind;
 import io.github.aglibs.lathe.maven.jdk.JdkSource;
+import io.github.aglibs.lathe.maven.jdk.JdkSourceResolver;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
+import java.util.Map;
 import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.plugin.logging.SystemStreamLog;
 import org.junit.jupiter.api.AfterEach;
@@ -56,7 +59,7 @@ class JdkTypeIndexSyncTest {
     assertThat(file.origin().jdk().vendor()).isEqualTo(source.vendor());
     assertThat(file.origin().jdk().version()).isEqualTo(source.version());
     assertThat(file.types())
-        .extracting(type -> type.qualifiedName())
+        .extracting(TypeIndexEntry::qualifiedName)
         .contains("java.lang.String", "java.util.List");
   }
 
@@ -93,7 +96,7 @@ class JdkTypeIndexSyncTest {
   @Test
   void index_missingJavaHome_returnsUnchangedSource() {
     useTempCache();
-    final JdkSource source = JdkSource.missing("Vendor", "21", null);
+    final JdkSource source = JdkSourceResolver.resolve(Map.of());
 
     assertThat(JdkTypeIndexSync.index(source, LOG)).isSameAs(source);
   }
@@ -107,9 +110,9 @@ class JdkTypeIndexSyncTest {
   }
 
   private JdkSource source() {
+    final var resolved =
+        JdkSourceResolver.resolve(Map.of("JAVA_HOME", System.getProperty("java.home")));
     return JdkSource.missing(
-        "Test Vendor",
-        Runtime.version().feature() + ".0.0",
-        Path.of(System.getProperty("java.home")));
+        resolved.vendor(), resolved.version(), resolved.cacheKey(), resolved.home());
   }
 }

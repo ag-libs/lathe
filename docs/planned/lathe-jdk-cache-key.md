@@ -91,9 +91,12 @@ This file is present in normal JDK distributions and includes implementation met
 Use this precedence:
 
 1. `IMPLEMENTOR_VERSION` from `$JAVA_HOME/release`
-2. `java.vendor.version`
-3. `IMPLEMENTOR` from `$JAVA_HOME/release` plus `JAVA_VERSION`
+2. `IMPLEMENTOR` from `$JAVA_HOME/release` plus `JAVA_VERSION`
+3. `java.vendor.version`
 4. `java.vendor` plus `java.version`
+
+Release-file entries are checked first so that a synthetic or foreign release file
+is not overridden by the running JVM's system properties (relevant in testing).
 
 For example,
 this local runtime exposes:

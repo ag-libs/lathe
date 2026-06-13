@@ -8,6 +8,7 @@ import java.nio.file.Path;
 public record JdkSource(
     String vendor,
     String version,
+    String cacheKey,
     SourceStatus status,
     Path home,
     Path sourceZip,
@@ -19,6 +20,7 @@ public record JdkSource(
         .notNull(status, "status")
         .notBlank(vendor, "vendor")
         .notBlank(version, "version")
+        .notBlank(cacheKey, "cacheKey")
         .when(
             status == SourceStatus.PRESENT,
             v ->
@@ -31,14 +33,17 @@ public record JdkSource(
   public static JdkSource present(
       final String vendor,
       final String version,
+      final String cacheKey,
       final Path home,
       final Path sourceZip,
       final Path sourceDir) {
-    return new JdkSource(vendor, version, SourceStatus.PRESENT, home, sourceZip, sourceDir, null);
+    return new JdkSource(
+        vendor, version, cacheKey, SourceStatus.PRESENT, home, sourceZip, sourceDir, null);
   }
 
-  public static JdkSource missing(final String vendor, final String version, final Path home) {
-    return new JdkSource(vendor, version, SourceStatus.MISSING, home, null, null, null);
+  public static JdkSource missing(
+      final String vendor, final String version, final String cacheKey, final Path home) {
+    return new JdkSource(vendor, version, cacheKey, SourceStatus.MISSING, home, null, null, null);
   }
 
   public boolean isPresent() {
@@ -46,7 +51,8 @@ public record JdkSource(
   }
 
   public JdkSource withTypeIndex(final Path typeIndexPath) {
-    return new JdkSource(vendor, version, status, home, sourceZip, sourceDir, typeIndexPath);
+    return new JdkSource(
+        vendor, version, cacheKey, status, home, sourceZip, sourceDir, typeIndexPath);
   }
 
   public JdkSourceData toData() {
