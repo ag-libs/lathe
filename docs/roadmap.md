@@ -93,6 +93,9 @@ Architecture is documented in [lathe-server-data-flow-recipe.md](done/lathe-serv
   See [lathe-stale-pom-detection.md](done/lathe-stale-pom-detection.md).
 - **Capability advertisement cleanup** — stopped advertising `documentRangeFormattingProvider` (stubbed to format full-document) and `documentOnTypeFormattingProvider` (stubbed to return empty edits list) to prevent incorrect editor behavior.
 - **Missing-import code action** — quick-fix code actions (`window/codeAction`) for unresolved type symbols query the type index and insert the appropriate `import` statement. Reuses the existing completion import insertion range and checks. Tested with various file package/import structures and end-to-end integration tests. See [lathe-missing-import-code-action.md](done/lathe-missing-import-code-action.md).
+- **Import optimization on formatting** — full-document formatting now uses google-java-format's import-fixing formatter,
+  so format-on-save can reorder imports and remove unused imports.
+  See [lathe-import-optimization.md](done/lathe-import-optimization.md).
 - **Pre-beta codebase cleanups** — all items in the refactoring/renaming plan completed: DRY/KISS helpers, `setLocationFromPaths` migration, walk depth limit, `var` rule enforcement, test naming and `@Nested` flattening, four conceptual renamings, and test co-location fixes (`SyncMojoTest` → `LatheFlagsTest` in `lathe-core`; `DependencySourceTest`, `DependencySourceSyncTest`, `JdkSourceResolverTest` moved to matching subpackages).
   See [lathe-refactoring-renaming.md](done/lathe-refactoring-renaming.md).
 
@@ -116,9 +119,6 @@ Use these as the starting point when reprioritizing or slicing new work:
   and stale code-review findings that should not drive work.
 - [lathe-completion-presentation.md](planned/lathe-completion-presentation.md) —
   JDT LS-style completion `labelDetails` and generic type display.
-- [lathe-import-optimization.md](planned/lathe-import-optimization.md) —
-  semantic import cleanup before full-document formatting,
-  including unused import removal and conservative wildcard expansion.
 - [lathe-lightweight-watcher.md](planned/lathe-lightweight-watcher.md) —
   lightweight module-targeted workspace watcher to replace recursive directory walking.
 - [lathe-missing-import-code-action.md](done/lathe-missing-import-code-action.md) —
@@ -215,14 +215,6 @@ The current `TokenScanner` legend only covers static/deprecated methods and fiel
 Full VS Code parity requires adding `class`, `parameter`, and `variable` token types and
 widening `method`/`property` to emit for all instances.
 See [lathe-vscode-semantic-tokens.md](planned/lathe-vscode-semantic-tokens.md) for the implementation plan.
-
-### Import optimization
-Run conservative semantic import cleanup before full-document formatting:
-deduplicate imports,
-remove unused explicit imports,
-sort normal/static groups,
-and replace wildcard imports with direct imports when javac can prove the used symbols.
-See [lathe-import-optimization.md](planned/lathe-import-optimization.md).
 
 ### Sibling recompilation
 When a saved file's public API changes, recompile closed intra-module callers in the background

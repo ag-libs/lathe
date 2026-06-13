@@ -12,17 +12,21 @@ sort import groups,
 remove unused imports,
 and (in post-v1) replace wildcard imports with direct imports.
 
-## Goal
+## Completed Scope
 
-For v1, run a syntactic import optimization using the built-in capabilities of google-java-format before full-document formatting.
-Specifically:
-- Remove unused imports syntactically using `com.google.googlejavaformat.java.RemoveUnusedImports`.
-- Sort import groups natively using `com.google.googlejavaformat.java.Formatter`.
+Full-document formatting now uses google-java-format's combined import-fixing formatter:
+
+```java
+new Formatter().formatSourceAndFixImports(content)
+```
+
+This runs the google-java-format import orderer,
+removes unused imports syntactically,
+and then formats the source.
 
 In post-v1, we will introduce a semantic import optimizer that leverages compiler attribution to handle wildcard expansion and robust static import resolution.
 
-The editor still invokes normal `textDocument/formatting`,
-but Lathe transforms the source in memory before passing it to google-java-format.
+The editor still invokes normal `textDocument/formatting`.
 
 The final LSP response should remain one full-document replacement edit when the formatted optimized source differs
 from the original source.
@@ -38,18 +42,21 @@ from the original source.
 
 ## Formatting Pipeline
 
-Full-document formatting should become:
+Full-document formatting now runs:
 
 ```text
 current source
-  -> syntactic import optimization (RemoveUnusedImports)
-  -> google-java-format (Formatter)
+  -> google-java-format import ordering
+  -> google-java-format unused import removal
+  -> google-java-format source formatting
   -> one full-document TextEdit
 ```
 
-If syntactic import optimization fails due to a syntax error or a FormatterException, Lathe should fall back to standard formatting of the original source.
+If formatting or import fixing fails due to a syntax error or a `FormatterException`,
+Lathe returns no edits.
 
-Range formatting and on-type formatting should continue to call google-java-format without import optimization.
+Lathe advertises full-document formatting.
+Range formatting and on-type formatting are not advertised.
 
 ## Post-v1: Semantic Import Optimization (Future Scope)
 
@@ -203,38 +210,22 @@ These guards can be relaxed later when tests cover the behavior.
 
 ## Implementation Shape
 
-Add an import optimizer helper in `lathe-server`,
-for example:
-
-```java
-final class ImportOptimizer {
-  static String optimize(String source) {
-    try {
-      return RemoveUnusedImports.removeUnusedImports(source);
-    } catch (FormatterException e) {
-      return source;
-    }
-  }
-}
-```
-
-Formatting integration should apply the optimizer only for full-document formatting before calling
-`JavaFormatter.format(...)`.
+`JavaFormatter.format(...)` calls `Formatter.formatSourceAndFixImports(...)`.
+This keeps formatting and import optimization on the existing formatting path.
 
 ## Tests
 
-Unit tests should cover:
+Unit tests cover:
+
+- an unformatted source is reformatted to the import-optimized result
+- an already formatted and import-optimized source returns no edits
+- an unused explicit normal import is removed
+- syntax errors return no edits
+
+Remaining useful follow-up tests:
 
 - duplicate explicit imports are removed
-- normal imports are sorted (via Formatter)
-- static imports are sorted separately (via Formatter)
-- unused explicit normal imports are removed (via RemoveUnusedImports)
-- unused explicit static imports are removed (via RemoveUnusedImports)
-- normal wildcard imports are NOT expanded in v1 (retained as-is)
-- static wildcard imports are NOT expanded in v1 (retained as-is)
-
-Formatting integration tests should verify:
-
-- full-document formatting runs optimization before google-java-format
-- range formatting does not optimize imports
-- on-type formatting does not optimize imports
+- static imports are sorted separately
+- unused explicit static imports are removed
+- normal wildcard imports are NOT expanded in v1
+- static wildcard imports are NOT expanded in v1

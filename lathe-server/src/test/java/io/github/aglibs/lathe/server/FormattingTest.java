@@ -2,31 +2,81 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.google.googlejavaformat.java.Formatter;
-import com.google.googlejavaformat.java.FormatterException;
-import java.io.IOException;
-import java.util.Objects;
 import org.junit.jupiter.api.Test;
 
 class FormattingTest {
 
-  private static String sampleSource() throws IOException {
-    try (final var in = FormattingTest.class.getResourceAsStream("/Sample.java")) {
-      return new String(Objects.requireNonNull(in).readAllBytes());
-    }
+  private static String formattedText(final String source) {
+    final var edits = JavaFormatter.format(source);
+    assertThat(edits).hasSize(1);
+    return edits.getFirst().getNewText();
   }
 
   @Test
-  void formatSource_violation_reformatsToOriginal() throws IOException, FormatterException {
-    final var original = sampleSource();
-    final var unformatted = original.replace("public String getName()", "public String  getName()");
-    assertThat(new Formatter().formatSource(unformatted)).isEqualTo(original);
+  void format_violation_reformatsToOriginal() {
+    final var original =
+        """
+        import static java.util.Objects.requireNonNull;
+
+        import java.util.List;
+
+        final class Sample {
+          List<String> values(String value) {
+            requireNonNull(value);
+            return List.of(value);
+          }
+        }
+        """;
+    final var unformatted = original.replace("List<String> values", "List<String>  values");
+
+    assertThat(formattedText(unformatted)).isEqualTo(original);
   }
 
   @Test
-  void format_alreadyFormatted_returnsEmpty() throws IOException {
-    final var original = sampleSource();
-    assertThat(JavaFormatter.format(original)).isEmpty();
+  void format_alreadyFormattedAndImportsOptimized_returnsEmpty() {
+    assertThat(
+            JavaFormatter.format(
+                """
+                import static java.util.Objects.requireNonNull;
+
+                import java.util.List;
+
+                final class Sample {
+                  List<String> values(String value) {
+                    requireNonNull(value);
+                    return List.of(value);
+                  }
+                }
+                """))
+        .isEmpty();
+  }
+
+  @Test
+  void format_unusedImport_removesImport() {
+    final var source =
+        """
+        package example;
+
+        import java.util.List;
+
+        final class Sample {
+          String value() {
+            return "ok";
+          }
+        }
+        """;
+
+    assertThat(formattedText(source))
+        .isEqualTo(
+            """
+            package example;
+
+            final class Sample {
+              String value() {
+                return "ok";
+              }
+            }
+            """);
   }
 
   @Test

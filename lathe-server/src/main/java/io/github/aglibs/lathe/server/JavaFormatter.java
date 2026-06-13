@@ -23,7 +23,7 @@ final class JavaFormatter {
     }
     final Stopwatch t = Stopwatch.start();
     try {
-      final var formatted = new Formatter().formatSource(content);
+      final var formatted = new Formatter().formatSourceAndFixImports(content);
       if (formatted.equals(content)) {
         LOG.fine(() -> "[format] no changes %dms".formatted(t.elapsedMs()));
         return List.of();
