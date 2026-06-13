@@ -4,9 +4,32 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 import org.eclipse.lsp4j.CompletionItem;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 class CompletionMemberAccessTest extends CompletionTestSupport {
+
+  private static void assertLabelBefore(
+      final List<String> labels, final String earlier, final String later) {
+    assertThat(labels).contains(earlier, later);
+    assertThat(labels.indexOf(earlier)).isLessThan(labels.indexOf(later));
+  }
+
+  private static List<String> completeCollectorsInReturn(
+      final String imports, final String returnType, final String streamType) {
+    return labels(
+        fixture.complete(
+            """
+            %s
+            import java.util.stream.Collectors;
+            import java.util.stream.Stream;
+            class Test {
+                %s value(Stream<%s> stream) {
+                    return stream.collect(Collectors.§)
+                }
+            }"""
+                .formatted(imports, returnType, streamType)));
+  }
 
   @Test
   void memberAccess_instanceMethod_prefixFiltered() {
@@ -871,6 +894,26 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
                 }"""));
 
     assertThat(items).contains("toList", "groupingBy", "joining");
+  }
+
+  // CQ-0027
+  @Test
+  @Disabled("CQ-0027: Collectors member completion is not yet ranked by enclosing return type")
+  void memberAccess_collectorsReceiverInsideReturnCollect_rankedByReturnType() {
+    final var stringItems = completeCollectorsInReturn("", "String", "String");
+    assertLabelBefore(stringItems, "joining", "averagingDouble");
+    assertLabelBefore(stringItems, "joining", "groupingBy");
+
+    final var mapItems =
+        completeCollectorsInReturn(
+            "import java.util.Map;", "Map<String, String>", "Map.Entry<String, String>");
+    assertLabelBefore(mapItems, "toMap", "toList");
+    assertLabelBefore(mapItems, "toMap", "joining");
+
+    final var listItems =
+        completeCollectorsInReturn("import java.util.List;", "List<String>", "String");
+    assertLabelBefore(listItems, "toList", "groupingBy");
+    assertLabelBefore(listItems, "toList", "toMap");
   }
 
   @Test
