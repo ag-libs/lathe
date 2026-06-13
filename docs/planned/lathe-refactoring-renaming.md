@@ -4,4 +4,3 @@ Deferred items not yet implemented. See `docs/done/lathe-refactoring-renaming.md
 everything completed.
 
 ---
-

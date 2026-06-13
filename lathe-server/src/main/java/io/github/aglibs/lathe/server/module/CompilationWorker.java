@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server.module;
 
 import io.github.aglibs.lathe.core.IOUtil;
+import io.github.aglibs.lathe.server.analysis.CodeActionRequest;
 import io.github.aglibs.lathe.server.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
@@ -20,7 +21,6 @@ import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.CodeAction;
-import org.eclipse.lsp4j.CodeActionContext;
 import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.CompletionContext;
 import org.eclipse.lsp4j.Hover;
@@ -136,9 +136,9 @@ public final class CompilationWorker {
       final String uri,
       final String content,
       final int version,
-      final CodeActionContext context,
+      final List<CodeActionRequest> requests,
       final WorkspaceTypeIndex typeIndex) {
-    return submit(ctx -> ctx.codeAction(uri, content, version, context, typeIndex));
+    return submit(ctx -> ctx.codeAction(uri, content, version, requests, typeIndex));
   }
 
   public CompletableFuture<List<SemanticToken>> semanticTokens(

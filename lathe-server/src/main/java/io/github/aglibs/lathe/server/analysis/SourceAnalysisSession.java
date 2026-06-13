@@ -1,8 +1,8 @@
 package io.github.aglibs.lathe.server.analysis;
 
+import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.core.Stopwatch;
-import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.LatheUri;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionEngine;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
@@ -10,11 +10,11 @@ import io.github.aglibs.lathe.server.analysis.completion.CompletionRequest;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
@@ -23,8 +23,6 @@ import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.JavaFileObject;
 import org.eclipse.lsp4j.CodeAction;
-import org.eclipse.lsp4j.CodeActionContext;
-import org.eclipse.lsp4j.CodeActionKind;
 import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.CompletionContext;
 import org.eclipse.lsp4j.Diagnostic;
@@ -34,8 +32,6 @@ import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
-import org.eclipse.lsp4j.TextEdit;
-import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 public final class SourceAnalysisSession implements AutoCloseable {
@@ -66,6 +62,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
     }
 
     final var diags = filterAndMap(run.diagnostics(), content);
+    enrichWithContext(diags, run.fileAnalysis());
     LOG.info(
         () ->
             "[compile:%s] %s %dms diags=%d".formatted(mode.tag, uri, t.elapsedMs(), diags.size()));
@@ -220,43 +217,42 @@ public final class SourceAnalysisSession implements AutoCloseable {
       final String uri,
       final String content,
       final int version,
-      final CodeActionContext context,
+      final List<CodeActionRequest> requests,
       final WorkspaceTypeIndex typeIndex) {
-    final var diagnostics = context.getDiagnostics();
-    if (diagnostics == null || diagnostics.isEmpty()) {
-      return List.of();
-    }
+    final Stopwatch t = Stopwatch.start();
+    LOG.info(() -> "[codeAction] %s diags=%d".formatted(uri, requests.size()));
 
     final var analysis = ensureAttributedAnalysis(uri, content, version);
     if (analysis == null) {
       return List.of();
     }
 
-    final var importAnalyzer = new ImportAnalyzer(analysis);
-    final var insertionRange = importAnalyzer.insertionRange();
-    if (insertionRange == null) {
-      return List.of();
-    }
-
-    final var alreadyImported = importAnalyzer.importedQualifiedNames();
+    final var importProvider = new ImportQuickFixProvider();
+    final var addThrowsProvider = new AddThrowsProvider();
+    final var declareProvider = new DeclareVariableProvider();
+    final var seen = new HashSet<String>();
     final var actions = new ArrayList<Either<Command, CodeAction>>();
 
-    for (final var diag : diagnostics) {
-      if (!(diag.getData() instanceof String simpleName) || simpleName.isEmpty()) {
-        continue;
-      }
+    for (final CodeActionRequest request : requests) {
+      final DiagnosticPayload payload = request.payload();
+      LOG.fine(() -> "[codeAction:diag] kind=%s name=%s".formatted(payload.kind(), payload.name()));
 
-      for (final var entry : typeIndex.search(simpleName, 100)) {
-        if (!entry.simpleName().equals(simpleName)) {
-          continue;
+      final List<Either<Command, CodeAction>> provided =
+          switch (payload.kind()) {
+            case TYPE_REF -> importProvider.provide(request, analysis, typeIndex);
+            case UNREPORTED_EXCEPTION -> addThrowsProvider.provide(request, analysis, typeIndex);
+            case VARIABLE_REF -> declareProvider.provide(request, analysis, typeIndex);
+            case MISSING_METHOD_IMPL -> List.of();
+          };
+
+      for (final var action : provided) {
+        if (action.isRight() && seen.add(action.getRight().getTitle())) {
+          actions.add(action);
         }
-
-        buildQuickFix(uri, diag, entry, analysis, alreadyImported, insertionRange)
-            .map(Either::<Command, CodeAction>forRight)
-            .ifPresent(actions::add);
       }
     }
 
+    LOG.info(() -> "[codeAction] %s %dms actions=%d".formatted(uri, t.elapsedMs(), actions.size()));
     return actions;
   }
 
@@ -271,25 +267,33 @@ public final class SourceAnalysisSession implements AutoCloseable {
     return cached != null ? cached.analysis() : null;
   }
 
-  private Optional<CodeAction> buildQuickFix(
-      final String uri,
-      final Diagnostic diag,
-      final TypeIndexEntry entry,
-      final AttributedFileAnalysis analysis,
-      final Set<String> alreadyImported,
-      final Range insertionRange) {
-    if (entry.packageName().isEmpty()) {
-      return Optional.empty();
-    }
+  private void enrichWithContext(
+      final List<Diagnostic> diags, final AttributedFileAnalysis analysis) {
+    for (final var diag : diags) {
+      final Either<String, Integer> codeEither = diag.getCode();
+      if (codeEither == null || !codeEither.isLeft()) {
+        continue;
+      }
 
-    final String fqName = entry.packageName() + "." + entry.simpleName();
-    if (alreadyImported.contains(fqName)) {
-      return Optional.empty();
+      final String code = codeEither.getLeft();
+      if (code.startsWith("compiler.err.cant.resolve") && diag.getData() instanceof String name) {
+        diag.setData(new DiagnosticPayload(resolveKind(diag, analysis), name));
+      } else if (code.startsWith("compiler.err.unreported.exception")) {
+        final Either<String, MarkupContent> msgEither = diag.getMessage();
+        final String name =
+            extractExceptionName(
+                msgEither != null && msgEither.isLeft() ? msgEither.getLeft() : null);
+        if (name != null) {
+          diag.setData(new DiagnosticPayload(DiagnosticPayload.Kind.UNREPORTED_EXCEPTION, name));
+        }
+      }
     }
+  }
 
-    final var typeEl = analysis.elements().getTypeElement(fqName);
-    if (typeEl == null) {
-      return Optional.empty();
+  private DiagnosticPayload.Kind resolveKind(
+      final Diagnostic diag, final AttributedFileAnalysis analysis) {
+    if (analysis.tree() == null) {
+      return DiagnosticPayload.Kind.TYPE_REF;
     }
 
     final long offset =
@@ -297,30 +301,58 @@ public final class SourceAnalysisSession implements AutoCloseable {
             analysis.tree(),
             diag.getRange().getStart().getLine(),
             diag.getRange().getStart().getCharacter());
-    final var path = SourceLocator.pathAt(analysis.trees(), analysis.tree(), offset);
-    final var scope = path != null ? analysis.trees().getScope(path) : null;
-    if (scope != null) {
-      try {
-        if (!analysis.trees().isAccessible(scope, typeEl)) {
-          return Optional.empty();
-        }
-      } catch (final IllegalArgumentException ignored) {
-        // defaults to accessible on unexpected compiler states
-      }
+    final TreePath path = SourceLocator.pathAt(analysis.trees(), analysis.tree(), offset);
+    if (path == null || path.getParentPath() == null) {
+      return DiagnosticPayload.Kind.TYPE_REF;
     }
 
-    final var action = new CodeAction();
-    action.setTitle("Import '" + fqName + "'");
-    action.setKind(CodeActionKind.QuickFix);
-    action.setDiagnostics(List.of(diag));
+    return switch (path.getParentPath().getLeaf().getKind()) {
+      case VARIABLE -> {
+        final var varTree = (VariableTree) path.getParentPath().getLeaf();
+        yield varTree.getType() == path.getLeaf()
+            ? DiagnosticPayload.Kind.TYPE_REF
+            : DiagnosticPayload.Kind.VARIABLE_REF;
+      }
+      case METHOD,
+          CLASS,
+          INTERFACE,
+          ENUM,
+          RECORD,
+          ANNOTATION_TYPE,
+          PARAMETERIZED_TYPE,
+          ANNOTATED_TYPE,
+          ARRAY_TYPE,
+          TYPE_CAST,
+          TYPE_PARAMETER,
+          INTERSECTION_TYPE,
+          UNION_TYPE,
+          EXTENDS_WILDCARD,
+          SUPER_WILDCARD,
+          NEW_CLASS,
+          INSTANCE_OF ->
+          DiagnosticPayload.Kind.TYPE_REF;
+      default -> DiagnosticPayload.Kind.VARIABLE_REF;
+    };
+  }
 
-    final var edit = new WorkspaceEdit();
-    final var importText = "import " + fqName + ";\n";
-    final var textEdit = new TextEdit(insertionRange, importText);
-    edit.setChanges(Map.of(uri, List.of(textEdit)));
-    action.setEdit(edit);
+  private static String extractExceptionName(final String message) {
+    if (message == null) {
+      return null;
+    }
 
-    return Optional.of(action);
+    final var prefix = "unreported exception ";
+    final int start = message.indexOf(prefix);
+    if (start < 0) {
+      return null;
+    }
+
+    final int nameStart = start + prefix.length();
+    final int end = message.indexOf(';', nameStart);
+    if (end < 0) {
+      return null;
+    }
+
+    return message.substring(nameStart, end).trim();
   }
 
   public void close() {

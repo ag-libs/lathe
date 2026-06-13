@@ -6,7 +6,9 @@ import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
+import io.github.aglibs.lathe.server.analysis.CodeActionRequest;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
+import io.github.aglibs.lathe.server.analysis.DiagnosticPayload;
 import io.github.aglibs.lathe.server.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
@@ -24,13 +26,7 @@ import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
@@ -432,14 +428,28 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(List.of());
     }
 
+    final List<CodeActionRequest> requests =
+        context.getDiagnostics().stream()
+            .map(diag -> toCodeActionRequest(uri, diag))
+            .filter(Objects::nonNull)
+            .toList();
+    if (requests.isEmpty()) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
     final var indexSnapshot = typeIndex;
     return routeFeature(
         uri,
         moduleWorker ->
             moduleWorker
-                .codeAction(uri, openFile.content(), openFile.version(), context, indexSnapshot)
+                .codeAction(uri, openFile.content(), openFile.version(), requests, indexSnapshot)
                 .exceptionally(ex -> logAndReturn(ex, "[codeAction] failed for " + uri, List.of())),
         List.of());
+  }
+
+  private static CodeActionRequest toCodeActionRequest(final String uri, final Diagnostic diag) {
+    final DiagnosticPayload payload = DiagnosticPayloadCodec.extractPayload(diag.getData());
+    return payload != null ? new CodeActionRequest(uri, diag, payload) : null;
   }
 
   CompletableFuture<SemanticTokens> semanticTokensFuture(final String uri) {
@@ -666,6 +676,7 @@ final class WorkspaceSession {
       return false;
     }
 
+    DiagnosticPayloadCodec.serializeDiagnosticData(result.diagnostics());
     client.publishDiagnostics(new PublishDiagnosticsParams(result.uri(), result.diagnostics()));
     client.refreshSemanticTokens();
     return true;

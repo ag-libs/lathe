@@ -27,7 +27,7 @@ too slow for an inner-loop "run test, edit, run again" UX.
 Lathe assumes `mvnd` (Maven Daemon) is on PATH, either as the `mvnd` binary directly or as a symlink/alias for `mvn`.
 With `mvnd`, per-invocation overhead drops to under 1s.
 
-If `mvnd` is unavailable the LS still works but surfaces a one-time warning:
+If `mvnd` is unavailable, the LS still works but surfaces a one-time warning:
 "Install `mvnd` for faster run/test/debug — falling back to `mvn` (slow)."
 
 ---
@@ -203,15 +203,12 @@ they belong to the user's process tree and are cleaned up by the next `mvnd --st
 The LS exposes data and execution.
 Editors own UI translation:
 
-- **Neovim** — a `neotest-lathe` adapter (~250 lines Lua) drives `neotest` for test discovery and run;
+- **Neovim (Primary Target)** — a `neotest-lathe` adapter (~250 lines Lua) drives `neotest` for test discovery and run;
   `nvim-dap` configuration (~30 lines Lua) consumes `lathe.debug`'s response and attaches via the bundled launcher.
   Optional companion plugin places gutter run buttons from `lathe.runnables.list`.
-- **VS Code** — the `vscode-lathe` extension (section 9 of the main design) gains a `TestController` for the Testing
-  API, a `CodeLens` provider for inline Run/Debug links,
-  and a `DebugAdapterDescriptorFactory` for the `lathe` debug type.
-  ~600 lines TypeScript total.
+- **VS Code** — Deferred to post-Neovim rollout.
 
-Both editors call the same six LS commands and consume the same `lathe/sessionEvent` notification.
+Both editors will eventually call the same six LS commands and consume the same `lathe/sessionEvent` notification.
 The protocol is editor-agnostic; the translation layers are not.
 
 ---
