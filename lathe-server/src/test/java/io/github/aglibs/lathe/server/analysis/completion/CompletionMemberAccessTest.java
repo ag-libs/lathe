@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 import org.eclipse.lsp4j.CompletionItem;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 class CompletionMemberAccessTest extends CompletionTestSupport {
@@ -898,7 +897,6 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
 
   // CQ-0027
   @Test
-  @Disabled("CQ-0027: Collectors member completion is not yet ranked by enclosing return type")
   void memberAccess_collectorsReceiverInsideReturnCollect_rankedByReturnType() {
     final var stringItems = completeCollectorsInReturn("", "String", "String");
     assertLabelBefore(stringItems, "joining", "averagingDouble");

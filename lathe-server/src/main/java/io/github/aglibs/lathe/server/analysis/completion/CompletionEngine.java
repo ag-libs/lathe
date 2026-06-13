@@ -449,7 +449,7 @@ public final class CompletionEngine {
     final TypeMirror expectedType = annotationValueCompletionType(elementType);
     final var semanticContext =
         new SemanticCompletionContext(
-            analysis, new ExpectedValue.Type(expectedType), true, false, false);
+            analysis, new ExpectedValue.Type(expectedType), true, false, false, null);
     final List<CompletionCandidate> candidates =
         Stream.concat(
                 KeywordProvider.suggestCandidates(parsed, injected.prefix(), injected.context())
@@ -1254,13 +1254,14 @@ public final class CompletionEngine {
         outerValue,
         base.valueContext(),
         base.inEqualityComparison(),
-        base.inNonVoidMethod());
+        base.inNonVoidMethod(),
+        base.staticMemberResultContext());
   }
 
   private static SemanticCompletionContext memberAccessSemanticContext(
       final AttributedFileAnalysis snapshot) {
     return new SemanticCompletionContext(
-        snapshot, new ExpectedValue.Unknown(), false, false, false);
+        snapshot, new ExpectedValue.Unknown(), false, false, false, null);
   }
 
   /**

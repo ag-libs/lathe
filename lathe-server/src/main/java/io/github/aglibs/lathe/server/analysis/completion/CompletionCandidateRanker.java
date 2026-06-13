@@ -44,6 +44,17 @@ final class CompletionCandidateRanker {
       return keywordSortText(candidate, context);
     }
 
+    if (context.staticMemberResultContext() != null) {
+      final boolean matches =
+          context.staticMemberResultContext().matches(candidate.valueType(), context.analysis());
+      final String base = baseSortText(candidate);
+      return "%d_%d_%s"
+          .formatted(
+              matches ? 0 : 1,
+              kindPriority(candidate.kind()),
+              base != null ? base : candidate.name());
+    }
+
     if (!(context.expectedValue() instanceof ExpectedValue.Type(final TypeMirror type))) {
       return baseSortText(candidate);
     }

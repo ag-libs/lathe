@@ -3,7 +3,6 @@ package io.github.aglibs.lathe.server.analysis.completion;
 import com.sun.source.tree.*;
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
-import io.github.aglibs.validcheck.ValidCheck;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.IntStream;
@@ -15,142 +14,6 @@ import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 
 final class LambdaExpectedReturnTypeResolver {
-
-  private enum ResultShape {
-    INVOCATION_ITSELF(null),
-    RECEIVER_OF_TO_LIST("toList"),
-    RECEIVER_OF_COLLECT("collect");
-
-    private final String methodName;
-
-    ResultShape(final String methodName) {
-      this.methodName = methodName;
-    }
-  }
-
-  private enum Projection {
-    FIRST_TYPE_ARGUMENT,
-    MAP_VALUE_TYPE,
-    MAP_VALUE_FIRST_TYPE_ARGUMENT
-  }
-
-  private record Rule(
-      String ownerQualifiedName,
-      String methodName,
-      int lambdaArgumentIndex,
-      ResultShape resultShape,
-      Projection projection) {
-
-    Rule {
-      ValidCheck.check()
-          .notBlank(ownerQualifiedName, "ownerQualifiedName")
-          .notBlank(methodName, "methodName")
-          .isNonNegative(lambdaArgumentIndex, "lambdaArgumentIndex")
-          .notNull(resultShape, "resultShape")
-          .notNull(projection, "projection")
-          .validate();
-    }
-  }
-
-  private static final List<Rule> RULES =
-      List.of(
-          // Optional rules
-          new Rule(
-              "java.util.Optional",
-              "map",
-              0,
-              ResultShape.INVOCATION_ITSELF,
-              Projection.FIRST_TYPE_ARGUMENT),
-          new Rule(
-              "java.util.Optional",
-              "flatMap",
-              0,
-              ResultShape.INVOCATION_ITSELF,
-              Projection.FIRST_TYPE_ARGUMENT),
-
-          // Stream rules mapping directly or toList
-          new Rule(
-              "java.util.stream.Stream",
-              "map",
-              0,
-              ResultShape.RECEIVER_OF_TO_LIST,
-              Projection.FIRST_TYPE_ARGUMENT),
-          new Rule(
-              "java.util.stream.Stream",
-              "flatMap",
-              0,
-              ResultShape.RECEIVER_OF_TO_LIST,
-              Projection.FIRST_TYPE_ARGUMENT),
-          new Rule(
-              "java.util.stream.Stream",
-              "mapToObj",
-              0,
-              ResultShape.RECEIVER_OF_TO_LIST,
-              Projection.FIRST_TYPE_ARGUMENT),
-
-          // Stream rules mapping to collect
-          new Rule(
-              "java.util.stream.Stream",
-              "map",
-              0,
-              ResultShape.RECEIVER_OF_COLLECT,
-              Projection.FIRST_TYPE_ARGUMENT),
-          new Rule(
-              "java.util.stream.Stream",
-              "map",
-              0,
-              ResultShape.RECEIVER_OF_COLLECT,
-              Projection.MAP_VALUE_TYPE),
-          new Rule(
-              "java.util.stream.Stream",
-              "map",
-              0,
-              ResultShape.RECEIVER_OF_COLLECT,
-              Projection.MAP_VALUE_FIRST_TYPE_ARGUMENT),
-
-          // CompletionStage / CompletableFuture rules
-          new Rule(
-              "java.util.concurrent.CompletionStage",
-              "thenApply",
-              0,
-              ResultShape.INVOCATION_ITSELF,
-              Projection.FIRST_TYPE_ARGUMENT),
-          new Rule(
-              "java.util.concurrent.CompletionStage",
-              "thenApplyAsync",
-              0,
-              ResultShape.INVOCATION_ITSELF,
-              Projection.FIRST_TYPE_ARGUMENT),
-          new Rule(
-              "java.util.concurrent.CompletionStage",
-              "thenCompose",
-              0,
-              ResultShape.INVOCATION_ITSELF,
-              Projection.FIRST_TYPE_ARGUMENT),
-          new Rule(
-              "java.util.concurrent.CompletionStage",
-              "thenComposeAsync",
-              0,
-              ResultShape.INVOCATION_ITSELF,
-              Projection.FIRST_TYPE_ARGUMENT),
-          new Rule(
-              "java.util.concurrent.CompletionStage",
-              "handle",
-              0,
-              ResultShape.INVOCATION_ITSELF,
-              Projection.FIRST_TYPE_ARGUMENT),
-          new Rule(
-              "java.util.concurrent.CompletionStage",
-              "handleAsync",
-              0,
-              ResultShape.INVOCATION_ITSELF,
-              Projection.FIRST_TYPE_ARGUMENT),
-          new Rule(
-              "java.util.concurrent.CompletionStage",
-              "exceptionally",
-              0,
-              ResultShape.INVOCATION_ITSELF,
-              Projection.FIRST_TYPE_ARGUMENT));
 
   private LambdaExpectedReturnTypeResolver() {}
 
@@ -199,7 +62,7 @@ final class LambdaExpectedReturnTypeResolver {
       return Optional.empty();
     }
 
-    for (final var rule : RULES) {
+    for (final var rule : CompletionLibraryRules.lambdaRules()) {
       if (!rule.methodName().equals(methodName) || rule.lambdaArgumentIndex() != argIndex) {
         continue;
       }
@@ -277,12 +140,12 @@ final class LambdaExpectedReturnTypeResolver {
   }
 
   private static TreePath resolveExpectedSourcePath(
-      final TreePath invocationPath, final ResultShape resultShape) {
-    if (resultShape == ResultShape.INVOCATION_ITSELF) {
+      final TreePath invocationPath, final CompletionLibraryRules.LambdaResultShape resultShape) {
+    if (resultShape == CompletionLibraryRules.LambdaResultShape.INVOCATION_ITSELF) {
       return invocationPath;
     }
 
-    if (resultShape.methodName != null) {
+    if (resultShape.methodName() != null) {
       final TreePath selectPath = invocationPath.getParentPath();
       if (selectPath == null || !(selectPath.getLeaf() instanceof final MemberSelectTree select)) {
         return null;
@@ -297,7 +160,7 @@ final class LambdaExpectedReturnTypeResolver {
 
       if (select.getExpression() == invocationPath.getLeaf()
           && parentInvocation.getMethodSelect() == selectPath.getLeaf()
-          && resultShape.methodName.equals(select.getIdentifier().toString())) {
+          && resultShape.methodName().equals(select.getIdentifier().toString())) {
         return parentInvocationPath;
       }
     }
@@ -354,7 +217,7 @@ final class LambdaExpectedReturnTypeResolver {
   }
 
   private static TypeMirror applyProjection(
-      final TypeMirror expectedType, final Projection projection) {
+      final TypeMirror expectedType, final CompletionLibraryRules.TypeProjection projection) {
     if (!(expectedType instanceof final DeclaredType declared)) {
       return null;
     }

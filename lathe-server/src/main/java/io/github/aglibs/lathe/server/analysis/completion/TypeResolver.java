@@ -91,6 +91,59 @@ final class TypeResolver {
     return resolveInitializerValue(site, snapshot);
   }
 
+  static CompletionLibraryRules.StaticMemberResultContext resolveStaticMemberResultContext(
+      final CompletionSite site,
+      final ParsedSentinel parsed,
+      final AttributedFileAnalysis snapshot) {
+    if (parsed.sentinelContext() != SentinelContext.MEMBER_ACCESS
+        || site.enclosingMethod() == null) {
+      return null;
+    }
+
+    final var rule =
+        CompletionLibraryRules.staticMemberResultRule(parsed.receiverText()).orElse(null);
+    if (rule == null) {
+      return null;
+    }
+
+    final var methodPath =
+        findScopeMethodPath(
+            site.enclosingClass(), site.enclosingMethod(), site.cursorOffset(), snapshot);
+    if (methodPath == null || ((MethodTree) methodPath.getLeaf()).getBody() == null) {
+      return null;
+    }
+
+    final var result = new AtomicReference<CompletionLibraryRules.StaticMemberResultContext>();
+    new TreePathScanner<Void, Void>() {
+      @Override
+      public Void visitMethodInvocation(final MethodInvocationTree node, final Void unused) {
+        if (result.get() != null || !rule.matchesEnclosingInvocation(getCurrentPath(), snapshot)) {
+          return super.visitMethodInvocation(node, unused);
+        }
+
+        if (node.getArguments().size() <= rule.enclosingArgumentIndex()
+            || cursorOutside(
+                snapshot,
+                node.getArguments().get(rule.enclosingArgumentIndex()),
+                site.cursorOffset())) {
+          return super.visitMethodInvocation(node, unused);
+        }
+
+        final TypeMirror expected = expectedTypeForExpression(getCurrentPath(), snapshot);
+        if (expected != null
+            && expected.getKind() != TypeKind.ERROR
+            && expected.getKind() != TypeKind.NONE
+            && expected.getKind() != TypeKind.VOID) {
+          result.set(new CompletionLibraryRules.StaticMemberResultContext(rule, expected));
+        }
+
+        return super.visitMethodInvocation(node, unused);
+      }
+    }.scan(methodPath, null);
+
+    return result.get();
+  }
+
   static ExpectedValue resolveExpectedArgumentValue(
       final int cursorOffset, final AttributedFileAnalysis snapshot) {
     if (snapshot.tree() == null) {
@@ -481,6 +534,60 @@ final class TypeResolver {
   }
 
   // ── shared primitives ─────────────────────────────────────────────────────────
+
+  private static TypeMirror expectedTypeForExpression(
+      final TreePath expressionPath, final AttributedFileAnalysis snapshot) {
+    var child = expressionPath;
+    var parent = child.getParentPath();
+    while (parent != null) {
+      final Tree leaf = parent.getLeaf();
+      if (leaf instanceof final ReturnTree returnTree
+          && returnTree.getExpression() == child.getLeaf()) {
+        return findReturnTargetType(parent, snapshot);
+      }
+
+      if (leaf instanceof final AssignmentTree assignment
+          && assignment.getExpression() == child.getLeaf()) {
+        return assignmentTargetType(parent, assignment, snapshot);
+      }
+
+      if (leaf instanceof final VariableTree variable
+          && variable.getInitializer() == child.getLeaf()) {
+        return variableDeclaredType(parent, variable, snapshot);
+      }
+
+      child = parent;
+      parent = parent.getParentPath();
+    }
+
+    return null;
+  }
+
+  private static TypeMirror assignmentTargetType(
+      final TreePath assignmentPath,
+      final AssignmentTree assignment,
+      final AttributedFileAnalysis snapshot) {
+    final var lhsPath = new TreePath(assignmentPath, assignment.getVariable());
+    final TypeMirror tm = snapshot.trees().getTypeMirror(lhsPath);
+    return tm != null && tm.getKind() != TypeKind.ERROR && tm.getKind() != TypeKind.NONE
+        ? tm
+        : null;
+  }
+
+  private static TypeMirror variableDeclaredType(
+      final TreePath variablePath,
+      final VariableTree variable,
+      final AttributedFileAnalysis snapshot) {
+    if (variable.getType() == null || "var".equals(variable.getType().toString())) {
+      return null;
+    }
+
+    final Element element = snapshot.trees().getElement(variablePath);
+    final TypeMirror tm = element != null ? element.asType() : null;
+    return tm != null && tm.getKind() != TypeKind.ERROR && tm.getKind() != TypeKind.NONE
+        ? tm
+        : null;
+  }
 
   private static TypeMirror findMethodParamType(
       final TypeElement owner,

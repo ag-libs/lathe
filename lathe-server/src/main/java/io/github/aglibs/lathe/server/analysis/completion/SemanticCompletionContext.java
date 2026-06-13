@@ -8,7 +8,8 @@ record SemanticCompletionContext(
     ExpectedValue expectedValue,
     boolean valueContext,
     boolean inEqualityComparison,
-    boolean inNonVoidMethod) {
+    boolean inNonVoidMethod,
+    CompletionLibraryRules.StaticMemberResultContext staticMemberResultContext) {
 
   SemanticCompletionContext {
     ValidCheck.check()
@@ -29,6 +30,7 @@ record SemanticCompletionContext(
         expectedValue,
         site.injectorContext() == SentinelInjector.Context.EXPRESSION,
         parsed.inEqualityComparison(),
-        TypeResolver.isNonVoidMethod(site.enclosingClass(), site.enclosingMethod(), analysis));
+        TypeResolver.isNonVoidMethod(site.enclosingClass(), site.enclosingMethod(), analysis),
+        TypeResolver.resolveStaticMemberResultContext(site, parsed, analysis));
   }
 }
