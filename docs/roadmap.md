@@ -236,11 +236,7 @@ Remaining:
   has enough local source or reactor-index information to answer safely.
 
 ### Structural Navigation
-`workspace/symbol` is implemented. Remaining:
-
-- **`textDocument/documentSymbol`** (file outline): uses a parse-only `SourceParser` AST pass and powers the editor Outline view.
-  `textDocument/foldingRange` is deferred to post-beta.
-  See [lathe-structural-navigation.md](planned/lathe-structural-navigation.md).
+✅ `workspace/symbol` is implemented. `textDocument/documentSymbol` and `textDocument/foldingRange` are deferred to post-beta.
 
 ### Architecture and Test Improvements
 `TestCompiler` fixture is consolidated and in use across server tests.
@@ -268,6 +264,12 @@ Static dependency, JDK, and reactor output shards are in place.
 The remaining reactor-index work is any later performance optimization if startup scanning becomes measurable.
 This also unlocks package-prefix completion and workspace symbols once those features query the reactor candidates.
 See [lathe-type-index.md](planned/lathe-type-index.md) and [lathe-reactor-type-index.md](planned/lathe-reactor-type-index.md).
+
+### Document Symbols and Folding Ranges
+Implement `textDocument/documentSymbol` (file outline) using a parse-only `SourceParser` AST pass.
+Powers the editor Outline view and breadcrumb navigation.
+`textDocument/foldingRange` can follow once the scanner infrastructure is in place.
+See [lathe-structural-navigation.md](planned/lathe-structural-navigation.md).
 
 ### onTypeFormatting
 Implement conservative `textDocument/onTypeFormatting` indentation hints for newline triggers.
