@@ -1,50 +1,120 @@
-# Structural Navigation (Document Symbols & Folding)
+# Structural Navigation (Document Symbols & Workspace Symbols)
 
 ## 1. Vision & Scope
 
-The goal is to implement two LSP features that power essential editor navigation and UI feedback:
+Three LSP features that power essential editor navigation:
+
 1. **Document Symbols (`textDocument/documentSymbol`)** *(beta scope)*: Powers the "Outline" view
    and breadcrumb navigation by providing a hierarchical tree of classes, methods, and fields in
    the current file.
-2. **Folding Ranges (`textDocument/foldingRange`)** *(deferred to post-beta)*: Powers code folding
-   for classes, methods, and import statements. Most Neovim users already get equivalent folding
-   from treesitter (`foldmethod=expr`), so this is low-impact for the beta audience.
+2. **Workspace Symbols (`workspace/symbol`)** *(beta scope)*: Powers "go to type by name" across
+   the entire project. The client sends a partial name query; the server returns matching types from
+   the type index. Essential for Neovim Telescope's `lsp_workspace_symbols` picker.
+3. **Folding Ranges (`textDocument/foldingRange`)** *(deferred to post-beta)*: Powers code folding.
+   Most Neovim users already get equivalent folding from treesitter (`foldmethod=expr`).
 
-Both features rely purely on the syntactic structure of the document. They do not require type
-attribution, cross-file resolution, or external index queries.
+Both beta features rely on existing infrastructure (`SourceParser`, `WorkspaceTypeIndex`) and
+require no new compilation passes.
 
-## 2. Approach
+## 2. Document Symbols
 
-Both features are fulfilled by using `SourceParser.parseContent(...)` to obtain a
-`CompilationUnitTree`, followed by a `TreePathScanner` to collect the necessary ranges and symbols.
-They are routed through `CompilationWorker` → `SourceAnalysisSession` in the same way as hover and
-signature help, reusing the `SourceParser` already owned by each `SourceAnalysisSession`.
+### 2.1 Approach
 
-### 2.1 LSP Endpoint Routing
-- Add `documentSymbol` (and, post-beta, `foldingRange`) endpoint to `LatheTextDocumentService`.
-- Dispatch via `WorkspaceSession` → `routeFeature` → `CompilationWorker` → `SourceAnalysisSession`,
-  following the same pattern as hover.
+Fulfilled by calling `SourceParser.parseContent(uri, content)` to get a `CompilationUnitTree`,
+then walking it with a `TreePathScanner`. No type attribution needed — parse only.
 
-### 2.2 Document Symbol Scanner
-Implement `DocumentSymbolScanner` extending `TreePathScanner<Void, Void>`.
-- **`visitClass`**: Emit `SymbolKind.Class`, `Interface`, `Enum`, or `Record`.
-- **`visitMethod`**: Emit `SymbolKind.Method` or `SymbolKind.Constructor`.
-- **`visitVariable`**: Emit `SymbolKind.Field` only when the enclosing node in the current path is
-  a `ClassTree` (skip local variables).
+Routed through `CompilationWorker` → `SourceAnalysisSession`, reusing the `SourceParser` already
+owned by each session, following the same pattern as hover and signature help.
 
-**Range Calculation**:
-Use `SourcePositions` (from `Trees.getSourcePositions()`) for node start/end offsets and
-`CompilationUnitTree.getLineMap()` for line/column conversion.
+### 2.2 LSP Routing
+
+- Add `documentSymbol` endpoint to `LatheTextDocumentService`.
+- Dispatch via `WorkspaceSession.documentSymbolFuture(uri)` → `routeFeature` →
+  `CompilationWorker.documentSymbol(request)` → `SourceAnalysisSession.documentSymbol(request)`.
+- `SourceAnalysisSession.documentSymbol` calls `parser.parseContent(uri, content)` directly and
+  does **not** call `resolve()` — no compilation needed.
+
+### 2.3 DocumentSymbolScanner
+
+`DocumentSymbolScanner extends TreePathScanner<Void, Void>`:
+
+- **`visitClass`**: push a `DocumentSymbol` onto a `Deque` stack, call `super.visitClass` to recurse
+  into members and inner classes, pop on exit, attach to parent or to the root list.
+  Kind: `Class`, `Interface`, `Enum`, or `Record` based on `ClassTree` flags.
+- **`visitMethod`**: same push/super/pop pattern.
+  Kind: `Constructor` when `getName()` returns `<init>`, `Method` otherwise.
+- **`visitVariable`**: only emit when the enclosing node in the current path is a `ClassTree`
+  (skips local variables, parameters, for-loop variables).
+  Kind: `Field`. Attach directly to the enclosing class symbol without pushing to the stack
+  (fields have no children).
+
+**Range calculation**:
+- Use `Trees.getSourcePositions().getStartPosition/EndPosition(cu, node)` for byte offsets.
+- Convert to LSP `Range` via `cu.getLineMap()`: `getLineNumber(offset) - 1` (0-based),
+  `getColumnNumber(offset) - 1` (0-based).
 - `range`: full span of the declaration node.
-- `selectionRange`: identifier name only, located by searching forward in the source text from the
-  node's start position.
+- `selectionRange`: locate the name identifier by `source.indexOf(name, startOffset)` — the name
+  appears after modifiers and keywords, so the first hit from the node's start is correct.
 
-**Hierarchy**:
-Maintain a `Deque<DocumentSymbol>` stack. Push a new symbol on class/method entry; pop and append
-to the parent's children list on exit. Top-level symbols are collected in the result list.
+**Result**: `List<Either<SymbolInformation, DocumentSymbol>>` — all items are `forRight(symbol)`.
 
-### 2.3 Folding Range Scanner *(post-beta)*
-Implement `FoldingRangeScanner` extending `TreePathScanner<Void, Void>`.
-- **Classes & Methods**: Emit `FoldingRangeKind.Region` folds using the full node span.
-- **Imports**: If there are ≥2 imports, emit a single `FoldingRangeKind.Imports` fold from the
+### 2.4 Capability
+
+Set `capabilities.setDocumentSymbolProvider(true)` in server capability initialization.
+
+## 3. Workspace Symbols
+
+### 3.1 Approach
+
+Fulfilled by querying the existing `WorkspaceTypeIndex` directly on the workspace session thread.
+No module worker or per-file analysis needed.
+
+`WorkspaceTypeIndex.search(query, limit)` already does case-insensitive prefix matching against
+all indexed types (JDK, dependency shards, and reactor output shards).
+
+### 3.2 LSP Routing
+
+- Add a `symbol(WorkspaceSymbolParams)` override to `LatheWorkspaceService`.
+- `LatheWorkspaceService` receives a reference to `WorkspaceSession` (or to
+  `LatheTextDocumentService`, which already holds the worker and session).
+- Dispatch: `worker.submit(() -> session.workspaceSymbol(query))` to run on the server worker thread
+  so the index snapshot is accessed safely.
+- `WorkspaceSession.workspaceSymbol(query)` calls `typeIndex.search(query, 100)` and maps each
+  `TypeIndexEntry` to a `SymbolInformation`.
+
+### 3.3 Location Resolution
+
+`TypeIndexEntry` does not store a source path. Derive it at query time:
+
+1. Convert `qualifiedName` to a relative path by replacing `.` with `/` and appending `.java`.
+   For top-level classes this is exact; for inner classes (name contains a capital after a `.`)
+   strip the last component to get the outer class file.
+2. Probe each directory in `allSourceRoots() + manifest.externalSourceDirs()` for the relative path.
+3. If found: use the file's `file://` URI; range is `{0,0}–{0,0}` (start of file). Editors open
+   the file and the user navigates from there.
+4. If not found: omit the result (do not emit a `SymbolInformation` with a garbage URI).
+
+### 3.4 Kind Mapping
+
+```
+TypeKind.CLASS       → SymbolKind.Class
+TypeKind.INTERFACE   → SymbolKind.Interface
+TypeKind.ENUM        → SymbolKind.Enum
+TypeKind.RECORD      → SymbolKind.Class   (LSP has no Record kind)
+TypeKind.ANNOTATION  → SymbolKind.Interface
+TypeKind.UNKNOWN     → SymbolKind.Class
+```
+
+### 3.5 Capability
+
+Set `capabilities.setWorkspaceSymbolProvider(true)` in server capability initialization.
+
+## 4. Folding Ranges *(post-beta)*
+
+`FoldingRangeScanner extends TreePathScanner<Void, Void>`:
+
+- **Classes & Methods**: emit `FoldingRangeKind.Region` folds using the full node span.
+- **Imports**: if there are ≥2 imports, emit a single `FoldingRangeKind.Imports` fold from the
   first to the last import line.
+
+Deferred because Neovim users already get equivalent folding from treesitter.

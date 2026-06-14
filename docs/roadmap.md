@@ -226,8 +226,10 @@ The remaining beta scope is:
   has enough local source or reactor-index information to answer safely.
 
 ### Structural Navigation
-Add `textDocument/documentSymbol` using a read-only `SourceParser` AST pass.
-Powers the editor "Outline" view and breadcrumb navigation for classes, methods, and fields.
+Add `textDocument/documentSymbol` (file outline) and `workspace/symbol` (type-by-name search).
+`documentSymbol` uses a parse-only `SourceParser` AST pass and powers the editor Outline view.
+`workspace/symbol` queries the existing `WorkspaceTypeIndex` directly and powers Neovim Telescope's
+`lsp_workspace_symbols` picker — essential for navigating to a type by name across the project.
 `textDocument/foldingRange` is deferred to post-beta (Neovim users already get equivalent folding
 from treesitter).
 See [lathe-structural-navigation.md](planned/lathe-structural-navigation.md).
