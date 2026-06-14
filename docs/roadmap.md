@@ -123,6 +123,15 @@ Architecture is documented in [lathe-server-data-flow-recipe.md](done/lathe-serv
   `TypeDisplayFormatter` moved to `analysis/` package for shared use.
   `dev/explore.py` gains a `sig` command.
   See [lathe-signature-help.md](done/lathe-signature-help.md).
+- **Rich Javadoc rendering** — `JavadocMarkdownPrinter` replaces the `cleanDoc()` regex hack with a
+  `DocTreeScanner` AST walker. HTML tags (`<b>`, `<i>`, `<code>`, `<pre>`), inline tags
+  (`{@link}`, `{@code}`, `{@literal}`), HTML entities, and block tags (`@param`, `@return`,
+  `@throws`, `@see`) are all converted to Markdown. `JavadocLocator` now returns
+  `Optional<DocCommentTree>` so callers can select the appropriate entry point:
+  hover/completion use `format()` for the full doc; `SignatureHelpResolver` uses
+  `mainDescription()` for `SignatureInformation.documentation` and `paramDocs()` to populate
+  per-argument `ParameterInformation.documentation`.
+  See [lathe-rich-javadoc-rendering.md](done/lathe-rich-javadoc-rendering.md).
 
 ---
 
@@ -159,7 +168,7 @@ Use these docs as the starting point when reprioritizing or slicing new work:
   reusing the existing completion import insertion behavior without replacing completion-side edits.
 - [lathe-reactor-type-index.md](planned/lathe-reactor-type-index.md) — implemented reactor type-index design and
   remaining follow-ups such as generated-source cleanup and SNAPSHOT freshness.
-- [lathe-rich-javadoc-rendering.md](planned/lathe-rich-javadoc-rendering.md) — AST-backed Markdown formatting for Javadoc using DocTreeScanner.
+- [lathe-rich-javadoc-rendering.md](done/lathe-rich-javadoc-rendering.md) — AST-backed Markdown formatting for Javadoc using DocTreeScanner (implemented).
 - [lathe-run-test-debug.md](planned/lathe-run-test-debug.md) — Maven-delegated run, test, debug commands and streamed
   session events.
 - [lathe-structural-navigation.md](planned/lathe-structural-navigation.md) — Document symbols (outline view) and folding ranges.
@@ -214,11 +223,6 @@ the remaining beta scope is:
 - **Gap 4 — type-index freshness for new reactor types**: ensure newly-created project types become available to
   missing-import code actions without requiring a manual full `mvn process-test-classes` round trip when Lathe already
   has enough local source or reactor-index information to answer safely.
-
-### Rich Javadoc Rendering
-Upgrade `textDocument/hover` and completion item documentation to render Javadoc as formatted Markdown instead of raw text.
-Replaces regex-based comment stripping with `DocTreeScanner` AST walking to support HTML tags, inline links, and block tags natively.
-See [lathe-rich-javadoc-rendering.md](planned/lathe-rich-javadoc-rendering.md).
 
 ### Structural Navigation
 Add `textDocument/documentSymbol` and `textDocument/foldingRange` using read-only `SourceParser` AST passes.
