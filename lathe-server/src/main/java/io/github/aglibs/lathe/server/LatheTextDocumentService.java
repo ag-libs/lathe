@@ -95,7 +95,19 @@ final class LatheTextDocumentService implements TextDocumentService {
     return worker
         .submit(() -> session.completionFuture(uri, pos, context))
         .thenCompose(f -> f)
-        .thenApply(LatheTextDocumentService::completionResult);
+        .thenApply(
+            outcome -> {
+              LOG.fine(
+                  () ->
+                      "[completion:lsp] %s line=%d character=%d items=%d incomplete=%s"
+                          .formatted(
+                              uri,
+                              pos.getLine(),
+                              pos.getCharacter(),
+                              outcome.items().size(),
+                              outcome.incomplete()));
+              return completionResult(outcome);
+            });
   }
 
   static Either<List<CompletionItem>, CompletionList> completionResult(

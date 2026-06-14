@@ -2193,3 +2193,56 @@ This gap is the parallel fix for type-pattern-switch case labels.
 The enum case fix detects enum selector type and adds enum constants.
 The type-pattern fix needs to detect non-enum selector types and route through the type-index.
 Subtype filtering (only `SocketAddress` subtypes) would be ideal but is not required in the first slice.
+
+## CQ-0031 — Statement member access can hide `equals` after parser recovery
+
+ID: CQ-0031
+Status: open
+Tier: basic
+Failure mode: missing-candidate
+Owner component: SemanticCompletionContext / CompletionCandidateRanker
+
+Project/file:
+`/home/ag-libs/git/helidon/dbclient/mongodb/src/main/java/io/helidon/dbclient/mongodb/MongoDbClient.java`
+
+Observed context:
+After adding a new line after the local variable declaration near line 53,
+typing `config.` sometimes omits `equals`.
+Selecting another method and backspacing back to `config.` can make `equals` appear again.
+
+Log evidence:
+Both requests resolve the same member-access receiver:
+`receiver=|config| type=io.helidon.dbclient.mongodb.MongoDbClientConfig`.
+
+One request returns 13 candidates:
+`[credDb, password, url, username, equals, getClass, hashCode, notify, notifyAll, toString, wait, wait, wait]`.
+
+Another request returns only 7 candidates:
+`[credDb, password, url, username, getClass, hashCode, toString]`.
+
+Likely cause:
+Parser recovery can treat `config.` as the initializer expression for a previous incomplete
+`String` declaration.
+`CompletionCandidateRanker` then filters member candidates by that inferred expected value context.
+That explains the missing `void` Object methods (`notify`, `notifyAll`, `wait`).
+It also explains `equals` disappearing when the inferred expected type is not boolean-compatible,
+because `equals` returns `boolean`.
+
+Expected Lathe behavior:
+A standalone member-access statement should show normal accessible members even when the previous
+statement is incomplete or parser recovery has introduced temporary errors.
+Expected-type filtering should not hide `equals` for `config.` in statement position.
+
+Regression target:
+`CompletionMemberAccessTest.memberAccess_afterIncompletePreviousStatement_includesEquals`
+
+Notes:
+The reproducer is an incomplete declaration followed by member access:
+```java
+String selected =
+config.§
+```
+
+The current failing candidate set is:
+`[credDb, password, url, username, toString, getClass, hashCode]`.
+The assertion includes the string-valued domain methods and `equals`.

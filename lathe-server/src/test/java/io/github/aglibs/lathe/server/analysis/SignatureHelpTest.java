@@ -217,7 +217,8 @@ class SignatureHelpTest {
       assertThat(methodHelp).isNotNull();
       final var methodSig = methodHelp.getSignatures().getFirst();
       assertThat(methodSig.getLabel()).contains("String name", "int count");
-      assertThat(methodSig.getDocumentation().getRight().getValue()).contains("Greets the recipient");
+      assertThat(methodSig.getDocumentation().getRight().getValue())
+          .contains("Greets the recipient");
 
       final var ctorHelp =
           fixture.signatureHelpAt(

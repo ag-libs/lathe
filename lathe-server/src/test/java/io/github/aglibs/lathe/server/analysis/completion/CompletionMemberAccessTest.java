@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 import org.eclipse.lsp4j.CompletionItem;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 class CompletionMemberAccessTest extends CompletionTestSupport {
@@ -816,6 +817,29 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
     final var equalsItem =
         items.stream().filter(i -> "equals".equals(i.getFilterText())).findFirst().orElseThrow();
     assertThat(sizeItem.getSortText()).isLessThan(equalsItem.getSortText());
+  }
+
+  @Test
+  @Disabled("CQ-0031: expected-type filtering hides equals after parser recovery")
+  void memberAccess_afterIncompletePreviousStatement_includesEquals() {
+    final var items =
+        fixture.complete(
+            """
+            class Test {
+                static class Config {
+                    String credDb() { return ""; }
+                    String username() { return ""; }
+                    String password() { return ""; }
+                    String url() { return ""; }
+                }
+
+                void m(Config config) {
+                    String selected =
+                    config.§
+                }
+            }""");
+
+    assertThat(labels(items)).contains("credDb", "password", "url", "username", "equals");
   }
 
   @Test
