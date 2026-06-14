@@ -225,15 +225,8 @@ Method-reference completion (`CQ-0002`) and generic-bound receiver completion (`
 are explicitly deferred until after beta.
 
 ### Code Action Gaps
-Gaps 1 (`TryCatchWrapProvider`) and 2 (`DeclareVariableProvider`) are closed.
-Remaining:
-
-- **Gap 3 — `MissingMethodImplProvider`**: classification of `compiler.err.does.not.override.abstract`
-  as `MISSING_METHOD_IMPL` is done; implement the provider to generate `@Override` stubs for all
-  unimplemented abstract methods using `elements().getAllMembers()`.
-- **Gap 4 — type-index freshness for new reactor types**: ensure newly-created project types become available to
-  missing-import code actions without requiring a manual full `mvn process-test-classes` round trip when Lathe already
-  has enough local source or reactor-index information to answer safely.
+✅ Gaps 1 (`TryCatchWrapProvider`), 2 (`DeclareVariableProvider`), and Gap 3 classification are closed.
+Gap 3 provider and Gap 4 are deferred to post-beta.
 
 ### Structural Navigation
 ✅ `workspace/symbol` is implemented. `textDocument/documentSymbol` and `textDocument/foldingRange` are deferred to post-beta.
@@ -264,6 +257,17 @@ Static dependency, JDK, and reactor output shards are in place.
 The remaining reactor-index work is any later performance optimization if startup scanning becomes measurable.
 This also unlocks package-prefix completion and workspace symbols once those features query the reactor candidates.
 See [lathe-type-index.md](planned/lathe-type-index.md) and [lathe-reactor-type-index.md](planned/lathe-reactor-type-index.md).
+
+### MissingMethodImplProvider
+Generate `@Override` stubs for all unimplemented abstract methods when a class fails
+`compiler.err.does.not.override.abstract`.
+Classification is already done (`MISSING_METHOD_IMPL` payload with class simple name).
+One new provider file (~150 lines) and a one-line dispatcher change.
+See [lathe-missing-method-impl.md](planned/lathe-missing-method-impl.md).
+
+### Type-index freshness for new reactor types (Gap 4)
+Ensure newly-created project types become available to missing-import code actions
+without requiring a manual `mvn process-test-classes` round trip.
 
 ### Document Symbols and Folding Ranges
 Implement `textDocument/documentSymbol` (file outline) using a parse-only `SourceParser` AST pass.
