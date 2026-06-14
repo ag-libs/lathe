@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.util.List;
 import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.SymbolKind;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -33,23 +34,17 @@ class WorkspaceSymbolTest {
     Files.writeString(dir.resolve(simpleName + ".java"), "");
   }
 
-  // --- resolve: basic matching ---
+  // --- resolve: query guards ---
 
   @Test
-  void resolve_emptyQuery_returnsEmpty() {
-    final var index = indexOf(entry("MyClass", "com.example", TypeKind.CLASS));
-    final List<SymbolInformation> result = WorkspaceSymbolResolver.resolve("", index, List.of(src));
-    assertThat(result).isEmpty();
-  }
-
-  @Test
-  void resolve_blankQuery_returnsEmpty() throws IOException {
+  void resolve_emptyOrBlankQuery_returnsEmpty() throws IOException {
     createSourceFile("com.example", "MyClass");
     final var index = indexOf(entry("MyClass", "com.example", TypeKind.CLASS));
-    final List<SymbolInformation> result =
-        WorkspaceSymbolResolver.resolve("   ", index, List.of(src));
-    assertThat(result).isEmpty();
+    assertThat(WorkspaceSymbolResolver.resolve("", index, List.of(src))).isEmpty();
+    assertThat(WorkspaceSymbolResolver.resolve("   ", index, List.of(src))).isEmpty();
   }
+
+  // --- resolve: basic matching ---
 
   @Test
   void resolve_matchingClass_returnsSymbol() throws IOException {
@@ -72,33 +67,6 @@ class WorkspaceSymbolTest {
   }
 
   @Test
-  void resolve_interfaceKind_mapsToInterface() throws IOException {
-    createSourceFile("com.example", "Printable");
-    final var index = indexOf(entry("Printable", "com.example", TypeKind.INTERFACE));
-    final List<SymbolInformation> result =
-        WorkspaceSymbolResolver.resolve("Print", index, List.of(src));
-    assertThat(result.getFirst().getKind()).isEqualTo(SymbolKind.Interface);
-  }
-
-  @Test
-  void resolve_enumKind_mapsToEnum() throws IOException {
-    createSourceFile("com.example", "Color");
-    final var index = indexOf(entry("Color", "com.example", TypeKind.ENUM));
-    final List<SymbolInformation> result =
-        WorkspaceSymbolResolver.resolve("Col", index, List.of(src));
-    assertThat(result.getFirst().getKind()).isEqualTo(SymbolKind.Enum);
-  }
-
-  @Test
-  void resolve_recordKind_mapsToClass() throws IOException {
-    createSourceFile("com.example", "Point");
-    final var index = indexOf(entry("Point", "com.example", TypeKind.RECORD));
-    final List<SymbolInformation> result =
-        WorkspaceSymbolResolver.resolve("Poi", index, List.of(src));
-    assertThat(result.getFirst().getKind()).isEqualTo(SymbolKind.Class);
-  }
-
-  @Test
   void resolve_defaultPackage_resolvesRootFile() throws IOException {
     createSourceFile("", "Standalone");
     final var index = indexOf(entry("Standalone", "", TypeKind.CLASS));
@@ -109,19 +77,53 @@ class WorkspaceSymbolTest {
   }
 
   @Test
-  void resolve_locationPointsToFileStart() throws IOException {
+  void resolve_multipleMatchingTypes_returnsAll() throws IOException {
+    createSourceFile("com.example", "FooBar");
+    createSourceFile("com.example", "FooBaz");
+    final var index =
+        indexOf(
+            entry("FooBar", "com.example", TypeKind.CLASS),
+            entry("FooBaz", "com.example", TypeKind.CLASS));
+    final List<SymbolInformation> result =
+        WorkspaceSymbolResolver.resolve("Foo", index, List.of(src));
+    assertThat(result).hasSize(2);
+    assertThat(result)
+        .extracting(SymbolInformation::getName)
+        .containsExactlyInAnyOrder("FooBar", "FooBaz");
+  }
+
+  // --- resolve: location ---
+
+  @Test
+  void resolve_location_hasCorrectUriAndRange() throws IOException {
     createSourceFile("com.example", "Foo");
     final var index = indexOf(entry("Foo", "com.example", TypeKind.CLASS));
     final List<SymbolInformation> result =
         WorkspaceSymbolResolver.resolve("Foo", index, List.of(src));
-    final var range = result.getFirst().getLocation().getRange();
-    assertThat(range.getStart().getLine()).isZero();
-    assertThat(range.getStart().getCharacter()).isZero();
-    assertThat(range.getEnd().getLine()).isZero();
-    assertThat(range.getEnd().getCharacter()).isZero();
+    final var loc = result.getFirst().getLocation();
+    assertThat(loc.getUri()).startsWith("file://");
+    assertThat(loc.getUri()).endsWith("com/example/Foo.java");
+    assertThat(loc.getRange().getStart().getLine()).isZero();
+    assertThat(loc.getRange().getStart().getCharacter()).isZero();
+    assertThat(loc.getRange().getEnd().getLine()).isZero();
+    assertThat(loc.getRange().getEnd().getCharacter()).isZero();
   }
 
-  // --- resolveSourcePath: inner class handling ---
+  // --- resolve: multiple source dirs ---
+
+  @Test
+  void resolve_typeInSecondSourceDir_found(@TempDir final Path src2) throws IOException {
+    final Path dir = src2.resolve("com/example");
+    Files.createDirectories(dir);
+    Files.writeString(dir.resolve("Remote.java"), "");
+    final var index = indexOf(entry("Remote", "com.example", TypeKind.CLASS));
+    final List<SymbolInformation> result =
+        WorkspaceSymbolResolver.resolve("Rem", index, List.of(src, src2));
+    assertThat(result).hasSize(1);
+    assertThat(result.getFirst().getName()).isEqualTo("Remote");
+  }
+
+  // --- resolveSourcePath: source path resolution ---
 
   @Test
   void resolveSourcePath_innerClass_resolvesToOuterFile() throws IOException {
@@ -135,7 +137,43 @@ class WorkspaceSymbolTest {
 
   @Test
   void resolveSourcePath_noMatchingDir_returnsNull() {
-    final var entry = entry("Ghost", "com.missing", TypeKind.CLASS);
-    assertThat(WorkspaceSymbolResolver.resolveSourcePath(entry, List.of(src))).isNull();
+    final var e = entry("Ghost", "com.missing", TypeKind.CLASS);
+    assertThat(WorkspaceSymbolResolver.resolveSourcePath(e, List.of(src))).isNull();
+  }
+
+  @Disabled(
+      "resolveSourcePath does not yet search module subdirs — JDK types missing from workspace/symbol")
+  @Test
+  void resolveSourcePath_jdkModuleSubdir_resolvesInsideModuleDir(@TempDir final Path jdkRoot)
+      throws IOException {
+    // JDK sources are extracted per module: <jdkRoot>/<module>/<package>/<Type>.java
+    // resolveSourcePath must search inside module subdirs when the direct package path is absent
+    final Path moduleDir = jdkRoot.resolve("java.base/java/util");
+    Files.createDirectories(moduleDir);
+    Files.writeString(moduleDir.resolve("ArrayList.java"), "");
+    final var jdkEntry =
+        new TypeIndexEntry("ArrayList", "java.util.ArrayList", "java.util", TypeKind.CLASS);
+    final Path result = WorkspaceSymbolResolver.resolveSourcePath(jdkEntry, List.of(jdkRoot));
+    assertThat(result).isNotNull();
+    assertThat(result.getFileName().toString()).isEqualTo("ArrayList.java");
+  }
+
+  // --- toSymbolKind: kind mappings ---
+
+  @Test
+  void toSymbolKind_interfaceAndEnum_mapToMatchingKind() {
+    assertThat(WorkspaceSymbolResolver.toSymbolKind(TypeKind.INTERFACE))
+        .isEqualTo(SymbolKind.Interface);
+    assertThat(WorkspaceSymbolResolver.toSymbolKind(TypeKind.ENUM)).isEqualTo(SymbolKind.Enum);
+  }
+
+  @Test
+  void toSymbolKind_otherKinds_mapToClass() {
+    for (final TypeKind kind :
+        new TypeKind[] {TypeKind.CLASS, TypeKind.RECORD, TypeKind.ANNOTATION, TypeKind.UNKNOWN}) {
+      assertThat(WorkspaceSymbolResolver.toSymbolKind(kind))
+          .as("kind %s", kind)
+          .isEqualTo(SymbolKind.Class);
+    }
   }
 }

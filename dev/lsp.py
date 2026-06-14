@@ -327,6 +327,11 @@ class LatheClient:
         })
         return result or []
 
+    def workspace_symbol(self, query: str) -> list[dict]:
+        """Workspace symbol search. Returns list of SymbolInformation."""
+        result = self.request("workspace/symbol", {"query": query})
+        return result or []
+
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 

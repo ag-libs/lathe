@@ -67,6 +67,12 @@ refs <text> [assertions]
       min <n>          at least n references required
       max <n>          at most n references allowed
 
+sym <query> [assertions]
+    Search the workspace type index for types matching <query> (prefix match).
+    Returns SymbolInformation entries — kind, simple name, package, and source path.
+    Supports expect, min, and max assertion qualifiers (matched against symbol labels).
+    This command is not tied to the open file; it queries the full workspace index.
+
 diagnostics   (alias: diag)
     List errors and warnings the compiler reports for this file.
 
@@ -453,6 +459,7 @@ class ExploreShell:
             "definition":  self._cmd_definition,
             "def":         self._cmd_definition,
             "refs":        self._cmd_refs,
+            "sym":         self._cmd_sym,
             "diagnostics": self._cmd_diagnostics,
             "diag":        self._cmd_diagnostics,
             "inject":      self._cmd_inject,
@@ -527,10 +534,15 @@ class ExploreShell:
     def _injected_content(self, code: str, target_0: int | None) -> tuple[str, int, int, str]:
         lines = self._original.splitlines()
 
+        _CONTROL_FLOW = {"if", "else", "for", "while", "do", "switch", "try", "catch", "finally"}
         if target_0 is None:
             for i, ln in enumerate(lines):
                 s = ln.strip()
-                if s.endswith("{") and not s.startswith("//") and i + 1 < len(lines):
+                first_tok = s.split()[0] if s.split() else ""
+                if (s.endswith("{") and "(" in s
+                        and first_tok not in _CONTROL_FLOW
+                        and not s.startswith("//")
+                        and i + 1 < len(lines)):
                     indent_str = " " * (len(ln) - len(ln.lstrip()) + 4)
                     target_0 = i + 1
                     break
@@ -928,6 +940,62 @@ class ExploreShell:
 
         if assertions:
             passed = _print_assertion_result(_check_refs_assertions(refs, assertions))
+            if not passed:
+                self.any_failure = True
+
+    def _cmd_sym(self, args: list[str]) -> None:
+        if not args:
+            print("usage: sym <query> [assertions]")
+            return
+
+        pre, assertions = _parse_assertions(args)
+        if not pre:
+            print("usage: sym <query> [assertions]")
+            return
+
+        query = pre[0]
+        try:
+            symbols = self._client.workspace_symbol(query)
+        except TimeoutError:
+            print("  TIMEOUT")
+            return
+
+        if not symbols:
+            print(f"  (no symbols found for {query!r})")
+            if assertions:
+                passed = _print_assertion_result(
+                    _check_assertions([], assertions)
+                )
+                if not passed:
+                    self.any_failure = True
+            return
+
+        _SYM_KIND_NAMES = {
+            1: "File", 2: "Module", 3: "Namespace", 4: "Package",
+            5: "Class", 6: "Method", 7: "Property", 8: "Field",
+            9: "Constructor", 10: "Enum", 11: "Interface", 12: "Function",
+            13: "Variable", 14: "Constant", 15: "String", 16: "Number",
+            17: "Boolean", 18: "Array", 19: "Object", 20: "Key",
+            21: "Null", 22: "EnumMember", 23: "Struct", 24: "Event",
+            25: "Operator", 26: "TypeParameter",
+        }
+
+        print(f"  {len(symbols)} symbol(s) for {query!r}:")
+        limit = 50
+        for sym in symbols[:limit]:
+            name = sym.get("name", "?")
+            kind = _SYM_KIND_NAMES.get(sym.get("kind"), "?")
+            container = sym.get("containerName") or ""
+            loc = sym.get("location", {})
+            uri = loc.get("uri", "").removeprefix("file://")
+            print(f"    [{kind}] {name}  {container}  {uri}")
+        if len(symbols) > limit:
+            print(f"    … {len(symbols) - limit} more")
+
+        if assertions:
+            items = [{"label": s.get("name", "")} for s in symbols]
+            failures = _check_assertions(items, assertions)
+            passed = _print_assertion_result(failures)
             if not passed:
                 self.any_failure = True
 
