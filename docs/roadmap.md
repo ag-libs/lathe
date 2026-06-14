@@ -179,7 +179,7 @@ Use these docs as the starting point when reprioritizing or slicing new work:
 ## Milestone: v0.1.0-beta (Release Scope)
 
 The beta is a build-from-source release focused on making the current Neovim workflow installable,
-closing the known completion and code-action gaps found so far,
+closing the known beta-scope completion and code-action gaps found so far,
 adding small high-value editor feedback features,
 and landing narrow maintainability improvements that reduce beta risk.
 The beta is distributed as source only;
@@ -194,10 +194,8 @@ Neovim LSP client configuration (native `vim.lsp.config` for Neovim 0.11+),
 and basic troubleshooting (`LATHE_DEBUG=1`, missing `.lathe/`, missing params).
 
 ### Completion Engine Gaps
-Close the known gaps in the completion engine documented in `lathe-completion-disabled-test-gaps.md`.
-This includes inner-class constructor completion,
-enum constants in equality comparisons,
-and local variables inside inner-class methods.
+Close the known beta-scope gaps in the completion engine documented in `planned/completion/gap-log.md`.
+Method-reference completion (`CQ-0002`) is explicitly deferred until after beta.
 These are highly visible to Neovim users relying on accurate completions.
 
 ### Code Action Gaps
@@ -255,6 +253,13 @@ See [lathe-type-index.md](planned/lathe-type-index.md) and [lathe-reactor-type-i
 Implement conservative `textDocument/onTypeFormatting` indentation hints for newline triggers.
 Currently stubbed and removed from advertised capabilities for the beta.
 See [lathe-google-indent.md](planned/lathe-google-indent.md).
+
+### Method-reference completion
+Implement method-reference completion after `Type::`, `this::`, `super::`, and expression receivers.
+This is deferred until after beta because it needs a new sentinel/parser site,
+completion routing without call-parenthesis insertion,
+and eventually target functional-interface compatibility filtering.
+Tracked as `CQ-0002` in [gap-log.md](planned/completion/gap-log.md).
 
 ### Run, test, and debug
 Adopt the design in [lathe-run-test-debug.md](planned/lathe-run-test-debug.md) to let the server manage Maven test/run executions

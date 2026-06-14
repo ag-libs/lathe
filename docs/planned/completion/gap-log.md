@@ -816,13 +816,13 @@ and record accessor member access all work correctly.
 
 Two new high-confidence gaps were found and recorded as `CQ-0020` and `CQ-0021`.
 
-`CQ-0002` and `CQ-0011` remain deferred.
+`CQ-0002` is deferred until after beta.
+`CQ-0011` remains deferred.
 `CQ-0010` is closed as an editor-side capability gap.
 
 Next completion work should either:
 
-- fix `CQ-0020` (static member access inside argument not ranked by expected type);
-- fix `CQ-0021` (type-pattern switch case label with no prefix returns simple names);
+- fix an open beta-scope completion gap from this log;
 - or run a new explorer pass with a different focus area.
 
 ## CQ-0004 — Dotted member access can fall back to simple-name completion in incomplete assignments
@@ -1881,7 +1881,7 @@ and unnamed enum-array `value()` elements.
 ## CQ-0002 — Method-reference completion returns no candidates
 
 ID: CQ-0002
-Status: deferred
+Status: deferred until after beta
 Tier: assistive
 Failure mode: missing-candidate
 Owner component: SentinelInjector / SentinelParser
@@ -1926,7 +1926,8 @@ Accepting `of` after `List::` should produce `List::of`.
 Accepting `url` after `this::` should produce `this::url`.
 
 Future design:
-Method-reference completion is post-v1 work.
+Method-reference completion is post-beta work.
+It is not required for the build-from-source beta.
 The first implementation slice should be basic receiver-member listing,
 not full smart compatibility filtering.
 Add a `METHOD_REFERENCE` sentinel site,
