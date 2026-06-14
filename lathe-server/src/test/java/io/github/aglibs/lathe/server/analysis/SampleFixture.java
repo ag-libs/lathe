@@ -42,6 +42,7 @@ public abstract class SampleFixture {
     final var javadoc =
         new JavadocLocator(compiled.parser())
             .locate(element, compiled.trees(), List.of())
+            .map(JavadocMarkdownPrinter::format)
             .orElse(null);
     final var fmt = new TypeDisplayFormatter(compiled.task().getTypes());
     return HoverFormatter.format(element, type, javadoc, null, fmt, null);

@@ -144,7 +144,10 @@ public final class SourceAnalysisSession implements AutoCloseable {
         cur.path() != null ? cur.analysis().trees().getTypeMirror(cur.path()) : null;
     final List<Path> allRoots = allRoots(request);
     final var javadoc =
-        javadocLocator.locate(element, cur.analysis().trees(), allRoots).orElse(null);
+        javadocLocator
+            .locate(element, cur.analysis().trees(), allRoots)
+            .map(JavadocMarkdownPrinter::format)
+            .orElse(null);
     final var origin = request.manifest().originLabel(element, compiler.fileManager()).orElse(null);
     final var fmt = new TypeDisplayFormatter(cur.analysis().types());
     final List<String> sourceParamNames =

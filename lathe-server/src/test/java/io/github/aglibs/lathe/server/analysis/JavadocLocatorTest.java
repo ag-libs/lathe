@@ -75,14 +75,14 @@ class JavadocLocatorTest {
 
     final var classDoc = locator.locate(classElement, parsed.trees(), List.of(srcDir));
     assertThat(classDoc).isPresent();
-    assertThat(classDoc.get()).contains("well-documented class");
+    assertThat(JavadocMarkdownPrinter.format(classDoc.get())).contains("well-documented class");
 
     final var fieldDoc = locator.locate(fieldElement, parsed.trees(), List.of(srcDir));
     assertThat(fieldDoc).isPresent();
-    assertThat(fieldDoc.get()).contains("maximum constant");
+    assertThat(JavadocMarkdownPrinter.format(fieldDoc.get())).contains("maximum constant");
 
     final var methodDoc = locator.locate(methodElement, parsed.trees(), List.of(srcDir));
     assertThat(methodDoc).isPresent();
-    assertThat(methodDoc.get()).contains("Says hello");
+    assertThat(JavadocMarkdownPrinter.format(methodDoc.get())).contains("Says hello");
   }
 }

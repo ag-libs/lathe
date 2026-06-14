@@ -1,5 +1,7 @@
 package io.github.aglibs.lathe.server.analysis;
 
+import com.sun.source.doctree.DocCommentTree;
+import com.sun.source.util.DocTrees;
 import com.sun.source.util.Trees;
 import java.nio.file.Path;
 import java.util.List;
@@ -17,7 +19,7 @@ public final class JavadocLocator {
     this.parser = parser;
   }
 
-  public Optional<String> locate(
+  public Optional<DocCommentTree> locate(
       final Element element, final Trees trees, final List<Path> sourceRoots) {
     if (element == null) {
       return Optional.empty();
@@ -26,9 +28,10 @@ public final class JavadocLocator {
     final var samePath = trees.getPath(element);
     if (samePath != null) {
       LOG.fine(() -> "[javadoc] same-file %s".formatted(element));
-      return Optional.ofNullable(trees.getDocComment(samePath));
+      return Optional.ofNullable(((DocTrees) trees).getDocCommentTree(samePath));
     }
 
-    return parser.parseDeclaration(element, sourceRoots, Trees::getDocComment);
+    return parser.parseDeclaration(
+        element, sourceRoots, (t, path) -> ((DocTrees) t).getDocCommentTree(path));
   }
 }

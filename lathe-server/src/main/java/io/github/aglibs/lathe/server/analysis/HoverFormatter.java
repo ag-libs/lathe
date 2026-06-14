@@ -1,6 +1,5 @@
 package io.github.aglibs.lathe.server.analysis;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -56,7 +55,7 @@ public final class HoverFormatter {
 
     final var sb = new StringBuilder("```java\n").append(sig).append("\n```");
     if (javadoc != null && !javadoc.isBlank()) {
-      sb.append("\n\n").append(cleanDoc(javadoc));
+      sb.append("\n\n").append(javadoc);
     }
     if (origin != null) {
       sb.append("\n\n*source: ").append(origin).append("*");
@@ -79,20 +78,5 @@ public final class HoverFormatter {
 
   public static String formatParameter(final VariableElement param) {
     return "```java\n%s %s\n```".formatted(param.asType(), param.getSimpleName());
-  }
-
-  static String cleanDoc(final String raw) {
-    final int openLen = 3; // "/**"
-    final int closeLen = 2; // "*/"
-    final var withoutOpen = raw.startsWith("/**") ? raw.substring(openLen) : raw;
-    final var withoutClose =
-        withoutOpen.endsWith("*/")
-            ? withoutOpen.substring(0, withoutOpen.length() - closeLen)
-            : withoutOpen;
-    return Arrays.stream(withoutClose.split("\n"))
-        .map(line -> line.stripLeading().replaceFirst("^\\*\\s?", "").stripTrailing())
-        .filter(line -> !line.isBlank())
-        .collect(Collectors.joining("\n"))
-        .strip();
   }
 }

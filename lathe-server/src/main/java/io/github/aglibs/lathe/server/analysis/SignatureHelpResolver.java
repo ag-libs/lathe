@@ -10,6 +10,7 @@ import com.sun.source.util.Trees;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.logging.Logger;
 import java.util.stream.IntStream;
 import javax.lang.model.element.ElementKind;
@@ -207,10 +208,27 @@ final class SignatureHelpResolver {
     sig.setParameters(paramInfos);
     javadocLocator
         .locate(method, trees, sourceRoots)
-        .map(HoverFormatter::cleanDoc)
-        .filter(doc -> !doc.isBlank())
         .ifPresent(
-            doc -> sig.setDocumentation(Either.forRight(new MarkupContent("markdown", doc))));
+            tree -> {
+              final String mainDesc = JavadocMarkdownPrinter.mainDescription(tree);
+              if (!mainDesc.isBlank()) {
+                sig.setDocumentation(Either.forRight(new MarkupContent("markdown", mainDesc)));
+              }
+
+              final Map<String, String> pdocs = JavadocMarkdownPrinter.paramDocs(tree);
+              if (!pdocs.isEmpty()) {
+                for (int i = 0; i < params.size(); i++) {
+                  final String name =
+                      sourceNames != null && i < sourceNames.size()
+                          ? sourceNames.get(i)
+                          : params.get(i).getSimpleName().toString();
+                  final String doc = pdocs.get(name);
+                  if (doc != null) {
+                    paramInfos.get(i).setDocumentation(new MarkupContent("markdown", doc));
+                  }
+                }
+              }
+            });
     return sig;
   }
 }

@@ -218,7 +218,12 @@ class SignatureHelpTest {
       final var methodSig = methodHelp.getSignatures().getFirst();
       assertThat(methodSig.getLabel()).contains("String name", "int count");
       assertThat(methodSig.getDocumentation().getRight().getValue())
-          .contains("Greets the recipient");
+          .contains("Greets the recipient")
+          .doesNotContain("@param");
+      assertThat(methodSig.getParameters().get(0).getDocumentation().getRight().getValue())
+          .contains("the recipient");
+      assertThat(methodSig.getParameters().get(1).getDocumentation().getRight().getValue())
+          .contains("repetitions");
 
       final var ctorHelp =
           fixture.signatureHelpAt(
@@ -242,7 +247,10 @@ class SignatureHelpTest {
     final var source =
         """
         class Test {
-            /** Says hello. @param msg the message */
+            /**
+             * Says hello.
+             * @param msg the message
+             */
             void greet(String msg) {}
             void caller() { greet(§"hi"); }
         }
@@ -252,7 +260,11 @@ class SignatureHelpTest {
     assertThat(help).isNotNull();
     final var sig = help.getSignatures().getFirst();
     assertThat(sig.getDocumentation()).isNotNull();
-    assertThat(sig.getDocumentation().getRight().getValue()).contains("Says hello");
+    assertThat(sig.getDocumentation().getRight().getValue())
+        .contains("Says hello")
+        .doesNotContain("@param");
+    assertThat(sig.getParameters().getFirst().getDocumentation().getRight().getValue())
+        .contains("the message");
   }
 
   // --- super() and this() constructor invocations ---

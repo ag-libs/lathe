@@ -23,11 +23,22 @@ final class ClassFileFixture implements AutoCloseable {
             srcDir.resolve("Greeter.java"),
             """
             public class Greeter {
-                /** Creates a greeter. @param label the label */
+                /**
+                 * Creates a greeter.
+                 * @param label the label
+                 */
                 public Greeter(String label) {}
-                /** Creates a greeter with a limit. @param label the label @param max max count */
+                /**
+                 * Creates a greeter with a limit.
+                 * @param label the label
+                 * @param max max count
+                 */
                 public Greeter(String label, int max) {}
-                /** Greets the recipient. @param name the recipient @param count repetitions */
+                /**
+                 * Greets the recipient.
+                 * @param name the recipient
+                 * @param count repetitions
+                 */
                 public void greet(String name, int count) {}
             }
             """);
