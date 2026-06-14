@@ -12,7 +12,6 @@ import org.junit.jupiter.api.Test;
 
 class ReferenceLocatorTest {
 
-  private static final String URI = "file:///Test.java";
   private static final String URI_B = "file:///Other.java";
 
   private static final String FIELD_SOURCE =
@@ -46,7 +45,7 @@ class ReferenceLocatorTest {
   // --- helpers ---
 
   private AttributedFileAnalysis compile(final String source) {
-    return compile(URI, source);
+    return compile(TempSourceCompiler.TEST_URI, source);
   }
 
   private AttributedFileAnalysis compile(final String uri, final String source) {
@@ -65,7 +64,7 @@ class ReferenceLocatorTest {
       final ReferenceTarget target,
       final boolean includeDecl)
       throws IOException {
-    return ReferenceLocator.references(analysis, target, URI, includeDecl);
+    return ReferenceLocator.references(analysis, target, TempSourceCompiler.TEST_URI, includeDecl);
   }
 
   private static Position posOf(final String source, final String context, final String token) {
@@ -425,12 +424,12 @@ class ReferenceLocatorTest {
 
   @Test
   void searchReferences_compilesUncachedFile() {
-    final var analysis = compile(URI, METHOD_SOURCE);
+    final var analysis = compile(TempSourceCompiler.TEST_URI, METHOD_SOURCE);
     final var target = targetAt(analysis, "void run()", "run");
 
     try (final var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       final List<ReferenceMatch> results =
-          session.searchReferences(URI, METHOD_SOURCE, 0, target, false);
+          session.searchReferences(TempSourceCompiler.TEST_URI, METHOD_SOURCE, 0, target, false);
 
       assertThat(results).hasSize(1);
     }
@@ -447,7 +446,7 @@ class ReferenceLocatorTest {
             void test() { run(); }
         }
         """;
-    final var analysisA = compile(URI, source);
+    final var analysisA = compile(TempSourceCompiler.TEST_URI, source);
     final var target = targetAt(analysisA, "void run()", "run");
 
     final var analysisB = compile(URI_B, source);
@@ -507,7 +506,8 @@ class ReferenceLocatorTest {
   void nullTarget_returnsEmpty() throws IOException {
     final var analysis = compile("class Test {}");
 
-    final List<ReferenceMatch> result = ReferenceLocator.references(analysis, null, URI, false);
+    final List<ReferenceMatch> result =
+        ReferenceLocator.references(analysis, null, TempSourceCompiler.TEST_URI, false);
 
     assertThat(result).isEmpty();
   }

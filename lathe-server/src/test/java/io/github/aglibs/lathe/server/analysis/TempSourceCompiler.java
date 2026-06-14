@@ -24,6 +24,8 @@ import javax.tools.ToolProvider;
 
 public final class TempSourceCompiler implements JavaSourceCompiler {
 
+  public static final String TEST_URI = "file:///Test.java";
+
   private final Path td;
   private final JavaCompiler compiler;
   private final StandardJavaFileManager fm;

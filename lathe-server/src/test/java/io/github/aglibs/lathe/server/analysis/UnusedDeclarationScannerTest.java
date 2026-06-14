@@ -12,8 +12,6 @@ import org.junit.jupiter.api.Test;
 
 class UnusedDeclarationScannerTest {
 
-  private static final String URI = "file:///Test.java";
-
   private SourceAnalysisSession session;
 
   @BeforeEach
@@ -202,7 +200,7 @@ class UnusedDeclarationScannerTest {
   // --- helpers ---
 
   private List<Diagnostic> unusedHintsFor(final String source) {
-    return session.compile(URI, source, 1, CompileMode.OPEN).stream()
+    return session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN).stream()
         .filter(UnusedDeclarationScannerTest::isUnusedHint)
         .toList();
   }

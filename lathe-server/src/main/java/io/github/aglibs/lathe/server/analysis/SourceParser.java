@@ -38,7 +38,7 @@ public final class SourceParser implements AutoCloseable {
     return parse(fm.getJavaFileObjects(sourceFile).iterator().next(), fn);
   }
 
-  static boolean isSyntheticName(final String name) {
+  public static boolean isSyntheticName(final String name) {
     return name.matches("arg\\d+");
   }
 

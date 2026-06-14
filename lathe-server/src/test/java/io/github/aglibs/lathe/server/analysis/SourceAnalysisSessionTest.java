@@ -102,7 +102,7 @@ class SourceAnalysisSessionTest {
 
   @Test
   void hover_staleCache_returnsNull() {
-    final String uri = "file:///Test.java";
+    final String uri = TempSourceCompiler.TEST_URI;
     final String cachedContent = "class Test { String value; }";
     final String currentContent = "class Test { Integer value; }";
     final var manifest = WorkspaceManifest.empty();

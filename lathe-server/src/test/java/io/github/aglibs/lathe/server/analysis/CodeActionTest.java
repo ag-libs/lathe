@@ -19,8 +19,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class CodeActionTest {
-  private static final String uri = "file:///Test.java";
-
   @TempDir private Path tmp;
 
   private WorkspaceTypeIndex typeIndex;
@@ -54,7 +52,8 @@ class CodeActionTest {
         }
         """;
 
-    final List<Diagnostic> diags = session.compile(uri, source, 1, CompileMode.OPEN);
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
 
     final Diagnostic diag = diagWithCode(diags, "compiler.err.cant.resolve");
     assertThat(diag.getData()).isInstanceOf(DiagnosticPayload.class);
@@ -65,7 +64,6 @@ class CodeActionTest {
 
   @Test
   void compile_unresolvedIdentifierInInitializer_setsVariableRefPayload() {
-    final var uri = "file:///Test.java";
     final var source =
         """
         package com.example;
@@ -76,7 +74,8 @@ class CodeActionTest {
         }
         """;
 
-    final List<Diagnostic> diags = session.compile(uri, source, 1, CompileMode.OPEN);
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
 
     final Diagnostic diag = diagWithCode(diags, "compiler.err.cant.resolve");
     assertThat(diag.getData()).isInstanceOf(DiagnosticPayload.class);
@@ -96,7 +95,8 @@ class CodeActionTest {
         }
         """;
 
-    final List<Diagnostic> diags = session.compile(uri, source, 1, CompileMode.OPEN);
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
 
     final Diagnostic diag = diagWithCode(diags, "compiler.err.unreported.exception");
     assertThat(diag.getData()).isInstanceOf(DiagnosticPayload.class);
@@ -117,8 +117,10 @@ class CodeActionTest {
         }
         """;
 
-    final List<Diagnostic> diags = session.compile(uri, source, 1, CompileMode.OPEN);
-    final var actions = session.codeAction(uri, source, 1, toRequests(diags), typeIndex);
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    final var actions =
+        session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), typeIndex);
 
     assertThat(actions).hasSize(1);
     final var action = actions.getFirst().getRight();
@@ -126,7 +128,7 @@ class CodeActionTest {
     assertThat(action.getKind()).isEqualTo("quickfix");
     assertThat(action.getDiagnostics()).hasSize(1);
 
-    final var edits = action.getEdit().getChanges().get(uri);
+    final var edits = action.getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
     assertThat(edits).hasSize(1);
     assertThat(edits.getFirst().getNewText()).isEqualTo("import java.util.ArrayList;\n");
     assertThat(edits.getFirst().getRange().getStart().getLine()).isEqualTo(1);
@@ -139,7 +141,8 @@ class CodeActionTest {
         package com.example;
         class Test { ArrayList list; }
         """;
-    final List<Diagnostic> diags = session.compile(uri, sourceWithoutImport, 1, CompileMode.OPEN);
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, sourceWithoutImport, 1, CompileMode.OPEN);
 
     final var sourceWithImport =
         """
@@ -147,13 +150,16 @@ class CodeActionTest {
         import java.util.ArrayList;
         class Test { ArrayList list; }
         """;
-    final var actions = session.codeAction(uri, sourceWithImport, 2, toRequests(diags), typeIndex);
+    final var actions =
+        session.codeAction(
+            TempSourceCompiler.TEST_URI, sourceWithImport, 2, toRequests(diags), typeIndex);
     assertThat(actions).isEmpty();
   }
 
   @Test
   void codeAction_noDiagnostics_returnsEmpty() {
-    final var actions = session.codeAction("file:///Test.java", "", 1, List.of(), typeIndex);
+    final var actions =
+        session.codeAction(TempSourceCompiler.TEST_URI, "", 1, List.of(), typeIndex);
     assertThat(actions).isEmpty();
   }
 
@@ -197,8 +203,11 @@ class CodeActionTest {
         }
         """;
 
-    final List<Diagnostic> diags = session.compile(uri, source, 1, CompileMode.OPEN);
-    final var actions = session.codeAction(uri, source, 1, toRequests(diags), customTypeIndex);
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    final var actions =
+        session.codeAction(
+            TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), customTypeIndex);
 
     assertThat(actions).hasSize(1);
     assertThat(actions.getFirst().getRight().getTitle())
@@ -218,8 +227,10 @@ class CodeActionTest {
         }
         """;
 
-    final List<Diagnostic> diags = session.compile(uri, source, 1, CompileMode.OPEN);
-    final var actions = session.codeAction(uri, source, 1, toRequests(diags), typeIndex);
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    final var actions =
+        session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), typeIndex);
 
     assertThat(actions).hasSize(1);
     final var action = actions.getFirst().getRight();
@@ -227,7 +238,7 @@ class CodeActionTest {
     assertThat(action.getKind()).isEqualTo("quickfix");
     assertThat(action.getDiagnostics()).hasSize(1);
 
-    final List<TextEdit> edits = action.getEdit().getChanges().get(uri);
+    final List<TextEdit> edits = action.getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
     assertThat(edits).hasSize(2);
 
     final var throwsEdit =
@@ -251,18 +262,20 @@ class CodeActionTest {
         }
         """;
 
-    final List<Diagnostic> diags = session.compile(uri, source, 1, CompileMode.OPEN);
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
     final List<CodeActionRequest> sqlOnly =
         toRequests(diags).stream()
             .filter(r -> r.payload().name().equals("java.sql.SQLException"))
             .toList();
-    final var actions = session.codeAction(uri, source, 1, sqlOnly, typeIndex);
+    final var actions =
+        session.codeAction(TempSourceCompiler.TEST_URI, source, 1, sqlOnly, typeIndex);
 
     assertThat(actions).hasSize(1);
     final var action = actions.getFirst().getRight();
     assertThat(action.getTitle()).isEqualTo("Add 'throws SQLException' to method");
 
-    final List<TextEdit> edits = action.getEdit().getChanges().get(uri);
+    final List<TextEdit> edits = action.getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
     assertThat(edits.getFirst().getNewText()).isEqualTo(", SQLException");
   }
 
@@ -277,11 +290,14 @@ class CodeActionTest {
         }
         """;
 
-    final List<Diagnostic> diags = session.compile(uri, source, 1, CompileMode.OPEN);
-    final var actions = session.codeAction(uri, source, 1, toRequests(diags), typeIndex);
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    final var actions =
+        session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), typeIndex);
 
     assertThat(actions).hasSize(1);
-    final List<TextEdit> edits = actions.getFirst().getRight().getEdit().getChanges().get(uri);
+    final List<TextEdit> edits =
+        actions.getFirst().getRight().getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
     assertThat(edits).hasSize(1);
     assertThat(edits.getFirst().getNewText()).isEqualTo(" throws Exception");
   }
@@ -298,15 +314,17 @@ class CodeActionTest {
         }
         """;
 
-    final List<Diagnostic> diags = session.compile(uri, source, 1, CompileMode.OPEN);
-    final var actions = session.codeAction(uri, source, 1, toRequests(diags), typeIndex);
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    final var actions =
+        session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), typeIndex);
 
     assertThat(actions).hasSize(1);
     final var action = actions.getFirst().getRight();
     assertThat(action.getTitle()).isEqualTo("Declare local variable 'count'");
     assertThat(action.getKind()).isEqualTo("quickfix");
 
-    final List<TextEdit> edits = action.getEdit().getChanges().get(uri);
+    final List<TextEdit> edits = action.getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
     assertThat(edits).hasSize(1);
     assertThat(edits.getFirst().getNewText()).isEqualTo("int count");
   }
@@ -321,11 +339,14 @@ class CodeActionTest {
         }
         """;
 
-    final List<Diagnostic> diags = session.compile(uri, source, 1, CompileMode.OPEN);
-    final var actions = session.codeAction(uri, source, 1, toRequests(diags), typeIndex);
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    final var actions =
+        session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), typeIndex);
 
     assertThat(actions).hasSize(1);
-    final List<TextEdit> edits = actions.getFirst().getRight().getEdit().getChanges().get(uri);
+    final List<TextEdit> edits =
+        actions.getFirst().getRight().getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
     assertThat(edits).hasSize(1);
     assertThat(edits.getFirst().getNewText()).isEqualTo("String msg");
   }
@@ -342,8 +363,10 @@ class CodeActionTest {
         }
         """;
 
-    final List<Diagnostic> diags = session.compile(uri, source, 1, CompileMode.OPEN);
-    final var actions = session.codeAction(uri, source, 1, toRequests(diags), typeIndex);
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    final var actions =
+        session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), typeIndex);
 
     assertThat(actions).isEmpty();
   }
@@ -360,8 +383,10 @@ class CodeActionTest {
         }
         """;
 
-    final List<Diagnostic> diags = session.compile(uri, source, 1, CompileMode.OPEN);
-    final var actions = session.codeAction(uri, source, 1, toRequests(diags), typeIndex);
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    final var actions =
+        session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), typeIndex);
 
     assertThat(actions).isEmpty();
   }
@@ -382,8 +407,10 @@ class CodeActionTest {
         }
         """;
 
-    final List<Diagnostic> diags = session.compile(uri, source, 1, CompileMode.OPEN);
-    final var actions = session.codeAction(uri, source, 1, toRequests(diags), typeIndex);
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    final var actions =
+        session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), typeIndex);
 
     assertThat(actions).hasSize(1);
     assertThat(actions.getFirst().getRight().getTitle()).contains("try");
@@ -408,8 +435,10 @@ class CodeActionTest {
         }
         """;
 
-    final List<Diagnostic> diags = session.compile(uri, source, 1, CompileMode.OPEN);
-    final var actions = session.codeAction(uri, source, 1, toRequests(diags), typeIndex);
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    final var actions =
+        session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), typeIndex);
 
     assertThat(actions).hasSize(1);
     assertThat(actions.getFirst().getRight().getTitle()).contains("try");
@@ -426,7 +455,8 @@ class CodeActionTest {
         class Test implements Runnable { }
         """;
 
-    final List<Diagnostic> diags = session.compile(uri, source, 1, CompileMode.OPEN);
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
 
     final Diagnostic diag = diagWithCode(diags, "compiler.err.does.not.override.abstract");
     assertThat(diag.getData()).isInstanceOf(DiagnosticPayload.class);
@@ -439,7 +469,10 @@ class CodeActionTest {
   private static List<CodeActionRequest> toRequests(final List<Diagnostic> diags) {
     return diags.stream()
         .filter(d -> d.getData() instanceof DiagnosticPayload)
-        .map(d -> new CodeActionRequest(uri, d, (DiagnosticPayload) d.getData()))
+        .map(
+            d ->
+                new CodeActionRequest(
+                    TempSourceCompiler.TEST_URI, d, (DiagnosticPayload) d.getData()))
         .toList();
   }
 

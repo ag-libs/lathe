@@ -177,7 +177,7 @@ final class SignatureHelpResolver {
               ? sourceNames.get(i)
               : param.getSimpleName().toString();
       label.append(fmt.format(param.asType()));
-      if (!name.isBlank() && !name.matches("arg\\d+")) {
+      if (!name.isBlank() && !SourceParser.isSyntheticName(name)) {
         label.append(' ').append(name);
       }
 

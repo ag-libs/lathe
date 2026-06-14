@@ -40,7 +40,9 @@ public final class HoverFormatter {
                         (sourceParamNames != null && i < sourceParamNames.size())
                             ? sourceParamNames.get(i)
                             : p.getSimpleName().toString();
-                    return name.matches("arg\\d+") ? typeName : "%s %s".formatted(typeName, name);
+                    return SourceParser.isSyntheticName(name)
+                        ? typeName
+                        : "%s %s".formatted(typeName, name);
                   })
               .collect(Collectors.joining(", "));
       final String returnType =

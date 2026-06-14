@@ -19,8 +19,6 @@ import org.eclipse.lsp4j.Position;
 
 final class CompletionFixture implements AutoCloseable {
 
-  private static final String TEST_URI = "file:///Test.java";
-
   private final SourceParser sourceParser;
   private final TempSourceCompiler compiler;
   private final CompletionEngine engine;
@@ -87,7 +85,7 @@ final class CompletionFixture implements AutoCloseable {
   }
 
   private AttributedFileAnalysis compile(final String source) {
-    return compiler.compile(TEST_URI, source, CompileMode.FULL).fileAnalysis();
+    return compiler.compile(TempSourceCompiler.TEST_URI, source, CompileMode.FULL).fileAnalysis();
   }
 
   private AttributedFileAnalysis jpmsAnalysis(
@@ -113,7 +111,7 @@ final class CompletionFixture implements AutoCloseable {
   private CompletionRequest request(
       final CursorFixture.Cursor cursor, final CachedFileAnalysis cached) {
     return new CompletionRequest(
-        TEST_URI,
+        TempSourceCompiler.TEST_URI,
         cursor.content(),
         new Position(cursor.lspLine(), cursor.lspChar()),
         null,

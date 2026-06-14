@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.analysis.completion;
 
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
+import io.github.aglibs.lathe.server.analysis.SourceParser;
 import io.github.aglibs.lathe.server.analysis.TypeDisplayFormatter;
 import java.util.List;
 import java.util.logging.Level;
@@ -174,7 +175,7 @@ final class CandidateFactory {
   }
 
   private static String displayParameter(final String typeText, final String name) {
-    if (name.isBlank() || name.matches("arg\\d+")) {
+    if (name.isBlank() || SourceParser.isSyntheticName(name)) {
       return typeText;
     }
 

@@ -11,9 +11,7 @@ package io.github.aglibs.lathe.server.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.aglibs.lathe.server.TestCompiler;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -106,33 +104,23 @@ class HoverTest extends SampleFixture {
   @Test
   void hover_classFileDependency_showsSourceParameterNames(@TempDir final Path tmpDir)
       throws Exception {
-    final var srcDir = Files.createDirectory(tmpDir.resolve("src"));
-    final var classDir = Files.createDirectory(tmpDir.resolve("classes"));
-
-    final var src =
-        Files.writeString(
-            srcDir.resolve("Greeter.java"),
-            """
-            public class Greeter {
-                public void greet(String name, int count) {}
-            }
-            """);
-    TestCompiler.compileToDir(classDir, src);
-
-    try (final var s = new SourceAnalysisSession(new TempSourceCompiler(List.of(classDir)))) {
+    try (final var fixture = new ClassFileFixture(tmpDir)) {
       final var source =
           """
           class Test {
               void caller() { new Greeter().greet("x", 1); }
           }
           """;
-      s.compile("file:///Test.java", source, 1, CompileMode.OPEN);
-      final int greetOffset = source.indexOf("greet");
-      final var pos = SourceLocator.offsetToPosition(source, greetOffset);
+      fixture.session().compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+      final var pos = SourceLocator.offsetToPosition(source, source.indexOf("greet"));
       final var request =
           new SourceFeatureRequest(
-              "file:///Test.java", source, pos, List.of(srcDir), WorkspaceManifest.empty());
-      final var hover = s.hover(request);
+              TempSourceCompiler.TEST_URI,
+              source,
+              pos,
+              List.of(fixture.srcDir()),
+              WorkspaceManifest.empty());
+      final var hover = fixture.session().hover(request);
 
       assertThat(hover).isNotNull();
       assertThat(hover.getContents().getRight().getValue()).contains("String name", "int count");

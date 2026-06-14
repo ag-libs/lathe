@@ -3,11 +3,8 @@ package io.github.aglibs.lathe.server.analysis;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import javax.tools.StandardLocation;
-import javax.tools.ToolProvider;
 import org.eclipse.lsp4j.SignatureHelp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,7 +13,6 @@ import org.junit.jupiter.api.io.TempDir;
 
 class SignatureHelpTest {
 
-  private static final String URI = "file:///Test.java";
   private static final String MARKER = "§";
 
   private SourceAnalysisSession session;
@@ -187,26 +183,7 @@ class SignatureHelpTest {
   @Test
   void signatureHelp_classFileDependency_showsSourceParameterNames(@TempDir final Path tmpDir)
       throws Exception {
-    final var srcDir = Files.createDirectory(tmpDir.resolve("src"));
-    final var classDir = Files.createDirectory(tmpDir.resolve("classes"));
-
-    final var libCompiler = ToolProvider.getSystemJavaCompiler();
-    try (final var libFm = libCompiler.getStandardFileManager(null, null, null)) {
-      final var src =
-          Files.writeString(
-              srcDir.resolve("Greeter.java"),
-              """
-              public class Greeter {
-                  public void greet(String name, int count) {}
-              }
-              """);
-      libFm.setLocationFromPaths(StandardLocation.CLASS_OUTPUT, List.of(classDir));
-      libCompiler
-          .getTask(null, libFm, null, List.of("-proc:none"), null, libFm.getJavaFileObjects(src))
-          .call();
-    }
-
-    try (final var s = new SourceAnalysisSession(new TempSourceCompiler(List.of(classDir)))) {
+    try (final var fixture = new ClassFileFixture(tmpDir)) {
       final var rawSource =
           """
           class Test {
@@ -215,11 +192,16 @@ class SignatureHelpTest {
           """;
       final var source = rawSource.replace(MARKER, "");
       final int markerOffset = rawSource.indexOf(MARKER);
-      s.compile(URI, source, 1, CompileMode.OPEN);
+      fixture.session().compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
       final var pos = SourceLocator.offsetToPosition(source, markerOffset);
       final var request =
-          new SourceFeatureRequest(URI, source, pos, List.of(srcDir), WorkspaceManifest.empty());
-      final var help = s.signatureHelp(request);
+          new SourceFeatureRequest(
+              TempSourceCompiler.TEST_URI,
+              source,
+              pos,
+              List.of(fixture.srcDir()),
+              WorkspaceManifest.empty());
+      final var help = fixture.session().signatureHelp(request);
 
       assertThat(help).isNotNull();
       assertThat(help.getSignatures().getFirst().getLabel()).contains("String name", "int count");
@@ -231,10 +213,11 @@ class SignatureHelpTest {
   private SignatureHelp signatureHelpAt(final String rawSource) {
     final var source = rawSource.replace(MARKER, "");
     final int markerOffset = rawSource.indexOf(MARKER);
-    session.compile(URI, source, 1, CompileMode.OPEN);
+    session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
     final var pos = SourceLocator.offsetToPosition(source, markerOffset);
     final var request =
-        new SourceFeatureRequest(URI, source, pos, List.of(), WorkspaceManifest.empty());
+        new SourceFeatureRequest(
+            TempSourceCompiler.TEST_URI, source, pos, List.of(), WorkspaceManifest.empty());
     return session.signatureHelp(request);
   }
 }
