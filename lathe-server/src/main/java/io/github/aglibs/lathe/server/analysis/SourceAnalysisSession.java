@@ -122,7 +122,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
         SourceLocator.toOffset(
             cur.analysis().tree(), request.pos().getLine(), request.pos().getCharacter());
     return SignatureHelpResolver.resolve(
-        cur.analysis(), cur.path(), offset, parser, allRoots(request));
+        cur.analysis(), cur.path(), offset, parser, allRoots(request), javadocLocator);
   }
 
   public Hover hover(final SourceFeatureRequest request) {

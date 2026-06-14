@@ -6,6 +6,7 @@ import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
+import com.sun.source.util.Trees;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -15,9 +16,11 @@ import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Name;
 import javax.lang.model.element.TypeElement;
+import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.ParameterInformation;
 import org.eclipse.lsp4j.SignatureHelp;
 import org.eclipse.lsp4j.SignatureInformation;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.jsonrpc.messages.Tuple;
 
 final class SignatureHelpResolver {
@@ -31,7 +34,8 @@ final class SignatureHelpResolver {
       final TreePath cursorPath,
       final long cursorOffset,
       final SourceParser parser,
-      final List<Path> sourceRoots) {
+      final List<Path> sourceRoots,
+      final JavadocLocator javadocLocator) {
     if (cursorPath == null) {
       return null;
     }
@@ -98,7 +102,9 @@ final class SignatureHelpResolver {
     final int activeParam = activeParamFromArgs(args, positions, cu, cursorOffset);
 
     final List<SignatureInformation> signatures =
-        overloads.stream().map(m -> buildSignature(m, fmt, callName, parser, sourceRoots)).toList();
+        overloads.stream()
+            .map(m -> buildSignature(m, fmt, callName, parser, sourceRoots, javadocLocator, trees))
+            .toList();
     final int activeSignature =
         IntStream.range(0, overloads.size())
             .filter(i -> overloads.get(i).equals(resolved))
@@ -167,7 +173,9 @@ final class SignatureHelpResolver {
       final TypeDisplayFormatter fmt,
       final String callName,
       final SourceParser parser,
-      final List<Path> sourceRoots) {
+      final List<Path> sourceRoots,
+      final JavadocLocator javadocLocator,
+      final Trees trees) {
     final var params = method.getParameters();
     final var label = new StringBuilder();
 
@@ -197,6 +205,12 @@ final class SignatureHelpResolver {
 
     final var sig = new SignatureInformation(label.toString());
     sig.setParameters(paramInfos);
+    javadocLocator
+        .locate(method, trees, sourceRoots)
+        .map(HoverFormatter::cleanDoc)
+        .filter(doc -> !doc.isBlank())
+        .ifPresent(
+            doc -> sig.setDocumentation(Either.forRight(new MarkupContent("markdown", doc))));
     return sig;
   }
 }

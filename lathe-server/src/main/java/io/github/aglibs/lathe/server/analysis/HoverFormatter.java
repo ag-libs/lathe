@@ -81,7 +81,7 @@ public final class HoverFormatter {
     return "```java\n%s %s\n```".formatted(param.asType(), param.getSimpleName());
   }
 
-  private static String cleanDoc(final String raw) {
+  static String cleanDoc(final String raw) {
     final int openLen = 3; // "/**"
     final int closeLen = 2; // "*/"
     final var withoutOpen = raw.startsWith("/**") ? raw.substring(openLen) : raw;

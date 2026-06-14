@@ -204,31 +204,54 @@ class SignatureHelpTest {
   // --- class-file dependency ---
 
   @Test
-  void signatureHelp_classFileDependency_showsSourceParameterNames(@TempDir final Path tmpDir)
+  void signatureHelp_classFileDependency_showsParamNamesAndJavadoc(@TempDir final Path tmpDir)
       throws Exception {
     try (final var fixture = new ClassFileFixture(tmpDir)) {
-      final var rawSource =
-          """
-          class Test {
-              void caller() { new Greeter().greet(§"x", 1); }
-          }
-          """;
-      final var source = rawSource.replace(MARKER, "");
-      final int markerOffset = rawSource.indexOf(MARKER);
-      fixture.session().compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
-      final var pos = SourceLocator.offsetToPosition(source, markerOffset);
-      final var request =
-          new SourceFeatureRequest(
-              TempSourceCompiler.TEST_URI,
-              source,
-              pos,
-              List.of(fixture.srcDir()),
-              WorkspaceManifest.empty());
-      final var help = fixture.session().signatureHelp(request);
+      final var methodHelp =
+          fixture.signatureHelpAt(
+              """
+              class Test {
+                  void caller() { new Greeter("x").greet(§"x", 1); }
+              }
+              """);
+      assertThat(methodHelp).isNotNull();
+      final var methodSig = methodHelp.getSignatures().getFirst();
+      assertThat(methodSig.getLabel()).contains("String name", "int count");
+      assertThat(methodSig.getDocumentation().getRight().getValue()).contains("Greets the recipient");
 
-      assertThat(help).isNotNull();
-      assertThat(help.getSignatures().getFirst().getLabel()).contains("String name", "int count");
+      final var ctorHelp =
+          fixture.signatureHelpAt(
+              """
+              class Test {
+                  void caller() { new Greeter(§"hi"); }
+              }
+              """);
+      assertThat(ctorHelp).isNotNull();
+      assertThat(ctorHelp.getSignatures()).hasSize(2);
+      final var activeSig = ctorHelp.getSignatures().get(ctorHelp.getActiveSignature());
+      assertThat(activeSig.getLabel()).contains("String label");
+      assertThat(activeSig.getDocumentation().getRight().getValue()).contains("Creates a greeter");
     }
+  }
+
+  // --- javadoc in documentation field ---
+
+  @Test
+  void signatureHelp_withJavadoc_populatesDocumentation() {
+    final var source =
+        """
+        class Test {
+            /** Says hello. @param msg the message */
+            void greet(String msg) {}
+            void caller() { greet(§"hi"); }
+        }
+        """;
+    final var help = signatureHelpAt(source);
+
+    assertThat(help).isNotNull();
+    final var sig = help.getSignatures().getFirst();
+    assertThat(sig.getDocumentation()).isNotNull();
+    assertThat(sig.getDocumentation().getRight().getValue()).contains("Says hello");
   }
 
   // --- super() and this() constructor invocations ---

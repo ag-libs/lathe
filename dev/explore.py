@@ -835,6 +835,11 @@ class ExploreShell:
             marker = ">>>" if i == active_sig else "   "
             active = active_param if i == active_sig else -1
             print(f"  {marker} {_format_sig_label(sig, active)}")
+            doc = sig.get("documentation")
+            if doc:
+                text = doc.get("value") if isinstance(doc, dict) else doc
+                if text:
+                    print(f"      doc: {text[:120]}")
 
     def _cmd_definition(self, args: list[str]) -> None:
         if not args:

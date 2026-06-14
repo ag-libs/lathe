@@ -108,7 +108,7 @@ class HoverTest extends SampleFixture {
       final var source =
           """
           class Test {
-              void caller() { new Greeter().greet("x", 1); }
+              void caller() { new Greeter("x").greet("x", 1); }
           }
           """;
       fixture.session().compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);

@@ -138,8 +138,12 @@ public final class SourceLocator {
 
       @Override
       public Void visitMethod(final MethodTree tree, final Void unused) {
+        final boolean nameMatch =
+            target.getKind() == ElementKind.CONSTRUCTOR
+                ? tree.getName().contentEquals("<init>")
+                : tree.getName().contentEquals(declarationName(target));
         if ((target.getKind() == ElementKind.METHOD || target.getKind() == ElementKind.CONSTRUCTOR)
-            && tree.getName().contentEquals(declarationName(target))
+            && nameMatch
             && matchParameters(
                 tree.getParameters(), ((ExecutableElement) target).getParameters())) {
           result.set(getCurrentPath());
