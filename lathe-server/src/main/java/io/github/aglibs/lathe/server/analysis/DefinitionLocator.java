@@ -84,7 +84,7 @@ public final class DefinitionLocator {
     final var relPath =
         pkg.isEmpty()
             ? topLevel.getSimpleName() + ".java"
-            : pkg.replace('.', '/') + "/" + topLevel.getSimpleName() + ".java";
+            : "%s/%s.java".formatted(pkg.replace('.', '/'), topLevel.getSimpleName());
     final var enclosingModule = pkgElement.getEnclosingElement();
     final String moduleName =
         enclosingModule instanceof final ModuleElement me && !me.isUnnamed()

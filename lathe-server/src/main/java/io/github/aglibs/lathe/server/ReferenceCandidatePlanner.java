@@ -76,7 +76,8 @@ final class ReferenceCandidatePlanner {
         || kind == ElementKind.METHOD
         || kind == ElementKind.CONSTRUCTOR
         || kind == ElementKind.ENUM_CONSTANT) {
-      final Set<String> staticImports = index.candidateUris(qualName + "." + simpleName);
+      final Set<String> staticImports =
+          index.candidateUris("%s.%s".formatted(qualName, simpleName));
       final Set<String> staticWildcards = index.candidateUris(qualName + ".*");
 
       final int lastDot = qualName.lastIndexOf('.');

@@ -111,7 +111,14 @@ After a large Java change, agents may run `mvn spotless:apply` before tests to n
 - Keep Maven Mojo classes as orchestration-first code.
   Extract helper methods when they separate Maven discovery, resolution, cache decisions,
   file IO, and logging.
-- Use formatted strings for structured log messages instead of long string concatenation.
+- Prefer `.formatted(...)` for human-facing strings:
+  log messages, exceptions, diagnostics, labels, and display text.
+- Avoid chained string concatenation for three or more parts.
+  Prefer `"%s.%s".formatted(qualifiedName, simpleName)` over `qualifiedName + "." + simpleName`.
+- Simple two-part joins may still use `+` when clearer,
+  for example `simpleName + ".java"` or `typeName + "[]"`.
+- Do not introduce `StringBuilder` just to avoid `+`;
+  use it only for repeated incremental construction where it improves clarity.
 
 ## Markdown style
 

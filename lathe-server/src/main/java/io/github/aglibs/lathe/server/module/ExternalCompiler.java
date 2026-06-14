@@ -82,7 +82,7 @@ public final class ExternalCompiler implements JavaSourceCompiler {
         .ifPresent(
             moduleName -> {
               options.add("--patch-module");
-              options.add(moduleName + "=" + td.resolve(moduleName));
+              options.add("%s=%s".formatted(moduleName, td.resolve(moduleName)));
             });
     return List.copyOf(options);
   }

@@ -37,12 +37,14 @@ final class SentinelInjector {
     final var semicolon =
         back.context() == Context.STATEMENT && !parenFollows && !suppressSemicolon ? ";" : "";
     final var injected =
-        content.substring(0, back.tokenStart())
-            + SENTINEL
-            + ")".repeat(fwd.unclosedParens())
-            + semicolon
-            + content.substring(suffixStart)
-            + "}".repeat(fwd.unclosedBraces());
+        "%s%s%s%s%s%s"
+            .formatted(
+                content.substring(0, back.tokenStart()),
+                SENTINEL,
+                ")".repeat(fwd.unclosedParens()),
+                semicolon,
+                content.substring(suffixStart),
+                "}".repeat(fwd.unclosedBraces()));
 
     return new SentinelInjectionResult(
         back.prefix(),

@@ -19,7 +19,7 @@ class WorkspaceTypeIndexTest {
   @TempDir private Path tmp;
 
   private static TypeIndexEntry entry(final String simpleName, final String pkg) {
-    return new TypeIndexEntry(simpleName, pkg + "." + simpleName, pkg, TypeKind.CLASS);
+    return new TypeIndexEntry(simpleName, "%s.%s".formatted(pkg, simpleName), pkg, TypeKind.CLASS);
   }
 
   private static TypeIndexFile shard(final TypeIndexEntry... entries) {

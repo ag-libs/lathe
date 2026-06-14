@@ -197,7 +197,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
                   .formatted(uri, target.simpleName(), results.size()));
       return results;
     } catch (final IOException e) {
-      LOG.log(Level.WARNING, e, () -> "[references] failed to read source for " + uri);
+      LOG.log(Level.WARNING, e, () -> "[references] failed to read source for %s".formatted(uri));
       return List.of();
     }
   }

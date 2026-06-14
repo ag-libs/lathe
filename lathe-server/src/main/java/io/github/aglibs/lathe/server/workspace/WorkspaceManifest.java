@@ -264,7 +264,7 @@ public final class WorkspaceManifest {
       throws IOException {
     if (fm.getLocationForModule(StandardLocation.SYSTEM_MODULES, moduleName) != null) {
       final var jdkLabel =
-          jdkVersion != null ? moduleName + " (JDK " + jdkVersion + ")" : moduleName;
+          jdkVersion != null ? "%s (JDK %s)".formatted(moduleName, jdkVersion) : moduleName;
       LOG.fine(() -> "[origin] module %s → jdk label".formatted(moduleName));
       return Optional.of(jdkLabel);
     }
@@ -275,7 +275,7 @@ public final class WorkspaceManifest {
         () ->
             "[origin] module %s → jar=%s gav=%s"
                 .formatted(moduleName, jar.orElse(null), gav.orElse(null)));
-    return gav.map(s -> moduleName + " (" + s + ")").or(() -> Optional.of(moduleName));
+    return gav.map(s -> "%s (%s)".formatted(moduleName, s)).or(() -> Optional.of(moduleName));
   }
 
   private Optional<Path> externalSourceRootForModule(

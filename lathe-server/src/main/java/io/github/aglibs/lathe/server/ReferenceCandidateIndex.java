@@ -82,11 +82,11 @@ final class ReferenceCandidateIndex {
                 try {
                   update(path.toUri().toString(), Files.readString(path));
                 } catch (final IOException e) {
-                  LOG.log(Level.FINE, e, () -> "[candidate-index] skipped: " + path);
+                  LOG.log(Level.FINE, e, () -> "[candidate-index] skipped: %s".formatted(path));
                 }
               });
     } catch (final IOException e) {
-      LOG.log(Level.WARNING, e, () -> "[candidate-index] failed to walk: " + root);
+      LOG.log(Level.WARNING, e, () -> "[candidate-index] failed to walk: %s".formatted(root));
     }
   }
 

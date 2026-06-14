@@ -275,9 +275,10 @@ class CompletionAcceptanceTest extends CompletionTestSupport {
   private static String accept(final String markedSource, final CompletionItem item) {
     final var cursor = CursorFixture.cursor(markedSource);
     final var accepted = applyCompletion(cursor.content(), item);
-    return accepted.content().substring(0, accepted.cursorOffset())
-        + "§"
-        + accepted.content().substring(accepted.cursorOffset());
+    return "%s§%s"
+        .formatted(
+            accepted.content().substring(0, accepted.cursorOffset()),
+            accepted.content().substring(accepted.cursorOffset()));
   }
 
   private static Accepted applyCompletion(final String content, final CompletionItem item) {
@@ -304,7 +305,7 @@ class CompletionAcceptanceTest extends CompletionTestSupport {
       final int end = CursorFixture.offset(content, edit.getRange().getEnd());
       final boolean primary = edit == textEdit;
       final String newText = primary ? replacement.text() : edit.getNewText();
-      updated = updated.substring(0, start) + newText + updated.substring(end);
+      updated = "%s%s%s".formatted(updated.substring(0, start), newText, updated.substring(end));
       if (primary) {
         cursorOffset = start + replacement.cursorOffset();
       }

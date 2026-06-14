@@ -147,7 +147,7 @@ abstract class CompletionTestSupport {
         libSrc.resolve("com/example/lib/LibType.java"));
 
     return new ExampleLib(
-        List.of("--module-path", libOut + ":" + otherOut),
+        List.of("--module-path", "%s:%s".formatted(libOut, otherOut)),
         """
         module com.example.app {
             requires com.example.lib;

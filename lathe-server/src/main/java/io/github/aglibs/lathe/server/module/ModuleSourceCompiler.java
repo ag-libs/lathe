@@ -56,7 +56,7 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
         config.sourceRoots().stream()
             .filter(filePath::startsWith)
             .max(Comparator.comparingInt(Path::getNameCount))
-            .orElseThrow(() -> new IllegalStateException("no source root for " + uri));
+            .orElseThrow(() -> new IllegalStateException("no source root for %s".formatted(uri)));
 
     try {
       final var tempFile = FileUtil.writeTempSourceFile(tempDir, sourceRoot, filePath, content);
@@ -142,7 +142,8 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
             v ->
                 fm.handleOption(
                     PATCH_MODULE,
-                    List.of(v.substring(0, v.indexOf('=')) + "=" + tempDir).iterator()));
+                    List.of("%s=%s".formatted(v.substring(0, v.indexOf('=')), tempDir))
+                        .iterator()));
     return normalized.stream().filter(a -> !a.startsWith(PATCH_MODULE_EQ)).toList();
   }
 

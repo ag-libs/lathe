@@ -37,7 +37,7 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
       final Path workspaceRoot, final WorkspaceManifest manifest) {
     final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
     if (!Files.isDirectory(latheDir)) {
-      LOG.warning(() -> "[workspace] .lathe/ not found at " + workspaceRoot);
+      LOG.warning(() -> "[workspace] .lathe/ not found at %s".formatted(workspaceRoot));
       return new WorkspaceModuleRegistry(List.of(), manifest);
     }
 

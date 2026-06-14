@@ -1219,7 +1219,8 @@ public final class CompletionEngine {
           continue;
         }
 
-        final var qualifiedMember = entry.qualifiedName() + "." + member.getSimpleName();
+        final var qualifiedMember =
+            "%s.%s".formatted(entry.qualifiedName(), member.getSimpleName());
         if (existingStaticImports.contains(qualifiedMember)) {
           continue;
         }
@@ -1243,9 +1244,9 @@ public final class CompletionEngine {
         new CandidateFactory(context.analysis().types())
             .memberCandidate(member, (DeclaredType) declaringType.asType());
     final var typeName = declaringType.getSimpleName().toString();
-    final var qualifiedMember = typeQualifiedName + "." + member.getSimpleName();
+    final var qualifiedMember = "%s.%s".formatted(typeQualifiedName, member.getSimpleName());
     return new CompletionCandidate(
-        typeName + "." + member.getSimpleName(),
+        "%s.%s".formatted(typeName, member.getSimpleName()),
         base.label(),
         base.kind(),
         typeName,

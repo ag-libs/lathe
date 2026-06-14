@@ -103,7 +103,7 @@ public final class SourceParser implements AutoCloseable {
       final T result = fn.apply(Trees.instance(task), cu);
       final var diags = collector.getDiagnostics();
       if (!diags.isEmpty()) {
-        LOG.fine(() -> "[parse] diags: " + diagSummary(diags));
+        LOG.fine(() -> "[parse] diags: %s".formatted(diagSummary(diags)));
       }
       return Optional.ofNullable(result);
     } catch (final IOException e) {
@@ -117,7 +117,7 @@ public final class SourceParser implements AutoCloseable {
         .collect(Collectors.groupingBy(Diagnostic::getKind, Collectors.counting()))
         .entrySet()
         .stream()
-        .map(e -> e.getKey() + "=" + e.getValue())
+        .map(e -> "%s=%d".formatted(e.getKey(), e.getValue()))
         .collect(Collectors.joining(" "));
   }
 

@@ -6,6 +6,6 @@ public final class Hello {
 
   public static String greet(final String name) {
     ValidCheck.requireNotNull(name, "name");
-    return "Hello, " + name + "!";
+    return "Hello, %s!".formatted(name);
   }
 }

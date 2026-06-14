@@ -60,7 +60,7 @@ class LspSmokeTest {
                   new BufferedReader(new InputStreamReader(serverProcess.getErrorStream()))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
-                  System.out.println("[server] " + line);
+                  System.out.println("[server] %s".formatted(line));
                 }
               } catch (final IOException ignored) {
               }
@@ -143,7 +143,7 @@ class LspSmokeTest {
 
     @Override
     public void showMessage(final MessageParams params) {
-      System.out.println("[showMessage] " + params.getType() + ": " + params.getMessage());
+      System.out.println("[showMessage] %s: %s".formatted(params.getType(), params.getMessage()));
       messages.add(params);
     }
 
@@ -156,7 +156,7 @@ class LspSmokeTest {
 
     @Override
     public void logMessage(final MessageParams params) {
-      System.out.println("[logMessage] " + params.getType() + ": " + params.getMessage());
+      System.out.println("[logMessage] %s: %s".formatted(params.getType(), params.getMessage()));
     }
 
     @Override
