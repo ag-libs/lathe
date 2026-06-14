@@ -56,10 +56,21 @@ final class SignatureHelpResolver {
       }
 
       resolved = exe;
-      callName = resolved.getSimpleName().toString();
-      overloads =
-          methodsNamed(
-              analysis, (TypeElement) resolved.getEnclosingElement(), resolved.getSimpleName());
+      if (resolved.getKind() == ElementKind.CONSTRUCTOR) {
+        final var owner = enclosingType(resolved);
+        if (owner == null) {
+          return null;
+        }
+
+        callName = owner.getSimpleName().toString();
+        overloads = constructorsOf(analysis, owner);
+      } else {
+        callName = resolved.getSimpleName().toString();
+        overloads =
+            methodsNamed(
+                analysis, (TypeElement) resolved.getEnclosingElement(), resolved.getSimpleName());
+      }
+
       args = inv.getArguments();
     } else {
       final var element = trees.getElement(callPath);
@@ -148,7 +159,7 @@ final class SignatureHelpResolver {
         return i;
       }
     }
-    return args.size();
+    return Math.max(0, args.size() - 1);
   }
 
   private static SignatureInformation buildSignature(
@@ -170,18 +181,10 @@ final class SignatureHelpResolver {
 
     final List<ParameterInformation> paramInfos = new ArrayList<>();
     for (int i = 0; i < params.size(); i++) {
-      final var param = params.get(i);
       final int start = label.length();
-      final String name =
-          (sourceNames != null && i < sourceNames.size())
-              ? sourceNames.get(i)
-              : param.getSimpleName().toString();
-      label.append(fmt.format(param.asType()));
-      if (!name.isBlank() && !SourceParser.isSyntheticName(name)) {
-        label.append(' ').append(name);
-      }
-
+      label.append(HoverFormatter.formatParam(params.get(i), fmt, sourceNames, i));
       final int end = label.length();
+
       if (i < params.size() - 1) {
         label.append(", ");
       }

@@ -31,19 +31,7 @@ public final class HoverFormatter {
       final var params = exe.getParameters();
       final String paramStr =
           IntStream.range(0, params.size())
-              .mapToObj(
-                  i -> {
-                    final var p = params.get(i);
-                    final String typeName =
-                        fmt != null ? fmt.format(p.asType()) : p.asType().toString();
-                    final String name =
-                        (sourceParamNames != null && i < sourceParamNames.size())
-                            ? sourceParamNames.get(i)
-                            : p.getSimpleName().toString();
-                    return SourceParser.isSyntheticName(name)
-                        ? typeName
-                        : "%s %s".formatted(typeName, name);
-                  })
+              .mapToObj(i -> formatParam(params.get(i), fmt, sourceParamNames, i))
               .collect(Collectors.joining(", "));
       final String returnType =
           fmt != null ? fmt.format(exe.getReturnType()) : exe.getReturnType().toString();
@@ -74,6 +62,19 @@ public final class HoverFormatter {
       sb.append("\n\n*source: ").append(origin).append("*");
     }
     return Optional.of(sb.toString());
+  }
+
+  static String formatParam(
+      final VariableElement param,
+      final TypeDisplayFormatter fmt,
+      final List<String> sourceNames,
+      final int index) {
+    final String typeName = fmt != null ? fmt.format(param.asType()) : param.asType().toString();
+    final String name =
+        (sourceNames != null && index < sourceNames.size())
+            ? sourceNames.get(index)
+            : param.getSimpleName().toString();
+    return SourceParser.isSyntheticName(name) ? typeName : "%s %s".formatted(typeName, name);
   }
 
   public static String formatParameter(final VariableElement param) {

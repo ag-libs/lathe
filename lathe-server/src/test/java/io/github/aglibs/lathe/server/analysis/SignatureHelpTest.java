@@ -142,6 +142,29 @@ class SignatureHelpTest {
     assertThat(help.getActiveParameter()).isEqualTo(1);
   }
 
+  // --- Overloaded methods ---
+
+  @Test
+  void signatureHelp_overloadedMethod_listsAllOverloadsAndSelectsResolved() {
+    final var source =
+        """
+        class Test {
+          void target(int x) {}
+          void target(String s) {}
+          void target(int x, int y) {}
+          void caller() { target("§hello"); }
+        }
+        """;
+    final var help = signatureHelpAt(source);
+
+    assertThat(help).isNotNull();
+    assertThat(help.getSignatures()).hasSize(3);
+    assertThat(help.getSignatures()).anyMatch(sig -> sig.getLabel().contains("int x)"));
+    assertThat(help.getSignatures()).anyMatch(sig -> sig.getLabel().contains("String s"));
+    assertThat(help.getSignatures()).anyMatch(sig -> sig.getLabel().contains("int x, int y"));
+    assertThat(help.getSignatures().get(help.getActiveSignature()).getLabel()).contains("String s");
+  }
+
   // --- Outside any call ---
 
   @Test
@@ -206,6 +229,82 @@ class SignatureHelpTest {
       assertThat(help).isNotNull();
       assertThat(help.getSignatures().getFirst().getLabel()).contains("String name", "int count");
     }
+  }
+
+  // --- super() and this() constructor invocations ---
+
+  @Test
+  void signatureHelp_superConstructorCall_showsParentOverloads() {
+    final var source =
+        """
+        class Base {
+            Base(int x) {}
+            Base(String s) {}
+        }
+        class Child extends Base {
+            Child() { super(§42); }
+        }
+        """;
+    final var help = signatureHelpAt(source);
+
+    assertThat(help).isNotNull();
+    assertThat(help.getSignatures()).hasSize(2);
+    assertThat(help.getSignatures()).anyMatch(sig -> sig.getLabel().contains("int x"));
+    assertThat(help.getSignatures()).anyMatch(sig -> sig.getLabel().contains("String s"));
+    final var activeSig = help.getSignatures().get(help.getActiveSignature());
+    assertThat(activeSig.getLabel()).startsWith("Base(").doesNotContain("<init>");
+    assertThat(activeSig.getLabel()).contains("int x");
+    assertThat(help.getActiveParameter()).isEqualTo(0);
+  }
+
+  @Test
+  void signatureHelp_thisConstructorCall_showsCurrentClassOverloads() {
+    final var source =
+        """
+        class Test {
+            Test(int x) {}
+            Test(String s) {}
+            Test() { this(§42); }
+        }
+        """;
+    final var help = signatureHelpAt(source);
+
+    assertThat(help).isNotNull();
+    assertThat(help.getSignatures()).anyMatch(sig -> sig.getLabel().contains("int x"));
+    assertThat(help.getSignatures().get(help.getActiveSignature()).getLabel()).contains("int x");
+    assertThat(help.getActiveParameter()).isEqualTo(0);
+  }
+
+  // --- activeParam at closing paren ---
+
+  @Test
+  void signatureHelp_cursorAfterLastArg_returnsLastParamIndex() {
+    final var source =
+        """
+        class Test {
+            void target(String name) {}
+            void caller() { target("hello"§); }
+        }
+        """;
+    final var help = signatureHelpAt(source);
+
+    assertThat(help).isNotNull();
+    assertThat(help.getActiveParameter()).isEqualTo(0);
+  }
+
+  @Test
+  void signatureHelp_cursorAfterLastArgOfTwo_returnsLastParamIndex() {
+    final var source =
+        """
+        class Test {
+            void target(String a, int b) {}
+            void caller() { target("x", 1§); }
+        }
+        """;
+    final var help = signatureHelpAt(source);
+
+    assertThat(help).isNotNull();
+    assertThat(help.getActiveParameter()).isEqualTo(1);
   }
 
   // --- helpers ---
