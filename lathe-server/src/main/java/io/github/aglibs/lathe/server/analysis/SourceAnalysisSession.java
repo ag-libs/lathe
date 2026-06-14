@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server.analysis;
 
+import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.core.Stopwatch;
@@ -258,6 +259,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
 
     final var importProvider = new ImportQuickFixProvider();
     final var addThrowsProvider = new AddThrowsProvider();
+    final var tryCatchProvider = new TryCatchWrapProvider();
     final var declareProvider = new DeclareVariableProvider();
     final var seen = new HashSet<String>();
     final var actions = new ArrayList<Either<Command, CodeAction>>();
@@ -269,7 +271,11 @@ public final class SourceAnalysisSession implements AutoCloseable {
       final List<Either<Command, CodeAction>> provided =
           switch (payload.kind()) {
             case TYPE_REF -> importProvider.provide(request, analysis, typeIndex);
-            case UNREPORTED_EXCEPTION -> addThrowsProvider.provide(request, analysis, typeIndex);
+            case UNREPORTED_EXCEPTION ->
+                Stream.concat(
+                        addThrowsProvider.provide(request, analysis, typeIndex).stream(),
+                        tryCatchProvider.provide(request, analysis, typeIndex).stream())
+                    .toList();
             case VARIABLE_REF -> declareProvider.provide(request, analysis, typeIndex);
             case MISSING_METHOD_IMPL -> List.of();
           };
@@ -314,6 +320,16 @@ public final class SourceAnalysisSession implements AutoCloseable {
                 msgEither != null && msgEither.isLeft() ? msgEither.getLeft() : null);
         if (name != null) {
           diag.setData(new DiagnosticPayload(DiagnosticPayload.Kind.UNREPORTED_EXCEPTION, name));
+        }
+      } else if (code.equals("compiler.err.does.not.override.abstract")) {
+        final Either<String, MarkupContent> msgEither = diag.getMessage();
+        final String name =
+            extractMissingMethodClassName(
+                diag,
+                analysis,
+                msgEither != null && msgEither.isLeft() ? msgEither.getLeft() : null);
+        if (name != null) {
+          diag.setData(new DiagnosticPayload(DiagnosticPayload.Kind.MISSING_METHOD_IMPL, name));
         }
       }
     }
@@ -382,6 +398,48 @@ public final class SourceAnalysisSession implements AutoCloseable {
     }
 
     return message.substring(nameStart, end).trim();
+  }
+
+  private static String extractMissingMethodClassName(
+      final Diagnostic diag, final AttributedFileAnalysis analysis, final String message) {
+    final String astName = missingMethodClassNameFromAst(diag, analysis);
+    if (astName != null) {
+      return astName;
+    }
+
+    if (message == null) {
+      return null;
+    }
+
+    final var suffix = " is not abstract and does not override abstract method ";
+    final int end = message.indexOf(suffix);
+    return end > 0 ? message.substring(0, end).trim() : null;
+  }
+
+  private static String missingMethodClassNameFromAst(
+      final Diagnostic diag, final AttributedFileAnalysis analysis) {
+    if (analysis.tree() == null) {
+      return null;
+    }
+
+    final TreePath path =
+        CodeActionSupport.pathAt(
+            analysis,
+            diag.getRange().getStart().getLine(),
+            diag.getRange().getStart().getCharacter());
+    return missingMethodClassNameFromPath(path);
+  }
+
+  private static String missingMethodClassNameFromPath(final TreePath path) {
+    if (path == null) {
+      return null;
+    }
+
+    if (path.getLeaf() instanceof ClassTree classTree) {
+      return classTree.getSimpleName().toString();
+    }
+
+    return missingMethodClassNameFromPath(path.getParentPath());
   }
 
   public void close() {
