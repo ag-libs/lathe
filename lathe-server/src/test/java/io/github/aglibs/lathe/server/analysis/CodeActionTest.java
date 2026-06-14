@@ -14,7 +14,6 @@ import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.TextEdit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -391,14 +390,12 @@ class CodeActionTest {
     assertThat(actions).isEmpty();
   }
 
-  // --- Gap regression tests (fail now, pass when each gap is fixed) ---
+  // --- Gap regression tests ---
 
-  @Disabled("Gap 1: TryCatchWrapProvider not yet implemented")
   @Test
   void codeAction_unreportedException_fieldInitializerLambda_offersTryCatch() {
     // Gap 1: UNREPORTED_EXCEPTION inside a field-initializer lambda should offer
-    // "Wrap in try/catch". Currently returns empty — no enclosing MethodTree.
-    // Will pass when TryCatchWrapProvider is implemented.
+    // "Wrap in try/catch" instead of depending on an enclosing MethodTree.
     final var source =
         """
         package com.example;
@@ -413,18 +410,21 @@ class CodeActionTest {
         session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), typeIndex);
 
     assertThat(actions).hasSize(1);
-    assertThat(actions.getFirst().getRight().getTitle()).contains("try");
+    final var action = actions.getFirst().getRight();
+    assertThat(action.getTitle()).isEqualTo("Wrap in try/catch");
+    final List<TextEdit> edits = action.getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
+    assertThat(edits).hasSize(1);
+    assertThat(edits.getFirst().getNewText())
+        .contains("try {")
+        .contains("throw new java.io.IOException(\"x\");")
+        .contains("catch (java.io.IOException e)");
   }
 
-  @Disabled(
-      "Gap 1: TryCatchWrapProvider not yet implemented; AddThrowsProvider not yet suppressed in lambda context")
   @Test
   void codeAction_unreportedException_methodBodyLambda_doesNotAddThrowsToOuterMethod() {
     // Gap 1 variant: UNREPORTED_EXCEPTION inside a lambda nested in a method body.
-    // AddThrowsProvider currently offers "Add throws" to the outer method, which is wrong
-    // (the exception cannot escape the lambda boundary). Desired action is "Wrap in try/catch".
-    // Will pass when AddThrowsProvider is suppressed in lambda context and TryCatchWrapProvider
-    // is implemented.
+    // AddThrowsProvider must not offer "Add throws" to the outer method, because the exception
+    // cannot escape the lambda boundary. Desired action is "Wrap in try/catch".
     final var source =
         """
         package com.example;
@@ -441,14 +441,50 @@ class CodeActionTest {
         session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), typeIndex);
 
     assertThat(actions).hasSize(1);
-    assertThat(actions.getFirst().getRight().getTitle()).contains("try");
+    final var action = actions.getFirst().getRight();
+    assertThat(action.getTitle()).isEqualTo("Wrap in try/catch");
+    final List<TextEdit> edits = action.getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
+    assertThat(edits).hasSize(1);
+    assertThat(edits.getFirst().getNewText()).doesNotContain("throws");
   }
 
-  @Disabled("Gap 3: MISSING_METHOD_IMPL classification not yet added to enrichWithContext")
+  @Test
+  void codeAction_unreportedException_anonymousClassMethod_offersTryCatch() {
+    final var source =
+        """
+        package com.example;
+        class Test {
+          void method() {
+            Runnable r = new Runnable() {
+              @Override
+              public void run() {
+                throw new java.io.IOException("x");
+              }
+            };
+          }
+        }
+        """;
+
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    final var actions =
+        session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), typeIndex);
+
+    assertThat(actions).hasSize(1);
+    final var action = actions.getFirst().getRight();
+    assertThat(action.getTitle()).isEqualTo("Wrap in try/catch");
+    final List<TextEdit> edits = action.getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
+    assertThat(edits).hasSize(1);
+    assertThat(edits.getFirst().getNewText())
+        .contains("try {")
+        .contains("throw new java.io.IOException(\"x\");")
+        .contains("catch (java.io.IOException e)")
+        .doesNotContain("throws");
+  }
+
   @Test
   void compile_doesNotOverrideAbstract_setsMissingMethodImplPayload() {
-    // Gap 3: compiler.err.does.not.override.abstract is not yet handled in enrichWithContext.
-    // Will pass when MISSING_METHOD_IMPL classification is added.
+    // Gap 3: compiler.err.does.not.override.abstract should be classified for future providers.
     final var source =
         """
         package com.example;
@@ -460,8 +496,9 @@ class CodeActionTest {
 
     final Diagnostic diag = diagWithCode(diags, "compiler.err.does.not.override.abstract");
     assertThat(diag.getData()).isInstanceOf(DiagnosticPayload.class);
-    assertThat(((DiagnosticPayload) diag.getData()).kind())
-        .isEqualTo(DiagnosticPayload.Kind.MISSING_METHOD_IMPL);
+    final DiagnosticPayload payload = (DiagnosticPayload) diag.getData();
+    assertThat(payload.kind()).isEqualTo(DiagnosticPayload.Kind.MISSING_METHOD_IMPL);
+    assertThat(payload.name()).isEqualTo("Test");
   }
 
   // --- Helpers ---

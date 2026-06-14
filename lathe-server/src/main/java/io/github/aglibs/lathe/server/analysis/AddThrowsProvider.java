@@ -38,20 +38,22 @@ final class AddThrowsProvider implements CodeActionProvider {
     final CompilationUnitTree cu = analysis.tree();
     final SourcePositions positions = analysis.trees().getSourcePositions();
 
-    final long offset =
-        SourceLocator.toOffset(
-            cu, diag.getRange().getStart().getLine(), diag.getRange().getStart().getCharacter());
-
-    TreePath path = SourceLocator.pathAt(analysis.trees(), cu, offset);
-    while (path != null && !(path.getLeaf() instanceof MethodTree)) {
-      path = path.getParentPath();
-    }
-
-    if (path == null) {
+    final TreePath path =
+        CodeActionSupport.pathAt(
+            analysis,
+            diag.getRange().getStart().getLine(),
+            diag.getRange().getStart().getCharacter());
+    if (CodeActionSupport.isInsideClosure(path)) {
+      LOG.fine(() -> "[codeAction:throws] closure context skipped");
       return List.of();
     }
 
-    final MethodTree methodTree = (MethodTree) path.getLeaf();
+    final TreePath methodPath = CodeActionSupport.enclosingMethod(path);
+    if (methodPath == null) {
+      return List.of();
+    }
+
+    final MethodTree methodTree = (MethodTree) methodPath.getLeaf();
     final String fqn = request.payload().name();
     final int lastDot = fqn.lastIndexOf('.');
     final String simpleName = lastDot >= 0 ? fqn.substring(lastDot + 1) : fqn;
