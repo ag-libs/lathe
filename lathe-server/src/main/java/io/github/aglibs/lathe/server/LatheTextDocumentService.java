@@ -195,4 +195,8 @@ final class LatheTextDocumentService implements TextDocumentService {
     // TODO Implement conservative indentation edits for supported on-type triggers.
     return CompletableFuture.completedFuture(List.of());
   }
+
+  CompletableFuture<List<? extends SymbolInformation>> workspaceSymbolFuture(final String query) {
+    return worker.submit(() -> session.workspaceSymbol(query));
+  }
 }

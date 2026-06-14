@@ -14,6 +14,7 @@ import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
 import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.server.analysis.TokenScanner;
+import io.github.aglibs.lathe.server.analysis.WorkspaceSymbolResolver;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
@@ -54,6 +55,7 @@ import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.SemanticTokens;
 import org.eclipse.lsp4j.ShowMessageRequestParams;
 import org.eclipse.lsp4j.SignatureHelp;
+import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.LanguageClient;
@@ -502,6 +504,13 @@ final class WorkspaceSession {
     LOG.fine(() -> "[%s] %s".formatted(tag, uri));
     final var openFile = openDocuments.get(uri);
     return JavaFormatter.format(openFile != null ? openFile.content() : null);
+  }
+
+  List<SymbolInformation> workspaceSymbol(final String query) {
+    final List<Path> sourceDirs =
+        Stream.concat(workspace.allSourceRoots().stream(), manifest.externalSourceDirs().stream())
+            .toList();
+    return WorkspaceSymbolResolver.resolve(query, typeIndex, sourceDirs);
   }
 
   private void scanReactorShards() {

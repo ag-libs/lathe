@@ -1,0 +1,73 @@
+package io.github.aglibs.lathe.server.analysis;
+
+import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
+import io.github.aglibs.lathe.core.typeindex.TypeKind;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Objects;
+import org.eclipse.lsp4j.Location;
+import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.SymbolInformation;
+import org.eclipse.lsp4j.SymbolKind;
+
+public final class WorkspaceSymbolResolver {
+
+  private static final Range FILE_START = new Range(new Position(0, 0), new Position(0, 0));
+
+  private WorkspaceSymbolResolver() {}
+
+  public static List<SymbolInformation> resolve(
+      final String query, final WorkspaceTypeIndex typeIndex, final List<Path> sourceDirs) {
+    if (query.isBlank()) {
+      return List.of();
+    }
+
+    return typeIndex.search(query, 100).stream()
+        .map(entry -> toSymbolInformation(entry, sourceDirs))
+        .filter(Objects::nonNull)
+        .toList();
+  }
+
+  private static SymbolInformation toSymbolInformation(
+      final TypeIndexEntry entry, final List<Path> sourceDirs) {
+    final Path file = resolveSourcePath(entry, sourceDirs);
+    if (file == null) {
+      return null;
+    }
+
+    final var location = new Location(file.toUri().toString(), FILE_START);
+    final var info =
+        new SymbolInformation(entry.simpleName(), toSymbolKind(entry.kind()), location);
+    info.setContainerName(entry.packageName());
+    return info;
+  }
+
+  static Path resolveSourcePath(final TypeIndexEntry entry, final List<Path> sourceDirs) {
+    final String pkg = entry.packageName();
+    final String qualName = entry.qualifiedName();
+    final String classComponent = pkg.isEmpty() ? qualName : qualName.substring(pkg.length() + 1);
+    final int dotIdx = classComponent.indexOf('.');
+    final String topLevel = dotIdx >= 0 ? classComponent.substring(0, dotIdx) : classComponent;
+    final String relPath =
+        pkg.isEmpty()
+            ? topLevel + ".java"
+            : "%s/%s.java".formatted(pkg.replace('.', '/'), topLevel);
+    for (final Path dir : sourceDirs) {
+      final Path candidate = dir.resolve(relPath);
+      if (Files.exists(candidate)) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
+  static SymbolKind toSymbolKind(final TypeKind kind) {
+    return switch (kind) {
+      case INTERFACE -> SymbolKind.Interface;
+      case ENUM -> SymbolKind.Enum;
+      default -> SymbolKind.Class;
+    };
+  }
+}
