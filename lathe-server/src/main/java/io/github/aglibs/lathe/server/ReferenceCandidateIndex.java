@@ -99,10 +99,9 @@ final class ReferenceCandidateIndex {
     while (i < len) {
       if (Character.isJavaIdentifierStart(content.charAt(i))) {
         final int start = i;
-        i++;
-        while (i < len && Character.isJavaIdentifierPart(content.charAt(i))) {
+        do {
           i++;
-        }
+        } while (i < len && Character.isJavaIdentifierPart(content.charAt(i)));
         tokens.add(content.substring(start, i));
       } else {
         i++;
