@@ -178,6 +178,33 @@ class CompletionPresentationTest extends CompletionTestSupport {
     assertThat(edit.getRange()).isEqualTo(new Range(new Position(3, 0), new Position(3, 0)));
   }
 
+  @Test
+  void completionItem_nestedType_addsOuterTypeImportEdit() throws IOException {
+    localFixture =
+        new CompletionFixture(
+            TempSourceCompiler.typeIndex(
+                tmp.resolve("index.json"),
+                CompletionFixture.typeEntry("Map", "java.util.Map", TypeKind.INTERFACE)));
+    final var items =
+        localFixture.complete(
+            """
+            package example;
+
+            import java.util.List;
+
+            class Test {
+              void m() {
+                Map.§
+              }
+            }""");
+
+    assertThat(labels(items)).contains("Entry");
+    final var item = itemLabeled(items, "Entry").orElseThrow();
+    final var edit = item.getAdditionalTextEdits().getFirst();
+    assertThat(edit.getNewText()).isEqualTo("import java.util.Map;\n");
+    assertThat(edit.getRange()).isEqualTo(new Range(new Position(3, 0), new Position(3, 0)));
+  }
+
   // ── type index ────────────────────────────────────────────────────────────────
 
   private static String textInRange(final String content, final Range range) {

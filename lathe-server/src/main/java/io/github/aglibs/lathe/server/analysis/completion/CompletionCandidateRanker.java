@@ -164,6 +164,10 @@ final class CompletionCandidateRanker {
       return true;
     }
 
+    if (objectMethod(c)) {
+      return true;
+    }
+
     if (vt.getKind() == TypeKind.BOOLEAN) {
       return booleanCompatible(expected, ctx);
     }

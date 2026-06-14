@@ -9,6 +9,12 @@ import org.junit.jupiter.api.Test;
 
 class CompletionSimpleNameTest extends CompletionTestSupport {
 
+  private static void assertLabelBefore(
+      final List<String> labels, final String earlier, final String later) {
+    assertThat(labels).contains(earlier, later);
+    assertThat(labels.indexOf(earlier)).isLessThan(labels.indexOf(later));
+  }
+
   @Test
   void simpleName_uppercasePrefix_inRecoveredStatementsIncludesVisibleValuesAndTypes()
       throws Exception {
@@ -67,6 +73,43 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
     final var textItem = itemWithFilterText(items, "text").orElseThrow();
     final var sbItem = itemWithFilterText(items, "sb").orElseThrow();
     assertThat(textItem.getSortText()).isLessThan(sbItem.getSortText());
+  }
+
+  @Test
+  void varInitializer_doesNotUseEnclosingMethodReturnType() {
+    final var items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    static class Service {}
+                    Service fromConfig() { return null; }
+                    Service m() {
+                        String text = "";
+                        var value = §
+                    }
+                }"""));
+
+    assertLabelBefore(items, "text", "fromConfig");
+  }
+
+  @Test
+  void assignmentToFreshLocal_usesAssigneeTypeNotEnclosingReturnType() {
+    final var items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    static class Service {}
+                    Service fromConfig() { return null; }
+                    Service m() {
+                        String text = "";
+                        String value = "";
+                        value = §
+                    }
+                }"""));
+
+    assertLabelBefore(items, "text", "fromConfig");
   }
 
   @Test

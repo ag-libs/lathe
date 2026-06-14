@@ -113,6 +113,27 @@ class CompletionAcceptanceTest extends CompletionTestSupport {
   }
 
   @Test
+  void accept_inTokenExistingNoArgCall_reusesExistingCall() {
+    final CompletionItem item =
+        itemWithLabelDetail(fixture.complete(overloadedPingSource("r.pi§ng();")), "ping", "()")
+            .orElseThrow();
+
+    assertThat(accept(overloadedPingSource("r.pi§ng();"), item))
+        .isEqualTo(overloadedPingSource("r.ping§();"));
+  }
+
+  @Test
+  void accept_inTokenExistingArgumentCall_reusesExistingArguments() {
+    final CompletionItem item =
+        itemWithLabelDetail(
+                fixture.complete(overloadedPingSource("r.pi§ng(\"x\");")), "ping", "(String value)")
+            .orElseThrow();
+
+    assertThat(accept(overloadedPingSource("r.pi§ng(\"x\");"), item))
+        .isEqualTo(overloadedPingSource("r.ping§(\"x\");"));
+  }
+
+  @Test
   void accept_noArgMethod_inVariableInitializer_withoutSemicolon_appendsSemicolon() {
     final CompletionItem item =
         itemWithLabelDetail(

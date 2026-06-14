@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 import org.eclipse.lsp4j.CompletionItem;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 class CompletionMemberAccessTest extends CompletionTestSupport {
@@ -397,6 +396,29 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
                 }"""));
 
     assertThat(items).contains("INITIALIZED", "IDLE").doesNotContain("Type.INITIALIZED");
+  }
+
+  @Test
+  void memberAccess_enumTypeReceiver_ranksConstantsBeforeNestedTypes() {
+    final List<String> items =
+        labels(
+            fixture.complete(
+                """
+                enum Status {
+                    OK,
+                    BAD_REQUEST;
+
+                    static class Family {}
+                }
+
+                class Test {
+                    void m() {
+                        Status.§
+                    }
+                }"""));
+
+    assertLabelBefore(items, "OK", "Family");
+    assertLabelBefore(items, "BAD_REQUEST", "Family");
   }
 
   @Test
@@ -820,7 +842,6 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
   }
 
   @Test
-  @Disabled("CQ-0031: expected-type filtering hides equals after parser recovery")
   void memberAccess_afterIncompletePreviousStatement_includesEquals() {
     final var items =
         fixture.complete(
