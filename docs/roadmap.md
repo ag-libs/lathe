@@ -93,7 +93,11 @@ Architecture is documented in [lathe-server-data-flow-recipe.md](done/lathe-serv
   See [lathe-stale-pom-detection.md](done/lathe-stale-pom-detection.md).
 - **Capability advertisement cleanup** — stopped advertising `documentRangeFormattingProvider` (stubbed to format full-document) and `documentOnTypeFormattingProvider` (stubbed to return empty edits list) to prevent incorrect editor behavior.
 - **Missing-import code action** — quick-fix code actions (`window/codeAction`) for unresolved type symbols query the type index and insert the appropriate `import` statement. Reuses the existing completion import insertion range and checks. Tested with various file package/import structures and end-to-end integration tests. See [lathe-missing-import-code-action.md](done/lathe-missing-import-code-action.md).
-- **Code actions infrastructure + providers** — `DiagnosticPayload` record with JSON codec, `enrichWithContext()` classification pass, `CodeActionProvider` interface, dispatcher, and three providers: `ImportQuickFixProvider` (TYPE_REF), `AddThrowsProvider` (UNREPORTED_EXCEPTION), `DeclareVariableProvider` (VARIABLE_REF assignment LHS). Gap regression tests cover lambda/closure and MISSING_METHOD_IMPL gaps. Items 10–11 deferred to post-beta. See [lathe-code-actions.md](done/lathe-code-actions.md).
+- **Code actions infrastructure + providers** — `DiagnosticPayload` record with JSON codec, `enrichWithContext()` classification pass, `CodeActionProvider` interface, dispatcher, and four providers: `ImportQuickFixProvider` (TYPE_REF), `AddThrowsProvider` (UNREPORTED_EXCEPTION), `DeclareVariableProvider` (VARIABLE_REF assignment LHS), `TryCatchWrapProvider` (UNREPORTED_EXCEPTION in lambda/closure context).
+  `AddThrowsProvider` is suppressed inside lambda and anonymous-class bodies (exception cannot escape).
+  `compiler.err.does.not.override.abstract` is classified as `MISSING_METHOD_IMPL` with the enclosing class name extracted for future provider dispatch.
+  `CodeActionSupport` provides enclosing-statement and path-at-position helpers.
+  Gap regression tests for lambda/closure and MISSING_METHOD_IMPL classification pass. Items 10–11 deferred to post-beta. See [lathe-code-actions.md](done/lathe-code-actions.md).
 - **Standard `file://` URIs for external sources** — reverted `lathe-source://` custom scheme back to standard `file://` URIs. Extracted source files in `~/.cache/lathe/` are now marked read-only (`444`) at extraction time; `deleteDir` clears write permission before deletion. `LatheUri` deleted; call sites inlined. Neovim plugin uses `BufReadPre`/`BufReadPost` path-pattern autocommands instead of a `BufReadCmd` virtual-buffer handler. See [lathe-file-uri-scheme.md](done/lathe-file-uri-scheme.md).
 - **Neovim plugin packaging** — `neovim/` contains a complete distributable plugin: `lua/lathe.lua` (LSP config, format-on-save, cache autocommands), `lua/lathe/` submodules, `ftplugin/java.lua`, and `after/indent/` for indentation. Plugin launches `~/.cache/lathe/current/lathe-launcher.sh` with no client-side project model.
 - **Import optimization on formatting** — full-document formatting now uses google-java-format's import-fixing formatter,
@@ -210,16 +214,13 @@ These are highly visible to Neovim users relying on accurate completions.
 
 ### Code Action Gaps
 Close the remaining gaps documented in `lathe-code-actions-gaps.md`.
-`VARIABLE_REF` assignment-LHS declaration is already implemented through `DeclareVariableProvider`;
-the remaining beta scope is:
+`VARIABLE_REF` assignment-LHS declaration is implemented through `DeclareVariableProvider`;
+lambda/closure wrapping is implemented through `TryCatchWrapProvider` (Gap 1 closed).
+The remaining beta scope is:
 
-- **Gap 1 — lambda/closure** (`UNREPORTED_EXCEPTION` in a lambda body): suppress `AddThrowsProvider`
-  when the throw site is inside a `LambdaExpressionTree` or anonymous class; implement
-  `TryCatchWrapProvider` to wrap the enclosing statement in `try { } catch (E e) { }`.
-  Requires completing `CodeActionSupport` with the enclosing-method and enclosing-statement finders.
-- **Gap 3 — `MISSING_METHOD_IMPL`**: add `compiler.err.does.not.override.abstract` classification
-  in `enrichWithContext()`; implement `MissingMethodImplProvider` to generate `@Override` stubs
-  for all unimplemented abstract methods using `elements().getAllMembers()`.
+- **Gap 3 — `MissingMethodImplProvider`**: classification of `compiler.err.does.not.override.abstract`
+  as `MISSING_METHOD_IMPL` is done; implement the provider to generate `@Override` stubs for all
+  unimplemented abstract methods using `elements().getAllMembers()`.
 - **Gap 4 — type-index freshness for new reactor types**: ensure newly-created project types become available to
   missing-import code actions without requiring a manual full `mvn process-test-classes` round trip when Lathe already
   has enough local source or reactor-index information to answer safely.
