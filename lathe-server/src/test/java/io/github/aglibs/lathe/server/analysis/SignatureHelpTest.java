@@ -343,6 +343,41 @@ class SignatureHelpTest {
     assertThat(help.getActiveParameter()).isEqualTo(1);
   }
 
+  // --- incomplete source ---
+
+  @Test
+  void signatureHelp_incompleteSource_noClosingParen_returnsSignature() {
+    final var source =
+        """
+        class Test {
+          void target(String name, int count) {}
+          void caller() { target(§ }
+        }
+        """;
+    final var help = signatureHelpAt(source);
+
+    assertThat(help).isNotNull();
+    assertThat(help.getSignatures()).hasSize(1);
+    assertThat(help.getSignatures().getFirst().getLabel()).contains("target");
+    assertThat(help.getActiveParameter()).isEqualTo(0);
+  }
+
+  @Test
+  void signatureHelp_incompleteSource_partialArgument_returnsSignature() {
+    final var source =
+        """
+        class Test {
+          void target(String name, int count) {}
+          void caller() { target("hello", § }
+        }
+        """;
+    final var help = signatureHelpAt(source);
+
+    assertThat(help).isNotNull();
+    assertThat(help.getSignatures()).hasSize(1);
+    assertThat(help.getActiveParameter()).isEqualTo(1);
+  }
+
   // --- helpers ---
 
   private SignatureHelp signatureHelpAt(final String rawSource) {

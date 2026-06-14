@@ -1,6 +1,8 @@
 package io.github.aglibs.lathe.server.analysis;
 
+import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.Tree;
@@ -56,24 +58,38 @@ final class SignatureHelpResolver {
 
     if (callPath.getLeaf() instanceof final MethodInvocationTree inv) {
       final var sel = trees.getElement(new TreePath(callPath, inv.getMethodSelect()));
-      if (!(sel instanceof ExecutableElement exe)) {
-        return null;
-      }
+      if (sel instanceof ExecutableElement exe) {
+        resolved = exe;
+        if (resolved.getKind() == ElementKind.CONSTRUCTOR) {
+          final var owner = enclosingType(resolved);
+          if (owner == null) {
+            return null;
+          }
 
-      resolved = exe;
-      if (resolved.getKind() == ElementKind.CONSTRUCTOR) {
-        final var owner = enclosingType(resolved);
+          callName = owner.getSimpleName().toString();
+          overloads = constructorsOf(analysis, owner);
+        } else {
+          callName = resolved.getSimpleName().toString();
+          overloads =
+              methodsNamed(
+                  analysis, (TypeElement) resolved.getEnclosingElement(), resolved.getSimpleName());
+        }
+      } else if (inv.getMethodSelect() instanceof final IdentifierTree id) {
+        final var owner = enclosingClass(callPath, trees);
         if (owner == null) {
           return null;
         }
 
-        callName = owner.getSimpleName().toString();
-        overloads = constructorsOf(analysis, owner);
+        final List<ExecutableElement> candidates = methodsNamed(analysis, owner, id.getName());
+        if (candidates.isEmpty()) {
+          return null;
+        }
+
+        callName = id.getName().toString();
+        overloads = candidates;
+        resolved = candidates.getFirst();
       } else {
-        callName = resolved.getSimpleName().toString();
-        overloads =
-            methodsNamed(
-                analysis, (TypeElement) resolved.getEnclosingElement(), resolved.getSimpleName());
+        return null;
       }
 
       args = inv.getArguments();
@@ -150,6 +166,18 @@ final class SignatureHelpResolver {
 
   private static TypeElement enclosingType(final ExecutableElement element) {
     return element.getEnclosingElement() instanceof TypeElement te ? te : null;
+  }
+
+  private static TypeElement enclosingClass(TreePath path, final Trees trees) {
+    path = path.getParentPath();
+    while (path != null) {
+      if (path.getLeaf() instanceof ClassTree && trees.getElement(path) instanceof TypeElement te) {
+        return te;
+      }
+
+      path = path.getParentPath();
+    }
+    return null;
   }
 
   private static int activeParamFromArgs(
