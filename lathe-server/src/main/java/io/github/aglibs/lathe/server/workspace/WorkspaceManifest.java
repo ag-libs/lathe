@@ -163,6 +163,26 @@ public final class WorkspaceManifest {
         .toList();
   }
 
+  public List<Path> depSourceDirs() {
+    return List.copyOf(jarToSourceDir.values());
+  }
+
+  public List<Path> jdkModuleSourceDirs() {
+    if (jdkSourceDir == null) {
+      return List.of();
+    }
+
+    try (var stream = Files.list(jdkSourceDir)) {
+      return stream.filter(Files::isDirectory).toList();
+    } catch (final IOException e) {
+      LOG.log(
+          Level.WARNING,
+          e,
+          () -> "[manifest] failed to list JDK module dirs in %s".formatted(jdkSourceDir));
+      return List.of();
+    }
+  }
+
   public List<Path> depClasspathForFile(final Path file) {
     return externalSourceRootForFile(file)
         .map(

@@ -508,7 +508,11 @@ final class WorkspaceSession {
 
   List<SymbolInformation> workspaceSymbol(final String query) {
     final List<Path> sourceDirs =
-        Stream.concat(workspace.allSourceRoots().stream(), manifest.externalSourceDirs().stream())
+        Stream.of(
+                workspace.allSourceRoots().stream(),
+                manifest.jdkModuleSourceDirs().stream(),
+                manifest.depSourceDirs().stream())
+            .flatMap(s -> s)
             .toList();
     return WorkspaceSymbolResolver.resolve(query, typeIndex, sourceDirs);
   }
@@ -722,14 +726,10 @@ final class WorkspaceSession {
     return true;
   }
 
-  private boolean refreshTokensIfCurrent(
-      final OpenDocument snapshot, final CompileResponse result) {
+  private void refreshTokensIfCurrent(final OpenDocument snapshot, final CompileResponse result) {
     if (isStale(snapshot, result.generation())) {
-      return false;
+      client.refreshSemanticTokens();
     }
-
-    client.refreshSemanticTokens();
-    return true;
   }
 
   private AfterCompile publishIfCurrentThen(final Runnable followUp) {

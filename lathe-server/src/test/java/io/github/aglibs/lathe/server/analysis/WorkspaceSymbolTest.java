@@ -10,7 +10,6 @@ import java.nio.file.Path;
 import java.util.List;
 import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.SymbolKind;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -141,19 +140,19 @@ class WorkspaceSymbolTest {
     assertThat(WorkspaceSymbolResolver.resolveSourcePath(e, List.of(src))).isNull();
   }
 
-  @Disabled(
-      "resolveSourcePath does not yet search module subdirs — JDK types missing from workspace/symbol")
   @Test
   void resolveSourcePath_jdkModuleSubdir_resolvesInsideModuleDir(@TempDir final Path jdkRoot)
       throws IOException {
-    // JDK sources are extracted per module: <jdkRoot>/<module>/<package>/<Type>.java
-    // resolveSourcePath must search inside module subdirs when the direct package path is absent
+    // JDK sources are organized by module: <jdkRoot>/<module>/<package>/<Type>.java
+    // WorkspaceManifest.jdkModuleSourceDirs() expands jdkRoot into its immediate module subdirs,
+    // so resolveSourcePath receives each module dir (e.g. java.base/) as a separate source root
     final Path moduleDir = jdkRoot.resolve("java.base/java/util");
     Files.createDirectories(moduleDir);
     Files.writeString(moduleDir.resolve("ArrayList.java"), "");
     final var jdkEntry =
         new TypeIndexEntry("ArrayList", "java.util.ArrayList", "java.util", TypeKind.CLASS);
-    final Path result = WorkspaceSymbolResolver.resolveSourcePath(jdkEntry, List.of(jdkRoot));
+    final Path result =
+        WorkspaceSymbolResolver.resolveSourcePath(jdkEntry, List.of(jdkRoot.resolve("java.base")));
     assertThat(result).isNotNull();
     assertThat(result.getFileName().toString()).isEqualTo("ArrayList.java");
   }
