@@ -136,6 +136,19 @@ Architecture is documented in [lathe-server-data-flow-recipe.md](done/lathe-serv
   `mainDescription()` for `SignatureInformation.documentation` and `paramDocs()` to populate
   per-argument `ParameterInformation.documentation`.
   See [lathe-rich-javadoc-rendering.md](done/lathe-rich-javadoc-rendering.md).
+- **Workspace symbols** — `workspace/symbol` implemented via `WorkspaceSymbolResolver` querying `WorkspaceTypeIndex`.
+  Returns `SymbolInformation` with file URI and position for each matching type.
+  Correctly maps `TypeKind` to `SymbolKind` (Interface, Enum, Class).
+  `dev/explore.py` gains a `sym` command for live probing.
+- **Completion engine refactoring** — `ImportAnalyzer` gains `needsImport()` (java.lang, same-package, and
+  already-imported checks in one place) and `importEdit()` (single `"import %s;\n"` construction site).
+  `AddThrowsProvider` and `DeclareVariableProvider` migrated to `importEdit()`.
+  `CompletionEngine` cleaned up: double-import deduplication in `addAdditionalTextEdit`,
+  second-reattribution avoided in `complete()` post-pass, `resolvePackageCandidates()` helper extracted,
+  `blankMemberAccessContext()` renamed from the 1-arg `memberAccessSemanticContext()` overload,
+  `noFinalCombination()` renamed from `modifierAfterFinalCombination()` with inverted body.
+  `Stream.of("").§` regression fixed: method-chain receivers now resolve through the type-index
+  fallback and receive an `additionalTextEdits` import suggestion.
 
 ---
 
@@ -207,16 +220,13 @@ Neovim LSP client configuration (native `vim.lsp.config` for Neovim 0.11+),
 and basic troubleshooting (`LATHE_DEBUG=1`, missing `.lathe/`, missing params).
 
 ### Completion Engine Gaps
-Close the known beta-scope gaps in the completion engine documented in `planned/completion/gap-log.md`.
+✅ All beta-scope gaps in `planned/completion/gap-log.md` are fixed.
 Method-reference completion (`CQ-0002`) and generic-bound receiver completion (`CQ-0029`, `CQ-0030`)
 are explicitly deferred until after beta.
-These are highly visible to Neovim users relying on accurate completions.
 
 ### Code Action Gaps
-Close the remaining gaps documented in `lathe-code-actions-gaps.md`.
-`VARIABLE_REF` assignment-LHS declaration is implemented through `DeclareVariableProvider`;
-lambda/closure wrapping is implemented through `TryCatchWrapProvider` (Gap 1 closed).
-The remaining beta scope is:
+Gaps 1 (`TryCatchWrapProvider`) and 2 (`DeclareVariableProvider`) are closed.
+Remaining:
 
 - **Gap 3 — `MissingMethodImplProvider`**: classification of `compiler.err.does.not.override.abstract`
   as `MISSING_METHOD_IMPL` is done; implement the provider to generate `@Override` stubs for all
@@ -226,19 +236,19 @@ The remaining beta scope is:
   has enough local source or reactor-index information to answer safely.
 
 ### Structural Navigation
-Add `textDocument/documentSymbol` (file outline) and `workspace/symbol` (type-by-name search).
-`documentSymbol` uses a parse-only `SourceParser` AST pass and powers the editor Outline view.
-`workspace/symbol` queries the existing `WorkspaceTypeIndex` directly and powers Neovim Telescope's
-`lsp_workspace_symbols` picker — essential for navigating to a type by name across the project.
-`textDocument/foldingRange` is deferred to post-beta (Neovim users already get equivalent folding
-from treesitter).
-See [lathe-structural-navigation.md](planned/lathe-structural-navigation.md).
+`workspace/symbol` is implemented. Remaining:
+
+- **`textDocument/documentSymbol`** (file outline): uses a parse-only `SourceParser` AST pass and powers the editor Outline view.
+  `textDocument/foldingRange` is deferred to post-beta.
+  See [lathe-structural-navigation.md](planned/lathe-structural-navigation.md).
 
 ### Architecture and Test Improvements
-Land the narrowly-scoped maintainability improvements documented in
-[lathe-architecture-test-improvements.md](planned/lathe-architecture-test-improvements.md).
-Beta scope is limited to worker-confined `WorkspaceSession` extractions that keep `WorkspaceSession` as owner,
-plus shared test-only compiler and zip/JAR fixtures.
+`TestCompiler` fixture is consolidated and in use across server tests.
+Remaining from [lathe-architecture-test-improvements.md](planned/lathe-architecture-test-improvements.md):
+
+- **`DocumentRegistry`** extraction from `WorkspaceSession` for open-document lifecycle.
+- **`DiagnosticPublisher`** extraction for stale-result checks and `PublishDiagnosticsParams` construction.
+- **Zip/JAR test fixture** to replace duplicated `JarOutputStream`/`Files.walk` test helpers.
 
 ---
 
