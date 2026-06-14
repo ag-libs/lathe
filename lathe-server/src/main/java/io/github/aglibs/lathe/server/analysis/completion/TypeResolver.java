@@ -426,6 +426,11 @@ final class TypeResolver {
       return new ExpectedValue.Unknown();
     }
 
+    final var cursorValue = resolveCursorExpressionValue(site, snapshot);
+    if (cursorValue.isPresent()) {
+      return cursorValue.orElseThrow();
+    }
+
     final var methodPath =
         findScopeMethodPath(
             site.enclosingClass(), site.enclosingMethod(), site.cursorOffset(), snapshot);
@@ -531,6 +536,41 @@ final class TypeResolver {
     return result.get() != null
         ? new ExpectedValue.Type(result.get())
         : new ExpectedValue.Unknown();
+  }
+
+  private static Optional<ExpectedValue> resolveCursorExpressionValue(
+      final CompletionSite site, final AttributedFileAnalysis snapshot) {
+    final var cursorPath =
+        SourceLocator.pathAt(snapshot.trees(), snapshot.tree(), site.cursorOffset());
+    return cursorPath != null
+        ? resolveCursorExpressionValue(cursorPath, cursorPath.getParentPath(), snapshot)
+        : Optional.empty();
+  }
+
+  private static Optional<ExpectedValue> resolveCursorExpressionValue(
+      final TreePath child, final TreePath parent, final AttributedFileAnalysis snapshot) {
+    if (parent == null) {
+      return Optional.empty();
+    }
+
+    final Tree leaf = parent.getLeaf();
+    if (leaf instanceof ReturnTree || leaf instanceof LambdaExpressionTree) {
+      return Optional.empty();
+    }
+
+    if (leaf instanceof final VariableTree variable
+        && variable.getInitializer() == child.getLeaf()) {
+      final TypeMirror type = variableDeclaredType(parent, variable, snapshot);
+      return Optional.of(type != null ? new ExpectedValue.Type(type) : new ExpectedValue.Unknown());
+    }
+
+    if (leaf instanceof final AssignmentTree assignment
+        && assignment.getExpression() == child.getLeaf()) {
+      final TypeMirror type = assignmentTargetType(parent, assignment, snapshot);
+      return Optional.of(type != null ? new ExpectedValue.Type(type) : new ExpectedValue.Unknown());
+    }
+
+    return resolveCursorExpressionValue(parent, parent.getParentPath(), snapshot);
   }
 
   // ── shared primitives ─────────────────────────────────────────────────────────

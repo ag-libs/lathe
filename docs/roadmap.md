@@ -195,7 +195,8 @@ and basic troubleshooting (`LATHE_DEBUG=1`, missing `.lathe/`, missing params).
 
 ### Completion Engine Gaps
 Close the known beta-scope gaps in the completion engine documented in `planned/completion/gap-log.md`.
-Method-reference completion (`CQ-0002`) is explicitly deferred until after beta.
+Method-reference completion (`CQ-0002`) and generic-bound receiver completion (`CQ-0029`, `CQ-0030`)
+are explicitly deferred until after beta.
 These are highly visible to Neovim users relying on accurate completions.
 
 ### Code Action Gaps
@@ -260,6 +261,11 @@ This is deferred until after beta because it needs a new sentinel/parser site,
 completion routing without call-parenthesis insertion,
 and eventually target functional-interface compatibility filtering.
 Tracked as `CQ-0002` in [gap-log.md](planned/completion/gap-log.md).
+
+### Generic-bound receiver completion
+Complete member access for wildcard and type-variable receivers by expanding effective upper bounds.
+This is deferred until after beta because it requires careful generic substitution and capture handling.
+Tracked as `CQ-0029` and `CQ-0030` in [gap-log.md](planned/completion/gap-log.md).
 
 ### Run, test, and debug
 Adopt the design in [lathe-run-test-debug.md](planned/lathe-run-test-debug.md) to let the server manage Maven test/run executions

@@ -81,7 +81,8 @@ final class CandidateGenerator {
                     || el.getKind() == ElementKind.ENUM
                     || el.getKind() == ElementKind.RECORD)
         .filter(el -> el.getSimpleName().toString().startsWith(prefix))
-        .map(el -> CandidateFactory.typeElementCandidate((TypeElement) el))
+        .map(
+            el -> CandidateFactory.typeElementCandidate((TypeElement) el).withSortText(sortKey(el)))
         .toList();
   }
 
@@ -240,7 +241,10 @@ final class CandidateGenerator {
       return "9_" + el.getSimpleName();
     }
 
-    return "0_" + el.getSimpleName();
+    return switch (el.getKind()) {
+      case CLASS, INTERFACE, ENUM, RECORD -> "3_" + el.getSimpleName();
+      default -> "0_" + el.getSimpleName();
+    };
   }
 
   private boolean isAccessible(

@@ -111,7 +111,7 @@ and `String` selectors should not fall through to broad type-index completion.
 ## CQ-0023 — Member-access in-token method completion still duplicates existing calls
 
 ID: CQ-0023
-Status: new
+Status: fixed
 Tier: presentation
 Failure mode: bad-replacement-range
 Owner component: CompletionSite / CompletionItemPresenter
@@ -181,10 +181,14 @@ Notes:
 `CQ-0003` fixed a similar in-token suffix problem for another member-access probe,
 but these real Helidon/Dropwizard probes show the method-call form still duplicates existing calls.
 
+Fixed by detecting an existing `(` immediately after the completed identifier and replacing method
+completion insert text with the bare method name so the existing call parentheses and arguments
+remain intact.
+
 ## CQ-0025 — Nested type completion after unimported outer type lacks an import edit
 
 ID: CQ-0025
-Status: new
+Status: fixed
 Tier: presentation
 Failure mode: bad-import-edit
 Owner component: CompletionEngine / CompletionItemPresenter
@@ -249,11 +253,13 @@ Regression target:
 Notes:
 The fully qualified control probe `java.util.Map.En§` accepts to `java.util.Map.Entry§`,
 which is self-contained and does not need an import.
+Fixed by adding a completion post-process that detects nested type items owned by a simple receiver
+and adds an import edit for the outer type.
 
 ## CQ-0024 — Enum type completion ranks nested type before enum constants
 
 ID: CQ-0024
-Status: new
+Status: fixed
 Tier: basic
 Failure mode: poor-ranking
 Owner component: CandidateGenerator / CompletionCandidateRanker
@@ -303,11 +309,13 @@ Notes:
 This is a ranking-only issue.
 The candidate set is valid,
 and prefix filtering behaves correctly for `Response.Status.B`.
+Fixed by assigning nested type candidates an explicit later sort key,
+so enum constants and regular members no longer sort behind null sort text.
 
 ## CQ-0026 — Class-body completion after modifiers offers invalid modifier keywords
 
 ID: CQ-0026
-Status: new
+Status: fixed
 Tier: basic
 Failure mode: wrong-candidate-set
 Owner component: KeywordCompletion / SentinelParser
@@ -336,6 +344,13 @@ useful candidates are field types,
 `enum`,
 or `record` where legal.
 Repeating access modifiers should not be offered.
+
+Regression target:
+`CompletionKeywordAndNoSlotTest.classBody_afterPrivateFinal_suppressesInvalidModifiers`
+
+Notes:
+Fixed by filtering class-body keyword candidates against modifiers already present on the same line.
+Type and nested declaration candidates remain available.
 
 Lathe behavior:
 Both probes return 125 items.
@@ -507,7 +522,7 @@ method-reference completion such as `Map.Entry::getV§` and `Object::to§` still
 ## CQ-0028 — Fresh local declaration and assignment sites borrow enclosing return type
 
 ID: CQ-0028
-Status: new
+Status: fixed
 Tier: typed
 Failure mode: poor-ranking
 Owner component: TypeResolver
@@ -578,6 +593,10 @@ Regression target:
 `CompletionSimpleNameTest.assignmentToFreshLocal_usesAssigneeTypeNotEnclosingReturnType`
 
 Notes:
+Fixed by checking the cursor's direct AST expression path before the broader enclosing-method scan.
+`var` initializers now remain unconstrained,
+and assignments use the left-hand side type when it is available.
+
 The same pass confirmed useful `var` behavior elsewhere:
 `var list = List.of("a"); list.§`,
 `var map = new java.util.HashMap<String, String>(); map.§`,
@@ -588,7 +607,7 @@ which is already covered by `CQ-0023`.
 ## CQ-0029 — Wildcard generic receivers do not expose usable bound members
 
 ID: CQ-0029
-Status: new
+Status: deferred until after beta
 Tier: typed
 Failure mode: missing-candidates
 Owner component: TypeResolver / CompletionEngine
@@ -677,7 +696,7 @@ and `Collection<String>.iterator().next().§` returns `String` methods.
 ## CQ-0030 — Type-variable receivers do not expose declared bounds
 
 ID: CQ-0030
-Status: new
+Status: deferred until after beta
 Tier: typed
 Failure mode: missing-candidates
 Owner component: TypeResolver / CompletionEngine
@@ -818,12 +837,11 @@ Two new high-confidence gaps were found and recorded as `CQ-0020` and `CQ-0021`.
 
 `CQ-0002` is deferred until after beta.
 `CQ-0011` remains deferred.
+`CQ-0029` and `CQ-0030` are deferred until after beta.
 `CQ-0010` is closed as an editor-side capability gap.
 
-Next completion work should either:
-
-- fix an open beta-scope completion gap from this log;
-- or run a new explorer pass with a different focus area.
+Next completion work should run a new explorer pass with a different focus area,
+or pick up one of the explicitly deferred post-beta gaps.
 
 ## CQ-0004 — Dotted member access can fall back to simple-name completion in incomplete assignments
 
@@ -2198,7 +2216,7 @@ Subtype filtering (only `SocketAddress` subtypes) would be ideal but is not requ
 ## CQ-0031 — Statement member access can hide `equals` after parser recovery
 
 ID: CQ-0031
-Status: open
+Status: fixed
 Tier: basic
 Failure mode: missing-candidate
 Owner component: SemanticCompletionContext / CompletionCandidateRanker
@@ -2247,3 +2265,6 @@ config.§
 The current failing candidate set is:
 `[credDb, password, url, username, toString, getClass, hashCode]`.
 The assertion includes the string-valued domain methods and `equals`.
+
+Fixed by letting `java.lang.Object` methods pass expected-type compatibility filtering after
+the existing `void`-method filter has removed `notify`, `notifyAll`, and `wait`.

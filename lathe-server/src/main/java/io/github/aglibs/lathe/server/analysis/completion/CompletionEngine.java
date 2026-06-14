@@ -13,6 +13,7 @@ import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.server.analysis.ImportAnalyzer;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
@@ -47,6 +48,10 @@ public final class CompletionEngine {
   private static final int TYPE_INDEX_RESULT_LIMIT = 50;
   private static final int TYPE_INDEX_VALIDATION_CANDIDATE_LIMIT = 1_000;
   private static final int STATIC_MEMBER_FIT_LIMIT = 20;
+  private static final Set<String> ACCESS_MODIFIER_KEYWORDS =
+      Set.of("public", "private", "protected");
+  private static final Set<String> OTHER_MODIFIER_KEYWORDS =
+      Set.of("static", "final", "abstract", "synchronized", "transient", "volatile");
 
   private final SentinelParser sentinelParser;
   private final JavaSourceCompiler compiler;
@@ -121,8 +126,10 @@ public final class CompletionEngine {
           default -> CompletionOutcome.of(List.of());
         };
     CompletionItemPresenter.applyReplacementRange(outcome.items(), site.replacementRange());
-    applyStatementSemicolonEdits(
-        outcome.items(), site, resolveAnalysis(req), req, injected.tokenStart());
+    preserveExistingMethodCall(outcome.items(), req, injected.tokenEnd());
+    final var analysis = resolveAnalysis(req);
+    applyNestedOuterImportEdits(outcome.items(), injected.receiverText(), analysis);
+    applyStatementSemicolonEdits(outcome.items(), site, analysis, req, injected.tokenStart());
     return outcome;
   }
 
@@ -419,6 +426,7 @@ public final class CompletionEngine {
         && parsed.enclosingClass() != null) {
       final List<CompletionItem> keywords =
           KeywordProvider.suggestCandidates(parsed, injected.prefix(), injected.context()).stream()
+              .filter(candidate -> classBodyModifierAllows(candidate, req, injected.tokenStart()))
               .map(CompletionItemPresenter::present)
               .toList();
       if (!keywords.isEmpty()) {
@@ -427,6 +435,50 @@ public final class CompletionEngine {
     }
 
     return typeRefOutcome;
+  }
+
+  private static boolean classBodyModifierAllows(
+      final CompletionCandidate candidate, final CompletionRequest req, final int tokenStart) {
+    if (candidate.kind() != CandidateKind.KEYWORD) {
+      return true;
+    }
+
+    final var modifiers = classBodyModifiersBefore(req.content(), tokenStart);
+    if (modifiers.isEmpty()) {
+      return true;
+    }
+
+    final String keyword = candidate.name();
+    return switch (keyword) {
+      case "public", "private", "protected" ->
+          !modifiers.contains(keyword)
+              && modifiers.stream().noneMatch(ACCESS_MODIFIER_KEYWORDS::contains);
+      case "final" ->
+          !modifiers.contains("final")
+              && !modifiers.contains("abstract")
+              && !modifierAfterFinalCombination(modifiers);
+      case "abstract", "volatile" ->
+          !modifiers.contains(keyword)
+              && !modifiers.contains("final")
+              && !modifierAfterFinalCombination(modifiers);
+      case "static", "synchronized", "transient" ->
+          !modifiers.contains(keyword) && !modifierAfterFinalCombination(modifiers);
+      default -> true;
+    };
+  }
+
+  private static boolean modifierAfterFinalCombination(final Set<String> modifiers) {
+    return modifiers.contains("final") && modifiers.size() > 1;
+  }
+
+  private static Set<String> classBodyModifiersBefore(final String content, final int tokenStart) {
+    final int lineStart = content.lastIndexOf('\n', Math.max(0, tokenStart - 1)) + 1;
+    return Stream.of(content.substring(lineStart, tokenStart).trim().split("\\s+"))
+        .filter(token -> !token.isBlank())
+        .filter(
+            token ->
+                ACCESS_MODIFIER_KEYWORDS.contains(token) || OTHER_MODIFIER_KEYWORDS.contains(token))
+        .collect(Collectors.toUnmodifiableSet());
   }
 
   private CompletionOutcome completeAnnotationArgument(
@@ -1024,6 +1076,89 @@ public final class CompletionEngine {
 
   private static String completionIdentity(final CompletionItem item) {
     return "%s\u0000%s".formatted(item.getLabel(), item.getDetail());
+  }
+
+  private static void preserveExistingMethodCall(
+      final List<CompletionItem> items, final CompletionRequest req, final int tokenEnd) {
+    if (tokenEnd >= req.content().length() || req.content().charAt(tokenEnd) != '(') {
+      return;
+    }
+
+    items.stream()
+        .filter(item -> item.getKind() == CompletionItemKind.Method)
+        .forEach(CompletionEngine::replaceWithMethodNameOnly);
+  }
+
+  private static void replaceWithMethodNameOnly(final CompletionItem item) {
+    final String methodName = item.getFilterText() != null ? item.getFilterText() : item.getLabel();
+    item.setInsertText(methodName);
+    item.setInsertTextFormat(null);
+    if (item.getTextEdit() != null && item.getTextEdit().isLeft()) {
+      item.getTextEdit().getLeft().setNewText(methodName);
+    }
+  }
+
+  private static void applyNestedOuterImportEdits(
+      final List<CompletionItem> items,
+      final String receiverText,
+      final AttributedFileAnalysis analysis) {
+    if (analysis == null || receiverText == null || receiverText.indexOf('.') >= 0) {
+      return;
+    }
+
+    final var importAnalyzer = new ImportAnalyzer(analysis);
+    final var insertionRange = importAnalyzer.insertionRange();
+    if (insertionRange == null) {
+      return;
+    }
+
+    final var imported = importAnalyzer.importedQualifiedNames();
+    items.stream()
+        .filter(item -> nestedTypeOwnedByReceiver(item, receiverText))
+        .map(item -> new ImportTarget(item, outerQualifiedName(item.getDetail())))
+        .filter(target -> target.qualifiedName() != null)
+        .filter(target -> !imported.contains(target.qualifiedName()))
+        .forEach(
+            target ->
+                addAdditionalTextEdit(
+                    target.item(),
+                    new TextEdit(
+                        insertionRange, "import %s;\n".formatted(target.qualifiedName()))));
+  }
+
+  private record ImportTarget(CompletionItem item, String qualifiedName) {}
+
+  private static boolean nestedTypeOwnedByReceiver(
+      final CompletionItem item, final String receiverText) {
+    if (item.getDetail() == null) {
+      return false;
+    }
+
+    final String outerQualifiedName = outerQualifiedName(item.getDetail());
+    return outerQualifiedName != null && receiverText.equals(simpleName(outerQualifiedName));
+  }
+
+  private static String outerQualifiedName(final String nestedQualifiedName) {
+    final int nestedDot = nestedQualifiedName.lastIndexOf('.');
+    if (nestedDot < 0) {
+      return null;
+    }
+
+    final String outer = nestedQualifiedName.substring(0, nestedDot);
+    return outer.indexOf('.') >= 0 ? outer : null;
+  }
+
+  private static String simpleName(final String qualifiedName) {
+    final int dot = qualifiedName.lastIndexOf('.');
+    return dot >= 0 ? qualifiedName.substring(dot + 1) : qualifiedName;
+  }
+
+  private static void addAdditionalTextEdit(final CompletionItem item, final TextEdit edit) {
+    final var edits =
+        item.getAdditionalTextEdits() == null
+            ? List.of(edit)
+            : Stream.concat(item.getAdditionalTextEdits().stream(), Stream.of(edit)).toList();
+    item.setAdditionalTextEdits(edits);
   }
 
   private CompletionOutcome completeMemberAccess(

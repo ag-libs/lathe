@@ -37,6 +37,24 @@ class CompletionKeywordAndNoSlotTest extends CompletionTestSupport {
         .contains("String", "class", "interface", "enum", "record");
   }
 
+  @Test
+  void classBody_afterPrivateFinal_suppressesInvalidModifiers() {
+    final var items = labels(fixture.complete("class Test { private final § }"));
+
+    assertThat(items).contains("String", "class", "interface", "enum", "record");
+    assertThat(items)
+        .doesNotContain(
+            "public",
+            "private",
+            "protected",
+            "static",
+            "final",
+            "abstract",
+            "synchronized",
+            "transient",
+            "volatile");
+  }
+
   // ── method body ───────────────────────────────────────────────────────────────
 
   @Test
