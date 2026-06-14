@@ -33,7 +33,26 @@ Key mappings:
 - **`HoverFormatter`**: Remove the `cleanDoc()` regex hack. The formatter will simply append the already-formatted Markdown string to the `MarkupContent`.
 - **Completion**: Ensure that completion item `documentation` also utilizes `JavadocLocator` to provide rich Markdown previews during autocomplete.
 
-## 3. Prior Art & Constraints
+## 3. Signature Help Impact
+
+Switching to `DocTrees` also unlocks `ParameterInformation.documentation` in signature help.
+Currently `SignatureInformation.documentation` receives the full cleaned javadoc string (main
+description + all `@param`/`@return` tags concatenated). Per-parameter docs are never set.
+
+Once `JavadocMarkdownPrinter` exposes the block tags as structured data, `buildSignature` in
+`SignatureHelpResolver` can:
+
+- Set `SignatureInformation.documentation` from the **main description only** (everything before
+  the first block tag) — so the popup stays concise.
+- Set `ParameterInformation.documentation` for each param from the matching `@param name …`
+  block — editors (Neovim, VS Code) swap the visible description as the cursor moves between
+  argument slots, giving tight per-argument feedback that matches jdtls behaviour.
+
+This requires `JavadocMarkdownPrinter` to expose two entry points: one that formats the full
+doc (used by hover and completion), and one that returns the `@param` descriptions as a
+`Map<String, String>` keyed by parameter name (used by `buildSignature`).
+
+## 4. Prior Art & Constraints
 
 This implementation is inspired by George Fraser's `java-language-server`, which proved that `DocTreeScanner` can generate comprehensive Markdown in under 300 lines of code.
 
