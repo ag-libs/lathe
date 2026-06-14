@@ -2,46 +2,49 @@
 
 ## 1. Vision & Scope
 
-The goal is to implement two high-value, read-only LSP features that power essential editor navigation and UI feedback:
-1. **Document Symbols (`textDocument/documentSymbol`)**: Powers the "Outline" view and breadcrumb navigation by providing a hierarchical tree of classes, methods, and fields in the current file.
-2. **Folding Ranges (`textDocument/foldingRange`)**: Powers code folding for classes, methods, Javadoc blocks, and import statements.
+The goal is to implement two LSP features that power essential editor navigation and UI feedback:
+1. **Document Symbols (`textDocument/documentSymbol`)** *(beta scope)*: Powers the "Outline" view
+   and breadcrumb navigation by providing a hierarchical tree of classes, methods, and fields in
+   the current file.
+2. **Folding Ranges (`textDocument/foldingRange`)** *(deferred to post-beta)*: Powers code folding
+   for classes, methods, and import statements. Most Neovim users already get equivalent folding
+   from treesitter (`foldmethod=expr`), so this is low-impact for the beta audience.
 
-Both features rely purely on the syntactic structure of the document. They do not require type attribution, cross-file resolution, or external index queries. Because they are so lightweight, they can be fulfilled instantaneously using Lathe's `SourceParser` without routing through the background compilation queue.
+Both features rely purely on the syntactic structure of the document. They do not require type
+attribution, cross-file resolution, or external index queries.
 
 ## 2. Approach
 
-Both features will be fulfilled by using `SourceParser.parseContent(...)` to obtain a `CompilationUnitTree`, followed by a `TreeScanner` to collect the necessary ranges and symbols.
+Both features are fulfilled by using `SourceParser.parseContent(...)` to obtain a
+`CompilationUnitTree`, followed by a `TreePathScanner` to collect the necessary ranges and symbols.
+They are routed through `CompilationWorker` → `SourceAnalysisSession` in the same way as hover and
+signature help, reusing the `SourceParser` already owned by each `SourceAnalysisSession`.
 
 ### 2.1 LSP Endpoint Routing
-- Add `documentSymbol` and `foldingRange` endpoints to `LatheTextDocumentService`.
-- Dispatch these to `WorkspaceSession`.
-- `WorkspaceSession` will route them to the appropriate `CompilationWorker`.
-- Introduce two new methods on `CompilationWorker`: `documentSymbol(uri, content)` and `foldingRange(uri, content)`.
+- Add `documentSymbol` (and, post-beta, `foldingRange`) endpoint to `LatheTextDocumentService`.
+- Dispatch via `WorkspaceSession` → `routeFeature` → `CompilationWorker` → `SourceAnalysisSession`,
+  following the same pattern as hover.
 
 ### 2.2 Document Symbol Scanner
 Implement `DocumentSymbolScanner` extending `TreePathScanner<Void, Void>`.
-- **Visit `ClassTree`**: Emit `SymbolKind.Class`, `SymbolKind.Interface`, or `SymbolKind.Enum`.
-- **Visit `MethodTree`**: Emit `SymbolKind.Method` or `SymbolKind.Constructor`.
-- **Visit `VariableTree`**: Emit `SymbolKind.Field` when the parent is a `ClassTree`.
+- **`visitClass`**: Emit `SymbolKind.Class`, `Interface`, `Enum`, or `Record`.
+- **`visitMethod`**: Emit `SymbolKind.Method` or `SymbolKind.Constructor`.
+- **`visitVariable`**: Emit `SymbolKind.Field` only when the enclosing node in the current path is
+  a `ClassTree` (skip local variables).
 
 **Range Calculation**:
-Use `SourcePositions` from `JavacTrees` to get the start and end positions of each tree node. The LSP `DocumentSymbol` requires two ranges:
-- `range`: The full range of the symbol (including body and Javadoc).
-- `selectionRange`: The range of the identifier name itself. We can derive the identifier range using the tree's start position offset by annotations/modifiers.
+Use `SourcePositions` (from `Trees.getSourcePositions()`) for node start/end offsets and
+`CompilationUnitTree.getLineMap()` for line/column conversion.
+- `range`: full span of the declaration node.
+- `selectionRange`: identifier name only, located by searching forward in the source text from the
+  node's start position.
 
 **Hierarchy**:
-Maintain a `Deque<DocumentSymbol>` stack to construct the parent-child hierarchy as the scanner traverses the AST.
+Maintain a `Deque<DocumentSymbol>` stack. Push a new symbol on class/method entry; pop and append
+to the parent's children list on exit. Top-level symbols are collected in the result list.
 
-### 2.3 Folding Range Scanner
+### 2.3 Folding Range Scanner *(post-beta)*
 Implement `FoldingRangeScanner` extending `TreePathScanner<Void, Void>`.
-- **Classes & Methods**: Emit folding ranges based on the `SourcePositions` of `ClassTree` and `MethodTree`. Set `kind` to `FoldingRangeKind.Region`.
-- **Imports**: Visit the compilation unit's imports. If there are multiple imports, emit a single folding range covering the first import to the last import. Set `kind` to `FoldingRangeKind.Imports`.
-
-## 3. Performance & Concurrency
-
-Since these features are pure parse passes:
-- They skip the `lathe.lock` wait step.
-- They do not need to build a fully attributed `JavacTask` with a `CustomFileManager`.
-- They execute in `<5ms` per file.
-
-Because they are fast and do not rely on mutable `javac` compiler caches, they can be safely served via the `CompilationWorker` using the existing `SourceParser.parseContent()` method.
+- **Classes & Methods**: Emit `FoldingRangeKind.Region` folds using the full node span.
+- **Imports**: If there are ≥2 imports, emit a single `FoldingRangeKind.Imports` fold from the
+  first to the last import line.

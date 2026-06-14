@@ -225,8 +225,10 @@ the remaining beta scope is:
   has enough local source or reactor-index information to answer safely.
 
 ### Structural Navigation
-Add `textDocument/documentSymbol` and `textDocument/foldingRange` using read-only `SourceParser` AST passes.
-Powers the editor "Outline" view, breadcrumbs, and code folding for classes, methods, and imports.
+Add `textDocument/documentSymbol` using a read-only `SourceParser` AST pass.
+Powers the editor "Outline" view and breadcrumb navigation for classes, methods, and fields.
+`textDocument/foldingRange` is deferred to post-beta (Neovim users already get equivalent folding
+from treesitter).
 See [lathe-structural-navigation.md](planned/lathe-structural-navigation.md).
 
 ### Architecture and Test Improvements
