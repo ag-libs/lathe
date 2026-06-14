@@ -127,7 +127,8 @@ public final class CompletionEngine {
         };
     CompletionItemPresenter.applyReplacementRange(outcome.items(), site.replacementRange());
     preserveExistingMethodCall(outcome.items(), req, injected.tokenEnd());
-    final var analysis = resolveAnalysis(req);
+    final var analysis =
+        outcome.freshAnalysis() != null ? outcome.freshAnalysis() : resolveAnalysis(req);
     applyNestedOuterImportEdits(outcome.items(), injected.receiverText(), analysis);
     applyStatementSemicolonEdits(outcome.items(), site, analysis, req, injected.tokenStart());
     return outcome;
@@ -456,19 +457,19 @@ public final class CompletionEngine {
       case "final" ->
           !modifiers.contains("final")
               && !modifiers.contains("abstract")
-              && !modifierAfterFinalCombination(modifiers);
+              && noFinalCombination(modifiers);
       case "abstract", "volatile" ->
           !modifiers.contains(keyword)
               && !modifiers.contains("final")
-              && !modifierAfterFinalCombination(modifiers);
+              && noFinalCombination(modifiers);
       case "static", "synchronized", "transient" ->
-          !modifiers.contains(keyword) && !modifierAfterFinalCombination(modifiers);
+          !modifiers.contains(keyword) && noFinalCombination(modifiers);
       default -> true;
     };
   }
 
-  private static boolean modifierAfterFinalCombination(final Set<String> modifiers) {
-    return modifiers.contains("final") && modifiers.size() > 1;
+  private static boolean noFinalCombination(final Set<String> modifiers) {
+    return !modifiers.contains("final") || modifiers.size() == 1;
   }
 
   private static Set<String> classBodyModifiersBefore(final String content, final int tokenStart) {
@@ -747,10 +748,9 @@ public final class CompletionEngine {
     final var analysis = req.cached().analysis();
     final var outer = analysis.elements().getTypeElement(parsed.receiverText());
     if (outer == null) {
-      final var pkgScope = TypeResolver.resolveScope(analysis, req.cursorOffset());
-      final var packageCandidates =
-          new ImportCompletionProvider(analysis, pkgScope)
-              .proposeCandidates(parsed.receiverText(), injected.prefix());
+      final List<CompletionCandidate> packageCandidates =
+          resolvePackageCandidates(
+              analysis, req.cursorOffset(), parsed.receiverText(), injected.prefix());
       return CompletionOutcome.of(
           packageCandidates.stream().map(CompletionItemPresenter::present).toList());
     }
@@ -758,10 +758,19 @@ public final class CompletionEngine {
     final var candidates =
         new CandidateGenerator(analysis).proposeNestedTypes(outer, injected.prefix());
     final List<CompletionItem> items =
-        CompletionCandidateRanker.rank(candidates, memberAccessSemanticContext(analysis)).stream()
+        CompletionCandidateRanker.rank(candidates, blankMemberAccessContext(analysis)).stream()
             .map(CompletionItemPresenter::present)
             .toList();
     return new CompletionOutcome(items, null);
+  }
+
+  private static List<CompletionCandidate> resolvePackageCandidates(
+      final AttributedFileAnalysis analysis,
+      final int cursorOffset,
+      final String receiverText,
+      final String prefix) {
+    final var scope = TypeResolver.resolveScope(analysis, cursorOffset);
+    return new ImportCompletionProvider(analysis, scope).proposeCandidates(receiverText, prefix);
   }
 
   private static List<CompletionCandidate> classLiteralCandidates(final String prefix) {
@@ -890,22 +899,9 @@ public final class CompletionEngine {
   private static ImportEdit importEdit(
       final TypeElement typeElement, final AttributedFileAnalysis analysis) {
     final String qualifiedName = typeElement.getQualifiedName().toString();
-    final var packageName = QualifiedNames.packageName(qualifiedName);
-    if (packageName.isEmpty()) {
-      return null;
-    }
-
-    if ("java.lang".equals(packageName.get())) {
-      return null;
-    }
-
-    if (analysis.tree() != null
-        && analysis.tree().getPackageName() != null
-        && packageName.get().equals(analysis.tree().getPackageName().toString())) {
-      return null;
-    }
-
-    return new ImportEdit(qualifiedName, false);
+    return new ImportAnalyzer(analysis).needsImport(qualifiedName)
+        ? new ImportEdit(qualifiedName, false)
+        : null;
   }
 
   private CompletionOutcome mergeInFileTypes(
@@ -1107,23 +1103,21 @@ public final class CompletionEngine {
     }
 
     final var importAnalyzer = new ImportAnalyzer(analysis);
-    final var insertionRange = importAnalyzer.insertionRange();
-    if (insertionRange == null) {
+    if (importAnalyzer.insertionRange() == null) {
       return;
     }
 
-    final var imported = importAnalyzer.importedQualifiedNames();
     items.stream()
         .filter(item -> nestedTypeOwnedByReceiver(item, receiverText))
         .map(item -> new ImportTarget(item, outerQualifiedName(item.getDetail())))
         .filter(target -> target.qualifiedName() != null)
-        .filter(target -> !imported.contains(target.qualifiedName()))
         .forEach(
-            target ->
-                addAdditionalTextEdit(
-                    target.item(),
-                    new TextEdit(
-                        insertionRange, "import %s;\n".formatted(target.qualifiedName()))));
+            target -> {
+              final var edit = importAnalyzer.importEdit(target.qualifiedName());
+              if (edit != null) {
+                addAdditionalTextEdit(target.item(), edit);
+              }
+            });
   }
 
   private record ImportTarget(CompletionItem item, String qualifiedName) {}
@@ -1154,11 +1148,16 @@ public final class CompletionEngine {
   }
 
   private static void addAdditionalTextEdit(final CompletionItem item, final TextEdit edit) {
-    final var edits =
-        item.getAdditionalTextEdits() == null
+    final var existing = item.getAdditionalTextEdits();
+    if (existing != null
+        && existing.stream().anyMatch(e -> e.getNewText().equals(edit.getNewText()))) {
+      return;
+    }
+
+    item.setAdditionalTextEdits(
+        existing == null
             ? List.of(edit)
-            : Stream.concat(item.getAdditionalTextEdits().stream(), Stream.of(edit)).toList();
-    item.setAdditionalTextEdits(edits);
+            : Stream.concat(existing.stream(), Stream.of(edit)).toList());
   }
 
   private CompletionOutcome completeMemberAccess(
@@ -1206,10 +1205,9 @@ public final class CompletionEngine {
 
     if (resolved == null) {
       if (snapshot != null && parsed.receiverText() != null) {
-        final var pkgScope = TypeResolver.resolveScope(snapshot, req.cursorOffset());
-        final var packageCandidates =
-            new ImportCompletionProvider(snapshot, pkgScope)
-                .proposeCandidates(parsed.receiverText(), injected.prefix());
+        final List<CompletionCandidate> packageCandidates =
+            resolvePackageCandidates(
+                snapshot, req.cursorOffset(), parsed.receiverText(), injected.prefix());
         if (!packageCandidates.isEmpty()) {
           return CompletionOutcome.of(
               packageCandidates.stream().map(CompletionItemPresenter::present).toList());
@@ -1270,10 +1268,17 @@ public final class CompletionEngine {
       return CompletionOutcome.of(List.of());
     }
 
+    final String receiverText = parsed.receiverText();
+    final boolean isMethodChain = receiverText.indexOf('(') >= 0;
+    final String lookupName = typeIndexLookupName(receiverText);
+    if (lookupName == null) {
+      return CompletionOutcome.of(List.of());
+    }
+
     final var scope = TypeResolver.resolveScope(snapshot, cursorOffset);
 
-    for (final var candidate : typeIndex.search(parsed.receiverText(), 200)) {
-      if (!candidate.simpleName().equals(parsed.receiverText())) {
+    for (final var candidate : typeIndex.search(lookupName, 200)) {
+      if (!candidate.simpleName().equals(lookupName)) {
         continue;
       }
 
@@ -1284,19 +1289,57 @@ public final class CompletionEngine {
 
       final var generator = new CandidateGenerator(snapshot);
       final var members =
-          generator.proposeMemberAccessCandidates(typeEl.asType(), injected.prefix(), true, scope);
-      final var nestedTypes = generator.proposeNestedTypes(typeEl, injected.prefix());
-      final var candidates = Stream.concat(members.stream(), nestedTypes.stream()).toList();
+          generator.proposeMemberAccessCandidates(
+              typeEl.asType(), injected.prefix(), !isMethodChain, scope);
+      final List<CompletionCandidate> candidates =
+          isMethodChain
+              ? members
+              : Stream.concat(
+                      members.stream(),
+                      generator.proposeNestedTypes(typeEl, injected.prefix()).stream())
+                  .toList();
       final List<CompletionItem> items =
-          CompletionCandidateRanker.rank(candidates, memberAccessSemanticContext(snapshot)).stream()
+          CompletionCandidateRanker.rank(candidates, blankMemberAccessContext(snapshot)).stream()
               .map(CompletionItemPresenter::present)
               .toList();
       if (!items.isEmpty()) {
+        applyTypeImportEdit(items, candidate.qualifiedName(), snapshot);
         return CompletionOutcome.of(items);
       }
     }
 
     return CompletionOutcome.of(List.of());
+  }
+
+  private static String typeIndexLookupName(final String receiverText) {
+    final int parenIdx = receiverText.indexOf('(');
+    final String nameStr;
+    if (parenIdx >= 0) {
+      final String beforeParen = receiverText.substring(0, parenIdx);
+      final int lastDot = beforeParen.lastIndexOf('.');
+      nameStr = lastDot >= 0 ? beforeParen.substring(0, lastDot) : beforeParen;
+    } else {
+      nameStr = receiverText;
+    }
+
+    if (nameStr.isEmpty()
+        || !Character.isUpperCase(nameStr.charAt(0))
+        || nameStr.indexOf('.') >= 0) {
+      return null;
+    }
+    return nameStr;
+  }
+
+  private static void applyTypeImportEdit(
+      final List<CompletionItem> items,
+      final String qualifiedName,
+      final AttributedFileAnalysis analysis) {
+    final var edit = new ImportAnalyzer(analysis).importEdit(qualifiedName);
+    if (edit == null) {
+      return;
+    }
+
+    items.forEach(item -> addAdditionalTextEdit(item, edit));
   }
 
   private List<CompletionCandidate> staticMemberFitCandidates(
@@ -1419,7 +1462,7 @@ public final class CompletionEngine {
         base.staticMemberResultContext());
   }
 
-  private static SemanticCompletionContext memberAccessSemanticContext(
+  private static SemanticCompletionContext blankMemberAccessContext(
       final AttributedFileAnalysis snapshot) {
     return new SemanticCompletionContext(
         snapshot, new ExpectedValue.Unknown(), false, false, false, null);

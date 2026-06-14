@@ -57,7 +57,6 @@ final class AddThrowsProvider implements CodeActionProvider {
     final String fqn = request.payload().name();
     final int lastDot = fqn.lastIndexOf('.');
     final String simpleName = lastDot >= 0 ? fqn.substring(lastDot + 1) : fqn;
-    final String pkg = lastDot >= 0 ? fqn.substring(0, lastDot) : "";
 
     final String source;
     try {
@@ -75,14 +74,9 @@ final class AddThrowsProvider implements CodeActionProvider {
     final var edits = new ArrayList<TextEdit>();
     edits.add(throwsEdit);
 
-    if (!pkg.equals("java.lang")) {
-      final var importAnalyzer = new ImportAnalyzer(analysis);
-      if (!importAnalyzer.importedQualifiedNames().contains(fqn)) {
-        final Range insertionRange = importAnalyzer.insertionRange();
-        if (insertionRange != null) {
-          edits.add(new TextEdit(insertionRange, "import %s;\n".formatted(fqn)));
-        }
-      }
+    final var importEdit = new ImportAnalyzer(analysis).importEdit(fqn);
+    if (importEdit != null) {
+      edits.add(importEdit);
     }
 
     final var action = new CodeAction();

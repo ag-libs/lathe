@@ -557,6 +557,40 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
   // ── stream chains ─────────────────────────────────────────────────────────────
 
   @Test
+  void streamChain_importedType_methodCallChain_typeResolved() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    import java.util.stream.Stream;
+                    class Test {
+                        void m() {
+                            Stream.of("").§
+                        }
+                    }""")))
+        .anyMatch(l -> l.startsWith("filter"));
+  }
+
+  @Test
+  void streamChain_unimportedType_methodCallChain_importSuggested() {
+    final var items =
+        fixture.complete(
+            """
+            class Test {
+                void m() {
+                    Stream.of("").§
+                }
+            }""");
+    assertThat(labels(items)).anyMatch(l -> l.startsWith("filter"));
+    assertThat(items)
+        .anyMatch(
+            item ->
+                item.getAdditionalTextEdits() != null
+                    && item.getAdditionalTextEdits().stream()
+                        .anyMatch(e -> e.getNewText().contains("java.util.stream.Stream")));
+  }
+
+  @Test
   void streamChain_streamMethods_returned() {
     final var items =
         labels(

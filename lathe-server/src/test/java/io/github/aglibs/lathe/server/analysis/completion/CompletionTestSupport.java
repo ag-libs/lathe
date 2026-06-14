@@ -36,7 +36,9 @@ abstract class CompletionTestSupport {
                     "StringBuilder", "java.lang.StringBuilder", TypeKind.CLASS),
                 CompletionFixture.typeEntry("String", "java.lang.String", TypeKind.CLASS),
                 CompletionFixture.typeEntry(
-                    "TimeUnit", "java.util.concurrent.TimeUnit", TypeKind.ENUM)));
+                    "TimeUnit", "java.util.concurrent.TimeUnit", TypeKind.ENUM),
+                CompletionFixture.typeEntry(
+                    "Stream", "java.util.stream.Stream", TypeKind.INTERFACE)));
   }
 
   @AfterAll
