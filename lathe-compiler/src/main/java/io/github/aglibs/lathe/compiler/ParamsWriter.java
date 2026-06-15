@@ -43,10 +43,15 @@ final class ParamsWriter {
     return map.entrySet().stream()
         .flatMap(
             e -> {
+              final var key = e.getKey();
               final var val = e.getValue();
-              return (val != null && !val.isBlank())
-                  ? Stream.of(e.getKey(), val)
-                  : Stream.of(e.getKey());
+              final var hasVal = val != null && !val.isBlank();
+              if (key == null) {
+                // standalone arg stored with null key (e.g. from <compilerArgs> in some Maven
+                // versions)
+                return hasVal ? Stream.of(val) : Stream.empty();
+              }
+              return hasVal ? Stream.of(key, val) : Stream.of(key);
             })
         .toList();
   }

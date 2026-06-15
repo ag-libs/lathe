@@ -145,28 +145,26 @@ a server reload.
 
 ## Neovim Setup
 
-Lathe provides a distributable plugin for Neovim 0.12+ that configures native LSP,
+Lathe provides a distributable plugin for Neovim 0.11+ that configures native LSP,
 format-on-save, and source cache autocommands out of the box.
 
-### Installation via Symlink
+### Installation
 
-Because Lathe is currently built from source,
-the easiest way to install the plugin is to symlink the `neovim/` directory
-from your checkout directly into Neovim's package directory.
-
-```bash
-mkdir -p ~/.local/share/nvim/site/pack/lathe/start
-ln -s ~/git/lathe/neovim ~/.local/share/nvim/site/pack/lathe/start/lathe
-```
-
-If you use `lazy.nvim`, you can load it as a local plugin instead:
+Load the plugin as a local directory with `lazy.nvim`, pointing `dir` at the `neovim/`
+subdirectory of your Lathe source checkout:
 
 ```lua
 {
-  dir = vim.fn.expand("~/git/lathe/neovim"),
+  dir = vim.fn.expand("~/git/lathe/neovim"), -- adjust to your checkout path
   ft = "java",
+  config = function()
+    require("lathe").setup()
+  end,
 }
 ```
+
+> **Note:** The `config` function is required. Without it, lazy.nvim only sources the
+> `ftplugin` (indentation), but the LSP server is never registered.
 
 ### Debugging
 
