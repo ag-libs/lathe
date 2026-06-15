@@ -11,6 +11,27 @@ Lathe setup has two parts:
 - `lathe-maven-plugin` declares two goals in the reactor root:
   `init` (auto-bound to `initialize`) and `sync` (auto-bound to `process-test-classes`).
 
+## Supported Features
+
+Lathe currently implements the following LSP endpoints:
+
+- `textDocument/publishDiagnostics`: Surfaces `javac` errors and warnings exactly as configured
+  in Maven, plus hints for unused private methods, fields, and local variables.
+- `textDocument/completion`: Provides type, method, and variable completion (excluding method
+  references and complex generic bounds). Includes automatic import insertion.
+- `textDocument/definition`: Resolves to local project files, unpacked dependency JAR sources,
+  and JDK sources.
+- `textDocument/hover`: Displays AST-resolved Javadoc formatted as Markdown.
+- `textDocument/signatureHelp`: Shows method and constructor parameter lists when triggered
+  by `(` or `,`.
+- `textDocument/references`: Finds usages across the same file, open files, same-module disk files,
+  and transitive reactor modules.
+- `textDocument/codeAction`: Supports four quick fixes: Import missing type, Add `throws` clause,
+  Wrap with `try/catch`, and Declare local variable.
+- `textDocument/formatting`: Applies `google-java-format` to the full document
+  and removes unused imports.
+- `workspace/symbol`: Searches for classes, interfaces, and enums across the workspace.
+
 ## Building from Source (Beta)
 
 Lathe is currently in beta and must be built from source.
@@ -237,16 +258,19 @@ mvnd --stop
 
 ## Troubleshooting
 
-**Missing `.lathe/` directory**
+### Missing `.lathe/` directory
+
 This means `lathe:init` has not run.
 Run `mvn lathe:init` (or `mvn clean process-test-classes` if the POM is configured)
 at the reactor root to initialize Lathe.
 
-**Missing params file (`Run mvn process-test-classes to activate module`)**
+### Missing params file (`Run mvn process-test-classes to activate module`)
+
 The LS cannot find the compiler shim parameters for the module you are editing.
 Re-run `mvn process-test-classes` to force the compiler shim to generate them.
 
-**LSP Server Crashing or Not Attaching**
+### LSP Server Crashing or Not Attaching
+
 Check the Neovim LSP logs (`tail -f ~/.local/state/nvim/lsp.log`) for errors.
 Set `export LATHE_DEBUG=1` before launching Neovim
 to get verbose compiler logging from the server.
