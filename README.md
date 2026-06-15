@@ -8,7 +8,18 @@ and the Maven plugin refreshes workspace metadata and dependency sources.
 Lathe setup has two parts:
 
 - `lathe-compiler` is configured as the `maven-compiler-plugin` compiler.
-- `lathe-maven-plugin` declares two goals in the reactor root: `init` (auto-bound to `initialize`) and `sync` (auto-bound to `process-test-classes`).
+- `lathe-maven-plugin` declares two goals in the reactor root:
+  `init` (auto-bound to `initialize`) and `sync` (auto-bound to `process-test-classes`).
+
+## Building from Source (Beta)
+
+Lathe is currently in beta and must be built from source.
+
+```bash
+git clone https://github.com/ag-libs/lathe.git
+cd lathe
+mvn install -DskipTests
+```
 
 ## Installation
 
@@ -20,7 +31,8 @@ Choose the Lathe version once in the POM where you manage plugin versions:
 </properties>
 ```
 
-Configure the compiler shim wherever the effective `maven-compiler-plugin` configuration for Java modules is defined.
+Configure the compiler shim wherever the effective `maven-compiler-plugin` configuration
+for Java modules is defined.
 For a simple project, this is usually the parent POM:
 
 ```xml
@@ -112,89 +124,46 @@ a server reload.
 
 ## Neovim Setup
 
-Lathe works with Neovim through the built-in LSP client.
-Lathe provides Java language-server features and formatting.
-Neovim still owns local editing behavior such as immediate indentation,
-cursor placement, and paired brace insertion.
+Lathe provides a distributable plugin for Neovim 0.12+ that configures native LSP,
+format-on-save, and source cache autocommands out of the box.
 
-Configure Lathe as a normal Neovim LSP server:
+### Installation via Symlink
 
-```lua
-vim.lsp.config("lathe", {
-  cmd = { vim.fn.expand("~/.cache/lathe/current/lathe-launcher.sh") },
-  filetypes = { "java" },
-  root_markers = { ".lathe" },
-})
+Because Lathe is currently built from source,
+the easiest way to install the plugin is to symlink the `neovim/` directory
+from your checkout directly into Neovim's package directory.
 
-vim.lsp.enable("lathe")
+```bash
+mkdir -p ~/.local/share/nvim/site/pack/lathe/start
+ln -s ~/git/lathe/neovim ~/.local/share/nvim/site/pack/lathe/start/lathe
 ```
 
-For debugging, run the launcher with `LATHE_DEBUG=1`:
+If you use `lazy.nvim`, you can load it as a local plugin instead:
 
 ```lua
-vim.lsp.config("lathe", {
-  cmd = {
-    "env",
-    "LATHE_DEBUG=1",
-    vim.fn.expand("~/.cache/lathe/current/lathe-launcher.sh"),
-  },
-  filetypes = { "java" },
-  root_markers = { ".lathe" },
-})
+{
+  dir = vim.fn.expand("~/git/lathe/neovim"),
+  ft = "java",
+}
 ```
 
-Neovim logs LSP traffic to its normal LSP log.
-For example:
+### Debugging
+
+For debugging, you can enable verbose logging by setting `LATHE_DEBUG=1` before starting Neovim,
+or configuring it in your environment:
+
+```bash
+export LATHE_DEBUG=1
+```
+
+Neovim logs LSP traffic to its normal LSP log. For example:
 
 ```bash
 tail -f ~/.local/state/nvim/lsp.log
 ```
 
-Lathe may advertise `textDocument/onTypeFormatting` for indentation hints.
-Enable Neovim's native on-type formatting when the Lathe client attaches:
+*(Note: The plugin automatically configures format-on-save and on-type formatting where supported).*
 
-```lua
-vim.api.nvim_create_autocmd("LspAttach", {
-  callback = function(event)
-    local client = vim.lsp.get_client_by_id(event.data.client_id)
-
-    if client and client.name == "lathe" then
-      vim.lsp.on_type_formatting.enable(true, { client_id = client.id })
-    end
-  end,
-})
-```
-
-On-type formatting is triggered when the user types a configured trigger character,
-such as pressing Enter in insert mode.
-Normal-mode commands such as `o` and `O` are handled by Neovim indentation,
-not by LSP on-type formatting.
-
-For users who want Google Java Style indentation while editing,
-use `google-java-indent.nvim` or another Java indentation plugin that sets Neovim's `indentexpr`.
-Lathe formatting remains the authoritative formatter;
-the indentation plugin only controls where Neovim places the cursor while editing.
-
-With `lazy.nvim`, a local checkout can be loaded like this:
-
-```lua
-{
-  dir = vim.fn.expand("~/git/google-java-indent.nvim"),
-  ft = "java",
-}
-```
-
-For paired braces, use a local editing plugin such as `nvim-autopairs`:
-
-```lua
-{
-  "windwp/nvim-autopairs",
-  event = "InsertEnter",
-  opts = {
-    check_ts = true,
-  },
-}
-```
 
 ## Opt-out and CI
 
@@ -242,8 +211,8 @@ Install two pieces:
 1. Configure maven-compiler-plugin so Java modules use the Lathe compiler shim.
    Add dependency io.github.ag-libs:lathe-compiler:${lathe.version}
    to the effective maven-compiler-plugin configuration and set <compilerId>lathe</compilerId>.
-   Preserve all existing compiler configuration, annotation processor paths, release/source/target settings,
-   compiler args, plugin management, and executions.
+   Preserve all existing compiler configuration, annotation processor paths,
+   release/source/target settings, compiler args, plugin management, and executions.
 
 2. Bind io.github.ag-libs:lathe-maven-plugin:${lathe.version} in the reactor root POM.
    Add two executions: id lathe-init with goal init, and id lathe-sync with goal sync.
@@ -265,3 +234,19 @@ If mvnd is used, stop the daemon after installing updated Lathe JARs so it picks
 
 mvnd --stop
 ```
+
+## Troubleshooting
+
+**Missing `.lathe/` directory**
+This means `lathe:init` has not run.
+Run `mvn lathe:init` (or `mvn clean process-test-classes` if the POM is configured)
+at the reactor root to initialize Lathe.
+
+**Missing params file (`Run mvn process-test-classes to activate module`)**
+The LS cannot find the compiler shim parameters for the module you are editing.
+Re-run `mvn process-test-classes` to force the compiler shim to generate them.
+
+**LSP Server Crashing or Not Attaching**
+Check the Neovim LSP logs (`tail -f ~/.local/state/nvim/lsp.log`) for errors.
+Set `export LATHE_DEBUG=1` before launching Neovim
+to get verbose compiler logging from the server.

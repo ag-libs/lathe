@@ -85,6 +85,7 @@
         <artifactId>maven-invoker-plugin</artifactId>
         <version>${maven-invoker-plugin.version}</version>
         <configuration>
+          <skipInvocation>${skipTests}</skipInvocation>
           <projectsDirectory>src/it</projectsDirectory>
           <cloneProjectsTo>${project.build.directory}/it</cloneProjectsTo>
           <localRepositoryPath>${project.build.directory}/local-repo</localRepositoryPath>
