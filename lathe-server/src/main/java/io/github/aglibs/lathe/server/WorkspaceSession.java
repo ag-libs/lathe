@@ -42,7 +42,6 @@ import org.eclipse.lsp4j.CodeActionContext;
 import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.CompletionContext;
 import org.eclipse.lsp4j.Diagnostic;
-import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.LocationLink;
@@ -50,8 +49,6 @@ import org.eclipse.lsp4j.MessageActionItem;
 import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.Position;
-import org.eclipse.lsp4j.PublishDiagnosticsParams;
-import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.SemanticTokens;
 import org.eclipse.lsp4j.ShowMessageRequestParams;
 import org.eclipse.lsp4j.SignatureHelp;
@@ -77,14 +74,15 @@ final class WorkspaceSession {
   private final Map<ModuleSourceConfig, List<TypeIndexEntry>> reactorShards = new LinkedHashMap<>();
   private WorkspaceWatcher watcher;
   private boolean pomNotificationPending;
-  private final Map<String, OpenDocument> openDocuments = new HashMap<>();
-  private long nextGeneration;
+  private final DocumentRegistry docs = new DocumentRegistry();
+  private final DiagnosticPublisher publisher;
 
   WorkspaceSession(
       final LanguageClient client, final ServerEventLoop worker, final long debounceMs) {
     this.client = client;
     this.worker = worker;
     this.debounceMs = debounceMs;
+    this.publisher = new DiagnosticPublisher(client, docs);
   }
 
   void initialize(final Path root) {
@@ -114,23 +112,23 @@ final class WorkspaceSession {
   }
 
   void onOpen(final String uri, final String content, final int version) {
-    final var snapshot = putOpenFile(uri, content, version);
+    final var snapshot = docs.put(uri, content, version);
     LOG.info(() -> "[open] %s".formatted(uri));
     candidateIndex.update(uri, content);
     compileAndPublish(snapshot, CompileMode.OPEN);
   }
 
   void onChange(final String uri, final String content, final int version) {
-    putOpenFile(uri, content, version);
+    docs.put(uri, content, version);
     LOG.fine(() -> "[change] %s".formatted(uri));
     candidateIndex.update(uri, content);
-    client.publishDiagnostics(new PublishDiagnosticsParams(uri, List.of()));
+    publisher.publishEmpty(uri);
     worker.cancel(uri);
     worker.schedule(
         uri,
         debounceMs,
         () -> {
-          final var latest = openDocuments.get(uri);
+          final var latest = docs.get(uri);
           if (latest != null) {
             compileAndPublish(latest, CompileMode.FAST);
           }
@@ -138,11 +136,11 @@ final class WorkspaceSession {
   }
 
   void onClose(final String uri) {
-    openDocuments.remove(uri);
+    docs.remove(uri);
     LOG.info(() -> "[close] %s".formatted(uri));
     worker.cancel(uri);
     workspace.dropFromAllCaches(uri);
-    client.publishDiagnostics(new PublishDiagnosticsParams(uri, List.of()));
+    publisher.publishEmpty(uri);
     reindexFromDisk(uri);
   }
 
@@ -167,7 +165,7 @@ final class WorkspaceSession {
                   });
           case CompilerRoute.External ignored ->
               publishIfCurrentThen(() -> scheduleAstRefresh(uri));
-          case CompilerRoute.Missing ignored -> this::publishIfCurrent;
+          case CompilerRoute.Missing ignored -> publisher::publishIfCurrent;
         };
     submitCompile(route, snapshot, CompileMode.FULL, afterCompile);
   }
@@ -175,10 +173,10 @@ final class WorkspaceSession {
   void onDeletedFile(final String uri) {
     LOG.info(() -> "[delete] %s".formatted(uri));
     worker.cancel(uri);
-    openDocuments.remove(uri);
+    docs.remove(uri);
     workspace.dropFromAllCaches(uri);
     candidateIndex.remove(uri);
-    client.publishDiagnostics(new PublishDiagnosticsParams(uri, List.of()));
+    publisher.publishEmpty(uri);
 
     final var deletedFile = toPath(uri);
     workspace
@@ -193,7 +191,7 @@ final class WorkspaceSession {
 
   CompletableFuture<List<Location>> referencesFuture(
       final String uri, final Position pos, final boolean includeDeclaration) {
-    final var openFile = openDocuments.get(uri);
+    final var openFile = docs.get(uri);
     if (openFile == null) {
       return CompletableFuture.completedFuture(List.of());
     }
@@ -280,7 +278,7 @@ final class WorkspaceSession {
       final Path packageRel) {
     final var worker = workspace.workerFor(config);
     final List<OpenDocument> openForConfig =
-        openDocuments.values().stream()
+        docs.all().stream()
             .filter(
                 doc ->
                     workspace
@@ -366,7 +364,7 @@ final class WorkspaceSession {
   private record DiskCandidate(String uri, String content) {}
 
   CompletableFuture<Hover> hoverFuture(final String uri, final Position pos) {
-    final var openFile = openDocuments.get(uri);
+    final var openFile = docs.get(uri);
     if (openFile == null) {
       return CompletableFuture.completedFuture(null);
     }
@@ -385,7 +383,7 @@ final class WorkspaceSession {
   }
 
   CompletableFuture<SignatureHelp> signatureHelpFuture(final String uri, final Position pos) {
-    final var openFile = openDocuments.get(uri);
+    final var openFile = docs.get(uri);
     if (openFile == null) {
       return CompletableFuture.completedFuture(null);
     }
@@ -405,7 +403,7 @@ final class WorkspaceSession {
 
   CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       definitionFuture(final String uri, final Position pos) {
-    final var openFile = openDocuments.get(uri);
+    final var openFile = docs.get(uri);
     if (openFile == null) {
       return CompletableFuture.completedFuture(Either.forLeft(List.of()));
     }
@@ -430,7 +428,7 @@ final class WorkspaceSession {
 
   CompletableFuture<CompletionOutcome> completionFuture(
       final String uri, final Position pos, final CompletionContext context) {
-    final var openFile = openDocuments.get(uri);
+    final var openFile = docs.get(uri);
     if (openFile == null) {
       return CompletableFuture.completedFuture(CompletionOutcome.of(List.of()));
     }
@@ -452,7 +450,7 @@ final class WorkspaceSession {
 
   CompletableFuture<List<Either<Command, CodeAction>>> codeActionFuture(
       final String uri, final CodeActionContext context) {
-    final var openFile = openDocuments.get(uri);
+    final var openFile = docs.get(uri);
     if (openFile == null) {
       return CompletableFuture.completedFuture(List.of());
     }
@@ -483,7 +481,7 @@ final class WorkspaceSession {
   }
 
   CompletableFuture<SemanticTokens> semanticTokensFuture(final String uri) {
-    final var openFile = openDocuments.get(uri);
+    final var openFile = docs.get(uri);
     if (openFile == null) {
       return CompletableFuture.completedFuture(null);
     }
@@ -502,7 +500,7 @@ final class WorkspaceSession {
 
   List<? extends TextEdit> format(final String tag, final String uri) {
     LOG.fine(() -> "[%s] %s".formatted(tag, uri));
-    final var openFile = openDocuments.get(uri);
+    final var openFile = docs.get(uri);
     return JavaFormatter.format(openFile != null ? openFile.content() : null);
   }
 
@@ -631,11 +629,11 @@ final class WorkspaceSession {
     reactorShards.clear();
     scanReactorShards();
     typeIndex = WorkspaceTypeIndex.build(newManifest.typeIndexShardPaths(), reactorShards.values());
-    List.copyOf(openDocuments.keySet())
+    List.copyOf(docs.uris())
         .forEach(
             uri -> {
-              final var f = openDocuments.get(uri);
-              putOpenFile(uri, f.content(), f.version());
+              final var f = docs.get(uri);
+              docs.put(uri, f.content(), f.version());
             });
     old.close();
     scheduleAllOpenFiles();
@@ -643,7 +641,7 @@ final class WorkspaceSession {
   }
 
   private void compileAndPublish(final OpenDocument snapshot, final CompileMode mode) {
-    submitCompile(snapshot, mode, this::publishIfCurrent);
+    submitCompile(snapshot, mode, publisher::publishIfCurrent);
   }
 
   private void submitCompile(
@@ -660,7 +658,8 @@ final class WorkspaceSession {
       case CompilerRoute.Module module -> submitTo(module.worker(), snapshot, mode, afterCompile);
       case CompilerRoute.External external ->
           submitTo(external.worker(), snapshot, mode, afterCompile);
-      case CompilerRoute.Missing missing -> publishMissingDiagnostic(missing);
+      case CompilerRoute.Missing missing ->
+          publisher.publishMissing(missing.uri(), missing.message());
     }
   }
 
@@ -677,7 +676,7 @@ final class WorkspaceSession {
         .thenAccept(result -> worker.execute(() -> afterCompile.accept(snapshot, result)))
         .exceptionally(
             ex -> {
-              worker.execute(() -> publishCompileError(snapshot, mode, ex));
+              worker.execute(() -> publisher.publishError(snapshot, mode, ex));
               return null;
             });
   }
@@ -709,40 +708,12 @@ final class WorkspaceSession {
     };
   }
 
-  private void publishMissingDiagnostic(final CompilerRoute.Missing missing) {
-    LOG.warning(() -> "[compile] no module for %s".formatted(missing.uri()));
-    client.publishDiagnostics(
-        singleDiag(missing.uri(), missing.message(), DiagnosticSeverity.Warning));
-  }
-
-  private boolean publishIfCurrent(final OpenDocument snapshot, final CompileResponse result) {
-    if (isStale(snapshot, result.generation())) {
-      return false;
-    }
-
-    DiagnosticPayloadCodec.serializeDiagnosticData(result.diagnostics());
-    client.publishDiagnostics(new PublishDiagnosticsParams(result.uri(), result.diagnostics()));
-    client.refreshSemanticTokens();
-    return true;
-  }
-
-  private void refreshTokensIfCurrent(final OpenDocument snapshot, final CompileResponse result) {
-    if (isStale(snapshot, result.generation())) {
-      client.refreshSemanticTokens();
-    }
-  }
-
   private AfterCompile publishIfCurrentThen(final Runnable followUp) {
     return (snapshot, result) -> {
-      if (publishIfCurrent(snapshot, result)) {
+      if (publisher.publishIfCurrent(snapshot, result)) {
         followUp.run();
       }
     };
-  }
-
-  private boolean isStale(final OpenDocument snapshot, final long generation) {
-    final var current = openDocuments.get(snapshot.uri());
-    return current == null || current.generation() != generation;
   }
 
   private void scheduleOpenFilesInModule(
@@ -750,8 +721,8 @@ final class WorkspaceSession {
     LOG.fine(
         () ->
             "[save] checking %d open file(s) for dependents of %s"
-                .formatted(openDocuments.size(), savedUri));
-    openDocuments.values().stream()
+                .formatted(docs.all().size(), savedUri));
+    docs.all().stream()
         .map(OpenDocument::uri)
         .filter(uri -> !uri.equals(savedUri))
         .filter(
@@ -764,7 +735,7 @@ final class WorkspaceSession {
   }
 
   private void scheduleAllOpenFiles() {
-    openDocuments.values().stream().map(OpenDocument::uri).toList().forEach(this::scheduleOpenFile);
+    docs.all().stream().map(OpenDocument::uri).toList().forEach(this::scheduleOpenFile);
   }
 
   private void scheduleOpenFile(final String uri) {
@@ -772,7 +743,7 @@ final class WorkspaceSession {
         uri,
         0L,
         () -> {
-          final var openFile = openDocuments.get(uri);
+          final var openFile = docs.get(uri);
           if (openFile != null) {
             compileAndPublish(openFile, CompileMode.OPEN);
           }
@@ -784,42 +755,20 @@ final class WorkspaceSession {
         uri,
         0L,
         () -> {
-          final var openFile = openDocuments.get(uri);
+          final var openFile = docs.get(uri);
           if (openFile != null) {
-            submitCompile(openFile, CompileMode.FAST, this::refreshTokensIfCurrent);
+            submitCompile(openFile, CompileMode.FAST, publisher::refreshTokensIfCurrent);
           }
         });
   }
 
   private OpenDocument snapshotForSave(final String uri, final String savedContent) {
-    final var openFile = openDocuments.get(uri);
+    final var openFile = docs.get(uri);
     if (openFile == null) {
       return null;
     }
 
-    return savedContent != null ? putOpenFile(uri, savedContent, openFile.version()) : openFile;
-  }
-
-  private OpenDocument putOpenFile(final String uri, final String content, final int version) {
-    final var openFile = new OpenDocument(uri, content, version, nextGeneration());
-    openDocuments.put(uri, openFile);
-    return openFile;
-  }
-
-  private long nextGeneration() {
-    return ++nextGeneration;
-  }
-
-  private void publishCompileError(
-      final OpenDocument snapshot, final CompileMode mode, final Throwable ex) {
-    if (isStale(snapshot, snapshot.generation())) {
-      return;
-    }
-
-    LOG.log(SEVERE, ex, () -> "[compile:%s] failed for %s".formatted(mode.tag, snapshot.uri()));
-    final var msg = ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
-    client.publishDiagnostics(
-        singleDiag(snapshot.uri(), "Lathe: %s".formatted(msg), DiagnosticSeverity.Error));
+    return savedContent != null ? docs.put(uri, savedContent, openFile.version()) : openFile;
   }
 
   private static <T> T logAndReturn(final Throwable ex, final String msg, final T fallback) {
@@ -845,15 +794,6 @@ final class WorkspaceSession {
     return Path.of(URI.create(uri));
   }
 
-  private static PublishDiagnosticsParams singleDiag(
-      final String uri, final String message, final DiagnosticSeverity severity) {
-    return new PublishDiagnosticsParams(
-        uri,
-        List.of(
-            new Diagnostic(
-                new Range(new Position(0, 0), new Position(0, 1)), message, severity, "lathe")));
-  }
-
   private sealed interface CompilerRoute {
     record Module(CompilationWorker worker, ModuleSourceConfig config) implements CompilerRoute {}
 
@@ -866,6 +806,4 @@ final class WorkspaceSession {
   private interface AfterCompile {
     void accept(OpenDocument snapshot, CompileResponse result);
   }
-
-  private record OpenDocument(String uri, String content, int version, long generation) {}
 }

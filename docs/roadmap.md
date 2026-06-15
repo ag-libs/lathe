@@ -232,12 +232,11 @@ Gap 3 provider and Gap 4 are deferred to post-beta.
 ✅ `workspace/symbol` is implemented. `textDocument/documentSymbol` and `textDocument/foldingRange` are deferred to post-beta.
 
 ### Architecture and Test Improvements
-`TestCompiler` fixture is consolidated and in use across server tests.
-Remaining from [lathe-architecture-test-improvements.md](planned/lathe-architecture-test-improvements.md):
-
-- **`DocumentRegistry`** extraction from `WorkspaceSession` for open-document lifecycle.
-- **`DiagnosticPublisher`** extraction for stale-result checks and `PublishDiagnosticsParams` construction.
-- **Zip/JAR test fixture** to replace duplicated `JarOutputStream`/`Files.walk` test helpers.
+✅ `TestCompiler` fixture is consolidated and in use across server tests.
+✅ **`DocumentRegistry`** extracted from `WorkspaceSession` — open-document lifecycle with `ValidCheck`-validated `OpenDocument` record.
+✅ **`DiagnosticPublisher`** extracted — stale-result checks, `PublishDiagnosticsParams` construction, empty/missing/error publish paths.
+✅ **Zip/JAR test fixture** — `ZipFixture` added to `lathe-core` test sources; `ZipCacheTest` and `FileUtilTest` private helpers removed.
+See [lathe-architecture-test-improvements.md](planned/lathe-architecture-test-improvements.md).
 
 ---
 

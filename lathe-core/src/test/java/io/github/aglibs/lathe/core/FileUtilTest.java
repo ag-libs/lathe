@@ -4,11 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipOutputStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -18,8 +15,9 @@ final class FileUtilTest {
 
   @Test
   void unzip_nestedFiles_extractsToDestination() throws IOException {
-    final Path zip = tempDir.resolve("sources.jar");
-    zip(zip, "com/example/Hello.java", "class Hello {}");
+    final Path zip =
+        ZipFixture.create(
+            tempDir.resolve("sources.jar"), "com/example/Hello.java", "class Hello {}");
 
     final Path dest = tempDir.resolve("dest");
     FileUtil.unzip(zip, dest);
@@ -29,8 +27,7 @@ final class FileUtilTest {
 
   @Test
   void unzip_unsafePath_throwsIOException() throws IOException {
-    final Path zip = tempDir.resolve("bad.jar");
-    zip(zip, "../escape.java", "bad");
+    final Path zip = ZipFixture.create(tempDir.resolve("bad.jar"), "../escape.java", "bad");
 
     assertThatThrownBy(() -> FileUtil.unzip(zip, tempDir.resolve("dest")))
         .isInstanceOf(IOException.class)
@@ -59,14 +56,5 @@ final class FileUtilTest {
 
     assertThat(src).doesNotExist();
     assertThat(dest).hasContent("new");
-  }
-
-  private static void zip(final Path zip, final String name, final String content)
-      throws IOException {
-    try (final ZipOutputStream out = new ZipOutputStream(Files.newOutputStream(zip))) {
-      out.putNextEntry(new ZipEntry(name));
-      out.write(content.getBytes(StandardCharsets.UTF_8));
-      out.closeEntry();
-    }
   }
 }
