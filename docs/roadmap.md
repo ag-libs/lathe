@@ -212,12 +212,8 @@ The beta is distributed as source only;
 users clone the repo and build locally.
 
 ### Installation and Neovim setup documentation
-Write user-facing setup documentation for the build-from-source beta.
-Cover Maven POM configuration (compiler shim + plugin executions),
-building Lathe from source (`mvn install`),
-the `mvn process-test-classes` workflow,
-Neovim LSP client configuration (native `vim.lsp.config` for Neovim 0.11+),
-and basic troubleshooting (`LATHE_DEBUG=1`, missing `.lathe/`, missing params).
+✅ README updated with build-from-source instructions, Neovim plugin installation (symlink and lazy.nvim),
+`LATHE_DEBUG=1` debugging, and troubleshooting for missing `.lathe/` and missing params.
 
 ### Completion Engine Gaps
 ✅ All beta-scope gaps in `planned/completion/gap-log.md` are fixed.
