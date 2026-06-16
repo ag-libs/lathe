@@ -87,8 +87,12 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
     final var element = trees.getElement(getCurrentPath());
     if (element != null) {
       final var parent = getCurrentPath().getParentPath().getLeaf();
-      if (parent instanceof ClassTree) {
-        if (element.getModifiers().contains(Modifier.PRIVATE)
+      if (parent instanceof ClassTree classTree) {
+        final boolean isRecordComponent =
+            classTree.getKind() == Tree.Kind.RECORD
+                && !element.getModifiers().contains(Modifier.STATIC);
+        if (!isRecordComponent
+            && element.getModifiers().contains(Modifier.PRIVATE)
             && !EXCLUDED_FIELD_NAMES.contains(node.getName().toString())) {
           privateFields.put(element, candidateFor(node, node.getName().toString()));
         }
