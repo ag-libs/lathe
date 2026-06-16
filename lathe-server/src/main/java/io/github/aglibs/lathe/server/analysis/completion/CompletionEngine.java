@@ -1184,7 +1184,9 @@ public final class CompletionEngine {
     }
 
     final var freshAnalysis =
-        (initialResolved == null && compiler != null && !req.noDiff())
+        ((initialResolved == null || initialResolved.type().getKind() == TypeKind.ERROR)
+                && compiler != null
+                && !req.noDiff())
             ? compiler.reattribute(req.uri(), req.content())
             : null;
 
