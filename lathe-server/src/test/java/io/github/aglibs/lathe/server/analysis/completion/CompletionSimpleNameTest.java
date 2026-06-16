@@ -732,5 +732,62 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
     assertThat(fieldItem.getSortText()).isLessThan(methodItem.getSortText());
   }
 
+  // ── lambda scope ─────────────────────────────────────────────────────────────
+
+  @Test
+  void simpleName_lambdaParam_notVisibleAfterLambdaCloses() {
+    final var labels =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    void m() {
+                        java.util.List.of(1, 2).forEach(n -> {
+                        });
+                        §
+                    }
+                }"""));
+
+    assertThat(labels).doesNotContain("n");
+  }
+
+  @Test
+  void simpleName_lambdaBodyLocal_notVisibleAfterLambdaCloses() {
+    final var labels =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    void m() {
+                        java.util.List.of(1, 2).forEach(n -> {
+                            int doubled = n * 2;
+                        });
+                        §
+                    }
+                }"""));
+
+    assertThat(labels).doesNotContain("doubled");
+  }
+
+  @Test
+  void simpleName_methodLocal_visibleAfterNestedLambdaCloses() {
+    final var labels =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    void m() {
+                        int count = 0;
+                        java.util.List.of(1, 2).forEach(n -> {
+                            int inner = n * 2;
+                        });
+                        §
+                    }
+                }"""));
+
+    assertThat(labels).contains("count");
+    assertThat(labels).doesNotContain("n", "inner");
+  }
+
   // ── presentation details ─────────────────────────────────────────────────────
 }

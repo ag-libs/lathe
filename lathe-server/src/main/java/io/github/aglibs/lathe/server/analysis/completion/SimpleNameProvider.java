@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.analysis.completion;
 
 import com.sun.source.tree.BindingPatternTree;
 import com.sun.source.tree.ClassTree;
+import com.sun.source.tree.LambdaExpressionTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.VariableTree;
@@ -94,6 +95,17 @@ final class SimpleNameProvider {
           }
 
           if (end < context.cursorOffset()) {
+            TreePath ancestor = getCurrentPath().getParentPath();
+            while (ancestor != null && ancestor.getLeaf() != methodPath.getLeaf()) {
+              if (ancestor.getLeaf() instanceof LambdaExpressionTree lambda) {
+                final long lambdaEnd = positions.getEndPosition(snapshot.tree(), lambda);
+                if (lambdaEnd >= 0 && lambdaEnd < context.cursorOffset()) {
+                  return;
+                }
+              }
+              ancestor = ancestor.getParentPath();
+            }
+
             final var el = snapshot.trees().getElement(getCurrentPath());
             addVariable(node.getName().toString(), el != null ? el.asType() : null);
           }
