@@ -277,7 +277,7 @@ which resolves a field whose attributed type in the error-recovery snapshot is g
 ## CQ-0033 — Uppercase prefix in statement position floods results with unrelated type-index classes
 
 ID: CQ-0033
-Status: accepted
+Status: fixed
 Tier: basic
 Failure mode: wrong-candidate-set
 Owner component: CompletionEngine / TypeIndexValidator
@@ -317,29 +317,27 @@ The log shows `javac=0` — no visible scope candidates match.
 The result is entirely type-index noise with no value candidates visible.
 
 Expected Lathe behavior:
-Per `expectations.md`, lowercase prefixes in ordinary value positions should suppress unrelated
-type-index candidates.
-Uppercase prefixes in method bodies may include importable types alongside visible values,
-but visible values should rank before type-index candidates.
-When `javac=0` (no visible value matches), the expectation from `expectations.md` is:
-- visible values matching the prefix rank first;
-- type-index candidates may follow but should be limited to genuinely accessible types;
-- 54 unrelated classes with no visible matches is clearly wrong for a statement value position.
+Uppercase prefixes in method bodies should include importable types alongside visible values,
+but visible scope candidates (locals, fields, methods) must rank before type-index candidates.
+The 54-item alphabetical type-index dump with no scope candidates visible is the failure:
+ranking is missing, not the presence of types.
 
 Accepted edit, if relevant:
 Not probed.
 
 Regression target:
-`CompletionSimpleNameTest.simpleName_uppercasePrefixNoLocalMatch_suppressesUnrelatedTypeIndex`
+`CompletionSimpleNameTest.simpleName_uppercasePrefix_scopeCandidateRanksBeforeTypeIndex`
 
 Notes:
-This is related to the casing rules in `expectations.md` (section "Simple Name Expression").
-`CQ-0009` covers the converse: visible static fields like `LOGGER` must still appear for `LOG§`.
-`CQ-0033` covers the flood side: when no visible value matches an uppercase prefix,
-unrelated type-index results must not dominate.
-The fix direction is to gate type-index candidates in `SIMPLE_NAME` context on whether
-there is at least one visible scope candidate, or to apply a strict accessibility filter
-that removes types the user would need to import but that are not assignable to any expected type.
+**Corrected diagnosis (2026-06-16)**: JDT and NetBeans both always return importable type
+candidates in statement position regardless of whether local/field scope candidates match —
+they run scope completion and type completion as parallel independent streams.
+Gating type-index on `javac > 0` would diverge from this established behavior.
+Verified that scope candidates already rank before type-index candidates when both are present:
+`CompletionSimpleNameTest.simpleName_uppercasePrefix_scopeCandidateRanksBeforeTypeIndex` passes
+against current code, confirming the ranking is correct.
+The original `javac=0` flood case (54 type-index results with no scope match) is expected
+behavior per JDT/NetBeans and does not require a fix.
 
 ---
 

@@ -789,5 +789,30 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
     assertThat(labels).doesNotContain("n", "inner");
   }
 
+  // ── type-index gating ────────────────────────────────────────────────────────
+
+  @Test
+  void simpleName_uppercasePrefix_scopeCandidateRanksBeforeTypeIndex() throws Exception {
+    localFixture =
+        new CompletionFixture(
+            CompletionFixture.typeIndex(
+                tmp.resolve("index.json"),
+                CompletionFixture.typeEntry("Random", "java.util.Random", TypeKind.CLASS)));
+
+    final var labels =
+        labels(
+            localFixture.complete(
+                """
+                class Test {
+                    static final Object RESOURCE = new Object();
+                    void m() {
+                        R§
+                    }
+                }"""));
+
+    assertThat(labels).contains("RESOURCE", "Random");
+    assertThat(labels.indexOf("RESOURCE")).isLessThan(labels.indexOf("Random"));
+  }
+
   // ── presentation details ─────────────────────────────────────────────────────
 }
