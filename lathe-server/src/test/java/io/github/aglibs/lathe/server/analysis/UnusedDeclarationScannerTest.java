@@ -197,6 +197,42 @@ class UnusedDeclarationScannerTest {
         .hasSize(1);
   }
 
+  // --- Records ---
+
+  @Test
+  void compile_recordComponents_noHints() {
+    assertThat(
+            unusedHintsFor(
+                """
+                record Point(int x, int y) {}
+                """))
+        .isEmpty();
+  }
+
+  @Test
+  void compile_recordUnusedPrivateStaticField_reportsHint() {
+    assertThat(
+            unusedHintsFor(
+                """
+                record Point(int x, int y) {
+                  private static final int CACHE_SIZE = 10;
+                }
+                """))
+        .hasSize(1);
+  }
+
+  @Test
+  void compile_recordUnusedPrivateStaticMethod_reportsHint() {
+    assertThat(
+            unusedHintsFor(
+                """
+                record Point(int x, int y) {
+                  private static int compute() { return 0; }
+                }
+                """))
+        .hasSize(1);
+  }
+
   // --- helpers ---
 
   private List<Diagnostic> unusedHintsFor(final String source) {
