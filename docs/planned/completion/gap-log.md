@@ -47,7 +47,7 @@ Notes:
 ## CQ-0036 — Goto definition fails for annotation-processor generated sources
 
 ID: CQ-0036
-Status: accepted
+Status: fixed
 Tier: Basic
 Discovery: 2026-06-16, sample-workspace (SampleConfigBuilder, SampleBuilder)
 
@@ -91,15 +91,13 @@ for generated sources from other modules in the reactor).
 
 ### Fix area
 
-Two complementary changes needed:
+### Fix
 
-1. **`lathe:sync` Mojo / `WorkspaceManifestWriter`**: collect each module's
-   `target/generated-sources/annotations/` (and any other
-   `project.getBuild().getGeneratedSourcesDirectory()` paths) and write them into
-   `workspace.json` alongside the hand-written source roots.
+`ParamsWriter` already writes `generatedSourcesDir` (Maven's `getGeneratedSourcesDirectory()`)
+into the per-module params file, and `ModuleSourceConfig` loads it as `originalGenSourcesDir`.
+The only missing piece was that `WorkspaceModuleRegistry.allSourceRoots()` did not include it.
 
-2. **`WorkspaceModuleRegistry.allSourceRoots()`**: include the registered generated-source
-   directories so `DefinitionLocator` can find generated `.java` files.
+Fix: extend `allSourceRoots()` to append `originalGenSourcesDir` when non-null.
 
 ### Impact
 
@@ -107,12 +105,15 @@ Any class produced by an annotation processor (`@Builder`, Lombok, MapStruct, Im
 is unreachable via goto-definition. This is a complete failure for generated APIs that
 developers commonly navigate to.
 
+Regression target:
+`WorkspaceModuleRegistryTest.allSourceRoots_includesOriginalGenSourcesDir_whenPresent`
+
 ---
 
 ## CQ-0035 — Parser fails to recognise enclosing method when closing `}` is missing (typed over)
 
 ID: CQ-0035
-Status: accepted
+Status: deferred
 Tier: Basic
 Discovery: 2025-07-25, AppServerConfig.java compact constructor (sample-workspace)
 
@@ -149,6 +150,14 @@ However, it is a hard failure (0 items, no degraded result), so it is worth noti
 Parser error-recovery in the sentinel-inject pipeline: if `class != null` but `method == null`,
 attempt to re-scan backward for the containing method declaration and synthesise a
 virtual block close before the sentinel.
+
+### Deferral note
+
+Any fix requires scanning backward through raw source text to locate the enclosing method
+declaration — effectively manual Java parsing. Simple injected cases are already handled
+correctly by `forwardScan` recovering the missing `}`. The hard failure only occurs in
+complex real-world files with specific brace-count contexts (confirmed in AppServerConfig.java).
+Deferred pending a cleaner approach.
 
 ---
 
