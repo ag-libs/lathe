@@ -161,6 +161,7 @@ Use these docs as the starting point when reprioritizing or slicing new work:
 
 - [lathe-call-hierarchy.md](planned/lathe-call-hierarchy.md) — exact-match method call tree exploration (incoming and outgoing calls).
 - [lathe-class-import-semantic-highlighting.md](planned/lathe-class-import-semantic-highlighting.md) — semantic token highlighting for class, interface, and enum type references in import statements and code bodies.
+- [lathe-goto-implementation.md](planned/lathe-goto-implementation.md) — `textDocument/implementation`: subtype and method-override navigation reusing Find References infrastructure.
 - [lathe-google-indent.md](planned/lathe-google-indent.md) — conservative `textDocument/onTypeFormatting`
   indentation hints using google-java-format.
 - [lathe-jdk-cache-key.md](done/lathe-jdk-cache-key.md) — unified JDK source and type-index cache pathing (implemented).
@@ -223,6 +224,13 @@ are explicitly deferred until after beta.
 ### Code Action Gaps
 ✅ Gaps 1 (`TryCatchWrapProvider`), 2 (`DeclareVariableProvider`), and Gap 3 classification are closed.
 Gap 3 provider and Gap 4 are deferred to post-beta.
+
+### Goto Implementation & Type Hierarchy
+`textDocument/implementation`, `textDocument/prepareTypeHierarchy`, `typeHierarchy/supertypes`, and `typeHierarchy/subtypes` implemented as a unified feature group.
+One new `ImplementationLocator` scanner (with a `directOnly` flag) serves all four endpoints.
+`supertypes` needs no file scan — pure `elements.getTypeElement()` introspection.
+`subtypes` and `implementation` reuse `ReferenceCandidatePlanner` candidate fan-out unchanged.
+See [lathe-goto-implementation.md](planned/lathe-goto-implementation.md).
 
 ### Structural Navigation
 ✅ `workspace/symbol` is implemented. `textDocument/documentSymbol` and `textDocument/foldingRange` are deferred to post-beta.
