@@ -171,6 +171,7 @@ _KIND_NAMES = {
 _LOG_KEYWORDS = (
     "inject prefix", "sentinelCtx", "resolve receiver",
     "type-index", "typeRef", "proposals", "WARN", "ERROR", "completion", "signatureHelp",
+    "unused",
 )
 
 _ASSERTION_KEYWORDS = frozenset(("expect", "min", "max", "filter"))
@@ -1011,10 +1012,12 @@ class ExploreShell:
             return
 
         for d in diags:
-            sev   = {1: "ERROR", 2: "WARN ", 3: "INFO "}.get(d["severity"], "?    ")
+            sev   = {1: "ERROR", 2: "WARN ", 3: "INFO ", 4: "HINT "}.get(d["severity"], "?    ")
             start = d["range"]["start"]
             msg   = d["message"].split("\n")[0]
-            print(f"  [{sev}] {start['line'] + 1}:{start['character'] + 1}  {msg}")
+            tags  = d.get("tags", [])
+            tag_str = " [unused]" if 1 in tags else ""
+            print(f"  [{sev}] {start['line'] + 1}:{start['character'] + 1}  {msg}{tag_str}")
 
     def _cmd_inject(self, args: list[str]) -> None:
         if not args:
@@ -1130,6 +1133,8 @@ def main() -> None:
                 parts.append(f"{sev_counts[1]} error(s)")
             if sev_counts.get(2):
                 parts.append(f"{sev_counts[2]} warning(s)")
+            if sev_counts.get(4):
+                parts.append(f"{sev_counts[4]} hint(s)")
             print(f"  diagnostics: {', '.join(parts)}")
         else:
             print("  diagnostics: none")

@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.logging.Logger;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
@@ -30,6 +31,8 @@ import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 
 final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
+
+  private static final Logger LOG = Logger.getLogger(UnusedDeclarationScanner.class.getName());
 
   private static final Set<String> EXCLUDED_FIELD_NAMES = Set.of("serialVersionUID");
 
@@ -158,6 +161,10 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
     collectUnused(privateMethods, reached, results);
     collectUnused(privateFields, referencedFields, results);
     collectUnused(localVars, referencedLocals, results);
+    if (!results.isEmpty()) {
+      final var uri = cu.getSourceFile().toUri();
+      LOG.fine(() -> "[unused] %s total=%d".formatted(uri, results.size()));
+    }
     return List.copyOf(results);
   }
 

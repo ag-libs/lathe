@@ -206,10 +206,11 @@ Severity is medium: wrong candidates appear but correct ones are usually present
 ## CQ-0032 — Member-access returns 0 items when stale snapshot holds an error type for the receiver
 
 ID: CQ-0032
-Status: accepted
+Status: fixed
 Tier: basic
 Failure mode: missing-candidate
 Owner component: CompletionEngine / TypeResolver
+Fix: commit 8355554 — extend reattribution guard to also trigger on TypeKind.ERROR
 
 Project/file:
 `/workspace/app-server/src/main/java/com/example/app/server/AppServer.java`
