@@ -53,6 +53,7 @@ final class ServerInstaller {
     try {
       Files.createDirectories(versionDir);
       if (Files.exists(launcherScript)
+          && Files.isExecutable(launcherScript)
           && script.equals(Files.readString(launcherScript, StandardCharsets.UTF_8))) {
         log.debug("[server] launcher unchanged — skipping write");
         updateCurrentLink(versionDir);
