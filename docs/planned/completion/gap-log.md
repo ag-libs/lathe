@@ -164,7 +164,7 @@ Deferred pending a cleaner approach.
 ## CQ-0034 — Lambda-scope locals leak into simple-name candidates after their enclosing block closes
 
 ID: CQ-0034
-Status: accepted
+Status: fixed
 Tier: Basic
 Discovery: 2025-07-25, AppServer.java constructor (sample-workspace)
 
@@ -209,6 +209,20 @@ Severity is medium: wrong candidates appear but correct ones are usually present
 ### Fix area
 
 `SimpleNameProvider` / the local-declaration scanner: record the enclosing block end line for each local and skip any local whose block does not contain the cursor position.
+
+### Fix
+
+`SimpleNameProvider.addVariableIfVisible` walks the ancestor path from each local's `TreePath`
+to the enclosing method, checking whether any `LambdaExpressionTree` ancestor ends before
+the cursor. If so, the local is suppressed. `LambdaExpressionTree` is checked specifically
+(not all block types) to avoid incorrectly filtering `instanceof` binding pattern variables,
+whose `InstanceOfTree` parent ends before the if-body where they remain in scope.
+Fix: commit `9f9e6b6`.
+
+Regression target:
+`CompletionSimpleNameTest.simpleName_lambdaParam_notVisibleAfterLambdaCloses`
+`CompletionSimpleNameTest.simpleName_lambdaBodyLocal_notVisibleAfterLambdaCloses`
+`CompletionSimpleNameTest.simpleName_methodLocal_visibleAfterNestedLambdaCloses`
 
 ---
 
