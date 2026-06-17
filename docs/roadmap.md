@@ -189,7 +189,8 @@ Use these docs as the starting point when reprioritizing or slicing new work:
 - [lathe-rich-javadoc-rendering.md](done/lathe-rich-javadoc-rendering.md) — AST-backed Markdown formatting for Javadoc using DocTreeScanner (implemented).
 - [lathe-run-test-debug.md](planned/lathe-run-test-debug.md) — Maven-delegated run, test, debug commands and streamed
   session events.
-- [lathe-structural-navigation.md](planned/lathe-structural-navigation.md) — Document symbols (outline view) and folding ranges.
+- [lathe-structural-navigation.md](planned/lathe-structural-navigation.md) — Document symbols (outline view) and workspace symbols.
+- [lathe-folding-ranges.md](planned/lathe-folding-ranges.md) — Folding ranges with targeted import folding.
 - [lathe-source-uri-scheme.md](done/lathe-source-uri-scheme.md) — superseded; `file://` approach implemented instead, see [lathe-file-uri-scheme.md](done/lathe-file-uri-scheme.md).
 - [lathe-unused-code-diagnostics.md](done/lathe-unused-code-diagnostics.md) — unused private methods, fields, and locals (implemented).
 - [lathe-stale-pom-detection.md](done/lathe-stale-pom-detection.md) — POM fingerprint recording,
@@ -275,8 +276,10 @@ without requiring a manual `mvn process-test-classes` round trip.
 ### Document Symbols and Folding Ranges
 Implement `textDocument/documentSymbol` (file outline) using a parse-only `SourceParser` AST pass.
 Powers the editor Outline view and breadcrumb navigation.
-`textDocument/foldingRange` can follow once the scanner infrastructure is in place.
 See [lathe-structural-navigation.md](planned/lathe-structural-navigation.md).
+
+`textDocument/foldingRange` can follow once the scanner infrastructure is in place.
+See [lathe-folding-ranges.md](planned/lathe-folding-ranges.md).
 
 ### onTypeFormatting
 Implement conservative `textDocument/onTypeFormatting` indentation hints for newline triggers.

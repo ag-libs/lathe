@@ -109,12 +109,3 @@ TypeKind.UNKNOWN     → SymbolKind.Class
 
 Set `capabilities.setWorkspaceSymbolProvider(true)` in server capability initialization.
 
-## 4. Folding Ranges *(post-beta)*
-
-`FoldingRangeScanner extends TreePathScanner<Void, Void>`:
-
-- **Classes & Methods**: emit `FoldingRangeKind.Region` folds using the full node span.
-- **Imports**: if there are ≥2 imports, emit a single `FoldingRangeKind.Imports` fold from the
-  first to the last import line.
-
-Deferred because Neovim users already get equivalent folding from treesitter.
