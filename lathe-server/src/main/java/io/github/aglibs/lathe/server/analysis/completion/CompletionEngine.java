@@ -103,7 +103,7 @@ public final class CompletionEngine {
           case CONSTRUCTOR_CALL ->
               parsed.argIndex() >= 0
                   ? completeSimpleName(parsed, injected, req, site)
-                  : completeConstructorTypeReference(injected, req, parsed.typeReferenceRole());
+                  : completeConstructorTypeReference(injected, req, parsed, site);
           case TYPE_REFERENCE ->
               shouldTreatTypeReferenceAsMixedSimpleName(parsed, injected)
                   ? completeSimpleName(parsed, injected, req, site)
@@ -395,6 +395,14 @@ public final class CompletionEngine {
     }
 
     return SemanticCompletionContext.from(site, req, parsed, req.cached().analysis());
+  }
+
+  private static SemanticCompletionContext semanticContext(
+      final CompletionSite site,
+      final CompletionRequest req,
+      final ParsedSentinel parsed,
+      final AttributedFileAnalysis analysis) {
+    return analysis != null ? SemanticCompletionContext.from(site, req, parsed, analysis) : null;
   }
 
   private CompletionOutcome completeTypeReference(
@@ -845,23 +853,33 @@ public final class CompletionEngine {
   private CompletionOutcome completeConstructorTypeReference(
       final SentinelInjectionResult injected,
       final CompletionRequest req,
-      final TypeReferenceRole role) {
-    final var base = completeSimpleNameTypeReferenceWithLang(injected, req, role);
-    final var initialAnalysis = req.cached() != null ? req.cached().analysis() : null;
-    final var initialExpected =
-        expectedConstructorTypeCandidates(injected.prefix(), req.cursorOffset(), initialAnalysis);
+      final ParsedSentinel parsed,
+      final CompletionSite site) {
+    final var role = parsed.typeReferenceRole();
+    final CompletionOutcome base = completeSimpleNameTypeReferenceWithLang(injected, req, role);
+    final AttributedFileAnalysis initialAnalysis =
+        req.cached() != null ? req.cached().analysis() : null;
+    final List<CompletionCandidate> initialExpected =
+        expectedConstructorTypeCandidates(
+            injected.prefix(),
+            req.cursorOffset(),
+            initialAnalysis,
+            semanticContext(site, req, parsed, initialAnalysis));
     final AttributedFileAnalysis freshAnalysis =
         initialExpected.isEmpty() && compiler != null && !req.noDiff()
             ? compiler.reattribute(req.uri(), req.content())
             : null;
-    final var analysis = freshAnalysis != null ? freshAnalysis : initialAnalysis;
-    final var expected =
+    final AttributedFileAnalysis analysis = freshAnalysis != null ? freshAnalysis : initialAnalysis;
+    final List<CompletionCandidate> expected =
         freshAnalysis != null
             ? expectedConstructorTypeCandidates(
-                injected.prefix(), req.cursorOffset(), freshAnalysis)
+                injected.prefix(),
+                req.cursorOffset(),
+                freshAnalysis,
+                semanticContext(site, req, parsed, freshAnalysis))
             : initialExpected;
     if (expected.isEmpty()) {
-      return base;
+      return incompleteEmptyConstructorPrefix(injected, base);
     }
 
     final List<CompletionItem> expectedItems =
@@ -876,12 +894,18 @@ public final class CompletionEngine {
   }
 
   private static List<CompletionCandidate> expectedConstructorTypeCandidates(
-      final String prefix, final int cursorOffset, final AttributedFileAnalysis analysis) {
+      final String prefix,
+      final int cursorOffset,
+      final AttributedFileAnalysis analysis,
+      final SemanticCompletionContext semanticContext) {
     if (analysis == null) {
       return List.of();
     }
 
-    final var expected = TypeResolver.resolveExpectedArgumentValue(cursorOffset, analysis);
+    final ExpectedValue expected =
+        semanticContext != null && semanticContext.expectedValue() instanceof ExpectedValue.Type
+            ? semanticContext.expectedValue()
+            : TypeResolver.resolveExpectedArgumentValue(cursorOffset, analysis);
     if (!(expected instanceof ExpectedValue.Type(final TypeMirror type))) {
       return List.of();
     }
@@ -896,6 +920,13 @@ public final class CompletionEngine {
     }
 
     return List.of(CandidateFactory.typeElementCandidate(typeEl, importEdit(typeEl, analysis)));
+  }
+
+  private static CompletionOutcome incompleteEmptyConstructorPrefix(
+      final SentinelInjectionResult injected, final CompletionOutcome base) {
+    return injected.prefix().isEmpty()
+        ? new CompletionOutcome(base.items(), base.freshAnalysis(), true)
+        : base;
   }
 
   private static ImportEdit importEdit(

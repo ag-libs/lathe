@@ -52,6 +52,42 @@ class CompletionTypeIndexTest extends CompletionTestSupport {
   }
 
   @Test
+  void constructorCall_emptyPrefixWithoutExpectedType_returnsIncomplete() throws IOException {
+    localFixture =
+        new CompletionFixture(
+            CompletionFixture.typeIndex(
+                tmp.resolve("index.json"),
+                CompletionFixture.typeEntry("ArrayDeque", "java.util.ArrayDeque", TypeKind.CLASS)));
+
+    final var outcome = localFixture.outcome("class Test { void m() { final var x = new § } }");
+
+    assertThat(outcome.incomplete()).isTrue();
+  }
+
+  @Test
+  void constructorCall_emptyPrefixExpectedType_ranksExpectedTypeFirst() throws IOException {
+    localFixture =
+        new CompletionFixture(
+            CompletionFixture.typeIndex(
+                tmp.resolve("index.json"),
+                CompletionFixture.typeEntry("ArrayDeque", "java.util.ArrayDeque", TypeKind.CLASS)));
+
+    final var items =
+        localFixture.complete(
+            """
+            import java.util.ArrayDeque;
+
+            class Test {
+                void m() {
+                    ArrayDeque<String> x = new §
+                }
+            }""");
+
+    assertThat(items).isNotEmpty();
+    assertThat(items.getFirst().getLabel()).isEqualTo("ArrayDeque");
+  }
+
+  @Test
   void typeIndex_classLiteral_suggestsIndexedType() {
     assertThat(
             labels(

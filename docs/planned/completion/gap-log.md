@@ -47,7 +47,7 @@ Notes:
 ## CQ-0036 — Empty constructor completion returns a complete narrow list
 
 ID: CQ-0036
-Status: accepted
+Status: fixed
 Tier: basic
 Failure mode: missing-candidate-after-client-filtering
 Owner component: CompletionEngine / TypeIndexCandidateProvider
@@ -84,7 +84,7 @@ final var x = new Connection§
 ConnectionString x = new §
 ```
 
-Observed behavior:
+Observed behavior before the fix:
 The direct prefixed request works.
 `new Connection§` is parsed as `sentinelCtx=CONSTRUCTOR_CALL`,
 queries the type index with prefix `Connection`,
@@ -95,7 +95,7 @@ and returns 28 type candidates including:
 - `ConnectionId` from `com.mongodb.connection`
 - `Connection` from `com.mongodb.internal.connection`
 
-The empty-prefix request is the gap.
+The empty-prefix request was the gap.
 `new §` is also parsed as `sentinelCtx=CONSTRUCTOR_CALL`,
 but returns only 88 broad java.lang/current-scope candidates and marks the completion list
 as complete:
@@ -107,7 +107,7 @@ as complete:
 [completion:lsp] ... items=88 incomplete=false
 ```
 
-The expected-type variant fails the same way.
+The expected-type variant failed the same way.
 `ConnectionString x = new §` returns the same 88 broad items,
 does not include or rank `ConnectionString` first,
 and also marks the result complete:
@@ -170,10 +170,10 @@ Regression target:
 `CompletionTypeIndexTest.constructorCall_emptyPrefixExpectedType_ranksExpectedTypeFirst`
 
 Notes:
-This is not a candidate-generation failure for non-empty prefixes.
-The bug is the empty-prefix constructor-call response contract with LSP clients.
-The behavior is especially visible in `blink.cmp`/Neovim because the user sees the completion menu
-continue filtering after `new ` while Lathe is not necessarily queried again.
+This was not a candidate-generation failure for non-empty prefixes.
+The bug was the empty-prefix constructor-call response contract with LSP clients.
+Fixed by marking broad empty-prefix constructor completions incomplete and by using the semantic
+expected type for constructor-call type completion before falling back to broad discovery.
 
 ## CQ-0039 — RejectedExecutionException logged as SEVERE at shutdown
 
