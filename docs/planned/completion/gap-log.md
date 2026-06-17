@@ -47,7 +47,7 @@ Notes:
 ## CQ-0039 — RejectedExecutionException logged as SEVERE at shutdown
 
 ID: CQ-0039
-Status: accepted
+Status: fixed
 Tier: lifecycle
 Discovery: 2026-06-17
 

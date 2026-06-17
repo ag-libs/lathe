@@ -4,6 +4,7 @@ import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.*;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
@@ -16,6 +17,7 @@ final class LatheTextDocumentService implements TextDocumentService {
   private static final long DEFAULT_DEBOUNCE_MS = 500;
 
   private final ServerEventLoop worker = new ServerEventLoop();
+  private final AtomicBoolean closed = new AtomicBoolean();
   private final long debounceMs;
   private WorkspaceSession session;
 
@@ -40,6 +42,10 @@ final class LatheTextDocumentService implements TextDocumentService {
   }
 
   void close() {
+    if (!closed.compareAndSet(false, true)) {
+      return;
+    }
+
     if (session != null) {
       worker
           .submit(

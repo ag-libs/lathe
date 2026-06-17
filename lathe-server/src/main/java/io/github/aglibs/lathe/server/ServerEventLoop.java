@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -29,20 +30,28 @@ final class ServerEventLoop {
   private final Map<String, ScheduledFuture<?>> pending = new HashMap<>();
 
   void execute(final Runnable task) {
-    executor.execute(() -> runLogged(task));
+    try {
+      executor.execute(() -> runLogged(task));
+    } catch (final RejectedExecutionException ignored) {
+      LOG.fine(() -> "[worker] execute rejected — executor shut down");
+    }
   }
 
   <T> CompletableFuture<T> submit(final Callable<T> task) {
     final var future = new CompletableFuture<T>();
-    executor.execute(
-        () -> {
-          try {
-            future.complete(task.call());
-          } catch (final Throwable t) {
-            future.completeExceptionally(t);
-            IOUtil.rethrowIfError(t);
-          }
-        });
+    try {
+      executor.execute(
+          () -> {
+            try {
+              future.complete(task.call());
+            } catch (final Throwable t) {
+              future.completeExceptionally(t);
+              IOUtil.rethrowIfError(t);
+            }
+          });
+    } catch (final RejectedExecutionException ignored) {
+      future.cancel(false);
+    }
     return future;
   }
 
