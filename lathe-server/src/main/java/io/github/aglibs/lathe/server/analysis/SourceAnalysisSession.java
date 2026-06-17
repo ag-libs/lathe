@@ -29,6 +29,8 @@ import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.CompletionContext;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
+import org.eclipse.lsp4j.DocumentSymbol;
+import org.eclipse.lsp4j.FoldingRange;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.MarkupContent;
@@ -102,6 +104,26 @@ public final class SourceAnalysisSession implements AutoCloseable {
 
   public void dropFromCache(final String uri) {
     cache.remove(uri);
+  }
+
+  public List<DocumentSymbol> documentSymbol(final String uri, final String content) {
+    final Stopwatch t = Stopwatch.start();
+    final var symbols =
+        parser
+            .parseContent(
+                uri, content, (trees, tree) -> DocumentSymbolScanner.scan(trees, tree, content))
+            .orElseGet(List::of);
+    LOG.fine(
+        () -> "[documentSymbol] %s %dms symbols=%d".formatted(uri, t.elapsedMs(), symbols.size()));
+    return symbols;
+  }
+
+  public List<FoldingRange> foldingRange(final String uri, final String content) {
+    final Stopwatch t = Stopwatch.start();
+    final var ranges =
+        parser.parseContent(uri, content, FoldingRangeScanner::scan).orElseGet(List::of);
+    LOG.fine(() -> "[foldingRange] %s %dms ranges=%d".formatted(uri, t.elapsedMs(), ranges.size()));
+    return ranges;
   }
 
   public List<SemanticToken> semanticTokens(final String uri, final int expectedVersion) {

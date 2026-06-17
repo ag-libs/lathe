@@ -3,6 +3,8 @@ package io.github.aglibs.lathe.server.analysis;
 import static io.github.aglibs.lathe.server.analysis.SourceLocator.offsetToPosition;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
@@ -10,8 +12,8 @@ import java.util.List;
 import java.util.Locale;
 import javax.tools.Diagnostic;
 import javax.tools.JavaFileObject;
-import org.eclipse.lsp4j.DiagnosticSeverity;
-import org.eclipse.lsp4j.Position;
+import javax.tools.StandardJavaFileManager;
+import org.eclipse.lsp4j.*;
 import org.junit.jupiter.api.Test;
 
 class SourceAnalysisSessionTest {
@@ -114,6 +116,62 @@ class SourceAnalysisSessionTest {
 
       assertThat(ctx.hover(new SourceFeatureRequest(uri, currentContent, pos, List.of(), manifest)))
           .isNull();
+    }
+  }
+
+  @Test
+  void documentSymbol_withoutCompile_returnsParseOnlySymbols() {
+    final var compiler = mock(JavaSourceCompiler.class);
+    final var fileManager = mock(StandardJavaFileManager.class);
+    when(compiler.fileManager()).thenReturn(fileManager);
+    final String source = "class Test { String field; void method() {} }";
+
+    final var session = new SourceAnalysisSession(compiler);
+    final var symbols = session.documentSymbol(TempSourceCompiler.TEST_URI, source);
+
+    assertThat(symbols).extracting(DocumentSymbol::getKind).containsExactly(SymbolKind.Class);
+    assertThat(symbols.getFirst().getChildren())
+        .extracting(DocumentSymbol::getName)
+        .containsExactly("field", "method");
+    verify(compiler, never()).compile(TempSourceCompiler.TEST_URI, source, CompileMode.OPEN);
+    verify(compiler, never()).compile(TempSourceCompiler.TEST_URI, source, CompileMode.FAST);
+    verify(compiler, never()).compile(TempSourceCompiler.TEST_URI, source, CompileMode.FULL);
+    session.close();
+  }
+
+  @Test
+  void foldingRange_withoutCompile_returnsParseOnlyRanges() {
+    final var compiler = mock(JavaSourceCompiler.class);
+    final var fileManager = mock(StandardJavaFileManager.class);
+    when(compiler.fileManager()).thenReturn(fileManager);
+    final String source =
+        """
+        import java.util.List;
+        import java.util.Map;
+
+        class Test {
+        }
+        """;
+
+    final var session = new SourceAnalysisSession(compiler);
+    final var ranges = session.foldingRange(TempSourceCompiler.TEST_URI, source);
+
+    assertThat(ranges).extracting(FoldingRange::getKind).contains(FoldingRangeKind.Imports);
+    verify(compiler, never()).compile(TempSourceCompiler.TEST_URI, source, CompileMode.OPEN);
+    verify(compiler, never()).compile(TempSourceCompiler.TEST_URI, source, CompileMode.FAST);
+    verify(compiler, never()).compile(TempSourceCompiler.TEST_URI, source, CompileMode.FULL);
+    session.close();
+  }
+
+  @Test
+  void structuralNavigation_incompleteSource_returnsBestEffortResults() {
+    final String source = "class Test { void method() {";
+
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      assertThat(session.documentSymbol(TempSourceCompiler.TEST_URI, source))
+          .extracting(DocumentSymbol::getName)
+          .contains("Test");
+      assertThat(session.foldingRange(TempSourceCompiler.TEST_URI, source)).isNotNull();
     }
   }
 

@@ -42,6 +42,8 @@ import org.eclipse.lsp4j.CodeActionContext;
 import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.CompletionContext;
 import org.eclipse.lsp4j.Diagnostic;
+import org.eclipse.lsp4j.DocumentSymbol;
+import org.eclipse.lsp4j.FoldingRange;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.LocationLink;
@@ -500,6 +502,41 @@ final class WorkspaceSession {
                 .exceptionally(
                     ex -> logAndReturn(ex, "[semanticTokens] failed for %s".formatted(uri), null)),
         null);
+  }
+
+  CompletableFuture<List<DocumentSymbol>> documentSymbolFuture(final String uri) {
+    final var openFile = docs.get(uri);
+    if (openFile == null) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
+    return routeFeature(
+        uri,
+        moduleWorker ->
+            moduleWorker
+                .documentSymbol(uri, openFile.content())
+                .exceptionally(
+                    ex ->
+                        logAndReturn(
+                            ex, "[documentSymbol] failed for %s".formatted(uri), List.of())),
+        List.of());
+  }
+
+  CompletableFuture<List<FoldingRange>> foldingRangeFuture(final String uri) {
+    final var openFile = docs.get(uri);
+    if (openFile == null) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
+    return routeFeature(
+        uri,
+        moduleWorker ->
+            moduleWorker
+                .foldingRange(uri, openFile.content())
+                .exceptionally(
+                    ex ->
+                        logAndReturn(ex, "[foldingRange] failed for %s".formatted(uri), List.of())),
+        List.of());
   }
 
   List<? extends TextEdit> format(final String tag, final String uri) {

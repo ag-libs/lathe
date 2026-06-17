@@ -295,6 +295,25 @@ public final class SourceLocator {
     return -1;
   }
 
+  public static long findLastIdentifierBetween(
+      final String content, final long fromOffset, final long toOffset, final String name) {
+    final int nameLen = name.length();
+    final int limit = Math.min(content.length(), (int) toOffset);
+    long result = -1L;
+    long cursor = Math.max(0L, fromOffset);
+    while (cursor < limit) {
+      final long candidate = findIdentifierFrom(content, cursor, name);
+      if (candidate < 0 || candidate + nameLen > limit) {
+        break;
+      }
+
+      result = candidate;
+      cursor = candidate + 1L;
+    }
+
+    return result;
+  }
+
   private static int indexIn(final List<? extends Tree> list, final Tree target) {
     return IntStream.range(0, list.size())
         .filter(i -> list.get(i) == target)

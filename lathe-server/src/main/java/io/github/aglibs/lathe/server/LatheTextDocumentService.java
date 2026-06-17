@@ -140,6 +140,28 @@ final class LatheTextDocumentService implements TextDocumentService {
   }
 
   @Override
+  public CompletableFuture<List<Either<SymbolInformation, DocumentSymbol>>> documentSymbol(
+      final DocumentSymbolParams params) {
+    final var uri = params.getTextDocument().getUri();
+    return worker
+        .submit(() -> session.documentSymbolFuture(uri))
+        .thenCompose(f -> f)
+        .thenApply(LatheTextDocumentService::documentSymbolResult);
+  }
+
+  static List<Either<SymbolInformation, DocumentSymbol>> documentSymbolResult(
+      final List<DocumentSymbol> symbols) {
+    return symbols.stream().map(Either::<SymbolInformation, DocumentSymbol>forRight).toList();
+  }
+
+  @Override
+  public CompletableFuture<List<FoldingRange>> foldingRange(
+      final FoldingRangeRequestParams params) {
+    final var uri = params.getTextDocument().getUri();
+    return worker.submit(() -> session.foldingRangeFuture(uri)).thenCompose(f -> f);
+  }
+
+  @Override
   public CompletableFuture<List<? extends Location>> references(final ReferenceParams params) {
     final var uri = params.getTextDocument().getUri();
     final var pos = params.getPosition();

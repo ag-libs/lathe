@@ -73,6 +73,15 @@ sym <query> [assertions]
     Supports expect, min, and max assertion qualifiers (matched against symbol labels).
     This command is not tied to the open file; it queries the full workspace index.
 
+symbols [assertions]   (alias: outline)
+    Show the hierarchical document symbols for the open file.
+    Supports expect, min, and max assertion qualifiers matched against symbol names.
+
+folds [assertions]     (alias: folding)
+    Show folding ranges for the open file.
+    Supports expect, min, and max assertion qualifiers matched against folding kinds
+    such as imports and region.
+
 diagnostics   (alias: diag)
     List errors and warnings the compiler reports for this file.
 
@@ -166,6 +175,16 @@ _KIND_NAMES = {
     17: "File", 18: "Reference", 19: "Folder", 20: "EnumMember",
     21: "Constant", 22: "Struct", 23: "Event", 24: "Operator",
     25: "TypeParameter",
+}
+
+_SYMBOL_KIND_NAMES = {
+    1: "File", 2: "Module", 3: "Namespace", 4: "Package",
+    5: "Class", 6: "Method", 7: "Property", 8: "Field",
+    9: "Constructor", 10: "Enum", 11: "Interface", 12: "Function",
+    13: "Variable", 14: "Constant", 15: "String", 16: "Number",
+    17: "Boolean", 18: "Array", 19: "Object", 20: "Key",
+    21: "Null", 22: "EnumMember", 23: "Struct", 24: "Event",
+    25: "Operator", 26: "TypeParameter",
 }
 
 _LOG_KEYWORDS = (
@@ -461,6 +480,10 @@ class ExploreShell:
             "def":         self._cmd_definition,
             "refs":        self._cmd_refs,
             "sym":         self._cmd_sym,
+            "symbols":     self._cmd_symbols,
+            "outline":     self._cmd_symbols,
+            "folds":       self._cmd_folds,
+            "folding":     self._cmd_folds,
             "diagnostics": self._cmd_diagnostics,
             "diag":        self._cmd_diagnostics,
             "inject":      self._cmd_inject,
@@ -971,21 +994,11 @@ class ExploreShell:
                     self.any_failure = True
             return
 
-        _SYM_KIND_NAMES = {
-            1: "File", 2: "Module", 3: "Namespace", 4: "Package",
-            5: "Class", 6: "Method", 7: "Property", 8: "Field",
-            9: "Constructor", 10: "Enum", 11: "Interface", 12: "Function",
-            13: "Variable", 14: "Constant", 15: "String", 16: "Number",
-            17: "Boolean", 18: "Array", 19: "Object", 20: "Key",
-            21: "Null", 22: "EnumMember", 23: "Struct", 24: "Event",
-            25: "Operator", 26: "TypeParameter",
-        }
-
         print(f"  {len(symbols)} symbol(s) for {query!r}:")
         limit = 50
         for sym in symbols[:limit]:
             name = sym.get("name", "?")
-            kind = _SYM_KIND_NAMES.get(sym.get("kind"), "?")
+            kind = _SYMBOL_KIND_NAMES.get(sym.get("kind"), "?")
             container = sym.get("containerName") or ""
             loc = sym.get("location", {})
             uri = loc.get("uri", "").removeprefix("file://")
@@ -999,6 +1012,87 @@ class ExploreShell:
             passed = _print_assertion_result(failures)
             if not passed:
                 self.any_failure = True
+
+    def _cmd_symbols(self, args: list[str]) -> None:
+        _, assertions = _parse_assertions(args)
+
+        try:
+            symbols = self._client.document_symbols(self._file)
+        except TimeoutError:
+            print("  TIMEOUT")
+            return
+
+        if not symbols:
+            print("  (no document symbols returned)")
+            if assertions:
+                passed = _print_assertion_result(_check_assertions([], assertions))
+                if not passed:
+                    self.any_failure = True
+            return
+
+        flat = self._flatten_symbols(symbols)
+        print(f"  {len(flat)} document symbol(s):")
+        self._print_symbol_tree(symbols)
+
+        if assertions:
+            items = [{"label": symbol.get("name", "")} for symbol in flat]
+            failures = _check_assertions(items, assertions)
+            passed = _print_assertion_result(failures)
+            if not passed:
+                self.any_failure = True
+
+    def _cmd_folds(self, args: list[str]) -> None:
+        _, assertions = _parse_assertions(args)
+
+        try:
+            ranges = self._client.folding_ranges(self._file)
+        except TimeoutError:
+            print("  TIMEOUT")
+            return
+
+        if not ranges:
+            print("  (no folding ranges returned)")
+            if assertions:
+                passed = _print_assertion_result(_check_assertions([], assertions))
+                if not passed:
+                    self.any_failure = True
+            return
+
+        print(f"  {len(ranges)} folding range(s):")
+        for fold in ranges:
+            kind = fold.get("kind") or "region"
+            start_line = fold.get("startLine", 0) + 1
+            end_line = fold.get("endLine", 0) + 1
+            start_char = fold.get("startCharacter", 0) + 1
+            end_char = fold.get("endCharacter", 0) + 1
+            print(f"    [{kind}] {start_line}:{start_char}-{end_line}:{end_char}")
+
+        if assertions:
+            items = [{"label": fold.get("kind") or "region"} for fold in ranges]
+            failures = _check_assertions(items, assertions)
+            passed = _print_assertion_result(failures)
+            if not passed:
+                self.any_failure = True
+
+    @staticmethod
+    def _flatten_symbols(symbols: list[dict]) -> list[dict]:
+        flat = []
+        for symbol in symbols:
+            flat.append(symbol)
+            flat.extend(ExploreShell._flatten_symbols(symbol.get("children") or []))
+        return flat
+
+    @staticmethod
+    def _print_symbol_tree(symbols: list[dict], indent: int = 0) -> None:
+        prefix = "  " * indent
+        for symbol in symbols:
+            name = symbol.get("name", "?")
+            kind = _SYMBOL_KIND_NAMES.get(symbol.get("kind"), "?")
+            selection = symbol.get("selectionRange", {}).get("start", {})
+            line = selection.get("line", 0) + 1
+            char = selection.get("character", 0) + 1
+            print(f"    {prefix}[{kind}] {name}  {line}:{char}")
+            ExploreShell._print_symbol_tree(symbol.get("children") or [], indent + 1)
 
     def _cmd_diagnostics(self, args: list[str]) -> None:
         try:

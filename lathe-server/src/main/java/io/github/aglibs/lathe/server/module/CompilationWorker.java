@@ -23,6 +23,8 @@ import java.util.logging.Logger;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.CompletionContext;
+import org.eclipse.lsp4j.DocumentSymbol;
+import org.eclipse.lsp4j.FoldingRange;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
@@ -125,6 +127,16 @@ public final class CompilationWorker {
 
   public CompletableFuture<Optional<Location>> definition(final SourceFeatureRequest request) {
     return submit(ctx -> ctx.definition(request));
+  }
+
+  public CompletableFuture<List<DocumentSymbol>> documentSymbol(
+      final String uri, final String content) {
+    return submit(ctx -> ctx.documentSymbol(uri, content));
+  }
+
+  public CompletableFuture<List<FoldingRange>> foldingRange(
+      final String uri, final String content) {
+    return submit(ctx -> ctx.foldingRange(uri, content));
   }
 
   public CompletableFuture<CompletionOutcome> complete(

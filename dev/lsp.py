@@ -327,6 +327,13 @@ class LatheClient:
         })
         return result or []
 
+    def folding_ranges(self, file: str | Path) -> list[dict]:
+        """Folding ranges. Returns list of FoldingRange objects."""
+        result = self.request("textDocument/foldingRange", {
+            "textDocument": {"uri": Path(file).resolve().as_uri()},
+        })
+        return result or []
+
     def workspace_symbol(self, query: str) -> list[dict]:
         """Workspace symbol search. Returns list of SymbolInformation."""
         result = self.request("workspace/symbol", {"query": query})

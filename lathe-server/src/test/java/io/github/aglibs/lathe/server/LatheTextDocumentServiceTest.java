@@ -12,6 +12,7 @@ import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.DidCloseTextDocumentParams;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
+import org.eclipse.lsp4j.DocumentSymbol;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
@@ -102,6 +103,18 @@ class LatheTextDocumentServiceTest {
     assertThat(result.isRight()).isTrue();
     assertThat(result.getRight().isIncomplete()).isTrue();
     assertThat(result.getRight().getItems()).containsExactly(item);
+  }
+
+  @Test
+  void documentSymbolResult_symbols_returnsDocumentSymbolEitherValues() {
+    final var symbol = new DocumentSymbol();
+    symbol.setName("Foo");
+
+    final var result = LatheTextDocumentService.documentSymbolResult(List.of(symbol));
+
+    assertThat(result).hasSize(1);
+    assertThat(result.getFirst().isRight()).isTrue();
+    assertThat(result.getFirst().getRight()).isSameAs(symbol);
   }
 
   private static DidChangeTextDocumentParams changeParams(final String text) {

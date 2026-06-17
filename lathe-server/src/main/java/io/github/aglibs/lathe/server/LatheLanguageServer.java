@@ -49,7 +49,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     return CompletableFuture.completedFuture(new InitializeResult(capabilities));
   }
 
-  private static ServerCapabilities createCapabilities() {
+  static ServerCapabilities createCapabilities() {
     final var capabilities = new ServerCapabilities();
     capabilities.setTextDocumentSync(TextDocumentSyncKind.Full);
     capabilities.setCompletionProvider(new CompletionOptions(false, List.of(".")));
@@ -63,6 +63,8 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     capabilities.setDocumentFormattingProvider(true);
     capabilities.setDefinitionProvider(true);
     capabilities.setReferencesProvider(true);
+    capabilities.setDocumentSymbolProvider(true);
+    capabilities.setFoldingRangeProvider(true);
     final var codeActionOptions = new CodeActionOptions(List.of(CodeActionKind.QuickFix));
     capabilities.setCodeActionProvider(codeActionOptions);
     capabilities.setWorkspaceSymbolProvider(true);

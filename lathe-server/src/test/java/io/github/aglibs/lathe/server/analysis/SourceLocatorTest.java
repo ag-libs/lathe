@@ -297,4 +297,28 @@ class SourceLocatorTest extends SampleFixture {
     assertThat(param).isNotNull();
     assertThat(param.getKind()).isEqualTo(ElementKind.PARAMETER);
   }
+
+  // --- identifier lookup ---
+
+  @Test
+  void findLastIdentifierBetween_repeatedIdentifier_returnsLastBoundedMatch() {
+    final String source = "class Foo { Foo Foo; }";
+
+    final long result =
+        SourceLocator.findLastIdentifierBetween(
+            source, source.indexOf("{"), source.indexOf(";"), "Foo");
+
+    assertThat(result).isEqualTo(source.lastIndexOf("Foo"));
+  }
+
+  @Test
+  void findLastIdentifierBetween_partialIdentifier_returnsNoMatch() {
+    final String source = "class Test { int Foobar; }";
+
+    final long result =
+        SourceLocator.findLastIdentifierBetween(
+            source, source.indexOf("{"), source.indexOf(";"), "Foo");
+
+    assertThat(result).isEqualTo(-1L);
+  }
 }
