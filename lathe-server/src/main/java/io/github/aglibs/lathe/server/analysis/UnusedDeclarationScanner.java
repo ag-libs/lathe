@@ -43,6 +43,8 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
   private final SourcePositions positions;
   private final String content;
 
+  private boolean declarationPhase = true;
+
   private final Map<Element, Candidate> privateMethods = new LinkedHashMap<>();
   private final Map<Element, Candidate> privateFields = new LinkedHashMap<>();
   private final Map<Element, Candidate> localVars = new LinkedHashMap<>();
@@ -68,36 +70,42 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
     }
     final var scanner = new UnusedDeclarationScanner(analysis, content);
     scanner.scan(analysis.tree(), null);
+    scanner.declarationPhase = false;
+    scanner.scan(analysis.tree(), null);
     return scanner.buildDiagnostics();
   }
 
   @Override
   public Void visitMethod(final MethodTree node, final Void v) {
-    final var element = trees.getElement(getCurrentPath());
-    if (element != null
-        && element.getKind() == ElementKind.METHOD
-        && element.getModifiers().contains(Modifier.PRIVATE)) {
-      privateMethods.put(element, candidateFor(node, node.getName().toString()));
+    if (declarationPhase) {
+      final var element = trees.getElement(getCurrentPath());
+      if (element != null
+          && element.getKind() == ElementKind.METHOD
+          && element.getModifiers().contains(Modifier.PRIVATE)) {
+        privateMethods.put(element, candidateFor(node, node.getName().toString()));
+      }
     }
     return super.visitMethod(node, v);
   }
 
   @Override
   public Void visitVariable(final VariableTree node, final Void v) {
-    final var element = trees.getElement(getCurrentPath());
-    if (element != null) {
-      final var parent = getCurrentPath().getParentPath().getLeaf();
-      if (parent instanceof ClassTree classTree) {
-        final boolean isRecordComponent =
-            classTree.getKind() == Tree.Kind.RECORD
-                && !element.getModifiers().contains(Modifier.STATIC);
-        if (!isRecordComponent
-            && element.getModifiers().contains(Modifier.PRIVATE)
-            && !EXCLUDED_FIELD_NAMES.contains(node.getName().toString())) {
-          privateFields.put(element, candidateFor(node, node.getName().toString()));
+    if (declarationPhase) {
+      final var element = trees.getElement(getCurrentPath());
+      if (element != null) {
+        final var parent = getCurrentPath().getParentPath().getLeaf();
+        if (parent instanceof ClassTree classTree) {
+          final boolean isRecordComponent =
+              classTree.getKind() == Tree.Kind.RECORD
+                  && !element.getModifiers().contains(Modifier.STATIC);
+          if (!isRecordComponent
+              && element.getModifiers().contains(Modifier.PRIVATE)
+              && !EXCLUDED_FIELD_NAMES.contains(node.getName().toString())) {
+            privateFields.put(element, candidateFor(node, node.getName().toString()));
+          }
+        } else if (!(parent instanceof MethodTree)) {
+          localVars.put(element, candidateFor(node, node.getName().toString()));
         }
-      } else if (!(parent instanceof MethodTree)) {
-        localVars.put(element, candidateFor(node, node.getName().toString()));
       }
     }
     return super.visitVariable(node, v);
@@ -105,12 +113,17 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
 
   @Override
   public Void visitIdentifier(final IdentifierTree node, final Void v) {
-    markReference(trees.getElement(getCurrentPath()));
+    if (!declarationPhase) {
+      markReference(trees.getElement(getCurrentPath()));
+    }
     return super.visitIdentifier(node, v);
   }
 
   @Override
   public Void visitMemberSelect(final MemberSelectTree node, final Void v) {
+    if (declarationPhase) {
+      return super.visitMemberSelect(node, v);
+    }
     scan(node.getExpression(), null);
     markReference(SourceLocator.elementAt(trees, getCurrentPath()));
     return null;
@@ -118,6 +131,9 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
 
   @Override
   public Void visitMemberReference(final MemberReferenceTree node, final Void v) {
+    if (declarationPhase) {
+      return super.visitMemberReference(node, v);
+    }
     scan(node.getQualifierExpression(), null);
     markReference(trees.getElement(getCurrentPath()));
     return null;

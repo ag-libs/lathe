@@ -44,6 +44,105 @@ Notes:
 
 ## Open Entries
 
+## CQ-0038 — Private methods falsely marked unused when declared after their callers
+
+ID: CQ-0038
+Status: fixed
+Tier: Basic
+Discovery: 2026-06-17
+
+### Description
+
+Private methods that are actually called are marked with an "Unused" hint whenever their
+declaration appears later in the file than the method that calls them.
+In the conventional Java style (public API first, private helpers below), this affects
+every private helper method — they all show as unused even when called.
+
+### Root cause
+
+`UnusedDeclarationScanner` uses a single tree-walk. `visitMethod` registers private methods
+into `privateMethods` and `visitIdentifier` / `visitMemberSelect` register callers via
+`markReference`, which does a `privateMethods.containsKey(element)` check.
+Because the tree is walked top-to-bottom in source order, a call inside a public method that
+appears before the private method's declaration reaches `markReference` before the callee is
+in `privateMethods`. The check returns false and the reference is permanently dropped.
+The same bug affects `this.helper()` calls (via `visitMemberSelect`) and private fields.
+
+### Fix
+
+Two-pass scan:
+- Pass 1 (`declarationPhase = true`): `visitMethod` and `visitVariable` populate the maps;
+  reference visitors do nothing.
+- Pass 2 (`declarationPhase = false`): reference visitors fire; declaration visitors skip.
+
+All declarations are known before any reference is checked, making the scan order-independent.
+
+### Regression targets
+
+`UnusedDeclarationScannerTest.compile_privateMethodDeclaredAfterCaller_noHint`
+`UnusedDeclarationScannerTest.compile_privateMethodCalledViaThis_noHint`
+
+## CQ-0037 — Primitive types not suggested in variable type position
+
+ID: CQ-0037
+Status: accepted
+Tier: Basic
+Discovery: 2026-06-17
+
+### Description
+
+Primitive types (`boolean`, `byte`, `char`, `double`, `float`, `int`, `long`, `short`) never
+appear in completion candidates when the cursor is in a type-name position:
+local variable type, method parameter type, method return type, field type, or cast expression.
+
+### Failure mode
+
+`KeywordProvider` has no PRIMITIVES list.
+The two contexts that cover type-name positions — `TYPE_REFERENCE` and `VARIABLE_DECLARATION` —
+return keywords through `classBodyKeywordsIfApplicable`, which returns `List.of()` inside any
+method body and `classBodyKeywords()` at class scope.
+Neither path includes primitives at any scope.
+
+### Probe
+
+```java
+class Foo {
+  void test() {
+    i§           // VARIABLE_DECLARATION — expects int, Integer, ...
+  }
+  b§ bar() {}   // TYPE_REFERENCE (return type) — expects boolean, byte, Boolean, ...
+}
+```
+
+### Expected Lathe behavior
+
+`int`, `long`, `boolean`, `byte`, `char`, `short`, `float`, `double` appear whenever the cursor
+is in a type-name slot (variable type, parameter type, return type, field type, cast).
+`void` is already in `TYPE_DECLARATIONS` (class-body level only) and needs no change.
+
+### Fix
+
+Add to `KeywordProvider`:
+
+```java
+private static final List<String> PRIMITIVES =
+    List.of("boolean", "byte", "char", "double", "float", "int", "long", "short");
+```
+
+Include PRIMITIVES unconditionally in:
+- `classBodyKeywords()` — covers field types and method return types
+- `selectKeywords` `TYPE_REFERENCE` branch when inside a method — currently returns `List.of()`
+  via `classBodyKeywordsIfApplicable`; add `PRIMITIVES` alongside
+- `selectKeywords` `VARIABLE_DECLARATION` branch (not-name-slot path) — same as above
+
+The change is entirely inside `KeywordProvider`; no other completion component is affected.
+
+### Regression target
+
+`KeywordProviderTest.typeReference_inMethodBody_includesPrimitives`
+`KeywordProviderTest.variableDeclaration_typeSlot_includesPrimitives`
+`KeywordProviderTest.classBody_returnType_includesPrimitives`
+
 ## CQ-0036 — Goto definition fails for annotation-processor generated sources
 
 ID: CQ-0036

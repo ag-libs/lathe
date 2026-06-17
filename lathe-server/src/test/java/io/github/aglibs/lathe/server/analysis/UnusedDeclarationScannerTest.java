@@ -57,6 +57,32 @@ class UnusedDeclarationScannerTest {
   }
 
   @Test
+  void compile_privateMethodDeclaredAfterCaller_noHint() {
+    assertThat(
+            unusedHintsFor(
+                """
+                class Test {
+                  public void api() { helper(); }
+                  private void helper() {}
+                }
+                """))
+        .isEmpty();
+  }
+
+  @Test
+  void compile_privateMethodCalledViaThis_noHint() {
+    assertThat(
+            unusedHintsFor(
+                """
+                class Test {
+                  public void api() { this.helper(); }
+                  private void helper() {}
+                }
+                """))
+        .isEmpty();
+  }
+
+  @Test
   void compile_selfRecursivePrivateMethod_reportsHint() {
     assertThat(
             unusedHintsFor(
