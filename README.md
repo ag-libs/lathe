@@ -11,26 +11,6 @@ Lathe setup has two parts:
 - `lathe-maven-plugin` declares two goals in the reactor root:
   `init` (auto-bound to `initialize`) and `sync` (auto-bound to `process-test-classes`).
 
-## Supported Features
-
-Lathe currently implements the following LSP endpoints:
-
-- `textDocument/publishDiagnostics`: Surfaces `javac` errors and warnings exactly as configured
-  in Maven, plus hints for unused private methods, fields, and local variables.
-- `textDocument/completion`: Provides type, method, and variable completion (excluding method
-  references and complex generic bounds). Includes automatic import insertion.
-- `textDocument/definition`: Resolves to local project files, unpacked dependency JAR sources,
-  and JDK sources.
-- `textDocument/hover`: Displays AST-resolved Javadoc formatted as Markdown.
-- `textDocument/signatureHelp`: Shows method and constructor parameter lists when triggered
-  by `(` or `,`.
-- `textDocument/references`: Finds usages across the same file, open files, same-module disk files,
-  and transitive reactor modules.
-- `textDocument/codeAction`: Supports four quick fixes: Import missing type, Add `throws` clause,
-  Wrap with `try/catch`, and Declare local variable.
-- `textDocument/formatting`: Applies `google-java-format` to the full document
-  and removes unused imports.
-- `workspace/symbol`: Searches for classes, interfaces, and enums across the workspace.
 
 ## Building from Source (Beta)
 
@@ -148,6 +128,35 @@ a server reload.
 Lathe provides a distributable plugin for Neovim 0.11+ that configures native LSP,
 format-on-save, and source cache autocommands out of the box.
 
+### Supported LSP Features
+
+Lathe implements the following LSP endpoints. In Neovim 0.11+, most are mapped automatically:
+
+- `textDocument/publishDiagnostics`: Surfaces `javac` errors, warnings exactly as configured in Maven, plus hints for unused private members.
+  - Neovim API: `vim.diagnostic.goto_next()` / `goto_prev()`
+  - Neovim default: `]d` / `[d`
+- `textDocument/completion`: Type, method, and variable completion. Includes automatic import insertion.
+- `textDocument/definition`: Resolves to local files, unpacked dependency JAR sources, and JDK sources.
+  - Neovim API: `vim.lsp.buf.definition()`
+  - Neovim default: `gd`
+- `textDocument/hover`: Displays AST-resolved Javadoc formatted as Markdown.
+  - Neovim API: `vim.lsp.buf.hover()`
+  - Neovim default: `K`
+- `textDocument/signatureHelp`: Shows method and constructor parameter lists.
+  - Neovim API: `vim.lsp.buf.signature_help()`
+  - Neovim default: `<C-S>` (insert mode)
+- `textDocument/references`: Finds usages across the workspace.
+  - Neovim API: `vim.lsp.buf.references()`
+  - Neovim default: `grr`
+- `textDocument/codeAction`: Supports four quick fixes: Import missing type, Add `throws` clause, Wrap with `try/catch`, and Declare local variable.
+  - Neovim API: `vim.lsp.buf.code_action()`
+  - Neovim default: `gra`
+- `textDocument/formatting`: Applies `google-java-format` to the full document and removes unused imports.
+  - Neovim API: `vim.lsp.buf.format()`
+  - *(Lathe plugin automatically configures format-on-save)*
+- `workspace/symbol`: Searches for classes, interfaces, and enums across the workspace.
+  - Neovim API: `vim.lsp.buf.workspace_symbol()`
+
 ### Installation
 
 Load the plugin as a local directory with `lazy.nvim`, pointing `dir` at the `neovim/`
@@ -256,11 +265,11 @@ mvnd --stop
 
 ## Troubleshooting
 
-### Missing `.lathe/` directory
+### Neovim Info: `.lathe` directory not found
 
-This means `lathe:init` has not run.
+This means `lathe:init` has not run, or the POM is misconfigured.
 Run `mvn lathe:init` (or `mvn clean process-test-classes` if the POM is configured)
-at the reactor root to initialize Lathe.
+at the reactor root to initialize Lathe. If `.lathe/` is still missing, verify the plugin configuration in your POM.
 
 ### Missing params file (`Run mvn process-test-classes to activate module`)
 
