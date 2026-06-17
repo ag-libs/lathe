@@ -44,6 +44,76 @@ Notes:
 
 ## Open Entries
 
+## CQ-0039 — RejectedExecutionException logged as SEVERE at shutdown
+
+ID: CQ-0039
+Status: accepted
+Tier: lifecycle
+Discovery: 2026-06-17
+
+### Description
+
+When Neovim exits, a `RejectedExecutionException` is logged at SEVERE severity in the client's
+LSP log, polluting the user's error output even though the server exits cleanly afterward.
+
+### Observed log
+
+```
+[shutdown] shutdown requested
+SEVERE  Internal error: Task ... rejected from
+  java.util.concurrent.ScheduledThreadPoolExecutor@...[Terminated, pool size = 0,
+  active threads = 0, queued tasks = 0, completed tasks = 39]
+java.util.concurrent.RejectedExecutionException: Task ... rejected from ...
+  at ServerEventLoop.submit(ServerEventLoop.java:37)
+  at LatheTextDocumentService.close(LatheTextDocumentService.java:45)
+  at LatheLanguageServer.shutdown(LatheLanguageServer.java:80)
+```
+
+### Root cause
+
+`LatheTextDocumentService.close()` calls `worker.submit(session::close)` followed by
+`worker.close()`.
+The `[Terminated]` state on the executor (`completed tasks = 39`) means `executor.shutdownNow()`
+was already called before `close()` reached `worker.submit()`.
+The only call site for `worker.close()` is inside `LatheTextDocumentService.close()` itself,
+so `close()` is most likely being called twice:
+the first call completes normally (submits session.close(), joins, then shuts down the executor),
+and the second call finds the executor already terminated and throws at `worker.submit()`.
+
+The most probable trigger: the LSP4J `ConcurrentMessageProcessor` dispatches `shutdown`
+(a request) and `exit` (a notification) concurrently on its thread pool.
+Neovim sends `exit` without waiting for the `shutdown` response,
+so both handlers can race.
+If `exit()` fires `System.exit(0)` before `shutdown()` completes,
+the JVM halt can interrupt the `LatheLanguageServer.shutdown()` path in a way that causes
+a second dispatch or re-entry.
+An alternative scenario is that the LSP4J framework calls `shutdown()` more than once
+under certain client disconnect conditions.
+
+### Impact
+
+A spurious SEVERE log appears in Neovim's LSP log on every normal exit.
+Users see it as a server crash rather than a clean shutdown.
+The server exits correctly through `exit()` → `System.exit(0)`, so there is no functional data loss.
+
+### Fix area
+
+Two complementary hardening points:
+
+1. **`LatheTextDocumentService.close()` — idempotent guard.**
+   Add an `AtomicBoolean closed` field; return immediately on the second call.
+
+2. **`ServerEventLoop.submit()` / `execute()` — graceful rejection.**
+   Catch `RejectedExecutionException` when the executor is already shut down and return a
+   cancelled future (for `submit`) or silently no-op (for `execute`) instead of propagating.
+   This prevents the exception from surfacing to LSP4J as an unhandled SEVERE error
+   even if the idempotent guard is the primary fix.
+
+### Regression target
+
+Lifecycle test: `LatheTextDocumentServiceTest.close_calledTwice_doesNotThrow`
+Lifecycle test: `LatheTextDocumentServiceTest.close_afterWorkerShutdown_doesNotThrow`
+
 ## CQ-0038 — Private methods falsely marked unused when declared after their callers
 
 ID: CQ-0038

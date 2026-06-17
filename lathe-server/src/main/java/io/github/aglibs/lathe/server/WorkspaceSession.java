@@ -260,7 +260,7 @@ final class WorkspaceSession {
             locations -> {
               final var name = targetName.get();
               if (name != null) {
-                LOG.fine(
+                LOG.info(
                     () ->
                         "[references] %s %dms target=%s hits=%d"
                             .formatted(uri, t.elapsedMs(), name, locations.size()));
@@ -408,6 +408,10 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(Either.forLeft(List.of()));
     }
 
+    LOG.info(
+        () ->
+            "[definition] %s line=%d character=%d"
+                .formatted(uri, pos.getLine(), pos.getCharacter()));
     final var request =
         new SourceFeatureRequest(
             openFile.uri(), openFile.content(), pos, workspace.allSourceRoots(), manifest);
@@ -499,12 +503,15 @@ final class WorkspaceSession {
   }
 
   List<? extends TextEdit> format(final String tag, final String uri) {
-    LOG.fine(() -> "[%s] %s".formatted(tag, uri));
+    final var t = Stopwatch.start();
     final var openFile = docs.get(uri);
-    return JavaFormatter.format(openFile != null ? openFile.content() : null);
+    final var result = JavaFormatter.format(openFile != null ? openFile.content() : null);
+    LOG.info(() -> "[%s] %s %dms edits=%d".formatted(tag, uri, t.elapsedMs(), result.size()));
+    return result;
   }
 
   List<SymbolInformation> workspaceSymbol(final String query) {
+    final var t = Stopwatch.start();
     final List<Path> sourceDirs =
         Stream.of(
                 workspace.allSourceRoots().stream(),
@@ -512,7 +519,11 @@ final class WorkspaceSession {
                 manifest.depSourceDirs().stream())
             .flatMap(s -> s)
             .toList();
-    return WorkspaceSymbolResolver.resolve(query, typeIndex, sourceDirs);
+    final List<SymbolInformation> results =
+        WorkspaceSymbolResolver.resolve(query, typeIndex, sourceDirs);
+    LOG.info(
+        () -> "[symbol] query=%s hits=%d %dms".formatted(query, results.size(), t.elapsedMs()));
+    return results;
   }
 
   private void scanReactorShards() {
