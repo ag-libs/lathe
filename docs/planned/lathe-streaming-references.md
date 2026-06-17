@@ -1,7 +1,7 @@
 # Streaming References and Progress Reporting
 
 ## Context
-Lathe’s "Find References" feature (`textDocument/references`) resolves usages by employing a fast token index to prune irrelevant files, followed by strict AST-based validation via `javac` for remaining candidates. 
+Lathe’s "Find References" feature (`textDocument/references`) resolves usages by employing a fast token index to prune irrelevant files, followed by strict AST-based validation via `javac` for remaining candidates.
 
 While the candidate pruning is highly aggressive, searches for very ubiquitous method names (e.g., `get()`, `build()`) can still result in tens or hundreds of candidates being sequentially verified by `CompilationWorker`s. Currently, Lathe blocks and accumulates all results before returning a massive `List<Location>` array. This leaves the user staring at a frozen IDE UI for multiple seconds with no feedback.
 
@@ -29,8 +29,8 @@ Lathe will support streaming `Location[]` arrays dynamically.
 - **Final Payload**: If partial results were used, the final RPC response to the `textDocument/references` request will be an empty array or `null`.
 
 ### 3. Graceful Fallback
-Not all LSP clients (or user configurations) support streaming. 
-- Lathe must inspect the incoming `ReferenceParams` for the presence of `workDoneToken` and `partialResultToken`. 
+Not all LSP clients (or user configurations) support streaming.
+- Lathe must inspect the incoming `ReferenceParams` for the presence of `workDoneToken` and `partialResultToken`.
 - If they are omitted, Lathe must fallback to the current behavior: suppressing `$/progress` messages, waiting for all threads to join, and returning the complete, unified `List<Location>` in the standard blocking response payload.
 
 ## Future Considerations

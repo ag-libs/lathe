@@ -108,4 +108,3 @@ TypeKind.UNKNOWN     → SymbolKind.Class
 ### 3.5 Capability
 
 Set `capabilities.setWorkspaceSymbolProvider(true)` in server capability initialization.
-

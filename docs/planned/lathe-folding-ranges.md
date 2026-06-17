@@ -54,7 +54,7 @@ Offsets are mapped via `lineMap.getLineNumber(offset) - 1`.
 
 ## 5. Client Integration: Neovim Default Import Folding
 
-Once Lathe emits the `imports` kind, Neovim users can fold imports by default. 
+Once Lathe emits the `imports` kind, Neovim users can fold imports by default.
 
 **Using `nvim-ufo` (Recommended):**
 ```lua

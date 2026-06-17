@@ -424,8 +424,7 @@ class CompletionKeywordAndNoSlotTest extends CompletionTestSupport {
 
   @Test
   void classBody_returnType_includesPrimitives() {
-    assertThat(labels(fixture.complete("class Test { b§ foo() {} }")))
-        .contains("boolean", "byte");
+    assertThat(labels(fixture.complete("class Test { b§ foo() {} }"))).contains("boolean", "byte");
   }
 
   // ── argument position ─────────────────────────────────────────────────────────
