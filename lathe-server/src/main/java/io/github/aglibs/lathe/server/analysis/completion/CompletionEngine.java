@@ -423,11 +423,13 @@ public final class CompletionEngine {
             : typeIndexOutcome;
 
     if (parsed.typeReferenceRole() == TypeReferenceRole.ORDINARY
-        && parsed.enclosingMethod() == null
         && parsed.enclosingClass() != null) {
       final List<CompletionItem> keywords =
           KeywordProvider.suggestCandidates(parsed, injected.prefix(), injected.context()).stream()
-              .filter(candidate -> classBodyModifierAllows(candidate, req, injected.tokenStart()))
+              .filter(
+                  candidate ->
+                      parsed.enclosingMethod() != null
+                          || classBodyModifierAllows(candidate, req, injected.tokenStart()))
               .map(CompletionItemPresenter::present)
               .toList();
       if (!keywords.isEmpty()) {

@@ -155,7 +155,7 @@ All declarations are known before any reference is checked, making the scan orde
 ## CQ-0037 — Primitive types not suggested in variable type position
 
 ID: CQ-0037
-Status: accepted
+Status: fixed
 Tier: Basic
 Discovery: 2026-06-17
 

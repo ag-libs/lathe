@@ -34,6 +34,10 @@ final class KeywordProvider {
   private static final List<String> TYPE_DECLARATIONS =
       List.of("class", "interface", "enum", "record", "void");
 
+  // Primitive types valid in any type-name position
+  private static final List<String> PRIMITIVES =
+      List.of("boolean", "byte", "char", "double", "float", "int", "long", "short");
+
   // Keywords valid at the top level of a compilation unit (outside any class)
   private static final List<String> TOP_LEVEL =
       List.of(
@@ -106,13 +110,13 @@ final class KeywordProvider {
     return TOP_LEVEL;
   }
 
-  /** Returns class-body keywords only when at class scope; method-level type refs get nothing. */
+  /** Returns class-body keywords at class scope, primitives inside a method, nothing otherwise. */
   private static List<String> classBodyKeywordsIfApplicable(final ParsedSentinel parsed) {
-    if (parsed.enclosingMethod() == null && parsed.enclosingClass() != null) {
-      return classBodyKeywords();
+    if (parsed.enclosingClass() == null) {
+      return List.of();
     }
 
-    return List.of();
+    return parsed.enclosingMethod() == null ? classBodyKeywords() : PRIMITIVES;
   }
 
   private static List<String> methodBodyKeywords(final ParsedSentinel parsed) {
@@ -121,6 +125,7 @@ final class KeywordProvider {
             STATEMENT_TERMINATORS,
             VALUE_EXPRESSIONS,
             DECLARATION_STARTERS,
+            PRIMITIVES,
             parsed.enclosedByLoop() || parsed.enclosedBySwitchStatement()
                 ? List.of("break")
                 : List.<String>of(),
@@ -131,7 +136,7 @@ final class KeywordProvider {
   }
 
   private static List<String> classBodyKeywords() {
-    return Stream.of(ACCESS_MODIFIERS, OTHER_MODIFIERS, TYPE_DECLARATIONS)
+    return Stream.of(ACCESS_MODIFIERS, OTHER_MODIFIERS, TYPE_DECLARATIONS, PRIMITIVES)
         .flatMap(List::stream)
         .toList();
   }

@@ -392,5 +392,41 @@ class CompletionKeywordAndNoSlotTest extends CompletionTestSupport {
     assertThat(fixture.complete("class Test { .§ }")).isEmpty();
   }
 
+  // ── primitives ────────────────────────────────────────────────────────────────
+
+  @Test
+  void variableDeclaration_typeSlot_includesPrimitives() {
+    final List<String> items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    void m() {
+                        i§
+                    }
+                }"""));
+    assertThat(items).contains("int");
+  }
+
+  @Test
+  void typeReference_inMethodBody_includesPrimitives() {
+    final List<String> items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    void m() {
+                        Object x = (b§) null;
+                    }
+                }"""));
+    assertThat(items).contains("boolean", "byte");
+  }
+
+  @Test
+  void classBody_returnType_includesPrimitives() {
+    assertThat(labels(fixture.complete("class Test { b§ foo() {} }")))
+        .contains("boolean", "byte");
+  }
+
   // ── argument position ─────────────────────────────────────────────────────────
 }
