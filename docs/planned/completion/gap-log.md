@@ -44,6 +44,137 @@ Notes:
 
 ## Open Entries
 
+## CQ-0036 — Empty constructor completion returns a complete narrow list
+
+ID: CQ-0036
+Status: accepted
+Tier: basic
+Failure mode: missing-candidate-after-client-filtering
+Owner component: CompletionEngine / TypeIndexCandidateProvider
+Discovery: 2026-06-17, Helidon MongoDB client
+
+Project/file:
+`/home/ag-libs/git/helidon/dbclient/mongodb/src/main/java/io/helidon/dbclient/mongodb/MongoDbClient.java`
+
+Probe command:
+```bash
+printf 'inject "final var x = new " min 1\nlog 120\n' \
+  | LATHE_DEBUG=1 python3 dev/explore.py \
+      /home/ag-libs/git/helidon/dbclient/mongodb/src/main/java/io/helidon/dbclient/mongodb/MongoDbClient.java
+```
+
+Control probe:
+```bash
+printf 'inject "final var x = new Connection" expect Connection min 1\nlog 80\n' \
+  | LATHE_DEBUG=1 python3 dev/explore.py \
+      /home/ag-libs/git/helidon/dbclient/mongodb/src/main/java/io/helidon/dbclient/mongodb/MongoDbClient.java
+```
+
+Expected-type probe:
+```bash
+printf 'inject "ConnectionString x = new " min 1\nlog 100\n' \
+  | LATHE_DEBUG=1 python3 dev/explore.py \
+      /home/ag-libs/git/helidon/dbclient/mongodb/src/main/java/io/helidon/dbclient/mongodb/MongoDbClient.java
+```
+
+Cursor context:
+```java
+final var x = new §
+final var x = new Connection§
+ConnectionString x = new §
+```
+
+Observed behavior:
+The direct prefixed request works.
+`new Connection§` is parsed as `sentinelCtx=CONSTRUCTOR_CALL`,
+queries the type index with prefix `Connection`,
+and returns 28 type candidates including:
+
+- `Connection` from `java.sql`
+- `ConnectionString` from `com.mongodb`
+- `ConnectionId` from `com.mongodb.connection`
+- `Connection` from `com.mongodb.internal.connection`
+
+The empty-prefix request is the gap.
+`new §` is also parsed as `sentinelCtx=CONSTRUCTOR_CALL`,
+but returns only 88 broad java.lang/current-scope candidates and marks the completion list
+as complete:
+
+```text
+[completion] inject prefix=|| receiver=|null| ctx=STATEMENT hasDot=false
+[completion] parsed valid=true sentinelCtx=CONSTRUCTOR_CALL receiver=|null| class=MongoDbClient method=<init> role=CONSTRUCTOR
+[completion] ... items=88 reattributed=false
+[completion:lsp] ... items=88 incomplete=false
+```
+
+The expected-type variant fails the same way.
+`ConnectionString x = new §` returns the same 88 broad items,
+does not include or rank `ConnectionString` first,
+and also marks the result complete:
+
+```text
+[completion] inject prefix=|| receiver=|null| ctx=STATEMENT hasDot=false
+[completion] parsed valid=true sentinelCtx=CONSTRUCTOR_CALL receiver=|null| class=MongoDbClient method=<init> role=CONSTRUCTOR
+[completion] ... items=88 reattributed=false
+[completion:lsp] ... items=88 incomplete=false
+```
+
+Why this matters:
+In an editor,
+the user naturally triggers completion after typing `new ` and then continues with `Connection`.
+Because the empty-prefix response is marked complete,
+the client can filter the cached 88 items instead of asking Lathe again.
+`Connection` is not in that initial list,
+so the menu can appear to miss `final var x = new Connection§`
+even though an explicit fresh request at that final cursor position succeeds.
+
+Expected Lathe behavior:
+Constructor-call completion at `new §` must either:
+
+- return an incomplete list so clients retrigger as the prefix grows; or
+- include a sufficiently broad type-index-backed candidate set for constructor-call filtering.
+
+When the enclosing expression has an expected type,
+Lathe should use it before falling back to broad constructor type discovery.
+For `ConnectionString x = new §`,
+`ConnectionString` should be the first completion candidate and should carry the same import/replace
+behavior as the prefixed type item.
+
+The first slice should prefer `isIncomplete=true` for empty-prefix constructor-call type completion
+when there is no useful expected type.
+That keeps the response small while making client-side incremental filtering safe.
+
+Accepted edit, if relevant:
+The prefixed `Connection` item has a correct replacement range and import edit:
+
+```json
+{
+  "label": "Connection",
+  "detail": "java.sql.Connection",
+  "textEdit": {
+    "range": {
+      "start": { "line": 43, "character": 24 },
+      "end": { "line": 43, "character": 34 }
+    },
+    "newText": "Connection"
+  },
+  "additionalTextEdits": [
+    { "newText": "import java.sql.Connection;\n" }
+  ]
+}
+```
+
+Regression target:
+`CompletionTypeIndexTest.constructorCall_emptyPrefix_returnsIncomplete`
+`CompletionTypeIndexTest.constructorCall_prefixAfterEmptyPrefix_canDiscoverIndexedTypes`
+`CompletionTypeIndexTest.constructorCall_emptyPrefixExpectedType_ranksExpectedTypeFirst`
+
+Notes:
+This is not a candidate-generation failure for non-empty prefixes.
+The bug is the empty-prefix constructor-call response contract with LSP clients.
+The behavior is especially visible in `blink.cmp`/Neovim because the user sees the completion menu
+continue filtering after `new ` while Lathe is not necessarily queried again.
+
 ## CQ-0039 — RejectedExecutionException logged as SEVERE at shutdown
 
 ID: CQ-0039
