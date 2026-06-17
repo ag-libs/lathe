@@ -759,6 +759,7 @@ final class WorkspaceSession {
   private AfterCompile publishIfCurrentThen(final Runnable followUp) {
     return (snapshot, result) -> {
       if (publisher.publishIfCurrent(snapshot, result)) {
+        LOG.info(() -> "[save] compiled %s".formatted(snapshot.uri()));
         followUp.run();
       }
     };
