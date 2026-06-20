@@ -10,10 +10,18 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.time.Instant;
+import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import org.eclipse.lsp4j.ClientCapabilities;
+import org.eclipse.lsp4j.DidOpenTextDocumentParams;
+import org.eclipse.lsp4j.Location;
+import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.ReferenceContext;
+import org.eclipse.lsp4j.ReferenceParams;
+import org.eclipse.lsp4j.TextDocumentIdentifier;
+import org.eclipse.lsp4j.TextDocumentItem;
 import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.InitializeResult;
 import org.eclipse.lsp4j.InitializedParams;
@@ -124,6 +132,53 @@ class LspSmokeTest {
   }
 
   @Test
+  void references_fromReactorSource_findsUsageAcrossModules() throws Exception {
+    final Path stringUtilsJava =
+        ROOT.resolve("core/src/main/java/com/example/core/StringUtils.java");
+    final String stringUtilsUri = stringUtilsJava.toUri().toString();
+    final String stringUtilsContent = Files.readString(stringUtilsJava);
+    openDoc(stringUtilsUri, stringUtilsContent);
+
+    final var params = new ReferenceParams();
+    params.setTextDocument(new TextDocumentIdentifier(stringUtilsUri));
+    params.setPosition(findToken(stringUtilsContent, "public static String upper", "upper"));
+    params.setContext(new ReferenceContext(false));
+
+    final List<? extends Location> refs =
+        server.getTextDocumentService().references(params).get(30, SECONDS);
+
+    assertThat(refs).anyMatch(loc -> loc.getUri().contains("Main.java"));
+  }
+
+  @Test
+  void references_fromCachedJdkSource_findsReactorUsages() throws Exception {
+    // FR-001: cursorConfig is empty for external sources → configs = List.of() → no search
+    final Path stringJava =
+        Files.find(
+                Path.of(System.getProperty("lathe.cache")).resolve("jdks"),
+                6,
+                (p, a) ->
+                    p.getParent().endsWith(Path.of("java.base", "java", "lang"))
+                        && p.getFileName().toString().equals("String.java"))
+            .findFirst()
+            .orElseThrow();
+
+    final String stringUri = stringJava.toUri().toString();
+    final String stringContent = Files.readString(stringJava);
+    openDoc(stringUri, stringContent);
+
+    final var params = new ReferenceParams();
+    params.setTextDocument(new TextDocumentIdentifier(stringUri));
+    params.setPosition(findToken(stringContent, "public final class String", "String"));
+    params.setContext(new ReferenceContext(false));
+
+    final List<? extends Location> refs =
+        server.getTextDocumentService().references(params).get(30, SECONDS);
+
+    assertThat(refs).anyMatch(loc -> loc.getUri().contains("StringUtils.java"));
+  }
+
+  @Test
   void pomChange_triggersResyncPrompt() throws Exception {
     Files.setLastModifiedTime(
         ROOT.resolve("pom.xml"), FileTime.from(Instant.now().plusSeconds(5)));
@@ -134,6 +189,29 @@ class LspSmokeTest {
     assertThat(prompt.getActions())
         .extracting(MessageActionItem::getTitle)
         .containsExactlyInAnyOrder("Sync", "Later");
+  }
+
+  private static void openDoc(final String uri, final String content) {
+    final var item = new TextDocumentItem();
+    item.setUri(uri);
+    item.setLanguageId("java");
+    item.setVersion(1);
+    item.setText(content);
+    final var params = new DidOpenTextDocumentParams();
+    params.setTextDocument(item);
+    server.getTextDocumentService().didOpen(params);
+  }
+
+  private static Position findToken(
+      final String content, final String linePattern, final String token) {
+    final String[] lines = content.split("\n", -1);
+    for (int i = 0; i < lines.length; i++) {
+      final int patternIdx = lines[i].indexOf(linePattern);
+      if (patternIdx >= 0) {
+        return new Position(i, lines[i].indexOf(token, patternIdx));
+      }
+    }
+    throw new AssertionError("pattern not found: " + linePattern);
   }
 
   static class CapturingClient implements LanguageClient {

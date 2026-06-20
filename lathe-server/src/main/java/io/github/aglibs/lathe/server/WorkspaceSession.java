@@ -245,7 +245,9 @@ final class WorkspaceSession {
 
               final List<ModuleSourceConfig> configs =
                   target.scope() == ReferenceTarget.SearchScope.REACTOR_MODULES
-                      ? cursorConfig.map(moduleGraph::referenceSearchScope).orElse(List.of())
+                      ? cursorConfig
+                          .map(moduleGraph::referenceSearchScope)
+                          .orElseGet(workspace::allConfigs)
                       : cursorConfig
                           .map(c -> moduleGraph.configsForModule(c.moduleDir()))
                           .orElse(List.of());

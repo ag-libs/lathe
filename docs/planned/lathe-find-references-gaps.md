@@ -23,57 +23,46 @@ The implemented search supports:
 - package-private restriction to the declaring package;
 - explicit imports, wildcard imports, static imports, and implicit `java.lang` type candidates.
 
-Live probes confirm that JDK symbols work when the request originates in project source:
+Confirmed working:
 
-- `java.lang.String` returns project references;
-- `java.time.Duration` returns project references;
+- `java.lang.String` returns project references from project source;
+- `java.time.Duration` returns project references from project source;
+- `java.lang.String` from the cached JDK `String.java` declaration returns reactor usages (FR-001 fixed);
 - the Helidon `Duration` incident produced two server-side locations in 12 ms.
 
-The remaining gaps concern external-source request routing, external-symbol scope policy, failure
-reporting, and end-to-end verification.
+The remaining gaps concern external-symbol scope policy, failure reporting, and end-to-end
+verification.
 
 ---
 
 ## 2. Gap FR-001 — References From External Source Have No Workspace Search Root
 
-Status: verified correctness defect.
+Status: fixed.
 
 When Find References is invoked from a cached JDK or dependency source file,
-`WorkspaceSession.referencesFuture()` resolves the symbol through the external compiler worker but
-derives the search scope from:
-
-```java
-workspace.moduleSourceFor(toPath(cursorUri))
-```
-
-Cached external source files do not belong to a reactor `ModuleSourceConfig`.
-The resulting `cursorConfig` is empty, the configuration list becomes empty, and no project file is
+`WorkspaceSession.referencesFuture()` derives the search scope from `cursorConfig`, which is empty
+for external paths not belonging to any reactor `ModuleSourceConfig`.
+The `REACTOR_MODULES` branch previously called `.orElse(List.of())`, so no project file was ever
 searched.
 
-This affects symbols such as:
+### Fix
 
-- `java.lang.String` when invoked from the JDK `String.java` declaration;
-- `java.time.Duration` when invoked from the JDK `Duration.java` declaration;
-- public types and members in dependency source caches.
+`WorkspaceSession.referencesFuture()` — change `orElse(List.of())` to
+`orElseGet(workspace::allConfigs)` for the `REACTOR_MODULES` scope branch.
+When the cursor is in an external source file, all reactor module configs are searched;
+`ReferenceCandidatePlanner` and javac identity matching filter out files that do not actually
+reference the target.
 
-### Required behavior
+The `DECLARING_MODULE` branch retains `orElse(List.of())` — there is no meaningful reactor
+module scope to derive for a package-private external symbol.
 
-An external declaration must still be able to search the active workspace.
-The request needs a workspace search root independent of the external cursor path.
+### Regression test
 
-For a single-workspace server, the simplest correct behavior is to search all reactor module
-configurations and rely on `ReferenceCandidatePlanner` plus javac matching to remove irrelevant
-files.
-
-If multiple workspace folders are supported later, the server must associate the external source
-buffer with the client workspace that opened it rather than search unrelated workspaces.
-
-### Required tests
-
-- Request references from a cached JDK type declaration and find project usages.
-- Request references from a cached dependency type declaration and find project usages.
-- Verify that similarly named project types are rejected by javac identity matching.
-- Verify behavior when the workspace has no candidate project files.
+`LspSmokeTest.references_fromCachedJdkSource_findsReactorUsages` — opens the JDK `String.java`
+from the Lathe cache, requests references at the class declaration, and asserts that
+`StringUtils.java` (which declares `String upper(String s)`) appears in the results.
+The reactor-origin case is covered by
+`LspSmokeTest.references_fromReactorSource_findsUsageAcrossModules`.
 
 ---
 
