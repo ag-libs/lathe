@@ -99,6 +99,8 @@ class LatheClient:
                     "hover": {"contentFormat": ["plaintext", "markdown"]},
                     "definition": {},
                     "references": {},
+                    "implementation": {},
+                    "typeHierarchy": {},
                     "completion": {"completionItem": {"snippetSupport": False}},
                     "signatureHelp": {},
                     "semanticTokens": {
@@ -337,6 +339,34 @@ class LatheClient:
     def workspace_symbol(self, query: str) -> list[dict]:
         """Workspace symbol search. Returns list of SymbolInformation."""
         result = self.request("workspace/symbol", {"query": query})
+        return result or []
+
+    def implementation(self, file: str | Path, line: int, col: int) -> list[dict]:
+        """Go-to-implementation at 0-based line/col. Returns list of Locations."""
+        result = self.request("textDocument/implementation", {
+            "textDocument": {"uri": Path(file).resolve().as_uri()},
+            "position": {"line": line, "character": col},
+        })
+        if result is None:
+            return []
+        return result if isinstance(result, list) else [result]
+
+    def prepare_type_hierarchy(self, file: str | Path, line: int, col: int) -> list[dict]:
+        """Prepare type hierarchy at 0-based line/col. Returns list of TypeHierarchyItems."""
+        result = self.request("textDocument/prepareTypeHierarchy", {
+            "textDocument": {"uri": Path(file).resolve().as_uri()},
+            "position": {"line": line, "character": col},
+        })
+        return result or []
+
+    def type_hierarchy_supertypes(self, item: dict) -> list[dict]:
+        """Fetch supertypes for a TypeHierarchyItem. Returns list of TypeHierarchyItems."""
+        result = self.request("typeHierarchy/supertypes", {"item": item})
+        return result or []
+
+    def type_hierarchy_subtypes(self, item: dict) -> list[dict]:
+        """Fetch subtypes for a TypeHierarchyItem. Returns list of TypeHierarchyItems."""
+        result = self.request("typeHierarchy/subtypes", {"item": item})
         return result or []
 
 

@@ -79,7 +79,8 @@ Architecture is documented in [lathe-server-data-flow-recipe.md](done/lathe-serv
   See [lathe-find-references.md](planned/lathe-find-references.md).
   Known gap: JDK and third-party dependency symbols are not yet restricted to open files only —
   they trigger a full reactor scan, attributing hundreds of files for common types like `String`.
-  Fix is documented in section 15 of the design doc.
+  Current correctness, scope-policy, fail-fast handling, and end-to-end coverage gaps are tracked in
+  [lathe-find-references-gaps.md](planned/lathe-find-references-gaps.md).
 - **Completion presentation** — JDT LS-style completion rows are implemented across four slices.
   Type labels show simple names with package in `labelDetails.description`.
   Method labels are bare names with parameter list in `labelDetails.detail` and return type in `labelDetails.description`.
@@ -159,48 +160,68 @@ Some planned docs also describe work that has since been implemented;
 the status in this roadmap is the source of truth when the two disagree.
 Use these docs as the starting point when reprioritizing or slicing new work:
 
+- [lathe-event-loop-starvation.md](planned/lathe-event-loop-starvation.md) — ServerEventLoop blocked by synchronous `WorkspaceTypeIndex.build` during init and post-save refresh; causes type-hierarchy and implementation timeouts on large workspaces.
 - [lathe-call-hierarchy.md](planned/lathe-call-hierarchy.md) — exact-match method call tree exploration (incoming and outgoing calls).
 - [lathe-class-import-semantic-highlighting.md](planned/lathe-class-import-semantic-highlighting.md) — semantic token highlighting for class, interface, and enum type references in import statements and code bodies.
-- [lathe-goto-implementation.md](planned/lathe-goto-implementation.md) — `textDocument/implementation`: subtype and method-override navigation reusing Find References infrastructure.
+- [lathe-find-references-gaps.md](planned/lathe-find-references-gaps.md) — current correctness,
+  external-symbol scope policy,
+  failure-propagation,
+  and invoker coverage gaps for `textDocument/references`.
+- [lathe-goto-implementation.md](planned/lathe-goto-implementation.md) — `textDocument/implementation`, `prepareTypeHierarchy`, `supertypes`, `subtypes`: subtype and override navigation reusing Find References infrastructure. Fix event-loop starvation and directOnly bug during this work.
 - [lathe-google-indent.md](planned/lathe-google-indent.md) — conservative `textDocument/onTypeFormatting`
   indentation hints using google-java-format.
 - [lathe-jdk-cache-key.md](done/lathe-jdk-cache-key.md) — unified JDK source and type-index cache pathing (implemented).
 - [lathe-launcher-jvm-opts.md](planned/lathe-launcher-jvm-opts.md) — generated launcher support for
   user-provided `LATHE_JVM_OPTS`.
-- [lathe-architecture-test-improvements.md](planned/lathe-architecture-test-improvements.md) —
-  beta workspace and test-fixture cleanup.
+- [lathe-architecture-test-improvements.md](done/lathe-architecture-test-improvements.md) —
+  beta workspace and test-fixture cleanup (implemented; remaining items in [lathe-maintainability-refactoring.md](planned/lathe-maintainability-refactoring.md)).
 - [completion/](planned/completion/) —
   active completion expectations,
   explorer-based gap discovery,
   and current completion-quality gap log.
+- [lathe-code-actions-gaps.md](planned/lathe-code-actions-gaps.md) —
+  code-action gap tracker: Gap 3B (MissingMethodImplProvider) and Gap 4 (type-index freshness) are beta-scope.
 - [lathe-code-quality-refactoring.md](planned/lathe-code-quality-refactoring.md) —
-  verified refactoring plan for completion internals,
-  worker-confined workspace coordination,
-  and stale code-review findings that should not drive work.
-- [lathe-completion-presentation.md](planned/lathe-completion-presentation.md) —
-  JDT LS-style completion `labelDetails` and generic type display.
+  historical refactoring review retained for context;
+  stale findings in it should not drive current work.
+- [lathe-maintainability-refactoring.md](planned/lathe-maintainability-refactoring.md) —
+  current systematic maintainability review covering correctness prerequisites,
+  focused DRY/KISS extractions,
+  naming consistency,
+  fail-fast exception propagation,
+  and test-fixture cleanup. Beta-scope.
+- [lathe-completion-presentation.md](done/lathe-completion-presentation.md) —
+  JDT LS-style completion `labelDetails` and generic type display (implemented).
 - [lathe-lightweight-watcher.md](planned/lathe-lightweight-watcher.md) —
-  lightweight module-targeted workspace watcher to replace recursive directory walking.
+  lightweight module-targeted workspace watcher; description partially stale (WorkspaceWatcher already simplified).
 - [lathe-missing-import-code-action.md](done/lathe-missing-import-code-action.md) —
-  LSP quick-fix code actions for unresolved types,
-  reusing the existing completion import insertion behavior without replacing completion-side edits.
+  LSP quick-fix code actions for unresolved types (implemented).
 - [lathe-reactor-type-index.md](planned/lathe-reactor-type-index.md) — implemented reactor type-index design and
   remaining follow-ups such as generated-source cleanup and SNAPSHOT freshness.
 - [lathe-rich-javadoc-rendering.md](done/lathe-rich-javadoc-rendering.md) — AST-backed Markdown formatting for Javadoc using DocTreeScanner (implemented).
 - [lathe-run-test-debug.md](planned/lathe-run-test-debug.md) — Maven-delegated run, test, debug commands and streamed
   session events.
-- [lathe-structural-navigation.md](planned/lathe-structural-navigation.md) — Document symbols (outline view) and workspace symbols.
-- [lathe-folding-ranges.md](planned/lathe-folding-ranges.md) — Folding ranges with targeted import folding.
+- [lathe-structural-navigation.md](done/lathe-structural-navigation.md) — Document symbols, folding ranges, and workspace symbols (implemented).
+- [lathe-folding-ranges.md](done/lathe-folding-ranges.md) — Folding ranges (implemented).
 - [lathe-source-uri-scheme.md](done/lathe-source-uri-scheme.md) — superseded; `file://` approach implemented instead, see [lathe-file-uri-scheme.md](done/lathe-file-uri-scheme.md).
 - [lathe-unused-code-diagnostics.md](done/lathe-unused-code-diagnostics.md) — unused private methods, fields, and locals (implemented).
 - [lathe-stale-pom-detection.md](done/lathe-stale-pom-detection.md) — POM fingerprint recording,
   `WorkspaceWatcher` simplification, and `showMessageRequest`-based Neovim sync prompt.
 - [lathe-type-index.md](planned/lathe-type-index.md) — implemented type-index design and remaining work such as
-  missing-import suggestions, package-prefix completion, workspace symbols, and freshness checks.
+  freshness checks.
 - [lathe-sibling-recompilation.md](planned/lathe-sibling-recompilation.md) — reference-index guided background
   recompilation of closed intra-module callers after an API signature change.
 - [lathe-vscode-semantic-tokens.md](planned/lathe-vscode-semantic-tokens.md) — expanded semantic-token coverage for
   VS Code parity.
+- [lathe-unused-record-components.md](done/lathe-unused-record-components.md) — false "Unused" hints for record component backing fields (fixed in `UnusedDeclarationScanner`).
+- [lathe-find-references.md](done/lathe-find-references.md) — original Find References design (implemented; gap tracker is [lathe-find-references-gaps.md](planned/lathe-find-references-gaps.md)).
+
+## Potential Design Documents
+
+Potential designs preserve architectural exploration without committing the work to beta, v1, or the active roadmap:
+
+- [lathe-shared-workspace-server.md](potential/lathe-shared-workspace-server.md) — history and detailed designs for
+  per-workspace or global shared server processes with isolated LSP client sessions and workspace runtimes.
 
 ---
 
@@ -227,25 +248,60 @@ are explicitly deferred until after beta.
 Gap 3 provider and Gap 4 are deferred to post-beta.
 
 ### Goto Implementation & Type Hierarchy
-`textDocument/implementation`, `textDocument/prepareTypeHierarchy`, `typeHierarchy/supertypes`, and `typeHierarchy/subtypes` implemented as a unified feature group.
-One new `ImplementationLocator` scanner (with a `directOnly` flag) serves all four endpoints.
-`supertypes` needs no file scan — pure `elements.getTypeElement()` introspection.
-`subtypes` and `implementation` reuse `ReferenceCandidatePlanner` candidate fan-out unchanged.
+`textDocument/implementation`, `textDocument/prepareTypeHierarchy`, `typeHierarchy/supertypes`, and `typeHierarchy/subtypes` — planned but not yet implemented.
+One `ImplementationLocator` scanner (with a `directOnly` flag) will serve all four endpoints.
 See [lathe-goto-implementation.md](planned/lathe-goto-implementation.md).
 
+Known correctness issues to address during implementation:
+- **ServerEventLoop starvation** — `WorkspaceTypeIndex.build` runs synchronously on the event loop during initialization and after each save; blocks all follow-up requests for tens of seconds on large workspaces (Helidon: 535 shards). Fix tracked in [lathe-event-loop-starvation.md](planned/lathe-event-loop-starvation.md). Must be fixed before the feature is usable.
+- **`typeHierarchy/subtypes` directOnly bug** — `subtypes` must pass `directOnly=true` to return only immediate subtypes per the LSP spec; passing `false` returns the full transitive closure instead.
+- **`textDocument/implementation` returns empty for declarations in other modules** — references requested from cached JDK/dependency source or external-module declarations search no project modules. Same root cause as the Find References external-symbol gap.
+
 ### Structural Navigation
-✅ `workspace/symbol` is implemented. `textDocument/documentSymbol` and `textDocument/foldingRange` are deferred to post-beta.
+✅ `workspace/symbol`, `textDocument/documentSymbol`, and `textDocument/foldingRange` are all implemented.
+
+### Known Correctness Bugs (beta-blocking)
+These small defects are confirmed in code; each needs a fix plus one or two regression tests before beta ships.
+
+- **Semantic-token refresh condition inverted** (`DiagnosticPublisher.java:39`) — tokens are refreshed for stale results instead of current ones. Causes semantic tokens to update on old compile output and to be skipped on current output. Two-line fix and two regression tests.
+- **Exceptions silently converted to empty reference results** (`WorkspaceSession.java` around the fan-out futures) — caught exceptions are logged and the request returns an empty list, hiding real failures as "no references found". Should propagate as LSP errors per the fail-fast policy in [lathe-maintainability-refactoring.md](planned/lathe-maintainability-refactoring.md).
 
 ### Architecture and Test Improvements
 ✅ `TestCompiler` fixture is consolidated and in use across server tests.
 ✅ **`DocumentRegistry`** extracted from `WorkspaceSession` — open-document lifecycle with `ValidCheck`-validated `OpenDocument` record.
 ✅ **`DiagnosticPublisher`** extracted — stale-result checks, `PublishDiagnosticsParams` construction, empty/missing/error publish paths.
 ✅ **Zip/JAR test fixture** — `ZipFixture` added to `lathe-core` test sources; `ZipCacheTest` and `FileUtilTest` private helpers removed.
-See [lathe-architecture-test-improvements.md](planned/lathe-architecture-test-improvements.md).
+See [lathe-architecture-test-improvements.md](done/lathe-architecture-test-improvements.md).
+
+### Maintainability Refactoring (beta-scope)
+Systematic correctness and code-quality fixes from the June 2026 review.
+Delivered as small independent slices; do not restructure the threading model.
+Key items:
+- **Fail-fast exception propagation** — replace empty-result swallowing with proper LSP error responses at all fan-out boundaries in `WorkspaceSession`.
+- **Test-fixture cleanup** — remove flaky `Thread.sleep` from async tests; standardize `Workbench`/`WorkbenchFixture`-based test construction.
+- **Naming and DRY** — targeted helper extraction and renaming passes from the review findings.
+See [lathe-maintainability-refactoring.md](planned/lathe-maintainability-refactoring.md).
+
+### MissingMethodImplProvider (code action Gap 3B)
+Generate `@Override` stubs for all unimplemented abstract methods when a class fails
+`compiler.err.does.not.override.abstract`.
+Classification (`MISSING_METHOD_IMPL` payload) is already done.
+One new provider file and a one-line dispatcher change.
+See [lathe-missing-method-impl.md](planned/lathe-missing-method-impl.md) and [lathe-code-actions-gaps.md](planned/lathe-code-actions-gaps.md) Gap 3.
+
+### Type-index freshness for new reactor types (code action Gap 4)
+Ensure newly-created project types become available to missing-import code actions
+without requiring a manual `mvn process-test-classes` round trip.
+See [lathe-code-actions-gaps.md](planned/lathe-code-actions-gaps.md) Gap 4 and [lathe-reactor-type-index.md](planned/lathe-reactor-type-index.md).
 
 ---
 
 ## Milestone: Post-Beta Backlog
+
+### External-source Find References
+References requested from cached JDK/dependency source declarations or from external-module types return no project results — the workspace scope selector doesn't widen to reactor modules when the cursor file is outside the reactor.
+Add invoker test coverage first, then fix scope selection in `WorkspaceSession` to route external-symbol cursors through the full reactor fan-out.
+Tracked in [lathe-find-references-gaps.md](planned/lathe-find-references-gaps.md).
 
 ### Call Hierarchy
 Implement `textDocument/prepareCallHierarchy`, `callHierarchy/incomingCalls`, and `callHierarchy/outgoingCalls` to allow users to navigate method call trees.
@@ -253,8 +309,9 @@ This heavily reuses the existing "Find References" infrastructure (AST scanning 
 See [lathe-call-hierarchy.md](planned/lathe-call-hierarchy.md).
 
 ### Lightweight Watcher
-Replace `Files.walk` with targeted polling to eliminate disk I/O spikes.
-See [lathe-lightweight-watcher.md](planned/lathe-lightweight-watcher.md).
+`WorkspaceWatcher` already polls only `workspace.json` and reactor POM fingerprints — it no longer does recursive `.lathe/` directory walking.
+Any remaining spike work (e.g. source-file watching for closed-file invalidation) should be re-evaluated against the current watcher before reopening this item.
+See [lathe-lightweight-watcher.md](planned/lathe-lightweight-watcher.md) (description may be stale).
 
 ### Reactor type-index follow-up
 Static dependency, JDK, and reactor output shards are in place.
@@ -262,24 +319,9 @@ The remaining reactor-index work is any later performance optimization if startu
 This also unlocks package-prefix completion and workspace symbols once those features query the reactor candidates.
 See [lathe-type-index.md](planned/lathe-type-index.md) and [lathe-reactor-type-index.md](planned/lathe-reactor-type-index.md).
 
-### MissingMethodImplProvider
-Generate `@Override` stubs for all unimplemented abstract methods when a class fails
-`compiler.err.does.not.override.abstract`.
-Classification is already done (`MISSING_METHOD_IMPL` payload with class simple name).
-One new provider file (~150 lines) and a one-line dispatcher change.
-See [lathe-missing-method-impl.md](planned/lathe-missing-method-impl.md).
-
-### Type-index freshness for new reactor types (Gap 4)
-Ensure newly-created project types become available to missing-import code actions
-without requiring a manual `mvn process-test-classes` round trip.
-
 ### Document Symbols and Folding Ranges
-Implement `textDocument/documentSymbol` (file outline) using a parse-only `SourceParser` AST pass.
-Powers the editor Outline view and breadcrumb navigation.
-See [lathe-structural-navigation.md](planned/lathe-structural-navigation.md).
-
-`textDocument/foldingRange` can follow once the scanner infrastructure is in place.
-See [lathe-folding-ranges.md](planned/lathe-folding-ranges.md).
+✅ `textDocument/documentSymbol` and `textDocument/foldingRange` are implemented.
+See [lathe-structural-navigation.md](done/lathe-structural-navigation.md) and [lathe-folding-ranges.md](done/lathe-folding-ranges.md).
 
 ### onTypeFormatting
 Implement conservative `textDocument/onTypeFormatting` indentation hints for newline triggers.

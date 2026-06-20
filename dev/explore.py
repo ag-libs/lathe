@@ -67,6 +67,23 @@ refs <text> [assertions]
       min <n>          at least n references required
       max <n>          at most n references allowed
 
+impl <line>:<col> [assertions]   (alias: implementation)
+    List concrete implementations of the type or method at the given 0-based position.
+
+impl <text> [assertions]
+    Find the first occurrence of <text> and request implementations there.
+    Supports the same assertion qualifiers as refs:
+      expect <substr>  at least one result path must contain substr
+      min <n>          at least n implementations required
+      max <n>          at most n implementations allowed
+
+hierarchy <line>:<col>   (alias: hier)
+    Show the full type hierarchy for the type at the given 0-based position.
+    Calls prepareTypeHierarchy, then supertypes and subtypes, and prints the tree.
+
+hierarchy <text>
+    Find the first occurrence of <text> and show its type hierarchy.
+
 sym <query> [assertions]
     Search the workspace type index for types matching <query> (prefix match).
     Returns SymbolInformation entries — kind, simple name, package, and source path.
@@ -478,8 +495,12 @@ class ExploreShell:
             "sig":         self._cmd_sig,
             "definition":  self._cmd_definition,
             "def":         self._cmd_definition,
-            "refs":        self._cmd_refs,
-            "sym":         self._cmd_sym,
+            "refs":           self._cmd_refs,
+            "impl":           self._cmd_impl,
+            "implementation": self._cmd_impl,
+            "hierarchy":      self._cmd_hierarchy,
+            "hier":           self._cmd_hierarchy,
+            "sym":            self._cmd_sym,
             "symbols":     self._cmd_symbols,
             "outline":     self._cmd_symbols,
             "folds":       self._cmd_folds,
@@ -966,6 +987,138 @@ class ExploreShell:
             passed = _print_assertion_result(_check_refs_assertions(refs, assertions))
             if not passed:
                 self.any_failure = True
+
+    def _cmd_impl(self, args: list[str]) -> None:
+        if not args:
+            print("usage: impl <line>:<col> [assertions]")
+            print("       impl <text>        [assertions]")
+            return
+
+        pre, assertions = _parse_assertions(args)
+
+        if not pre:
+            print("usage: impl <line>:<col> [assertions]")
+            print("       impl <text>        [assertions]")
+            return
+
+        if ":" in pre[0] and pre[0][0].isdigit():
+            try:
+                line, col = (int(x) for x in pre[0].split(":", 1))
+            except (ValueError, TypeError):
+                print(f"  expected line:col (0-based) or text, got {pre[0]!r}")
+                return
+        else:
+            pos = self._find_text(pre[0])
+            if pos is None:
+                print(f"  text not found: {pre[0]!r}")
+                return
+            line, col = pos
+            print(f"  found {pre[0]!r} at {line}:{col}")
+
+        try:
+            locs = self._client.implementation(self._file, line, col)
+        except TimeoutError:
+            print("  TIMEOUT")
+            return
+
+        if not locs:
+            print("  (no implementations found)")
+            if assertions:
+                passed = _print_assertion_result(_check_refs_assertions([], assertions))
+                if not passed:
+                    self.any_failure = True
+            return
+
+        print(f"  {len(locs)} implementation(s):")
+        limit = len(locs) if assertions else 15
+        for loc in locs[:limit]:
+            uri   = loc.get("uri") or loc.get("targetUri", "?")
+            r     = loc.get("range") or loc.get("targetSelectionRange", {})
+            start = r.get("start", {})
+            path  = uri.removeprefix("file://")
+            ln    = start.get("line", "?")
+            ch    = start.get("character", "?")
+            print(f"    {path}:{ln + 1 if isinstance(ln, int) else ln}"
+                  f":{ch + 1 if isinstance(ch, int) else ch}")
+        if len(locs) > limit:
+            print(f"    … {len(locs) - limit} more")
+
+        if assertions:
+            refs_like = [{"uri": loc.get("uri") or loc.get("targetUri", "")} for loc in locs]
+            passed = _print_assertion_result(_check_refs_assertions(refs_like, assertions))
+            if not passed:
+                self.any_failure = True
+
+    def _cmd_hierarchy(self, args: list[str]) -> None:
+        if not args:
+            print("usage: hierarchy <line>:<col>")
+            print("       hierarchy <text>")
+            return
+
+        if ":" in args[0] and args[0][0].isdigit():
+            try:
+                line, col = (int(x) for x in args[0].split(":", 1))
+            except (ValueError, TypeError):
+                print(f"  expected line:col (0-based) or text, got {args[0]!r}")
+                return
+        else:
+            pos = self._find_text(args[0])
+            if pos is None:
+                print(f"  text not found: {args[0]!r}")
+                return
+            line, col = pos
+            print(f"  found {args[0]!r} at {line}:{col}")
+
+        try:
+            items = self._client.prepare_type_hierarchy(self._file, line, col)
+        except TimeoutError:
+            print("  TIMEOUT")
+            return
+
+        if not items:
+            print("  (no type hierarchy item at this position)")
+            return
+
+        for item in items:
+            name   = item.get("name", "?")
+            kind   = _SYMBOL_KIND_NAMES.get(item.get("kind"), "?")
+            detail = item.get("detail") or ""
+            detail_str = f"  {detail}" if detail else ""
+            print(f"  {name}  [{kind}]{detail_str}")
+
+            try:
+                supers = self._client.type_hierarchy_supertypes(item)
+            except TimeoutError:
+                print("  supertypes: TIMEOUT")
+                supers = []
+
+            if supers:
+                print(f"  supertypes ({len(supers)}):")
+                for s in supers:
+                    sname   = s.get("name", "?")
+                    skind   = _SYMBOL_KIND_NAMES.get(s.get("kind"), "?")
+                    sdetail = s.get("detail") or ""
+                    sdetail_str = f"  {sdetail}" if sdetail else ""
+                    print(f"    {sname}  [{skind}]{sdetail_str}")
+            else:
+                print("  supertypes: (none)")
+
+            try:
+                subs = self._client.type_hierarchy_subtypes(item)
+            except TimeoutError:
+                print("  subtypes: TIMEOUT")
+                subs = []
+
+            if subs:
+                print(f"  subtypes ({len(subs)}):")
+                for s in subs:
+                    sname   = s.get("name", "?")
+                    skind   = _SYMBOL_KIND_NAMES.get(s.get("kind"), "?")
+                    sdetail = s.get("detail") or ""
+                    sdetail_str = f"  {sdetail}" if sdetail else ""
+                    print(f"    {sname}  [{skind}]{sdetail_str}")
+            else:
+                print("  subtypes: (none)")
 
     def _cmd_sym(self, args: list[str]) -> None:
         if not args:
