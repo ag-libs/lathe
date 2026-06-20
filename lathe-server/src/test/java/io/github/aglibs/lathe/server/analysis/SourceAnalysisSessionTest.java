@@ -14,6 +14,7 @@ import javax.tools.Diagnostic;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import org.eclipse.lsp4j.*;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 class SourceAnalysisSessionTest {
@@ -172,6 +173,33 @@ class SourceAnalysisSessionTest {
           .extracting(DocumentSymbol::getName)
           .contains("Test");
       assertThat(session.foldingRange(TempSourceCompiler.TEST_URI, source)).isNotNull();
+    }
+  }
+
+  @Disabled("gap: same unresolved type in declaration and constructor emits two errors on one line")
+  @Test
+  void compile_unknownTypeInDeclarationAndConstructor_singleErrorOnLine() {
+    // Gap: javac emits two separate "cannot find symbol" errors when the same unresolved type
+    // appears in both the variable-type position and the constructor call on the same line.
+    final var source =
+        """
+        class Test {
+          public void method() {
+            UnknownType foo = new UnknownType();
+          }
+        }
+        """;
+
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      final var diags = session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+
+      final long errorsOnDeclarationLine =
+          diags.stream()
+              .filter(d -> d.getSeverity() == DiagnosticSeverity.Error)
+              .filter(d -> d.getRange().getStart().getLine() == 2)
+              .count();
+
+      assertThat(errorsOnDeclarationLine).isEqualTo(1);
     }
   }
 
