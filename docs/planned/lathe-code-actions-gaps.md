@@ -138,13 +138,13 @@ in the same project but not yet indexed by `lathe:sync`).
 
 ### Impact
 
-Medium for beta: this appears when a project type is created or renamed and Lathe has not yet refreshed the reactor
+Medium for M1: this appears when a project type is created or renamed and Lathe has not yet refreshed the reactor
 type index through a full sync.
 Running `mvn process-test-classes` restores the action,
-but the beta goal is to avoid requiring that round trip when Lathe already has enough local source or reactor-index
+but the M1 goal is to avoid requiring that round trip when Lathe already has enough local source or reactor-index
 information to answer safely.
 
-### Proposed beta direction
+### Proposed M1 direction
 
 Treat this as a type-index freshness problem rather than an `ImportQuickFixProvider` provider bug.
 The fix should make newly-created project types available to missing-import code actions from current reactor source or

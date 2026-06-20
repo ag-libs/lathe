@@ -1,7 +1,7 @@
 # Lathe — Type Index Design
 
 Working design draft.
-This document captures the planned v1 type-index shape for completion and missing-import support.
+This document captures the initial type-index shape for completion and missing-import support.
 It is intentionally scoped: the index discovers possible type candidates, while javac remains the final authority for
 whether a candidate is legal from a specific source file.
 
@@ -69,7 +69,7 @@ If no attributed snapshot or probe is available, completion may return broad ind
 
 ## 3. Scope
 
-### In Scope for v1
+### Initial Scope
 
 - public top-level dependency classes
 - public top-level reactor classes
@@ -255,7 +255,7 @@ SNAPSHOT dependencies can change under the same GAV.
 The size/mtime check detects ordinary local repository updates after Maven resolves the dependency.
 
 If the local repository preserves size and mtime across a SNAPSHOT update, the index may be stale.
-That failure mode is acceptable for v1:
+That failure mode is acceptable for the initial index:
 
 - javac diagnostics and attribution still use the actual updated JAR
 - javac validation drops deleted/inaccessible stale candidates
@@ -321,17 +321,17 @@ open JarFile
 ```
 
 Multi-release JAR precision is deferred.
-For v1, root and versioned entries may be handled conservatively or versioned entries may be skipped.
+Initially, root and versioned entries may be handled conservatively or versioned entries may be skipped.
 Javac validation remains the final authority.
 
 ### Public Top-Level Class Filtering
 
 Top-level Java classes can only be public or package-private.
-For external dependency shards, v1 keeps only public top-level classes.
+For external dependency shards, the initial completion index keeps only public top-level classes.
 
 This avoids noisy fallback completions when no javac snapshot is available.
 
-Nested classes are skipped in v1 by ignoring class names containing `$`.
+Nested classes are initially skipped for completion by ignoring class names containing `$`.
 That avoids private/protected/package-private nested visibility rules.
 
 ### Classfile Access Flags Reader
@@ -376,7 +376,7 @@ It must not fail the entire shard.
 
 ### Skipped Entries
 
-v1 skips:
+The initial completion index skips:
 
 - `module-info.class`
 - `package-info.class`
@@ -839,7 +839,7 @@ Scanner fixtures should include:
 - public enum included
 - public record included
 - public annotation included
-- nested public class skipped in v1
+- nested public class skipped in the initial completion index
 - `module-info.class` skipped
 - `package-info.class` skipped
 - invalid class file skipped without failing the whole scan

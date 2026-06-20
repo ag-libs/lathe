@@ -1227,7 +1227,7 @@ which is already covered by `CQ-0023`.
 ## CQ-0029 — Wildcard generic receivers do not expose usable bound members
 
 ID: CQ-0029
-Status: deferred until after beta
+Status: planned for M2
 Tier: typed
 Failure mode: missing-candidates
 Owner component: TypeResolver / CompletionEngine
@@ -1316,7 +1316,7 @@ and `Collection<String>.iterator().next().§` returns `String` methods.
 ## CQ-0030 — Type-variable receivers do not expose declared bounds
 
 ID: CQ-0030
-Status: deferred until after beta
+Status: planned for M2
 Tier: typed
 Failure mode: missing-candidates
 Owner component: TypeResolver / CompletionEngine
@@ -1455,13 +1455,13 @@ and record accessor member access all work correctly.
 
 Two new high-confidence gaps were found and recorded as `CQ-0020` and `CQ-0021`.
 
-`CQ-0002` is deferred until after beta.
+`CQ-0002` is planned for M2.
 `CQ-0011` remains deferred.
-`CQ-0029` and `CQ-0030` are deferred until after beta.
+`CQ-0029` and `CQ-0030` are planned for M2.
 `CQ-0010` is closed as an editor-side capability gap.
 
 Next completion work should run a new explorer pass with a different focus area,
-or pick up one of the explicitly deferred post-beta gaps.
+or pick up one of the gaps explicitly assigned to M2.
 
 ## CQ-0004 — Dotted member access can fall back to simple-name completion in incomplete assignments
 
@@ -2519,7 +2519,7 @@ and unnamed enum-array `value()` elements.
 ## CQ-0002 — Method-reference completion returns no candidates
 
 ID: CQ-0002
-Status: deferred until after beta
+Status: planned for M2
 Tier: assistive
 Failure mode: missing-candidate
 Owner component: SentinelInjector / SentinelParser
@@ -2564,8 +2564,8 @@ Accepting `of` after `List::` should produce `List::of`.
 Accepting `url` after `this::` should produce `this::url`.
 
 Future design:
-Method-reference completion is post-beta work.
-It is not required for the build-from-source beta.
+Method-reference completion is M2 work.
+It is not required for M1 Internal Preview.
 The first implementation slice should be basic receiver-member listing,
 not full smart compatibility filtering.
 Add a `METHOD_REFERENCE` sentinel site,

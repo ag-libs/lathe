@@ -12,7 +12,7 @@ Call hierarchy answers the editor questions:
 > "What methods does this method call?" (Outgoing Calls)
 
 The feature relies on Lathe's existing `ReferenceTarget` symbol identity and the `ReferenceCandidateIndex` architecture used by "Find References".
-Like find-references, Call Hierarchy v1 focuses on exact method matches (no hierarchy-aware semantic expansion to overrides/implementations) and leverages `javac` attribution as the single source of truth.
+For M2, Call Hierarchy focuses on exact method matches (no hierarchy-aware semantic expansion to overrides/implementations) and leverages `javac` attribution as the single source of truth.
 
 ---
 
@@ -114,7 +114,7 @@ To keep the implementation simple and avoid duplication, we will maximize reuse 
 
 ---
 
-## 8. Deferred Items (Post-v1)
+## 8. Deferred Items (Post-M2)
 
 - **Hierarchy Expansion**: Finding incoming calls to overrides (e.g., finding calls to `List.add` when looking at `ArrayList.add`). This should be designed separately alongside Rename's hierarchy expansion policy.
-- **Anonymous Class Callers**: If an incoming call is inside an anonymous class or lambda, v1 can attribute the call to the nearest enclosing named method, or gracefully format the anonymous class as `<anonymous>` or `<lambda>`.
+- **Anonymous Class Callers**: If an incoming call is inside an anonymous class or lambda, M2 can attribute the call to the nearest enclosing named method, or gracefully format the anonymous class as `<anonymous>` or `<lambda>`.

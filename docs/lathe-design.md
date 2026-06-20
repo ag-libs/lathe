@@ -156,7 +156,7 @@ Create `.lathe/` at the Maven session top-level project if missing.
 
 `lathe:init` does not validate Maven configuration.
 Maven setup can be inherited from parents, profiles, plugin management, or external build conventions,
-so v1 treats POM validation as out of scope.
+so the M3 initial release treats POM validation as out of scope.
 Missing or incorrect setup is surfaced later by the compiler shim, sync goal, or language server based on files that
 Lathe actually needs.
 
@@ -975,13 +975,13 @@ not a feature-for-feature clone of JDT LS.
 This document describes Lathe's stable architecture and mechanics.
 It intentionally does not track feature completion status.
 
-Current release scope,
-completed work,
-planned work,
-and links to detailed design documents are tracked in [roadmap.md](roadmap.md).
-Feature-specific designs live under [docs/done/](done/) and [docs/planned/](planned/).
-When feature status in this document appears to conflict with the roadmap,
-the roadmap is authoritative.
+Release scope and milestone exit criteria are tracked in [roadmap.md](roadmap.md).
+The implemented capability matrix and known gaps are tracked in [status.md](status.md).
+Active, completed, and exploratory designs are cataloged in [design-index.md](design-index.md).
+Feature-specific designs live under [docs/done/](done/), [docs/planned/](planned/), and
+[docs/potential/](potential/).
+When feature status in this document appears to conflict with the roadmap or status document,
+the roadmap defines scope and the status document defines current behavior.
 
 ---
 
@@ -1016,10 +1016,10 @@ but features that require a newer manifest schema may degrade with a clear messa
 
 The restart policy belongs to the editor integration:
 
-- **Neovim v1** — show a normal LSP message:
+- **M3 Neovim release** — show a normal LSP message:
   `Lathe server updated. Restart the language server.`
   Users can run `:LspRestart`.
-- **VS Code extension** — listen for a Lathe-specific server-update notification,
+- **Post-M3 VS Code extension** — listen for a Lathe-specific server-update notification,
   stop the current `LanguageClient`,
   and start a new one from `~/.cache/lathe/current/lathe-launcher.sh`.
   The restarted client naturally picks up the new module path because `current` has already been updated by
@@ -1215,7 +1215,7 @@ Lombok rewrites the AST during annotation processing in ways that conflict with 
 Not advertised and not tested.
 
 **Multi-JDK projects** — Lathe uses `$JAVA_HOME` consistently, matching Maven's behaviour.
-Projects requiring multiple JDKs for different modules are not supported in v1.
+Projects requiring multiple JDKs for different modules are not supported in the M3 initial release.
 
 **IDE plugins beyond Neovim and VS Code** — Lathe speaks standard LSP.
 Any LSP-capable editor can connect using the launcher script.

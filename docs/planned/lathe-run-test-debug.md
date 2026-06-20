@@ -1,8 +1,8 @@
 # Lathe — Run, Test, and Debug
 
-Post-v1 design.
+Post-M3 design.
 Builds on `lathe-design.md`.
-Adopted only after the main design is implemented and stable.
+Adopted only after the Neovim-focused Maven Central release is implemented and stable.
 
 ---
 

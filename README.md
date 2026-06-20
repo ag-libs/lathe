@@ -11,10 +11,17 @@ Lathe setup has two parts:
 - `lathe-maven-plugin` declares two goals in the reactor root:
   `init` (auto-bound to `initialize`) and `sync` (auto-bound to `process-test-classes`).
 
+Project documentation:
 
-## Building from Source (Beta)
+- [Current status](docs/status.md)
+- [Roadmap](docs/roadmap.md)
+- [Design index](docs/design-index.md)
+- [Architecture](docs/lathe-design.md)
 
-Lathe is currently in beta and must be built from source.
+
+## Building from Source (Internal Preview)
+
+Lathe is currently at the M1 Internal Preview stage and must be built from source.
 
 ```bash
 git clone https://github.com/ag-libs/lathe.git

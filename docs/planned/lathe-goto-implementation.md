@@ -1,322 +1,626 @@
 # Lathe — Goto Implementation & Type Hierarchy Design
 
 Working design draft.
-This document describes `textDocument/implementation`, `textDocument/prepareTypeHierarchy`,
-`typeHierarchy/supertypes`, and `typeHierarchy/subtypes` as a unified feature group.
+Builds on `lathe-design.md` and the existing type-index implementation.
 
 ---
 
 ## 1. Goal
 
-Four editor questions, one coherent feature:
+Implement four related LSP operations:
 
-> "Where is this interface/abstract method actually implemented?" (`textDocument/implementation`)
-> "What are the direct supertypes of this type?" (`typeHierarchy/supertypes`)
-> "What types directly extend or implement this type?" (`typeHierarchy/subtypes`)
-> "What type is at this cursor — give me a type hierarchy item so I can explore up and down." (`textDocument/prepareTypeHierarchy`)
+- `textDocument/implementation` for types and methods;
+- `textDocument/prepareTypeHierarchy`;
+- `typeHierarchy/supertypes`;
+- `typeHierarchy/subtypes`.
 
-All four endpoints share one scanner, one candidate-lookup strategy, and one identity record.
-The implementation adds very little new infrastructure; the heavy lifting is already in `ReferenceCandidateIndex`, `ReferenceCandidatePlanner`, the module-graph fan-out, and `DefinitionLocator`.
+Type implementation and hierarchy navigation cover reactor, dependency, and JDK types when their class files are
+indexed and navigable source is available.
+Method implementation is intentionally limited to implementations declared in reactor source.
 
----
-
-## 2. LSP Overview
-
-| Endpoint | Request | Response | File scan? |
-|---|---|---|---|
-| `textDocument/implementation` | URI + position | `List<Location>` | Yes — all-subtypes OR method overrides |
-| `textDocument/prepareTypeHierarchy` | URI + position | `TypeHierarchyItem[]` | No — position resolution only |
-| `typeHierarchy/supertypes` | `TypeHierarchyItem` | `TypeHierarchyItem[]` | No — element introspection only |
-| `typeHierarchy/subtypes` | `TypeHierarchyItem` | `TypeHierarchyItem[]` | Yes — direct subtypes only |
-
-`textDocument/implementation` covers two sub-cases:
-- **Type cursor** — returns locations of all (direct and transitive) subtypes of the target type.
-- **Method cursor** — returns locations of all methods that `elements.overrides(m, target, enclosingType(m))`.
-
-`typeHierarchy/subtypes` covers only the type case (direct subtypes, one level at a time).
+The design must remain responsive on large workspaces.
+It must not discover type relationships by attributing every source file that happens to contain a target's simple
+name.
+It must also remove the current whole-index rebuild from the server event loop.
 
 ---
 
-## 3. Shared Building Blocks
+## 2. Design Summary
 
-### 3.1 `ImplementationLocator` — one scanner for three endpoints
+Extend the existing class-file type-index shards with minimal direct-inheritance metadata.
+Each indexed type records its binary name, kind, visibility, and direct superclass/interfaces.
 
-`ImplementationLocator` is a new `TreePathScanner<Void, Void>`. It runs against an already-attributed `AttributedFileAnalysis` and returns `List<ImplementationMatch>`:
+At server startup, eagerly load all JDK, dependency, and reactor shards into immutable collections.
+Construct two immutable index components:
 
-```java
-record ImplementationMatch(TypeElement element, Location location) {}
+- a static index for JDK and dependency entries;
+- a reactor index for project entries.
+
+The active `WorkspaceTypeIndex` is an immutable snapshot containing both components.
+Index construction happens outside `ServerEventLoop`; the completed snapshot is installed with one atomic reference
+replacement.
+Workspace reload replaces the complete snapshot.
+After a successful reactor save, the static component is reused unchanged and a newly built immutable reactor
+component replaces the previous reactor component.
+
+Type hierarchy and type implementation are graph lookups.
+Method implementation uses the graph to find reactor subtype source files, then asks javac to validate exact overrides.
+
+This design keeps javac authoritative for Java semantics without using javac as a workspace search engine.
+
+---
+
+## 3. Scope
+
+### 3.1 Included
+
+- Direct and transitive named subtype discovery.
+- Class inheritance.
+- Interface implementation and interface extension.
+- Generic inheritance matched by erased binary type identity.
+- Reactor implementations of JDK and dependency types.
+- Dependency and JDK type implementations when indexed source is available.
+- Method implementations declared in reactor source.
+- Immutable index snapshots eagerly loaded at startup.
+- Immutable snapshot replacement on workspace reload and reactor refresh.
+- Existing completion and workspace-symbol lookup from the same type-index files.
+
+Examples:
+
+```text
+java.util.List
+├── java.util.ArrayList
+├── java.util.LinkedList
+└── com.example.CustomList
 ```
 
-`element` carries the simple name and `ElementKind` needed to build a `TypeHierarchyItem` in `subtypes`. `location` is all `implementation` needs. A single `boolean directOnly` flag controls depth:
-
-**Type target** (kind is CLASS, INTERFACE, ENUM, or RECORD):
-
-```java
-// directOnly = false  (textDocument/implementation, typeHierarchy/subtypes with all-levels)
-types.isSubtype(classEl.asType(), targetEl.asType())
-    && !types.isSameType(classEl.asType(), targetEl.asType())
-
-// directOnly = true  (typeHierarchy/subtypes)
-types.directSupertypes(classEl.asType()).stream()
-    .anyMatch(s -> types.isSameType(types.erasure(s), types.erasure(targetEl.asType())))
+```text
+com.example.Service.run()
+├── com.example.DefaultService.run()
+└── com.example.TestService.run()
 ```
 
-Erasure is applied in the direct-only check so that `class Foo implements Comparable<Foo>` matches a query on `Comparable`.
+### 3.2 Deferred
 
-**Method target** (kind is METHOD):
+- Method implementations declared in JDK or dependency classes.
+- Lambda expressions as implementations of functional-interface methods.
+- Anonymous-class implementation locations.
+- A live unsaved-source inheritance overlay.
+- Hot incremental mutation of index maps.
+- A binary index format.
 
-Reconstruct the target `ExecutableElement` once per file by calling `elements.getTypeElement(target.qualifiedName().replace('$', '.'))` and scanning its members for the entry matching `target.simpleName()` and `target.erasedDescriptor()`. Then for each method `m` declared in every `ClassTree` in the file:
+The initial reactor index reflects the last successful compilation.
+An open file whose inheritance clause has changed but has not compiled successfully may temporarily use stale graph
+edges.
+
+---
+
+## 4. Index Schema
+
+Keep completion metadata and inheritance metadata conceptually separate.
+Completion should continue to expose only useful visible type candidates, while inheritance traversal must retain
+internal nodes that connect public types.
+
+One possible schema is:
 
 ```java
-m.getSimpleName().toString().equals(target.simpleName())
-    && elements.overrides(m, targetMethod, enclosingClassEl)
-    && !types.isSameType(m.getEnclosingElement().asType(), targetMethod.getEnclosingElement().asType())
+record TypeIndexFile(
+    String schema,
+    TypeIndexOrigin origin,
+    List<TypeIndexEntry> types,
+    List<InheritanceEntry> inheritance) {}
+
+record InheritanceEntry(
+    String binaryName,
+    TypeKind kind,
+    TypeVisibility visibility,
+    List<String> directSupertypes) {}
 ```
 
-The last condition excludes a re-encounter of the target declaration itself. `getAllMembers` is not used for the override scan — only `ClassTree`-local methods are emitted so each override appears once at the declaring class rather than at every inheriting subclass.
+`directSupertypes` contains erased binary names from the class file's `super_class` and `interfaces[]` entries.
+It does not contain generic arguments or a transitive closure.
 
-Location reporting uses `SourceLocator.findIdentifierFrom()` (same approach as `ReferenceLocator.addDeclarationMatch`) to get the precise class-name or method-name identifier span.
+For example:
 
-### 3.2 `ReferenceCandidatePlanner` — unchanged
+```json
+{
+  "binaryName": "java.util.ArrayList",
+  "kind": "CLASS",
+  "visibility": "PUBLIC",
+  "directSupertypes": [
+    "java.util.AbstractList",
+    "java.util.List",
+    "java.util.RandomAccess",
+    "java.lang.Cloneable",
+    "java.io.Serializable"
+  ]
+}
+```
 
-`planCandidates(config, target)` already returns the right superset for both cases:
+Binary names preserve nested-class identity, for example `com.example.Outer$Inner`.
+Display and source lookup may convert them to canonical names where required by javac or extracted source layout.
 
-- **Type target**: files containing the type's simple name appear in the candidate set because every file that `extends`/`implements` the type must reference its name.
-- **Method target**: files containing both the method's simple name and the enclosing type's simple name appear because every override must name the method and extend/implement the owning type.
+Changing the schema invalidates existing cached JDK and dependency shards.
+`lathe:sync` rebuilds them using the existing origin fingerprints.
 
-False positives (files that use the type/method without subtyping/overriding) are filtered by the AST scan.
+### 4.1 Internal and nested types
 
-### 3.3 `TypeHierarchyItemData` — round-trip payload
+`ClassFileTypeScanner` currently excludes nested and non-public top-level classes from completion indexing.
+Inheritance scanning must retain them as graph nodes.
 
-A small serialisable record stored in `TypeHierarchyItem.data`:
+Otherwise an internal intermediate type breaks valid traversal:
+
+```text
+PublicInterface
+    ↑
+PackagePrivateBase
+    ↑
+PublicImplementation
+```
+
+Visibility controls completion and result presentation, not graph participation.
+An internal node may be traversed without being returned as a user-facing navigation result.
+
+### 4.2 Type identity and origins
+
+Binary name alone is not globally unique when multiple modules or dependency versions provide the same class.
+In memory, associate every entry with its shard origin:
+
+```java
+record TypeId(String originId, String binaryName) {}
+```
+
+Inheritance edges read from class files initially carry binary names.
+They are resolved against the requesting module's visible reactor modules, module path, and classpath.
+If more than one origin remains plausible, retain all candidates and let javac validation reject inaccessible or
+incorrect reactor method candidates.
+
+This prevents the index from inventing one global classpath that does not exist in Maven.
+
+---
+
+## 5. Class-File Scanning
+
+`ClassFileTypeScanner` already opens every JDK, dependency, and reactor class file used to build type-index entries.
+Extend its existing minimal class-file reader to retain the constant-pool values needed to read:
+
+- `this_class`;
+- `super_class`;
+- `interfaces[]`;
+- access flags.
+
+The scanner does not need to parse fields, methods, bytecode, annotations, or generic signatures.
+The additional sync-time I/O is therefore negligible because the class-file streams are already opened.
+
+The scanner emits completion entries using the existing visibility policy and inheritance entries for all useful graph
+nodes.
+Malformed or unsupported class files are reported consistently with the current scanner policy and do not fail the
+entire artifact unless the existing index build treats that failure as fatal.
+
+---
+
+## 6. Immutable In-Memory Index
+
+The index collections are immutable after construction.
+Nested collection values must also be immutable.
+
+```java
+final class WorkspaceTypeIndex {
+  private final StaticTypeIndex staticIndex;
+  private final ReactorTypeIndex reactorIndex;
+}
+```
+
+Both components provide:
+
+```java
+Map<String, List<IndexedType>> bySimpleNameLower();
+Map<TypeId, IndexedType> byId();
+Map<String, List<IndexedType>> directSubtypesByBinaryName();
+```
+
+`StaticTypeIndex` contains all eagerly loaded JDK and dependency shards.
+It is built once during initialization and reused after reactor saves.
+
+`ReactorTypeIndex` contains project outputs grouped by module configuration.
+After a successful save, Lathe rescans the affected module and builds a new complete immutable reactor component from
+the already available per-module entry lists.
+It does not reread or regroup static JDK and dependency shards.
+
+The implementation may initially rebuild all reactor maps in memory after replacing one module's entry list.
+That work runs on the indexing executor and is expected to be small compared with static shard loading.
+Persistent collections or edge-level mutation are unnecessary until measurements show otherwise.
+
+Queries combine the two immutable components:
+
+```java
+Stream.concat(
+    staticIndex.directSubtypes(binaryName).stream(),
+    reactorIndex.directSubtypes(binaryName).stream())
+```
+
+No query mutates or lazily fills an index collection.
+
+---
+
+## 7. Loading, Reload, and Refresh
+
+### 7.1 Startup
+
+Load all configured shards eagerly on a dedicated single-threaded indexing executor:
+
+```text
+read all static and reactor shards
+    ↓
+construct immutable maps
+    ↓
+publish one WorkspaceTypeIndex snapshot
+    ↓
+report index ready
+```
+
+`ServerEventLoop` must not read shard files, scan class directories, parse JSON, or group index entries.
+Non-index-dependent operations may continue while loading.
+Index-dependent requests wait on the initialization future rather than observing a partially built collection.
+
+The existing empty index remains a valid bootstrap value for workspace configurations with no shards.
+
+### 7.2 Workspace reload
+
+Workspace reload builds a complete replacement snapshot on the indexing executor.
+The current snapshot remains available until construction succeeds.
+The event loop installs the completed snapshot with one reference assignment.
+
+If reload fails, Lathe retains the previous valid snapshot and surfaces the reload failure.
+It must not publish a partially rebuilt index.
+
+### 7.3 Successful reactor save
+
+After a successful full save compilation:
+
+1. Scan only the affected module's `.lathe` class output.
+2. Replace that module's immutable entry list in the reactor-shard input map.
+3. Build a new immutable `ReactorTypeIndex` on the indexing executor.
+4. Combine it with the unchanged `StaticTypeIndex`.
+5. Install the resulting `WorkspaceTypeIndex` snapshot on `ServerEventLoop`.
+
+Rapid refresh requests may be coalesced.
+Every build captures a generation; an older result must not replace a newer snapshot.
+
+The snapshot field may be `volatile` because the value and all reachable collections are immutable.
+Each request captures the current snapshot once and uses it for the request's complete lifetime.
+
+---
+
+## 8. Type Hierarchy Operations
+
+### 8.1 `textDocument/prepareTypeHierarchy`
+
+Use the cursor file's existing attributed analysis to resolve a `TypeElement`.
+Create a `TypeHierarchyItem` containing a serialized identity payload:
 
 ```java
 record TypeHierarchyItemData(
-    String qualifiedName,          // canonical name (dots, no $) for elements.getTypeElement()
-    String simpleName,
-    ElementKind kind,              // CLASS, INTERFACE, ENUM, RECORD
-    ReferenceTarget.SearchScope scope, // REACTOR_MODULES / DECLARING_MODULE / DECLARING_FILE
-    String routingUri              // source URI for supertypes worker routing
-) {}
+    String originId,
+    String binaryName,
+    String routingUri) {}
 ```
 
-`routingUri` is the URI of the type's own source file (from `DefinitionLocator.findSourceFile()`) or, if unavailable, the cursor file's URI. Every module worker can call `elements.getTypeElement()` for types reachable on its classpath, so routing to the declaring file's worker covers all cases including JDK types (which route to the external worker via `manifest.containsFile()`).
+The payload is opaque to clients.
+`routingUri` supports javac-backed fallback and source routing.
 
-`TypeHierarchyItemData` is serialised to/from `TypeHierarchyItem.data` as JSON using the existing `Json` utility — the same codec pattern as `DiagnosticPayload`.
+### 8.2 `typeHierarchy/supertypes`
 
----
+Read the selected entry's `directSupertypes` and resolve each visible type through the captured index snapshot.
+This is a forward-edge lookup and does not attribute source files.
 
-## 4. `textDocument/implementation`
+### 8.3 `typeHierarchy/subtypes`
 
-### Phase 1 — element resolution (cursor worker)
+Read `directSubtypesByBinaryName` from the static and reactor components.
+Return only immediate visible children, as required by the LSP operation.
 
-Reuse the existing `CompilationWorker.resolveTarget(SourceFeatureRequest)` → `ReferenceTarget`. Return empty immediately if `target` is null or its kind is not a type or METHOD.
+Do not return the transitive closure from `subtypes`.
+Editors request subsequent levels as users expand the hierarchy.
 
-### Phase 2 — fan-out (shared with `typeHierarchy/subtypes`)
+### 8.4 Source locations
 
-For **type targets**, delegate to the shared `typeSearchFutures(target, directOnly=false)` helper in `WorkspaceSession`.
+Resolve locations using existing source metadata:
 
-For **method targets**, fan out to candidate files using `planCandidates(config, target)` and call `CompilationWorker.searchImplementations(uri, content, version, target)` on each. Combine results the same way as `referencesFuture`.
+- reactor type → module source roots;
+- JDK type → extracted JDK source directory;
+- dependency type → extracted dependency source directory.
 
-Result: `Either.forLeft(List<Location>)` — extract `.location()` from each `ImplementationMatch`.
-
----
-
-## 5. `textDocument/prepareTypeHierarchy`
-
-Cursor position → one `TypeHierarchyItem` (or empty array).
-
-### In `SourceAnalysisSession.prepareTypeHierarchy(SourceFeatureRequest)`
-
-1. Resolve cursor: `SourceLocator.elementAt(trees, path)`.
-2. Accept `TypeElement` only (not methods, fields, locals).
-3. Determine file location: try `trees.getPath(element)` first (same-file); fall back to `DefinitionLocator.findSourceFile(element, sourceRoots)`.
-4. Build `TypeHierarchyItem`:
-   - `name` = `element.getSimpleName()`
-   - `kind` = map `ElementKind` → `SymbolKind` (INTERFACE → Interface, ENUM → Enum, else → Class)
-   - `detail` = package name (`((PackageElement) topLevelClass.getEnclosingElement()).getQualifiedName()`)
-   - `selectionRange` = name identifier span from `DefinitionLocator.parsePosition()` (a zero-length range at the name start, same as definition)
-   - `range` = full class declaration span from `trees.getSourcePositions().getStartPosition(cu, classTree)` and `getEndPosition(cu, classTree)`, converted via `SourceLocator.offsetToPosition()`
-   - `uri` = source file URI
-   - `data` = serialized `TypeHierarchyItemData` (qualifiedName, simpleName, kind, scope, routingUri)
-
-Return `Optional<TypeHierarchyItem>`. `WorkspaceSession.prepareTypeHierarchyFuture` wraps it as `List.of(item)` or `List.of()`.
+A graph node without available source still participates in traversal but is omitted from user-facing navigation
+results unless Lathe later adds class-file or decompiled navigation.
 
 ---
 
-## 6. `typeHierarchy/supertypes`
+## 9. `textDocument/implementation`
 
-No file scan. Pure element introspection.
+### 9.1 Type target
 
-### In `SourceAnalysisSession.supertypes(TypeHierarchyItemData data, List<Path> sourceRoots, WorkspaceManifest manifest)`
+Resolve the cursor target with javac, then traverse reverse inheritance edges transitively from its binary name.
+Traversal uses an explicit queue and visited set.
+It must not use recursive calls or stream state for graph traversal.
 
-```java
-TypeElement el = elements.getTypeElement(data.qualifiedName());
-if (el == null) return List.of();
+Return visible, source-backed matching types.
+The target declaration itself is excluded.
 
-List<TypeMirror> directSupers = new ArrayList<>();
-if (el.getSuperclass().getKind() != TypeKind.NONE) {
-  directSupers.add(el.getSuperclass());
-}
-directSupers.addAll(el.getInterfaces());
+The traversal crosses internal graph nodes so public implementations remain discoverable through non-public
+intermediate types.
 
-return directSupers.stream()
-    .map(t -> (TypeElement) types.asElement(t))
-    .filter(Objects::nonNull)
-    .flatMap(superEl -> buildItem(superEl, sourceRoots, manifest).stream())
-    .toList();
-```
+### 9.2 Method target
 
-`buildItem` calls `DefinitionLocator.findSourceFile(superEl, sourceRoots)` and constructs a `TypeHierarchyItem` with a new `TypeHierarchyItemData` payload (routing URI = the supertype's own source path, or the caller's routing URI if the source is not found).
+Method implementation remains javac-validated and reactor-only:
 
-Route the call via `data.routingUri()` — same `routeFeature` path as definition and hover.
+1. Resolve the target `ExecutableElement` and its declaring type.
+2. Traverse the inheritance graph to collect transitive reactor subtypes of the declaring type.
+3. Group candidates by reactor source file.
+4. Attribute only those source files on their owning module workers.
+5. Inspect methods declared in each candidate class.
+6. Validate matches with `elements.overrides(candidate, target, enclosingType)`.
+7. Return precise method-name locations.
 
-`java.lang.Object` is included (editors typically show it as the root of the hierarchy). If editors omit it by convention, a flag can suppress it later.
+The graph provides the candidate set; javac remains authoritative for overloads, erasure, generic substitution,
+visibility, and JPMS rules.
 
----
+Abstract overriding declarations may participate in continued inheritance traversal but are not returned as concrete
+implementations unless the LSP behavior is explicitly changed later.
 
-## 7. `typeHierarchy/subtypes`
-
-Reuses `typeSearchFutures(target, directOnly=true)` — the same fan-out helper as `implementation` for type targets.
-
-Deserialize `TypeHierarchyItemData` from the request item. Build a synthetic `ReferenceTarget`:
-
-```java
-new ReferenceTarget(data.kind(), data.qualifiedName(), data.simpleName(), null, data.scope())
-```
-
-Then call `typeSearchFutures(target, directOnly=true)`. The resulting `List<ImplementationMatch>` is converted to `List<TypeHierarchyItem>` in `WorkspaceSession`: each `ImplementationMatch.element()` provides the simple name and `ElementKind` directly — no filename parsing needed. Build a `TypeHierarchyItem` per match using the element's name and kind, the `location()` for `uri`/`selectionRange`, and a new `TypeHierarchyItemData` payload. The full `range` is already in the `Location` (set by `ImplementationLocator` from the class tree's start/end positions).
+No method names or descriptors are added to the index in this design.
 
 ---
 
-## 8. Shared Fan-Out Helper in `WorkspaceSession`
+## 10. Threading and Ownership
 
-Both `implementation` (type case) and `subtypes` execute the same fan-out pattern. Extract one private method:
-
-```java
-private CompletableFuture<List<Location>> typeSearchFutures(
-    ReferenceTarget target, boolean directOnly) { ... }
-```
-
-This mirrors `searchFutures(config, target, includeDeclaration, packageRel)` from `referencesFuture` but calls `CompilationWorker.searchImplementations(uri, content, version, target, directOnly)` instead of `searchReferences`.
-
-`implementationFuture` calls `typeSearchFutures(target, directOnly=false)` for type targets, and a local method-override fan-out for METHOD targets.
-
-`subtypesFuture` calls `typeSearchFutures(target, directOnly=true)`.
-
----
-
-## 9. New Components — Complete List
-
-**New classes:**
-
-| Class | Size estimate | Notes |
-|---|---|---|
-| `ImplementationLocator` | ~120 lines | One scanner for type subtypes (direct and transitive) + method overrides; returns `List<ImplementationMatch>` |
-| `ImplementationMatch` | ~5 lines | `record(TypeElement element, Location location)` — carries name/kind for `TypeHierarchyItem` construction |
-| `TypeHierarchyItemData` | ~10 lines | Round-trip payload record serialized into `TypeHierarchyItem.data` |
-
-**New methods on existing classes:**
-
-| Class | New methods |
-|---|---|
-| `SourceAnalysisSession` | `searchImplementations(uri, content, version, target, directOnly) → List<ImplementationMatch>`, `prepareTypeHierarchy(request) → Optional<TypeHierarchyItem>`, `supertypes(data, sourceRoots, manifest) → List<TypeHierarchyItem>` |
-| `CompilationWorker` | Matching `CompletableFuture<T>` delegation methods for the three above |
-| `WorkspaceSession` | `implementationFuture(uri, pos)`, `typeSearchFutures(target, directOnly)` (private), `prepareTypeHierarchyFuture(uri, pos)`, `supertypesFuture(item)`, `subtypesFuture(item)` |
-| `LatheTextDocumentService` | `implementation(params)`, `prepareTypeHierarchy(params)`, `typeHierarchySupertypes(params)`, `typeHierarchySubtypes(params)` |
-
-**Capability changes in `LatheLanguageServer.createCapabilities()`:**
-
-```java
-capabilities.setImplementationProvider(true);
-capabilities.setTypeHierarchyProvider(true);
-```
-
-That is the entire delta. No new modules, no new infrastructure, no new index structures.
-
----
-
-## 10. Threading
-
-All four endpoints follow the same threading model as references:
-
-```
+```text
 LSP4J thread
-  -> LatheTextDocumentService (captures immutable params)
-  -> worker.submit(() -> session.XxxFuture(...))
-       [lathe-worker thread — reads candidateIndex, routes to workers]
-       -> Phase 1: cursorWorker.resolveTarget() or deserialize TypeHierarchyItemData
-       -> Phase 2: fan-out to N CompilationWorker threads
-            -> ImplementationLocator (or element introspection for supertypes)
-       -> combine futures
-  -> thenApply (LSP shape conversion on calling thread)
+  → LatheTextDocumentService captures immutable request data
+  → ServerEventLoop captures WorkspaceTypeIndex snapshot
+  → graph lookup runs against immutable collections
+  → reactor method candidates fan out to module workers for javac validation
+  → results return to ServerEventLoop
+  → LSP response completes
 ```
 
-`typeHierarchy/supertypes` skips Phase 2 fan-out — it routes directly to a single worker via `routingUri` and calls `ctx.supertypes(...)` synchronously on that worker thread.
+Index construction uses a separate single-threaded indexing executor.
+It never runs on `ServerEventLoop` or a module compilation worker.
+
+Module workers continue to own javac-backed `SourceAnalysisSession` state.
+The index contains metadata only and does not retain javac elements, trees, tasks, or file managers.
+
+Closing the workspace shuts down and reaps the indexing executor after pending work is cancelled or completed
+according to the server shutdown policy.
 
 ---
 
-## 11. Test Strategy
+## 11. Performance Characteristics
 
-### `ImplementationLocatorTest`
+Expected query complexity:
 
-Covers the scanner in isolation using `WorkbenchFixture`:
+| Operation | Work |
+|---|---|
+| Prepare hierarchy | Existing cursor attribution plus one index lookup |
+| Direct supertypes | O(number of direct supertypes) |
+| Direct subtypes | O(number of direct subtypes) |
+| Type implementation | O(reachable subtype nodes and edges) |
+| Method implementation | Graph traversal plus attribution of reactor subtype files |
 
-```
-typeSubtypes_directOnly_findsDirectImplementor
-typeSubtypes_directOnly_excludesTransitiveSubtype
-typeSubtypes_allLevels_findsTransitiveSubtype
-typeSubtypes_excludesTargetItself
-typeSubtypes_parameterizedInterface_matchesViaErasure  (e.g. Comparable<Foo>)
-methodOverride_findsConcreteOverride
-methodOverride_excludesTargetDeclaration
-methodOverride_concreteBaseMethod_findsSubclassOverride
-methodOverride_abstractMethod_notReturnedAsImplementation
-```
+The design removes lexical workspace candidate scans from type queries.
+It also prevents static shard disk reads and regrouping after each save.
 
-### `PrepareTypeHierarchyTest`
+Memory grows by one inheritance record per indexed class and one reverse-edge reference per direct superclass or
+interface edge.
+This is expected to be substantially smaller than caching attributed javac analyses for broad lexical candidate sets.
 
-```
-prepare_onInterface_returnsItemWithCorrectName
-prepare_onClass_returnsItemWithPackageDetail
-prepare_onConcreteClass_returnsItem
-prepare_onNonTypeElement_returnsEmpty
-```
+Initial acceptance measurements should include:
 
-### `SupertypesTest`
+- startup index time and peak heap on Helidon;
+- `List` direct-subtype and transitive-implementation latency;
+- reactor interface method implementation latency;
+- post-save reactor index refresh duration;
+- event-loop responsiveness while startup and refresh builds run.
 
-```
-supertypes_classWithExplicitSuperclass_returnsSuperclass
-supertypes_interfaceImplementation_returnsInterface
-supertypes_multipleInterfaces_returnsAll
-supertypes_javaLangObject_returnsEmpty (no supertype of Object)
-```
-
-### Integration scenario — `TypeHierarchyIT`
-
-Multi-file workbench:
-
-```
-Drawable.java      interface Drawable { void draw(); }
-Shape.java         abstract class Shape implements Drawable {}
-Circle.java        class Circle extends Shape { @Override void draw() {} }
-Square.java        class Square extends Shape { @Override void draw() {} }
-```
-
-| Cursor | Endpoint | Expected |
-|---|---|---|
-| `Drawable` in `Drawable.java` | `implementation` | `Shape`, `Circle`, `Square` |
-| `draw()` in `Drawable.java` | `implementation` | `Circle.draw`, `Square.draw` |
-| `Drawable` in `Drawable.java` | `prepareTypeHierarchy` | item with name=`Drawable`, kind=Interface |
-| item for `Shape` | `supertypes` | item for `Drawable` |
-| item for `Drawable` | `subtypes` | item for `Shape` only (directOnly) |
-| item for `Shape` | `subtypes` | items for `Circle` and `Square` |
+No fixed latency budget should be claimed until these measurements exist.
 
 ---
 
-## 12. Deferred
+## 12. Failure Handling
 
-- **JDK / dependency subtypes**: implementations in JDK classes (e.g., `ArrayList` as a subtype of `List`) are not returned because `ReferenceCandidateIndex` only covers reactor source files. Same known gap as Find References. Fix strategy: restrict JDK/dep queries to open files, or add a type-hierarchy shard to the type index.
-- **Anonymous class implementations**: `types.isSubtype` returns true for anonymous classes, but their class-name span is empty. v1 omits them. A follow-up can report the `NewClassTree` location as the result range.
-- **Lambda implementations of functional interfaces**: similarly not reported in v1.
-- **`textDocument/implementation` on concrete methods in final classes**: returns no results (correct). On overridable concrete methods: returns subclass overrides (correct via `elements.overrides`).
+- Startup index failure completes initialization exceptionally with the affected shard path or origin.
+- Workspace reload failure retains the prior valid immutable snapshot.
+- Reactor refresh failure retains the prior valid reactor snapshot and reports the module and output directory.
+- Invalid hierarchy payload data fails the LSP request; it is not converted to an empty result.
+- Legitimate absence, such as a type with no subtypes, returns an empty list.
+- Failures are logged once at the upstream operation boundary according to the server fail-fast policy.
+
+---
+
+## 13. Alternatives Considered
+
+### 13.1 Reuse Find References candidate scanning
+
+The original design used `ReferenceCandidateIndex` to find files containing the target's simple name, attributed every
+candidate, and filtered matches with `Types.isSubtype()` or `Elements.overrides()`.
+
+This minimizes new index metadata but scales with lexical candidate count rather than actual subtype count.
+Common names can attribute hundreds of unrelated files, retain expensive compiler analyses, and create unpredictable
+latency.
+
+Rejected as the primary design.
+The reference scanner remains useful for reference search, but it is not an appropriate type-relationship index.
+
+### 13.2 Reactor-only inheritance index
+
+Indexing only reactor classes is smaller and covers most application-defined implementations.
+It cannot answer `List → ArrayList` or dependency-to-dependency hierarchy questions even though Lathe already scans the
+relevant class files for completion.
+
+Rejected because adding direct-supertype extraction to existing JDK and dependency scans is a contained extension and
+provides substantially better type hierarchy coverage.
+Method implementation remains reactor-only to preserve the useful scope boundary.
+
+### 13.3 One mutable global graph
+
+A mutable graph could update individual edges after every save.
+It would require synchronization or event-loop confinement and would expose readers to partial updates unless mutation
+were carefully transactional.
+
+Rejected in favor of immutable snapshots.
+Whole reactor-component replacement is simpler to reason about, test, and publish safely.
+
+### 13.4 One rebuilt global immutable index
+
+Rebuilding one global index from JDK, dependency, and reactor entries after every save preserves immutability but repeats
+static grouping work unnecessarily.
+
+Rejected in favor of separate immutable static and reactor components.
+The static component is shared across reactor snapshot replacements.
+
+### 13.5 Independently queried per-shard maps
+
+Each shard could retain its own reverse map and every query could probe all visible shards.
+This makes replacement cheap and aligns with artifact boundaries.
+It also complicates transitive traversal, duplicate handling, and query filtering because every graph step becomes a
+multi-shard operation.
+
+Not selected because eagerly merged immutable static/reactor components provide a simpler query model.
+The file format remains sharded, so this alternative can be revisited if merge cost becomes material.
+
+### 13.6 Lazy dependency loading
+
+Dependency inheritance shards could load on first use to reduce startup work.
+That produces unpredictable first-query latency and additional loading states.
+
+Rejected in favor of eager startup loading and a single clear readiness boundary.
+The serialized format can be optimized later if eager JSON loading becomes expensive.
+
+### 13.7 Source-header inheritance index
+
+Lathe could parse `extends` and `implements` clauses from source without attribution.
+This would provide immediate unsaved updates but would need to approximate imports, nested names, wildcard imports, and
+Java resolution rules.
+
+Rejected as the authoritative index because class files already contain resolved direct relationships.
+A source or attributed-analysis overlay remains a possible follow-up for unsaved-file freshness.
+
+### 13.8 Persistent database
+
+SQLite or another persistent graph store would support indexed reverse queries and fine-grained updates.
+It would also add database lifecycle, locking, migration, corruption recovery, and another dependency.
+
+Rejected as unnecessary for the expected graph size.
+
+### 13.9 Pre-index external methods
+
+Indexing method names, erased descriptors, modifiers, and locations would enable dependency/JDK method implementation
+queries without source attribution.
+It substantially expands the schema and still requires careful Java override semantics.
+
+Deferred.
+The minimal inheritance graph supplies most navigation value while reactor method matches remain exactly validated by
+javac.
+
+---
+
+## 14. Implementation Slices
+
+### Slice 1 — Class-file inheritance metadata
+
+- Extend the minimal class-file reader with class-name, superclass, and interface decoding.
+- Add inheritance records to the type-index schema.
+- Retain internal and nested graph nodes.
+- Update JDK, dependency, and directory scanner tests.
+- Invalidate and rebuild old cached shards through the schema version.
+
+### Slice 2 — Immutable index components
+
+- Introduce immutable static and reactor index components.
+- Add forward-supertype and reverse-subtype lookup.
+- Keep existing completion search behavior.
+- Add graph traversal and duplicate/cycle tests.
+
+### Slice 3 — Background loading and replacement
+
+- Move initial shard reading and map construction off `ServerEventLoop`.
+- Install complete snapshots atomically.
+- Retain the previous snapshot on reload failure.
+- Replace only the immutable reactor component after successful saves.
+- Add generation checks and shutdown handling.
+
+### Slice 4 — Type hierarchy
+
+- Implement prepare, supertypes, and direct subtypes.
+- Add source-location resolution for reactor, dependency, and JDK types.
+- Advertise `typeHierarchyProvider` only after all endpoints pass integration tests.
+
+### Slice 5 — Type implementation
+
+- Implement transitive reverse-edge traversal.
+- Filter internal and source-unavailable results while traversing through internal nodes.
+- Add JDK `List → ArrayList`, dependency, and cross-reactor integration coverage.
+
+### Slice 6 — Reactor method implementation
+
+- Use subtype traversal to select reactor source candidates.
+- Validate declared overrides with javac.
+- Add overloaded, generic, abstract-intermediate, and cross-module tests.
+- Advertise `implementationProvider` after type and method behavior is complete.
+
+Each slice runs `mvn spotless:apply` and the relevant tests before the next slice begins.
+
+---
+
+## 15. Test Strategy
+
+### Class-file scanner
+
+- superclass and multiple interfaces are decoded;
+- interface extension is decoded;
+- nested and package-private classes participate in inheritance records;
+- completion visibility remains unchanged;
+- multi-release JAR selection remains correct;
+- malformed class files follow the existing scanner failure policy.
+
+### Index graph
+
+- direct subtypes exclude transitive descendants;
+- transitive traversal includes all descendants exactly once;
+- cycles or malformed duplicate edges do not loop;
+- internal intermediate nodes preserve public descendants;
+- static and reactor results combine without mutating either component;
+- replacing a reactor component does not rebuild or modify the static component.
+
+### Type hierarchy
+
+- class superclass and implemented interfaces are returned;
+- interface supertypes are returned;
+- `Object` has no supertype;
+- `List` includes `ArrayList` as an indexed subtype;
+- direct subtype requests omit grandchildren;
+- unavailable-source nodes are traversed but not returned.
+
+### Type implementation
+
+- reactor interface returns direct and transitive reactor implementations;
+- JDK interface returns source-backed JDK and reactor implementations;
+- dependency interface returns dependency and reactor implementations;
+- target declaration is excluded;
+- duplicate binary names are filtered using request visibility and validation.
+
+### Method implementation
+
+- concrete reactor overrides are returned;
+- overloaded methods are distinguished by javac;
+- generic overrides are validated correctly;
+- abstract intermediate declarations are not reported as concrete implementations;
+- dependency and JDK method implementations remain outside the result scope;
+- broad interfaces attribute only reactor subtype source candidates.
+
+### Concurrency and lifecycle
+
+- requests do not observe partially built indexes;
+- event-loop work proceeds during startup and refresh construction;
+- stale refresh generations cannot replace newer snapshots;
+- failed reload retains the prior snapshot;
+- shutdown closes the indexing executor cleanly.
