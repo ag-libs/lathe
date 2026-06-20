@@ -39,6 +39,28 @@ class WorkspaceModuleRegistryTest {
   }
 
   @Test
+  void moduleSourceFor_fileInSourceRoot_returnsModule() throws IOException {
+    final var src = tmp.resolve("module-a/src/main/java");
+    writeParams("module-a", src, null);
+
+    final var registry = WorkspaceModuleRegistry.scan(tmp, WorkspaceManifest.empty());
+
+    assertThat(registry.moduleSourceFor(src.resolve("com/example/Foo.java"))).isPresent();
+  }
+
+  @Test
+  void moduleSourceFor_fileInGeneratedSourcesDir_returnsModule() throws IOException {
+    final var src = tmp.resolve("module-a/src/main/java");
+    final var generatedSrc = tmp.resolve("module-a/target/generated-sources/annotations");
+    writeParams("module-a", src, generatedSrc);
+
+    final var registry = WorkspaceModuleRegistry.scan(tmp, WorkspaceManifest.empty());
+
+    assertThat(registry.moduleSourceFor(generatedSrc.resolve("com/example/FooBuilder.java")))
+        .isPresent();
+  }
+
+  @Test
   void allSourceRoots_noGenSourcesDir_doesNotAddNull() throws IOException {
     final var src = tmp.resolve("module-a/src/main/java");
     writeParams("module-a", src, null);

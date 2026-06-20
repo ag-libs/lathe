@@ -73,7 +73,11 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
 
   public Optional<ModuleSourceConfig> moduleSourceFor(final Path filePath) {
     return moduleSources.stream()
-        .filter(m -> m.sourceRoots().stream().anyMatch(filePath::startsWith))
+        .filter(
+            m ->
+                m.sourceRoots().stream().anyMatch(filePath::startsWith)
+                    || (m.originalGenSourcesDir() != null
+                        && filePath.startsWith(m.originalGenSourcesDir())))
         .findFirst();
   }
 
