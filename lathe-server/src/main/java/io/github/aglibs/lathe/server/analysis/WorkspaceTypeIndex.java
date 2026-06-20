@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server.analysis;
 
 import io.github.aglibs.lathe.core.Json;
+import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexFile;
 import java.io.IOException;
@@ -20,14 +21,18 @@ public final class WorkspaceTypeIndex {
 
   private static final Logger LOG = Logger.getLogger(WorkspaceTypeIndex.class.getName());
 
+  private final List<TypeIndexEntry> staticEntries;
   private final NavigableMap<String, List<TypeIndexEntry>> bySimpleNameLower;
 
-  private WorkspaceTypeIndex(final NavigableMap<String, List<TypeIndexEntry>> bySimpleNameLower) {
+  private WorkspaceTypeIndex(
+      final List<TypeIndexEntry> staticEntries,
+      final NavigableMap<String, List<TypeIndexEntry>> bySimpleNameLower) {
+    this.staticEntries = staticEntries;
     this.bySimpleNameLower = bySimpleNameLower;
   }
 
   public static WorkspaceTypeIndex empty() {
-    return new WorkspaceTypeIndex(new TreeMap<>());
+    return new WorkspaceTypeIndex(List.of(), Collections.emptyNavigableMap());
   }
 
   public static WorkspaceTypeIndex build(final List<Path> shardPaths) {
@@ -36,26 +41,56 @@ public final class WorkspaceTypeIndex {
 
   public static WorkspaceTypeIndex build(
       final List<Path> shardPaths, final Collection<List<TypeIndexEntry>> reactorEntries) {
+    final var t = Stopwatch.start();
     final List<TypeIndexFile> files =
         shardPaths.stream()
             .filter(WorkspaceTypeIndex::shardExists)
             .flatMap(WorkspaceTypeIndex::loadFile)
             .toList();
+    final List<TypeIndexEntry> staticEntries =
+        files.stream().flatMap(file -> file.types().stream()).toList();
+    final var index = create(staticEntries, reactorEntries);
+    LOG.fine(
+        () ->
+            "[type-index] loaded index: %d simple names from %d/%d shard(s) + %d reactor shard(s) %dms"
+                .formatted(
+                    index.bySimpleNameLower.size(),
+                    files.size(),
+                    shardPaths.size(),
+                    reactorEntries.size(),
+                    t.elapsedMs()));
+    return index;
+  }
+
+  public WorkspaceTypeIndex withReactorEntries(
+      final Collection<List<TypeIndexEntry>> reactorEntries) {
+    final var t = Stopwatch.start();
+    final var index = create(staticEntries, reactorEntries);
+    LOG.fine(
+        () ->
+            "[type-index] refreshed reactor index: %d simple names from %d static type(s) + %d reactor shard(s) %dms"
+                .formatted(
+                    index.bySimpleNameLower.size(),
+                    staticEntries.size(),
+                    reactorEntries.size(),
+                    t.elapsedMs()));
+    return index;
+  }
+
+  private static WorkspaceTypeIndex create(
+      final List<TypeIndexEntry> staticEntries,
+      final Collection<List<TypeIndexEntry>> reactorEntries) {
     final TreeMap<String, List<TypeIndexEntry>> mutable =
-        Stream.concat(
-                files.stream().flatMap(f -> f.types().stream()),
-                reactorEntries.stream().flatMap(List::stream))
+        Stream.concat(staticEntries.stream(), reactorEntries.stream().flatMap(List::stream))
             .collect(
                 Collectors.groupingBy(
-                    e -> e.simpleName().toLowerCase(), TreeMap::new, Collectors.toList()));
+                    e -> e.simpleName().toLowerCase(),
+                    TreeMap::new,
+                    Collectors.collectingAndThen(Collectors.toList(), List::copyOf)));
 
     final NavigableMap<String, List<TypeIndexEntry>> map =
         Collections.unmodifiableNavigableMap(mutable);
-    LOG.fine(
-        () ->
-            "[type-index] built index: %d simple names from %d/%d shard(s) + %d reactor shard(s)"
-                .formatted(map.size(), files.size(), shardPaths.size(), reactorEntries.size()));
-    return new WorkspaceTypeIndex(map);
+    return new WorkspaceTypeIndex(staticEntries, map);
   }
 
   private static boolean shardExists(final Path shard) {

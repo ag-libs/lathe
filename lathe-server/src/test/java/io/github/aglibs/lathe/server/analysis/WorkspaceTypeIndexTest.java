@@ -122,4 +122,35 @@ class WorkspaceTypeIndexTest {
     assertThat(index.search("Al", 10)).extracting(TypeIndexEntry::simpleName).contains("Alpha");
     assertThat(index.search("Be", 10)).extracting(TypeIndexEntry::simpleName).contains("Beta");
   }
+
+  @Test
+  void withReactorEntries_replacesReactorEntriesAndPreservesSnapshot() throws IOException {
+    final var shard = writeShard(tmp, "shard.json", shard(entry("Alpha", "com.static")));
+    final var original =
+        WorkspaceTypeIndex.build(List.of(shard), List.of(List.of(entry("Beta", "com.reactor"))));
+
+    final var refreshed =
+        original.withReactorEntries(List.of(List.of(entry("Gamma", "com.reactor"))));
+
+    assertThat(refreshed.search("Alpha", 10)).hasSize(1);
+    assertThat(refreshed.search("Beta", 10)).isEmpty();
+    assertThat(refreshed.search("Gamma", 10)).hasSize(1);
+    assertThat(original.search("Beta", 10)).hasSize(1);
+    assertThat(original.search("Gamma", 10)).isEmpty();
+  }
+
+  @Test
+  void withReactorEntries_changedStaticShard_reloadsOnlyOnBuild() throws IOException {
+    final var shard = writeShard(tmp, "shard.json", shard(entry("Alpha", "com.static")));
+    final var original = WorkspaceTypeIndex.build(List.of(shard));
+    writeShard(tmp, "shard.json", shard(entry("Delta", "com.static")));
+
+    final var refreshed = original.withReactorEntries(List.of());
+    final var reloaded = WorkspaceTypeIndex.build(List.of(shard));
+
+    assertThat(refreshed.search("Alpha", 10)).hasSize(1);
+    assertThat(refreshed.search("Delta", 10)).isEmpty();
+    assertThat(reloaded.search("Alpha", 10)).isEmpty();
+    assertThat(reloaded.search("Delta", 10)).hasSize(1);
+  }
 }

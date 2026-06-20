@@ -573,7 +573,7 @@ final class WorkspaceSession {
 
   private void refreshReactorShard(final ModuleSourceConfig config) {
     reactorShards.put(config, scanReactorDir(config));
-    typeIndex = WorkspaceTypeIndex.build(manifest.typeIndexShardPaths(), reactorShards.values());
+    typeIndex = typeIndex.withReactorEntries(reactorShards.values());
   }
 
   private static List<TypeIndexEntry> scanReactorDir(final ModuleSourceConfig config) {
