@@ -30,7 +30,7 @@ Maven Central publication is planned for M3.
 
 | Area | Status | Current behavior and gaps |
 |---|---|---|
-| Diagnostics | Implemented | Fast change diagnostics, full save diagnostics, and unused private/local hints. |
+| Diagnostics | Implemented | Fast change diagnostics, full save diagnostics, and unused private/local hints. Duplicate `cant.resolve` errors on the same line are deduplicated; unused-declaration scan is suppressed when compilation has errors. |
 | Hover | Implemented | Includes source-backed Javadoc rendering. |
 | Definition | Implemented | Supports reactor and extracted dependency/JDK sources where available. |
 | Completion | Implemented with M2 gaps | Member, type, import, constructor, lambda, argument, keyword, and typed-slot completion. Method references and generic-bound receivers remain. |
