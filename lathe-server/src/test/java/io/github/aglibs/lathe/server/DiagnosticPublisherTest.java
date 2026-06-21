@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import io.github.aglibs.lathe.server.analysis.CompileMode;
@@ -35,10 +36,11 @@ class DiagnosticPublisherTest {
     final var result = new CompileResponse("file:///A.java", snapshot.generation(), List.of());
 
     final boolean published = publisher.publishIfCurrent(snapshot, result);
+    publisher.refreshTokensIfCurrent(snapshot, result);
 
     assertThat(published).isTrue();
     verify(client).publishDiagnostics(new PublishDiagnosticsParams("file:///A.java", List.of()));
-    verify(client).refreshSemanticTokens();
+    verify(client, times(2)).refreshSemanticTokens();
   }
 
   @Test
@@ -48,6 +50,7 @@ class DiagnosticPublisherTest {
     final var result = new CompileResponse("file:///A.java", old.generation(), List.of());
 
     final boolean published = publisher.publishIfCurrent(old, result);
+    publisher.refreshTokensIfCurrent(old, result);
 
     assertThat(published).isFalse();
     verify(client, never()).publishDiagnostics(any());

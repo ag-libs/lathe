@@ -37,7 +37,7 @@ final class DiagnosticPublisher {
   }
 
   void refreshTokensIfCurrent(final OpenDocument snapshot, final CompileResponse result) {
-    if (registry.isStale(snapshot, result.generation())) {
+    if (!registry.isStale(snapshot, result.generation())) {
       client.refreshSemanticTokens();
     }
   }

@@ -43,7 +43,7 @@ Maven Central publication is planned for M3.
 | Workspace symbols | Implemented | Type-name lookup uses `WorkspaceTypeIndex`. |
 | Document symbols | Implemented | File outline support is available. |
 | Folding ranges | Implemented | Java structural folding is available. |
-| Semantic tokens | Partially implemented | Static/deprecated members, enum constants, type parameters, and annotations are covered. Refresh correctness is an M1 blocker. |
+| Semantic tokens | Partially implemented | Static/deprecated members, enum constants, type parameters, and annotations are covered. Class and import highlighting remain planned for M2. |
 | Full-document formatting | Implemented | google-java-format also reorders and removes imports. |
 | On-type formatting | M2 planned | Stub is not advertised; conservative indentation remains planned. |
 | Code actions | Implemented with M1 gaps | Missing imports, add throws, try/catch wrapping, and variable declaration work. Missing-method stubs and new-type freshness remain. |
@@ -89,7 +89,6 @@ Detailed implementation designs and historical decisions are indexed under
 
 ## Known M1 Blockers
 
-- Semantic-token refresh is inverted in one save path.
 - Workspace fan-out boundaries still convert some unexpected failures to empty successful results.
 - Synchronous whole-index construction can block `ServerEventLoop` on large workspaces.
 - `MissingMethodImplProvider` is not implemented.
