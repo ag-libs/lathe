@@ -210,21 +210,35 @@ Message format: `[operation] uri-or-module detail Xms outcome`
 
 ## Testing
 
-- **Discovering Best Practices**: Test utilities and fixtures evolve constantly. **Before** writing
-  any new tests, you **MUST** read at least 2 existing test classes in the same package or module to
-  discover the current standard fixtures, mock setups, and test architectures. **NEVER** guess or
-  invent new test infrastructure without checking existing patterns first.
-- **ALL** test method names **MUST** strictly match the `methodName_condition_result` pattern. *
-  *NEVER** use standard camelCase for test names. (Example:
-  `resolve_missingJavaHome_returnsMissing`).
-- JUnit 5 + AssertJ in all modules.
-- **NEVER** use Mockito or any mocking frameworks inside the `lathe-compiler` module.
+### Framework and style
+- JUnit 5 + AssertJ in all modules; **NEVER** use Mockito inside `lathe-compiler`.
 - Use `@TempDir` for all filesystem tests.
-- Always include both positive and negative cases.
-- Group related assertions — prefer a few meaningful test methods per class over dozens of
-  micro-tests.
-- **NEVER** duplicate boilerplate. If you find yourself writing complex setup or mock logic across
-  multiple tests, you **MUST** extract it into a dedicated test utility class.
+- **ALL** test method names **MUST** match `methodName_condition_result` with underscores.
+  **NEVER** use camelCase for test names. (`resolve_missingJavaHome_returnsMissing`)
+- **NEVER** use `@Nested` — flatten all tests into the top-level class with descriptive prefixed names.
+- Always include both a positive case and a negative/edge case per behaviour.
+
+### How to write a new test
+
+Test utilities and fixtures evolve. **Before writing any new test, you MUST read at least 2 existing
+test classes in the same package** to discover the current fixtures, mock setups, and patterns.
+**NEVER** guess or invent new test infrastructure without checking existing tests first.
+
+1. **Follow the nearest existing test pattern.** Open a neighbouring test, understand what fixture it
+   uses, and mirror that approach. Do not introduce new boilerplate unless no existing pattern fits.
+
+2. **Reuse the compilation pipeline — never replicate it.** `lathe-server` already has helpers that
+   compile Java source and return an attributed AST. Before writing a `javac` call by hand, check
+   what neighbouring tests do and use the same path.
+
+3. **Never duplicate setup across test classes.** If multiple tests need the same compile or file
+   setup, extract it into a shared helper in the same package or extend an existing base class.
+
+4. **Prefer real objects over mocks.** Mock only at the boundary where a real object would require
+   network I/O, a file-system side-effect, or disproportionate multi-class setup.
+
+5. **Use `Mockito.verify(client, timeout(N))` instead of `Thread.sleep` for async assertions.**
+   Hard-coded sleeps cause flakiness under load.
 
 Every test module needs `src/test/resources/junit-platform.properties`:
 
@@ -232,5 +246,6 @@ Every test module needs `src/test/resources/junit-platform.properties`:
 junit.jupiter.extensions.autodetection.enabled=true
 ```
 
-`lathe-server` tests need a `LoggingConfig` JUnit extension (registered via `META-INF/services`)
-that loads the production `logging.properties`.
+`lathe-server` tests require a `LoggingConfig` JUnit extension registered via
+`META-INF/services/org.junit.jupiter.api.extension.Extension`.
+It loads the production `logging.properties` so log output is consistent during test runs.
