@@ -9,6 +9,10 @@ Read their current-status sections and compare them with the roadmap before star
 
 ## M1 — Internal Preview
 
+- [Request Cancellation and Compilation Admission](planned/lathe-request-cancellation-and-compilation-admission.md) —
+  process-wide javac concurrency and cooperative LSP request cancellation.
+- [Reference Search Resource Safety](planned/lathe-reference-search-resource-safety.md) — transient closed-file
+  analysis and shared javac admission after the Helidon `String` search crash.
 - [Goto Implementation and Type Hierarchy](planned/lathe-goto-implementation.md) — inheritance-index-backed type
   navigation and reactor method implementation.
 - [Event-Loop Starvation](planned/lathe-event-loop-starvation.md) — diagnosis of synchronous index construction on
