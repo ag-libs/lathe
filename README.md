@@ -145,7 +145,13 @@ Lathe implements the following LSP endpoints. In Neovim 0.11+, most are mapped a
 - `textDocument/completion`: Type, method, and variable completion. Includes automatic import insertion.
 - `textDocument/definition`: Resolves to local files, unpacked dependency JAR sources, and JDK sources.
   - Neovim API: `vim.lsp.buf.definition()`
-  - Neovim default: `gd`
+  - Neovim default: `<C-]>` (via `tagfunc`); most configs also remap `gd`
+- `textDocument/implementation`: Finds concrete implementations of an interface method, or all subtypes of a class or interface across the workspace.
+  - Neovim API: `vim.lsp.buf.implementation()`
+  - Neovim default: `gri`
+- `typeHierarchy`: Navigates supertypes and subtypes of the symbol under the cursor.
+  - Neovim API: `vim.lsp.buf.typehierarchy('supertypes')` / `vim.lsp.buf.typehierarchy('subtypes')`
+  - No Neovim default; add explicit keybinds (e.g. `<leader>ts` / `<leader>ti`)
 - `textDocument/hover`: Displays AST-resolved Javadoc formatted as Markdown.
   - Neovim API: `vim.lsp.buf.hover()`
   - Neovim default: `K`
@@ -161,8 +167,11 @@ Lathe implements the following LSP endpoints. In Neovim 0.11+, most are mapped a
 - `textDocument/formatting`: Applies `google-java-format` to the full document and removes unused imports.
   - Neovim API: `vim.lsp.buf.format()`
   - *(Lathe plugin automatically configures format-on-save)*
-- `workspace/symbol`: Searches for classes, interfaces, and enums across the workspace.
-  - Neovim API: `vim.lsp.buf.workspace_symbol()`
+- `textDocument/semanticTokens`: Highlights static and deprecated members, enum constants, type parameters, and annotations beyond what tree-sitter covers. Works automatically when the server attaches.
+- `textDocument/foldingRange`: Provides Java structural folding for classes, methods, blocks, and import groups. Works automatically with fold providers.
+- `workspace/symbol` and `textDocument/documentSymbol`: Search for types across the workspace, or list all symbols in the current file as an outline.
+  - Neovim API: `vim.lsp.buf.workspace_symbol()` / `vim.lsp.buf.document_symbol()`
+  - Neovim default: `gO` (document symbols)
 
 ### Installation
 
@@ -197,7 +206,7 @@ Neovim logs LSP traffic to its normal LSP log. For example:
 tail -f ~/.local/state/nvim/lsp.log
 ```
 
-*(Note: The plugin automatically configures format-on-save and on-type formatting where supported).*
+*(Note: The plugin automatically configures format-on-save.)*
 
 
 ## Opt-out and CI
