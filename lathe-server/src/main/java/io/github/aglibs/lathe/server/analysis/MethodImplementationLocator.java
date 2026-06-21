@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
@@ -82,24 +83,26 @@ final class MethodImplementationLocator extends TreePathScanner<Void, Void> {
           .filter(method -> !method.getModifiers().contains(Modifier.ABSTRACT))
           .filter(method -> method.getSimpleName().contentEquals(target.simpleName()))
           .filter(method -> analysis.elements().overrides(method, targetMethod, candidateType))
-          .map(this::location)
+          .flatMap(method -> location(method).stream())
           .forEach(results::add);
     }
 
     return super.visitClass(classTree, unused);
   }
 
-  private Location location(final ExecutableElement method) {
+  private Optional<Location> location(final ExecutableElement method) {
     final var path = analysis.trees().getPath(method);
     final CompilationUnitTree tree = analysis.tree();
     try {
-      final Position start =
-          SourceLocator.declarationNamePosition(
-                  analysis.trees(), tree, path, method.getSimpleName().toString())
-              .orElseThrow();
-      final var end =
-          new Position(start.getLine(), start.getCharacter() + method.getSimpleName().length());
-      return new Location(uri, new Range(start, end));
+      return SourceLocator.declarationNamePosition(
+              analysis.trees(), tree, path, method.getSimpleName().toString())
+          .map(
+              start -> {
+                final var end =
+                    new Position(
+                        start.getLine(), start.getCharacter() + method.getSimpleName().length());
+                return new Location(uri, new Range(start, end));
+              });
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }

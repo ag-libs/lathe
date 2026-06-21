@@ -63,6 +63,39 @@ class MethodImplementationTest {
   }
 
   @Test
+  void methodImplementations_recordComponentAccessor_skipsWithoutCrash() throws IOException {
+    final String serviceContent = "interface HasText { String text(); }\n";
+    final var serviceSource = Files.writeString(tempDir.resolve("HasText.java"), serviceContent);
+    final var classDir = tempDir.resolve("classes");
+    TestCompiler.compileToDir(classDir, serviceSource);
+    // record accessor for 'text' is compiler-synthesized: no MethodDecl node in the AST
+    final String recordContent = "record Impl(String text) implements HasText {}\n";
+    final String recordUri = tempDir.resolve("Impl.java").toUri().toString();
+
+    final ReferenceTarget target;
+    try (var targetSession = new SourceAnalysisSession(new TempSourceCompiler())) {
+      targetSession.compile(TempSourceCompiler.TEST_URI, serviceContent, 1, CompileMode.OPEN);
+      target =
+          targetSession.resolveTarget(
+              new SourceFeatureRequest(
+                  TempSourceCompiler.TEST_URI,
+                  serviceContent,
+                  new Position(0, 27),
+                  List.of(tempDir),
+                  WorkspaceManifest.empty()));
+    }
+
+    try (var candidateSession =
+        new SourceAnalysisSession(new TempSourceCompiler(List.of(classDir)))) {
+      final List<Location> locations =
+          candidateSession.methodImplementations(
+              recordUri, recordContent, 1, target, Set.of("Impl"));
+
+      assertThat(locations).isEmpty();
+    }
+  }
+
+  @Test
   void methodImplementations_nonMethodTarget_returnsEmpty() {
     final var target =
         new ReferenceTarget(
