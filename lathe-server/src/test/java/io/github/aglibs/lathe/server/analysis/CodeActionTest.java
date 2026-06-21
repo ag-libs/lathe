@@ -29,7 +29,8 @@ class CodeActionTest {
     typeIndex =
         TempSourceCompiler.typeIndex(
             tmp.resolve("index.json"),
-            new TypeIndexEntry("ArrayList", "java.util.ArrayList", "java.util", TypeKind.CLASS));
+            new TypeIndexEntry(
+                "ArrayList", "java.util.ArrayList", "java.util", TypeKind.CLASS, true, List.of()));
     compiler = new TempSourceCompiler();
     session = new SourceAnalysisSession(compiler);
   }
@@ -189,9 +190,16 @@ class CodeActionTest {
                 "PackagePrivateClass",
                 "com.other.PackagePrivateClass",
                 "com.other",
-                TypeKind.CLASS),
+                TypeKind.CLASS,
+                true,
+                List.of()),
             new TypeIndexEntry(
-                "PublicClass", "com.other.PublicClass", "com.other", TypeKind.CLASS));
+                "PublicClass",
+                "com.other.PublicClass",
+                "com.other",
+                TypeKind.CLASS,
+                true,
+                List.of()));
 
     final var source =
         """

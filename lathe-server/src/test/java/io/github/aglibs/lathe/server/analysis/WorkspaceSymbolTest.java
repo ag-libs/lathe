@@ -20,7 +20,7 @@ class WorkspaceSymbolTest {
   private static TypeIndexEntry entry(
       final String simpleName, final String pkg, final TypeKind kind) {
     final String qualName = pkg.isEmpty() ? simpleName : pkg + "." + simpleName;
-    return new TypeIndexEntry(simpleName, qualName, pkg, kind);
+    return new TypeIndexEntry(simpleName, qualName, pkg, kind, true, List.of());
   }
 
   private WorkspaceTypeIndex indexOf(final TypeIndexEntry... entries) {
@@ -128,7 +128,8 @@ class WorkspaceSymbolTest {
   void resolveSourcePath_innerClass_resolvesToOuterFile() throws IOException {
     createSourceFile("com.example", "Outer");
     final var innerEntry =
-        new TypeIndexEntry("Inner", "com.example.Outer.Inner", "com.example", TypeKind.CLASS);
+        new TypeIndexEntry(
+            "Inner", "com.example.Outer$Inner", "com.example", TypeKind.CLASS, true, List.of());
     final Path result = WorkspaceSymbolResolver.resolveSourcePath(innerEntry, List.of(src));
     assertThat(result).isNotNull();
     assertThat(result.getFileName().toString()).isEqualTo("Outer.java");
@@ -150,7 +151,8 @@ class WorkspaceSymbolTest {
     Files.createDirectories(moduleDir);
     Files.writeString(moduleDir.resolve("ArrayList.java"), "");
     final var jdkEntry =
-        new TypeIndexEntry("ArrayList", "java.util.ArrayList", "java.util", TypeKind.CLASS);
+        new TypeIndexEntry(
+            "ArrayList", "java.util.ArrayList", "java.util", TypeKind.CLASS, true, List.of());
     final Path result =
         WorkspaceSymbolResolver.resolveSourcePath(jdkEntry, List.of(jdkRoot.resolve("java.base")));
     assertThat(result).isNotNull();

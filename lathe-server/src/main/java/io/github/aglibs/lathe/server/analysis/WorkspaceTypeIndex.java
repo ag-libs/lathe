@@ -7,10 +7,16 @@ import io.github.aglibs.lathe.core.typeindex.TypeIndexFile;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.NavigableMap;
+import java.util.Optional;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -23,16 +29,26 @@ public final class WorkspaceTypeIndex {
 
   private final List<TypeIndexEntry> staticEntries;
   private final NavigableMap<String, List<TypeIndexEntry>> bySimpleNameLower;
+  private final Map<String, List<TypeIndexEntry>> byBinaryName;
+  private final Map<String, List<TypeIndexEntry>> directSubtypesByParent;
+  private final Set<String> duplicateBinaryNames;
 
   private WorkspaceTypeIndex(
       final List<TypeIndexEntry> staticEntries,
-      final NavigableMap<String, List<TypeIndexEntry>> bySimpleNameLower) {
+      final NavigableMap<String, List<TypeIndexEntry>> bySimpleNameLower,
+      final Map<String, List<TypeIndexEntry>> byBinaryName,
+      final Map<String, List<TypeIndexEntry>> directSubtypesByParent,
+      final Set<String> duplicateBinaryNames) {
     this.staticEntries = staticEntries;
     this.bySimpleNameLower = bySimpleNameLower;
+    this.byBinaryName = byBinaryName;
+    this.directSubtypesByParent = directSubtypesByParent;
+    this.duplicateBinaryNames = duplicateBinaryNames;
   }
 
   public static WorkspaceTypeIndex empty() {
-    return new WorkspaceTypeIndex(List.of(), Collections.emptyNavigableMap());
+    return new WorkspaceTypeIndex(
+        List.of(), Collections.emptyNavigableMap(), Map.of(), Map.of(), Set.of());
   }
 
   public static WorkspaceTypeIndex build(final List<Path> shardPaths) {
@@ -80,8 +96,12 @@ public final class WorkspaceTypeIndex {
   private static WorkspaceTypeIndex create(
       final List<TypeIndexEntry> staticEntries,
       final Collection<List<TypeIndexEntry>> reactorEntries) {
-    final TreeMap<String, List<TypeIndexEntry>> mutable =
+    final List<TypeIndexEntry> allEntries =
         Stream.concat(staticEntries.stream(), reactorEntries.stream().flatMap(List::stream))
+            .toList();
+    final TreeMap<String, List<TypeIndexEntry>> mutable =
+        allEntries.stream()
+            .filter(TypeIndexEntry::typeNameCandidate)
             .collect(
                 Collectors.groupingBy(
                     e -> e.simpleName().toLowerCase(),
@@ -90,7 +110,39 @@ public final class WorkspaceTypeIndex {
 
     final NavigableMap<String, List<TypeIndexEntry>> map =
         Collections.unmodifiableNavigableMap(mutable);
-    return new WorkspaceTypeIndex(staticEntries, map);
+    final Map<String, List<TypeIndexEntry>> byBinaryName =
+        allEntries.stream()
+            .collect(
+                Collectors.groupingBy(
+                    TypeIndexEntry::binaryName,
+                    Collectors.collectingAndThen(Collectors.toList(), List::copyOf)));
+    final Set<String> duplicateBinaryNames =
+        byBinaryName.entrySet().stream()
+            .filter(entry -> entry.getValue().size() > 1)
+            .map(Map.Entry::getKey)
+            .collect(Collectors.toUnmodifiableSet());
+    duplicateBinaryNames.forEach(
+        binaryName ->
+            LOG.warning(
+                () ->
+                    "[type-index] duplicate type %s; hierarchy navigation skipped"
+                        .formatted(binaryName)));
+    final Map<String, List<TypeIndexEntry>> directSubtypesByParent =
+        allEntries.stream()
+            .flatMap(
+                entry -> entry.directSupertypes().stream().map(parent -> Map.entry(parent, entry)))
+            .collect(
+                Collectors.groupingBy(
+                    Map.Entry::getKey,
+                    Collectors.mapping(
+                        Map.Entry::getValue,
+                        Collectors.collectingAndThen(Collectors.toList(), List::copyOf))));
+    return new WorkspaceTypeIndex(
+        staticEntries,
+        map,
+        Map.copyOf(byBinaryName),
+        Map.copyOf(directSubtypesByParent),
+        duplicateBinaryNames);
   }
 
   private static boolean shardExists(final Path shard) {
@@ -121,5 +173,57 @@ public final class WorkspaceTypeIndex {
         .flatMap(List::stream)
         .limit(limit)
         .toList();
+  }
+
+  public Optional<TypeIndexEntry> findType(final String binaryName) {
+    if (duplicateBinaryNames.contains(binaryName)) {
+      return Optional.empty();
+    }
+
+    final List<TypeIndexEntry> entries = byBinaryName.get(binaryName);
+    return entries != null && !entries.isEmpty()
+        ? Optional.of(entries.getFirst())
+        : Optional.empty();
+  }
+
+  public boolean isDuplicate(final String binaryName) {
+    return duplicateBinaryNames.contains(binaryName);
+  }
+
+  public List<TypeIndexEntry> directSupertypes(final String binaryName) {
+    return findType(binaryName).stream()
+        .flatMap(entry -> entry.directSupertypes().stream())
+        .flatMap(name -> findType(name).stream())
+        .toList();
+  }
+
+  public List<TypeIndexEntry> directSubtypes(final String binaryName) {
+    if (duplicateBinaryNames.contains(binaryName)) {
+      return List.of();
+    }
+
+    return directSubtypesByParent.getOrDefault(binaryName, List.of()).stream()
+        .filter(entry -> !duplicateBinaryNames.contains(entry.binaryName()))
+        .distinct()
+        .toList();
+  }
+
+  public List<TypeIndexEntry> transitiveSubtypes(final String binaryName) {
+    if (duplicateBinaryNames.contains(binaryName)) {
+      return List.of();
+    }
+
+    final var visited = new HashSet<String>();
+    visited.add(binaryName);
+    final var pending = new ArrayDeque<>(directSubtypes(binaryName));
+    final var results = new ArrayList<TypeIndexEntry>();
+    while (!pending.isEmpty()) {
+      final var subtype = pending.removeFirst();
+      if (visited.add(subtype.binaryName())) {
+        results.add(subtype);
+        pending.addAll(directSubtypes(subtype.binaryName()));
+      }
+    }
+    return List.copyOf(results);
   }
 }

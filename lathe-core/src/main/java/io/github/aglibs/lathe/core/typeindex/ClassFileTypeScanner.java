@@ -74,12 +74,12 @@ public final class ClassFileTypeScanner {
 
   private static Optional<TypeIndexEntry> scanClassEntry(
       final String className, final InputStream in) throws IOException {
-    final Optional<ClassAccess> access = ClassAccessReader.read(in);
-    if (access.isEmpty() || !access.get().isPublicTopLevelType()) {
+    final Optional<ClassMetadata> metadata = ClassMetadataReader.read(in);
+    if (metadata.isEmpty() || !className(metadata.get()).equals(className)) {
       return Optional.empty();
     }
 
-    return Optional.of(toEntry(className, access.get()));
+    return Optional.of(toEntry(metadata.get()));
   }
 
   private static String classEntryName(final Path root, final Path file) {
@@ -105,8 +105,7 @@ public final class ClassFileTypeScanner {
     if (name.startsWith(META_INF)
         || !name.endsWith(CLASS_SUFFIX)
         || name.endsWith("module-info.class")
-        || name.endsWith("package-info.class")
-        || name.contains("$")) {
+        || name.endsWith("package-info.class")) {
       return Optional.empty();
     }
 
@@ -131,15 +130,26 @@ public final class ClassFileTypeScanner {
     return !text.isBlank() && text.chars().allMatch(Character::isDigit);
   }
 
-  private static TypeIndexEntry toEntry(final String classEntryName, final ClassAccess access) {
-    final String qualifiedName =
-        classEntryName
-            .substring(0, classEntryName.length() - CLASS_SUFFIX.length())
-            .replace('/', '.');
-    final int packageEnd = qualifiedName.lastIndexOf('.');
-    final String packageName = packageEnd > 0 ? qualifiedName.substring(0, packageEnd) : "";
-    final String simpleName =
-        packageEnd > 0 ? qualifiedName.substring(packageEnd + 1) : qualifiedName;
-    return new TypeIndexEntry(simpleName, qualifiedName, packageName, access.kind());
+  private static String className(final ClassMetadata metadata) {
+    return metadata.binaryName().replace('.', '/') + CLASS_SUFFIX;
+  }
+
+  private static TypeIndexEntry toEntry(final ClassMetadata metadata) {
+    final String binaryName = metadata.binaryName();
+    final int packageEnd = binaryName.lastIndexOf('.');
+    final String packageName = packageEnd > 0 ? binaryName.substring(0, packageEnd) : "";
+    final int nestedNameStart = binaryName.lastIndexOf('$') + 1;
+    final int simpleNameStart = Math.max(packageEnd + 1, nestedNameStart);
+    final String simpleName = binaryName.substring(simpleNameStart);
+    final boolean typeNameCandidate = !binaryName.contains("$") && metadata.access().isPublicType();
+    final TypeKind kind = metadata.access().kind();
+    final List<String> directSupertypes =
+        kind == TypeKind.INTERFACE || kind == TypeKind.ANNOTATION
+            ? metadata.directSupertypes().stream()
+                .filter(name -> !"java.lang.Object".equals(name))
+                .toList()
+            : metadata.directSupertypes();
+    return new TypeIndexEntry(
+        simpleName, binaryName, packageName, kind, typeNameCandidate, directSupertypes);
   }
 }

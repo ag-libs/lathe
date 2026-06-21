@@ -1,6 +1,6 @@
 # Lathe — Goto Implementation and Type Hierarchy
 
-Proposed M1 design.
+Implemented M1 design.
 Builds on [lathe-design.md](../lathe-design.md) and the existing type-index implementation.
 
 ---
@@ -133,7 +133,7 @@ record TypeIndexEntry(
     String binaryName,
     String packageName,
     TypeKind kind,
-    boolean discoverable,
+    boolean typeNameCandidate,
     List<String> directSupertypes) {}
 ```
 
@@ -148,7 +148,8 @@ com.example.Outer$Inner
 
 `simpleName` remains the user-facing name used by completion and symbol presentation.
 
-`discoverable` means the entry is eligible for type-name completion and workspace-symbol results.
+`typeNameCandidate` means the entry is eligible for type-name completion, missing-import actions, and workspace-symbol
+results.
 The initial policy remains public top-level classes only.
 
 `directSupertypes` contains erased binary names from the class file's `super_class` and `interfaces[]` entries.
@@ -162,7 +163,7 @@ For example:
   "binaryName": "java.util.ArrayList",
   "packageName": "java.util",
   "kind": "CLASS",
-  "discoverable": true,
+  "typeNameCandidate": true,
   "directSupertypes": [
     "java.util.AbstractList",
     "java.util.List",
@@ -179,7 +180,7 @@ The existing cache validation then rebuilds dependency and JDK shards on the nex
 ### 5.2 Internal graph nodes
 
 The current scanner excludes nested and non-public classes entirely.
-The inheritance scanner must retain them with `discoverable=false`.
+The inheritance scanner must retain them with `typeNameCandidate=false`.
 
 Otherwise an internal intermediate type breaks traversal:
 
@@ -192,7 +193,7 @@ PublicImplementation
 ```
 
 Internal nodes participate in graph traversal without appearing in completion or workspace-symbol results.
-Anonymous and local class files may also appear as non-discoverable graph nodes, but M1 does not return them as
+Anonymous and local class files may also appear as graph-only nodes, but M1 does not return them as
 user-facing locations.
 
 All lists stored in index entries and all index lookup collections are immutable.
@@ -208,12 +209,12 @@ Split packages do not require special handling when their classes have different
 Two indexed classes with the same package and class name produce the same binary name and are unsupported for hierarchy
 and implementation queries.
 
-During index construction, collect duplicate binary names in an immutable set.
+During index construction, collect duplicate binary names in an immutable set and log one warning per duplicate for
+that snapshot.
 When a hierarchy traversal reaches an ambiguous name:
 
-1. Log one warning for that binary name.
-2. Omit that ambiguous node and its outgoing branch from the result.
-3. Continue processing unambiguous branches where possible.
+1. Omit that ambiguous node and its outgoing branch from the result.
+2. Continue processing unambiguous branches where possible.
 
 Example warning:
 
@@ -221,7 +222,8 @@ Example warning:
 [type-index] duplicate type com.example.Service; hierarchy navigation skipped
 ```
 
-Warnings are deduplicated per workspace snapshot so repeated editor requests do not flood the log.
+Construction-time reporting keeps warnings deduplicated per immutable workspace snapshot, so repeated editor requests
+do not flood the log and the index needs no mutable warning state.
 Completion keeps its existing javac candidate-validation behavior.
 
 This is a narrow duplicate-class restriction, not a general JPMS or classpath restriction.
@@ -273,7 +275,7 @@ final class WorkspaceTypeIndex {
 ```
 
 `bySimpleNameLower` preserves current prefix completion.
-Search filters out entries where `discoverable=false`.
+Search filters out entries where `typeNameCandidate=false`.
 
 `byBinaryName` resolves unique graph nodes and identifies unsupported duplicates.
 
@@ -367,7 +369,7 @@ For a type cursor:
 1. Resolve the target `TypeElement` and binary name with javac.
 2. Reject an ambiguous target name with the deduplicated warning.
 3. Traverse `directSubtypes` transitively with an explicit queue and visited set.
-4. Traverse through non-discoverable internal nodes.
+4. Traverse through graph-only internal nodes.
 5. Return precise locations for M1-supported source-backed named types.
 6. Exclude the target declaration itself.
 
@@ -432,7 +434,7 @@ Keep the existing timed index lifecycle logs:
 [type-index] refreshed reactor index: ... Xms
 ```
 
-Add one deduplicated warning for unsupported duplicate binary names encountered by hierarchy navigation.
+Log one warning per unsupported duplicate binary name when each immutable index snapshot is constructed.
 
 Expected absence returns an empty list:
 
@@ -493,7 +495,7 @@ Duplicate package and binary names are explicitly unsupported instead.
 `TypeIndexFile` could contain independent completion and inheritance lists.
 
 That duplicates type identity and scanner output.
-Rejected in favor of one entry with an explicit `discoverable` policy.
+Rejected in favor of one entry with an explicit `typeNameCandidate` policy.
 
 ### 16.5 Mutable or incrementally patched graph
 
@@ -523,8 +525,8 @@ The direct-inheritance graph supplies most navigation value while reactor method
 ### Slice 1 — Class-file inheritance metadata
 
 - Extend the minimal constant-pool reader.
-- Add binary name, discoverability, and direct supertypes to `TypeIndexEntry`.
-- Retain non-discoverable graph nodes.
+- Add binary name, type-name candidacy, and direct supertypes to `TypeIndexEntry`.
+- Retain graph-only nodes that are not type-name candidates.
 - Increment the schema version.
 - Update JAR, JDK, directory, JSON, and multi-release tests.
 
@@ -574,8 +576,8 @@ Each slice runs `mvn spotless:apply` and its relevant tests before the next slic
 - superclass and multiple interfaces are decoded;
 - interface extension is decoded;
 - erased generic inheritance has the expected binary supertype;
-- public top-level classes remain discoverable;
-- package-private and nested classes remain graph nodes but are not discoverable;
+- public top-level classes remain type-name candidates;
+- package-private and nested classes remain graph nodes but are not type-name candidates;
 - multi-release JAR behavior remains unchanged;
 - malformed class files follow the existing scanner failure policy.
 

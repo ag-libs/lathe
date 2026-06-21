@@ -18,6 +18,8 @@ class LatheLanguageServerTest {
     assertThat(capabilities.getSemanticTokensProvider()).isNotNull();
     assertThat(capabilities.getDocumentFormattingProvider().getLeft()).isTrue();
     assertThat(capabilities.getDefinitionProvider().getLeft()).isTrue();
+    assertThat(capabilities.getImplementationProvider().getLeft()).isTrue();
+    assertThat(capabilities.getTypeHierarchyProvider().getLeft()).isTrue();
     assertThat(capabilities.getReferencesProvider().getLeft()).isTrue();
     assertThat(capabilities.getDocumentSymbolProvider().getLeft()).isTrue();
     assertThat(capabilities.getFoldingRangeProvider().getLeft()).isTrue();

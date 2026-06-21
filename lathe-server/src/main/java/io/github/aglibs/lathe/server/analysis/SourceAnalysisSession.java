@@ -4,6 +4,7 @@ import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.core.Stopwatch;
+import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionEngine;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionRequest;
@@ -16,11 +17,13 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.JavaFileObject;
@@ -37,6 +40,7 @@ import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.SignatureHelp;
+import org.eclipse.lsp4j.TypeHierarchyItem;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 public final class SourceAnalysisSession implements AutoCloseable {
@@ -228,6 +232,18 @@ public final class SourceAnalysisSession implements AutoCloseable {
     }
   }
 
+  public List<Location> methodImplementations(
+      final String uri,
+      final String content,
+      final int version,
+      final ReferenceTarget target,
+      final Set<String> candidateBinaryNames) {
+    final var analysis = ensureAttributedAnalysis(uri, content, version);
+    return analysis != null
+        ? MethodImplementationLocator.locate(analysis, target, candidateBinaryNames, uri)
+        : List.of();
+  }
+
   public Optional<Location> definition(final SourceFeatureRequest request) {
     final Stopwatch t = Stopwatch.start();
     final var cur = resolve(request);
@@ -263,6 +279,111 @@ public final class SourceAnalysisSession implements AutoCloseable {
                         .map(l -> "%s:%d".formatted(l.getUri(), l.getRange().getStart().getLine()))
                         .orElse("not found")));
     return result;
+  }
+
+  public List<Location> typeImplementations(
+      final SourceFeatureRequest request, final WorkspaceTypeIndex typeIndex) {
+    final Stopwatch t = Stopwatch.start();
+    final var cur = resolve(request);
+    if (cur == null) {
+      return List.of();
+    }
+
+    final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
+    if (!(element instanceof final TypeElement typeElement)) {
+      return List.of();
+    }
+
+    final String binaryName = cur.analysis().elements().getBinaryName(typeElement).toString();
+    final List<Path> sourceRoots = typeSourceRoots(request);
+    final List<Location> results =
+        typeIndex.transitiveSubtypes(binaryName).stream()
+            .flatMap(entry -> TypeSourceLocator.locate(entry, sourceRoots, parser).stream())
+            .toList();
+    LOG.fine(
+        () ->
+            "[implementation:type] %s %dms hits=%d"
+                .formatted(request.uri(), t.elapsedMs(), results.size()));
+    return results;
+  }
+
+  public List<TypeHierarchyItem> prepareTypeHierarchy(
+      final SourceFeatureRequest request, final WorkspaceTypeIndex typeIndex) {
+    final var cur = resolve(request);
+    if (cur == null) {
+      return List.of();
+    }
+
+    final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
+    if (!(element instanceof final TypeElement typeElement)) {
+      return List.of();
+    }
+
+    final String binaryName = cur.analysis().elements().getBinaryName(typeElement).toString();
+    return typeIndex
+        .findType(binaryName)
+        .flatMap(entry -> typeHierarchyItem(entry, typeSourceRoots(request)))
+        .map(List::of)
+        .orElseGet(List::of);
+  }
+
+  public List<TypeHierarchyItem> typeHierarchySupertypes(
+      final TypeHierarchyItem item,
+      final WorkspaceTypeIndex typeIndex,
+      final List<Path> sourceRoots) {
+    final var data = TypeHierarchyItemDataCodec.decode(item.getData());
+    return data != null
+        ? typeHierarchyItems(typeIndex.directSupertypes(data.binaryName()), sourceRoots)
+        : List.of();
+  }
+
+  public List<TypeHierarchyItem> typeHierarchySubtypes(
+      final TypeHierarchyItem item,
+      final WorkspaceTypeIndex typeIndex,
+      final List<Path> sourceRoots) {
+    final var data = TypeHierarchyItemDataCodec.decode(item.getData());
+    if (data == null) {
+      return List.of();
+    }
+
+    final List<TypeIndexEntry> subtypes = typeIndex.directSubtypes(data.binaryName());
+    return typeHierarchyItems(subtypes, sourceRoots);
+  }
+
+  private List<TypeHierarchyItem> typeHierarchyItems(
+      final List<TypeIndexEntry> entries, final List<Path> sourceRoots) {
+    return entries.stream()
+        .flatMap(entry -> typeHierarchyItem(entry, sourceRoots).stream())
+        .toList();
+  }
+
+  private Optional<TypeHierarchyItem> typeHierarchyItem(
+      final TypeIndexEntry entry, final List<Path> sourceRoots) {
+    return TypeSourceLocator.locate(entry, sourceRoots, parser)
+        .map(
+            location -> {
+              final var item =
+                  new TypeHierarchyItem(
+                      entry.simpleName(),
+                      WorkspaceSymbolResolver.toSymbolKind(entry.kind()),
+                      location.getUri(),
+                      location.getRange(),
+                      location.getRange());
+              item.setDetail(entry.packageName());
+              item.setData(
+                  TypeHierarchyItemDataCodec.encode(
+                      new TypeHierarchyItemData(entry.binaryName(), location.getUri())));
+              return item;
+            });
+  }
+
+  private static List<Path> typeSourceRoots(final SourceFeatureRequest request) {
+    return Stream.of(
+            request.sourceRoots().stream(),
+            request.manifest().depSourceDirs().stream(),
+            request.manifest().jdkModuleSourceDirs().stream())
+        .flatMap(stream -> stream)
+        .toList();
   }
 
   public List<Either<Command, CodeAction>> codeAction(

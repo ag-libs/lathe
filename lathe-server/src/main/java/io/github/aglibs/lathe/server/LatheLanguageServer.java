@@ -62,6 +62,8 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     capabilities.setSemanticTokensProvider(semanticTokensOptions);
     capabilities.setDocumentFormattingProvider(true);
     capabilities.setDefinitionProvider(true);
+    capabilities.setImplementationProvider(true);
+    capabilities.setTypeHierarchyProvider(true);
     capabilities.setReferencesProvider(true);
     capabilities.setDocumentSymbolProvider(true);
     capabilities.setFoldingRangeProvider(true);

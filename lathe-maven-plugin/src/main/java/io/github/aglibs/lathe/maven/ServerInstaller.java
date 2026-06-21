@@ -108,9 +108,13 @@ final class ServerInstaller {
 
   static String renderLauncherScript(final String modulePath) {
     final var sb = new StringBuilder("#!/bin/sh\nexec java \\\n");
-    // java.net.http is not in the default module graph for the unnamed module; Error Prone's
-    // WellKnownMutability references HttpClient and throws ClassNotFoundException without this.
-    sb.append("  --add-modules java.net.http \\\n");
+    // java.net.http: not in the default module graph; Error Prone's WellKnownMutability references
+    // HttpClient and throws ClassNotFoundException without this.
+    // jdk.unsupported: Gson's module-info declares `requires static jdk.unsupported` (optional).
+    // Without this, jdk.unsupported is absent from the module graph and sun.misc.Unsafe is
+    // invisible to Gson, causing UnsafeAllocator to fall back to its "give up" stub. LSP4J types
+    // like TypeHierarchyItem have no no-args constructor and cannot be deserialized otherwise.
+    sb.append("  --add-modules java.net.http,jdk.unsupported \\\n");
     // Classpath javac plugins (e.g. Error Prone, loaded via -Xplugin: on the processor path) run
     // in the unnamed module. They access javac internals directly and need ALL-UNNAMED exports.
     // Without these, didSave full passes that replay -Xplugin:ErrorProne throw IllegalAccessError.

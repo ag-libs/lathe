@@ -2,7 +2,6 @@ package io.github.aglibs.lathe.server.analysis;
 
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
@@ -45,22 +44,7 @@ public final class WorkspaceSymbolResolver {
   }
 
   static Path resolveSourcePath(final TypeIndexEntry entry, final List<Path> sourceDirs) {
-    final String pkg = entry.packageName();
-    final String qualName = entry.qualifiedName();
-    final String classComponent = pkg.isEmpty() ? qualName : qualName.substring(pkg.length() + 1);
-    final int dotIdx = classComponent.indexOf('.');
-    final String topLevel = dotIdx >= 0 ? classComponent.substring(0, dotIdx) : classComponent;
-    final String relPath =
-        pkg.isEmpty()
-            ? topLevel + ".java"
-            : "%s/%s.java".formatted(pkg.replace('.', '/'), topLevel);
-    for (final Path dir : sourceDirs) {
-      final Path candidate = dir.resolve(relPath);
-      if (Files.exists(candidate)) {
-        return candidate;
-      }
-    }
-    return null;
+    return TypeSourceLocator.findSourceFile(entry, sourceDirs).orElse(null);
   }
 
   static SymbolKind toSymbolKind(final TypeKind kind) {

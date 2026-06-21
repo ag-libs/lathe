@@ -195,6 +195,38 @@ final class LatheTextDocumentService implements TextDocumentService {
   }
 
   @Override
+  public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
+      implementation(final ImplementationParams params) {
+    final var uri = params.getTextDocument().getUri();
+    final var pos = params.getPosition();
+    return worker.submit(() -> session.implementationFuture(uri, pos)).thenCompose(f -> f);
+  }
+
+  @Override
+  public CompletableFuture<List<TypeHierarchyItem>> prepareTypeHierarchy(
+      final TypeHierarchyPrepareParams params) {
+    final var uri = params.getTextDocument().getUri();
+    final var pos = params.getPosition();
+    return worker.submit(() -> session.prepareTypeHierarchyFuture(uri, pos)).thenCompose(f -> f);
+  }
+
+  @Override
+  public CompletableFuture<List<TypeHierarchyItem>> typeHierarchySupertypes(
+      final TypeHierarchySupertypesParams params) {
+    return worker
+        .submit(() -> session.typeHierarchySupertypesFuture(params.getItem()))
+        .thenCompose(f -> f);
+  }
+
+  @Override
+  public CompletableFuture<List<TypeHierarchyItem>> typeHierarchySubtypes(
+      final TypeHierarchySubtypesParams params) {
+    return worker
+        .submit(() -> session.typeHierarchySubtypesFuture(params.getItem()))
+        .thenCompose(f -> f);
+  }
+
+  @Override
   public CompletableFuture<List<? extends TextEdit>> formatting(
       final DocumentFormattingParams params) {
     final var uri = params.getTextDocument().getUri();

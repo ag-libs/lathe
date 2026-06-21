@@ -19,7 +19,23 @@ class WorkspaceTypeIndexTest {
   @TempDir private Path tmp;
 
   private static TypeIndexEntry entry(final String simpleName, final String pkg) {
-    return new TypeIndexEntry(simpleName, "%s.%s".formatted(pkg, simpleName), pkg, TypeKind.CLASS);
+    return new TypeIndexEntry(
+        simpleName, "%s.%s".formatted(pkg, simpleName), pkg, TypeKind.CLASS, true, List.of());
+  }
+
+  private static TypeIndexEntry graphEntry(
+      final String binaryName, final boolean typeNameCandidate, final String... directSupertypes) {
+    final int packageEnd = binaryName.lastIndexOf('.');
+    final String packageName = packageEnd > 0 ? binaryName.substring(0, packageEnd) : "";
+    final int nestedNameStart = binaryName.lastIndexOf('$') + 1;
+    final String simpleName = binaryName.substring(Math.max(packageEnd + 1, nestedNameStart));
+    return new TypeIndexEntry(
+        simpleName,
+        binaryName,
+        packageName,
+        TypeKind.CLASS,
+        typeNameCandidate,
+        List.of(directSupertypes));
   }
 
   private static TypeIndexFile shard(final TypeIndexEntry... entries) {
@@ -121,6 +137,72 @@ class WorkspaceTypeIndexTest {
 
     assertThat(index.search("Al", 10)).extracting(TypeIndexEntry::simpleName).contains("Alpha");
     assertThat(index.search("Be", 10)).extracting(TypeIndexEntry::simpleName).contains("Beta");
+  }
+
+  @Test
+  void build_nonTypeNameCandidate_excludesFromSearch() {
+    final var hidden =
+        new TypeIndexEntry(
+            "Hidden", "com.reactor.Hidden", "com.reactor", TypeKind.CLASS, false, List.of());
+
+    final var index = WorkspaceTypeIndex.build(List.of(), List.of(List.of(hidden)));
+
+    assertThat(index.search("Hidden", 10)).isEmpty();
+  }
+
+  @Test
+  void graph_directRelations_returnsImmediateTypes() {
+    final var object = graphEntry("java.lang.Object", true);
+    final var base = graphEntry("com.example.Base", true, "java.lang.Object");
+    final var child = graphEntry("com.example.Child", true, "com.example.Base");
+    final var index = WorkspaceTypeIndex.build(List.of(), List.of(List.of(object, base, child)));
+
+    assertThat(index.directSupertypes("com.example.Child"))
+        .extracting(TypeIndexEntry::binaryName)
+        .containsExactly("com.example.Base");
+    assertThat(index.directSubtypes("com.example.Base"))
+        .extracting(TypeIndexEntry::binaryName)
+        .containsExactly("com.example.Child");
+    assertThat(index.directSubtypes("java.lang.Object"))
+        .extracting(TypeIndexEntry::binaryName)
+        .containsExactly("com.example.Base");
+  }
+
+  @Test
+  void graph_transitiveSubtypes_traversesGraphOnlyIntermediate() {
+    final var base = graphEntry("com.example.Base", true);
+    final var internal = graphEntry("com.example.Internal", false, "com.example.Base");
+    final var leaf = graphEntry("com.example.Leaf", true, "com.example.Internal");
+    final var index = WorkspaceTypeIndex.build(List.of(), List.of(List.of(base, internal, leaf)));
+
+    assertThat(index.transitiveSubtypes("com.example.Base"))
+        .extracting(TypeIndexEntry::binaryName)
+        .containsExactly("com.example.Internal", "com.example.Leaf");
+  }
+
+  @Test
+  void graph_transitiveSubtypes_cycle_excludesTargetAndTerminates() {
+    final var a = graphEntry("com.example.A", true, "com.example.C");
+    final var b = graphEntry("com.example.B", true, "com.example.A");
+    final var c = graphEntry("com.example.C", true, "com.example.B");
+    final var index = WorkspaceTypeIndex.build(List.of(), List.of(List.of(a, b, c)));
+
+    assertThat(index.transitiveSubtypes("com.example.A"))
+        .extracting(TypeIndexEntry::binaryName)
+        .containsExactly("com.example.B", "com.example.C");
+  }
+
+  @Test
+  void graph_duplicateBinaryName_marksAmbiguousAndSkipsRelations() {
+    final var first = graphEntry("com.example.Duplicate", true, "com.example.ParentA");
+    final var second = graphEntry("com.example.Duplicate", true, "com.example.ParentB");
+    final var index = WorkspaceTypeIndex.build(List.of(), List.of(List.of(first, second)));
+
+    assertThat(index.isDuplicate("com.example.Duplicate")).isTrue();
+    assertThat(index.findType("com.example.Duplicate")).isEmpty();
+    assertThat(index.directSupertypes("com.example.Duplicate")).isEmpty();
+    assertThat(index.directSubtypes("com.example.ParentA")).isEmpty();
+    assertThat(index.transitiveSubtypes("com.example.Duplicate")).isEmpty();
   }
 
   @Test

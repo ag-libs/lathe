@@ -11,5 +11,6 @@ public record TypeIndexFile(String schema, TypeIndexOrigin origin, List<TypeInde
         .notNull(origin, "origin")
         .notNull(types, "types")
         .validate();
+    types = List.copyOf(types);
   }
 }

@@ -14,6 +14,8 @@ import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
 import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.server.analysis.TokenScanner;
+import io.github.aglibs.lathe.server.analysis.TypeHierarchyItemDataCodec;
+import io.github.aglibs.lathe.server.analysis.TypeSourceLocator;
 import io.github.aglibs.lathe.server.analysis.WorkspaceSymbolResolver;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
@@ -37,6 +39,7 @@ import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
+import javax.lang.model.element.ElementKind;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionContext;
 import org.eclipse.lsp4j.Command;
@@ -56,6 +59,7 @@ import org.eclipse.lsp4j.ShowMessageRequestParams;
 import org.eclipse.lsp4j.SignatureHelp;
 import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.TextEdit;
+import org.eclipse.lsp4j.TypeHierarchyItem;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.LanguageClient;
 
@@ -434,6 +438,179 @@ final class WorkspaceSession {
         Either.forLeft(List.of()));
   }
 
+  CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
+      implementationFuture(final String uri, final Position pos) {
+    final var openFile = docs.get(uri);
+    if (openFile == null) {
+      return CompletableFuture.completedFuture(Either.forLeft(List.of()));
+    }
+
+    final var request =
+        new SourceFeatureRequest(
+            openFile.uri(), openFile.content(), pos, workspace.allSourceRoots(), manifest);
+    final var indexSnapshot = typeIndex;
+    final var cursorWorker =
+        switch (routeCompiler(uri)) {
+          case CompilerRoute.Module module -> module.worker();
+          case CompilerRoute.External external -> external.worker();
+          case CompilerRoute.Missing ignored -> null;
+        };
+    if (cursorWorker == null) {
+      return CompletableFuture.completedFuture(Either.forLeft(List.of()));
+    }
+
+    final var t = Stopwatch.start();
+    return cursorWorker
+        .resolveTarget(request)
+        .thenCompose(
+            target ->
+                worker
+                    .submit(
+                        () -> implementationForTarget(target, request, cursorWorker, indexSnapshot))
+                    .thenCompose(future -> future))
+        .thenApply(
+            locations -> {
+              LOG.fine(
+                  () ->
+                      "[implementation] %s %dms hits=%d"
+                          .formatted(uri, t.elapsedMs(), locations.size()));
+              return definitionResult(locations);
+            });
+  }
+
+  private CompletableFuture<List<Location>> implementationForTarget(
+      final ReferenceTarget target,
+      final SourceFeatureRequest request,
+      final CompilationWorker cursorWorker,
+      final WorkspaceTypeIndex indexSnapshot) {
+    if (target == null) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
+    if (target.kind().isClass() || target.kind().isInterface()) {
+      return cursorWorker.typeImplementations(request, indexSnapshot);
+    }
+
+    if (target.kind() != ElementKind.METHOD) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
+    final Map<Path, Set<String>> candidatesByFile =
+        indexSnapshot.transitiveSubtypes(target.qualifiedName()).stream()
+            .filter(TypeSourceLocator::isNamedDeclaration)
+            .flatMap(
+                entry ->
+                    TypeSourceLocator.findSourceFile(entry, workspace.allSourceRoots()).stream()
+                        .map(path -> Map.entry(path, entry.binaryName())))
+            .collect(
+                Collectors.groupingBy(
+                    Map.Entry::getKey,
+                    Collectors.mapping(Map.Entry::getValue, Collectors.toUnmodifiableSet())));
+    return candidatesByFile.entrySet().stream()
+        .map(entry -> methodImplementationFuture(entry.getKey(), entry.getValue(), target))
+        .reduce(
+            CompletableFuture.completedFuture(List.of()),
+            (left, right) ->
+                left.thenCombine(
+                    right,
+                    (first, second) -> Stream.concat(first.stream(), second.stream()).toList()));
+  }
+
+  private CompletableFuture<List<Location>> methodImplementationFuture(
+      final Path sourceFile, final Set<String> candidateBinaryNames, final ReferenceTarget target) {
+    final var config = workspace.moduleSourceFor(sourceFile);
+    if (config.isEmpty()) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
+    final String uri = sourceFile.toUri().toString();
+    final var openFile = docs.get(uri);
+    final var diskFile = openFile == null ? readDiskCandidate(uri).orElse(null) : null;
+    if (openFile == null && diskFile == null) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
+    final String content = openFile != null ? openFile.content() : diskFile.content();
+    final int version = openFile != null ? openFile.version() : 0;
+    return workspace
+        .workerFor(config.get())
+        .methodImplementations(uri, content, version, target, candidateBinaryNames);
+  }
+
+  CompletableFuture<List<TypeHierarchyItem>> prepareTypeHierarchyFuture(
+      final String uri, final Position pos) {
+    final var openFile = docs.get(uri);
+    if (openFile == null) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
+    final var request =
+        new SourceFeatureRequest(
+            openFile.uri(), openFile.content(), pos, workspace.allSourceRoots(), manifest);
+    final var indexSnapshot = typeIndex;
+    final var t = Stopwatch.start();
+    return routeFeature(
+            uri,
+            moduleWorker -> moduleWorker.prepareTypeHierarchy(request, indexSnapshot),
+            List.of())
+        .thenApply(
+            items -> {
+              LOG.fine(
+                  () ->
+                      "[typeHierarchy:prepare] %s %dms items=%d"
+                          .formatted(uri, t.elapsedMs(), items.size()));
+              return items;
+            });
+  }
+
+  CompletableFuture<List<TypeHierarchyItem>> typeHierarchySupertypesFuture(
+      final TypeHierarchyItem item) {
+    final var data = TypeHierarchyItemDataCodec.decode(item.getData());
+    if (data == null) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
+    final var indexSnapshot = typeIndex;
+    final List<Path> sourceDirs = typeSourceDirs();
+    final var t = Stopwatch.start();
+    return routeFeature(
+            data.routingUri(),
+            moduleWorker -> moduleWorker.typeHierarchySupertypes(item, indexSnapshot, sourceDirs),
+            List.of())
+        .thenApply(
+            items -> {
+              LOG.fine(
+                  () ->
+                      "[typeHierarchy:supertypes] %s %dms items=%d"
+                          .formatted(data.binaryName(), t.elapsedMs(), items.size()));
+              return items;
+            });
+  }
+
+  CompletableFuture<List<TypeHierarchyItem>> typeHierarchySubtypesFuture(
+      final TypeHierarchyItem item) {
+    final var data = TypeHierarchyItemDataCodec.decode(item.getData());
+    if (data == null) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
+    final var indexSnapshot = typeIndex;
+    final List<Path> sourceDirs = typeSourceDirs();
+    final var t = Stopwatch.start();
+    return routeFeature(
+            data.routingUri(),
+            moduleWorker -> moduleWorker.typeHierarchySubtypes(item, indexSnapshot, sourceDirs),
+            List.of())
+        .thenApply(
+            items -> {
+              LOG.fine(
+                  () ->
+                      "[typeHierarchy:subtypes] %s %dms items=%d"
+                          .formatted(data.binaryName(), t.elapsedMs(), items.size()));
+              return items;
+            });
+  }
+
   CompletableFuture<CompletionOutcome> completionFuture(
       final String uri, final Position pos, final CompletionContext context) {
     final var openFile = docs.get(uri);
@@ -551,18 +728,21 @@ final class WorkspaceSession {
 
   List<SymbolInformation> workspaceSymbol(final String query) {
     final var t = Stopwatch.start();
-    final List<Path> sourceDirs =
-        Stream.of(
-                workspace.allSourceRoots().stream(),
-                manifest.jdkModuleSourceDirs().stream(),
-                manifest.depSourceDirs().stream())
-            .flatMap(s -> s)
-            .toList();
+    final List<Path> sourceDirs = typeSourceDirs();
     final List<SymbolInformation> results =
         WorkspaceSymbolResolver.resolve(query, typeIndex, sourceDirs);
     LOG.info(
         () -> "[symbol] query=%s hits=%d %dms".formatted(query, results.size(), t.elapsedMs()));
     return results;
+  }
+
+  private List<Path> typeSourceDirs() {
+    return Stream.of(
+            workspace.allSourceRoots().stream(),
+            manifest.jdkModuleSourceDirs().stream(),
+            manifest.depSourceDirs().stream())
+        .flatMap(stream -> stream)
+        .toList();
   }
 
   private void scanReactorShards() {

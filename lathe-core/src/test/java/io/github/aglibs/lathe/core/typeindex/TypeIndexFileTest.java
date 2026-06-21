@@ -22,7 +22,9 @@ class TypeIndexFileTest {
                     "ImmutableList",
                     "com.google.common.collect.ImmutableList",
                     "com.google.common.collect",
-                    TypeKind.CLASS)));
+                    TypeKind.CLASS,
+                    true,
+                    List.of("java.lang.Object"))));
 
     final TypeIndexFile roundTrip = Json.fromJson(Json.toJson(file), TypeIndexFile.class);
 

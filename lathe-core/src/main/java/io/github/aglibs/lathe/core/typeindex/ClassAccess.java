@@ -8,7 +8,7 @@ record ClassAccess(int flags) {
   private static final int ACC_ENUM = 0x4000;
   private static final int ACC_MODULE = 0x8000;
 
-  boolean isPublicTopLevelType() {
+  boolean isPublicType() {
     return hasFlag(ACC_PUBLIC) && !hasFlag(ACC_MODULE);
   }
 

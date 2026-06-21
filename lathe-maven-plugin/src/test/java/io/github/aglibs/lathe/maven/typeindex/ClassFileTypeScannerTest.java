@@ -23,7 +23,7 @@ class ClassFileTypeScannerTest {
   @TempDir Path tmp;
 
   @Test
-  void scanJar_standardClassEntries_returnsPublicTopLevelTypes() throws Exception {
+  void scanJar_standardClassEntries_returnsGraphTypes() throws Exception {
     final Path jar = fixtureJar();
 
     final List<TypeIndexEntry> entries = ClassFileTypeScanner.scanJar(jar);
@@ -32,7 +32,7 @@ class ClassFileTypeScannerTest {
   }
 
   @Test
-  void scanDirectory_standardClassFiles_returnsPublicTopLevelTypes() throws Exception {
+  void scanDirectory_standardClassFiles_returnsGraphTypes() throws Exception {
     final Path classes = compileFixtureClasses();
     Files.write(classes.resolve("com/example/Broken.class"), new byte[] {0, 1, 2});
     Files.write(classes.resolve("module-info.class"), new byte[] {0, 1, 2});
@@ -51,27 +51,33 @@ class ClassFileTypeScannerTest {
   }
 
   private void assertFixtureEntries(final List<TypeIndexEntry> entries) {
-    final Map<String, TypeIndexEntry> byQualifiedName =
-        entries.stream()
-            .collect(Collectors.toMap(TypeIndexEntry::qualifiedName, Function.identity()));
-    assertThat(byQualifiedName)
+    final Map<String, TypeIndexEntry> byBinaryName =
+        entries.stream().collect(Collectors.toMap(TypeIndexEntry::binaryName, Function.identity()));
+    assertThat(byBinaryName)
         .containsKeys(
             "com.example.PublicType",
+            "com.example.PublicType$Nested",
+            "com.example.PackagePrivate",
             "com.example.PublicInterface",
             "com.example.PublicEnum",
             "com.example.PublicAnnotation")
-        .doesNotContainKeys(
-            "com.example.PackagePrivate",
-            "com.example.PublicType.Nested",
-            "com.example.Broken",
-            "com.example.VersionedOnly",
-            "com.example.Meta");
-    assertThat(byQualifiedName.get("com.example.PublicType").kind()).isEqualTo(TypeKind.CLASS);
-    assertThat(byQualifiedName.get("com.example.PublicInterface").kind())
+        .doesNotContainKeys("com.example.Broken", "com.example.VersionedOnly", "com.example.Meta");
+    assertThat(byBinaryName.get("com.example.PublicType").kind()).isEqualTo(TypeKind.CLASS);
+    assertThat(byBinaryName.get("com.example.PublicInterface").kind())
         .isEqualTo(TypeKind.INTERFACE);
-    assertThat(byQualifiedName.get("com.example.PublicEnum").kind()).isEqualTo(TypeKind.ENUM);
-    assertThat(byQualifiedName.get("com.example.PublicAnnotation").kind())
+    assertThat(byBinaryName.get("com.example.PublicEnum").kind()).isEqualTo(TypeKind.ENUM);
+    assertThat(byBinaryName.get("com.example.PublicAnnotation").kind())
         .isEqualTo(TypeKind.ANNOTATION);
+    assertThat(byBinaryName.get("com.example.PublicType").typeNameCandidate()).isTrue();
+    assertThat(byBinaryName.get("com.example.PackagePrivate").typeNameCandidate()).isFalse();
+    assertThat(byBinaryName.get("com.example.PublicType$Nested").typeNameCandidate()).isFalse();
+    assertThat(byBinaryName.get("com.example.PublicType").directSupertypes())
+        .containsExactly("com.example.PackagePrivate");
+    assertThat(byBinaryName.get("com.example.PackagePrivate").directSupertypes())
+        .containsExactly("java.lang.Object", "com.example.PublicInterface");
+    assertThat(byBinaryName.get("com.example.PublicInterface").directSupertypes()).isEmpty();
+    assertThat(byBinaryName.get("com.example.PublicAnnotation").directSupertypes())
+        .containsExactly("java.lang.annotation.Annotation");
   }
 
   private Path fixtureJar() throws IOException {
@@ -101,9 +107,9 @@ class ClassFileTypeScannerTest {
     final Map<String, String> sources =
         Map.of(
             "PublicType.java",
-            "package com.example; public class PublicType { public static class Nested {} }",
+            "package com.example; public class PublicType extends PackagePrivate { public static class Nested {} }",
             "PackagePrivate.java",
-            "package com.example; class PackagePrivate {}",
+            "package com.example; class PackagePrivate implements PublicInterface {}",
             "PublicInterface.java",
             "package com.example; public interface PublicInterface {}",
             "PublicEnum.java",

@@ -85,7 +85,9 @@ class JdkTypeIndexSyncTest {
 
     JdkTypeIndexSync.index(source, LOG);
     final String stale =
-        Files.readString(index).replace("\"schema\": \"1\"", "\"schema\": \"old\"");
+        Files.readString(index)
+            .replace(
+                "\"schema\": \"%s\"".formatted(LatheLayout.SCHEMA_VERSION), "\"schema\": \"old\"");
     Files.writeString(index, stale);
 
     JdkTypeIndexSync.index(source, LOG);

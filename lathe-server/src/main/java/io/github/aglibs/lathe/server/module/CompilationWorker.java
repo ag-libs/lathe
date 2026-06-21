@@ -10,8 +10,10 @@ import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -29,6 +31,7 @@ import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.SignatureHelp;
+import org.eclipse.lsp4j.TypeHierarchyItem;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 /** Called from the server event loop; executes all compilation work on its own module thread. */
@@ -125,8 +128,42 @@ public final class CompilationWorker {
     return submit(ctx -> ctx.searchReferences(uri, content, version, target, includeDeclaration));
   }
 
+  public CompletableFuture<List<Location>> methodImplementations(
+      final String uri,
+      final String content,
+      final int version,
+      final ReferenceTarget target,
+      final Set<String> candidateBinaryNames) {
+    return submit(
+        ctx -> ctx.methodImplementations(uri, content, version, target, candidateBinaryNames));
+  }
+
   public CompletableFuture<Optional<Location>> definition(final SourceFeatureRequest request) {
     return submit(ctx -> ctx.definition(request));
+  }
+
+  public CompletableFuture<List<Location>> typeImplementations(
+      final SourceFeatureRequest request, final WorkspaceTypeIndex typeIndex) {
+    return submit(ctx -> ctx.typeImplementations(request, typeIndex));
+  }
+
+  public CompletableFuture<List<TypeHierarchyItem>> prepareTypeHierarchy(
+      final SourceFeatureRequest request, final WorkspaceTypeIndex typeIndex) {
+    return submit(ctx -> ctx.prepareTypeHierarchy(request, typeIndex));
+  }
+
+  public CompletableFuture<List<TypeHierarchyItem>> typeHierarchySupertypes(
+      final TypeHierarchyItem item,
+      final WorkspaceTypeIndex typeIndex,
+      final List<Path> sourceRoots) {
+    return submit(ctx -> ctx.typeHierarchySupertypes(item, typeIndex, sourceRoots));
+  }
+
+  public CompletableFuture<List<TypeHierarchyItem>> typeHierarchySubtypes(
+      final TypeHierarchyItem item,
+      final WorkspaceTypeIndex typeIndex,
+      final List<Path> sourceRoots) {
+    return submit(ctx -> ctx.typeHierarchySubtypes(item, typeIndex, sourceRoots));
   }
 
   public CompletableFuture<List<DocumentSymbol>> documentSymbol(

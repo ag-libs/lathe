@@ -16,6 +16,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import org.eclipse.lsp4j.ClientCapabilities;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
+import org.eclipse.lsp4j.ImplementationParams;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.ReferenceContext;
@@ -29,6 +30,9 @@ import org.eclipse.lsp4j.MessageActionItem;
 import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.ShowMessageRequestParams;
+import org.eclipse.lsp4j.TypeHierarchyItem;
+import org.eclipse.lsp4j.TypeHierarchyPrepareParams;
+import org.eclipse.lsp4j.TypeHierarchySubtypesParams;
 import org.eclipse.lsp4j.jsonrpc.Launcher;
 import org.eclipse.lsp4j.launch.LSPLauncher;
 import org.eclipse.lsp4j.services.LanguageClient;
@@ -116,6 +120,8 @@ class LspSmokeTest {
     assertThat(caps.getCompletionProvider()).isNotNull();
     assertThat(caps.getHoverProvider()).isNotNull();
     assertThat(caps.getDefinitionProvider()).isNotNull();
+    assertThat(caps.getImplementationProvider()).isNotNull();
+    assertThat(caps.getTypeHierarchyProvider()).isNotNull();
     assertThat(caps.getReferencesProvider()).isNotNull();
     assertThat(caps.getDocumentFormattingProvider()).isNotNull();
     assertThat(caps.getSemanticTokensProvider()).isNotNull();
@@ -176,6 +182,55 @@ class LspSmokeTest {
         server.getTextDocumentService().references(params).get(30, SECONDS);
 
     assertThat(refs).anyMatch(loc -> loc.getUri().contains("StringUtils.java"));
+  }
+
+  @Test
+  void implementation_typeCursor_findsImplementationsAcrossModules() throws Exception {
+    final Path greeterJava =
+        ROOT.resolve("core/src/main/java/com/example/core/Greeter.java");
+    final String greeterUri = greeterJava.toUri().toString();
+    final String greeterContent = Files.readString(greeterJava);
+    openDoc(greeterUri, greeterContent);
+
+    final var params = new ImplementationParams();
+    params.setTextDocument(new TextDocumentIdentifier(greeterUri));
+    params.setPosition(findToken(greeterContent, "public interface Greeter", "Greeter"));
+
+    final List<? extends Location> impls =
+        server.getTextDocumentService().implementation(params).get(30, SECONDS).getLeft();
+
+    assertThat(impls)
+        .anyMatch(loc -> loc.getUri().contains("FormalGreeter.java"))
+        .anyMatch(loc -> loc.getUri().contains("CasualGreeter.java"));
+  }
+
+  @Test
+  void typeHierarchy_subtypes_returnsImplementorsAcrossModules() throws Exception {
+    final Path greeterJava =
+        ROOT.resolve("core/src/main/java/com/example/core/Greeter.java");
+    final String greeterUri = greeterJava.toUri().toString();
+    final String greeterContent = Files.readString(greeterJava);
+    openDoc(greeterUri, greeterContent);
+
+    final var prepareParams = new TypeHierarchyPrepareParams();
+    prepareParams.setTextDocument(new TextDocumentIdentifier(greeterUri));
+    prepareParams.setPosition(findToken(greeterContent, "public interface Greeter", "Greeter"));
+
+    final List<TypeHierarchyItem> items =
+        server.getTextDocumentService().prepareTypeHierarchy(prepareParams).get(30, SECONDS);
+
+    assertThat(items).hasSize(1);
+    assertThat(items.getFirst().getName()).isEqualTo("Greeter");
+
+    final var subtypesParams = new TypeHierarchySubtypesParams();
+    subtypesParams.setItem(items.getFirst());
+
+    final List<TypeHierarchyItem> subtypes =
+        server.getTextDocumentService().typeHierarchySubtypes(subtypesParams).get(30, SECONDS);
+
+    assertThat(subtypes)
+        .extracting(TypeHierarchyItem::getName)
+        .containsExactlyInAnyOrder("FormalGreeter", "CasualGreeter");
   }
 
   @Test

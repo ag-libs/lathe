@@ -3,7 +3,7 @@
 This document records the implemented baseline and known user-visible gaps.
 The [roadmap](roadmap.md) defines milestone scope; the [design index](design-index.md) links detailed designs.
 
-Status last reviewed: 2026-06-20.
+Status last reviewed: 2026-06-21.
 
 ## Release State
 
@@ -23,7 +23,7 @@ Maven Central publication is planned for M3.
 | Workspace manifest | Implemented | Server version, source roots, type indexes, and POM fingerprints are recorded. |
 | Server launcher installation | Implemented | Maven installs versioned launchers and updates the `current` symlink. |
 | POM staleness detection | Implemented | Neovim receives a sync prompt after Maven project changes. |
-| Inheritance index | M1 planned | Direct supertype metadata and immutable snapshot loading are not implemented. |
+| Inheritance index | Implemented | Dependency, JDK, and reactor entries include direct supertypes in immutable snapshots. |
 | Maven Central distribution | M3 planned | Current setup requires a source build. |
 
 ## LSP Capability Matrix
@@ -37,8 +37,8 @@ Maven Central publication is planned for M3.
 | Completion presentation | Implemented | Label details, generic display, receiver substitution, documentation, and import edits. |
 | Signature help | Implemented | Overloads, active parameters, constructors, parameter names, and Javadoc. |
 | Find References | Implemented with gaps | Exact same-file, module, and reactor search. External-source scope and fail-fast gaps remain. |
-| Implementation | M1 planned | Type graph and reactor method implementation are not implemented. |
-| Type hierarchy | M1 planned | Prepare, supertypes, and subtypes are not implemented. |
+| Implementation | Implemented | Type implementations use indexed transitive subtypes; method implementations are reactor-only and javac-validated. |
+| Type hierarchy | Implemented | Prepare, direct supertypes, and direct subtypes cover source-backed reactor, dependency, and JDK types. |
 | Call hierarchy | M2 planned | Incoming and outgoing calls are not implemented. |
 | Workspace symbols | Implemented | Type-name lookup uses `WorkspaceTypeIndex`. |
 | Document symbols | Implemented | File outline support is available. |
@@ -69,6 +69,7 @@ Maven Central publication is planned for M3.
 - `DiagnosticPublisher` owns diagnostic publication and semantic-token refresh requests.
 - `ReferenceCandidateIndex` maps Java identifier tokens to source files for reference search.
 - `WorkspaceTypeIndex` merges dependency/JDK shards with reactor output entries for type discovery.
+- `WorkspaceTypeIndex` also provides immutable direct-supertype, direct-subtype, and transitive-subtype queries.
 - External sources use standard read-only `file://` files under the Lathe cache.
 
 See [lathe-server-data-flow-recipe.md](done/lathe-server-data-flow-recipe.md) for the threading and data-flow recipe.
@@ -91,7 +92,6 @@ Detailed implementation designs and historical decisions are indexed under
 - Semantic-token refresh is inverted in one save path.
 - Workspace fan-out boundaries still convert some unexpected failures to empty successful results.
 - Synchronous whole-index construction can block `ServerEventLoop` on large workspaces.
-- Goto implementation and type hierarchy are not implemented.
 - `MissingMethodImplProvider` is not implemented.
 - New reactor types may require Maven sync before missing-import actions discover them.
 - Some asynchronous tests still use timing-based synchronization.
