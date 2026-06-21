@@ -72,7 +72,10 @@ public final class SourceAnalysisSession implements AutoCloseable {
 
     final var compiled = filterAndMap(run.diagnostics(), content);
     enrichWithContext(compiled, run.fileAnalysis());
-    final List<Diagnostic> unusedDiags = UnusedDeclarationScanner.scan(run.fileAnalysis(), content);
+    final boolean compileFailed =
+        compiled.stream().anyMatch(d -> d.getSeverity() == DiagnosticSeverity.Error);
+    final List<Diagnostic> unusedDiags =
+        compileFailed ? List.of() : UnusedDeclarationScanner.scan(run.fileAnalysis(), content);
     final List<Diagnostic> diags =
         unusedDiags.isEmpty()
             ? compiled
@@ -615,13 +618,29 @@ public final class SourceAnalysisSession implements AutoCloseable {
   public static List<Diagnostic> filterAndMap(
       final List<? extends javax.tools.Diagnostic<? extends JavaFileObject>> raw,
       final String content) {
+    final var seen = new HashSet<String>();
     return raw.stream()
         .filter(
             d ->
                 d.getKind() != javax.tools.Diagnostic.Kind.NOTE
                     || d.getPosition() != javax.tools.Diagnostic.NOPOS)
         .map(d -> toLsp(d, content))
+        .filter(d -> notDuplicate(d, seen))
         .toList();
+  }
+
+  private static boolean notDuplicate(final Diagnostic d, final Set<String> seen) {
+    final Either<String, Integer> codeEither = d.getCode();
+    if (codeEither == null || !codeEither.isLeft()) {
+      return true;
+    }
+
+    final String code = codeEither.getLeft();
+    if (!code.startsWith("compiler.err.cant.resolve") || !(d.getData() instanceof String name)) {
+      return true;
+    }
+
+    return seen.add(d.getRange().getStart().getLine() + "|" + code + "|" + name);
   }
 
   public static Diagnostic toLsp(

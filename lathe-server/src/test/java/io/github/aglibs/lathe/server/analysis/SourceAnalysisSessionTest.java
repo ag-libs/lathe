@@ -14,7 +14,6 @@ import javax.tools.Diagnostic;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import org.eclipse.lsp4j.*;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 class SourceAnalysisSessionTest {
@@ -176,7 +175,6 @@ class SourceAnalysisSessionTest {
     }
   }
 
-  @Disabled("gap: same unresolved type in declaration and constructor emits two errors on one line")
   @Test
   void compile_unknownTypeInDeclarationAndConstructor_singleErrorOnLine() {
     // Gap: javac emits two separate "cannot find symbol" errors when the same unresolved type

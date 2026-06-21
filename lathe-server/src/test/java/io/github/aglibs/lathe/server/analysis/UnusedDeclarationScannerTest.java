@@ -8,7 +8,6 @@ import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.DiagnosticTag;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 class UnusedDeclarationScannerTest {
@@ -208,7 +207,6 @@ class UnusedDeclarationScannerTest {
         .isEmpty();
   }
 
-  @Disabled("gap: scanner emits Unused hints even when compilation fails")
   @Test
   void compile_localVarWithUnresolvedType_noUnusedHint() {
     // Gap: scanner runs even when compilation fails and emits Unused on a variable that is
