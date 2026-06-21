@@ -8,35 +8,37 @@ Before making non-trivial changes, read the relevant design document first:
 
 - Overall design: `docs/lathe-design.md`
 - Roadmap: `docs/roadmap.md`
-- Run/test/debug design: `docs/planned/lathe-run-test-debug.md`
 
 ## Working style
 
-- **Ask before coding when in doubt** — if the approach is unclear or multiple valid designs exist, present the options
-  and ask the user to choose before writing any code.
-- **Present design for non-trivial changes** — any change that touches multiple classes, introduces new abstractions,
-  or affects public APIs requires a design summary (what classes change, what is added, why) and user approval before
-  implementation.
-- **Never commit or push without explicit user approval** — always show what will be committed and ask before running
-  `git commit` or `git push`.
-- **Comprehensive Commit Messages** — all commit messages must be comprehensive and clear, describing both the "what" and the "why" of the changes, and following standard prefix naming (e.g., `refactor:`, `test:`, `docs:`, `feat:`).
-- **No backward compatibility requirement** — the tool has no external adopters yet;
-  schema changes, format changes, and API changes may break existing files without migration support.
+- **CRITICAL**: If a change touches multiple classes, changes a public API, or introduces a new
+  abstraction, you **MUST STOP**. You are forbidden from writing code until you output a structured
+  design summary and explicitly wait for the user to reply "Approved".
+- **NEVER** run `git commit` or `git push` autonomously. You MUST show the `git diff` and wait for
+  user authorization.
+- **Ask before coding when in doubt** — if the approach is unclear or multiple valid designs exist,
+  present the options and ask the user to choose before writing any code.
+- **Comprehensive Commit Messages** — all commit messages must be comprehensive and clear,
+  describing both the "what" and the "why" of the changes, and following standard prefix naming (
+  e.g., `refactor:`, `test:`, `docs:`, `feat:`).
+- **No backward compatibility requirement** — the tool has no external adopters yet; schema changes,
+  format changes, and API changes may break existing files without migration support.
 
 ---
 
 ## Modules
 
-| Module | Role |
-|---|---|
-| `lathe-core` | Shared utilities (property file helpers, future shared code); no external deps; has `module-info.java` |
-| `lathe-compiler` | Plexus compiler SPI (`hint=lathe`) |
+| Module               | Role                                                                                                                                                             |
+|----------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `lathe-core`         | Shared utilities (property file helpers, future shared code); no external deps; has `module-info.java`                                                           |
+| `lathe-compiler`     | Plexus compiler SPI (`hint=lathe`)                                                                                                                               |
 | `lathe-maven-plugin` | `lathe:init` (auto-bound to `initialize`, creates `.lathe/`) and `lathe:sync` (auto-bound to `process-test-classes`) Mojos; owns Maven invoker integration tests |
-| `lathe-server` | LSP server; reads files produced by the other two; JPMS module; regular dep on `lathe-core` |
+| `lathe-server`       | LSP server; reads files produced by the other two; JPMS module; regular dep on `lathe-core`                                                                      |
 
 Build order: `lathe-core` → `lathe-compiler` → `lathe-server` → `lathe-maven-plugin`.
 
-`lathe-compiler`, `lathe-maven-plugin`, and `lathe-server` use `lathe-core` for shared layout and property-file helpers.
+`lathe-compiler`, `lathe-maven-plugin`, and `lathe-server` use `lathe-core` for shared layout and
+property-file helpers.
 
 - `groupId`: `io.github.ag-libs`
 - Package root: `io.github.aglibs.lathe`
@@ -48,17 +50,24 @@ Build order: `lathe-core` → `lathe-compiler` → `lathe-server` → `lathe-mav
 ## Build commands
 
 ```bash
-mvn install -DskipTests                                         # build and install all modules
-mvn verify -pl lathe-maven-plugin                               # all test layers
-mvn verify -pl lathe-maven-plugin -DskipNeovimTests             # invoker only
-mvn verify -pl lathe-maven-plugin -Dinvoker.test=jpms-project   # one invoker project
+mvn install -DskipTests                                          # build and install all modules
+mvn verify -pl lathe-maven-plugin                                # all test layers (unit + invoker)
+mvn verify -pl lathe-maven-plugin -Dsurefire.skip=true           # invoker integration tests only
+mvn verify -pl lathe-maven-plugin -Dinvoker.test=multi-module    # one specific invoker project
 ```
 
 ## Test projects
 
-**dropwizard** (`~/git/dropwizard`) — used to test lathe end-to-end with a large real-world codebase.
-Requires Java 25 (Corretto 25); set `JAVA_HOME=/opt/amazon-corretto-25.0.0.36.2-linux-x64` before building.
-Run `mvn process-test-classes` to trigger `lathe:sync` and verify the launcher and workspace manifest.
+**dropwizard** (`~/git/dropwizard`) — used to test lathe end-to-end with a large real-world
+codebase.
+Requires Java 25 (Corretto 25); set `JAVA_HOME=/opt/amazon-corretto-25.0.0.36.2-linux-x64` before
+building.
+Run `mvn process-test-classes` to trigger `lathe:sync` and verify the launcher and workspace
+manifest.
+
+**helidon** (`../helidon` or `~/git/helidon`) — another large real-world codebase used for
+end-to-end testing and validation. Run `mvn process-test-classes` similarly to trigger
+synchronization.
 
 `spotless:check` runs on `verify` — run `spotless:apply` to fix formatting before committing.
 After a large Java change, agents may run `mvn spotless:apply` before tests to normalize formatting.
@@ -67,62 +76,66 @@ After a large Java change, agents may run `mvn spotless:apply` before tests to n
 
 ## Coding style
 
-- Java formatting is Google Java Format via Spotless.
-- Keep string literal lines within 100 columns where practical;
-  split long messages across multiple lines instead of relying on very long literals.
-- `final` on all fields, local variables, and parameters — omit only when reassignment is needed
-- Use `var` for local variables to reduce boilerplate and keep code readable when the type is obvious:
-  * DO use `var` when:
-    - The RHS has a constructor call or obvious factory (e.g., `new HashMap()`, `Path.of()`, `List.of()`).
-    - The RHS is a self-evident stream/builder terminal method (e.g., `.toList()`, `.build()`).
-    - The variable name clearly conveys the concept/type (e.g., `workspaceRoot`, `classesDir`, `classpath`, `tempFile`, `filePath`).
-  * ALWAYS use explicit types when:
-    - The RHS is a helper/third-party method return where the type isn't self-evident from the variable name or assignment context (e.g., avoid `var outcome = service.compute()`).
-- Always use `{}` braces on `if`/`else`, even for single-line bodies
-- Leave a blank line after the closing `}` of every `if`/`else` block when another statement follows in the same scope.
-- Document magic numbers with an inline comment, for example `final int openLen = 3; // "/**"`.
-- Streams, lambdas, and method references over imperative loops
-- Avoid fully qualified imports when a normal import is practical,
-  for example prefer `import java.util.stream.Stream` over `java.util.stream.Stream.xxx`.
-- Extract long lambda bodies to a named private method; pass as a method reference where the signature allows
-- Records for all value types (params, results, entries, config objects)
-- `Optional<T>` as return type only — never as a field or parameter
-- Immutable collections: `List.of`, `Map.of`, `Set.of`
-- No nullable annotations (`@Nullable`, `@NonNull`, etc.)
-- No comments unless the WHY is non-obvious
-- Avoid name echo between class and method.
-  Prefer `SourceParser.parse()` over `SourceParser.withParsed()`.
-- Prefer KISS and DRY, but do not introduce abstractions before there is a clear repeated pattern.
-- Favor functional style for collection transformations and stream pipelines.
-  Avoid mutable counters inside streams when a collector expresses the result clearly.
-- Functional vs. Imperative boundaries:
-  * DO use functional streams/lambdas for data transformation, mapping, filtering, and collectors.
-  * DO NOT use streams for stateful parsing/lexing (e.g. character scanning), queue-based/graph traversals, or operations with heavy side-effects. Prefer clean `for`/`while` loops and local state variables.
-- Use existing core utilities before adding local helpers.
-  For timing, use `Stopwatch`.
-  For filesystem helpers, prefer `FileUtil`.
-  For checked `IOException` lambdas, use `IOUtil`.
-  New shared helper methods should be added as `public static` methods in existing `lathe-core` utility classes (`FileUtil`, `IOUtil`) if they are shared across modules, or kept Package-Private if they are only utilized inside specific modules.
-- Do not create constants for one-off string literals.
-  Constants are for names with domain meaning, file-format keys used in multiple places,
-  public/shared values, or values where a typo would be costly.
-  Shared directory and file names (e.g., `.lathe/`, `workspace.json`, `lsp-params-*.json`) must reside in `LatheLayout.java` or `LatheFlags.java` as constants to prevent typos and centralize layout paths.
-- **Spotless Formatting & Verification** — always run `mvn spotless:apply` to format all changed files and run tests to verify correctness before staging or proposing any commits.
-- Keep Maven Mojo classes as orchestration-first code.
-  Extract helper methods when they separate Maven discovery, resolution, cache decisions,
-  file IO, and logging.
-- Prefer `.formatted(...)` for human-facing strings:
-  log messages, exceptions, diagnostics, labels, and display text.
-- Avoid chained string concatenation for three or more parts.
-  Prefer `"%s.%s".formatted(qualifiedName, simpleName)` over `qualifiedName + "." + simpleName`.
-- Simple two-part joins may still use `+` when clearer,
-  for example `simpleName + ".java"` or `typeName + "[]"`.
-- Do not introduce `StringBuilder` just to avoid `+`;
-  use it only for repeated incremental construction where it improves clarity.
+- **Java formatting**: Google Java Format via Spotless.
+- **CRITICAL WORKFLOW**: Immediately after you modify ANY `.java` file, you **MUST** execute
+  `mvn spotless:apply` in the terminal to normalize the formatting. **DO NOT** end your turn or
+  present the code to the user until Spotless has successfully run.
+- **Records**: Use `record` for all value types (params, results, entries, config objects). **ALL
+  records MUST have a compact constructor** (e.g., `public MyRecord { ... }`) that implements
+  invariants and validates parameters (e.g. using `ValidCheck.check()`).
+- **Variables (`var` vs Types)**:
+    * **NEVER** write `final MyType x = new MyType()`. If the RHS is a constructor (`new X()`), an
+      array creation, or a terminal stream method (`.toList()`, `.build()`), you **MUST** use `var`.
+    * **NEVER** use `var` for method returns where the type isn't blindly obvious from the name. You
+      **MUST** write the explicit type.
+    * **NEVER** omit the `final` keyword on parameters, local variables, or fields. The only
+      exception is if the variable is explicitly mutated in a loop or reassigned.
+- **KISS & Architecture**:
+    * **NEVER** introduce Interfaces for classes that only have a single implementation.
+    * **NEVER** introduce Design Patterns (Factories, Builders, Strategies) unless explicitly
+      requested.
+    * **NEVER** nest `if/else` statements more than 2 levels deep. You **MUST** use early returns (
+      guard clauses).
+    * **NEVER** hardcode directory names, file names, or shared configuration keys. They **MUST** be
+      defined as constants exclusively inside `LatheLayout.java` or `LatheFlags.java`.
+    * **NEVER** put business logic directly inside Maven Mojo `execute()` methods.
+- **DRY (Don't Repeat Yourself)**:
+    * **The 3-Line Rule:** If you copy and paste a block of 3 or more lines (e.g. Future routing or
+      telemetry logging) across more than 3 methods, you **MUST** extract that logic into a
+      `private` helper method.
+    * **Anti-Spaghetti Rule:** **NEVER** prematurely extract logic that is only used *once* into its
+      own helper method.
+- **Lambdas & Streams**:
+    * **NEVER** write multi-line inline lambda bodies. If a lambda requires a `{}` block, you **MUST
+      ** extract it into a named `private` method and pass it via method reference.
+    * **NEVER** use Java Streams for operations that require mutable state, graph traversal, or
+      side-effects. You **MUST** use explicit `for` or `while` loops.
+- **Strict Utilities**:
+    * **NEVER** use `System.currentTimeMillis()` or `System.nanoTime()`. You **MUST** use
+      `Stopwatch`.
+    * **NEVER** write raw `try-catch` blocks for simple IO closures if `IOUtil` can handle it.
+    * **NEVER** write custom file-walking or path-manipulation logic in local classes. You **MUST**
+      use or extend `FileUtil`.
+- **Strings**:
+    * **NEVER** use chained `+` concatenation for more than two parts. You **MUST** use
+      `"%s.%s".formatted(...)`.
+    * **DO NOT** use `StringBuilder` unless you are appending incrementally inside a loop.
+- **General Rules**:
+    * **NEVER** use `Optional<T>` as a class field or a method parameter. It **MUST ONLY** be used
+      as a return type.
+    * **NEVER** write comments that explain *WHAT* the code is doing. Only write comments if the
+      *WHY* is highly unintuitive.
+    * Always use `{}` braces on `if`/`else`, even for single-line bodies.
+    * **Immutable Collections**: Methods **MUST** return or produce immutable collections (
+      `List.of`, `Map.copyOf`, etc.). Any collection passed into a `record` constructor **MUST** be
+      defensively copied to an immutable version inside the compact constructor (e.g.,
+      `this.items = List.copyOf(items)`).
+    * No nullable annotations (`@Nullable`, `@NonNull`).
 
 ## Markdown style
 
-- Use semantic line breaks for prose: one sentence per line, or one natural clause per line for long sentences.
+- Use semantic line breaks for prose: one sentence per line, or one natural clause per line for long
+  sentences.
 - Do not hard-wrap prose in the middle of a phrase only to satisfy a fixed column.
 - Preserve code blocks, tables, property examples, and directory trees as-is.
 - Prefer dedicated formatting-only commits when reflowing large existing documents.
@@ -133,6 +146,7 @@ After a large Java change, agents may run `mvn spotless:apply` before tests to n
 
 **`lathe-compiler`** — SLF4J logger.
 Visible via Maven logging output.
+
 - `DEBUG` — workspace root found/skipped, params written, copy duration
 - `WARN` — post-compile, copy, and lock cleanup errors
 
@@ -141,30 +155,53 @@ Visible via Maven logging output.
 **`lathe-server`** — JUL only.
 `LATHE_DEBUG=1` enables `FINE` level.
 
-| Level | When to use |
-|---|---|
-| `SEVERE` | Unrecoverable errors: compile/feature failures surfaced to the client, unexpected exceptions. Always include the `Throwable`. |
-| `WARNING` | Actionable problems the user should know about: no module found for an open file, workspace config missing. |
-| `INFO` | Lifecycle events that show the server is working: server start/stop, workspace load/reload, file open/close/save, compile result with diag count and elapsed time. One line per user-visible action. |
-| `FINE` | High-frequency or low-value detail: per-keystroke change events, format requests, classpath/option setup, individual diagnostic entries. Enabled only when `LATHE_DEBUG=1`. |
-| `FINEST` | Rarely needed deep internals. Avoid unless a feature explicitly calls for it. |
+| Level     | When to use                                                                                                                                                                                          |
+|-----------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `SEVERE`  | Unrecoverable errors: compile/feature failures surfaced to the client, unexpected exceptions. Always include the `Throwable`.                                                                        |
+| `WARNING` | Actionable problems the user should know about: no module found for an open file, workspace config missing.                                                                                          |
+| `INFO`    | Lifecycle events that show the server is working: server start/stop, workspace load/reload, file open/close/save, compile result with diag count and elapsed time. One line per user-visible action. |
+| `FINE`    | High-frequency or low-value detail: per-keystroke change events, format requests, classpath/option setup, individual diagnostic entries. Enabled only when `LATHE_DEBUG=1`.                          |
+| `FINEST`  | Rarely needed deep internals. Avoid unless a feature explicitly calls for it.                                                                                                                        |
 
 Guidelines:
-- **INFO fires once per user action** — opening a file, saving, a compile completing.
-  It must not fire on every keystroke (`onChange`) or on every request that may repeat rapidly (hover, semanticTokens).
-- **Compile results always at INFO** — include mode tag, URI, elapsed ms, and diag count so it is clear the compiler ran and what it found.
+
+- **CRITICAL**: Every single `LOG.info`, `LOG.warning`, and `LOG.fine` message **MUST** follow this
+  exact format: `[operation] target detail outcome`.
+- **Timing:** For async operations, heavy computations, or network/disk I/O, you **MUST** append the
+  duration (`Xms`) to the end of the string. For instantaneous lifecycle events (e.g. server start),
+  omit the timing.
+- **NEVER** emit unstructured trace spam (e.g., `LOG.info("enter method")` or
+  `LOG.info("[feature] called")`). All logs must be tied to a distinct, timed outcome.
+- **NEVER** log raw file content, source code lines, or AST nodes at any log level.
+- **INFO fires once per user action** — opening a file, saving, a compile completing. It must not
+  fire on every keystroke (`onChange`) or on every request that may repeat rapidly.
+- **Compile results always at INFO** — include mode tag, URI, elapsed ms, and diag count.
 - **FINE for timed sub-operations** — hover resolution, definition lookup, completion steps.
-  These fire on cursor movement and would flood the log at INFO.
-- **WARNING for missing-module** — the user must re-run `mvn process-test-classes`; logging it at WARNING ensures it appears without `LATHE_DEBUG=1`.
-- **Never log content** — do not log file content, source lines, or AST node text at any level.
 
 Logger field name: `LOG` (static final).
 Always use lambda form, single space after the operation tag:
+
 ```java
-LOG.info(() -> "[open] %s".formatted(uri));
-LOG.info(() -> "[open] %s %dms diags=%d".formatted(uri, t.elapsedMs(), diags.size()));
-LOG.fine(() -> "[change] %s".formatted(uri));
-LOG.log(Level.SEVERE, e, () -> "[save] failed for %s".formatted(uri));
+LOG.info(() ->"[open] %s".
+
+formatted(uri));
+    LOG.
+
+info(() ->"[open] %s %dms diags=%d".
+
+formatted(uri, t.elapsedMs(),diags.
+
+size()));
+    LOG.
+
+fine(() ->"[change] %s".
+
+formatted(uri));
+    LOG.
+
+log(Level.SEVERE, e, () ->"[save] failed for %s".
+
+formatted(uri));
 ```
 
 Message format: `[operation] uri-or-module detail Xms outcome`
@@ -173,20 +210,27 @@ Message format: `[operation] uri-or-module detail Xms outcome`
 
 ## Testing
 
-- Test method names follow `methodName_condition_result` with underscores:
-  `resolve_missingJavaHome_returnsMissing`, `extract_writesMarkerAfterSuccess`
-- JUnit 5 + AssertJ in all modules
-- Mockito available but **not used in `lathe-compiler`**
-- `@TempDir` for all filesystem tests
-- Always include both positive and negative cases
-- Group related assertions — few meaningful test methods per class
-- Extract shared compiler/fixture boilerplate into a dedicated test utility class rather than duplicating across test
-  classes (see `TestCompiler`)
+- **Discovering Best Practices**: Test utilities and fixtures evolve constantly. **Before** writing
+  any new tests, you **MUST** read at least 2 existing test classes in the same package or module to
+  discover the current standard fixtures, mock setups, and test architectures. **NEVER** guess or
+  invent new test infrastructure without checking existing patterns first.
+- **ALL** test method names **MUST** strictly match the `methodName_condition_result` pattern. *
+  *NEVER** use standard camelCase for test names. (Example:
+  `resolve_missingJavaHome_returnsMissing`).
+- JUnit 5 + AssertJ in all modules.
+- **NEVER** use Mockito or any mocking frameworks inside the `lathe-compiler` module.
+- Use `@TempDir` for all filesystem tests.
+- Always include both positive and negative cases.
+- Group related assertions — prefer a few meaningful test methods per class over dozens of
+  micro-tests.
+- **NEVER** duplicate boilerplate. If you find yourself writing complex setup or mock logic across
+  multiple tests, you **MUST** extract it into a dedicated test utility class.
 
 Every test module needs `src/test/resources/junit-platform.properties`:
+
 ```properties
 junit.jupiter.extensions.autodetection.enabled=true
 ```
 
-`lathe-server` tests need a `LoggingConfig` JUnit extension (registered via `META-INF/services`) that loads the
-production `logging.properties` — see Phase 3 in `docs/lathe-plan.md` for details.
+`lathe-server` tests need a `LoggingConfig` JUnit extension (registered via `META-INF/services`)
+that loads the production `logging.properties`.
