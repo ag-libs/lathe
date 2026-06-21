@@ -30,7 +30,6 @@ It includes the current implementation and every active, non-deferred correctnes
 
 ### Correctness and maintainability
 
-- Fix the inverted semantic-token refresh condition and cover current and stale snapshots.
 - Replace empty-success exception handling at workspace fan-out boundaries with proper LSP failures.
 - Remove hard-coded sleeps and other known flakiness from asynchronous tests.
 - Complete the focused fail-fast, naming, DRY, and fixture slices in the current maintainability plan.
@@ -84,6 +83,7 @@ It remains a build-from-source release.
 - Implement useful Java inlay hints.
 - Complete the richer code actions accepted for M2.
 - Complete Neovim-relevant semantic highlighting where tree-sitter cannot classify identifiers correctly.
+- Implement LSP work-done progress notifications for workspace initialization and reload.
 
 ### Workspace behavior
 

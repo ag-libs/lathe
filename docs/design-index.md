@@ -38,6 +38,9 @@ Read their current-status sections and compare them with the roadmap before star
 - [Lightweight Watcher](planned/lathe-lightweight-watcher.md) — partially stale design to re-evaluate before adding
   source watching.
 
+- [LSP Progress Notifications](planned/lathe-lsp-progress.md) — work-done progress for workspace
+  initialization and reload, visible via `vim.lsp.status()`.
+
 Rename, inlay hints, and additional M2 code actions require focused designs before implementation.
 
 ## M3 — 0.1.0 General Availability
