@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server.module;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -8,6 +9,8 @@ import static org.mockito.Mockito.when;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.analysis.SourceAnalysisSession;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DocumentSymbol;
 import org.eclipse.lsp4j.FoldingRange;
@@ -87,5 +90,41 @@ class CompilationWorkerTest {
     worker.close();
 
     verify(context).close();
+  }
+
+  @Test
+  void compile_directOutOfMemory_invokesFatalTermination() {
+    assertTermination(new OutOfMemoryError("expected"), 1);
+  }
+
+  @Test
+  void compile_wrappedOutOfMemory_invokesFatalTermination() {
+    assertTermination(new IllegalStateException(new OutOfMemoryError("expected")), 1);
+  }
+
+  @Test
+  void compile_ordinaryFailure_doesNotInvokeFatalTermination() {
+    assertTermination(new IllegalStateException("expected"), 0);
+  }
+
+  private void assertTermination(final Throwable failure, final int expectedStatus) {
+    final var status = new AtomicInteger();
+    final SourceAnalysisSession failingContext = mock(SourceAnalysisSession.class);
+    final var failingWorker =
+        new CompilationWorker("lathe-module-fatal-test", () -> failingContext, status::set);
+    final var request = new CompileRequest("file:///A.java", "class A {}", 1, 1L, CompileMode.OPEN);
+    when(failingContext.compile(
+            request.uri(), request.content(), request.version(), request.mode()))
+        .thenThrow(failure);
+
+    try {
+      final CompletableFuture<CompileResponse> future = failingWorker.compile(request);
+
+      assertThatThrownBy(future::join).hasCause(failure);
+      failingWorker.documentSymbol(request.uri(), request.content()).join();
+      assertThat(status).hasValue(expectedStatus);
+    } finally {
+      failingWorker.close();
+    }
   }
 }

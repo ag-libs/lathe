@@ -1,7 +1,9 @@
 package io.github.aglibs.lathe.server.module;
 
 import io.github.aglibs.lathe.core.IOUtil;
+import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.analysis.CodeActionRequest;
+import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
 import io.github.aglibs.lathe.server.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
@@ -19,6 +21,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.function.Function;
+import java.util.function.IntConsumer;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -38,9 +41,11 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
 public final class CompilationWorker {
 
   private static final Logger LOG = Logger.getLogger(CompilationWorker.class.getName());
+  private static final int FATAL_EXIT_STATUS = 1;
 
   private final ExecutorService executor;
   private final Supplier<SourceAnalysisSession> contextFactory;
+  private final IntConsumer processTerminator;
   private SourceAnalysisSession context;
   private boolean closed;
   private CompletableFuture<Void> closeFuture;
@@ -60,7 +65,15 @@ public final class CompilationWorker {
   }
 
   CompilationWorker(final String name, final Supplier<SourceAnalysisSession> contextFactory) {
+    this(name, contextFactory, status -> Runtime.getRuntime().halt(status));
+  }
+
+  CompilationWorker(
+      final String name,
+      final Supplier<SourceAnalysisSession> contextFactory,
+      final IntConsumer processTerminator) {
     this.contextFactory = contextFactory;
+    this.processTerminator = processTerminator;
     this.executor =
         Executors.newSingleThreadExecutor(
             r -> {
@@ -234,6 +247,7 @@ public final class CompilationWorker {
     try {
       executor.execute(
           () -> {
+            final var timer = Stopwatch.start();
             try {
               if (context == null) {
                 context = contextFactory.get();
@@ -241,6 +255,19 @@ public final class CompilationWorker {
 
               future.complete(fn.apply(context));
             } catch (final Throwable t) {
+              final OutOfMemoryError outOfMemory = JavaSourceCompiler.outOfMemoryCause(t);
+              if (outOfMemory != null) {
+                try {
+                  LOG.log(
+                      Level.SEVERE,
+                      outOfMemory,
+                      () ->
+                          "[compiler] process heap-exhausted %dms fatal"
+                              .formatted(timer.elapsedMs()));
+                } finally {
+                  processTerminator.accept(FATAL_EXIT_STATUS);
+                }
+              }
               future.completeExceptionally(t);
               IOUtil.rethrowIfError(t);
             }

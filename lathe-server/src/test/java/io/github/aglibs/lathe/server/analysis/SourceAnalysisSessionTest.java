@@ -2,12 +2,15 @@ package io.github.aglibs.lathe.server.analysis;
 
 import static io.github.aglibs.lathe.server.analysis.SourceLocator.offsetToPosition;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.sun.source.util.JavacTask;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
+import java.io.IOException;
 import java.util.List;
 import java.util.Locale;
 import javax.tools.Diagnostic;
@@ -17,6 +20,16 @@ import org.eclipse.lsp4j.*;
 import org.junit.jupiter.api.Test;
 
 class SourceAnalysisSessionTest {
+
+  @Test
+  void safeCompile_wrappedOutOfMemory_rethrowsFatalCause() throws IOException {
+    final JavacTask task = mock(JavacTask.class);
+    final var expected = new OutOfMemoryError("expected");
+    when(task.parse()).thenReturn(List.of());
+    when(task.analyze()).thenThrow(new IllegalStateException(expected));
+
+    assertThatThrownBy(() -> JavaSourceCompiler.safeCompile(task)).isSameAs(expected);
+  }
 
   // --- offsetToPosition ---
 
