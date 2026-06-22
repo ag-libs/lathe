@@ -111,6 +111,59 @@ Waiting for admission must never block `ServerEventLoop` or a JSON-RPC transport
 Processor count is an execution ceiling, not a complete memory bound.
 Feature implementations must also avoid retaining completed javac analyses unnecessarily.
 
+### Admission implementation
+
+The admission component owns one fair `Semaphore`:
+
+```java
+final int permits = Math.max(1, Runtime.getRuntime().availableProcessors());
+final var semaphore = new Semaphore(permits, true);
+```
+
+`WorkspaceModuleRegistry` creates one admission component and supplies it to every module and external compiler:
+
+```text
+WorkspaceModuleRegistry
+  └─ CompilationAdmission
+      ├─ ModuleSourceCompiler → JavacRunner
+      ├─ ModuleSourceCompiler → JavacRunner
+      └─ ExternalCompiler     → JavacRunner
+```
+
+`JavacRunner.run()` is the admission boundary because it directly surrounds task creation and javac execution for
+both full compilation and attribution.
+Acquiring a permit around an entire `CompilationWorker` task would unnecessarily throttle cached hover, parsing, and
+other operations that do not invoke javac.
+
+Permit acquisition must remain responsive to cancellation.
+It uses a short timed `tryAcquire` loop and checks the request between attempts rather than waiting indefinitely:
+
+```java
+cancel.checkCanceled();
+while (!semaphore.tryAcquire(50, TimeUnit.MILLISECONDS)) {
+  cancel.checkCanceled();
+}
+
+try {
+  cancel.checkCanceled();
+  return runJavac();
+} finally {
+  semaphore.release();
+}
+```
+
+The polling duration is an implementation constant rather than user configuration.
+Waiting occurs only on module worker threads; `ServerEventLoop` and JSON-RPC transport threads never acquire permits
+directly.
+
+Every request-backed compiler call receives the response-backed `CancelChecker` from its LSP handler.
+Notification work such as `didOpen`, `didChange`, and `didSave` receives a shared no-op checker because notifications
+cannot be cancelled, but it still uses the same compilation admission limit.
+
+After javac returns, the caller checks cancellation again before caching, publishing, or aggregating the result.
+Cancellation during javac therefore does not retain or expose a stale result, and Lathe does not interrupt javac
+itself.
+
 ## Cancellation Model
 
 ### Protocol behavior
@@ -189,9 +242,10 @@ It requires a separate approved implementation design summary before code is wri
 
 Expected ownership:
 
-- server runtime: owns the process-wide compilation admission limit;
-- `WorkspaceModuleRegistry`: supplies the shared admission instance to every worker;
-- `CompilationWorker`: accepts `CancelChecker`, checks cancellation, and applies admission around javac-backed work;
+- `WorkspaceModuleRegistry`: creates and owns the process-wide `CompilationAdmission` instance;
+- `ModuleSourceCompiler` and `ExternalCompiler`: supply shared admission and `CancelChecker` to `JavacRunner`;
+- `JavacRunner`: acquires and releases admission immediately around javac execution;
+- `CompilationWorker`: accepts `CancelChecker` and checks cancellation before invoking feature work;
 - LSP services: create the returned response future and its associated `CancelChecker`;
 - feature orchestration: propagates `CancelChecker` through composed futures.
 
@@ -206,6 +260,8 @@ It must not absorb feature-specific scheduling, caching, or result aggregation.
 - Concurrent work across different module and external workers never exceeds the configured limit.
 - Two simultaneous requests share one limit.
 - Admission is released after success, ordinary failure, cancellation before javac, and cancellation during javac.
+- Cancellation while waiting for admission exits without acquiring or leaking a permit.
+- Notification compilation uses the same limit with a no-op cancellation checker.
 - A waiting interactive request receives admission before a broad operation can monopolize every subsequent permit.
 - No admission wait blocks `ServerEventLoop`.
 
