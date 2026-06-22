@@ -17,6 +17,7 @@ import org.eclipse.lsp4j.SemanticTokensWithRegistrationOptions;
 import org.eclipse.lsp4j.ServerCapabilities;
 import org.eclipse.lsp4j.SignatureHelpOptions;
 import org.eclipse.lsp4j.TextDocumentSyncKind;
+import org.eclipse.lsp4j.WorkDoneProgressCancelParams;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.LanguageClientAware;
 import org.eclipse.lsp4j.services.LanguageServer;
@@ -39,6 +40,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     final var rootUri = rootUri(params);
     LOG.fine(() -> "[initialize] rootUri=%s client=%s".formatted(rootUri, params.getClientInfo()));
 
+    textDocumentService.setWorkDoneProgressSupported(workDoneProgressSupported(params));
     if (rootUri != null) {
       textDocumentService.initialize(Path.of(URI.create(rootUri)));
     } else {
@@ -92,6 +94,11 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
   }
 
   @Override
+  public void cancelProgress(final WorkDoneProgressCancelParams params) {
+    textDocumentService.cancelProgress(params);
+  }
+
+  @Override
   public TextDocumentService getTextDocumentService() {
     return textDocumentService;
   }
@@ -108,5 +115,11 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     }
 
     return params.getRootUri();
+  }
+
+  private static boolean workDoneProgressSupported(final InitializeParams params) {
+    return params.getCapabilities() != null
+        && params.getCapabilities().getWindow() != null
+        && Boolean.TRUE.equals(params.getCapabilities().getWindow().getWorkDoneProgress());
   }
 }

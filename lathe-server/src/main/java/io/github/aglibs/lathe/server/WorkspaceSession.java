@@ -202,7 +202,8 @@ final class WorkspaceSession {
       final String uri,
       final Position pos,
       final boolean includeDeclaration,
-      final CancelChecker cancelChecker) {
+      final CancelChecker cancelChecker,
+      final ReferenceProgressReporter.Task progress) {
     cancelChecker.checkCanceled();
     final OpenDocument openFile = docs.get(uri);
     if (openFile == null) {
@@ -240,6 +241,7 @@ final class WorkspaceSession {
               targetName.set(target.simpleName());
 
               if (target.scope() == ReferenceTarget.SearchScope.DECLARING_FILE) {
+                progress.begin(target.simpleName(), 1);
                 return cursorWorker
                     .searchReferences(
                         openFile.uri(),
@@ -248,7 +250,13 @@ final class WorkspaceSession {
                         target,
                         includeDeclaration,
                         cancelChecker)
-                    .thenApply(WorkspaceSession::toLocations);
+                    .thenApply(WorkspaceSession::toLocations)
+                    .whenComplete(
+                        (locations, failure) -> {
+                          if (failure == null) {
+                            progress.advance(false, locations.size());
+                          }
+                        });
               }
 
               final Path packageRel =
@@ -265,11 +273,20 @@ final class WorkspaceSession {
                           .map(c -> moduleGraph.configsForModule(c.moduleDir()))
                           .orElse(List.of());
 
-              return configs.stream()
-                  .flatMap(
-                      config ->
-                          searchFutures(
-                              config, target, includeDeclaration, packageRel, cancelChecker))
+              final List<CompletableFuture<List<Location>>> searches =
+                  configs.stream()
+                      .flatMap(
+                          config ->
+                              searchFutures(
+                                  config,
+                                  target,
+                                  includeDeclaration,
+                                  packageRel,
+                                  cancelChecker,
+                                  progress))
+                      .toList();
+              progress.begin(target.simpleName(), searches.size());
+              return searches.stream()
                   .reduce(
                       CompletableFuture.completedFuture(List.of()),
                       (f1, f2) ->
@@ -301,7 +318,15 @@ final class WorkspaceSession {
                   && completion.getCause() instanceof CancellationException cancellation) {
                 throw cancellation;
               }
-              return logAndReturn(ex, "[references] failed for %s".formatted(uri), List.of());
+              LOG.log(
+                  SEVERE,
+                  ex,
+                  () ->
+                      "[references] %s target=%s %dms failed"
+                          .formatted(uri, targetName.get(), t.elapsedMs()));
+              throw ex instanceof CompletionException completion
+                  ? completion
+                  : new CompletionException(ex);
             });
   }
 
@@ -310,7 +335,8 @@ final class WorkspaceSession {
       final ReferenceTarget target,
       final boolean includeDeclaration,
       final Path packageRel,
-      final CancelChecker cancelChecker) {
+      final CancelChecker cancelChecker,
+      final ReferenceProgressReporter.Task progress) {
     cancelChecker.checkCanceled();
     final var worker = workspace.workerFor(config);
     final List<OpenDocument> openForConfig =
@@ -346,7 +372,13 @@ final class WorkspaceSession {
                           target,
                           includeDeclaration,
                           cancelChecker)
-                      .thenApply(WorkspaceSession::toLocations);
+                      .thenApply(WorkspaceSession::toLocations)
+                      .whenComplete(
+                          (locations, failure) -> {
+                            if (failure == null) {
+                              progress.advance(false, locations.size());
+                            }
+                          });
                 }),
         diskFiles.stream()
             .map(
@@ -355,7 +387,13 @@ final class WorkspaceSession {
                   return worker
                       .searchReferencesTransient(
                           d.uri(), d.content(), target, includeDeclaration, cancelChecker)
-                      .thenApply(WorkspaceSession::toLocations);
+                      .thenApply(WorkspaceSession::toLocations)
+                      .whenComplete(
+                          (locations, failure) -> {
+                            if (failure == null) {
+                              progress.advance(true, locations.size());
+                            }
+                          });
                 }));
   }
 

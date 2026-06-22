@@ -7,6 +7,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.*;
+import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.eclipse.lsp4j.jsonrpc.CompletableFutures;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.LanguageClient;
@@ -20,6 +21,7 @@ final class LatheTextDocumentService implements TextDocumentService {
   private final ServerEventLoop worker = new ServerEventLoop();
   private final AtomicBoolean closed = new AtomicBoolean();
   private final long debounceMs;
+  private ReferenceProgressReporter progressReporter;
   private WorkspaceSession session;
 
   LatheTextDocumentService() {
@@ -31,7 +33,16 @@ final class LatheTextDocumentService implements TextDocumentService {
   }
 
   void connect(final LanguageClient client) {
+    progressReporter = new ReferenceProgressReporter(client);
     worker.execute(() -> session = new WorkspaceSession(client, worker, debounceMs));
+  }
+
+  void setWorkDoneProgressSupported(final boolean supported) {
+    progressReporter.setSupported(supported);
+  }
+
+  void cancelProgress(final WorkDoneProgressCancelParams params) {
+    progressReporter.cancel(params.getToken());
   }
 
   void initialize(final Path workspaceRoot) {
@@ -167,12 +178,23 @@ final class LatheTextDocumentService implements TextDocumentService {
     final var uri = params.getTextDocument().getUri();
     final var pos = params.getPosition();
     final var incl = params.getContext().isIncludeDeclaration();
-    return CompletableFutures.computeAsync(
-        cancelChecker ->
-            worker
-                .submit(() -> session.referencesFuture(uri, pos, incl, cancelChecker))
-                .thenCompose(f -> f)
-                .join());
+    final var response = new CompletableFuture<List<? extends Location>>();
+    final CancelChecker cancelChecker = new CompletableFutures.FutureCancelChecker(response);
+    final var progress = progressReporter.open(params.getWorkDoneToken(), response);
+    final CompletableFuture<List<Location>> work =
+        worker
+            .submit(() -> session.referencesFuture(uri, pos, incl, cancelChecker, progress))
+            .thenCompose(f -> f);
+    work.whenComplete(
+        (locations, failure) -> {
+          progress.finish(failure);
+          if (failure == null) {
+            response.complete(locations);
+          } else {
+            response.completeExceptionally(failure);
+          }
+        });
+    return response;
   }
 
   @Override
