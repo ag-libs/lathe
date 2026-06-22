@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
 import java.util.List;
 import java.util.Objects;
@@ -71,6 +72,16 @@ class ReferenceLocatorTest {
     final int from = source.indexOf(context);
     final int offset = source.indexOf(token, from);
     return SourceLocator.offsetToPosition(source, offset);
+  }
+
+  private static SourceFeatureRequest requestAt(
+      final String source, final String context, final String token) {
+    return new SourceFeatureRequest(
+        TempSourceCompiler.TEST_URI,
+        source,
+        posOf(source, context, token),
+        List.of(),
+        WorkspaceManifest.empty());
   }
 
   // --- fields ---
@@ -420,18 +431,38 @@ class ReferenceLocatorTest {
                     && m.range().getStart().equals(posOf(source, "Item create", "Item")));
   }
 
-  // --- disk search (searchReferences on uncached file) ---
-
   @Test
-  void searchReferences_compilesUncachedFile() {
+  void searchReferences_uncachedOpenFile_compilesAndCachesAnalysis() {
     final var analysis = compile(TempSourceCompiler.TEST_URI, METHOD_SOURCE);
     final var target = targetAt(analysis, "void run()", "run");
+    final var request = requestAt(METHOD_SOURCE, "run();", "run");
 
     try (final var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       final List<ReferenceMatch> results =
           session.searchReferences(TempSourceCompiler.TEST_URI, METHOD_SOURCE, 0, target, false);
 
       assertThat(results).hasSize(1);
+      assertThat(session.resolveTarget(request)).isNotNull();
+    }
+  }
+
+  @Test
+  void searchReferencesTransient_repeatedScans_returnMatchesWithoutCaching() {
+    final var analysis = compile(TempSourceCompiler.TEST_URI, METHOD_SOURCE);
+    final var target = targetAt(analysis, "void run()", "run");
+    final var request = requestAt(METHOD_SOURCE, "run();", "run");
+
+    try (final var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      final List<ReferenceMatch> first =
+          session.searchReferencesTransient(
+              TempSourceCompiler.TEST_URI, METHOD_SOURCE, target, false);
+      final List<ReferenceMatch> second =
+          session.searchReferencesTransient(
+              TempSourceCompiler.TEST_URI, METHOD_SOURCE, target, false);
+
+      assertThat(first).hasSize(1);
+      assertThat(second).isEqualTo(first);
+      assertThat(session.resolveTarget(request)).isNull();
     }
   }
 

@@ -65,7 +65,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
   public List<Diagnostic> compile(
       final String uri, final String content, final int version, final CompileMode mode) {
     final var t = Stopwatch.start();
-    final var run = compiler.compile(uri, content, mode);
+    final CompilerResult run = compiler.compile(uri, content, mode);
     if (mode != CompileMode.FULL) {
       cache.put(uri, new CachedFileAnalysis(content, version, run.fileAnalysis()));
     }
@@ -218,7 +218,29 @@ public final class SourceAnalysisSession implements AutoCloseable {
       final ReferenceTarget target,
       final boolean includeDeclaration) {
     final var analysis = ensureAttributedAnalysis(uri, content, version);
-    if (analysis == null) {
+    return locateReferences(uri, target, includeDeclaration, analysis);
+  }
+
+  public List<ReferenceMatch> searchReferencesTransient(
+      final String uri,
+      final String content,
+      final ReferenceTarget target,
+      final boolean includeDeclaration) {
+    final var t = Stopwatch.start();
+    final CompilerResult run = compiler.compile(uri, content, CompileMode.FAST);
+    LOG.info(
+        () ->
+            "[compile:fast] %s %dms diags=%d"
+                .formatted(uri, t.elapsedMs(), run.diagnostics().size()));
+    return locateReferences(uri, target, includeDeclaration, run.fileAnalysis());
+  }
+
+  private List<ReferenceMatch> locateReferences(
+      final String uri,
+      final ReferenceTarget target,
+      final boolean includeDeclaration,
+      final AttributedFileAnalysis analysis) {
+    if (analysis == null || analysis.tree() == null) {
       return List.of();
     }
 

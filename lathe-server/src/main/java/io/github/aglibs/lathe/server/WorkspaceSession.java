@@ -317,7 +317,7 @@ final class WorkspaceSession {
             .map(
                 d ->
                     worker
-                        .searchReferences(d.uri(), d.content(), 0, target, includeDeclaration)
+                        .searchReferencesTransient(d.uri(), d.content(), target, includeDeclaration)
                         .thenApply(WorkspaceSession::toLocations)));
   }
 

@@ -128,6 +128,14 @@ public final class CompilationWorker {
     return submit(ctx -> ctx.searchReferences(uri, content, version, target, includeDeclaration));
   }
 
+  public CompletableFuture<List<ReferenceMatch>> searchReferencesTransient(
+      final String uri,
+      final String content,
+      final ReferenceTarget target,
+      final boolean includeDeclaration) {
+    return submit(ctx -> ctx.searchReferencesTransient(uri, content, target, includeDeclaration));
+  }
+
   public CompletableFuture<List<Location>> methodImplementations(
       final String uri,
       final String content,
