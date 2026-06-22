@@ -9,6 +9,10 @@ Read their current-status sections and compare them with the roadmap before star
 
 ## M1 — Internal Preview
 
+- [Exploration Gaps](planned/lathe-m1-exploration-gaps.md) — eight gaps confirmed by live probing against Helidon and
+  Dropwizard: signature-help inner-method bug, absent try/catch wrap action, hover on Javadoc and import positions,
+  workspace symbol prefix-only matching and reactor-type ranking, WARNING flood from duplicate index entries, and
+  Object sync methods in member-access completion.
 - [Reference Search Reliability](planned/lathe-reference-search-reliability.md) — bounded transient analysis,
   work-done progress, and optional cancellation after the Helidon `String` search crash.
 - [Goto Implementation and Type Hierarchy](planned/lathe-goto-implementation.md) — inheritance-index-backed type

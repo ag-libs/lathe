@@ -46,7 +46,7 @@ Maven Central publication is planned for M3.
 | Semantic tokens | Partially implemented | Static/deprecated members, enum constants, type parameters, and annotations are covered. Class and import highlighting remain planned for M2. |
 | Full-document formatting | Implemented | google-java-format also reorders and removes imports. |
 | On-type formatting | M2 planned | Stub is not advertised; conservative indentation remains planned. |
-| Code actions | Implemented with M1 gaps | Missing imports, add throws, try/catch wrapping, and variable declaration work. Missing-method stubs and new-type freshness remain. |
+| Code actions | Implemented with M1 gaps | Missing imports and add-throws work. Try/catch wrapping and variable declaration are classified and dispatched but providers are not yet implemented. Missing-method stubs and new-type freshness remain. |
 | Rename | M2 planned | Existing reference identity and roles provide part of the foundation. |
 | Inlay hints | M2 planned | Not implemented. |
 | Run/test/debug | Post-M3 | No execution or DAP surface is advertised. |
