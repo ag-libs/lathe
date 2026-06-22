@@ -7,11 +7,31 @@ explore.py positioning behaviour.
 
 Gaps that are already tracked under an existing design document are cross-referenced rather than
 duplicated here.
-All gaps listed below are targeted for M1 closure.
+
+## Status
+
+| Gap | Title | Milestone |
+|---|---|---|
+| EG-001 | Signature help selects inner method when argument is itself a method call | M1 |
+| EG-002 | Wrap-with-try/catch absent for `UNREPORTED_EXCEPTION` in method bodies | M1 |
+| EG-003 | Hover returns null inside Javadoc type-reference tags | M2 |
+| EG-004 | Hover returns null on import declarations | M1 |
+| EG-005 | Workspace symbol search is prefix-only; CamelCase and infix queries miss results | M2 |
+| EG-006 | Workspace symbol results rank reactor-local types below dependency and JDK types | M1 |
+| EG-007 | Type-index startup emits hundreds of WARNING-level duplicate-type messages | M1 |
+| EG-008 | Object synchronization methods appear in member-access completion results | M1 |
+
+EG-003 and EG-005 are deferred to M2:
+EG-003 requires `DocTrees` attribution of Javadoc comment positions, which is a non-trivial
+hover extension;
+EG-005 requires building a secondary CamelCase initial index alongside the existing prefix
+structure, which is an enhancement rather than a correctness gap.
 
 ---
 
 ## EG-001 — Signature help selects the inner method's signature when the argument is itself a method call
+
+**Milestone: M1**
 
 ### Observed behaviour
 
@@ -81,6 +101,8 @@ printf 'sig after "tasks.put("\nlog 5\n' \
 
 ## EG-002 — Wrap-with-try/catch action absent for `UNREPORTED_EXCEPTION` in regular method bodies
 
+**Milestone: M1**
+
 ### Observed behaviour
 
 When a method body contains a checked exception that is neither caught nor declared, the
@@ -104,7 +126,7 @@ Python test script that called `didSave` with injected source and then called `c
 This gap confirms that `TryCatchWrapProvider` is absent entirely — the lambda-context
 route is not the only missing branch; the baseline non-lambda method-body route is also missing.
 
-`status.md` must be corrected: try/catch wrapping is **not implemented**.
+`status.md` has been corrected: try/catch wrapping is **not implemented**.
 
 ### Proposed fix
 
@@ -126,6 +148,8 @@ Once `TryCatchWrapProvider` is implemented, the `AddThrowsProvider` lambda-suppr
 ---
 
 ## EG-003 — Hover returns null on positions inside Javadoc type-reference tags
+
+**Milestone: M2**
 
 ### Observed behaviour
 
@@ -179,6 +203,8 @@ printf 'hover "Scheduling"\n' \
 
 ## EG-004 — Hover returns null on positions inside import declarations
 
+**Milestone: M1**
+
 ### Observed behaviour
 
 `textDocument/hover` at a type name inside an import statement returns no result.
@@ -208,7 +234,9 @@ Delegate to the normal hover path with that type element.
 
 ---
 
-## EG-005 — Workspace symbol search uses strict prefix matching; infix and CamelCase abbreviation queries find nothing
+## EG-005 — Workspace symbol search uses strict prefix matching; CamelCase and infix queries find nothing
+
+**Milestone: M2**
 
 ### Observed behaviour
 
@@ -236,7 +264,7 @@ For example, `AbstractServerFactory` generates entries keyed on `ASF`, `ASFac`, 
 For substring search, the most practical approach is a trigram or suffix index, or a sorted list
 of `(reverse-suffix, fqn)` pairs enabling suffix-prefix lookups.
 
-The minimal M1 fix is CamelCase initial matching:
+The minimal fix is CamelCase initial matching:
 decompose each type name into its uppercase-initial subsequences at index build time and store
 them in a secondary map.
 At query time, if no prefix hit is found, check whether the query matches any CamelCase
@@ -250,6 +278,8 @@ abbreviation.
 ---
 
 ## EG-006 — Workspace symbol results rank reactor-local types below dependency and JDK types
+
+**Milestone: M1**
 
 ### Observed behaviour
 
@@ -285,6 +315,8 @@ entries when the simple name matches the query exactly.
 ---
 
 ## EG-007 — Type-index startup emits hundreds of WARNING-level duplicate-type messages, obscuring real warnings
+
+**Milestone: M1**
 
 ### Observed behaviour
 
@@ -336,6 +368,8 @@ Two complementary changes:
 ---
 
 ## EG-008 — Object synchronization methods appear in member-access completion results
+
+**Milestone: M1**
 
 ### Observed behaviour
 
@@ -427,33 +461,30 @@ These are reference data, not gap items.
 
 ---
 
-## Implementation Order
+## M1 Implementation Order
 
-Items in dependency order; items without dependencies may proceed in parallel.
+Items without dependencies may proceed in parallel.
 
-1. **EG-007** (WARNING flood) — isolate and downgrade duplicate-type log messages.
-   Small, self-contained change; improves log signal for all subsequent debugging.
+1. **EG-007** (WARNING flood) — downgrade duplicate-type log messages to FINE and deduplicate
+   at merge time.
+   Self-contained; improves log signal for all subsequent debugging.
 
-2. **EG-002** (try/catch wrap) — implement `TryCatchWrapProvider`.
-   Fixes a status.md correctness claim and closes the main code-action gap.
-   See also `lathe-code-actions-gaps.md` Gap 1 for lambda-context suppression.
+2. **EG-002** (try/catch wrap) — implement `TryCatchWrapProvider` for both regular method and
+   lambda contexts.
+   Closes the main code-action gap and fixes a false status.md claim.
+   See also `lathe-code-actions-gaps.md` Gap 1 for the lambda-suppression companion change to
+   `AddThrowsProvider`.
 
 3. **EG-001** (signature help inner method) — fix backward-scan anchor in `SignatureHelpLocator`.
    No design dependencies.
 
-4. **EG-008** (Object sync methods) — add three-entry suppression list to member-access
+4. **EG-008** (Object sync methods) — add three-entry suppression list to the member-access
    candidate filter.
    Minimal change, no design dependencies.
 
-5. **EG-006** (workspace symbol ranking) — add reactor-origin boost to the result comparator.
-   Requires understanding `TypeIndexEntry` origin field; no structural design needed.
+5. **EG-006** (workspace symbol ranking) — add reactor-origin sort boost to the result
+   comparator in `WorkspaceTypeIndex`.
+   No structural design needed; requires reading `TypeIndexEntry` origin information.
 
-6. **EG-005** (workspace symbol prefix-only) — add CamelCase initial index as first slice;
-   defer infix index unless measurements show broad demand.
-
-7. **EG-004** (hover on import) — add `ImportTree` element extraction to `HoverLocator`.
+6. **EG-004** (hover on import) — add `ImportTree` element extraction to `HoverLocator`.
    Small, bounded change.
-
-8. **EG-003** (hover in Javadoc tags) — add `DocCommentTree` position detection and
-   `DocTrees.getElement` delegation to `HoverLocator`.
-   Slightly larger than EG-004 but follows the same two-phase lookup pattern.

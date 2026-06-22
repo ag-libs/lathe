@@ -78,7 +78,7 @@ See [lathe-server-data-flow-recipe.md](done/lathe-server-data-flow-recipe.md) fo
 
 - Completion contexts, typed-slot filtering, type-index discovery, import insertion, and JDT-style presentation.
 - Exact javac-backed references with scope tightening and indexed candidate discovery.
-- Missing-import, add-throws, try/catch, and variable-declaration quick fixes.
+- Missing-import and add-throws quick fixes. Try/catch wrapping and variable declaration are classified and dispatched but providers are not yet implemented.
 - Rich AST-backed Markdown Javadoc for hover, completion, and signature help.
 - Workspace/document symbols, folding ranges, formatting, import optimization, and unused-code diagnostics.
 - Maven-managed server distribution, unified JDK cache keys, POM staleness prompts, and packaged Neovim setup.

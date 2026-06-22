@@ -9,10 +9,11 @@ Read their current-status sections and compare them with the roadmap before star
 
 ## M1 — Internal Preview
 
-- [Exploration Gaps](planned/lathe-m1-exploration-gaps.md) — eight gaps confirmed by live probing against Helidon and
-  Dropwizard: signature-help inner-method bug, absent try/catch wrap action, hover on Javadoc and import positions,
-  workspace symbol prefix-only matching and reactor-type ranking, WARNING flood from duplicate index entries, and
-  Object sync methods in member-access completion.
+- [Exploration Gaps](planned/lathe-m1-exploration-gaps.md) — six M1 gaps confirmed by live probing against Helidon and
+  Dropwizard: signature-help inner-method bug (EG-001), absent try/catch wrap action (EG-002), hover on import
+  positions (EG-004), reactor-type ranking in workspace symbols (EG-006), WARNING flood from duplicate index entries
+  (EG-007), and Object sync methods in member-access completion (EG-008).
+  EG-003 (hover in Javadoc tags) and EG-005 (CamelCase workspace symbol matching) are deferred to M2.
 - [Call Hierarchy](planned/lathe-call-hierarchy.md) — `prepareCallHierarchy`, `incomingCalls`, and `outgoingCalls`
   built on `ReferenceTarget` identity, `ReferenceCandidateIndex` candidate discovery, and two new
   `TreePathScanner` locators.
@@ -32,6 +33,8 @@ Read their current-status sections and compare them with the roadmap before star
 
 ## M2 — Neovim Public Beta
 
+- [Exploration Gaps (deferred)](planned/lathe-m1-exploration-gaps.md) — EG-003 (hover in Javadoc type-reference tags)
+  and EG-005 (CamelCase and infix workspace symbol matching) deferred from M1.
 - [Find References Gaps](planned/lathe-find-references-gaps.md) — external-source scope, failure propagation, and
   integration coverage.
 - [Completion Expectations](planned/completion/expectations.md) — expected completion behavior.

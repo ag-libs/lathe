@@ -57,6 +57,18 @@ See [lathe-goto-implementation.md](planned/lathe-goto-implementation.md).
 
 See [lathe-call-hierarchy.md](planned/lathe-call-hierarchy.md).
 
+### Live-probing correctness fixes
+
+Gaps confirmed by systematic probing against Helidon and Dropwizard.
+See [lathe-m1-exploration-gaps.md](planned/lathe-m1-exploration-gaps.md).
+
+- Fix signature help returning the wrong signature when the first argument is itself a method call (EG-001).
+- Implement `TryCatchWrapProvider` for `UNREPORTED_EXCEPTION` in regular method and lambda bodies (EG-002).
+- Fix hover returning null on import declaration positions (EG-004).
+- Boost reactor-origin entries ahead of dependency and JDK entries in workspace symbol results (EG-006).
+- Downgrade duplicate-type index messages from WARNING to FINE and deduplicate at merge time (EG-007).
+- Suppress `wait`, `notify`, and `notifyAll` from member-access completion results (EG-008).
+
 ### Code-action and index freshness gaps
 
 - Implement `MissingMethodImplProvider` for unimplemented abstract methods.
@@ -79,14 +91,17 @@ It remains a build-from-source release.
 ### Navigation and references
 
 - Complete external-source Find References scope, failure propagation, and invoker coverage.
-- Implement incoming and outgoing call hierarchy.
 - Consider partial-result streaming only if post-M1 measurements show material result latency or memory pressure.
 
-### Completion
+### Completion and search
 
 - Implement method-reference completion after type, `this`, `super`, and expression receivers.
 - Implement generic-bound receiver completion for wildcard and type-variable upper bounds.
 - Close additional reproducible completion gaps accepted into the M2 gap log.
+- Add CamelCase initial matching to workspace symbol search (EG-005).
+- Fix hover on type names inside Javadoc `{@link}` and `{@see}` tags using `DocTrees.getElement` (EG-003).
+
+See [lathe-m1-exploration-gaps.md](planned/lathe-m1-exploration-gaps.md) for EG-003 and EG-005 detail.
 
 ### Editing and refactoring
 
