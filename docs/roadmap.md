@@ -38,16 +38,6 @@ It includes the current implementation and every active, non-deferred correctnes
 - Complete the focused fail-fast, naming, DRY, and fixture slices in the current maintainability plan.
 - Preserve the existing server-event-loop and module-worker ownership model.
 
-### Implementation navigation and hierarchy
-
-- Add minimal direct-inheritance metadata to reactor, dependency, and JDK type-index shards.
-- Load immutable static and reactor index components eagerly outside `ServerEventLoop`.
-- Replace complete immutable snapshots on workspace reload and replace only the reactor component after reactor refresh.
-- Implement type implementation and type hierarchy across indexed reactor, dependency, and JDK types.
-- Implement reactor-only method implementation with exact javac validation.
-
-See [lathe-goto-implementation.md](planned/lathe-goto-implementation.md).
-
 ### Call hierarchy
 
 - Implement `textDocument/prepareCallHierarchy`, `callHierarchy/incomingCalls`, and

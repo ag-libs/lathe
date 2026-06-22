@@ -19,10 +19,6 @@ Read their current-status sections and compare them with the roadmap before star
   `TreePathScanner` locators.
 - [Reference Search Reliability](planned/lathe-reference-search-reliability.md) — bounded transient analysis,
   work-done progress, and optional cancellation after the Helidon `String` search crash.
-- [Goto Implementation and Type Hierarchy](planned/lathe-goto-implementation.md) — inheritance-index-backed type
-  navigation and reactor method implementation.
-- [Event-Loop Starvation](planned/lathe-event-loop-starvation.md) — diagnosis of synchronous index construction on
-  `ServerEventLoop`; superseded solution details should follow the goto-implementation design.
 - [Code Action Gaps](planned/lathe-code-actions-gaps.md) — missing-method provider and reactor type freshness.
 - [MissingMethodImplProvider](planned/lathe-missing-method-impl.md) — generation of abstract-method stubs.
 - [Maintainability Refactoring](planned/lathe-maintainability-refactoring.md) — fail-fast propagation and focused
@@ -68,6 +64,10 @@ M3 designs before implementation.
 
 ## Completed Designs
 
+- [Goto Implementation and Type Hierarchy](done/lathe-goto-implementation.md) — inheritance-index-backed type
+  navigation and reactor method implementation across reactor, dependency, and JDK types.
+- [Event-Loop Starvation](done/lathe-event-loop-starvation.md) — diagnosis of synchronous index construction;
+  resolved by the goto-implementation design keeping construction on `ServerEventLoop`.
 - [Completion Design](done/completion-design.md)
 - [Completion Gap Fixes](done/completion-gap-fixes.md)
 - [Completion Gaps](done/completion-gaps.md)
