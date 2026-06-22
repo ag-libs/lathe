@@ -51,7 +51,7 @@ final class JavacRunner {
 
     try {
       final CompilationUnitTree cu = JavaSourceCompiler.safeCompile(task);
-      final Trees trees = Trees.instance(task);
+      final var trees = Trees.instance(task);
       final var elements = task.getElements();
       final var types = task.getTypes();
       final AttributedFileAnalysis fileAnalysis;

@@ -1,7 +1,6 @@
 package io.github.aglibs.lathe.server.analysis;
 
 import io.github.aglibs.validcheck.ValidCheck;
-import java.util.Set;
 import java.util.stream.Collectors;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
@@ -73,7 +72,7 @@ public record ReferenceTarget(
       return SearchScope.DECLARING_FILE;
     }
 
-    final Set<Modifier> mods = element.getModifiers();
+    final var mods = element.getModifiers();
     if (mods.contains(Modifier.PRIVATE)) {
       return SearchScope.DECLARING_FILE;
     }

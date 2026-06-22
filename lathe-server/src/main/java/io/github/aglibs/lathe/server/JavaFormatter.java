@@ -21,7 +21,7 @@ final class JavaFormatter {
     if (content == null) {
       return List.of();
     }
-    final Stopwatch t = Stopwatch.start();
+    final var t = Stopwatch.start();
     try {
       final var formatted = new Formatter().formatSourceAndFixImports(content);
       if (formatted.equals(content)) {

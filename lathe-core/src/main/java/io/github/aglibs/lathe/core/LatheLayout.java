@@ -49,7 +49,7 @@ public final class LatheLayout {
   }
 
   public static boolean isParamsFile(final Path path) {
-    final String name = path.getFileName().toString();
+    final var name = path.getFileName().toString();
     return name.startsWith(PARAMS_FILE_PREFIX) && name.endsWith(".json");
   }
 }

@@ -26,7 +26,7 @@ public final class DependencyTypeIndexSync {
   private DependencyTypeIndexSync() {}
 
   public static void index(final Collection<Artifact> artifacts, final Log log) {
-    final Stopwatch t = Stopwatch.start();
+    final var t = Stopwatch.start();
     try {
       final Map<Boolean, Long> counts =
           artifacts.stream()
@@ -58,9 +58,9 @@ public final class DependencyTypeIndexSync {
   }
 
   private static boolean index(final Artifact artifact, final Log log) throws IOException {
-    final Path jar = artifact.getFile().toPath();
+    final var jar = artifact.getFile().toPath();
     final Path index = indexPath(artifact);
-    final Stopwatch t = Stopwatch.start();
+    final var t = Stopwatch.start();
     final Optional<TypeIndexFile> current = currentIndex(index, artifact, jar);
     if (current.isPresent()) {
       log.debug(

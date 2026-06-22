@@ -34,7 +34,7 @@ class MethodImplementationTest {
           public String execute(Integer value) { return value.toString(); }
         }
         """;
-    final String candidateUri = tempDir.resolve("Direct.java").toUri().toString();
+    final var candidateUri = tempDir.resolve("Direct.java").toUri().toString();
 
     final ReferenceTarget target;
     try (var targetSession = new SourceAnalysisSession(new TempSourceCompiler())) {
@@ -70,7 +70,7 @@ class MethodImplementationTest {
     TestCompiler.compileToDir(classDir, serviceSource);
     // record accessor for 'text' is compiler-synthesized: no MethodDecl node in the AST
     final String recordContent = "record Impl(String text) implements HasText {}\n";
-    final String recordUri = tempDir.resolve("Impl.java").toUri().toString();
+    final var recordUri = tempDir.resolve("Impl.java").toUri().toString();
 
     final ReferenceTarget target;
     try (var targetSession = new SourceAnalysisSession(new TempSourceCompiler())) {

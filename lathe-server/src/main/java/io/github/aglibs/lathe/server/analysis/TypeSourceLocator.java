@@ -111,7 +111,7 @@ public final class TypeSourceLocator {
 
     @Override
     public Void visitClass(final ClassTree classTree, final Void unused) {
-      final String name = classTree.getSimpleName().toString();
+      final var name = classTree.getSimpleName().toString();
       names.addLast(name);
       if (result == null && String.join("$", names).equals(targetName)) {
         result = location(sourceFile, trees, tree, getCurrentPath(), name);

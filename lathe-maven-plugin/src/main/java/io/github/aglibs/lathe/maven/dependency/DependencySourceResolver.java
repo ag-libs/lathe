@@ -49,7 +49,7 @@ public final class DependencySourceResolver {
       final Artifact artifact,
       final Map<String, List<Path>> artifactClasspaths,
       final List<RemoteRepository> repositories) {
-    final Path binaryJar = artifact.getFile().toPath();
+    final var binaryJar = artifact.getFile().toPath();
     final var classpath =
         artifactClasspaths.getOrDefault(ReactorProjects.artifactKey(artifact), List.of());
     final var sourceArtifact =

@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Comparator;
+import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -63,7 +64,7 @@ public final class FileUtil {
 
   public static void deleteDir(final Path dir) throws IOException {
     try (final var walk = Files.walk(dir)) {
-      final var sorted = walk.sorted(Comparator.reverseOrder()).toList();
+      final List<Path> sorted = walk.sorted(Comparator.reverseOrder()).toList();
       for (final var path : sorted) {
         setWritable(path);
         Files.delete(path);

@@ -64,7 +64,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
 
   public List<Diagnostic> compile(
       final String uri, final String content, final int version, final CompileMode mode) {
-    final Stopwatch t = Stopwatch.start();
+    final var t = Stopwatch.start();
     final var run = compiler.compile(uri, content, mode);
     if (mode != CompileMode.FULL) {
       cache.put(uri, new CachedFileAnalysis(content, version, run.fileAnalysis()));
@@ -93,7 +93,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
       final Position pos,
       final CompletionContext context,
       final WorkspaceTypeIndex typeIndex) {
-    final Stopwatch t = Stopwatch.start();
+    final var t = Stopwatch.start();
     final var request =
         new CompletionRequest(uri, content, pos, context, cache.get(uri), typeIndex);
     final var outcome = completionEngine.complete(request);
@@ -114,7 +114,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
   }
 
   public List<DocumentSymbol> documentSymbol(final String uri, final String content) {
-    final Stopwatch t = Stopwatch.start();
+    final var t = Stopwatch.start();
     final var symbols =
         parser
             .parseContent(
@@ -126,7 +126,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
   }
 
   public List<FoldingRange> foldingRange(final String uri, final String content) {
-    final Stopwatch t = Stopwatch.start();
+    final var t = Stopwatch.start();
     final var ranges =
         parser.parseContent(uri, content, FoldingRangeScanner::scan).orElseGet(List::of);
     LOG.fine(() -> "[foldingRange] %s %dms ranges=%d".formatted(uri, t.elapsedMs(), ranges.size()));
@@ -134,7 +134,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
   }
 
   public List<SemanticToken> semanticTokens(final String uri, final int expectedVersion) {
-    final var ctx = cache.get(uri);
+    final CachedFileAnalysis ctx = cache.get(uri);
     if (ctx == null || ctx.version() != expectedVersion) {
       return null;
     }
@@ -156,7 +156,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
   }
 
   public Hover hover(final SourceFeatureRequest request) {
-    final Stopwatch t = Stopwatch.start();
+    final var t = Stopwatch.start();
     final CursorContext cur = resolve(request);
     if (cur == null) {
       return null;
@@ -223,7 +223,8 @@ public final class SourceAnalysisSession implements AutoCloseable {
     }
 
     try {
-      final var results = ReferenceLocator.references(analysis, target, uri, includeDeclaration);
+      final List<ReferenceMatch> results =
+          ReferenceLocator.references(analysis, target, uri, includeDeclaration);
       LOG.fine(
           () ->
               "[references] uri=%s element=%s hits=%d"
@@ -248,7 +249,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
   }
 
   public Optional<Location> definition(final SourceFeatureRequest request) {
-    final Stopwatch t = Stopwatch.start();
+    final var t = Stopwatch.start();
     final var cur = resolve(request);
     if (cur == null) {
       return Optional.empty();
@@ -286,7 +287,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
 
   public List<Location> typeImplementations(
       final SourceFeatureRequest request, final WorkspaceTypeIndex typeIndex) {
-    final Stopwatch t = Stopwatch.start();
+    final var t = Stopwatch.start();
     final var cur = resolve(request);
     if (cur == null) {
       return List.of();
@@ -297,7 +298,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
       return List.of();
     }
 
-    final String binaryName = cur.analysis().elements().getBinaryName(typeElement).toString();
+    final var binaryName = cur.analysis().elements().getBinaryName(typeElement).toString();
     final List<Path> sourceRoots = typeSourceRoots(request);
     final List<Location> results =
         typeIndex.transitiveSubtypes(binaryName).stream()
@@ -322,7 +323,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
       return List.of();
     }
 
-    final String binaryName = cur.analysis().elements().getBinaryName(typeElement).toString();
+    final var binaryName = cur.analysis().elements().getBinaryName(typeElement).toString();
     return typeIndex
         .findType(binaryName)
         .flatMap(entry -> typeHierarchyItem(entry, typeSourceRoots(request)))
@@ -334,7 +335,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
       final TypeHierarchyItem item,
       final WorkspaceTypeIndex typeIndex,
       final List<Path> sourceRoots) {
-    final var data = TypeHierarchyItemDataCodec.decode(item.getData());
+    final TypeHierarchyItemData data = TypeHierarchyItemDataCodec.decode(item.getData());
     return data != null
         ? typeHierarchyItems(typeIndex.directSupertypes(data.binaryName()), sourceRoots)
         : List.of();
@@ -344,7 +345,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
       final TypeHierarchyItem item,
       final WorkspaceTypeIndex typeIndex,
       final List<Path> sourceRoots) {
-    final var data = TypeHierarchyItemDataCodec.decode(item.getData());
+    final TypeHierarchyItemData data = TypeHierarchyItemDataCodec.decode(item.getData());
     if (data == null) {
       return List.of();
     }
@@ -395,7 +396,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
       final int version,
       final List<CodeActionRequest> requests,
       final WorkspaceTypeIndex typeIndex) {
-    final Stopwatch t = Stopwatch.start();
+    final var t = Stopwatch.start();
     LOG.info(() -> "[codeAction] %s diags=%d".formatted(uri, requests.size()));
 
     final var analysis = ensureAttributedAnalysis(uri, content, version);
@@ -444,7 +445,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
       compile(uri, content, version, CompileMode.OPEN);
     }
 
-    final var cached = cache.get(uri);
+    final CachedFileAnalysis cached = cache.get(uri);
     return cached != null ? cached.analysis() : null;
   }
 
@@ -597,7 +598,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
   private record CursorContext(AttributedFileAnalysis analysis, TreePath path) {}
 
   private CachedFileAnalysis currentCache(final String uri, final String content) {
-    final var cached = cache.get(uri);
+    final CachedFileAnalysis cached = cache.get(uri);
     return cached != null && cached.content().equals(content) ? cached : null;
   }
 

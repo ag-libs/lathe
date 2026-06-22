@@ -37,13 +37,13 @@ final class SentinelParser {
       final int expectedLspLine,
       final int version) {
 
-    final TreePath sentinelPath = new SentinelFinder().scan(cu, null);
+    final var sentinelPath = new SentinelFinder().scan(cu, null);
     if (sentinelPath == null) {
       LOG.fine(() -> "[sentinel-parse] sentinel not found in parse tree");
       return ParsedSentinel.invalid(injected.prefix(), injected.receiverText(), version);
     }
 
-    final SourcePositions sourcePositions = trees.getSourcePositions();
+    final var sourcePositions = trees.getSourcePositions();
     final int receiverEndOffset;
     if (sentinelPath.getLeaf() instanceof final MemberSelectTree memberSelect) {
       final long pos = sourcePositions.getEndPosition(cu, memberSelect.getExpression());
@@ -454,7 +454,7 @@ final class SentinelParser {
     }
 
     final var params = lambda.getParameters();
-    final String receiver = sel.getExpression().toString();
+    final var receiver = sel.getExpression().toString();
     final int lambdaParamIndex =
         IntStream.range(0, params.size())
             .filter(j -> params.get(j).getName().toString().equals(receiver))

@@ -10,7 +10,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import org.apache.maven.plugin.logging.SystemStreamLog;
-import org.eclipse.aether.artifact.Artifact;
 import org.eclipse.aether.artifact.DefaultArtifact;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -50,7 +49,7 @@ class DependencySourceSyncTest {
   private DependencySource presentSource() throws IOException {
     final Path jar =
         ZipFixture.create(tmp.resolve("dep-sources.jar"), "com/example/A.java", "class A {}");
-    final Artifact artifact = new DefaultArtifact("com.example:dep:1.0").setFile(jar.toFile());
+    final var artifact = new DefaultArtifact("com.example:dep:1.0").setFile(jar.toFile());
     return DependencySource.present(
         "com.example:dep:1.0", jar, tmp.resolve("cache/dep"), artifact, List.of());
   }

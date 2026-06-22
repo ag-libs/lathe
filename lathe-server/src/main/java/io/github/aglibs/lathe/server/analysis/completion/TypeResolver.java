@@ -479,7 +479,7 @@ final class TypeResolver {
           return super.visitThrow(node, unused);
         }
 
-        final TypeElement throwable = snapshot.elements().getTypeElement("java.lang.Throwable");
+        final var throwable = snapshot.elements().getTypeElement("java.lang.Throwable");
         if (throwable != null) {
           result.set(throwable.asType());
         }
@@ -1077,7 +1077,7 @@ final class TypeResolver {
       final ExecutableElement method,
       final TypeElement functionalInterface,
       final AttributedFileAnalysis snapshot) {
-    final TypeElement objectType = snapshot.elements().getTypeElement("java.lang.Object");
+    final var objectType = snapshot.elements().getTypeElement("java.lang.Object");
     if (objectType == null) {
       return false;
     }

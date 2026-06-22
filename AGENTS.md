@@ -84,12 +84,15 @@ After a large Java change, agents may run `mvn spotless:apply` before tests to n
   records MUST have a compact constructor** (e.g., `public MyRecord { ... }`) that implements
   invariants and validates parameters (e.g. using `ValidCheck.check()`).
 - **Variables (`var` vs Types)**:
-    * **NEVER** write `final MyType x = new MyType()`. If the RHS is a constructor (`new X()`), an
-      array creation, or a terminal stream method (`.toList()`, `.build()`), you **MUST** use `var`.
-    * **NEVER** use `var` for method returns where the type isn't blindly obvious from the name. You
-      **MUST** write the explicit type.
-    * **NEVER** omit the `final` keyword on parameters, local variables, or fields. The only
-      exception is if the variable is explicitly mutated in a loop or reassigned.
+    * **NEVER** write `final Type x = new X()` — **MUST** use `var` for all constructor calls
+      and array creation, even when the declared type would be a supertype.
+    * **MUST** use `var` when the return type name appears literally in the method name
+      (`getSourcePositions`, `offsetToPosition`, `toPath`, `toString`) or the method is a
+      same-class factory (`Stopwatch.start()`, `Trees.instance()`).
+    * **NEVER** use `var` for cross-class factory/utility methods, map/collection accessors,
+      or any stream terminal — **MUST** write the explicit type (`List<T>`, `Map<K,V>`, `Set<T>`).
+    * **NEVER** omit `final` on local variables, parameters, or fields unless the variable is
+      explicitly reassigned.
 - **KISS & Architecture**:
     * **NEVER** introduce Interfaces for classes that only have a single implementation.
     * **NEVER** introduce Design Patterns (Factories, Builders, Strategies) unless explicitly

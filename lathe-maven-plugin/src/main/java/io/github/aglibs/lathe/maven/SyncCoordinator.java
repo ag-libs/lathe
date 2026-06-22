@@ -4,6 +4,7 @@ import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.maven.dependency.DependencySource;
 import io.github.aglibs.lathe.maven.dependency.DependencySourceResolver;
 import io.github.aglibs.lathe.maven.dependency.DependencySourceSync;
+import io.github.aglibs.lathe.maven.jdk.JdkSource;
 import io.github.aglibs.lathe.maven.jdk.JdkSourceResolver;
 import io.github.aglibs.lathe.maven.jdk.JdkSourceSync;
 import io.github.aglibs.lathe.maven.typeindex.DependencyTypeIndexSync;
@@ -53,9 +54,9 @@ final class SyncCoordinator {
                     (first, ignored) -> first));
     final List<DependencySource> enrichedSources =
         dependencySources.stream().map(s -> enrichWithTypeIndex(s, jarToTypeIndex)).toList();
-    final var jdkSource = JdkSourceResolver.resolve();
+    final JdkSource jdkSource = JdkSourceResolver.resolve();
     JdkSourceSync.extract(jdkSource, log);
-    final var enrichedJdkSource = JdkTypeIndexSync.index(jdkSource, log);
+    final JdkSource enrichedJdkSource = JdkTypeIndexSync.index(jdkSource, log);
     new ServerInstaller(repositorySystem, session.getRepositorySession(), remoteRepos, log)
         .install();
     if (isPartialReactor() && !LatheFlags.isForcedSync()) {
@@ -73,7 +74,7 @@ final class SyncCoordinator {
 
   private static DependencySource enrichWithTypeIndex(
       final DependencySource s, final Map<Path, Path> jarToTypeIndex) {
-    final var idx = s.jar() != null ? jarToTypeIndex.get(s.jar()) : null;
+    final Path idx = s.jar() != null ? jarToTypeIndex.get(s.jar()) : null;
     return idx != null ? s.withTypeIndex(idx) : s;
   }
 

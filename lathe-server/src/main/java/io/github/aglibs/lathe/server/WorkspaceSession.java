@@ -134,7 +134,7 @@ final class WorkspaceSession {
         uri,
         debounceMs,
         () -> {
-          final var latest = docs.get(uri);
+          final OpenDocument latest = docs.get(uri);
           if (latest != null) {
             compileAndPublish(latest, CompileMode.FAST);
           }
@@ -197,7 +197,7 @@ final class WorkspaceSession {
 
   CompletableFuture<List<Location>> referencesFuture(
       final String uri, final Position pos, final boolean includeDeclaration) {
-    final var openFile = docs.get(uri);
+    final OpenDocument openFile = docs.get(uri);
     if (openFile == null) {
       return CompletableFuture.completedFuture(List.of());
     }
@@ -219,7 +219,7 @@ final class WorkspaceSession {
     // Capture declaring module synchronously on the lathe-worker thread before any async hand-off
     final var cursorConfig = workspace.moduleSourceFor(toPath(uri));
 
-    final Stopwatch t = Stopwatch.start();
+    final var t = Stopwatch.start();
     final var targetName = new AtomicReference<String>();
     return cursorWorker
         .resolveTarget(request)
@@ -372,7 +372,7 @@ final class WorkspaceSession {
   private record DiskCandidate(String uri, String content) {}
 
   CompletableFuture<Hover> hoverFuture(final String uri, final Position pos) {
-    final var openFile = docs.get(uri);
+    final OpenDocument openFile = docs.get(uri);
     if (openFile == null) {
       return CompletableFuture.completedFuture(null);
     }
@@ -391,7 +391,7 @@ final class WorkspaceSession {
   }
 
   CompletableFuture<SignatureHelp> signatureHelpFuture(final String uri, final Position pos) {
-    final var openFile = docs.get(uri);
+    final OpenDocument openFile = docs.get(uri);
     if (openFile == null) {
       return CompletableFuture.completedFuture(null);
     }
@@ -411,7 +411,7 @@ final class WorkspaceSession {
 
   CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       definitionFuture(final String uri, final Position pos) {
-    final var openFile = docs.get(uri);
+    final OpenDocument openFile = docs.get(uri);
     if (openFile == null) {
       return CompletableFuture.completedFuture(Either.forLeft(List.of()));
     }
@@ -440,7 +440,7 @@ final class WorkspaceSession {
 
   CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       implementationFuture(final String uri, final Position pos) {
-    final var openFile = docs.get(uri);
+    final OpenDocument openFile = docs.get(uri);
     if (openFile == null) {
       return CompletableFuture.completedFuture(Either.forLeft(List.of()));
     }
@@ -523,8 +523,8 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    final String uri = sourceFile.toUri().toString();
-    final var openFile = docs.get(uri);
+    final var uri = sourceFile.toUri().toString();
+    final OpenDocument openFile = docs.get(uri);
     final var diskFile = openFile == null ? readDiskCandidate(uri).orElse(null) : null;
     if (openFile == null && diskFile == null) {
       return CompletableFuture.completedFuture(List.of());
@@ -539,7 +539,7 @@ final class WorkspaceSession {
 
   CompletableFuture<List<TypeHierarchyItem>> prepareTypeHierarchyFuture(
       final String uri, final Position pos) {
-    final var openFile = docs.get(uri);
+    final OpenDocument openFile = docs.get(uri);
     if (openFile == null) {
       return CompletableFuture.completedFuture(List.of());
     }
@@ -613,7 +613,7 @@ final class WorkspaceSession {
 
   CompletableFuture<CompletionOutcome> completionFuture(
       final String uri, final Position pos, final CompletionContext context) {
-    final var openFile = docs.get(uri);
+    final OpenDocument openFile = docs.get(uri);
     if (openFile == null) {
       return CompletableFuture.completedFuture(CompletionOutcome.of(List.of()));
     }
@@ -635,7 +635,7 @@ final class WorkspaceSession {
 
   CompletableFuture<List<Either<Command, CodeAction>>> codeActionFuture(
       final String uri, final CodeActionContext context) {
-    final var openFile = docs.get(uri);
+    final OpenDocument openFile = docs.get(uri);
     if (openFile == null) {
       return CompletableFuture.completedFuture(List.of());
     }
@@ -666,7 +666,7 @@ final class WorkspaceSession {
   }
 
   CompletableFuture<SemanticTokens> semanticTokensFuture(final String uri) {
-    final var openFile = docs.get(uri);
+    final OpenDocument openFile = docs.get(uri);
     if (openFile == null) {
       return CompletableFuture.completedFuture(null);
     }
@@ -684,7 +684,7 @@ final class WorkspaceSession {
   }
 
   CompletableFuture<List<DocumentSymbol>> documentSymbolFuture(final String uri) {
-    final var openFile = docs.get(uri);
+    final OpenDocument openFile = docs.get(uri);
     if (openFile == null) {
       return CompletableFuture.completedFuture(List.of());
     }
@@ -702,7 +702,7 @@ final class WorkspaceSession {
   }
 
   CompletableFuture<List<FoldingRange>> foldingRangeFuture(final String uri) {
-    final var openFile = docs.get(uri);
+    final OpenDocument openFile = docs.get(uri);
     if (openFile == null) {
       return CompletableFuture.completedFuture(List.of());
     }
@@ -720,8 +720,9 @@ final class WorkspaceSession {
 
   List<? extends TextEdit> format(final String tag, final String uri) {
     final var t = Stopwatch.start();
-    final var openFile = docs.get(uri);
-    final var result = JavaFormatter.format(openFile != null ? openFile.content() : null);
+    final OpenDocument openFile = docs.get(uri);
+    final List<TextEdit> result =
+        JavaFormatter.format(openFile != null ? openFile.content() : null);
     LOG.info(() -> "[%s] %s %dms edits=%d".formatted(tag, uri, t.elapsedMs(), result.size()));
     return result;
   }
@@ -867,7 +868,7 @@ final class WorkspaceSession {
 
   private void refreshOpenDocuments() {
     for (final var uri : List.copyOf(docs.uris())) {
-      final var f = docs.get(uri);
+      final OpenDocument f = docs.get(uri);
       docs.put(uri, f.content(), f.version());
     }
   }
@@ -976,7 +977,7 @@ final class WorkspaceSession {
         uri,
         0L,
         () -> {
-          final var openFile = docs.get(uri);
+          final OpenDocument openFile = docs.get(uri);
           if (openFile != null) {
             compileAndPublish(openFile, CompileMode.OPEN);
           }
@@ -988,7 +989,7 @@ final class WorkspaceSession {
         uri,
         0L,
         () -> {
-          final var openFile = docs.get(uri);
+          final OpenDocument openFile = docs.get(uri);
           if (openFile != null) {
             submitCompile(openFile, CompileMode.FAST, publisher::refreshTokensIfCurrent);
           }
@@ -996,7 +997,7 @@ final class WorkspaceSession {
   }
 
   private OpenDocument snapshotForSave(final String uri, final String savedContent) {
-    final var openFile = docs.get(uri);
+    final OpenDocument openFile = docs.get(uri);
     if (openFile == null) {
       return null;
     }
@@ -1019,7 +1020,7 @@ final class WorkspaceSession {
       return null;
     }
 
-    final var encoded = TokenScanner.encode(tokens);
+    final int[] encoded = TokenScanner.encode(tokens);
     return new SemanticTokens(IntStream.of(encoded).boxed().toList());
   }
 

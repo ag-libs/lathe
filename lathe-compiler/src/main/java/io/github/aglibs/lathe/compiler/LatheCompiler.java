@@ -92,7 +92,7 @@ public final class LatheCompiler implements Compiler {
       final Path moduleDir,
       final Path moduleRel,
       final CompilerResult result) {
-    final Stopwatch sw = Stopwatch.start();
+    final var sw = Stopwatch.start();
     try {
       if (!result.isSuccess() && result.getCompilerMessages().isEmpty()) {
         throw new IOException("javac returned failure with no diagnostics");

@@ -19,7 +19,6 @@ import java.util.Set;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
-import org.eclipse.lsp4j.Position;
 
 public final class TokenScanner extends TreePathScanner<Void, Void> {
 
@@ -116,7 +115,7 @@ public final class TokenScanner extends TreePathScanner<Void, Void> {
     }
     final var mods = interestingModifiers(element);
     if (!mods.isEmpty()) {
-      final String name = node.getName().toString();
+      final var name = node.getName().toString();
       final long namePos =
           SourceLocator.findIdentifierFrom(content, positions.getStartPosition(cu, node), name);
       if (namePos >= 0) {
@@ -140,7 +139,7 @@ public final class TokenScanner extends TreePathScanner<Void, Void> {
     final var mods =
         kind == ElementKind.ENUM_CONSTANT ? new HashSet<String>() : interestingModifiers(element);
     if (kind == ElementKind.ENUM_CONSTANT || !mods.isEmpty()) {
-      final String name = node.getName().toString();
+      final var name = node.getName().toString();
       final long namePos =
           SourceLocator.findIdentifierFrom(content, positions.getStartPosition(cu, node), name);
       if (namePos >= 0) {
@@ -215,7 +214,7 @@ public final class TokenScanner extends TreePathScanner<Void, Void> {
     if (absoluteOffset < 0 || length <= 0) {
       return;
     }
-    final Position lspPos = SourceLocator.offsetToPosition(cu, absoluteOffset);
+    final var lspPos = SourceLocator.offsetToPosition(cu, absoluteOffset);
     tokens.add(new SemanticToken(lspPos.getLine(), lspPos.getCharacter(), length, type, modifiers));
   }
 }

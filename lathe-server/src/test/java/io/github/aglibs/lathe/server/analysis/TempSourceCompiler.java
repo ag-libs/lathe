@@ -72,7 +72,7 @@ public final class TempSourceCompiler implements JavaSourceCompiler {
 
       final CompilationUnitTree cu = JavaSourceCompiler.safeCompile(task);
 
-      final Trees trees = Trees.instance(task);
+      final var trees = Trees.instance(task);
       final AttributedFileAnalysis fileAnalysis;
       if (cu != null) {
         final List<SemanticToken> tokens = TokenScanner.scan(trees, cu);

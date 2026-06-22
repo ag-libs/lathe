@@ -48,7 +48,7 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
   }
 
   static Map<String, String> paramDocs(final DocCommentTree tree) {
-    final Map<String, String> result = new LinkedHashMap<>();
+    final var result = new LinkedHashMap<String, String>();
     if (tree == null) {
       return result;
     }
@@ -58,7 +58,7 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
       }
       final var printer = new JavadocMarkdownPrinter();
       printer.scan(p.getDescription(), null);
-      final String desc = printer.sb.toString().strip();
+      final var desc = printer.sb.toString().strip();
       if (!desc.isBlank()) {
         result.put(p.getName().toString(), desc);
       }

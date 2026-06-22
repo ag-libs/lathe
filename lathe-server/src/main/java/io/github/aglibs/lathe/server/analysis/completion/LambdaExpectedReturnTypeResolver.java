@@ -129,7 +129,7 @@ final class LambdaExpectedReturnTypeResolver {
       return true;
     }
 
-    final TypeElement superElement = snapshot.elements().getTypeElement(superClassName);
+    final var superElement = snapshot.elements().getTypeElement(superClassName);
     if (superElement == null) {
       return false;
     }

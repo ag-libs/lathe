@@ -78,7 +78,8 @@ public final class WorkspaceManifest {
         return empty();
       }
 
-      final var entries = data.dependencySources().stream().filter(e -> e.jar() != null).toList();
+      final List<DependencyData> entries =
+          data.dependencySources().stream().filter(e -> e.jar() != null).toList();
       final var jarToGav =
           entries.stream()
               .collect(Collectors.toUnmodifiableMap(e -> Path.of(e.jar()), DependencyData::gav));
@@ -107,7 +108,8 @@ public final class WorkspaceManifest {
                       ? Stream.of(jdk.typeIndex())
                       : Stream.empty())
               .toList();
-      final var resolvedPomPaths = data.pomPaths().stream().map(workspaceRoot::resolve).toList();
+      final List<Path> resolvedPomPaths =
+          data.pomPaths().stream().map(workspaceRoot::resolve).toList();
       return new WorkspaceManifest(
           jarToGav,
           jarToSourceDir,
@@ -130,7 +132,7 @@ public final class WorkspaceManifest {
   }
 
   private static TypeEntry classify(final Element element) {
-    final var topLevel = DefinitionLocator.topLevelClass(element);
+    final TypeElement topLevel = DefinitionLocator.topLevelClass(element);
     if (topLevel == null) {
       return null;
     }
@@ -187,7 +189,7 @@ public final class WorkspaceManifest {
     return externalSourceRootForFile(file)
         .map(
             root -> {
-              final var selfJar = sourceDirToJar.get(root);
+              final Path selfJar = sourceDirToJar.get(root);
               final var transitive = sourceDirToClasspath.getOrDefault(root, List.of());
               if (selfJar == null) {
                 return transitive;

@@ -88,7 +88,7 @@ class ExternalCompilerTest {
     writeWorkspaceManifest(
         usesJar, usesSourceRoot, List.of(helperJar), helperJar, helperSourceRoot);
     final WorkspaceManifest manifest = WorkspaceManifest.load(tmp);
-    final String usesUri = usesSource.toUri().toString();
+    final var usesUri = usesSource.toUri().toString();
     final Position helperPos =
         SourceLocator.offsetToPosition(usesContent, usesContent.indexOf("Helper"));
 
@@ -127,7 +127,7 @@ class ExternalCompilerTest {
     final Path usesJar = tmp.resolve("repo/uses.jar");
     TestCompiler.compileToJar(usesJar, tmp.resolve("classes/uses"), List.of(helperJar), usesSource);
 
-    final String uri = usesSource.toUri().toString();
+    final var uri = usesSource.toUri().toString();
 
     writeWorkspaceManifest(
         usesJar, usesSourceRoot, List.of(helperJar), helperJar, helperSourceRoot);

@@ -30,7 +30,7 @@ final class ReferenceCandidateIndex {
   private final Map<String, Set<String>> uriToTokens = new HashMap<>();
 
   static ReferenceCandidateIndex build(final List<ModuleSourceConfig> allConfigs) {
-    final Stopwatch t = Stopwatch.start();
+    final var t = Stopwatch.start();
     final var index = new ReferenceCandidateIndex();
     for (final var root :
         allConfigs.stream()
@@ -63,7 +63,7 @@ final class ReferenceCandidateIndex {
     }
 
     for (final var token : tokens) {
-      final var uris = tokenToUris.get(token);
+      final Set<String> uris = tokenToUris.get(token);
       if (uris != null) {
         uris.remove(uri);
         if (uris.isEmpty()) {

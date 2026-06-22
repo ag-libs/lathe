@@ -35,7 +35,7 @@ public final class JdkTypeIndexSync {
     }
 
     final Path index = indexPath(source);
-    final Stopwatch t = Stopwatch.start();
+    final var t = Stopwatch.start();
     try {
       final Optional<TypeIndexFile> current = currentIndex(index, source);
       if (current.isPresent()) {

@@ -41,12 +41,12 @@ final class ServerInstaller {
   }
 
   void install() throws SyncException {
-    final var version = PluginProps.version();
-    final var versionDir = LatheLayout.serverVersionDir(version);
+    final String version = PluginProps.version();
+    final Path versionDir = LatheLayout.serverVersionDir(version);
     final var launcherScript = versionDir.resolve(LatheLayout.LAUNCHER_SCRIPT);
 
     final var jars = resolveServerJars();
-    final var modulePath = jars.stream().map(Path::toString).collect(Collectors.joining(":"));
+    final String modulePath = jars.stream().map(Path::toString).collect(Collectors.joining(":"));
     final var script = renderLauncherScript(modulePath);
 
     try {
@@ -93,7 +93,7 @@ final class ServerInstaller {
   }
 
   private void updateCurrentLink(final Path versionDir) throws SyncException {
-    final var currentLink = LatheLayout.currentLink();
+    final Path currentLink = LatheLayout.currentLink();
     try {
       Files.createDirectories(currentLink.getParent());
       Files.deleteIfExists(currentLink);

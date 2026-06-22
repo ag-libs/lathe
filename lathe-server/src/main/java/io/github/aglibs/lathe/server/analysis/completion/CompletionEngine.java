@@ -8,7 +8,6 @@ import com.sun.source.tree.ParenthesizedTree;
 import com.sun.source.tree.Scope;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
-import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
@@ -244,7 +243,8 @@ public final class CompletionEngine {
       return withTypes;
     }
 
-    final var ranked = CompletionCandidateRanker.rank(staticFitCandidates, semanticContext);
+    final List<RankedCompletionCandidate> ranked =
+        CompletionCandidateRanker.rank(staticFitCandidates, semanticContext);
     final List<CompletionItem> staticFitItems =
         ranked.stream().map(CompletionItemPresenter::present).toList();
     CompletionItemPresenter.applyImportEdits(
@@ -1561,7 +1561,7 @@ public final class CompletionEngine {
       return;
     }
 
-    final SourcePositions positions = analysis.trees().getSourcePositions();
+    final var positions = analysis.trees().getSourcePositions();
     final long exprEnd = positions.getEndPosition(analysis.tree(), exprNode);
     if (exprEnd < 0) {
       return;
@@ -1626,9 +1626,9 @@ public final class CompletionEngine {
     } else {
       final long insertLine = cu.getLineMap().getLineNumber(exprEnd) - 1;
       final long insertCol = cu.getLineMap().getColumnNumber(exprEnd) - 1;
-      final Position pos = new Position((int) insertLine, (int) insertCol);
-      final Range range = new Range(pos, pos);
-      final TextEdit semicolonEdit = new TextEdit(range, ";");
+      final var pos = new Position((int) insertLine, (int) insertCol);
+      final var range = new Range(pos, pos);
+      final var semicolonEdit = new TextEdit(range, ";");
       final List<TextEdit> edits =
           item.getAdditionalTextEdits() == null
               ? List.of(semicolonEdit)

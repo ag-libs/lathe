@@ -26,7 +26,7 @@ public final class JdkSourceResolver {
   public static JdkSource resolve(final Map<String, String> env) {
     final var vendor = System.getProperty("java.vendor");
     final var version = System.getProperty("java.version");
-    final var javaHome = env.get("JAVA_HOME");
+    final String javaHome = env.get("JAVA_HOME");
     if (javaHome == null) {
       return JdkSource.missing(vendor, version, cacheKey(null, vendor, version), null);
     }
@@ -46,13 +46,13 @@ public final class JdkSourceResolver {
   static String cacheKey(final Path home, final String vendor, final String version) {
     final var release = parseReleaseFile(home);
 
-    final var implementorVersion = release.get(IMPLEMENTOR_VERSION);
+    final String implementorVersion = release.get(IMPLEMENTOR_VERSION);
     if (implementorVersion != null && !implementorVersion.isBlank()) {
       return sanitize(implementorVersion);
     }
 
-    final var implementor = release.get(IMPLEMENTOR);
-    final var javaVersion = release.get(JAVA_VERSION);
+    final String implementor = release.get(IMPLEMENTOR);
+    final String javaVersion = release.get(JAVA_VERSION);
     if (implementor != null && javaVersion != null) {
       return sanitize("%s-%s".formatted(stripLegalSuffix(implementor), javaVersion));
     }

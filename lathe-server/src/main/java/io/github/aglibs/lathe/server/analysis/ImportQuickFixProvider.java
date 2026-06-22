@@ -8,7 +8,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.logging.Logger;
-import javax.lang.model.element.TypeElement;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionKind;
 import org.eclipse.lsp4j.Command;
@@ -28,7 +27,7 @@ final class ImportQuickFixProvider implements CodeActionProvider {
       final AttributedFileAnalysis analysis,
       final WorkspaceTypeIndex typeIndex) {
     final var importAnalyzer = new ImportAnalyzer(analysis);
-    final Range insertionRange = importAnalyzer.insertionRange();
+    final var insertionRange = importAnalyzer.insertionRange();
     if (insertionRange == null) {
       return List.of();
     }
@@ -66,7 +65,7 @@ final class ImportQuickFixProvider implements CodeActionProvider {
       return Optional.empty();
     }
 
-    final TypeElement typeEl = analysis.elements().getTypeElement(fqName);
+    final var typeEl = analysis.elements().getTypeElement(fqName);
     if (typeEl == null) {
       return Optional.empty();
     }

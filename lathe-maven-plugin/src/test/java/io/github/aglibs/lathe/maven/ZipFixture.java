@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -30,7 +31,7 @@ public final class ZipFixture {
       final Path path, final Path root, final Map<String, byte[]> extraEntries) throws IOException {
     try (final ZipOutputStream out = new ZipOutputStream(Files.newOutputStream(path))) {
       try (final var walk = Files.walk(root)) {
-        final var files = walk.filter(Files::isRegularFile).toList();
+        final List<Path> files = walk.filter(Files::isRegularFile).toList();
         for (final Path file : files) {
           writeEntry(out, root.relativize(file).toString(), Files.readAllBytes(file));
         }

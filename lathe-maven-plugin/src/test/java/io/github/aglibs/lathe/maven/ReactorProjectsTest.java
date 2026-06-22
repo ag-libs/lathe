@@ -84,7 +84,7 @@ class ReactorProjectsTest {
 
   private static MavenProject project(
       final String groupId, final String artifactId, final String version, final Path basedir) {
-    final MavenProject project = new TestProject();
+    final var project = new TestProject();
     project.setGroupId(groupId);
     project.setArtifactId(artifactId);
     project.setVersion(version);

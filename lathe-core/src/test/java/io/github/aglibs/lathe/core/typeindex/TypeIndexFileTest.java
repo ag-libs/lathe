@@ -35,7 +35,7 @@ class TypeIndexFileTest {
   void constructor_dependencyOriginWithJdkBranch_throws() {
     final DependencyTypeIndexOrigin dependency =
         new DependencyTypeIndexOrigin("com.example:lib:1", "/repo/lib.jar", 1, 2);
-    final JdkTypeIndexOrigin jdk = new JdkTypeIndexOrigin("/jdk", "Vendor", "21");
+    final var jdk = new JdkTypeIndexOrigin("/jdk", "Vendor", "21");
 
     assertThatThrownBy(
             () -> new TypeIndexOrigin(TypeIndexOriginKind.DEPENDENCY, dependency, jdk, null))

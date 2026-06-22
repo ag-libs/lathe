@@ -1,7 +1,6 @@
 package io.github.aglibs.lathe.server.analysis;
 
 import com.sun.source.tree.CompilationUnitTree;
-import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import java.io.IOException;
 import java.util.List;
@@ -12,7 +11,6 @@ import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionKind;
 import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.Diagnostic;
-import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.WorkspaceEdit;
@@ -43,7 +41,7 @@ final class TryCatchWrapProvider implements CodeActionProvider {
     }
 
     final CompilationUnitTree cu = analysis.tree();
-    final SourcePositions positions = analysis.trees().getSourcePositions();
+    final var positions = analysis.trees().getSourcePositions();
     final long statementStart = positions.getStartPosition(cu, statementPath.getLeaf());
     final long statementEnd = positions.getEndPosition(cu, statementPath.getLeaf());
     if (statementStart < 0 || statementEnd < 0) {
@@ -68,8 +66,8 @@ final class TryCatchWrapProvider implements CodeActionProvider {
         %s}"""
             .formatted(indent + "  ", original, indent, request.payload().name(), indent);
 
-    final Position start = SourceLocator.offsetToPosition(cu, statementStart);
-    final Position end = SourceLocator.offsetToPosition(cu, statementEnd);
+    final var start = SourceLocator.offsetToPosition(cu, statementStart);
+    final var end = SourceLocator.offsetToPosition(cu, statementEnd);
     final var edit = new WorkspaceEdit();
     edit.setChanges(Map.of(request.uri(), List.of(new TextEdit(new Range(start, end), wrapped))));
 

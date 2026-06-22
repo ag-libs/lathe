@@ -6,7 +6,6 @@ import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.ExpressionStatementTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.MethodTree;
-import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import java.util.ArrayList;
 import java.util.List;
@@ -17,7 +16,6 @@ import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionKind;
 import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.Diagnostic;
-import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.WorkspaceEdit;
@@ -37,7 +35,7 @@ final class DeclareVariableProvider implements CodeActionProvider {
     }
 
     final CompilationUnitTree cu = analysis.tree();
-    final SourcePositions positions = analysis.trees().getSourcePositions();
+    final var positions = analysis.trees().getSourcePositions();
     final long offset =
         SourceLocator.toOffset(
             cu,
@@ -62,7 +60,7 @@ final class DeclareVariableProvider implements CodeActionProvider {
       return List.of();
     }
 
-    final String varName = lhs.getName().toString();
+    final var varName = lhs.getName().toString();
     if (!varName.equals(request.payload().name())) {
       return List.of();
     }
@@ -79,8 +77,8 @@ final class DeclareVariableProvider implements CodeActionProvider {
       return List.of();
     }
 
-    final Position startPos = SourceLocator.offsetToPosition(cu, lhsStart);
-    final Position endPos = SourceLocator.offsetToPosition(cu, lhsEnd);
+    final var startPos = SourceLocator.offsetToPosition(cu, lhsStart);
+    final var endPos = SourceLocator.offsetToPosition(cu, lhsEnd);
     final var edits = new ArrayList<TextEdit>();
     edits.add(new TextEdit(new Range(startPos, endPos), "%s %s".formatted(typePart, varName)));
 

@@ -62,7 +62,7 @@ final class CompletionItemPresenter {
     final var alreadyImported = importAnalyzer.importedQualifiedNames();
     final var alreadyStaticImported = importAnalyzer.importedStaticNames();
     for (int i = 0; i < candidates.size(); i++) {
-      final var edit = candidates.get(i).importEdit();
+      final ImportEdit edit = candidates.get(i).importEdit();
       if (edit == null) {
         continue;
       }

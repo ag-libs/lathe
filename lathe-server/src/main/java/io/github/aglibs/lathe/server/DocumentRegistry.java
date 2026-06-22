@@ -33,7 +33,7 @@ final class DocumentRegistry {
   }
 
   boolean isStale(final OpenDocument snapshot, final long generation) {
-    final var current = documents.get(snapshot.uri());
+    final OpenDocument current = documents.get(snapshot.uri());
     return current == null || current.generation() != generation;
   }
 }

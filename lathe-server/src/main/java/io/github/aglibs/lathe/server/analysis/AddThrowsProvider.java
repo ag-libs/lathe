@@ -36,7 +36,7 @@ final class AddThrowsProvider implements CodeActionProvider {
 
     final Diagnostic diag = request.diag();
     final CompilationUnitTree cu = analysis.tree();
-    final SourcePositions positions = analysis.trees().getSourcePositions();
+    final var positions = analysis.trees().getSourcePositions();
 
     final TreePath path =
         CodeActionSupport.pathAt(
@@ -105,7 +105,7 @@ final class AddThrowsProvider implements CodeActionProvider {
         return null;
       }
 
-      final Position pos = SourceLocator.offsetToPosition(cu, lastEnd);
+      final var pos = SourceLocator.offsetToPosition(cu, lastEnd);
       return new TextEdit(new Range(pos, pos), ", %s".formatted(simpleName));
     }
 

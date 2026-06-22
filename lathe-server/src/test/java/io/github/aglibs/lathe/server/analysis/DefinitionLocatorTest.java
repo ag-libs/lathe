@@ -36,7 +36,7 @@ class DefinitionLocatorTest extends SampleFixture {
         }
 
         public Status getStatus() {
-          final Map<String, Status> statuses = new HashMap<>();
+          final var statuses = new HashMap<String, Status>();
           statuses.put("string", Status.ACTIVE);
           return statuses.get("string");
         }
