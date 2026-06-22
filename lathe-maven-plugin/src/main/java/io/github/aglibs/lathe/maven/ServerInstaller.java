@@ -106,12 +106,11 @@ final class ServerInstaller {
   }
 
   static String renderLauncherScript(final String modulePath) {
-    // java.net.http: not in the default module graph; Error Prone's WellKnownMutability references
-    // HttpClient and throws ClassNotFoundException without this.
-    // jdk.unsupported: Gson's module-info declares `requires static jdk.unsupported` (optional).
-    // Without this, jdk.unsupported is absent from the module graph and sun.misc.Unsafe is
-    // invisible to Gson, causing UnsafeAllocator to fall back to its "give up" stub. LSP4J types
-    // like TypeHierarchyItem have no no-args constructor and cannot be deserialized otherwise.
+    // java.net.http: not in the default module graph and not declared in module-info.java because
+    // lathe-server does not use it directly. Error Prone loads as a classpath javac plugin
+    // (-Xplugin:ErrorProne) and runs inside the lathe-server JVM. Its WellKnownMutability class
+    // references HttpClient at class-load time and throws ClassNotFoundException if java.net.http
+    // is absent from the module graph. jdk.unsupported is declared in module-info.java.
     //
     // Classpath javac plugins (e.g. Error Prone, loaded via -Xplugin: on the processor path) run
     // in the unnamed module. They access javac internals directly and need ALL-UNNAMED exports.
@@ -121,7 +120,7 @@ final class ServerInstaller {
     return """
         #!/bin/sh
         exec java \\
-          --add-modules java.net.http,jdk.unsupported \\
+          --add-modules java.net.http \\
         %s%s%s%s  --module-path %s \\
           -m io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer "$@"
         """

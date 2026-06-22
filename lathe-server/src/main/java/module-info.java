@@ -5,6 +5,11 @@ module io.github.aglibs.lathe.server {
   requires org.eclipse.lsp4j;
   requires org.eclipse.lsp4j.jsonrpc;
   requires com.google.gson;
+  // Gson declares `requires static jdk.unsupported` (optional). On the module path the optional
+  // dependency is not pulled in automatically, leaving sun.misc.Unsafe invisible to Gson's
+  // UnsafeAllocator. LSP4J types such as TypeHierarchyItem and CallHierarchyItem have no no-arg
+  // constructor, so Gson must use Unsafe to instantiate them; without it deserialization throws.
+  requires jdk.unsupported;
   requires com.google.googlejavaformat;
   requires io.github.aglibs.lathe.core;
   requires io.github.aglibs.validcheck;
