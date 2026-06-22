@@ -31,12 +31,13 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
   private final Path tempDir;
   private final List<String> compilerArgs;
 
-  ModuleSourceCompiler(final ModuleSourceConfig config) {
+  ModuleSourceCompiler(
+      final ModuleSourceConfig config, final CompilationAdmission compilationAdmission) {
     this.config = config;
     try {
       this.tempDir = Files.createTempDirectory("lathe-");
       this.fm = JavaSourceCompiler.createFileManager();
-      this.runner = new JavacRunner(fm);
+      this.runner = new JavacRunner(fm, compilationAdmission);
       initLocations();
       this.compilerArgs = processPatchModules(config.compilerArgs(), fm, tempDir);
     } catch (final IOException e) {

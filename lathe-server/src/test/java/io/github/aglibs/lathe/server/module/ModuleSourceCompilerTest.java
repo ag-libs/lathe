@@ -59,7 +59,7 @@ class ModuleSourceCompilerTest {
     final var config =
         TestCompiler.moduleConfig(td.resolve(".lathe"), td.resolve("target/classes"), sourceRoot);
 
-    try (var compiler = new ModuleSourceCompiler(config)) {
+    try (var compiler = new ModuleSourceCompiler(config, new CompilationAdmission(1))) {
       final var result =
           compiler.compile(
               sourceFile.toUri().toString(),
@@ -93,7 +93,8 @@ class ModuleSourceCompilerTest {
     final int cursor = markedContent.indexOf('§');
     final Path sourceFile = sourceRoot.resolve("example/Test.java");
 
-    try (final var ctx = new SourceAnalysisSession(new ModuleSourceCompiler(config))) {
+    try (final var ctx =
+        new SourceAnalysisSession(new ModuleSourceCompiler(config, new CompilationAdmission(1)))) {
       ctx.compile(sourceFile.toUri().toString(), content, 1, CompileMode.OPEN);
 
       final var outcome =

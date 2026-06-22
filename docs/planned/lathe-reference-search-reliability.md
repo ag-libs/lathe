@@ -124,11 +124,11 @@ Both methods reuse the same existing reference-location logic; no lifetime strat
 The permit count is captured once at startup:
 
 ```text
-max(1, min(4, Runtime.getRuntime().availableProcessors()))
+max(1, min(16, Runtime.getRuntime().availableProcessors()))
 ```
 
-The cap of four is deliberately conservative.
-Processor count is an execution signal, not a memory bound, and preventing another heap exhaustion is more important than maximizing broad-search throughput.
+The cap of sixteen allows full utilization of a 16-core workstation while preventing reactor size from creating hundreds of concurrent javac tasks.
+Processor count is an execution signal rather than a memory bound, so Helidon qualification must validate the resulting peak heap after transient analysis removes long-lived candidate state.
 The constructor accepts an explicit permit count for deterministic tests; the production default is not user configurable in M1.
 
 `JavacRunner` acquires admission immediately around javac task creation, parsing, attribution, and result extraction.
@@ -320,7 +320,7 @@ They must not duplicate detailed compiler or cache assertions already owned by l
 
 ### Compilation admission tests
 
-- Production permit calculation returns one for one processor, the processor count below four, and four above the cap.
+- Production permit calculation returns one for one processor, the processor count below sixteen, and sixteen above the cap.
 - Concurrent work across separate module and external workers never exceeds the configured permit count.
 - Two simultaneous requests share the same admission instance.
 - Admission is released after success, ordinary failure, cancellation after acquisition, and fatal propagation.
@@ -403,14 +403,14 @@ Run a broad `String` reference search against Helidon through the explorer and r
 - interactive-cache size before and after the search.
 
 This is a manual milestone qualification step, not a Maven integration test.
-The run passes only if it completes or can be cancelled without heap exhaustion, active javac never exceeds four, closed candidates do not remain cached, and the server answers a subsequent interactive request.
+The run passes only if it completes or can be cancelled without heap exhaustion, active javac never exceeds sixteen, closed candidates do not remain cached, and the server answers a subsequent interactive request.
 Repeat the search once to verify stable post-search memory rather than relying on one successful run.
 
 ## Acceptance Criteria
 
 - A Helidon-wide `String` search completes or can be cancelled without exhausting the JVM heap.
 - No closed-file candidate analysis remains in an interactive cache after the request.
-- Lathe executes at most four javac tasks concurrently across the process.
+- Lathe executes at most sixteen javac tasks concurrently across the process.
 - Queued cancelled candidates never enter javac.
 - Cancellation during javac never publishes or caches that result.
 - Supported clients see monotonic progress and one terminal outcome.

@@ -19,14 +19,17 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
 
   private static final Logger LOG = Logger.getLogger(WorkspaceModuleRegistry.class.getName());
 
+  private final CompilationAdmission compilationAdmission;
   private final List<ModuleSourceConfig> moduleSources;
   private final Map<String, CompilationWorker> workers = new HashMap<>();
   private final CompilationWorker externalWorker;
 
   private WorkspaceModuleRegistry(
       final List<ModuleSourceConfig> moduleSources, final WorkspaceManifest manifest) {
+    this.compilationAdmission =
+        new CompilationAdmission(Runtime.getRuntime().availableProcessors());
     this.moduleSources = moduleSources;
-    this.externalWorker = CompilationWorker.external(manifest);
+    this.externalWorker = CompilationWorker.external(manifest, compilationAdmission);
   }
 
   public static WorkspaceModuleRegistry empty() {
@@ -87,7 +90,8 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
 
   public CompilationWorker workerFor(final ModuleSourceConfig config) {
     return workers.computeIfAbsent(
-        config.latheClassesDir().toString(), key -> CompilationWorker.module(config));
+        config.latheClassesDir().toString(),
+        key -> CompilationWorker.module(config, compilationAdmission));
   }
 
   public CompilationWorker externalWorker() {

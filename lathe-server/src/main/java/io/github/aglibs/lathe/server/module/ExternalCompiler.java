@@ -32,11 +32,12 @@ public final class ExternalCompiler implements JavaSourceCompiler {
   private final Path td;
   private final Set<String> patchedModules = new HashSet<>();
 
-  public ExternalCompiler(final WorkspaceManifest manifest) {
+  ExternalCompiler(
+      final WorkspaceManifest manifest, final CompilationAdmission compilationAdmission) {
     this.manifest = manifest;
     try {
       this.fm = JavaSourceCompiler.createFileManager();
-      this.runner = new JavacRunner(fm);
+      this.runner = new JavacRunner(fm, compilationAdmission);
       this.td = Files.createTempDirectory("lathe-ext-");
     } catch (final IOException e) {
       throw new UncheckedIOException(e);

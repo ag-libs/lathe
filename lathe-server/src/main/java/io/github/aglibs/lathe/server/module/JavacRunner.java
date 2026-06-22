@@ -17,17 +17,21 @@ import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 
 final class JavacRunner {
+  private final CompilationAdmission admission;
   private final StandardJavaFileManager fm;
 
-  JavacRunner(final StandardJavaFileManager fm) {
+  JavacRunner(final StandardJavaFileManager fm, final CompilationAdmission admission) {
     this.fm = fm;
+    this.admission = admission;
   }
 
   CompilerResult run(
       final JavaFileObject sourceFile, final List<String> options, final CompileMode mode) {
-    return mode == CompileMode.FULL
-        ? compileFull(sourceFile, options)
-        : analyze(sourceFile, options);
+    return admission.run(
+        () ->
+            mode == CompileMode.FULL
+                ? compileFull(sourceFile, options)
+                : analyze(sourceFile, options));
   }
 
   private CompilerResult compileFull(final JavaFileObject sourceFile, final List<String> options) {

@@ -45,15 +45,18 @@ public final class CompilationWorker {
   private boolean closed;
   private CompletableFuture<Void> closeFuture;
 
-  static CompilationWorker module(final ModuleSourceConfig config) {
+  static CompilationWorker module(
+      final ModuleSourceConfig config, final CompilationAdmission compilationAdmission) {
     return new CompilationWorker(
         "lathe-module-%s-%s".formatted(config.moduleDir().getFileName(), config.sourceTree()),
-        () -> new SourceAnalysisSession(new ModuleSourceCompiler(config)));
+        () -> new SourceAnalysisSession(new ModuleSourceCompiler(config, compilationAdmission)));
   }
 
-  static CompilationWorker external(final WorkspaceManifest manifest) {
+  static CompilationWorker external(
+      final WorkspaceManifest manifest, final CompilationAdmission compilationAdmission) {
     return new CompilationWorker(
-        "lathe-external", () -> new SourceAnalysisSession(new ExternalCompiler(manifest)));
+        "lathe-external",
+        () -> new SourceAnalysisSession(new ExternalCompiler(manifest, compilationAdmission)));
   }
 
   CompilationWorker(final String name, final Supplier<SourceAnalysisSession> contextFactory) {
