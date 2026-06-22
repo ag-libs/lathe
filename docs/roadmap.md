@@ -48,6 +48,15 @@ It includes the current implementation and every active, non-deferred correctnes
 
 See [lathe-goto-implementation.md](planned/lathe-goto-implementation.md).
 
+### Call hierarchy
+
+- Implement `textDocument/prepareCallHierarchy`, `callHierarchy/incomingCalls`, and
+  `callHierarchy/outgoingCalls`.
+- Incoming calls reuse `ReferenceTarget` identity and `ReferenceCandidateIndex` candidate discovery.
+- Outgoing calls scan the target method body in a single file.
+
+See [lathe-call-hierarchy.md](planned/lathe-call-hierarchy.md).
+
 ### Code-action and index freshness gaps
 
 - Implement `MissingMethodImplProvider` for unimplemented abstract methods.

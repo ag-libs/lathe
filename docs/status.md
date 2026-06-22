@@ -39,7 +39,7 @@ Maven Central publication is planned for M3.
 | Find References | Implemented with gaps | Exact same-file, module, and reactor search. External-source scope and fail-fast gaps remain. |
 | Implementation | Implemented | Type implementations use indexed transitive subtypes; method implementations are reactor-only and javac-validated. |
 | Type hierarchy | Implemented | Prepare, direct supertypes, and direct subtypes cover source-backed reactor, dependency, and JDK types. |
-| Call hierarchy | M2 planned | Incoming and outgoing calls are not implemented. |
+| Call hierarchy | M1 planned | Incoming and outgoing calls are not implemented. Design in lathe-call-hierarchy.md. |
 | Workspace symbols | Implemented | Type-name lookup uses `WorkspaceTypeIndex`. |
 | Document symbols | Implemented | File outline support is available. |
 | Folding ranges | Implemented | Java structural folding is available. |

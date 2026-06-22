@@ -13,6 +13,9 @@ Read their current-status sections and compare them with the roadmap before star
   Dropwizard: signature-help inner-method bug, absent try/catch wrap action, hover on Javadoc and import positions,
   workspace symbol prefix-only matching and reactor-type ranking, WARNING flood from duplicate index entries, and
   Object sync methods in member-access completion.
+- [Call Hierarchy](planned/lathe-call-hierarchy.md) — `prepareCallHierarchy`, `incomingCalls`, and `outgoingCalls`
+  built on `ReferenceTarget` identity, `ReferenceCandidateIndex` candidate discovery, and two new
+  `TreePathScanner` locators.
 - [Reference Search Reliability](planned/lathe-reference-search-reliability.md) — bounded transient analysis,
   work-done progress, and optional cancellation after the Helidon `String` search crash.
 - [Goto Implementation and Type Hierarchy](planned/lathe-goto-implementation.md) — inheritance-index-backed type
@@ -31,7 +34,6 @@ Read their current-status sections and compare them with the roadmap before star
 
 - [Find References Gaps](planned/lathe-find-references-gaps.md) — external-source scope, failure propagation, and
   integration coverage.
-- [Call Hierarchy](planned/lathe-call-hierarchy.md) — incoming and outgoing exact call navigation.
 - [Completion Expectations](planned/completion/expectations.md) — expected completion behavior.
 - [Completion Gap Log](planned/completion/gap-log.md) — active completion gaps, including method references and generic
   bounds.

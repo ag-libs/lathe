@@ -1,120 +1,373 @@
 # Lathe — Call Hierarchy Design
 
-Working design draft.
-This document describes the implementation of `textDocument/prepareCallHierarchy`, `callHierarchy/incomingCalls`, and `callHierarchy/outgoingCalls`.
+This document is the implementation design for `textDocument/prepareCallHierarchy`,
+`callHierarchy/incomingCalls`, and `callHierarchy/outgoingCalls`.
+Targeted at M1.
 
 ---
 
 ## 1. Goal
 
-Call hierarchy answers the editor questions:
-> "Who calls this method?" (Incoming Calls)
-> "What methods does this method call?" (Outgoing Calls)
+Call hierarchy answers two editor questions:
 
-The feature relies on Lathe's existing `ReferenceTarget` symbol identity and the `ReferenceCandidateIndex` architecture used by "Find References".
-For M2, Call Hierarchy focuses on exact method matches (no hierarchy-aware semantic expansion to overrides/implementations) and leverages `javac` attribution as the single source of truth.
+- **Incoming calls** (`gri` / `vim.lsp.buf.incoming_calls()`): who calls this method?
+- **Outgoing calls** (`gro` / `vim.lsp.buf.outgoing_calls()`): what does this method call?
 
----
-
-## 2. LSP Overview
-
-The Call Hierarchy feature involves three distinct requests:
-
-1.  **`textDocument/prepareCallHierarchy`**: Maps a cursor position to a target method/constructor and returns a `CallHierarchyItem[]` (usually length 1).
-2.  **`callHierarchy/incomingCalls`**: Takes a `CallHierarchyItem` and returns a list of `CallHierarchyIncomingCall` objects (which pairs a *caller* `CallHierarchyItem` with the `Range`s where the calls occurred).
-3.  **`callHierarchy/outgoingCalls`**: Takes a `CallHierarchyItem` and returns a list of `CallHierarchyOutgoingCall` objects (which pairs a *callee* `CallHierarchyItem` with the `Range`s where the calls occurred).
+The feature reuses the same symbol identity, candidate index, and scope planning already in
+place for Find References.
+No new architectural components are required.
 
 ---
 
-## 3. Symbol Identity & Prepare Call Hierarchy
+## 2. LSP Protocol
 
-When a user triggers call hierarchy, the server must resolve the cursor to a method or constructor.
+Three requests, always in this order:
 
-```text
-LSP prepareCallHierarchy
-  -> WorkspaceSession routes to the owning CompilationWorker
-  -> SourceAnalysisSession resolves the cached attributed file
-  -> SourceLocator.elementAt(...) returns the javac Element at the cursor
-  -> If the element is an ExecutableElement (method/constructor), build a CallHierarchyItem
-```
+1. **`textDocument/prepareCallHierarchy`** — map a cursor position to a
+   `CallHierarchyItem[]` (typically length 1, empty if the cursor is not on a
+   method or constructor).
+   The item carries an opaque `data` payload used by the next two requests.
+2. **`callHierarchy/incomingCalls`** — take a `CallHierarchyItem` and return
+   `CallHierarchyIncomingCall[]`.
+   Each entry pairs a *caller* `CallHierarchyItem` with the `Range[]` of call sites within
+   that caller.
+3. **`callHierarchy/outgoingCalls`** — take a `CallHierarchyItem` and return
+   `CallHierarchyOutgoingCall[]`.
+   Each entry pairs a *callee* `CallHierarchyItem` with the `Range[]` of call sites within
+   the target method's body.
 
-### Passing State via `CallHierarchyItem.data`
-The LSP `CallHierarchyItem` specification allows an arbitrary `data` payload.
-We should serialize a `CallHierarchyItemData` object here that captures enough information to recreate the `ReferenceTarget` later without re-attributing the defining file.
+---
+
+## 3. Item Data
+
+`CallHierarchyItem.data` carries the information needed to reconstruct the symbol identity and
+route subsequent requests without re-attributing the source file.
 
 ```java
 record CallHierarchyItemData(
-    String uri, // The defining file
-    String ownerBinaryName,
-    String methodName,
-    String erasedDescriptor,
-    ElementKind kind
+    String ownerBinaryName,   // binary name of the declaring class
+    String methodName,        // simple method/constructor name
+    String erasedDescriptor,  // erased parameter descriptor, e.g. "(java.lang.String,int)"
+    ElementKind kind,         // METHOD or CONSTRUCTOR
+    String routingUri         // file:// URI of the declaring source file
 ) {}
 ```
-When `prepareCallHierarchy` succeeds, we return the `CallHierarchyItem` populated with this payload, along with the method's `name`, `detail` (e.g., the owning class name), `uri`, full `range`, and `selectionRange` (the method identifier).
+
+`CallHierarchyItemDataCodec` follows `TypeHierarchyItemDataCodec` exactly:
+`encode` writes a `JsonObject`; `decode` accepts either a `CallHierarchyItemData` instance
+(same JVM round-trip) or a `JsonObject` (cross-request deserialization).
+
+From `CallHierarchyItemData`, a `ReferenceTarget` is reconstructed as:
+
+```java
+new ReferenceTarget(kind, ownerBinaryName, methodName, erasedDescriptor, scope)
+```
+
+`scope` is re-derived from the element when the declaring file is re-attributed during incoming
+calls, or can be stored in the data for cheaper reconstruction.
 
 ---
 
-## 4. Incoming Calls (`callHierarchy/incomingCalls`)
+## 4. Prepare Call Hierarchy
 
-Finding incoming calls is effectively a specialized **Find References** request.
+```
+prepareCallHierarchy(uri, pos)
+  → WorkspaceSession.prepareCallHierarchyFuture(uri, pos)
+    → routeCompiler(uri)  (same as references and definition)
+    → CompilationWorker.submit(session::prepareCallHierarchy)
+      → SourceAnalysisSession.prepareCallHierarchy(uri, pos)
+        → SourceLocator.elementAt(trees, path)
+        → if kind == METHOD or CONSTRUCTOR: build CallHierarchyItem
+        → else: return List.of()
+```
 
-1.  **Reconstruct Target**: Deserialize `CallHierarchyItem.data` back into a `ReferenceTarget`.
-2.  **Candidate Discovery**: Reuse `ReferenceCandidatePlanner` and the `ReferenceCandidateIndex` to find files that contain the method's spelling.
-3.  **Attribution**: Route candidate files to their respective `CompilationWorker`s.
-4.  **Tree Scanning (`CallHierarchyIncomingLocator`)**:
-    We cannot simply reuse `ReferenceLocator` as-is, because `ReferenceLocator` only returns the exact token `Location` of the reference. For incoming calls, we must know the **enclosing ExecutableElement** (or ClassTree for field initializers/static blocks) where the reference token is located.
+`SourceAnalysisSession.prepareCallHierarchy` builds the item:
 
-We should create a new `CallHierarchyIncomingLocator` (or extend `TreePathScanner`) that:
-- Finds occurrences of `ReferenceTarget`.
-- For each occurrence, walks up the `TreePath` (`getCurrentPath().getParentPath()`) until it finds an enclosing `MethodTree` (or `ClassTree`).
-- Resolves the `Element` of that enclosing tree to create the caller `CallHierarchyItem`.
-- Groups the occurrences by the caller `CallHierarchyItem`.
+- `name`: `element.getSimpleName()`
+- `detail`: binary name of the enclosing `TypeElement`
+- `kind`: `SymbolKind.Function` for methods, `SymbolKind.Constructor` for constructors
+- `uri`: the source file URI
+- `range`: full `MethodTree` span (start of modifiers to closing `}`)
+- `selectionRange`: identifier token only
+- `data`: `CallHierarchyItemDataCodec.encode(new CallHierarchyItemData(...))`
+
+If the cursor is on a method *invocation* rather than a method *declaration*,
+`SourceLocator.elementAt` resolves the element of the target method, not the caller.
+`prepareCallHierarchy` must then find the declaring source file via
+`DefinitionLocator.findSourceFile` to produce a correct `uri` and `routingUri`.
+
+---
+
+## 5. Incoming Calls
+
+Incoming calls is Find References scoped to `INVOCATION` roles and grouped by enclosing caller.
+
+```
+incomingCalls(item)
+  → CallHierarchyItemDataCodec.decode(item.getData())
+  → reconstruct ReferenceTarget
+  → WorkspaceSession.incomingCallsFuture(item)
+    → planSearchScope(target, cursorConfig)   ← extracted helper (see §7)
+    → for each candidate config:
+        CompilationWorker.searchIncomingCalls(target, ...)
+          → SourceAnalysisSession.searchIncomingCalls(...)
+            → CallHierarchyIncomingLocator.scan(attributedAnalysis, target)
+              → returns Map<ExecutableElement, List<Range>>
+          → convert to List<CallHierarchyIncomingCall>
+    → merge and return
+```
+
+### `CallHierarchyIncomingLocator`
+
+New class, extends `TreePathScanner<Void, Void>`.
+Reuses `target.matches(element, types, elements)` from `ReferenceTarget` for element comparison.
+
+Handles three node kinds:
+
+- `visitMethodInvocation` — resolve the invoked element via
+  `trees.getElement(getCurrentPath().getParentPath())`; if it matches, record the call site
+  and find the enclosing caller.
+- `visitNewClass` — resolve via `trees.getElement(getCurrentPath())`; same pattern.
+- `visitMemberReference` — resolve via `trees.getElement(getCurrentPath())`; same pattern.
+
+For each match, `enclosingExecutable()` walks `getCurrentPath()` upward through
+`getParentPath()` until it finds a `MethodTree` node.
+The caller `Element` is `trees.getElement(methodPath)`.
+If no `MethodTree` is found before reaching the `ClassTree`, the call is inside a static or
+instance initializer block; attribute the call to a synthetic `<clinit>` or `<init>` entry.
+
+Results are grouped by caller element:
+
+```java
+Map<ExecutableElement, CallHierarchyIncomingCall> grouped = new LinkedHashMap<>();
+```
+
+Each `CallHierarchyIncomingCall` pairs:
+- `from`: a `CallHierarchyItem` built from the caller `ExecutableElement` (name, uri, range,
+  selectionRange, data)
+- `fromRanges`: all `Range` values where the call occurs inside that caller
+
+The caller's `uri` is known from the file being scanned; no definition lookup is needed for the
+caller itself.
 
 ### Scope
-The search scope uses the exact same conservative `SearchScope` rules and `WorkspaceModuleGraph` as Find References. If the method is package-private, we search the package. If public, we search the module and downstream modules.
+
+Identical to Find References: `private` → declaring file; package-private → declaring module;
+`public`/`protected` → `moduleGraph.referenceSearchScope(cursorConfig)`.
 
 ---
 
-## 5. Outgoing Calls (`callHierarchy/outgoingCalls`)
+## 6. Outgoing Calls
 
-Outgoing calls only need to analyze a single file—the file where the target method is declared.
+Outgoing calls scans a **single file** — the file named in `routingUri`.
+No candidate index and no cross-module fan-out are required.
 
-1.  **Resolve File**: The client sends the `CallHierarchyItem` which contains the `uri`.
-2.  **Attribution**: Send an attribution request to the `CompilationWorker` for that `uri`.
-3.  **Locate Method**: Use the `CallHierarchyItem.selectionRange` or `range` to find the exact `MethodTree` in the `CompilationUnitTree`.
-4.  **Tree Scanning (`CallHierarchyOutgoingLocator`)**:
-    Scan only the body of that `MethodTree`. Look for:
-    - `MethodInvocationTree`
-    - `NewClassTree` (constructor calls)
-    - `MemberReferenceTree` (method references)
-5.  **Grouping**: For every method/constructor invocation found, resolve its `Element`. Convert the resolved `Element` into a `CallHierarchyItem` (the callee) and record the token's `Range` where the call occurred. Group results by callee.
+```
+outgoingCalls(item)
+  → CallHierarchyItemDataCodec.decode(item.getData())
+  → WorkspaceSession.outgoingCallsFuture(item)
+    → routeCompiler(data.routingUri())
+    → CompilationWorker.submit(session::outgoingCalls)
+      → SourceAnalysisSession.outgoingCalls(item)
+        → locate target MethodTree by selectionRange
+        → CallHierarchyOutgoingLocator.scan(methodBody, analysis)
+          → returns Map<Element, List<Range>>
+        → for each callee Element:
+            uri ← DefinitionLocator.findSourceFile(element)
+            build CallHierarchyOutgoingCall(callee item, ranges)
+        → return List<CallHierarchyOutgoingCall>
+```
+
+### `CallHierarchyOutgoingLocator`
+
+New class, extends `TreePathScanner<Void, Void>`.
+
+`visitMethod` is overridden to enter **only** the target method (matched by comparing
+`selectionRange` against the element's position) and skip all nested method declarations,
+so that calls made by locally-defined anonymous classes or lambdas are attributed to the
+correct scope.
+
+```java
+@Override
+public Void visitMethod(MethodTree node, Void ignored) {
+    if (isTargetMethod(node)) {
+        scan(node.getBody(), null);
+    }
+    return null; // skip all other MethodTree nodes entirely
+}
+```
+
+Handles:
+
+- `visitMethodInvocation` — `trees.getElement(parentPath)` gives the resolved callee.
+- `visitNewClass` — `trees.getElement(currentPath)` gives the constructor element.
+- `visitMemberReference` — `trees.getElement(currentPath)` gives the referenced method.
+
+Results are grouped by callee `Element`.
+Each `CallHierarchyOutgoingCall` pairs:
+- `to`: a `CallHierarchyItem` for the callee; `uri` is resolved via
+  `DefinitionLocator.findSourceFile(calleeElement)` (returns `null` for non-source callees,
+  which are omitted).
+- `fromRanges`: `Range[]` of the call sites within the target method's body.
 
 ---
 
-## 6. Architecture & Threading
+## 7. Shared Scope-Planning Helper
 
-The threading model matches `references`:
-- `LatheTextDocumentService` exposes the three LSP endpoints.
-- `WorkspaceSession` handles the routing.
-- The `ReferenceCandidateIndex` (living on `lathe-worker`) is queried for incoming calls.
-- `CompilationWorker` threads perform the actual `javac` attribution and AST scanning.
-- We map `AttributedFileAnalysis` to `CallHierarchyIncomingCall` and `CallHierarchyOutgoingCall` records, which are then translated to LSP objects at the edge.
+`WorkspaceSession.referencesFuture` contains scope-planning logic that `incomingCallsFuture`
+must duplicate without extraction.
+Before implementing incoming calls, extract this into a package-private helper:
+
+```java
+private List<ModuleSourceConfig> planSearchScope(
+    ReferenceTarget target, Optional<ModuleSourceConfig> cursorConfig) {
+  return switch (target.scope()) {
+    case DECLARING_FILE -> List.of();   // handled separately upstream
+    case DECLARING_MODULE ->
+        cursorConfig.map(c -> moduleGraph.configsForModule(c.moduleDir())).orElse(List.of());
+    case REACTOR_MODULES ->
+        cursorConfig.map(moduleGraph::referenceSearchScope).orElseGet(workspace::allConfigs);
+  };
+}
+```
+
+`referencesFuture` and `incomingCallsFuture` both call this.
+No other change to `referencesFuture` is needed.
 
 ---
 
-## 7. DRY & KISS Principles
+## 8. Wiring
 
-To keep the implementation simple and avoid duplication, we will maximize reuse of existing codebase components:
+### `LatheLanguageServer.createCapabilities()`
 
-1.  **Target Identity (`ReferenceTarget`)**: Instead of creating a custom payload, we reuse `ReferenceTarget` directly. `prepareCallHierarchy` will serialize it into `CallHierarchyItem.data`. `incomingCalls` will deserialize it, allowing us to instantly resume search logic.
-2.  **Search Orchestration**: `WorkspaceSession.referencesFuture` already calculates search scopes using `WorkspaceModuleGraph` and prefilters using `ReferenceCandidateIndex`. We will extract this logic into a helper method (`planSearchScope(ReferenceTarget target)`) so both Find References and Incoming Calls can share it without duplication.
-3.  **Source Resolution**: When `prepareCallHierarchy` is invoked on a method invocation, we must find the original declaration file to build the `CallHierarchyItem`. We will reuse `DefinitionLocator.findSourceFile()` for this exact purpose.
-4.  **AST Scanning**: We will **not** modify `ReferenceLocator` to return enclosing methods, as that would bloat it. Instead, following KISS principles, we will write two tiny, dedicated classes: `CallHierarchyIncomingLocator` and `CallHierarchyOutgoingLocator`. Both will extend `TreePathScanner` and reuse `target.matches()` to evaluate elements.
+```java
+capabilities.setCallHierarchyProvider(true);
+```
+
+### `LatheTextDocumentService`
+
+Three new overrides following the existing `prepareTypeHierarchy` / `typeHierarchySupertypes` /
+`typeHierarchySubtypes` pattern:
+
+```java
+@Override
+public CompletableFuture<List<CallHierarchyItem>> prepareCallHierarchy(
+    final CallHierarchyPrepareParams params) {
+  final var uri = params.getTextDocument().getUri();
+  final var pos = params.getPosition();
+  return worker.submit(() -> session.prepareCallHierarchyFuture(uri, pos)).thenCompose(f -> f);
+}
+
+@Override
+public CompletableFuture<List<CallHierarchyIncomingCall>> callHierarchyIncomingCalls(
+    final CallHierarchyIncomingCallsParams params) {
+  return worker.submit(() -> session.incomingCallsFuture(params.getItem())).thenCompose(f -> f);
+}
+
+@Override
+public CompletableFuture<List<CallHierarchyOutgoingCall>> callHierarchyOutgoingCalls(
+    final CallHierarchyOutgoingCallsParams params) {
+  return worker.submit(() -> session.outgoingCallsFuture(params.getItem())).thenCompose(f -> f);
+}
+```
+
+### `CompilationWorker`
+
+Three new delegating methods following the existing `resolveTarget` / `searchReferences`
+pattern.
+
+### `SourceAnalysisSession`
+
+Two new analysis methods: `prepareCallHierarchy(uri, pos)` and `outgoingCalls(item)`.
+Incoming calls reuse `searchReferences` infrastructure via `CompilationWorker`, just as the
+existing transient search path does.
 
 ---
 
-## 8. Deferred Items (Post-M2)
+## 9. New Files
 
-- **Hierarchy Expansion**: Finding incoming calls to overrides (e.g., finding calls to `List.add` when looking at `ArrayList.add`). This should be designed separately alongside Rename's hierarchy expansion policy.
-- **Anonymous Class Callers**: If an incoming call is inside an anonymous class or lambda, M2 can attribute the call to the nearest enclosing named method, or gracefully format the anonymous class as `<anonymous>` or `<lambda>`.
+| File | Role |
+|---|---|
+| `CallHierarchyItemData.java` | Record for item data payload |
+| `CallHierarchyItemDataCodec.java` | JSON encode/decode |
+| `CallHierarchyIncomingLocator.java` | Scanner: finds callers grouped by enclosing method |
+| `CallHierarchyOutgoingLocator.java` | Scanner: finds callees within one method body |
+
+All four files live in `io.github.aglibs.lathe.server.analysis`.
+
+---
+
+## 10. Implementation Order
+
+Steps are ordered to minimise blocked dependencies.
+Steps 3 and 4 are independent once step 2 is done.
+
+1. **Extract `planSearchScope`** from `WorkspaceSession.referencesFuture`.
+   Verify `referencesFuture` behaviour is unchanged.
+
+2. **`CallHierarchyItemData` + codec + capability flag.**
+   Add `setCallHierarchyProvider(true)` to `createCapabilities()` and the
+   `LatheLanguageServerTest` capability assertion.
+
+3. **`prepareCallHierarchy`** — `SourceAnalysisSession`, `CompilationWorker`,
+   `WorkspaceSession`, `LatheTextDocumentService`.
+   Smoke-test via `dev/explore.py` against a known method.
+
+4. **`outgoingCalls`** — `CallHierarchyOutgoingLocator`, `SourceAnalysisSession`,
+   `CompilationWorker`, `WorkspaceSession`, `LatheTextDocumentService`.
+   Validate the single-file path before tackling cross-module incoming.
+
+5. **`incomingCalls`** — `CallHierarchyIncomingLocator`, `CompilationWorker`,
+   `WorkspaceSession`, `LatheTextDocumentService`.
+
+6. **Tests** — see §11.
+
+---
+
+## 11. Tests
+
+### Unit
+
+`CallHierarchyItemDataCodecTest`
+- `encode_decode_roundTrip_preservesAllFields`
+- `decode_fromJsonObject_reconstructsRecord`
+
+`CallHierarchyIncomingLocatorTest` (uses `WorkbenchFixture`)
+- `scan_directMethodCall_returnsCallerAndRange`
+- `scan_constructorCall_returnsCallerAndRange`
+- `scan_memberReference_returnsCallerAndRange`
+- `scan_callInStaticInitializer_attributesToClinitSynthetic`
+- `scan_noMatch_returnsEmpty`
+
+`CallHierarchyOutgoingLocatorTest` (uses `WorkbenchFixture`)
+- `scan_methodCallInBody_returnsCalleeAndRange`
+- `scan_nestedClassMethod_notAttributedToOuterMethod`
+- `scan_constructorInvocationInBody_returnsCallee`
+- `scan_nonSourceCallee_omitted`
+
+### Integration (invoker `multi-module`)
+
+Extend `LspSmokeTest`:
+- `prepareCallHierarchy_onMethodDeclaration_returnsItem`
+- `prepareCallHierarchy_notOnMethod_returnsEmpty`
+- `outgoingCalls_returnsCalleesInMethodBody`
+- `incomingCalls_publicMethod_findsCrossModuleCallers`
+
+### Capability assertion
+
+`LatheLanguageServerTest.createCapabilities_includesCallHierarchyProvider`
+
+---
+
+## 12. Deferred
+
+The following are explicitly out of scope for M1 and should be designed separately before
+implementation:
+
+- **Override expansion**: finding incoming calls to all overrides or implementations of a
+  method.
+  This shares design space with rename and should be addressed alongside it in M2.
+- **Anonymous-class and lambda caller labelling**: `<anonymous Runnable>` or `<lambda>`
+  display names for calls inside anonymous classes or lambda bodies.
+  M1 can attribute these to the nearest enclosing named method.
+- **Partial-result streaming**: not needed until measurements show latency on large reactors.
