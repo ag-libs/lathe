@@ -41,6 +41,7 @@ import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.SignatureHelp;
 import org.eclipse.lsp4j.TypeHierarchyItem;
+import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 public final class SourceAnalysisSession implements AutoCloseable {
@@ -64,8 +65,18 @@ public final class SourceAnalysisSession implements AutoCloseable {
 
   public List<Diagnostic> compile(
       final String uri, final String content, final int version, final CompileMode mode) {
+    return compile(uri, content, version, mode, () -> {});
+  }
+
+  private List<Diagnostic> compile(
+      final String uri,
+      final String content,
+      final int version,
+      final CompileMode mode,
+      final CancelChecker cancelChecker) {
     final var t = Stopwatch.start();
-    final CompilerResult run = compiler.compile(uri, content, mode);
+    final CompilerResult run = compiler.compile(uri, content, mode, cancelChecker);
+    cancelChecker.checkCanceled();
     if (mode != CompileMode.FULL) {
       cache.put(uri, new CachedFileAnalysis(content, version, run.fileAnalysis()));
     }
@@ -217,7 +228,19 @@ public final class SourceAnalysisSession implements AutoCloseable {
       final int version,
       final ReferenceTarget target,
       final boolean includeDeclaration) {
-    final var analysis = ensureAttributedAnalysis(uri, content, version);
+    return searchReferences(uri, content, version, target, includeDeclaration, () -> {});
+  }
+
+  public List<ReferenceMatch> searchReferences(
+      final String uri,
+      final String content,
+      final int version,
+      final ReferenceTarget target,
+      final boolean includeDeclaration,
+      final CancelChecker cancelChecker) {
+    final AttributedFileAnalysis analysis =
+        ensureAttributedAnalysis(uri, content, version, cancelChecker);
+    cancelChecker.checkCanceled();
     return locateReferences(uri, target, includeDeclaration, analysis);
   }
 
@@ -226,8 +249,18 @@ public final class SourceAnalysisSession implements AutoCloseable {
       final String content,
       final ReferenceTarget target,
       final boolean includeDeclaration) {
+    return searchReferencesTransient(uri, content, target, includeDeclaration, () -> {});
+  }
+
+  public List<ReferenceMatch> searchReferencesTransient(
+      final String uri,
+      final String content,
+      final ReferenceTarget target,
+      final boolean includeDeclaration,
+      final CancelChecker cancelChecker) {
     final var t = Stopwatch.start();
-    final CompilerResult run = compiler.compile(uri, content, CompileMode.FAST);
+    final CompilerResult run = compiler.compile(uri, content, CompileMode.FAST, cancelChecker);
+    cancelChecker.checkCanceled();
     LOG.info(
         () ->
             "[compile:fast] %s %dms diags=%d"
@@ -462,11 +495,20 @@ public final class SourceAnalysisSession implements AutoCloseable {
 
   private AttributedFileAnalysis ensureAttributedAnalysis(
       final String uri, final String content, final int version) {
+    return ensureAttributedAnalysis(uri, content, version, () -> {});
+  }
+
+  private AttributedFileAnalysis ensureAttributedAnalysis(
+      final String uri,
+      final String content,
+      final int version,
+      final CancelChecker cancelChecker) {
     final var existing = currentCache(uri, content);
     if (existing == null || existing.analysis().tree() == null) {
-      compile(uri, content, version, CompileMode.OPEN);
+      compile(uri, content, version, CompileMode.OPEN, cancelChecker);
     }
 
+    cancelChecker.checkCanceled();
     final CachedFileAnalysis cached = cache.get(uri);
     return cached != null ? cached.analysis() : null;
   }

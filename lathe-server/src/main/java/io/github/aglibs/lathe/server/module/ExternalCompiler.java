@@ -20,6 +20,7 @@ import java.util.logging.Logger;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
+import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 
 public final class ExternalCompiler implements JavaSourceCompiler {
 
@@ -51,6 +52,15 @@ public final class ExternalCompiler implements JavaSourceCompiler {
 
   @Override
   public CompilerResult compile(final String uri, final String content, final CompileMode mode) {
+    return compile(uri, content, mode, () -> {});
+  }
+
+  @Override
+  public CompilerResult compile(
+      final String uri,
+      final String content,
+      final CompileMode mode,
+      final CancelChecker cancelChecker) {
     final var filePath = Path.of(URI.create(uri));
     final var sourceRoot = manifest.externalSourceRootForFile(filePath);
     if (sourceRoot.isEmpty()) {
@@ -68,7 +78,7 @@ public final class ExternalCompiler implements JavaSourceCompiler {
       final JavaFileObject jfo = fm.getJavaFileObjects(tempFile).iterator().next();
       final List<String> options = buildOptions(filePath);
       final var externalMode = mode == CompileMode.FULL ? CompileMode.FAST : mode;
-      return runner.run(jfo, options, externalMode);
+      return runner.run(jfo, options, externalMode, cancelChecker);
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }

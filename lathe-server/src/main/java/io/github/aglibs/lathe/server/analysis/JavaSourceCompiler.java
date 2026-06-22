@@ -8,6 +8,7 @@ import java.util.logging.Logger;
 import javax.tools.JavaCompiler;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.ToolProvider;
+import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 
 public interface JavaSourceCompiler extends AutoCloseable {
   Logger LOG = Logger.getLogger(JavaSourceCompiler.class.getName());
@@ -19,6 +20,17 @@ public interface JavaSourceCompiler extends AutoCloseable {
   }
 
   CompilerResult compile(String uri, String content, CompileMode mode);
+
+  default CompilerResult compile(
+      final String uri,
+      final String content,
+      final CompileMode mode,
+      final CancelChecker cancelChecker) {
+    cancelChecker.checkCanceled();
+    final CompilerResult result = compile(uri, content, mode);
+    cancelChecker.checkCanceled();
+    return result;
+  }
 
   default AttributedFileAnalysis reattribute(final String uri, final String content) {
     return compile(uri, content, CompileMode.FAST).fileAnalysis();

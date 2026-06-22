@@ -7,6 +7,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.*;
+import org.eclipse.lsp4j.jsonrpc.CompletableFutures;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.TextDocumentService;
@@ -166,10 +167,12 @@ final class LatheTextDocumentService implements TextDocumentService {
     final var uri = params.getTextDocument().getUri();
     final var pos = params.getPosition();
     final var incl = params.getContext().isIncludeDeclaration();
-    return worker
-        .submit(() -> session.referencesFuture(uri, pos, incl))
-        .thenCompose(f -> f)
-        .thenApply(r -> r);
+    return CompletableFutures.computeAsync(
+        cancelChecker ->
+            worker
+                .submit(() -> session.referencesFuture(uri, pos, incl, cancelChecker))
+                .thenCompose(f -> f)
+                .join());
   }
 
   @Override

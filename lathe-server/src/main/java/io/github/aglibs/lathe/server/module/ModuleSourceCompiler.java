@@ -18,6 +18,7 @@ import java.util.stream.Stream;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
+import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 
 public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoCloseable {
 
@@ -52,6 +53,15 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
 
   @Override
   public CompilerResult compile(final String uri, final String content, final CompileMode mode) {
+    return compile(uri, content, mode, () -> {});
+  }
+
+  @Override
+  public CompilerResult compile(
+      final String uri,
+      final String content,
+      final CompileMode mode,
+      final CancelChecker cancelChecker) {
     final var filePath = Path.of(URI.create(uri));
     final Path sourceRoot =
         config.sourceRoots().stream()
@@ -69,7 +79,7 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
                   .formatted(mode.tag, tempDir, sourceRoot, options));
       final JavaFileObject jfo = fm.getJavaFileObjects(tempFile).iterator().next();
       try {
-        return runner.run(jfo, options, mode);
+        return runner.run(jfo, options, mode, cancelChecker);
       } finally {
         if (mode == CompileMode.FULL) {
           fm.flush();

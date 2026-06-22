@@ -3,8 +3,11 @@ package io.github.aglibs.lathe.server.analysis;
 import static io.github.aglibs.lathe.server.analysis.SourceLocator.offsetToPosition;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -13,10 +16,13 @@ import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import javax.tools.Diagnostic;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import org.eclipse.lsp4j.*;
+import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.junit.jupiter.api.Test;
 
 class SourceAnalysisSessionTest {
@@ -29,6 +35,39 @@ class SourceAnalysisSessionTest {
     when(task.analyze()).thenThrow(new IllegalStateException(expected));
 
     assertThatThrownBy(() -> JavaSourceCompiler.safeCompile(task)).isSameAs(expected);
+  }
+
+  @Test
+  void searchReferences_cancelledAfterCompile_doesNotCacheAnalysis() {
+    final String uri = TempSourceCompiler.TEST_URI;
+    final String content = "class Test {}";
+    final var compiler = mock(JavaSourceCompiler.class);
+    final var result = new CompilerResult(List.of(), AttributedFileAnalysis.diagnosticsOnly());
+    final var cancelled = new AtomicBoolean();
+    final CancelChecker cancelChecker =
+        () -> {
+          if (cancelled.get()) {
+            throw new CancellationException();
+          }
+        };
+    final ReferenceTarget target = mock(ReferenceTarget.class);
+    when(compiler.compile(eq(uri), eq(content), eq(CompileMode.OPEN), any()))
+        .thenAnswer(
+            ignored -> {
+              cancelled.set(true);
+              return result;
+            })
+        .thenReturn(result);
+
+    try (final var session = new SourceAnalysisSession(compiler)) {
+      assertThatThrownBy(
+              () -> session.searchReferences(uri, content, 1, target, false, cancelChecker))
+          .isInstanceOf(CancellationException.class);
+      cancelled.set(false);
+
+      assertThat(session.searchReferences(uri, content, 1, target, false)).isEmpty();
+      verify(compiler, times(2)).compile(eq(uri), eq(content), eq(CompileMode.OPEN), any());
+    }
   }
 
   // --- offsetToPosition ---

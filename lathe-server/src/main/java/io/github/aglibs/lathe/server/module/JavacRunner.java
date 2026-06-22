@@ -15,6 +15,7 @@ import java.util.List;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
+import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 
 final class JavacRunner {
   private final CompilationAdmission admission;
@@ -27,11 +28,25 @@ final class JavacRunner {
 
   CompilerResult run(
       final JavaFileObject sourceFile, final List<String> options, final CompileMode mode) {
+    return run(sourceFile, options, mode, () -> {});
+  }
+
+  CompilerResult run(
+      final JavaFileObject sourceFile,
+      final List<String> options,
+      final CompileMode mode,
+      final CancelChecker cancelChecker) {
+    cancelChecker.checkCanceled();
     return admission.run(
-        () ->
-            mode == CompileMode.FULL
-                ? compileFull(sourceFile, options)
-                : analyze(sourceFile, options));
+        cancelChecker,
+        () -> {
+          final CompilerResult result =
+              mode == CompileMode.FULL
+                  ? compileFull(sourceFile, options)
+                  : analyze(sourceFile, options);
+          cancelChecker.checkCanceled();
+          return result;
+        });
   }
 
   private CompilerResult compileFull(final JavaFileObject sourceFile, final List<String> options) {

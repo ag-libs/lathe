@@ -31,7 +31,9 @@ import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.logging.Level;
@@ -60,6 +62,7 @@ import org.eclipse.lsp4j.SignatureHelp;
 import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.TypeHierarchyItem;
+import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.LanguageClient;
 
@@ -196,7 +199,11 @@ final class WorkspaceSession {
   }
 
   CompletableFuture<List<Location>> referencesFuture(
-      final String uri, final Position pos, final boolean includeDeclaration) {
+      final String uri,
+      final Position pos,
+      final boolean includeDeclaration,
+      final CancelChecker cancelChecker) {
+    cancelChecker.checkCanceled();
     final OpenDocument openFile = docs.get(uri);
     if (openFile == null) {
       return CompletableFuture.completedFuture(List.of());
@@ -222,9 +229,10 @@ final class WorkspaceSession {
     final var t = Stopwatch.start();
     final var targetName = new AtomicReference<String>();
     return cursorWorker
-        .resolveTarget(request)
+        .resolveTarget(request, cancelChecker)
         .thenCompose(
             target -> {
+              cancelChecker.checkCanceled();
               if (target == null) {
                 return CompletableFuture.completedFuture(List.of());
               }
@@ -238,7 +246,8 @@ final class WorkspaceSession {
                         openFile.content(),
                         openFile.version(),
                         target,
-                        includeDeclaration)
+                        includeDeclaration,
+                        cancelChecker)
                     .thenApply(WorkspaceSession::toLocations);
               }
 
@@ -257,15 +266,23 @@ final class WorkspaceSession {
                           .orElse(List.of());
 
               return configs.stream()
-                  .flatMap(config -> searchFutures(config, target, includeDeclaration, packageRel))
+                  .flatMap(
+                      config ->
+                          searchFutures(
+                              config, target, includeDeclaration, packageRel, cancelChecker))
                   .reduce(
                       CompletableFuture.completedFuture(List.of()),
                       (f1, f2) ->
                           f1.thenCombine(
-                              f2, (a, b) -> Stream.concat(a.stream(), b.stream()).toList()));
+                              f2,
+                              (a, b) -> {
+                                cancelChecker.checkCanceled();
+                                return Stream.concat(a.stream(), b.stream()).toList();
+                              }));
             })
         .thenApply(
             locations -> {
+              cancelChecker.checkCanceled();
               final var name = targetName.get();
               if (name != null) {
                 LOG.info(
@@ -276,14 +293,25 @@ final class WorkspaceSession {
               return locations;
             })
         .exceptionally(
-            ex -> logAndReturn(ex, "[references] failed for %s".formatted(uri), List.of()));
+            ex -> {
+              if (ex instanceof CancellationException cancellation) {
+                throw cancellation;
+              }
+              if (ex instanceof CompletionException completion
+                  && completion.getCause() instanceof CancellationException cancellation) {
+                throw cancellation;
+              }
+              return logAndReturn(ex, "[references] failed for %s".formatted(uri), List.of());
+            });
   }
 
   private Stream<CompletableFuture<List<Location>>> searchFutures(
       final ModuleSourceConfig config,
       final ReferenceTarget target,
       final boolean includeDeclaration,
-      final Path packageRel) {
+      final Path packageRel,
+      final CancelChecker cancelChecker) {
+    cancelChecker.checkCanceled();
     final var worker = workspace.workerFor(config);
     final List<OpenDocument> openForConfig =
         docs.all().stream()
@@ -308,17 +336,27 @@ final class WorkspaceSession {
     return Stream.concat(
         openForConfig.stream()
             .map(
-                doc ->
-                    worker
-                        .searchReferences(
-                            doc.uri(), doc.content(), doc.version(), target, includeDeclaration)
-                        .thenApply(WorkspaceSession::toLocations)),
+                doc -> {
+                  cancelChecker.checkCanceled();
+                  return worker
+                      .searchReferences(
+                          doc.uri(),
+                          doc.content(),
+                          doc.version(),
+                          target,
+                          includeDeclaration,
+                          cancelChecker)
+                      .thenApply(WorkspaceSession::toLocations);
+                }),
         diskFiles.stream()
             .map(
-                d ->
-                    worker
-                        .searchReferencesTransient(d.uri(), d.content(), target, includeDeclaration)
-                        .thenApply(WorkspaceSession::toLocations)));
+                d -> {
+                  cancelChecker.checkCanceled();
+                  return worker
+                      .searchReferencesTransient(
+                          d.uri(), d.content(), target, includeDeclaration, cancelChecker)
+                      .thenApply(WorkspaceSession::toLocations);
+                }));
   }
 
   private static List<Location> toLocations(final List<ReferenceMatch> matches) {

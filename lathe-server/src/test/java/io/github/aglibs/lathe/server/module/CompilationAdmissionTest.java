@@ -4,11 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.ArrayList;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
@@ -69,6 +71,45 @@ class CompilationAdmissionTest {
                       throw new IllegalStateException("expected");
                     }))
         .isInstanceOf(IllegalStateException.class);
+    assertThat(admission.run(() -> "available")).isEqualTo("available");
+  }
+
+  @Test
+  void run_cancelledWhileWaiting_exitsWithoutLeakingPermit() {
+    final var admission = new CompilationAdmission(1);
+    final var entered = new CountDownLatch(1);
+    final var release = new CountDownLatch(1);
+    final var checked = new CountDownLatch(1);
+    final var cancelled = new AtomicBoolean();
+
+    final CompletableFuture<Void> holder =
+        CompletableFuture.runAsync(
+            () ->
+                admission.run(
+                    () -> {
+                      entered.countDown();
+                      await(release);
+                      return null;
+                    }));
+    await(entered);
+
+    final CompletableFuture<Void> waiting =
+        CompletableFuture.runAsync(
+            () ->
+                admission.run(
+                    () -> {
+                      checked.countDown();
+                      if (cancelled.get()) {
+                        throw new CancellationException();
+                      }
+                    },
+                    () -> null));
+    await(checked);
+    cancelled.set(true);
+
+    assertThatThrownBy(waiting::join).hasCauseInstanceOf(CancellationException.class);
+    release.countDown();
+    holder.join();
     assertThat(admission.run(() -> "available")).isEqualTo("available");
   }
 

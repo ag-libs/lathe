@@ -35,6 +35,7 @@ import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.SignatureHelp;
 import org.eclipse.lsp4j.TypeHierarchyItem;
+import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 /** Called from the server event loop; executes all compilation work on its own module thread. */
@@ -131,6 +132,11 @@ public final class CompilationWorker {
     return submit(ctx -> ctx.hover(request));
   }
 
+  public CompletableFuture<ReferenceTarget> resolveTarget(
+      final SourceFeatureRequest request, final CancelChecker cancelChecker) {
+    return submit(ctx -> ctx.resolveTarget(request), cancelChecker);
+  }
+
   public CompletableFuture<ReferenceTarget> resolveTarget(final SourceFeatureRequest request) {
     return submit(ctx -> ctx.resolveTarget(request));
   }
@@ -140,16 +146,24 @@ public final class CompilationWorker {
       final String content,
       final int version,
       final ReferenceTarget target,
-      final boolean includeDeclaration) {
-    return submit(ctx -> ctx.searchReferences(uri, content, version, target, includeDeclaration));
+      final boolean includeDeclaration,
+      final CancelChecker cancelChecker) {
+    return submit(
+        ctx ->
+            ctx.searchReferences(uri, content, version, target, includeDeclaration, cancelChecker),
+        cancelChecker);
   }
 
   public CompletableFuture<List<ReferenceMatch>> searchReferencesTransient(
       final String uri,
       final String content,
       final ReferenceTarget target,
-      final boolean includeDeclaration) {
-    return submit(ctx -> ctx.searchReferencesTransient(uri, content, target, includeDeclaration));
+      final boolean includeDeclaration,
+      final CancelChecker cancelChecker) {
+    return submit(
+        ctx ->
+            ctx.searchReferencesTransient(uri, content, target, includeDeclaration, cancelChecker),
+        cancelChecker);
   }
 
   public CompletableFuture<List<Location>> methodImplementations(
@@ -238,6 +252,11 @@ public final class CompilationWorker {
   }
 
   private <T> CompletableFuture<T> submit(final Function<SourceAnalysisSession, T> fn) {
+    return submit(fn, () -> {});
+  }
+
+  private <T> CompletableFuture<T> submit(
+      final Function<SourceAnalysisSession, T> fn, final CancelChecker cancelChecker) {
     final var future = new CompletableFuture<T>();
     if (closed) {
       future.completeExceptionally(new IllegalStateException("module worker is closed"));
@@ -249,6 +268,7 @@ public final class CompilationWorker {
           () -> {
             final var timer = Stopwatch.start();
             try {
+              cancelChecker.checkCanceled();
               if (context == null) {
                 context = contextFactory.get();
               }
