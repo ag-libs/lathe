@@ -23,6 +23,14 @@ public record ModuleSourceConfig(
     String proc,
     List<String> compilerArgs) {
 
+  public ModuleSourceConfig {
+    sourceRoots = sourceRoots != null ? List.copyOf(sourceRoots) : List.of();
+    classpath = classpath != null ? List.copyOf(classpath) : List.of();
+    modulepath = modulepath != null ? List.copyOf(modulepath) : List.of();
+    processorPath = processorPath != null ? List.copyOf(processorPath) : List.of();
+    compilerArgs = compilerArgs != null ? List.copyOf(compilerArgs) : List.of();
+  }
+
   public Path latheClassesDir() {
     return moduleDir.resolve(sourceTree);
   }

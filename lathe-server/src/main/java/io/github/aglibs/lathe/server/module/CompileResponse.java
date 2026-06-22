@@ -7,6 +7,6 @@ import org.eclipse.lsp4j.Diagnostic;
 public record CompileResponse(String uri, long generation, List<Diagnostic> diagnostics) {
   public CompileResponse {
     ValidCheck.check().notNull(uri, "uri").notNull(diagnostics).validate();
-    ;
+    diagnostics = List.copyOf(diagnostics);
   }
 }

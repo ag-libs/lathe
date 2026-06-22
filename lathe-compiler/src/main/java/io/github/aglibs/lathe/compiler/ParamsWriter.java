@@ -6,6 +6,7 @@ import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Stream;
 import org.codehaus.plexus.compiler.CompilerConfiguration;
 
@@ -40,20 +41,18 @@ final class ParamsWriter {
     if (map == null || map.isEmpty()) {
       return List.of();
     }
-    return map.entrySet().stream()
-        .flatMap(
-            e -> {
-              final var key = e.getKey();
-              final var val = e.getValue();
-              final var hasVal = val != null && !val.isBlank();
-              if (key == null) {
-                // standalone arg stored with null key (e.g. from <compilerArgs> in some Maven
-                // versions)
-                return hasVal ? Stream.of(val) : Stream.empty();
-              }
-              return hasVal ? Stream.of(key, val) : Stream.of(key);
-            })
-        .toList();
+    return map.entrySet().stream().flatMap(ParamsWriter::streamCompilerArg).toList();
+  }
+
+  private static Stream<String> streamCompilerArg(final Map.Entry<String, String> e) {
+    final var key = e.getKey();
+    final var val = e.getValue();
+    final var hasVal = val != null && !val.isBlank();
+    if (key == null) {
+      // standalone arg stored with null key (e.g. from <compilerArgs> in some Maven versions)
+      return hasVal ? Stream.of(val) : Stream.empty();
+    }
+    return hasVal ? Stream.of(key, val) : Stream.of(key);
   }
 
   // isEnablePreview() was added in plexus-compiler-api 2.9.0; older maven-compiler-plugin

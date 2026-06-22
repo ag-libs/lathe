@@ -12,8 +12,6 @@ import java.util.Optional;
 
 final class TypeIndexFiles {
 
-  static final String INDEX_JSON = "index.json";
-
   private TypeIndexFiles() {}
 
   static void write(final Path index, final TypeIndexFile file) throws IOException {

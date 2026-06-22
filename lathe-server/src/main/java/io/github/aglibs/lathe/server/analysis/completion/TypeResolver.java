@@ -964,7 +964,7 @@ final class TypeResolver {
             default -> null;
           };
       if (selector != null) {
-        final TreePath selectorPath = new TreePath(current, selector);
+        final var selectorPath = new TreePath(current, selector);
         final TypeMirror type = snapshot.trees().getTypeMirror(selectorPath);
         if (type != null && type.getKind() != TypeKind.ERROR && type.getKind() != TypeKind.NONE) {
           return new ExpectedValue.Type(type);

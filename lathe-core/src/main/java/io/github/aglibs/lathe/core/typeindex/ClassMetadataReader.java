@@ -15,7 +15,7 @@ final class ClassMetadataReader {
   private ClassMetadataReader() {}
 
   static Optional<ClassMetadata> read(final InputStream in) throws IOException {
-    final DataInputStream data = new DataInputStream(in);
+    final var data = new DataInputStream(in);
     if (data.readInt() != CLASS_MAGIC) {
       return Optional.empty();
     }

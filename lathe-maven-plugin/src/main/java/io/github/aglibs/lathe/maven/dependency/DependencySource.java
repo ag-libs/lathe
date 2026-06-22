@@ -24,6 +24,7 @@ public record DependencySource(
         .notNull(classpath, "classpath")
         .when(status == SourceStatus.PRESENT, v -> v.notNull(dir, "dir"))
         .validate();
+    classpath = List.copyOf(classpath);
   }
 
   public static DependencySource present(

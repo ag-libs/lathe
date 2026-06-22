@@ -8,7 +8,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import org.apache.maven.plugin.logging.Log;
 import org.eclipse.aether.RepositorySystem;
 import org.eclipse.aether.RepositorySystemSession;
@@ -107,60 +106,62 @@ final class ServerInstaller {
   }
 
   static String renderLauncherScript(final String modulePath) {
-    final var sb = new StringBuilder("#!/bin/sh\nexec java \\\n");
     // java.net.http: not in the default module graph; Error Prone's WellKnownMutability references
     // HttpClient and throws ClassNotFoundException without this.
     // jdk.unsupported: Gson's module-info declares `requires static jdk.unsupported` (optional).
     // Without this, jdk.unsupported is absent from the module graph and sun.misc.Unsafe is
     // invisible to Gson, causing UnsafeAllocator to fall back to its "give up" stub. LSP4J types
     // like TypeHierarchyItem have no no-args constructor and cannot be deserialized otherwise.
-    sb.append("  --add-modules java.net.http,jdk.unsupported \\\n");
+    //
     // Classpath javac plugins (e.g. Error Prone, loaded via -Xplugin: on the processor path) run
     // in the unnamed module. They access javac internals directly and need ALL-UNNAMED exports.
     // Without these, didSave full passes that replay -Xplugin:ErrorProne throw IllegalAccessError.
-    appendJavacAccess(
-        sb,
-        "--add-exports",
-        "ALL-UNNAMED",
-        "api",
-        "code",
-        "comp",
-        "file",
-        "main",
-        "model",
-        "parser",
-        "processing",
-        "tree",
-        "util");
-    appendJavacAccess(sb, "--add-opens", "ALL-UNNAMED", "code", "comp");
+    //
     // google-java-format is a named module on the module path and uses module-qualified exports.
-    appendJavacAccess(
-        sb,
-        "--add-exports",
-        "com.google.googlejavaformat",
-        "api",
-        "code",
-        "comp",
-        "file",
-        "main",
-        "model",
-        "parser",
-        "tree",
-        "util");
-    appendJavacAccess(sb, "--add-opens", "com.google.googlejavaformat", "code", "comp");
-    sb.append("  --module-path ").append(modulePath).append(" \\\n");
-    sb.append(
-        "  -m io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer \"$@\"\n");
-    return sb.toString();
+    return """
+        #!/bin/sh
+        exec java \\
+          --add-modules java.net.http,jdk.unsupported \\
+        %s%s%s%s  --module-path %s \\
+          -m io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer "$@"
+        """
+        .formatted(
+            javacAccessLines(
+                "--add-exports",
+                "ALL-UNNAMED",
+                "api",
+                "code",
+                "comp",
+                "file",
+                "main",
+                "model",
+                "parser",
+                "processing",
+                "tree",
+                "util"),
+            javacAccessLines("--add-opens", "ALL-UNNAMED", "code", "comp"),
+            javacAccessLines(
+                "--add-exports",
+                "com.google.googlejavaformat",
+                "api",
+                "code",
+                "comp",
+                "file",
+                "main",
+                "model",
+                "parser",
+                "tree",
+                "util"),
+            javacAccessLines("--add-opens", "com.google.googlejavaformat", "code", "comp"),
+            modulePath);
   }
 
-  private static void appendJavacAccess(
-      final StringBuilder sb, final String flag, final String target, final String... pkgs) {
-    Stream.of(pkgs)
-        .forEach(
-            pkg ->
-                sb.append(
-                    "  %s jdk.compiler/com.sun.tools.javac.%s=%s \\\n"
-                        .formatted(flag, pkg, target)));
+  private static String javacAccessLines(
+      final String flag, final String target, final String... pkgs) {
+    final var sb = new StringBuilder();
+    for (final var pkg : pkgs) {
+      sb.append("  %s jdk.compiler/com.sun.tools.javac.%s=%s \\\n".formatted(flag, pkg, target));
+    }
+    return sb.toString();
   }
 }

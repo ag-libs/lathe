@@ -172,7 +172,7 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
           case "quot" -> "\"";
           case "apos" -> "'";
           case "nbsp" -> " ";
-          default -> "&" + node.getName() + ";";
+          default -> "&%s;".formatted(node.getName());
         });
     return null;
   }

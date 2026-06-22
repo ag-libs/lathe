@@ -967,7 +967,7 @@ public final class CompletionEngine {
     }
 
     final var scope = TypeResolver.resolveScope(analysis, cursorOffset);
-    final List<CompletionCandidate> result = new ArrayList<>();
+    final var result = new ArrayList<CompletionCandidate>();
     new TreePathScanner<Void, Void>() {
       @Override
       public Void visitClass(final ClassTree node, final Void unused) {
@@ -1398,7 +1398,7 @@ public final class CompletionEngine {
                 .collect(Collectors.toUnmodifiableSet())
             : Set.of();
 
-    final List<CompletionCandidate> result = new ArrayList<>();
+    final var result = new ArrayList<CompletionCandidate>();
     for (final var entry : typeIndex.search(prefix, 200)) {
       if (!validator.isResolvable(entry)) {
         continue;

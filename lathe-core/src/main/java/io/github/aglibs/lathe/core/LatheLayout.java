@@ -18,6 +18,8 @@ public final class LatheLayout {
   public static final String LOCK_FILE = "lathe.lock";
   public static final String GENERATED_SOURCES = "generated-sources";
   public static final String PARAMS_FILE_PREFIX = "lsp-params-";
+  public static final String DEPENDENCY_SOURCE_FILENAME = ".lathe-source.json";
+  public static final String TYPE_INDEX_FILENAME = "index.json";
 
   private LatheLayout() {}
 

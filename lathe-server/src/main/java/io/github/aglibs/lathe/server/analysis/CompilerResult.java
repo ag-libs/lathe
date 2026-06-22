@@ -12,5 +12,6 @@ public record CompilerResult(
         .notNull(diagnostics, "diagnostics")
         .notNull(fileAnalysis, "fileAnalysis")
         .validate();
+    diagnostics = List.copyOf(diagnostics);
   }
 }

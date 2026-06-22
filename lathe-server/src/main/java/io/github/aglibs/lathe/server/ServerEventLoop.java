@@ -20,14 +20,15 @@ final class ServerEventLoop {
 
   private final AtomicReference<Thread> workerThread = new AtomicReference<>();
   private final ScheduledExecutorService executor =
-      Executors.newSingleThreadScheduledExecutor(
-          r -> {
-            final var t = new Thread(r, "lathe-worker");
-            t.setDaemon(true);
-            workerThread.set(t);
-            return t;
-          });
+      Executors.newSingleThreadScheduledExecutor(this::newWorkerThread);
   private final Map<String, ScheduledFuture<?>> pending = new HashMap<>();
+
+  private Thread newWorkerThread(final Runnable r) {
+    final var t = new Thread(r, "lathe-worker");
+    t.setDaemon(true);
+    workerThread.set(t);
+    return t;
+  }
 
   void execute(final Runnable task) {
     try {

@@ -7,6 +7,10 @@ import org.eclipse.lsp4j.CompletionItem;
 public record CompletionOutcome(
     List<CompletionItem> items, AttributedFileAnalysis freshAnalysis, boolean incomplete) {
 
+  public CompletionOutcome {
+    items = items != null ? List.copyOf(items) : null;
+  }
+
   public CompletionOutcome(
       final List<CompletionItem> items, final AttributedFileAnalysis freshAnalysis) {
     this(items, freshAnalysis, false);

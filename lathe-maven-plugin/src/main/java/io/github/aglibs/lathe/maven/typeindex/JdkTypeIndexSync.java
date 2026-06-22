@@ -67,7 +67,7 @@ public final class JdkTypeIndexSync {
         .resolve(LatheLayout.TYPE_INDEX_DIR)
         .resolve(LatheLayout.CACHE_JDKS_DIR)
         .resolve(source.cacheKey())
-        .resolve(TypeIndexFiles.INDEX_JSON);
+        .resolve(LatheLayout.TYPE_INDEX_FILENAME);
   }
 
   private static List<TypeIndexEntry> scanJdk() throws IOException {

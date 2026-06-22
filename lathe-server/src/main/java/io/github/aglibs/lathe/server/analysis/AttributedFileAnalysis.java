@@ -13,6 +13,10 @@ public record AttributedFileAnalysis(
     CompilationUnitTree tree,
     List<SemanticToken> semanticTokens) {
 
+  public AttributedFileAnalysis {
+    semanticTokens = semanticTokens != null ? List.copyOf(semanticTokens) : null;
+  }
+
   public static AttributedFileAnalysis diagnosticsOnly() {
     return new AttributedFileAnalysis(null, null, null, null, null);
   }

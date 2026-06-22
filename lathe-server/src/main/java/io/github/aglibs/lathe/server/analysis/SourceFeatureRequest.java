@@ -17,5 +17,6 @@ public record SourceFeatureRequest(
         .notNull(sourceRoots, "sourceRoots")
         .notNull(manifest, "manifest")
         .validate();
+    sourceRoots = List.copyOf(sourceRoots);
   }
 }

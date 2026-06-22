@@ -640,7 +640,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
       return true;
     }
 
-    return seen.add(d.getRange().getStart().getLine() + "|" + code + "|" + name);
+    return seen.add("%s|%s|%s".formatted(d.getRange().getStart().getLine(), code, name));
   }
 
   public static Diagnostic toLsp(

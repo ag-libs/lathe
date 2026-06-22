@@ -59,12 +59,15 @@ public final class WorkspaceModuleGraph {
                                 .filter(dep -> dep != null && !dep.equals(config.moduleDir())),
                         Collectors.toSet())));
 
-    final Map<Path, Set<Path>> directDependents = new HashMap<>();
-    configsByModuleDir.keySet().forEach(m -> directDependents.put(m, new HashSet<>()));
-    directDeps.forEach(
-        (module, deps) ->
-            deps.forEach(
-                dep -> directDependents.computeIfAbsent(dep, k -> new HashSet<>()).add(module)));
+    final var directDependents = new HashMap<Path, Set<Path>>();
+    for (final var m : configsByModuleDir.keySet()) {
+      directDependents.put(m, new HashSet<>());
+    }
+    for (final var entry : directDeps.entrySet()) {
+      for (final var dep : entry.getValue()) {
+        directDependents.computeIfAbsent(dep, k -> new HashSet<>()).add(entry.getKey());
+      }
+    }
 
     final Map<Path, Set<Path>> downstreamOf =
         configsByModuleDir.keySet().stream()
@@ -96,19 +99,16 @@ public final class WorkspaceModuleGraph {
 
   private static Set<Path> transitiveDownstream(
       final Path root, final Map<Path, Set<Path>> directDependents) {
-    final Set<Path> visited = new HashSet<>();
+    final var visited = new HashSet<Path>();
     visited.add(root);
     final var queue = new ArrayDeque<Path>();
     queue.add(root);
     while (!queue.isEmpty()) {
-      directDependents
-          .getOrDefault(queue.poll(), Set.of())
-          .forEach(
-              dep -> {
-                if (visited.add(dep)) {
-                  queue.add(dep);
-                }
-              });
+      for (final var dep : directDependents.getOrDefault(queue.poll(), Set.of())) {
+        if (visited.add(dep)) {
+          queue.add(dep);
+        }
+      }
     }
     return Set.copyOf(visited);
   }

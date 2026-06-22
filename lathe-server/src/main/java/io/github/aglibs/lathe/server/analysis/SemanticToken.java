@@ -7,5 +7,6 @@ public record SemanticToken(
     int line, int character, int length, String type, Set<String> modifiers) {
   public SemanticToken {
     ValidCheck.check().notNull(type, "type").notNull(modifiers, "modifiers").validate();
+    modifiers = Set.copyOf(modifiers);
   }
 }

@@ -216,7 +216,7 @@ final class SignatureHelpResolver {
 
     label.append(callName).append('(');
 
-    final List<ParameterInformation> paramInfos = new ArrayList<>();
+    final var paramInfos = new ArrayList<ParameterInformation>();
     for (int i = 0; i < params.size(); i++) {
       final int start = label.length();
       label.append(HoverFormatter.formatParam(params.get(i), fmt, sourceNames, i));

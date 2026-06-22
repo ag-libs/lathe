@@ -177,7 +177,7 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
 
   private List<Diagnostic> buildDiagnostics() {
     final var reached = reachableMethods();
-    final List<Diagnostic> results = new ArrayList<>();
+    final var results = new ArrayList<Diagnostic>();
     collectUnused(privateMethods, reached, results);
     collectUnused(privateFields, referencedFields, results);
     collectUnused(localVars, referencedLocals, results);
@@ -192,12 +192,11 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
       final Map<Element, Candidate> candidates,
       final Set<Element> used,
       final List<Diagnostic> results) {
-    candidates.forEach(
-        (element, candidate) -> {
-          if (!used.contains(element)) {
-            unusedDiag(candidate).ifPresent(results::add);
-          }
-        });
+    for (final var entry : candidates.entrySet()) {
+      if (!used.contains(entry.getKey())) {
+        unusedDiag(entry.getValue()).ifPresent(results::add);
+      }
+    }
   }
 
   private Set<Element> reachableMethods() {

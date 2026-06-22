@@ -51,10 +51,10 @@ public final class DependencyTypeIndexSync {
             .resolve(artifact.getVersion());
     final String classifier = artifact.getClassifier();
     if (classifier == null || classifier.isBlank()) {
-      return versionDir.resolve(TypeIndexFiles.INDEX_JSON);
+      return versionDir.resolve(LatheLayout.TYPE_INDEX_FILENAME);
     }
 
-    return versionDir.resolve(classifier).resolve(TypeIndexFiles.INDEX_JSON);
+    return versionDir.resolve(classifier).resolve(LatheLayout.TYPE_INDEX_FILENAME);
   }
 
   private static boolean index(final Artifact artifact, final Log log) throws IOException {

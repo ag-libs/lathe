@@ -1,7 +1,6 @@
 package io.github.aglibs.lathe.core;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
@@ -56,29 +55,24 @@ public final class FileUtil {
 
   public static void copyDir(final Path src, final Path dest) throws IOException {
     try (final var walk = Files.walk(src)) {
-      walk.forEach(source -> IOUtil.unchecked(() -> copyEntry(src, dest, source)));
-    } catch (final UncheckedIOException e) {
-      throw e.getCause();
+      for (final var source : walk.toList()) {
+        copyEntry(src, dest, source);
+      }
     }
   }
 
   public static void deleteDir(final Path dir) throws IOException {
     try (final var walk = Files.walk(dir)) {
-      walk.sorted(Comparator.reverseOrder())
-          .forEach(
-              path ->
-                  IOUtil.unchecked(
-                      () -> {
-                        setWritable(path);
-                        Files.delete(path);
-                      }));
-    } catch (final UncheckedIOException e) {
-      throw e.getCause();
+      final var sorted = walk.sorted(Comparator.reverseOrder()).toList();
+      for (final var path : sorted) {
+        setWritable(path);
+        Files.delete(path);
+      }
     }
   }
 
   public static void unzip(final Path zipFile, final Path destDir) throws IOException {
-    try (final ZipInputStream in = new ZipInputStream(Files.newInputStream(zipFile))) {
+    try (final var in = new ZipInputStream(Files.newInputStream(zipFile))) {
       ZipEntry entry = in.getNextEntry();
       while (entry != null) {
         extractZipEntry(destDir, in, entry);

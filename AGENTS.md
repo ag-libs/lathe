@@ -106,8 +106,12 @@ After a large Java change, agents may run `mvn spotless:apply` before tests to n
     * **Anti-Spaghetti Rule:** **NEVER** prematurely extract logic that is only used *once* into its
       own helper method.
 - **Lambdas & Streams**:
-    * **NEVER** write multi-line inline lambda bodies. If a lambda requires a `{}` block, you **MUST
-      ** extract it into a named `private` method and pass it via method reference.
+    * **Prefer** extracting `{}` block-lambda bodies into a named `private` method passed via method
+      reference — this applies especially to stream pipeline operations (`map`, `flatMap`, `filter`)
+      and thread/executor factories, where the extracted name adds clarity.
+      **Exception:** if the lambda closes over several local variables that would all become parameters
+      of the extracted method, an inline block body is acceptable — the added parameter list
+      would obscure rather than clarify.
     * **NEVER** use Java Streams for operations that require mutable state, graph traversal, or
       side-effects. You **MUST** use explicit `for` or `while` loops.
 - **Strict Utilities**:

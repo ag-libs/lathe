@@ -41,21 +41,15 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
       return new WorkspaceModuleRegistry(List.of(), manifest);
     }
 
-    final List<ModuleSourceConfig> moduleSources = new ArrayList<>();
+    final var moduleSources = new ArrayList<ModuleSourceConfig>();
     try (final Stream<Path> stream = Files.walk(latheDir)) {
-      stream
-          .filter(LatheLayout::isParamsFile)
-          .forEach(
-              paramsFile -> {
-                try {
-                  moduleSources.add(ModuleSourceConfig.load(paramsFile, paramsFile.getParent()));
-                } catch (final IOException e) {
-                  LOG.log(
-                      Level.WARNING,
-                      e,
-                      () -> "[workspace] failed to load %s".formatted(paramsFile));
-                }
-              });
+      for (final var paramsFile : stream.filter(LatheLayout::isParamsFile).toList()) {
+        try {
+          moduleSources.add(ModuleSourceConfig.load(paramsFile, paramsFile.getParent()));
+        } catch (final IOException e) {
+          LOG.log(Level.WARNING, e, () -> "[workspace] failed to load %s".formatted(paramsFile));
+        }
+      }
     } catch (final IOException e) {
       LOG.log(Level.WARNING, e, () -> "[workspace] scan failed");
     }
@@ -101,7 +95,9 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
   }
 
   public void dropFromAllCaches(final String uri) {
-    workers.values().forEach(w -> w.dropFromCache(uri));
+    for (final var w : workers.values()) {
+      w.dropFromCache(uri);
+    }
     externalWorker.dropFromCache(uri);
   }
 

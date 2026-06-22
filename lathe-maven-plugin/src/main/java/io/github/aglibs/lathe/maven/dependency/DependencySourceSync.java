@@ -19,8 +19,6 @@ import org.eclipse.aether.artifact.Artifact;
 
 public final class DependencySourceSync {
 
-  private static final String SOURCE_MARKER = ".lathe-source.json";
-
   private DependencySourceSync() {}
 
   public static void extract(final Collection<DependencySource> sources, final Log log) {
@@ -54,7 +52,7 @@ public final class DependencySourceSync {
 
   private static boolean isSourceCacheCurrent(
       final Path targetDir, final Artifact artifact, final Path sourceJar) throws IOException {
-    final var marker = targetDir.resolve(SOURCE_MARKER);
+    final var marker = targetDir.resolve(LatheLayout.DEPENDENCY_SOURCE_FILENAME);
     if (!Files.exists(marker)) {
       return false;
     }
@@ -80,7 +78,7 @@ public final class DependencySourceSync {
             sourceJar.toString(),
             Files.size(sourceJar),
             Files.getLastModifiedTime(sourceJar).toMillis());
-    Json.write(marker, tempDir.resolve(SOURCE_MARKER));
+    Json.write(marker, tempDir.resolve(LatheLayout.DEPENDENCY_SOURCE_FILENAME));
   }
 
   private record SourceMarker(

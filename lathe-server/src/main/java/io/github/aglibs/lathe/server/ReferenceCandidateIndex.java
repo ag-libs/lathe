@@ -32,11 +32,14 @@ final class ReferenceCandidateIndex {
   static ReferenceCandidateIndex build(final List<ModuleSourceConfig> allConfigs) {
     final Stopwatch t = Stopwatch.start();
     final var index = new ReferenceCandidateIndex();
-    allConfigs.stream()
-        .flatMap(config -> config.sourceRoots().stream())
-        .distinct()
-        .filter(Files::isDirectory)
-        .forEach(index::indexRoot);
+    for (final var root :
+        allConfigs.stream()
+            .flatMap(config -> config.sourceRoots().stream())
+            .distinct()
+            .filter(Files::isDirectory)
+            .toList()) {
+      index.indexRoot(root);
+    }
     LOG.fine(
         () ->
             "[candidate-index] built: %d file(s), %d token(s) %dms"
@@ -48,7 +51,9 @@ final class ReferenceCandidateIndex {
     remove(uri);
     final Set<String> tokens = extractTokens(content);
     uriToTokens.put(uri, tokens);
-    tokens.forEach(token -> tokenToUris.computeIfAbsent(token, k -> new HashSet<>()).add(uri));
+    for (final var token : tokens) {
+      tokenToUris.computeIfAbsent(token, k -> new HashSet<>()).add(uri);
+    }
   }
 
   void remove(final String uri) {
@@ -57,16 +62,15 @@ final class ReferenceCandidateIndex {
       return;
     }
 
-    tokens.forEach(
-        token -> {
-          final var uris = tokenToUris.get(token);
-          if (uris != null) {
-            uris.remove(uri);
-            if (uris.isEmpty()) {
-              tokenToUris.remove(token);
-            }
-          }
-        });
+    for (final var token : tokens) {
+      final var uris = tokenToUris.get(token);
+      if (uris != null) {
+        uris.remove(uri);
+        if (uris.isEmpty()) {
+          tokenToUris.remove(token);
+        }
+      }
+    }
   }
 
   Set<String> candidateUris(final String token) {
@@ -75,16 +79,13 @@ final class ReferenceCandidateIndex {
 
   private void indexRoot(final Path root) {
     try (final var stream = Files.walk(root)) {
-      stream
-          .filter(p -> p.toString().endsWith(".java"))
-          .forEach(
-              path -> {
-                try {
-                  update(path.toUri().toString(), Files.readString(path));
-                } catch (final IOException e) {
-                  LOG.log(Level.FINE, e, () -> "[candidate-index] skipped: %s".formatted(path));
-                }
-              });
+      for (final var path : stream.filter(p -> p.toString().endsWith(".java")).toList()) {
+        try {
+          update(path.toUri().toString(), Files.readString(path));
+        } catch (final IOException e) {
+          LOG.log(Level.FINE, e, () -> "[candidate-index] skipped: %s".formatted(path));
+        }
+      }
     } catch (final IOException e) {
       LOG.log(Level.WARNING, e, () -> "[candidate-index] failed to walk: %s".formatted(root));
     }

@@ -107,7 +107,7 @@ final class LambdaExpectedReturnTypeResolver {
       final MethodInvocationTree invocation,
       final AttributedFileAnalysis snapshot) {
     if (invocation.getMethodSelect() instanceof final MemberSelectTree ms) {
-      final TreePath receiverPath = new TreePath(invocationPath, ms.getExpression());
+      final var receiverPath = new TreePath(invocationPath, ms.getExpression());
       return snapshot.trees().getTypeMirror(receiverPath);
     }
 
@@ -184,7 +184,7 @@ final class LambdaExpectedReturnTypeResolver {
 
       if (leaf instanceof final AssignmentTree assignment
           && assignment.getExpression() == previous.getLeaf()) {
-        final TreePath lhsPath = new TreePath(current, assignment.getVariable());
+        final var lhsPath = new TreePath(current, assignment.getVariable());
         return snapshot.trees().getTypeMirror(lhsPath);
       }
 

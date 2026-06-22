@@ -32,7 +32,7 @@ public final class ReactorProjects {
    */
   public static Map<String, List<Path>> artifactClasspaths(final List<MavenProject> projects) {
     final var reactorGAs = reactorProjects(projects);
-    final Map<String, List<Path>> result = new TreeMap<>();
+    final var result = new TreeMap<String, List<Path>>();
     for (final MavenProject project : projects) {
       final var projectClasspath =
           project.getArtifacts().stream()
@@ -41,7 +41,9 @@ public final class ReactorProjects {
               .filter(a -> isCompileClasspathScope(a.getScope()))
               .map(a -> a.getFile().toPath())
               .toList();
-      project.getArtifacts().forEach(a -> result.putIfAbsent(artifactKey(a), projectClasspath));
+      for (final var a : project.getArtifacts()) {
+        result.putIfAbsent(artifactKey(a), projectClasspath);
+      }
     }
     return result;
   }

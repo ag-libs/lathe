@@ -18,5 +18,6 @@ public record DependencyData(
         .notBlank(jar, "jar")
         .when(status == SourceStatus.PRESENT, v -> v.notBlank(dir, "dir"))
         .validate();
+    classpath = classpath != null ? List.copyOf(classpath) : null;
   }
 }

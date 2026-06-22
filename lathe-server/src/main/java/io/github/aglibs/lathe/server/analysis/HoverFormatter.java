@@ -53,14 +53,14 @@ public final class HoverFormatter {
       sig = element.toString();
     }
 
-    final var sb = new StringBuilder("```java\n").append(sig).append("\n```");
+    var result = "```java\n%s\n```".formatted(sig);
     if (javadoc != null && !javadoc.isBlank()) {
-      sb.append("\n\n").append(javadoc);
+      result = "%s\n\n%s".formatted(result, javadoc);
     }
     if (origin != null) {
-      sb.append("\n\n*source: ").append(origin).append("*");
+      result = "%s\n\n*source: %s*".formatted(result, origin);
     }
-    return Optional.of(sb.toString());
+    return Optional.of(result);
   }
 
   static String formatParam(

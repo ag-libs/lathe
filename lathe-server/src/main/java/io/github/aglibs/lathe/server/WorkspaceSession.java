@@ -859,15 +859,17 @@ final class WorkspaceSession {
     reactorShards.clear();
     scanReactorShards();
     typeIndex = WorkspaceTypeIndex.build(newManifest.typeIndexShardPaths(), reactorShards.values());
-    List.copyOf(docs.uris())
-        .forEach(
-            uri -> {
-              final var f = docs.get(uri);
-              docs.put(uri, f.content(), f.version());
-            });
+    refreshOpenDocuments();
     old.close();
     scheduleAllOpenFiles();
     client.showMessage(new MessageParams(MessageType.Info, "Lathe: workspace reloaded."));
+  }
+
+  private void refreshOpenDocuments() {
+    for (final var uri : List.copyOf(docs.uris())) {
+      final var f = docs.get(uri);
+      docs.put(uri, f.content(), f.version());
+    }
   }
 
   private void compileAndPublish(final OpenDocument snapshot, final CompileMode mode) {
