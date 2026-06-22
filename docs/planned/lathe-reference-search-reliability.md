@@ -52,11 +52,12 @@ In order:
 - Never cache analysis created solely for a closed reference candidate.
 - Bound active javac work across all module and external-source workers.
 - Show candidate completion progress for every long-running reference search when the client supports work-done progress.
-- Propagate optional `$/cancelRequest` from the returned LSP response to queued candidate work.
+- Propagate optional request-ID and work-done-progress cancellation to queued candidate work.
 - Release admission after success, failure, or cancellation.
 - Terminate the process if direct or wrapped `OutOfMemoryError` still occurs.
 - Preserve the existing module-worker confinement model and exact javac validation.
 - Record enough aggregate measurements to validate memory use and throughput on Helidon.
+- Verify that editor shutdown or transport EOF during an active search does not leave a Lathe process running.
 
 ## Non-goals
 
@@ -150,6 +151,16 @@ The references handler returns the response `CompletableFuture` observed by LSP4
 Its checker throws `CancellationException` after LSP4J cancels that response in reaction to `$/cancelRequest`.
 The checker is propagated through the existing asynchronous composition to every candidate owned by the request.
 
+Work-done progress provides a second standard cancellation path.
+Lathe sets `cancellable=true` on the operation's `WorkDoneProgressBegin` notification.
+Clients such as progress UIs can then send `window/workDoneProgress/cancel` with the operation token.
+
+`LatheLanguageServer.cancelProgress()` delegates that notification to the reference-progress owner.
+The progress owner maintains an operation-scoped association from each active work-done token to the same response future used by request-ID cancellation.
+Cancelling by progress token cancels that response future, so both protocol paths activate the same LSP4J `CancelChecker` and candidate checks.
+The token association is removed on success, cancellation, and failure.
+Unknown or already-completed tokens are ignored.
+
 A candidate checks cancellation:
 
 1. before submission where practical;
@@ -163,7 +174,7 @@ Cancellation before javac completes the candidate without compiler work.
 Cancellation during javac does not interrupt the compiler; the pass finishes, admission is released, and its result is discarded.
 
 The request completes with LSP `RequestCancelled` (`-32800`), not a successful empty result.
-Clients that do not send `$/cancelRequest` receive normal complete-search behavior.
+Clients that send neither `$/cancelRequest` nor `window/workDoneProgress/cancel` receive normal complete-search behavior.
 Cancellation of one request does not affect notifications or unrelated requests sharing the same module worker.
 
 Cancelled tasks are not physically removed from module executor queues in M1.
@@ -173,6 +184,7 @@ Queue removal requires measurements demonstrating a material responsiveness prob
 ## Work-Done Progress
 
 Reference searches use LSP work-done progress, not partial-result streaming.
+The begin notification advertises `cancellable=true` whenever the operation is backed by a cancellable response future.
 The operation begins after the candidate count is known and reports completed candidates:
 
 ```text
@@ -201,6 +213,7 @@ Begin/end guards and throttling state belong to one operation, not to a reporter
 If the request supplies a work-done token, Lathe uses it.
 Otherwise, Lathe may create a server-initiated token when the client advertised work-done progress support.
 If progress is unsupported, the same search runs with a no-op progress task.
+Request-ID cancellation remains available independently of progress support.
 
 ## Result Aggregation and Partial Results
 
@@ -250,6 +263,7 @@ The Helidon qualification run records candidate count, attributed count, elapsed
 
 Expected ownership:
 
+- `LatheLanguageServer`: receives `window/workDoneProgress/cancel` and delegates by token;
 - `LatheTextDocumentService`: response future, response-backed cancellation checker, and progress lifecycle;
 - `WorkspaceSession`: candidate ownership, open-versus-closed routing, aggregation, and counters;
 - `CompilationWorker`: queued cancellation checks and fatal-memory boundary;
@@ -257,7 +271,7 @@ Expected ownership:
 - `WorkspaceModuleRegistry`: ownership of shared `CompilationAdmission`;
 - `CompilationAdmission`: permit acquisition, cancellation-aware waiting, and release only;
 - `JavacRunner`: admission boundary immediately around javac;
-- `ProgressReporter`: shared protocol plumbing with operation-scoped asynchronous progress state.
+- `ProgressReporter`: shared protocol plumbing, active-token associations, and operation-scoped asynchronous progress state.
 
 `CompilationAdmission` is a concrete class.
 It must not absorb scheduling, caching, feature orchestration, progress, or aggregation.
@@ -288,6 +302,7 @@ Default ownership for this design is:
 | Open-versus-closed candidate routing | `WorkspaceSessionTest` |
 | Permit calculation, concurrency, and release | `CompilationAdmissionTest` |
 | Queued cancellation and fatal-memory boundary | `CompilationWorkerTest` |
+| Work-done cancellation notification routing | `LatheLanguageServerTest` |
 | LSP cancellation response and progress protocol | `LatheTextDocumentServiceTest` |
 | Real JSON-RPC wiring and Helidon qualification | Explorer validation |
 
@@ -319,6 +334,9 @@ They must not use `Thread.sleep`.
 ### Cancellation tests
 
 - Cancelling the returned response future is observed by the propagated checker.
+- `$/cancelRequest` and `window/workDoneProgress/cancel` cancel the same response future and checker.
+- Cancelling an active work-done token removes its association after termination.
+- Cancelling an unknown or completed work-done token is a no-op.
 - A candidate cancelled while queued never invokes javac.
 - A candidate cancelled while waiting for admission exits without compiler work.
 - A candidate cancelled during javac releases admission and discards its result.
@@ -328,11 +346,12 @@ They must not use `Thread.sleep`.
 
 ### Progress tests
 
-- A supported client receives one begin, monotonic reports, and one completed end.
+- A supported client receives one cancellable begin, monotonic reports, and one completed end.
 - A cancelled request receives one cancelled end.
 - A failed request receives one failed end and preserves the original request failure.
 - An unsupported client receives no progress notifications and the same final locations.
 - Concurrent requests use distinct tokens and independent begin/end guards.
+- Cancelling one progress token does not affect another active operation.
 - Rapid candidate completions are throttled without suppressing terminal end.
 - Progress notification failure does not fail or cancel the reference request.
 - No progress object retains compiler analysis after candidate completion.
@@ -352,7 +371,7 @@ Automated tests invoke the normal text-document service boundary with `Reference
 They do not launch Neovim or a separate editor process as part of the Maven build.
 
 - A multi-module references request returns complete exact locations and emits progress notifications to the fake client.
-- Cancelling the returned request future produces `RequestCancelled` and leaves the service able to answer a subsequent emulated hover request.
+- Cancelling by request ID or work-done token produces `RequestCancelled` and leaves the service able to answer a subsequent emulated hover request.
 - A request without cancellation or progress support retains normal protocol behavior.
 - An ordinary candidate failure reaches the service boundary and is logged once.
 - Request, progress, and cancellation parameters use the same LSP4J types used by the production JSON-RPC path.
@@ -360,14 +379,16 @@ They do not launch Neovim or a separate editor process as part of the Maven buil
 ### Explorer validation
 
 The real protocol workflow is validated manually with `dev/explore.py` and its existing `dev/lsp.py` client rather than by running Neovim in the build.
-The explorer client may be extended only as needed to display `$/progress` notifications and issue `$/cancelRequest` for its active references request.
+The explorer client may be extended only as needed to display `$/progress` notifications and issue `$/cancelRequest` or `window/workDoneProgress/cancel` for its active references request.
 
 Explorer validation covers:
 
 - a completed references request with visible monotonic progress;
-- cancellation of an active references request;
+- cancellation of an active references request through its progress UI token;
 - a successful hover request after completion or cancellation;
-- identical final locations when progress is enabled or unsupported.
+- identical final locations when progress is enabled or unsupported;
+- process exit within a bounded timeout after LSP `shutdown` and `exit` during an active search;
+- process exit within a bounded timeout after the explorer closes server stdin without an LSP shutdown.
 
 ### Helidon qualification
 
@@ -393,6 +414,8 @@ Repeat the search once to verify stable post-search memory rather than relying o
 - Queued cancelled candidates never enter javac.
 - Cancellation during javac never publishes or caches that result.
 - Supported clients see monotonic progress and one terminal outcome.
+- Cancellable progress and request-ID cancellation stop the same operation.
+- Editor shutdown and transport EOF during an active search leave no Lathe process running.
 - Unsupported clients retain normal complete-result behavior.
 - Complete searches retain exact project-wide reference semantics.
 - Any residual direct or wrapped `OutOfMemoryError` terminates the process.
