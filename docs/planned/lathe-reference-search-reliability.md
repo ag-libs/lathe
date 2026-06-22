@@ -267,6 +267,33 @@ It must not absorb scheduling, caching, feature orchestration, progress, or aggr
 Before adding tests, read at least two existing test classes in every affected test package and follow their fixtures, compilation pipeline, and asynchronous assertion patterns.
 All new tests follow the repository naming and formatting rules and include positive and negative or edge cases.
 
+### Test ownership and redundancy
+
+Before writing tests for each implementation slice, perform a read-only test-ownership audit:
+
+1. search for existing assertions covering each planned behavior;
+2. identify the lowest reliable layer that can prove the behavior;
+3. extend the nearest existing test class where that layer already has an owner;
+4. add a new test class only for a genuinely new production abstraction;
+5. avoid repeating the same successful scenario at analysis, worker, workspace, and service layers.
+
+The implementation summary for each slice must include a small coverage map showing the behavior, existing coverage, proposed change, and owning test class.
+If an existing test already proves the behavior, reuse it unchanged.
+
+Default ownership for this design is:
+
+| Behavior | Test owner |
+|---|---|
+| Cache lifetime and exact transient reference results | `SourceAnalysisSessionTest` |
+| Open-versus-closed candidate routing | `WorkspaceSessionTest` |
+| Permit calculation, concurrency, and release | `CompilationAdmissionTest` |
+| Queued cancellation and fatal-memory boundary | `CompilationWorkerTest` |
+| LSP cancellation response and progress protocol | `LatheTextDocumentServiceTest` |
+| Real JSON-RPC wiring and Helidon qualification | Explorer validation |
+
+Higher-layer tests verify only routing, protocol, or integration behavior that lower layers cannot establish.
+They must not duplicate detailed compiler or cache assertions already owned by lower-layer tests.
+
 ### Analysis lifetime tests
 
 - A closed-file reference scan returns exact matches and leaves `SourceAnalysisSession.cache` unchanged.
