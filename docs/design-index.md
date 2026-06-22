@@ -9,10 +9,8 @@ Read their current-status sections and compare them with the roadmap before star
 
 ## M1 — Internal Preview
 
-- [Request Cancellation and Compilation Admission](planned/lathe-request-cancellation-and-compilation-admission.md) —
-  process-wide javac concurrency and cooperative LSP request cancellation.
-- [Reference Search Resource Safety](planned/lathe-reference-search-resource-safety.md) — transient closed-file
-  analysis and shared javac admission after the Helidon `String` search crash.
+- [Reference Search Reliability](planned/lathe-reference-search-reliability.md) — bounded transient analysis,
+  work-done progress, and optional cancellation after the Helidon `String` search crash.
 - [Goto Implementation and Type Hierarchy](planned/lathe-goto-implementation.md) — inheritance-index-backed type
   navigation and reactor method implementation.
 - [Event-Loop Starvation](planned/lathe-event-loop-starvation.md) — diagnosis of synchronous index construction on
@@ -37,8 +35,6 @@ Read their current-status sections and compare them with the roadmap before star
 - [Google Indentation](planned/lathe-google-indent.md) — conservative on-type formatting.
 - [Class/Import Semantic Highlighting](planned/lathe-class-import-semantic-highlighting.md) — Neovim-relevant semantic
   corrections for type references.
-- [Streaming References](planned/lathe-streaming-references.md) — progress and partial results for long searches if
-  measurements justify the work.
 - [Lightweight Watcher](planned/lathe-lightweight-watcher.md) — partially stale design to re-evaluate before adding
   source watching.
 

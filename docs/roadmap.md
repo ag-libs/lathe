@@ -31,6 +31,9 @@ It includes the current implementation and every active, non-deferred correctnes
 ### Correctness and maintainability
 
 - Replace empty-success exception handling at workspace fan-out boundaries with proper LSP failures.
+- Make workspace-wide reference search use transient closed-file analysis and a process-wide javac concurrency cap.
+- Show work-done progress for reference search and honor optional LSP request cancellation.
+- Treat direct or wrapped `OutOfMemoryError` as fatal instead of continuing with partially failed compiler workers.
 - Remove hard-coded sleeps and other known flakiness from asynchronous tests.
 - Complete the focused fail-fast, naming, DRY, and fixture slices in the current maintainability plan.
 - Preserve the existing server-event-loop and module-worker ownership model.
@@ -68,7 +71,7 @@ It remains a build-from-source release.
 
 - Complete external-source Find References scope, failure propagation, and invoker coverage.
 - Implement incoming and outgoing call hierarchy.
-- Add progress reporting for long-running reference operations where measurements justify it.
+- Consider partial-result streaming only if post-M1 measurements show material result latency or memory pressure.
 
 ### Completion
 
