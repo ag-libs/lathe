@@ -101,13 +101,13 @@ class CompilationWorkerTest {
   }
 
   @Test
-  void compile_directOutOfMemory_invokesFatalTermination() {
+  void compile_directError_invokesFatalTermination() {
     assertTermination(new OutOfMemoryError("expected"), 1);
   }
 
   @Test
-  void compile_wrappedOutOfMemory_invokesFatalTermination() {
-    assertTermination(new IllegalStateException(new OutOfMemoryError("expected")), 1);
+  void compile_wrappedError_invokesFatalTermination() {
+    assertTermination(new IllegalStateException(new AssertionError("expected")), 1);
   }
 
   @Test

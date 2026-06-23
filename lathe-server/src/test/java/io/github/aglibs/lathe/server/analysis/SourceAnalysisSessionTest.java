@@ -28,9 +28,9 @@ import org.junit.jupiter.api.Test;
 class SourceAnalysisSessionTest {
 
   @Test
-  void safeCompile_wrappedOutOfMemory_rethrowsFatalCause() throws IOException {
+  void safeCompile_wrappedError_rethrowsFatalCause() throws IOException {
     final JavacTask task = mock(JavacTask.class);
-    final var expected = new OutOfMemoryError("expected");
+    final var expected = new AssertionError("expected");
     when(task.parse()).thenReturn(List.of());
     when(task.analyze()).thenThrow(new IllegalStateException(expected));
 

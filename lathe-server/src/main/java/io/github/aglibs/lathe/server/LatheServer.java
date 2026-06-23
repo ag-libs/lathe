@@ -4,6 +4,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.logging.Level;
 import java.util.logging.LogManager;
@@ -29,12 +31,23 @@ public final class LatheServer {
   static void run(final InputStream in, final OutputStream out)
       throws ExecutionException, InterruptedException {
     final var server = new LatheLanguageServer();
-    final Launcher<LanguageClient> launcher = LSPLauncher.createServerLauncher(server, in, out);
+    final ExecutorService rpcExecutor = Executors.newCachedThreadPool(LatheServer::newRpcThread);
+    final Launcher<LanguageClient> launcher =
+        LSPLauncher.createServerLauncher(server, in, out, rpcExecutor, consumer -> consumer);
     server.connect(launcher.getRemoteProxy());
     final Future<?> listening = launcher.startListening();
     LOG.info(() -> "[startup] Lathe language server ready");
-    listening.get();
-    LOG.info(() -> "[shutdown] Lathe language server stopped");
+    try {
+      listening.get();
+    } finally {
+      server.shutdown().join();
+      rpcExecutor.shutdownNow();
+      LOG.info(() -> "[shutdown] Lathe language server stopped");
+    }
+  }
+
+  private static Thread newRpcThread(final Runnable task) {
+    return new Thread(task, "lathe-jsonrpc");
   }
 
   private static PrintStream acquireStdout() {

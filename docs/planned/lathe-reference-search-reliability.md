@@ -54,7 +54,7 @@ In order:
 - Show candidate completion progress for every long-running reference search when the client supports work-done progress.
 - Propagate optional request-ID and work-done-progress cancellation to queued candidate work.
 - Release admission after success, failure, or cancellation.
-- Terminate the process if direct or wrapped `OutOfMemoryError` still occurs.
+- Terminate the process if direct or wrapped `Error` still occurs.
 - Preserve the existing module-worker confinement model and exact javac validation.
 - Record enough aggregate measurements to validate memory use and throughput on Helidon.
 - Verify that editor shutdown or transport EOF during an active search does not leave a Lathe process running.
@@ -225,14 +225,14 @@ Eager dispatch and aggregation may be reconsidered only if post-fix measurements
 
 ## Failure Handling
 
-Cancellation, legitimate empty results, ordinary failures, and fatal memory exhaustion are distinct outcomes.
+Cancellation, legitimate empty results, ordinary failures, and fatal JVM errors are distinct outcomes.
 
 - An unresolved target or completed search with no matches returns a successful empty list.
 - Source-read, compiler, worker, and aggregation failures complete the request exceptionally and are logged once at the request boundary.
 - Cancellation completes with `RequestCancelled` and is not logged as a failure.
-- Direct or wrapped `OutOfMemoryError` is fatal.
+- Direct or wrapped `Error` is fatal.
 
-`OutOfMemoryError` must never be swallowed by javac recovery code or converted into partial analysis.
+`Error` must never be swallowed by javac recovery code or converted into partial analysis.
 The module-worker boundary detects it, including a wrapped cause, and terminates the process immediately with a non-zero status.
 Continuing with a partially failed worker registry is unsupported because compiler and file-manager state may already be corrupted.
 
@@ -358,10 +358,10 @@ They must not use `Thread.sleep`.
 
 Progress throttling tests use an injected or existing controllable time source rather than wall-clock sleeps.
 
-### Fatal-memory tests
+### Fatal-error tests
 
-- Direct `OutOfMemoryError` is never converted into partial analysis.
-- A runtime exception wrapping `OutOfMemoryError` is classified as fatal.
+- Direct `Error` is never converted into partial analysis.
+- A runtime exception wrapping `Error` is classified as fatal.
 - The fatal boundary invokes an injectable termination action in tests instead of terminating the test JVM.
 - Ordinary compiler exceptions remain non-fatal request failures.
 
@@ -418,7 +418,7 @@ Repeat the search once to verify stable post-search memory rather than relying o
 - Editor shutdown and transport EOF during an active search leave no Lathe process running.
 - Unsupported clients retain normal complete-result behavior.
 - Complete searches retain exact project-wide reference semantics.
-- Any residual direct or wrapped `OutOfMemoryError` terminates the process.
+- Any residual direct or wrapped `Error` terminates the process.
 - Partial-result streaming, result caching, and new scheduling abstractions remain deferred.
 - Focused unit and emulated request tests, the full Maven verification suite, Spotless, explorer validation, and Helidon qualification pass.
 

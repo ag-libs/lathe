@@ -47,9 +47,9 @@ public interface JavaSourceCompiler extends AutoCloseable {
     try {
       task.analyze();
     } catch (final RuntimeException e) {
-      final OutOfMemoryError outOfMemory = outOfMemoryCause(e);
-      if (outOfMemory != null) {
-        throw outOfMemory;
+      final Error fatal = fatalErrorCause(e);
+      if (fatal != null) {
+        throw fatal;
       }
       LOG.log(Level.SEVERE, e, () -> "javac bug: analyze() crashed on sentinel-injected source");
     }
@@ -57,11 +57,11 @@ public interface JavaSourceCompiler extends AutoCloseable {
     return cu;
   }
 
-  static OutOfMemoryError outOfMemoryCause(final Throwable failure) {
+  static Error fatalErrorCause(final Throwable failure) {
     Throwable current = failure;
     while (current != null) {
-      if (current instanceof OutOfMemoryError outOfMemory) {
-        return outOfMemory;
+      if (current instanceof Error error) {
+        return error;
       }
       current = current.getCause();
     }

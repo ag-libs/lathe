@@ -66,6 +66,11 @@ refs <text> [assertions]
       expect <substr>  at least one result path must contain substr
       min <n>          at least n references required
       max <n>          at most n references allowed
+    Optional lifecycle controls:
+      cancel-progress <n>  cancel through the progress token after n candidates
+      cancel-request <n>   cancel through $/cancelRequest after n candidates
+      shutdown-after <n>   request server shutdown after n candidates
+      eof-after <n>        close server stdin after n candidates
 
 impl <line>:<col> [assertions]   (alias: implementation)
     List concrete implementations of the type or method at the given 0-based position.
@@ -178,7 +183,7 @@ except ImportError:
     pass
 
 sys.path.insert(0, str(Path(__file__).parent))
-from lsp import LatheClient, find_workspace_root
+from lsp import LatheClient, RequestCancelledError, find_workspace_root
 
 # ── constants ─────────────────────────────────────────────────────────────────
 
@@ -936,6 +941,30 @@ class ExploreShell:
 
         pre, assertions = _parse_assertions(args)
 
+        cancel_mode = None
+        cancel_after = None
+        modes = {
+            "cancel-progress": "progress",
+            "cancel-request": "request",
+            "shutdown-after": "shutdown",
+            "eof-after": "eof",
+        }
+        for option, mode in modes.items():
+            if option not in pre:
+                continue
+            option_index = pre.index(option)
+            if option_index + 1 >= len(pre):
+                print(f"  {option} requires a candidate count")
+                return
+            try:
+                cancel_after = int(pre[option_index + 1])
+            except ValueError:
+                print(f"  invalid candidate count: {pre[option_index + 1]!r}")
+                return
+            cancel_mode = mode
+            del pre[option_index:option_index + 2]
+            break
+
         if not pre:
             print("usage: refs <line>:<col> [assertions]")
             print("       refs <text>        [assertions]")
@@ -956,9 +985,19 @@ class ExploreShell:
             print(f"  found {pre[0]!r} at {line}:{col}")
 
         try:
-            refs = self._client.references(self._file, line, col)
+            refs = self._client.references(
+                self._file,
+                line,
+                col,
+                on_progress=self._print_reference_progress,
+                cancel_after=cancel_after,
+                cancel_mode=cancel_mode or "progress",
+            )
         except TimeoutError:
             print("  TIMEOUT")
+            return
+        except RequestCancelledError:
+            print("  (reference search cancelled)")
             return
 
         if not refs:
@@ -987,6 +1026,17 @@ class ExploreShell:
             passed = _print_assertion_result(_check_refs_assertions(refs, assertions))
             if not passed:
                 self.any_failure = True
+
+    @staticmethod
+    def _print_reference_progress(value: dict) -> None:
+        kind = value.get("kind", "report")
+        title = value.get("title")
+        message = value.get("message")
+        percentage = value.get("percentage")
+        parts = [part for part in (title, message) if part]
+        if percentage is not None:
+            parts.append(f"{percentage}%")
+        print(f"  progress {kind}: {' — '.join(parts)}")
 
     def _cmd_impl(self, args: list[str]) -> None:
         if not args:

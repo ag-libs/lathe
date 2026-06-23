@@ -41,6 +41,27 @@ LATHE_LAUNCHER = os.environ.get(
 DEFAULT_TIMEOUT = int(os.environ.get("LATHE_TIMEOUT", "15"))
 
 
+class RequestCancelledError(RuntimeError):
+    """Raised when the server returns LSP RequestCancelled."""
+
+
+class RequestHandle:
+    """One in-flight JSON-RPC request that can be waited on or cancelled."""
+
+    def __init__(self, client: "LatheClient", request_id: int, method: str,
+                 responses: queue.SimpleQueue):
+        self._client = client
+        self.id = request_id
+        self.method = method
+        self.responses = responses
+
+    def wait(self, timeout: int = DEFAULT_TIMEOUT) -> Any:
+        return self._client._wait_response(self, timeout)
+
+    def cancel(self) -> None:
+        self._client.notify("$/cancelRequest", {"id": self.id})
+
+
 # ── LatheClient ───────────────────────────────────────────────────────────────
 
 class LatheClient:
@@ -55,12 +76,15 @@ class LatheClient:
         self.stderr_lines = stderr_lines
         self._id = 0
         self._id_lock = threading.Lock()
+        self._progress_id = 0
+        self._send_lock = threading.Lock()
         # pending request futures: id -> queue(maxsize=1)
         self._pending: dict[int, queue.SimpleQueue] = {}
         self._pending_lock = threading.Lock()
         # notification queues keyed by method
         self._notifications: dict[str, queue.Queue] = {}
         self._notif_lock = threading.Lock()
+        self._stopped = False
 
         self._reader = threading.Thread(target=self._read_loop, daemon=True)
         self._reader.start()
@@ -109,20 +133,38 @@ class LatheClient:
                         "tokenModifiers": [],
                         "formats": ["relative"],
                     },
-                }
+                },
+                "window": {"workDoneProgress": True},
             },
         })
         self.notify("initialized", {})
         return resp
 
     def stop(self):
+        if self._stopped:
+            return
+        self._stopped = True
         try:
-            self.request("shutdown", None)
+            self.request("shutdown", None, timeout=3)
             self.notify("exit", None)
         except Exception:
             pass
-        self._proc.terminate()
-        self._proc.wait(timeout=3)
+        self._wait_or_terminate()
+
+    def close_transport(self):
+        """Close server stdin and require bounded process exit without LSP shutdown."""
+        if self._stopped:
+            return
+        self._stopped = True
+        self._proc.stdin.close()
+        self._wait_or_terminate()
+
+    def _wait_or_terminate(self, timeout: int = 3):
+        try:
+            self._proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            self._proc.terminate()
+            self._proc.wait(timeout=timeout)
 
     def __enter__(self):
         return self
@@ -137,11 +179,17 @@ class LatheClient:
             self._id += 1
             return self._id
 
+    def _next_progress_token(self) -> str:
+        with self._id_lock:
+            self._progress_id += 1
+            return f"lathe-explorer-references-{self._progress_id}"
+
     def _send(self, msg: dict):
         body = json.dumps(msg)
         data = f"Content-Length: {len(body)}\r\n\r\n{body}".encode()
-        self._proc.stdin.write(data)
-        self._proc.stdin.flush()
+        with self._send_lock:
+            self._proc.stdin.write(data)
+            self._proc.stdin.flush()
 
     def _read_loop(self):
         while True:
@@ -158,10 +206,13 @@ class LatheClient:
                 if length == 0:
                     break
                 msg = json.loads(self._proc.stdout.read(length))
-            except Exception:
+            except Exception as exc:
+                self.stderr_lines.append(f"explorer reader failed: {exc}")
                 break
 
-            if "id" in msg and "method" not in msg:
+            if "id" in msg and "method" in msg:
+                self._handle_server_request(msg)
+            elif "id" in msg and "method" not in msg:
                 # response to a request
                 with self._pending_lock:
                     q = self._pending.pop(msg["id"], None)
@@ -171,11 +222,23 @@ class LatheClient:
                 # notification
                 method = msg["method"]
                 with self._notif_lock:
-                    q = self._notifications.get(method)
-                if q:
-                    q.put(msg)
+                    q = self._notifications.setdefault(method, queue.Queue())
+                q.put(msg)
+
+    def _handle_server_request(self, msg: dict):
+        if msg["method"] == "window/workDoneProgress/create":
+            self._send({"jsonrpc": "2.0", "id": msg["id"], "result": None})
+            return
+        self._send({
+            "jsonrpc": "2.0",
+            "id": msg["id"],
+            "error": {"code": -32601, "message": f"unsupported client method {msg['method']}"},
+        })
 
     def request(self, method: str, params: Any, timeout: int = DEFAULT_TIMEOUT) -> Any:
+        return self.request_async(method, params).wait(timeout)
+
+    def request_async(self, method: str, params: Any) -> RequestHandle:
         req_id = self._next_id()
         q: queue.SimpleQueue = queue.SimpleQueue()
         with self._pending_lock:
@@ -184,13 +247,22 @@ class LatheClient:
         if params is not None:
             msg["params"] = params
         self._send(msg)
+        return RequestHandle(self, req_id, method, q)
+
+    def _wait_response(self, handle: RequestHandle, timeout: int) -> Any:
         try:
-            resp = q.get(timeout=timeout)
+            resp = handle.responses.get(timeout=timeout)
         except queue.Empty:
             with self._pending_lock:
-                self._pending.pop(req_id, None)
-            raise TimeoutError(f"{method} timed out after {timeout}s")
+                self._pending.pop(handle.id, None)
+            raise TimeoutError(f"{handle.method} timed out after {timeout}s")
+        return self._response_result(handle.method, resp)
+
+    @staticmethod
+    def _response_result(method: str, resp: dict) -> Any:
         if "error" in resp:
+            if resp["error"].get("code") == -32800:
+                raise RequestCancelledError(f"{method} cancelled")
             raise RuntimeError(f"{method} error: {resp['error']}")
         return resp.get("result")
 
@@ -223,12 +295,19 @@ class LatheClient:
             except queue.Empty:
                 raise TimeoutError(f"notification {method!r} timed out after {timeout}s")
 
+    def _notification_queue(self, method: str) -> queue.Queue:
+        with self._notif_lock:
+            if method not in self._notifications:
+                self._notifications[method] = queue.Queue()
+            return self._notifications[method]
+
     # ── LSP feature helpers ────────────────────────────────────────────────
 
     def open(self, file: str | Path, timeout: int = DEFAULT_TIMEOUT) -> list[dict]:
         """Open file and return diagnostics."""
         p = Path(file).resolve()
         uri = p.as_uri()
+        self._notification_queue("textDocument/publishDiagnostics")
         self.notify("textDocument/didOpen", {
             "textDocument": {
                 "uri": uri,
@@ -256,6 +335,7 @@ class LatheClient:
         """Send didSave and return resulting diagnostics."""
         p = Path(file).resolve()
         uri = p.as_uri()
+        self._notification_queue("textDocument/publishDiagnostics")
         self.notify("textDocument/didSave", {"textDocument": {"uri": uri}})
         msg = self.wait_notification(
             "textDocument/publishDiagnostics",
@@ -293,14 +373,108 @@ class LatheClient:
         return result if isinstance(result, list) else [result]
 
     def references(self, file: str | Path, line: int, col: int,
-                   include_declaration: bool = False) -> list[dict]:
+                   include_declaration: bool = False,
+                   on_progress: Callable[[dict], None] | None = None,
+                   cancel_after: int | None = None,
+                   cancel_mode: str = "progress") -> list[dict]:
         """Find references at 0-based line/col."""
-        result = self.request("textDocument/references", {
+        token = self._next_progress_token()
+        progress = self._notification_queue("$/progress")
+        handle = self.request_async("textDocument/references", {
             "textDocument": {"uri": Path(file).resolve().as_uri()},
             "position": {"line": line, "character": col},
             "context": {"includeDeclaration": include_declaration},
+            "workDoneToken": token,
         })
+        deadline = time.monotonic() + DEFAULT_TIMEOUT
+        cancelled = False
+        while True:
+            completed = self._drain_reference_progress(progress, token, on_progress)
+            if cancel_after is not None and not cancelled:
+                if completed is not None and completed >= cancel_after:
+                    if cancel_mode == "request":
+                        handle.cancel()
+                    elif cancel_mode == "shutdown":
+                        self.stop()
+                        raise RequestCancelledError("server stopped during references")
+                    elif cancel_mode == "eof":
+                        self.close_transport()
+                        raise RequestCancelledError("transport closed during references")
+                    else:
+                        self.notify("window/workDoneProgress/cancel", {"token": token})
+                    cancelled = True
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                with self._pending_lock:
+                    self._pending.pop(handle.id, None)
+                raise TimeoutError(
+                    f"textDocument/references timed out after {DEFAULT_TIMEOUT}s"
+                )
+            try:
+                resp = handle.responses.get(timeout=min(0.1, remaining))
+                self._drain_reference_progress(progress, token, on_progress)
+                try:
+                    result = self._response_result(handle.method, resp)
+                except RequestCancelledError:
+                    self._wait_reference_end(progress, token, on_progress)
+                    raise
+                break
+            except queue.Empty:
+                continue
         return result or []
+
+    @staticmethod
+    def _drain_reference_progress(progress: queue.Queue, token: str,
+                                  on_progress: Callable[[dict], None] | None) -> int | None:
+        latest = None
+        retained = []
+        while True:
+            try:
+                msg = progress.get_nowait()
+            except queue.Empty:
+                break
+            if msg.get("params", {}).get("token") == token:
+                value = msg["params"]["value"]
+                if on_progress is not None:
+                    on_progress(value)
+                message = value.get("message", "")
+                try:
+                    completed = int(message.split("/", 1)[0].strip())
+                    latest = completed if latest is None else max(latest, completed)
+                except (ValueError, IndexError):
+                    pass
+            else:
+                retained.append(msg)
+        for msg in retained:
+            progress.put(msg)
+        return latest
+
+    @staticmethod
+    def _wait_reference_end(progress: queue.Queue, token: str,
+                            on_progress: Callable[[dict], None] | None,
+                            timeout: int = 5) -> None:
+        deadline = time.monotonic() + timeout
+        retained = []
+        try:
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return
+                try:
+                    msg = progress.get(timeout=remaining)
+                except queue.Empty:
+                    return
+                if msg.get("params", {}).get("token") != token:
+                    retained.append(msg)
+                    continue
+                value = msg["params"]["value"]
+                if on_progress is not None:
+                    on_progress(value)
+                if value.get("kind") == "end":
+                    return
+        finally:
+            for msg in retained:
+                progress.put(msg)
 
     def completion(self, file: str | Path, line: int, col: int) -> list[dict]:
         """Completion at 0-based line/col. Returns list of CompletionItems."""

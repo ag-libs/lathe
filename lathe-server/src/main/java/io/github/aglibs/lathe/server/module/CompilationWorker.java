@@ -275,15 +275,14 @@ public final class CompilationWorker {
 
               future.complete(fn.apply(context));
             } catch (final Throwable t) {
-              final OutOfMemoryError outOfMemory = JavaSourceCompiler.outOfMemoryCause(t);
-              if (outOfMemory != null) {
+              final Error fatal = JavaSourceCompiler.fatalErrorCause(t);
+              if (fatal != null) {
                 try {
                   LOG.log(
                       Level.SEVERE,
-                      outOfMemory,
+                      fatal,
                       () ->
-                          "[compiler] process heap-exhausted %dms fatal"
-                              .formatted(timer.elapsedMs()));
+                          "[compiler] process fatal-error fatal %dms".formatted(timer.elapsedMs()));
                 } finally {
                   processTerminator.accept(FATAL_EXIT_STATUS);
                 }

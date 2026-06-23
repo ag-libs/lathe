@@ -176,6 +176,23 @@ python3 dev/explore.py /path/to/File.java \
 
 `refs <text>` is the primary tool for exploring and verifying reference behaviour.
 Position the cursor by naming a token — no need to know the exact line and column.
+Reference searches display LSP work-done progress as candidates complete.
+
+Long searches can be cancelled through either standard protocol route after a candidate threshold:
+
+```bash
+python3 dev/explore.py File.java refs String cancel-progress 100
+python3 dev/explore.py File.java refs String cancel-request 100
+```
+
+Lifecycle probes verify bounded server exit during an active search:
+
+```bash
+python3 dev/explore.py File.java refs String shutdown-after 100
+python3 dev/explore.py File.java refs String eof-after 100
+```
+
+After completion or cancellation, run `hover <text>` in the same interactive session to verify that the server remains responsive.
 
 **What to probe:**
 
@@ -234,8 +251,27 @@ and `hover <text>` handle the conversion automatically.
 
 ## lsp.py — LSP client library
 
-`lsp.py` is the shared foundation for `explore.py` and ad-hoc probes.  It
-wraps the Lathe server process in a synchronous Python API.
+`lsp.py` is the shared foundation for `explore.py` and ad-hoc probes.
+It handles work-done progress and wraps the Lathe server process in synchronous and cancellable asynchronous APIs.
+
+There is intentionally no Python test suite for `dev/`.
+These scripts are developer tools, not part of the Maven build or release gate.
+When changing them, validate the affected path with direct commands against a real workspace.
+
+Useful manual validations:
+
+```bash
+python3 -m py_compile dev/lsp.py dev/explore.py
+
+LATHE_TIMEOUT=90 python3 dev/explore.py File.java refs Symbol cancel-progress 100
+LATHE_TIMEOUT=90 python3 dev/explore.py File.java refs Symbol cancel-request 100
+LATHE_TIMEOUT=90 python3 dev/explore.py File.java refs Symbol shutdown-after 100
+LATHE_TIMEOUT=90 python3 dev/explore.py File.java refs Symbol eof-after 100
+```
+
+These probes cover progress parsing, progress-token cancellation, `$/cancelRequest` cancellation,
+bounded shutdown, EOF handling, and post-cancellation responsiveness.
+They do not launch Neovim and they are not a replacement for Java-side LSP request tests.
 
 ### CLI — print diagnostics for a file
 
