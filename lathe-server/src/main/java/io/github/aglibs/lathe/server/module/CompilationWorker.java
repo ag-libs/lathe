@@ -34,6 +34,7 @@ import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.SignatureHelp;
+import org.eclipse.lsp4j.CallHierarchyItem;
 import org.eclipse.lsp4j.TypeHierarchyItem;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
@@ -183,6 +184,11 @@ public final class CompilationWorker {
   public CompletableFuture<List<Location>> typeImplementations(
       final SourceFeatureRequest request, final WorkspaceTypeIndex typeIndex) {
     return submit(ctx -> ctx.typeImplementations(request, typeIndex));
+  }
+
+  public CompletableFuture<List<CallHierarchyItem>> prepareCallHierarchy(
+      final SourceFeatureRequest request) {
+    return submit(ctx -> ctx.prepareCallHierarchy(request));
   }
 
   public CompletableFuture<List<TypeHierarchyItem>> prepareTypeHierarchy(

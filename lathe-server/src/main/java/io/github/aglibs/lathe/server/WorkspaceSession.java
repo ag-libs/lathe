@@ -61,6 +61,7 @@ import org.eclipse.lsp4j.ShowMessageRequestParams;
 import org.eclipse.lsp4j.SignatureHelp;
 import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.TextEdit;
+import org.eclipse.lsp4j.CallHierarchyItem;
 import org.eclipse.lsp4j.TypeHierarchyItem;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
@@ -623,6 +624,31 @@ final class WorkspaceSession {
     return workspace
         .workerFor(config.get())
         .methodImplementations(uri, content, version, target, candidateBinaryNames);
+  }
+
+  CompletableFuture<List<CallHierarchyItem>> prepareCallHierarchyFuture(
+      final String uri, final Position pos) {
+    final OpenDocument openFile = docs.get(uri);
+    if (openFile == null) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
+    final var request =
+        new SourceFeatureRequest(
+            openFile.uri(), openFile.content(), pos, workspace.allSourceRoots(), manifest);
+    final var t = Stopwatch.start();
+    return routeFeature(
+            uri,
+            moduleWorker -> moduleWorker.prepareCallHierarchy(request),
+            List.of())
+        .thenApply(
+            items -> {
+              LOG.fine(
+                  () ->
+                      "[callHierarchy:prepare] %s %dms items=%d"
+                          .formatted(uri, t.elapsedMs(), items.size()));
+              return items;
+            });
   }
 
   CompletableFuture<List<TypeHierarchyItem>> prepareTypeHierarchyFuture(

@@ -22,11 +22,13 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
 import javax.lang.model.element.Element;
+import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.JavaFileObject;
+import org.eclipse.lsp4j.CallHierarchyItem;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.CompletionContext;
@@ -40,6 +42,7 @@ import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.SignatureHelp;
+import org.eclipse.lsp4j.SymbolKind;
 import org.eclipse.lsp4j.TypeHierarchyItem;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
@@ -382,6 +385,91 @@ public final class SourceAnalysisSession implements AutoCloseable {
     return typeIndex
         .findType(binaryName)
         .flatMap(entry -> typeHierarchyItem(entry, typeSourceRoots(request)))
+        .map(List::of)
+        .orElseGet(List::of);
+  }
+
+  public List<CallHierarchyItem> prepareCallHierarchy(final SourceFeatureRequest request) {
+    final var cur = resolve(request);
+    if (cur == null) {
+      return List.of();
+    }
+
+    final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
+    if (element == null) {
+      return List.of();
+    }
+
+    final var kind = element.getKind();
+    if (kind != ElementKind.METHOD && kind != ElementKind.CONSTRUCTOR) {
+      return List.of();
+    }
+
+    final var ee = (ExecutableElement) element;
+    final var owner = (TypeElement) ee.getEnclosingElement();
+    final var target =
+        ReferenceTarget.from(element, cur.analysis().types(), cur.analysis().elements());
+    final String displayName = SourceLocator.declarationName(element).toString();
+    final String ownerBinaryName = cur.analysis().elements().getBinaryName(owner).toString();
+    final var symbolKind =
+        kind == ElementKind.CONSTRUCTOR ? SymbolKind.Constructor : SymbolKind.Function;
+
+    final TreePath methodPath = cur.analysis().trees().getPath(element);
+    if (methodPath != null) {
+      final var cu = cur.analysis().tree();
+      final var positions = cur.analysis().trees().getSourcePositions();
+      final long startOff = positions.getStartPosition(cu, methodPath.getLeaf());
+      final long endOff = positions.getEndPosition(cu, methodPath.getLeaf());
+      final var rangeStart = SourceLocator.offsetToPosition(cu, startOff);
+      final var rangeEnd = SourceLocator.offsetToPosition(cu, endOff);
+      final var range = new Range(rangeStart, rangeEnd);
+      Position selStart;
+      try {
+        selStart =
+            SourceLocator.declarationNamePosition(
+                    cur.analysis().trees(), cu, methodPath, displayName)
+                .orElse(rangeStart);
+      } catch (final IOException e) {
+        selStart = rangeStart;
+      }
+      final var selEnd =
+          new Position(selStart.getLine(), selStart.getCharacter() + displayName.length());
+      final var selectionRange = new Range(selStart, selEnd);
+      final var item =
+          new CallHierarchyItem(displayName, symbolKind, request.uri(), range, selectionRange);
+      item.setDetail(ownerBinaryName);
+      item.setData(
+          CallHierarchyItemDataCodec.encode(
+              new CallHierarchyItemData(
+                  ownerBinaryName,
+                  target.simpleName(),
+                  target.erasedDescriptor(),
+                  kind,
+                  request.uri(),
+                  target.scope())));
+      return List.of(item);
+    }
+
+    return DefinitionLocator.findSourceFile(element, allRoots(request))
+        .map(
+            file -> {
+              final var pos = definitionLocator.parsePosition(file, element);
+              final var pointRange = new Range(pos, pos);
+              final var uri = file.toUri().toString();
+              final var item =
+                  new CallHierarchyItem(displayName, symbolKind, uri, pointRange, pointRange);
+              item.setDetail(ownerBinaryName);
+              item.setData(
+                  CallHierarchyItemDataCodec.encode(
+                      new CallHierarchyItemData(
+                          ownerBinaryName,
+                          target.simpleName(),
+                          target.erasedDescriptor(),
+                          kind,
+                          uri,
+                          target.scope())));
+              return item;
+            })
         .map(List::of)
         .orElseGet(List::of);
   }
