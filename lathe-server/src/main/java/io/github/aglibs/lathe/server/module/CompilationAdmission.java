@@ -8,7 +8,6 @@ import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 
 final class CompilationAdmission {
 
-  private static final int MAX_PERMITS = 16;
   private static final long CANCEL_POLL_MS = 50;
 
   private final Semaphore semaphore;
@@ -18,7 +17,7 @@ final class CompilationAdmission {
   }
 
   static int permitCount(final int availableProcessors) {
-    return Math.max(1, Math.min(MAX_PERMITS, availableProcessors));
+    return Math.max(1, availableProcessors);
   }
 
   <T> T run(final Supplier<T> operation) {

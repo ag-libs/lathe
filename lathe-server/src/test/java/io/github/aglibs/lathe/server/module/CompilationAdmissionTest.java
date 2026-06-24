@@ -17,12 +17,11 @@ import org.junit.jupiter.api.Test;
 class CompilationAdmissionTest {
 
   @Test
-  void permitCount_processorCounts_clampsBetweenOneAndSixteen() {
+  void permitCount_processorCounts_clampsToAtLeastOne() {
     assertThat(CompilationAdmission.permitCount(0)).isOne();
     assertThat(CompilationAdmission.permitCount(1)).isOne();
     assertThat(CompilationAdmission.permitCount(8)).isEqualTo(8);
-    assertThat(CompilationAdmission.permitCount(16)).isEqualTo(16);
-    assertThat(CompilationAdmission.permitCount(32)).isEqualTo(16);
+    assertThat(CompilationAdmission.permitCount(32)).isEqualTo(32);
   }
 
   @Test
