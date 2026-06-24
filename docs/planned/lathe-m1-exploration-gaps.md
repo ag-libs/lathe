@@ -23,7 +23,7 @@ duplicated here.
 | EG-009 | Outgoing calls includes anonymous class constructor instantiations with empty name | M1 |
 | EG-010 | `explore.py` cannot probe dep/JDK source files — no workspace context for cache paths | M1 |
 | EG-011 | Outgoing calls silently omits callees whose source is in extracted dep or JDK dirs | M2 |
-| EG-012 | No quick navigation from an overriding method declaration to its overridden super/interface method | M2 |
+| EG-012 | `textDocument/declaration` not implemented; overriding method declarations have no path to the contract/interface method | M2 |
 
 EG-003 and EG-005 are deferred to M2:
 EG-003 requires `DocTrees` attribution of Javadoc comment positions, which is a non-trivial
@@ -604,7 +604,7 @@ have the cache path as their `uri`, consistent with how `definition` navigates t
 
 ---
 
-## EG-012 — No quick navigation from an overriding method declaration to its overridden super/interface method
+## EG-012 — `textDocument/declaration` not implemented; no path from override to contract method
 
 **Milestone: M2**
 
@@ -655,33 +655,60 @@ Normal call-site definition also behaves correctly:
 The missing behavior is specifically declaration-site navigation from an override to the
 overridden method.
 
-### Product shape
+### Definition vs. declaration in LSP
 
-This should probably not change ordinary `textDocument/definition`.
-For Java, definition at a method declaration naturally returns that declaration, while
-implementation at an interface method returns concrete overrides.
+In LSP the intended split is language-dependent, but the general contract is:
 
-Better options:
+- **Definition** — where the symbol is actually defined/implemented.
+- **Declaration** — where the symbol is declared as an API/contract, which may not be the implementation.
 
-- add a code-lens-like or command-backed "Go to super method" action if the client can surface it;
-- expose a Lathe-specific command through code action on `@Override` or the method name;
-- map a Neovim helper command to a future server request that returns overridden declarations.
+In Java, most symbols do not have a separate declaration and definition.
+A class, field, local variable, or normal method has one source location, so both can
+reasonably return the same place.
 
-If the LSP client has no dedicated "super method" request, the first implementation can be a
-code action or command rather than a capability-level protocol feature.
+The distinction becomes useful for overrides:
 
-### Proposed implementation direction
+```java
+interface DbClient {
+    DbExecute execute();       // declaration / contract
+}
 
-Reuse javac override checks rather than the type index alone:
+class MongoDbClient implements DbClient {
+    @Override
+    public DbExecute execute() {   // definition / implementation
+        ...
+    }
+}
+```
 
-1. At a method declaration, resolve the `ExecutableElement` and enclosing `TypeElement`.
-2. Walk direct and transitive supertypes using `Types.directSupertypes(...)`.
-3. For each candidate method in each supertype, use `Elements.overrides(current, candidate, enclosingType)`.
+Expected navigation model:
+
+| Cursor location | Go to Definition | Go to Declaration |
+|---|---|---|
+| `dbClient.execute()` where `dbClient` is `MongoDbClient` | `MongoDbClient.execute()` | `DbClient.execute()` |
+| `dbClient.execute()` where `dbClient` is `DbClient` | `DbClient.execute()` | `DbClient.execute()` |
+| `MongoDbClient.execute()` declaration itself | `MongoDbClient.execute()` | `DbClient.execute()` |
+| `DbClient.execute()` declaration | `DbClient.execute()` | `DbClient.execute()` or empty |
+
+### Proposed fix
+
+Implement `textDocument/declaration`.
+Do not change `textDocument/definition`.
+
+- For an overriding method declaration, `declaration` resolves the overridden superclass or
+  interface method and returns its source location.
+- For everything else (non-override methods, fields, types, locals), `declaration` falls back
+  to `definition` for usability.
+
+Implementation uses javac override checks:
+
+1. Resolve the `ExecutableElement` at the cursor and the enclosing `TypeElement`.
+2. Walk direct supertypes using `Types.directSupertypes(...)`.
+3. For each candidate method in each supertype, call `Elements.overrides(current, candidate, enclosingType)`.
 4. Return source locations for matching candidates using the existing definition/source-location machinery.
 
-For interface methods, this must find the interface declaration.
-For class overrides, it must find the superclass method.
-For multiple inherited interface declarations, returning multiple locations is acceptable.
+Multiple inherited interface declarations may return multiple locations.
+The declaration result for a non-overriding method falls back to the definition location.
 
 ### Probe commands
 
@@ -697,13 +724,10 @@ printf 'impl 52:14\nimpl 64:18\nimpl 45:11\nimpl 77:10\nquit\n' \
 
 ### Regression targets
 
-Future tests should avoid duplicating implementation-navigation coverage.
-They should focus only on override-to-super navigation:
-
-- concrete class method overriding interface method returns the interface declaration;
-- concrete class method overriding superclass method returns the superclass declaration;
-- generic method override resolves the erased/substituted super declaration;
-- non-overriding method returns no result.
+- `DeclarationTest.declaration_overridingMethodDeclaration_returnsInterfaceMethod`
+- `DeclarationTest.declaration_overridingMethodDeclaration_returnsSuperclassMethod`
+- `DeclarationTest.declaration_nonOverridingMethod_fallsBackToDefinition`
+- `DeclarationTest.declaration_callSiteWithConcreteType_fallsBackToDefinition`
 
 ---
 
