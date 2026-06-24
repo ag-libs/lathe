@@ -34,6 +34,7 @@ import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.SignatureHelp;
+import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.CallHierarchyItem;
 import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
 import org.eclipse.lsp4j.TypeHierarchyItem;
@@ -165,6 +166,27 @@ public final class CompilationWorker {
     return submit(
         ctx ->
             ctx.searchReferencesTransient(uri, content, target, includeDeclaration, cancelChecker),
+        cancelChecker);
+  }
+
+  public CompletableFuture<List<CallHierarchyIncomingCall>> searchIncomingCalls(
+      final String uri,
+      final String content,
+      final int version,
+      final ReferenceTarget target,
+      final CancelChecker cancelChecker) {
+    return submit(
+        ctx -> ctx.searchIncomingCalls(uri, content, version, target, cancelChecker),
+        cancelChecker);
+  }
+
+  public CompletableFuture<List<CallHierarchyIncomingCall>> searchIncomingCallsTransient(
+      final String uri,
+      final String content,
+      final ReferenceTarget target,
+      final CancelChecker cancelChecker) {
+    return submit(
+        ctx -> ctx.searchIncomingCallsTransient(uri, content, target, cancelChecker),
         cancelChecker);
   }
 

@@ -17,16 +17,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import javax.lang.model.element.Element;
-import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
-import javax.lang.model.element.TypeElement;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 import org.eclipse.lsp4j.CallHierarchyItem;
 import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
-import org.eclipse.lsp4j.SymbolKind;
 
 final class CallHierarchyOutgoingLocator extends TreePathScanner<Void, Void> {
 
@@ -160,29 +157,9 @@ final class CallHierarchyOutgoingLocator extends TreePathScanner<Void, Void> {
                 final var pos = definitionLocator.parsePosition(file, calleeElement);
                 final var pointRange = new Range(pos, pos);
                 final var uri = file.toUri().toString();
-                final var kind = calleeElement.getKind();
-                final var ee = (ExecutableElement) calleeElement;
-                final var owner = (TypeElement) ee.getEnclosingElement();
-                final String displayName = SourceLocator.declarationName(calleeElement).toString();
-                final String ownerBinaryName = elements.getBinaryName(owner).toString();
-                final var symbolKind =
-                    kind == ElementKind.CONSTRUCTOR
-                        ? SymbolKind.Constructor
-                        : SymbolKind.Function;
-                final var calleeTarget =
-                    ReferenceTarget.from(calleeElement, types, elements);
                 final var calleeItem =
-                    new CallHierarchyItem(displayName, symbolKind, uri, pointRange, pointRange);
-                calleeItem.setDetail(ownerBinaryName);
-                calleeItem.setData(
-                    CallHierarchyItemDataCodec.encode(
-                        new CallHierarchyItemData(
-                            ownerBinaryName,
-                            calleeTarget.simpleName(),
-                            calleeTarget.erasedDescriptor(),
-                            kind,
-                            uri,
-                            calleeTarget.scope())));
+                    CallHierarchyItemDataCodec.buildItem(
+                        calleeElement, uri, pointRange, pointRange, types, elements);
                 results.add(new CallHierarchyOutgoingCall(calleeItem, List.copyOf(ranges)));
               });
     }

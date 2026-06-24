@@ -63,6 +63,7 @@ import org.eclipse.lsp4j.ShowMessageRequestParams;
 import org.eclipse.lsp4j.SignatureHelp;
 import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.TextEdit;
+import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.CallHierarchyItem;
 import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
 import org.eclipse.lsp4j.TypeHierarchyItem;
@@ -660,6 +661,116 @@ final class WorkspaceSession {
                           .formatted(data.routingUri(), t.elapsedMs(), calls.size()));
               return calls;
             });
+  }
+
+  CompletableFuture<List<CallHierarchyIncomingCall>> incomingCallsFuture(
+      final CallHierarchyItem item, final CancelChecker cancelChecker) {
+    cancelChecker.checkCanceled();
+    final CallHierarchyItemData data = CallHierarchyItemDataCodec.decode(item.getData());
+    if (data == null) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
+    final var target =
+        new ReferenceTarget(
+            data.kind(),
+            data.ownerBinaryName(),
+            data.methodName(),
+            data.erasedDescriptor(),
+            data.scope());
+
+    final var declaringPath = toPath(data.routingUri());
+    final var declaringConfig = workspace.moduleSourceFor(declaringPath);
+
+    if (target.scope() == ReferenceTarget.SearchScope.DECLARING_FILE) {
+      final var worker =
+          switch (routeCompiler(data.routingUri())) {
+            case CompilerRoute.Module m -> m.worker();
+            case CompilerRoute.External e -> e.worker();
+            case CompilerRoute.Missing ignored -> null;
+          };
+      if (worker == null) {
+        return CompletableFuture.completedFuture(List.of());
+      }
+      final OpenDocument declaringDoc = docs.get(data.routingUri());
+      if (declaringDoc != null) {
+        return worker.searchIncomingCalls(
+            declaringDoc.uri(),
+            declaringDoc.content(),
+            declaringDoc.version(),
+            target,
+            cancelChecker);
+      }
+      return readDiskCandidate(data.routingUri())
+          .map(d -> worker.searchIncomingCallsTransient(d.uri(), d.content(), target, cancelChecker))
+          .orElseGet(() -> CompletableFuture.completedFuture(List.of()));
+    }
+
+    final Path packageRel =
+        target.scope() == ReferenceTarget.SearchScope.DECLARING_MODULE
+            ? declaringPackageRel(declaringPath, declaringConfig.orElse(null))
+            : null;
+
+    final List<ModuleSourceConfig> configs = planSearchScope(target, declaringConfig.orElse(null));
+
+    final var t = Stopwatch.start();
+    final List<CompletableFuture<List<CallHierarchyIncomingCall>>> searches =
+        configs.stream()
+            .flatMap(config -> incomingCallFutures(config, target, packageRel, cancelChecker))
+            .toList();
+    return joinCandidateResults(searches, cancelChecker)
+        .thenApply(
+            calls -> {
+              LOG.fine(
+                  () ->
+                      "[callHierarchy:incoming] %s %dms calls=%d"
+                          .formatted(data.routingUri(), t.elapsedMs(), calls.size()));
+              return calls;
+            });
+  }
+
+  private Stream<CompletableFuture<List<CallHierarchyIncomingCall>>> incomingCallFutures(
+      final ModuleSourceConfig config,
+      final ReferenceTarget target,
+      final Path packageRel,
+      final CancelChecker cancelChecker) {
+    cancelChecker.checkCanceled();
+    final var worker = workspace.workerFor(config);
+    final List<OpenDocument> openForConfig =
+        docs.all().stream()
+            .filter(
+                doc ->
+                    workspace
+                        .moduleSourceFor(toPath(doc.uri()))
+                        .map(c -> c.equals(config))
+                        .orElse(false))
+            .filter(doc -> isInPackageScope(toPath(doc.uri()), config.sourceRoots(), packageRel))
+            .toList();
+    final Set<String> openUrisForConfig =
+        openForConfig.stream().map(OpenDocument::uri).collect(Collectors.toUnmodifiableSet());
+    final List<Path> sourceRoots = config.sourceRoots();
+    final var planner = new ReferenceCandidatePlanner(candidateIndex);
+    final List<DiskCandidate> diskFiles =
+        planner.planCandidates(config, target).stream()
+            .filter(uri -> !openUrisForConfig.contains(uri))
+            .filter(uri -> isInPackageScope(toPath(uri), sourceRoots, packageRel))
+            .flatMap(uri -> readDiskCandidate(uri).stream())
+            .toList();
+    return Stream.concat(
+        openForConfig.stream()
+            .map(
+                doc -> {
+                  cancelChecker.checkCanceled();
+                  return worker.searchIncomingCalls(
+                      doc.uri(), doc.content(), doc.version(), target, cancelChecker);
+                }),
+        diskFiles.stream()
+            .map(
+                d -> {
+                  cancelChecker.checkCanceled();
+                  return worker.searchIncomingCallsTransient(
+                      d.uri(), d.content(), target, cancelChecker);
+                }));
   }
 
   CompletableFuture<List<CallHierarchyItem>> prepareCallHierarchyFuture(
