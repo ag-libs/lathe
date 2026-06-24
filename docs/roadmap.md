@@ -41,7 +41,7 @@ It includes the current implementation and every active, non-deferred correctnes
 - Complete the focused fail-fast, naming, DRY, and fixture slices in the current maintainability plan.
 - Preserve the existing server-event-loop and module-worker ownership model.
 
-### Call hierarchy
+### Call hierarchy ✓
 
 - Implement `textDocument/prepareCallHierarchy`, `callHierarchy/incomingCalls`, and
   `callHierarchy/outgoingCalls`.

@@ -3,6 +3,7 @@
 This document is the implementation design for `textDocument/prepareCallHierarchy`,
 `callHierarchy/incomingCalls`, and `callHierarchy/outgoingCalls`.
 Targeted at M1.
+**Status: Implemented.**
 
 ---
 
