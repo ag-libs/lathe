@@ -25,11 +25,11 @@ public final class CallHierarchyItemDataCodec {
     final var kind = element.getKind();
     final var ee = (ExecutableElement) element;
     final var owner = (TypeElement) ee.getEnclosingElement();
-    final String displayName = SourceLocator.declarationName(element).toString();
-    final String ownerBinaryName = elements.getBinaryName(owner).toString();
+    final var displayName = SourceLocator.declarationName(element).toString();
+    final var ownerBinaryName = elements.getBinaryName(owner).toString();
     final var symbolKind =
         kind == ElementKind.CONSTRUCTOR ? SymbolKind.Constructor : SymbolKind.Function;
-    final var target = ReferenceTarget.from(element, types, elements);
+    final ReferenceTarget target = ReferenceTarget.from(element, types, elements);
     final var item = new CallHierarchyItem(displayName, symbolKind, uri, range, selectionRange);
     item.setDetail(ownerBinaryName);
     item.setData(

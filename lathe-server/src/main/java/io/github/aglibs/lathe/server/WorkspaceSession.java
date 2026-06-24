@@ -6,6 +6,8 @@ import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
+import io.github.aglibs.lathe.server.analysis.CallHierarchyItemData;
+import io.github.aglibs.lathe.server.analysis.CallHierarchyItemDataCodec;
 import io.github.aglibs.lathe.server.analysis.CodeActionRequest;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.analysis.DiagnosticPayload;
@@ -14,8 +16,6 @@ import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
 import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.server.analysis.TokenScanner;
-import io.github.aglibs.lathe.server.analysis.CallHierarchyItemData;
-import io.github.aglibs.lathe.server.analysis.CallHierarchyItemDataCodec;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyItemDataCodec;
 import io.github.aglibs.lathe.server.analysis.TypeSourceLocator;
 import io.github.aglibs.lathe.server.analysis.WorkspaceSymbolResolver;
@@ -44,6 +44,9 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import javax.lang.model.element.ElementKind;
+import org.eclipse.lsp4j.CallHierarchyIncomingCall;
+import org.eclipse.lsp4j.CallHierarchyItem;
+import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionContext;
 import org.eclipse.lsp4j.Command;
@@ -63,9 +66,6 @@ import org.eclipse.lsp4j.ShowMessageRequestParams;
 import org.eclipse.lsp4j.SignatureHelp;
 import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.TextEdit;
-import org.eclipse.lsp4j.CallHierarchyIncomingCall;
-import org.eclipse.lsp4j.CallHierarchyItem;
-import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
 import org.eclipse.lsp4j.TypeHierarchyItem;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
@@ -702,7 +702,8 @@ final class WorkspaceSession {
             cancelChecker);
       }
       return readDiskCandidate(data.routingUri())
-          .map(d -> worker.searchIncomingCallsTransient(d.uri(), d.content(), target, cancelChecker))
+          .map(
+              d -> worker.searchIncomingCallsTransient(d.uri(), d.content(), target, cancelChecker))
           .orElseGet(() -> CompletableFuture.completedFuture(List.of()));
     }
 
@@ -784,10 +785,7 @@ final class WorkspaceSession {
         new SourceFeatureRequest(
             openFile.uri(), openFile.content(), pos, workspace.allSourceRoots(), manifest);
     final var t = Stopwatch.start();
-    return routeFeature(
-            uri,
-            moduleWorker -> moduleWorker.prepareCallHierarchy(request),
-            List.of())
+    return routeFeature(uri, moduleWorker -> moduleWorker.prepareCallHierarchy(request), List.of())
         .thenApply(
             items -> {
               LOG.fine(

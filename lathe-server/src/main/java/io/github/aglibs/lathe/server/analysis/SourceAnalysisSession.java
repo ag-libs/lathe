@@ -447,7 +447,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
       return List.of();
     }
 
-    final String displayName = SourceLocator.declarationName(element).toString();
+    final var displayName = SourceLocator.declarationName(element).toString();
 
     final TreePath methodPath = cur.analysis().trees().getPath(element);
     if (methodPath != null) {
@@ -524,7 +524,8 @@ public final class SourceAnalysisSession implements AutoCloseable {
     try {
       return CallHierarchyOutgoingLocator.scan(analysis, target, sourceRoots, definitionLocator);
     } catch (final IOException e) {
-      LOG.log(Level.WARNING, e, () -> "[outgoingCalls] failed to read source for %s".formatted(uri));
+      LOG.log(
+          Level.WARNING, e, () -> "[outgoingCalls] failed to read source for %s".formatted(uri));
       return List.of();
     }
   }

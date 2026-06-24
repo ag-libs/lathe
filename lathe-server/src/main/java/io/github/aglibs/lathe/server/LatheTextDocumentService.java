@@ -258,9 +258,7 @@ final class LatheTextDocumentService implements TextDocumentService {
   @Override
   public CompletableFuture<List<CallHierarchyOutgoingCall>> callHierarchyOutgoingCalls(
       final CallHierarchyOutgoingCallsParams params) {
-    return worker
-        .submit(() -> session.outgoingCallsFuture(params.getItem()))
-        .thenCompose(f -> f);
+    return worker.submit(() -> session.outgoingCallsFuture(params.getItem())).thenCompose(f -> f);
   }
 
   @Override

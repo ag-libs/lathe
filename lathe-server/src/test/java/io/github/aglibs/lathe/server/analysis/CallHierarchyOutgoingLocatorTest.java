@@ -44,8 +44,7 @@ class CallHierarchyOutgoingLocatorTest {
       assertThat(items).hasSize(1);
 
       final List<CallHierarchyOutgoingCall> calls =
-          session.outgoingCalls(
-              items.getFirst(), request.uri(), content, 1, List.of(sourceRoot));
+          session.outgoingCalls(items.getFirst(), request.uri(), content, 1, List.of(sourceRoot));
 
       assertThat(calls).hasSize(1);
       assertThat(calls.getFirst().getTo().getName()).isEqualTo("doStuff");
@@ -78,8 +77,7 @@ class CallHierarchyOutgoingLocatorTest {
       assertThat(items).hasSize(1);
 
       final List<CallHierarchyOutgoingCall> calls =
-          session.outgoingCalls(
-              items.getFirst(), request.uri(), content, 1, List.of(sourceRoot));
+          session.outgoingCalls(items.getFirst(), request.uri(), content, 1, List.of(sourceRoot));
 
       assertThat(calls).hasSize(1);
       assertThat(calls.getFirst().getTo().getName()).isEqualTo("Box");

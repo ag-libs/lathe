@@ -200,7 +200,7 @@ final class CallHierarchyIncomingLocator extends TreePathScanner<Void, Void> {
     if (kind != ElementKind.METHOD && kind != ElementKind.CONSTRUCTOR) {
       return null;
     }
-    final String displayName = SourceLocator.declarationName(callerElement).toString();
+    final var displayName = SourceLocator.declarationName(callerElement).toString();
     final long startOff = positions.getStartPosition(cu, methodPath.getLeaf());
     final long endOff = positions.getEndPosition(cu, methodPath.getLeaf());
     final var rangeStart = SourceLocator.offsetToPosition(cu, startOff);

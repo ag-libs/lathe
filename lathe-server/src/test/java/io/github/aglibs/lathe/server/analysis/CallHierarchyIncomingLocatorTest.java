@@ -61,7 +61,8 @@ class CallHierarchyIncomingLocatorTest {
       assertThat(items).hasSize(1);
       assertThat(items.getFirst().getName()).isEqualTo("Box");
 
-      final CallHierarchyItemData data = CallHierarchyItemDataCodec.decode(items.getFirst().getData());
+      final CallHierarchyItemData data =
+          CallHierarchyItemDataCodec.decode(items.getFirst().getData());
       assertThat(data).isNotNull();
       assertThat(data.kind()).isEqualTo(ElementKind.CONSTRUCTOR);
 

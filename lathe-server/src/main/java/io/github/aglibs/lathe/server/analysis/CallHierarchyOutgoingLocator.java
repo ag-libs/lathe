@@ -20,7 +20,6 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
-import org.eclipse.lsp4j.CallHierarchyItem;
 import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
@@ -124,8 +123,7 @@ final class CallHierarchyOutgoingLocator extends TreePathScanner<Void, Void> {
   public Void visitMemberReference(final MemberReferenceTree node, final Void ignored) {
     scan(node.getQualifierExpression(), null);
     final var element = trees.getElement(getCurrentPath());
-    if (element instanceof ExecutableElement
-        && !element.getSimpleName().contentEquals("<init>")) {
+    if (element instanceof ExecutableElement && !element.getSimpleName().contentEquals("<init>")) {
       final String name = node.getName().toString();
       final long startOff =
           SourceLocator.findIdentifierFrom(content, positions.getStartPosition(cu, node), name);
