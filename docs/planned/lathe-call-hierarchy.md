@@ -49,26 +49,30 @@ route subsequent requests without re-attributing the source file.
 
 ```java
 record CallHierarchyItemData(
-    String ownerBinaryName,   // binary name of the declaring class
-    String methodName,        // simple method/constructor name
-    String erasedDescriptor,  // erased parameter descriptor, e.g. "(java.lang.String,int)"
-    ElementKind kind,         // METHOD or CONSTRUCTOR
-    String routingUri         // file:// URI of the declaring source file
+    String ownerBinaryName,          // binary name of the declaring class
+    String methodName,               // simple method/constructor name
+    String erasedDescriptor,         // erased parameter descriptor, e.g. "(java.lang.String,int)"
+    ElementKind kind,                // METHOD or CONSTRUCTOR
+    String routingUri,               // file:// URI of the declaring source file
+    ReferenceTarget.SearchScope scope // DECLARING_FILE / DECLARING_MODULE / REACTOR_MODULES
 ) {}
 ```
 
-`CallHierarchyItemDataCodec` follows `TypeHierarchyItemDataCodec` exactly:
-`encode` writes a `JsonObject`; `decode` accepts either a `CallHierarchyItemData` instance
-(same JVM round-trip) or a `JsonObject` (cross-request deserialization).
+`scope` is stored directly rather than re-derived.
+Re-derivation would require re-attributing the declaring file (which may be closed, forcing a
+transient compile) just to read visibility modifiers.
+Storing it avoids that cost and makes `incomingCallsFuture` independent of the declaring file.
 
-From `CallHierarchyItemData`, a `ReferenceTarget` is reconstructed as:
+`CallHierarchyItemDataCodec` follows `TypeHierarchyItemDataCodec` exactly:
+`encode` writes a `JsonObject` with `scope` serialized as its `name()` string;
+`decode` accepts either a `CallHierarchyItemData` instance (same JVM round-trip) or a `JsonObject`
+(cross-request deserialization).
+
+From `CallHierarchyItemData`, a `ReferenceTarget` is reconstructed directly:
 
 ```java
 new ReferenceTarget(kind, ownerBinaryName, methodName, erasedDescriptor, scope)
 ```
-
-`scope` is re-derived from the element when the declaring file is re-attributed during incoming
-calls, or can be stored in the data for cheaper reconstruction.
 
 ---
 
@@ -99,6 +103,10 @@ If the cursor is on a method *invocation* rather than a method *declaration*,
 `SourceLocator.elementAt` resolves the element of the target method, not the caller.
 `prepareCallHierarchy` must then find the declaring source file via
 `DefinitionLocator.findSourceFile` to produce a correct `uri` and `routingUri`.
+For the item `range` and `selectionRange`, use `DefinitionLocator.parsePosition(file, element)`
+(which parses the declaring file without attribution) to get the method name position.
+Set both `range` and `selectionRange` to a point range at that position for the cross-file case;
+this is consistent with how `DefinitionLocator.locate` builds external-source locations.
 
 ---
 
@@ -128,19 +136,29 @@ incomingCalls(item)
 New class, extends `TreePathScanner<Void, Void>`.
 Reuses `target.matches(element, types, elements)` from `ReferenceTarget` for element comparison.
 
-Handles three node kinds:
+**Do not override `visitMethodInvocation`.**
+`trees.getElement` on a `MethodInvocationTree` path returns `null` in javac's implementation.
+The correct element-resolution pattern — already used in `SourceLocator.elementAt` and
+`SignatureHelpResolver` — is `trees.getElement(new TreePath(invocationPath, inv.getMethodSelect()))`.
+Instead, mirror the approach `ReferenceLocator` uses and handle call sites at the identifier and
+member-select level:
 
-- `visitMethodInvocation` — resolve the invoked element via
-  `trees.getElement(getCurrentPath().getParentPath())`; if it matches, record the call site
-  and find the enclosing caller.
-- `visitNewClass` — resolve via `trees.getElement(getCurrentPath())`; same pattern.
-- `visitMemberReference` — resolve via `trees.getElement(getCurrentPath())`; same pattern.
+- `visitIdentifier` — `trees.getElement(getCurrentPath())`; if it matches the target and
+  `getCurrentPath().getParentPath().getLeaf()` is not a declaration context (i.e., not a
+  `MethodTree`, `VariableTree`, or `ClassTree` name position), record the call site and find the
+  enclosing caller.
+- `visitMemberSelect` — `SourceLocator.elementAt(trees, getCurrentPath())`; confirm the parent is a
+  `MethodInvocationTree` with `inv.getMethodSelect() == getCurrentPath().getLeaf()` before recording.
+- `visitNewClass` — `trees.getElement(getCurrentPath())`; same grouping pattern.
+- `visitMemberReference` — `trees.getElement(getCurrentPath())`; same grouping pattern.
 
-For each match, `enclosingExecutable()` walks `getCurrentPath()` upward through
-`getParentPath()` until it finds a `MethodTree` node.
+This is the same four-visitor structure as `ReferenceLocator`, scoped to invocation roles only.
+
+For each match, `enclosingExecutable()` walks upward via `getParentPath()` until it finds a
+`MethodTree` node.
 The caller `Element` is `trees.getElement(methodPath)`.
 If no `MethodTree` is found before reaching the `ClassTree`, the call is inside a static or
-instance initializer block; attribute the call to a synthetic `<clinit>` or `<init>` entry.
+instance initializer block; skip it in M1 (return no result for that call site).
 
 Results are grouped by caller element:
 
@@ -254,12 +272,29 @@ private List<ModuleSourceConfig> planSearchScope(
 }
 ```
 
+### `packageRel` for package-private incoming calls
+
+`referencesFuture` computes a `packageRel` path for `DECLARING_MODULE` scope that restricts
+candidate files to the declaring class's package directory.
+The existing `declaringPackageRel(toPath(uri), cursorConfig)` derives this from the **cursor URI**.
+
+For incoming calls there is no cursor — the declaring file is `CallHierarchyItemData.routingUri`.
+The shared candidate fan-out helper must accept a `packageRel` parameter and callers must supply it:
+
+- `referencesFuture` passes `declaringPackageRel(toPath(cursorUri), cursorConfig)` as before.
+- `incomingCallsFuture` passes `declaringPackageRel(toPath(data.routingUri()), declaringConfig)`
+  where `declaringConfig = workspace.moduleSourceFor(toPath(data.routingUri()))`.
+
+This ensures package-private incoming-call searches are restricted to the correct package, exactly
+as Find References does today.
+
 The preferred DRY shape is a private candidate fan-out helper used by both references and incoming calls:
 
 ```java
 private <T> CompletableFuture<List<T>> searchReferenceCandidates(
     ReferenceTarget target,
     String routingUri,
+    Path packageRel,          // null for public/protected; non-null for package-private
     CancelChecker cancelChecker,
     CandidateOperation<T> operation) {
   ...
@@ -271,7 +306,7 @@ If a private functional interface would be the only clean way to express this,
 use a small set of private helper methods instead:
 
 - `planSearchScope(...)`
-- `referenceCandidates(...)`
+- `referenceCandidates(...)`  — accepts `packageRel`
 - `searchCandidateReferences(...)`
 - `searchCandidateIncomingCalls(...)`
 - `joinCandidateResults(...)`
@@ -295,8 +330,11 @@ capabilities.setCallHierarchyProvider(true);
 
 ### `LatheTextDocumentService`
 
-Three new overrides following the existing `prepareTypeHierarchy` / `typeHierarchySupertypes` /
-`typeHierarchySubtypes` pattern:
+Three new overrides.
+`prepareCallHierarchy` and `outgoingCalls` follow the `prepareTypeHierarchy` /
+`typeHierarchySupertypes` pattern.
+`incomingCalls` follows the `references` pattern because it can fan out across a large reactor
+and must support cancellation:
 
 ```java
 @Override
@@ -310,7 +348,21 @@ public CompletableFuture<List<CallHierarchyItem>> prepareCallHierarchy(
 @Override
 public CompletableFuture<List<CallHierarchyIncomingCall>> callHierarchyIncomingCalls(
     final CallHierarchyIncomingCallsParams params) {
-  return worker.submit(() -> session.incomingCallsFuture(params.getItem())).thenCompose(f -> f);
+  final var response = new CompletableFuture<List<CallHierarchyIncomingCall>>();
+  final CancelChecker cancelChecker = new CompletableFutures.FutureCancelChecker(response);
+  final CompletableFuture<List<CallHierarchyIncomingCall>> work =
+      worker
+          .submit(() -> session.incomingCallsFuture(params.getItem(), cancelChecker))
+          .thenCompose(f -> f);
+  work.whenComplete(
+      (result, failure) -> {
+        if (failure == null) {
+          response.complete(result);
+        } else {
+          response.completeExceptionally(failure);
+        }
+      });
+  return response;
 }
 
 @Override
