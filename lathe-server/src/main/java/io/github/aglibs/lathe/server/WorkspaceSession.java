@@ -265,13 +265,7 @@ final class WorkspaceSession {
                       : null;
 
               final List<ModuleSourceConfig> configs =
-                  target.scope() == ReferenceTarget.SearchScope.REACTOR_MODULES
-                      ? cursorConfig
-                          .map(moduleGraph::referenceSearchScope)
-                          .orElseGet(workspace::allConfigs)
-                      : cursorConfig
-                          .map(c -> moduleGraph.configsForModule(c.moduleDir()))
-                          .orElse(List.of());
+                  planSearchScope(target, cursorConfig.orElse(null));
 
               final List<CompletableFuture<List<Location>>> searches =
                   configs.stream()
@@ -286,16 +280,7 @@ final class WorkspaceSession {
                                   progress))
                       .toList();
               progress.begin(target.simpleName(), searches.size());
-              return searches.stream()
-                  .reduce(
-                      CompletableFuture.completedFuture(List.of()),
-                      (f1, f2) ->
-                          f1.thenCombine(
-                              f2,
-                              (a, b) -> {
-                                cancelChecker.checkCanceled();
-                                return Stream.concat(a.stream(), b.stream()).toList();
-                              }));
+              return joinCandidateResults(searches, cancelChecker);
             })
         .thenApply(
             locations -> {
@@ -395,6 +380,33 @@ final class WorkspaceSession {
                             }
                           });
                 }));
+  }
+
+  private List<ModuleSourceConfig> planSearchScope(
+      final ReferenceTarget target, final ModuleSourceConfig cursorConfig) {
+    return switch (target.scope()) {
+      case DECLARING_FILE -> List.of();
+      case DECLARING_MODULE ->
+          cursorConfig != null ? moduleGraph.configsForModule(cursorConfig.moduleDir()) : List.of();
+      case REACTOR_MODULES ->
+          cursorConfig != null
+              ? moduleGraph.referenceSearchScope(cursorConfig)
+              : workspace.allConfigs();
+    };
+  }
+
+  private static <T> CompletableFuture<List<T>> joinCandidateResults(
+      final List<CompletableFuture<List<T>>> futures, final CancelChecker cancelChecker) {
+    return futures.stream()
+        .reduce(
+            CompletableFuture.completedFuture(List.of()),
+            (f1, f2) ->
+                f1.thenCombine(
+                    f2,
+                    (a, b) -> {
+                      cancelChecker.checkCanceled();
+                      return Stream.concat(a.stream(), b.stream()).toList();
+                    }));
   }
 
   private static List<Location> toLocations(final List<ReferenceMatch> matches) {
