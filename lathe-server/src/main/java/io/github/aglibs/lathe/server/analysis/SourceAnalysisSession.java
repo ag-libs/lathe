@@ -29,6 +29,7 @@ import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.JavaFileObject;
 import org.eclipse.lsp4j.CallHierarchyItem;
+import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.CompletionContext;
@@ -472,6 +473,37 @@ public final class SourceAnalysisSession implements AutoCloseable {
             })
         .map(List::of)
         .orElseGet(List::of);
+  }
+
+  public List<CallHierarchyOutgoingCall> outgoingCalls(
+      final CallHierarchyItem item,
+      final String uri,
+      final String content,
+      final int version,
+      final List<Path> sourceRoots) {
+    final CallHierarchyItemData data = CallHierarchyItemDataCodec.decode(item.getData());
+    if (data == null) {
+      return List.of();
+    }
+
+    final var analysis = ensureAttributedAnalysis(uri, content, version);
+    if (analysis == null) {
+      return List.of();
+    }
+
+    final var target =
+        new ReferenceTarget(
+            data.kind(),
+            data.ownerBinaryName(),
+            data.methodName(),
+            data.erasedDescriptor(),
+            data.scope());
+    try {
+      return CallHierarchyOutgoingLocator.scan(analysis, target, sourceRoots, definitionLocator);
+    } catch (final IOException e) {
+      LOG.log(Level.WARNING, e, () -> "[outgoingCalls] failed to read source for %s".formatted(uri));
+      return List.of();
+    }
   }
 
   public List<TypeHierarchyItem> typeHierarchySupertypes(

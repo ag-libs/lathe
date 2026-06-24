@@ -236,6 +236,14 @@ final class LatheTextDocumentService implements TextDocumentService {
   }
 
   @Override
+  public CompletableFuture<List<CallHierarchyOutgoingCall>> callHierarchyOutgoingCalls(
+      final CallHierarchyOutgoingCallsParams params) {
+    return worker
+        .submit(() -> session.outgoingCallsFuture(params.getItem()))
+        .thenCompose(f -> f);
+  }
+
+  @Override
   public CompletableFuture<List<TypeHierarchyItem>> prepareTypeHierarchy(
       final TypeHierarchyPrepareParams params) {
     final var uri = params.getTextDocument().getUri();

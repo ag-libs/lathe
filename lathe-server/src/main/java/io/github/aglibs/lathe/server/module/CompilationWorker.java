@@ -35,6 +35,7 @@ import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.SignatureHelp;
 import org.eclipse.lsp4j.CallHierarchyItem;
+import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
 import org.eclipse.lsp4j.TypeHierarchyItem;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
@@ -189,6 +190,15 @@ public final class CompilationWorker {
   public CompletableFuture<List<CallHierarchyItem>> prepareCallHierarchy(
       final SourceFeatureRequest request) {
     return submit(ctx -> ctx.prepareCallHierarchy(request));
+  }
+
+  public CompletableFuture<List<CallHierarchyOutgoingCall>> outgoingCalls(
+      final CallHierarchyItem item,
+      final String uri,
+      final String content,
+      final int version,
+      final List<Path> sourceRoots) {
+    return submit(ctx -> ctx.outgoingCalls(item, uri, content, version, sourceRoots));
   }
 
   public CompletableFuture<List<TypeHierarchyItem>> prepareTypeHierarchy(

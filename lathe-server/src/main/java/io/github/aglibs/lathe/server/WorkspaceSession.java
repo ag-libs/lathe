@@ -14,6 +14,8 @@ import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
 import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.server.analysis.TokenScanner;
+import io.github.aglibs.lathe.server.analysis.CallHierarchyItemData;
+import io.github.aglibs.lathe.server.analysis.CallHierarchyItemDataCodec;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyItemDataCodec;
 import io.github.aglibs.lathe.server.analysis.TypeSourceLocator;
 import io.github.aglibs.lathe.server.analysis.WorkspaceSymbolResolver;
@@ -62,6 +64,7 @@ import org.eclipse.lsp4j.SignatureHelp;
 import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.CallHierarchyItem;
+import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
 import org.eclipse.lsp4j.TypeHierarchyItem;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
@@ -624,6 +627,39 @@ final class WorkspaceSession {
     return workspace
         .workerFor(config.get())
         .methodImplementations(uri, content, version, target, candidateBinaryNames);
+  }
+
+  CompletableFuture<List<CallHierarchyOutgoingCall>> outgoingCallsFuture(
+      final CallHierarchyItem item) {
+    final CallHierarchyItemData data = CallHierarchyItemDataCodec.decode(item.getData());
+    if (data == null) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
+    final OpenDocument openFile = docs.get(data.routingUri());
+    if (openFile == null) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
+    final var t = Stopwatch.start();
+    return routeFeature(
+            data.routingUri(),
+            moduleWorker ->
+                moduleWorker.outgoingCalls(
+                    item,
+                    openFile.uri(),
+                    openFile.content(),
+                    openFile.version(),
+                    workspace.allSourceRoots()),
+            List.of())
+        .thenApply(
+            calls -> {
+              LOG.fine(
+                  () ->
+                      "[callHierarchy:outgoing] %s %dms calls=%d"
+                          .formatted(data.routingUri(), t.elapsedMs(), calls.size()));
+              return calls;
+            });
   }
 
   CompletableFuture<List<CallHierarchyItem>> prepareCallHierarchyFuture(
