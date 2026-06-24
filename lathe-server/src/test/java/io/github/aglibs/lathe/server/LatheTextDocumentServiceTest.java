@@ -15,6 +15,12 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.TimeUnit;
+import org.eclipse.lsp4j.CallHierarchyIncomingCall;
+import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams;
+import org.eclipse.lsp4j.CallHierarchyItem;
+import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
+import org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams;
+import org.eclipse.lsp4j.CallHierarchyPrepareParams;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.DidCloseTextDocumentParams;
@@ -115,7 +121,7 @@ class LatheTextDocumentServiceTest {
   @Test
   void references_workspaceFile_reportsProgressAndLocations() throws Exception {
     final Path source = writeWorkspaceSource();
-    final String content = Files.readString(source);
+    final var content = Files.readString(source);
     final var token = Either.<String, Integer>forLeft("refs-token");
     service.setWorkDoneProgressSupported(true);
     service.initialize(tmp);
@@ -139,7 +145,7 @@ class LatheTextDocumentServiceTest {
   @Test
   void references_progressCancelled_cancelsResponseAndKeepsServiceUsable() throws Exception {
     final Path source = writeWorkspaceSource();
-    final String content = Files.readString(source);
+    final var content = Files.readString(source);
     final var token = Either.<String, Integer>forLeft("refs-token");
     service.setWorkDoneProgressSupported(true);
     service.initialize(tmp);
@@ -186,6 +192,109 @@ class LatheTextDocumentServiceTest {
     assertThat(result).hasSize(1);
     assertThat(result.getFirst().isRight()).isTrue();
     assertThat(result.getFirst().getRight()).isSameAs(symbol);
+  }
+
+  @Test
+  void prepareCallHierarchy_onMethodDeclaration_returnsItem() throws Exception {
+    final Path source = writeWorkspaceSource();
+    final var content = Files.readString(source);
+    service.initialize(tmp);
+    service.didOpen(
+        new DidOpenTextDocumentParams(
+            new TextDocumentItem(source.toUri().toString(), "java", 1, content)));
+
+    final var params = new CallHierarchyPrepareParams();
+    params.setTextDocument(new TextDocumentIdentifier(source.toUri().toString()));
+    params.setPosition(offsetToPosition(content, content.indexOf("target")));
+
+    final List<CallHierarchyItem> items =
+        service.prepareCallHierarchy(params).get(5, TimeUnit.SECONDS);
+
+    assertThat(items).hasSize(1);
+    assertThat(items.getFirst().getName()).isEqualTo("target");
+  }
+
+  @Test
+  void prepareCallHierarchy_notOnMethod_returnsEmpty() throws Exception {
+    final Path source = writeWorkspaceSource();
+    final var content = Files.readString(source);
+    service.initialize(tmp);
+    service.didOpen(
+        new DidOpenTextDocumentParams(
+            new TextDocumentItem(source.toUri().toString(), "java", 1, content)));
+
+    final var params = new CallHierarchyPrepareParams();
+    params.setTextDocument(new TextDocumentIdentifier(source.toUri().toString()));
+    params.setPosition(offsetToPosition(content, content.indexOf("Foo")));
+
+    final List<CallHierarchyItem> items =
+        service.prepareCallHierarchy(params).get(5, TimeUnit.SECONDS);
+
+    assertThat(items).isEmpty();
+  }
+
+  @Test
+  void outgoingCalls_fromPreparedItem_returnsCallees() throws Exception {
+    final Path sourceRoot = tmp.resolve("module/src/main/java");
+    Files.createDirectories(sourceRoot);
+    Files.writeString(sourceRoot.resolve("Callee.java"), "class Callee { void run() {} }");
+    final Path callerFile = sourceRoot.resolve("Caller.java");
+    final String callerContent =
+        """
+        class Caller { void invoke(Callee c) { c.run(); } }
+        class Callee { void run() {} }
+        """;
+    Files.writeString(callerFile, callerContent);
+    TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
+    service.initialize(tmp);
+    service.didOpen(
+        new DidOpenTextDocumentParams(
+            new TextDocumentItem(callerFile.toUri().toString(), "java", 1, callerContent)));
+
+    final var prepParams = new CallHierarchyPrepareParams();
+    prepParams.setTextDocument(new TextDocumentIdentifier(callerFile.toUri().toString()));
+    prepParams.setPosition(offsetToPosition(callerContent, callerContent.indexOf("invoke")));
+    final List<CallHierarchyItem> items =
+        service.prepareCallHierarchy(prepParams).get(5, TimeUnit.SECONDS);
+    assertThat(items).hasSize(1);
+
+    final List<CallHierarchyOutgoingCall> calls =
+        service
+            .callHierarchyOutgoingCalls(new CallHierarchyOutgoingCallsParams(items.getFirst()))
+            .get(5, TimeUnit.SECONDS);
+
+    assertThat(calls).hasSize(1);
+    assertThat(calls.getFirst().getTo().getName()).isEqualTo("run");
+  }
+
+  @Test
+  void incomingCalls_fromPreparedItem_returnsCallerAndRanges() throws Exception {
+    final Path sourceRoot = tmp.resolve("module/src/main/java");
+    final Path source = sourceRoot.resolve("com/example/Foo.java");
+    Files.createDirectories(source.getParent());
+    final String content =
+        "package com.example; class Foo { private void target() {} void caller() { target(); } }";
+    Files.writeString(source, content);
+    TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
+    service.initialize(tmp);
+    service.didOpen(
+        new DidOpenTextDocumentParams(
+            new TextDocumentItem(source.toUri().toString(), "java", 1, content)));
+
+    final var prepParams = new CallHierarchyPrepareParams();
+    prepParams.setTextDocument(new TextDocumentIdentifier(source.toUri().toString()));
+    prepParams.setPosition(offsetToPosition(content, content.indexOf("target")));
+    final List<CallHierarchyItem> items =
+        service.prepareCallHierarchy(prepParams).get(5, TimeUnit.SECONDS);
+    assertThat(items).hasSize(1);
+
+    final List<CallHierarchyIncomingCall> calls =
+        service
+            .callHierarchyIncomingCalls(new CallHierarchyIncomingCallsParams(items.getFirst()))
+            .get(5, TimeUnit.SECONDS);
+
+    assertThat(calls).hasSize(1);
+    assertThat(calls.getFirst().getFrom().getName()).isEqualTo("caller");
   }
 
   private static DidChangeTextDocumentParams changeParams(final String text) {

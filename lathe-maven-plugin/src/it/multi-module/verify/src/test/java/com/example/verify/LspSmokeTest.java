@@ -14,6 +14,10 @@ import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
+import org.eclipse.lsp4j.CallHierarchyIncomingCall;
+import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams;
+import org.eclipse.lsp4j.CallHierarchyItem;
+import org.eclipse.lsp4j.CallHierarchyPrepareParams;
 import org.eclipse.lsp4j.ClientCapabilities;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
 import org.eclipse.lsp4j.ImplementationParams;
@@ -141,8 +145,8 @@ class LspSmokeTest {
   void references_fromReactorSource_findsUsageAcrossModules() throws Exception {
     final Path stringUtilsJava =
         ROOT.resolve("core/src/main/java/com/example/core/StringUtils.java");
-    final String stringUtilsUri = stringUtilsJava.toUri().toString();
-    final String stringUtilsContent = Files.readString(stringUtilsJava);
+    final var stringUtilsUri = stringUtilsJava.toUri().toString();
+    final var stringUtilsContent = Files.readString(stringUtilsJava);
     openDoc(stringUtilsUri, stringUtilsContent);
 
     final var params = new ReferenceParams();
@@ -231,6 +235,32 @@ class LspSmokeTest {
     assertThat(subtypes)
         .extracting(TypeHierarchyItem::getName)
         .containsExactlyInAnyOrder("FormalGreeter", "CasualGreeter");
+  }
+
+  @Test
+  void incomingCalls_publicMethod_findsCrossModuleCaller() throws Exception {
+    final Path stringUtilsJava =
+        ROOT.resolve("core/src/main/java/com/example/core/StringUtils.java");
+    final var stringUtilsUri = stringUtilsJava.toUri().toString();
+    final var stringUtilsContent = Files.readString(stringUtilsJava);
+    openDoc(stringUtilsUri, stringUtilsContent);
+
+    final var prepParams = new CallHierarchyPrepareParams();
+    prepParams.setTextDocument(new TextDocumentIdentifier(stringUtilsUri));
+    prepParams.setPosition(findToken(stringUtilsContent, "public static String upper", "upper"));
+
+    final List<CallHierarchyItem> items =
+        server.getTextDocumentService().prepareCallHierarchy(prepParams).get(30, SECONDS);
+    assertThat(items).hasSize(1);
+    assertThat(items.getFirst().getName()).isEqualTo("upper");
+
+    final List<CallHierarchyIncomingCall> calls =
+        server
+            .getTextDocumentService()
+            .callHierarchyIncomingCalls(new CallHierarchyIncomingCallsParams(items.getFirst()))
+            .get(30, SECONDS);
+
+    assertThat(calls).anyMatch(call -> call.getFrom().getUri().contains("Main.java"));
   }
 
   @Test
