@@ -17,6 +17,10 @@ The feature reuses the same symbol identity, candidate index, and scope planning
 place for Find References.
 No new architectural components are required.
 
+Incoming calls should be implemented as a specialized Find References search.
+The implementation should prefer DRY reuse of the existing reference candidate pipeline over a second parallel fan-out path,
+while still avoiding a new scheduler, engine framework, or public abstraction.
+
 ---
 
 ## 2. LSP Protocol
@@ -100,15 +104,17 @@ If the cursor is on a method *invocation* rather than a method *declaration*,
 
 ## 5. Incoming Calls
 
-Incoming calls is Find References scoped to `INVOCATION` roles and grouped by enclosing caller.
+Incoming calls is Find References scoped to invocation-like roles and grouped by enclosing caller.
+It must reuse the same candidate discovery and transient closed-file compilation path as `textDocument/references`,
+so the reference-search OOM fix also applies to call hierarchy.
 
 ```
 incomingCalls(item)
   → CallHierarchyItemDataCodec.decode(item.getData())
   → reconstruct ReferenceTarget
   → WorkspaceSession.incomingCallsFuture(item)
-    → planSearchScope(target, cursorConfig)   ← extracted helper (see §7)
-    → for each candidate config:
+    → run shared reference-candidate fan-out (see §7)
+      → for each candidate:
         CompilationWorker.searchIncomingCalls(target, ...)
           → SourceAnalysisSession.searchIncomingCalls(...)
             → CallHierarchyIncomingLocator.scan(attributedAnalysis, target)
@@ -212,11 +218,28 @@ Each `CallHierarchyOutgoingCall` pairs:
 
 ---
 
-## 7. Shared Scope-Planning Helper
+## 7. Shared Reference Candidate Pipeline
 
-`WorkspaceSession.referencesFuture` contains scope-planning logic that `incomingCallsFuture`
-must duplicate without extraction.
-Before implementing incoming calls, extract this into a package-private helper:
+`WorkspaceSession.referencesFuture` already owns the broad-search shape that incoming calls needs:
+
+1. resolve or receive a `ReferenceTarget`;
+2. choose legal module/source-config scope from target visibility;
+3. ask `ReferenceCandidateIndex` for candidate files;
+4. route each candidate to the owning `CompilationWorker`;
+5. use cached analysis for open files and transient analysis for closed files;
+6. pass the request `CancelChecker` into queued candidate work;
+7. join candidate futures and flatten immutable per-candidate results.
+
+Incoming calls should not duplicate that fan-out.
+Before implementing incoming calls, extract the reusable parts of `referencesFuture` into private helpers inside
+`WorkspaceSession`.
+Prefer private generic helper methods if the signatures stay readable.
+If generics obscure the code, keep two explicit feature methods and share only candidate planning, routing, and joining helpers.
+
+Do not introduce a public search abstraction, a top-level engine class, or a strategy hierarchy in the first implementation.
+Reconsider a concrete package-private helper class only after incoming calls are implemented and `WorkspaceSession` becomes visibly harder to read.
+
+At minimum, extract shared scope planning:
 
 ```java
 private List<ModuleSourceConfig> planSearchScope(
@@ -231,8 +254,34 @@ private List<ModuleSourceConfig> planSearchScope(
 }
 ```
 
-`referencesFuture` and `incomingCallsFuture` both call this.
-No other change to `referencesFuture` is needed.
+The preferred DRY shape is a private candidate fan-out helper used by both references and incoming calls:
+
+```java
+private <T> CompletableFuture<List<T>> searchReferenceCandidates(
+    ReferenceTarget target,
+    String routingUri,
+    CancelChecker cancelChecker,
+    CandidateOperation<T> operation) {
+  ...
+}
+```
+
+However, repository style forbids new interfaces for single implementations.
+If a private functional interface would be the only clean way to express this,
+use a small set of private helper methods instead:
+
+- `planSearchScope(...)`
+- `referenceCandidates(...)`
+- `searchCandidateReferences(...)`
+- `searchCandidateIncomingCalls(...)`
+- `joinCandidateResults(...)`
+
+The important invariant is that references and incoming calls share candidate discovery, worker routing,
+cancellation checks, and transient closed-file lifetime.
+They should differ only in the per-candidate analysis operation and final aggregation shape.
+
+Outgoing calls must not use this pipeline.
+It scans exactly one attributed source file named by `routingUri`.
 
 ---
 
@@ -275,6 +324,8 @@ public CompletableFuture<List<CallHierarchyOutgoingCall>> callHierarchyOutgoingC
 
 Three new delegating methods following the existing `resolveTarget` / `searchReferences`
 pattern.
+Incoming-call candidate methods should mirror the current transient reference-search methods closely enough that
+`WorkspaceSession` can route both through the same candidate fan-out helpers.
 
 ### `SourceAnalysisSession`
 
@@ -302,7 +353,9 @@ All four files live in `io.github.aglibs.lathe.server.analysis`.
 Steps are ordered to minimise blocked dependencies.
 Steps 3 and 4 are independent once step 2 is done.
 
-1. **Extract `planSearchScope`** from `WorkspaceSession.referencesFuture`.
+1. **Extract the shared reference-candidate pipeline** from `WorkspaceSession.referencesFuture`.
+   At minimum extract `planSearchScope`; preferably also share candidate discovery, worker routing, cancellation-aware
+   closed/open candidate handling, future joining, and flattening where this remains readable.
    Verify `referencesFuture` behaviour is unchanged.
 
 2. **`CallHierarchyItemData` + codec + capability flag.**
@@ -319,6 +372,8 @@ Steps 3 and 4 are independent once step 2 is done.
 
 5. **`incomingCalls`** — `CallHierarchyIncomingLocator`, `CompilationWorker`,
    `WorkspaceSession`, `LatheTextDocumentService`.
+   Plug incoming-call candidate work into the shared reference-candidate pipeline rather than copying the references
+   fan-out.
 
 6. **Tests** — see §11.
 
@@ -326,36 +381,102 @@ Steps 3 and 4 are independent once step 2 is done.
 
 ## 11. Tests
 
-### Unit
+Before adding tests, read at least two existing test classes in every affected package and follow the nearest fixtures.
+The goal is to prove each behavior once at the lowest reliable layer.
+Higher layers verify routing and protocol shape only.
+
+### Test ownership and anti-duplication
+
+Tests are organized by behavior ownership, not by implementation layer.
+Do not add a test at every layer because a feature crosses every layer.
+Add a higher-layer test only when that layer owns a distinct risk such as LSP parameter mapping, request routing,
+cross-module wiring, or real protocol workflow.
+
+| Behavior | Primary owner | Higher-layer coverage |
+|---|---|---|
+| Item data JSON round trip | `CallHierarchyItemDataCodecTest` | none |
+| Capability advertisement | `LatheLanguageServerTest` | none |
+| Cursor-to-method item creation | `SourceAnalysisSessionTest` or nearest existing session test | one service smoke only if needed |
+| Incoming call AST grouping | `CallHierarchyIncomingLocatorTest` | one workspace/service cross-module scenario |
+| Outgoing call AST grouping | `CallHierarchyOutgoingLocatorTest` | one service scenario only if locator cannot prove source URI conversion |
+| Reference candidate fan-out reuse | existing Find References tests | no duplicate call-hierarchy fan-out test unless extraction creates a new helper contract |
+| Cross-module incoming scope | `WorkspaceSessionTest` or existing workspace reference-scope owner | one invoker smoke if not already covered by service tests |
+| LSP request parameter/response wiring | `LatheTextDocumentServiceTest` | no locator details |
+| Real editor-like workflow | explorer manual validation | no Neovim-in-build test |
+
+Each implementation slice should include a small coverage map:
+
+```text
+behavior -> existing coverage -> new/changed coverage -> owning test class
+```
+
+If existing reference tests already prove candidate planning, open/closed routing, cancellation-aware transient analysis,
+or future joining after extraction, do not add equivalent call hierarchy tests for those mechanics.
+Incoming-call tests should focus on the new grouping semantics.
+Outgoing-call tests should focus on the single-method-body scan semantics.
+Service tests should assert protocol shape and dispatch only.
+Invoker or explorer validation should cover one representative real workflow, not every node kind.
+
+### Unit and service tests
 
 `CallHierarchyItemDataCodecTest`
+
 - `encode_decode_roundTrip_preservesAllFields`
 - `decode_fromJsonObject_reconstructsRecord`
 
-`CallHierarchyIncomingLocatorTest` (uses `WorkbenchFixture`)
+`CallHierarchyIncomingLocatorTest`
+
 - `scan_directMethodCall_returnsCallerAndRange`
 - `scan_constructorCall_returnsCallerAndRange`
 - `scan_memberReference_returnsCallerAndRange`
-- `scan_callInStaticInitializer_attributesToClinitSynthetic`
 - `scan_noMatch_returnsEmpty`
 
-`CallHierarchyOutgoingLocatorTest` (uses `WorkbenchFixture`)
+Initializer attribution is deferred unless the implementation supports it naturally without extra display/range policy.
+
+`CallHierarchyOutgoingLocatorTest`
+
 - `scan_methodCallInBody_returnsCalleeAndRange`
 - `scan_nestedClassMethod_notAttributedToOuterMethod`
 - `scan_constructorInvocationInBody_returnsCallee`
 - `scan_nonSourceCallee_omitted`
 
-### Integration (invoker `multi-module`)
+`LatheLanguageServerTest`
 
-Extend `LspSmokeTest`:
+- `createCapabilities_includesCallHierarchyProvider`
+
+`LatheTextDocumentServiceTest` or the nearest existing service/workspace owner
+
 - `prepareCallHierarchy_onMethodDeclaration_returnsItem`
 - `prepareCallHierarchy_notOnMethod_returnsEmpty`
-- `outgoingCalls_returnsCalleesInMethodBody`
-- `incomingCalls_publicMethod_findsCrossModuleCallers`
+- `outgoingCalls_fromPreparedItem_returnsCallees`
+- `incomingCalls_fromPreparedItem_returnsCallerAndRanges`
 
-### Capability assertion
+These service tests should use simple source fixtures and assert protocol-level structure.
+They should not reassert every locator node kind.
 
-`LatheLanguageServerTest.createCapabilities_includesCallHierarchyProvider`
+### Invoker and explorer validation
+
+Add invoker coverage only for behavior that cannot be proven reliably by unit/service tests.
+The preferred invoker scope is one multi-module smoke:
+
+- `incomingCalls_publicMethod_findsCrossModuleCaller`
+
+Do not add separate invoker tests for every locator node kind.
+Those belong in locator unit tests.
+
+Manual explorer validation covers the real JSON-RPC workflow:
+
+- prepare on a known method;
+- outgoing calls from that prepared item;
+- incoming calls to a public method with at least one reactor caller;
+- empty prepare result when the cursor is not on a method or constructor.
+
+### Reuse regression for extraction
+
+Existing Find References tests remain the primary regression suite for the extracted candidate pipeline.
+Add new tests only where the extraction creates a genuinely new helper contract that is not already covered through
+`referencesFuture`.
+Do not duplicate the same successful reference search at every layer only to prove that the helper is shared.
 
 ---
 
