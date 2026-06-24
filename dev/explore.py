@@ -55,6 +55,9 @@ sig after <text>
     Typical use: sig after "methodName("
 
 definition <line>:<col>   (alias: def <line>:<col>)
+    Show the definition site of the symbol at the given 0-based position.
+
+declaration <line>:<col>  (alias: decl <line>:<col>)
     Show the declaration site of the symbol at the given 0-based position.
 
 refs <line>:<col> [assertions]
@@ -516,6 +519,8 @@ class ExploreShell:
             "sig":         self._cmd_sig,
             "definition":  self._cmd_definition,
             "def":         self._cmd_definition,
+            "declaration": self._cmd_declaration,
+            "decl":        self._cmd_declaration,
             "refs":           self._cmd_refs,
             "impl":           self._cmd_impl,
             "implementation": self._cmd_impl,
@@ -939,6 +944,36 @@ class ExploreShell:
 
         if not locs:
             print("  (no definition found)")
+            return
+
+        for loc in locs:
+            uri   = loc.get("uri") or loc.get("targetUri", "?")
+            r     = loc.get("range") or loc.get("targetSelectionRange", {})
+            start = r.get("start", {})
+            path  = uri.removeprefix("file://")
+            ln    = start.get("line", "?")
+            ch    = start.get("character", "?")
+            print(f"  {path}:{ln + 1 if isinstance(ln, int) else ln}"
+                  f":{ch + 1 if isinstance(ch, int) else ch}")
+
+    def _cmd_declaration(self, args: list[str]) -> None:
+        if not args:
+            print("usage: declaration <line>:<col>")
+            return
+        try:
+            line, col = (int(x) for x in args[0].split(":", 1))
+        except (ValueError, TypeError):
+            print(f"  expected line:col (0-based), got {args[0]!r}")
+            return
+
+        try:
+            locs = self._client.declaration(self._file, line, col)
+        except TimeoutError:
+            print("  TIMEOUT")
+            return
+
+        if not locs:
+            print("  (no declaration found)")
             return
 
         for loc in locs:
