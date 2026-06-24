@@ -532,6 +532,35 @@ final class WorkspaceSession {
   }
 
   CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
+      declarationFuture(final String uri, final Position pos) {
+    final OpenDocument openFile = docs.get(uri);
+    if (openFile == null) {
+      return CompletableFuture.completedFuture(Either.forLeft(List.of()));
+    }
+
+    LOG.info(
+        () ->
+            "[declaration] %s line=%d character=%d"
+                .formatted(uri, pos.getLine(), pos.getCharacter()));
+    final var request =
+        new SourceFeatureRequest(
+            openFile.uri(), openFile.content(), pos, workspace.allSourceRoots(), manifest);
+    return routeFeature(
+        uri,
+        moduleWorker ->
+            moduleWorker
+                .declaration(request)
+                .thenApply(location -> definitionResult(location.map(List::of).orElseGet(List::of)))
+                .exceptionally(
+                    ex ->
+                        logAndReturn(
+                            ex,
+                            "[declaration] failed for %s".formatted(uri),
+                            Either.forLeft(List.of()))),
+        Either.forLeft(List.of()));
+  }
+
+  CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       implementationFuture(final String uri, final Position pos) {
     final OpenDocument openFile = docs.get(uri);
     if (openFile == null) {
