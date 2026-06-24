@@ -17,8 +17,6 @@ Read their current-status sections and compare them with the roadmap before star
 - [Call Hierarchy](planned/lathe-call-hierarchy.md) — `prepareCallHierarchy`, `incomingCalls`, and `outgoingCalls`
   built on `ReferenceTarget` identity, `ReferenceCandidateIndex` candidate discovery, and two new
   `TreePathScanner` locators.
-- [Reference Search Reliability](planned/lathe-reference-search-reliability.md) — bounded transient analysis,
-  work-done progress, and optional cancellation after the Helidon `String` search crash.
 - [Code Action Gaps](planned/lathe-code-actions-gaps.md) — missing-method provider and reactor type freshness.
 - [MissingMethodImplProvider](planned/lathe-missing-method-impl.md) — generation of abstract-method stubs.
 - [Maintainability Refactoring](planned/lathe-maintainability-refactoring.md) — fail-fast propagation and focused
@@ -79,6 +77,9 @@ M3 designs before implementation.
 - [Completion Presentation](done/lathe-completion-presentation.md)
 - [Standard File URI Scheme](done/lathe-file-uri-scheme.md)
 - [Find References](done/lathe-find-references.md)
+- [Reference Search Reliability](done/lathe-reference-search-reliability.md) — bounded transient analysis,
+  process-wide compilation admission, work-done progress, optional cancellation, and fatal `Error` handling after the
+  Helidon `String` search crash.
 - [Folding Ranges](done/lathe-folding-ranges.md)
 - [Import Optimization](done/lathe-import-optimization.md)
 - [JDK Cache Key](done/lathe-jdk-cache-key.md)

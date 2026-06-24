@@ -3,7 +3,7 @@
 This document records the implemented baseline and known user-visible gaps.
 The [roadmap](roadmap.md) defines milestone scope; the [design index](design-index.md) links detailed designs.
 
-Status last reviewed: 2026-06-21.
+Status last reviewed: 2026-06-24.
 
 ## Release State
 
@@ -36,7 +36,7 @@ Maven Central publication is planned for M3.
 | Completion | Implemented with M2 gaps | Member, type, import, constructor, lambda, argument, keyword, and typed-slot completion. Method references and generic-bound receivers remain. |
 | Completion presentation | Implemented | Label details, generic display, receiver substitution, documentation, and import edits. |
 | Signature help | Implemented | Overloads, active parameters, constructors, parameter names, and Javadoc. |
-| Find References | Implemented with gaps | Exact same-file, module, and reactor search. External-source scope and fail-fast gaps remain. |
+| Find References | Implemented with M2 gaps | Exact same-file, module, and reactor search with transient closed-file analysis, process-wide compilation admission, work-done progress, optional cancellation, and fatal `Error` handling. External-source scope remains. |
 | Implementation | Implemented | Type implementations use indexed transitive subtypes; method implementations are reactor-only and javac-validated. |
 | Type hierarchy | Implemented | Prepare, direct supertypes, and direct subtypes cover source-backed reactor, dependency, and JDK types. |
 | Call hierarchy | M1 planned | Incoming and outgoing calls are not implemented. Design in lathe-call-hierarchy.md. |
@@ -68,6 +68,7 @@ Maven Central publication is planned for M3.
 - `DocumentRegistry` owns open-document generations and stale-result validation.
 - `DiagnosticPublisher` owns diagnostic publication and semantic-token refresh requests.
 - `ReferenceCandidateIndex` maps Java identifier tokens to source files for reference search.
+- `CompilationAdmission` bounds concurrent javac tasks across reference search and interactive compilation.
 - `WorkspaceTypeIndex` merges dependency/JDK shards with reactor output entries for type discovery.
 - `WorkspaceTypeIndex` also provides immutable direct-supertype, direct-subtype, and transitive-subtype queries.
 - External sources use standard read-only `file://` files under the Lathe cache.
@@ -77,7 +78,8 @@ See [lathe-server-data-flow-recipe.md](done/lathe-server-data-flow-recipe.md) fo
 ## Implemented Feature Highlights
 
 - Completion contexts, typed-slot filtering, type-index discovery, import insertion, and JDT-style presentation.
-- Exact javac-backed references with scope tightening and indexed candidate discovery.
+- Exact javac-backed references with scope tightening, indexed candidate discovery, bounded transient closed-file
+  analysis, work-done progress, and optional cancellation.
 - Missing-import and add-throws quick fixes. Try/catch wrapping and variable declaration are classified and dispatched but providers are not yet implemented.
 - Rich AST-backed Markdown Javadoc for hover, completion, and signature help.
 - Workspace/document symbols, folding ranges, formatting, import optimization, and unused-code diagnostics.

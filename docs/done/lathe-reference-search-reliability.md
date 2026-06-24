@@ -2,12 +2,12 @@
 
 ## Status
 
-Planned for M1 — Internal Preview, the next milestone.
+Implemented for M1 — Internal Preview.
 
 This design replaces the former Reference Search Resource Safety, Request Cancellation and Compilation Admission, and Streaming References designs.
 It defines one focused reliability change for workspace-wide Find References: bounded transient javac analysis, visible work-done progress, and optional cooperative cancellation.
 
-The separate [LSP Work-Done Progress](lathe-lsp-progress.md) design continues to cover workspace initialization and reload.
+The separate [LSP Work-Done Progress](../planned/lathe-lsp-progress.md) design continues to cover workspace initialization and reload.
 Both features should share protocol-level progress plumbing, but their operation lifecycles remain independent.
 
 ## Incident
@@ -424,5 +424,4 @@ Repeat the search once to verify stable post-search memory rather than relying o
 
 ## Implementation Approval
 
-The implementation touches multiple classes and introduces `CompilationAdmission` plus asynchronous progress plumbing.
-No production code may be written until an implementation design summary based on this document is explicitly approved.
+Implemented with focused slices covering transient closed-file analysis, process-wide compilation admission, progress reporting, request/progress cancellation, fatal `Error` handling, explorer validation, and supporting unit tests.
