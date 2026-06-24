@@ -688,7 +688,7 @@ Expected navigation model:
 | `dbClient.execute()` where `dbClient` is `MongoDbClient` | `MongoDbClient.execute()` | `DbClient.execute()` |
 | `dbClient.execute()` where `dbClient` is `DbClient` | `DbClient.execute()` | `DbClient.execute()` |
 | `MongoDbClient.execute()` declaration itself | `MongoDbClient.execute()` | `DbClient.execute()` |
-| `DbClient.execute()` declaration | `DbClient.execute()` | `DbClient.execute()` or empty |
+| `DbClient.execute()` declaration | `DbClient.execute()` | `DbClient.execute()` |
 
 ### Proposed fix
 
@@ -709,6 +709,29 @@ Implementation uses javac override checks:
 
 Multiple inherited interface declarations may return multiple locations.
 The declaration result for a non-overriding method falls back to the definition location.
+
+### Implementation notes
+
+**Call-site rows (rows 1–2) are more ambitious than declaration-site (row 3).**
+The proposed fix focuses on overriding method *declarations*.
+Rows 1 and 2 are *call sites*: getting declaration to navigate from `dbClient.execute()` (where
+`dbClient` is `MongoDbClient`) to `DbClient.execute()` requires resolving the concrete callee at
+the call site and then walking up to the interface — a separate code path.
+V1 should cover declaration-site overrides (row 3) only; call sites can fall back to definition
+until a follow-up extends the logic there.
+
+**Decide between immediate override and root contract.**
+Walking only *direct* supertypes may not reach the root interface.
+For `MongoDbClient extends DbClientBase implements DbClient`, if `DbClientBase` also declares
+`execute()`, a single-level walk lands on `DbClientBase.execute()`, not `DbClient.execute()`.
+Whether to return the *nearest* overridden declaration or the *most abstract* one is a product
+decision; the implementation must choose one consistently.
+Returning the nearest overridden declaration is simpler; returning the root interface is arguably
+more aligned with "jump to contract".
+
+**Row 4 — interface method is its own declaration.**
+`DbClient.execute()` IS the declaration, so `declaration` should return itself, not empty.
+"Or empty" was removed from the table above.
 
 ### Probe commands
 
