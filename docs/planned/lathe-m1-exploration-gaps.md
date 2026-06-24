@@ -23,6 +23,7 @@ duplicated here.
 | EG-009 | Outgoing calls includes anonymous class constructor instantiations with empty name | M1 |
 | EG-010 | `explore.py` cannot probe dep/JDK source files — no workspace context for cache paths | M1 |
 | EG-011 | Outgoing calls silently omits callees whose source is in extracted dep or JDK dirs | M2 |
+| EG-012 | No quick navigation from an overriding method declaration to its overridden super/interface method | M2 |
 
 EG-003 and EG-005 are deferred to M2:
 EG-003 requires `DocTrees` attribution of Javadoc comment positions, which is a non-trivial
@@ -603,6 +604,109 @@ have the cache path as their `uri`, consistent with how `definition` navigates t
 
 ---
 
+## EG-012 — No quick navigation from an overriding method declaration to its overridden super/interface method
+
+**Milestone: M2**
+
+### Observed behaviour
+
+Java IDEs commonly provide a quick way to navigate from an overriding method declaration to the
+method it overrides in a superclass or interface.
+Lathe does not currently expose that navigation.
+
+Probing `MongoDbClient` in Helidon confirms:
+
+```java
+public class MongoDbClient extends DbClientBase implements DbClient {
+  @Override
+  public DbExecute execute() { ... }
+
+  @Override
+  public DbTransaction transaction() { ... }
+
+  @Override
+  public String dbType() { ... }
+
+  @Override
+  public <C> C unwrap(Class<C> cls) { ... }
+}
+```
+
+Running `definition` on the overriding method declarations returns the declaration itself:
+
+| Cursor target | Actual definition result |
+|---|---|
+| `MongoDbClient.execute()` | `MongoDbClient.execute()` |
+| `MongoDbClient.transaction()` | `MongoDbClient.transaction()` |
+| `MongoDbClient.dbType()` | `MongoDbClient.dbType()` |
+| `MongoDbClient.unwrap(...)` | `MongoDbClient.unwrap(...)` |
+
+The reverse direction works through `textDocument/implementation`:
+running `impl` on the corresponding `DbClient` interface declarations returns both
+`JdbcClient` and `MongoDbClient` implementations.
+
+Normal call-site definition also behaves correctly:
+
+- `MongoDbClient dbClient; dbClient.execute()` jumps to `MongoDbClient.execute()`;
+- `DbClient dbClient; dbClient.execute()` jumps to `DbClient.execute()`;
+- inherited superclass calls such as `context()` inside `MongoDbClient.execute()` jump to
+  `DbClientBase.context()`.
+
+The missing behavior is specifically declaration-site navigation from an override to the
+overridden method.
+
+### Product shape
+
+This should probably not change ordinary `textDocument/definition`.
+For Java, definition at a method declaration naturally returns that declaration, while
+implementation at an interface method returns concrete overrides.
+
+Better options:
+
+- add a code-lens-like or command-backed "Go to super method" action if the client can surface it;
+- expose a Lathe-specific command through code action on `@Override` or the method name;
+- map a Neovim helper command to a future server request that returns overridden declarations.
+
+If the LSP client has no dedicated "super method" request, the first implementation can be a
+code action or command rather than a capability-level protocol feature.
+
+### Proposed implementation direction
+
+Reuse javac override checks rather than the type index alone:
+
+1. At a method declaration, resolve the `ExecutableElement` and enclosing `TypeElement`.
+2. Walk direct and transitive supertypes using `Types.directSupertypes(...)`.
+3. For each candidate method in each supertype, use `Elements.overrides(current, candidate, enclosingType)`.
+4. Return source locations for matching candidates using the existing definition/source-location machinery.
+
+For interface methods, this must find the interface declaration.
+For class overrides, it must find the superclass method.
+For multiple inherited interface declarations, returning multiple locations is acceptable.
+
+### Probe commands
+
+```bash
+printf 'definition 96:19\ndefinition 101:23\ndefinition 106:16\ndefinition 111:15\nquit\n' \
+  | env LATHE_TIMEOUT=90 python3 dev/explore.py \
+      /home/ag-libs/git/helidon/dbclient/mongodb/src/main/java/io/helidon/dbclient/mongodb/MongoDbClient.java
+
+printf 'impl 52:14\nimpl 64:18\nimpl 45:11\nimpl 77:10\nquit\n' \
+  | env LATHE_TIMEOUT=90 python3 dev/explore.py \
+      /home/ag-libs/git/helidon/dbclient/dbclient/src/main/java/io/helidon/dbclient/DbClient.java
+```
+
+### Regression targets
+
+Future tests should avoid duplicating implementation-navigation coverage.
+They should focus only on override-to-super navigation:
+
+- concrete class method overriding interface method returns the interface declaration;
+- concrete class method overriding superclass method returns the superclass declaration;
+- generic method override resolves the erased/substituted super declaration;
+- non-overriding method returns no result.
+
+---
+
 ## M1 Implementation Order
 
 Items without dependencies may proceed in parallel.
@@ -638,4 +742,5 @@ Items without dependencies may proceed in parallel.
 8. **EG-010** (`explore.py` workspace flag) — add `--workspace <path>` argument to `explore.py`.
    Dev-tooling only; self-contained.
 
-EG-011 is M2 work, tracked alongside the external-source Find References scope expansion.
+EG-011 and EG-012 are M2 work, tracked alongside the external-source Find References and
+navigation scope expansion.
