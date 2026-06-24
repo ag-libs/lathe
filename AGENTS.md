@@ -133,6 +133,7 @@ After a large Java change, agents may run `mvn spotless:apply` before tests to n
     * **NEVER** write comments that explain *WHAT* the code is doing. Only write comments if the
       *WHY* is highly unintuitive.
     * Always use `{}` braces on `if`/`else`, even for single-line bodies.
+    * Always add a blank new line after an `if () {}` block.
     * **Immutable Collections**: Methods **MUST** return or produce immutable collections (
       `List.of`, `Map.copyOf`, etc.). Any collection passed into a `record` constructor **MUST** be
       defensively copied to an immutable version inside the compact constructor (e.g.,
