@@ -23,7 +23,7 @@ duplicated here.
 | EG-009 | Outgoing calls includes anonymous class constructor instantiations with empty name | M1 |
 | EG-010 | `explore.py` cannot probe dep/JDK source files — no workspace context for cache paths | M1 |
 | EG-011 | Outgoing calls silently omits callees whose source is in extracted dep or JDK dirs | M2 |
-| EG-012 | `textDocument/declaration` not implemented; overriding method declarations have no path to the contract/interface method | M2 |
+| EG-012 | `textDocument/declaration` not implemented; overriding method declarations have no path to the contract/interface method | M1 |
 
 EG-003 and EG-005 are deferred to M2:
 EG-003 requires `DocTrees` attribution of Javadoc comment positions, which is a non-trivial
@@ -606,7 +606,7 @@ have the cache path as their `uri`, consistent with how `definition` navigates t
 
 ## EG-012 — `textDocument/declaration` not implemented; no path from override to contract method
 
-**Milestone: M2**
+**Milestone: M1**
 
 ### Observed behaviour
 
@@ -789,5 +789,7 @@ Items without dependencies may proceed in parallel.
 8. **EG-010** (`explore.py` workspace flag) — add `--workspace <path>` argument to `explore.py`.
    Dev-tooling only; self-contained.
 
-EG-011 and EG-012 are M2 work, tracked alongside the external-source Find References and
+9. **EG-012** (`textDocument/declaration`) — implement `textDocument/declaration` to allow navigating from an override to its contract method.
+
+EG-011 is M2 work, tracked alongside the external-source Find References and
 navigation scope expansion.
