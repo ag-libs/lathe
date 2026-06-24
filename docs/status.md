@@ -91,8 +91,5 @@ Detailed implementation designs and historical decisions are indexed under
 
 ## Known M1 Blockers
 
-- Workspace fan-out boundaries still convert some unexpected failures to empty successful results.
-- Synchronous whole-index construction can block `ServerEventLoop` on large workspaces.
 - `MissingMethodImplProvider` is not implemented.
 - New reactor types may require Maven sync before missing-import actions discover them.
-- Some asynchronous tests still use timing-based synchronization.

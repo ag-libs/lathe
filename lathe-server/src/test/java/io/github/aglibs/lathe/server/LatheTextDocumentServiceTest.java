@@ -4,7 +4,7 @@ import static io.github.aglibs.lathe.server.analysis.SourceLocator.offsetToPosit
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
@@ -69,33 +69,31 @@ class LatheTextDocumentServiceTest {
   }
 
   @Test
-  void didChange_rapidKeystrokes_compilesOnlyOnce() throws InterruptedException {
+  void didChange_rapidKeystrokes_compilesOnlyOnce() {
     for (int i = 0; i < 5; i++) {
       service.didChange(changeParams("content-" + i));
-      Thread.sleep(10);
     }
 
-    Thread.sleep(DEBOUNCE_MS * 3);
-
-    final var captor = ArgumentCaptor.forClass(PublishDiagnosticsParams.class);
-    verify(client, atLeastOnce()).publishDiagnostics(captor.capture());
-    assertThat(captor.getAllValues().getLast().getUri()).isEqualTo(URI);
-    assertThat(captor.getAllValues().getLast().getDiagnostics()).isNotEmpty();
+    verify(client, timeout(DEBOUNCE_MS * 5).atLeastOnce())
+        .publishDiagnostics(argThat(p -> p.getUri().equals(URI) && !p.getDiagnostics().isEmpty()));
   }
 
   @Test
-  void didChange_rapidKeystrokes_compilesLatestContent() throws InterruptedException {
+  void didChange_rapidKeystrokes_compilesLatestContent() {
     for (int i = 0; i < 5; i++) {
       service.didChange(changeParams("content-" + i));
-      Thread.sleep(10);
     }
 
-    Thread.sleep(DEBOUNCE_MS * 3);
-
-    final var captor = ArgumentCaptor.forClass(PublishDiagnosticsParams.class);
-    verify(client, atLeastOnce()).publishDiagnostics(captor.capture());
-    assertThat(captor.getAllValues().getLast().getDiagnostics().getFirst().getMessage().getLeft())
-        .contains("mvn process-test-classes");
+    verify(client, timeout(DEBOUNCE_MS * 5).atLeastOnce())
+        .publishDiagnostics(
+            argThat(
+                p ->
+                    !p.getDiagnostics().isEmpty()
+                        && p.getDiagnostics()
+                            .getFirst()
+                            .getMessage()
+                            .getLeft()
+                            .contains("mvn process-test-classes")));
   }
 
   @Test
