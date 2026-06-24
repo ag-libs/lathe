@@ -33,6 +33,13 @@ class LatheLanguageServerTest {
   }
 
   @Test
+  void createCapabilities_includesCallHierarchyProvider() {
+    final var capabilities = LatheLanguageServer.createCapabilities();
+
+    assertThat(capabilities.getCallHierarchyProvider().getLeft()).isTrue();
+  }
+
+  @Test
   void cancelProgress_unknownToken_routesWithoutFailure() {
     final var server = new LatheLanguageServer();
     server.connect(mock(LanguageClient.class));
