@@ -543,6 +543,51 @@ class LatheClient:
         result = self.request("typeHierarchy/subtypes", {"item": item})
         return result or []
 
+    def prepare_call_hierarchy(self, file: str | Path, line: int, col: int) -> list[dict]:
+        """Prepare call hierarchy at 0-based line/col. Returns list of CallHierarchyItems."""
+        result = self.request("textDocument/prepareCallHierarchy", {
+            "textDocument": {"uri": Path(file).resolve().as_uri()},
+            "position": {"line": line, "character": col},
+        })
+        return result or []
+
+    def call_hierarchy_incoming(self, item: dict,
+                                on_progress: Callable[[dict], None] | None = None) -> list[dict]:
+        """Fetch incoming calls for a CallHierarchyItem. Returns list of CallHierarchyIncomingCalls."""
+        token = self._next_progress_token()
+        progress = self._notification_queue("$/progress")
+        handle = self.request_async("callHierarchy/incomingCalls", {
+            "item": item,
+            "workDoneToken": token,
+        })
+        deadline = time.monotonic() + DEFAULT_TIMEOUT
+        while True:
+            self._drain_reference_progress(progress, token, on_progress)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                with self._pending_lock:
+                    self._pending.pop(handle.id, None)
+                raise TimeoutError(
+                    f"callHierarchy/incomingCalls timed out after {DEFAULT_TIMEOUT}s"
+                )
+            try:
+                resp = handle.responses.get(timeout=min(0.1, remaining))
+                self._drain_reference_progress(progress, token, on_progress)
+                try:
+                    result = self._response_result(handle.method, resp)
+                except RequestCancelledError:
+                    self._wait_reference_end(progress, token, on_progress)
+                    raise
+                break
+            except queue.Empty:
+                continue
+        return result or []
+
+    def call_hierarchy_outgoing(self, item: dict) -> list[dict]:
+        """Fetch outgoing calls for a CallHierarchyItem. Returns list of CallHierarchyOutgoingCalls."""
+        result = self.request("callHierarchy/outgoingCalls", {"item": item})
+        return result or []
+
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 

@@ -89,6 +89,22 @@ hierarchy <line>:<col>   (alias: hier)
 hierarchy <text>
     Find the first occurrence of <text> and show its type hierarchy.
 
+callers <line>:<col> [assertions]
+    Show incoming callers of the method at the given 0-based position.
+    Calls prepareCallHierarchy then callHierarchy/incomingCalls.
+    Supports expect, min, and max assertion qualifiers matched against caller names.
+
+callers <text> [assertions]
+    Find the first occurrence of <text> and show its incoming callers.
+
+callees <line>:<col> [assertions]
+    Show outgoing callees of the method at the given 0-based position.
+    Calls prepareCallHierarchy then callHierarchy/outgoingCalls.
+    Supports expect, min, and max assertion qualifiers matched against callee names.
+
+callees <text> [assertions]
+    Find the first occurrence of <text> and show its outgoing callees.
+
 sym <query> [assertions]
     Search the workspace type index for types matching <query> (prefix match).
     Returns SymbolInformation entries — kind, simple name, package, and source path.
@@ -505,6 +521,8 @@ class ExploreShell:
             "implementation": self._cmd_impl,
             "hierarchy":      self._cmd_hierarchy,
             "hier":           self._cmd_hierarchy,
+            "callers":        self._cmd_callers,
+            "callees":        self._cmd_callees,
             "sym":            self._cmd_sym,
             "symbols":     self._cmd_symbols,
             "outline":     self._cmd_symbols,
@@ -1169,6 +1187,156 @@ class ExploreShell:
                     print(f"    {sname}  [{skind}]{sdetail_str}")
             else:
                 print("  subtypes: (none)")
+
+    def _cmd_callers(self, args: list[str]) -> None:
+        if not args:
+            print("usage: callers <line>:<col> [assertions]")
+            print("       callers <text>        [assertions]")
+            return
+
+        pre, assertions = _parse_assertions(args)
+        if not pre:
+            print("usage: callers <line>:<col> [assertions]")
+            print("       callers <text>        [assertions]")
+            return
+
+        if ":" in pre[0] and pre[0][0].isdigit():
+            try:
+                line, col = (int(x) for x in pre[0].split(":", 1))
+            except (ValueError, TypeError):
+                print(f"  expected line:col (0-based) or text, got {pre[0]!r}")
+                return
+        else:
+            pos = self._find_text(pre[0])
+            if pos is None:
+                print(f"  text not found: {pre[0]!r}")
+                return
+            line, col = pos
+            print(f"  found {pre[0]!r} at {line}:{col}")
+
+        try:
+            items = self._client.prepare_call_hierarchy(self._file, line, col)
+        except TimeoutError:
+            print("  TIMEOUT (prepareCallHierarchy)")
+            return
+
+        if not items:
+            print("  (no call hierarchy item at this position)")
+            return
+
+        item = items[0]
+        print(f"  prepared: {item.get('name', '?')}  [{_SYMBOL_KIND_NAMES.get(item.get('kind'), '?')}]")
+
+        try:
+            calls = self._client.call_hierarchy_incoming(
+                item, on_progress=self._print_reference_progress
+            )
+        except TimeoutError:
+            print("  TIMEOUT (incomingCalls)")
+            return
+        except RequestCancelledError:
+            print("  (incoming calls cancelled)")
+            return
+
+        if not calls:
+            print("  (no callers found)")
+            if assertions:
+                names: list[dict] = []
+                passed = _print_assertion_result(_check_refs_assertions(names, assertions))
+                if not passed:
+                    self.any_failure = True
+            return
+
+        print(f"  {len(calls)} caller(s):")
+        limit = len(calls) if assertions else 20
+        for call in calls[:limit]:
+            frm = call.get("from", {})
+            name = frm.get("name", "?")
+            uri = frm.get("uri", "?").removeprefix("file://")
+            frm_ranges = call.get("fromRanges", [])
+            ln = frm_ranges[0].get("start", {}).get("line", "?") if frm_ranges else "?"
+            ln_str = str(ln + 1) if isinstance(ln, int) else ln
+            print(f"    {name}  {uri}:{ln_str}")
+        if len(calls) > limit:
+            print(f"    … {len(calls) - limit} more")
+
+        if assertions:
+            name_refs = [{"uri": c.get("from", {}).get("name", "")} for c in calls]
+            passed = _print_assertion_result(_check_refs_assertions(name_refs, assertions))
+            if not passed:
+                self.any_failure = True
+
+    def _cmd_callees(self, args: list[str]) -> None:
+        if not args:
+            print("usage: callees <line>:<col> [assertions]")
+            print("       callees <text>        [assertions]")
+            return
+
+        pre, assertions = _parse_assertions(args)
+        if not pre:
+            print("usage: callees <line>:<col> [assertions]")
+            print("       callees <text>        [assertions]")
+            return
+
+        if ":" in pre[0] and pre[0][0].isdigit():
+            try:
+                line, col = (int(x) for x in pre[0].split(":", 1))
+            except (ValueError, TypeError):
+                print(f"  expected line:col (0-based) or text, got {pre[0]!r}")
+                return
+        else:
+            pos = self._find_text(pre[0])
+            if pos is None:
+                print(f"  text not found: {pre[0]!r}")
+                return
+            line, col = pos
+            print(f"  found {pre[0]!r} at {line}:{col}")
+
+        try:
+            items = self._client.prepare_call_hierarchy(self._file, line, col)
+        except TimeoutError:
+            print("  TIMEOUT (prepareCallHierarchy)")
+            return
+
+        if not items:
+            print("  (no call hierarchy item at this position)")
+            return
+
+        item = items[0]
+        print(f"  prepared: {item.get('name', '?')}  [{_SYMBOL_KIND_NAMES.get(item.get('kind'), '?')}]")
+
+        try:
+            calls = self._client.call_hierarchy_outgoing(item)
+        except TimeoutError:
+            print("  TIMEOUT (outgoingCalls)")
+            return
+
+        if not calls:
+            print("  (no callees found)")
+            if assertions:
+                passed = _print_assertion_result(_check_refs_assertions([], assertions))
+                if not passed:
+                    self.any_failure = True
+            return
+
+        print(f"  {len(calls)} callee(s):")
+        limit = len(calls) if assertions else 20
+        for call in calls[:limit]:
+            to = call.get("to", {})
+            name = to.get("name", "?")
+            uri = to.get("uri", "?").removeprefix("file://")
+            ranges = call.get("fromRanges", [])
+            ln = ranges[0].get("start", {}).get("line", "?") if ranges else "?"
+            ln_str = str(ln + 1) if isinstance(ln, int) else ln
+            print(f"    {name}  {uri}:{ln_str}")
+        if len(calls) > limit:
+            print(f"    … {len(calls) - limit} more")
+
+        if assertions:
+            name_refs = [{"uri": c.get("to", {}).get("name", "")} for c in calls]
+            passed = _print_assertion_result(_check_refs_assertions(name_refs, assertions))
+            if not passed:
+                self.any_failure = True
 
     def _cmd_sym(self, args: list[str]) -> None:
         if not args:

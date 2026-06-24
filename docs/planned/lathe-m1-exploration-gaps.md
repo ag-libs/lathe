@@ -20,6 +20,7 @@ duplicated here.
 | EG-006 | Workspace symbol results rank reactor-local types below dependency and JDK types | M1 |
 | EG-007 | Type-index startup emits hundreds of WARNING-level duplicate-type messages | M1 |
 | EG-008 | Object synchronization methods appear in member-access completion results | M1 |
+| EG-009 | Outgoing calls includes anonymous class constructor instantiations with empty name | M1 |
 
 EG-003 and EG-005 are deferred to M2:
 EG-003 requires `DocTrees` attribution of Javadoc comment positions, which is a non-trivial
@@ -461,6 +462,50 @@ These are reference data, not gap items.
 
 ---
 
+## EG-009 — Outgoing calls includes anonymous class constructor instantiations with empty name
+
+**Milestone: M1**
+
+### Observed behaviour
+
+`callHierarchy/outgoingCalls` on a method that instantiates an anonymous class returns one extra
+callee entry with an empty name and the declaring file as its URI.
+
+```java
+// CronTask.java — void run()
+actualTask.run(new CronInvocation() { ... });
+//              ^^^ anonymous class instantiation → callee with name="" uri=CronTask.java
+```
+
+Probe against Helidon `CronTask.run()` yields:
+
+```
+3 callee(s):
+    scheduleNext  CronTask.java:88
+    run           ScheduledConsumer.java:92
+                  CronTask.java:92        ← empty name
+```
+
+### Root cause
+
+`CallHierarchyOutgoingLocator` visits `NewClassTree` nodes.
+When the instantiated type is an anonymous class, `SourceLocator.declarationName()` returns
+`""` because `element.getSimpleName()` is empty for anonymous types.
+`findSourceFile` resolves to the declaring file itself (the anonymous body is defined there),
+so the entry is not suppressed by the missing-source-file guard.
+
+### Proposed fix
+
+In `CallHierarchyOutgoingLocator`, skip any `NewClassTree` whose resolved element is an
+anonymous class (i.e., `element.getSimpleName().isEmpty()`).
+Anonymous class instantiations are not meaningful callee targets in a call hierarchy view.
+
+### Regression target
+
+`CallHierarchyOutgoingLocatorTest.outgoingCalls_anonymousClassInstantiation_excludedFromResults`
+
+---
+
 ## M1 Implementation Order
 
 Items without dependencies may proceed in parallel.
@@ -488,3 +533,7 @@ Items without dependencies may proceed in parallel.
 
 6. **EG-004** (hover on import) — add `ImportTree` element extraction to `HoverLocator`.
    Small, bounded change.
+
+7. **EG-009** (anonymous callee) — skip `NewClassTree` nodes with an empty simple name in
+   `CallHierarchyOutgoingLocator`.
+   One-line guard, no design dependencies.
