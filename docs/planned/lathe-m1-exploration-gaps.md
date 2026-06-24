@@ -21,6 +21,8 @@ duplicated here.
 | EG-007 | Type-index startup emits hundreds of WARNING-level duplicate-type messages | M1 |
 | EG-008 | Object synchronization methods appear in member-access completion results | M1 |
 | EG-009 | Outgoing calls includes anonymous class constructor instantiations with empty name | M1 |
+| EG-010 | `explore.py` cannot probe dep/JDK source files — no workspace context for cache paths | M1 |
+| EG-011 | Outgoing calls silently omits callees whose source is in extracted dep or JDK dirs | M2 |
 
 EG-003 and EG-005 are deferred to M2:
 EG-003 requires `DocTrees` attribution of Javadoc comment positions, which is a non-trivial
@@ -506,6 +508,101 @@ Anonymous class instantiations are not meaningful callee targets in a call hiera
 
 ---
 
+## EG-010 — `explore.py` cannot probe dep/JDK source files — no workspace context for cache paths
+
+**Milestone: M1**
+
+### Observed behaviour
+
+Attempting to open a dependency or JDK source file in `explore.py` by passing its path on the
+command line fails immediately:
+
+```
+error: No .lathe/ directory found above /home/ag-libs/.cache/lathe/deps/io.dropwizard.metrics:metrics-core:4.2.38/com/codahale/metrics/MetricRegistry.java
+```
+
+This blocks two probe scenarios:
+- Finding **callers of dep/JDK methods** (e.g. all reactor callers of `MetricRegistry.register`)
+  by opening the dep source file and running `callers`.
+- Finding **callers of JDK methods** by opening JDK source from the cache.
+
+The limitation also applies to the `refs` command, making it impossible to probe
+external-source reference scope from `explore.py`.
+
+### Root cause
+
+`explore.py` derives the workspace root from the opened file path by walking up the directory
+tree looking for a `.lathe/` directory.
+Dependency source files are extracted to `~/.cache/lathe/deps/<gav>/` and JDK sources to
+`~/.cache/lathe/jdks/<jdk-key>/`, neither of which are workspace directories.
+`find_workspace_root` exhausts the tree and raises an error before the LSP server is started.
+
+### Proposed fix
+
+Add a `--workspace <path>` argument to `explore.py`.
+When provided, it overrides `find_workspace_root` and is passed directly to `initialize`.
+This allows callers to pair any source file (dep cache, JDK cache, absolute path) with any
+workspace root, enabling:
+
+```bash
+python3 dev/explore.py --workspace /home/ag-libs/git/dropwizard \
+    /home/ag-libs/.cache/lathe/deps/io.dropwizard.metrics:metrics-core:4.2.38/com/codahale/metrics/MetricRegistry.java
+callers "register" min 1
+```
+
+### Regression targets
+
+`explore.py --workspace` integration test or inline doc-test in the script's own test section.
+
+---
+
+## EG-011 — Outgoing calls silently omits callees whose source is in extracted dep or JDK dirs
+
+**Milestone: M2**
+
+### Observed behaviour
+
+`callHierarchy/outgoingCalls` on a method that calls into a dependency type returns only reactor
+callees; dep and JDK callees are silently absent.
+
+Probing `Bootstrap.registerMetrics()` (which calls `MetricRegistry.register()`) yields:
+
+```
+1 callee(s):
+    getMetricRegistry  Bootstrap.java:218
+```
+
+`MetricRegistry.register(String, Metric)` is not shown even though the Dropwizard workspace has
+207 extracted dependency sources and `MetricRegistry.java` exists at
+`~/.cache/lathe/deps/io.dropwizard.metrics:metrics-core:4.2.38/com/codahale/metrics/MetricRegistry.java`.
+
+### Root cause
+
+`WorkspaceSession.outgoingCallsFuture` passes `workspace.allSourceRoots()` to
+`CallHierarchyOutgoingLocator`.
+`allSourceRoots()` returns only reactor module source directories.
+`DefinitionLocator.findSourceFile` therefore cannot resolve callees whose source lives under
+`~/.cache/lathe/deps/` or `~/.cache/lathe/jdks/`, so those callees are silently dropped.
+
+This is the mirror limitation to external-source Find References scope (M2).
+
+### Proposed fix
+
+Include extracted dependency and JDK source directories in the search roots passed to
+`CallHierarchyOutgoingLocator`, paralleling the M2 work to expand Find References scope.
+`WorkspaceModuleRegistry` or `Workspace` already tracks `dependencySources` with their `dir`
+fields; exposing them alongside `allSourceRoots()` would let `findSourceFile` resolve dep/JDK
+callees.
+
+The callee items returned for dep/JDK targets should be marked with `SymbolKind.Method` and
+have the cache path as their `uri`, consistent with how `definition` navigates to dep sources.
+
+### Regression targets
+
+`CallHierarchyServiceTest.outgoingCalls_calleeInDependencySource_returnsDepCallee`
+
+---
+
 ## M1 Implementation Order
 
 Items without dependencies may proceed in parallel.
@@ -537,3 +634,8 @@ Items without dependencies may proceed in parallel.
 7. **EG-009** (anonymous callee) — skip `NewClassTree` nodes with an empty simple name in
    `CallHierarchyOutgoingLocator`.
    One-line guard, no design dependencies.
+
+8. **EG-010** (`explore.py` workspace flag) — add `--workspace <path>` argument to `explore.py`.
+   Dev-tooling only; self-contained.
+
+EG-011 is M2 work, tracked alongside the external-source Find References scope expansion.
