@@ -240,12 +240,14 @@ final class LatheTextDocumentService implements TextDocumentService {
       final CallHierarchyIncomingCallsParams params) {
     final var response = new CompletableFuture<List<CallHierarchyIncomingCall>>();
     final CancelChecker cancelChecker = new CompletableFutures.FutureCancelChecker(response);
+    final var progress = progressReporter.open(params.getWorkDoneToken(), response);
     final CompletableFuture<List<CallHierarchyIncomingCall>> work =
         worker
-            .submit(() -> session.incomingCallsFuture(params.getItem(), cancelChecker))
+            .submit(() -> session.incomingCallsFuture(params.getItem(), cancelChecker, progress))
             .thenCompose(f -> f);
     work.whenComplete(
         (result, failure) -> {
+          progress.finish(failure);
           if (failure == null) {
             response.complete(result);
           } else {

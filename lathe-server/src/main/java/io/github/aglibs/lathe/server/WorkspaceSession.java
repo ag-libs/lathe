@@ -664,7 +664,9 @@ final class WorkspaceSession {
   }
 
   CompletableFuture<List<CallHierarchyIncomingCall>> incomingCallsFuture(
-      final CallHierarchyItem item, final CancelChecker cancelChecker) {
+      final CallHierarchyItem item,
+      final CancelChecker cancelChecker,
+      final ReferenceProgressReporter.Task progress) {
     cancelChecker.checkCanceled();
     final CallHierarchyItemData data = CallHierarchyItemDataCodec.decode(item.getData());
     if (data == null) {
@@ -692,18 +694,34 @@ final class WorkspaceSession {
       if (worker == null) {
         return CompletableFuture.completedFuture(List.of());
       }
+      progress.begin(target.simpleName(), 1);
       final OpenDocument declaringDoc = docs.get(data.routingUri());
       if (declaringDoc != null) {
-        return worker.searchIncomingCalls(
-            declaringDoc.uri(),
-            declaringDoc.content(),
-            declaringDoc.version(),
-            target,
-            cancelChecker);
+        return worker
+            .searchIncomingCalls(
+                declaringDoc.uri(),
+                declaringDoc.content(),
+                declaringDoc.version(),
+                target,
+                cancelChecker)
+            .whenComplete(
+                (calls, failure) -> {
+                  if (failure == null) {
+                    progress.advance(false, calls.size());
+                  }
+                });
       }
       return readDiskCandidate(data.routingUri())
           .map(
-              d -> worker.searchIncomingCallsTransient(d.uri(), d.content(), target, cancelChecker))
+              d ->
+                  worker
+                      .searchIncomingCallsTransient(d.uri(), d.content(), target, cancelChecker)
+                      .whenComplete(
+                          (calls, failure) -> {
+                            if (failure == null) {
+                              progress.advance(true, calls.size());
+                            }
+                          }))
           .orElseGet(() -> CompletableFuture.completedFuture(List.of()));
     }
 
@@ -717,8 +735,10 @@ final class WorkspaceSession {
     final var t = Stopwatch.start();
     final List<CompletableFuture<List<CallHierarchyIncomingCall>>> searches =
         configs.stream()
-            .flatMap(config -> incomingCallFutures(config, target, packageRel, cancelChecker))
+            .flatMap(
+                config -> incomingCallFutures(config, target, packageRel, cancelChecker, progress))
             .toList();
+    progress.begin(target.simpleName(), searches.size());
     return joinCandidateResults(searches, cancelChecker)
         .thenApply(
             calls -> {
@@ -734,7 +754,8 @@ final class WorkspaceSession {
       final ModuleSourceConfig config,
       final ReferenceTarget target,
       final Path packageRel,
-      final CancelChecker cancelChecker) {
+      final CancelChecker cancelChecker,
+      final ReferenceProgressReporter.Task progress) {
     cancelChecker.checkCanceled();
     final var worker = workspace.workerFor(config);
     final List<OpenDocument> openForConfig =
@@ -762,15 +783,28 @@ final class WorkspaceSession {
             .map(
                 doc -> {
                   cancelChecker.checkCanceled();
-                  return worker.searchIncomingCalls(
-                      doc.uri(), doc.content(), doc.version(), target, cancelChecker);
+                  return worker
+                      .searchIncomingCalls(
+                          doc.uri(), doc.content(), doc.version(), target, cancelChecker)
+                      .whenComplete(
+                          (calls, failure) -> {
+                            if (failure == null) {
+                              progress.advance(false, calls.size());
+                            }
+                          });
                 }),
         diskFiles.stream()
             .map(
                 d -> {
                   cancelChecker.checkCanceled();
-                  return worker.searchIncomingCallsTransient(
-                      d.uri(), d.content(), target, cancelChecker);
+                  return worker
+                      .searchIncomingCallsTransient(d.uri(), d.content(), target, cancelChecker)
+                      .whenComplete(
+                          (calls, failure) -> {
+                            if (failure == null) {
+                              progress.advance(true, calls.size());
+                            }
+                          });
                 }));
   }
 
