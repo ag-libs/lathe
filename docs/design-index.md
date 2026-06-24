@@ -9,11 +9,8 @@ Read their current-status sections and compare them with the roadmap before star
 
 ## M1 — Internal Preview
 
-- [Exploration Gaps](planned/lathe-m1-exploration-gaps.md) — six M1 gaps confirmed by live probing against Helidon and
-  Dropwizard: signature-help inner-method bug (EG-001), absent try/catch wrap action (EG-002), hover on import
-  positions (EG-004), reactor-type ranking in workspace symbols (EG-006), WARNING flood from duplicate index entries
-  (EG-007), and Object sync methods in member-access completion (EG-008).
-  EG-003 (hover in Javadoc tags) and EG-005 (CamelCase workspace symbol matching) are deferred to M2.
+- [Exploration Gaps](planned/lathe-m1-exploration-gaps.md) — live-probing gaps confirmed against Helidon and
+  Dropwizard, including M1 correctness gaps and deferred M2 navigation/search enhancements.
 - [Call Hierarchy](planned/lathe-call-hierarchy.md) — `prepareCallHierarchy`, `incomingCalls`, and `outgoingCalls`
   built on `ReferenceTarget` identity, `ReferenceCandidateIndex` candidate discovery, and two new
   `TreePathScanner` locators.
