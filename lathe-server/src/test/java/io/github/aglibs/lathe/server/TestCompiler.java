@@ -3,6 +3,9 @@ package io.github.aglibs.lathe.server;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.Trees;
+import io.github.aglibs.lathe.core.Json;
+import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
@@ -54,6 +57,33 @@ public final class TestCompiler {
         false,
         null,
         List.of());
+  }
+
+  public static void writeModuleParams(
+      final Path workspaceRoot,
+      final String moduleName,
+      final Path sourceRoot,
+      final Path generatedSourcesDir)
+      throws IOException {
+    final var latheModuleDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(moduleName);
+    Files.createDirectories(latheModuleDir);
+    final var config =
+        new ModuleConfigData(
+            "classes",
+            latheModuleDir.resolve("classes").toString(),
+            generatedSourcesDir != null ? generatedSourcesDir.toString() : null,
+            List.of(sourceRoot.toString()),
+            List.of(),
+            List.of(),
+            List.of(),
+            "21",
+            "UTF-8",
+            false,
+            false,
+            null,
+            List.of());
+    final Path paramsFile = latheModuleDir.resolve(LatheLayout.paramsFileName("classes"));
+    Json.write(config, paramsFile);
   }
 
   public static void compileToDir(final Path classDir, final Path... sources) throws IOException {
