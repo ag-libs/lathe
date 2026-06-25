@@ -39,7 +39,7 @@ duplicated here.
 | EG-021 | Type-name completion ranks reactor-local types below dependency and JDK types | M2 |
 | EG-022 | Sealed-type `switch`/`case` pattern completion offers arbitrary types instead of the permitted subtypes | M2 |
 | EG-023 | `this.` completion leaks low-value `Object` methods that value-receiver member-access suppresses | M2 |
-| EG-024 | Type-name completion surfaces JDK-internal and non-exported package types | M2 |
+| EG-024 | Type-name completion can offer types from modules the current module does not read | M2 |
 
 EG-003 and EG-005 are deferred to M2:
 EG-003 requires `DocTrees` attribution of Javadoc comment positions, which is a non-trivial
@@ -1345,57 +1345,79 @@ python3 dev/explore.py /path/to/Scratch.java inject "this."
 
 ---
 
-## EG-024 — Type-name completion surfaces JDK-internal and non-exported package types
+## EG-024 — Type-name completion can offer types from modules the current module does not read
 
 **Milestone: M2**
 
+### Scope correction
+
+An earlier version of this record claimed that transitive-dependency types such as
+`org.mvel2.*`, `com.sun.xml.ws.*`, and `com.mysql.cj.*` were offered but not importable from
+`app-server`.
+That claim was wrong.
+`app-server/module-info.java` explicitly declares `requires mvel2`, `requires com.sun.xml.ws`,
+`requires mysql.connector.j`, and `requires jakarta.xml.ws`, so those types are genuinely readable
+and importable; offering them is correct (their volume and ranking are covered by EG-021, not
+here).
+The actual gap is narrow and is described below.
+
 ### Observed behaviour
 
-Type-name completion offers JDK-internal and dependency implementation-detail types that a
-developer almost never wants.
+Type-name completion can offer a type whose package is not readable from the current module, which
+lathe's own diagnostics then reject if the candidate is accepted.
 
-```
-inject "Object o = new Oper" / "class X extends Strin"
-  → com.sun.xml.ws.wsdl.OperationDispatcher, org.mvel2.ast.OperativeAssign,
-    com.mysql.cj.jdbc.exceptions.*, com.sun.* internal types
-```
+Confirmed by opening a `app-server` file that imports three candidates that completion offered for
+the `Oper` prefix:
 
-In this workspace the modules are JPMS modules: `app-server/module-info.java` does not `requires`
-the `mvel2` or internal JAX-WS modules, so several of these candidates cannot be imported in the
-real modular build even though they sit on the analysis path.
+| Import | lathe diagnostic on open |
+|---|---|
+| `org.mvel2.ast.OperativeAssign` | none — importable (`requires mvel2`) |
+| `com.sun.xml.ws.wsdl.OperationDispatcher` | none — importable (`requires com.sun.xml.ws`) |
+| `com.sun.management.OperatingSystemMXBean` | ERROR: `package com.sun.management is not visible (declared in module jdk.management)` |
+
+`com.sun.management.OperatingSystemMXBean` was offered by completion (as
+`new Oper` candidate `OperatingSystemMXBean [Interface] com.sun.management.OperatingSystemMXBean`),
+but `app-server` does not read `jdk.management`, so accepting it produces a not-visible error that
+lathe reports correctly.
+
+The completion candidate set is therefore slightly broader than the module graph allows.
+The discrepancy is limited to modules the current module does not read — in practice JDK modules
+(and any dependency) that are present on the analysis path but not in the module's `requires`
+graph.
+It is not the transitive-dependency flood originally described.
 
 ### Root cause
 
-The workspace type index includes every type on the combined classpath and modulepath, including
-JDK-internal (`com.sun.*`, `sun.*`) packages and transitive-dependency implementation classes.
-Completion does not filter by package exports or module readability, so these types appear as
-candidates.
-
-This is distinct from EG-021: EG-021 is about re-ranking, while this gap is about excluding
-candidates that should not appear at all.
+The workspace type index includes every type on the combined classpath and modulepath.
+Type completion does not intersect candidates with the set of packages readable from the current
+source module, so a type from a present-but-unread module can appear.
+lathe's javac-backed diagnostics already enforce module readability, so the inconsistency is
+between the completion candidate set and the compiler's own accessibility rules.
 
 ### Proposed fix
 
-Filter type-completion candidates by accessibility:
+For modular sources, restrict type-completion candidates to types whose package is exported by a
+module the current module reads (directly or via `requires transitive`).
+This requires resolving the module readability graph for the current source module — the same
+information javac already uses to produce the not-visible diagnostic — and intersecting candidates
+against it.
 
-- Exclude well-known JDK-internal package prefixes (`com.sun.`, `sun.`, `jdk.internal.`) unless
-  explicitly imported.
-- For modular sources, restrict candidates to types whose package is exported by a module the
-  current module reads (directly or transitively).
-
-The minimal first step is the JDK-internal prefix exclusion, which removes the bulk of the noise
-without requiring full module-graph resolution.
+This is a usefulness refinement, not a correctness blocker: accepting an unreadable candidate
+yields an immediate, accurate diagnostic, so the user is not silently misled.
 
 ### Probe commands
 
 ```bash
+# Open a app-server file importing com.sun.management.OperatingSystemMXBean and confirm the
+# not-visible diagnostic, then confirm completion still offers the type for the "Oper" prefix.
+python3 dev/lsp.py /path/to/ScratchImports.java
 python3 dev/explore.py /path/to/Scratch.java inject "Object o = new Oper"
 ```
 
 ### Regression targets
 
-- `CompletionTypeFilterTest.completion_typePrefix_excludesJdkInternalPackages`
-- `CompletionTypeFilterTest.completion_modularSource_excludesUnreadableTypes`
+- `CompletionTypeFilterTest.completion_modularSource_excludesUnreadableModuleTypes`
+- `CompletionTypeFilterTest.completion_modularSource_keepsRequiredModuleTypes`
 
 ---
 
