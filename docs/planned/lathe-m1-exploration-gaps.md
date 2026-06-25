@@ -4,6 +4,8 @@ This document records gaps found during a systematic live-probing session agains
 Helidon (332-module) and Dropwizard (68-module) workspaces.
 EG-013 and EG-014 were added from a later session against the sample-workspace (25-module)
 workspace, which makes heavy use of the `record-companion` `@Builder` annotation processor.
+EG-020 through EG-024 were added from a completion-focused session in the same workspace that
+emulated authoring a new source file from scratch inside a JPMS module.
 Each gap was confirmed against a running Lathe server with `LATHE_DEBUG=1` and is independent of
 explore.py positioning behaviour.
 
@@ -33,6 +35,11 @@ duplicated here.
 | EG-017 | `textDocument/documentHighlight` not implemented; cursor-occurrence highlighting is unavailable | M2 |
 | EG-018 | `textDocument/selectionRange` not implemented; expand/shrink selection is unavailable | M2 |
 | EG-019 | Unused-declaration diagnostic message is the bare word `Unused` with a null code | M1 |
+| EG-020 | `new` expression completion is not slot-aware; it offers non-instantiable types and ignores the expected type | M2 |
+| EG-021 | Type-name completion ranks reactor-local types below dependency and JDK types | M2 |
+| EG-022 | Sealed-type `switch`/`case` pattern completion offers arbitrary types instead of the permitted subtypes | M2 |
+| EG-023 | `this.` completion leaks low-value `Object` methods that value-receiver member-access suppresses | M2 |
+| EG-024 | Type-name completion surfaces JDK-internal and non-exported package types | M2 |
 
 EG-003 and EG-005 are deferred to M2:
 EG-003 requires `DocTrees` attribution of Javadoc comment positions, which is a non-trivial
@@ -1146,6 +1153,252 @@ python3 dev/lsp.py \
 
 ---
 
+## EG-020 — `new` expression completion is not slot-aware
+
+**Milestone: M2**
+
+### Observed behaviour
+
+Completion in a `new` expression neither filters to instantiable types nor uses the expected type
+of the assignment.
+
+```
+inject "Object o = new Oper"
+  → offers interfaces and a sealed interface that cannot be instantiated:
+    Operator [Interface], OperationResponse [Interface] (sealed), OperatorAdapter [Interface], …
+
+inject "java.util.List<String> ls = new "
+  → 93 items led by List [Interface] and unrelated types: Short, Integer, Double,
+    RuntimePermission, ProcessHandle, …
+  → no ArrayList; nothing assignable to List<String> is prioritised
+```
+
+This is in sharp contrast to the other type-position slots, which filter correctly in the same
+session:
+
+- `extends` offers only non-final classes (interfaces and final classes such as `String`,
+  `Integer`, `StringBuilder` are excluded);
+- `implements` offers only interfaces;
+- `throws` offers only `Throwable` subtypes;
+- `catch` offers only exception types.
+
+The slot-aware filtering machinery clearly exists; the `new` path does not use it, and it does not
+consult the expected (target) type that is already known at the assignment site.
+
+### Root cause
+
+The `new`-expression branch of the completion engine resolves type candidates from the workspace
+type index without applying an instantiability filter (concrete, non-abstract, non-sealed-from-here
+classes) and without restricting or ranking by the assignment's target type.
+
+### Proposed fix
+
+In the `new`-expression completion branch:
+
+1. Filter candidates to instantiable types — exclude interfaces (unless an anonymous-class body is
+   being offered), abstract classes, and sealed types that cannot be subclassed from this location.
+2. When the expression has a known target type (assignment, return, argument), restrict or rank
+   candidates to subtypes assignable to that target, so `List<String> x = new ` surfaces
+   `ArrayList`, `LinkedList`, etc. first.
+
+### Probe commands
+
+```bash
+python3 dev/explore.py /path/to/Scratch.java inject "java.util.List<String> ls = new " expect ArrayList
+```
+
+(Probed with a temporary `ScratchLathe.java` authored inside `app-server`.)
+
+### Regression targets
+
+- `CompletionNewExprTest.completion_newWithListTarget_prioritisesInstantiableSubtypes`
+- `CompletionNewExprTest.completion_newExpr_excludesInterfacesAndSealedTypes`
+
+---
+
+## EG-021 — Type-name completion ranks reactor-local types below dependency and JDK types
+
+**Milestone: M2**
+
+### Observed behaviour
+
+Type-name completion ranks dependency and JDK types ahead of project-local types.
+
+```
+inject "Object o = new Oper"  (in a app-server file)
+  → org.mvel2.*, com.sun.xml.ws.*, com.mysql.cj.* candidates rank above
+    com.example.app.* reactor-local types
+```
+
+A developer authoring code in the reactor almost always wants the project-local type first.
+
+### Root cause
+
+The type-completion candidate comparator does not boost reactor-origin entries.
+This is the completion-context analog of EG-006, which covers the same mis-ranking in workspace
+symbol search; the two share the underlying `WorkspaceTypeIndex` ordering.
+
+### Proposed fix
+
+Apply a reactor-origin sort boost in the type-completion result comparator, reusing the
+`TypeIndexEntry` origin information proposed for EG-006.
+Reactor entries should outrank dependency and JDK entries for an equal prefix match.
+
+### Probe commands
+
+```bash
+python3 dev/explore.py /path/to/Scratch.java inject "Object o = new Oper"
+```
+
+### Regression targets
+
+- `CompletionTypeRankingTest.completion_typePrefix_ranksReactorTypeFirst`
+
+---
+
+## EG-022 — Sealed-type `switch`/`case` pattern completion offers arbitrary types
+
+**Milestone: M2**
+
+### Observed behaviour
+
+Inside a `switch` over a sealed reference type, `case` completion offers arbitrary types instead of
+the type's permitted subtypes as pattern labels.
+
+```java
+String handle(OperationResponse r) {   // sealed interface, 8 permitted subtypes
+  switch (r) {
+    case ▮          // → 112 items: StrictMath, Short, ScopedValue, RuntimePermission, …
+                    //   none of the 8 permitted subtypes are offered as patterns
+  }
+}
+```
+
+Enum `case` completion works correctly in the same session (a `switch` over a `ResultCode` enum
+offers all 48 constants), so the gap is specific to sealed/reference-type pattern labels.
+
+### Root cause
+
+The `case`-label completion path handles the enum-constant case but does not recognise a `switch`
+selector whose type is a sealed reference type.
+It falls back to general type completion, which dumps the type index unranked.
+
+### Proposed fix
+
+When the enclosing `switch` selector resolves to a sealed type (or any reference type), offer its
+permitted subtypes (for sealed types) or assignable subtypes as type-pattern `case` labels, with
+insert text of the form `case SubType name ->`.
+
+### Probe commands
+
+```bash
+python3 dev/explore.py /path/to/Scratch.java inject "case " at <line-in-sealed-switch>
+```
+
+### Regression targets
+
+- `CompletionCaseTest.completion_caseInSealedSwitch_offersPermittedSubtypes`
+- `CompletionCaseTest.completion_caseInEnumSwitch_unchanged`
+
+---
+
+## EG-023 — `this.` completion leaks low-value `Object` methods
+
+**Milestone: M2**
+
+### Observed behaviour
+
+Member completion on `this.` offers `clone`, `finalize`, `notify`, `notifyAll`, and `wait`, while
+value-receiver member-access suppresses them.
+
+```
+inject "names."   (List<String> field receiver)
+  → no clone / finalize / notify / notifyAll / wait
+
+inject "this."
+  → clone, finalize, notify, notifyAll, wait(), wait(long), wait(long, int) all present
+```
+
+### Root cause
+
+The Object-method suppression that EG-008 applies on the value-receiver member-access path is not
+applied on the `this.` (and likely `super.`) completion path.
+The suppression list is keyed to one candidate-generation route and is not shared across all
+member-completion routes.
+
+### Relationship to EG-008
+
+EG-008 covers suppressing `wait`/`notify`/`notifyAll` on member-access results.
+This gap is the same suppression list applied inconsistently: it must also cover the `this.` and
+`super.` routes, and should additionally consider `clone` and `finalize`.
+Implement alongside EG-008.
+
+### Probe commands
+
+```bash
+python3 dev/explore.py /path/to/Scratch.java inject "this."
+```
+
+### Regression targets
+
+- `CompletionThisTest.completion_thisReceiver_suppressesObjectInternalMethods`
+
+---
+
+## EG-024 — Type-name completion surfaces JDK-internal and non-exported package types
+
+**Milestone: M2**
+
+### Observed behaviour
+
+Type-name completion offers JDK-internal and dependency implementation-detail types that a
+developer almost never wants.
+
+```
+inject "Object o = new Oper" / "class X extends Strin"
+  → com.sun.xml.ws.wsdl.OperationDispatcher, org.mvel2.ast.OperativeAssign,
+    com.mysql.cj.jdbc.exceptions.*, com.sun.* internal types
+```
+
+In this workspace the modules are JPMS modules: `app-server/module-info.java` does not `requires`
+the `mvel2` or internal JAX-WS modules, so several of these candidates cannot be imported in the
+real modular build even though they sit on the analysis path.
+
+### Root cause
+
+The workspace type index includes every type on the combined classpath and modulepath, including
+JDK-internal (`com.sun.*`, `sun.*`) packages and transitive-dependency implementation classes.
+Completion does not filter by package exports or module readability, so these types appear as
+candidates.
+
+This is distinct from EG-021: EG-021 is about re-ranking, while this gap is about excluding
+candidates that should not appear at all.
+
+### Proposed fix
+
+Filter type-completion candidates by accessibility:
+
+- Exclude well-known JDK-internal package prefixes (`com.sun.`, `sun.`, `jdk.internal.`) unless
+  explicitly imported.
+- For modular sources, restrict candidates to types whose package is exported by a module the
+  current module reads (directly or transitively).
+
+The minimal first step is the JDK-internal prefix exclusion, which removes the bulk of the noise
+without requiring full module-graph resolution.
+
+### Probe commands
+
+```bash
+python3 dev/explore.py /path/to/Scratch.java inject "Object o = new Oper"
+```
+
+### Regression targets
+
+- `CompletionTypeFilterTest.completion_typePrefix_excludesJdkInternalPackages`
+- `CompletionTypeFilterTest.completion_modularSource_excludesUnreadableTypes`
+
+---
+
 ## M1 Implementation Order
 
 Items without dependencies may proceed in parallel.
@@ -1185,5 +1438,7 @@ Items without dependencies may proceed in parallel.
    its kind and set a stable diagnostic code.
    Small, bounded change to the unused-declaration scan.
 
-EG-011, EG-012, EG-013, EG-014, EG-015, EG-016, EG-017, and EG-018 are M2 work, tracked alongside
-the external-source Find References, navigation, completion, and editor-feature scope expansion.
+EG-011 through EG-018 and EG-020 through EG-024 are M2 work, tracked alongside the external-source
+Find References, navigation, completion, and editor-feature scope expansion.
+EG-023 should be implemented together with EG-008 (shared Object-method suppression list), and
+EG-021 together with EG-006 (shared reactor-origin ranking).
