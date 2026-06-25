@@ -175,6 +175,13 @@ Provide a supported VS Code integration, complete identifier-level semantic-toke
 and editor-specific installation and testing.
 See [lathe-vscode-semantic-tokens.md](planned/lathe-vscode-semantic-tokens.md).
 
+### Quality tooling
+
+Differential testing against jdtls: drive Lathe and Eclipse JDT LS with identical LSP requests over a shared
+fixture, then compare answers semantically to surface behavioral divergences as EG-/CQ- gap candidates.
+Deferred from M2 because it measures parity rather than adding a feature.
+See [lathe-jdtls-differential-testing.md](planned/lathe-jdtls-differential-testing.md).
+
 ### Further work
 
 - Sibling recompilation and closed-file workspace diagnostics.

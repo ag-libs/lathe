@@ -55,6 +55,8 @@ M3 designs before implementation.
 - [VS Code Semantic Tokens](planned/lathe-vscode-semantic-tokens.md) — semantic-token parity needed for supported VS Code
   integration.
 - [Sibling Recompilation](planned/lathe-sibling-recompilation.md) — closed-file diagnostics after API changes.
+- [Differential Testing Against jdtls](planned/lathe-jdtls-differential-testing.md) — semantic LSP-response
+  comparison against Eclipse JDT LS to surface behavioral gaps; post-M2 quality tooling.
 
 ## Completed Designs
 
