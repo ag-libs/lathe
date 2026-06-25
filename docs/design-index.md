@@ -16,9 +16,8 @@ Read their current-status sections and compare them with the roadmap before star
   `TreePathScanner` locators.
 - [Code Action Gaps](planned/lathe-code-actions-gaps.md) — missing-method provider and reactor type freshness.
 - [MissingMethodImplProvider](planned/lathe-missing-method-impl.md) — generation of abstract-method stubs.
-- [Maintainability Refactoring](planned/lathe-maintainability-refactoring.md) — fail-fast propagation and focused
-  workspace/analysis cleanup.
-- [Test Suite Refactoring](planned/lathe-test-suite-refactoring.md) — fixture consolidation and removal of flaky sleeps.
+- [M1 Refactoring](planned/lathe-m1-refactoring.md) — single consolidated refactoring plan: documentation accuracy,
+  fail-fast propagation, DRY/structural extractions, god-class decomposition, naming, and test-suite hygiene.
 - [Reactor Type Index](planned/lathe-reactor-type-index.md) — implemented baseline and freshness follow-ups.
 - [Type Index](planned/lathe-type-index.md) — implemented baseline plus active schema and freshness context.
 
@@ -91,11 +90,6 @@ M3 designs before implementation.
 - [Structural Navigation](done/lathe-structural-navigation.md)
 - [Unused-Code Diagnostics](done/lathe-unused-code-diagnostics.md)
 - [Unused Record Components](done/lathe-unused-record-components.md)
-
-## Historical or Re-Evaluate Before Use
-
-- [Code Quality Refactoring](planned/lathe-code-quality-refactoring.md) — superseded where it overlaps the current
-  maintainability design; retained as review history.
 
 ## Potential Designs
 

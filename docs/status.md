@@ -62,7 +62,7 @@ Maven Central publication is planned for M3.
 ## Implemented Architecture
 
 - JSON schemas in `lathe-core` define compiler params and workspace state.
-- `lathe-worker` owns mutable workspace state and client publication.
+- `WorkspaceSession`, confined to the single server worker thread (`lathe-worker`), owns mutable workspace state and client publication.
 - One module worker owns each javac-backed `SourceAnalysisSession`.
 - LSP4J threads capture immutable inputs and enqueue work.
 - `DocumentRegistry` owns open-document generations and stale-result validation.

@@ -38,8 +38,11 @@ It includes the current implementation and every active, non-deferred correctnes
 
 - Replace empty-success exception handling at workspace fan-out boundaries with proper LSP failures.
 - Remove hard-coded sleeps and other known flakiness from asynchronous tests.
-- Complete the focused fail-fast, naming, DRY, and fixture slices in the current maintainability plan.
+- Correct design-document drift, then complete the focused fail-fast, naming, DRY, structural, and fixture
+  slices in the consolidated refactoring plan.
 - Preserve the existing server-event-loop and module-worker ownership model.
+
+See [lathe-m1-refactoring.md](planned/lathe-m1-refactoring.md).
 
 ### Call hierarchy ✓
 

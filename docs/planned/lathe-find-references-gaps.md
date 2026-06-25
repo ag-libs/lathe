@@ -133,7 +133,7 @@ Consequently, the client cannot distinguish:
 - a bug in result aggregation.
 
 This conflicts with the fail-fast policy in
-[lathe-maintainability-refactoring.md](lathe-maintainability-refactoring.md).
+[lathe-m1-refactoring.md](lathe-m1-refactoring.md).
 
 ### Required behavior
 

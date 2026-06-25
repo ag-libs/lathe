@@ -537,7 +537,7 @@ For each params file:
   Both main and test classpath entries are cross-referenced.
 
 No `JavacTask` is created at startup.
-No `CustomFileManager` is created.
+No compiler or javac state is created at startup; per-module compilation state is built lazily on first use.
 Startup cost is bounded by the number of params files, not by reactor complexity or classpath size.
 
 If `.lathe/` does not exist: "Run `mvn lathe:init` then `mvn process-test-classes` to initialize Lathe."
@@ -620,23 +620,14 @@ Non-reactor entries (JARs in `~/.m2/repository/`) are used as-is.
 The `outputDir` field in the params file is used only as a lookup key for this remapping —
 the LS never reads from or writes to it.
 
-**LS output redirection.** When javac calls `getJavaFileForOutput(location, ...)`
-during a compilation pass, the `CustomFileManager` intercepts and redirects:
+**LS output redirection.** Each compilation pass writes its output under `.lathe/<this-module-rel>/` —
+class files to `classes/` and generated sources to `generated-sources/` — never to Maven's `target/`.
+This is independent of the params `outputDir`, which the LS uses only as a remapping lookup key.
 
-- `StandardLocation.CLASS_OUTPUT` → `.lathe/<this-module-rel>/classes/`
-- `StandardLocation.SOURCE_OUTPUT` → `.lathe/<this-module-rel>/generated-sources/`
-
-This is independent of `outputDir`.
-The LS writes compiled artifacts to `.lathe/` regardless of what Maven's output directory is.
-
-**Orphan handling.** When a compile pass produces fewer class files than the previous pass for the same source:
-
-- Before the pass, snapshot `.lathe/<rel>/classes/` entries matching the source basename pattern (`Foo.class`,
-  `Foo$*.class`).
-- During the pass, capture files actually written via `getJavaFileForOutput`.
-- After the pass, delete `snapshot \ written` from `.lathe/<rel>/classes/`.
-
-Same logic applies to `.lathe/<rel>/generated-sources/` for AP outputs.
+**Orphan handling.** When a compile pass produces fewer class files than the previous pass for the same
+source (for example, a removed nested class), the stale class files from the previous pass are removed from
+`.lathe/<rel>/classes/` so cached bytecode matches the current source.
+The same applies to `.lathe/<rel>/generated-sources/` for annotation-processor outputs.
 
 **Source file deletion** (via `didChangeWatchedFiles`):
 walk `.lathe/<rel>/classes/<package>/` for class files matching the deleted source's basename (including `$Inner`
@@ -653,7 +644,7 @@ No LS-side action needed.
 ### Single-file compilation semantics
 
 Each pass compiles exactly one source file — the file being edited or opened.
-Dependencies within the same module are resolved by the `CustomFileManager` based on whether each sibling file is
+Dependencies within the same module are resolved based on whether each sibling file is
 currently open:
 
 - **Open sibling files** — served from the module's temp directory (current content written there on
@@ -714,7 +705,7 @@ server worker:
   → cancel any pending debounce
   → wait for the file's own module's lathe.lock to disappear if present
   → wait for any direct reactor dependency's lathe.lock to disappear if present
-  → build fresh JavacTask from params + CustomFileManager (proc= from params — AP runs)
+  → build a fresh compilation pass from params (proc= from params — AP runs)
   → single-file compilation pass for the changed file
   → flush file manager after the pass
   → write .class to .lathe/<rel>/classes/ and generated sources
@@ -727,7 +718,7 @@ Target: ~1–2s p95 for AP-heavy modules.
 
 Cancels any in-flight pass for the module and any pending debounce,
 then runs immediately with no debounce, using the same full-pass logic as `didSave`.
-First-file-in-module open also pays for `CustomFileManager` creation and params-file parse.
+First-file-in-module open also pays for one-time module compiler setup and params-file parse.
 
 If the module has no params yet: "Run `mvn process-test-classes` to activate module `<relativePath>`."
 
@@ -869,7 +860,8 @@ Modules with no `.lathe/<rel>/classes/` are silently skipped.
 
 `ExternalCompiler` handles source files outside any reactor module when their path is under a manifest
 dependency source root or `jdk.sourceDir`.
-It owns a reusable `StandardJavaFileManager`, a temp source root, and a `ModuleAnalysis`.
+It owns reusable compilation state for external sources — a file manager, a temp source root, and a cached
+analysis — independent of reactor module compilation.
 For dependency sources it sets `CLASS_PATH` from the manifest's per-dependency classpath entries plus the dependency's
 own JAR;
 for JDK sources the classpath is empty.
