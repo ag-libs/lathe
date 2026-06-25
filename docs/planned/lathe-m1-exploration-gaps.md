@@ -2,6 +2,8 @@
 
 This document records gaps found during a systematic live-probing session against the
 Helidon (332-module) and Dropwizard (68-module) workspaces.
+EG-013 and EG-014 were added from a later session against the sample-workspace (25-module)
+workspace, which makes heavy use of the `record-companion` `@Builder` annotation processor.
 Each gap was confirmed against a running Lathe server with `LATHE_DEBUG=1` and is independent of
 explore.py positioning behaviour.
 
@@ -24,6 +26,13 @@ duplicated here.
 | EG-010 | `explore.py` cannot probe dep/JDK source files — no workspace context for cache paths | M1 |
 | EG-011 | Outgoing calls silently omits callees whose source is in extracted dep or JDK dirs | M2 |
 | EG-012 | `textDocument/declaration` not implemented; overriding method declarations have no path to the contract/interface method | M2 |
+| EG-013 | Find References candidate discovery excludes generated annotation sources; references in `@Builder`-generated classes are never found | M2 |
+| EG-014 | Find References on an overriding method returns only exact-static-type call sites, not polymorphic uses of the overridden method | M2 |
+| EG-015 | Override/implement completion missing; a method-name prefix in a class body offers only type candidates, no override stubs | M2 |
+| EG-016 | Annotation-member completion missing; completion inside an annotation's parentheses returns nothing | M2 |
+| EG-017 | `textDocument/documentHighlight` not implemented; cursor-occurrence highlighting is unavailable | M2 |
+| EG-018 | `textDocument/selectionRange` not implemented; expand/shrink selection is unavailable | M2 |
+| EG-019 | Unused-declaration diagnostic message is the bare word `Unused` with a null code | M1 |
 
 EG-003 and EG-005 are deferred to M2:
 EG-003 requires `DocTrees` attribution of Javadoc comment positions, which is a non-trivial
@@ -754,6 +763,389 @@ printf 'impl 52:14\nimpl 64:18\nimpl 45:11\nimpl 77:10\nquit\n' \
 
 ---
 
+## EG-013 — Find References candidate discovery excludes generated annotation sources
+
+**Milestone: M2**
+
+### Observed behaviour
+
+Find References on a record component never returns the generated `@Builder` class that uses that
+component, even when the generated builder calls the component's accessor.
+
+Probed against the sample-workspace workspace, which generates a `*Builder` per `@Builder` record
+under each module's `target/generated-sources/annotations/`:
+
+```
+refs "requestId,"  on Entity (app-alpha, builder present)
+  → progress: 0 / 1 candidates       ← only the record's own file is a candidate
+  → 1 reference (the accessor call inside Entity itself)
+  → EntityBuilder.builder(existing) calls existing.requestId() but is never found
+
+refs "customerReference,"  on CreateEntity (app-core)
+  → progress: 0 / 1 candidates
+  → 0 references
+```
+
+The decisive signal is the candidate count: `0 / 1 candidates`.
+`EntityBuilder.builder(Entity existing)` contains
+`builder.requestId = existing.requestId();`, so the generated file does reference the accessor,
+yet it is never even offered as a candidate to scan.
+
+### Root cause
+
+Two scopes are inconsistent:
+
+- **Resolution scope** — `WorkspaceModuleRegistry.allSourceRoots()` already includes the generated
+  directory (`ModuleSourceConfig.originalGenSourcesDir()`, which points at
+  `target/generated-sources/annotations`) when it is non-null.
+- **Candidate discovery** — `ReferenceCandidateIndex.build(...)` builds the token-to-file index
+  from `config.sourceRoots()` only, which contains just `src/main/java`.
+  The generated directory is never tokenized, so generated files never appear in the candidate
+  set.
+
+The server can resolve a reference that lives in a generated builder, but candidate discovery
+filters those files out first, so the reference search never reaches them.
+This is independent of the editor and of explore.py positioning — it is in the index.
+
+### Proposed fix
+
+In `ReferenceCandidateIndex.build(...)`, include each config's `originalGenSourcesDir()` in the
+set of indexed roots, mirroring the exact logic already used by
+`WorkspaceModuleRegistry.allSourceRoots()`:
+
+```java
+allConfigs.stream()
+    .flatMap(
+        config ->
+            config.originalGenSourcesDir() != null
+                ? Stream.concat(
+                    config.sourceRoots().stream(), Stream.of(config.originalGenSourcesDir()))
+                : config.sourceRoots().stream())
+    .distinct()
+    .filter(Files::isDirectory)
+```
+
+Returning `target/generated-sources/annotations/...` URIs from a reference search is consistent
+with how `textDocument/definition` already navigates into generated sources via the same
+`allSourceRoots()` scope.
+
+### Related observation — incomplete `.lathe` generated-sources mirror
+
+Separately, the `.lathe/<module>/generated-sources` mirror is inconsistent across modules
+(`app-core` 0 of 208, `app-api` 0 of 46, `app-config` 0 of 108; `app-alpha` 14 of 14;
+`app-server` 6 of 120).
+This mirror feeds `ModuleSourceCompiler`, not the reference candidate path (which reads the
+original `target` directory), so it is **not** the cause of this gap.
+It appears generated sources are only captured for modules that actually recompiled during the
+lathe-instrumented build, and warrants a separate investigation under the build/sync lifecycle.
+
+### Probe commands
+
+```bash
+python3 dev/explore.py \
+    /workspace/app-alpha/src/main/java/com/example/app/alpha/Entity.java \
+    refs "requestId," min 2 expect "EntityBuilder.java"
+```
+
+### Regression targets
+
+- `ReferenceCandidateIndexTest.build_includesGeneratedSourcesDir_whenPresent`
+- `ReferenceServiceTest.references_recordComponent_findsGeneratedBuilderUsage`
+
+---
+
+## EG-014 — Find References on an overriding method returns only exact-static-type call sites
+
+**Milestone: M2**
+
+### Observed behaviour
+
+Find References on an overriding method declaration returns no polymorphic call sites; the same
+search on the overridden interface or superclass method returns them all.
+
+```
+refs "getType" on Request.getType()       (interface declaration)  → 14 references
+refs "getType" on CreateEntity.getType() (@Override declaration)   → 0 references
+```
+
+`CreateEntity implements Request`, and every `getType()` call site in the workspace has a
+statically `Request`-typed receiver, so each call resolves to `Request.getType()`.
+There are zero call sites with a statically `CreateEntity`-typed receiver.
+
+### Analysis
+
+The 0-result is exact-element-correct: no call statically dispatches to `CreateEntity.getType()`.
+But a developer invoking Find References from an override expects to see the usages of the method
+they are looking at, which in practice are the polymorphic uses of the overridden contract.
+
+This is the Find References mirror of EG-012 (`textDocument/declaration` from an override to its
+contract).
+EG-012 navigates override → contract; this gap is about pulling the contract's usages into the
+override's reference results.
+
+### Proposed fix
+
+When Find References is invoked on an overriding method declaration, additionally search for
+references to the method(s) it overrides:
+
+1. Resolve the `ExecutableElement` at the cursor and its enclosing `TypeElement`.
+2. Walk supertypes with `Types.directSupertypes(...)` and, for each candidate method, test
+   `Elements.overrides(current, candidate, enclosingType)`.
+3. Union the reference results for the override and each overridden declaration, de-duplicated by
+   location.
+
+This reuses the EG-012 override-resolution walk, so the two should be implemented together.
+The reverse direction (Find References on a base method already includes override declarations)
+is out of scope for this gap.
+
+### Probe commands
+
+```bash
+printf 'refs "getType"\n' \
+  | python3 dev/explore.py \
+      /workspace/app-core/src/main/java/com/example/app/model/CreateEntity.java
+```
+
+### Regression targets
+
+- `ReferenceServiceTest.references_overridingMethod_includesOverriddenContractUsages`
+- `ReferenceServiceTest.references_nonOverridingMethod_unchanged`
+
+---
+
+## EG-015 — Override/implement completion missing in class bodies
+
+**Milestone: M2**
+
+### Observed behaviour
+
+Typing a method-name prefix inside a class body offers only type-name candidates; no
+override-stub completion item is ever returned.
+
+Probed against `DummyAdapter`, which extends a base class and implements an
+interface:
+
+```
+inject "toString"  in class body
+  → 9 items, all types: ToString, ToStringStyle, ToStringBuilder, ToStringSerializer, …
+  → no "@Override public String toString() { … }" stub
+
+inject "createP"   in class body  (createPin is an inherited contract method)
+  → 8 items, all types: CreatePartitionsResult, CreatePartitionsOptions, …
+  → no override stub for createPin
+```
+
+A developer typing a method name in a class body expects an override/implement completion that
+inserts the full overriding signature with `@Override`, as IntelliJ and Eclipse JDT do.
+
+### Root cause
+
+The completion engine has providers for simple names, types, imports, keywords, and members, but
+no provider that enumerates overridable methods from the enclosing type's supertypes.
+The enclosing-type and supertype information is already available (the same walk used by type
+hierarchy and proposed for EG-012), but it is not wired into a completion provider.
+
+### Relationship to `MissingMethodImplProvider`
+
+This is the completion-driven path to implementing a method.
+The code-action-driven path (`MissingMethodImplProvider`) is a separate, also-unimplemented
+M1 blocker.
+With both absent there is currently no assisted way to implement or override a method.
+
+### Proposed fix
+
+Add an override-completion provider that, when the cursor is at a member-declaration position in a
+class body, enumerates the inherited methods of the enclosing `TypeElement` (via supertype walk
+plus `Object` methods), filters to those overridable and matching the typed prefix, and returns
+completion items whose insert text is the full overriding signature annotated with `@Override`.
+
+### Probe commands
+
+```bash
+python3 dev/explore.py \
+    /workspace/app-server/src/main/java/com/example/app/server/operator/dummy/DummyAdapter.java \
+    inject "toString" at 46 expect toString
+```
+
+### Regression targets
+
+- `CompletionOverrideTest.completion_methodPrefixInClassBody_offersOverrideStub`
+- `CompletionOverrideTest.completion_objectMethodPrefix_offersToStringOverride`
+
+---
+
+## EG-016 — Annotation-member completion missing
+
+**Milestone: M2**
+
+### Observed behaviour
+
+Completion inside an annotation's parentheses returns nothing.
+
+```
+inject "@JsonProperty("  before a record component
+  → (no completions returned)
+```
+
+Developers expect the annotation's element names (`value`, `required`, `defaultValue`, …) and,
+for enum-valued elements, the permitted constants.
+
+This workspace is annotation-heavy — 112 `@JsonProperty`, 125 `@Path`, plus Swagger,
+`@RolesAllowed`, and Jackson XML annotations — so annotation-member completion is a frequent need.
+
+### Root cause
+
+The completion engine has no annotation-context provider.
+When the cursor is inside an `AnnotationTree`'s argument list, no candidate generator recognises the
+context, so the engine returns an empty result.
+
+### Proposed fix
+
+Add an annotation-member provider that detects the `AnnotationTree` enclosing the cursor, resolves
+its annotation `TypeElement`, and offers its `ExecutableElement` members as completion items
+(`name = ` insert text).
+For an element whose type is an enum, additionally offer the enum constants once the cursor is past
+the `=`.
+
+### Probe commands
+
+```bash
+python3 dev/explore.py \
+    /workspace/app-core/src/main/java/com/example/app/model/CreateEntity.java \
+    inject "@JsonProperty(" at 14 expect value
+```
+
+### Regression targets
+
+- `CompletionAnnotationTest.completion_insideAnnotationArgs_offersElementNames`
+- `CompletionAnnotationTest.completion_enumValuedElement_offersConstants`
+
+---
+
+## EG-017 — `textDocument/documentHighlight` not implemented
+
+**Milestone: M2**
+
+### Observed behaviour
+
+The server does not advertise `documentHighlightProvider`, and no handler exists.
+Cursor-occurrence highlighting — the read/write highlight an editor draws for every occurrence of
+the symbol under the cursor as the cursor rests — is therefore unavailable.
+
+### Root cause
+
+`LatheLanguageServer.initialize` registers no `documentHighlightProvider`, and there is no
+`documentHighlight` request handler in the server.
+
+### Proposed fix
+
+Implement `textDocument/documentHighlight` as a file-scoped specialisation of the existing exact
+same-file reference matching.
+Reuse the `ReferenceTarget` identity already used by Find References, restrict the scan to the
+current document, and map each occurrence to a `DocumentHighlight` with `Read` or `Write` kind
+based on whether the occurrence is an assignment target.
+
+This is the highest value-to-effort item in this set: the same-file matching machinery already
+exists, and the feature is exercised continuously during normal editing.
+
+### Probe commands
+
+Not probeable through `explore.py` (no `documentHighlight` command); confirmed by the absent
+capability and the absent handler in `LatheLanguageServer`.
+
+### Regression targets
+
+- `DocumentHighlightTest.documentHighlight_localVariable_highlightsReadAndWriteOccurrences`
+- `DocumentHighlightTest.documentHighlight_methodName_highlightsSameFileCalls`
+
+---
+
+## EG-018 — `textDocument/selectionRange` not implemented
+
+**Milestone: M2**
+
+### Observed behaviour
+
+The server does not advertise `selectionRangeProvider`, and no handler exists.
+Expand-selection and shrink-selection (a common editing keystroke) are unavailable.
+
+The `selectionRange` occurrences in the server source are unrelated: they are the
+`DocumentSymbol.selectionRange` and `CallHierarchyItem.selectionRange` fields, not the
+`textDocument/selectionRange` feature.
+
+### Root cause
+
+`LatheLanguageServer.initialize` registers no `selectionRangeProvider`, and there is no
+`selectionRange` request handler.
+
+### Proposed fix
+
+Implement `textDocument/selectionRange` syntactically.
+For each requested position, walk the enclosing `TreePath` from the leaf outward and emit a nested
+chain of `SelectionRange` entries (identifier → expression → statement → block → member → type).
+This needs only source positions, not type resolution, so it can run on the parsed tree without a
+full attribution pass.
+
+### Probe commands
+
+Not probeable through `explore.py` (no `selectionRange` command); confirmed by the absent
+capability and the absent handler in `LatheLanguageServer`.
+
+### Regression targets
+
+- `SelectionRangeTest.selectionRange_insideExpression_returnsNestedSyntacticRanges`
+- `SelectionRangeTest.selectionRange_atMethodName_expandsToMemberThenType`
+
+---
+
+## EG-019 — Unused-declaration diagnostic message is the bare word `Unused`
+
+**Milestone: M1**
+
+### Observed behaviour
+
+The unused-declaration hint carries the correct `Unnecessary` tag but a non-descriptive message and
+a null code.
+
+Probed against `RegionAdapter.java`, where local variable `billingStatus` is unused:
+
+```json
+{"severity": 4, "code": null, "source": "lathe", "message": "Unused", "tags": [1],
+ "range": {"start": {"line": 236, "character": 20}, "end": {"line": 236, "character": 29}}}
+```
+
+`tags: [1]` (`DiagnosticTag.Unnecessary`) is correctly present, so editors do gray the
+declaration.
+The message is the single word `Unused`, and `code` is `null`.
+
+### Root cause
+
+The unused-declaration scan emits a fixed `"Unused"` message and sets no diagnostic `code`.
+It does not distinguish the kind of declaration (local variable, private field, private method) or
+include the declaration name.
+
+### Proposed fix
+
+Produce a descriptive message that names the declaration and its kind, for example
+`Unused local variable 'billingStatus'`, `Unused private method 'foo'`, and set a stable
+diagnostic `code` (for example `lathe.unused`) so clients can filter the hint and map it to a
+future remove-declaration quick fix.
+Keep the `Unnecessary` tag.
+
+### Probe command
+
+```bash
+python3 dev/lsp.py \
+    /workspace/app-server/src/main/java/com/example/app/server/operator/region/RegionAdapter.java
+```
+
+### Regression targets
+
+- `UnusedDiagnosticTest.unused_localVariable_messageNamesVariableAndKind`
+- `UnusedDiagnosticTest.unused_diagnostic_setsStableCode`
+
+---
+
 ## M1 Implementation Order
 
 Items without dependencies may proceed in parallel.
@@ -789,5 +1181,9 @@ Items without dependencies may proceed in parallel.
 8. **EG-010** (`explore.py` workspace flag) — add `--workspace <path>` argument to `explore.py`.
    Dev-tooling only; self-contained.
 
-EG-011 and EG-012 are M2 work, tracked alongside the external-source Find References and
-navigation scope expansion.
+9. **EG-019** (unused-diagnostic message) — emit a descriptive message naming the declaration and
+   its kind and set a stable diagnostic code.
+   Small, bounded change to the unused-declaration scan.
+
+EG-011, EG-012, EG-013, EG-014, EG-015, EG-016, EG-017, and EG-018 are M2 work, tracked alongside
+the external-source Find References, navigation, completion, and editor-feature scope expansion.
