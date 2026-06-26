@@ -864,7 +864,8 @@ public final class CompletionEngine {
             injected.prefix(),
             req.cursorOffset(),
             initialAnalysis,
-            semanticContext(site, req, parsed, initialAnalysis));
+            semanticContext(site, req, parsed, initialAnalysis),
+            req.typeIndex());
     final AttributedFileAnalysis freshAnalysis =
         initialExpected.isEmpty() && compiler != null && !req.noDiff()
             ? compiler.reattribute(req.uri(), req.content())
@@ -876,7 +877,8 @@ public final class CompletionEngine {
                 injected.prefix(),
                 req.cursorOffset(),
                 freshAnalysis,
-                semanticContext(site, req, parsed, freshAnalysis))
+                semanticContext(site, req, parsed, freshAnalysis),
+                req.typeIndex())
             : initialExpected;
     if (expected.isEmpty()) {
       return incompleteEmptyConstructorPrefix(injected, base);
@@ -897,7 +899,8 @@ public final class CompletionEngine {
       final String prefix,
       final int cursorOffset,
       final AttributedFileAnalysis analysis,
-      final SemanticCompletionContext semanticContext) {
+      final SemanticCompletionContext semanticContext,
+      final WorkspaceTypeIndex typeIndex) {
     if (analysis == null) {
       return List.of();
     }
@@ -910,16 +913,62 @@ public final class CompletionEngine {
       return List.of();
     }
 
-    if (!(analysis.types().asElement(type) instanceof final TypeElement typeEl)) {
+    if (!(analysis.types().asElement(type) instanceof final TypeElement expectedEl)) {
       return List.of();
     }
 
-    final String simpleName = typeEl.getSimpleName().toString();
-    if (!simpleName.startsWith(prefix)) {
+    final List<CompletionCandidate> subtypeCandidates =
+        instantiableSubtypeCandidates(prefix, expectedEl, analysis, typeIndex);
+    if (!(expectedEl.getSimpleName().toString().startsWith(prefix)
+        && constructibleType(expectedEl, analysis, null))) {
+      return subtypeCandidates;
+    }
+
+    return Stream.concat(
+            Stream.of(
+                CandidateFactory.typeElementCandidate(
+                    expectedEl, importEdit(expectedEl, analysis))),
+            subtypeCandidates.stream())
+        .toList();
+  }
+
+  private static List<CompletionCandidate> instantiableSubtypeCandidates(
+      final String prefix,
+      final TypeElement expectedEl,
+      final AttributedFileAnalysis analysis,
+      final WorkspaceTypeIndex typeIndex) {
+    if (typeIndex == null) {
       return List.of();
     }
 
-    return List.of(CandidateFactory.typeElementCandidate(typeEl, importEdit(typeEl, analysis)));
+    final var binaryName = analysis.elements().getBinaryName(expectedEl).toString();
+    return typeIndex.transitiveSubtypes(binaryName).stream()
+        .filter(CompletionEngine::indexKindMaybeInstantiable)
+        .filter(entry -> entry.simpleName().startsWith(prefix))
+        .sorted(typeCandidateComparator(prefix))
+        .limit(TYPE_INDEX_RESULT_LIMIT)
+        .filter(entry -> resolvesToInstantiableSubtype(entry, expectedEl, analysis))
+        .map(CandidateFactory::typeIndexCandidate)
+        .toList();
+  }
+
+  private static boolean resolvesToInstantiableSubtype(
+      final TypeIndexEntry entry,
+      final TypeElement expectedEl,
+      final AttributedFileAnalysis analysis) {
+    final var subtypeEl = analysis.elements().getTypeElement(entry.qualifiedName());
+    return subtypeEl != null && !subtypeEl.equals(expectedEl) && directlyInstantiable(subtypeEl);
+  }
+
+  private static boolean indexKindMaybeInstantiable(final TypeIndexEntry entry) {
+    return entry.kind() == io.github.aglibs.lathe.core.typeindex.TypeKind.CLASS
+        || entry.kind() == io.github.aglibs.lathe.core.typeindex.TypeKind.RECORD;
+  }
+
+  private static boolean directlyInstantiable(final TypeElement typeEl) {
+    return (typeEl.getKind() == ElementKind.CLASS || typeEl.getKind() == ElementKind.RECORD)
+        && !typeEl.getModifiers().contains(Modifier.ABSTRACT)
+        && !typeEl.getModifiers().contains(Modifier.SEALED);
   }
 
   private static CompletionOutcome incompleteEmptyConstructorPrefix(
@@ -1016,10 +1065,15 @@ public final class CompletionEngine {
   private static boolean constructibleType(
       final TypeElement typeEl, final AttributedFileAnalysis analysis, final Scope scope) {
     if (typeEl.getKind() == ElementKind.INTERFACE) {
-      return true;
+      return !typeEl.getModifiers().contains(Modifier.SEALED);
     }
 
     if (typeEl.getKind() != ElementKind.CLASS && typeEl.getKind() != ElementKind.RECORD) {
+      return false;
+    }
+
+    if (typeEl.getModifiers().contains(Modifier.SEALED)
+        && typeEl.getModifiers().contains(Modifier.ABSTRACT)) {
       return false;
     }
 
