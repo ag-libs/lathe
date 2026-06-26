@@ -198,7 +198,8 @@ Use one heading per entry:
 ## CQ-0001 — Missing method after chained receiver
 
 ID: CQ-0001
-Status: new
+Status: documented
+Target: M2
 Tier: basic
 Failure mode: missing-candidate
 Owner component: TypeResolver
@@ -217,10 +218,13 @@ Notes:
 ```
 
 Use sequential `CQ-` IDs for completion-quality gaps.
-Keep entries short enough that scanning the log remains useful.
+`Status` and `Target` follow the shared [gap lifecycle](gap-process.md); a new entry starts
+`documented`, and completion gaps default to `Target: M2` unless triaged otherwise.
+Keep entries short enough that scanning the registry remains useful.
 
-When an entry is fixed,
-update `Status` and `Regression target`.
+When an entry reaches `done`,
+update `Status` and record the `Regression target`, then move the entry to
+[gaps-archive.md](gaps-archive.md).
 Only move details to `docs/done/` if the fix teaches a durable design lesson.
 
 `IntelliJ or JDT behavior` is useful evidence,
