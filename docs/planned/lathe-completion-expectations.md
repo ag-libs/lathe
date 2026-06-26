@@ -121,7 +121,7 @@ The completion contract includes the source text produced when the user accepts 
 not only whether the item appears in the menu.
 
 The planned JDT LS-style presentation work is tracked in
-[`../lathe-completion-presentation.md`](../lathe-completion-presentation.md).
+[`lathe-completion-presentation.md`](../done/lathe-completion-presentation.md).
 
 ## Universal Invariants
 

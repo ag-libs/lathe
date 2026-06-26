@@ -8,13 +8,14 @@ Documents under `planned/` can contain implemented history or stale details.
 Read their current-status sections and compare them with the roadmap before starting work.
 
 The [gap lifecycle](gap-process.md) defines how every gap (EG/FR/CA and CQ) moves from
-`documented` through a release `Target` to `done`, across the exploration-gaps doc and the
-completion gap log.
+`documented` through a release `Target` to `done` in the single registry [gaps.md](gaps.md), with
+discovery via [gap-workflow.md](gap-workflow.md) and resolved entries in [gaps-archive.md](gaps-archive.md).
 
 ## M1 — Internal Preview
 
-- [Exploration Gaps](planned/lathe-exploration-gaps.md) — the single consolidated gap tracker: live-probing
-  exploration gaps (EG), Find References gaps (FR), and code-action gaps (CA), spanning M1 and M2.
+- [Gaps](gaps.md) — the single active gap registry (EG/FR/CA/CQ); resolved entries in
+  [gaps-archive.md](gaps-archive.md). Lifecycle in [gap-process.md](gap-process.md); discovery in
+  [gap-workflow.md](gap-workflow.md).
 - [Declaration](planned/lathe-declaration.md) — `textDocument/declaration` navigating an overriding method to
   its root contract (EG-012); implemented.
 - [Call Hierarchy](planned/lathe-call-hierarchy.md) — `prepareCallHierarchy`, `incomingCalls`, and `outgoingCalls`
@@ -28,14 +29,13 @@ completion gap log.
 
 ## M2 — Neovim Public Beta
 
-- [Exploration Gaps (deferred)](planned/lathe-exploration-gaps.md) — EG-003 (hover in Javadoc type-reference tags)
-  and EG-005 (CamelCase and infix workspace symbol matching) deferred from M1.
-- [Find References Gaps](planned/lathe-exploration-gaps.md) — FR-002 external-source scope, FR-003 failure
-  propagation, and FR-004 integration coverage (in the consolidated gaps doc).
-- [Completion Expectations](planned/completion/expectations.md) — expected completion behavior.
-- [Completion Gap Log](planned/completion/gap-log.md) — active completion gaps, including method references and generic
-  bounds.
-- [Completion Discovery Workflow](planned/completion/discovery-workflow.md) — reproducible gap discovery and triage.
+- [Gaps (deferred)](gaps.md) — EG-003 (hover in Javadoc type-reference tags) and EG-005 (CamelCase and infix
+  workspace symbol matching) deferred from M1.
+- [Find References gaps](gaps.md) — FR-002 external-source scope, FR-003 failure propagation, and FR-004
+  integration coverage.
+- [Completion Expectations](planned/lathe-completion-expectations.md) — expected completion behavior.
+- [Completion gaps (CQ)](gaps.md) — active completion-quality gaps, including method references and generic bounds.
+- [Gap Workflow](gap-workflow.md) — reproducible gap discovery and triage (all areas).
 - [New Type Creation](planned/lathe-new-type-creation.md) — scaffold a blank file's class/interface/enum/record via
   snippet completion, with no custom client-side UI.
 - [Google Indentation](planned/lathe-google-indent.md) — conservative on-type formatting.

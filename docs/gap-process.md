@@ -10,20 +10,22 @@ toward a release.
 
 ---
 
-## Gap families and where they live
+## Where gaps live
 
-Gaps keep their family prefix and their existing home file, but share the schema below.
+All open gaps share a single active registry, [gaps.md](gaps.md), regardless of area.
+Each keeps its area prefix:
 
-| Family | Prefix | Home | Scope |
-|---|---|---|---|
-| Exploration | `EG-NNN` | [planned/lathe-exploration-gaps.md](planned/lathe-exploration-gaps.md) | Live-probing: navigation, hover, search, editor features |
-| Find References | `FR-NNN` | same file | `textDocument/references` scope, failure propagation, coverage |
-| Code Action | `CA-N` | same file | `textDocument/codeAction` providers |
-| Completion | `CQ-NNNN` | [planned/completion/gap-log.md](planned/completion/gap-log.md) | Completion quality; part of the completion discovery workflow |
+| Prefix | Area | Scope |
+|---|---|---|
+| `EG-NNN` | exploration | Live-probing: navigation, hover, search, completion, code actions, hierarchies |
+| `FR-NNN` | references | `textDocument/references` scope, failure propagation, coverage |
+| `CA-N` | code-action | `textDocument/codeAction` providers |
+| `CQ-NNNN` | completion | Completion quality |
 
-The completion gap log stays a separate file because it is a living, process-managed queue with its
-own [discovery workflow](planned/completion/discovery-workflow.md) and [expectations](planned/completion/expectations.md).
-It adopts this lifecycle; it is not merged.
+Resolved (`done` / `non-goal`) entries move to [gaps-archive.md](gaps-archive.md).
+Discovery and triage follow the single [gap workflow](gap-workflow.md).
+Completion keeps area-specific *reference* material — its behavioral contract,
+[expectations.md](planned/lathe-completion-expectations.md) — but no separate process.
 
 ---
 
@@ -82,7 +84,7 @@ Do not keep a separate ordered "implementation order" list; it duplicates `Targe
 To see the slice:
 
 ```bash
-grep -nE 'Target: M1' docs/planned/lathe-exploration-gaps.md docs/planned/completion/gap-log.md
+grep -n 'Target: M1' docs/gaps.md
 ```
 
 ---
@@ -103,6 +105,6 @@ entry itself stays in its home file as the record.
 
 Families may carry extra fields without changing the lifecycle.
 Completion entries keep `Tier` (`basic` / `typed` / `assistive` / `presentation`), `Failure mode`,
-and `Owner component` as defined by the completion [expectations](planned/completion/expectations.md)
-and [discovery workflow](planned/completion/discovery-workflow.md).
+and `Owner component` as defined by the completion [expectations](planned/lathe-completion-expectations.md)
+and the [gap workflow](gap-workflow.md).
 `Tier` is a feature category, not a priority or a release — milestone targeting is always `Target`.

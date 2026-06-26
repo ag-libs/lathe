@@ -64,7 +64,7 @@ See [lathe-declaration.md](planned/lathe-declaration.md).
 ### Live-probing correctness fixes
 
 Gaps confirmed by systematic probing against Helidon, Dropwizard, and sample-workspace.
-See [lathe-exploration-gaps.md](planned/lathe-exploration-gaps.md).
+See [gaps.md](gaps.md).
 
 - Fix signature help returning the wrong signature when the first argument is itself a method call (EG-001).
 - Implement `TryCatchWrapProvider` for `UNREPORTED_EXCEPTION` in regular method and lambda bodies (EG-002).
@@ -106,7 +106,7 @@ It remains a build-from-source release.
 - Add CamelCase initial matching to workspace symbol search (EG-005).
 - Fix hover on type names inside Javadoc `{@link}` and `{@see}` tags using `DocTrees.getElement` (EG-003).
 
-See [lathe-exploration-gaps.md](planned/lathe-exploration-gaps.md) for EG-003 and EG-005 detail.
+See [gaps.md](gaps.md) for EG-003 and EG-005 detail.
 
 ### Editing and refactoring
 

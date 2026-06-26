@@ -1,135 +1,264 @@
-# Lathe — Completion Gap Log
+# Lathe — Resolved Gaps (Archive)
 
-This file is a lightweight queue for current completion discrepancies.
-Entries should be short and mechanical.
+Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](gaps.md) per the
+[gap lifecycle](gap-process.md). Kept for the historical record and regression-target references.
 
-Move durable rules into [`expectations.md`](expectations.md).
-Move process changes into [`discovery-workflow.md`](discovery-workflow.md).
-Move resolved implementation notes to `docs/done/` only when they are useful after the fix.
+---
 
-## Status Values
+# Navigation, references, code actions (resolved)
 
-| Status | Meaning |
-|---|---|
-| `new` | Captured but not triaged. |
-| `accepted` | Lathe should support this behavior. |
-| `deferred` | Valid behavior, but not in the current slice. |
-| `non-goal` | Deliberately outside Lathe's current completion contract. |
-| `covered` | Regression test or durable probe exists. |
-| `fixed` | Implementation changed and verification passed. |
+## EG-012 — `textDocument/declaration`: navigate an override to its contract method
 
-## Template
+**Status: done — Target: M1.**
+The design of record is [lathe-declaration.md](planned/lathe-declaration.md).
+The implementation resolves to the **root contract** (walking the full supertype hierarchy, not just
+direct supertypes) and handles **both** the declaration site and the call site, with a fallback to
+`definition` for non-overriding symbols.
+The "Proposed fix" and "Implementation notes" below are retained as the historical gap record; where
+they pose open questions, those were resolved in favour of root-contract resolution and call-site
+support per the design doc.
 
-```text
-## CQ-0001 — Short description
+### Observed behaviour (historical)
 
-ID: CQ-0001
-Status:
-Tier:
-Failure mode:
-Owner component:
+Java IDEs commonly provide a quick way to navigate from an overriding method declaration to the
+method it overrides in a superclass or interface.
+Before EG-012 was implemented, Lathe did not expose that navigation.
 
-Project/file:
-Probe command:
-Cursor context:
+Probing `MongoDbClient` in Helidon confirms:
 
-IntelliJ or JDT behavior:
-Lathe behavior:
-Expected Lathe behavior:
-Accepted edit, if relevant:
-
-Regression target:
-Notes:
-```
-
-## Open Entries
-
-## CQ-0040 — `bind(...).to(...)` chain offers no members on the captured-wildcard result
-
-ID: CQ-0040
-Status: planned for M1
-Tier: typed
-Failure mode: missing-candidate
-Owner component: TypeResolver / CompletionEngine
-Discovery: 2026-06-26, sample-workspace (AppServer anonymous `AbstractBinder.configure()`)
-
-Project/file:
-`/workspace/app-server/src/main/java/com/example/app/server/AppServer.java`
-
-Probe command (real source, line 624 has a double `.to(...).to(...)` chain):
-```bash
-python3 dev/explore.py \
-  /workspace/app-server/src/main/java/com/example/app/server/AppServer.java \
-  complete after "bind(pipelineService).to(RequestPipelineService.class)."
-```
-
-Control probe (first hop works):
-```bash
-python3 dev/explore.py \
-  /workspace/app-server/src/main/java/com/example/app/server/AppServer.java \
-  complete after "bind(onboardingService)." expect to min 1
-```
-
-Single-`.to()` injection probe (gap reproduces without the double chain):
-```bash
-printf 'inject "bind(rpcServer).to(RpcServer.class)." at 617\ninject "bind(rpcServer)." at 617\n' \
-  | python3 dev/explore.py \
-    /workspace/app-server/src/main/java/com/example/app/server/AppServer.java
-```
-
-Cursor context:
 ```java
-resourceConfig.register(
-    new AbstractBinder() {
-      @Override
-      protected void configure() {
-        bind(onboardingService).§                                  // works: 28 Binding<OnboardingService> members
-        bind(pipelineService).to(RequestPipelineService.class).§   // gap: no completions
-      }
-    });
+public class MongoDbClient extends DbClientBase implements DbClient {
+  @Override
+  public DbExecute execute() { ... }
+
+  @Override
+  public DbTransaction transaction() { ... }
+
+  @Override
+  public String dbType() { ... }
+
+  @Override
+  public <C> C unwrap(Class<C> cls) { ... }
+}
 ```
 
-IntelliJ or JDT behavior:
-After `bind(x).to(Y.class).`, both IDEs expose the binding-builder's self-type members so the
-fluent chain continues — `to`, `in`, `named`, `qualifiedBy`, `ranked`, `proxy`, `proxyForSameScope`.
-This is the standard Jersey/HK2 DI registration DSL.
+Running `definition` on the overriding method declarations returns the declaration itself:
 
-Lathe behavior:
-`bind(x).` resolves to a concrete `Binding<T>` and returns 28 members, including the `to` overloads
-whose return type is surfaced as `<captured wildcard>`:
-```text
-to  [Method]  Binding.to(Class<? super RpcServer> contract) : <captured wildcard>
+| Cursor target | Actual definition result |
+|---|---|
+| `MongoDbClient.execute()` | `MongoDbClient.execute()` |
+| `MongoDbClient.transaction()` | `MongoDbClient.transaction()` |
+| `MongoDbClient.dbType()` | `MongoDbClient.dbType()` |
+| `MongoDbClient.unwrap(...)` | `MongoDbClient.unwrap(...)` |
+
+The reverse direction works through `textDocument/implementation`:
+running `impl` on the corresponding `DbClient` interface declarations returns both
+`JdbcClient` and `MongoDbClient` implementations.
+
+Normal call-site definition also behaves correctly:
+
+- `MongoDbClient dbClient; dbClient.execute()` jumps to `MongoDbClient.execute()`;
+- `DbClient dbClient; dbClient.execute()` jumps to `DbClient.execute()`;
+- inherited superclass calls such as `context()` inside `MongoDbClient.execute()` jump to
+  `DbClientBase.context()`.
+
+The missing behavior is specifically declaration-site navigation from an override to the
+overridden method.
+
+### Definition vs. declaration in LSP
+
+In LSP the intended split is language-dependent, but the general contract is:
+
+- **Definition** — where the symbol is actually defined/implemented.
+- **Declaration** — where the symbol is declared as an API/contract, which may not be the implementation.
+
+In Java, most symbols do not have a separate declaration and definition.
+A class, field, local variable, or normal method has one source location, so both can
+reasonably return the same place.
+
+The distinction becomes useful for overrides:
+
+```java
+interface DbClient {
+    DbExecute execute();       // declaration / contract
+}
+
+class MongoDbClient implements DbClient {
+    @Override
+    public DbExecute execute() {   // definition / implementation
+        ...
+    }
+}
 ```
-Hover on `to` shows the declared signature `D to(Class<? super T> contract)`.
-Completing on the result of any `.to(...)` call returns 0 items — the receiver's static type is the
-type variable `D` / its captured wildcard, and member discovery on that receiver yields nothing.
 
-Expected Lathe behavior:
-Member completion on a captured-wildcard / type-variable receiver should use the capture's effective
-upper bound (here the binding-builder self-type), so `bind(x).to(Y.class).` offers `to`, `in`,
-`named`, `ranked`, etc., and chained `bind(x).to(Y.class).to(Z.class)` completes.
+Expected navigation model:
 
-Accepted edit, if relevant:
-Not applicable — no candidate is returned.
+| Cursor location | Go to Definition | Go to Declaration |
+|---|---|---|
+| `dbClient.execute()` where `dbClient` is `MongoDbClient` | `MongoDbClient.execute()` | `DbClient.execute()` |
+| `dbClient.execute()` where `dbClient` is `DbClient` | `DbClient.execute()` | `DbClient.execute()` |
+| `MongoDbClient.execute()` declaration itself | `MongoDbClient.execute()` | `DbClient.execute()` |
+| `DbClient.execute()` declaration | `DbClient.execute()` | `DbClient.execute()` |
 
-Regression target:
-`CompletionMemberAccessTest.memberAccess_typeVariableReturn_usesCapturedBound`
+### Proposed fix
 
-Notes:
-Same root-cause family as `CQ-0029` (wildcard generic receivers do not expose usable bound members)
-and `CQ-0030` (type-variable receivers do not expose declared bounds), both planned for M2.
-This entry is pulled into M1 because it breaks completion in the ubiquitous HK2/Jersey `AbstractBinder`
-`bind(x).to(Y.class)` registration DSL on a real workspace, not just synthetic generics.
-The first `bind(x).` hop is unaffected because it resolves to the concrete `Binding<T>`; the failure
-begins at the first `.to(...)`.
+Implement `textDocument/declaration`.
+Do not change `textDocument/definition`.
 
-Also observed in the same `configure()` body, needs separate isolation before filing:
-statement-position identifier completion returned nothing for an inherited-method prefix
-(`inject "b"` / `inject "bind"` at line 617 → 0 items, where `bind` was expected), and `inject "this."`
-resolved `this` to `TypeLiteral` (from the `new TypeLiteral<...>(){}` at line 658) rather than the
-enclosing `AbstractBinder`. A captured-local member access (`inject "onboardingService."`) works
-correctly in the same body. These injection-based observations may be incomplete-statement artifacts
-and should be reconfirmed against valid syntax before being recorded as gaps.
+- For an overriding method declaration, `declaration` resolves the overridden superclass or
+  interface method and returns its source location.
+- For everything else (non-override methods, fields, types, locals), `declaration` falls back
+  to `definition` for usability.
+
+Implementation uses javac override checks:
+
+1. Resolve the `ExecutableElement` at the cursor and the enclosing `TypeElement`.
+2. Walk direct supertypes using `Types.directSupertypes(...)`.
+3. For each candidate method in each supertype, call `Elements.overrides(current, candidate, enclosingType)`.
+4. Return source locations for matching candidates using the existing definition/source-location machinery.
+
+Multiple inherited interface declarations may return multiple locations.
+The declaration result for a non-overriding method falls back to the definition location.
+
+### Implementation notes
+
+**Call-site rows (rows 1–2) are more ambitious than declaration-site (row 3).**
+The proposed fix focuses on overriding method *declarations*.
+Rows 1 and 2 are *call sites*: getting declaration to navigate from `dbClient.execute()` (where
+`dbClient` is `MongoDbClient`) to `DbClient.execute()` requires resolving the concrete callee at
+the call site and then walking up to the interface — a separate code path.
+V1 should cover declaration-site overrides (row 3) only; call sites can fall back to definition
+until a follow-up extends the logic there.
+
+**Decide between immediate override and root contract.**
+Walking only *direct* supertypes may not reach the root interface.
+For `MongoDbClient extends DbClientBase implements DbClient`, if `DbClientBase` also declares
+`execute()`, a single-level walk lands on `DbClientBase.execute()`, not `DbClient.execute()`.
+Whether to return the *nearest* overridden declaration or the *most abstract* one is a product
+decision; the implementation must choose one consistently.
+Returning the nearest overridden declaration is simpler; returning the root interface is arguably
+more aligned with "jump to contract".
+
+**Row 4 — interface method is its own declaration.**
+`DbClient.execute()` IS the declaration, so `declaration` should return itself, not empty.
+"Or empty" was removed from the table above.
+
+### Probe commands
+
+```bash
+printf 'definition 96:19\ndefinition 101:23\ndefinition 106:16\ndefinition 111:15\nquit\n' \
+  | env LATHE_TIMEOUT=90 python3 dev/explore.py \
+      /home/ag-libs/git/helidon/dbclient/mongodb/src/main/java/io/helidon/dbclient/mongodb/MongoDbClient.java
+
+printf 'impl 52:14\nimpl 64:18\nimpl 45:11\nimpl 77:10\nquit\n' \
+  | env LATHE_TIMEOUT=90 python3 dev/explore.py \
+      /home/ag-libs/git/helidon/dbclient/dbclient/src/main/java/io/helidon/dbclient/DbClient.java
+```
+
+### Regression targets
+
+- `DeclarationTest.declaration_overridingMethodDeclaration_returnsInterfaceMethod`
+- `DeclarationTest.declaration_overridingMethodDeclaration_returnsSuperclassMethod`
+- `DeclarationTest.declaration_nonOverridingMethod_fallsBackToDefinition`
+- `DeclarationTest.declaration_callSiteWithConcreteType_fallsBackToDefinition`
+
+---
+
+## EG-020 — `new` expression completion is not slot-aware
+
+**Status: done — Target: M2.**
+
+### Observed behaviour
+
+Completion in a `new` expression neither filters to instantiable types nor uses the expected type
+of the assignment.
+
+```
+inject "Object o = new Oper"
+  → offers interfaces and a sealed interface that cannot be instantiated:
+    Operator [Interface], OperationResponse [Interface] (sealed), OperatorAdapter [Interface], …
+
+inject "java.util.List<String> ls = new "
+  → 93 items led by List [Interface] and unrelated types: Short, Integer, Double,
+    RuntimePermission, ProcessHandle, …
+  → no ArrayList; nothing assignable to List<String> is prioritised
+```
+
+This is in sharp contrast to the other type-position slots, which filter correctly in the same
+session:
+
+- `extends` offers only non-final classes (interfaces and final classes such as `String`,
+  `Integer`, `StringBuilder` are excluded);
+- `implements` offers only interfaces;
+- `throws` offers only `Throwable` subtypes;
+- `catch` offers only exception types.
+
+The slot-aware filtering machinery clearly exists; the `new` path does not use it, and it does not
+consult the expected (target) type that is already known at the assignment site.
+
+### Root cause
+
+The `new`-expression branch of the completion engine resolves type candidates from the workspace
+type index without applying an instantiability filter (concrete, non-abstract, non-sealed-from-here
+classes) and without restricting or ranking by the assignment's target type.
+
+### Proposed fix
+
+In the `new`-expression completion branch:
+
+1. Filter candidates to instantiable types — exclude interfaces (unless an anonymous-class body is
+   being offered), abstract classes, and sealed types that cannot be subclassed from this location.
+2. When the expression has a known target type (assignment, return, argument), restrict or rank
+   candidates to subtypes assignable to that target, so `List<String> x = new ` surfaces
+   `ArrayList`, `LinkedList`, etc. first.
+
+### Probe commands
+
+```bash
+python3 dev/explore.py /path/to/Scratch.java inject "java.util.List<String> ls = new " expect ArrayList
+```
+
+(Probed with a temporary `ScratchLathe.java` authored inside `app-server`.)
+
+### Regression targets
+
+- `CompletionNewExprTest.completion_newWithListTarget_prioritisesInstantiableSubtypes`
+- `CompletionNewExprTest.completion_newExpr_excludesInterfacesAndSealedTypes`
+
+---
+
+## FR-001 — References from external source have no workspace search root
+
+Status: done — Target: M1.
+
+When Find References is invoked from a cached JDK or dependency source file,
+`WorkspaceSession.referencesFuture()` derives the search scope from `cursorConfig`, which is empty
+for external paths not belonging to any reactor `ModuleSourceConfig`.
+The `REACTOR_MODULES` branch previously called `.orElse(List.of())`, so no project file was ever
+searched.
+
+### Fix
+
+`WorkspaceSession.referencesFuture()` — change `orElse(List.of())` to
+`orElseGet(workspace::allConfigs)` for the `REACTOR_MODULES` scope branch.
+When the cursor is in an external source file, all reactor module configs are searched;
+`ReferenceCandidatePlanner` and javac identity matching filter out files that do not actually
+reference the target.
+
+The `DECLARING_MODULE` branch retains `orElse(List.of())` — there is no meaningful reactor
+module scope to derive for a package-private external symbol.
+
+### Regression test
+
+`LspSmokeTest.references_fromCachedJdkSource_findsReactorUsages` — opens the JDK `String.java`
+from the Lathe cache, requests references at the class declaration, and asserts that
+`StringUtils.java` (which declares `String upper(String s)`) appears in the results.
+The reactor-origin case is covered by
+`LspSmokeTest.references_fromReactorSource_findsUsageAcrossModules`.
+
+---
+
+# Completion (CQ) — resolved
 
 ## CQ-0036 — Empty constructor completion returns a complete narrow list
 
@@ -494,57 +623,6 @@ developers commonly navigate to.
 
 Regression target:
 `WorkspaceModuleRegistryTest.allSourceRoots_includesOriginalGenSourcesDir_whenPresent`
-
----
-
-## CQ-0035 — Parser fails to recognise enclosing method when closing `}` is missing (typed over)
-
-ID: CQ-0035
-Status: deferred
-Tier: Basic
-Discovery: 2025-07-25, AppServerConfig.java compact constructor (sample-workspace)
-
-### Description
-
-When a user accidentally overwrites the closing `}` of a constructor (or method) with new text, the
-parser returns `valid=false, class=null, method=null` and 0 completions are returned.
-This is a parse-recovery failure: the parser cannot locate the enclosing method scope without the
-closing brace, so no context is available and completion bails out entirely.
-
-### Reproduction
-
-Target: `AppServerConfig.java`, inject at line 122 (the compact constructor's `}`):
-- `inject "n" at 122` → 0 items, `parsed valid=false sentinelCtx=null class=null method=null`
-- `inject "ValidCheck.check()." at 122` → 9 Object methods only, `method=<error>`, `type=null`
-
-In both cases the parser sees code at the class body level (no enclosing `{}`), so
-the method context is lost entirely.
-
-### Root cause
-
-Parse error recovery does not synthesise a closing brace when a sentinel injection replaces the
-sole `}` that closes a method body.
-This is distinct from a normal "open block" recovery because the sentinel is at a position
-the parser was already expecting `}` — the recovery heuristic doesn't re-close the block.
-
-### Impact
-
-Edge case: affects only the exact keystroke that replaces the closing `}`.
-However, it is a hard failure (0 items, no degraded result), so it is worth noting.
-
-### Fix area
-
-Parser error-recovery in the sentinel-inject pipeline: if `class != null` but `method == null`,
-attempt to re-scan backward for the containing method declaration and synthesise a
-virtual block close before the sentinel.
-
-### Deferral note
-
-Any fix requires scanning backward through raw source text to locate the enclosing method
-declaration — effectively manual Java parsing. Simple injected cases are already handled
-correctly by `forwardScan` recovering the missing `}`. The hard failure only occurs in
-complex real-world files with specific brace-count contexts (confirmed in AppServerConfig.java).
-Deferred pending a cleaner approach.
 
 ---
 
@@ -1311,250 +1389,6 @@ and `var service = fromConfig(config); service.§` all resolve the inferred loca
 Editing `var list = List.o§f("a")` still duplicates the existing call suffix,
 which is already covered by `CQ-0023`.
 
-## CQ-0029 — Wildcard generic receivers do not expose usable bound members
-
-ID: CQ-0029
-Status: planned for M2
-Tier: typed
-Failure mode: missing-candidates
-Owner component: TypeResolver / CompletionEngine
-
-Project/file:
-`/home/ag-libs/git/dropwizard/dropwizard-e2e/src/main/java/com/example/app1/App1Resource.java`
-
-Probe command:
-```bash
-printf 'diagnostics\ninject "final java.util.Collection<? extends Number> numbers = java.util.List.of(1); numbers.iterator().next()." at 37\nlog 45\n' \
-  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-e2e/src/main/java/com/example/app1/App1Resource.java
-```
-
-Related probes:
-```bash
-printf 'diagnostics\ninject "final java.util.List<? extends Number> numbers = java.util.List.of(1); numbers.get(0)." at 37\nlog 45\n' \
-  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-e2e/src/main/java/com/example/app1/App1Resource.java
-
-printf 'diagnostics\ninject "final java.util.Map<String, ? extends Number> numbers = java.util.Map.of(\"x\", 1); numbers.get(\"x\")." at 37\nlog 45\n' \
-  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-e2e/src/main/java/com/example/app1/App1Resource.java
-
-printf 'diagnostics\ninject "final java.util.Collection<?> values = java.util.List.of(\"a\"); values.iterator().next()." at 37\nlog 45\n' \
-  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-e2e/src/main/java/com/example/app1/App1Resource.java
-```
-
-Cursor context:
-```java
-final java.util.Collection<? extends Number> numbers = java.util.List.of(1);
-numbers.iterator().next().§
-
-final java.util.List<? extends Number> numbers = java.util.List.of(1);
-numbers.get(0).§
-
-final java.util.Map<String, ? extends Number> numbers = java.util.Map.of("x", 1);
-numbers.get("x").§
-
-final java.util.Collection<?> values = java.util.List.of("a");
-values.iterator().next().§
-```
-
-IntelliJ or JDT behavior:
-Expected IDE behavior is to expose members from the capture's usable upper bound.
-For `? extends Number`,
-member completion should show `Number` methods such as `intValue`,
-`longValue`,
-and `doubleValue`.
-For unbounded `?`,
-member completion should at least show `Object` methods.
-
-Lathe behavior:
-All wildcard probes return no completion items.
-The log shows `sentinelCtx=MEMBER_ACCESS` but receiver resolution fails:
-```text
-resolve receiver=|numbers.iterator().next()| type=null static=null reattributed=true
-resolve receiver=|numbers.get(0)| type=null static=null reattributed=true
-resolve receiver=|numbers.get("x")| type=null static=null reattributed=true
-resolve receiver=|values.iterator().next()| type=null static=null reattributed=true
-```
-
-Expected Lathe behavior:
-When a generic member returns a captured wildcard,
-Lathe should use the capture's upper bound for completion.
-Examples:
-
-- `Collection<? extends Number>.iterator().next().§` should complete as `Number`.
-- `List<? extends Number>.get(0).§` should complete as `Number`.
-- `Map<String, ? extends Number>.get("x").§` should complete as `Number`.
-- `Collection<?>.iterator().next().§` should complete as `Object`.
-
-Accepted edit, if relevant:
-Not applicable.
-No candidate is returned.
-
-Regression target:
-`CompletionMemberAccessTest.memberAccess_wildcardExtendsCollectionElement_usesUpperBound`
-`CompletionMemberAccessTest.memberAccess_unboundedWildcardCollectionElement_usesObjectBound`
-
-Notes:
-Non-wildcard generic controls work correctly:
-`Map<String, String>.entrySet().iterator().next().§` returns `Entry.getKey() : String`
-and `Entry.getValue() : String`;
-`Map<String, List<String>>.get("x").§` returns `List<String>` methods;
-`Map<String, List<String>>.get("x").get(0).§` returns `String` methods;
-and `Collection<String>.iterator().next().§` returns `String` methods.
-
-## CQ-0030 — Type-variable receivers do not expose declared bounds
-
-ID: CQ-0030
-Status: planned for M2
-Tier: typed
-Failure mode: missing-candidates
-Owner component: TypeResolver / CompletionEngine
-
-Project/file:
-`/home/ag-libs/git/dropwizard/dropwizard-core/src/main/java/io/dropwizard/core/setup/Bootstrap.java`
-
-Probe command:
-```bash
-printf 'diagnostics\ninject "configuration." at 199\nlog 45\n' \
-  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-core/src/main/java/io/dropwizard/core/setup/Bootstrap.java
-```
-
-Related probes:
-```bash
-printf 'diagnostics\ninject "public <T extends java.util.Collection<String>> void use(T value) { value.§ }" at 40\nlog 50\n' \
-  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-e2e/src/main/java/com/example/app1/App1Resource.java
-
-printf 'diagnostics\ninject "return call.call()." at 181\nlog 45\n' \
-  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-testing/src/main/java/io/dropwizard/testing/common/DAOTest.java
-```
-
-Cursor context:
-```java
-public class Bootstrap<T extends Configuration> {
-    public void run(T configuration, Environment environment) throws Exception {
-        configuration.§
-    }
-}
-
-public <T extends java.util.Collection<String>> void use(T value) {
-    value.§
-}
-
-public <T> T inTransaction(Callable<T> call) {
-    return call.call().§
-}
-```
-
-IntelliJ or JDT behavior:
-Expected IDE behavior is to expose members available through the type variable's declared bound.
-For `T extends Configuration`,
-completion should show `Configuration` and `Object` members.
-For `T extends Collection<String>`,
-completion should show `Collection<String>` members.
-For unbounded `T`,
-completion should at least show `Object` members.
-
-Lathe behavior:
-Bounded type-variable receivers return no completion items.
-The log preserves the type variable but does not expand its bound:
-```text
-resolve receiver=|configuration| type=T static=false reattributed=false
-proposals count=0 labels=[]
-
-resolve receiver=|value| type=T static=false reattributed=true
-proposals count=0 labels=[]
-```
-
-For the generic method return probe,
-`Callable<T>.call().§` also returns no items:
-```text
-resolve receiver=|call.call()| type=null static=null reattributed=true
-```
-
-Expected Lathe behavior:
-Type-variable member completion should use the effective upper bound.
-If the bound is parameterized,
-the substituted type should be used for method signatures:
-for `T extends Collection<String>`,
-`iterator()` should be shown as returning `Iterator<String>`,
-`stream()` as `Stream<String>`,
-and `forEach` as accepting `Consumer<? super String>`.
-
-Accepted edit, if relevant:
-Not applicable.
-No candidate is returned.
-
-Regression target:
-`CompletionMemberAccessTest.memberAccess_classTypeVariable_usesDeclaredBound`
-`CompletionMemberAccessTest.memberAccess_methodTypeVariable_usesDeclaredBound`
-`CompletionMemberAccessTest.memberAccess_unboundedMethodTypeVariable_usesObjectBound`
-
-Notes:
-Generic type-reference completion while declaring bounds works:
-`public <T extends RuntimeEx§> T identity(T value) { return value; }`
-offers `RuntimeException` and accepts to
-`public <T extends RuntimeException§> T identity(T value) { return value; }`.
-Local generic class bounds also work for
-`class Local<T extends RuntimeEx§`.
-
-## Current Triage
-
-All accepted completion-quality gaps from the `DropwizardResourceConfig` explorer pass have been resolved or triaged.
-
-The latest Helidon/Dropwizard explorer pass added `CQ-0023`,
-`CQ-0024`,
-`CQ-0025`,
-`CQ-0026`,
-`CQ-0028`,
-`CQ-0029`,
-and `CQ-0030`.
-It also reconfirmed deferred `CQ-0002` with additional method-reference probes on
-`List::stream`,
-`Duration::toMilliseconds`,
-and `poolConfig::setValidationQuery`.
-
-`CQ-0001`,
-`CQ-0003`,
-`CQ-0004`,
-`CQ-0005`,
-`CQ-0006`,
-`CQ-0007`,
-`CQ-0008`,
-`CQ-0009`,
-`CQ-0012`,
-`CQ-0013`,
-`CQ-0014`,
-`CQ-0015`,
-`CQ-0016`,
-`CQ-0017`,
-`CQ-0018`,
-`CQ-0019`,
-`CQ-0020`,
-and `CQ-0021` are fixed and covered by regression tests.
-A second explorer pass covering `LoomServer`, `DropwizardTestSupport`, `BaseConfigurationFactory`,
-`ProxyProtocolHandler`, and `Environment` confirmed that lambda body member access,
-fluent builder chains,
-catch block exception types,
-instanceof pattern variables,
-static import completion,
-multi-catch second type,
-ternary branch member access,
-stream map lambda parameter types,
-and record accessor member access all work correctly.
-
-Two new high-confidence gaps were found and recorded as `CQ-0020` and `CQ-0021`.
-
-`CQ-0002` is planned for M2.
-`CQ-0011` remains deferred.
-`CQ-0029` and `CQ-0030` are planned for M2.
-`CQ-0010` is closed as an editor-side capability gap.
-
-A 2026-06-26 sample-workspace pass on `AppServer` (anonymous `AbstractBinder.configure()`) recorded
-`CQ-0040`: member completion on the captured-wildcard result of `bind(x).to(Y.class)` returns nothing.
-It shares the `CQ-0029`/`CQ-0030` root cause but is pulled into M1 because it breaks the ubiquitous
-HK2/Jersey binder DSL on a real workspace.
-
-Next completion work should run a new explorer pass with a different focus area,
-or pick up one of the gaps explicitly assigned to M2.
-
 ## CQ-0004 — Dotted member access can fall back to simple-name completion in incomplete assignments
 
 ID: CQ-0004
@@ -1965,60 +1799,6 @@ return type alone in `labelDetails.description`,
 and the ` : ` separator only in the fallback `detail` string.
 The spacing should be handled by the Neovim completion renderer,
 not by changing Lathe's server-side LSP data away from the JDT LS shape.
-
-## CQ-0011 — Constructor invocation keywords can be offered when an explicit invocation already exists
-
-ID: CQ-0011
-Status: deferred
-Tier: semantic
-Failure mode: invalid-keyword-candidate
-Owner component: KeywordProvider / SentinelParser
-
-Project/file:
-`/home/ag-libs/git/dropwizard/dropwizard-jersey/src/main/java/io/dropwizard/jersey/DropwizardResourceConfig.java`
-
-Probe command:
-```bash
-printf 'inject "this" at 63\nlog 20\n' \
-  | python3 dev/explore.py /home/ag-libs/git/dropwizard/dropwizard-jersey/src/main/java/io/dropwizard/jersey/DropwizardResourceConfig.java
-```
-
-Cursor context:
-```java
-public DropwizardResourceConfig(@Nullable MetricRegistry metricRegistry) {
-    this§
-    super();
-    ...
-}
-```
-
-IntelliJ or JDT behavior:
-Expected IDE behavior is to avoid suggesting an explicit constructor invocation
-when the constructor body already contains one.
-Java permits at most one explicit constructor invocation,
-and it must be the first statement in the constructor body.
-
-Lathe behavior:
-Lathe offers the `this` keyword at the first statement slot before an existing `super();`.
-Accepting it as a constructor invocation starter would leave both `this...` and `super();`
-in the same constructor body.
-
-Expected Lathe behavior:
-`this` and `super` constructor-invocation keyword candidates should be offered only when the current
-constructor does not already contain an explicit `this(...)` or `super(...)` invocation.
-They should also be constrained to the first-statement position.
-
-Accepted edit, if relevant:
-Not applicable until constructor-invocation completion adds call-shape snippets.
-
-Regression target:
-Future keyword completion test for constructor first-statement rules.
-
-Notes:
-This gap is about `this` and `super` as explicit constructor invocation starters.
-It should not block ordinary `this` expression completion,
-`this.member` access,
-or `super.member` access where those are otherwise legal.
 
 ## CQ-0012 — Member completion after assignment can be misclassified as a type reference
 
@@ -2607,77 +2387,6 @@ This is a real Dropwizard probe with no diagnostics.
 Fixed for enum member access,
 unnamed enum `value()` elements,
 and unnamed enum-array `value()` elements.
-
-## CQ-0002 — Method-reference completion returns no candidates
-
-ID: CQ-0002
-Status: planned for M2
-Tier: assistive
-Failure mode: missing-candidate
-Owner component: SentinelInjector / SentinelParser
-
-Project/file:
-`/home/ag-libs/git/helidon/dbclient/tracing/src/main/java/io/helidon/dbclient/tracing/DbClientTracingProvider.java`
-
-Probe command:
-```bash
-printf 'complete after "List::" expect of min 1\nlog 30\n' \
-  | python3 dev/explore.py /home/ag-libs/git/helidon/dbclient/tracing/src/main/java/io/helidon/dbclient/tracing/DbClientTracingProvider.java
-```
-
-Related project/file:
-`/home/ag-libs/git/helidon/dbclient/mongodb/src/main/java/io/helidon/dbclient/mongodb/MongoDbClientBuilder.java`
-
-Related probe:
-```bash
-printf 'complete after "this::" expect url username password min 1\nlog 30\n' \
-  | python3 dev/explore.py /home/ag-libs/git/helidon/dbclient/mongodb/src/main/java/io/helidon/dbclient/mongodb/MongoDbClientBuilder.java
-```
-
-Cursor context:
-```java
-config.asNodeList().orElseGet(List::of)
-connConfig.get("url").asString().ifPresent(this::url)
-```
-
-IntelliJ or JDT behavior:
-Expected IDE behavior is method-reference completion after `Type::` and `this::`.
-
-Lathe behavior:
-No completions are returned.
-The log shows `parsed valid=false sentinelCtx=null` after `List::` and after `this::`.
-
-Expected Lathe behavior:
-Eventually,
-method-reference completion should offer compatible methods for the receiver and target functional interface.
-
-Accepted edit, if relevant:
-Accepting `of` after `List::` should produce `List::of`.
-Accepting `url` after `this::` should produce `this::url`.
-
-Future design:
-Method-reference completion is M2 work.
-It is not required for M1 Internal Preview.
-The first implementation slice should be basic receiver-member listing,
-not full smart compatibility filtering.
-Add a `METHOD_REFERENCE` sentinel site,
-detect `::`,
-capture receiver text similarly to member access,
-and route simple cases through member candidate generation.
-`TypeName::` should offer static methods such as `List::of`;
-`this::` should offer visible instance methods such as `this::url`;
-ordinary expression receivers such as `service::` should offer instance methods.
-Expected functional-interface filtering should be a later slice,
-because robust compatibility needs the target type from contexts such as `orElseGet`,
-`ifPresent`,
-and `stream.map`.
-Constructor references such as `TypeName::new` and array constructor references are also later slices.
-
-Regression target:
-Future method-reference completion test class or `CompletionEngineTest` method-reference section.
-
-Notes:
-This matches the existing deferred method-reference gap in the historical completion docs.
 
 ## CQ-0003 — In-token method completion does not replace the suffix
 

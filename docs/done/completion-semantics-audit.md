@@ -3,8 +3,9 @@
 This document is a historical gap-discovery aid for completion behavior.
 It is not the normative design.
 
-Current completion expectations and active gap tracking live in
-[`../planned/completion/`](../planned/completion/).
+Current completion expectations live in
+[`../planned/lathe-completion-expectations.md`](../planned/lathe-completion-expectations.md); active
+gap tracking is in the registry [`../gaps.md`](../gaps.md).
 
 The goal is to make Java syntax-site behavior explicit before implementation fixes are made.
 Each row should eventually map to active tests, a documented gap, or a deliberate non-goal.
@@ -62,6 +63,6 @@ Each row should eventually map to active tests, a documented gap, or a deliberat
 ## Current Use
 
 Use this matrix as historical context when expanding
-[`../planned/completion/expectations.md`](../planned/completion/expectations.md).
-New discrepancies should be recorded as `CQ-*` entries in
-[`../planned/completion/gap-log.md`](../planned/completion/gap-log.md).
+[`../planned/lathe-completion-expectations.md`](../planned/lathe-completion-expectations.md).
+New discrepancies should be recorded as `CQ-*` entries in the gap registry
+[`../gaps.md`](../gaps.md).

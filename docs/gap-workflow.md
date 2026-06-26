@@ -1,15 +1,20 @@
-# Lathe — Completion Discovery Workflow
+# Lathe — Gap Workflow
 
-This document describes how completion discrepancies should move from observation to regression coverage.
+This document describes how a gap moves from observation to regression coverage, for any area
+(exploration, references, code actions, completion).
 
 The short version:
 use real-project probes to discover issues,
+record them in the active registry [gaps.md](gaps.md) with a `Status` and a `Target`,
 reduce accepted issues to focused tests,
-and record anything unresolved in the gap log.
+and archive resolved entries to [gaps-archive.md](gaps-archive.md).
 
-Completion gaps follow the shared gap lifecycle in [gap-process.md](../../gap-process.md):
-every `CQ-` entry carries a `Status` and a `Target` (release or `backlog`), and milestone
-targeting is always the `Target` field — never the `Tier`.
+Every gap follows the shared [gap lifecycle](gap-process.md); milestone targeting is always the
+`Target` field — never the `Tier` (a completion-only category).
+
+Completion is the most formalized area and has the richest probe tooling, so the recipes below are
+written from the completion workflow and double as the general guide.
+The completion behavioral contract is [expectations.md](planned/lathe-completion-expectations.md).
 
 ## Tools
 
@@ -185,7 +190,7 @@ Use `inject` for temporary source changes.
 
 ## Gap Recording Location
 
-Record active completion discrepancies in [`gap-log.md`](gap-log.md).
+Record active gaps in the registry [`gaps.md`](gaps.md) (completion gaps use the `CQ-` prefix).
 
 Use one heading per entry:
 
@@ -224,7 +229,7 @@ not the final specification.
 
 ## Tiers
 
-Use the tiers from [`expectations.md`](expectations.md):
+Use the tiers from [`expectations.md`](planned/lathe-completion-expectations.md):
 
 - `basic`
 - `typed`
