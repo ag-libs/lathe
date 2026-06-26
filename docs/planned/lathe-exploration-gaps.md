@@ -1,16 +1,24 @@
-# Lathe — M1 Exploration Gaps
+# Lathe — Exploration Gaps
 
-This document records gaps found during a systematic live-probing session against the
-Helidon (332-module) and Dropwizard (68-module) workspaces.
-EG-013 and EG-014 were added from a later session against the sample-workspace (25-module)
-workspace, which makes heavy use of the `record-companion` `@Builder` annotation processor.
-EG-020 through EG-024 were added from a completion-focused session in the same workspace that
-emulated authoring a new source file from scratch inside a JPMS module.
-Each gap was confirmed against a running Lathe server with `LATHE_DEBUG=1` and is independent of
+This is the single consolidated gap tracker for Lathe.
+It spans both M1 and M2 and folds together three gap families:
+
+- **EG-NNN — Exploration gaps** from systematic live-probing sessions against the Helidon
+  (332-module), Dropwizard (68-module), and sample-workspace (25-module) workspaces.
+- **FR-NNN — Find References gaps** (scope policy, failure propagation, and end-to-end coverage).
+- **CA-N — Code Action gaps** found while probing `textDocument/codeAction`.
+
+The EG gaps were discovered as follows: EG-001–EG-012 against Helidon and Dropwizard; EG-013 and
+EG-014 against sample-workspace, which makes heavy use of the `record-companion` `@Builder`
+annotation processor; and EG-020 through EG-024 from a completion-focused session in the same
+workspace that emulated authoring a new source file from scratch inside a JPMS module.
+Each EG gap was confirmed against a running Lathe server with `LATHE_DEBUG=1` and is independent of
 explore.py positioning behaviour.
 
 Gaps that are already tracked under an existing design document are cross-referenced rather than
 duplicated here.
+Completion-quality gaps (CQ-NNN) live separately in
+[completion/gap-log.md](completion/gap-log.md), which is part of the completion discovery workflow.
 
 ## Status
 
@@ -27,7 +35,7 @@ duplicated here.
 | EG-009 | Outgoing calls includes anonymous class constructor instantiations with empty name | M1 |
 | EG-010 | `explore.py` cannot probe dep/JDK source files — no workspace context for cache paths | M1 |
 | EG-011 | Outgoing calls silently omits callees whose source is in extracted dep or JDK dirs | M2 |
-| EG-012 | `textDocument/declaration` not implemented; overriding method declarations have no path to the contract/interface method | M1 |
+| EG-012 | `textDocument/declaration` navigates an overriding method to its contract/interface method — **implemented** ([lathe-declaration.md](lathe-declaration.md)) | M1 ✓ |
 | EG-013 | Find References candidate discovery excludes generated annotation sources; references in `@Builder`-generated classes are never found | M2 |
 | EG-014 | Find References on an overriding method returns only exact-static-type call sites, not polymorphic uses of the overridden method | M2 |
 | EG-015 | Override/implement completion missing; a method-name prefix in a class body offers only type candidates, no override stubs | M2 |
@@ -139,9 +147,9 @@ code-action response returns only `"Add 'throws ...' to method"`.
 This was tested in both Helidon and Dropwizard module method bodies (non-lambda context) using a
 Python test script that called `didSave` with injected source and then called `codeAction`.
 
-### Relationship to existing Gap 1
+### Relationship to code-action gap CA-1
 
-`lathe-code-actions-gaps.md` Gap 1 identifies this for the **lambda** case and proposes
+Code-action gap CA-1 (below) identifies this for the **lambda** case and proposes
 `TryCatchWrapProvider` as the fix.
 This gap confirms that `TryCatchWrapProvider` is absent entirely — the lambda-context
 route is not the only missing branch; the baseline non-lambda method-body route is also missing.
@@ -150,7 +158,7 @@ route is not the only missing branch; the baseline non-lambda method-body route 
 
 ### Proposed fix
 
-Implement `TryCatchWrapProvider` as described in `lathe-code-actions-gaps.md` Gap 1.
+Implement `TryCatchWrapProvider` as described in code-action gap CA-1 below.
 The provider must handle both contexts:
 
 - Regular method body: wrap the statement containing the throw or checked call in a
@@ -158,7 +166,7 @@ The provider must handle both contexts:
 - Lambda/anonymous-class body: same wrapping, targeted at the statement within the lambda.
 
 Once `TryCatchWrapProvider` is implemented, the `AddThrowsProvider` lambda-suppression from
-`lathe-code-actions-gaps.md` Gap 1 should be applied alongside it.
+code-action gap CA-1 should be applied alongside it.
 
 ### Regression targets
 
@@ -455,7 +463,7 @@ Based on this session, the following items are **not working**:
 | Claim | Actual state |
 |---|---|
 | try/catch wrapping works | `TryCatchWrapProvider` is not implemented; the action is never returned (EG-002) |
-| variable declaration works | `DeclareVariableProvider` is not implemented; see code-actions-gaps.md Gap 2 |
+| variable declaration works | `DeclareVariableProvider` is not implemented; see code-action gap CA-2 below |
 
 Both items should be removed from the "implemented" list in `status.md` until the providers
 are in place and covered by tests.
@@ -620,15 +628,22 @@ have the cache path as their `uri`, consistent with how `definition` navigates t
 
 ---
 
-## EG-012 — `textDocument/declaration` not implemented; no path from override to contract method
+## EG-012 — `textDocument/declaration`: navigate an override to its contract method
 
-**Milestone: M1**
+**Milestone: M1 — ✓ implemented.**
+The design of record is [lathe-declaration.md](lathe-declaration.md).
+The implementation resolves to the **root contract** (walking the full supertype hierarchy, not just
+direct supertypes) and handles **both** the declaration site and the call site, with a fallback to
+`definition` for non-overriding symbols.
+The "Proposed fix" and "Implementation notes" below are retained as the historical gap record; where
+they pose open questions, those were resolved in favour of root-contract resolution and call-site
+support per the design doc.
 
-### Observed behaviour
+### Observed behaviour (historical)
 
 Java IDEs commonly provide a quick way to navigate from an overriding method declaration to the
 method it overrides in a superclass or interface.
-Lathe does not currently expose that navigation.
+Before EG-012 was implemented, Lathe did not expose that navigation.
 
 Probing `MongoDbClient` in Helidon confirms:
 
@@ -1432,7 +1447,7 @@ Items without dependencies may proceed in parallel.
 2. **EG-002** (try/catch wrap) — implement `TryCatchWrapProvider` for both regular method and
    lambda contexts.
    Closes the main code-action gap and fixes a false status.md claim.
-   See also `lathe-code-actions-gaps.md` Gap 1 for the lambda-suppression companion change to
+   See also code-action gap CA-1 for the lambda-suppression companion change to
    `AddThrowsProvider`.
 
 3. **EG-001** (signature help inner method) — fix backward-scan anchor in `SignatureHelpLocator`.
@@ -1460,10 +1475,412 @@ Items without dependencies may proceed in parallel.
    its kind and set a stable diagnostic code.
    Small, bounded change to the unused-declaration scan.
 
-10. **EG-012** (`textDocument/declaration`) — implement `textDocument/declaration` to allow
-    navigating from an override to its contract method.
+10. **EG-012** (`textDocument/declaration`) — ✓ **implemented**: navigates an override to its
+    contract method (root contract, declaration and call sites). See
+    [lathe-declaration.md](lathe-declaration.md).
 
 EG-011, EG-013 through EG-018, and EG-020 through EG-024 are M2 work, tracked alongside the
 external-source Find References, navigation, completion, and editor-feature scope expansion.
 EG-023 should be implemented together with EG-008 (shared Object-method suppression list), and
 EG-021 together with EG-006 (shared reactor-origin ranking).
+
+---
+
+# Find References Gaps (FR-NNN)
+
+Current correctness, policy, and test-coverage gaps in `textDocument/references`.
+The original feature design remains in [lathe-find-references.md](../done/lathe-find-references.md);
+this section is the current gap tracker when the original design and implemented behavior differ.
+
+### Current behaviour
+
+Find References uses javac attribution for exact symbol matching and a textual candidate index to
+avoid compiling every workspace file.
+
+The implemented search supports:
+
+- same-file references;
+- open and closed files in the declaring module;
+- transitive downstream reactor modules;
+- private and local symbol restriction to the declaring file;
+- package-private restriction to the declaring package;
+- explicit imports, wildcard imports, static imports, and implicit `java.lang` type candidates.
+
+Confirmed working:
+
+- `java.lang.String` returns project references from project source;
+- `java.time.Duration` returns project references from project source;
+- `java.lang.String` from the cached JDK `String.java` declaration returns reactor usages (FR-001 fixed);
+- the Helidon `Duration` incident produced two server-side locations in 12 ms.
+
+The remaining gaps concern external-symbol scope policy, failure reporting, and end-to-end
+verification.
+
+## FR-001 — References from external source have no workspace search root
+
+Status: fixed.
+
+When Find References is invoked from a cached JDK or dependency source file,
+`WorkspaceSession.referencesFuture()` derives the search scope from `cursorConfig`, which is empty
+for external paths not belonging to any reactor `ModuleSourceConfig`.
+The `REACTOR_MODULES` branch previously called `.orElse(List.of())`, so no project file was ever
+searched.
+
+### Fix
+
+`WorkspaceSession.referencesFuture()` — change `orElse(List.of())` to
+`orElseGet(workspace::allConfigs)` for the `REACTOR_MODULES` scope branch.
+When the cursor is in an external source file, all reactor module configs are searched;
+`ReferenceCandidatePlanner` and javac identity matching filter out files that do not actually
+reference the target.
+
+The `DECLARING_MODULE` branch retains `orElse(List.of())` — there is no meaningful reactor
+module scope to derive for a package-private external symbol.
+
+### Regression test
+
+`LspSmokeTest.references_fromCachedJdkSource_findsReactorUsages` — opens the JDK `String.java`
+from the Lathe cache, requests references at the class declaration, and asserts that
+`StringUtils.java` (which declares `String upper(String s)`) appears in the results.
+The reactor-origin case is covered by
+`LspSmokeTest.references_fromReactorSource_findsUsageAcrossModules`.
+
+## FR-002 — External-symbol search scope policy is unresolved
+
+Status: roadmap gap requiring a product decision.
+
+The original design says JDK and third-party symbols should search open files only.
+The implementation instead searches reactor files selected from the cursor module's downstream
+graph.
+
+The current implementation is more useful for users asking for project-wide references to common
+types, but it can be expensive:
+
+- `String` may select a large part of the workspace;
+- common dependency methods may require attribution of many candidate files;
+- the result depends on which project module contains the cursor usage.
+
+Restricting external symbols to open files would satisfy the original performance policy but would
+make Find References incomplete in a way that is surprising for a workspace operation.
+
+### Recommended direction
+
+Preserve project-wide correctness and improve execution rather than silently restricting results to
+open files.
+
+The preferred progression is:
+
+1. retain candidate-index filtering;
+2. search all relevant workspace modules when the target is external;
+3. add cancellation propagation;
+4. support LSP partial results for large result sets;
+5. consider a user-visible warning only when candidate counts exceed a measured threshold.
+
+The roadmap's open-file-only statement should not be implemented until this policy is explicitly
+confirmed.
+
+### Required measurement
+
+Record candidate count, attributed-file count, elapsed time, and result count for representative
+symbols:
+
+- `java.lang.String`;
+- `java.time.Duration`;
+- one frequently used dependency type;
+- one static dependency method;
+- one external method reference.
+
+## FR-003 — Failures are converted into empty results
+
+Status: verified error-handling gap.
+
+The references pipeline currently has two silent-recovery boundaries:
+
+- `SourceAnalysisSession.searchReferences()` catches `IOException`, logs it, and returns an empty
+  list;
+- `WorkspaceSession.referencesFuture()` catches any exceptional completion, logs it, and returns an
+  empty list.
+
+Consequently, the client cannot distinguish:
+
+- a symbol with no references;
+- a source-read failure;
+- a compiler or attribution failure;
+- a worker failure;
+- a bug in result aggregation.
+
+This conflicts with the fail-fast policy in
+[lathe-m1-refactoring.md](lathe-m1-refactoring.md).
+
+### Required behavior
+
+- Lower layers preserve and propagate failures with useful URI or path context.
+- Lower layers do not log and then return an empty result.
+- The nearest upstream references-operation boundary logs the failure once with the `Throwable`.
+- The LSP request completes exceptionally rather than reporting a successful empty result.
+- Legitimate absence, including an unresolved cursor element, remains an empty result.
+
+### Required tests
+
+- A source-read failure completes the references request exceptionally.
+- A module-worker failure reaches the upstream request boundary.
+- The failure is logged once rather than at both analysis and workspace layers.
+- A valid symbol with no references still returns an empty list.
+
+## FR-004 — No end-to-end invoker coverage
+
+Status: verified test gap.
+
+The Maven invoker `LspSmokeTest` checks that `referencesProvider` is advertised but never sends a
+`textDocument/references` request.
+
+Existing server tests cover important pieces independently:
+
+- `ReferenceCandidateIndexTest` covers token and import indexing;
+- `ReferenceCandidatePlannerTest` covers explicit imports, wildcard imports, static members, and
+  implicit `java.lang.String` candidates;
+- `ReferenceLocatorTest` covers attributed identity matching, roles, scope classification, and
+  cross-compilation matching.
+
+No test covers the complete path:
+
+```text
+LSP request
+  -> open-document lookup
+  -> cursor target resolution
+  -> workspace scope planning
+  -> candidate selection
+  -> module-worker attribution
+  -> Location aggregation
+  -> JSON-RPC response
+  -> client receipt
+```
+
+### Required invoker cases
+
+Extend the existing multi-module LSP smoke test rather than creating a second server launcher.
+
+At minimum:
+
+1. Open a project source file through `didOpen`.
+2. Request references for a reactor symbol and assert same-module or cross-module locations.
+3. Request references for `java.lang.String` and assert at least one project location.
+4. Request references for `java.time.Duration` and assert project locations.
+5. Open the cached JDK `Duration.java` returned by definition navigation.
+6. Request references from its declaration and assert project locations.
+
+The test must inspect returned URIs and ranges, not only result count.
+
+## FR-005 — Client response incident is not reproducibly covered
+
+Status: observed incident; server defect not established.
+
+In the Helidon incident, the server log ended immediately after:
+
+```text
+[references] MongoDbClient.java element=Duration hits=2
+[references] MongoDbExecute.java element=Duration hits=0
+[references] MongoDbClient.java 12ms target=Duration hits=2
+```
+
+There was no server exception, fatal JVM message, shutdown record, or RPC exit record.
+Lathe therefore completed reference computation successfully, but Neovim did not display the two
+locations before the editor/session connection ended.
+
+This does not establish a Lathe crash.
+It establishes that the current tests stop before JSON-RPC client receipt and cannot distinguish a
+server response failure from an editor-side display or process failure.
+
+### Required investigation support
+
+- The invoker client must await and assert the actual references response.
+- A focused service test should verify that the `CompletableFuture` completes with serializable LSP
+  `Location` values.
+- Operation logging should retain the request URI, target, elapsed time, and final hit count.
+- If another incident occurs, capture the Neovim process exit status and RPC client-exit event in
+  addition to the server log.
+
+No production fix should be attributed to this incident until it is reproduced outside the editor or
+an RPC/client error is captured.
+
+### Find References implementation order
+
+1. Add invoker coverage for the currently working reactor and project-origin JDK cases.
+2. Add a failing external-declaration invoker case.
+3. Fix external-source workspace search-root selection.
+4. Replace empty-result exception recovery with fail-fast propagation and single-boundary logging.
+5. Measure external-symbol project-wide search cost.
+6. Decide and document the final external-symbol scope policy.
+7. Add cancellation and partial-result support if measurements justify it.
+
+The external-declaration correctness fix and failure-propagation change should be independently
+reviewable.
+Do not combine them with candidate-index optimization.
+
+### Find References verification
+
+```bash
+mvn spotless:apply
+mvn test -pl lathe-server
+mvn verify -pl lathe-maven-plugin -Dinvoker.test=multi-module
+```
+
+Final verification must demonstrate all four request origins:
+
+| Target origin | Symbol origin | Expected search result |
+|---|---|---|
+| Project source | Reactor | Exact project references |
+| Project source | JDK/dependency | Exact project references |
+| Cached external source | JDK | Exact project references |
+| Cached external source | Dependency | Exact project references |
+
+---
+
+# Code Action Gaps (CA-N)
+
+Gaps found during live probing of `textDocument/codeAction` on the Dropwizard and Helidon
+codebases after the initial code-action implementation (`ImportQuickFixProvider` +
+`AddThrowsProvider`).
+Each gap describes the observed behaviour, the root cause, and the proposed fix.
+
+## CA-1 — `UNREPORTED_EXCEPTION` inside a lambda body has no action
+
+### Observed behaviour
+
+```java
+Runnable r = () -> { throw new IOException("x"); };
+```
+
+Diagnostic: `UNREPORTED_EXCEPTION / java.io.IOException` — correctly classified and published
+with a `JsonObject` payload.
+Code-action request: returns zero actions.
+
+### Root cause
+
+`AddThrowsProvider.provide()` walks the AST up from the diagnostic position looking for the first
+enclosing `MethodTree`.
+A lambda body is a `LambdaExpressionTree`, not a `MethodTree`, so the walk continues past it.
+
+When the lambda is a **field initializer** there is no enclosing `MethodTree` at all —
+the walk reaches the `CompilationUnitTree` and the path becomes `null`, causing the provider to
+return `List.of()`.
+
+When the lambda is inside a **method body**, the walk does find the outer method and offers
+"Add throws IOException to method".
+This is semantically wrong: the exception cannot propagate past the lambda boundary regardless
+of what the outer method declares.
+
+### Proposed fix
+
+Add a `TryCatchWrapProvider` for `UNREPORTED_EXCEPTION` that targets the statement containing
+the throw site and wraps it in a `try { … } catch (ExceptionType e) { }` block.
+
+The `AddThrowsProvider` should be suppressed (or ranked lower) when the throw site is inside a
+`LambdaExpressionTree` or `AnonymousClassTree`, because adding `throws` to the outer method does
+not silence the error.
+
+Detection: walk the path between the diagnostic position and the nearest `MethodTree`;
+if a `LambdaExpressionTree` or `NewClassTree` (anonymous class) is encountered along the way,
+classify the context as "inside closure" and route to the try/catch provider instead.
+
+**Files to change**: `AddThrowsProvider.java` (suppress in closure context),
+new `TryCatchWrapProvider.java`, dispatcher in `SourceAnalysisSession.codeAction()`.
+
+This is the M1 gap also referenced by EG-002.
+
+## CA-2 — `VARIABLE_REF` has no action
+
+### Observed behaviour
+
+```java
+void m() { int x = unknownVar + 1; }
+```
+
+Diagnostic: `VARIABLE_REF / unknownVar` — correctly classified.
+Code-action request: returns zero actions.
+
+### Root cause
+
+`DeclareVariableProvider` does not exist yet.
+The dispatcher routes `VARIABLE_REF` to `List.of()`.
+
+### Proposed fix
+
+Implement `DeclareVariableProvider` as described in `lathe-code-actions.md` §2.7:
+find the assignment or local-variable declaration at the diagnostic offset,
+infer the RHS type via `trees().getTypeMirror(rhsPath)`,
+emit `TypeName varName = …` (with import if needed) or `var varName = …` as a fallback.
+
+**Files to change**: new `DeclareVariableProvider.java`, dispatcher in `SourceAnalysisSession`.
+
+## CA-3 — `MISSING_METHOD_IMPL` is never classified
+
+### Observed behaviour
+
+```java
+public class Foo implements Runnable { }  // missing run()
+```
+
+The compiler emits `compiler.err.does.not.override.abstract`.
+The diagnostic arrives with `data = null` — no payload is set.
+No code action is offered.
+
+### Root cause
+
+`enrichWithContext()` only handles two diagnostic codes:
+`compiler.err.cant.resolve` and `compiler.err.unreported.exception`.
+The `MISSING_METHOD_IMPL` `Kind` exists in the enum but the corresponding classification branch
+is missing.
+
+`MissingMethodImplProvider` is also not yet implemented.
+
+### Proposed fix
+
+**Part A — classify in `enrichWithContext()`.**
+Add a branch for `compiler.err.does.not.override.abstract`.
+The message has the form `"Foo is not abstract and does not override abstract method run() in Runnable"`.
+Extract the class simple name (first token before `"is not abstract"`) and set
+`DiagnosticPayload(MISSING_METHOD_IMPL, className)`.
+
+**Part B — implement `MissingMethodImplProvider`.**
+Look up the `ClassTree` for `payload.name()` in the attributed analysis.
+Use `elements().getAllMembers(classElement)` to enumerate abstract methods not yet overridden.
+Generate `@Override` stubs for each, insert them before the closing `}` of the class body,
+and add any needed imports.
+
+**Files to change**: `SourceAnalysisSession.enrichWithContext()` (classification),
+new `MissingMethodImplProvider.java`, dispatcher in `SourceAnalysisSession`.
+
+## CA-4 — `TYPE_REF` in a `throws` declaration with no index match produces no action
+
+### Observed behaviour
+
+```java
+void m() throws MyCustomException {}
+```
+
+When `MyCustomException` is unresolvable, the diagnostic is classified as `TYPE_REF / MyCustomException`
+and the payload is published correctly.
+If `MyCustomException` is not in the type index, `ImportQuickFixProvider` returns zero actions.
+
+### Root cause
+
+`ImportQuickFixProvider` queries `typeIndex.search(simpleName, 100)` and returns nothing when
+there is no matching entry.
+This is expected for types that have never been compiled (e.g. a new exception class defined
+in the same project but not yet indexed by `lathe:sync`).
+
+### Impact
+
+Medium for M1: this appears when a project type is created or renamed and Lathe has not yet refreshed the reactor
+type index through a full sync.
+Running `mvn process-test-classes` restores the action,
+but the M1 goal is to avoid requiring that round trip when Lathe already has enough local source or reactor-index
+information to answer safely.
+
+### Proposed M1 direction
+
+Treat this as a type-index freshness problem rather than an `ImportQuickFixProvider` provider bug.
+The fix should make newly-created project types available to missing-import code actions from current reactor source or
+fresh in-memory reactor index state,
+without weakening the provider's existing type-index validation path for dependencies and JDK types.

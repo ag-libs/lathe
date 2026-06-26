@@ -32,7 +32,8 @@ Maven Central publication is planned for M3.
 |---|---|---|
 | Diagnostics | Implemented | Fast change diagnostics, full save diagnostics, and unused private/local hints. Duplicate `cant.resolve` errors on the same line are deduplicated; unused-declaration scan is suppressed when compilation has errors. |
 | Hover | Implemented | Includes source-backed Javadoc rendering. |
-| Definition | Implemented with M2 navigation gap | Supports reactor and extracted dependency/JDK sources where available. Override declaration to super/interface method navigation is not exposed yet. |
+| Definition | Implemented | Supports reactor and extracted dependency/JDK sources where available. |
+| Declaration | Implemented | `textDocument/declaration` navigates an overriding method (at its declaration site or a call site) to its root contract method in the superclass or interface; falls back to `definition` for non-overriding symbols. |
 | Completion | Implemented with M2 gaps | Member, type, import, constructor, lambda, argument, keyword, and typed-slot completion. Method references and generic-bound receivers remain. |
 | Completion presentation | Implemented | Label details, generic display, receiver substitution, documentation, and import edits. |
 | Signature help | Implemented | Overloads, active parameters, constructors, parameter names, and Javadoc. |

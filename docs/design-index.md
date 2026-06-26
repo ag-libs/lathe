@@ -9,12 +9,13 @@ Read their current-status sections and compare them with the roadmap before star
 
 ## M1 — Internal Preview
 
-- [Exploration Gaps](planned/lathe-m1-exploration-gaps.md) — live-probing gaps confirmed against Helidon and
-  Dropwizard, including M1 correctness gaps and deferred M2 navigation/search enhancements.
+- [Exploration Gaps](planned/lathe-exploration-gaps.md) — the single consolidated gap tracker: live-probing
+  exploration gaps (EG), Find References gaps (FR), and code-action gaps (CA), spanning M1 and M2.
+- [Declaration](planned/lathe-declaration.md) — `textDocument/declaration` navigating an overriding method to
+  its root contract (EG-012); implemented.
 - [Call Hierarchy](planned/lathe-call-hierarchy.md) — `prepareCallHierarchy`, `incomingCalls`, and `outgoingCalls`
   built on `ReferenceTarget` identity, `ReferenceCandidateIndex` candidate discovery, and two new
   `TreePathScanner` locators.
-- [Code Action Gaps](planned/lathe-code-actions-gaps.md) — missing-method provider and reactor type freshness.
 - [MissingMethodImplProvider](planned/lathe-missing-method-impl.md) — generation of abstract-method stubs.
 - [M1 Refactoring](planned/lathe-m1-refactoring.md) — single consolidated refactoring plan: documentation accuracy,
   fail-fast propagation, DRY/structural extractions, god-class decomposition, naming, and test-suite hygiene.
@@ -23,10 +24,10 @@ Read their current-status sections and compare them with the roadmap before star
 
 ## M2 — Neovim Public Beta
 
-- [Exploration Gaps (deferred)](planned/lathe-m1-exploration-gaps.md) — EG-003 (hover in Javadoc type-reference tags)
+- [Exploration Gaps (deferred)](planned/lathe-exploration-gaps.md) — EG-003 (hover in Javadoc type-reference tags)
   and EG-005 (CamelCase and infix workspace symbol matching) deferred from M1.
-- [Find References Gaps](planned/lathe-find-references-gaps.md) — external-source scope, failure propagation, and
-  integration coverage.
+- [Find References Gaps](planned/lathe-exploration-gaps.md) — FR-002 external-source scope, FR-003 failure
+  propagation, and FR-004 integration coverage (in the consolidated gaps doc).
 - [Completion Expectations](planned/completion/expectations.md) — expected completion behavior.
 - [Completion Gap Log](planned/completion/gap-log.md) — active completion gaps, including method references and generic
   bounds.

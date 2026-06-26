@@ -53,10 +53,18 @@ See [lathe-m1-refactoring.md](planned/lathe-m1-refactoring.md).
 
 See [lathe-call-hierarchy.md](planned/lathe-call-hierarchy.md).
 
+### Declaration ✓
+
+- Implement `textDocument/declaration` to navigate an overriding method to its contract method
+  (EG-012). Resolves to the root contract across the full supertype hierarchy and handles both the
+  declaration site and the call site, falling back to `definition` for non-overriding symbols.
+
+See [lathe-declaration.md](planned/lathe-declaration.md).
+
 ### Live-probing correctness fixes
 
-Gaps confirmed by systematic probing against Helidon and Dropwizard.
-See [lathe-m1-exploration-gaps.md](planned/lathe-m1-exploration-gaps.md).
+Gaps confirmed by systematic probing against Helidon, Dropwizard, and sample-workspace.
+See [lathe-exploration-gaps.md](planned/lathe-exploration-gaps.md).
 
 - Fix signature help returning the wrong signature when the first argument is itself a method call (EG-001).
 - Implement `TryCatchWrapProvider` for `UNREPORTED_EXCEPTION` in regular method and lambda bodies (EG-002).
@@ -64,6 +72,9 @@ See [lathe-m1-exploration-gaps.md](planned/lathe-m1-exploration-gaps.md).
 - Boost reactor-origin entries ahead of dependency and JDK entries in workspace symbol results (EG-006).
 - Downgrade duplicate-type index messages from WARNING to FINE and deduplicate at merge time (EG-007).
 - Suppress `wait`, `notify`, and `notifyAll` from member-access completion results (EG-008).
+- Skip anonymous-class instantiations with empty names in outgoing-calls results (EG-009).
+- Add a `--workspace` flag to `explore.py` so dependency and JDK cache sources can be probed (EG-010).
+- Emit a descriptive unused-declaration message naming the declaration and its kind, with a stable code (EG-019).
 
 ### Code-action and index freshness gaps
 
@@ -95,7 +106,7 @@ It remains a build-from-source release.
 - Add CamelCase initial matching to workspace symbol search (EG-005).
 - Fix hover on type names inside Javadoc `{@link}` and `{@see}` tags using `DocTrees.getElement` (EG-003).
 
-See [lathe-m1-exploration-gaps.md](planned/lathe-m1-exploration-gaps.md) for EG-003 and EG-005 detail.
+See [lathe-exploration-gaps.md](planned/lathe-exploration-gaps.md) for EG-003 and EG-005 detail.
 
 ### Editing and refactoring
 
