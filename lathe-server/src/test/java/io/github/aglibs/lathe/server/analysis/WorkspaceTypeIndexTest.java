@@ -193,16 +193,26 @@ class WorkspaceTypeIndexTest {
   }
 
   @Test
-  void graph_duplicateBinaryName_marksAmbiguousAndSkipsRelations() {
+  void graph_duplicateBinaryName_withinShard_keepsFirst() {
     final var first = graphEntry("com.example.Duplicate", true, "com.example.ParentA");
     final var second = graphEntry("com.example.Duplicate", true, "com.example.ParentB");
     final var index = WorkspaceTypeIndex.build(List.of(), List.of(List.of(first, second)));
 
-    assertThat(index.isDuplicate("com.example.Duplicate")).isTrue();
-    assertThat(index.findType("com.example.Duplicate")).isEmpty();
-    assertThat(index.directSupertypes("com.example.Duplicate")).isEmpty();
-    assertThat(index.directSubtypes("com.example.ParentA")).isEmpty();
-    assertThat(index.transitiveSubtypes("com.example.Duplicate")).isEmpty();
+    assertThat(index.findType("com.example.Duplicate"))
+        .hasValueSatisfying(
+            e -> assertThat(e.directSupertypes()).containsExactly("com.example.ParentA"));
+  }
+
+  @Test
+  void merge_duplicateTypeAcrossShards_keepsFirstEntry() {
+    final var fromShardA = graphEntry("com.example.Dup", true, "com.example.ParentA");
+    final var fromShardB = graphEntry("com.example.Dup", true, "com.example.ParentB");
+    final var index =
+        WorkspaceTypeIndex.build(List.of(), List.of(List.of(fromShardA), List.of(fromShardB)));
+
+    assertThat(index.findType("com.example.Dup"))
+        .hasValueSatisfying(
+            e -> assertThat(e.directSupertypes()).containsExactly("com.example.ParentA"));
   }
 
   @Test

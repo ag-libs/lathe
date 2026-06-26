@@ -324,7 +324,7 @@ entries when the simple name matches the query exactly.
 
 ## EG-007 — Type-index startup emits hundreds of WARNING-level duplicate-type messages, obscuring real warnings
 
-**Status: accepted — Target: M1**
+**Status: done — Target: M1**
 
 ### Observed behaviour
 
@@ -352,25 +352,16 @@ duplicate.
 Common test-infrastructure JARs (JUnit, Hamcrest, ASM) are almost always duplicated across the
 server classpath and any workspace that uses the same testing stack.
 
-### Proposed fix
+### Fix
 
-Two complementary changes:
-
-1. **Downgrade duplicate-type messages to FINE.**
-   Duplicate types are a structural inevitability for common JARs and are not actionable by the
-   user.
-   Only log at WARNING when the duplicates are in the same shard namespace (which would indicate
-   a real indexing error).
-
-2. **Deduplicate at merge time rather than at first-occurrence.**
-   When building the merged index, keep the first seen entry per fully-qualified name and skip
-   subsequent entries silently (or at FINE).
-   This prevents the O(N) WARNING flood without sacrificing correctness, since all entries for a
-   given type should be structurally equivalent.
+`WorkspaceTypeIndex.deduplicate()` keeps the first-seen entry per binary name and logs at `FINE`
+for each skipped duplicate.
+The `duplicateBinaryNames` tracking and the `isDuplicate()` method were removed; hierarchy
+navigation now works for cross-shard duplicates since only one entry per binary name is stored.
 
 ### Regression targets
 
-`WorkspaceTypeIndexTest.merge_duplicateTypeAcrossShards_logsAtFineNotWarning`
+`WorkspaceTypeIndexTest.graph_duplicateBinaryName_withinShard_keepsFirst`
 `WorkspaceTypeIndexTest.merge_duplicateTypeAcrossShards_keepsFirstEntry`
 
 ---
