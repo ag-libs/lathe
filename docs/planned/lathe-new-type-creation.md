@@ -1,4 +1,7 @@
-# Design Document: New Type Creation via Snippet Autocompletion
+# Lathe — New Type Creation via Snippet Completion
+
+Proposed M2 completion enhancement.
+Builds on the completion engine in `lathe-design.md`.
 
 ## Motivation
 Modern IDEs provide wizards to create new Java classes, interfaces, and enums, automatically generating the `package` declaration and class boilerplate. The standard Language Server Protocol (LSP) specification lacks a dedicated `createClass` request or native UI form capabilities. While it is possible to implement this using `workspace/executeCommand` combined with custom client-side prompts, this approach fragments the user experience, requires editor-specific plugins, and breaks out-of-the-box compatibility.

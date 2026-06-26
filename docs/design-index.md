@@ -32,6 +32,8 @@ Read their current-status sections and compare them with the roadmap before star
 - [Completion Gap Log](planned/completion/gap-log.md) — active completion gaps, including method references and generic
   bounds.
 - [Completion Discovery Workflow](planned/completion/discovery-workflow.md) — reproducible gap discovery and triage.
+- [New Type Creation](planned/lathe-new-type-creation.md) — scaffold a blank file's class/interface/enum/record via
+  snippet completion, with no custom client-side UI.
 - [Google Indentation](planned/lathe-google-indent.md) — conservative on-type formatting.
 - [Class/Import Semantic Highlighting](planned/lathe-class-import-semantic-highlighting.md) — Neovim-relevant semantic
   corrections for type references.
