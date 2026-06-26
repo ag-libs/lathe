@@ -122,6 +122,7 @@ class LatheClient:
                     "publishDiagnostics": {"relatedInformation": False},
                     "hover": {"contentFormat": ["plaintext", "markdown"]},
                     "definition": {},
+                    "declaration": {},
                     "references": {},
                     "implementation": {},
                     "typeHierarchy": {},
@@ -365,6 +366,16 @@ class LatheClient:
     def definition(self, file: str | Path, line: int, col: int) -> list[dict]:
         """Go-to-definition at 0-based line/col. Returns list of LocationLinks."""
         result = self.request("textDocument/definition", {
+            "textDocument": {"uri": Path(file).resolve().as_uri()},
+            "position": {"line": line, "character": col},
+        })
+        if result is None:
+            return []
+        return result if isinstance(result, list) else [result]
+
+    def declaration(self, file: str | Path, line: int, col: int) -> list[dict]:
+        """Go-to-declaration at 0-based line/col. Returns list of LocationLinks."""
+        result = self.request("textDocument/declaration", {
             "textDocument": {"uri": Path(file).resolve().as_uri()},
             "position": {"line": line, "character": col},
         })

@@ -27,7 +27,7 @@ duplicated here.
 | EG-009 | Outgoing calls includes anonymous class constructor instantiations with empty name | M1 |
 | EG-010 | `explore.py` cannot probe dep/JDK source files — no workspace context for cache paths | M1 |
 | EG-011 | Outgoing calls silently omits callees whose source is in extracted dep or JDK dirs | M2 |
-| EG-012 | `textDocument/declaration` not implemented; overriding method declarations have no path to the contract/interface method | M2 |
+| EG-012 | `textDocument/declaration` not implemented; overriding method declarations have no path to the contract/interface method | M1 |
 | EG-013 | Find References candidate discovery excludes generated annotation sources; references in `@Builder`-generated classes are never found | M2 |
 | EG-014 | Find References on an overriding method returns only exact-static-type call sites, not polymorphic uses of the overridden method | M2 |
 | EG-015 | Override/implement completion missing; a method-name prefix in a class body offers only type candidates, no override stubs | M2 |
@@ -622,7 +622,7 @@ have the cache path as their `uri`, consistent with how `definition` navigates t
 
 ## EG-012 — `textDocument/declaration` not implemented; no path from override to contract method
 
-**Milestone: M2**
+**Milestone: M1**
 
 ### Observed behaviour
 
@@ -1460,7 +1460,10 @@ Items without dependencies may proceed in parallel.
    its kind and set a stable diagnostic code.
    Small, bounded change to the unused-declaration scan.
 
-EG-011 through EG-018 and EG-020 through EG-024 are M2 work, tracked alongside the external-source
-Find References, navigation, completion, and editor-feature scope expansion.
+10. **EG-012** (`textDocument/declaration`) — implement `textDocument/declaration` to allow
+    navigating from an override to its contract method.
+
+EG-011, EG-013 through EG-018, and EG-020 through EG-024 are M2 work, tracked alongside the
+external-source Find References, navigation, completion, and editor-feature scope expansion.
 EG-023 should be implemented together with EG-008 (shared Object-method suppression list), and
 EG-021 together with EG-006 (shared reactor-origin ranking).

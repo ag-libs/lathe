@@ -348,14 +348,8 @@ public final class SourceAnalysisSession implements AutoCloseable {
         : List.of();
   }
 
-  public Optional<Location> definition(final SourceFeatureRequest request) {
-    final var t = Stopwatch.start();
-    final var cur = resolve(request);
-    if (cur == null) {
-      return Optional.empty();
-    }
-
-    final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
+  private Optional<Location> findDefinitionLocation(
+      final SourceFeatureRequest request, final CursorContext cur, final Element element) {
     Optional<Location> result =
         definitionLocator.locate(
             element, cur.analysis().trees(), request.sourceRoots(), request.uri());
@@ -372,17 +366,76 @@ public final class SourceAnalysisSession implements AutoCloseable {
                   });
     }
 
-    final var finalResult = result;
+    return result;
+  }
+
+  public Optional<Location> definition(final SourceFeatureRequest request) {
+    final var t = Stopwatch.start();
+    final var cur = resolve(request);
+    if (cur == null) {
+      return Optional.empty();
+    }
+
+    final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
+    final var result = findDefinitionLocation(request, cur, element);
+
     LOG.fine(
         () ->
             "[definition] %dms element=%s → %s"
                 .formatted(
                     t.elapsedMs(),
                     element,
-                    finalResult
+                    result
                         .map(l -> "%s:%d".formatted(l.getUri(), l.getRange().getStart().getLine()))
                         .orElse("not found")));
     return result;
+  }
+
+  public Optional<Location> declaration(final SourceFeatureRequest request) {
+    final var t = Stopwatch.start();
+    final var cur = resolve(request);
+    if (cur == null) {
+      return Optional.empty();
+    }
+
+    final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
+    if (element != null) {
+      final var contractOpt =
+          DeclarationLocator.findContract(
+              element, cur.analysis().types(), cur.analysis().elements());
+      if (contractOpt.isPresent()) {
+        final var contract = contractOpt.get();
+        final var result = findDefinitionLocation(request, cur, contract);
+
+        LOG.fine(
+            () ->
+                "[declaration] %dms element=%s contract=%s → %s"
+                    .formatted(
+                        t.elapsedMs(),
+                        element,
+                        contract,
+                        result
+                            .map(
+                                l ->
+                                    "%s:%d"
+                                        .formatted(l.getUri(), l.getRange().getStart().getLine()))
+                            .orElse("not found")));
+        return result;
+      }
+    }
+
+    final var fallback = findDefinitionLocation(request, cur, element);
+
+    LOG.fine(
+        () ->
+            "[declaration] %dms fallback to definition %s → %s"
+                .formatted(
+                    t.elapsedMs(),
+                    element,
+                    fallback
+                        .map(l -> "%s:%d".formatted(l.getUri(), l.getRange().getStart().getLine()))
+                        .orElse("not found")));
+    return fallback;
   }
 
   public List<Location> typeImplementations(

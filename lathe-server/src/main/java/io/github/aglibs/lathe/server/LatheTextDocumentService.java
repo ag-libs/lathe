@@ -221,6 +221,14 @@ final class LatheTextDocumentService implements TextDocumentService {
 
   @Override
   public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
+      declaration(final DeclarationParams params) {
+    final var uri = params.getTextDocument().getUri();
+    final var pos = params.getPosition();
+    return worker.submit(() -> session.declarationFuture(uri, pos)).thenCompose(f -> f);
+  }
+
+  @Override
+  public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       implementation(final ImplementationParams params) {
     final var uri = params.getTextDocument().getUri();
     final var pos = params.getPosition();

@@ -73,8 +73,6 @@ See [lathe-m1-exploration-gaps.md](planned/lathe-m1-exploration-gaps.md).
 ### Exit criteria
 
 - The Neovim workflow is reliable for daily use on representative projects and Helidon-scale reactors.
-- No known correctness bug silently reports an internal failure as an empty successful result.
-- Index initialization, reload, and refresh do not block `ServerEventLoop`.
 - All M1 unit, integration, invoker, formatting, and Neovim verification layers pass.
 
 ---
