@@ -7,6 +7,10 @@ use real-project probes to discover issues,
 reduce accepted issues to focused tests,
 and record anything unresolved in the gap log.
 
+Completion gaps follow the shared gap lifecycle in [gap-process.md](../../gap-process.md):
+every `CQ-` entry carries a `Status` and a `Target` (release or `backlog`), and milestone
+targeting is always the `Target` field — never the `Tier`.
+
 ## Tools
 
 ### `dev/explore.py`

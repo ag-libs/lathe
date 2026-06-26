@@ -7,6 +7,10 @@ implemented baseline.
 Documents under `planned/` can contain implemented history or stale details.
 Read their current-status sections and compare them with the roadmap before starting work.
 
+The [gap lifecycle](gap-process.md) defines how every gap (EG/FR/CA and CQ) moves from
+`documented` through a release `Target` to `done`, across the exploration-gaps doc and the
+completion gap log.
+
 ## M1 — Internal Preview
 
 - [Exploration Gaps](planned/lathe-exploration-gaps.md) — the single consolidated gap tracker: live-probing
