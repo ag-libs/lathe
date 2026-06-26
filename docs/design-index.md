@@ -7,20 +7,15 @@ implemented baseline.
 Documents under `planned/` can contain implemented history or stale details.
 Read their current-status sections and compare them with the roadmap before starting work.
 
-The [gap lifecycle](gap-process.md) defines how every gap (EG/FR/CA and CQ) moves from
-`documented` through a release `Target` to `done` in the single registry [gaps.md](gaps.md), with
-discovery via [gap-workflow.md](gap-workflow.md) and resolved entries in [gaps-archive.md](gaps-archive.md).
+The [gap lifecycle](gaps/gap-process.md) defines how every gap (EG/FR/CA and CQ) moves from
+`documented` through a release `Target` to `done` in the single registry [gaps.md](gaps/gaps.md), with
+discovery via [gap-workflow.md](gaps/gap-workflow.md) and resolved entries in [gaps-archive.md](gaps/gaps-archive.md).
 
 ## M1 — Internal Preview
 
-- [Gaps](gaps.md) — the single active gap registry (EG/FR/CA/CQ); resolved entries in
-  [gaps-archive.md](gaps-archive.md). Lifecycle in [gap-process.md](gap-process.md); discovery in
-  [gap-workflow.md](gap-workflow.md).
-- [Declaration](planned/lathe-declaration.md) — `textDocument/declaration` navigating an overriding method to
-  its root contract (EG-012); implemented.
-- [Call Hierarchy](planned/lathe-call-hierarchy.md) — `prepareCallHierarchy`, `incomingCalls`, and `outgoingCalls`
-  built on `ReferenceTarget` identity, `ReferenceCandidateIndex` candidate discovery, and two new
-  `TreePathScanner` locators.
+- [Gaps](gaps/gaps.md) — the single active gap registry (EG/FR/CA/CQ); resolved entries in
+  [gaps-archive.md](gaps/gaps-archive.md). Lifecycle in [gap-process.md](gaps/gap-process.md); discovery in
+  [gap-workflow.md](gaps/gap-workflow.md).
 - [MissingMethodImplProvider](planned/lathe-missing-method-impl.md) — generation of abstract-method stubs.
 - [M1 Refactoring](planned/lathe-m1-refactoring.md) — single consolidated refactoring plan: documentation accuracy,
   fail-fast propagation, DRY/structural extractions, god-class decomposition, naming, and test-suite hygiene.
@@ -29,13 +24,13 @@ discovery via [gap-workflow.md](gap-workflow.md) and resolved entries in [gaps-a
 
 ## M2 — Neovim Public Beta
 
-- [Gaps (deferred)](gaps.md) — EG-003 (hover in Javadoc type-reference tags) and EG-005 (CamelCase and infix
+- [Gaps (deferred)](gaps/gaps.md) — EG-003 (hover in Javadoc type-reference tags) and EG-005 (CamelCase and infix
   workspace symbol matching) deferred from M1.
-- [Find References gaps](gaps.md) — FR-002 external-source scope, FR-003 failure propagation, and FR-004
+- [Find References gaps](gaps/gaps.md) — FR-002 external-source scope, FR-003 failure propagation, and FR-004
   integration coverage.
 - [Completion Expectations](planned/lathe-completion-expectations.md) — expected completion behavior.
-- [Completion gaps (CQ)](gaps.md) — active completion-quality gaps, including method references and generic bounds.
-- [Gap Workflow](gap-workflow.md) — reproducible gap discovery and triage (all areas).
+- [Completion gaps (CQ)](gaps/gaps.md) — active completion-quality gaps, including method references and generic bounds.
+- [Gap Workflow](gaps/gap-workflow.md) — reproducible gap discovery and triage (all areas).
 - [New Type Creation](planned/lathe-new-type-creation.md) — scaffold a blank file's class/interface/enum/record via
   snippet completion, with no custom client-side UI.
 - [Google Indentation](planned/lathe-google-indent.md) — conservative on-type formatting.
@@ -71,10 +66,14 @@ M3 designs before implementation.
   navigation and reactor method implementation across reactor, dependency, and JDK types.
 - [Event-Loop Starvation](done/lathe-event-loop-starvation.md) — diagnosis of synchronous index construction;
   resolved by the goto-implementation design keeping construction on `ServerEventLoop`.
-- [Completion Design](done/completion-design.md)
-- [Completion Gap Fixes](done/completion-gap-fixes.md)
-- [Completion Gaps](done/completion-gaps.md)
-- [Completion Semantics Audit](done/completion-semantics-audit.md)
+- [Call Hierarchy](done/lathe-call-hierarchy.md) — `prepareCallHierarchy`, `incomingCalls`, and `outgoingCalls`
+  on `ReferenceTarget` identity and `ReferenceCandidateIndex` discovery (M1).
+- [Declaration](done/lathe-declaration.md) — `textDocument/declaration` navigating an overriding method to its
+  root contract; declaration- and call-site (EG-012, M1).
+- [Completion Design](done/lathe-completion-design.md)
+- [Completion Gap Fixes](done/lathe-completion-gap-fixes.md)
+- [Completion Gaps](done/lathe-completion-gaps.md)
+- [Completion Semantics Audit](done/lathe-completion-semantics-audit.md)
 - [Architecture and Test Improvements](done/lathe-architecture-test-improvements.md)
 - [Code Actions](done/lathe-code-actions.md)
 - [June 2026 Code Review](done/lathe-code-review-jun-2026.md)

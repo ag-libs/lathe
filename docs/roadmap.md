@@ -51,7 +51,7 @@ See [lathe-m1-refactoring.md](planned/lathe-m1-refactoring.md).
 - Incoming calls reuse `ReferenceTarget` identity and `ReferenceCandidateIndex` candidate discovery.
 - Outgoing calls scan the target method body in a single file.
 
-See [lathe-call-hierarchy.md](planned/lathe-call-hierarchy.md).
+See [lathe-call-hierarchy.md](done/lathe-call-hierarchy.md).
 
 ### Declaration ✓
 
@@ -59,12 +59,12 @@ See [lathe-call-hierarchy.md](planned/lathe-call-hierarchy.md).
   (EG-012). Resolves to the root contract across the full supertype hierarchy and handles both the
   declaration site and the call site, falling back to `definition` for non-overriding symbols.
 
-See [lathe-declaration.md](planned/lathe-declaration.md).
+See [lathe-declaration.md](done/lathe-declaration.md).
 
 ### Live-probing correctness fixes
 
 Gaps confirmed by systematic probing against Helidon, Dropwizard, and sample-workspace.
-See [gaps.md](gaps.md).
+See [gaps.md](gaps/gaps.md).
 
 - Fix signature help returning the wrong signature when the first argument is itself a method call (EG-001).
 - Implement `TryCatchWrapProvider` for `UNREPORTED_EXCEPTION` in regular method and lambda bodies (EG-002).
@@ -106,7 +106,7 @@ It remains a build-from-source release.
 - Add CamelCase initial matching to workspace symbol search (EG-005).
 - Fix hover on type names inside Javadoc `{@link}` and `{@see}` tags using `DocTrees.getElement` (EG-003).
 
-See [gaps.md](gaps.md) for EG-003 and EG-005 detail.
+See [gaps.md](gaps/gaps.md) for EG-003 and EG-005 detail.
 
 ### Editing and refactoring
 

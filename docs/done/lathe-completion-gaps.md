@@ -7,7 +7,7 @@ Gap J (method references) is deferred to a future version.
 
 Gap E has been revised — see the Closed section.
 
-Gap discovery now starts from [completion-semantics-audit.md](completion-semantics-audit.md).
+Gap discovery now starts from [completion-semantics-audit.md](lathe-completion-semantics-audit.md).
 That matrix records syntax-site behavior before fixes are made.
 
 ---

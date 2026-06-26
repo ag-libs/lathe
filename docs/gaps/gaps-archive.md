@@ -10,7 +10,7 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 ## EG-012 — `textDocument/declaration`: navigate an override to its contract method
 
 **Status: done — Target: M1.**
-The design of record is [lathe-declaration.md](planned/lathe-declaration.md).
+The design of record is [lathe-declaration.md](../done/lathe-declaration.md).
 The implementation resolves to the **root contract** (walking the full supertype hierarchy, not just
 direct supertypes) and handles **both** the declaration site and the call site, with a fallback to
 `definition` for non-overriding symbols.

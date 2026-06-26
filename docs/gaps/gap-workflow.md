@@ -14,7 +14,7 @@ Every gap follows the shared [gap lifecycle](gap-process.md); milestone targetin
 
 Completion is the most formalized area and has the richest probe tooling, so the recipes below are
 written from the completion workflow and double as the general guide.
-The completion behavioral contract is [expectations.md](planned/lathe-completion-expectations.md).
+The completion behavioral contract is [expectations.md](../planned/lathe-completion-expectations.md).
 
 ## Tools
 
@@ -233,7 +233,7 @@ not the final specification.
 
 ## Tiers
 
-Use the tiers from [`expectations.md`](planned/lathe-completion-expectations.md):
+Use the tiers from [`expectations.md`](../planned/lathe-completion-expectations.md):
 
 - `basic`
 - `typed`

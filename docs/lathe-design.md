@@ -772,7 +772,7 @@ it is flushed after full passes and closed on workspace reload and server shutdo
 
 ### Member access completion
 
-> Full design: [completion-design.md](done/completion-design.md)
+> Full design: [completion-design.md](done/lathe-completion-design.md)
 
 Completion uses three layers kept strictly separate:
 

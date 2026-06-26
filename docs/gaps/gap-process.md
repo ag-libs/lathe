@@ -5,7 +5,7 @@ belongs to or which file records it.
 It is the authoritative answer to two questions a gap must always answer:
 *what state is it in* and *which release is it targeted to*.
 
-The [roadmap](roadmap.md) defines release scope; this document defines how an individual gap moves
+The [roadmap](../roadmap.md) defines release scope; this document defines how an individual gap moves
 toward a release.
 
 ---
@@ -25,7 +25,7 @@ Each keeps its area prefix:
 Resolved (`done` / `non-goal`) entries move to [gaps-archive.md](gaps-archive.md).
 Discovery and triage follow the single [gap workflow](gap-workflow.md).
 Completion keeps area-specific *reference* material — its behavioral contract,
-[expectations.md](planned/lathe-completion-expectations.md) — but no separate process.
+[expectations.md](../planned/lathe-completion-expectations.md) — but no separate process.
 
 ---
 
@@ -84,7 +84,7 @@ Do not keep a separate ordered "implementation order" list; it duplicates `Targe
 To see the slice:
 
 ```bash
-grep -n 'Target: M1' docs/gaps.md
+grep -n 'Target: M1' docs/gaps/gaps.md
 ```
 
 ---
@@ -105,6 +105,6 @@ entry itself stays in its home file as the record.
 
 Families may carry extra fields without changing the lifecycle.
 Completion entries keep `Tier` (`basic` / `typed` / `assistive` / `presentation`), `Failure mode`,
-and `Owner component` as defined by the completion [expectations](planned/lathe-completion-expectations.md)
+and `Owner component` as defined by the completion [expectations](../planned/lathe-completion-expectations.md)
 and the [gap workflow](gap-workflow.md).
 `Tier` is a feature category, not a priority or a release — milestone targeting is always `Target`.

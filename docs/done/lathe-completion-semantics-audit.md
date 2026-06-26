@@ -5,7 +5,7 @@ It is not the normative design.
 
 Current completion expectations live in
 [`../planned/lathe-completion-expectations.md`](../planned/lathe-completion-expectations.md); active
-gap tracking is in the registry [`../gaps.md`](../gaps.md).
+gap tracking is in the registry [`../gaps.md`](../gaps/gaps.md).
 
 The goal is to make Java syntax-site behavior explicit before implementation fixes are made.
 Each row should eventually map to active tests, a documented gap, or a deliberate non-goal.
@@ -65,4 +65,4 @@ Each row should eventually map to active tests, a documented gap, or a deliberat
 Use this matrix as historical context when expanding
 [`../planned/lathe-completion-expectations.md`](../planned/lathe-completion-expectations.md).
 New discrepancies should be recorded as `CQ-*` entries in the gap registry
-[`../gaps.md`](../gaps.md).
+[`../gaps.md`](../gaps/gaps.md).

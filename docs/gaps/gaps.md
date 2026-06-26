@@ -14,7 +14,7 @@ Each gap keeps its area prefix; the area is the discovery family, not a strict f
 | `EG-NNN` | exploration | Live-probing of nav, hover, search, completion, code actions, hierarchies, against Helidon, Dropwizard, and the `@Builder`-heavy sample-workspace workspace |
 | `FR-NNN` | references | `textDocument/references` scope, failure propagation, coverage |
 | `CA-N` | code-action | `textDocument/codeAction` providers |
-| `CQ-NNNN` | completion | Completion quality; checked against the completion [expectations](planned/lathe-completion-expectations.md) contract |
+| `CQ-NNNN` | completion | Completion quality; checked against the completion [expectations](../planned/lathe-completion-expectations.md) contract |
 
 ## Finding the work for a release
 
@@ -22,8 +22,8 @@ The slice for a release is derived, not hand-maintained: every gap with `Status:
 matching `Target` (see [gap-process.md](gap-process.md)).
 
 ```bash
-grep -nE '^(Status|Target):|^\*\*Status' docs/gaps.md     # scan active entries
-grep -n 'Target: M1' docs/gaps.md                         # the M1 slice
+grep -nE '^(Status|Target):|^\*\*Status' docs/gaps/gaps.md     # scan active entries
+grep -n 'Target: M1' docs/gaps/gaps.md                         # the M1 slice
 ```
 
 Entries follow, grouped by area: exploration (EG) below, then Find References (FR), Code Actions
@@ -1214,7 +1214,7 @@ Guidance that does not fall out of the fields:
 # Find References Gaps (FR-NNN)
 
 Current correctness, policy, and test-coverage gaps in `textDocument/references`.
-The original feature design remains in [lathe-find-references.md](done/lathe-find-references.md);
+The original feature design remains in [lathe-find-references.md](../done/lathe-find-references.md);
 this section is the current gap tracker when the original design and implemented behavior differ.
 
 ### Current behaviour
@@ -1308,7 +1308,7 @@ Consequently, the client cannot distinguish:
 - a bug in result aggregation.
 
 This conflicts with the fail-fast policy in
-[lathe-m1-refactoring.md](planned/lathe-m1-refactoring.md).
+[lathe-m1-refactoring.md](../planned/lathe-m1-refactoring.md).
 
 ### Required behavior
 
@@ -1591,7 +1591,7 @@ without weakening the provider's existing type-index validation path for depende
 # Completion Gaps (CQ)
 
 Active completion-quality gaps. Discovered and triaged via the completion appendix of the
-[gap workflow](gap-workflow.md); checked against the completion [expectations](planned/lathe-completion-expectations.md)
+[gap workflow](gap-workflow.md); checked against the completion [expectations](../planned/lathe-completion-expectations.md)
 contract. Resolved CQ entries are in [gaps-archive.md](gaps-archive.md).
 
 ## CQ-0040 — `bind(...).to(...)` chain offers no members on the captured-wildcard result

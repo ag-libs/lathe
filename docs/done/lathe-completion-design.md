@@ -2,7 +2,7 @@
 
 Describes how `textDocument/completion` works in Lathe.
 The implementation is complete and this document reflects current behaviour.
-Open behavioural gaps are tracked separately in [completion-gaps.md](completion-gaps.md).
+Open behavioural gaps are tracked separately in [completion-gaps.md](lathe-completion-gaps.md).
 
 ---
 
