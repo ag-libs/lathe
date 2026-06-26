@@ -44,6 +44,93 @@ Notes:
 
 ## Open Entries
 
+## CQ-0040 — `bind(...).to(...)` chain offers no members on the captured-wildcard result
+
+ID: CQ-0040
+Status: planned for M1
+Tier: typed
+Failure mode: missing-candidate
+Owner component: TypeResolver / CompletionEngine
+Discovery: 2026-06-26, sample-workspace (AppServer anonymous `AbstractBinder.configure()`)
+
+Project/file:
+`/workspace/app-server/src/main/java/com/example/app/server/AppServer.java`
+
+Probe command (real source, line 624 has a double `.to(...).to(...)` chain):
+```bash
+python3 dev/explore.py \
+  /workspace/app-server/src/main/java/com/example/app/server/AppServer.java \
+  complete after "bind(pipelineService).to(RequestPipelineService.class)."
+```
+
+Control probe (first hop works):
+```bash
+python3 dev/explore.py \
+  /workspace/app-server/src/main/java/com/example/app/server/AppServer.java \
+  complete after "bind(onboardingService)." expect to min 1
+```
+
+Single-`.to()` injection probe (gap reproduces without the double chain):
+```bash
+printf 'inject "bind(rpcServer).to(RpcServer.class)." at 617\ninject "bind(rpcServer)." at 617\n' \
+  | python3 dev/explore.py \
+    /workspace/app-server/src/main/java/com/example/app/server/AppServer.java
+```
+
+Cursor context:
+```java
+resourceConfig.register(
+    new AbstractBinder() {
+      @Override
+      protected void configure() {
+        bind(onboardingService).§                                  // works: 28 Binding<OnboardingService> members
+        bind(pipelineService).to(RequestPipelineService.class).§   // gap: no completions
+      }
+    });
+```
+
+IntelliJ or JDT behavior:
+After `bind(x).to(Y.class).`, both IDEs expose the binding-builder's self-type members so the
+fluent chain continues — `to`, `in`, `named`, `qualifiedBy`, `ranked`, `proxy`, `proxyForSameScope`.
+This is the standard Jersey/HK2 DI registration DSL.
+
+Lathe behavior:
+`bind(x).` resolves to a concrete `Binding<T>` and returns 28 members, including the `to` overloads
+whose return type is surfaced as `<captured wildcard>`:
+```text
+to  [Method]  Binding.to(Class<? super RpcServer> contract) : <captured wildcard>
+```
+Hover on `to` shows the declared signature `D to(Class<? super T> contract)`.
+Completing on the result of any `.to(...)` call returns 0 items — the receiver's static type is the
+type variable `D` / its captured wildcard, and member discovery on that receiver yields nothing.
+
+Expected Lathe behavior:
+Member completion on a captured-wildcard / type-variable receiver should use the capture's effective
+upper bound (here the binding-builder self-type), so `bind(x).to(Y.class).` offers `to`, `in`,
+`named`, `ranked`, etc., and chained `bind(x).to(Y.class).to(Z.class)` completes.
+
+Accepted edit, if relevant:
+Not applicable — no candidate is returned.
+
+Regression target:
+`CompletionMemberAccessTest.memberAccess_typeVariableReturn_usesCapturedBound`
+
+Notes:
+Same root-cause family as `CQ-0029` (wildcard generic receivers do not expose usable bound members)
+and `CQ-0030` (type-variable receivers do not expose declared bounds), both planned for M2.
+This entry is pulled into M1 because it breaks completion in the ubiquitous HK2/Jersey `AbstractBinder`
+`bind(x).to(Y.class)` registration DSL on a real workspace, not just synthetic generics.
+The first `bind(x).` hop is unaffected because it resolves to the concrete `Binding<T>`; the failure
+begins at the first `.to(...)`.
+
+Also observed in the same `configure()` body, needs separate isolation before filing:
+statement-position identifier completion returned nothing for an inherited-method prefix
+(`inject "b"` / `inject "bind"` at line 617 → 0 items, where `bind` was expected), and `inject "this."`
+resolved `this` to `TypeLiteral` (from the `new TypeLiteral<...>(){}` at line 658) rather than the
+enclosing `AbstractBinder`. A captured-local member access (`inject "onboardingService."`) works
+correctly in the same body. These injection-based observations may be incomplete-statement artifacts
+and should be reconfirmed against valid syntax before being recorded as gaps.
+
 ## CQ-0036 — Empty constructor completion returns a complete narrow list
 
 ID: CQ-0036
@@ -1459,6 +1546,11 @@ Two new high-confidence gaps were found and recorded as `CQ-0020` and `CQ-0021`.
 `CQ-0011` remains deferred.
 `CQ-0029` and `CQ-0030` are planned for M2.
 `CQ-0010` is closed as an editor-side capability gap.
+
+A 2026-06-26 sample-workspace pass on `AppServer` (anonymous `AbstractBinder.configure()`) recorded
+`CQ-0040`: member completion on the captured-wildcard result of `bind(x).to(Y.class)` returns nothing.
+It shares the `CQ-0029`/`CQ-0030` root cause but is pulled into M1 because it breaks the ubiquitous
+HK2/Jersey binder DSL on a real workspace.
 
 Next completion work should run a new explorer pass with a different focus area,
 or pick up one of the gaps explicitly assigned to M2.
