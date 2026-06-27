@@ -89,8 +89,11 @@ The LS spawns:
 
 - **test-method**: `mvnd -pl <moduleRel> -am test -Dtest=<fqn>#<method> -DfailIfNoTests=false`
 - **test-class**: `mvnd -pl <moduleRel> -am test -Dtest=<fqn> -DfailIfNoTests=false`
-- **package pattern**: `mvnd -pl <module> test -Dtest=<testPattern> -DfailIfNoTests=false`
-- **main**: `mvnd -pl <moduleRel> -am compile exec:exec -Dexec.executable=java -Dexec.args="..."`
+- **package pattern**: `mvnd -pl <module> -am test -Dtest=<testPattern> -DfailIfNoTests=false`
+- **main**: `mvnd -pl <moduleRel> -am compile exec:exec -Dexec.executable=java -Dexec.args="-classpath %classpath <mainClass>"`
+
+The exec plugin is resolved by Maven on demand — no `<plugin>` block in the user's POM is required.
+`%classpath` is the exec plugin's interpolation token; it expands to the full project classpath at invocation time.
 
 Returns `{ sessionId, kind: "run" }` immediately; output and lifecycle stream via `lathe/sessionEvent`.
 
@@ -108,8 +111,12 @@ where the program runs past breakpoints before the debugger connects.
 ### `lathe.session.cancel`
 
 Kill a running session by `sessionId`.
-The LS signals `mvnd` (which propagates termination to the forked JVM and any test forks).
-Returns once the process tree is reaped.
+The LS destroys the `mvnd` client process.
+`mvnd` detects the client disconnect and cancels the running build, which propagates termination to any
+Surefire-forked JVMs.
+If the daemon crashes before propagating, Surefire forks may outlive the session; they are not tracked
+separately and will be cleaned up by the next `mvnd --stop`.
+Returns once the client process has exited.
 
 ### `lathe.session.list`
 
@@ -135,10 +142,16 @@ Event `type` values:
   Forwarded from the process.
   The `"maven"` channel carries Maven's own log lines (filtered — see below);
   `"stdout"`/`"stderr"` are the test/program's own output.
+  For test runs, Surefire captures test stdout/stderr into `surefire-reports/*.txt` — these are included in
+  the XML and surfaced via `testResult` events rather than `output` events.
+  For main-class runs (`exec:exec`), the spawned program's stdout flows directly through the captured process
+  stream without a `[INFO]`/`[WARNING]`/`[ERROR]` prefix; Lathe routes non-prefixed lines to `"stdout"` and
+  Maven's own prefixed lines to `"maven"`.
 - `"testResult"` — `{ testId, status: "passed"|"failed"|"skipped", durationMs, message?, stackTrace?
   }`.
   Surefire writes one `TEST-*.xml` file per test class into `target/surefire-reports/` as each class finishes.
-  Lathe watches that directory with a `WatchService` and parses each XML immediately when it appears.
+  Lathe registers a `WatchService` on that directory **before spawning `mvnd`** to avoid missing XMLs from
+  fast-completing test classes, then parses each XML immediately when it appears.
   Each `<testcase>` element in the XML becomes a `testResult` event; a `<failure>` or `<error>` child
   element supplies the `message` and `stackTrace`.
   This approach requires no extra configuration, no bundled listener JARs, and works for JUnit 4, JUnit 5,
