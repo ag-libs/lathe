@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.core.schema;
 
+import io.github.aglibs.validcheck.ValidCheck;
 import java.util.List;
 import java.util.Objects;
 
@@ -20,6 +21,11 @@ public record ModuleConfigData(
 
   public ModuleConfigData {
     encoding = Objects.requireNonNullElse(encoding, "UTF-8");
-    compilerArgs = Objects.requireNonNullElse(compilerArgs, List.of());
+    sourceRoots = sourceRoots != null ? List.copyOf(sourceRoots) : List.of();
+    classpath = classpath != null ? List.copyOf(classpath) : List.of();
+    modulepath = modulepath != null ? List.copyOf(modulepath) : List.of();
+    processorPath = processorPath != null ? List.copyOf(processorPath) : List.of();
+    compilerArgs = compilerArgs != null ? List.copyOf(compilerArgs) : List.of();
+    ValidCheck.check().notNull(sourceTree, "sourceTree").notNull(outputDir, "outputDir").validate();
   }
 }
