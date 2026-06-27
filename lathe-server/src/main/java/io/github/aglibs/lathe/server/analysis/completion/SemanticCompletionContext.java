@@ -18,6 +18,11 @@ record SemanticCompletionContext(
         .validate();
   }
 
+  static SemanticCompletionContext blank(final AttributedFileAnalysis analysis) {
+    return new SemanticCompletionContext(
+        analysis, new ExpectedValue.Unknown(), false, false, false, null);
+  }
+
   static SemanticCompletionContext from(
       final CompletionSite site,
       final CompletionRequest request,
