@@ -100,7 +100,7 @@ final class MemberAccessCompleter {
         Stream.concat(
                 Stream.concat(members.stream(), nestedTypes),
                 isStaticAccess
-                    ? CompletionEngine.classLiteralCandidates(injected.prefix()).stream()
+                    ? TypeReferenceCompleter.classLiteralCandidates(injected.prefix()).stream()
                     : Stream.of())
             .toList();
     final List<CompletionItem> items =
