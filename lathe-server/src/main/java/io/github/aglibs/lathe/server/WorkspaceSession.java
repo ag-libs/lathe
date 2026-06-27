@@ -328,30 +328,9 @@ final class WorkspaceSession {
       final ReferenceProgressReporter.Task progress) {
     cancelChecker.checkCanceled();
     final var worker = workspace.workerFor(config);
-    final List<OpenDocument> openForConfig =
-        docs.all().stream()
-            .filter(
-                doc ->
-                    workspace
-                        .moduleSourceFor(LatheUri.toPath(doc.uri()))
-                        .map(c -> c.equals(config))
-                        .orElse(false))
-            .filter(
-                doc ->
-                    isInPackageScope(LatheUri.toPath(doc.uri()), config.sourceRoots(), packageRel))
-            .toList();
-    final Set<String> openUrisForConfig =
-        openForConfig.stream().map(OpenDocument::uri).collect(Collectors.toUnmodifiableSet());
-    final List<Path> sourceRoots = config.sourceRoots();
-    final var planner = new ReferenceCandidatePlanner(candidateIndex);
-    final List<DiskCandidate> diskFiles =
-        planner.planCandidates(config, target).stream()
-            .filter(uri -> !openUrisForConfig.contains(uri))
-            .filter(uri -> isInPackageScope(LatheUri.toPath(uri), sourceRoots, packageRel))
-            .flatMap(uri -> readDiskCandidate(uri).stream())
-            .toList();
+    final var inputs = planSearchInputs(config, target, packageRel);
     return Stream.concat(
-        openForConfig.stream()
+        inputs.openDocuments().stream()
             .map(
                 doc -> {
                   cancelChecker.checkCanceled();
@@ -371,7 +350,7 @@ final class WorkspaceSession {
                             }
                           });
                 }),
-        diskFiles.stream()
+        inputs.diskCandidates().stream()
             .map(
                 d -> {
                   cancelChecker.checkCanceled();
@@ -464,6 +443,36 @@ final class WorkspaceSession {
   }
 
   private record DiskCandidate(String uri, String content) {}
+
+  private record WorkspaceSearchInputs(
+      List<OpenDocument> openDocuments, List<DiskCandidate> diskCandidates) {}
+
+  private WorkspaceSearchInputs planSearchInputs(
+      final ModuleSourceConfig config, final ReferenceTarget target, final Path packageRel) {
+    final List<OpenDocument> openForConfig =
+        docs.all().stream()
+            .filter(
+                doc ->
+                    workspace
+                        .moduleSourceFor(LatheUri.toPath(doc.uri()))
+                        .map(c -> c.equals(config))
+                        .orElse(false))
+            .filter(
+                doc ->
+                    isInPackageScope(LatheUri.toPath(doc.uri()), config.sourceRoots(), packageRel))
+            .toList();
+    final Set<String> openUris =
+        openForConfig.stream().map(OpenDocument::uri).collect(Collectors.toUnmodifiableSet());
+    final List<Path> sourceRoots = config.sourceRoots();
+    final var planner = new ReferenceCandidatePlanner(candidateIndex);
+    final List<DiskCandidate> diskCandidates =
+        planner.planCandidates(config, target).stream()
+            .filter(uri -> !openUris.contains(uri))
+            .filter(uri -> isInPackageScope(LatheUri.toPath(uri), sourceRoots, packageRel))
+            .flatMap(uri -> readDiskCandidate(uri).stream())
+            .toList();
+    return new WorkspaceSearchInputs(openForConfig, diskCandidates);
+  }
 
   CompletableFuture<Hover> hoverFuture(final String uri, final Position pos) {
     final OpenDocument openFile = docs.get(uri);
@@ -788,30 +797,9 @@ final class WorkspaceSession {
       final ReferenceProgressReporter.Task progress) {
     cancelChecker.checkCanceled();
     final var worker = workspace.workerFor(config);
-    final List<OpenDocument> openForConfig =
-        docs.all().stream()
-            .filter(
-                doc ->
-                    workspace
-                        .moduleSourceFor(LatheUri.toPath(doc.uri()))
-                        .map(c -> c.equals(config))
-                        .orElse(false))
-            .filter(
-                doc ->
-                    isInPackageScope(LatheUri.toPath(doc.uri()), config.sourceRoots(), packageRel))
-            .toList();
-    final Set<String> openUrisForConfig =
-        openForConfig.stream().map(OpenDocument::uri).collect(Collectors.toUnmodifiableSet());
-    final List<Path> sourceRoots = config.sourceRoots();
-    final var planner = new ReferenceCandidatePlanner(candidateIndex);
-    final List<DiskCandidate> diskFiles =
-        planner.planCandidates(config, target).stream()
-            .filter(uri -> !openUrisForConfig.contains(uri))
-            .filter(uri -> isInPackageScope(LatheUri.toPath(uri), sourceRoots, packageRel))
-            .flatMap(uri -> readDiskCandidate(uri).stream())
-            .toList();
+    final var inputs = planSearchInputs(config, target, packageRel);
     return Stream.concat(
-        openForConfig.stream()
+        inputs.openDocuments().stream()
             .map(
                 doc -> {
                   cancelChecker.checkCanceled();
@@ -825,7 +813,7 @@ final class WorkspaceSession {
                             }
                           });
                 }),
-        diskFiles.stream()
+        inputs.diskCandidates().stream()
             .map(
                 d -> {
                   cancelChecker.checkCanceled();
