@@ -22,8 +22,6 @@ import org.eclipse.aether.util.artifact.JavaScopes;
 
 final class ServerInstaller {
 
-  private static final String ARTIFACT_ID = "lathe-server";
-
   private final RepositorySystem repositorySystem;
   private final RepositorySystemSession repoSession;
   private final List<RemoteRepository> remoteRepositories;
@@ -72,7 +70,8 @@ final class ServerInstaller {
 
   private List<Path> resolveServerJars() throws SyncException {
     final var artifact =
-        new DefaultArtifact(PluginProps.groupId(), ARTIFACT_ID, "jar", PluginProps.version());
+        new DefaultArtifact(
+            PluginProps.groupId(), PluginProps.SERVER_ARTIFACT_ID, "jar", PluginProps.version());
     final var dep = new Dependency(artifact, JavaScopes.RUNTIME);
     final var collectRequest = new CollectRequest(dep, remoteRepositories);
     final var depRequest = new DependencyRequest(collectRequest, null);

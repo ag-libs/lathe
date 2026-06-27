@@ -7,6 +7,7 @@ import java.util.Properties;
 final class PluginProps {
 
   static final String GROUP_ID = "io.github.ag-libs";
+  static final String SERVER_ARTIFACT_ID = "lathe-server";
 
   private static final Properties PROPS = load();
 
