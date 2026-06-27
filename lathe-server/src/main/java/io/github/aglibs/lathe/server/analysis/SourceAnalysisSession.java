@@ -4,7 +4,6 @@ import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.core.Stopwatch;
-import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionEngine;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionRequest;
@@ -58,6 +57,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
   private final JavadocLocator javadocLocator;
   private final Map<String, CachedFileAnalysis> cache = new HashMap<>();
   private final SourceParser parser;
+  private final TypeHierarchyResolver typeHierarchyResolver;
 
   public SourceAnalysisSession(final JavaSourceCompiler compiler) {
     this.compiler = compiler;
@@ -65,6 +65,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
     this.completionEngine = new CompletionEngine(parser, compiler);
     this.definitionLocator = new DefinitionLocator(parser);
     this.javadocLocator = new JavadocLocator(parser);
+    this.typeHierarchyResolver = new TypeHierarchyResolver(parser);
   }
 
   public List<Diagnostic> compile(
@@ -455,7 +456,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
     final List<Path> sourceRoots = typeSourceRoots(request);
     final List<Location> results =
         typeIndex.transitiveSubtypes(binaryName).stream()
-            .flatMap(entry -> TypeSourceLocator.locate(entry, sourceRoots, parser).stream())
+            .flatMap(entry -> typeHierarchyResolver.locateSource(entry, sourceRoots).stream())
             .toList();
     LOG.fine(
         () ->
@@ -477,11 +478,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
     }
 
     final var binaryName = cur.analysis().elements().getBinaryName(typeElement).toString();
-    return typeIndex
-        .findType(binaryName)
-        .flatMap(entry -> typeHierarchyItem(entry, typeSourceRoots(request)))
-        .map(List::of)
-        .orElseGet(List::of);
+    return typeHierarchyResolver.prepare(binaryName, typeIndex, typeSourceRoots(request));
   }
 
   public List<CallHierarchyItem> prepareCallHierarchy(final SourceFeatureRequest request) {
@@ -587,50 +584,14 @@ public final class SourceAnalysisSession implements AutoCloseable {
       final TypeHierarchyItem item,
       final WorkspaceTypeIndex typeIndex,
       final List<Path> sourceRoots) {
-    final TypeHierarchyItemData data = TypeHierarchyItemDataCodec.decode(item.getData());
-    return data != null
-        ? typeHierarchyItems(typeIndex.directSupertypes(data.binaryName()), sourceRoots)
-        : List.of();
+    return typeHierarchyResolver.supertypes(item, typeIndex, sourceRoots);
   }
 
   public List<TypeHierarchyItem> typeHierarchySubtypes(
       final TypeHierarchyItem item,
       final WorkspaceTypeIndex typeIndex,
       final List<Path> sourceRoots) {
-    final TypeHierarchyItemData data = TypeHierarchyItemDataCodec.decode(item.getData());
-    if (data == null) {
-      return List.of();
-    }
-
-    final List<TypeIndexEntry> subtypes = typeIndex.directSubtypes(data.binaryName());
-    return typeHierarchyItems(subtypes, sourceRoots);
-  }
-
-  private List<TypeHierarchyItem> typeHierarchyItems(
-      final List<TypeIndexEntry> entries, final List<Path> sourceRoots) {
-    return entries.stream()
-        .flatMap(entry -> typeHierarchyItem(entry, sourceRoots).stream())
-        .toList();
-  }
-
-  private Optional<TypeHierarchyItem> typeHierarchyItem(
-      final TypeIndexEntry entry, final List<Path> sourceRoots) {
-    return TypeSourceLocator.locate(entry, sourceRoots, parser)
-        .map(
-            location -> {
-              final var item =
-                  new TypeHierarchyItem(
-                      entry.simpleName(),
-                      WorkspaceSymbolResolver.toSymbolKind(entry.kind()),
-                      location.getUri(),
-                      location.getRange(),
-                      location.getRange());
-              item.setDetail(entry.packageName());
-              item.setData(
-                  TypeHierarchyItemDataCodec.encode(
-                      new TypeHierarchyItemData(entry.binaryName(), location.getUri())));
-              return item;
-            });
+    return typeHierarchyResolver.subtypes(item, typeIndex, sourceRoots);
   }
 
   private static List<Path> typeSourceRoots(final SourceFeatureRequest request) {

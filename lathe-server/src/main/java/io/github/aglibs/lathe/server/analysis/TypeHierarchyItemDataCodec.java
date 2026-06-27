@@ -19,6 +19,14 @@ public final class TypeHierarchyItemDataCodec {
     }
 
     if (data instanceof final JsonObject json) {
+      if (json.get("binaryName") == null) {
+        throw new IllegalArgumentException("missing field: binaryName");
+      }
+
+      if (json.get("routingUri") == null) {
+        throw new IllegalArgumentException("missing field: routingUri");
+      }
+
       return new TypeHierarchyItemData(
           json.get("binaryName").getAsString(), json.get("routingUri").getAsString());
     }
