@@ -1,7 +1,6 @@
 package io.github.aglibs.lathe.server.analysis;
 
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
-import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
@@ -9,7 +8,6 @@ import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.SymbolInformation;
-import org.eclipse.lsp4j.SymbolKind;
 
 public final class WorkspaceSymbolResolver {
 
@@ -38,20 +36,13 @@ public final class WorkspaceSymbolResolver {
 
     final var location = new Location(file.toUri().toString(), FILE_START);
     final var info =
-        new SymbolInformation(entry.simpleName(), toSymbolKind(entry.kind()), location);
+        new SymbolInformation(
+            entry.simpleName(), SymbolKinds.fromTypeIndex(entry.kind()), location);
     info.setContainerName(entry.packageName());
     return info;
   }
 
   static Path resolveSourcePath(final TypeIndexEntry entry, final List<Path> sourceDirs) {
     return TypeSourceLocator.findSourceFile(entry, sourceDirs).orElse(null);
-  }
-
-  static SymbolKind toSymbolKind(final TypeKind kind) {
-    return switch (kind) {
-      case INTERFACE -> SymbolKind.Interface;
-      case ENUM -> SymbolKind.Enum;
-      default -> SymbolKind.Class;
-    };
   }
 }

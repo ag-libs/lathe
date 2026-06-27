@@ -108,11 +108,6 @@ final class DocumentSymbolScanner extends TreePathScanner<Void, Void> {
   }
 
   private static SymbolKind kind(final ClassTree node) {
-    return switch (node.getKind()) {
-      case ANNOTATION_TYPE, INTERFACE -> SymbolKind.Interface;
-      case ENUM -> SymbolKind.Enum;
-      case RECORD -> SymbolKind.Struct;
-      default -> SymbolKind.Class;
-    };
+    return SymbolKinds.fromTree(node.getKind());
   }
 }

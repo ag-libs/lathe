@@ -67,7 +67,7 @@ final class TypeHierarchyResolver {
               final var hierarchyItem =
                   new TypeHierarchyItem(
                       entry.simpleName(),
-                      WorkspaceSymbolResolver.toSymbolKind(entry.kind()),
+                      SymbolKinds.fromTypeIndex(entry.kind()),
                       location.getUri(),
                       location.getRange(),
                       location.getRange());

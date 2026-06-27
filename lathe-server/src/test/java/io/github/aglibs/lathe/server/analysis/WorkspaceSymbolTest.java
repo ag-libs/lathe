@@ -159,22 +159,19 @@ class WorkspaceSymbolTest {
     assertThat(result.getFileName().toString()).isEqualTo("ArrayList.java");
   }
 
-  // --- toSymbolKind: kind mappings ---
+  // --- SymbolKinds.fromTypeIndex ---
 
   @Test
-  void toSymbolKind_interfaceAndEnum_mapToMatchingKind() {
-    assertThat(WorkspaceSymbolResolver.toSymbolKind(TypeKind.INTERFACE))
-        .isEqualTo(SymbolKind.Interface);
-    assertThat(WorkspaceSymbolResolver.toSymbolKind(TypeKind.ENUM)).isEqualTo(SymbolKind.Enum);
+  void fromTypeIndex_interfaceAndEnum_mapToMatchingKind() {
+    assertThat(SymbolKinds.fromTypeIndex(TypeKind.INTERFACE)).isEqualTo(SymbolKind.Interface);
+    assertThat(SymbolKinds.fromTypeIndex(TypeKind.ENUM)).isEqualTo(SymbolKind.Enum);
+    assertThat(SymbolKinds.fromTypeIndex(TypeKind.RECORD)).isEqualTo(SymbolKind.Struct);
+    assertThat(SymbolKinds.fromTypeIndex(TypeKind.ANNOTATION)).isEqualTo(SymbolKind.Interface);
   }
 
   @Test
-  void toSymbolKind_otherKinds_mapToClass() {
-    for (final TypeKind kind :
-        new TypeKind[] {TypeKind.CLASS, TypeKind.RECORD, TypeKind.ANNOTATION, TypeKind.UNKNOWN}) {
-      assertThat(WorkspaceSymbolResolver.toSymbolKind(kind))
-          .as("kind %s", kind)
-          .isEqualTo(SymbolKind.Class);
-    }
+  void fromTypeIndex_classAndUnknown_mapToClass() {
+    assertThat(SymbolKinds.fromTypeIndex(TypeKind.CLASS)).isEqualTo(SymbolKind.Class);
+    assertThat(SymbolKinds.fromTypeIndex(TypeKind.UNKNOWN)).isEqualTo(SymbolKind.Class);
   }
 }
