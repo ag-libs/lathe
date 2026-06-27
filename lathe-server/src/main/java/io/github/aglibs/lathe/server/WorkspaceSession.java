@@ -36,6 +36,7 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -475,99 +476,82 @@ final class WorkspaceSession {
   }
 
   CompletableFuture<Hover> hoverFuture(final String uri, final Position pos) {
-    final OpenDocument openFile = docs.get(uri);
-    if (openFile == null) {
-      return CompletableFuture.completedFuture(null);
-    }
-
-    final var request =
-        new SourceFeatureRequest(
-            openFile.uri(), openFile.content(), pos, workspace.allSourceRoots(), manifest);
-    return routeFeature(
+    return openDocFeature(
         uri,
-        moduleWorker ->
-            moduleWorker
-                .hover(request)
-                .exceptionally(
-                    ex -> logAndReturn(ex, "[hover] failed for %s".formatted(uri), null)),
-        null);
+        null,
+        (worker, doc) -> {
+          final var request =
+              new SourceFeatureRequest(
+                  doc.uri(), doc.content(), pos, workspace.allSourceRoots(), manifest);
+          return worker
+              .hover(request)
+              .exceptionally(ex -> logAndReturn(ex, "[hover] failed for %s".formatted(uri), null));
+        });
   }
 
   CompletableFuture<SignatureHelp> signatureHelpFuture(final String uri, final Position pos) {
-    final OpenDocument openFile = docs.get(uri);
-    if (openFile == null) {
-      return CompletableFuture.completedFuture(null);
-    }
-
-    final var request =
-        new SourceFeatureRequest(
-            openFile.uri(), openFile.content(), pos, workspace.allSourceRoots(), manifest);
-    return routeFeature(
+    return openDocFeature(
         uri,
-        moduleWorker ->
-            moduleWorker
-                .signatureHelp(request)
-                .exceptionally(
-                    ex -> logAndReturn(ex, "[signatureHelp] failed for %s".formatted(uri), null)),
-        null);
+        null,
+        (worker, doc) -> {
+          final var request =
+              new SourceFeatureRequest(
+                  doc.uri(), doc.content(), pos, workspace.allSourceRoots(), manifest);
+          return worker
+              .signatureHelp(request)
+              .exceptionally(
+                  ex -> logAndReturn(ex, "[signatureHelp] failed for %s".formatted(uri), null));
+        });
   }
 
   CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       definitionFuture(final String uri, final Position pos) {
-    final OpenDocument openFile = docs.get(uri);
-    if (openFile == null) {
-      return CompletableFuture.completedFuture(Either.forLeft(List.of()));
-    }
-
     LOG.info(
         () ->
             "[definition] %s line=%d character=%d"
                 .formatted(uri, pos.getLine(), pos.getCharacter()));
-    final var request =
-        new SourceFeatureRequest(
-            openFile.uri(), openFile.content(), pos, workspace.allSourceRoots(), manifest);
-    return routeFeature(
+    return openDocFeature(
         uri,
-        moduleWorker ->
-            moduleWorker
-                .definition(request)
-                .thenApply(location -> definitionResult(location.map(List::of).orElseGet(List::of)))
-                .exceptionally(
-                    ex ->
-                        logAndReturn(
-                            ex,
-                            "[definition] failed for %s".formatted(uri),
-                            Either.forLeft(List.of()))),
-        Either.forLeft(List.of()));
+        Either.forLeft(List.of()),
+        (worker, doc) -> {
+          final var request =
+              new SourceFeatureRequest(
+                  doc.uri(), doc.content(), pos, workspace.allSourceRoots(), manifest);
+          return worker
+              .definition(request)
+              .thenApply(location -> definitionResult(location.map(List::of).orElseGet(List::of)))
+              .exceptionally(
+                  ex ->
+                      logAndReturn(
+                          ex,
+                          "[definition] failed for %s".formatted(uri),
+                          Either.forLeft(List.of())));
+        });
   }
 
   CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       declarationFuture(final String uri, final Position pos) {
-    final OpenDocument openFile = docs.get(uri);
-    if (openFile == null) {
-      return CompletableFuture.completedFuture(Either.forLeft(List.of()));
-    }
-
     LOG.info(
         () ->
             "[declaration] %s line=%d character=%d"
                 .formatted(uri, pos.getLine(), pos.getCharacter()));
-    final var request =
-        new SourceFeatureRequest(
-            openFile.uri(), openFile.content(), pos, workspace.allSourceRoots(), manifest);
-    return routeFeature(
+    return openDocFeature(
         uri,
-        moduleWorker ->
-            moduleWorker
-                .declaration(request)
-                .thenApply(location -> definitionResult(location.map(List::of).orElseGet(List::of)))
-                .exceptionally(
-                    ex ->
-                        logAndReturn(
-                            ex,
-                            "[declaration] failed for %s".formatted(uri),
-                            Either.forLeft(List.of()))),
-        Either.forLeft(List.of()));
+        Either.forLeft(List.of()),
+        (worker, doc) -> {
+          final var request =
+              new SourceFeatureRequest(
+                  doc.uri(), doc.content(), pos, workspace.allSourceRoots(), manifest);
+          return worker
+              .declaration(request)
+              .thenApply(location -> definitionResult(location.map(List::of).orElseGet(List::of)))
+              .exceptionally(
+                  ex ->
+                      logAndReturn(
+                          ex,
+                          "[declaration] failed for %s".formatted(uri),
+                          Either.forLeft(List.of())));
+        });
   }
 
   CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
@@ -676,22 +660,13 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    final OpenDocument openFile = docs.get(data.routingUri());
-    if (openFile == null) {
-      return CompletableFuture.completedFuture(List.of());
-    }
-
     final var t = Stopwatch.start();
-    return routeFeature(
+    return openDocFeature(
             data.routingUri(),
-            moduleWorker ->
-                moduleWorker.outgoingCalls(
-                    item,
-                    openFile.uri(),
-                    openFile.content(),
-                    openFile.version(),
-                    workspace.allSourceRoots()),
-            List.of())
+            List.of(),
+            (worker, doc) ->
+                worker.outgoingCalls(
+                    item, doc.uri(), doc.content(), doc.version(), workspace.allSourceRoots()))
         .thenApply(
             calls -> {
               LOG.fine(
@@ -830,16 +805,16 @@ final class WorkspaceSession {
 
   CompletableFuture<List<CallHierarchyItem>> prepareCallHierarchyFuture(
       final String uri, final Position pos) {
-    final OpenDocument openFile = docs.get(uri);
-    if (openFile == null) {
-      return CompletableFuture.completedFuture(List.of());
-    }
-
-    final var request =
-        new SourceFeatureRequest(
-            openFile.uri(), openFile.content(), pos, workspace.allSourceRoots(), manifest);
     final var t = Stopwatch.start();
-    return routeFeature(uri, moduleWorker -> moduleWorker.prepareCallHierarchy(request), List.of())
+    return openDocFeature(
+            uri,
+            List.of(),
+            (worker, doc) -> {
+              final var request =
+                  new SourceFeatureRequest(
+                      doc.uri(), doc.content(), pos, workspace.allSourceRoots(), manifest);
+              return worker.prepareCallHierarchy(request);
+            })
         .thenApply(
             items -> {
               LOG.fine(
@@ -852,20 +827,17 @@ final class WorkspaceSession {
 
   CompletableFuture<List<TypeHierarchyItem>> prepareTypeHierarchyFuture(
       final String uri, final Position pos) {
-    final OpenDocument openFile = docs.get(uri);
-    if (openFile == null) {
-      return CompletableFuture.completedFuture(List.of());
-    }
-
-    final var request =
-        new SourceFeatureRequest(
-            openFile.uri(), openFile.content(), pos, workspace.allSourceRoots(), manifest);
     final var indexSnapshot = typeIndex;
     final var t = Stopwatch.start();
-    return routeFeature(
+    return openDocFeature(
             uri,
-            moduleWorker -> moduleWorker.prepareTypeHierarchy(request, indexSnapshot),
-            List.of())
+            List.of(),
+            (worker, doc) -> {
+              final var request =
+                  new SourceFeatureRequest(
+                      doc.uri(), doc.content(), pos, workspace.allSourceRoots(), manifest);
+              return worker.prepareTypeHierarchy(request, indexSnapshot);
+            })
         .thenApply(
             items -> {
               LOG.fine(
@@ -886,10 +858,10 @@ final class WorkspaceSession {
     final var indexSnapshot = typeIndex;
     final List<Path> sourceDirs = typeSourceDirs();
     final var t = Stopwatch.start();
-    return routeFeature(
+    return openDocFeature(
             data.routingUri(),
-            moduleWorker -> moduleWorker.typeHierarchySupertypes(item, indexSnapshot, sourceDirs),
-            List.of())
+            List.of(),
+            (worker, doc) -> worker.typeHierarchySupertypes(item, indexSnapshot, sourceDirs))
         .thenApply(
             items -> {
               LOG.fine(
@@ -910,10 +882,10 @@ final class WorkspaceSession {
     final var indexSnapshot = typeIndex;
     final List<Path> sourceDirs = typeSourceDirs();
     final var t = Stopwatch.start();
-    return routeFeature(
+    return openDocFeature(
             data.routingUri(),
-            moduleWorker -> moduleWorker.typeHierarchySubtypes(item, indexSnapshot, sourceDirs),
-            List.of())
+            List.of(),
+            (worker, doc) -> worker.typeHierarchySubtypes(item, indexSnapshot, sourceDirs))
         .thenApply(
             items -> {
               LOG.fine(
@@ -926,24 +898,19 @@ final class WorkspaceSession {
 
   CompletableFuture<CompletionOutcome> completionFuture(
       final String uri, final Position pos, final CompletionContext context) {
-    final OpenDocument openFile = docs.get(uri);
-    if (openFile == null) {
-      return CompletableFuture.completedFuture(CompletionOutcome.of(List.of()));
-    }
-
     final var indexSnapshot = typeIndex;
-    return routeFeature(
+    return openDocFeature(
         uri,
-        moduleWorker ->
-            moduleWorker
-                .complete(uri, openFile.content(), openFile.version(), pos, context, indexSnapshot)
+        CompletionOutcome.of(List.of()),
+        (worker, doc) ->
+            worker
+                .complete(uri, doc.content(), doc.version(), pos, context, indexSnapshot)
                 .exceptionally(
                     ex ->
                         logAndReturn(
                             ex,
                             "[completion] failed for %s".formatted(uri),
-                            CompletionOutcome.of(List.of()))),
-        CompletionOutcome.of(List.of()));
+                            CompletionOutcome.of(List.of()))));
   }
 
   CompletableFuture<List<Either<Command, CodeAction>>> codeActionFuture(
@@ -979,56 +946,41 @@ final class WorkspaceSession {
   }
 
   CompletableFuture<SemanticTokens> semanticTokensFuture(final String uri) {
-    final OpenDocument openFile = docs.get(uri);
-    if (openFile == null) {
-      return CompletableFuture.completedFuture(null);
-    }
-
-    final int version = openFile.version();
-    return routeFeature(
+    return openDocFeature(
         uri,
-        moduleWorker ->
-            moduleWorker
-                .semanticTokens(uri, version)
+        null,
+        (worker, doc) ->
+            worker
+                .semanticTokens(uri, doc.version())
                 .thenApply(WorkspaceSession::encodeTokensOrNull)
                 .exceptionally(
-                    ex -> logAndReturn(ex, "[semanticTokens] failed for %s".formatted(uri), null)),
-        null);
+                    ex -> logAndReturn(ex, "[semanticTokens] failed for %s".formatted(uri), null)));
   }
 
   CompletableFuture<List<DocumentSymbol>> documentSymbolFuture(final String uri) {
-    final OpenDocument openFile = docs.get(uri);
-    if (openFile == null) {
-      return CompletableFuture.completedFuture(List.of());
-    }
-
-    return routeFeature(
+    return openDocFeature(
         uri,
-        moduleWorker ->
-            moduleWorker
-                .documentSymbol(uri, openFile.content())
+        List.of(),
+        (worker, doc) ->
+            worker
+                .documentSymbol(uri, doc.content())
                 .exceptionally(
                     ex ->
                         logAndReturn(
-                            ex, "[documentSymbol] failed for %s".formatted(uri), List.of())),
-        List.of());
+                            ex, "[documentSymbol] failed for %s".formatted(uri), List.of())));
   }
 
   CompletableFuture<List<FoldingRange>> foldingRangeFuture(final String uri) {
-    final OpenDocument openFile = docs.get(uri);
-    if (openFile == null) {
-      return CompletableFuture.completedFuture(List.of());
-    }
-
-    return routeFeature(
+    return openDocFeature(
         uri,
-        moduleWorker ->
-            moduleWorker
-                .foldingRange(uri, openFile.content())
+        List.of(),
+        (worker, doc) ->
+            worker
+                .foldingRange(uri, doc.content())
                 .exceptionally(
                     ex ->
-                        logAndReturn(ex, "[foldingRange] failed for %s".formatted(uri), List.of())),
-        List.of());
+                        logAndReturn(
+                            ex, "[foldingRange] failed for %s".formatted(uri), List.of())));
   }
 
   List<? extends TextEdit> format(final String tag, final String uri) {
@@ -1241,6 +1193,18 @@ final class WorkspaceSession {
               return new CompilerRoute.Missing(
                   uri, "Run `mvn process-test-classes` to initialize Lathe for this module");
             });
+  }
+
+  private <T> CompletableFuture<T> openDocFeature(
+      final String uri,
+      final T fallback,
+      final BiFunction<CompilationWorker, OpenDocument, CompletableFuture<T>> op) {
+    final OpenDocument doc = docs.get(uri);
+    if (doc == null) {
+      return CompletableFuture.completedFuture(fallback);
+    }
+
+    return routeFeature(uri, worker -> op.apply(worker, doc), fallback);
   }
 
   private <T> CompletableFuture<T> routeFeature(
