@@ -2,10 +2,15 @@ package io.github.aglibs.lathe.server.analysis;
 
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.JavacTask;
+import com.sun.source.util.Trees;
 import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
+import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.ToolProvider;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
@@ -40,6 +45,26 @@ public interface JavaSourceCompiler extends AutoCloseable {
 
   @Override
   void close();
+
+  static CompilerResult runAnalysis(
+      final JavacTask task, final DiagnosticCollector<JavaFileObject> collector) {
+    try {
+      final CompilationUnitTree cu = safeCompile(task);
+      final var trees = Trees.instance(task);
+      if (cu != null) {
+        final List<SemanticToken> tokens = TokenScanner.scan(trees, cu);
+        return new CompilerResult(
+            collector.getDiagnostics(),
+            new AttributedFileAnalysis(trees, task.getElements(), task.getTypes(), cu, tokens));
+      }
+
+      return new CompilerResult(
+          collector.getDiagnostics(),
+          new AttributedFileAnalysis(trees, task.getElements(), task.getTypes(), null, null));
+    } catch (final IOException e) {
+      throw new UncheckedIOException(e);
+    }
+  }
 
   static CompilationUnitTree safeCompile(final JavacTask task) throws IOException {
     final var it = task.parse().iterator();

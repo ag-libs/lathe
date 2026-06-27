@@ -1,8 +1,6 @@
 package io.github.aglibs.lathe.server.analysis;
 
-import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.JavacTask;
-import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.typeindex.DependencyTypeIndexOrigin;
@@ -70,20 +68,7 @@ public final class TempSourceCompiler implements JavaSourceCompiler {
                   null,
                   fm.getJavaFileObjects(tempFile));
 
-      final CompilationUnitTree cu = JavaSourceCompiler.safeCompile(task);
-
-      final var trees = Trees.instance(task);
-      final AttributedFileAnalysis fileAnalysis;
-      if (cu != null) {
-        final List<SemanticToken> tokens = TokenScanner.scan(trees, cu);
-        fileAnalysis =
-            new AttributedFileAnalysis(trees, task.getElements(), task.getTypes(), cu, tokens);
-      } else {
-        fileAnalysis =
-            new AttributedFileAnalysis(trees, task.getElements(), task.getTypes(), null, null);
-      }
-
-      return new CompilerResult(collector.getDiagnostics(), fileAnalysis);
+      return JavaSourceCompiler.runAnalysis(task, collector);
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }
