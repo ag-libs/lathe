@@ -1,9 +1,11 @@
 package io.github.aglibs.lathe.server.analysis;
 
+import static io.github.aglibs.lathe.server.analysis.SourceLocator.offsetToPosition;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.type.TypeKind;
+import org.eclipse.lsp4j.Position;
 import org.junit.jupiter.api.Test;
 
 // Sample.java line/char positions (LSP 0-based):
@@ -320,5 +322,32 @@ class SourceLocatorTest extends SampleFixture {
             source, source.indexOf("{"), source.indexOf(";"), "Foo");
 
     assertThat(result).isEqualTo(-1L);
+  }
+
+  // --- offsetToPosition ---
+
+  @Test
+  void offsetToPosition_startOfString_returnsOrigin() {
+    assertThat(offsetToPosition("hello", 0)).isEqualTo(new Position(0, 0));
+  }
+
+  @Test
+  void offsetToPosition_midLine_returnsCorrectColumn() {
+    assertThat(offsetToPosition("hello world", 6)).isEqualTo(new Position(0, 6));
+  }
+
+  @Test
+  void offsetToPosition_afterNewline_returnsNextLineStart() {
+    assertThat(offsetToPosition("hello\nworld", 6)).isEqualTo(new Position(1, 0));
+  }
+
+  @Test
+  void offsetToPosition_multiline_returnsCorrectLineAndCol() {
+    assertThat(offsetToPosition("hello\nworld", 8)).isEqualTo(new Position(1, 2));
+  }
+
+  @Test
+  void offsetToPosition_beyondEnd_clampsToLength() {
+    assertThat(offsetToPosition("hi", 100)).isEqualTo(new Position(0, 2));
   }
 }
