@@ -206,12 +206,18 @@ prepareTypeHierarchy, typeHierarchySupertypes, typeHierarchySubtypes) repeat the
 Collapse into one parameterized helper.
 This is a contained, high-clarity win and can be proposed independently.
 
-### 6.2 `WorkspaceSession` immutable state holder
+### 6.2 `WorkspaceSession` immutable state holder — DROPPED
 
 The cluster of mutable fields reassigned across `initialize()` / `reload()` / `refreshReactorShard()`
 (`manifest`, `workspace`, `moduleGraph`, `candidateIndex`, `typeIndex`, `reactorShards`) could move
 behind a single immutable snapshot swapped atomically on the worker thread.
-Propose only after 6.1.
+
+**Decision (2026-06-27): not doing this.**
+`WorkspaceSession` is single-threaded; partial-update is not a real risk.
+Grouping the 6 fields behind a record accessor adds call-site verbosity at 40+ sites,
+triggers an unresolvable AutoCloseable warning on `state.moduleRegistry().close()`,
+and requires an ugly 6-arg empty-state constructor.
+The cost outweighs a purely aesthetic benefit.
 
 ### 6.3 `CompletionEngine` completer extraction
 

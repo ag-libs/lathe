@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.analysis.completion;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.ImportAnalyzer;
 import java.util.List;
+import java.util.stream.Stream;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.CompletionItemLabelDetails;
@@ -78,6 +79,19 @@ final class CompletionItemPresenter {
               : "import %s;\n".formatted(edit.qualifiedName());
       items.get(i).setAdditionalTextEdits(List.of(new TextEdit(insertionRange, importText)));
     }
+  }
+
+  static void addAdditionalTextEdit(final CompletionItem item, final TextEdit edit) {
+    final var existing = item.getAdditionalTextEdits();
+    if (existing != null
+        && existing.stream().anyMatch(e -> e.getNewText().equals(edit.getNewText()))) {
+      return;
+    }
+
+    item.setAdditionalTextEdits(
+        existing == null
+            ? List.of(edit)
+            : Stream.concat(existing.stream(), Stream.of(edit)).toList());
   }
 
   static void applyReplacementRange(final List<CompletionItem> items, final Range range) {
