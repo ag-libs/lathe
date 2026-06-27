@@ -42,8 +42,11 @@ final class SimpleNameProvider {
   List<CompletionCandidate> collect() {
     final var methodPath =
         context.enclosingMethod() != null
-            ? findScopeMethodPath(
-                context.enclosingClass(), context.enclosingMethod(), context.cursorOffset())
+            ? TypeResolver.findMethodPath(
+                context.enclosingClass(),
+                context.enclosingMethod(),
+                context.cursorOffset(),
+                snapshot)
             : null;
     final boolean staticMethod = isStaticMethod(methodPath);
 
@@ -168,43 +171,6 @@ final class SimpleNameProvider {
         .filter(el -> !staticOnly || el.getModifiers().contains(Modifier.STATIC))
         .filter(el -> el.getSimpleName().toString().startsWith(context.prefix()))
         .forEach(el -> addMember(el, declaredType));
-  }
-
-  private TreePath findScopeMethodPath(
-      final String className, final String methodName, final long cursorOffset) {
-    final var result = new AtomicReference<TreePath>();
-    new TreePathScanner<Void, Void>() {
-      @Override
-      public Void visitClass(final ClassTree node, final Void unused) {
-        return super.visitClass(node, unused);
-      }
-
-      @Override
-      public Void visitMethod(final MethodTree node, final Void unused) {
-        if (!methodName.equals(node.getName().toString())) {
-          return null;
-        }
-
-        final var parentLeaf = getCurrentPath().getParentPath().getLeaf();
-        if (!(parentLeaf instanceof final ClassTree cls)
-            || !className.equals(cls.getSimpleName().toString())) {
-          return null;
-        }
-
-        final var current = getCurrentPath();
-        final var pos = snapshot.trees().getSourcePositions();
-        final long start = pos.getStartPosition(snapshot.tree(), node);
-        final long end = pos.getEndPosition(snapshot.tree(), node);
-        if (cursorOffset >= start && cursorOffset <= end) {
-          result.set(current);
-        } else if (result.get() == null) {
-          result.set(current);
-        }
-
-        return null;
-      }
-    }.scan(snapshot.tree(), null);
-    return result.get();
   }
 
   private void addStaticImportMembers() {

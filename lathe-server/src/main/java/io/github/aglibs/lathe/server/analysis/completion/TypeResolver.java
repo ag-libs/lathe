@@ -107,7 +107,7 @@ final class TypeResolver {
     }
 
     final var methodPath =
-        findScopeMethodPath(
+        findMethodPath(
             site.enclosingClass(), site.enclosingMethod(), site.cursorOffset(), snapshot);
     if (methodPath == null || ((MethodTree) methodPath.getLeaf()).getBody() == null) {
       return null;
@@ -374,7 +374,7 @@ final class TypeResolver {
   private static ExpectedValue resolveArgumentValueByPosition(
       final CompletionSite site, final AttributedFileAnalysis snapshot) {
     final var methodPath =
-        findScopeMethodPath(
+        findMethodPath(
             site.enclosingClass(), site.enclosingMethod(), site.cursorOffset(), snapshot);
     if (methodPath == null) {
       return new ExpectedValue.Unknown();
@@ -432,7 +432,7 @@ final class TypeResolver {
     }
 
     final var methodPath =
-        findScopeMethodPath(
+        findMethodPath(
             site.enclosingClass(), site.enclosingMethod(), site.cursorOffset(), snapshot);
     if (methodPath == null || ((MethodTree) methodPath.getLeaf()).getBody() == null) {
       return new ExpectedValue.Unknown();
@@ -714,47 +714,6 @@ final class TypeResolver {
     return start < 0 || start >= cursorOffset || end < cursorOffset;
   }
 
-  private static TreePath findScopeMethodPath(
-      final String className,
-      final String methodName,
-      final int cursorOffset,
-      final AttributedFileAnalysis snapshot) {
-    final var result = new AtomicReference<TreePath>();
-    new TreePathScanner<Void, Void>() {
-      @Override
-      public Void visitClass(final ClassTree node, final Void unused) {
-        return super.visitClass(node, unused);
-      }
-
-      @Override
-      public Void visitMethod(final MethodTree node, final Void unused) {
-        if (!methodName.equals(node.getName().toString())) {
-          return null;
-        }
-
-        final var parentLeaf = getCurrentPath().getParentPath().getLeaf();
-        if (className != null
-            && !(parentLeaf instanceof final ClassTree cls
-                && className.equals(cls.getSimpleName().toString()))) {
-          return null;
-        }
-
-        final var current = getCurrentPath();
-        final var pos = snapshot.trees().getSourcePositions();
-        final long start = pos.getStartPosition(snapshot.tree(), node);
-        final long end = pos.getEndPosition(snapshot.tree(), node);
-        if (cursorOffset >= start && cursorOffset <= end) {
-          result.set(current);
-        } else if (result.get() == null) {
-          result.set(current);
-        }
-
-        return null;
-      }
-    }.scan(snapshot.tree(), null);
-    return result.get();
-  }
-
   private static TypeElement findClassElement(
       final String simpleName, final AttributedFileAnalysis snapshot) {
     if (simpleName == null || snapshot.tree() == null) {
@@ -778,28 +737,41 @@ final class TypeResolver {
     return result.get();
   }
 
-  private static TreePath findMethodPath(
-      final String className, final String methodName, final AttributedFileAnalysis snapshot) {
+  static TreePath findMethodPath(
+      final String className,
+      final String methodName,
+      final int cursorOffset,
+      final AttributedFileAnalysis snapshot) {
     final var result = new AtomicReference<TreePath>();
     new TreePathScanner<Void, Void>() {
       @Override
-      public Void visitClass(final ClassTree node, final Void unused) {
-        return super.visitClass(node, unused);
-      }
-
-      @Override
       public Void visitMethod(final MethodTree node, final Void unused) {
-        if (result.get() != null || !methodName.equals(node.getName().toString())) {
+        if (!methodName.equals(node.getName().toString())) {
           return null;
         }
 
         final var parentLeaf = getCurrentPath().getParentPath().getLeaf();
-        if (!(parentLeaf instanceof final ClassTree cls)
-            || !className.equals(cls.getSimpleName().toString())) {
+        if (className != null
+            && !(parentLeaf instanceof final ClassTree cls
+                && className.equals(cls.getSimpleName().toString()))) {
           return null;
         }
 
-        result.set(getCurrentPath());
+        final var current = getCurrentPath();
+        if (cursorOffset >= 0) {
+          final var pos = snapshot.trees().getSourcePositions();
+          final long start = pos.getStartPosition(snapshot.tree(), node);
+          final long end = pos.getEndPosition(snapshot.tree(), node);
+          if (cursorOffset >= start && cursorOffset <= end) {
+            result.set(current);
+            return null;
+          }
+        }
+
+        if (result.get() == null) {
+          result.set(current);
+        }
+
         return null;
       }
     }.scan(snapshot.tree(), null);
@@ -816,7 +788,7 @@ final class TypeResolver {
       return null;
     }
 
-    final var methodPath = findMethodPath(enclosingClass, enclosingMethod, snapshot);
+    final var methodPath = findMethodPath(enclosingClass, enclosingMethod, -1, snapshot);
     if (methodPath == null) {
       return null;
     }
