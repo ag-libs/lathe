@@ -462,7 +462,7 @@ These are reference data, not gap items.
 
 ## EG-009 — Outgoing calls includes anonymous class constructor instantiations with empty name
 
-**Status: accepted — Target: M1**
+**Status: done — Target: M1**
 
 ### Observed behaviour
 

@@ -86,7 +86,8 @@ final class CallHierarchyOutgoingLocator extends SourceTreeLocator {
   @Override
   public Void visitNewClass(final NewClassTree node, final Void ignored) {
     final var element = trees.getElement(getCurrentPath());
-    if (element instanceof ExecutableElement) {
+    if (element instanceof ExecutableElement
+        && !element.getEnclosingElement().getSimpleName().isEmpty()) {
       final var id = node.getIdentifier();
       final String name =
           id instanceof final MemberSelectTree mst

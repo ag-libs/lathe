@@ -17,8 +17,8 @@ discovery via [gap-workflow.md](gaps/gap-workflow.md) and resolved entries in [g
   [gaps-archive.md](gaps/gaps-archive.md). Lifecycle in [gap-process.md](gaps/gap-process.md); discovery in
   [gap-workflow.md](gaps/gap-workflow.md).
 - [MissingMethodImplProvider](planned/lathe-missing-method-impl.md) — generation of abstract-method stubs.
-- [M1 Refactoring](planned/lathe-m1-refactoring.md) — single consolidated refactoring plan: documentation accuracy,
-  fail-fast propagation, DRY/structural extractions, god-class decomposition, naming, and test-suite hygiene.
+- [M1 Refactoring](done/lathe-m1-refactoring.md) — single consolidated refactoring plan: documentation accuracy,
+  fail-fast propagation, DRY/structural extractions, god-class decomposition, naming, and test-suite hygiene. ✓
 - [Reactor Type Index](planned/lathe-reactor-type-index.md) — implemented baseline and freshness follow-ups.
 - [Type Index](planned/lathe-type-index.md) — implemented baseline plus active schema and freshness context.
 

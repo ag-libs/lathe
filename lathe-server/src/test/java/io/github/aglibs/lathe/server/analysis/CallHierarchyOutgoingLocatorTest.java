@@ -86,7 +86,36 @@ class CallHierarchyOutgoingLocatorTest {
   }
 
   @Test
-  void outgoingCalls_emptyMethodBody_returnsEmpty() throws IOException {
+  void outgoingCalls_anonymousClassInstantiation_excludedFromResults() throws IOException {
+    final String content =
+        """
+        class Task {
+            void run() {
+                execute(new Runnable() {
+                    public void run() {}
+                });
+            }
+            private void execute(Runnable r) {}
+        }
+        """;
+    Files.writeString(sourceRoot.resolve("Task.java"), content);
+    final var request = request(content, new Position(1, 9));
+
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(request.uri(), content, 1, CompileMode.OPEN);
+
+      final List<CallHierarchyItem> items = session.prepareCallHierarchy(request);
+      assertThat(items).hasSize(1);
+
+      final List<CallHierarchyOutgoingCall> calls =
+          session.outgoingCalls(items.getFirst(), request.uri(), content, 1, List.of(sourceRoot));
+
+      assertThat(calls).noneMatch(c -> c.getTo().getName().isEmpty());
+    }
+  }
+
+  @Test
+  void outgoingCalls_emptyMethodBody_returnsEmpty() {
     final String content = "class Thing { void noop() {} }\n";
     final var request = request(content, new Position(0, 19));
 
