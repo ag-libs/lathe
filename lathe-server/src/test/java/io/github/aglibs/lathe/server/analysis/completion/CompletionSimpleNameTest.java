@@ -4,8 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import java.util.List;
+import java.util.stream.Stream;
 import org.eclipse.lsp4j.CompletionItem;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class CompletionSimpleNameTest extends CompletionTestSupport {
 
@@ -201,70 +205,65 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
     assertThat(textItem.getSortText()).isLessThan(sbItem.getSortText());
   }
 
-  @Test
-  void simpleName_innerClassMethod_localsVisible() {
-    // Locals declared in an inner class method must appear at usage sites within that method
-    final var items =
-        labels(
-            fixture.complete(
-                """
-                class Outer {
-                    private static class Inner {
-                        static void accept(String s) {}
-                        void process(int x) {
-                            switch (x) {
-                                case 1:
-                                    final String localVar = "hello";
-                                    accept(loc§);
-                                    break;
+  // ── switch / inner-class local visibility (pure data variations) ─────────────
+
+  static Stream<Arguments> simpleName_localVisibleAtUsageSite_cases() {
+    return Stream.of(
+        Arguments.of(
+            "innerClassMethod",
+            """
+            class Outer {
+                private static class Inner {
+                    static void accept(String s) {}
+                    void process(int x) {
+                        switch (x) {
+                            case 1:
+                                final String localVar = "hello";
+                                accept(loc§);
+                                break;
+                        }
+                    }
+                }
+            }""",
+            "localVar"),
+        Arguments.of(
+            "switchCaseArm",
+            """
+            class Test {
+                static void accept(String s) {}
+                void m(int x) {
+                    switch (x) {
+                        case 1:
+                            final String result = "hello";
+                            accept(res§);
+                            break;
+                    }
+                }
+            }""",
+            "result"),
+        Arguments.of(
+            "forLoopNestedInSwitch",
+            """
+            class Test {
+                static void accept(String s) {}
+                void m(int x) {
+                    switch (x) {
+                        case 1:
+                            for (String item : java.util.List.of("a")) {
+                                accept(it§);
                             }
-                        }
+                            break;
                     }
-                }"""));
-    assertThat(items).contains("localVar");
+                }
+            }""",
+            "item"));
   }
 
-  @Test
-  void simpleName_switchCaseLocal_visibleAtUsageSite() {
-    // Local declared inside a switch-case arm must appear in completions at the usage site
-    final var items =
-        labels(
-            fixture.complete(
-                """
-                class Test {
-                    static void accept(String s) {}
-                    void m(int x) {
-                        switch (x) {
-                            case 1:
-                                final String result = "hello";
-                                accept(res§);
-                                break;
-                        }
-                    }
-                }"""));
-    assertThat(items).contains("result");
-  }
-
-  @Test
-  void simpleName_switchCaseLocal_forLoopNestedInSwitch() {
-    // Local declared inside for-loop inside switch-case arm must be visible
-    final var items =
-        labels(
-            fixture.complete(
-                """
-                class Test {
-                    static void accept(String s) {}
-                    void m(int x) {
-                        switch (x) {
-                            case 1:
-                                for (String item : java.util.List.of("a")) {
-                                    accept(it§);
-                                }
-                                break;
-                        }
-                    }
-                }"""));
-    assertThat(items).contains("item");
+  @ParameterizedTest(name = "simpleName_{0}_local_visibleAtUsage")
+  @MethodSource("simpleName_localVisibleAtUsageSite_cases")
+  void simpleName_local_visibleAtUsage(
+      final String scenario, final String source, final String expected) {
+    assertThat(labels(fixture.complete(source))).contains(expected);
   }
 
   @Test

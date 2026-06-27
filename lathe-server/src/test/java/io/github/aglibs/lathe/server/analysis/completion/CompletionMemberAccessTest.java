@@ -3,8 +3,12 @@ package io.github.aglibs.lathe.server.analysis.completion;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
+import java.util.stream.Stream;
 import org.eclipse.lsp4j.CompletionItem;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class CompletionMemberAccessTest extends CompletionTestSupport {
 
@@ -29,6 +33,176 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
             }"""
                 .formatted(imports, returnType, streamType)));
   }
+
+  // ── receiver-type dispatch (pure data variations) ─────────────────────────────
+
+  static Stream<Arguments> receiverTypeResolvedCases() {
+    return Stream.of(
+        Arguments.of(
+            "staticFqnReceiver",
+            """
+            class Test {
+                void m() {
+                    java.util.Collections.empty§
+                }
+            }""",
+            "emptyList"),
+        Arguments.of(
+            "methodCallComplexReceiver",
+            """
+            class Test {
+                java.util.List<String> getList() { return null; }
+                void m() {
+                    getList().sub§
+                }
+            }""",
+            "subList"),
+        Arguments.of(
+            "samePackageTypeReceiver",
+            """
+            package com.example;
+            class Helper {
+                static String greet() { return "hi"; }
+            }
+            class Test {
+                void m() {
+                    Helper.§
+                }
+            }""",
+            "greet"),
+        Arguments.of(
+            "starImportReceiver",
+            """
+            import java.util.*;
+            class Test {
+                void m() {
+                    Collections.§
+                }
+            }""",
+            "emptyList"),
+        Arguments.of(
+            "newClassReceiver", "class Test { void m() { new StringBuilder().ap§ } }", "append"),
+        Arguments.of(
+            "instanceFieldChain",
+            """
+            class Test {
+                String name = "x";
+                void m() {
+                    this.name.toL§
+                }
+            }""",
+            "toLowerCase"),
+        Arguments.of("staticFieldChain", "class Test { void m() { System.out.print§ } }", "print"),
+        Arguments.of(
+            "arrayElementReceiver",
+            """
+            class Test {
+                void m(String[] arr) {
+                    arr[0].toL§
+                }
+            }""",
+            "toLowerCase"),
+        Arguments.of(
+            "castReceiver",
+            """
+            class Test {
+                void m(Object obj) {
+                    ((String) obj).toL§
+                }
+            }""",
+            "toLowerCase"),
+        Arguments.of(
+            "methodParamReceiver", "class Test { void m(String s) { s.to§ } }", "toLowerCase"),
+        Arguments.of(
+            "stringLiteralReceiver", "class Test { void m() { \"hello\".to§ } }", "toLowerCase"),
+        Arguments.of(
+            "receiverInMethodArg",
+            """
+            class Test {
+                static void consume(String s) {}
+                void m() {
+                    String hello = "x";
+                    consume(hello.§);
+                }
+            }""",
+            "toLowerCase"),
+        Arguments.of(
+            "receiverInConstructorArg",
+            """
+            class Test {
+                void m() {
+                    String hello = "x";
+                    new StringBuilder(hello.§);
+                }
+            }""",
+            "toLowerCase"),
+        Arguments.of(
+            "gapClassFieldReceiver",
+            """
+            class Test {
+                java.util.ArrayList<String> handler = new java.util.ArrayList<>();
+                void m() {
+                    handler.sub§
+                }
+            }""",
+            "subList"),
+        Arguments.of(
+            "classLiteralArgReceiver",
+            """
+            class Test {
+                static class StrAssert {
+                    StrAssert isEqualTo(String v) { return this; }
+                    StrAssert contains(String s) { return this; }
+                    StrAssert startsWith(String s) { return this; }
+                }
+                static StrAssert assertThat(String v) { return new StrAssert(); }
+                static <T> T readEntity(Class<T> cls) { return null; }
+                void m() {
+                    assertThat(readEntity(String.class)).isEqual§
+                }
+            }""",
+            "isEqualTo"),
+        Arguments.of(
+            "methodParamInConstructorArg",
+            """
+            class Test {
+                static class Config {
+                    String url() { return ""; }
+                    String username() { return ""; }
+                }
+                static class Connection {
+                    Connection(String url) {}
+                }
+                void m(Config config) {
+                    new Connection(config.ur§);
+                }
+            }""",
+            "url"),
+        Arguments.of(
+            "localVarInStaticFactoryArg",
+            """
+            class Test {
+                static class Builder {
+                    Object build() { return null; }
+                    Builder credential(String c) { return this; }
+                }
+                static Object create(Object settings) { return null; }
+                void m() {
+                    Builder settingsBuilder = new Builder();
+                    create(settingsBuilder.buil§);
+                }
+            }""",
+            "build"));
+  }
+
+  @ParameterizedTest(name = "memberAccess_{0}_typeResolved")
+  @MethodSource("receiverTypeResolvedCases")
+  void memberAccess_receiverType_typeResolved(
+      final String scenario, final String source, final String prefix) {
+    assertThat(labels(fixture.complete(source))).anyMatch(l -> l.startsWith(prefix));
+  }
+
+  // ── core member access ────────────────────────────────────────────────────────
 
   @Test
   void memberAccess_instanceMethod_prefixFiltered() {
@@ -57,20 +231,6 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
                         }
                     }""")))
         .contains("name");
-  }
-
-  @Test
-  void memberAccess_staticFqnReceiver_staticMethodIncluded() {
-    assertThat(
-            labels(
-                fixture.complete(
-                    """
-                    class Test {
-                        void m() {
-                            java.util.Collections.empty§
-                        }
-                    }""")))
-        .anyMatch(l -> l.startsWith("emptyList"));
   }
 
   @Test
@@ -224,49 +384,6 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
   }
 
   @Test
-  void memberAccess_complexReceiver_returnTypeResolved() {
-    assertThat(
-            labels(
-                fixture.complete(
-                    """
-                    class Test {
-                        java.util.List<String> getList() { return null; }
-                        void m() {
-                            getList().sub§
-                        }
-                    }""")))
-        .anyMatch(l -> l.startsWith("subList"));
-  }
-
-  @Test
-  void memberAccess_receiverInArgument_completionsReturned() {
-    // receiver.§ inside method call arg and constructor call arg
-    assertThat(
-            labels(
-                fixture.complete(
-                    """
-                    class Test {
-                        static void consume(String s) {}
-                        void m() {
-                            String hello = "x";
-                            consume(hello.§);
-                        }
-                    }""")))
-        .anyMatch(l -> l.startsWith("toLowerCase"));
-    assertThat(
-            labels(
-                fixture.complete(
-                    """
-                    class Test {
-                        void m() {
-                            String hello = "x";
-                            new StringBuilder(hello.§);
-                        }
-                    }""")))
-        .anyMatch(l -> l.startsWith("toLowerCase"));
-  }
-
-  @Test
   void memberAccess_objectMethodsIncludedAndRankLast() {
     final var items =
         fixture.complete(
@@ -314,39 +431,6 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
               assertThat(i.getLabelDetails()).isNotNull();
               assertThat(i.getLabelDetails().getDetail()).isEqualTo("(E)");
             });
-  }
-
-  @Test
-  void memberAccess_samePackageType_staticMembersReturned() {
-    assertThat(
-            labels(
-                fixture.complete(
-                    """
-                    package com.example;
-                    class Helper {
-                        static String greet() { return "hi"; }
-                    }
-                    class Test {
-                        void m() {
-                            Helper.§
-                        }
-                    }""")))
-        .anyMatch(l -> l.startsWith("greet"));
-  }
-
-  @Test
-  void memberAccess_starImport_staticMembersReturned() {
-    assertThat(
-            labels(
-                fixture.complete(
-                    """
-                    import java.util.*;
-                    class Test {
-                        void m() {
-                            Collections.§
-                        }
-                    }""")))
-        .anyMatch(l -> l.startsWith("emptyList"));
   }
 
   @Test
@@ -419,73 +503,6 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
 
     assertLabelBefore(items, "OK", "Family");
     assertLabelBefore(items, "BAD_REQUEST", "Family");
-  }
-
-  @Test
-  void memberAccess_newClassReceiver_methodsReturned() {
-    assertThat(labels(fixture.complete("class Test { void m() { new StringBuilder().ap§ } }")))
-        .anyMatch(l -> l.startsWith("append"));
-  }
-
-  @Test
-  void memberAccess_instanceFieldChain_typeResolved() {
-    assertThat(
-            labels(
-                fixture.complete(
-                    """
-                    class Test {
-                        String name = "x";
-                        void m() {
-                            this.name.toL§
-                        }
-                    }""")))
-        .anyMatch(l -> l.startsWith("toLowerCase"));
-  }
-
-  @Test
-  void memberAccess_staticFieldChain_typeResolved() {
-    assertThat(labels(fixture.complete("class Test { void m() { System.out.print§ } }")))
-        .anyMatch(l -> l.startsWith("print"));
-  }
-
-  @Test
-  void memberAccess_arrayElementReceiver_typeResolved() {
-    assertThat(
-            labels(
-                fixture.complete(
-                    """
-                    class Test {
-                        void m(String[] arr) {
-                            arr[0].toL§
-                        }
-                    }""")))
-        .anyMatch(l -> l.startsWith("toLowerCase"));
-  }
-
-  @Test
-  void memberAccess_castReceiver_typeResolved() {
-    assertThat(
-            labels(
-                fixture.complete(
-                    """
-                    class Test {
-                        void m(Object obj) {
-                            ((String) obj).toL§
-                        }
-                    }""")))
-        .anyMatch(l -> l.startsWith("toLowerCase"));
-  }
-
-  @Test
-  void memberAccess_methodParamSameLine_typeResolved() {
-    assertThat(labels(fixture.complete("class Test { void m(String s) { s.to§ } }")))
-        .anyMatch(l -> l.startsWith("toLowerCase"));
-  }
-
-  @Test
-  void memberAccess_stringLiteralReceiver_stringMethodsReturned() {
-    assertThat(labels(fixture.complete("class Test { void m() { \"hello\".to§ } }")))
-        .anyMatch(l -> l.startsWith("toLowerCase"));
   }
 
   @Test
@@ -793,68 +810,6 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
     assertThat(items).noneMatch(i -> i.getLabel().startsWith("contains"));
   }
 
-  @Test
-  void memberAccess_methodCallReceiver_argumentContainsClassLiteral_returnTypeResolved() {
-    assertThat(
-            labels(
-                fixture.complete(
-                    """
-                    class Test {
-                        static class StrAssert {
-                            StrAssert isEqualTo(String v) { return this; }
-                            StrAssert contains(String s) { return this; }
-                            StrAssert startsWith(String s) { return this; }
-                        }
-                        static StrAssert assertThat(String v) { return new StrAssert(); }
-                        static <T> T readEntity(Class<T> cls) { return null; }
-                        void m() {
-                            assertThat(readEntity(String.class)).isEqual§
-                        }
-                    }""")))
-        .anyMatch(l -> l.startsWith("isEqualTo"));
-  }
-
-  @Test
-  void memberAccess_methodParam_insideConstructorCallArg_typeResolved() {
-    assertThat(
-            labels(
-                fixture.complete(
-                    """
-                    class Test {
-                        static class Config {
-                            String url() { return ""; }
-                            String username() { return ""; }
-                        }
-                        static class Connection {
-                            Connection(String url) {}
-                        }
-                        void m(Config config) {
-                            new Connection(config.ur§);
-                        }
-                    }""")))
-        .anyMatch(l -> l.startsWith("url"));
-  }
-
-  @Test
-  void memberAccess_localVar_insideStaticFactoryCallArg_typeResolved() {
-    assertThat(
-            labels(
-                fixture.complete(
-                    """
-                    class Test {
-                        static class Builder {
-                            Object build() { return null; }
-                            Builder credential(String c) { return this; }
-                        }
-                        static Object create(Object settings) { return null; }
-                        void m() {
-                            Builder settingsBuilder = new Builder();
-                            create(settingsBuilder.buil§);
-                        }
-                    }""")))
-        .anyMatch(l -> l.startsWith("build"));
-  }
-
   // ── gap regressions ───────────────────────────────────────────────────────────
 
   @Test
@@ -895,22 +850,6 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
             }""");
 
     assertThat(labels(items)).contains("credDb", "password", "url", "username", "equals");
-  }
-
-  @Test
-  void memberAccess_classFieldReceiver_typeResolved() {
-    // gap #7: class field receiver — scanForLocalDeclaration only checks method locals
-    assertThat(
-            labels(
-                fixture.complete(
-                    """
-                    class Test {
-                        java.util.ArrayList<String> handler = new java.util.ArrayList<>();
-                        void m() {
-                            handler.sub§
-                        }
-                    }""")))
-        .anyMatch(l -> l.startsWith("subList"));
   }
 
   @Test
