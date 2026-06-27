@@ -7,8 +7,6 @@ import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.NewClassTree;
-import com.sun.source.util.SourcePositions;
-import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -24,17 +22,9 @@ import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 
-final class CallHierarchyOutgoingLocator extends TreePathScanner<Void, Void> {
+final class CallHierarchyOutgoingLocator extends SourceTreeLocator {
 
   private final Map<Element, List<Range>> callSites = new LinkedHashMap<>();
-
-  private final Trees trees;
-  private final CompilationUnitTree cu;
-  private final String content;
-  private final SourcePositions positions;
-  private final ReferenceTarget target;
-  private final Types types;
-  private final Elements elements;
 
   private CallHierarchyOutgoingLocator(
       final Trees trees,
@@ -43,13 +33,7 @@ final class CallHierarchyOutgoingLocator extends TreePathScanner<Void, Void> {
       final ReferenceTarget target,
       final Types types,
       final Elements elements) {
-    this.trees = trees;
-    this.cu = cu;
-    this.content = content;
-    this.positions = trees.getSourcePositions();
-    this.target = target;
-    this.types = types;
-    this.elements = elements;
+    super(trees, cu, content, target, types, elements);
   }
 
   static List<CallHierarchyOutgoingCall> scan(
@@ -58,7 +42,7 @@ final class CallHierarchyOutgoingLocator extends TreePathScanner<Void, Void> {
       final List<Path> sourceRoots,
       final DefinitionLocator definitionLocator)
       throws IOException {
-    final var content = analysis.tree().getSourceFile().getCharContent(false).toString();
+    final var content = sourceContent(analysis);
     final var locator =
         new CallHierarchyOutgoingLocator(
             analysis.trees(),

@@ -14,9 +14,7 @@ import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.UnaryTree;
 import com.sun.source.tree.VariableTree;
-import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
-import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -28,15 +26,8 @@ import javax.lang.model.util.Types;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 
-final class ReferenceLocator extends TreePathScanner<Void, Void> {
+final class ReferenceLocator extends SourceTreeLocator {
 
-  private final Trees trees;
-  private final CompilationUnitTree cu;
-  private final SourcePositions positions;
-  private final String content;
-  private final ReferenceTarget target;
-  private final Types types;
-  private final Elements elements;
   private final String uri;
   private final boolean includeDeclaration;
   private final List<ReferenceMatch> results = new ArrayList<>();
@@ -50,13 +41,7 @@ final class ReferenceLocator extends TreePathScanner<Void, Void> {
       final Elements elements,
       final String uri,
       final boolean includeDeclaration) {
-    this.trees = trees;
-    this.cu = cu;
-    this.positions = trees.getSourcePositions();
-    this.content = content;
-    this.target = target;
-    this.types = types;
-    this.elements = elements;
+    super(trees, cu, content, target, types, elements);
     this.uri = uri;
     this.includeDeclaration = includeDeclaration;
   }
@@ -71,7 +56,7 @@ final class ReferenceLocator extends TreePathScanner<Void, Void> {
       return List.of();
     }
 
-    final var content = analysis.tree().getSourceFile().getCharContent(true).toString();
+    final var content = sourceContent(analysis);
     final var locator =
         new ReferenceLocator(
             analysis.trees(),

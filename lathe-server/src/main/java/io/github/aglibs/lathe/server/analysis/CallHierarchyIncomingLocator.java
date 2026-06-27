@@ -10,9 +10,7 @@ import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.VariableTree;
-import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
-import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -28,18 +26,10 @@ import org.eclipse.lsp4j.CallHierarchyItem;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 
-final class CallHierarchyIncomingLocator extends TreePathScanner<Void, Void> {
+final class CallHierarchyIncomingLocator extends SourceTreeLocator {
 
   private final Map<Element, TreePath> callerPaths = new LinkedHashMap<>();
   private final Map<Element, List<Range>> callerRanges = new LinkedHashMap<>();
-
-  private final Trees trees;
-  private final CompilationUnitTree cu;
-  private final String content;
-  private final SourcePositions positions;
-  private final ReferenceTarget target;
-  private final Types types;
-  private final Elements elements;
 
   private CallHierarchyIncomingLocator(
       final Trees trees,
@@ -48,19 +38,13 @@ final class CallHierarchyIncomingLocator extends TreePathScanner<Void, Void> {
       final ReferenceTarget target,
       final Types types,
       final Elements elements) {
-    this.trees = trees;
-    this.cu = cu;
-    this.content = content;
-    this.positions = trees.getSourcePositions();
-    this.target = target;
-    this.types = types;
-    this.elements = elements;
+    super(trees, cu, content, target, types, elements);
   }
 
   static List<CallHierarchyIncomingCall> scan(
       final AttributedFileAnalysis analysis, final ReferenceTarget target, final String fileUri)
       throws IOException {
-    final var content = analysis.tree().getSourceFile().getCharContent(false).toString();
+    final var content = sourceContent(analysis);
     final var locator =
         new CallHierarchyIncomingLocator(
             analysis.trees(),
