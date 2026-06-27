@@ -16,33 +16,14 @@ import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
 import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.plugin.logging.SystemStreamLog;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class DependencyTypeIndexSyncTest {
+class DependencyTypeIndexSyncTest extends AbstractCachePropertyTest {
 
   private static final Log LOG = new SystemStreamLog();
 
   @TempDir Path tmp;
-
-  private String previousCache;
-
-  @BeforeEach
-  void rememberCacheOverride() {
-    previousCache = System.getProperty("lathe.cache");
-  }
-
-  @AfterEach
-  void restoreCacheOverride() {
-    if (previousCache == null) {
-      System.clearProperty("lathe.cache");
-      return;
-    }
-
-    System.setProperty("lathe.cache", previousCache);
-  }
 
   @Test
   void index_missingIndex_writesShard() throws Exception {
