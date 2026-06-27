@@ -1187,6 +1187,42 @@ python3 dev/explore.py /path/to/Scratch.java inject "Object o = new Oper"
 
 ---
 
+## EG-025 — Stale class files from removed or renamed inner types are never cleaned up
+
+**Status: accepted — Target: M1**
+
+### Observed behaviour
+
+When a source file is **edited** to remove or rename a nested type (inner class, anonymous class,
+or local class), the corresponding `.class` file persists indefinitely in `latheClassesDir`.
+
+`deleteClassOutputs()` is called only on file deletion (`didClose` with a removed path),
+where it removes `Foo.class`, `Foo$Inner.class`, etc. matching the deleted source.
+There is no equivalent cleanup triggered by a successful recompilation of a file that still exists.
+
+A renamed `Foo$OldInner.class` that no longer corresponds to any source type remains in
+`latheClassesDir`, where `ClassFileTypeScanner` picks it up and adds the stale type to the reactor
+type index.
+This causes removed or renamed types to continue appearing in type-name completion, workspace symbol
+search, and type-hierarchy results until the server restarts.
+
+### Required behaviour
+
+After every successful `FULL` compile of a source file, delete any `.class` files in the matching
+package directory under `latheClassesDir` whose type name (simple name prefix before `$` or `.class`)
+does not match the top-level type declared in the recompiled source.
+
+Outer class files for other source files in the same package must not be deleted.
+
+### Required tests
+
+- Compile `Foo.java` containing `class Foo { class Inner {} }`, then recompile it with `Inner`
+  removed; assert `Foo$Inner.class` is gone from `latheClassesDir`.
+- Compile `Foo.java` containing `class Foo {}` and `Bar.java` containing `class Bar {}` in the same
+  package; recompile `Foo.java` with no inner types; assert `Bar.class` is untouched.
+
+---
+
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work
