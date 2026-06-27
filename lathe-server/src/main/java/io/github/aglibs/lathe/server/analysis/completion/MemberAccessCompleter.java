@@ -235,12 +235,6 @@ final class MemberAccessCompleter {
       return base;
     }
 
-    return new SemanticCompletionContext(
-        base.analysis(),
-        outerValue,
-        base.valueContext(),
-        base.inEqualityComparison(),
-        base.inNonVoidMethod(),
-        base.staticMemberResultContext());
+    return base.withExpectedValue(outerValue);
   }
 }

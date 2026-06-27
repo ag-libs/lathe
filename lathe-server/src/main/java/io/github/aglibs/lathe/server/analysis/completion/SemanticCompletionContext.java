@@ -23,6 +23,16 @@ record SemanticCompletionContext(
         analysis, new ExpectedValue.Unknown(), false, false, false, null);
   }
 
+  SemanticCompletionContext withExpectedValue(final ExpectedValue value) {
+    return new SemanticCompletionContext(
+        analysis,
+        value,
+        valueContext,
+        inEqualityComparison,
+        inNonVoidMethod,
+        staticMemberResultContext);
+  }
+
   static SemanticCompletionContext from(
       final CompletionSite site,
       final CompletionRequest request,
