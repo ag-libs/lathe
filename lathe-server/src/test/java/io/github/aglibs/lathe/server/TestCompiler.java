@@ -9,6 +9,7 @@ import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
+import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -29,7 +30,24 @@ public final class TestCompiler {
       Trees trees,
       CompilationUnitTree cu,
       StandardJavaFileManager fm,
-      SourceParser parser) {}
+      SourceParser parser)
+      implements AutoCloseable {
+
+    public ParsedSource {
+      ValidCheck.check()
+          .notNull(task, "task")
+          .notNull(trees, "trees")
+          .notNull(cu, "cu")
+          .notNull(fm, "fm")
+          .notNull(parser, "parser")
+          .validate();
+    }
+
+    @Override
+    public void close() throws IOException {
+      fm.close();
+    }
+  }
 
   private TestCompiler() {}
 

@@ -20,15 +20,16 @@ class DeclarationLocatorTest {
             public void greet() {}
         }
         """;
-    final var parsed = compile(tempDir, "MyClass.java", source);
-    final var path = SampleFixture.pathAt(parsed.trees(), parsed.cu(), "greet", "greet");
-    final var element = SourceLocator.elementAt(parsed.trees(), path);
+    try (final var parsed = compile(tempDir, "MyClass.java", source)) {
+      final var path = SampleFixture.pathAt(parsed.trees(), parsed.cu(), "greet", "greet");
+      final var element = SourceLocator.elementAt(parsed.trees(), path);
 
-    final var contract =
-        DeclarationLocator.findContract(
-            element, parsed.task().getTypes(), parsed.task().getElements());
+      final var contract =
+          DeclarationLocator.findContract(
+              element, parsed.task().getTypes(), parsed.task().getElements());
 
-    assertThat(contract).isEmpty();
+      assertThat(contract).isEmpty();
+    }
   }
 
   @Test
@@ -45,18 +46,19 @@ class DeclarationLocatorTest {
             public void greet() {}
         }
         """;
-    final var parsed = compile(tempDir, "MyGreeter.java", source);
-    final var path =
-        SampleFixture.pathAt(parsed.trees(), parsed.cu(), "public void greet", "greet");
-    final var element = SourceLocator.elementAt(parsed.trees(), path);
+    try (final var parsed = compile(tempDir, "MyGreeter.java", source)) {
+      final var path =
+          SampleFixture.pathAt(parsed.trees(), parsed.cu(), "public void greet", "greet");
+      final var element = SourceLocator.elementAt(parsed.trees(), path);
 
-    final var contract =
-        DeclarationLocator.findContract(
-            element, parsed.task().getTypes(), parsed.task().getElements());
+      final var contract =
+          DeclarationLocator.findContract(
+              element, parsed.task().getTypes(), parsed.task().getElements());
 
-    assertThat(contract).isPresent();
-    assertThat(contract.get().getEnclosingElement().getSimpleName().toString())
-        .isEqualTo("Greeter");
+      assertThat(contract).isPresent();
+      assertThat(contract.get().getEnclosingElement().getSimpleName().toString())
+          .isEqualTo("Greeter");
+    }
   }
 
   @Test
@@ -73,18 +75,19 @@ class DeclarationLocatorTest {
             public void greet() {}
         }
         """;
-    final var parsed = compile(tempDir, "AbstractGreeter.java", source);
-    final var path =
-        SampleFixture.pathAt(parsed.trees(), parsed.cu(), "public void greet", "greet");
-    final var element = SourceLocator.elementAt(parsed.trees(), path);
+    try (final var parsed = compile(tempDir, "AbstractGreeter.java", source)) {
+      final var path =
+          SampleFixture.pathAt(parsed.trees(), parsed.cu(), "public void greet", "greet");
+      final var element = SourceLocator.elementAt(parsed.trees(), path);
 
-    final var contract =
-        DeclarationLocator.findContract(
-            element, parsed.task().getTypes(), parsed.task().getElements());
+      final var contract =
+          DeclarationLocator.findContract(
+              element, parsed.task().getTypes(), parsed.task().getElements());
 
-    assertThat(contract).isPresent();
-    assertThat(contract.get().getEnclosingElement().getSimpleName().toString())
-        .isEqualTo("BaseGreeter");
+      assertThat(contract).isPresent();
+      assertThat(contract.get().getEnclosingElement().getSimpleName().toString())
+          .isEqualTo("BaseGreeter");
+    }
   }
 
   @Test
@@ -105,17 +108,18 @@ class DeclarationLocatorTest {
             public void run() {}
         }
         """;
-    final var parsed = compile(tempDir, "MyRunnable.java", source);
-    final var path = SampleFixture.pathAt(parsed.trees(), parsed.cu(), "class MyRunnable", "run");
-    final var element = SourceLocator.elementAt(parsed.trees(), path);
+    try (final var parsed = compile(tempDir, "MyRunnable.java", source)) {
+      final var path = SampleFixture.pathAt(parsed.trees(), parsed.cu(), "class MyRunnable", "run");
+      final var element = SourceLocator.elementAt(parsed.trees(), path);
 
-    final var contract =
-        DeclarationLocator.findContract(
-            element, parsed.task().getTypes(), parsed.task().getElements());
+      final var contract =
+          DeclarationLocator.findContract(
+              element, parsed.task().getTypes(), parsed.task().getElements());
 
-    assertThat(contract).isPresent();
-    assertThat(contract.get().getEnclosingElement().getSimpleName().toString())
-        .isEqualTo("IRunnable");
+      assertThat(contract).isPresent();
+      assertThat(contract.get().getEnclosingElement().getSimpleName().toString())
+          .isEqualTo("IRunnable");
+    }
   }
 
   @Test
@@ -136,17 +140,18 @@ class DeclarationLocatorTest {
             public void execute() {}
         }
         """;
-    final var parsed = compile(tempDir, "Impl.java", source);
-    final var path =
-        SampleFixture.pathAt(parsed.trees(), parsed.cu(), "public void execute", "execute");
-    final var element = SourceLocator.elementAt(parsed.trees(), path);
+    try (final var parsed = compile(tempDir, "Impl.java", source)) {
+      final var path =
+          SampleFixture.pathAt(parsed.trees(), parsed.cu(), "public void execute", "execute");
+      final var element = SourceLocator.elementAt(parsed.trees(), path);
 
-    final var contract =
-        DeclarationLocator.findContract(
-            element, parsed.task().getTypes(), parsed.task().getElements());
+      final var contract =
+          DeclarationLocator.findContract(
+              element, parsed.task().getTypes(), parsed.task().getElements());
 
-    assertThat(contract).isPresent();
-    assertThat(contract.get().getEnclosingElement().getSimpleName().toString()).isEqualTo("Top");
+      assertThat(contract).isPresent();
+      assertThat(contract.get().getEnclosingElement().getSimpleName().toString()).isEqualTo("Top");
+    }
   }
 
   private static TestCompiler.ParsedSource compile(

@@ -12,6 +12,7 @@ import java.util.Objects;
 import java.util.Optional;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.VariableElement;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -33,6 +34,11 @@ public abstract class SampleFixture {
     final var sourceFile = tmp.resolve("Sample.java");
     Files.writeString(sourceFile, source);
     compiled = TestCompiler.parse(sourceFile);
+  }
+
+  @AfterEach
+  void closeCompiled() throws IOException {
+    compiled.close();
   }
 
   Optional<String> hoverAt(final int line, final int character) {

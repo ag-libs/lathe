@@ -104,13 +104,14 @@ class ImportAnalyzerTest {
 
   private AttributedFileAnalysis analyze(final String source) throws IOException {
     final var file = writeSource(source);
-    final var parsed = TestCompiler.parse(file);
-    return new AttributedFileAnalysis(
-        parsed.trees(),
-        parsed.task().getElements(),
-        parsed.task().getTypes(),
-        parsed.cu(),
-        List.of());
+    try (final var parsed = TestCompiler.parse(file)) {
+      return new AttributedFileAnalysis(
+          parsed.trees(),
+          parsed.task().getElements(),
+          parsed.task().getTypes(),
+          parsed.cu(),
+          List.of());
+    }
   }
 
   private Path writeSource(final String content) throws IOException {

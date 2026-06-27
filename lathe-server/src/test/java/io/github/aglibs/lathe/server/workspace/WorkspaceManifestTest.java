@@ -56,10 +56,12 @@ class WorkspaceManifestTest extends SampleFixture {
     final Path sampleSrc = tmp.resolve("Sample.java");
     TestCompiler.compileToDir(classDir, sampleSrc);
 
-    final var parsed = TestCompiler.parseWithClasspath(sampleSrc, classDir);
-    final var sampleType = parsed.task().getElements().getTypeElement("Sample");
+    try (final var parsed = TestCompiler.parseWithClasspath(sampleSrc, classDir)) {
+      final var sampleType = parsed.task().getElements().getTypeElement("Sample");
 
-    assertThat(WorkspaceManifest.empty().originLabel(sampleType, parsed.fm())).hasValue("mymodule");
+      assertThat(WorkspaceManifest.empty().originLabel(sampleType, parsed.fm()))
+          .hasValue("mymodule");
+    }
   }
 
   @Test
@@ -129,11 +131,12 @@ class WorkspaceManifestTest extends SampleFixture {
 
     final Path userSrc = tmp.resolve("User.java");
     Files.writeString(userSrc, "import com.example.Greeter; public class User { Greeter g; }");
-    final var parsed = TestCompiler.parseWithClasspath(userSrc, jar);
-    final var greeterElement = parsed.task().getElements().getTypeElement("com.example.Greeter");
+    try (final var parsed = TestCompiler.parseWithClasspath(userSrc, jar)) {
+      final var greeterElement = parsed.task().getElements().getTypeElement("com.example.Greeter");
 
-    assertThat(WorkspaceManifest.load(tmp).externalSourceRoot(greeterElement, parsed.fm()))
-        .hasValue(sourceDir);
+      assertThat(WorkspaceManifest.load(tmp).externalSourceRoot(greeterElement, parsed.fm()))
+          .hasValue(sourceDir);
+    }
   }
 
   private void writeWorkspaceManifest(final List<DependencyData> deps) throws Exception {
