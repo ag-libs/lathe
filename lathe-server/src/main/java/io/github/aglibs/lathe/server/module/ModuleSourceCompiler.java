@@ -1,12 +1,12 @@
 package io.github.aglibs.lathe.server.module;
 
 import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.server.LatheUri;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.analysis.CompilerResult;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -62,7 +62,7 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
       final String content,
       final CompileMode mode,
       final CancelChecker cancelChecker) {
-    final var filePath = Path.of(URI.create(uri));
+    final var filePath = LatheUri.toPath(uri);
     final Path sourceRoot =
         config.sourceRoots().stream()
             .filter(filePath::startsWith)

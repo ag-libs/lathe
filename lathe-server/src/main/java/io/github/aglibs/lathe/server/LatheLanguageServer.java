@@ -1,8 +1,6 @@
 package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.server.analysis.TokenScanner;
-import java.net.URI;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.logging.Logger;
@@ -42,7 +40,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
 
     textDocumentService.setWorkDoneProgressSupported(workDoneProgressSupported(params));
     if (rootUri != null) {
-      textDocumentService.initialize(Path.of(URI.create(rootUri)));
+      textDocumentService.initialize(LatheUri.toPath(rootUri));
     } else {
       LOG.warning(() -> "[initialize] no rootUri — module registry not available");
     }

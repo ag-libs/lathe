@@ -29,7 +29,6 @@ import io.github.aglibs.lathe.server.module.WorkspaceModuleGraph;
 import io.github.aglibs.lathe.server.module.WorkspaceModuleRegistry;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
-import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
@@ -192,7 +191,7 @@ final class WorkspaceSession {
     candidateIndex.remove(uri);
     publisher.publishEmpty(uri);
 
-    final var deletedFile = toPath(uri);
+    final var deletedFile = LatheUri.toPath(uri);
     workspace
         .moduleSourceFor(deletedFile)
         .ifPresent(
@@ -230,7 +229,7 @@ final class WorkspaceSession {
     }
 
     // Capture declaring module synchronously on the lathe-worker thread before any async hand-off
-    final var cursorConfig = workspace.moduleSourceFor(toPath(uri));
+    final var cursorConfig = workspace.moduleSourceFor(LatheUri.toPath(uri));
 
     final var t = Stopwatch.start();
     final var targetName = new AtomicReference<String>();
@@ -266,7 +265,7 @@ final class WorkspaceSession {
 
               final Path packageRel =
                   target.scope() == ReferenceTarget.SearchScope.DECLARING_MODULE
-                      ? declaringPackageRel(toPath(uri), cursorConfig.orElse(null))
+                      ? declaringPackageRel(LatheUri.toPath(uri), cursorConfig.orElse(null))
                       : null;
 
               final List<ModuleSourceConfig> configs =
@@ -334,10 +333,12 @@ final class WorkspaceSession {
             .filter(
                 doc ->
                     workspace
-                        .moduleSourceFor(toPath(doc.uri()))
+                        .moduleSourceFor(LatheUri.toPath(doc.uri()))
                         .map(c -> c.equals(config))
                         .orElse(false))
-            .filter(doc -> isInPackageScope(toPath(doc.uri()), config.sourceRoots(), packageRel))
+            .filter(
+                doc ->
+                    isInPackageScope(LatheUri.toPath(doc.uri()), config.sourceRoots(), packageRel))
             .toList();
     final Set<String> openUrisForConfig =
         openForConfig.stream().map(OpenDocument::uri).collect(Collectors.toUnmodifiableSet());
@@ -346,7 +347,7 @@ final class WorkspaceSession {
     final List<DiskCandidate> diskFiles =
         planner.planCandidates(config, target).stream()
             .filter(uri -> !openUrisForConfig.contains(uri))
-            .filter(uri -> isInPackageScope(toPath(uri), sourceRoots, packageRel))
+            .filter(uri -> isInPackageScope(LatheUri.toPath(uri), sourceRoots, packageRel))
             .flatMap(uri -> readDiskCandidate(uri).stream())
             .toList();
     return Stream.concat(
@@ -440,7 +441,7 @@ final class WorkspaceSession {
   }
 
   private void reindexFromDisk(final String uri) {
-    final var path = toPath(uri);
+    final var path = LatheUri.toPath(uri);
     if (Files.exists(path)) {
       try {
         candidateIndex.update(uri, Files.readString(path));
@@ -455,7 +456,7 @@ final class WorkspaceSession {
 
   private static Optional<DiskCandidate> readDiskCandidate(final String uri) {
     try {
-      return Optional.of(new DiskCandidate(uri, Files.readString(toPath(uri))));
+      return Optional.of(new DiskCandidate(uri, Files.readString(LatheUri.toPath(uri))));
     } catch (final IOException e) {
       LOG.log(Level.FINE, e, () -> "[references] failed to read candidate: %s".formatted(uri));
       return Optional.empty();
@@ -710,7 +711,7 @@ final class WorkspaceSession {
             data.erasedDescriptor(),
             data.scope());
 
-    final var declaringPath = toPath(data.routingUri());
+    final var declaringPath = LatheUri.toPath(data.routingUri());
     final var declaringConfig = workspace.moduleSourceFor(declaringPath);
 
     if (target.scope() == ReferenceTarget.SearchScope.DECLARING_FILE) {
@@ -792,10 +793,12 @@ final class WorkspaceSession {
             .filter(
                 doc ->
                     workspace
-                        .moduleSourceFor(toPath(doc.uri()))
+                        .moduleSourceFor(LatheUri.toPath(doc.uri()))
                         .map(c -> c.equals(config))
                         .orElse(false))
-            .filter(doc -> isInPackageScope(toPath(doc.uri()), config.sourceRoots(), packageRel))
+            .filter(
+                doc ->
+                    isInPackageScope(LatheUri.toPath(doc.uri()), config.sourceRoots(), packageRel))
             .toList();
     final Set<String> openUrisForConfig =
         openForConfig.stream().map(OpenDocument::uri).collect(Collectors.toUnmodifiableSet());
@@ -804,7 +807,7 @@ final class WorkspaceSession {
     final List<DiskCandidate> diskFiles =
         planner.planCandidates(config, target).stream()
             .filter(uri -> !openUrisForConfig.contains(uri))
-            .filter(uri -> isInPackageScope(toPath(uri), sourceRoots, packageRel))
+            .filter(uri -> isInPackageScope(LatheUri.toPath(uri), sourceRoots, packageRel))
             .flatMap(uri -> readDiskCandidate(uri).stream())
             .toList();
     return Stream.concat(
@@ -1237,7 +1240,7 @@ final class WorkspaceSession {
   }
 
   private CompilerRoute routeCompiler(final String uri) {
-    final var path = toPath(uri);
+    final var path = LatheUri.toPath(uri);
     return workspace
         .moduleSourceFor(path)
         .<CompilerRoute>map(module -> new CompilerRoute.Module(workspace.workerFor(module), module))
@@ -1284,7 +1287,7 @@ final class WorkspaceSession {
         .filter(
             uri ->
                 workspace
-                    .moduleSourceFor(toPath(uri))
+                    .moduleSourceFor(LatheUri.toPath(uri))
                     .map(m -> m.moduleDir().equals(savedModule.moduleDir()))
                     .orElse(false))
         .forEach(this::scheduleOpenFile);
@@ -1344,10 +1347,6 @@ final class WorkspaceSession {
 
     final int[] encoded = TokenScanner.encode(tokens);
     return new SemanticTokens(IntStream.of(encoded).boxed().toList());
-  }
-
-  private static Path toPath(final String uri) {
-    return Path.of(URI.create(uri));
   }
 
   private sealed interface CompilerRoute {

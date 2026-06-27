@@ -4,6 +4,7 @@ import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.DependencyData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
+import io.github.aglibs.lathe.server.LatheUri;
 import io.github.aglibs.lathe.server.analysis.DefinitionLocator;
 import java.io.IOException;
 import java.net.URI;
@@ -368,6 +369,6 @@ public final class WorkspaceManifest {
       return Optional.empty();
     }
 
-    return Optional.of(Path.of(URI.create(specific.substring(0, sep))));
+    return Optional.of(LatheUri.toPath(specific.substring(0, sep)));
   }
 }

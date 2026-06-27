@@ -2,7 +2,6 @@ package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
-import java.net.URI;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
@@ -68,7 +67,8 @@ final class ReferenceCandidatePlanner {
       return Stream.concat(
               importTokens.flatMap(token -> index.candidateUris(token).stream()),
               simpleCandidates.stream()
-                  .filter(uri -> isInPackage(toPath(uri), config.sourceRoots(), packageRel)))
+                  .filter(
+                      uri -> isInPackage(LatheUri.toPath(uri), config.sourceRoots(), packageRel)))
           .collect(Collectors.toUnmodifiableSet());
     }
 
@@ -91,10 +91,6 @@ final class ReferenceCandidatePlanner {
     }
 
     return simpleCandidates;
-  }
-
-  private static Path toPath(final String uri) {
-    return Path.of(URI.create(uri));
   }
 
   private static boolean isInPackage(
