@@ -245,4 +245,17 @@ class WorkspaceTypeIndexTest {
     assertThat(reloaded.search("Alpha", 10)).isEmpty();
     assertThat(reloaded.search("Delta", 10)).hasSize(1);
   }
+
+  @Test
+  void search_exactName_ranksReactorTypeBeforeDependencyType() throws IOException {
+    final var depShard = writeShard(tmp, "dep.json", shard(entry("Application", "com.dep")));
+    final var reactorEntry = entry("Application", "com.reactor");
+
+    final var index = WorkspaceTypeIndex.build(List.of(depShard), List.of(List.of(reactorEntry)));
+
+    final List<TypeIndexEntry> results = index.search("Application", 10);
+    assertThat(results).hasSize(2);
+    assertThat(results.get(0).packageName()).isEqualTo("com.reactor");
+    assertThat(results.get(1).packageName()).isEqualTo("com.dep");
+  }
 }

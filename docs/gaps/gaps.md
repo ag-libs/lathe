@@ -287,7 +287,7 @@ abbreviation.
 
 ## EG-006 — Workspace symbol results rank reactor-local types below dependency and JDK types
 
-**Status: accepted — Target: M1**
+**Status: done — Target: M1**
 
 ### Observed behaviour
 

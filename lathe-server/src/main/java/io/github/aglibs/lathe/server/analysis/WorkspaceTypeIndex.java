@@ -11,12 +11,14 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -28,23 +30,27 @@ public final class WorkspaceTypeIndex {
   private static final Logger LOG = Logger.getLogger(WorkspaceTypeIndex.class.getName());
 
   private final List<TypeIndexEntry> staticEntries;
+  private final Set<String> reactorBinaryNames;
   private final NavigableMap<String, List<TypeIndexEntry>> bySimpleNameLower;
   private final Map<String, TypeIndexEntry> byBinaryName;
   private final Map<String, List<TypeIndexEntry>> directSubtypesByParent;
 
   private WorkspaceTypeIndex(
       final List<TypeIndexEntry> staticEntries,
+      final Set<String> reactorBinaryNames,
       final NavigableMap<String, List<TypeIndexEntry>> bySimpleNameLower,
       final Map<String, TypeIndexEntry> byBinaryName,
       final Map<String, List<TypeIndexEntry>> directSubtypesByParent) {
     this.staticEntries = staticEntries;
+    this.reactorBinaryNames = reactorBinaryNames;
     this.bySimpleNameLower = bySimpleNameLower;
     this.byBinaryName = byBinaryName;
     this.directSubtypesByParent = directSubtypesByParent;
   }
 
   public static WorkspaceTypeIndex empty() {
-    return new WorkspaceTypeIndex(List.of(), Collections.emptyNavigableMap(), Map.of(), Map.of());
+    return new WorkspaceTypeIndex(
+        List.of(), Set.of(), Collections.emptyNavigableMap(), Map.of(), Map.of());
   }
 
   public static WorkspaceTypeIndex build(final List<Path> shardPaths) {
@@ -92,6 +98,11 @@ public final class WorkspaceTypeIndex {
   private static WorkspaceTypeIndex create(
       final List<TypeIndexEntry> staticEntries,
       final Collection<List<TypeIndexEntry>> reactorEntries) {
+    final Set<String> reactorBinaryNames =
+        reactorEntries.stream()
+            .flatMap(List::stream)
+            .map(TypeIndexEntry::binaryName)
+            .collect(Collectors.toUnmodifiableSet());
     final List<TypeIndexEntry> deduped = deduplicate(staticEntries, reactorEntries);
     final TreeMap<String, List<TypeIndexEntry>> mutable =
         deduped.stream()
@@ -118,7 +129,11 @@ public final class WorkspaceTypeIndex {
                         Map.Entry::getValue,
                         Collectors.collectingAndThen(Collectors.toList(), List::copyOf))));
     return new WorkspaceTypeIndex(
-        staticEntries, map, Map.copyOf(byBinaryName), Map.copyOf(directSubtypesByParent));
+        staticEntries,
+        reactorBinaryNames,
+        map,
+        Map.copyOf(byBinaryName),
+        Map.copyOf(directSubtypesByParent));
   }
 
   private static List<TypeIndexEntry> deduplicate(
@@ -161,8 +176,13 @@ public final class WorkspaceTypeIndex {
     }
 
     final String lower = prefix.toLowerCase();
+    final Comparator<TypeIndexEntry> order =
+        Comparator.<TypeIndexEntry, Boolean>comparing(
+                e -> !reactorBinaryNames.contains(e.binaryName()))
+            .thenComparing(TypeIndexEntry::binaryName);
     return bySimpleNameLower.subMap(lower, lower + "￿").values().stream()
         .flatMap(List::stream)
+        .sorted(order)
         .limit(limit)
         .toList();
   }
