@@ -936,7 +936,7 @@ capability and the absent handler in `LatheLanguageServer`.
 
 ## EG-019 — Unused-declaration diagnostic message is the bare word `Unused`
 
-**Status: accepted — Target: M1**
+**Status: done — Target: M1**
 
 ### Observed behaviour
 

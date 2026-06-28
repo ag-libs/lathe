@@ -11,6 +11,7 @@ import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
+import io.github.aglibs.validcheck.ValidCheck;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -36,7 +37,28 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
 
   private static final Set<String> EXCLUDED_FIELD_NAMES = Set.of("serialVersionUID");
 
-  private record Candidate(String name, long nodeStart) {}
+  private enum Kind {
+    LOCAL_VARIABLE("local variable"),
+    PRIVATE_FIELD("private field"),
+    PRIVATE_METHOD("private method");
+
+    private final String label;
+
+    Kind(final String label) {
+      this.label = label;
+    }
+
+    @Override
+    public String toString() {
+      return label;
+    }
+  }
+
+  private record Candidate(String name, long nodeStart, Kind kind) {
+    Candidate {
+      ValidCheck.check().notNull(name, "name").notNull(kind, "kind").validate();
+    }
+  }
 
   private final Trees trees;
   private final com.sun.source.tree.CompilationUnitTree cu;
@@ -82,7 +104,8 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
       if (element != null
           && element.getKind() == ElementKind.METHOD
           && element.getModifiers().contains(Modifier.PRIVATE)) {
-        privateMethods.put(element, candidateFor(node, node.getName().toString()));
+        privateMethods.put(
+            element, candidateFor(node, node.getName().toString(), Kind.PRIVATE_METHOD));
       }
     }
     return super.visitMethod(node, v);
@@ -101,10 +124,12 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
           if (!isRecordComponent
               && element.getModifiers().contains(Modifier.PRIVATE)
               && !EXCLUDED_FIELD_NAMES.contains(node.getName().toString())) {
-            privateFields.put(element, candidateFor(node, node.getName().toString()));
+            privateFields.put(
+                element, candidateFor(node, node.getName().toString(), Kind.PRIVATE_FIELD));
           }
         } else if (!(parent instanceof MethodTree)) {
-          localVars.put(element, candidateFor(node, node.getName().toString()));
+          localVars.put(
+              element, candidateFor(node, node.getName().toString(), Kind.LOCAL_VARIABLE));
         }
       }
     }
@@ -224,12 +249,17 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
     final var start = SourceLocator.offsetToPosition(cu, nameOffset);
     final var end = new Position(start.getLine(), start.getCharacter() + candidate.name().length());
     final var diag =
-        new Diagnostic(new Range(start, end), "Unused", DiagnosticSeverity.Hint, "lathe");
+        new Diagnostic(
+            new Range(start, end),
+            "Unused %s '%s'".formatted(candidate.kind(), candidate.name()),
+            DiagnosticSeverity.Hint,
+            "lathe");
+    diag.setCode("lathe.unused");
     diag.setTags(List.of(DiagnosticTag.Unnecessary));
     return Optional.of(diag);
   }
 
-  private Candidate candidateFor(final Tree node, final String name) {
-    return new Candidate(name, positions.getStartPosition(cu, node));
+  private Candidate candidateFor(final Tree node, final String name, final Kind kind) {
+    return new Candidate(name, positions.getStartPosition(cu, node), kind);
   }
 }

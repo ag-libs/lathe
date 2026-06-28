@@ -6,6 +6,7 @@ import java.util.List;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.DiagnosticTag;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -273,6 +274,38 @@ class UnusedDeclarationScannerTest {
                 }
                 """))
         .hasSize(1);
+  }
+
+  // --- Diagnostic message and code ---
+
+  @Test
+  void unused_localVariable_messageNamesVariableAndKind() {
+    final List<Diagnostic> hints =
+        unusedHintsFor(
+            """
+            class Test {
+              public void method() {
+                int unused = 42;
+              }
+            }
+            """);
+
+    assertThat(hints).hasSize(1);
+    assertThat(hints.getFirst().getMessage().getLeft()).isEqualTo("Unused local variable 'unused'");
+  }
+
+  @Test
+  void unused_diagnostic_setsStableCode() {
+    final List<Diagnostic> hints =
+        unusedHintsFor(
+            """
+            class Test {
+              private int unused = 0;
+            }
+            """);
+
+    assertThat(hints).hasSize(1);
+    assertThat(hints.getFirst().getCode()).isEqualTo(Either.forLeft("lathe.unused"));
   }
 
   // --- helpers ---
