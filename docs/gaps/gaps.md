@@ -2313,9 +2313,9 @@ completion should show `Collection<String>` members.
 For unbounded `T`,
 completion should at least show `Object` members.
 
-Lathe behavior:
-Bounded type-variable receivers return no completion items.
-The log preserves the type variable but does not expand its bound:
+Original Lathe behavior:
+Bounded type-variable receivers returned no completion items.
+The log preserved the type variable but did not expand its bound:
 ```text
 resolve receiver=|configuration| type=T static=false reattributed=false
 proposals count=0 labels=[]
@@ -2330,6 +2330,27 @@ For the generic method return probe,
 resolve receiver=|call.call()| type=null static=null reattributed=true
 ```
 
+Current narrowed behaviour:
+Direct source fixtures now resolve type-variable receivers correctly:
+class type variables,
+method type variables,
+unbounded method type variables,
+and unbounded `Callable<T>.call()` returns all have active regression coverage.
+
+The remaining failure is the stale-cache/edit-buffer path.
+When the cached attributed source is still the previous valid file and the changed buffer adds
+`configuration.§`,
+the cached receiver lookup resolves `configuration` as raw `T`.
+Because `T` is not `ERROR`,
+`MemberAccessCompleter` does not force a fresh reattribution.
+`CandidateGenerator` then receives a `TYPEVAR` rather than a `DeclaredType` and returns no
+candidates.
+
+This mirrors the live Dropwizard `Bootstrap<T extends Configuration>` probe:
+`configuration.§` inside the edited `run(T configuration, Environment environment)` body returns no
+items,
+while equivalent direct-source unit fixtures do expose the bound's members.
+
 Expected Lathe behavior:
 Type-variable member completion should use the effective upper bound.
 If the bound is parameterized,
@@ -2339,14 +2360,31 @@ for `T extends Collection<String>`,
 `stream()` as `Stream<String>`,
 and `forEach` as accepting `Consumer<? super String>`.
 
+Suggested fix:
+Treat a resolved `TYPEVAR` receiver from cached analysis as insufficient for member access.
+Either:
+
+- force fresh reattribution in `MemberAccessCompleter` when `initialResolved.type().getKind()` is
+  `TYPEVAR`, just as it already does for `null` and `ERROR`; or
+- normalize receiver types through a shared effective-completion-type helper before candidate
+  generation,
+  so `T` becomes its upper bound before `CandidateGenerator.proposeMemberAccessCandidates(...)`.
+
+The second option is cleaner long-term because it also centralizes wildcard,
+type-variable,
+and future error-type fallback logic,
+but the first option is likely the minimal fix for the currently reproduced stale-cache failure.
+
 Accepted edit, if relevant:
 Not applicable.
 No candidate is returned.
 
 Regression target:
 `CompletionMemberAccessTest.memberAccess_classTypeVariable_usesDeclaredBound`
+`CompletionMemberAccessTest.memberAccess_classTypeVariable_afterChange_usesDeclaredBound`
 `CompletionMemberAccessTest.memberAccess_methodTypeVariable_usesDeclaredBound`
 `CompletionMemberAccessTest.memberAccess_unboundedMethodTypeVariable_usesObjectBound`
+`CompletionMemberAccessTest.memberAccess_unboundedTypeVariableMethodReturn_usesObjectBound`
 
 Notes:
 Generic type-reference completion while declaring bounds works:

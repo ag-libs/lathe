@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.List;
 import java.util.stream.Stream;
 import org.eclipse.lsp4j.CompletionItem;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -1058,6 +1059,114 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
                         void m() {
                             final java.util.Collection<?> values = java.util.List.of("a");
                             values.iterator().next().§
+                        }
+                    }""")))
+        .contains("toString", "getClass");
+  }
+
+  // CQ-0030
+  @Test
+  void memberAccess_classTypeVariable_usesDeclaredBound() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test<T extends Test.Configuration> {
+                        static class Configuration {
+                            String getName() {
+                                return "";
+                            }
+
+                            boolean isReady() {
+                                return true;
+                            }
+                        }
+
+                        void m(T configuration) {
+                            configuration.§
+                        }
+                    }""")))
+        .contains("getName", "isReady");
+  }
+
+  @Test
+  @Disabled("CQ-0030: stale cached analysis keeps type-variable receiver as T")
+  void memberAccess_classTypeVariable_afterChange_usesDeclaredBound() {
+    final var cachedSource =
+        """
+        class Test<T extends Test.Configuration> {
+            static class Configuration {
+                String getName() {
+                    return "";
+                }
+
+                boolean isReady() {
+                    return true;
+                }
+            }
+
+            void m(T configuration) {
+            }
+        }""";
+    final var markedSource =
+        """
+        class Test<T extends Test.Configuration> {
+            static class Configuration {
+                String getName() {
+                    return "";
+                }
+
+                boolean isReady() {
+                    return true;
+                }
+            }
+
+            void m(T configuration) {
+                configuration.§
+            }
+        }""";
+
+    assertThat(labels(fixture.completeWithCache(cachedSource, markedSource)))
+        .contains("getName", "isReady");
+  }
+
+  @Test
+  void memberAccess_methodTypeVariable_usesDeclaredBound() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        <T extends java.util.Collection<String>> void use(T value) {
+                            value.§
+                        }
+                    }""")))
+        .contains("iterator", "stream", "size");
+  }
+
+  @Test
+  void memberAccess_unboundedMethodTypeVariable_usesObjectBound() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        <T> void use(T value) {
+                            value.§
+                        }
+                    }""")))
+        .contains("toString", "getClass");
+  }
+
+  @Test
+  void memberAccess_unboundedTypeVariableMethodReturn_usesObjectBound() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        <T> T call(java.util.concurrent.Callable<T> callable) throws Exception {
+                            return callable.call().§
                         }
                     }""")))
         .contains("toString", "getClass");
