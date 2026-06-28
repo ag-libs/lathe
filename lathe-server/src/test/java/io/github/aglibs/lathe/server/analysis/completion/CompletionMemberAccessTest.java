@@ -1001,4 +1001,65 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
                     }""")))
         .contains("named", "in", "to");
   }
+
+  // CQ-0029
+  @Test
+  void memberAccess_wildcardExtendsCollectionElement_usesUpperBound() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        void m() {
+                            final java.util.Collection<? extends Number> numbers = java.util.List.of(1);
+                            numbers.iterator().next().§
+                        }
+                    }""")))
+        .contains("intValue", "longValue", "doubleValue");
+  }
+
+  @Test
+  void memberAccess_wildcardExtendsListGet_usesUpperBound() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        void m() {
+                            final java.util.List<? extends Number> numbers = java.util.List.of(1);
+                            numbers.get(0).§
+                        }
+                    }""")))
+        .contains("intValue", "longValue", "doubleValue");
+  }
+
+  @Test
+  void memberAccess_wildcardExtendsMapValue_usesUpperBound() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        void m() {
+                            final java.util.Map<String, ? extends Number> numbers = java.util.Map.of("x", 1);
+                            numbers.get("x").§
+                        }
+                    }""")))
+        .contains("intValue", "longValue", "doubleValue");
+  }
+
+  @Test
+  void memberAccess_unboundedWildcardCollectionElement_usesObjectBound() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        void m() {
+                            final java.util.Collection<?> values = java.util.List.of("a");
+                            values.iterator().next().§
+                        }
+                    }""")))
+        .contains("toString", "getClass");
+  }
 }

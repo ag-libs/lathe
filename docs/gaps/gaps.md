@@ -2166,7 +2166,7 @@ Deferred pending a cleaner approach.
 ## CQ-0029 — Wildcard generic receivers do not expose usable bound members
 
 ID: CQ-0029
-Status: accepted
+Status: done
 Target: M2
 Tier: typed
 Failure mode: missing-candidates
@@ -2217,15 +2217,20 @@ and `doubleValue`.
 For unbounded `?`,
 member completion should at least show `Object` methods.
 
-Lathe behavior:
-All wildcard probes return no completion items.
-The log shows `sentinelCtx=MEMBER_ACCESS` but receiver resolution fails:
+Original Lathe behavior:
+All wildcard probes returned no completion items.
+The log showed `sentinelCtx=MEMBER_ACCESS` but receiver resolution failed:
 ```text
 resolve receiver=|numbers.iterator().next()| type=null static=null reattributed=true
 resolve receiver=|numbers.get(0)| type=null static=null reattributed=true
 resolve receiver=|numbers.get("x")| type=null static=null reattributed=true
 resolve receiver=|values.iterator().next()| type=null static=null reattributed=true
 ```
+
+Current Lathe behavior:
+Retested on current code after adding regression coverage.
+The documented probes now return the expected `Number` methods for `? extends Number`
+and `Object` methods for unbounded `?`.
 
 Expected Lathe behavior:
 When a generic member returns a captured wildcard,
@@ -2241,8 +2246,10 @@ Accepted edit, if relevant:
 Not applicable.
 No candidate is returned.
 
-Regression target:
+Regression coverage:
 `CompletionMemberAccessTest.memberAccess_wildcardExtendsCollectionElement_usesUpperBound`
+`CompletionMemberAccessTest.memberAccess_wildcardExtendsListGet_usesUpperBound`
+`CompletionMemberAccessTest.memberAccess_wildcardExtendsMapValue_usesUpperBound`
 `CompletionMemberAccessTest.memberAccess_unboundedWildcardCollectionElement_usesObjectBound`
 
 Notes:
