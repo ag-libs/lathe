@@ -109,7 +109,7 @@ printf 'sig after "tasks.put("\nlog 5\n' \
 
 ## EG-002 — Wrap-with-try/catch action absent for `UNREPORTED_EXCEPTION` in regular method bodies
 
-**Status: accepted — Target: M1**
+**Status: done — Target: M1**
 
 ### Observed behaviour
 
@@ -1465,7 +1465,7 @@ Each gap describes the observed behaviour, the root cause, and the proposed fix.
 
 ## CA-1 — `UNREPORTED_EXCEPTION` inside a lambda body has no action
 
-**Status: accepted — Target: M1.**
+**Status: done — Target: M1.**
 
 ### Observed behaviour
 
@@ -1512,7 +1512,7 @@ This is the M1 gap also referenced by EG-002.
 
 ## CA-2 — `VARIABLE_REF` has no action
 
-**Status: accepted — Target: M1.**
+**Status: done — Target: M1.**
 
 ### Observed behaviour
 
@@ -1539,7 +1539,7 @@ emit `TypeName varName = …` (with import if needed) or `var varName = …` as 
 
 ## CA-3 — `MISSING_METHOD_IMPL` is never classified
 
-**Status: accepted — Target: M1.**
+**Status: done — Target: M1.**
 
 ### Observed behaviour
 
@@ -1620,6 +1620,113 @@ without weakening the provider's existing type-index validation path for depende
 Active completion-quality gaps. Discovered and triaged via the completion appendix of the
 [gap workflow](gap-workflow.md); checked against the completion [expectations](../planned/lathe-completion-expectations.md)
 contract. Resolved CQ entries are in [gaps-archive.md](gaps-archive.md).
+
+## CQ-0041 — `module-info.java` directive slots return no completion candidates
+
+ID: CQ-0041
+Status: accepted
+Target: M1
+Tier: basic
+Failure mode: missing-candidate
+Owner component: SentinelParser / CompletionEngine
+Discovery: 2026-06-28, Helidon `module-info.java` live probes
+
+Project/file:
+`/home/ag-libs/git/helidon/health/health/src/main/java/module-info.java`
+
+Probe command:
+```bash
+printf 'complete after "module io.helidon." min 1\ncomplete after "requires " min 1\ncomplete after "requires transitive " min 1\ncomplete after "requires transitive io.helidon." min 1\ncomplete after "exports " min 1\ncomplete after "exports io.helidon." min 1\n' \
+  | python3 dev/explore.py \
+      /home/ag-libs/git/helidon/health/health/src/main/java/module-info.java
+```
+
+Related annotation-context probes:
+```bash
+printf 'complete after "@Features."\ncomplete after "@Features.Aot("\ncomplete after "HelidonFlavor."\n' \
+  | python3 dev/explore.py \
+      /home/ag-libs/git/helidon/dbclient/jdbc/src/main/java/module-info.java
+```
+
+Cursor context:
+```java
+module io.helidon.health {
+
+    requires transitive io.helidon.common;
+    requires transitive io.helidon.config;
+
+    exports io.helidon.health;
+    exports io.helidon.health.spi;
+}
+```
+
+IntelliJ or JDT behavior:
+Expected IDE behavior is context-specific completion inside module descriptors:
+module-name candidates after `module`,
+reachable module-name candidates after `requires` and `requires transitive`,
+package-name candidates after `exports` and `opens`,
+service types after `uses`,
+and provider types after `provides ... with`.
+
+Lathe behavior:
+All probed directive slots return 0 items.
+The failure reproduces both at bare directive positions and after typed prefixes:
+`module io.helidon.`,
+`requires `,
+`requires transitive io.helidon.`,
+`exports `,
+and `exports io.helidon.`.
+
+`module-info.java` annotation contexts are also incomplete.
+Basic annotation type completion can work in some injected positions,
+such as `@Dep` before `module`,
+but annotation member completion and annotation-value member access return no useful candidates:
+`@Features.`,
+`@Features.Aot(`,
+and `HelidonFlavor.` all return 0 items in real Helidon module descriptors.
+
+Expected Lathe behavior:
+Completion should provide legal directive-specific candidates in `module-info.java`.
+For M1,
+the required slice is basic candidate discovery and insertion for:
+
+- module names after `module`, `requires`, and `requires transitive`;
+- package names after `exports` and `opens`;
+- type names after `uses`;
+- provider type names after `provides ... with`;
+- directive keywords where the cursor is inside the module body and no directive prefix has been typed.
+
+Annotation completion inside module descriptors should behave like annotation completion before a
+`package-info.java` package declaration:
+annotation type names,
+annotation element names,
+and basic typed values such as booleans and enum constants should be available.
+
+Accepted edit, if relevant:
+Accepting a module candidate after `requires transitive io.helidon.` should complete only the
+remaining module-name segment and preserve the trailing semicolon if present.
+Accepting a package candidate after `exports io.helidon.` should complete only the remaining
+package segment and preserve the trailing semicolon if present.
+
+Root cause:
+`SentinelParser` recognises module descriptor positions as `MODULE_DIRECTIVE`.
+`CompletionEngine` has no handler for that context,
+so it falls through to an empty `CompletionOutcome`.
+
+Regression targets:
+
+- `CompletionModuleInfoTest.completion_requiresDirective_offersReachableModules`
+- `CompletionModuleInfoTest.completion_exportsDirective_offersModulePackages`
+- `CompletionModuleInfoTest.completion_moduleAnnotation_offersAnnotationMembers`
+
+Notes:
+Dropwizard has no source `module-info.java` or `package-info.java`,
+but a Dropwizard control probe confirmed normal member completion is live in that workspace:
+`inject "String.valueOf(1)."` returned 73 `String` members.
+This gap is therefore specific to module descriptor contexts,
+not a dead LSP session.
+
+---
 
 ## CQ-0040 — `bind(...).to(...)` chain offers no members on the captured-wildcard result
 

@@ -10,8 +10,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import javax.tools.StandardLocation;
+import org.eclipse.lsp4j.CodeAction;
+import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.TextEdit;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -239,13 +242,14 @@ class CodeActionTest {
     final var actions =
         session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), typeIndex);
 
-    assertThat(actions).hasSize(1);
-    final var action = actions.getFirst().getRight();
-    assertThat(action.getTitle()).isEqualTo("Add 'throws IOException' to method");
-    assertThat(action.getKind()).isEqualTo("quickfix");
-    assertThat(action.getDiagnostics()).hasSize(1);
+    assertThat(actions).hasSize(2);
+    final var throwsAction = findThrowsAction(actions);
+    assertThat(throwsAction.getTitle()).isEqualTo("Add 'throws IOException' to method");
+    assertThat(throwsAction.getKind()).isEqualTo("quickfix");
+    assertThat(throwsAction.getDiagnostics()).hasSize(1);
 
-    final List<TextEdit> edits = action.getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
+    final List<TextEdit> edits =
+        throwsAction.getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
     assertThat(edits).hasSize(2);
 
     final var throwsEdit =
@@ -278,11 +282,12 @@ class CodeActionTest {
     final var actions =
         session.codeAction(TempSourceCompiler.TEST_URI, source, 1, sqlOnly, typeIndex);
 
-    assertThat(actions).hasSize(1);
-    final var action = actions.getFirst().getRight();
-    assertThat(action.getTitle()).isEqualTo("Add 'throws SQLException' to method");
+    assertThat(actions).hasSize(2);
+    final var throwsAction = findThrowsAction(actions);
+    assertThat(throwsAction.getTitle()).isEqualTo("Add 'throws SQLException' to method");
 
-    final List<TextEdit> edits = action.getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
+    final List<TextEdit> edits =
+        throwsAction.getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
     assertThat(edits.getFirst().getNewText()).isEqualTo(", SQLException");
   }
 
@@ -302,9 +307,10 @@ class CodeActionTest {
     final var actions =
         session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), typeIndex);
 
-    assertThat(actions).hasSize(1);
+    assertThat(actions).hasSize(2);
+    final var throwsAction = findThrowsAction(actions);
     final List<TextEdit> edits =
-        actions.getFirst().getRight().getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
+        throwsAction.getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
     assertThat(edits).hasSize(1);
     assertThat(edits.getFirst().getNewText()).isEqualTo(" throws Exception");
   }
@@ -492,7 +498,6 @@ class CodeActionTest {
 
   @Test
   void compile_doesNotOverrideAbstract_setsMissingMethodImplPayload() {
-    // Gap 3: compiler.err.does.not.override.abstract should be classified for future providers.
     final var source =
         """
         package com.example;
@@ -509,7 +514,107 @@ class CodeActionTest {
     assertThat(payload.name()).isEqualTo("Test");
   }
 
+  // --- EG-002 regression ---
+
+  @Test
+  void codeAction_unreportedException_methodBody_offersBothWrapAndThrows() {
+    final var source =
+        """
+        package com.example;
+        class Test {
+          void method() { throw new java.io.IOException("x"); }
+        }
+        """;
+
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    final var actions =
+        session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), typeIndex);
+
+    assertThat(actions).hasSize(2);
+    assertThat(actions.stream().map(a -> a.getRight().getTitle()))
+        .contains("Add 'throws IOException' to method", "Wrap in try/catch");
+  }
+
+  @Test
+  void codeAction_unreportedException_lambdaBody_offersOnlyWrap() {
+    final var source =
+        """
+        package com.example;
+        class Test {
+          void method() {
+            Runnable r = () -> { throw new java.io.IOException("x"); };
+          }
+        }
+        """;
+
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    final var actions =
+        session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), typeIndex);
+
+    assertThat(actions).hasSize(1);
+    assertThat(actions.getFirst().getRight().getTitle()).isEqualTo("Wrap in try/catch");
+  }
+
+  // --- MissingMethodImpl provider ---
+
+  @Test
+  void codeAction_missingMethodImpl_singleAbstractMethod_generatesStub() {
+    final var source =
+        """
+        package com.example;
+        class Test implements Runnable { }
+        """;
+
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    final var actions =
+        session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), typeIndex);
+
+    assertThat(actions).hasSize(1);
+    final var action = actions.getFirst().getRight();
+    assertThat(action.getTitle()).isEqualTo("Implement abstract methods");
+    assertThat(action.getKind()).isEqualTo("quickfix");
+
+    final List<TextEdit> edits = action.getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
+    assertThat(edits).hasSize(1);
+    assertThat(edits.getFirst().getNewText())
+        .contains("@Override")
+        .contains("public void run()")
+        .contains("throw new UnsupportedOperationException()");
+  }
+
+  @Test
+  void codeAction_missingMethodImpl_multipleAbstractMethods_generatesAllStubs() {
+    final var source =
+        """
+        package com.example;
+        import java.util.Iterator;
+        class Test implements Iterator<String> { }
+        """;
+
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    final var actions =
+        session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), typeIndex);
+
+    assertThat(actions).hasSize(1);
+    final List<TextEdit> edits =
+        actions.getFirst().getRight().getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
+    final String stubText = edits.getFirst().getNewText();
+    assertThat(stubText).contains("public boolean hasNext()").contains("public String next()");
+  }
+
   // --- Helpers ---
+
+  private static CodeAction findThrowsAction(final List<Either<Command, CodeAction>> actions) {
+    return actions.stream()
+        .map(a -> a.getRight())
+        .filter(a -> a.getTitle().startsWith("Add 'throws"))
+        .findFirst()
+        .orElseThrow();
+  }
 
   private static List<CodeActionRequest> toRequests(final List<Diagnostic> diags) {
     return diags.stream()

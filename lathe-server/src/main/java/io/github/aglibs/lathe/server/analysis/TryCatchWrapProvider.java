@@ -35,7 +35,7 @@ final class TryCatchWrapProvider implements CodeActionProvider {
             analysis,
             diag.getRange().getStart().getLine(),
             diag.getRange().getStart().getCharacter());
-    final TreePath statementPath = CodeActionSupport.enclosingClosureStatement(path);
+    final TreePath statementPath = CodeActionSupport.enclosingStatementToWrap(path);
     if (statementPath == null) {
       return List.of();
     }

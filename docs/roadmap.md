@@ -75,6 +75,8 @@ See [gaps.md](gaps/gaps.md).
 - Skip anonymous-class instantiations with empty names in outgoing-calls results (EG-009).
 - Add a `--workspace` flag to `explore.py` so dependency and JDK cache sources can be probed (EG-010).
 - Emit a descriptive unused-declaration message naming the declaration and its kind, with a stable code (EG-019).
+- Add basic `module-info.java` directive completion for module names, exported/opened packages,
+  service types, provider types, directive keywords, and module annotation contexts (CQ-0041).
 
 ### Code-action and index freshness gaps
 

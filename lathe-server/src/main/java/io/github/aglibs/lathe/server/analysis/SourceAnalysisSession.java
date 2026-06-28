@@ -617,6 +617,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
     final var addThrowsProvider = new AddThrowsProvider();
     final var tryCatchProvider = new TryCatchWrapProvider();
     final var declareProvider = new DeclareVariableProvider();
+    final var missingImplProvider = new MissingMethodImplProvider();
     final var seen = new HashSet<String>();
     final var actions = new ArrayList<Either<Command, CodeAction>>();
 
@@ -633,7 +634,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
                         tryCatchProvider.provide(request, analysis, typeIndex).stream())
                     .toList();
             case VARIABLE_REF -> declareProvider.provide(request, analysis, typeIndex);
-            case MISSING_METHOD_IMPL -> List.of();
+            case MISSING_METHOD_IMPL -> missingImplProvider.provide(request, analysis, typeIndex);
           };
 
       for (final var action : provided) {

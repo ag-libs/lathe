@@ -69,7 +69,7 @@ final class CodeActionSupport {
     return false;
   }
 
-  static TreePath enclosingClosureStatement(final TreePath path) {
+  static TreePath enclosingStatementToWrap(final TreePath path) {
     TreePath current = path;
     TreePath statement = null;
     while (current != null) {
@@ -77,7 +77,9 @@ final class CodeActionSupport {
         statement = current;
       }
 
-      if (current.getLeaf() instanceof LambdaExpressionTree || isAnonymousClass(current)) {
+      if (current.getLeaf() instanceof LambdaExpressionTree
+          || isAnonymousClass(current)
+          || current.getLeaf() instanceof MethodTree) {
         return statement;
       }
 
