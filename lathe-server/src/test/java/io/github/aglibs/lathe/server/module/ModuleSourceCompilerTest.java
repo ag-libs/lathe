@@ -51,6 +51,50 @@ class ModuleSourceCompilerTest {
   }
 
   @Test
+  void compile_fullMode_withInnerClass_writtenBinaryNamesContainsBothClasses() throws Exception {
+    final Path sourceRoot = td.resolve("src/main/java");
+    final Path sourceFile = sourceRoot.resolve("Foo.java");
+    Files.createDirectories(sourceFile.getParent());
+
+    final var config =
+        TestCompiler.moduleConfig(td.resolve(".lathe"), td.resolve("target/classes"), sourceRoot);
+
+    try (var compiler = new ModuleSourceCompiler(config, new CompilationAdmission(1))) {
+      final var result =
+          compiler.compile(
+              sourceFile.toUri().toString(),
+              "class Foo { static class Inner {} }",
+              CompileMode.FULL);
+
+      assertThat(result.writtenBinaryNames()).containsExactlyInAnyOrder("Foo", "Foo$Inner");
+    }
+  }
+
+  @Test
+  void compile_fullMode_afterInnerClassRemoved_writtenBinaryNamesExcludesRemovedInner()
+      throws Exception {
+    final Path sourceRoot = td.resolve("src/main/java");
+    final Path sourceFile = sourceRoot.resolve("Foo.java");
+    Files.createDirectories(sourceFile.getParent());
+
+    final var config =
+        TestCompiler.moduleConfig(td.resolve(".lathe"), td.resolve("target/classes"), sourceRoot);
+
+    try (var compiler = new ModuleSourceCompiler(config, new CompilationAdmission(1))) {
+      compiler.compile(
+          sourceFile.toUri().toString(), "class Foo { static class Inner {} }", CompileMode.FULL);
+      assertThat(config.latheClassesDir().resolve("Foo$Inner.class")).exists();
+
+      final var result =
+          compiler.compile(sourceFile.toUri().toString(), "class Foo {}", CompileMode.FULL);
+
+      assertThat(result.writtenBinaryNames()).containsExactly("Foo");
+      assertThat(config.latheClassesDir().resolve("Foo$Inner.class"))
+          .exists(); // WorkspaceSession calls deleteStaleClassOutputs, not ModuleSourceCompiler
+    }
+  }
+
+  @Test
   void compile_fullMode_generatesClassWithoutAnalysis() throws Exception {
     final Path sourceRoot = td.resolve("src/main/java");
     final Path sourceFile = sourceRoot.resolve("Sample.java");

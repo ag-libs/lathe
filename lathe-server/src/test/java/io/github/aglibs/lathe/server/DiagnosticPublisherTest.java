@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verify;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.module.CompileResponse;
 import java.util.List;
+import java.util.Set;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.services.LanguageClient;
@@ -33,7 +34,8 @@ class DiagnosticPublisherTest {
   @Test
   void publishIfCurrent_currentSnapshot_publishesDiagnosticsAndRefreshesTokens() {
     final var snapshot = registry.put("file:///A.java", "class A {}", 1);
-    final var result = new CompileResponse("file:///A.java", snapshot.generation(), List.of());
+    final var result =
+        new CompileResponse("file:///A.java", snapshot.generation(), List.of(), Set.of());
 
     final boolean published = publisher.publishIfCurrent(snapshot, result);
     publisher.refreshTokensIfCurrent(snapshot, result);
@@ -47,7 +49,7 @@ class DiagnosticPublisherTest {
   void publishIfCurrent_staleSnapshot_doesNotPublish() {
     final var old = registry.put("file:///A.java", "v1", 1);
     registry.put("file:///A.java", "v2", 2);
-    final var result = new CompileResponse("file:///A.java", old.generation(), List.of());
+    final var result = new CompileResponse("file:///A.java", old.generation(), List.of(), Set.of());
 
     final boolean published = publisher.publishIfCurrent(old, result);
     publisher.refreshTokensIfCurrent(old, result);

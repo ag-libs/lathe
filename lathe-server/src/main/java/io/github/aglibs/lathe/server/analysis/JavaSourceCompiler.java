@@ -6,6 +6,7 @@ import com.sun.source.util.Trees;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.List;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.tools.DiagnosticCollector;
@@ -55,12 +56,14 @@ public interface JavaSourceCompiler extends AutoCloseable {
         final List<SemanticToken> tokens = TokenScanner.scan(trees, cu);
         return new CompilerResult(
             collector.getDiagnostics(),
-            new AttributedFileAnalysis(trees, task.getElements(), task.getTypes(), cu, tokens));
+            new AttributedFileAnalysis(trees, task.getElements(), task.getTypes(), cu, tokens),
+            Set.of());
       }
 
       return new CompilerResult(
           collector.getDiagnostics(),
-          new AttributedFileAnalysis(trees, task.getElements(), task.getTypes(), null, null));
+          new AttributedFileAnalysis(trees, task.getElements(), task.getTypes(), null, null),
+          Set.of());
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }

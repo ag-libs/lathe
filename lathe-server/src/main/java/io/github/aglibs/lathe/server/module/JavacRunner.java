@@ -5,10 +5,16 @@ import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.analysis.CompilerResult;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Path;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
+import javax.tools.StandardLocation;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 
 final class JavacRunner {
@@ -45,8 +51,31 @@ final class JavacRunner {
 
   private CompilerResult compileFull(final JavaFileObject sourceFile, final List<String> options) {
     final var collector = new DiagnosticCollector<JavaFileObject>();
-    createTask(sourceFile, options, collector).call();
-    return new CompilerResult(collector.getDiagnostics(), AttributedFileAnalysis.diagnosticsOnly());
+    final var task = createTask(sourceFile, options, collector);
+    try {
+      task.analyze();
+      final Iterable<? extends JavaFileObject> generated = task.generate();
+      return new CompilerResult(
+          collector.getDiagnostics(),
+          AttributedFileAnalysis.diagnosticsOnly(),
+          writtenBinaryNames(generated));
+    } catch (final IOException e) {
+      throw new UncheckedIOException(e);
+    }
+  }
+
+  private Set<String> writtenBinaryNames(final Iterable<? extends JavaFileObject> generated) {
+    final Path classesRoot = fm.getLocationAsPaths(StandardLocation.CLASS_OUTPUT).iterator().next();
+    final Set<String> names = new HashSet<>();
+    for (final var jfo : generated) {
+      final var classFile = Path.of(jfo.toUri());
+      final var relative = classesRoot.relativize(classFile).toString();
+      names.add(
+          relative
+              .substring(0, relative.length() - ".class".length())
+              .replace(classFile.getFileSystem().getSeparator(), "."));
+    }
+    return Set.copyOf(names);
   }
 
   private JavacTask createTask(

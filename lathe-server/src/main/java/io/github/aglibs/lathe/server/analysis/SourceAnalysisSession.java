@@ -58,6 +58,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
   private final Map<String, CachedFileAnalysis> cache = new HashMap<>();
   private final SourceParser parser;
   private final TypeHierarchyResolver typeHierarchyResolver;
+  private Set<String> lastWrittenBinaryNames = Set.of();
 
   public SourceAnalysisSession(final JavaSourceCompiler compiler) {
     this.compiler = compiler;
@@ -73,6 +74,10 @@ public final class SourceAnalysisSession implements AutoCloseable {
     return compile(uri, content, version, mode, () -> {});
   }
 
+  public Set<String> lastWrittenBinaryNames() {
+    return lastWrittenBinaryNames;
+  }
+
   private List<Diagnostic> compile(
       final String uri,
       final String content,
@@ -82,7 +87,9 @@ public final class SourceAnalysisSession implements AutoCloseable {
     final var t = Stopwatch.start();
     final CompilerResult run = compiler.compile(uri, content, mode, cancelChecker);
     cancelChecker.checkCanceled();
-    if (mode != CompileMode.FULL) {
+    if (mode == CompileMode.FULL) {
+      lastWrittenBinaryNames = run.writtenBinaryNames();
+    } else {
       cache.put(uri, new CachedFileAnalysis(content, version, run.fileAnalysis()));
     }
 

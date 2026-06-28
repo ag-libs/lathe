@@ -17,7 +17,7 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.lang.model.element.ElementKind;
@@ -43,7 +43,8 @@ class SourceAnalysisSessionTest {
     final String uri = TempSourceCompiler.TEST_URI;
     final String content = "class Test {}";
     final var compiler = mock(JavaSourceCompiler.class);
-    final var result = new CompilerResult(List.of(), AttributedFileAnalysis.diagnosticsOnly());
+    final var result =
+        new CompilerResult(List.of(), AttributedFileAnalysis.diagnosticsOnly(), Set.of());
     final var cancelled = new AtomicBoolean();
     final CancelChecker cancelChecker =
         () -> {
@@ -188,9 +189,6 @@ class SourceAnalysisSessionTest {
       final var analysis = compiler.compile(uri, content, CompileMode.OPEN).fileAnalysis();
       session.compile(uri, content, 1, CompileMode.OPEN);
 
-      final var path =
-          SampleFixture.pathAt(analysis.trees(), analysis.tree(), "return name", "name");
-      final var element = Objects.requireNonNull(SourceLocator.elementAt(analysis.trees(), path));
       final var target =
           new ReferenceTarget(
               ElementKind.FIELD,
@@ -203,8 +201,6 @@ class SourceAnalysisSessionTest {
       final Path sourceFile = Path.of(analysis.tree().getSourceFile().toUri());
       Files.delete(sourceFile);
 
-      // Before fix: returns empty list (silently swallows IOException)
-      // After fix: propagates as UncheckedIOException
       assertThatThrownBy(() -> session.searchReferences(uri, content, 1, target, false))
           .isInstanceOf(UncheckedIOException.class);
     }

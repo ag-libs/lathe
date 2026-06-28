@@ -66,7 +66,7 @@ public final class ExternalCompiler implements JavaSourceCompiler {
     if (sourceRoot.isEmpty()) {
       LOG.fine(() -> "[external] no source root for %s — skipping".formatted(uri));
       return new CompilerResult(
-          List.of(), new AttributedFileAnalysis(null, null, null, null, null));
+          List.of(), new AttributedFileAnalysis(null, null, null, null, null), Set.of());
     }
 
     try {

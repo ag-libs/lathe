@@ -37,6 +37,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -172,11 +173,7 @@ final class WorkspaceSession {
         switch (route) {
           case CompilerRoute.Module module ->
               publishIfCurrentThen(
-                  () -> {
-                    scheduleAstRefresh(uri);
-                    scheduleOpenFilesInModule(uri, module.config());
-                    refreshReactorShard(module.config());
-                  });
+                  result -> afterModuleSave(result, module.config(), LatheUri.toPath(uri)));
           case CompilerRoute.External ignored ->
               publishIfCurrentThen(() -> scheduleAstRefresh(uri));
           case CompilerRoute.Missing ignored -> publisher::publishIfCurrent;
@@ -1303,6 +1300,23 @@ final class WorkspaceSession {
       case CompilerRoute.Module module -> operation.apply(module.worker());
       case CompilerRoute.External external -> operation.apply(external.worker());
       case CompilerRoute.Missing ignored -> CompletableFuture.completedFuture(missingFallback);
+    };
+  }
+
+  private void afterModuleSave(
+      final CompileResponse result, final ModuleSourceConfig config, final Path savedSource) {
+    deleteStaleClassOutputs(config, savedSource, result.writtenBinaryNames());
+    scheduleAstRefresh(result.uri());
+    scheduleOpenFilesInModule(result.uri(), config);
+    refreshReactorShard(config);
+  }
+
+  private AfterCompile publishIfCurrentThen(final Consumer<CompileResponse> followUp) {
+    return (snapshot, result) -> {
+      if (publisher.publishIfCurrent(snapshot, result)) {
+        LOG.info(() -> "[save] compiled %s".formatted(snapshot.uri()));
+        followUp.accept(result);
+      }
     };
   }
 

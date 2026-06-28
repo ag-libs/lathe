@@ -121,11 +121,12 @@ public final class CompilationWorker {
 
   public CompletableFuture<CompileResponse> compile(final CompileRequest request) {
     return submit(
-        ctx ->
-            new CompileResponse(
-                request.uri(),
-                request.generation(),
-                ctx.compile(request.uri(), request.content(), request.version(), request.mode())));
+        ctx -> {
+          final var diags =
+              ctx.compile(request.uri(), request.content(), request.version(), request.mode());
+          return new CompileResponse(
+              request.uri(), request.generation(), diags, ctx.lastWrittenBinaryNames());
+        });
   }
 
   public CompletableFuture<SignatureHelp> signatureHelp(final SourceFeatureRequest request) {
