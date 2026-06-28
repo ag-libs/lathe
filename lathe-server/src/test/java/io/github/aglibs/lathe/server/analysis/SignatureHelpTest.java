@@ -378,6 +378,46 @@ class SignatureHelpTest {
     assertThat(help.getActiveParameter()).isEqualTo(1);
   }
 
+  // --- inner call as first argument ---
+
+  @Test
+  void signatureHelp_outerCall_firstArgIsMethodCall_returnsOuterSignature() {
+    final var source =
+        """
+        class Test {
+          String transform(String s) { return s; }
+          void target(String name, int count) {}
+          void caller() { target(§transform("x"), 1); }
+        }
+        """;
+    final var help = signatureHelpAt(source);
+
+    assertThat(help).isNotNull();
+    assertThat(help.getSignatures().getFirst().getLabel()).contains("String name");
+    assertThat(help.getActiveParameter()).isEqualTo(0);
+  }
+
+  @Test
+  void signatureHelp_mapPut_firstArgIsMethodCall_returnsMapPutSignature() {
+    final var source =
+        """
+        import java.util.HashMap;
+        import java.util.Map;
+        class Test {
+          String id() { return "x"; }
+          void caller() {
+            Map<String, Integer> map = new HashMap<>();
+            map.put(§id(), 1);
+          }
+        }
+        """;
+    final var help = signatureHelpAt(source);
+
+    assertThat(help).isNotNull();
+    assertThat(help.getSignatures().getFirst().getLabel()).contains("put");
+    assertThat(help.getActiveParameter()).isEqualTo(0);
+  }
+
   // --- helpers ---
 
   private SignatureHelp signatureHelpAt(final String rawSource) {

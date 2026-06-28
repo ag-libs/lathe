@@ -39,7 +39,7 @@ structure, which is an enhancement rather than a correctness gap.
 
 ## EG-001 — Signature help selects the inner method's signature when the argument is itself a method call
 
-**Status: accepted — Target: M1**
+**Status: done — Target: M1**
 
 ### Observed behaviour
 

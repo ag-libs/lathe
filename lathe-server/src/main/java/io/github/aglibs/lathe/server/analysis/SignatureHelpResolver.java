@@ -43,7 +43,9 @@ final class SignatureHelpResolver {
       return null;
     }
 
-    final var callPath = findEnclosingCall(cursorPath);
+    final var positions = analysis.trees().getSourcePositions();
+    final var cu = analysis.tree();
+    final var callPath = findEnclosingCall(cursorPath, positions, cu, cursorOffset);
     if (callPath == null) {
       return null;
     }
@@ -114,8 +116,6 @@ final class SignatureHelpResolver {
       return null;
     }
 
-    final var positions = trees.getSourcePositions();
-    final var cu = analysis.tree();
     final int activeParam = activeParamFromArgs(args, positions, cu, cursorOffset);
 
     final List<SignatureInformation> signatures =
@@ -135,11 +135,22 @@ final class SignatureHelpResolver {
     return new SignatureHelp(signatures, activeSignature, activeParam);
   }
 
-  private static TreePath findEnclosingCall(TreePath path) {
+  private static TreePath findEnclosingCall(
+      TreePath path,
+      final SourcePositions positions,
+      final CompilationUnitTree cu,
+      final long cursorOffset) {
     while (path != null) {
-      if (path.getLeaf() instanceof MethodInvocationTree
-          || path.getLeaf() instanceof NewClassTree) {
-        return path;
+      if (path.getLeaf() instanceof final MethodInvocationTree inv) {
+        final long selectEnd = positions.getEndPosition(cu, inv.getMethodSelect());
+        if (cursorOffset > selectEnd) {
+          return path;
+        }
+      } else if (path.getLeaf() instanceof final NewClassTree newClass) {
+        final long identEnd = positions.getEndPosition(cu, newClass.getIdentifier());
+        if (cursorOffset > identEnd) {
+          return path;
+        }
       }
 
       path = path.getParentPath();
