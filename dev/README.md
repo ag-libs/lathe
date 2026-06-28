@@ -10,6 +10,7 @@ All files live in `dev/` and are never shipped with the distribution.
 | File | Purpose |
 |---|---|
 | `nvim.sh` | Build server + open Neovim with Lathe attached |
+| `check-nvim.sh` | Headless Neovim smoke check for the Lathe runtime |
 | `lsp.py` | Python LSP client library and CLI diagnostics tool |
 | `explore.py` | Interactive LSP shell — explore any file like an engineer would |
 
@@ -29,6 +30,34 @@ On each launch it:
 **Debug port** (attach a debugger):
 ```bash
 LATHE_DEBUG_PORT=5005 ./dev/nvim.sh path/to/File.java
+```
+
+---
+
+## check-nvim.sh — headless Neovim runtime smoke check
+
+```bash
+./dev/check-nvim.sh
+```
+
+The script uses `nvim` from `PATH`, starts it with `--clean --headless`,
+loads the Lathe runtime for that process only,
+and verifies Java Tree-sitter indentation for `module-info.java`.
+It redirects Neovim cache and state writes into a temporary directory.
+
+By default it checks the source runtime under `lathe-maven-plugin/src/main/neovim`.
+To check the runtime installed by `lathe:sync`:
+
+```bash
+LATHE_NVIM_RUNTIME="$HOME/.cache/lathe/current/neovim" ./dev/check-nvim.sh
+```
+
+If your Java parser is not under the common `nvim-treesitter` lazy path,
+point the script at a runtime directory containing `parser/java.so`:
+
+```bash
+LATHE_NVIM_PARSER_RUNTIME="$HOME/.local/share/nvim/site/pack/plugins/start/nvim-treesitter" \
+  ./dev/check-nvim.sh
 ```
 
 ---
