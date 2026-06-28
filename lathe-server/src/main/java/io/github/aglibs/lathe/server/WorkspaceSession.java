@@ -24,6 +24,7 @@ import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.module.CompileRequest;
 import io.github.aglibs.lathe.server.module.CompileResponse;
+import io.github.aglibs.lathe.server.module.ModuleNameDiscovery;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.lathe.server.module.WorkspaceModuleGraph;
 import io.github.aglibs.lathe.server.module.WorkspaceModuleRegistry;
@@ -896,12 +897,20 @@ final class WorkspaceSession {
   CompletableFuture<CompletionOutcome> completionFuture(
       final String uri, final Position pos, final CompletionContext context) {
     final var indexSnapshot = typeIndex;
+    final var route = routeCompiler(uri);
     return openDocFeature(
         uri,
         CompletionOutcome.of(List.of()),
         (worker, doc) ->
             worker
-                .complete(uri, doc.content(), doc.version(), pos, context, indexSnapshot)
+                .complete(
+                    uri,
+                    doc.content(),
+                    doc.version(),
+                    pos,
+                    context,
+                    indexSnapshot,
+                    completionModuleNames(route, uri))
                 .exceptionally(
                     ex ->
                         logAndReturn(
@@ -1278,6 +1287,19 @@ final class WorkspaceSession {
               return new CompilerRoute.Missing(
                   uri, "Run `mvn process-test-classes` to initialize Lathe for this module");
             });
+  }
+
+  private static List<String> completionModuleNames(final CompilerRoute route, final String uri) {
+    if (!LatheLayout.MODULE_INFO_JAVA.equals(LatheUri.toPath(uri).getFileName().toString())) {
+      return List.of();
+    }
+
+    return switch (route) {
+      case CompilerRoute.Module module ->
+          ModuleNameDiscovery.observableModuleNames(module.config());
+      case CompilerRoute.External ignored -> List.of();
+      case CompilerRoute.Missing ignored -> List.of();
+    };
   }
 
   private <T> CompletableFuture<T> openDocFeature(

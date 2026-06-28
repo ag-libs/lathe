@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.analysis.completion;
 import io.github.aglibs.lathe.server.analysis.CachedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.validcheck.ValidCheck;
+import java.util.List;
 import org.eclipse.lsp4j.CompletionContext;
 import org.eclipse.lsp4j.Position;
 
@@ -12,7 +13,8 @@ public record CompletionRequest(
     Position pos,
     CompletionContext context,
     CachedFileAnalysis cached,
-    WorkspaceTypeIndex typeIndex) {
+    WorkspaceTypeIndex typeIndex,
+    List<String> moduleNames) {
 
   public CompletionRequest {
     ValidCheck.check()
@@ -20,6 +22,7 @@ public record CompletionRequest(
         .notNull(content, "content")
         .notNull(pos, "pos")
         .validate();
+    moduleNames = moduleNames != null ? List.copyOf(moduleNames) : List.of();
   }
 
   int cursorOffset() {

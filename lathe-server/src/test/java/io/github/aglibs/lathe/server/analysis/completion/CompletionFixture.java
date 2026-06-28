@@ -24,21 +24,28 @@ final class CompletionFixture implements AutoCloseable {
   private final CompletionEngine engine;
   private final WorkspaceTypeIndex typeIndex;
   private final Path tmpDir;
+  private final List<String> moduleNames;
 
   CompletionFixture() {
-    this(WorkspaceTypeIndex.empty(), null);
+    this(WorkspaceTypeIndex.empty(), null, List.of());
   }
 
   CompletionFixture(final WorkspaceTypeIndex typeIndex) {
-    this(typeIndex, null);
+    this(typeIndex, null, List.of());
   }
 
   CompletionFixture(final WorkspaceTypeIndex typeIndex, final Path tmpDir) {
+    this(typeIndex, tmpDir, List.of());
+  }
+
+  CompletionFixture(
+      final WorkspaceTypeIndex typeIndex, final Path tmpDir, final List<String> moduleNames) {
     this.sourceParser = new SourceParser();
     this.compiler = new TempSourceCompiler();
     this.engine = new CompletionEngine(sourceParser, compiler);
     this.typeIndex = typeIndex;
     this.tmpDir = tmpDir;
+    this.moduleNames = List.copyOf(moduleNames);
   }
 
   List<CompletionItem> complete(final String markedSource) {
@@ -67,7 +74,8 @@ final class CompletionFixture implements AutoCloseable {
                 new Position(cursor.lspLine(), cursor.lspChar()),
                 null,
                 null,
-                typeIndex))
+                typeIndex,
+                moduleNames))
         .items();
   }
 
@@ -131,7 +139,8 @@ final class CompletionFixture implements AutoCloseable {
         new Position(cursor.lspLine(), cursor.lspChar()),
         null,
         cached,
-        typeIndex);
+        typeIndex,
+        moduleNames);
   }
 
   @Override

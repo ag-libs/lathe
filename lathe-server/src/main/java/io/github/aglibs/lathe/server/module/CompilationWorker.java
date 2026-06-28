@@ -269,8 +269,10 @@ public final class CompilationWorker {
       final int version,
       final Position position,
       final CompletionContext context,
-      final WorkspaceTypeIndex typeIndex) {
-    return submit(ctx -> ctx.complete(uri, content, version, position, context, typeIndex));
+      final WorkspaceTypeIndex typeIndex,
+      final List<String> moduleNames) {
+    return submit(
+        ctx -> ctx.complete(uri, content, version, position, context, typeIndex, moduleNames));
   }
 
   public CompletableFuture<List<Either<Command, CodeAction>>> codeAction(

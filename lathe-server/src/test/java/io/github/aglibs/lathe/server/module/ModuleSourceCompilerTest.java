@@ -148,7 +148,8 @@ class ModuleSourceCompilerTest {
               1,
               SourceLocator.offsetToPosition(content, cursor),
               null,
-              typeIndex);
+              typeIndex,
+              List.of());
 
       assertThat(outcome.items()).extracting(CompletionItem::getLabel).contains("ReactorOnlyType");
     }

@@ -115,10 +115,11 @@ public final class SourceAnalysisSession implements AutoCloseable {
       final int version,
       final Position pos,
       final CompletionContext context,
-      final WorkspaceTypeIndex typeIndex) {
+      final WorkspaceTypeIndex typeIndex,
+      final List<String> moduleNames) {
     final var t = Stopwatch.start();
     final var request =
-        new CompletionRequest(uri, content, pos, context, cache.get(uri), typeIndex);
+        new CompletionRequest(uri, content, pos, context, cache.get(uri), typeIndex, moduleNames);
     final var outcome = completionEngine.complete(request);
     if (outcome.freshAnalysis() != null) {
       cache.put(uri, new CachedFileAnalysis(content, version, outcome.freshAnalysis()));

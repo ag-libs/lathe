@@ -1958,12 +1958,14 @@ contract. Resolved CQ entries are in [gaps-archive.md](gaps-archive.md).
 ## CQ-0041 — `module-info.java` directive slots return no completion candidates
 
 ID: CQ-0041
-Status: accepted
+Status: done
 Target: M1
 Tier: basic
 Failure mode: missing-candidate
 Owner component: SentinelParser / CompletionEngine
 Discovery: 2026-06-28, Helidon `module-info.java` live probes
+Resolved: 2026-06-28, module-name completion uses `ModuleFinder.ofSystem()` plus the current
+module path.
 
 Project/file:
 `/home/ag-libs/git/helidon/health/health/src/main/java/module-info.java`

@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.analysis.completion;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
+import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import java.io.IOException;
 import java.util.List;
 import org.eclipse.lsp4j.CompletionItem;
@@ -132,14 +133,67 @@ class CompletionModuleInfoTest {
   }
 
   @Test
-  void complete_requiresDirective_returnsEmpty() {
+  void complete_requiresDirective_offersModuleNames() throws IOException {
+    try (final var localFixture =
+        new CompletionFixture(
+            WorkspaceTypeIndex.empty(),
+            null,
+            List.of("com.example.lib", "java.base", "java.logging", "java.net.http"))) {
+      final List<String> result =
+          labels(
+              localFixture.completeModuleInfo(
+                  """
+                  module com.example {
+                      requires java.§
+                  }
+                  """));
+      assertThat(result).containsExactlyInAnyOrder("java.base", "java.logging", "java.net.http");
+    }
+  }
+
+  @Test
+  void complete_requiresDirective_withTypedPrefix_filtersModuleNames() throws IOException {
+    try (final var localFixture =
+        new CompletionFixture(
+            WorkspaceTypeIndex.empty(),
+            null,
+            List.of("com.example.lib", "java.base", "java.logging", "java.net.http"))) {
+      final List<String> result =
+          labels(
+              localFixture.completeModuleInfo(
+                  """
+                  module com.example {
+                      requires java.n§
+                  }
+                  """));
+      assertThat(result).containsExactly("java.net.http");
+    }
+  }
+
+  @Test
+  void complete_requiresStaticDirective_offersModuleNames() throws IOException {
+    try (final var localFixture =
+        new CompletionFixture(
+            WorkspaceTypeIndex.empty(), null, List.of("com.example.lib", "java.logging"))) {
+      final List<String> result =
+          labels(
+              localFixture.completeModuleInfo(
+                  """
+                  module com.example {
+                      requires static com.§
+                  }
+                  """));
+      assertThat(result).containsExactly("com.example.lib");
+    }
+  }
+
+  @Test
+  void complete_moduleName_returnsEmpty() {
     final List<String> result =
         labels(
             fixture.completeModuleInfo(
                 """
-                module com.example {
-                    requires io.helidon.§
-                }
+                module com.§ {
                 """));
     assertThat(result).isEmpty();
   }

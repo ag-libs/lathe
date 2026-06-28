@@ -75,7 +75,8 @@ public final class CompletionEngine {
     }
 
     if (parsed.sentinelContext() == SentinelContext.MODULE_DIRECTIVE) {
-      return completeModuleDirective(injected, parsed.directiveKeyword(), req.typeIndex());
+      return completeModuleDirective(
+          injected, parsed.directiveKeyword(), req.typeIndex(), req.moduleNames());
     }
 
     final var site = CompletionSite.from(req, injected, parsed);
@@ -546,14 +547,29 @@ public final class CompletionEngine {
   private static CompletionOutcome completeModuleDirective(
       final SentinelInjectionResult injected,
       final ModuleDirectiveKind kind,
-      final WorkspaceTypeIndex typeIndex) {
+      final WorkspaceTypeIndex typeIndex,
+      final List<String> moduleNames) {
     final List<CompletionItem> items =
         switch (kind) {
           case EXPORTS, OPENS, USES, PROVIDES, WITH -> nameSegmentItems(injected, typeIndex);
-          case MODULE, REQUIRES, REQUIRES_TRANSITIVE, REQUIRES_STATIC -> List.of();
+          case REQUIRES, REQUIRES_TRANSITIVE, REQUIRES_STATIC ->
+              moduleNameItems(injected, moduleNames);
+          case MODULE -> List.of();
           case NONE -> directiveKeywordItems();
         };
     return CompletionOutcome.of(items);
+  }
+
+  private static List<CompletionItem> moduleNameItems(
+      final SentinelInjectionResult injected, final List<String> moduleNames) {
+    final String prefix =
+        injected.receiverText() != null
+            ? "%s.%s".formatted(injected.receiverText(), injected.prefix())
+            : injected.prefix();
+    return moduleNames.stream()
+        .filter(name -> name.startsWith(prefix))
+        .map(CompletionEngine::toModuleItem)
+        .toList();
   }
 
   private static List<CompletionItem> nameSegmentItems(
