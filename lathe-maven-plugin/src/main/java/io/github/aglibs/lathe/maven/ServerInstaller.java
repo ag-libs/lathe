@@ -4,10 +4,13 @@ import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URL;
+import java.net.URLConnection;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Properties;
 import java.util.stream.Collectors;
 import org.apache.maven.plugin.logging.Log;
 import org.eclipse.aether.RepositorySystem;
@@ -25,6 +28,9 @@ final class ServerInstaller {
 
   private static final String NEOVIM_BUNDLE_RESOURCE =
       "/META-INF/lathe/%s".formatted(LatheLayout.NEOVIM_BUNDLE);
+  private static final String MARKER_SCHEMA = "schema";
+  private static final String MARKER_BUNDLE_SIZE = "bundleSize";
+  private static final String MARKER_BUNDLE_MODIFIED = "bundleModified";
 
   private final RepositorySystem repositorySystem;
   private final RepositorySystemSession repoSession;
@@ -73,23 +79,74 @@ final class ServerInstaller {
   }
 
   private void installNeovim(final Path versionDir) throws IOException {
-    try (final InputStream in = ServerInstaller.class.getResourceAsStream(NEOVIM_BUNDLE_RESOURCE)) {
-      if (in == null) {
-        throw new IOException("Neovim runtime bundle not found");
-      }
-      installNeovimBundle(in, versionDir);
+    final URL bundleUrl = ServerInstaller.class.getResource(NEOVIM_BUNDLE_RESOURCE);
+    if (bundleUrl == null) {
+      throw new IOException("Neovim runtime bundle not found");
+    }
+
+    final URLConnection connection = bundleUrl.openConnection();
+    connection.setUseCaches(false);
+    final long bundleSize = connection.getContentLengthLong();
+    final long bundleModified = connection.getLastModified();
+    final Path neovimDir = versionDir.resolve(LatheLayout.NEOVIM_DIR);
+    if (isNeovimCurrent(neovimDir, bundleSize, bundleModified)) {
+      log.debug("[server] Neovim runtime unchanged — skipping unzip");
+      return;
+    }
+
+    try (final InputStream in = connection.getInputStream()) {
+      installNeovimBundle(in, versionDir, bundleSize, bundleModified);
       log.debug("[server] installed Neovim runtime at %s".formatted(versionDir));
     }
   }
 
-  static void installNeovimBundle(final InputStream bundle, final Path versionDir)
+  static boolean installNeovimBundle(
+      final InputStream bundle,
+      final Path versionDir,
+      final long bundleSize,
+      final long bundleModified)
       throws IOException {
     final Path neovimDir = versionDir.resolve(LatheLayout.NEOVIM_DIR);
+    if (isNeovimCurrent(neovimDir, bundleSize, bundleModified)) {
+      return false;
+    }
+
     if (Files.exists(neovimDir)) {
       FileUtil.deleteDir(neovimDir);
     }
     Files.createDirectories(neovimDir);
     FileUtil.unzip(bundle, neovimDir);
+    writeNeovimMarker(neovimDir, bundleSize, bundleModified);
+    return true;
+  }
+
+  private static boolean isNeovimCurrent(
+      final Path neovimDir, final long bundleSize, final long bundleModified) {
+    final Path marker = neovimDir.resolve(LatheLayout.NEOVIM_MARKER);
+    if (!Files.exists(marker)) {
+      return false;
+    }
+
+    final var properties = new Properties();
+    try (final InputStream in = Files.newInputStream(marker)) {
+      properties.load(in);
+      return LatheLayout.SCHEMA_VERSION.equals(properties.getProperty(MARKER_SCHEMA))
+          && Long.toString(bundleSize).equals(properties.getProperty(MARKER_BUNDLE_SIZE))
+          && Long.toString(bundleModified).equals(properties.getProperty(MARKER_BUNDLE_MODIFIED));
+    } catch (final IOException e) {
+      return false;
+    }
+  }
+
+  private static void writeNeovimMarker(
+      final Path neovimDir, final long bundleSize, final long bundleModified) throws IOException {
+    final var properties = new Properties();
+    properties.setProperty(MARKER_SCHEMA, LatheLayout.SCHEMA_VERSION);
+    properties.setProperty(MARKER_BUNDLE_SIZE, Long.toString(bundleSize));
+    properties.setProperty(MARKER_BUNDLE_MODIFIED, Long.toString(bundleModified));
+    try (final var out = Files.newOutputStream(neovimDir.resolve(LatheLayout.NEOVIM_MARKER))) {
+      properties.store(out, null);
+    }
   }
 
   private List<Path> resolveServerJars() throws SyncException {
