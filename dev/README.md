@@ -63,6 +63,16 @@ printf 'grep setAttribute\ncomplete after "handler.getServletContext()."\n' \
     | python3 dev/explore.py AbstractServerFactory.java
 ```
 
+**External dependency or JDK cache source** (open a file outside the workspace,
+but initialize Lathe with the real workspace):
+```
+python3 dev/explore.py --workspace /home/ag-libs/git/dropwizard \
+    /home/ag-libs/.cache/lathe/deps/io.dropwizard.metrics:metrics-core:4.2.38/com/codahale/metrics/MetricRegistry.java
+```
+
+Use `--workspace` when the file being probed does not live under a `.lathe/`
+directory, such as dependency or JDK sources extracted into the Lathe cache.
+
 ### Commands
 
 | Command | What it does |
@@ -278,6 +288,8 @@ They do not launch Neovim and they are not a replacement for Java-side LSP reque
 ```bash
 python3 dev/lsp.py path/to/Foo.java
 python3 dev/lsp.py path/to/Foo.java:42:10   # also prints hover at line 42, col 10 (1-based)
+python3 dev/lsp.py --workspace /home/ag-libs/git/dropwizard \
+    /home/ag-libs/.cache/lathe/jdks/corretto-25.0.0.36.2/java.base/java/lang/String.java
 ```
 
 ### Importable `LatheClient`

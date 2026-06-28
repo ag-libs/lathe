@@ -14,6 +14,9 @@ USAGE
 Interactive REPL:
     python3 dev/explore.py <file>
 
+External dependency or JDK cache source:
+    python3 dev/explore.py --workspace /path/to/workspace /path/to/cache/File.java
+
 Single inline command (remaining argv joined as one command line):
     python3 dev/explore.py <file> complete after "config.url()"
     python3 dev/explore.py <file> complete after "MongoClients." expect create min 1
@@ -189,6 +192,7 @@ When any qualifier fails the line starts with  [FAIL]  and the exit code is 1.
 When there are no qualifiers the result is printed without a status badge.
 """
 
+import argparse
 import json
 import re
 import shlex
@@ -202,7 +206,7 @@ except ImportError:
     pass
 
 sys.path.insert(0, str(Path(__file__).parent))
-from lsp import LatheClient, RequestCancelledError, find_workspace_root
+from lsp import LatheClient, RequestCancelledError, find_workspace_root, workspace_arg
 
 # ── constants ─────────────────────────────────────────────────────────────────
 
@@ -1589,20 +1593,35 @@ class ExploreShell:
 
 # ── main ──────────────────────────────────────────────────────────────────────
 
-def main() -> None:
-    if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
-        print(__doc__)
-        sys.exit(0)
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        add_help=True,
+    )
+    parser.add_argument(
+        "--workspace",
+        help="Workspace root to initialize Lathe with, for files outside a .lathe workspace.",
+    )
+    parser.add_argument("file", help="Java source file to open.")
+    parser.add_argument(
+        "command", nargs=argparse.REMAINDER, help="Optional inline explorer command."
+    )
+    return parser.parse_args()
 
-    file = Path(sys.argv[1]).expanduser().resolve()
+
+def main() -> None:
+    args = _parse_args()
+
+    file = Path(args.file).expanduser().resolve()
     if not file.exists():
         print(f"error: file not found: {file}", file=sys.stderr)
         sys.exit(1)
 
-    inline_cmd = shlex.join(sys.argv[2:]) if len(sys.argv) > 2 else None
+    inline_cmd = shlex.join(args.command) if args.command else None
 
     try:
-        workspace = find_workspace_root(file)
+        workspace = workspace_arg(args.workspace) if args.workspace else find_workspace_root(file)
     except RuntimeError as exc:
         print(f"error: {exc}", file=sys.stderr)
         sys.exit(1)

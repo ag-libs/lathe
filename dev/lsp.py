@@ -5,6 +5,7 @@ Lathe LSP exploratory client — drives the server directly via JSON-RPC.
 Usage:
     python3 dev/lsp.py <file> [<file> ...]            # diagnostics for each file
     python3 dev/lsp.py <file>:<line>:<col> [...]      # diagnostics + hover (1-based line/col)
+    python3 dev/lsp.py --workspace <workspace> <cache-file>
 
     Or import LatheClient for ad-hoc feature testing:
 
@@ -23,6 +24,7 @@ Set LATHE_DEBUG=1 for verbose server logs (default: on in CLI mode).
 Set LATHE_TIMEOUT=<seconds> to change the per-request wait (default: 15).
 """
 
+import argparse
 import json
 import os
 import queue
@@ -621,6 +623,20 @@ def find_workspace_root(file: Path) -> Path:
     raise RuntimeError(f"No .lathe/ directory found above {file}")
 
 
+def workspace_arg(path_text: str) -> Path:
+    workspace = Path(path_text).expanduser().resolve()
+    if not workspace.exists():
+        raise RuntimeError(f"workspace does not exist: {workspace}")
+
+    if not workspace.is_dir():
+        raise RuntimeError(f"workspace is not a directory: {workspace}")
+
+    if not (workspace / ".lathe").is_dir():
+        raise RuntimeError(f"workspace has no .lathe/ directory: {workspace}")
+
+    return workspace
+
+
 def print_diagnostics(file: Path, diags: list[dict]):
     print(f"\n{'='*60}")
     print(f"  {file.name}  ({file.parent})")
@@ -650,17 +666,33 @@ def print_hover(line: int, col: int, result: dict | None):
 
 
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
-        print(__doc__)
-        sys.exit(0)
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--workspace",
+        help="Workspace root to initialize Lathe with, for files outside a .lathe workspace.",
+    )
+    parser.add_argument(
+        "targets", nargs="+", help="Java file, optionally suffixed with :line:col."
+    )
+    args = parser.parse_args()
 
-    targets = [parse_arg(arg) for arg in sys.argv[1:]]
+    targets = [parse_arg(arg) for arg in args.targets]
     for file, _ in targets:
         if not file.exists():
             print(f"error: file not found: {file}", file=sys.stderr)
             sys.exit(1)
 
-    workspace_root = find_workspace_root(targets[0][0])
+    try:
+        workspace_root = (
+            workspace_arg(args.workspace) if args.workspace else find_workspace_root(targets[0][0])
+        )
+    except RuntimeError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
     print(f"workspace: {workspace_root}", file=sys.stderr)
     print(f"server:    {LATHE_LAUNCHER}", file=sys.stderr)
 
