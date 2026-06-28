@@ -1649,7 +1649,7 @@ This conflicts with the fail-fast policy in
 
 ## FR-004 — No end-to-end invoker coverage
 
-Status: accepted — Target: M1.
+Status: done — Target: M1.
 Verified test gap.
 
 The Maven invoker `LspSmokeTest` checks that `referencesProvider` is advertised but never sends a
