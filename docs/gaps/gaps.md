@@ -1352,33 +1352,36 @@ The problem affects all class file types produced from a single source file:
 | Local class | `Foo$1LocalName.class` | Yes |
 | Package-private sibling | `Helper.class` | **No** |
 
-### Decided implementation — `JavaFileManager` wrapper (Option B)
+### Decided implementation — `task.generate()` return value
 
-Eclipse JDT and Zinc (Scala) both solve this by persisting the compiler's own output manifest per
-source file and diffing it on the next compile.
-Lathe will use the same approach via a `ForwardingJavaFileManager` wrapper:
+`JavacTask.generate()` is a public `com.sun.source.util` API already used by Lathe.
+It returns `Iterable<? extends JavaFileObject>` — the exact set of class files javac wrote during a
+compile, including all `Foo$Inner.class`, `Foo$1.class`, and AP-generated `Foo$Something.class`
+files produced in the same run.
 
-1. **`TrackingFileManager`** (new class, `module` package) — wraps `StandardJavaFileManager`,
-   overrides `getJavaFileForOutput()` to collect the binary class names (e.g.
-   `com.example.Foo`, `com.example.Foo$Inner`, `com.example.Helper`) written to `CLASS_OUTPUT`
-   during a `FULL` compile.
-   Uses only public `javax.tools` API; no `com.sun.tools.javac.*` internals.
+The implementation requires changes to three existing classes only.
+No new classes, no sidecar files, no in-memory state map.
 
-2. **`CompilerResult`** — add `Set<String> writtenBinaryNames` field (empty for `FAST`/`OPEN`,
-   populated by `TrackingFileManager` for `FULL`).
+1. **`JavacRunner.compileFull()`** — switch from `task.call()` to `task.analyze()` +
+   `task.generate()`.
+   Collect the returned `JavaFileObject`s; convert each to a binary name by resolving its URI
+   relative to `latheClassesDir`, replacing `/` with `.`, and stripping the `.class` suffix.
 
-3. **`JavacRunner.compileFull()`** — wrap `fm` with `TrackingFileManager` for the task duration;
-   include written names in `CompilerResult`.
+2. **`CompilerResult`** — add `Set<String> writtenBinaryNames` field
+   (`Set.of()` for `FAST`/`OPEN`, populated from `task.generate()` for `FULL`).
 
-4. **`JavaSourceCompiler.runAnalysis()`** — pass `Set.of()` for `writtenBinaryNames`.
+3. **`WorkspaceSession.deleteStaleClassOutputs(config, savedSource, writtenBinaryNames)`** —
+   replace the stub: scan the package dir for files matching `Foo$*.class`; delete any whose binary
+   name is absent from `writtenBinaryNames`.
+   Call this from `onSave` after `FULL` compile, before `refreshReactorShard`.
 
-5. **`WorkspaceSession.deleteStaleClassOutputs()`** — replace the stub with the real implementation:
-   read the old sidecar (`.lathe/classes/<pkg>/Foo.java.manifest`), compute
-   `oldNames − writtenBinaryNames`, delete those `.class` files, write the new sidecar.
-   Call this from `onSave` before `refreshReactorShard`.
-   On `onDeletedFile`, delete the sidecar alongside `deleteClassOutputs`.
+AP-generated `Foo$Something.class` files are safe: they are written during the same compile that
+produces `Foo.class`, so they appear in `task.generate()` output and are retained.
 
-This replaces any timestamp-based approach and covers all class file types uniformly.
+The package-private sibling case (`Helper.class`) is a documented gap.
+`Helper.class` carries no `Foo$` prefix so `deleteStaleClassOutputs` never considers it.
+Accepting this gap avoids source-root inference, which would incorrectly delete AP-generated
+files that share a name with a type from another source file.
 
 ### Regression tests
 

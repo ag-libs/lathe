@@ -6,8 +6,7 @@ import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.FileTime;
-import java.time.Instant;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -59,80 +58,70 @@ class WorkspaceSessionTest {
     assertThat(outputDir.resolve("Foo.class")).exists();
   }
 
-  @Disabled
   @Test
   void deleteStaleClassOutputs_namedInnerClassRemoved_deletesStaleClassFile() throws Exception {
     Files.writeString(outputDir.resolve("Foo.class"), "");
     Files.writeString(outputDir.resolve("Foo$Inner.class"), "");
-    setOld(outputDir.resolve("Foo$Inner.class"));
 
-    final int deleted = WorkspaceSession.deleteStaleClassOutputs(config, sourceFile);
+    final int deleted =
+        WorkspaceSession.deleteStaleClassOutputs(config, sourceFile, Set.of("com.example.Foo"));
 
     assertThat(deleted).isEqualTo(1);
     assertThat(outputDir.resolve("Foo.class")).exists();
     assertThat(outputDir.resolve("Foo$Inner.class")).doesNotExist();
   }
 
-  @Disabled
   @Test
   void deleteStaleClassOutputs_anonymousClassRemoved_deletesStaleClassFile() throws Exception {
     Files.writeString(outputDir.resolve("Foo.class"), "");
     Files.writeString(outputDir.resolve("Foo$1.class"), "");
-    setOld(outputDir.resolve("Foo$1.class"));
 
-    final int deleted = WorkspaceSession.deleteStaleClassOutputs(config, sourceFile);
+    final int deleted =
+        WorkspaceSession.deleteStaleClassOutputs(config, sourceFile, Set.of("com.example.Foo"));
 
     assertThat(deleted).isEqualTo(1);
     assertThat(outputDir.resolve("Foo.class")).exists();
     assertThat(outputDir.resolve("Foo$1.class")).doesNotExist();
   }
 
-  @Disabled
   @Test
   void deleteStaleClassOutputs_outerClass_isUntouched() throws Exception {
-    // Foo.class is the reference timestamp — it must never be deleted even though it matches.
     Files.writeString(outputDir.resolve("Foo.class"), "");
 
-    final int deleted = WorkspaceSession.deleteStaleClassOutputs(config, sourceFile);
+    final int deleted =
+        WorkspaceSession.deleteStaleClassOutputs(config, sourceFile, Set.of("com.example.Foo"));
 
     assertThat(deleted).isZero();
     assertThat(outputDir.resolve("Foo.class")).exists();
   }
 
-  @Disabled
   @Test
   void deleteStaleClassOutputs_sibling_isUntouched() throws Exception {
     Files.writeString(outputDir.resolve("Foo.class"), "");
     Files.writeString(outputDir.resolve("Foo$Inner.class"), "");
     Files.writeString(outputDir.resolve("Bar.class"), "");
-    setOld(outputDir.resolve("Foo$Inner.class"));
-    setOld(outputDir.resolve("Bar.class"));
 
-    WorkspaceSession.deleteStaleClassOutputs(config, sourceFile);
+    WorkspaceSession.deleteStaleClassOutputs(config, sourceFile, Set.of("com.example.Foo"));
 
     assertThat(outputDir.resolve("Bar.class")).exists();
   }
 
   // GAP: package-private sibling types (e.g. `class Helper {}` co-declared in Foo.java) produce
-  // Helper.class with no Foo prefix, so the timestamp approach cannot identify them as belonging
-  // to Foo.java. Needs sidecar tracking of declared top-level types per source file.
+  // Helper.class with no Foo$ prefix; deleteStaleClassOutputs only considers Foo$* files and
+  // cannot identify Helper.class as stale without sidecar tracking.
   @Disabled
   @Test
   void deleteStaleClassOutputs_packagePrivateSiblingRemoved_deletesStaleClassFile()
       throws Exception {
     Files.writeString(outputDir.resolve("Foo.class"), "");
     Files.writeString(outputDir.resolve("Helper.class"), "");
-    setOld(outputDir.resolve("Helper.class"));
 
-    final int deleted = WorkspaceSession.deleteStaleClassOutputs(config, sourceFile);
+    final int deleted =
+        WorkspaceSession.deleteStaleClassOutputs(config, sourceFile, Set.of("com.example.Foo"));
 
     assertThat(deleted).isEqualTo(1);
     assertThat(outputDir.resolve("Foo.class")).exists();
     assertThat(outputDir.resolve("Helper.class")).doesNotExist();
-  }
-
-  private static void setOld(final Path path) throws IOException {
-    Files.setLastModifiedTime(path, FileTime.from(Instant.now().minusSeconds(10)));
   }
 
   private ModuleSourceConfig config(final Path sourceRoot) {

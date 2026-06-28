@@ -1076,8 +1076,7 @@ final class WorkspaceSession {
       return 0;
     }
 
-    final var sourceName = deletedSource.getFileName().toString();
-    final var typeName = sourceName.substring(0, sourceName.length() - ".java".length());
+    final var typeName = typeNameFrom(deletedSource);
     try (final var stream = Files.list(classDir)) {
       final var matchingClassFiles =
           stream.filter(path -> deletedClassFile(typeName, path)).toList();
@@ -1092,9 +1091,59 @@ final class WorkspaceSession {
     }
   }
 
-  // EG-025: placeholder — will be implemented via JavaFileManager wrapper (Option B).
-  static int deleteStaleClassOutputs(final ModuleSourceConfig config, final Path savedSource) {
-    return 0;
+  static int deleteStaleClassOutputs(
+      final ModuleSourceConfig config,
+      final Path savedSource,
+      final Set<String> writtenBinaryNames) {
+    if (!savedSource.getFileName().toString().endsWith(".java")) {
+      return 0;
+    }
+
+    final var sourceRoot = sourceRootFor(config, savedSource);
+    if (sourceRoot == null) {
+      return 0;
+    }
+
+    final var rel = sourceRoot.relativize(savedSource);
+    final var packageRel = rel.getParent();
+    final var classDir =
+        packageRel != null
+            ? config.latheClassesDir().resolve(packageRel)
+            : config.latheClassesDir();
+    if (!Files.isDirectory(classDir)) {
+      return 0;
+    }
+
+    final var typeName = typeNameFrom(savedSource);
+    try (final var stream = Files.list(classDir)) {
+      final var staleClassFiles =
+          stream
+              .filter(
+                  path -> {
+                    final var n = path.getFileName().toString();
+                    return n.startsWith(typeName + "$") && n.endsWith(".class");
+                  })
+              .filter(path -> !writtenBinaryNames.contains(toBinaryName(config, path)))
+              .toList();
+      for (final var classFile : staleClassFiles) {
+        Files.deleteIfExists(classFile);
+      }
+
+      if (!staleClassFiles.isEmpty()) {
+        LOG.fine(
+            () ->
+                "[delete] %s stale=%d"
+                    .formatted(savedSource.getFileName(), staleClassFiles.size()));
+      }
+
+      return staleClassFiles.size();
+    } catch (final IOException e) {
+      LOG.log(
+          Level.WARNING,
+          e,
+          () -> "[delete] stale class cleanup failed for %s".formatted(savedSource));
+      return 0;
+    }
   }
 
   private static Path sourceRootFor(final ModuleSourceConfig config, final Path file) {
@@ -1104,10 +1153,22 @@ final class WorkspaceSession {
         .orElse(null);
   }
 
+  private static String typeNameFrom(final Path sourceFile) {
+    final var name = sourceFile.getFileName().toString();
+    return name.substring(0, name.length() - ".java".length());
+  }
+
   private static boolean deletedClassFile(final String typeName, final Path path) {
     final var name = path.getFileName().toString();
     return name.equals(typeName + ".class")
         || (name.startsWith(typeName + "$") && name.endsWith(".class"));
+  }
+
+  private static String toBinaryName(final ModuleSourceConfig config, final Path classFile) {
+    final var relative = config.latheClassesDir().relativize(classFile).toString();
+    return relative
+        .substring(0, relative.length() - ".class".length())
+        .replace(classFile.getFileSystem().getSeparator(), ".");
   }
 
   private void checkForChanges() {
