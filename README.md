@@ -155,6 +155,9 @@ Lathe implements the following LSP endpoints. In Neovim 0.11+, most are mapped a
 - `typeHierarchy`: Navigates supertypes and subtypes of the symbol under the cursor.
   - Neovim API: `vim.lsp.buf.typehierarchy('supertypes')` / `vim.lsp.buf.typehierarchy('subtypes')`
   - No Neovim default; add explicit keybinds (e.g. `<leader>ts` / `<leader>ti`)
+- `callHierarchy`: Navigates incoming and outgoing calls of the method under the cursor.
+  - Neovim API: `vim.lsp.buf.incoming_calls()` / `vim.lsp.buf.outgoing_calls()`
+  - No Neovim default; add explicit keybinds (e.g. `<leader>ci` / `<leader>co`)
 - `textDocument/hover`: Displays AST-resolved Javadoc formatted as Markdown.
   - Neovim API: `vim.lsp.buf.hover()`
   - Neovim default: `K`
