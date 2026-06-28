@@ -572,6 +572,48 @@ class ExploreShell:
         return None
 
     @staticmethod
+    def _parse_line_col(token: str, expected: str) -> tuple[int, int] | None:
+        try:
+            line_text, col_text = token.split(":", 1)
+            return int(line_text), int(col_text)
+        except (ValueError, TypeError):
+            print(f"  expected {expected}, got {token!r}")
+            return None
+
+    def _line_col_or_text(self, token: str, expected: str) -> tuple[int, int] | None:
+        if ":" in token and token[0].isdigit():
+            return self._parse_line_col(token, expected)
+
+        pos = self._find_text(token)
+        if pos is None:
+            print(f"  text not found: {token!r}")
+            return None
+
+        line, col = pos
+        print(f"  found {token!r} at {line}:{col}")
+        return line, col
+
+    @staticmethod
+    def _location_text(loc: dict) -> str:
+        uri = loc.get("uri") or loc.get("targetUri", "?")
+        r = loc.get("range") or loc.get("targetSelectionRange", {})
+        start = r.get("start", {})
+        path = uri.removeprefix("file://")
+        line = start.get("line", "?")
+        char = start.get("character", "?")
+        line_text = str(line + 1) if isinstance(line, int) else line
+        char_text = str(char + 1) if isinstance(char, int) else char
+        return f"{path}:{line_text}:{char_text}"
+
+    @classmethod
+    def _print_locations(cls, locs: list[dict], indent: str = "  ", limit: int | None = None) -> None:
+        shown = locs if limit is None else locs[:limit]
+        for loc in shown:
+            print(f"{indent}{cls._location_text(loc)}")
+        if limit is not None and len(locs) > limit:
+            print(f"{indent}… {len(locs) - limit} more")
+
+    @staticmethod
     def _print_context(lines: list[str], center: int, radius: int = 4) -> None:
         start = max(0, center - radius)
         end = min(len(lines), center + radius + 1)
@@ -607,6 +649,14 @@ class ExploreShell:
             passed = _print_assertion_result(failures)
             if not passed:
                 self.any_failure = True
+
+    def _evaluate_refs(self, refs: list[dict], assertions: dict) -> None:
+        if not assertions:
+            return
+
+        passed = _print_assertion_result(_check_refs_assertions(refs, assertions))
+        if not passed:
+            self.any_failure = True
 
     def _injected_content(self, code: str, target_0: int | None) -> tuple[str, int, int, str]:
         lines = self._original.splitlines()
@@ -732,11 +782,10 @@ class ExploreShell:
             line, col = pos[0], pos[1] + len(text)
             print(f"  completing after {text!r}  →  {line}:{col}")
         elif pre:
-            try:
-                line, col = (int(x) for x in pre[0].split(":", 1))
-            except (ValueError, TypeError):
-                print(f"  expected line:col (0-based) or 'after <text>', got {pre[0]!r}")
+            parsed = self._parse_line_col(pre[0], "line:col (0-based) or 'after <text>'")
+            if parsed is None:
                 return
+            line, col = parsed
         else:
             print("usage: complete <line>:<col> [assertions]")
             print("       complete after <text> [assertions]")
@@ -804,11 +853,10 @@ class ExploreShell:
             print(f"  injected at line {line + 1}:  {injected_line!r}")
             print(f"  accepting at {line}:{col}")
         elif ":" in args[0]:
-            try:
-                line, col = (int(x) for x in args[0].split(":", 1))
-            except (ValueError, TypeError):
-                print(f"  expected line:col (0-based), got {args[0]!r}")
+            parsed = self._parse_line_col(args[0], "line:col (0-based)")
+            if parsed is None:
                 return
+            line, col = parsed
             selector_args = args[1:]
         else:
             print(f"  expected line:col, 'after <text>', or 'inject <code>', got {args[0]!r}")
@@ -848,19 +896,10 @@ class ExploreShell:
             print("usage: hover <line>:<col>  OR  hover <text>")
             return
 
-        if ":" in args[0]:
-            try:
-                line, col = (int(x) for x in args[0].split(":", 1))
-            except (ValueError, TypeError):
-                print(f"  expected line:col (0-based), got {args[0]!r}")
-                return
-        else:
-            pos = self._find_text(args[0])
-            if pos is None:
-                print(f"  text not found: {args[0]!r}")
-                return
-            line, col = pos
-            print(f"  found {args[0]!r} at {line}:{col}")
+        parsed = self._line_col_or_text(args[0], "line:col (0-based) or text")
+        if parsed is None:
+            return
+        line, col = parsed
 
         try:
             result = self._client.hover(self._file, line, col)
@@ -896,11 +935,10 @@ class ExploreShell:
             line, col = pos[0], pos[1] + len(text)
             print(f"  sig after {text!r}  →  {line}:{col}")
         elif ":" in args[0]:
-            try:
-                line, col = (int(x) for x in args[0].split(":", 1))
-            except (ValueError, TypeError):
-                print(f"  expected line:col (0-based), got {args[0]!r}")
+            parsed = self._parse_line_col(args[0], "line:col (0-based)")
+            if parsed is None:
                 return
+            line, col = parsed
         else:
             print(f"  expected line:col (0-based) or 'after <text>', got {args[0]!r}")
             return
@@ -934,11 +972,10 @@ class ExploreShell:
         if not args:
             print("usage: definition <line>:<col>")
             return
-        try:
-            line, col = (int(x) for x in args[0].split(":", 1))
-        except (ValueError, TypeError):
-            print(f"  expected line:col (0-based), got {args[0]!r}")
+        parsed = self._parse_line_col(args[0], "line:col (0-based)")
+        if parsed is None:
             return
+        line, col = parsed
 
         try:
             locs = self._client.definition(self._file, line, col)
@@ -950,25 +987,16 @@ class ExploreShell:
             print("  (no definition found)")
             return
 
-        for loc in locs:
-            uri   = loc.get("uri") or loc.get("targetUri", "?")
-            r     = loc.get("range") or loc.get("targetSelectionRange", {})
-            start = r.get("start", {})
-            path  = uri.removeprefix("file://")
-            ln    = start.get("line", "?")
-            ch    = start.get("character", "?")
-            print(f"  {path}:{ln + 1 if isinstance(ln, int) else ln}"
-                  f":{ch + 1 if isinstance(ch, int) else ch}")
+        self._print_locations(locs)
 
     def _cmd_declaration(self, args: list[str]) -> None:
         if not args:
             print("usage: declaration <line>:<col>")
             return
-        try:
-            line, col = (int(x) for x in args[0].split(":", 1))
-        except (ValueError, TypeError):
-            print(f"  expected line:col (0-based), got {args[0]!r}")
+        parsed = self._parse_line_col(args[0], "line:col (0-based)")
+        if parsed is None:
             return
+        line, col = parsed
 
         try:
             locs = self._client.declaration(self._file, line, col)
@@ -980,15 +1008,7 @@ class ExploreShell:
             print("  (no declaration found)")
             return
 
-        for loc in locs:
-            uri   = loc.get("uri") or loc.get("targetUri", "?")
-            r     = loc.get("range") or loc.get("targetSelectionRange", {})
-            start = r.get("start", {})
-            path  = uri.removeprefix("file://")
-            ln    = start.get("line", "?")
-            ch    = start.get("character", "?")
-            print(f"  {path}:{ln + 1 if isinstance(ln, int) else ln}"
-                  f":{ch + 1 if isinstance(ch, int) else ch}")
+        self._print_locations(locs)
 
     def _cmd_refs(self, args: list[str]) -> None:
         if not args:
@@ -1027,19 +1047,10 @@ class ExploreShell:
             print("       refs <text>        [assertions]")
             return
 
-        if ":" in pre[0] and pre[0][0].isdigit():
-            try:
-                line, col = (int(x) for x in pre[0].split(":", 1))
-            except (ValueError, TypeError):
-                print(f"  expected line:col (0-based) or text, got {pre[0]!r}")
-                return
-        else:
-            pos = self._find_text(pre[0])
-            if pos is None:
-                print(f"  text not found: {pre[0]!r}")
-                return
-            line, col = pos
-            print(f"  found {pre[0]!r} at {line}:{col}")
+        parsed = self._line_col_or_text(pre[0], "line:col (0-based) or text")
+        if parsed is None:
+            return
+        line, col = parsed
 
         try:
             refs = self._client.references(
@@ -1059,30 +1070,14 @@ class ExploreShell:
 
         if not refs:
             print("  (no references found)")
-            if assertions:
-                passed = _print_assertion_result(_check_refs_assertions([], assertions))
-                if not passed:
-                    self.any_failure = True
+            self._evaluate_refs([], assertions)
             return
 
         print(f"  {len(refs)} reference(s):")
         limit = len(refs) if assertions else 15
-        for ref in refs[:limit]:
-            uri   = ref.get("uri", "?")
-            r     = ref.get("range", {})
-            start = r.get("start", {})
-            path  = uri.removeprefix("file://")
-            ln    = start.get("line", "?")
-            ch    = start.get("character", "?")
-            print(f"    {path}:{ln + 1 if isinstance(ln, int) else ln}"
-                  f":{ch + 1 if isinstance(ch, int) else ch}")
-        if len(refs) > limit:
-            print(f"    … {len(refs) - limit} more")
+        self._print_locations(refs, indent="    ", limit=limit)
 
-        if assertions:
-            passed = _print_assertion_result(_check_refs_assertions(refs, assertions))
-            if not passed:
-                self.any_failure = True
+        self._evaluate_refs(refs, assertions)
 
     @staticmethod
     def _print_reference_progress(value: dict) -> None:
@@ -1108,19 +1103,10 @@ class ExploreShell:
             print("       impl <text>        [assertions]")
             return
 
-        if ":" in pre[0] and pre[0][0].isdigit():
-            try:
-                line, col = (int(x) for x in pre[0].split(":", 1))
-            except (ValueError, TypeError):
-                print(f"  expected line:col (0-based) or text, got {pre[0]!r}")
-                return
-        else:
-            pos = self._find_text(pre[0])
-            if pos is None:
-                print(f"  text not found: {pre[0]!r}")
-                return
-            line, col = pos
-            print(f"  found {pre[0]!r} at {line}:{col}")
+        parsed = self._line_col_or_text(pre[0], "line:col (0-based) or text")
+        if parsed is None:
+            return
+        line, col = parsed
 
         try:
             locs = self._client.implementation(self._file, line, col)
@@ -1130,31 +1116,16 @@ class ExploreShell:
 
         if not locs:
             print("  (no implementations found)")
-            if assertions:
-                passed = _print_assertion_result(_check_refs_assertions([], assertions))
-                if not passed:
-                    self.any_failure = True
+            self._evaluate_refs([], assertions)
             return
 
         print(f"  {len(locs)} implementation(s):")
         limit = len(locs) if assertions else 15
-        for loc in locs[:limit]:
-            uri   = loc.get("uri") or loc.get("targetUri", "?")
-            r     = loc.get("range") or loc.get("targetSelectionRange", {})
-            start = r.get("start", {})
-            path  = uri.removeprefix("file://")
-            ln    = start.get("line", "?")
-            ch    = start.get("character", "?")
-            print(f"    {path}:{ln + 1 if isinstance(ln, int) else ln}"
-                  f":{ch + 1 if isinstance(ch, int) else ch}")
-        if len(locs) > limit:
-            print(f"    … {len(locs) - limit} more")
+        self._print_locations(locs, indent="    ", limit=limit)
 
         if assertions:
             refs_like = [{"uri": loc.get("uri") or loc.get("targetUri", "")} for loc in locs]
-            passed = _print_assertion_result(_check_refs_assertions(refs_like, assertions))
-            if not passed:
-                self.any_failure = True
+            self._evaluate_refs(refs_like, assertions)
 
     def _cmd_hierarchy(self, args: list[str]) -> None:
         if not args:
@@ -1162,19 +1133,10 @@ class ExploreShell:
             print("       hierarchy <text>")
             return
 
-        if ":" in args[0] and args[0][0].isdigit():
-            try:
-                line, col = (int(x) for x in args[0].split(":", 1))
-            except (ValueError, TypeError):
-                print(f"  expected line:col (0-based) or text, got {args[0]!r}")
-                return
-        else:
-            pos = self._find_text(args[0])
-            if pos is None:
-                print(f"  text not found: {args[0]!r}")
-                return
-            line, col = pos
-            print(f"  found {args[0]!r} at {line}:{col}")
+        parsed = self._line_col_or_text(args[0], "line:col (0-based) or text")
+        if parsed is None:
+            return
+        line, col = parsed
 
         try:
             items = self._client.prepare_type_hierarchy(self._file, line, col)
@@ -1239,19 +1201,10 @@ class ExploreShell:
             print("       callers <text>        [assertions]")
             return
 
-        if ":" in pre[0] and pre[0][0].isdigit():
-            try:
-                line, col = (int(x) for x in pre[0].split(":", 1))
-            except (ValueError, TypeError):
-                print(f"  expected line:col (0-based) or text, got {pre[0]!r}")
-                return
-        else:
-            pos = self._find_text(pre[0])
-            if pos is None:
-                print(f"  text not found: {pre[0]!r}")
-                return
-            line, col = pos
-            print(f"  found {pre[0]!r} at {line}:{col}")
+        parsed = self._line_col_or_text(pre[0], "line:col (0-based) or text")
+        if parsed is None:
+            return
+        line, col = parsed
 
         try:
             items = self._client.prepare_call_hierarchy(self._file, line, col)
@@ -1279,11 +1232,7 @@ class ExploreShell:
 
         if not calls:
             print("  (no callers found)")
-            if assertions:
-                names: list[dict] = []
-                passed = _print_assertion_result(_check_refs_assertions(names, assertions))
-                if not passed:
-                    self.any_failure = True
+            self._evaluate_refs([], assertions)
             return
 
         print(f"  {len(calls)} caller(s):")
@@ -1301,9 +1250,7 @@ class ExploreShell:
 
         if assertions:
             name_refs = [{"uri": c.get("from", {}).get("name", "")} for c in calls]
-            passed = _print_assertion_result(_check_refs_assertions(name_refs, assertions))
-            if not passed:
-                self.any_failure = True
+            self._evaluate_refs(name_refs, assertions)
 
     def _cmd_callees(self, args: list[str]) -> None:
         if not args:
@@ -1317,19 +1264,10 @@ class ExploreShell:
             print("       callees <text>        [assertions]")
             return
 
-        if ":" in pre[0] and pre[0][0].isdigit():
-            try:
-                line, col = (int(x) for x in pre[0].split(":", 1))
-            except (ValueError, TypeError):
-                print(f"  expected line:col (0-based) or text, got {pre[0]!r}")
-                return
-        else:
-            pos = self._find_text(pre[0])
-            if pos is None:
-                print(f"  text not found: {pre[0]!r}")
-                return
-            line, col = pos
-            print(f"  found {pre[0]!r} at {line}:{col}")
+        parsed = self._line_col_or_text(pre[0], "line:col (0-based) or text")
+        if parsed is None:
+            return
+        line, col = parsed
 
         try:
             items = self._client.prepare_call_hierarchy(self._file, line, col)
@@ -1352,10 +1290,7 @@ class ExploreShell:
 
         if not calls:
             print("  (no callees found)")
-            if assertions:
-                passed = _print_assertion_result(_check_refs_assertions([], assertions))
-                if not passed:
-                    self.any_failure = True
+            self._evaluate_refs([], assertions)
             return
 
         print(f"  {len(calls)} callee(s):")
@@ -1373,9 +1308,7 @@ class ExploreShell:
 
         if assertions:
             name_refs = [{"uri": c.get("to", {}).get("name", "")} for c in calls]
-            passed = _print_assertion_result(_check_refs_assertions(name_refs, assertions))
-            if not passed:
-                self.any_failure = True
+            self._evaluate_refs(name_refs, assertions)
 
     def _cmd_sym(self, args: list[str]) -> None:
         if not args:
