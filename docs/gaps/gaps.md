@@ -211,7 +211,7 @@ printf 'hover "Scheduling"\n' \
 
 ## EG-004 — Hover returns null on positions inside import declarations
 
-**Status: accepted — Target: M1**
+**Status: done — Target: M1**
 
 ### Observed behaviour
 
@@ -501,6 +501,21 @@ Anonymous class instantiations are not meaningful callee targets in a call hiera
 ### Regression target
 
 `CallHierarchyOutgoingLocatorTest.outgoingCalls_anonymousClassInstantiation_excludedFromResults`
+
+### Related observation
+
+The same anonymous-class empty-name pattern also appears in document symbols.
+Probing Dropwizard `PersonResourceTest.java` returns a blank class symbol for
+`new GenericType<List<Person>>() {}`:
+
+```text
+[Method] testGetImmutableListOfPersons  63:10
+  [Class]   64:104
+```
+
+Do not open a separate gap record for this until the anonymous-class naming policy is revisited.
+Either anonymous classes should be suppressed from user-facing symbol/call outputs,
+or they should use a stable synthetic label.
 
 ---
 
@@ -979,6 +994,92 @@ python3 dev/lsp.py \
 
 - `UnusedDiagnosticTest.unused_localVariable_messageNamesVariableAndKind`
 - `UnusedDiagnosticTest.unused_diagnostic_setsStableCode`
+
+---
+
+## EG-020 — `module-info.java` and `package-info.java` return no document symbols or folding ranges
+
+**Status: accepted — Target: M2**
+
+### Observed behaviour
+
+`textDocument/documentSymbol` and `textDocument/foldingRange` return no results for Java info files,
+even when those files have meaningful structure.
+
+Helidon `module-info.java`:
+
+```bash
+printf 'symbols min 1\nfolds min 1\n' \
+  | python3 dev/explore.py \
+      /home/ag-libs/git/helidon/health/health/src/main/java/module-info.java
+```
+
+Observed:
+
+```text
+(no document symbols returned)
+[FAIL]
+  ✗  expected ≥1 items, got 0
+(no folding ranges returned)
+[FAIL]
+  ✗  expected ≥1 items, got 0
+```
+
+Helidon `package-info.java`:
+
+```bash
+printf 'symbols min 1\nfolds min 1\n' \
+  | python3 dev/explore.py \
+      /home/ag-libs/git/helidon/health/health/src/main/java/io/helidon/health/package-info.java
+```
+
+Observed:
+
+```text
+(no document symbols returned)
+[FAIL]
+  ✗  expected ≥1 items, got 0
+(no folding ranges returned)
+[FAIL]
+  ✗  expected ≥1 items, got 0
+```
+
+Controls in the same probing session showed ordinary Java files work:
+Helidon `HealthCheck.java` returned 5 document symbols and 4 folding ranges,
+and Dropwizard `PersonResourceTest.java` returned 18 document symbols and 15 folding ranges.
+
+### Expected behaviour
+
+`module-info.java` should expose at least a module document symbol and folding ranges for the module
+body and directive groups where source ranges are available.
+Annotated module descriptors should also make the leading annotation block foldable.
+
+`package-info.java` should expose at least a package document symbol.
+Its package Javadoc should be foldable,
+and any package annotations should participate in the fold range when present.
+
+### Related navigation observation
+
+Package declarations are also weak in hover/definition:
+hover on package-name segments reports only the package name,
+and definition returns no target for both ordinary package declarations and `package-info.java`.
+That is not split out as a separate open gap here to avoid duplicating package-info handling work.
+
+### Proposed fix
+
+Extend the document-symbol and folding-range providers to handle compilation units whose primary
+top-level declaration is a module declaration or package declaration rather than a class,
+interface,
+enum,
+record,
+or annotation type.
+
+### Regression targets
+
+- `DocumentSymbolTest.documentSymbol_moduleInfo_returnsModuleSymbol`
+- `DocumentSymbolTest.documentSymbol_packageInfo_returnsPackageSymbol`
+- `FoldingRangeTest.foldingRange_moduleInfo_returnsModuleBodyRange`
+- `FoldingRangeTest.foldingRange_packageInfo_returnsJavadocRange`
 
 ---
 

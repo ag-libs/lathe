@@ -99,6 +99,16 @@ class HoverTest extends SampleFixture {
     assertThat(md.get()).contains("Status").contains("ACTIVE");
   }
 
+  // --- import declaration ---
+
+  @Test
+  void hover_importDeclaration_resolvesImportedType() {
+    // "List" in "import java.util.List;" on line 4, col 17
+    final var md = hoverAt(4, 17);
+    assertThat(md).isPresent();
+    assertThat(md.get()).contains("List");
+  }
+
   // --- class-file dependency ---
 
   @Test
