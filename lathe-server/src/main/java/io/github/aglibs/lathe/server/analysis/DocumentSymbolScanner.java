@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.analysis;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.MethodTree;
+import com.sun.source.tree.ModuleTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePathScanner;
@@ -34,6 +35,13 @@ final class DocumentSymbolScanner extends TreePathScanner<Void, Void> {
     final var scanner = new DocumentSymbolScanner(trees, compilationUnit, source);
     scanner.scan(compilationUnit, null);
     return scanner.roots;
+  }
+
+  @Override
+  public Void visitModule(final ModuleTree node, final Void unused) {
+    final String name = node.getName().toString();
+    add(symbol(node, name, SymbolKind.Module, false));
+    return null;
   }
 
   @Override

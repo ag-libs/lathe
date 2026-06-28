@@ -115,11 +115,49 @@ class DocumentSymbolScannerTest {
     assertThat(children(method)).isEmpty();
   }
 
+  @Test
+  void scan_moduleInfo_simpleModuleName_returnsModuleSymbol() {
+    final String source =
+        """
+        module com.example {
+          requires java.base;
+        }
+        """;
+
+    final List<DocumentSymbol> symbols = scanAs(source, "module-info.java");
+
+    assertThat(symbols).hasSize(1);
+    final var module = symbols.getFirst();
+    assertThat(module.getName()).isEqualTo("com.example");
+    assertThat(module.getKind()).isEqualTo(SymbolKind.Module);
+    assertThat(module.getSelectionRange().getStart().getLine()).isEqualTo(0);
+    assertThat(module.getSelectionRange().getStart().getCharacter()).isEqualTo(7);
+  }
+
+  @Test
+  void scan_moduleInfo_noDirectives_returnsModuleSymbol() {
+    final String source =
+        """
+        module leaf {
+        }
+        """;
+
+    final List<DocumentSymbol> symbols = scanAs(source, "module-info.java");
+
+    assertThat(symbols).hasSize(1);
+    assertThat(symbols.getFirst().getName()).isEqualTo("leaf");
+    assertThat(symbols.getFirst().getKind()).isEqualTo(SymbolKind.Module);
+  }
+
   private static List<DocumentSymbol> scan(final String source) {
+    return scanAs(source, "Test.java");
+  }
+
+  private static List<DocumentSymbol> scanAs(final String source, final String fileName) {
     try (var parser = new SourceParser()) {
       return parser
           .parseContent(
-              TempSourceCompiler.TEST_URI,
+              "file:///" + fileName,
               source,
               (trees, tree) -> DocumentSymbolScanner.scan(trees, tree, source))
           .orElseThrow();
