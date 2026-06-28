@@ -368,7 +368,7 @@ navigation now works for cross-shard duplicates since only one entry per binary 
 
 ## EG-008 — Object synchronization methods appear in member-access completion results
 
-**Status: accepted — Target: M1**
+**Status: done — Target: M1**
 
 ### Observed behaviour
 

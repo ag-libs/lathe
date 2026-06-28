@@ -11,6 +11,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -30,6 +31,8 @@ final class CandidateGenerator {
 
   private static final List<String> OBJECT_METHOD_NAMES =
       Arrays.stream(Object.class.getDeclaredMethods()).map(Method::getName).distinct().toList();
+
+  private static final Set<String> SUPPRESSED_SYNC_METHODS = Set.of("wait", "notify", "notifyAll");
 
   private final AttributedFileAnalysis snapshot;
   private final Types types;
@@ -62,6 +65,7 @@ final class CandidateGenerator {
                     || el.getKind() == ElementKind.FIELD
                     || el.getKind() == ElementKind.ENUM_CONSTANT)
         .filter(el -> el.getModifiers().contains(Modifier.STATIC) == isStaticAccess)
+        .filter(el -> !isObjectSyncMethod(el))
         .filter(el -> isAccessible(el, declaredType, scope))
         .filter(el -> el.getSimpleName().toString().startsWith(prefix))
         .map(
@@ -233,6 +237,15 @@ final class CandidateGenerator {
         new SimpleNameContext(
             enclosingClass, enclosingMethod, prefix, cursorOffset, semanticContext);
     return new SimpleNameProvider(snapshot, itemFactory, context).collect();
+  }
+
+  private static boolean isObjectSyncMethod(final Element el) {
+    if (!SUPPRESSED_SYNC_METHODS.contains(el.getSimpleName().toString())) {
+      return false;
+    }
+
+    return el.getEnclosingElement() instanceof final TypeElement enclosing
+        && "java.lang.Object".equals(enclosing.getQualifiedName().toString());
   }
 
   private static String sortKey(final Element el) {

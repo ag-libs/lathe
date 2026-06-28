@@ -384,7 +384,7 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
   }
 
   @Test
-  void memberAccess_objectMethodsIncludedAndRankLast() {
+  void memberAccess_objectMethodsRankLast() {
     final var items =
         fixture.complete(
             """
@@ -395,16 +395,42 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
             }""");
     final var sizeSort =
         itemWithFilterText(items, "size").map(CompletionItem::getSortText).orElseThrow();
-    assertThat(items).anyMatch(i -> "wait".equals(i.getFilterText()));
-    assertThat(items).anyMatch(i -> "notify".equals(i.getFilterText()));
-    assertThat(items).anyMatch(i -> "notifyAll".equals(i.getFilterText()));
-    items.stream()
-        .filter(
-            i ->
-                "wait".equals(i.getFilterText())
-                    || "notify".equals(i.getFilterText())
-                    || "notifyAll".equals(i.getFilterText()))
-        .forEach(i -> assertThat(i.getSortText()).isGreaterThan(sizeSort));
+    assertThat(items).anyMatch(i -> "equals".equals(i.getFilterText()));
+    assertThat(items).anyMatch(i -> "hashCode".equals(i.getFilterText()));
+    assertThat(items)
+        .anyMatch(
+            i -> "equals".equals(i.getFilterText()) && i.getSortText().compareTo(sizeSort) > 0);
+  }
+
+  @Test
+  void memberAccess_anyReceiver_suppressesSynchronizationMethods() {
+    final var items =
+        fixture.complete(
+            """
+            class Test {
+                void m(java.util.ArrayList<String> list) {
+                    list.§
+                }
+            }""");
+    assertThat(items).noneMatch(i -> "wait".equals(i.getFilterText()));
+    assertThat(items).noneMatch(i -> "notify".equals(i.getFilterText()));
+    assertThat(items).noneMatch(i -> "notifyAll".equals(i.getFilterText()));
+  }
+
+  @Test
+  void memberAccess_customNotifyMethod_notSuppressed() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Emitter {
+                        void notify(String event) {}
+                        void emit(String event) {}
+                    }
+                    class Test {
+                        void m(Emitter e) { e.§ }
+                    }""")))
+        .contains("notify", "emit");
   }
 
   @Test
