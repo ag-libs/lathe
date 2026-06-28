@@ -1323,7 +1323,7 @@ python3 dev/explore.py /path/to/Scratch.java inject "Object o = new Oper"
 
 ## EG-025 — Stale class files from removed or renamed types are never cleaned up
 
-**Status: accepted — Target: M1**
+**Status: done — Target: M1**
 
 ### Observed behaviour
 
@@ -1397,7 +1397,7 @@ Disabled tests in `WorkspaceSessionTest` cover the expected behaviour of `delete
 
 ## EG-026 — Workspace symbol search excludes test classes
 
-**Status: accepted — Target: M1**
+**Status: done — Target: M1**
 
 ### Observed behaviour
 

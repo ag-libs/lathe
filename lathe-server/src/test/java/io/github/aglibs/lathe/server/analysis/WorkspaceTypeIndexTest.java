@@ -140,12 +140,29 @@ class WorkspaceTypeIndexTest {
   }
 
   @Test
-  void build_nonTypeNameCandidate_excludesFromSearch() {
-    final var hidden =
+  void build_nonTypeNameCandidateInReactor_includedInSearch() {
+    final var packagePrivate =
         new TypeIndexEntry(
-            "Hidden", "com.reactor.Hidden", "com.reactor", TypeKind.CLASS, false, List.of());
+            "FooTest", "com.example.FooTest", "com.example", TypeKind.CLASS, false, List.of());
 
-    final var index = WorkspaceTypeIndex.build(List.of(), List.of(List.of(hidden)));
+    final var index = WorkspaceTypeIndex.build(List.of(), List.of(List.of(packagePrivate)));
+
+    assertThat(index.search("FooTest", 10))
+        .extracting(TypeIndexEntry::simpleName)
+        .containsExactly("FooTest");
+  }
+
+  @Test
+  void build_nonTypeNameCandidateInStaticShard_excludedFromSearch() throws IOException {
+    final var shardPath =
+        writeShard(
+            tmp,
+            "dep.json",
+            shard(
+                new TypeIndexEntry(
+                    "Hidden", "com.dep.Hidden", "com.dep", TypeKind.CLASS, false, List.of())));
+
+    final var index = WorkspaceTypeIndex.build(List.of(shardPath));
 
     assertThat(index.search("Hidden", 10)).isEmpty();
   }

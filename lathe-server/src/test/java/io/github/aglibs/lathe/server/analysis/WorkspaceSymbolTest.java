@@ -159,6 +159,26 @@ class WorkspaceSymbolTest {
     assertThat(result.getFileName().toString()).isEqualTo("ArrayList.java");
   }
 
+  // --- reactor: package-private types ---
+
+  @Test
+  void workspaceSymbol_mainClass_andTestClass_sameWorkspace_bothVisible() throws IOException {
+    createSourceFile("com.example", "Foo");
+    createSourceFile("com.example", "FooTest");
+    final var index =
+        indexOf(
+            entry("Foo", "com.example", TypeKind.CLASS),
+            new TypeIndexEntry(
+                "FooTest", "com.example.FooTest", "com.example", TypeKind.CLASS, false, List.of()));
+
+    final List<SymbolInformation> result =
+        WorkspaceSymbolResolver.resolve("Foo", index, List.of(src));
+
+    assertThat(result)
+        .extracting(SymbolInformation::getName)
+        .containsExactlyInAnyOrder("Foo", "FooTest");
+  }
+
   // --- SymbolKinds.fromTypeIndex ---
 
   @Test

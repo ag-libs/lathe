@@ -29,4 +29,8 @@ public record TypeIndexEntry(
   public String className() {
     return packageName.isEmpty() ? binaryName : binaryName.substring(packageName.length() + 1);
   }
+
+  public boolean isTopLevel() {
+    return !binaryName.contains("$");
+  }
 }

@@ -106,7 +106,10 @@ public final class WorkspaceTypeIndex {
     final List<TypeIndexEntry> deduped = deduplicate(staticEntries, reactorEntries);
     final TreeMap<String, List<TypeIndexEntry>> mutable =
         deduped.stream()
-            .filter(TypeIndexEntry::typeNameCandidate)
+            .filter(
+                e ->
+                    e.typeNameCandidate()
+                        || (reactorBinaryNames.contains(e.binaryName()) && e.isTopLevel()))
             .collect(
                 Collectors.groupingBy(
                     e -> e.simpleName().toLowerCase(),
