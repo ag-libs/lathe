@@ -20,10 +20,13 @@ final class SentinelParser {
   }
 
   ParsedSentinel parse(
-      final SentinelInjectionResult injected, final int expectedLspLine, final int version) {
+      final SentinelInjectionResult injected,
+      final int expectedLspLine,
+      final int version,
+      final String uri) {
     return sourceParser
         .parseContent(
-            "sentinel://completion.java",
+            uri,
             injected.injectedContent(),
             (trees, cu) -> findSentinel(trees, cu, injected, expectedLspLine, version))
         .orElseGet(
@@ -40,6 +43,11 @@ final class SentinelParser {
     final var sentinelPath = new SentinelFinder().scan(cu, null);
     if (sentinelPath == null) {
       LOG.fine(() -> "[sentinel-parse] sentinel not found in parse tree");
+      if (cu.getModule() != null) {
+        return ParsedSentinel.valid(
+            injected, SentinelContext.MODULE_DIRECTIVE, -1, ModuleDirectiveKind.NONE, version);
+      }
+
       return ParsedSentinel.invalid(injected.prefix(), injected.receiverText(), version);
     }
 
@@ -77,6 +85,7 @@ final class SentinelParser {
               injected,
               importTree.isStatic() ? SentinelContext.STATIC_IMPORT : SentinelContext.IMPORT,
               receiverEndOffset,
+              null,
               version);
       logValid(parsed);
       return parsed;
@@ -128,9 +137,10 @@ final class SentinelParser {
     }
 
     if (enclosingClass == null && cu.getModule() != null) {
+      final var keyword = findDirectiveKeyword(cu.getModule());
       final var parsed =
           ParsedSentinel.valid(
-              injected, SentinelContext.MODULE_DIRECTIVE, receiverEndOffset, version);
+              injected, SentinelContext.MODULE_DIRECTIVE, receiverEndOffset, keyword, version);
       logValid(parsed);
       return parsed;
     }
@@ -154,6 +164,7 @@ final class SentinelParser {
             enclosedBySwitchExpression,
             inEqualityComparison,
             cls.inExpression(),
+            null,
             version);
 
     logValid(parsed);
@@ -601,6 +612,61 @@ final class SentinelParser {
         sentinel instanceof MemberSelectTree
             ? SentinelContext.MEMBER_ACCESS
             : SentinelContext.SIMPLE_NAME);
+  }
+
+  static ModuleDirectiveKind findDirectiveKeyword(final ModuleTree moduleTree) {
+    if (containsSentinel(moduleTree.getName())) {
+      return ModuleDirectiveKind.MODULE;
+    }
+
+    for (final var directive : moduleTree.getDirectives()) {
+      switch (directive.getKind()) {
+        case EXPORTS -> {
+          if (containsSentinel(((ExportsTree) directive).getPackageName())) {
+            return ModuleDirectiveKind.EXPORTS;
+          }
+        }
+        case OPENS -> {
+          if (containsSentinel(((OpensTree) directive).getPackageName())) {
+            return ModuleDirectiveKind.OPENS;
+          }
+        }
+        case REQUIRES -> {
+          final var req = (RequiresTree) directive;
+          if (containsSentinel(req.getModuleName())) {
+            return req.isTransitive()
+                ? ModuleDirectiveKind.REQUIRES_TRANSITIVE
+                : req.isStatic()
+                    ? ModuleDirectiveKind.REQUIRES_STATIC
+                    : ModuleDirectiveKind.REQUIRES;
+          }
+        }
+        case USES -> {
+          if (containsSentinel(((UsesTree) directive).getServiceName())) {
+            return ModuleDirectiveKind.USES;
+          }
+        }
+        case PROVIDES -> {
+          final var prov = (ProvidesTree) directive;
+          if (containsSentinel(prov.getServiceName())) {
+            return ModuleDirectiveKind.PROVIDES;
+          }
+
+          for (final ExpressionTree impl : prov.getImplementationNames()) {
+            if (containsSentinel(impl)) {
+              return ModuleDirectiveKind.WITH;
+            }
+          }
+        }
+        default -> {}
+      }
+    }
+
+    return ModuleDirectiveKind.NONE;
+  }
+
+  private static boolean containsSentinel(final Tree tree) {
+    return tree != null && tree.toString().contains(SentinelInjector.SENTINEL);
   }
 
   private static final class SentinelFinder extends TreePathScanner<TreePath, Void> {

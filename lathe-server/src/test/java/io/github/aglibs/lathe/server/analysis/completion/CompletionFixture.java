@@ -57,6 +57,20 @@ final class CompletionFixture implements AutoCloseable {
     return engine.complete(request(cursor, cached)).items();
   }
 
+  List<CompletionItem> completeModuleInfo(final String markedContent) {
+    final var cursor = CursorFixture.cursor(markedContent);
+    return engine
+        .complete(
+            new CompletionRequest(
+                "file:///module-info.java",
+                cursor.content(),
+                new Position(cursor.lspLine(), cursor.lspChar()),
+                null,
+                null,
+                typeIndex))
+        .items();
+  }
+
   List<CompletionItem> completeWithJpms(final String markedSource, final String moduleInfo)
       throws IOException {
     return completeWithJpms(markedSource, moduleInfo, List.of());

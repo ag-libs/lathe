@@ -22,6 +22,7 @@ record ParsedSentinel(
     boolean enclosedBySwitchExpression,
     boolean inEqualityComparison,
     boolean inExpression,
+    ModuleDirectiveKind directiveKeyword,
     int docVersion) {
 
   ParsedSentinel {
@@ -61,6 +62,7 @@ record ParsedSentinel(
         false,
         false,
         false,
+        null,
         docVersion);
   }
 
@@ -68,6 +70,7 @@ record ParsedSentinel(
       final SentinelInjectionResult injected,
       final SentinelContext context,
       final int receiverEndOffset,
+      final ModuleDirectiveKind directiveKeyword,
       final int docVersion) {
     return valid(
         injected,
@@ -87,6 +90,7 @@ record ParsedSentinel(
         false,
         false,
         false,
+        directiveKeyword,
         docVersion);
   }
 
@@ -108,6 +112,7 @@ record ParsedSentinel(
       final boolean enclosedBySwitchExpression,
       final boolean inEqualityComparison,
       final boolean inExpression,
+      final ModuleDirectiveKind directiveKeyword,
       final int docVersion) {
     return new ParsedSentinel(
         true,
@@ -129,6 +134,7 @@ record ParsedSentinel(
         enclosedBySwitchExpression,
         inEqualityComparison,
         inExpression,
+        directiveKeyword,
         docVersion);
   }
 }

@@ -27,6 +27,7 @@ public final class CompletionEngine {
 
   private static final Logger LOG = Logger.getLogger(CompletionEngine.class.getName());
   private static final int STATIC_MEMBER_FIT_LIMIT = 20;
+  private static final int MODULE_SEGMENT_LIMIT = 50;
 
   private final SentinelParser sentinelParser;
   private final JavaSourceCompiler compiler;
@@ -57,7 +58,7 @@ public final class CompletionEngine {
     }
 
     final int version = req.cached() != null ? req.cached().version() : -1;
-    final var parsed = sentinelParser.parse(injected, req.pos().getLine(), version);
+    final var parsed = sentinelParser.parse(injected, req.pos().getLine(), version, req.uri());
     LOG.fine(
         () ->
             "[completion] parsed valid=%s sentinelCtx=%s receiver=|%s| class=%s method=%s role=%s"
@@ -71,6 +72,10 @@ public final class CompletionEngine {
 
     if (!parsed.valid()) {
       return CompletionOutcome.of(List.of());
+    }
+
+    if (parsed.sentinelContext() == SentinelContext.MODULE_DIRECTIVE) {
+      return completeModuleDirective(injected, parsed.directiveKeyword(), req.typeIndex());
     }
 
     final var site = CompletionSite.from(req, injected, parsed);
@@ -536,5 +541,46 @@ public final class CompletionEngine {
   private static boolean isRealNameSlot(final ParsedSentinel parsed) {
     return parsed.declaredTypeText() != null
         && !parsed.declaredTypeText().equals(parsed.enclosingClass());
+  }
+
+  private static CompletionOutcome completeModuleDirective(
+      final SentinelInjectionResult injected,
+      final ModuleDirectiveKind kind,
+      final WorkspaceTypeIndex typeIndex) {
+    final List<CompletionItem> items =
+        switch (kind) {
+          case EXPORTS, OPENS, USES, PROVIDES, WITH -> nameSegmentItems(injected, typeIndex);
+          case MODULE, REQUIRES, REQUIRES_TRANSITIVE, REQUIRES_STATIC -> List.of();
+          case NONE -> directiveKeywordItems();
+        };
+    return CompletionOutcome.of(items);
+  }
+
+  private static List<CompletionItem> nameSegmentItems(
+      final SentinelInjectionResult injected, final WorkspaceTypeIndex typeIndex) {
+    final String dotPrefix =
+        injected.receiverText() != null ? "%s.".formatted(injected.receiverText()) : "";
+    return typeIndex.searchByBinaryPrefix(dotPrefix, MODULE_SEGMENT_LIMIT).stream()
+        .filter(seg -> seg.startsWith(injected.prefix()))
+        .map(CompletionEngine::toModuleItem)
+        .toList();
+  }
+
+  private static CompletionItem toModuleItem(final String label) {
+    final var item = new CompletionItem(label);
+    item.setKind(CompletionItemKind.Module);
+    return item;
+  }
+
+  private static List<CompletionItem> directiveKeywordItems() {
+    return Stream.of("requires", "exports", "opens", "uses", "provides")
+        .map(CompletionEngine::toKeywordItem)
+        .toList();
+  }
+
+  private static CompletionItem toKeywordItem(final String keyword) {
+    final var item = new CompletionItem(keyword);
+    item.setKind(CompletionItemKind.Keyword);
+    return item;
   }
 }

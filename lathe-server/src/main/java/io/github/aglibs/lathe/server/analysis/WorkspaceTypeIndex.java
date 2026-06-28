@@ -14,6 +14,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
@@ -32,14 +33,14 @@ public final class WorkspaceTypeIndex {
   private final List<TypeIndexEntry> staticEntries;
   private final Set<String> reactorBinaryNames;
   private final NavigableMap<String, List<TypeIndexEntry>> bySimpleNameLower;
-  private final Map<String, TypeIndexEntry> byBinaryName;
+  private final NavigableMap<String, TypeIndexEntry> byBinaryName;
   private final Map<String, List<TypeIndexEntry>> directSubtypesByParent;
 
   private WorkspaceTypeIndex(
       final List<TypeIndexEntry> staticEntries,
       final Set<String> reactorBinaryNames,
       final NavigableMap<String, List<TypeIndexEntry>> bySimpleNameLower,
-      final Map<String, TypeIndexEntry> byBinaryName,
+      final NavigableMap<String, TypeIndexEntry> byBinaryName,
       final Map<String, List<TypeIndexEntry>> directSubtypesByParent) {
     this.staticEntries = staticEntries;
     this.reactorBinaryNames = reactorBinaryNames;
@@ -50,7 +51,11 @@ public final class WorkspaceTypeIndex {
 
   public static WorkspaceTypeIndex empty() {
     return new WorkspaceTypeIndex(
-        List.of(), Set.of(), Collections.emptyNavigableMap(), Map.of(), Map.of());
+        List.of(),
+        Set.of(),
+        Collections.emptyNavigableMap(),
+        Collections.emptyNavigableMap(),
+        Map.of());
   }
 
   public static WorkspaceTypeIndex build(final List<Path> shardPaths) {
@@ -117,10 +122,11 @@ public final class WorkspaceTypeIndex {
                     Collectors.collectingAndThen(Collectors.toList(), List::copyOf)));
     final NavigableMap<String, List<TypeIndexEntry>> map =
         Collections.unmodifiableNavigableMap(mutable);
-    final Map<String, TypeIndexEntry> byBinaryName = new LinkedHashMap<>();
+    final var byBinaryName = new TreeMap<String, TypeIndexEntry>();
     for (final TypeIndexEntry entry : deduped) {
       byBinaryName.put(entry.binaryName(), entry);
     }
+
     final Map<String, List<TypeIndexEntry>> directSubtypesByParent =
         deduped.stream()
             .flatMap(
@@ -135,7 +141,7 @@ public final class WorkspaceTypeIndex {
         staticEntries,
         reactorBinaryNames,
         map,
-        Map.copyOf(byBinaryName),
+        Collections.unmodifiableNavigableMap(byBinaryName),
         Map.copyOf(directSubtypesByParent));
   }
 
@@ -188,6 +194,34 @@ public final class WorkspaceTypeIndex {
         .sorted(order)
         .limit(limit)
         .toList();
+  }
+
+  public List<String> searchByBinaryPrefix(final String prefix, final int limit) {
+    final Set<String> seen = new LinkedHashSet<>();
+    // "￿" (U+FFFF) is the highest BMP char — acts as an exclusive upper bound for all ASCII binary
+    // names
+    for (final TypeIndexEntry entry : byBinaryName.subMap(prefix, prefix + "￿").values()) {
+      final String remainder = entry.binaryName().substring(prefix.length());
+      if (remainder.isEmpty() || remainder.charAt(0) == '$') {
+        continue;
+      }
+
+      int end = remainder.length();
+      final int dot = remainder.indexOf('.');
+      final int dollar = remainder.indexOf('$');
+      if (dot >= 0) {
+        end = dot;
+      }
+
+      if (dollar >= 0) {
+        end = Math.min(end, dollar);
+      }
+      seen.add(remainder.substring(0, end));
+      if (seen.size() >= limit) {
+        break;
+      }
+    }
+    return List.copyOf(seen);
   }
 
   public boolean isReactorType(final String binaryName) {

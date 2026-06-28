@@ -275,4 +275,24 @@ class WorkspaceTypeIndexTest {
     assertThat(results.get(0).packageName()).isEqualTo("com.reactor");
     assertThat(results.get(1).packageName()).isEqualTo("com.dep");
   }
+
+  @Test
+  void searchByBinaryPrefix_matchingPrefix_returnsNextSegments() {
+    final var a = graphEntry("io.helidon.health.HealthCheck", true);
+    final var b = graphEntry("io.helidon.health.spi.HealthCheckProvider", true);
+    final var c = graphEntry("io.helidon.config.Config", true);
+    final var index = WorkspaceTypeIndex.build(List.of(), List.of(List.of(a, b, c)));
+
+    final List<String> result = index.searchByBinaryPrefix("io.helidon.", 10);
+
+    assertThat(result).containsExactlyInAnyOrder("health", "config");
+  }
+
+  @Test
+  void searchByBinaryPrefix_noMatch_returnsEmpty() {
+    final var a = graphEntry("com.other.Foo", true);
+    final var index = WorkspaceTypeIndex.build(List.of(), List.of(List.of(a)));
+
+    assertThat(index.searchByBinaryPrefix("io.helidon.", 10)).isEmpty();
+  }
 }
