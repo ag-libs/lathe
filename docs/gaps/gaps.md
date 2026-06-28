@@ -997,14 +997,16 @@ python3 dev/lsp.py \
 
 ---
 
-## EG-020 — `module-info.java` and `package-info.java` return no document symbols or folding ranges
+## EG-020 — `module-info.java` and `package-info.java` return no document symbols, folding ranges, or semantic tokens
 
 **Status: accepted — Target: M2**
 
 ### Observed behaviour
 
-`textDocument/documentSymbol` and `textDocument/foldingRange` return no results for Java info files,
-even when those files have meaningful structure.
+`textDocument/documentSymbol`,
+`textDocument/foldingRange`,
+and `textDocument/semanticTokens/full` return no useful structural results for Java info files,
+even when those files have meaningful structure and declarations worth highlighting.
 
 Helidon `module-info.java`:
 
@@ -1048,15 +1050,41 @@ Controls in the same probing session showed ordinary Java files work:
 Helidon `HealthCheck.java` returned 5 document symbols and 4 folding ranges,
 and Dropwizard `PersonResourceTest.java` returned 18 document symbols and 15 folding ranges.
 
+Direct semantic-token probes show the same special-file gap:
+
+```bash
+python3 -c 'import sys; from pathlib import Path; sys.path.insert(0,"dev"); from lsp import LatheClient, find_workspace_root; files=[Path("../helidon/health/health/src/main/java/module-info.java"), Path("../helidon/health/health/src/main/java/io/helidon/health/package-info.java"), Path("../dropwizard/dropwizard-testing/src/test/java/io/dropwizard/testing/junit5/PersonResourceTest.java")];
+for f in files:
+    with LatheClient.start(find_workspace_root(f), debug=False) as c:
+        d=c.open(f); r=c.request("textDocument/semanticTokens/full", {"textDocument":{"uri":f.resolve().as_uri()}}); print(f.name, "diag", len(d), "tokens", 0 if not r else len(r.get("data",[]))//5)'
+```
+
+Observed:
+
+```text
+module-info.java diag 0 tokens 0
+package-info.java diag 0 tokens 0
+PersonResourceTest.java diag 0 tokens 50
+```
+
+An extracted dependency-source control also returned semantic tokens:
+cached Dropwizard Metrics `MetricRegistry.java` returned 120 tokens.
+
 ### Expected behaviour
 
 `module-info.java` should expose at least a module document symbol and folding ranges for the module
 body and directive groups where source ranges are available.
 Annotated module descriptors should also make the leading annotation block foldable.
+Semantic tokens should highlight module annotations,
+directive keywords,
+module names,
+exported package names,
+and service/provider type names where the LSP token legend has a suitable token type.
 
 `package-info.java` should expose at least a package document symbol.
 Its package Javadoc should be foldable,
 and any package annotations should participate in the fold range when present.
+Semantic tokens should highlight package annotations and the package declaration at minimum.
 
 ### Related navigation observation
 
@@ -1067,8 +1095,10 @@ That is not split out as a separate open gap here to avoid duplicating package-i
 
 ### Proposed fix
 
-Extend the document-symbol and folding-range providers to handle compilation units whose primary
-top-level declaration is a module declaration or package declaration rather than a class,
+Extend the document-symbol,
+folding-range,
+and semantic-token providers to handle compilation units whose primary top-level declaration is a
+module declaration or package declaration rather than a class,
 interface,
 enum,
 record,
@@ -1080,6 +1110,8 @@ or annotation type.
 - `DocumentSymbolTest.documentSymbol_packageInfo_returnsPackageSymbol`
 - `FoldingRangeTest.foldingRange_moduleInfo_returnsModuleBodyRange`
 - `FoldingRangeTest.foldingRange_packageInfo_returnsJavadocRange`
+- `SemanticTokensTest.semanticTokens_moduleInfo_returnsModuleDescriptorTokens`
+- `SemanticTokensTest.semanticTokens_packageInfo_returnsPackageDeclarationTokens`
 
 ---
 
@@ -1321,6 +1353,168 @@ Outer class files for other source files in the same package must not be deleted
   removed; assert `Foo$Inner.class` is gone from `latheClassesDir`.
 - Compile `Foo.java` containing `class Foo {}` and `Bar.java` containing `class Bar {}` in the same
   package; recompile `Foo.java` with no inner types; assert `Bar.class` is untouched.
+
+---
+
+## EG-026 — Workspace symbol search excludes test classes
+
+**Status: accepted — Target: M1**
+
+### Observed behaviour
+
+`workspace/symbol` does not return classes declared under `src/test/java`,
+even though those files open,
+compile,
+and produce document symbols.
+
+Dropwizard probe:
+
+```bash
+printf 'sym PersonResourceTest expect PersonResourceTest min 1\nsym DropwizardAppExtensionRandomPortsConfigOverrideTest expect DropwizardAppExtensionRandomPortsConfigOverrideTest min 1\nsym ResourceExtension expect ResourceExtension min 1\n' \
+  | python3 dev/explore.py \
+      /home/ag-libs/git/dropwizard/dropwizard-testing/src/test/java/io/dropwizard/testing/junit5/PersonResourceTest.java
+```
+
+Observed:
+
+```text
+(no symbols found for 'PersonResourceTest')
+[FAIL]
+  ✗  expected label starting with 'PersonResourceTest' — not found
+  ✗  expected ≥1 items, got 0
+(no symbols found for 'DropwizardAppExtensionRandomPortsConfigOverrideTest')
+[FAIL]
+  ✗  expected label starting with 'DropwizardAppExtensionRandomPortsConfigOverrideTest' — not found
+  ✗  expected ≥1 items, got 0
+1 symbol(s) for 'ResourceExtension':
+  [Class] ResourceExtension  io.dropwizard.testing.junit5  /home/ag-libs/git/dropwizard/dropwizard-testing/src/main/java/io/dropwizard/testing/junit5/ResourceExtension.java
+[PASS]
+```
+
+The same file's document symbols are present:
+
+```bash
+printf 'symbols expect PersonResourceTest min 1\n' \
+  | python3 dev/explore.py \
+      /home/ag-libs/git/dropwizard/dropwizard-testing/src/test/java/io/dropwizard/testing/junit5/PersonResourceTest.java
+```
+
+Helidon shows the same workspace-symbol omission:
+
+```bash
+printf 'symbols expect DiskSpaceHealthCheckTest min 1\nsym DiskSpaceHealthCheckTest expect DiskSpaceHealthCheckTest min 1\nsym DeadlockHealthCheckTest expect DeadlockHealthCheckTest min 1\nsym MemoryHealthCheckTest expect MemoryHealthCheckTest min 1\n' \
+  | python3 dev/explore.py \
+      /home/ag-libs/git/helidon/health/health-checks/src/test/java/io/helidon/health/checks/DiskSpaceHealthCheckTest.java
+```
+
+Observed controls:
+`DiskSpaceHealthCheckTest` returns document symbols,
+but `DiskSpaceHealthCheckTest`,
+`DeadlockHealthCheckTest`,
+and `MemoryHealthCheckTest` return no workspace-symbol results.
+
+Type-name completion is more mixed:
+it can offer the open test class in some contexts,
+but sibling test classes are not reliably offered.
+That points at workspace type-index coverage rather than a general parser or file-open failure.
+
+### Expected behaviour
+
+Workspace symbol search should include reactor test classes.
+Test types are part of the active editing workspace,
+and `docs/status.md` already states that classes,
+test classes,
+and generated sources are mirrored under `.lathe/`.
+
+Search results should preserve the existing source-origin ordering rules once `EG-006` is fixed:
+reactor test classes should rank as reactor-local entries,
+not as dependency or external entries.
+
+### Proposed fix
+
+Include test-output type entries in the workspace type index shard consumed by `workspace/symbol`.
+If the compiler already writes test classes into `.lathe/`,
+verify whether `ClassFileTypeScanner`,
+`WorkspaceTypeIndex`,
+or the workspace-symbol handler filters them out.
+
+Completion should reuse the same candidate source where possible,
+so sibling test classes are consistently available when the current source has test-scope access.
+
+### Regression targets
+
+- `WorkspaceSymbolTest.workspaceSymbol_testClass_returnsResult`
+- `WorkspaceSymbolTest.workspaceSymbol_mainClass_andTestClass_sameWorkspace_bothVisible`
+- `CompletionSimpleNameTest.completion_testSource_offersSiblingTestClass`
+
+---
+
+## EG-027 — Out-of-range LSP positions throw internal errors on navigation endpoints
+
+**Status: accepted — Target: M2**
+
+### Observed behaviour
+
+Several position-based LSP endpoints throw an internal error when the client sends a line outside the
+opened document's range.
+
+Dropwizard probe:
+
+```bash
+printf 'refs 9999:0 max 0\nimpl 9999:0 max 0\ncallees 9999:0 max 0\nhierarchy 9999:0\n' \
+  | python3 dev/explore.py \
+      /home/ag-libs/git/dropwizard/dropwizard-testing/src/test/java/io/dropwizard/testing/junit5/PersonResourceTest.java
+```
+
+Observed failures include:
+
+```text
+error: textDocument/references error: {'code': -32603, 'message': 'Internal error.', 'data': 'java.util.concurrent.CompletionException: java.lang.ArrayIndexOutOfBoundsException: Index 9999 out of bounds for length 128 ... SourceLocator.toOffset(SourceLocator.java:35) ...'}
+error: textDocument/implementation error: {'code': -32603, 'message': 'Internal error.', 'data': 'java.util.concurrent.CompletionException: java.lang.ArrayIndexOutOfBoundsException: Index 9999 out of bounds for length 128 ... SourceLocator.toOffset(SourceLocator.java:35) ...'}
+error: textDocument/prepareCallHierarchy error: {'code': -32603, 'message': 'Internal error.', 'data': 'java.util.concurrent.CompletionException: java.lang.ArrayIndexOutOfBoundsException: Index 9999 out of bounds for length 128 ... SourceLocator.toOffset(SourceLocator.java:35) ...'}
+error: textDocument/prepareTypeHierarchy error: {'code': -32603, 'message': 'Internal error.', 'data': 'java.util.concurrent.CompletionException: java.lang.ArrayIndexOutOfBoundsException: Index 9999 out of bounds for length 128 ... SourceLocator.toOffset(SourceLocator.java:35) ...'}
+```
+
+Controls in the same probe showed that other endpoints degrade cleanly:
+`completion 9999:0` returned no completions,
+`sig 9999:0` returned no signature help,
+`hover 9999:0` returned no hover result,
+and `definition 9999:0` returned no definition.
+
+### Expected behaviour
+
+Out-of-range positions should not surface as server internal errors.
+For read-only navigation requests,
+the server should return an empty result or `null` consistently with hover,
+definition,
+completion,
+and signature help.
+
+Editors should normally send valid positions,
+but stale-buffer races,
+delayed responses,
+or client bugs can still produce impossible coordinates.
+Those should be cheap to reject before invoking javac's `LineMap`.
+
+### Proposed fix
+
+Add a bounds check before every call path that resolves an LSP position through
+`SourceLocator.toOffset`.
+The shared fix should likely live in `SourceLocator.toOffset` or a small wrapper around it,
+so references,
+implementation,
+call hierarchy,
+and type hierarchy use the same policy.
+
+Returning `OptionalInt.empty()` or a sentinel failure result is preferable to catching
+`ArrayIndexOutOfBoundsException` at each feature boundary.
+
+### Regression targets
+
+- `ReferenceLocatorTest.references_outOfRangePosition_returnsEmpty`
+- `ImplementationTest.implementation_outOfRangePosition_returnsEmpty`
+- `CallHierarchyTest.prepareCallHierarchy_outOfRangePosition_returnsEmpty`
+- `TypeHierarchyTest.prepareTypeHierarchy_outOfRangePosition_returnsEmpty`
 
 ---
 
