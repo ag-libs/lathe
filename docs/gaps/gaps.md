@@ -2429,14 +2429,36 @@ Root cause:
 `effectiveDeclaredType` in `TypeResolver` returns `null` for `TypeKind.ERROR`.
 No fallback to the element-level return type is attempted.
 
-Regression target:
+Suggested fix:
+Keep javac as the source of truth.
+Do not parse the invocation text.
+
+1. In the receiver-resolution path,
+   when the current path is a method invocation whose attributed type is `TypeKind.ERROR`,
+   ask `Trees.getElement(path)` for the invoked method element.
+2. If the element is an `ExecutableElement`,
+   use its declared return type as a recovery candidate.
+3. Run that candidate through the same effective-completion-type logic used for captured wildcards
+   and type variables,
+   so `<D extends Binding<D>> D` resolves to the usable `Binding` bound.
+4. Keep the fallback narrow:
+   only use it for method-invocation receivers with an `ERROR` attributed type.
+   Do not broaden arbitrary unresolved expressions to declared-element fallback,
+   because an unresolved variable or malformed selector does not have an equivalent declared return
+   type.
+
+Regression coverage:
 `CompletionMemberAccessTest.memberAccess_typeErrorReceiver_fallsBackToElementReturnType`
+is present but disabled until the fix is implemented.
 
 Notes:
 Same root-cause family as CQ-0029, CQ-0030, and CQ-0040.
 CQ-0040 (type-variable return, no type error) is fixed for M1.
 This entry covers the error-recovery dimension: the call itself is type-incorrect but the
 return type is still knowable from the method declaration.
+It is also distinct from archived CQ-0032,
+which forced reattribution when a stale snapshot had already resolved the receiver to
+`TypeKind.ERROR`.
 
 ---
 

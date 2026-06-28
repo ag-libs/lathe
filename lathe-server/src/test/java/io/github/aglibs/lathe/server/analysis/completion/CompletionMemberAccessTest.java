@@ -1003,6 +1003,29 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
         .contains("named", "in", "to");
   }
 
+  // CQ-0042
+  @Disabled(
+      "CQ-0042: type-error method invocation receiver does not fall back to declared return type")
+  @Test
+  void memberAccess_typeErrorReceiver_fallsBackToElementReturnType() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        static class Binding<T> {
+                            <D extends Binding<D>> D to(Class<? super T> contract) { return null; }
+                            Binding<T> named(String name) { return this; }
+                            Binding<T> in(Class<?> scope) { return this; }
+                        }
+                        static <T> Binding<T> bind(T service) { return new Binding<>(); }
+                        void configure() {
+                            bind(new Object()).to(Runnable.class).§
+                        }
+                    }""")))
+        .contains("named", "in", "to");
+  }
+
   // CQ-0029
   @Test
   void memberAccess_wildcardExtendsCollectionElement_usesUpperBound() {
