@@ -102,6 +102,12 @@ After a large Java change, agents may run `mvn spotless:apply` before tests to n
     * **NEVER** hardcode directory names, file names, or shared configuration keys. They **MUST** be
       defined as constants exclusively inside `LatheLayout.java` or `LatheFlags.java`.
     * **NEVER** put business logic directly inside Maven Mojo `execute()` methods.
+    * **No ad hoc Java parsing:** LSP feature implementations **MUST NOT** parse Java code using
+      regex, manual brace matching, string slicing, or custom token scanners. Java syntax and
+      semantics must come from javac APIs and Lathe's existing analysis helpers. If incomplete editor
+      text cannot be represented directly by javac, first prefer the existing sentinel/recovery
+      pipeline. Any remaining text-level fallback must be narrowly scoped, covered by tests, and
+      justified in the code.
 - **DRY (Don't Repeat Yourself)**:
     * **The 3-Line Rule:** If you copy and paste a block of 3 or more lines (e.g. Future routing or
       telemetry logging) across more than 3 methods, you **MUST** extract that logic into a
