@@ -87,10 +87,42 @@ class FoldingRangeScannerTest {
         .contains(0, 1, 4);
   }
 
+  @Test
+  void scan_moduleInfo_returnsModuleBodyRegion() {
+    final String source =
+        """
+        module com.example {
+          requires java.base;
+          exports com.example.api;
+        }
+        """;
+
+    final List<FoldingRange> ranges = scanAs(source, "module-info.java");
+
+    assertThat(ranges).hasSize(1);
+    final var region = ranges.getFirst();
+    assertThat(region.getKind()).isEqualTo(FoldingRangeKind.Region);
+    assertThat(region.getStartLine()).isEqualTo(0);
+    assertThat(region.getEndLine()).isEqualTo(3);
+  }
+
+  @Test
+  void scan_moduleInfo_emptyBody_returnsSingleLineNoFold() {
+    final String source = "module leaf { }";
+
+    final List<FoldingRange> ranges = scanAs(source, "module-info.java");
+
+    assertThat(ranges).isEmpty();
+  }
+
   private static List<FoldingRange> scan(final String source) {
+    return scanAs(source, "Test.java");
+  }
+
+  private static List<FoldingRange> scanAs(final String source, final String fileName) {
     try (var parser = new SourceParser()) {
       return parser
-          .parseContent(TempSourceCompiler.TEST_URI, source, FoldingRangeScanner::scan)
+          .parseContent("file:///" + fileName, source, FoldingRangeScanner::scan)
           .orElseThrow();
     }
   }

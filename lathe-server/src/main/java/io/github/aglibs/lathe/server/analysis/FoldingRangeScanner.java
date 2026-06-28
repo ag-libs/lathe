@@ -4,6 +4,7 @@ import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.ImportTree;
 import com.sun.source.tree.MethodTree;
+import com.sun.source.tree.ModuleTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
@@ -33,6 +34,12 @@ final class FoldingRangeScanner extends TreePathScanner<Void, Void> {
   public Void visitCompilationUnit(final CompilationUnitTree node, final Void unused) {
     addImports(node.getImports());
     return super.visitCompilationUnit(node, unused);
+  }
+
+  @Override
+  public Void visitModule(final ModuleTree node, final Void unused) {
+    addRegion(node);
+    return super.visitModule(node, unused);
   }
 
   @Override
