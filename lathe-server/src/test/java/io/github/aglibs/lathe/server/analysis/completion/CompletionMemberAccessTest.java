@@ -954,4 +954,25 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
         .contains("staticField", "staticMethod")
         .doesNotContain("instanceField", "instanceMethod");
   }
+
+  // CQ-0040
+  @Test
+  void memberAccess_typeVariableReturn_usesCapturedBound() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        static class Binding<T> {
+                            <D extends Binding<D>> D to(Class<?> contract) { return null; }
+                            Binding<T> named(String name) { return this; }
+                            Binding<T> in(Class<?> scope) { return this; }
+                        }
+                        static <T> Binding<T> bind(T service) { return new Binding<>(); }
+                        void configure() {
+                            bind(new Object()).to(Runnable.class).§
+                        }
+                    }""")))
+        .contains("named", "in", "to");
+  }
 }

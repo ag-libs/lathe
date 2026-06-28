@@ -80,8 +80,18 @@ See [gaps.md](gaps/gaps.md).
 
 ### Code-action and index freshness gaps
 
-- Implement `MissingMethodImplProvider` for unimplemented abstract methods.
-- Make new and renamed reactor types available to missing-import actions without a manual Maven sync.
+- Implement `MissingMethodImplProvider` for unimplemented abstract methods (CA-3).
+- Make new and renamed reactor types available to missing-import actions without a manual Maven sync (CA-4).
+
+### Find References hardening
+
+- Confirm and document the external-symbol search-scope policy (FR-002).
+- Propagate failures instead of silently returning empty results (FR-003).
+- Add end-to-end invoker coverage for `textDocument/references` (FR-004).
+
+### Completion quality
+
+- Add `bind(x).to(Y.class).` captured-wildcard member access (CQ-0040).
 
 ### Exit criteria
 

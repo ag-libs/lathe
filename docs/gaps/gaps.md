@@ -506,7 +506,7 @@ Anonymous class instantiations are not meaningful callee targets in a call hiera
 
 ## EG-010 — `explore.py` cannot probe dep/JDK source files — no workspace context for cache paths
 
-**Status: accepted — Target: M1**
+**Status: done — Target: M1**
 
 ### Observed behaviour
 
@@ -1270,7 +1270,7 @@ verification.
 
 ## FR-002 — External-symbol search scope policy is unresolved
 
-Status: accepted — Target: M2.
+Status: accepted — Target: M1.
 Requires a product decision on the external-symbol search-scope policy (see below).
 
 The original design says JDK and third-party symbols should search open files only.
@@ -1316,7 +1316,7 @@ symbols:
 
 ## FR-003 — Failures are converted into empty results
 
-Status: accepted — Target: M2.
+Status: accepted — Target: M1.
 Verified error-handling gap.
 
 The references pipeline currently has two silent-recovery boundaries:
@@ -1354,7 +1354,7 @@ This conflicts with the fail-fast policy in
 
 ## FR-004 — No end-to-end invoker coverage
 
-Status: accepted — Target: M2.
+Status: accepted — Target: M1.
 Verified test gap.
 
 The Maven invoker `LspSmokeTest` checks that `referencesProvider` is advertised but never sends a
@@ -2053,6 +2053,52 @@ offers `RuntimeException` and accepts to
 `public <T extends RuntimeException§> T identity(T value) { return value; }`.
 Local generic class bounds also work for
 `class Local<T extends RuntimeEx§`.
+
+## CQ-0042 — Member access on a type-error receiver returns no candidates
+
+ID: CQ-0042
+Status: accepted
+Target: M2
+Tier: typed
+Failure mode: missing-candidates
+Owner component: TypeResolver / CompletionEngine
+Discovery: 2026-06-28, CQ-0040 regression test authoring
+
+Cursor context:
+```java
+// to() declared as: <D extends Binding<D>> D to(Class<? super T> contract)
+// T inferred as Object; Runnable.class is Class<Runnable>, not Class<? super Object>
+bind(new Object()).to(Runnable.class).§
+```
+
+Lathe behavior:
+When the receiver expression has a compile error (javac attributes it as `TypeKind.ERROR`),
+`TypeResolver.resolveByPosition` gets `null` from `effectiveDeclaredType` and returns no receiver.
+Completion returns 0 items.
+
+Expected Lathe behavior:
+When `getTypeMirror` returns `ERROR` for a method invocation, fall back to the method element's
+declared return type (obtained via `trees().getElement()` on the invocation path cast to
+`ExecutableElement`).
+Apply the same type-variable and wildcard unwrapping so the effective declared type is used for
+member lookup.
+This would expose `Binding` members even though the argument type is wrong — the user is
+mid-edit and still wants completion to continue.
+
+Root cause:
+`effectiveDeclaredType` in `TypeResolver` returns `null` for `TypeKind.ERROR`.
+No fallback to the element-level return type is attempted.
+
+Regression target:
+`CompletionMemberAccessTest.memberAccess_typeErrorReceiver_fallsBackToElementReturnType`
+
+Notes:
+Same root-cause family as CQ-0029, CQ-0030, and CQ-0040.
+CQ-0040 (type-variable return, no type error) is fixed for M1.
+This entry covers the error-recovery dimension: the call itself is type-incorrect but the
+return type is still knowable from the method declaration.
+
+---
 
 ## Current Triage
 

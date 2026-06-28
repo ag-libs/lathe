@@ -38,6 +38,8 @@ import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.ExecutableType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.type.TypeVariable;
+import javax.lang.model.type.WildcardType;
 
 final class TypeResolver {
 
@@ -896,18 +898,22 @@ final class TypeResolver {
       }
 
       private void check(final Tree node) {
-        if (sourcePositions.getEndPosition(cu, node) == dotOffset) {
-          final var type = snapshot.trees().getTypeMirror(getCurrentPath());
-          if (type != null && type.getKind() == TypeKind.DECLARED) {
-            final var element = snapshot.trees().getElement(getCurrentPath());
-            final boolean isStatic =
-                element instanceof TypeElement
-                    && !(node instanceof final IdentifierTree id
-                        && (id.getName().contentEquals("this")
-                            || id.getName().contentEquals("super")));
-            result.compareAndSet(null, new ResolvedReceiver(type, isStatic));
-          }
+        if (sourcePositions.getEndPosition(cu, node) != dotOffset) {
+          return;
         }
+
+        final TypeMirror raw = snapshot.trees().getTypeMirror(getCurrentPath());
+        final TypeMirror type = effectiveDeclaredType(raw, snapshot);
+        if (type == null) {
+          return;
+        }
+
+        final var element = snapshot.trees().getElement(getCurrentPath());
+        final boolean isStatic =
+            element instanceof TypeElement
+                && !(node instanceof final IdentifierTree id
+                    && (id.getName().contentEquals("this") || id.getName().contentEquals("super")));
+        result.compareAndSet(null, new ResolvedReceiver(type, isStatic));
       }
     }.scan(cu, null);
     return result.get();
@@ -1060,6 +1066,32 @@ final class TypeResolver {
         .anyMatch(
             objectMethod ->
                 snapshot.elements().overrides(method, objectMethod, functionalInterface));
+  }
+
+  private static TypeMirror effectiveDeclaredType(
+      final TypeMirror type, final AttributedFileAnalysis snapshot) {
+    TypeMirror current = type;
+    while (current != null) {
+      if (current.getKind() == TypeKind.DECLARED) {
+        return current;
+      }
+
+      if (current instanceof final TypeVariable tv) {
+        current = tv.getUpperBound();
+      } else if (current instanceof final WildcardType wt) {
+        final TypeMirror ext = wt.getExtendsBound();
+        if (ext != null) {
+          current = ext;
+        } else {
+          final var obj = snapshot.elements().getTypeElement("java.lang.Object");
+          return obj != null ? obj.asType() : null;
+        }
+      } else {
+        return null;
+      }
+    }
+
+    return null;
   }
 
   private static TypeMirror findReturnTargetType(
