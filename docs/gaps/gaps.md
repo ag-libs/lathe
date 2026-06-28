@@ -29,11 +29,12 @@ grep -n 'Target: M1' docs/gaps/gaps.md                         # the M1 slice
 Entries follow, grouped by area: exploration (EG) below, then Find References (FR), Code Actions
 (CA), and Completion (CQ).
 
-EG-003 and EG-005 are deferred to M2:
-EG-003 requires `DocTrees` attribution of Javadoc comment positions, which is a non-trivial
-hover extension;
-EG-005 requires building a secondary CamelCase initial index alongside the existing prefix
-structure, which is an enhancement rather than a correctness gap.
+EG-005 is deferred to M2 because it requires building a secondary CamelCase initial index alongside
+the existing prefix structure,
+which is an enhancement rather than a correctness gap.
+EG-003 is deferred until after M2 because it requires `DocTrees` attribution of Javadoc comment
+positions,
+which is a non-trivial hover extension.
 
 ---
 
@@ -157,7 +158,7 @@ code-action gap CA-1 should be applied alongside it.
 
 ## EG-003 — Hover returns null on positions inside Javadoc type-reference tags
 
-**Status: accepted — Target: M2**
+**Status: deferred — Target: backlog**
 
 ### Observed behaviour
 
@@ -2580,8 +2581,8 @@ or `super.member` access where those are otherwise legal.
 ## CQ-0002 — Method-reference completion returns no candidates
 
 ID: CQ-0002
-Status: accepted
-Target: M2
+Status: deferred
+Target: backlog
 Tier: assistive
 Failure mode: missing-candidate
 Owner component: SentinelInjector / SentinelParser
@@ -2626,8 +2627,7 @@ Accepting `of` after `List::` should produce `List::of`.
 Accepting `url` after `this::` should produce `this::url`.
 
 Future design:
-Method-reference completion is M2 work.
-It is not required for M1 Internal Preview.
+Method-reference completion is deferred until after M2.
 The first implementation slice should be basic receiver-member listing,
 not full smart compatibility filtering.
 Add a `METHOD_REFERENCE` sentinel site,

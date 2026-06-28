@@ -112,13 +112,12 @@ It remains a build-from-source release.
 
 ### Completion and search
 
-- Implement method-reference completion after type, `this`, `super`, and expression receivers.
 - Implement generic-bound receiver completion for wildcard and type-variable upper bounds.
+- Implement declaration-name completion for variables, fields, parameters, and type parameters.
 - Close additional reproducible completion gaps accepted into the M2 gap log.
 - Add CamelCase initial matching to workspace symbol search (EG-005).
-- Fix hover on type names inside Javadoc `{@link}` and `{@see}` tags using `DocTrees.getElement` (EG-003).
 
-See [gaps.md](gaps/gaps.md) for EG-003 and EG-005 detail.
+See [gaps.md](gaps/gaps.md) for EG-005 and accepted M2 completion-gap detail.
 
 ### Editing and refactoring
 

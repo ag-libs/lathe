@@ -24,12 +24,15 @@ discovery via [gap-workflow.md](gaps/gap-workflow.md) and resolved entries in [g
 
 ## M2 — Neovim Public Beta
 
-- [Gaps (deferred)](gaps/gaps.md) — EG-003 (hover in Javadoc type-reference tags) and EG-005 (CamelCase and infix
-  workspace symbol matching) deferred from M1.
+- [Gaps](gaps/gaps.md) — active M2 gap registry.
+  EG-005 covers CamelCase and infix workspace-symbol matching;
+  EG-003 is deferred until after M2.
 - [Find References gaps](gaps/gaps.md) — FR-002 external-source scope, FR-003 failure propagation, and FR-004
   integration coverage.
 - [Completion Expectations](planned/lathe-completion-expectations.md) — expected completion behavior.
-- [Completion gaps (CQ)](gaps/gaps.md) — active completion-quality gaps, including method references and generic bounds.
+- [Completion gaps (CQ)](gaps/gaps.md) — active completion-quality gaps, including generic bounds.
+- [Declaration Name Completion](planned/lathe-declaration-name-completion.md) — M2 assistive completion for variable,
+  field, parameter, and type-parameter names in declaration-name slots.
 - [Gap Workflow](gaps/gap-workflow.md) — reproducible gap discovery and triage (all areas).
 - [New Type Creation](planned/lathe-new-type-creation.md) — scaffold a blank file's class/interface/enum/record via
   snippet completion, with no custom client-side UI.
