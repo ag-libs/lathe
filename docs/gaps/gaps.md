@@ -2065,7 +2065,7 @@ not a dead LSP session.
 ## CQ-0040 — `bind(...).to(...)` chain offers no members on the captured-wildcard result
 
 ID: CQ-0040
-Status: accepted
+Status: done
 Target: M1
 Tier: typed
 Failure mode: missing-candidate
