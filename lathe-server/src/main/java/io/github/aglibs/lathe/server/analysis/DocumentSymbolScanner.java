@@ -38,6 +38,21 @@ final class DocumentSymbolScanner extends TreePathScanner<Void, Void> {
   }
 
   @Override
+  public Void visitCompilationUnit(final CompilationUnitTree node, final Void unused) {
+    if (node.getModule() != null) {
+      return super.visitCompilationUnit(node, unused);
+    }
+
+    if (node.getPackageName() != null && node.getTypeDecls().isEmpty()) {
+      final String name = node.getPackageName().toString();
+      add(symbol(node.getPackageName(), name, SymbolKind.Package, false));
+      return null;
+    }
+
+    return super.visitCompilationUnit(node, unused);
+  }
+
+  @Override
   public Void visitModule(final ModuleTree node, final Void unused) {
     final String name = node.getName().toString();
     add(symbol(node, name, SymbolKind.Module, false));

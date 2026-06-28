@@ -116,6 +116,38 @@ class DocumentSymbolScannerTest {
   }
 
   @Test
+  void scan_packageInfo_returnsPackageSymbol() {
+    final String source =
+        """
+        package com.example.api;
+        """;
+
+    final List<DocumentSymbol> symbols = scanAs(source, "package-info.java");
+
+    assertThat(symbols).hasSize(1);
+    final var pkg = symbols.getFirst();
+    assertThat(pkg.getName()).isEqualTo("com.example.api");
+    assertThat(pkg.getKind()).isEqualTo(SymbolKind.Package);
+    assertThat(pkg.getSelectionRange().getStart().getLine()).isEqualTo(0);
+    assertThat(pkg.getSelectionRange().getStart().getCharacter()).isEqualTo(8);
+  }
+
+  @Test
+  void scan_packageInfo_withAnnotation_returnsPackageSymbol() {
+    final String source =
+        """
+        @Deprecated
+        package com.example;
+        """;
+
+    final List<DocumentSymbol> symbols = scanAs(source, "package-info.java");
+
+    assertThat(symbols).hasSize(1);
+    assertThat(symbols.getFirst().getName()).isEqualTo("com.example");
+    assertThat(symbols.getFirst().getKind()).isEqualTo(SymbolKind.Package);
+  }
+
+  @Test
   void scan_moduleInfo_simpleModuleName_returnsModuleSymbol() {
     final String source =
         """
