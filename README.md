@@ -178,12 +178,12 @@ Lathe implements the following LSP endpoints. In Neovim 0.11+, most are mapped a
 
 ### Installation
 
-Load the plugin as a local directory with `lazy.nvim`, pointing `dir` at the `neovim/`
-subdirectory of your Lathe source checkout:
+Load the plugin as a local directory with `lazy.nvim`, pointing `dir` at the Neovim runtime
+installed by `lathe:sync`:
 
 ```lua
 {
-  dir = vim.fn.expand("~/git/lathe/neovim"), -- adjust to your checkout path
+  dir = vim.fn.expand("~/.cache/lathe/current/neovim"),
   ft = "java",
   config = function()
     require("lathe").setup()

@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.core;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
@@ -73,7 +74,11 @@ public final class FileUtil {
   }
 
   public static void unzip(final Path zipFile, final Path destDir) throws IOException {
-    try (final var in = new ZipInputStream(Files.newInputStream(zipFile))) {
+    unzip(Files.newInputStream(zipFile), destDir);
+  }
+
+  public static void unzip(final InputStream zipStream, final Path destDir) throws IOException {
+    try (final var in = new ZipInputStream(zipStream)) {
       ZipEntry entry = in.getNextEntry();
       while (entry != null) {
         extractZipEntry(destDir, in, entry);

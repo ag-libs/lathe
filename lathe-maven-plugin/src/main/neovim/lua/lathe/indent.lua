@@ -10,6 +10,7 @@ local BLOCK_NODES = {
   constructor_body = true,
   enum_body = true,
   interface_body = true,
+  module_body = true,
   switch_block = true,
 }
 

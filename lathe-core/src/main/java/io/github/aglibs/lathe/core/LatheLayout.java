@@ -13,6 +13,8 @@ public final class LatheLayout {
   public static final String SERVERS_DIR = "servers";
   public static final String CURRENT_LINK = "current";
   public static final String LAUNCHER_SCRIPT = "lathe-launcher.sh";
+  public static final String NEOVIM_DIR = "neovim";
+  public static final String NEOVIM_BUNDLE = "lathe-neovim.zip";
   public static final String SCHEMA_VERSION = "2";
   public static final String WORKSPACE_JSON = "workspace.json";
   public static final String LOCK_FILE = "lathe.lock";

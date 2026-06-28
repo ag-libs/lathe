@@ -51,6 +51,15 @@ class MultiModuleTest {
   }
 
   @Test
+  void sync_neovimRuntime_extracted() {
+    final var neovim = LATHE_CACHE.resolve("current").resolve("neovim");
+    assertThat(neovim.resolve("lua/lathe.lua")).exists();
+    assertThat(neovim.resolve("lua/lathe/indent.lua")).exists();
+    assertThat(neovim.resolve("ftplugin/java.lua")).exists();
+    assertThat(neovim.resolve("after/indent/java.lua")).exists();
+  }
+
+  @Test
   void sync_launcherContent_containsRequiredJvmArgs() throws IOException {
     final var launcher =
         LATHE_CACHE.resolve("servers").resolve(LATHE_VERSION).resolve("lathe-launcher.sh");

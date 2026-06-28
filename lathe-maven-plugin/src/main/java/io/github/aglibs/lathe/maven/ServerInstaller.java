@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.maven;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -21,6 +22,9 @@ import org.eclipse.aether.resolution.DependencyResolutionException;
 import org.eclipse.aether.util.artifact.JavaScopes;
 
 final class ServerInstaller {
+
+  private static final String NEOVIM_BUNDLE_RESOURCE =
+      "/META-INF/lathe/%s".formatted(LatheLayout.NEOVIM_BUNDLE);
 
   private final RepositorySystem repositorySystem;
   private final RepositorySystemSession repoSession;
@@ -53,19 +57,39 @@ final class ServerInstaller {
           && Files.isExecutable(launcherScript)
           && script.equals(Files.readString(launcherScript, StandardCharsets.UTF_8))) {
         log.debug("[server] launcher unchanged — skipping write");
-        updateCurrentLink(versionDir);
-        return;
+      } else {
+        final boolean isUpdate = Files.exists(launcherScript);
+        FileUtil.writeAtomically(versionDir, launcherScript, script, true);
+        log.info(
+            "[server] %s launcher at %s"
+                .formatted(isUpdate ? "updated" : "installed", launcherScript));
       }
-      final boolean isUpdate = Files.exists(launcherScript);
-      FileUtil.writeAtomically(versionDir, launcherScript, script, true);
-      log.info(
-          "[server] %s launcher at %s"
-              .formatted(isUpdate ? "updated" : "installed", launcherScript));
+      installNeovim(versionDir);
     } catch (final IOException e) {
-      throw new SyncException("lathe:sync failed to write launcher script", e);
+      throw new SyncException("lathe:sync failed to install server files", e);
     }
 
     updateCurrentLink(versionDir);
+  }
+
+  private void installNeovim(final Path versionDir) throws IOException {
+    try (final InputStream in = ServerInstaller.class.getResourceAsStream(NEOVIM_BUNDLE_RESOURCE)) {
+      if (in == null) {
+        throw new IOException("Neovim runtime bundle not found");
+      }
+      installNeovimBundle(in, versionDir);
+      log.debug("[server] installed Neovim runtime at %s".formatted(versionDir));
+    }
+  }
+
+  static void installNeovimBundle(final InputStream bundle, final Path versionDir)
+      throws IOException {
+    final Path neovimDir = versionDir.resolve(LatheLayout.NEOVIM_DIR);
+    if (Files.exists(neovimDir)) {
+      FileUtil.deleteDir(neovimDir);
+    }
+    Files.createDirectories(neovimDir);
+    FileUtil.unzip(bundle, neovimDir);
   }
 
   private List<Path> resolveServerJars() throws SyncException {
