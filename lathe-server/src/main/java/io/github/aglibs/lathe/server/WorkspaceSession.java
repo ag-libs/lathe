@@ -929,15 +929,37 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    final var indexSnapshot = typeIndex;
+    final Set<String> neededTypeNames =
+        requests.stream()
+            .filter(r -> r.payload().kind() == DiagnosticPayload.Kind.TYPE_REF)
+            .map(r -> r.payload().name())
+            .collect(Collectors.toUnmodifiableSet());
+    final var baseIndex = typeIndex;
     return routeFeature(
         uri,
         moduleWorker ->
             moduleWorker
-                .codeAction(uri, openFile.content(), openFile.version(), requests, indexSnapshot)
+                .cachedTypeEntries(neededTypeNames)
+                .thenCompose(
+                    openEntries -> {
+                      final var enriched = buildEnrichedIndex(baseIndex, openEntries);
+                      return moduleWorker.codeAction(
+                          uri, openFile.content(), openFile.version(), requests, enriched);
+                    })
                 .exceptionally(
                     ex -> logAndReturn(ex, "[codeAction] failed for %s".formatted(uri), List.of())),
         List.of());
+  }
+
+  private WorkspaceTypeIndex buildEnrichedIndex(
+      final WorkspaceTypeIndex base, final List<TypeIndexEntry> openFileEntries) {
+    if (openFileEntries.isEmpty()) {
+      return base;
+    }
+
+    final List<List<TypeIndexEntry>> allReactor =
+        Stream.concat(reactorShards.values().stream(), Stream.of(openFileEntries)).toList();
+    return base.withReactorEntries(allReactor);
   }
 
   private static CodeActionRequest toCodeActionRequest(final String uri, final Diagnostic diag) {

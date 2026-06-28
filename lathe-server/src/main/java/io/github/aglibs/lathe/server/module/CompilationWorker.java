@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.module;
 
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Stopwatch;
+import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.analysis.CodeActionRequest;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
 import io.github.aglibs.lathe.server.analysis.ReferenceMatch;
@@ -244,6 +245,11 @@ public final class CompilationWorker {
       final WorkspaceTypeIndex typeIndex,
       final List<Path> sourceRoots) {
     return submit(ctx -> ctx.typeHierarchySubtypes(item, typeIndex, sourceRoots));
+  }
+
+  public CompletableFuture<List<TypeIndexEntry>> cachedTypeEntries(
+      final Set<String> neededSimpleNames) {
+    return submit(ctx -> ctx.cachedTypeEntries(neededSimpleNames));
   }
 
   public CompletableFuture<List<DocumentSymbol>> documentSymbol(

@@ -1,7 +1,10 @@
 package io.github.aglibs.lathe.server.analysis;
 
+import com.sun.source.tree.ClassTree;
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.core.Stopwatch;
+import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
+import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionEngine;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionRequest;
@@ -597,6 +600,32 @@ public final class SourceAnalysisSession implements AutoCloseable {
             request.manifest().jdkModuleSourceDirs().stream())
         .flatMap(stream -> stream)
         .toList();
+  }
+
+  public List<TypeIndexEntry> cachedTypeEntries(final Set<String> neededSimpleNames) {
+    if (neededSimpleNames.isEmpty()) {
+      return List.of();
+    }
+
+    return cache.values().stream()
+        .filter(cached -> cached.analysis().tree() != null)
+        .flatMap(cached -> typeEntriesForFile(cached.analysis().tree(), neededSimpleNames))
+        .toList();
+  }
+
+  private static Stream<TypeIndexEntry> typeEntriesForFile(
+      final com.sun.source.tree.CompilationUnitTree tree, final Set<String> neededSimpleNames) {
+    final String pkg = tree.getPackageName() != null ? tree.getPackageName().toString() : "";
+    return tree.getTypeDecls().stream()
+        .filter(ClassTree.class::isInstance)
+        .map(ClassTree.class::cast)
+        .filter(ct -> neededSimpleNames.contains(ct.getSimpleName().toString()))
+        .map(ct -> typeEntry(ct.getSimpleName().toString(), pkg));
+  }
+
+  private static TypeIndexEntry typeEntry(final String simpleName, final String pkg) {
+    final String fqName = pkg.isEmpty() ? simpleName : "%s.%s".formatted(pkg, simpleName);
+    return new TypeIndexEntry(simpleName, fqName, pkg, TypeKind.CLASS, true, List.of());
   }
 
   public List<Either<Command, CodeAction>> codeAction(

@@ -187,6 +187,10 @@ public final class WorkspaceTypeIndex {
         .toList();
   }
 
+  public boolean isReactorType(final String binaryName) {
+    return reactorBinaryNames.contains(binaryName);
+  }
+
   public Optional<TypeIndexEntry> findType(final String binaryName) {
     return Optional.ofNullable(byBinaryName.get(binaryName));
   }

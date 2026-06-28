@@ -11,7 +11,6 @@ import java.util.logging.Logger;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionKind;
 import org.eclipse.lsp4j.Command;
-import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.WorkspaceEdit;
@@ -41,7 +40,7 @@ final class ImportQuickFixProvider implements CodeActionProvider {
         continue;
       }
 
-      buildImportAction(request, entry, analysis, alreadyImported, insertionRange)
+      buildImportAction(request, entry, analysis, typeIndex, alreadyImported, insertionRange)
           .map(Either::<Command, CodeAction>forRight)
           .ifPresent(actions::add);
     }
@@ -53,6 +52,7 @@ final class ImportQuickFixProvider implements CodeActionProvider {
       final CodeActionRequest request,
       final TypeIndexEntry entry,
       final AttributedFileAnalysis analysis,
+      final WorkspaceTypeIndex typeIndex,
       final Set<String> alreadyImported,
       final Range insertionRange) {
     if (entry.packageName().isEmpty()) {
@@ -67,31 +67,28 @@ final class ImportQuickFixProvider implements CodeActionProvider {
 
     final var typeEl = analysis.elements().getTypeElement(fqName);
     if (typeEl == null) {
-      return Optional.empty();
-    }
-
-    final Diagnostic diag = request.diag();
-    final long offset =
-        SourceLocator.toOffset(
-            analysis.tree(),
-            diag.getRange().getStart().getLine(),
-            diag.getRange().getStart().getCharacter());
-    final TreePath path = SourceLocator.pathAt(analysis.trees(), analysis.tree(), offset);
-    final var scope = path != null ? analysis.trees().getScope(path) : null;
-    if (scope != null) {
-      try {
-        if (!analysis.trees().isAccessible(scope, typeEl)) {
-          return Optional.empty();
-        }
-      } catch (final IllegalArgumentException ignored) {
-        // isAccessible throws on unexpected compiler states; treat as accessible
+      // Reactor types may not have class files on the classpath yet (e.g. created but not synced).
+      // Trust the type index entry and offer the import without the accessibility check.
+      if (!typeIndex.isReactorType(fqName)) {
+        return Optional.empty();
+      }
+    } else {
+      final long offset =
+          SourceLocator.toOffset(
+              analysis.tree(),
+              request.diag().getRange().getStart().getLine(),
+              request.diag().getRange().getStart().getCharacter());
+      final TreePath path = SourceLocator.pathAt(analysis.trees(), analysis.tree(), offset);
+      final var scope = path != null ? analysis.trees().getScope(path) : null;
+      if (scope != null && !analysis.trees().isAccessible(scope, typeEl)) {
+        return Optional.empty();
       }
     }
 
     final var action = new CodeAction();
     action.setTitle("Import '%s'".formatted(fqName));
     action.setKind(CodeActionKind.QuickFix);
-    action.setDiagnostics(List.of(diag));
+    action.setDiagnostics(List.of(request.diag()));
 
     final var edit = new WorkspaceEdit();
     edit.setChanges(

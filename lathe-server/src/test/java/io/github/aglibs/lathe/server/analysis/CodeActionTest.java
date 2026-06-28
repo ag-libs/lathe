@@ -224,6 +224,38 @@ class CodeActionTest {
         .isEqualTo("Import 'com.other.PublicClass'");
   }
 
+  @Test
+  void codeAction_typeRef_reactorEntryNotOnClasspath_offersImport() {
+    // Reactor type is in the type index but has no class file on the compilation classpath.
+    // This happens when a project type is created/renamed but not yet synced via Maven.
+    final var reactorEntry =
+        new TypeIndexEntry(
+            "MyCustomException",
+            "com.example.MyCustomException",
+            "com.example",
+            TypeKind.CLASS,
+            true,
+            List.of());
+    final var reactorIndex = WorkspaceTypeIndex.build(List.of(), List.of(List.of(reactorEntry)));
+
+    final var source =
+        """
+        package com.other;
+        class Test {
+          void m() throws MyCustomException {}
+        }
+        """;
+
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    final var actions =
+        session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), reactorIndex);
+
+    assertThat(actions).hasSize(1);
+    assertThat(actions.getFirst().getRight().getTitle())
+        .isEqualTo("Import 'com.example.MyCustomException'");
+  }
+
   // --- AddThrows provider ---
 
   @Test

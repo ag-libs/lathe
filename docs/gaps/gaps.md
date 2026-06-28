@@ -1874,7 +1874,7 @@ new `MissingMethodImplProvider.java`, dispatcher in `SourceAnalysisSession`.
 
 ## CA-4 — `TYPE_REF` in a `throws` declaration with no index match produces no action
 
-**Status: accepted — Target: M1.**
+**Status: done — Target: M1.**
 
 ### Observed behaviour
 
