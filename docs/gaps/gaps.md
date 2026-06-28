@@ -1611,7 +1611,7 @@ symbols:
 
 ## FR-003 — Failures are converted into empty results
 
-Status: accepted — Target: M1.
+Status: done — Target: M1.
 Verified error-handling gap.
 
 The references pipeline currently has two silent-recovery boundaries:

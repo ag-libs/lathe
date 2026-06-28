@@ -13,9 +13,14 @@ import static org.mockito.Mockito.when;
 import com.sun.source.util.JavacTask;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import javax.lang.model.element.ElementKind;
 import javax.tools.StandardJavaFileManager;
 import org.eclipse.lsp4j.*;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
@@ -162,6 +167,46 @@ class SourceAnalysisSessionTest {
               .count();
 
       assertThat(errorsOnDeclarationLine).isEqualTo(1);
+    }
+  }
+
+  @Test
+  void searchReferences_sourceReadFailure_throwsUncheckedIOException() throws IOException {
+    final String uri = TempSourceCompiler.TEST_URI;
+    final String content =
+        """
+        class Test {
+            String name;
+            String get() { return name; }
+        }
+        """;
+
+    // session.close() calls compiler.close(), so don't put compiler in try-with-resources
+    final var compiler = new TempSourceCompiler();
+    try (final var session = new SourceAnalysisSession(compiler)) {
+      // Compile to get analysis for target construction and to warm the session cache
+      final var analysis = compiler.compile(uri, content, CompileMode.OPEN).fileAnalysis();
+      session.compile(uri, content, 1, CompileMode.OPEN);
+
+      final var path =
+          SampleFixture.pathAt(analysis.trees(), analysis.tree(), "return name", "name");
+      final var element = Objects.requireNonNull(SourceLocator.elementAt(analysis.trees(), path));
+      final var target =
+          new ReferenceTarget(
+              ElementKind.FIELD,
+              "Test.name",
+              "name",
+              null,
+              ReferenceTarget.SearchScope.DECLARING_FILE);
+
+      // Delete the source file to simulate a source-read failure
+      final Path sourceFile = Path.of(analysis.tree().getSourceFile().toUri());
+      Files.delete(sourceFile);
+
+      // Before fix: returns empty list (silently swallows IOException)
+      // After fix: propagates as UncheckedIOException
+      assertThatThrownBy(() -> session.searchReferences(uri, content, 1, target, false))
+          .isInstanceOf(UncheckedIOException.class);
     }
   }
 }

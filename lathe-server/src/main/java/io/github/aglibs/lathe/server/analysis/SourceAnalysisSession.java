@@ -6,6 +6,7 @@ import io.github.aglibs.lathe.server.analysis.completion.CompletionEngine;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionRequest;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -328,8 +329,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
                   .formatted(uri, target.simpleName(), results.size()));
       return results;
     } catch (final IOException e) {
-      LOG.log(Level.WARNING, e, () -> "[references] failed to read source for %s".formatted(uri));
-      return List.of();
+      throw new UncheckedIOException("[references] failed to read source for %s".formatted(uri), e);
     }
   }
 
