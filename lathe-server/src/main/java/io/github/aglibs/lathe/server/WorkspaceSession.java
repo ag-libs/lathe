@@ -1092,6 +1092,11 @@ final class WorkspaceSession {
     }
   }
 
+  // EG-025: placeholder — will be implemented via JavaFileManager wrapper (Option B).
+  static int deleteStaleClassOutputs(final ModuleSourceConfig config, final Path savedSource) {
+    return 0;
+  }
+
   private static Path sourceRootFor(final ModuleSourceConfig config, final Path file) {
     return config.sourceRoots().stream()
         .filter(file::startsWith)

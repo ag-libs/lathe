@@ -1321,39 +1321,74 @@ python3 dev/explore.py /path/to/Scratch.java inject "Object o = new Oper"
 
 ---
 
-## EG-025 — Stale class files from removed or renamed inner types are never cleaned up
+## EG-025 — Stale class files from removed or renamed types are never cleaned up
 
 **Status: accepted — Target: M1**
 
 ### Observed behaviour
 
-When a source file is **edited** to remove or rename a nested type (inner class, anonymous class,
-or local class), the corresponding `.class` file persists indefinitely in `latheClassesDir`.
+When a source file is **edited** to remove or rename any type — a nested class, anonymous class,
+local class, or package-private sibling top-level type — the corresponding `.class` file persists
+indefinitely in `latheClassesDir`.
 
 `deleteClassOutputs()` is called only on file deletion (`didClose` with a removed path),
 where it removes `Foo.class`, `Foo$Inner.class`, etc. matching the deleted source.
 There is no equivalent cleanup triggered by a successful recompilation of a file that still exists.
 
-A renamed `Foo$OldInner.class` that no longer corresponds to any source type remains in
-`latheClassesDir`, where `ClassFileTypeScanner` picks it up and adds the stale type to the reactor
-type index.
+A stale `Foo$OldInner.class` or `Helper.class` that no longer corresponds to any source type
+remains in `latheClassesDir`, where `ClassFileTypeScanner` picks it up and adds the stale type to
+the reactor type index.
 This causes removed or renamed types to continue appearing in type-name completion, workspace symbol
 search, and type-hierarchy results until the server restarts.
 
-### Required behaviour
+### Scope
 
-After every successful `FULL` compile of a source file, delete any `.class` files in the matching
-package directory under `latheClassesDir` whose type name (simple name prefix before `$` or `.class`)
-does not match the top-level type declared in the recompiled source.
+The problem affects all class file types produced from a single source file:
 
-Outer class files for other source files in the same package must not be deleted.
+| Type | Class file | Covered by `Foo$` prefix? |
+|---|---|---|
+| Named inner class | `Foo$Inner.class` | Yes |
+| Anonymous class | `Foo$1.class` | Yes |
+| Local class | `Foo$1LocalName.class` | Yes |
+| Package-private sibling | `Helper.class` | **No** |
 
-### Required tests
+### Decided implementation — `JavaFileManager` wrapper (Option B)
 
-- Compile `Foo.java` containing `class Foo { class Inner {} }`, then recompile it with `Inner`
-  removed; assert `Foo$Inner.class` is gone from `latheClassesDir`.
-- Compile `Foo.java` containing `class Foo {}` and `Bar.java` containing `class Bar {}` in the same
-  package; recompile `Foo.java` with no inner types; assert `Bar.class` is untouched.
+Eclipse JDT and Zinc (Scala) both solve this by persisting the compiler's own output manifest per
+source file and diffing it on the next compile.
+Lathe will use the same approach via a `ForwardingJavaFileManager` wrapper:
+
+1. **`TrackingFileManager`** (new class, `module` package) — wraps `StandardJavaFileManager`,
+   overrides `getJavaFileForOutput()` to collect the binary class names (e.g.
+   `com.example.Foo`, `com.example.Foo$Inner`, `com.example.Helper`) written to `CLASS_OUTPUT`
+   during a `FULL` compile.
+   Uses only public `javax.tools` API; no `com.sun.tools.javac.*` internals.
+
+2. **`CompilerResult`** — add `Set<String> writtenBinaryNames` field (empty for `FAST`/`OPEN`,
+   populated by `TrackingFileManager` for `FULL`).
+
+3. **`JavacRunner.compileFull()`** — wrap `fm` with `TrackingFileManager` for the task duration;
+   include written names in `CompilerResult`.
+
+4. **`JavaSourceCompiler.runAnalysis()`** — pass `Set.of()` for `writtenBinaryNames`.
+
+5. **`WorkspaceSession.deleteStaleClassOutputs()`** — replace the stub with the real implementation:
+   read the old sidecar (`.lathe/classes/<pkg>/Foo.java.manifest`), compute
+   `oldNames − writtenBinaryNames`, delete those `.class` files, write the new sidecar.
+   Call this from `onSave` before `refreshReactorShard`.
+   On `onDeletedFile`, delete the sidecar alongside `deleteClassOutputs`.
+
+This replaces any timestamp-based approach and covers all class file types uniformly.
+
+### Regression tests
+
+Disabled tests in `WorkspaceSessionTest` cover the expected behaviour of `deleteStaleClassOutputs`:
+
+- `deleteStaleClassOutputs_namedInnerClassRemoved_deletesStaleClassFile`
+- `deleteStaleClassOutputs_anonymousClassRemoved_deletesStaleClassFile`
+- `deleteStaleClassOutputs_outerClass_isUntouched`
+- `deleteStaleClassOutputs_sibling_isUntouched`
+- `deleteStaleClassOutputs_packagePrivateSiblingRemoved_deletesStaleClassFile`
 
 ---
 
