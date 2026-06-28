@@ -85,7 +85,7 @@ See [gaps.md](gaps/gaps.md).
 
 ### Find References hardening
 
-- Confirm and document the external-symbol search-scope policy (FR-002).
+- ~~Confirm and document the external-symbol search-scope policy (FR-002).~~ Done: project-wide search retained; open-file-only restriction superseded by import filtering.
 - Propagate failures instead of silently returning empty results (FR-003).
 - Add end-to-end invoker coverage for `textDocument/references` (FR-004).
 

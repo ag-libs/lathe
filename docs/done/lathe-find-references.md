@@ -934,6 +934,21 @@ and every file is attributed by javac.
 
 `String` alone causes ~900 javac attributions per request.
 
+### Policy decision (confirmed)
+
+Project-wide search is kept for all symbol types.
+The open-file-only restriction stated in section 5 is superseded.
+
+**Rationale:** import-based candidate pre-filtering (Option 1 below, already implemented)
+reduces candidate counts dramatically for external symbols.
+`String` now resolves in ~170ms and `LoggerFactory` in ~68ms —
+well within interactive-response budgets.
+Restricting to open files would silently omit correct results and surprise users
+who expect workspace-wide hits for a "Find All References" command.
+
+Remaining headroom for large result sets is covered by Options 3–4 below,
+which are deferred to M2/M3.
+
 ### Approaches — recommended order
 
 The following options are ordered from highest value / lowest effort to most complete.

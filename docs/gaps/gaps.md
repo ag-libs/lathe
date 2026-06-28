@@ -1565,8 +1565,8 @@ verification.
 
 ## FR-002 — External-symbol search scope policy is unresolved
 
-Status: accepted — Target: M1.
-Requires a product decision on the external-symbol search-scope policy (see below).
+Status: done — Target: M1.
+Decision recorded in `docs/done/lathe-find-references.md` section 15.
 
 The original design says JDK and third-party symbols should search open files only.
 The implementation instead searches reactor files selected from the cursor module's downstream
