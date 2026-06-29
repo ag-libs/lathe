@@ -104,6 +104,30 @@
         <artifactId>maven-plugin-plugin</artifactId>
         <version>${maven-plugin.version}</version>
       </plugin>
+      <!-- Runs the Neovim indent fixtures during `test`. The wrapper script
+           hard-fails under CI when nvim is absent and degrades gracefully on
+           local machines without it. -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>${exec-maven-plugin.version}</version>
+        <executions>
+          <execution>
+            <id>neovim-indent-spec</id>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <phase>test</phase>
+            <configuration>
+              <skip>${skipTests}</skip>
+              <executable>bash</executable>
+              <arguments>
+                <argument>${project.basedir}/src/test/neovim/run-indent-tests.sh</argument>
+              </arguments>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-invoker-plugin</artifactId>
@@ -128,43 +152,4 @@
       </plugin>
     </plugins>
   </build>
-
-  <profiles>
-    <!-- Runs the Neovim indent fixtures during `test`. Active unless
-         -Dskip.neovim.indent.tests is set; the wrapper script no-ops when nvim
-         is absent, so builds without Neovim (CI, contributors) are unaffected. -->
-    <profile>
-      <id>neovim-indent-tests</id>
-      <activation>
-        <property>
-          <name>!skip.neovim.indent.tests</name>
-        </property>
-      </activation>
-      <build>
-        <plugins>
-          <plugin>
-            <groupId>org.codehaus.mojo</groupId>
-            <artifactId>exec-maven-plugin</artifactId>
-            <version>${exec-maven-plugin.version}</version>
-            <executions>
-              <execution>
-                <id>neovim-indent-spec</id>
-                <goals>
-                  <goal>exec</goal>
-                </goals>
-                <phase>test</phase>
-                <configuration>
-                  <skip>${skipTests}</skip>
-                  <executable>bash</executable>
-                  <arguments>
-                    <argument>${project.basedir}/src/test/neovim/run-indent-tests.sh</argument>
-                  </arguments>
-                </configuration>
-              </execution>
-            </executions>
-          </plugin>
-        </plugins>
-      </build>
-    </profile>
-  </profiles>
 </project>

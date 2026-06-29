@@ -1680,9 +1680,9 @@ Made the text heuristic authoritative and used tree-sitter only for closer-to-bl
 - `lathe-maven-plugin/src/test/neovim/indent_spec.lua` — 19 project-neutral fixtures covering record
   components, wrapped arguments, assignment-RHS continuation, block bodies/closers, statement-end
   dedent, blank lines inside calls and lambda bodies, nested wrapped calls, and selector chains.
-- Run via the `neovim-indent-tests` Maven profile (`exec:exec@neovim-indent-spec`), which no-ops when
-  `nvim` is absent. The fixtures are editor-neutral so they also serve as the acceptance spec for the
-  future VS Code indentation rules.
+- Run during the `test` phase via `exec:exec@neovim-indent-spec`, which hard-fails under CI when
+  `nvim` is absent and degrades gracefully on local machines without it. The fixtures are
+  editor-neutral so they also serve as the acceptance spec for the future VS Code indentation rules.
 
 ### Deferred sub-case
 
