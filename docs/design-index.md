@@ -39,6 +39,8 @@ discovery via [gap-workflow.md](gaps/gap-workflow.md) and resolved entries in [g
 - [Google Indentation](planned/lathe-google-indent.md) — conservative on-type formatting.
 - [Class/Import Semantic Highlighting](planned/lathe-class-import-semantic-highlighting.md) — Neovim-relevant semantic
   corrections for type references.
+- [Type Definition Navigation](planned/lathe-type-definition.md) — LSP `textDocument/typeDefinition` support for
+  Neovim 0.12's default `grt` mapping.
 - [Lightweight Watcher](planned/lathe-lightweight-watcher.md) — partially stale design to re-evaluate before adding
   source watching.
 
