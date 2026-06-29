@@ -1000,7 +1000,7 @@ python3 dev/lsp.py \
 
 ## EG-020 — `module-info.java` and `package-info.java` return no document symbols, folding ranges, or semantic tokens
 
-**Status: accepted — Target: M2**
+**Status: done**
 
 ### Observed behaviour
 
