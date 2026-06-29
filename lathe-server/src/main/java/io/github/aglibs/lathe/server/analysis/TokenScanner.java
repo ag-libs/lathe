@@ -80,6 +80,15 @@ public final class TokenScanner extends TreePathScanner<Void, Void> {
   }
 
   @Override
+  public Void visitCompilationUnit(final CompilationUnitTree node, final Void ignored) {
+    if (node.getModule() == null && node.getTypeDecls().isEmpty()) {
+      addNamespaceToken(node.getPackageName());
+    }
+
+    return super.visitCompilationUnit(node, ignored);
+  }
+
+  @Override
   public Void visitModule(final ModuleTree node, final Void ignored) {
     addNamespaceToken(node.getName());
     for (final var directive : node.getDirectives()) {

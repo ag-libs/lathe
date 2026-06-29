@@ -221,13 +221,6 @@ class SemanticTokensTest extends SampleFixture {
   }
 
   private SemanticToken tokenAt(final int line, final int character) {
-    return tokens.stream()
-        .filter(
-            t ->
-                t.line() == line
-                    && t.character() <= character
-                    && character < t.character() + t.length())
-        .findFirst()
-        .orElse(null);
+    return TokenScannerTestHelper.tokenAt(tokens, line, character);
   }
 }
