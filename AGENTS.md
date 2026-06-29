@@ -23,6 +23,10 @@ Before making non-trivial changes, read the relevant design document first:
   e.g., `refactor:`, `test:`, `docs:`, `feat:`).
 - **No backward compatibility requirement** — the tool has no external adopters yet; schema changes,
   format changes, and API changes may break existing files without migration support.
+- **Public repo — genericize private-workspace identifiers** — never commit real paths, packages,
+  project/module, or class/field names from a private codebase used for validation; use neutral
+  placeholders (`com.example.app`, `AppServer`). Public OSS codebases (Helidon, Dropwizard) may be
+  named.
 
 ---
 
