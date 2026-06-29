@@ -14,14 +14,6 @@ local BLOCK_NODES = {
   switch_block = true,
 }
 
-local CONTINUATION_NODES = {
-  annotation_argument_list = true,
-  argument_list = true,
-  array_initializer = true,
-  element_value_array_initializer = true,
-  formal_parameters = true,
-}
-
 local function line(lnum)
   return vim.api.nvim_buf_get_lines(0, lnum - 1, lnum, false)[1] or ""
 end
@@ -67,15 +59,27 @@ local function ends_with_block_opener(text)
   return trim(text):match("{%s*$") ~= nil
 end
 
-local function ends_with_continuation(text)
+local function ends_with_open_bracket(text)
+  return trim(text):match("[%(%[]$") ~= nil
+end
+
+local function ends_with_comma(text)
+  return trim(text):match(",$") ~= nil
+end
+
+local function ends_with_operator(text)
   local stripped = trim(text)
   if stripped == "" then
     return false
   end
-  if stripped:match("[%.%,%+%-%*/%%=&|!<>?:]$") then
+  if stripped:match("%-%>$") then
     return true
   end
-  return stripped:match("%-%>$") ~= nil
+  return stripped:match("[%.%+%-%*/%%=&|!<>?:]$") ~= nil
+end
+
+local function ends_statement(text)
+  return trim(text):match("[;}]$") ~= nil
 end
 
 local function selector_indent(prev_lnum, prev)
@@ -89,11 +93,63 @@ local function selector_indent(prev_lnum, prev)
 end
 
 local function blank_selector_indent(prev_lnum, prev, next_lnum, next_line)
+  -- An open bracket or block opener on the previous line means the blank line
+  -- sits inside that construct, so the continuation rules own it even when the
+  -- previous line is itself a selector call such as `.installPlugin(`.
+  if prev_lnum and (ends_with_open_bracket(prev) or ends_with_block_opener(prev)) then
+    return nil
+  end
   if prev_lnum and starts_with_selector(prev) then
     return vim.fn.indent(prev_lnum)
   end
   if next_lnum and starts_with_selector(next_line) then
     return vim.fn.indent(next_lnum)
+  end
+  return nil
+end
+
+-- A line is continued by the next one when it ends with an open bracket, a
+-- list separator, or a binary operator. Block openers ({) and statement
+-- terminators (; }) start a new block/statement, so they do not continue.
+local function continues_into_next(text)
+  return ends_with_open_bracket(text) or ends_with_comma(text) or ends_with_operator(text)
+end
+
+-- Indent of the first line of the statement that `lnum` belongs to, found by
+-- walking back across continuation lines. Used to dedent the line that follows
+-- a completed multi-line statement back to the statement's base column.
+local function statement_start_indent(lnum)
+  local l = lnum
+  while l > 1 do
+    local p = vim.fn.prevnonblank(l - 1)
+    if p <= 0 or not continues_into_next(line(p)) then
+      break
+    end
+    l = p
+  end
+  return vim.fn.indent(l)
+end
+
+-- Indentation dictated by how the previous line ends, anchored to Google Java
+-- Format's block (+2) and continuation (+4) model. The offset is measured from
+-- the previous line itself, except for list separators: GJF breaks after the
+-- opening bracket, so every wrapped item sits at the same column and a comma
+-- keeps the next item aligned rather than stair-stepping it deeper.
+-- Returns nil when the previous line neither opens a block nor continues an
+-- expression, leaving the base indent to the caller.
+local function continuation_indent(prev_lnum, prev)
+  local prev_indent = vim.fn.indent(prev_lnum)
+  if ends_with_block_opener(prev) then
+    return prev_indent + BLOCK_INDENT
+  end
+  if ends_with_open_bracket(prev) then
+    return prev_indent + CONTINUATION_INDENT
+  end
+  if ends_with_comma(prev) then
+    return prev_indent
+  end
+  if ends_with_operator(prev) then
+    return prev_indent + CONTINUATION_INDENT
   end
   return nil
 end
@@ -117,15 +173,6 @@ local function node_at_line(root, lnum)
   return root:descendant_for_range(lnum - 1, col, lnum - 1, col + 1)
 end
 
-local function previous_code_node(root, lnum)
-  local prev_lnum, prev = previous_nonblank(lnum)
-  if not prev_lnum then
-    return nil
-  end
-  local col = math.max(first_nonblank_col(prev) + #trim(prev) - 1, 0)
-  return root:descendant_for_range(prev_lnum - 1, col, prev_lnum - 1, col + 1)
-end
-
 local function nearest_block_indent(node)
   local current = node
   while current do
@@ -138,32 +185,11 @@ local function nearest_block_indent(node)
   return nil
 end
 
-local function tree_indent(node, lnum)
-  if not node then
-    return nil
-  end
-  local block_depth = 0
-  local continuation = false
-  local current = node
-  while current do
-    if current:has_error() then
-      return nil
-    end
-    local kind = current:type()
-    local start_row, _, end_row = current:range()
-    local spans_line = start_row < lnum - 1 and lnum - 1 <= end_row
-    if spans_line and BLOCK_NODES[kind] then
-      block_depth = block_depth + 1
-    end
-    if spans_line and CONTINUATION_NODES[kind] then
-      continuation = true
-    end
-    current = current:parent()
-  end
-  return (block_depth * BLOCK_INDENT) + (continuation and CONTINUATION_INDENT or 0)
-end
-
-local function fallback_indent(current, prev_lnum, prev)
+-- The authoritative indent rule: derived from how the previous line ends and
+-- how the current line starts, anchored to existing indentation. It is purely
+-- text-based, so it behaves identically while the buffer is mid-edit and
+-- unparseable -- which is when indentation is requested most.
+local function heuristic_indent(current, prev_lnum, prev)
   if not prev_lnum then
     return 0
   end
@@ -177,22 +203,34 @@ local function fallback_indent(current, prev_lnum, prev)
   if starts_with_switch_label(current) then
     return prev_indent
   end
-  if ends_with_block_opener(prev) then
-    return prev_indent + BLOCK_INDENT
+  local continuation = continuation_indent(prev_lnum, prev)
+  if continuation then
+    return continuation
   end
-  if ends_with_continuation(prev) then
-    return prev_indent + CONTINUATION_INDENT
+  if ends_statement(prev) then
+    return statement_start_indent(prev_lnum)
   end
   return prev_indent
 end
 
-function M.indentexpr()
-  local lnum = vim.v.lnum
-  local bufnr = vim.api.nvim_get_current_buf()
+-- Match a closing }/)/] to the line that opened its block. The tree models
+-- block nesting reliably; it is unreliable for Google Java Format's mixed
+-- selector/continuation/lambda indentation, so it is used only here.
+local function closer_block_indent(bufnr, lnum, current)
+  if not starts_with_closer(current) then
+    return nil
+  end
+  local root = parser_root(bufnr, lnum)
+  if not root then
+    return nil
+  end
+  return nearest_block_indent(node_at_line(root, lnum))
+end
+
+function M.compute(lnum, bufnr)
   local current = line(lnum)
   local prev_lnum, prev = previous_nonblank(lnum)
   local next_lnum, next_line = next_nonblank(lnum)
-  local root = parser_root(bufnr, lnum)
 
   if trim(current) == "" then
     local selector = blank_selector_indent(prev_lnum, prev, next_lnum, next_line)
@@ -201,38 +239,16 @@ function M.indentexpr()
     end
   end
 
-  if not root then
-    return fallback_indent(current, prev_lnum, prev)
+  local block = closer_block_indent(bufnr, lnum, current)
+  if block then
+    return block
   end
 
-  local current_node = node_at_line(root, lnum)
+  return heuristic_indent(current, prev_lnum, prev)
+end
 
-  if starts_with_closer(current) then
-    return nearest_block_indent(current_node) or fallback_indent(current, prev_lnum, prev)
-  end
-
-  if starts_with_selector(current) then
-    return selector_indent(prev_lnum, prev)
-  end
-
-  if starts_with_switch_label(current) then
-    return tree_indent(current_node, lnum) or fallback_indent(current, prev_lnum, prev)
-  end
-
-  if prev and ends_with_block_opener(prev) then
-    return vim.fn.indent(prev_lnum) + BLOCK_INDENT
-  end
-
-  if prev and ends_with_continuation(prev) then
-    return vim.fn.indent(prev_lnum) + CONTINUATION_INDENT
-  end
-
-  local node = current_node
-  if trim(current) == "" then
-    node = previous_code_node(root, lnum)
-  end
-
-  return tree_indent(node, lnum) or fallback_indent(current, prev_lnum, prev)
+function M.indentexpr()
+  return M.compute(vim.v.lnum, vim.api.nvim_get_current_buf())
 end
 
 return M
