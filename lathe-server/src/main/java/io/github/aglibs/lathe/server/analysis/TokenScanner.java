@@ -2,9 +2,14 @@ package io.github.aglibs.lathe.server.analysis;
 
 import com.sun.source.tree.AnnotationTree;
 import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.ExportsTree;
+import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodTree;
+import com.sun.source.tree.ModuleTree;
+import com.sun.source.tree.OpensTree;
+import com.sun.source.tree.RequiresTree;
 import com.sun.source.tree.TypeParameterTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.SourcePositions;
@@ -23,7 +28,7 @@ import javax.lang.model.element.Modifier;
 public final class TokenScanner extends TreePathScanner<Void, Void> {
 
   public static final List<String> TOKEN_TYPES =
-      List.of("enumMember", "method", "property", "typeParameter", "annotation");
+      List.of("enumMember", "method", "property", "typeParameter", "annotation", "namespace");
 
   public static final List<String> TOKEN_MODIFIERS = List.of("declaration", "static", "deprecated");
 
@@ -72,6 +77,31 @@ public final class TokenScanner extends TreePathScanner<Void, Void> {
       prevChar = tok.character();
     }
     return data;
+  }
+
+  @Override
+  public Void visitModule(final ModuleTree node, final Void ignored) {
+    addNamespaceToken(node.getName());
+    for (final var directive : node.getDirectives()) {
+      switch (directive.getKind()) {
+        case REQUIRES -> addNamespaceToken(((RequiresTree) directive).getModuleName());
+        case EXPORTS -> addNamespaceToken(((ExportsTree) directive).getPackageName());
+        case OPENS -> addNamespaceToken(((OpensTree) directive).getPackageName());
+        default -> {}
+      }
+    }
+    return super.visitModule(node, ignored);
+  }
+
+  private void addNamespaceToken(final ExpressionTree tree) {
+    if (tree == null) {
+      return;
+    }
+    final long start = positions.getStartPosition(cu, tree);
+    final long end = positions.getEndPosition(cu, tree);
+    if (start >= 0 && end > start) {
+      addToken(start, (int) (end - start), "namespace", Set.of());
+    }
   }
 
   @Override
