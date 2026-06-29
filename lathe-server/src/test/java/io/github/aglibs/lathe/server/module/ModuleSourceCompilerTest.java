@@ -118,6 +118,41 @@ class ModuleSourceCompilerTest {
   }
 
   @Test
+  void compile_openMode_fileUnderGeneratedSourcesRoot_compilesInsteadOfThrowing() throws Exception {
+    final Path sourceRoot = td.resolve("src/main/java");
+    final Path genRoot = td.resolve("target/generated-sources/annotations");
+    final Path genFile = genRoot.resolve("gen/GenBuilder.java");
+    Files.createDirectories(genFile.getParent());
+
+    final var config =
+        new ModuleSourceConfig(
+            td.resolve(".lathe/module"),
+            "classes",
+            td.resolve("target/classes"),
+            genRoot,
+            List.of(sourceRoot),
+            List.of(),
+            List.of(),
+            List.of(),
+            "21",
+            "UTF-8",
+            false,
+            false,
+            null,
+            List.of());
+
+    try (var compiler = new ModuleSourceCompiler(config, new CompilationAdmission(1))) {
+      final var result =
+          compiler.compile(
+              genFile.toUri().toString(),
+              "package gen; public class GenBuilder {}",
+              CompileMode.OPEN);
+
+      assertThat(result.diagnostics()).isEmpty();
+    }
+  }
+
+  @Test
   void complete_reactorOutputTypeInSameModule_suggestsIndexedType() throws Exception {
     final Path sourceRoot = td.resolve("module/src/main/java");
     final Path reactorSource = sourceRoot.resolve("example/ReactorOnlyType.java");
