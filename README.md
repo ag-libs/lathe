@@ -148,7 +148,7 @@ Lathe implements the following LSP endpoints. In Neovim 0.11+, most are mapped a
   - Neovim default: `<C-]>` (via `tagfunc`); most configs also remap `gd`
 - `textDocument/declaration`: Navigates to the interface or abstract method contract being overridden.
   - Neovim API: `vim.lsp.buf.declaration()`
-  - Neovim default: `gD`
+  - Neovim default: None; most configs remap `gD`
 - `textDocument/implementation`: Finds concrete implementations of an interface method, or all subtypes of a class or interface across the workspace.
   - Neovim API: `vim.lsp.buf.implementation()`
   - Neovim default: `gri`
