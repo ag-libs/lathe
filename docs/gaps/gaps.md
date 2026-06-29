@@ -1648,6 +1648,72 @@ Not probeable through `explore.py`; confirmed by both endpoints sharing the whol
 
 ---
 
+## EG-030 — Neovim indenter Google-Java-Format continuation handling
+
+**Status: done — Target: M2 (regression). One sub-case deferred (see below).**
+
+### Observed behaviour (before)
+
+The Neovim `indentexpr` (`lathe-maven-plugin/src/main/neovim/lua/lathe/indent.lua`) used a
+`tree_indent` block-depth model that could not reproduce Google Java Format's mixed
+selector/continuation/lambda indentation, and a previous-line continuation rule that stair-stepped
+list items deeper on every line. Pressing Enter in wrapped GJF structures left the cursor in the
+wrong column: record components, wrapped arguments, blank lines inside calls and lambda bodies, and
+the line after a completed multi-line statement were all mis-indented.
+
+### Fix
+
+Made the text heuristic authoritative and used tree-sitter only for closer-to-block matching:
+
+- Split list separators (align) from binary operators (one continuation level), and recognise
+  trailing `(`/`[` openers — fixes stair-stepping and wrapped-argument / record-component indent.
+- Added `statement_start_indent` so the line after a completed multi-line statement dedents to the
+  statement base.
+- Guarded the blank-line selector rule so a blank line inside a `selector(`-opened call indents into
+  the call rather than aligning to the selector.
+- Removed the unreliable `tree_indent`/`CONTINUATION_NODES` path; the indent value is now purely
+  text-derived, so behaviour is identical whether or not the buffer parses (the common mid-edit
+  case).
+
+### Regression targets
+
+- `lathe-maven-plugin/src/test/neovim/indent_spec.lua` — 19 project-neutral fixtures covering record
+  components, wrapped arguments, assignment-RHS continuation, block bodies/closers, statement-end
+  dedent, blank lines inside calls and lambda bodies, nested wrapped calls, and selector chains.
+- Run via the `neovim-indent-tests` Maven profile (`exec:exec@neovim-indent-spec`), which no-ops when
+  `nvim` is absent. The fixtures are editor-neutral so they also serve as the acceptance spec for the
+  future VS Code indentation rules.
+
+### Deferred sub-case
+
+A method-chain selector that **resumes after a multi-line wrapped argument** still anchors to the
+closing line rather than the chain:
+
+```java
+return source.of(req)
+    .request(Type.class)
+    .recover(
+        e -> {
+          log(e);
+          return fallback();
+        })
+    .get();        // indenter yields closer-indent + 4; GJF puts this at the chain column (probe: 16 vs 8)
+```
+
+`selector_indent` anchors a `.`-led line to the previous line; when that line is the `})` closing a
+multi-line argument, it indents one level past the closer instead of back to the chain's first
+selector. Resolving the chain anchor across an intervening multi-line lambda needs tree-sitter
+structure (walk to the outermost `method_invocation`/`field_access` receiver), which the text
+heuristic cannot do. Two minor relatives are also deferred: a continuation line that *starts* with a
+binary operator (Google breaks before `&&`/`+`) gets no extra level, and a lone `)`/`]` wrap-closer
+aligns to the block rather than the wrap opener.
+
+Deferred, not fixed, because `format_on_save` (full-document GJF, on by default in the Neovim plugin)
+corrects the file on every save; the only impact is a transient cursor column on a rare shape. If
+revisited, add the tree-sitter chain-anchor rule and a fixture for the `.get()`-after-`})` tail.
+
+---
+
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work
@@ -2679,19 +2745,16 @@ Target: backlog
 Tier: typed
 Failure mode: missing-candidates
 Owner component: TypeResolver / CandidateGenerator
-Discovery: 2026-06-29, sample-workspace AppServer validation pass
+Discovery: 2026-06-29, real-workspace validation pass
 
 Cursor context:
 ```java
-// AppServer.java ~line 194-196, inside config.itemsToProcess().forEach(schema -> { ... })
-config
-    .itemsToProcess()
-    .forEach(
-        schema -> {
-          final var runner =
-              new Runner(jdbi.delegate(), "db/migration-" + schema, schema);
-          runner.§
-        });
+// inside a forEach lambda block body
+items.forEach(
+    item -> {
+      final var runner = new Runner(client, item);
+      runner.§
+    });
 ```
 
 Lathe behavior:
