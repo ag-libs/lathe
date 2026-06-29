@@ -1557,6 +1557,97 @@ Returning `OptionalInt.empty()` or a sentinel failure result is preferable to ca
 
 ---
 
+## EG-028 — `textDocument/onTypeFormatting` is a stub and is not registered
+
+**Status: documented — Target: backlog**
+
+### Observed behaviour
+
+Typing in Google-Java-Format code with complex wrapped structure (assignment continuations at +8,
+wrapped call arguments at +12, multi-line record headers at +4) leaves the cursor at the wrong
+indentation when a new line is started.
+The server provides no type-time indentation assistance.
+
+### Root cause
+
+`LatheTextDocumentService.onTypeFormatting` (around line 312) is a TODO stub that returns
+`List.of()` for every request, and `LatheLanguageServer.initialize` does not register a
+`documentOnTypeFormattingProvider` (no `firstTriggerCharacter` / `moreTriggerCharacter`), so most
+clients never send the request at all.
+
+### Constraint (why this cannot fully close the indentation gap)
+
+Lathe's only formatting engine is Google Java Format, which parses the **entire compilation unit**
+before emitting anything and throws `FormatterException` on unparseable input (`JavaFormatter`
+catches it and returns no edits).
+Its range API parses the whole file too — ranges only limit which edits are emitted.
+The most useful `onTypeFormatting` trigger, newline (`\n`) inside a wrapped expression or record
+header, fires precisely when the buffer is **not parseable**, so a GJF-backed handler can return
+nothing there.
+The CLAUDE.md "no ad hoc Java parsing" rule forbids a hand-rolled indentation model as the
+alternative.
+
+### Realistic scope
+
+`onTypeFormatting` is at best a **partial** improvement, scoped to triggers that tend to *complete*
+a parseable file (`}`, `;`): when the file parses again, run GJF (range-scoped to the touched lines)
+and return conservative edits for brace/statement layout.
+It will not fix the live-newline cursor case.
+Conservative behaviour depends on EG-029 (real range formatting) landing first.
+Because the editor already formats on save (full-document GJF), the saved result is GJF-correct
+regardless, so this is a live-typing nicety, not a correctness requirement — which is why it is
+parked at `backlog`.
+The lever that actually fixes the newline/record-component cursor is error-tolerant client-side
+indentation (e.g. tree-sitter), not the server.
+
+### Probe commands
+
+Not probeable through `explore.py`; confirmed by the stub handler and the absent capability
+registration in `LatheLanguageServer`.
+
+### Regression targets
+
+- `OnTypeFormattingTest.onTypeFormatting_closingBraceCompletesFile_returnsConservativeEdits`
+- `OnTypeFormattingTest.onTypeFormatting_unparseableNewline_returnsNoEdits`
+
+---
+
+## EG-029 — `rangeFormat` ignores its range and formats the whole document
+
+**Status: documented — Target: backlog**
+
+### Observed behaviour
+
+`textDocument/rangeFormatting` reformats the entire document instead of only the requested range,
+so a range-format request can move and reflow code far outside the selection.
+
+### Root cause
+
+Both the `formatting` and `rangeFormatting` endpoints delegate to the same
+`WorkspaceSession.format(tag, uri)` (`LatheTextDocumentService` lines ~302 and ~309), which calls
+`JavaFormatter.format(content)` — a whole-document `Formatter().formatSourceAndFixImports(content)`.
+The selection range carried by the request is never read.
+
+### Proposed fix
+
+Add a range-aware path in `JavaFormatter` using GJF's `formatSource(text, ranges)` with the
+character range derived from the request's LSP range, and emit only the resulting in-range edits.
+Keep the whole-document path for `formatting`.
+This is a prerequisite for a conservative EG-028 (`}`/`;` on-type formatting that touches only the
+edited region).
+
+### Probe commands
+
+Not probeable through `explore.py`; confirmed by both endpoints sharing the whole-document
+`JavaFormatter.format` path in `WorkspaceSession`.
+
+### Regression targets
+
+- `RangeFormattingTest.rangeFormat_selectionInsideMethod_editsOnlySelectedLines`
+- `RangeFormattingTest.rangeFormat_unchangedSelection_returnsNoEdits`
+
+---
+
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work
@@ -2503,6 +2594,147 @@ which forced reattribution when a stale snapshot had already resolved the receiv
 
 ---
 
+## CQ-0043 — Argument-position type filtering excludes boolean returns but lets other mismatched types through
+
+ID: CQ-0043
+Status: documented
+Target: backlog
+Tier: typed
+Failure mode: missing-candidates
+Owner component: CompletionCandidateRanker
+Discovery: 2026-06-29, explorer validation pass
+
+Cursor context:
+```java
+class Test {
+  static class Foo {}
+  Foo getFoo() { return null; }
+  boolean isReady() { return true; }
+  void accept(Foo f) {}
+  void m() {
+    accept(§);
+  }
+}
+```
+
+Lathe behavior:
+At an argument slot whose expected parameter type is a non-boolean type (`Foo` above),
+`CompletionCandidateRanker.expectedTypeAllows` **hard-excludes** any candidate whose value type is
+`TypeKind.BOOLEAN` — both boolean-returning methods (`isReady()`) and the `true`/`false` keywords —
+unless the expected type is `boolean`/`java.lang.Boolean`.
+But the same method returns `true` (allow) for every other type:
+non-boolean mismatches such as `int hashCode()`, `String getStr()`, or any unrelated reference type
+are still offered for a `Foo` parameter.
+The filter is therefore asymmetric: it removes one specific kind of mismatch (boolean) while leaving
+all the others.
+
+Confirmed by `CompletionArgumentTest.argumentPosition_referenceTypeParam_booleansExcluded`, which
+asserts `getFoo` is offered and `isReady()`, `true`, `false` are not, and by the live observation
+that `int hashCode()` is offered at the same slot even though `int` does not match `Foo`.
+
+Expected Lathe behavior:
+Apply expected-type relevance consistently through **ranking, not exclusion**.
+A boolean-returning candidate is a legitimate completion at a non-boolean argument slot — the user
+may be mid-typing a larger expression (a ternary `cond ? a : b`, a comparison, a negation, or a
+boxed `Boolean` target reached through overloads).
+Booleans should be demoted via `sortText` exactly like other mismatched types already are
+(the `matches ? 0 : 1` prefix in `sortText`), not dropped.
+If hard exclusion is ever intended, it must be symmetric across all mismatched value types, not
+boolean-only — the current behavior achieves neither relevance (mismatched ints/strings still
+appear) nor completeness (valid booleans disappear).
+
+Root cause:
+`CompletionCandidateRanker.expectedTypeAllows` special-cases `TypeKind.BOOLEAN`
+(`return booleanCompatible(expected, ctx)`) and falls through to `return true` for every other value
+type.
+The asymmetry is in the filter, not the ranker: `sortText` already computes an
+`isAssignable`-based `matches` prefix that would demote mismatched candidates without removing them.
+
+Suggested fix:
+Keep javac as the source of truth for assignability.
+
+1. Remove the boolean-only branch from `expectedTypeAllows` so the filter stops excluding boolean
+   value types at non-boolean slots.
+2. Let `sortText`'s existing `matches`/`kindPriority` ordering demote all non-assignable candidates
+   (boolean and otherwise) uniformly.
+3. Preserve the keyword handling already present (`compatibleKeyword` / `keywordSortText`) so
+   `true`/`false` are offered and ranked sensibly when a boolean is expected, and demoted otherwise
+   rather than removed.
+4. Re-baseline `argumentPosition_referenceTypeParam_booleansExcluded` to assert
+   *ranking* (boolean candidates sort after the assignable `getFoo`) instead of *absence*.
+
+Notes:
+Distinct from the lambda-body case (`lambdaBody_filterExpectedType_ranksBooleanHigher`), where a
+boolean is expected and is correctly ranked higher — that path already uses ranking, not exclusion.
+This gap is the inverse defect: at a non-boolean slot the boolean is excluded outright while equally
+mismatched non-boolean candidates survive.
+
+---
+
+## CQ-0044 — Member access on a `var` local declared inside a lambda body returns no candidates
+
+ID: CQ-0044
+Status: documented
+Target: backlog
+Tier: typed
+Failure mode: missing-candidates
+Owner component: TypeResolver / CandidateGenerator
+Discovery: 2026-06-29, sample-workspace AppServer validation pass
+
+Cursor context:
+```java
+// AppServer.java ~line 194-196, inside config.itemsToProcess().forEach(schema -> { ... })
+config
+    .itemsToProcess()
+    .forEach(
+        schema -> {
+          final var runner =
+              new Runner(jdbi.delegate(), "db/migration-" + schema, schema);
+          runner.§
+        });
+```
+
+Lathe behavior:
+Completion after `runner.` returns an **empty popup** — zero members.
+`Runner` is a concrete type with a `public void validate()` declared directly on it, so the
+expected behavior is that `validate()` (and the rest of its members) are offered.
+
+Expected Lathe behavior:
+Offer the members of `Runner`, including `validate()`, exactly as for any other concrete
+receiver.
+
+Root cause (hypothesis, to be verified):
+The receiver is a `var` local whose type is *inferred* from `new Runner(...)`, and it is
+declared **inside a lambda block body** that is incomplete while the user is typing `runner.`.
+When the snapshot cannot fully attribute the enclosing lambda body, the `var` local has no resolved
+declared type, so `TypeResolver.resolveReceiver` yields no receiver and `CandidateGenerator`
+produces zero candidates.
+The fact that `Runner` comes from a dependency JAR is believed incidental — member access on
+dependency-JAR concrete types works elsewhere (Dropwizard/Helidon fluent chains).
+The distinguishing factors are (1) `var` inference and (2) the lambda-body-under-edit recovery path.
+
+Reproduction probes (to isolate the decisive factor):
+1. Change `var` to an explicit `Runner runner = ...` and retype `.` — if members
+   appear, the `var` inference path is the cause.
+2. Move the same `var runner = new Runner(...)` + `runner.` out of the
+   lambda to plain method-body scope — if members appear, the lambda-body recovery is the trigger.
+3. Try `new Runner(...).§` directly with no local — isolates constructor/JAR resolution.
+
+Suggested fix:
+Keep javac as the source of truth; do not parse the lambda or the declaration text.
+Confirm via the probes whether the failure is in `var`-local type inference or in attributing an
+incomplete lambda body, then route through the existing sentinel/recovery pipeline so the `var`
+local's initializer type is available for receiver resolution while the lambda body is mid-edit.
+
+Notes:
+Adjacent to CQ-0042 (type-error receiver returns no candidates) but distinct: there the receiver
+expression has an explicit compile error in a method chain; here the receiver is a well-formed `var`
+local whose inferred type is unavailable during in-lambda editing.
+Not a match for CQ-0029/CQ-0030/CQ-0040 (wildcard, type-variable, and captured-wildcard receivers) —
+no generics are involved.
+
+---
+
 ## Current Triage
 
 All accepted completion-quality gaps from the `DropwizardResourceConfig` explorer pass have been resolved or triaged.
@@ -2559,6 +2791,11 @@ A 2026-06-26 sample-workspace pass on `AppServer` (anonymous `AbstractBinder.con
 `CQ-0040`: member completion on the captured-wildcard result of `bind(x).to(Y.class)` returns nothing.
 It shares the `CQ-0029`/`CQ-0030` root cause but is pulled into M1 because it breaks the ubiquitous
 HK2/Jersey binder DSL on a real workspace.
+
+A 2026-06-29 validation pass recorded two new `documented` gaps awaiting triage:
+`CQ-0043` (argument-position type filtering excludes boolean returns but lets other mismatched types
+through) and `CQ-0044` (member access on a `var` local declared inside a lambda body returns no
+candidates, found on `AppServer` `runner.validate()`).
 
 Next completion work should run a new explorer pass with a different focus area,
 or pick up one of the gaps explicitly assigned to M2.
