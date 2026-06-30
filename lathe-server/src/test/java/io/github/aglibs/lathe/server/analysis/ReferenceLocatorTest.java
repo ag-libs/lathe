@@ -9,6 +9,7 @@ import java.util.Objects;
 import org.eclipse.lsp4j.Position;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 class ReferenceLocatorTest {
@@ -203,6 +204,66 @@ class ReferenceLocatorTest {
     assertThat(withDecl).hasSize(withoutDecl.size() + 1);
     assertThat(withDecl)
         .anyMatch(l -> l.range().getStart().equals(posOf(METHOD_SOURCE, "void run()", "run")));
+  }
+
+  @Test
+  @Disabled("FR-006: method references ignore the override hierarchy")
+  void method_interfaceDeclaration_findsCallThroughImplementingType() throws IOException {
+    final var source =
+        """
+        interface Service {
+            void handle();
+        }
+        class Impl implements Service {
+            public void handle() {}
+        }
+        class Caller {
+            void use(Service s, Impl i) {
+                s.handle();
+                i.handle();
+            }
+        }
+        """;
+    final var analysis = compile(source);
+    final var target = targetAt(analysis, "void handle();", "handle");
+
+    final List<ReferenceMatch> result = refs(analysis, target, false);
+
+    assertThat(result).hasSize(2);
+    assertThat(result)
+        .anyMatch(l -> l.range().getStart().equals(posOf(source, "s.handle()", "handle")));
+    assertThat(result)
+        .anyMatch(l -> l.range().getStart().equals(posOf(source, "i.handle()", "handle")));
+  }
+
+  @Test
+  @Disabled("FR-006: method references ignore the override hierarchy")
+  void method_override_findsCallThroughInterfaceType() throws IOException {
+    final var source =
+        """
+        interface Service {
+            void handle();
+        }
+        class Impl implements Service {
+            public void handle() {}
+        }
+        class Caller {
+            void use(Service s, Impl i) {
+                s.handle();
+                i.handle();
+            }
+        }
+        """;
+    final var analysis = compile(source);
+    final var target = targetAt(analysis, "public void handle()", "handle");
+
+    final List<ReferenceMatch> result = refs(analysis, target, false);
+
+    assertThat(result).hasSize(2);
+    assertThat(result)
+        .anyMatch(l -> l.range().getStart().equals(posOf(source, "s.handle()", "handle")));
+    assertThat(result)
+        .anyMatch(l -> l.range().getStart().equals(posOf(source, "i.handle()", "handle")));
   }
 
   // --- constructors ---

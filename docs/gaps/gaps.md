@@ -2014,6 +2014,89 @@ server response failure from an editor-side display or process failure.
 No production fix should be attributed to this incident until it is reproduced outside the editor or
 an RPC/client error is captured.
 
+## FR-006 — Method references ignore the override hierarchy, so interface-method searches miss real call sites
+
+Status: documented — Target: backlog.
+Discovered 2026-06-30, gap validation pass.
+
+### Observed behaviour
+
+Find References on a method declared in an interface (or any supertype) returns only the call sites
+whose static receiver type is the declaring type itself.
+Every call dispatched through an implementing or overriding type is missed, and the override
+declarations are missed.
+
+Reproduction in a single compilation unit:
+
+```java
+interface Service {
+    void handle();              // line 1 — declaration
+}
+class Impl implements Service {
+    public void handle() {}     // line 4 — override
+}
+class Caller {
+    void use(Service s, Impl i) {
+        s.handle();             // line 8 — call through the interface type
+        i.handle();             // line 9 — call through the concrete type
+    }
+}
+```
+
+| Find References target | Matches returned | Missed |
+|---|---|---|
+| `Service.handle` (interface declaration) | `s.handle()` only | `i.handle()` and the `Impl.handle` override |
+| `Impl.handle` (override) | `i.handle()` only | `s.handle()` |
+
+In real workspaces the interface is normally called through a concrete or injected implementation
+type, so a search from the interface method commonly returns **no usages at all**.
+
+The companion symptom — "Find References on a method only returns the line where the method is
+declared" — is the same defect surfaced through the client.
+Neovim's `vim.lsp.buf.references()` sets `context.includeDeclaration = true`, so Lathe adds the
+declaration site (correct per the LSP request).
+When all real call sites dispatch through implementing types and are missed, the declaration becomes
+the only entry in the result, making it look as though Find References returns the declaration line
+instead of the usages.
+
+### Root cause
+
+`ReferenceTarget.matches` (`ReferenceTarget.java`) compares a method candidate by exact owner binary
+name plus erased descriptor:
+
+```java
+case METHOD, CONSTRUCTOR -> {
+  final var ee = (ExecutableElement) element;
+  final var owner = (TypeElement) ee.getEnclosingElement();
+  yield qualifiedName.equals(elements.getBinaryName(owner).toString())
+      && erasedDescriptor.equals(buildDescriptor(ee, types));
+}
+```
+
+`element.getEnclosingElement()` is the type that *declares* the resolved element, which for
+`i.handle()` is `Impl` and for the interface declaration is `Service`.
+The comparison never consults `Elements.overrides` or walks the supertype chain, so an interface
+method and its overrides are treated as unrelated symbols.
+`includeDeclaration` itself is handled correctly (`ReferenceLocator.visitMethod` adds the declaration
+only when the flag is set); it is not the defect.
+
+### Proposed fix
+
+Make method identity override-aware rather than owner-exact.
+When the candidate element and the target share a simple name and erased descriptor, accept the match
+if either element overrides the other anywhere in the type hierarchy, using `Elements.overrides`
+together with the supertype walk already used for definition/hover override resolution (EG-012).
+The descriptor comparison stays, so overloads are still distinguished.
+
+This is a correctness change to symbol matching only; search scope, candidate planning, and
+`includeDeclaration` behaviour are unchanged.
+
+### Regression targets
+
+- `ReferenceLocatorTest.method_interfaceDeclaration_findsCallThroughImplementingType` (added,
+  `@Disabled`)
+- `ReferenceLocatorTest.method_override_findsCallThroughInterfaceType` (added, `@Disabled`)
+
 ### Find References notes
 
 The FR slice is derived by `Target` like every other family.
