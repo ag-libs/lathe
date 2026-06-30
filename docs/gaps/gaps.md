@@ -2021,6 +2021,55 @@ Confirmed working:
 The remaining gaps concern external-symbol scope policy, failure reporting, and end-to-end
 verification.
 
+## FR-007 — Override-method references do not search inherited hook calls in supertype sources
+
+Status: open — Target: M2.
+Discovered 2026-06-30, Dropwizard `SessionFactoryProvider` validation.
+
+### Observed behaviour
+
+`textDocument/implementation` from Jersey's cached
+`AbstractValueParamProvider.createValueProvider(...)` correctly returns the Dropwizard reactor
+overrides:
+
+- `SessionFactoryProvider.createValueProvider(...)`
+- `AuthValueFactoryProvider.createValueProvider(...)`
+- `PolymorphicAuthValueFactoryProvider.createValueProvider(...)`
+
+But Find References on the reactor override
+`SessionFactoryProvider.createValueProvider(...)` does not search the cached superclass source file,
+so it misses the inherited framework hook call:
+
+```java
+public final Function<ContainerRequest, ?> getValueProvider(Parameter parameter) {
+    return createValueProvider(parameter);
+}
+```
+
+Find References on the cached superclass declaration also returns no references for that method in
+the current explorer probe.
+
+### Root cause
+
+The javac matching path is already override-aware after FR-006.
+The remaining failure happens earlier in candidate discovery.
+
+`ReferenceCandidatePlanner.planCandidates` handles method targets by intersecting:
+
+- files containing the method simple name, and
+- files containing the target's exact enclosing class simple name.
+
+For an override target such as `SessionFactoryProvider.createValueProvider`, the cached superclass
+file contains `createValueProvider(...)`, but it does not contain `SessionFactoryProvider`.
+The file is filtered out before javac can attribute the call and prove the override relationship.
+
+### Regression target
+
+`ReferenceCandidatePlannerTest.planCandidates_overrideMethodTarget_returnsSuperclassSelfCallFile`
+captures this as a disabled regression test.
+Enable it when candidate planning can include inherited hook-call files for override method targets
+without turning every common method name into a workspace-wide scan.
+
 ## FR-002 — External-symbol search scope policy is unresolved
 
 Status: done — Target: M1.
@@ -2183,166 +2232,6 @@ server response failure from an editor-side display or process failure.
 No production fix should be attributed to this incident until it is reproduced outside the editor or
 an RPC/client error is captured.
 
-## FR-006 — Method references ignore the override hierarchy, so interface-method searches miss real call sites
-
-Status: done — Target: M2.
-Discovered 2026-06-30, gap validation pass.
-
-### Observed behaviour
-
-Find References on a method declared in an interface (or any supertype) returns only the call sites
-whose static receiver type is the declaring type itself.
-Every call dispatched through an implementing or overriding type is missed, and the override
-declarations are missed.
-
-Reproduction in a single compilation unit:
-
-```java
-interface Service {
-    void handle();              // line 1 — declaration
-}
-class Impl implements Service {
-    public void handle() {}     // line 4 — override
-}
-class Caller {
-    void use(Service s, Impl i) {
-        s.handle();             // line 8 — call through the interface type
-        i.handle();             // line 9 — call through the concrete type
-    }
-}
-```
-
-| Find References target | Matches returned | Missed |
-|---|---|---|
-| `Service.handle` (interface declaration) | `s.handle()` only | `i.handle()` and the `Impl.handle` override |
-| `Impl.handle` (override) | `i.handle()` only | `s.handle()` |
-
-In real workspaces the interface is normally called through a concrete or injected implementation
-type, so a search from the interface method commonly returns **no usages at all**.
-
-The companion symptom — "Find References on a method only returns the line where the method is
-declared" — is the same defect surfaced through the client.
-Neovim's `vim.lsp.buf.references()` sets `context.includeDeclaration = true`, so Lathe adds the
-declaration site (correct per the LSP request).
-When all real call sites dispatch through implementing types and are missed, the declaration becomes
-the only entry in the result, making it look as though Find References returns the declaration line
-instead of the usages.
-
-### Root cause
-
-`ReferenceTarget.matches` (`ReferenceTarget.java`) compares a method candidate by exact owner binary
-name plus erased descriptor:
-
-```java
-case METHOD, CONSTRUCTOR -> {
-  final var ee = (ExecutableElement) element;
-  final var owner = (TypeElement) ee.getEnclosingElement();
-  yield qualifiedName.equals(elements.getBinaryName(owner).toString())
-      && erasedDescriptor.equals(buildDescriptor(ee, types));
-}
-```
-
-`element.getEnclosingElement()` is the type that *declares* the resolved element, which for
-`i.handle()` is `Impl` and for the interface declaration is `Service`.
-The comparison never consults `Elements.overrides` or walks the supertype chain, so an interface
-method and its overrides are treated as unrelated symbols.
-`includeDeclaration` itself is handled correctly (`ReferenceLocator.visitMethod` adds the declaration
-only when the flag is set); it is not the defect.
-
-### Implementation
-
-Make method identity override-aware rather than owner-exact.
-The change is confined to the references matching path; search scope, candidate planning, and
-`includeDeclaration` behaviour are unchanged.
-All hierarchy queries reuse `Elements.overrides`, which already performs the type-substitution and
-signature checks, so no manual descriptor or supertype walking is added.
-
-The mechanics already exist in `MethodImplementationLocator` (the `textDocument/implementation`
-feature) and `DeclarationLocator` (EG-012); the work is to reuse them on the references path rather
-than introduce new traversal.
-
-1. **Reconstruct the target method once per analysis.**
-   In each compilation context the target is reconstructed from its captured strings: resolve the
-   owner with `elements.getTypeElement(target.qualifiedName().replace('$', '.'))`, then select the
-   enclosed `ExecutableElement` for which the existing exact `ReferenceTarget.matches` is true.
-   This is exactly what `MethodImplementationLocator.locate` already does, so the reconstruction is
-   extracted into a shared helper (e.g. `ReferenceTarget.resolveMethodElement(elements)`) and reused
-   by both locators to satisfy the DRY rule.
-   The result is computed once in `ReferenceLocator.references`, not per visited node.
-
-2. **Accept overrides in both directions.**
-   For a candidate executable `ee` resolved at a use site, with `targetMethod` reconstructed in
-   step 1 and its owner `targetOwner`, accept the match when any of the following holds:
-   - the current exact owner-binary-name + erased-descriptor comparison (unchanged fast path);
-   - `elements.overrides(ee, targetMethod, (TypeElement) ee.getEnclosingElement())` — the candidate
-     overrides the target, covering an interface/supertype target matched at a call through a
-     concrete subtype (`i.handle()`);
-   - `elements.overrides(targetMethod, ee, targetOwner)` — the target overrides the candidate,
-     covering an override target matched at a call through the supertype (`s.handle()`).
-
-3. **Keep overloads and siblings distinct.**
-   The descriptor comparison stays and `Elements.overrides` enforces signature compatibility, so
-   unrelated overloads never match, and sibling overrides (`Impl.handle` vs `Impl2.handle`) do not
-   match each other directly — they relate only through the shared ancestor, which is the
-   conventional "could-dispatch-here" semantics.
-
-4. **Constructors stay exact.**
-   The override-aware branch applies to `ElementKind.METHOD` only; the `CONSTRUCTOR` branch keeps the
-   exact owner + descriptor comparison, since constructors are never overridden.
-
-5. **Single integration point.**
-   The override-aware check is placed so it flows through every method use site —
-   `visitIdentifier`, `visitMemberSelect`, `visitMemberReference`, and `visitNewClass` — uniformly.
-   If the target cannot be reconstructed in a given compilation (owner type absent from the path),
-   the code falls back to the existing exact comparison so no current match regresses.
-
-**Residual scope limitation (not addressed here).**
-Override-aware matching only finds call sites in files the search already attributes.
-The textual candidate index keys on the method simple name and public methods search
-`REACTOR_MODULES`, so the common case is covered; implementations in modules outside the searched
-scope remain a separate coverage concern tracked under FR-002.
-
-### Regression targets
-
-Enable on implementation:
-
-- `ReferenceLocatorTest.method_interfaceDeclaration_findsCallThroughImplementingType` (added,
-  `@Disabled`)
-- `ReferenceLocatorTest.method_override_findsCallThroughInterfaceType` (added, `@Disabled`)
-
-Add on implementation:
-
-- a cross-file variant asserting an interface-method search matches an override call site in a
-  separate compilation;
-- a negative case asserting a sibling override (`Impl2.handle`) and an unrelated overload are not
-  matched;
-- a constructor case asserting the exact-match behaviour is unchanged.
-
-### Find References notes
-
-The FR slice is derived by `Target` like every other family.
-Guidance that does not fall out of the fields: the external-source correctness fix (FR-002) and the
-failure-propagation change (FR-003) should be independently reviewable, and neither should be
-combined with candidate-index optimization.
-
-### Find References verification
-
-```bash
-mvn spotless:apply
-mvn test -pl lathe-server
-mvn verify -pl lathe-maven-plugin -Dinvoker.test=multi-module
-```
-
-Final verification must demonstrate all four request origins:
-
-| Target origin | Symbol origin | Expected search result |
-|---|---|---|
-| Project source | Reactor | Exact project references |
-| Project source | JDK/dependency | Exact project references |
-| Cached external source | JDK | Exact project references |
-| Cached external source | Dependency | Exact project references |
-
----
 
 # Code Action Gaps (CA-N)
 

@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
 import javax.lang.model.element.ElementKind;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -186,6 +187,39 @@ class ReferenceCandidatePlannerTest {
     final Set<String> candidates =
         planner.planCandidates(TestCompiler.moduleConfig(root, src), target);
     assertThat(candidates).containsExactly(uri(fileF));
+  }
+
+  @Test
+  @Disabled("FR-007: override targets must search inherited hook calls in supertype sources")
+  void planCandidates_overrideMethodTarget_returnsSuperclassSelfCallFile() throws IOException {
+    final Path src = Files.createDirectories(root.resolve("src"));
+    final Path file =
+        Files.writeString(
+            src.resolve("AbstractValueParamProvider.java"),
+            """
+            package org.example;
+            abstract class AbstractValueParamProvider {
+              abstract Object createValueProvider(String parameter);
+              Object getValueProvider(String parameter) {
+                return createValueProvider(parameter);
+              }
+            }
+            """);
+
+    final var index = ReferenceCandidateIndex.build(List.of(TestCompiler.moduleConfig(root, src)));
+    final var planner = new ReferenceCandidatePlanner(index);
+
+    final var target =
+        new ReferenceTarget(
+            ElementKind.METHOD,
+            "com.example.app.SessionFactoryProvider",
+            "createValueProvider",
+            "(java.lang.String)",
+            ReferenceTarget.SearchScope.REACTOR_MODULES);
+
+    final Set<String> candidates =
+        planner.planCandidates(TestCompiler.moduleConfig(root, src), target);
+    assertThat(candidates).containsExactly(uri(file));
   }
 
   @Test

@@ -256,6 +256,26 @@ from the Lathe cache, requests references at the class declaration, and asserts 
 The reactor-origin case is covered by
 `LspSmokeTest.references_fromReactorSource_findsUsageAcrossModules`.
 
+## FR-006 — Method references are override-aware
+
+Status: done — Target: M2.
+Discovered 2026-06-30, gap validation pass.
+
+Find References previously compared method references by exact declaring owner plus erased
+descriptor.
+That meant a search from an interface or superclass method missed call sites whose static receiver
+type was an implementation, and a search from an override missed call sites whose static receiver
+type was the supertype.
+
+The resolved implementation reconstructs the target method in each javac analysis and accepts
+matches when either executable overrides the other according to `Elements.overrides`, while keeping
+constructors and unrelated overloads exact.
+
+Regression coverage:
+
+- `ReferenceLocatorTest.method_interfaceDeclaration_findsCallThroughImplementingType`
+- `ReferenceLocatorTest.method_override_findsCallThroughInterfaceType`
+
 ---
 
 # Completion (CQ) — resolved
