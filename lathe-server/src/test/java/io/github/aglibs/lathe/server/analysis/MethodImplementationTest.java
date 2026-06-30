@@ -96,6 +96,22 @@ class MethodImplementationTest {
   }
 
   @Test
+  void implementation_outOfRangePosition_returnsEmpty() {
+    final String content = "interface Service { void run(); }\n";
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(TempSourceCompiler.TEST_URI, content, 1, CompileMode.OPEN);
+      final var request =
+          new SourceFeatureRequest(
+              TempSourceCompiler.TEST_URI,
+              content,
+              new Position(9999, 0),
+              List.of(tempDir),
+              WorkspaceManifest.empty());
+      assertThat(session.resolveTarget(request)).isNull();
+    }
+  }
+
+  @Test
   void methodImplementations_nonMethodTarget_returnsEmpty() {
     final var target =
         new ReferenceTarget(

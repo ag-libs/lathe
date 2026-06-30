@@ -592,6 +592,24 @@ class ReferenceLocatorTest {
     assertThat(target.scope()).isEqualTo(ReferenceTarget.SearchScope.REACTOR_MODULES);
   }
 
+  // --- EG-027: out-of-range positions ---
+
+  @Test
+  void references_outOfRangePosition_returnsEmpty() {
+    final var source = "class Test { void run() {} }";
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+      final var request =
+          new SourceFeatureRequest(
+              TempSourceCompiler.TEST_URI,
+              source,
+              new Position(9999, 0),
+              List.of(),
+              WorkspaceManifest.empty());
+      assertThat(session.resolveTarget(request)).isNull();
+    }
+  }
+
   // --- edge cases ---
 
   @Test

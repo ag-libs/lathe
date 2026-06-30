@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Stream;
 
 /**
  * Live token-to-URI index for reference candidate discovery.
@@ -34,7 +35,7 @@ final class ReferenceCandidateIndex {
     final var index = new ReferenceCandidateIndex();
     for (final var root :
         allConfigs.stream()
-            .flatMap(config -> config.sourceRoots().stream())
+            .flatMap(ReferenceCandidateIndex::allSourceRoots)
             .distinct()
             .filter(Files::isDirectory)
             .toList()) {
@@ -75,6 +76,14 @@ final class ReferenceCandidateIndex {
 
   Set<String> candidateUris(final String token) {
     return tokenToUris.getOrDefault(token, Set.of());
+  }
+
+  private static Stream<Path> allSourceRoots(final ModuleSourceConfig config) {
+    if (config.originalGenSourcesDir() == null) {
+      return config.sourceRoots().stream();
+    }
+
+    return Stream.concat(config.sourceRoots().stream(), Stream.of(config.originalGenSourcesDir()));
   }
 
   private void indexRoot(final Path root) {

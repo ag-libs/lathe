@@ -68,6 +68,16 @@ class TypeHierarchyTest {
     }
   }
 
+  @Test
+  void prepareTypeHierarchy_outOfRangePosition_returnsEmpty() {
+    final String content = "interface Service {}\n";
+    final var request = request(content, new Position(9999, 0));
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(request.uri(), content, 1, CompileMode.OPEN);
+      assertThat(session.prepareTypeHierarchy(request, WorkspaceTypeIndex.empty())).isEmpty();
+    }
+  }
+
   private SourceFeatureRequest request(final String content, final Position position) {
     return new SourceFeatureRequest(
         TempSourceCompiler.TEST_URI,

@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.util.List;
 import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.SymbolKind;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -193,5 +194,34 @@ class WorkspaceSymbolTest {
   void fromTypeIndex_classAndUnknown_mapToClass() {
     assertThat(SymbolKinds.fromTypeIndex(TypeKind.CLASS)).isEqualTo(SymbolKind.Class);
     assertThat(SymbolKinds.fromTypeIndex(TypeKind.UNKNOWN)).isEqualTo(SymbolKind.Class);
+  }
+
+  // --- EG-033: declaration position ---
+
+  @Test
+  @Disabled("EG-033: workspace symbol range points to FILE_START instead of class declaration")
+  void resolve_class_rangePointsToDeclaration() throws IOException {
+    final Path dir = src.resolve("com/example");
+    Files.createDirectories(dir);
+    Files.writeString(
+        dir.resolve("Service.java"), "package com.example;\n\npublic class Service {}\n");
+    final var index = indexOf(entry("Service", "com.example", TypeKind.CLASS));
+    final List<SymbolInformation> result =
+        WorkspaceSymbolResolver.resolve("Service", index, List.of(src));
+    assertThat(result).hasSize(1);
+    final var range = result.getFirst().getLocation().getRange();
+    // "public class Service" — "Service" starts at character 13, line 2 (0-indexed)
+    assertThat(range.getStart().getLine()).isEqualTo(2);
+    assertThat(range.getStart().getCharacter()).isEqualTo(13);
+  }
+
+  @Test
+  @Disabled("EG-033: workspace symbol range points to FILE_START instead of class declaration")
+  void resolve_class_fallsBackToFileStartWhenNoSource() {
+    final var index = indexOf(entry("Ghost", "com.example", TypeKind.CLASS));
+    // no source file → resolveSourcePath returns null → result is empty (not FILE_START fallback)
+    final List<SymbolInformation> result =
+        WorkspaceSymbolResolver.resolve("Ghost", index, List.of(src));
+    assertThat(result).isEmpty();
   }
 }

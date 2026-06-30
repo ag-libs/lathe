@@ -32,7 +32,11 @@ public final class SourceLocator {
   private SourceLocator() {}
 
   public static long toOffset(final CompilationUnitTree cu, final int line, final int character) {
-    return cu.getLineMap().getPosition(line + 1, character + 1);
+    try {
+      return cu.getLineMap().getPosition(line + 1, character + 1);
+    } catch (final ArrayIndexOutOfBoundsException e) {
+      return Diagnostic.NOPOS;
+    }
   }
 
   public static Position offsetToPosition(final CompilationUnitTree cu, final long offset) {

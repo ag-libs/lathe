@@ -81,6 +81,17 @@ class CallHierarchyPrepareTest {
     }
   }
 
+  @Test
+  void prepareCallHierarchy_outOfRangePosition_returnsEmpty() throws IOException {
+    final String content = "class Service { void execute() {} }\n";
+    Files.writeString(sourceRoot.resolve("Service.java"), content);
+    final var request = request(content, new Position(9999, 0));
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(request.uri(), content, 1, CompileMode.OPEN);
+      assertThat(session.prepareCallHierarchy(request)).isEmpty();
+    }
+  }
+
   private SourceFeatureRequest request(final String content, final Position position) {
     return new SourceFeatureRequest(
         TempSourceCompiler.TEST_URI,

@@ -93,8 +93,20 @@ final class CandidateFactory {
   }
 
   CompletionCandidate variableCandidate(final String name, final TypeMirror type) {
+    final String formattedType = type != null ? typeDisplayFormatter.format(type) : null;
     return new CompletionCandidate(
-        name, name, CandidateKind.LOCAL_VARIABLE, null, name, false, null, type, null, null);
+        name,
+        name,
+        CandidateKind.LOCAL_VARIABLE,
+        null,
+        name,
+        false,
+        null,
+        null,
+        formattedType,
+        type,
+        null,
+        null);
   }
 
   CompletionCandidate memberCandidate(final Element el, final DeclaredType receiverType) {

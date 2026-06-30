@@ -9,7 +9,6 @@ import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.InsertTextFormat;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 class CompletionPresentationTest extends CompletionTestSupport {
@@ -155,8 +154,6 @@ class CompletionPresentationTest extends CompletionTestSupport {
   }
 
   @Test
-  @Disabled(
-      "CQ-0045: local-variable items carry no type detail (variableCandidate passes detail=null)")
   void completionItem_localVariable_usesFormattedTypeDetail() {
     // A field of the same name and type already presents its type (see the field test above); a
     // local variable should present it the same way. The type is known at build time on the
@@ -180,7 +177,6 @@ class CompletionPresentationTest extends CompletionTestSupport {
   }
 
   @Test
-  @Disabled("CQ-0045: method-parameter items carry no type detail")
   void completionItem_methodParameter_usesFormattedTypeDetail() {
     assertThat(
             itemWithFilterText(
