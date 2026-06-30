@@ -1807,6 +1807,175 @@ env -u JAVA_HOME mvn -q -pl lathe-maven-plugin -Dinvoker.test=<jdk-source-projec
 
 ---
 
+## EG-032 — Signature help returns nothing for a qualified call with empty parentheses when the method has parameters
+
+**Status: documented — Target: backlog**
+
+### Observed behaviour
+
+With the cursor between empty parentheses of a qualified (member-select) call — `receiver.method(¦)` —
+`textDocument/signatureHelp` returns nothing whenever the method declares one or more parameters.
+
+```java
+new Other().target(¦);   // Other.target(String name, int count) → no signature help
+obj.compute(¦);          // obj.compute(int n)                   → no signature help
+```
+
+Two adjacent cases behave correctly, which is what makes the gap surprising:
+
+- An **unqualified** self-call with the same empty parens does work: `target(¦)` shows the signature
+  with active parameter 0 (covered by `signatureHelp_zeroParamMethod_returnsEmptyParamList` and
+  `signatureHelp_incompleteSource_noClosingParen_returnsSignature`).
+- A **qualified zero-parameter** call works too: `obj.run(¦)` for `run()` resolves fine.
+
+Only the combination *qualified receiver* + *empty argument list* + *method with parameters* fails.
+Confirmed with a scratch `SignatureHelpResolver` test: `new Other().target(§)` returns `null`, while
+the unqualified `target(§)` form returns a signature.
+
+### Root cause
+
+`SignatureHelpResolver.resolve` resolves the called method two different ways depending on the
+method-select shape (`SignatureHelpResolver.java:61-95`):
+
+- For a `MemberSelectTree` (`receiver.method`), it relies on `trees.getElement(methodSelect)` being an
+  `ExecutableElement`. With empty parens and a method that requires arguments, javac overload
+  resolution finds **no** applicable zero-argument overload, so `getElement` does not yield a usable
+  `ExecutableElement`. Because the select is a `MemberSelectTree` (not an `IdentifierTree`), control
+  falls through to the final `else { return null; }` — no signature is produced.
+- For an `IdentifierTree` (unqualified `method(...)`), resolution goes through `methodsNamed(owner,
+  id.getName())`, which looks the overloads up **by name** and therefore does not depend on successful
+  overload resolution. This is why the unqualified path survives empty parens but the qualified path
+  does not.
+
+### Proposed fix
+
+When the member-select element does not resolve to an `ExecutableElement`, fall back to a by-name
+overload lookup on the receiver's type (the member-select expression's type), mirroring the
+`IdentifierTree` branch, instead of returning `null`. The active-parameter computation already handles
+an empty argument list (`activeParamFromArgs` returns 0), so only the candidate-resolution step needs
+the name-based fallback.
+
+### Probe commands
+
+```bash
+printf 'sig after "new Other().target("\nlog 5\n' \
+  | python3 dev/explore.py <file-with-a-qualified-call-to-a-parameterized-method>
+# observe: no signature help is returned, despite target(String, int) being in scope
+```
+
+### Regression targets
+
+- `SignatureHelpTest.signatureHelp_qualifiedEmptyParens_paramMethod_returnsSignature` (proposed)
+- `SignatureHelpTest.signatureHelp_qualifiedEmptyParens_zeroParamMethod_stillWorks` (proposed, guard)
+
+---
+
+## EG-033 — Workspace symbol (Telescope) results always jump to the file's first line, not the declaration
+
+**Status: documented — Target: backlog**
+
+### Observed behaviour
+
+Selecting a type from the workspace-symbol picker (Telescope's `lsp_workspace_symbols`, or any
+`workspace/symbol` client) opens the correct file but places the cursor at line 1, column 0 rather
+than on the selected type's declaration. For files with a license header, package statement, and
+imports, the declaration can be dozens of lines down, so every pick lands far from the symbol.
+
+### Root cause
+
+`WorkspaceSymbolResolver` assigns every result a constant location:
+
+```java
+private static final Range FILE_START = new Range(new Position(0, 0), new Position(0, 0));
+...
+final var location = new Location(file.toUri().toString(), FILE_START); // WorkspaceSymbolResolver.java:37
+```
+
+The `TypeIndexEntry` carries the file but no declaration position, so the resolver has nothing better
+than `(0,0)` to emit. The range is correct as a *file* reference but useless as a *navigation* target.
+
+### Proposed fix
+
+Carry the declaration's name position in the type index (or resolve it on demand when building the
+`SymbolInformation`) and emit a `Range` on the type's identifier rather than `FILE_START`. Reuse
+`SourceLocator.declarationNamePosition` (already used by `MethodImplementationLocator`) so the range
+matches what definition/implementation navigation produces. If a position cannot be resolved, fall back
+to `FILE_START` rather than dropping the symbol.
+
+### Probe commands
+
+```bash
+# In Neovim against a workspace: :Telescope lsp_workspace_symbols, pick a type whose declaration is
+# below a license header / imports, and observe the cursor lands on line 1 instead of the declaration.
+```
+
+### Regression targets
+
+- `WorkspaceSymbolResolverTest.resolve_typeBelowHeader_locationPointsAtDeclaration` (proposed)
+- `WorkspaceSymbolResolverTest.resolve_positionUnresolvable_fallsBackToFileStart` (proposed, guard)
+
+---
+
+## EG-034 — `textDocument/implementation` on an interface method omits record component accessors that implement it
+
+**Status: documented — Target: backlog**
+
+### Observed behaviour
+
+Asking for the implementations of an interface method does not list a record's component accessor even
+when that accessor satisfies the interface method.
+
+```java
+interface HasText { String text(); }
+record Impl(String text) implements HasText {}   // Impl.text() implements HasText.text()
+//                                                  but implementations of text() omit Impl
+```
+
+The omission is currently deliberate, not accidental: the existing test
+`MethodImplementationTest.methodImplementations_recordComponentAccessor_skipsWithoutCrash` asserts the
+result is **empty** for exactly this case, with the comment *"record accessor for 'text' is
+compiler-synthesized: no MethodDecl node in the AST"*. The locator avoids crashing but contributes no
+result, so the user sees no implementation where one genuinely exists.
+
+### Root cause
+
+`MethodImplementationLocator.location` resolves a result range from the implementing method's source
+tree (`MethodImplementationLocator.java:93-105`):
+
+```java
+final var path = analysis.trees().getPath(method);   // null for an implicit record accessor
+...
+SourceLocator.declarationNamePosition(analysis.trees(), tree, path, ...)
+```
+
+An implicitly declared record component accessor has no `MethodTree` in the AST, so `getPath(method)`
+yields no usable path and `declarationNamePosition` produces no position; the candidate is filtered out
+by `flatMap(method -> location(method).stream())`. The overrides check at
+`MethodImplementationLocator.java:85` (`elements().overrides(accessor, targetMethod, candidateType)`)
+does recognize the accessor — it is only the position resolution that drops it.
+
+### Proposed fix
+
+When the implementing method is an implicit record component accessor (no source path), fall back to
+the position of the matching record component in the record header (`RecordComponentTree` / the
+component's name token) instead of skipping it. That points navigation at `String text` in
+`record Impl(String text)`, which is the only meaningful source location for a synthesized accessor.
+Update the existing `skipsWithoutCrash` test to expect the component location once implemented.
+
+### Probe commands
+
+```bash
+# Place the cursor on an interface method that a record implements via a component accessor, then
+# request textDocument/implementation; observe the record is not listed among the implementations.
+```
+
+### Regression targets
+
+- `MethodImplementationTest.methodImplementations_recordComponentAccessor_returnsComponentLocation`
+  (replaces the current `_skipsWithoutCrash` expectation)
+
+---
+
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work
@@ -3189,6 +3358,129 @@ mis-resolved constructor-argument expected type.
 Related to CQ-0044 (member access under in-edit `var` in a lambda) only superficially — there the
 receiver type is unavailable; here the receiver (`config`) resolves fine and its members are computed,
 but the boolean ones are filtered out.
+
+---
+
+## CQ-0047 — Member access inside a void-returning lambda body (e.g. `Runnable`) drops every void-returning method
+
+ID: CQ-0047
+Status: documented
+Target: backlog
+Tier: typed
+Failure mode: missing-candidate
+Owner component: TypeResolver / MemberAccessCompleter / CompletionCandidateRanker
+Discovery: 2026-06-30, scratch-reproduced in `SignatureHelpResolver`-adjacent completion harness
+
+Cursor context:
+```java
+class Sched { void tick() {} long now() { return 0; } }
+class Ctx {
+    void addTask(Runnable r) {}
+    void run(Sched scheduler) {
+        addTask(() -> scheduler.§);     // member access inside a Runnable lambda body
+    }
+}
+```
+
+Lathe behavior:
+Member-access completion after `scheduler.` inside a lambda passed where a **void** functional
+interface (`Runnable`) is expected drops every void-returning method. `tick()` (returns `void`) is
+absent while `now()` (returns `long`) and the `Object` methods are offered. The same `scheduler.` in a
+plain statement (`scheduler.§;`) correctly offers both. Reproduced with a scratch test:
+
+- `scheduler.§;` (plain statement) → `[now, tick, equals, getClass, hashCode, toString]`.
+- `addTask(() -> scheduler.§)` (expression lambda) → `[now, equals, getClass, hashCode, toString]` — `tick` excluded.
+- `addTask(() -> { scheduler.§ })` (block lambda) → same exclusion.
+
+Expected Lathe behavior:
+The body of a lambda whose functional-interface SAM returns `void` is a **statement** position, where a
+void-returning call such as `scheduler.tick()` is the most likely completion. Void-returning methods
+must be offered (and not value-filtered) there, exactly as in any other statement position.
+
+Root cause:
+The lambda body's expected value collapses to the wrong slot, then the value-sensitive filter deletes
+void methods.
+
+1. `TypeResolver.resolveLambdaBodyExpectedValue` computes the lambda SAM return type
+   (`resolveLambdaSamReturnType`); for a `Runnable` it is `void`, and `completeType(void)` is `false`,
+   so it returns `ExpectedValue.Unknown` rather than a "statement / void slot" signal.
+2. `MemberAccessCompleter.memberAccessSemanticContext` sees `Unknown` and falls back to
+   `TypeResolver.resolveExpectedArgumentValue`, which resolves the **enclosing** `addTask(...)`
+   argument slot type — `Runnable` — and installs it as `ExpectedValue.Type(Runnable)`.
+3. `CompletionCandidateRanker.valid` then treats the context as value-sensitive
+   (`valueSensitiveContext` is true for any `ExpectedValue.Type`) and excludes every `voidMethod(...)`
+   candidate (`CompletionCandidateRanker.java:36`). `now()` survives because it is non-void;
+   `Object` methods survive via the `objectMethod` exemption.
+
+Suggested fix:
+Keep javac as the source of truth; do not parse. When the completion site is the body of a lambda whose
+SAM returns `void`, treat it as a statement position: either model a distinct "void/statement" expected
+value that suppresses the argument-slot fallback in `memberAccessSemanticContext`, or skip the
+`resolveExpectedArgumentValue` fallback when the nearest enclosing lambda has a void SAM. Void-returning
+methods must not be filtered in that context.
+
+Regression targets:
+- `CompletionMemberAccessTest.memberAccess_insideRunnableLambdaBody_offersVoidMethods` (proposed)
+- `CompletionMemberAccessTest.memberAccess_insideRunnableBlockLambdaBody_offersVoidMethods` (proposed)
+
+Notes:
+Same filter family as CQ-0043/CQ-0046 (a mis-resolved `ExpectedValue.Type` driving value-sensitive
+exclusion), but the deleted candidates here are *void methods* via `voidMethod`, not boolean members via
+`expectedTypeAllows`. A fix that stops fabricating an argument-slot expected type inside a void lambda
+body resolves this independently of the boolean-filter fixes.
+
+---
+
+## CQ-0048 — `instanceof` is never offered as a keyword candidate in expression position
+
+ID: CQ-0048
+Status: documented
+Target: backlog
+Tier: assistive
+Failure mode: missing-candidate
+Owner component: KeywordProvider
+
+Cursor context:
+```java
+class Test {
+    void m(Object o) {
+        if (o ins§) {}        // expect: instanceof
+        boolean b = o ins§;   // expect: instanceof
+    }
+}
+```
+
+Lathe behavior:
+`instanceof` is never suggested. Code inspection confirms the literal `"instanceof"` appears in **no**
+keyword list in `KeywordProvider` (`VALUE_EXPRESSIONS`, `CONTROL_FLOW`, etc.) and nowhere else in the
+completion module, so no sentinel context can ever produce it. After a reference-typed expression in an
+expression slot — where `instanceof` is the natural continuation — completion offers only the
+value-expression starters (`new`, `null`, `true`, `false`, `this`, `super`).
+
+Expected Lathe behavior:
+When the cursor follows a **reference-typed** expression in a position where a boolean/expression
+continuation is legal, `instanceof` should be offered as a keyword candidate (accepting it would yield
+`o instanceof `, ready for a type). It must **not** be offered after a primitive-typed expression, where
+`instanceof` is illegal, nor as a standalone statement starter.
+
+Root cause:
+`KeywordProvider` has no `instanceof` entry in any list, and `selectKeywords` for an expression-position
+`SIMPLE_NAME` returns `VALUE_EXPRESSIONS`, which contains only value starters. There is no rule that
+inspects the preceding expression's type to offer the infix `instanceof` operator keyword.
+
+Suggested fix:
+Add `instanceof` as a keyword candidate offered in expression position when the preceding expression
+resolves (via javac attribution, not text scanning) to a reference type. Gate it on the receiver type
+being non-primitive so it is suppressed for primitive expressions.
+
+Regression targets:
+- `CompletionSimpleNameTest.keyword_afterReferenceExpression_offersInstanceof` (proposed)
+- `CompletionSimpleNameTest.keyword_afterPrimitiveExpression_omitsInstanceof` (proposed, guard)
+
+Notes:
+Distinct from CQ-0011 (constructor-invocation keyword over-offering): this is a *missing* assistive
+keyword, not an invalid one. The type-gating requirement (reference vs primitive LHS) is what keeps it
+from being a plain unconditional keyword addition.
 
 ---
 
