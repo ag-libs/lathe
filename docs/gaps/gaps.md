@@ -2016,7 +2016,7 @@ an RPC/client error is captured.
 
 ## FR-006 — Method references ignore the override hierarchy, so interface-method searches miss real call sites
 
-Status: documented — Target: backlog.
+Status: accepted — Target: M1.
 Discovered 2026-06-30, gap validation pass.
 
 ### Observed behaviour
@@ -2080,22 +2080,74 @@ method and its overrides are treated as unrelated symbols.
 `includeDeclaration` itself is handled correctly (`ReferenceLocator.visitMethod` adds the declaration
 only when the flag is set); it is not the defect.
 
-### Proposed fix
+### Implementation
 
 Make method identity override-aware rather than owner-exact.
-When the candidate element and the target share a simple name and erased descriptor, accept the match
-if either element overrides the other anywhere in the type hierarchy, using `Elements.overrides`
-together with the supertype walk already used for definition/hover override resolution (EG-012).
-The descriptor comparison stays, so overloads are still distinguished.
-
-This is a correctness change to symbol matching only; search scope, candidate planning, and
+The change is confined to the references matching path; search scope, candidate planning, and
 `includeDeclaration` behaviour are unchanged.
+All hierarchy queries reuse `Elements.overrides`, which already performs the type-substitution and
+signature checks, so no manual descriptor or supertype walking is added.
+
+The mechanics already exist in `MethodImplementationLocator` (the `textDocument/implementation`
+feature) and `DeclarationLocator` (EG-012); the work is to reuse them on the references path rather
+than introduce new traversal.
+
+1. **Reconstruct the target method once per analysis.**
+   In each compilation context the target is reconstructed from its captured strings: resolve the
+   owner with `elements.getTypeElement(target.qualifiedName().replace('$', '.'))`, then select the
+   enclosed `ExecutableElement` for which the existing exact `ReferenceTarget.matches` is true.
+   This is exactly what `MethodImplementationLocator.locate` already does, so the reconstruction is
+   extracted into a shared helper (e.g. `ReferenceTarget.resolveMethodElement(elements)`) and reused
+   by both locators to satisfy the DRY rule.
+   The result is computed once in `ReferenceLocator.references`, not per visited node.
+
+2. **Accept overrides in both directions.**
+   For a candidate executable `ee` resolved at a use site, with `targetMethod` reconstructed in
+   step 1 and its owner `targetOwner`, accept the match when any of the following holds:
+   - the current exact owner-binary-name + erased-descriptor comparison (unchanged fast path);
+   - `elements.overrides(ee, targetMethod, (TypeElement) ee.getEnclosingElement())` — the candidate
+     overrides the target, covering an interface/supertype target matched at a call through a
+     concrete subtype (`i.handle()`);
+   - `elements.overrides(targetMethod, ee, targetOwner)` — the target overrides the candidate,
+     covering an override target matched at a call through the supertype (`s.handle()`).
+
+3. **Keep overloads and siblings distinct.**
+   The descriptor comparison stays and `Elements.overrides` enforces signature compatibility, so
+   unrelated overloads never match, and sibling overrides (`Impl.handle` vs `Impl2.handle`) do not
+   match each other directly — they relate only through the shared ancestor, which is the
+   conventional "could-dispatch-here" semantics.
+
+4. **Constructors stay exact.**
+   The override-aware branch applies to `ElementKind.METHOD` only; the `CONSTRUCTOR` branch keeps the
+   exact owner + descriptor comparison, since constructors are never overridden.
+
+5. **Single integration point.**
+   The override-aware check is placed so it flows through every method use site —
+   `visitIdentifier`, `visitMemberSelect`, `visitMemberReference`, and `visitNewClass` — uniformly.
+   If the target cannot be reconstructed in a given compilation (owner type absent from the path),
+   the code falls back to the existing exact comparison so no current match regresses.
+
+**Residual scope limitation (not addressed here).**
+Override-aware matching only finds call sites in files the search already attributes.
+The textual candidate index keys on the method simple name and public methods search
+`REACTOR_MODULES`, so the common case is covered; implementations in modules outside the searched
+scope remain a separate coverage concern tracked under FR-002.
 
 ### Regression targets
+
+Enable on implementation:
 
 - `ReferenceLocatorTest.method_interfaceDeclaration_findsCallThroughImplementingType` (added,
   `@Disabled`)
 - `ReferenceLocatorTest.method_override_findsCallThroughInterfaceType` (added, `@Disabled`)
+
+Add on implementation:
+
+- a cross-file variant asserting an interface-method search matches an override call site in a
+  separate compilation;
+- a negative case asserting a sibling override (`Impl2.handle`) and an unrelated overload are not
+  matched;
+- a constructor case asserting the exact-match behaviour is unchanged.
 
 ### Find References notes
 
