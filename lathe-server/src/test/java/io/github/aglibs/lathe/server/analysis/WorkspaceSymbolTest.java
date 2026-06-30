@@ -10,7 +10,6 @@ import java.nio.file.Path;
 import java.util.List;
 import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.SymbolKind;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -18,10 +17,9 @@ class WorkspaceSymbolTest {
 
   @TempDir private Path src;
 
-  private static TypeIndexEntry entry(
-      final String simpleName, final String pkg, final TypeKind kind) {
+  private static TypeIndexEntry entry(final String simpleName, final String pkg) {
     final String qualName = pkg.isEmpty() ? simpleName : pkg + "." + simpleName;
-    return new TypeIndexEntry(simpleName, qualName, pkg, kind, true, List.of());
+    return new TypeIndexEntry(simpleName, qualName, pkg, TypeKind.CLASS, true, List.of());
   }
 
   private WorkspaceTypeIndex indexOf(final TypeIndexEntry... entries) {
@@ -39,7 +37,7 @@ class WorkspaceSymbolTest {
   @Test
   void resolve_emptyOrBlankQuery_returnsEmpty() throws IOException {
     createSourceFile("com.example", "MyClass");
-    final var index = indexOf(entry("MyClass", "com.example", TypeKind.CLASS));
+    final var index = indexOf(entry("MyClass", "com.example"));
     assertThat(WorkspaceSymbolResolver.resolve("", index, List.of(src))).isEmpty();
     assertThat(WorkspaceSymbolResolver.resolve("   ", index, List.of(src))).isEmpty();
   }
@@ -49,7 +47,7 @@ class WorkspaceSymbolTest {
   @Test
   void resolve_matchingClass_returnsSymbol() throws IOException {
     createSourceFile("com.example", "UserService");
-    final var index = indexOf(entry("UserService", "com.example", TypeKind.CLASS));
+    final var index = indexOf(entry("UserService", "com.example"));
     final List<SymbolInformation> result =
         WorkspaceSymbolResolver.resolve("User", index, List.of(src));
     assertThat(result).hasSize(1);
@@ -60,7 +58,7 @@ class WorkspaceSymbolTest {
 
   @Test
   void resolve_noMatchingFile_excludesResult() {
-    final var index = indexOf(entry("Missing", "com.example", TypeKind.CLASS));
+    final var index = indexOf(entry("Missing", "com.example"));
     final List<SymbolInformation> result =
         WorkspaceSymbolResolver.resolve("Miss", index, List.of(src));
     assertThat(result).isEmpty();
@@ -69,7 +67,7 @@ class WorkspaceSymbolTest {
   @Test
   void resolve_defaultPackage_resolvesRootFile() throws IOException {
     createSourceFile("", "Standalone");
-    final var index = indexOf(entry("Standalone", "", TypeKind.CLASS));
+    final var index = indexOf(entry("Standalone", ""));
     final List<SymbolInformation> result =
         WorkspaceSymbolResolver.resolve("Stand", index, List.of(src));
     assertThat(result).hasSize(1);
@@ -80,10 +78,7 @@ class WorkspaceSymbolTest {
   void resolve_multipleMatchingTypes_returnsAll() throws IOException {
     createSourceFile("com.example", "FooBar");
     createSourceFile("com.example", "FooBaz");
-    final var index =
-        indexOf(
-            entry("FooBar", "com.example", TypeKind.CLASS),
-            entry("FooBaz", "com.example", TypeKind.CLASS));
+    final var index = indexOf(entry("FooBar", "com.example"), entry("FooBaz", "com.example"));
     final List<SymbolInformation> result =
         WorkspaceSymbolResolver.resolve("Foo", index, List.of(src));
     assertThat(result).hasSize(2);
@@ -97,7 +92,7 @@ class WorkspaceSymbolTest {
   @Test
   void resolve_location_hasCorrectUriAndRange() throws IOException {
     createSourceFile("com.example", "Foo");
-    final var index = indexOf(entry("Foo", "com.example", TypeKind.CLASS));
+    final var index = indexOf(entry("Foo", "com.example"));
     final List<SymbolInformation> result =
         WorkspaceSymbolResolver.resolve("Foo", index, List.of(src));
     final var loc = result.getFirst().getLocation();
@@ -116,7 +111,7 @@ class WorkspaceSymbolTest {
     final Path dir = src2.resolve("com/example");
     Files.createDirectories(dir);
     Files.writeString(dir.resolve("Remote.java"), "");
-    final var index = indexOf(entry("Remote", "com.example", TypeKind.CLASS));
+    final var index = indexOf(entry("Remote", "com.example"));
     final List<SymbolInformation> result =
         WorkspaceSymbolResolver.resolve("Rem", index, List.of(src, src2));
     assertThat(result).hasSize(1);
@@ -138,7 +133,7 @@ class WorkspaceSymbolTest {
 
   @Test
   void resolveSourcePath_noMatchingDir_returnsNull() {
-    final var e = entry("Ghost", "com.missing", TypeKind.CLASS);
+    final var e = entry("Ghost", "com.missing");
     assertThat(WorkspaceSymbolResolver.resolveSourcePath(e, List.of(src))).isNull();
   }
 
@@ -168,7 +163,7 @@ class WorkspaceSymbolTest {
     createSourceFile("com.example", "FooTest");
     final var index =
         indexOf(
-            entry("Foo", "com.example", TypeKind.CLASS),
+            entry("Foo", "com.example"),
             new TypeIndexEntry(
                 "FooTest", "com.example.FooTest", "com.example", TypeKind.CLASS, false, List.of()));
 
@@ -199,13 +194,12 @@ class WorkspaceSymbolTest {
   // --- EG-033: declaration position ---
 
   @Test
-  @Disabled("EG-033: workspace symbol range points to FILE_START instead of class declaration")
   void resolve_class_rangePointsToDeclaration() throws IOException {
     final Path dir = src.resolve("com/example");
     Files.createDirectories(dir);
     Files.writeString(
         dir.resolve("Service.java"), "package com.example;\n\npublic class Service {}\n");
-    final var index = indexOf(entry("Service", "com.example", TypeKind.CLASS));
+    final var index = indexOf(entry("Service", "com.example"));
     final List<SymbolInformation> result =
         WorkspaceSymbolResolver.resolve("Service", index, List.of(src));
     assertThat(result).hasSize(1);
@@ -216,9 +210,8 @@ class WorkspaceSymbolTest {
   }
 
   @Test
-  @Disabled("EG-033: workspace symbol range points to FILE_START instead of class declaration")
   void resolve_class_fallsBackToFileStartWhenNoSource() {
-    final var index = indexOf(entry("Ghost", "com.example", TypeKind.CLASS));
+    final var index = indexOf(entry("Ghost", "com.example"));
     // no source file → resolveSourcePath returns null → result is empty (not FILE_START fallback)
     final List<SymbolInformation> result =
         WorkspaceSymbolResolver.resolve("Ghost", index, List.of(src));
