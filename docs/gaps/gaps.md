@@ -158,7 +158,7 @@ code-action gap CA-1 should be applied alongside it.
 
 ## EG-003 — Hover returns null on positions inside Javadoc type-reference tags
 
-**Status: deferred — Target: backlog**
+**Status: accepted — Target: M2**
 
 ### Observed behaviour
 
@@ -1559,7 +1559,7 @@ Returning `OptionalInt.empty()` or a sentinel failure result is preferable to ca
 
 ## EG-028 — `textDocument/onTypeFormatting` is a stub and is not registered
 
-**Status: documented — Target: backlog**
+**Status: accepted — Target: M2**
 
 ### Observed behaviour
 
@@ -1614,7 +1614,7 @@ registration in `LatheLanguageServer`.
 
 ## EG-029 — `rangeFormat` ignores its range and formats the whole document
 
-**Status: documented — Target: backlog**
+**Status: accepted — Target: M2**
 
 ### Observed behaviour
 
@@ -1716,7 +1716,7 @@ revisited, add the tree-sitter chain-anchor rule and a fixture for the `.get()`-
 
 ## EG-031 — JDK source resolution depends solely on `JAVA_HOME`, and its absence is silent and undiagnosable
 
-**Status: documented — Target: backlog**
+**Status: accepted — Target: M2**
 
 ### Observed behaviour
 
@@ -1809,7 +1809,7 @@ env -u JAVA_HOME mvn -q -pl lathe-maven-plugin -Dinvoker.test=<jdk-source-projec
 
 ## EG-032 — Signature help returns nothing for a qualified call with empty parentheses when the method has parameters
 
-**Status: documented — Target: backlog**
+**Status: accepted — Target: M2**
 
 ### Observed behaviour
 
@@ -1872,7 +1872,7 @@ printf 'sig after "new Other().target("\nlog 5\n' \
 
 ## EG-033 — Workspace symbol (Telescope) results always jump to the file's first line, not the declaration
 
-**Status: documented — Target: backlog**
+**Status: accepted — Target: M2**
 
 ### Observed behaviour
 
@@ -1918,7 +1918,7 @@ to `FILE_START` rather than dropping the symbol.
 
 ## EG-034 — `textDocument/implementation` on an interface method omits record component accessors that implement it
 
-**Status: documented — Target: backlog**
+**Status: accepted — Target: M2**
 
 ### Observed behaviour
 
@@ -2152,7 +2152,7 @@ The test must inspect returned URIs and ranges, not only result count.
 
 ## FR-005 — Client response incident is not reproducibly covered
 
-Status: deferred — Target: backlog.
+Status: accepted — Target: M2.
 Observed incident; server defect not established.
 
 In the Helidon incident, the server log ended immediately after:
@@ -2185,7 +2185,7 @@ an RPC/client error is captured.
 
 ## FR-006 — Method references ignore the override hierarchy, so interface-method searches miss real call sites
 
-Status: accepted — Target: M1.
+Status: accepted — Target: M2.
 Discovered 2026-06-30, gap validation pass.
 
 ### Observed behaviour
@@ -2709,8 +2709,8 @@ and should be reconfirmed against valid syntax before being recorded as gaps.
 ## CQ-0035 — Parser fails to recognise enclosing method when closing `}` is missing (typed over)
 
 ID: CQ-0035
-Status: deferred
-Target: backlog
+Status: accepted
+Target: M2
 Tier: Basic
 Discovery: 2025-07-25, AppServerConfig.java compact constructor (sample-workspace)
 
@@ -3060,8 +3060,8 @@ which forced reattribution when a stale snapshot had already resolved the receiv
 ## CQ-0043 — Argument-position type filtering excludes boolean returns but lets other mismatched types through
 
 ID: CQ-0043
-Status: documented
-Target: backlog
+Status: accepted
+Target: M2
 Tier: typed
 Failure mode: missing-candidates
 Owner component: CompletionCandidateRanker
@@ -3137,8 +3137,8 @@ mismatched non-boolean candidates survive.
 ## CQ-0044 — Member access on a `var` local declared inside a lambda body returns no candidates
 
 ID: CQ-0044
-Status: documented
-Target: backlog
+Status: accepted
+Target: M2
 Tier: typed
 Failure mode: missing-candidates
 Owner component: TypeResolver / CandidateGenerator
@@ -3198,8 +3198,8 @@ no generics are involved.
 ## CQ-0045 — Local-variable and parameter completion items carry no type detail
 
 ID: CQ-0045
-Status: documented
-Target: backlog
+Status: accepted
+Target: M2
 Tier: presentation
 Failure mode: missing-detail
 Owner component: CandidateFactory
@@ -3273,8 +3273,8 @@ separation.
 ## CQ-0046 — Boolean members are dropped in constructor-call argument completion, emptying the popup
 
 ID: CQ-0046
-Status: documented
-Target: backlog
+Status: accepted
+Target: M2
 Tier: typed
 Failure mode: missing-candidate
 Owner component: TypeResolver / CompletionCandidateRanker
@@ -3364,8 +3364,8 @@ but the boolean ones are filtered out.
 ## CQ-0047 — Member access inside a void-returning lambda body (e.g. `Runnable`) drops every void-returning method
 
 ID: CQ-0047
-Status: documented
-Target: backlog
+Status: accepted
+Target: M2
 Tier: typed
 Failure mode: missing-candidate
 Owner component: TypeResolver / MemberAccessCompleter / CompletionCandidateRanker
@@ -3434,8 +3434,8 @@ body resolves this independently of the boolean-filter fixes.
 ## CQ-0048 — `instanceof` is never offered as a keyword candidate in expression position
 
 ID: CQ-0048
-Status: documented
-Target: backlog
+Status: accepted
+Target: M2
 Tier: assistive
 Failure mode: missing-candidate
 Owner component: KeywordProvider
@@ -3564,8 +3564,8 @@ or pick up one of the gaps explicitly assigned to M2.
 ## CQ-0011 — Constructor invocation keywords can be offered when an explicit invocation already exists
 
 ID: CQ-0011
-Status: deferred
-Target: backlog
+Status: accepted
+Target: M2
 Tier: semantic
 Failure mode: invalid-keyword-candidate
 Owner component: KeywordProvider / SentinelParser
@@ -3619,8 +3619,8 @@ or `super.member` access where those are otherwise legal.
 ## CQ-0002 — Method-reference completion returns no candidates
 
 ID: CQ-0002
-Status: deferred
-Target: backlog
+Status: accepted
+Target: M2
 Tier: assistive
 Failure mode: missing-candidate
 Owner component: SentinelInjector / SentinelParser
