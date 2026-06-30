@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -19,6 +20,31 @@ class JdkSourceResolverTest {
     assertThat(result.isPresent()).isFalse();
     assertThat(result.home()).isNull();
     assertThat(result.cacheKey()).isNotBlank().doesNotContain(" ");
+  }
+
+  @Test
+  @Disabled("EG-031: when JAVA_HOME is unset, fall back to the running JVM's java.home")
+  void resolve_javaHomeUnset_fallsBackToRunningJavaHome() throws IOException {
+    final Path runningHome = Path.of(System.getProperty("java.home")).toRealPath();
+
+    final JdkSource result = JdkSourceResolver.resolve(Map.of());
+
+    assertThat(result.home()).isEqualTo(runningHome);
+  }
+
+  @Test
+  @Disabled("EG-031: a JAVA_HOME pointing at a symlink into a JDK must resolve to the real home")
+  void resolve_symlinkedHome_resolvesToRealPath() throws IOException {
+    final Path realHome = tmp.resolve("real-jdk");
+    Files.createDirectories(realHome.resolve("lib"));
+    Files.createFile(realHome.resolve("lib/src.zip"));
+    final Path link = Files.createSymbolicLink(tmp.resolve("jdk-link"), realHome);
+
+    final JdkSource result = JdkSourceResolver.resolve(Map.of("JAVA_HOME", link.toString()));
+
+    assertThat(result.isPresent()).isTrue();
+    assertThat(result.home()).isEqualTo(realHome.toRealPath());
+    assertThat(result.sourceZip()).isEqualTo(realHome.toRealPath().resolve("lib/src.zip"));
   }
 
   @Test

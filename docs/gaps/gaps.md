@@ -1714,6 +1714,99 @@ revisited, add the tree-sitter chain-anchor rule and a fixture for the `.get()`-
 
 ---
 
+## EG-031 — JDK source resolution depends solely on `JAVA_HOME`, and its absence is silent and undiagnosable
+
+**Status: documented — Target: backlog**
+
+### Observed behaviour
+
+`JdkSourceResolver` locates `src.zip` only through the `JAVA_HOME` environment variable.
+When `JAVA_HOME` is not set, `lathe:sync` produces no JDK source cache and the only trace is a single
+unexplained INFO line:
+
+```
+[sync] jdk sources missing
+```
+
+Two distinct, unrelated situations produce that same line:
+
+1. `JAVA_HOME` is unset — even when the build is genuinely running on a full JDK. This includes the
+   common setup where the `java` launcher on `PATH` is a symlink into a valid JDK directory (so the
+   running JVM has a real JDK home and a `lib/src.zip`), but `JAVA_HOME` was never exported.
+2. `JAVA_HOME` is set, but the JDK ships no `lib/src.zip` (a JRE, or a JDK installed without sources).
+
+The two causes are indistinguishable from the log, and neither tells the user that setting
+`JAVA_HOME` (or installing a full JDK) would enable JDK source navigation, hover, and the JDK type
+index.
+Case 1 is the surprising one: the JDK home is knowable from the running JVM, yet lathe reports the
+sources as missing purely because one env var is absent.
+
+Downstream, definition and hover into JDK types silently fall back to class-only behaviour because
+`JdkSourceData.status` is `MISSING` with no recorded reason.
+
+### Root cause
+
+`JdkSourceResolver.resolve(env)` reads `home` exclusively from `env.get("JAVA_HOME")` and never
+consults the running JVM's authoritative `java.home` system property (`System.getProperty("java.home")`
+is used nowhere in the codebase).
+It then collapses two distinct conditions into one `SourceStatus.MISSING`:
+
+```java
+final String javaHome = env.get("JAVA_HOME");
+if (javaHome == null) {
+  return JdkSource.missing(vendor, version, cacheKey(null, vendor, version), null); // home == null
+}
+...
+if (Files.exists(sourceZip)) {
+  return JdkSource.present(...);
+}
+return JdkSource.missing(vendor, version, key, home);                                // home != null
+```
+
+`JdkSource.missing` records `SourceStatus.MISSING` and drops the reason.
+The `home` field is the only surviving signal (`null` ⇒ `JAVA_HOME` unset, non-`null` ⇒ `src.zip`
+absent), and it is never surfaced.
+`JdkSourceSync.extract` then logs the bare `"[sync] jdk sources missing"` for both cases, with no
+reason, no inspected path, and no remediation — and the message does not follow the project's
+`[operation] target detail outcome` log convention.
+
+### Proposed fix
+
+Two independent improvements:
+
+1. **Resolve the JDK home robustly, not from `JAVA_HOME` alone.** When `JAVA_HOME` is unset, fall back
+   to the running JVM's `java.home` (with symlinks resolved via `toRealPath()`), which is the JDK that
+   actually compiles the workspace and carries the matching `lib/src.zip`. This covers the
+   symlinked-launcher case and any environment that omits `JAVA_HOME`. `JAVA_HOME`, when present, may
+   still take precedence so a user can point lathe at a different JDK's sources.
+2. **Diagnose the remaining genuine-missing cases actionably**, distinguishing them:
+   - no JDK home resolvable at all → a WARNING naming the cause and the remedy, e.g.
+     `[sync] jdk-sources unresolved no-jdk-home set JAVA_HOME or run the build on a JDK to enable JDK source navigation`.
+   - JDK home resolved but `lib/src.zip` absent → a WARNING naming the inspected path, e.g.
+     `[sync] jdk-sources missing <home>/lib/src.zip not-found install a full JDK with sources`.
+
+Optionally carry the reason on the model (a `MISSING` sub-reason on `JdkSource`/`JdkSourceData`, or a
+distinct status) so the server can explain JDK-source absence on a definition or hover into a JDK
+type rather than silently degrading.
+
+### Probe commands
+
+```bash
+# JAVA_HOME unset while running on a real JDK (e.g. a symlinked launcher on PATH):
+env -u JAVA_HOME mvn -q -pl lathe-maven-plugin -Dinvoker.test=<jdk-source-project> verify
+# observe the single "[sync] jdk sources missing" line; confirm no cause/remedy is reported and that
+# no JDK source cache was produced even though the build ran on a JDK with lib/src.zip
+```
+
+### Regression targets
+
+- `JdkSourceResolverTest.resolve_javaHomeUnset_fallsBackToRunningJavaHome` (added, `@Disabled`)
+- `JdkSourceResolverTest.resolve_symlinkedHome_resolvesToRealPath` (added, `@Disabled`)
+- `JdkSourceResolverTest.resolve_srcZipAbsent_recordsAbsentReason` (proposed; needs a `MISSING` sub-reason on the model)
+- `JdkSourceSyncTest.extract_noJdkHome_logsActionableWarning` (proposed; no `JdkSourceSyncTest` exists yet)
+
+---
+
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work
@@ -2798,6 +2891,172 @@ no generics are involved.
 
 ---
 
+## CQ-0045 — Local-variable and parameter completion items carry no type detail
+
+ID: CQ-0045
+Status: documented
+Target: backlog
+Tier: presentation
+Failure mode: missing-detail
+Owner component: CandidateFactory
+Discovery: 2026-06-30, gap validation pass
+
+Cursor context:
+```java
+class Test {
+    void m() {
+        String greeting = "hi";
+        System.out.println(gree§);
+    }
+}
+```
+
+Lathe behavior:
+The `greeting` completion item is offered but its `detail`, `labelDetails.detail`, and
+`labelDescription` are all `null`, so the popup shows only the bare name `greeting` with no type.
+A field of the same name and type, by contrast, is presented with `detail = "String"` and
+`labelDetails.description = "String"`.
+The type is known at candidate-build time — it is stored on the candidate's `valueType` and used for
+ranking — but it is never rendered.
+
+Confirmed by a probe at the cursor above: the local-variable item resolves to
+`label=greeting detail=null labelDetails=null`, while the field variant resolves to
+`label=greeting detail=String labelDescription=String`.
+
+Expected Lathe behavior:
+Local-variable and method-parameter items should show their type the same way fields do —
+`labelDescription` (and/or `detail`) set to the formatted type, so the popup reads `greeting : String`.
+Presentation only; semantic filtering and ranking are unchanged.
+
+Root cause:
+`CandidateFactory.variableCandidate(name, type)` constructs the candidate through the 10-arg
+`CompletionCandidate` constructor with `detail = null` and no `labelDetail`/`labelDescription`,
+passing the type solely as `valueType`:
+
+```java
+CompletionCandidate variableCandidate(final String name, final TypeMirror type) {
+  return new CompletionCandidate(
+      name, name, CandidateKind.LOCAL_VARIABLE, null, name, false, null, type, null, null);
+}
+```
+
+`fieldCandidate`, in contrast, formats the type via `TypeDisplayFormatter` and passes it as `detail`
+and `labelDescription`.
+`CompletionItemPresenter` faithfully renders whatever the candidate carries, so the empty detail
+originates entirely in `variableCandidate`.
+
+Suggested fix:
+Format `type` with the existing `TypeDisplayFormatter` and pass it as `labelDescription` (mirroring
+`fieldCandidate`) so locals, parameters, and fields present consistently.
+Guard the `null`-type case (parameters whose element did not resolve are added with a `null` type in
+`SimpleNameProvider.addMethodLocals`): omit the detail when the type is unknown rather than rendering
+a placeholder.
+Keep `valueType` for ranking. No change to candidate discovery or filtering.
+
+Regression targets (added, `@Disabled` pending the fix):
+- `CompletionPresentationTest.completionItem_localVariable_usesFormattedTypeDetail`
+- `CompletionPresentationTest.completionItem_methodParameter_usesFormattedTypeDetail`
+
+Notes:
+Distinct from the typed-tier completion gaps (CQ-0029/0030/0040/0042/0044), which are about *missing
+candidates*; here the candidate is present and correctly ranked, only its display detail is absent.
+This is a presentation-tier gap — the tier the completion
+[expectations](../planned/lathe-completion-expectations.md) defines as the "label vs detail"
+separation.
+
+---
+
+## CQ-0046 — Boolean members are dropped in constructor-call argument completion, emptying the popup
+
+ID: CQ-0046
+Status: documented
+Target: backlog
+Tier: typed
+Failure mode: missing-candidate
+Owner component: TypeResolver / CompletionCandidateRanker
+Discovery: 2026-06-30, real-workspace validation pass (`AppServer` constructor wiring)
+
+Cursor context:
+```java
+class Config {
+    boolean isReady() { return true; }
+    String name() { return ""; }
+}
+class Service {
+    Service(boolean flag) {}
+}
+class Test {
+    void m() {
+        Config config = new Config();
+        final var svc = new Service(config.§);   // member access at a constructor boolean slot
+    }
+}
+```
+
+Lathe behavior:
+Member-access completion after `config.` inside a **constructor** argument drops every
+boolean-returning member.
+`isReady()` (returns `boolean`) is absent while `name()` (returns `String`) is offered.
+When the typed prefix matches only the boolean member (`config.isR§`), the popup is **empty**.
+The same `config.` at a **method-call** argument slot (`accept(config.§)`) correctly offers
+`isReady()`.
+
+Confirmed by probes:
+- `new Service(config.§)` → `[name, equals, getClass, hashCode, toString]` — `isReady` excluded.
+- `new Service(config.isR§)` → `[]` — empty popup.
+- `accept(config.§)` (method call, same types) → `[isReady, ...]` — present.
+The defect is **not** `var`-specific: an explicitly-typed target (`final Service svc = ...`) behaves
+identically, and it reproduces at any constructor argument index (observed on a real workspace at both
+the first and the sixth argument of two different constructor calls).
+
+Expected Lathe behavior:
+A boolean-returning member is a valid completion at a `boolean` constructor argument and must be
+offered (and, when the slot is boolean, ranked first).
+More generally, constructor-argument slots should resolve the expected type from the constructor
+parameter, exactly as method-argument slots do.
+
+Root cause:
+Two defects compound.
+
+1. **Constructor-argument expected-type resolution is missing for the by-position path.**
+   `TypeResolver.resolveArgumentValueByPosition` overrides only `visitMethodInvocation`; it never
+   visits `NewClassTree`. For a member-access cursor inside a constructor argument, neither the
+   name-based `resolveArgumentValue` nor the position-based scan resolves the constructor parameter
+   type, so resolution falls through to `resolveInitializerValue`, which yields the **constructed /
+   declared** type (here `Service`, a non-boolean) as the expected value.
+2. **The asymmetric boolean-only filter then deletes the candidate.**
+   With a non-boolean expected type in hand, `CompletionCandidateRanker.expectedTypeAllows`
+   hard-excludes any candidate whose value type is `TypeKind.BOOLEAN` (returning
+   `booleanCompatible(expected)`), while non-boolean mismatches fall through to `return true`. This is
+   the exact asymmetry recorded in CQ-0043; it is what removes `isReady()` while keeping `name()`.
+
+Suggested fix:
+Keep javac as the source of truth; route through the existing sentinel/recovery pipeline rather than
+parsing.
+
+1. Resolve constructor-argument expected types by position: handle `NewClassTree` in the
+   argument-by-position scan (mirroring the `visitMethodInvocation` branch and the existing
+   `resolveConstructorArgumentValue` lookup) so the `boolean` parameter type is recovered for a
+   member-access cursor.
+2. Fix CQ-0043 (rank rather than hard-exclude boolean value types) so a boolean member is never
+   *deleted* even when the expected type is mis-resolved — only demoted. Either fix alone restores the
+   user-visible candidate; both are warranted, and they should be implemented together.
+
+Regression targets:
+- `CompletionArgumentTest.constructorArgument_memberAccess_booleanReturn_offeredAtBooleanSlot` (added, `@Disabled`)
+- `CompletionArgumentTest.constructorArgument_booleanPrefix_popupNotEmpty` (added, `@Disabled`)
+- `TypeResolverTest.resolveExpectedValue_constructorArgumentByPosition_resolvesParamType` (proposed; no `TypeResolverTest` exists yet)
+
+Notes:
+This is the real-workspace reproduction of CQ-0043: the user's symptom (an empty popup after
+`config.isR` in `new Service(config.isReady())`) is the boolean-only exclusion firing against a
+mis-resolved constructor-argument expected type.
+Related to CQ-0044 (member access under in-edit `var` in a lambda) only superficially — there the
+receiver type is unavailable; here the receiver (`config`) resolves fine and its members are computed,
+but the boolean ones are filtered out.
+
+---
+
 ## Current Triage
 
 All accepted completion-quality gaps from the `DropwizardResourceConfig` explorer pass have been resolved or triaged.
@@ -2859,6 +3118,18 @@ A 2026-06-29 validation pass recorded two new `documented` gaps awaiting triage:
 `CQ-0043` (argument-position type filtering excludes boolean returns but lets other mismatched types
 through) and `CQ-0044` (member access on a `var` local declared inside a lambda body returns no
 candidates, found on `AppServer` `runner.validate()`).
+
+A 2026-06-30 validation pass recorded two more `documented` gaps:
+`CQ-0045` (local-variable and parameter completion items carry no type detail, while fields do) and
+`CQ-0046` (boolean members are dropped in constructor-call argument completion, emptying the popup —
+the real-workspace reproduction of `CQ-0043`, found on `AppServer` constructor wiring
+`new Service(config.isReady())`).
+The same pass investigated a reported "boolean variable or boolean-returning method not offered for a
+boolean parameter" and could **not** reproduce it at ordinary boolean argument slots: at a `boolean`
+(or boxed `Boolean`) parameter, boolean locals and boolean-returning methods are offered and
+top-ranked across typed-prefix, second-parameter, overloaded, and `if`-condition contexts. The only
+failing case is the constructor-argument member-access path, which is captured as `CQ-0046`; no
+separate gap was opened for the boolean-slot claim.
 
 Next completion work should run a new explorer pass with a different focus area,
 or pick up one of the gaps explicitly assigned to M2.

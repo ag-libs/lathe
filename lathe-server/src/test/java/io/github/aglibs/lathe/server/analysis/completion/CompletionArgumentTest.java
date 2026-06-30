@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import java.io.IOException;
 import java.util.List;
 import org.eclipse.lsp4j.CompletionItem;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 class CompletionArgumentTest extends CompletionTestSupport {
@@ -234,6 +235,55 @@ class CompletionArgumentTest extends CompletionTestSupport {
   }
 
   // ── constructor call position ─────────────────────────────────────────────────
+
+  @Test
+  @Disabled("CQ-0046: boolean members dropped in constructor-arg member-access completion")
+  void constructorArgument_memberAccess_booleanReturn_offeredAtBooleanSlot() {
+    // Mirrors the method-call argument path, which already offers the boolean member. The
+    // constructor-arg path falls through to the constructed/declared type as the expected value
+    // (TypeResolver.resolveArgumentValueByPosition handles MethodInvocationTree but not
+    // NewClassTree), and the asymmetric boolean-only filter (CQ-0043) then deletes the candidate.
+    final var items =
+        labels(
+            fixture.complete(
+                """
+                class Config {
+                    boolean isReady() { return true; }
+                    String name() { return ""; }
+                }
+                class Service {
+                    Service(boolean flag) {}
+                }
+                class Test {
+                    void m() {
+                        Config config = new Config();
+                        final var svc = new Service(config.§);
+                    }
+                }"""));
+    assertThat(items).contains("isReady", "name");
+  }
+
+  @Test
+  @Disabled("CQ-0046: prefix matching only the boolean member yields an empty popup")
+  void constructorArgument_booleanPrefix_popupNotEmpty() {
+    final var items =
+        labels(
+            fixture.complete(
+                """
+                class Config {
+                    boolean isReady() { return true; }
+                }
+                class Service {
+                    Service(boolean flag) {}
+                }
+                class Test {
+                    void m() {
+                        Config config = new Config();
+                        final var svc = new Service(config.isR§);
+                    }
+                }"""));
+    assertThat(items).contains("isReady");
+  }
 
   @Test
   void constructorCall_suggestsLocalsAndExcludesNoise() {
