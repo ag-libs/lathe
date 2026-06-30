@@ -617,7 +617,7 @@ have the cache path as their `uri`, consistent with how `definition` navigates t
 
 ## EG-013 — Find References candidate discovery excludes generated annotation sources
 
-**Status: accepted — Target: M2**
+**Status: done — Target: M2**
 
 ### Observed behaviour
 
@@ -1204,7 +1204,7 @@ python3 dev/explore.py /path/to/Scratch.java inject "case " at <line-in-sealed-s
 
 ## EG-023 — `this.` completion leaks low-value `Object` methods
 
-**Status: accepted — Target: M2**
+**Status: done — Target: M2**
 
 ### Observed behaviour
 
@@ -1490,7 +1490,7 @@ so sibling test classes are consistently available when the current source has t
 
 ## EG-027 — Out-of-range LSP positions throw internal errors on navigation endpoints
 
-**Status: accepted — Target: M2**
+**Status: done — Target: M2**
 
 ### Observed behaviour
 
@@ -1872,7 +1872,7 @@ printf 'sig after "new Other().target("\nlog 5\n' \
 
 ## EG-033 — Workspace symbol (Telescope) results always jump to the file's first line, not the declaration
 
-**Status: accepted — Target: M2**
+**Status: done — Target: M2**
 
 ### Observed behaviour
 
@@ -3198,7 +3198,7 @@ no generics are involved.
 ## CQ-0045 — Local-variable and parameter completion items carry no type detail
 
 ID: CQ-0045
-Status: accepted
+Status: done
 Target: M2
 Tier: presentation
 Failure mode: missing-detail
