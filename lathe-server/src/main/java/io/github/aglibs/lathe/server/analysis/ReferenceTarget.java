@@ -84,6 +84,51 @@ public record ReferenceTarget(
     return SearchScope.DECLARING_MODULE;
   }
 
+  ExecutableElement resolveMethodElement(final Elements elements, final Types types) {
+    if (kind != ElementKind.METHOD) {
+      return null;
+    }
+
+    final var owner = elements.getTypeElement(qualifiedName.replace('$', '.'));
+    if (owner == null) {
+      return null;
+    }
+
+    return owner.getEnclosedElements().stream()
+        .filter(ExecutableElement.class::isInstance)
+        .map(ExecutableElement.class::cast)
+        .filter(el -> matches(el, types, elements))
+        .findFirst()
+        .orElse(null);
+  }
+
+  boolean matchesWithOverrides(
+      final Element element,
+      final Types types,
+      final Elements elements,
+      final ExecutableElement targetMethod) {
+    if (matches(element, types, elements)) {
+      return true;
+    }
+
+    if (kind != ElementKind.METHOD) {
+      return false;
+    }
+
+    if (!(element instanceof final ExecutableElement ee)) {
+      return false;
+    }
+
+    if (targetMethod == null) {
+      return false;
+    }
+
+    final var eeOwner = (TypeElement) ee.getEnclosingElement();
+    final var targetOwner = (TypeElement) targetMethod.getEnclosingElement();
+    return elements.overrides(ee, targetMethod, eeOwner)
+        || elements.overrides(targetMethod, ee, targetOwner);
+  }
+
   boolean matches(final Element element, final Types types, final Elements elements) {
     if (element == null || element.getKind() != kind) {
       return false;

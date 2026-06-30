@@ -48,18 +48,8 @@ final class MethodImplementationLocator extends TreePathScanner<Void, Void> {
       return List.of();
     }
 
-    final var owner = analysis.elements().getTypeElement(target.qualifiedName().replace('$', '.'));
-    if (owner == null) {
-      return List.of();
-    }
-
     final ExecutableElement targetMethod =
-        owner.getEnclosedElements().stream()
-            .filter(ExecutableElement.class::isInstance)
-            .map(ExecutableElement.class::cast)
-            .filter(method -> target.matches(method, analysis.types(), analysis.elements()))
-            .findFirst()
-            .orElse(null);
+        target.resolveMethodElement(analysis.elements(), analysis.types());
     if (targetMethod == null) {
       return List.of();
     }

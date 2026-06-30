@@ -2185,7 +2185,7 @@ an RPC/client error is captured.
 
 ## FR-006 — Method references ignore the override hierarchy, so interface-method searches miss real call sites
 
-Status: accepted — Target: M2.
+Status: done — Target: M2.
 Discovered 2026-06-30, gap validation pass.
 
 ### Observed behaviour

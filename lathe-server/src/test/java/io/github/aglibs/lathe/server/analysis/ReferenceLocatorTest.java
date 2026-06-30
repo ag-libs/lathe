@@ -9,7 +9,6 @@ import java.util.Objects;
 import org.eclipse.lsp4j.Position;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 class ReferenceLocatorTest {
@@ -75,12 +74,11 @@ class ReferenceLocatorTest {
     return SourceLocator.offsetToPosition(source, offset);
   }
 
-  private static SourceFeatureRequest requestAt(
-      final String source, final String context, final String token) {
+  private static SourceFeatureRequest requestAt() {
     return new SourceFeatureRequest(
         TempSourceCompiler.TEST_URI,
-        source,
-        posOf(source, context, token),
+        ReferenceLocatorTest.METHOD_SOURCE,
+        posOf(ReferenceLocatorTest.METHOD_SOURCE, "run();", "run"),
         List.of(),
         WorkspaceManifest.empty());
   }
@@ -207,7 +205,6 @@ class ReferenceLocatorTest {
   }
 
   @Test
-  @Disabled("FR-006: method references ignore the override hierarchy")
   void method_interfaceDeclaration_findsCallThroughImplementingType() throws IOException {
     final var source =
         """
@@ -237,7 +234,6 @@ class ReferenceLocatorTest {
   }
 
   @Test
-  @Disabled("FR-006: method references ignore the override hierarchy")
   void method_override_findsCallThroughInterfaceType() throws IOException {
     final var source =
         """
@@ -496,7 +492,7 @@ class ReferenceLocatorTest {
   void searchReferences_uncachedOpenFile_compilesAndCachesAnalysis() {
     final var analysis = compile(TempSourceCompiler.TEST_URI, METHOD_SOURCE);
     final var target = targetAt(analysis, "void run()", "run");
-    final var request = requestAt(METHOD_SOURCE, "run();", "run");
+    final var request = requestAt();
 
     try (final var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       final List<ReferenceMatch> results =
@@ -511,7 +507,7 @@ class ReferenceLocatorTest {
   void searchReferencesTransient_repeatedScans_returnMatchesWithoutCaching() {
     final var analysis = compile(TempSourceCompiler.TEST_URI, METHOD_SOURCE);
     final var target = targetAt(analysis, "void run()", "run");
-    final var request = requestAt(METHOD_SOURCE, "run();", "run");
+    final var request = requestAt();
 
     try (final var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       final List<ReferenceMatch> first =

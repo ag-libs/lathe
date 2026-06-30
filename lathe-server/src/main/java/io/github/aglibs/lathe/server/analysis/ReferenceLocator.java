@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 import org.eclipse.lsp4j.Position;
@@ -30,6 +31,7 @@ final class ReferenceLocator extends SourceTreeLocator {
 
   private final String uri;
   private final boolean includeDeclaration;
+  private final ExecutableElement targetMethod;
   private final List<ReferenceMatch> results = new ArrayList<>();
 
   private ReferenceLocator(
@@ -40,10 +42,12 @@ final class ReferenceLocator extends SourceTreeLocator {
       final Types types,
       final Elements elements,
       final String uri,
-      final boolean includeDeclaration) {
+      final boolean includeDeclaration,
+      final ExecutableElement targetMethod) {
     super(trees, cu, content, target, types, elements);
     this.uri = uri;
     this.includeDeclaration = includeDeclaration;
+    this.targetMethod = targetMethod;
   }
 
   static List<ReferenceMatch> references(
@@ -57,6 +61,8 @@ final class ReferenceLocator extends SourceTreeLocator {
     }
 
     final var content = sourceContent(analysis);
+    final ExecutableElement targetMethod =
+        target.resolveMethodElement(analysis.elements(), analysis.types());
     final var locator =
         new ReferenceLocator(
             analysis.trees(),
@@ -66,7 +72,8 @@ final class ReferenceLocator extends SourceTreeLocator {
             analysis.types(),
             analysis.elements(),
             uri,
-            includeDeclaration);
+            includeDeclaration,
+            targetMethod);
     locator.scan(analysis.tree(), null);
     return List.copyOf(locator.results);
   }
@@ -76,7 +83,7 @@ final class ReferenceLocator extends SourceTreeLocator {
     final var name = node.getName().toString();
     if (!name.equals("this") && !name.equals("super")) {
       final var element = trees.getElement(getCurrentPath());
-      if (target.matches(element, types, elements)) {
+      if (target.matchesWithOverrides(element, types, elements, targetMethod)) {
         addMatch(positions.getStartPosition(cu, node), name.length(), roleForElement(element));
       }
     }
@@ -88,7 +95,7 @@ final class ReferenceLocator extends SourceTreeLocator {
   public Void visitMemberReference(final MemberReferenceTree node, final Void ignored) {
     scan(node.getQualifierExpression(), null);
     final var element = trees.getElement(getCurrentPath());
-    if (target.matches(element, types, elements)) {
+    if (target.matchesWithOverrides(element, types, elements, targetMethod)) {
       addMatchAtIdentifier(node, node.getName().toString(), ReferenceRole.INVOCATION);
     }
     return null;
@@ -97,7 +104,7 @@ final class ReferenceLocator extends SourceTreeLocator {
   @Override
   public Void visitNewClass(final NewClassTree node, final Void ignored) {
     final var element = trees.getElement(getCurrentPath());
-    if (target.matches(element, types, elements)) {
+    if (target.matchesWithOverrides(element, types, elements, targetMethod)) {
       final var id = node.getIdentifier();
       final String name =
           id instanceof final MemberSelectTree mst
@@ -116,7 +123,7 @@ final class ReferenceLocator extends SourceTreeLocator {
     final var qualIdPath = new TreePath(getCurrentPath(), qualId);
     final var element =
         node.isStatic() ? SourceLocator.elementAt(trees, qualIdPath) : trees.getElement(qualIdPath);
-    if (target.matches(element, types, elements)) {
+    if (target.matchesWithOverrides(element, types, elements, targetMethod)) {
       if (qualId instanceof final MemberSelectTree mst) {
         addMatchAtIdentifier(qualId, mst.getIdentifier().toString(), ReferenceRole.IMPORT);
       } else if (qualId instanceof final IdentifierTree it) {
@@ -131,7 +138,7 @@ final class ReferenceLocator extends SourceTreeLocator {
   public Void visitMemberSelect(final MemberSelectTree node, final Void ignored) {
     scan(node.getExpression(), null);
     final var element = SourceLocator.elementAt(trees, getCurrentPath());
-    if (target.matches(element, types, elements)) {
+    if (target.matchesWithOverrides(element, types, elements, targetMethod)) {
       addMatchAtIdentifier(node, node.getIdentifier().toString(), roleForMemberSelect(element));
     }
     return null;
@@ -169,7 +176,7 @@ final class ReferenceLocator extends SourceTreeLocator {
 
   private Element matchedElement() {
     final var element = trees.getElement(getCurrentPath());
-    return target.matches(element, types, elements) ? element : null;
+    return target.matchesWithOverrides(element, types, elements, targetMethod) ? element : null;
   }
 
   private ReferenceRole roleForElement(final Element element) {
