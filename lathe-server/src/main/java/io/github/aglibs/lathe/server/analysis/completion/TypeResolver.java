@@ -417,6 +417,31 @@ final class TypeResolver {
 
         return super.visitMethodInvocation(node, unused);
       }
+
+      @Override
+      public Void visitNewClass(final NewClassTree node, final Void unused) {
+        if (result.get() != null || cursorOutside(snapshot, node, site.cursorOffset())) {
+          return super.visitNewClass(node, unused);
+        }
+
+        if (!site.enclosingMethodName().equals(methodSelectName(node.getIdentifier()))) {
+          return super.visitNewClass(node, unused);
+        }
+
+        if (!(snapshot.trees().getElement(getCurrentPath())
+            instanceof final ExecutableElement ctor)) {
+          return super.visitNewClass(node, unused);
+        }
+
+        final var params = ctor.getParameters();
+        final int idx =
+            ctor.isVarArgs() ? Math.min(site.argIndex(), params.size() - 1) : site.argIndex();
+        if (idx >= 0 && idx < params.size()) {
+          result.set(new ExpectedValue.Type(params.get(idx).asType()));
+        }
+
+        return null;
+      }
     }.scan(methodPath, null);
 
     return result.get() != null ? result.get() : new ExpectedValue.Unknown();

@@ -3273,7 +3273,7 @@ separation.
 ## CQ-0046 — Boolean members are dropped in constructor-call argument completion, emptying the popup
 
 ID: CQ-0046
-Status: accepted
+Status: done
 Target: M2
 Tier: typed
 Failure mode: missing-candidate

@@ -33,9 +33,7 @@ final class CompletionCandidateRanker {
       return true;
     }
 
-    return !voidMethod(candidate)
-        && compatibleKeyword(candidate, context)
-        && expectedTypeAllows(candidate, context);
+    return !voidMethod(candidate) && compatibleKeyword(candidate, context);
   }
 
   private static String sortText(
@@ -147,32 +145,6 @@ final class CompletionCandidateRanker {
 
     return context.analysis().types().asElement(type) instanceof final TypeElement typeElement
         && "java.lang.Boolean".equals(typeElement.getQualifiedName().toString());
-  }
-
-  private static boolean expectedTypeAllows(
-      final CompletionCandidate c, final SemanticCompletionContext ctx) {
-    if (c.kind() == CandidateKind.KEYWORD) {
-      return true;
-    }
-
-    if (!(ctx.expectedValue() instanceof ExpectedValue.Type(final TypeMirror expected))) {
-      return true;
-    }
-
-    final TypeMirror vt = c.valueType();
-    if (vt == null || vt.getKind() == TypeKind.ERROR || vt.getKind() == TypeKind.NONE) {
-      return true;
-    }
-
-    if (objectMethod(c)) {
-      return true;
-    }
-
-    if (vt.getKind() == TypeKind.BOOLEAN) {
-      return booleanCompatible(expected, ctx);
-    }
-
-    return true;
   }
 
   private static boolean objectMethod(final CompletionCandidate candidate) {

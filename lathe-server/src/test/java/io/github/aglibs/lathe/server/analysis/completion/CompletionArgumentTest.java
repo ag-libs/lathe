@@ -7,7 +7,6 @@ import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import java.io.IOException;
 import java.util.List;
 import org.eclipse.lsp4j.CompletionItem;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 class CompletionArgumentTest extends CompletionTestSupport {
@@ -237,7 +236,6 @@ class CompletionArgumentTest extends CompletionTestSupport {
   // ── constructor call position ─────────────────────────────────────────────────
 
   @Test
-  @Disabled("CQ-0046: boolean members dropped in constructor-arg member-access completion")
   void constructorArgument_memberAccess_booleanReturn_offeredAtBooleanSlot() {
     // Mirrors the method-call argument path, which already offers the boolean member. The
     // constructor-arg path falls through to the constructed/declared type as the expected value
@@ -264,7 +262,6 @@ class CompletionArgumentTest extends CompletionTestSupport {
   }
 
   @Test
-  @Disabled("CQ-0046: prefix matching only the boolean member yields an empty popup")
   void constructorArgument_booleanPrefix_popupNotEmpty() {
     final var items =
         labels(
