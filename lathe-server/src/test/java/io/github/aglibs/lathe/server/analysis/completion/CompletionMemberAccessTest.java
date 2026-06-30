@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.List;
 import java.util.stream.Stream;
 import org.eclipse.lsp4j.CompletionItem;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -1004,8 +1003,6 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
   }
 
   // CQ-0042
-  @Disabled(
-      "CQ-0042: type-error method invocation receiver does not fall back to declared return type")
   @Test
   void memberAccess_typeErrorReceiver_fallsBackToElementReturnType() {
     assertThat(
@@ -1024,6 +1021,27 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
                         }
                     }""")))
         .contains("named", "in", "to");
+  }
+
+  @Test
+  void memberAccess_typeErrorMethodChain_returnsMembersWithoutFreshAnalysis() {
+    final var outcome =
+        fixture.outcome(
+            """
+            class Test {
+                static class Binding<T> {
+                    <D extends Binding<D>> D to(Class<? super T> contract) { return null; }
+                    Binding<T> named(String name) { return this; }
+                    Binding<T> in(Class<?> scope) { return this; }
+                }
+                static <T> Binding<T> bind(T service) { return new Binding<>(); }
+                void configure() {
+                    bind(new Object()).to(Runnable.class).§
+                }
+            }""");
+
+    assertThat(labels(outcome.items())).contains("named", "in", "to");
+    assertThat(outcome.freshAnalysis()).isNull();
   }
 
   // CQ-0029
@@ -1113,7 +1131,6 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
   }
 
   @Test
-  @Disabled("CQ-0030: stale cached analysis keeps type-variable receiver as T")
   void memberAccess_classTypeVariable_afterChange_usesDeclaredBound() {
     final var cachedSource =
         """

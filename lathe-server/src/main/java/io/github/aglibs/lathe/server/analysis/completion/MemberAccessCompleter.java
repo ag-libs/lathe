@@ -45,18 +45,38 @@ final class MemberAccessCompleter {
           candidates.stream().map(CompletionItemPresenter::present).toList(), null);
     }
 
-    final var freshAnalysis =
-        ((initialResolved == null || initialResolved.type().getKind() == TypeKind.ERROR)
-                && compiler != null
-                && !req.noDiff())
-            ? compiler.reattribute(req.uri(), req.content())
-            : null;
+    final boolean methodChainReceiver = isMethodChainReceiver(parsed);
+    final boolean initialUnusable =
+        initialResolved != null
+            && (initialResolved.type().getKind() == TypeKind.ERROR
+                || initialResolved.type().getKind() == TypeKind.TYPEVAR);
+    final boolean shouldReattribute =
+        compiler != null
+            && (methodChainReceiver || !req.noDiff())
+            && (initialResolved == null || initialUnusable);
+    final AttributedFileAnalysis reattributedAnalysis;
+    final AttributedFileAnalysis cacheableAnalysis;
+    if (shouldReattribute) {
+      reattributedAnalysis =
+          compiler.reattribute(
+              req.uri(), methodChainReceiver ? injected.injectedContent() : req.content());
+      cacheableAnalysis = methodChainReceiver ? null : reattributedAnalysis;
+    } else {
+      reattributedAnalysis = null;
+      cacheableAnalysis = null;
+    }
 
-    final var snapshot = freshAnalysis != null ? freshAnalysis : initialSnapshot;
+    final var reattributedResolved =
+        reattributedAnalysis != null
+            ? TypeResolver.resolveReceiver(parsed, req.pos().getLine(), reattributedAnalysis)
+            : null;
     final var resolved =
-        freshAnalysis != null
-            ? TypeResolver.resolveReceiver(parsed, req.pos().getLine(), freshAnalysis)
-            : initialResolved;
+        hasDeclaredReceiver(reattributedResolved) ? reattributedResolved : initialResolved;
+    final var snapshot =
+        (reattributedResolved != null && resolved == reattributedResolved)
+                || (resolved == null && cacheableAnalysis != null)
+            ? reattributedAnalysis
+            : initialSnapshot;
 
     LOG.fine(
         () ->
@@ -65,7 +85,7 @@ final class MemberAccessCompleter {
                     parsed.receiverText(),
                     resolved != null ? resolved.type() : null,
                     resolved != null ? resolved.staticAccess() : null,
-                    freshAnalysis != null));
+                    reattributedResolved != null && resolved == reattributedResolved));
 
     if (resolved == null) {
       if (snapshot != null && parsed.receiverText() != null) {
@@ -81,6 +101,35 @@ final class MemberAccessCompleter {
       return fallback(parsed, injected, snapshot, req.cursorOffset(), req.typeIndex());
     }
 
+    final CompletionOutcome outcome =
+        completeResolved(parsed, injected, req, site, snapshot, resolved, cacheableAnalysis);
+    if (!outcome.items().isEmpty()) {
+      return outcome;
+    }
+
+    if (initialResolved != null && initialResolved != resolved) {
+      final CompletionOutcome initialOutcome =
+          completeResolved(parsed, injected, req, site, initialSnapshot, initialResolved, null);
+      if (!initialOutcome.items().isEmpty()) {
+        return initialOutcome;
+      }
+    }
+
+    if (initialSnapshot != null && initialSnapshot != snapshot) {
+      return fallback(parsed, injected, initialSnapshot, req.cursorOffset(), req.typeIndex());
+    }
+
+    return fallback(parsed, injected, snapshot, req.cursorOffset(), req.typeIndex());
+  }
+
+  private CompletionOutcome completeResolved(
+      final ParsedSentinel parsed,
+      final SentinelInjectionResult injected,
+      final CompletionRequest req,
+      final CompletionSite site,
+      final AttributedFileAnalysis snapshot,
+      final ResolvedReceiver resolved,
+      final AttributedFileAnalysis cacheableAnalysis) {
     final boolean isStaticAccess =
         parsed.sentinelContext() == SentinelContext.STATIC_IMPORT || resolved.staticAccess();
     final var scope = TypeResolver.resolveScope(snapshot, req.cursorOffset());
@@ -121,7 +170,15 @@ final class MemberAccessCompleter {
           });
     }
 
-    return new CompletionOutcome(items, freshAnalysis);
+    return new CompletionOutcome(items, cacheableAnalysis);
+  }
+
+  private static boolean isMethodChainReceiver(final ParsedSentinel parsed) {
+    return parsed.receiverText() != null && parsed.receiverText().indexOf('(') >= 0;
+  }
+
+  private static boolean hasDeclaredReceiver(final ResolvedReceiver resolved) {
+    return resolved != null && resolved.type().getKind() == TypeKind.DECLARED;
   }
 
   private CompletionOutcome fallback(

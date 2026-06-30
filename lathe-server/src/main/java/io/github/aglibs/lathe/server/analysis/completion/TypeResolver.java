@@ -928,8 +928,13 @@ final class TypeResolver {
         }
 
         final TypeMirror raw = snapshot.trees().getTypeMirror(getCurrentPath());
-        final TypeMirror type = effectiveDeclaredType(raw, snapshot);
+        TypeMirror type = methodInvocationReturnType(node, raw);
         if (type == null) {
+          type = effectiveDeclaredType(raw, snapshot);
+        }
+
+        if (type == null) {
+          checkErrorMethodInvocation(node, raw);
           return;
         }
 
@@ -939,6 +944,96 @@ final class TypeResolver {
                 && !(node instanceof final IdentifierTree id
                     && (id.getName().contentEquals("this") || id.getName().contentEquals("super")));
         result.compareAndSet(null, new ResolvedReceiver(type, isStatic));
+      }
+
+      private TypeMirror methodInvocationReturnType(final Tree node, final TypeMirror raw) {
+        if (!(node instanceof MethodInvocationTree)) {
+          return null;
+        }
+
+        if (!(raw instanceof final ExecutableType executableType)) {
+          return null;
+        }
+
+        return effectiveDeclaredType(executableType.getReturnType(), snapshot);
+      }
+
+      private void checkErrorMethodInvocation(final Tree node, final TypeMirror raw) {
+        if (raw == null || raw.getKind() != TypeKind.ERROR) {
+          return;
+        }
+
+        if (!(node instanceof final MethodInvocationTree mi)) {
+          return;
+        }
+
+        final TypeMirror returnType = methodInvocationElementReturnType(mi);
+        if (returnType != null) {
+          result.compareAndSet(null, new ResolvedReceiver(returnType, false));
+          return;
+        }
+
+        result.compareAndSet(null, new ResolvedReceiver(raw, false));
+      }
+
+      private TypeMirror methodInvocationElementReturnType(final MethodInvocationTree mi) {
+        final var selectorPath = new TreePath(getCurrentPath(), mi.getMethodSelect());
+        final var el = snapshot.trees().getElement(selectorPath);
+        if (el instanceof final ExecutableElement ee) {
+          return effectiveDeclaredType(ee.getReturnType(), snapshot);
+        }
+
+        return methodInvocationReceiverReturnType(mi);
+      }
+
+      private TypeMirror methodInvocationReceiverReturnType(final MethodInvocationTree mi) {
+        if (!(mi.getMethodSelect() instanceof final MemberSelectTree ms)) {
+          return null;
+        }
+
+        final var receiverPath = new TreePath(getCurrentPath(), ms.getExpression());
+        final TypeMirror receiverType =
+            effectiveDeclaredType(snapshot.trees().getTypeMirror(receiverPath), snapshot);
+        if (receiverType == null) {
+          return null;
+        }
+
+        if (!(snapshot.types().asElement(receiverType) instanceof final TypeElement receiverEl)) {
+          return null;
+        }
+
+        TypeMirror matchedReturnType = null;
+        for (final var member : snapshot.elements().getAllMembers(receiverEl)) {
+          if (member.getKind() != ElementKind.METHOD
+              || !member.getSimpleName().contentEquals(ms.getIdentifier())) {
+            continue;
+          }
+
+          final var method = (ExecutableElement) member;
+          if (!arityMatches(method, mi.getArguments().size())) {
+            continue;
+          }
+
+          final TypeMirror returnType = effectiveDeclaredType(method.getReturnType(), snapshot);
+          if (returnType != null) {
+            if (matchedReturnType != null) {
+              return null;
+            }
+
+            matchedReturnType = returnType;
+          }
+        }
+
+        return matchedReturnType;
+      }
+
+      private boolean arityMatches(final ExecutableElement method, final int argCount) {
+        final int paramCount = method.getParameters().size();
+        if (method.isVarArgs()) {
+          return argCount >= paramCount - 1;
+        }
+
+        return argCount == paramCount;
       }
     }.scan(cu, null);
     return result.get();
