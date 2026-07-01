@@ -146,6 +146,11 @@ public final class CompilationWorker {
     return submit(ctx -> ctx.resolveTarget(request));
   }
 
+  public CompletableFuture<ReferenceTarget> resolveContractTarget(
+      final SourceFeatureRequest request, final CancelChecker cancelChecker) {
+    return submit(ctx -> ctx.resolveContractTarget(request), cancelChecker);
+  }
+
   public CompletableFuture<List<ReferenceMatch>> searchReferences(
       final String uri,
       final String content,

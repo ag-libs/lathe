@@ -164,6 +164,32 @@ printf 'impl 52:14\nimpl 64:18\nimpl 45:11\nimpl 77:10\nquit\n' \
 
 ---
 
+## EG-014 — Find References on an overriding method returns only exact-static-type call sites
+
+**Status: done — Target: M2.**
+Resolved with FR-006 and FR-007.
+
+Find References from an overriding method now resolves the method's overridden contract before
+planning the workspace search.
+That makes override-origin searches include call sites whose static receiver type is the interface
+or superclass contract, including sibling downstream modules of the contract owner.
+
+The implementation reuses javac attribution and override checks rather than text parsing:
+
+1. Resolve the cursor target as a `ReferenceTarget`.
+2. For method targets, ask the cursor module analysis for the root contract method.
+3. Plan reference search from the contract owner's module when a contract is found.
+4. Match method references using javac override-aware element comparison.
+
+Regression coverage:
+
+- `ReferenceLocatorTest.method_override_findsCallThroughInterfaceType`
+- `ReferenceLocatorTest.method_interfaceDeclaration_findsOverridingDeclarationAndCallThroughImplementingType`
+- `ReferenceLocatorTest.method_interfaceDeclaration_findsCallThroughImplementingPublicOverride`
+- `LspSmokeTest.references_fromOverrideMethod_findsSupertypeTypedCallSite`
+
+---
+
 ## EG-020 — `new` expression completion is not slot-aware
 
 **Status: done — Target: M2.**
@@ -275,6 +301,24 @@ Regression coverage:
 
 - `ReferenceLocatorTest.method_interfaceDeclaration_findsCallThroughImplementingType`
 - `ReferenceLocatorTest.method_override_findsCallThroughInterfaceType`
+
+## FR-007 — Override-method references search inherited hook calls in supertype sources
+
+Status: done — Target: M2.
+Discovered 2026-06-30, Dropwizard `SessionFactoryProvider` validation.
+
+Find References on a reactor override such as
+`SessionFactoryProvider.createValueProvider(...)` previously missed inherited framework hook calls
+in cached superclass sources, because candidate discovery required method candidates to contain both
+the method simple name and the override owner's exact simple name.
+
+The resolved implementation treats method candidate discovery as simple-name based and leaves exact
+owner and override validation to javac attribution.
+Fields, constructors, and enum constants keep the narrower owner filter.
+
+Regression coverage:
+
+- `ReferenceCandidatePlannerTest.planCandidates_overrideMethodTarget_returnsSuperclassSelfCallFile`
 
 ---
 

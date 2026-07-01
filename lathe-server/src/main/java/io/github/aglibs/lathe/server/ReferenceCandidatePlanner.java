@@ -43,8 +43,7 @@ final class ReferenceCandidatePlanner {
         return simpleCandidates;
       }
 
-      final Path packageRel =
-          targetPkg.isEmpty() ? Path.of("") : Path.of(targetPkg.replace('.', '/'));
+      final Path packageRel = packageRelForPackageName(targetPkg);
 
       // Collect all possible import spelling candidates by walking up qualified name prefixes
       final Stream.Builder<String> tokensBuilder = Stream.builder();
@@ -73,7 +72,6 @@ final class ReferenceCandidatePlanner {
     }
 
     if (kind == ElementKind.FIELD
-        || kind == ElementKind.METHOD
         || kind == ElementKind.CONSTRUCTOR
         || kind == ElementKind.ENUM_CONSTANT) {
       final Set<String> staticImports =
@@ -90,6 +88,10 @@ final class ReferenceCandidatePlanner {
           .collect(Collectors.toUnmodifiableSet());
     }
 
+    if (kind == ElementKind.METHOD) {
+      return simpleCandidates;
+    }
+
     return simpleCandidates;
   }
 
@@ -98,5 +100,18 @@ final class ReferenceCandidatePlanner {
     return sourceRoots.stream()
         .map(root -> root.resolve(packageRel))
         .anyMatch(dir -> path.getParent().equals(dir));
+  }
+
+  static Path packageRelForQualifiedName(final String qualifiedName) {
+    final int packageEnd = qualifiedName.lastIndexOf('.');
+    if (packageEnd < 0) {
+      return Path.of("");
+    }
+
+    return packageRelForPackageName(qualifiedName.substring(0, packageEnd));
+  }
+
+  private static Path packageRelForPackageName(final String packageName) {
+    return packageName.isEmpty() ? Path.of("") : Path.of(packageName.replace('.', '/'));
   }
 }

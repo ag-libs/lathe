@@ -123,6 +123,40 @@ class DeclarationLocatorTest {
   }
 
   @Test
+  void findContract_indirectInterfaceThroughAbstractBase_returnsInterfaceMethod(
+      @TempDir final Path tempDir) throws IOException {
+    final var source =
+        """
+        interface DbClient {
+            String dbType();
+        }
+
+        abstract class DbClientBase implements DbClient {
+        }
+
+        class MongoDbClient extends DbClientBase implements DbClient {
+            @Override
+            public String dbType() {
+                return "mongo";
+            }
+        }
+        """;
+    try (final var parsed = compile(tempDir, "MongoDbClient.java", source)) {
+      final var path =
+          SampleFixture.pathAt(parsed.trees(), parsed.cu(), "public String dbType", "dbType");
+      final var element = SourceLocator.elementAt(parsed.trees(), path);
+
+      final var contract =
+          DeclarationLocator.findContract(
+              element, parsed.task().getTypes(), parsed.task().getElements());
+
+      assertThat(contract).isPresent();
+      assertThat(contract.get().getEnclosingElement().getSimpleName().toString())
+          .isEqualTo("DbClient");
+    }
+  }
+
+  @Test
   void findContract_deepHierarchy_findsTopMostInterface(@TempDir final Path tempDir)
       throws IOException {
     final var source =

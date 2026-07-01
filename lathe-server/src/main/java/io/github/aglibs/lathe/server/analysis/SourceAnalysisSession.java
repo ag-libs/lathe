@@ -235,6 +235,25 @@ public final class SourceAnalysisSession implements AutoCloseable {
     return ReferenceTarget.from(element, cur.analysis().types(), cur.analysis().elements());
   }
 
+  public ReferenceTarget resolveContractTarget(final SourceFeatureRequest request) {
+    final var cur = resolve(request);
+    if (cur == null) {
+      return null;
+    }
+
+    final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
+    if (element == null) {
+      return null;
+    }
+
+    return DeclarationLocator.findContract(
+            element, cur.analysis().types(), cur.analysis().elements())
+        .map(
+            contract ->
+                ReferenceTarget.from(contract, cur.analysis().types(), cur.analysis().elements()))
+        .orElse(null);
+  }
+
   public List<ReferenceMatch> searchReferences(
       final String uri,
       final String content,

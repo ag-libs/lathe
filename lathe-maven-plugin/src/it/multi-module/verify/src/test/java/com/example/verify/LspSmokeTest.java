@@ -189,6 +189,45 @@ class LspSmokeTest {
   }
 
   @Test
+  void references_fromBaseMethod_findsOverrideDeclarationAndCallSite() throws Exception {
+    final Path dbClientJava = ROOT.resolve("core/src/main/java/com/example/core/DbClient.java");
+    final String dbClientUri = dbClientJava.toUri().toString();
+    final String dbClientContent = Files.readString(dbClientJava);
+    openDoc(dbClientUri, dbClientContent);
+
+    final var params = new ReferenceParams();
+    params.setTextDocument(new TextDocumentIdentifier(dbClientUri));
+    params.setPosition(findToken(dbClientContent, "String dbType()", "dbType"));
+    params.setContext(new ReferenceContext(true));
+
+    final List<? extends Location> refs =
+        server.getTextDocumentService().references(params).get(30, SECONDS);
+
+    assertThat(refs)
+        .anyMatch(loc -> loc.getUri().contains("MongoDbClient.java"))
+        .anyMatch(loc -> loc.getUri().contains("DbClientHealthCheck.java"));
+  }
+
+  @Test
+  void references_fromOverrideMethod_findsSupertypeTypedCallSite() throws Exception {
+    final Path mongoClientJava =
+        ROOT.resolve("app/src/main/java/com/example/app/MongoDbClient.java");
+    final String mongoClientUri = mongoClientJava.toUri().toString();
+    final String mongoClientContent = Files.readString(mongoClientJava);
+    openDoc(mongoClientUri, mongoClientContent);
+
+    final var params = new ReferenceParams();
+    params.setTextDocument(new TextDocumentIdentifier(mongoClientUri));
+    params.setPosition(findToken(mongoClientContent, "public String dbType()", "dbType"));
+    params.setContext(new ReferenceContext(true));
+
+    final List<? extends Location> refs =
+        server.getTextDocumentService().references(params).get(30, SECONDS);
+
+    assertThat(refs).anyMatch(loc -> loc.getUri().contains("DbClientHealthCheck.java"));
+  }
+
+  @Test
   void implementation_typeCursor_findsImplementationsAcrossModules() throws Exception {
     final Path greeterJava =
         ROOT.resolve("core/src/main/java/com/example/core/Greeter.java");

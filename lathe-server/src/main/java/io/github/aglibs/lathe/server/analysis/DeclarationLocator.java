@@ -6,8 +6,10 @@ import java.util.List;
 import java.util.Optional;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.ExecutableType;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
@@ -44,7 +46,8 @@ public final class DeclarationLocator {
 
         for (final Element enclosed : typeElement.getEnclosedElements()) {
           if (enclosed instanceof final ExecutableElement candidate) {
-            if (elements.overrides(method, candidate, startType)) {
+            if (matchesContractMethod(
+                method, candidate, startType, declaredType, types, elements)) {
               if (contract == method) {
                 contract = candidate;
               } else {
@@ -73,5 +76,38 @@ public final class DeclarationLocator {
     }
 
     return Optional.of(contract);
+  }
+
+  private static boolean matchesContractMethod(
+      final ExecutableElement method,
+      final ExecutableElement candidate,
+      final TypeElement startType,
+      final DeclaredType contractOwnerType,
+      final Types types,
+      final Elements elements) {
+    if (elements.overrides(method, candidate, startType)) {
+      return true;
+    }
+
+    if (method.getModifiers().contains(Modifier.STATIC)
+        || candidate.getModifiers().contains(Modifier.STATIC)
+        || candidate.getModifiers().contains(Modifier.PRIVATE)) {
+      return false;
+    }
+
+    if (!method.getSimpleName().contentEquals(candidate.getSimpleName())) {
+      return false;
+    }
+
+    if (!(method.asType() instanceof final ExecutableType methodType)) {
+      return false;
+    }
+
+    final TypeMirror candidateMemberType = types.asMemberOf(contractOwnerType, candidate);
+    if (!(candidateMemberType instanceof final ExecutableType candidateType)) {
+      return false;
+    }
+
+    return types.isSubsignature(methodType, candidateType);
   }
 }

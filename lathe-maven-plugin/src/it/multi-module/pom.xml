@@ -12,6 +12,7 @@
   <modules>
     <module>core</module>
     <module>app</module>
+    <module>health</module>
     <module>jpms</module>
     <module>verify</module>
   </modules>

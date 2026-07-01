@@ -262,6 +262,38 @@ class ReferenceLocatorTest {
         .anyMatch(l -> l.range().getStart().equals(posOf(source, "i.handle()", "handle")));
   }
 
+  @Test
+  void method_interfaceDeclaration_includeDeclarationAddsOverrideDeclaration() throws IOException {
+    final var source =
+        """
+        interface DbClient {
+            String dbType();
+        }
+        abstract class DbClientBase implements DbClient {
+        }
+        class MongoDbClient extends DbClientBase implements DbClient {
+            public String dbType() { return "mongo"; }
+        }
+        class DbClientHealthCheck {
+            void use(DbClient dbClient) {
+                dbClient.dbType();
+            }
+        }
+        """;
+    final var analysis = compile(source);
+    final var target = targetAt(analysis, "String dbType();", "dbType");
+
+    final List<ReferenceMatch> result = refs(analysis, target, true);
+
+    assertThat(result)
+        .anyMatch(l -> l.range().getStart().equals(posOf(source, "String dbType();", "dbType")));
+    assertThat(result)
+        .anyMatch(
+            l -> l.range().getStart().equals(posOf(source, "public String dbType()", "dbType")));
+    assertThat(result)
+        .anyMatch(l -> l.range().getStart().equals(posOf(source, "dbClient.dbType()", "dbType")));
+  }
+
   // --- constructors ---
 
   @Test
@@ -557,6 +589,22 @@ class ReferenceLocatorTest {
   void searchScope_publicMethod_reactorModules() {
     final var analysis = compile("class Test { public void run() {} }");
     final var target = targetAt(analysis, "public void run()", "run");
+    assertThat(target.scope()).isEqualTo(ReferenceTarget.SearchScope.REACTOR_MODULES);
+  }
+
+  @Test
+  void searchScope_publicOverrideMethod_reactorModules() {
+    final var source =
+        """
+        interface DbClient {
+            String dbType();
+        }
+        class MongoDbClient implements DbClient {
+            public String dbType() { return "mongo"; }
+        }
+        """;
+    final var analysis = compile(source);
+    final var target = targetAt(analysis, "public String dbType()", "dbType");
     assertThat(target.scope()).isEqualTo(ReferenceTarget.SearchScope.REACTOR_MODULES);
   }
 

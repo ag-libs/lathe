@@ -241,49 +241,19 @@ final class WorkspaceSession {
                 return CompletableFuture.completedFuture(List.of());
               }
 
-              targetName.set(target.simpleName());
-
-              if (target.scope() == ReferenceTarget.SearchScope.DECLARING_FILE) {
-                progress.begin(target.simpleName(), 1);
-                return cursorWorker
-                    .searchReferences(
-                        openFile.uri(),
-                        openFile.content(),
-                        openFile.version(),
-                        target,
-                        includeDeclaration,
-                        cancelChecker)
-                    .thenApply(WorkspaceSession::toLocations)
-                    .whenComplete(
-                        (locations, failure) -> {
-                          if (failure == null) {
-                            progress.advance(false, locations.size());
-                          }
-                        });
-              }
-
-              final Path packageRel =
-                  target.scope() == ReferenceTarget.SearchScope.DECLARING_MODULE
-                      ? declaringPackageRel(LatheUri.toPath(uri), cursorConfig.orElse(null))
-                      : null;
-
-              final List<ModuleSourceConfig> configs =
-                  planSearchScope(target, cursorConfig.orElse(null));
-
-              final List<CompletableFuture<List<Location>>> searches =
-                  configs.stream()
-                      .flatMap(
-                          config ->
-                              searchFutures(
-                                  config,
-                                  target,
-                                  includeDeclaration,
-                                  packageRel,
-                                  cancelChecker,
-                                  progress))
-                      .toList();
-              progress.begin(target.simpleName(), searches.size());
-              return joinCandidateResults(searches, cancelChecker);
+              return referenceSearchTarget(cursorWorker, request, target, cancelChecker)
+                  .thenCompose(
+                      searchTarget -> {
+                        targetName.set(searchTarget.simpleName());
+                        return searchReferencesForTarget(
+                            openFile,
+                            cursorWorker,
+                            cursorConfig.orElse(null),
+                            searchTarget,
+                            includeDeclaration,
+                            cancelChecker,
+                            progress);
+                      });
             })
         .thenApply(
             locations -> {
@@ -316,6 +286,71 @@ final class WorkspaceSession {
                   ? completion
                   : new CompletionException(ex);
             });
+  }
+
+  private CompletableFuture<ReferenceTarget> referenceSearchTarget(
+      final CompilationWorker cursorWorker,
+      final SourceFeatureRequest request,
+      final ReferenceTarget target,
+      final CancelChecker cancelChecker) {
+    if (target.kind() != ElementKind.METHOD) {
+      return CompletableFuture.completedFuture(target);
+    }
+
+    return cursorWorker
+        .resolveContractTarget(request, cancelChecker)
+        .thenApply(contract -> contract != null ? contract : target);
+  }
+
+  private CompletableFuture<List<Location>> searchReferencesForTarget(
+      final OpenDocument openFile,
+      final CompilationWorker cursorWorker,
+      final ModuleSourceConfig cursorConfig,
+      final ReferenceTarget target,
+      final boolean includeDeclaration,
+      final CancelChecker cancelChecker,
+      final ReferenceProgressReporter.Task progress) {
+    if (target.scope() == ReferenceTarget.SearchScope.DECLARING_FILE) {
+      progress.begin(target.simpleName(), 1);
+      return cursorWorker
+          .searchReferences(
+              openFile.uri(),
+              openFile.content(),
+              openFile.version(),
+              target,
+              includeDeclaration,
+              cancelChecker)
+          .thenApply(WorkspaceSession::toLocations)
+          .whenComplete(
+              (locations, failure) -> {
+                if (failure == null) {
+                  progress.advance(false, locations.size());
+                }
+              });
+    }
+
+    final Path packageRel =
+        target.scope() == ReferenceTarget.SearchScope.DECLARING_MODULE
+            ? ReferenceCandidatePlanner.packageRelForQualifiedName(target.qualifiedName())
+            : null;
+
+    final ModuleSourceConfig searchConfig = declaringConfigFor(target, cursorConfig);
+    final List<ModuleSourceConfig> configs = planSearchScope(target, searchConfig);
+    progress.begin(
+        target.simpleName(),
+        configs.stream()
+            .map(config -> planSearchInputs(config, target, packageRel))
+            .mapToInt(inputs -> inputs.openDocuments().size() + inputs.diskCandidates().size())
+            .sum());
+
+    final List<CompletableFuture<List<Location>>> searches =
+        configs.stream()
+            .flatMap(
+                config ->
+                    searchFutures(
+                        config, target, includeDeclaration, packageRel, cancelChecker, progress))
+            .toList();
+    return joinCandidateResults(searches, cancelChecker);
   }
 
   private Stream<CompletableFuture<List<Location>>> searchFutures(
@@ -377,6 +412,18 @@ final class WorkspaceSession {
               ? moduleGraph.referenceSearchScope(cursorConfig)
               : workspace.allConfigs();
     };
+  }
+
+  private ModuleSourceConfig declaringConfigFor(
+      final ReferenceTarget target, final ModuleSourceConfig fallback) {
+    return reactorShards.entrySet().stream()
+        .filter(
+            entry ->
+                entry.getValue().stream()
+                    .anyMatch(type -> type.binaryName().equals(target.qualifiedName())))
+        .map(Map.Entry::getKey)
+        .findFirst()
+        .orElse(fallback);
   }
 
   private static <T> CompletableFuture<List<T>> joinCandidateResults(

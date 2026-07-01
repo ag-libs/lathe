@@ -9,7 +9,6 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
 import javax.lang.model.element.ElementKind;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -190,7 +189,6 @@ class ReferenceCandidatePlannerTest {
   }
 
   @Test
-  @Disabled("FR-007: override targets must search inherited hook calls in supertype sources")
   void planCandidates_overrideMethodTarget_returnsSuperclassSelfCallFile() throws IOException {
     final Path src = Files.createDirectories(root.resolve("src"));
     final Path file =

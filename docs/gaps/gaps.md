@@ -706,65 +706,6 @@ python3 dev/explore.py \
 
 ---
 
-## EG-014 — Find References on an overriding method returns only exact-static-type call sites
-
-**Status: accepted — Target: M2**
-
-### Observed behaviour
-
-Find References on an overriding method declaration returns no polymorphic call sites; the same
-search on the overridden interface or superclass method returns them all.
-
-```
-refs "getType" on Request.getType()       (interface declaration)  → 14 references
-refs "getType" on CreateEntity.getType() (@Override declaration)   → 0 references
-```
-
-`CreateEntity implements Request`, and every `getType()` call site in the workspace has a
-statically `Request`-typed receiver, so each call resolves to `Request.getType()`.
-There are zero call sites with a statically `CreateEntity`-typed receiver.
-
-### Analysis
-
-The 0-result is exact-element-correct: no call statically dispatches to `CreateEntity.getType()`.
-But a developer invoking Find References from an override expects to see the usages of the method
-they are looking at, which in practice are the polymorphic uses of the overridden contract.
-
-This is the Find References mirror of EG-012 (`textDocument/declaration` from an override to its
-contract).
-EG-012 navigates override → contract; this gap is about pulling the contract's usages into the
-override's reference results.
-
-### Proposed fix
-
-When Find References is invoked on an overriding method declaration, additionally search for
-references to the method(s) it overrides:
-
-1. Resolve the `ExecutableElement` at the cursor and its enclosing `TypeElement`.
-2. Walk supertypes with `Types.directSupertypes(...)` and, for each candidate method, test
-   `Elements.overrides(current, candidate, enclosingType)`.
-3. Union the reference results for the override and each overridden declaration, de-duplicated by
-   location.
-
-This reuses the EG-012 override-resolution walk, so the two should be implemented together.
-The reverse direction (Find References on a base method already includes override declarations)
-is out of scope for this gap.
-
-### Probe commands
-
-```bash
-printf 'refs "getType"\n' \
-  | python3 dev/explore.py \
-      /workspace/app-core/src/main/java/com/example/app/model/CreateEntity.java
-```
-
-### Regression targets
-
-- `ReferenceServiceTest.references_overridingMethod_includesOverriddenContractUsages`
-- `ReferenceServiceTest.references_nonOverridingMethod_unchanged`
-
----
-
 ## EG-015 — Override/implement completion missing in class bodies
 
 **Status: accepted — Target: M2**
@@ -2020,55 +1961,6 @@ Confirmed working:
 
 The remaining gaps concern external-symbol scope policy, failure reporting, and end-to-end
 verification.
-
-## FR-007 — Override-method references do not search inherited hook calls in supertype sources
-
-Status: open — Target: M2.
-Discovered 2026-06-30, Dropwizard `SessionFactoryProvider` validation.
-
-### Observed behaviour
-
-`textDocument/implementation` from Jersey's cached
-`AbstractValueParamProvider.createValueProvider(...)` correctly returns the Dropwizard reactor
-overrides:
-
-- `SessionFactoryProvider.createValueProvider(...)`
-- `AuthValueFactoryProvider.createValueProvider(...)`
-- `PolymorphicAuthValueFactoryProvider.createValueProvider(...)`
-
-But Find References on the reactor override
-`SessionFactoryProvider.createValueProvider(...)` does not search the cached superclass source file,
-so it misses the inherited framework hook call:
-
-```java
-public final Function<ContainerRequest, ?> getValueProvider(Parameter parameter) {
-    return createValueProvider(parameter);
-}
-```
-
-Find References on the cached superclass declaration also returns no references for that method in
-the current explorer probe.
-
-### Root cause
-
-The javac matching path is already override-aware after FR-006.
-The remaining failure happens earlier in candidate discovery.
-
-`ReferenceCandidatePlanner.planCandidates` handles method targets by intersecting:
-
-- files containing the method simple name, and
-- files containing the target's exact enclosing class simple name.
-
-For an override target such as `SessionFactoryProvider.createValueProvider`, the cached superclass
-file contains `createValueProvider(...)`, but it does not contain `SessionFactoryProvider`.
-The file is filtered out before javac can attribute the call and prove the override relationship.
-
-### Regression target
-
-`ReferenceCandidatePlannerTest.planCandidates_overrideMethodTarget_returnsSuperclassSelfCallFile`
-captures this as a disabled regression test.
-Enable it when candidate planning can include inherited hook-call files for override method targets
-without turning every common method name into a workspace-wide scan.
 
 ## FR-002 — External-symbol search scope policy is unresolved
 
