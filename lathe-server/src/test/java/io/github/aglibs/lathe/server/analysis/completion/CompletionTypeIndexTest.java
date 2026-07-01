@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import java.io.IOException;
+import java.util.List;
 import org.eclipse.lsp4j.CompletionItemKind;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 class CompletionTypeIndexTest extends CompletionTestSupport {
@@ -214,6 +216,40 @@ class CompletionTypeIndexTest extends CompletionTestSupport {
                     module com.example.app {
                     }""")))
         .anyMatch(l -> l.startsWith("Objects"));
+  }
+
+  @Test
+  @Disabled(
+      "CQ-0049: type-index completion offers observable-but-unreadable types "
+          + "(TypeIndexValidator gates on Elements.getTypeElement, not JPMS readability)")
+  void typeIndex_jpmsObservableButUnreadableModule_doesNotSuggestIndexedType() throws IOException {
+    // Reproduces the dob-core leak: a module the current module does not read is nonetheless in the
+    // module graph. In a real workspace java.desktop is pulled in by a dependency's non-transitive
+    // `requires`; here --add-modules puts it in the graph directly. Either way it is *observable*
+    // (Elements.getTypeElement resolves javax.swing.JButton) but not *readable* by com.example.app
+    // (a real `import javax.swing.JButton;` fails: "module com.example.app does not read it").
+    // TypeIndexValidator gates only on getTypeElement, so JButton currently leaks into completion;
+    // the correct gate is Trees.isAccessible(scope, typeElement).
+    localFixture =
+        new CompletionFixture(
+            CompletionFixture.typeIndex(
+                tmp.resolve("index.json"),
+                CompletionFixture.typeEntry("JButton", "javax.swing.JButton", TypeKind.CLASS)),
+            tmp);
+    assertThat(
+            labels(
+                localFixture.completeWithJpms(
+                    """
+                    package com.example.app;
+
+                    class Test {
+                        JBut§ field;
+                    }""",
+                    """
+                    module com.example.app {
+                    }""",
+                    List.of("--add-modules", "java.desktop"))))
+        .doesNotContain("JButton");
   }
 
   // ── argument position: importable types ───────────────────────────────────────

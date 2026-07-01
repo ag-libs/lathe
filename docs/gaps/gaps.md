@@ -3265,6 +3265,74 @@ from being a plain unconditional keyword addition.
 
 ---
 
+## CQ-0049 — Type-index completion offers types from modules the current module does not read
+
+ID: CQ-0049
+Status: accepted
+Target: M1
+Tier: correctness
+Failure mode: invalid-candidate
+Owner component: TypeIndexValidator
+
+Cursor context:
+```java
+// module-info.java:  module com.example.app { }   (no `requires java.desktop`)
+package com.example.app;
+
+class Test {
+    JBut§ field;    // expect: no JButton — javax.swing is not readable here
+}
+```
+
+Lathe behavior:
+`JButton` (`javax.swing.JButton`, module `java.desktop`) is offered as a completion candidate even
+though the enclosing module never `requires java.desktop`. Confirmed on the `payment-dob-lathe`
+workspace: in `dob-core` (whose `module-info.java` does not read `java.desktop`) Swing and other
+unread-module types complete via the type-index path, while a real `import javax.swing.JButton;`
+correctly fails to compile. `java.desktop` is pulled into the module graph by a dependency's
+non-transitive `requires`, so it is *observable* but not *readable* by `dob-core`.
+
+Expected Lathe behavior:
+Type-index candidates must be filtered by JPMS readability from the current compilation unit's
+module, matching what a real `import` would accept. A type in a module the current module does not
+read must not be offered. `java.base` types and types in read modules continue to be offered.
+
+Root cause:
+`TypeIndexValidator.isResolvable` gates candidates on `Elements.getTypeElement(qualifiedName) != null`
+(`TypeIndexValidator.java:30`). Single-arg `getTypeElement` performs a global lookup across every
+*observable* module in the graph and ignores whether the current module *reads* the type's module, so
+observable-but-unreadable types pass the filter. The correct primitive is
+`Trees.isAccessible(scope, typeElement)`, already used on the member-access path
+(`CandidateGenerator`) and the import path (`ImportCompletionProvider.java:70`); the type-index path
+is the only one that skips it. The comment in `TypeIndexValidator` claiming `getTypeElement` "follows
+JPMS module-boundary semantics automatically" is incorrect — it conflates observability with
+readability.
+
+Suggested fix:
+Gate `TypeIndexValidator` on `Trees.isAccessible(scope, typeElement)` in addition to resolving the
+element, threading the completion `scope` (already computed in
+`TypeReferenceCompleter.completeSimpleNameTypeReference`) into the validator, and computing a scope
+for the `CompletionEngine.staticMemberFitCandidates` call site. Preserve the permissive fallback when
+no scope is available (mirroring `ImportCompletionProvider`'s `scope == null || …` guard).
+
+Regression targets:
+- `CompletionTypeIndexTest.typeIndex_jpmsObservableButUnreadableModule_doesNotSuggestIndexedType`
+  (present, `@Disabled` pending fix — reproduces the gap via `--add-modules java.desktop` on a module
+  that does not `requires` it)
+- `CompletionTypeIndexTest.typeIndex_jpmsReadablePackage_suggestsIndexedType` (guard: `requires
+  java.desktop` still offers `JButton`)
+- `CompletionTypeIndexTest.typeIndex_platformType_survivesValidator_jpmsModule` (guard: `java.base`
+  types survive)
+
+Notes:
+Only the type-index type-reference path leaks; the member-access and import paths already enforce
+readability via `Trees.isAccessible`. The unit test that previously "covered" this
+(`typeIndex_jpmsUnreadablePackage_doesNotSuggestIndexedType`) passed only because its minimal module
+graph never made `java.desktop` observable, so `getTypeElement` returned `null` for the wrong reason
+— it never exercised the observable-but-unreadable case that occurs in real multi-module workspaces.
+
+---
+
 ## Current Triage
 
 All accepted completion-quality gaps from the `DropwizardResourceConfig` explorer pass have been resolved or triaged.
@@ -3338,6 +3406,12 @@ boolean parameter" and could **not** reproduce it at ordinary boolean argument s
 top-ranked across typed-prefix, second-parameter, overloaded, and `if`-condition contexts. The only
 failing case is the constructor-argument member-access path, which is captured as `CQ-0046`; no
 separate gap was opened for the boolean-slot claim.
+
+A 2026-07-01 validation pass on `payment-dob-lathe` recorded `CQ-0049`: type-index completion offers
+types from modules the current module does not read (Swing and AWS types complete in `dob-core`,
+which does not `requires java.desktop`). It is a correctness gap pulled into M1 — the type-index path
+gates on `Elements.getTypeElement` (observability) instead of `Trees.isAccessible` (JPMS readability),
+unlike the already-correct member-access and import paths. A `@Disabled` regression test reproduces it.
 
 Next completion work should run a new explorer pass with a different focus area,
 or pick up one of the gaps explicitly assigned to M2.
