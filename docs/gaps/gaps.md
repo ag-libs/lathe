@@ -1917,6 +1917,84 @@ Update the existing `skipsWithoutCrash` test to expect the component location on
 
 ---
 
+## EG-035 — Unused-declaration scan treats an assignment target as a use, so write-only variables are never flagged
+
+**Status: open — Target: M2**
+
+### Observed behaviour
+
+A local variable (or private field) that is assigned but never read is not reported as unused,
+even though its value is never observed. The declaration and every write are dead code.
+
+```java
+class Test {
+  public void method() {
+    int count = 0;       // declared
+    count = compute();   // assigned, never read
+  }
+  private int compute() { return 1; }
+}
+```
+
+`int count` receives an initializer and a later assignment, but the value is never read.
+No `Unused local variable 'count'` hint is produced, whereas an unread variable with no assignment
+(`int count = 0;` alone) is correctly flagged.
+
+### Root cause
+
+`UnusedDeclarationScanner` counts any reference to a declaration's element as a use.
+`visitIdentifier` calls `markReference` for the `IdentifierTree` on the **left-hand side** of an
+assignment (`count = ...`), because the scanner has no `visitAssignment` override and does not
+distinguish read positions from write positions:
+
+```java
+public Void visitIdentifier(final IdentifierTree node, final Void v) {
+  if (!declarationPhase) {
+    markReference(trees.getElement(getCurrentPath()));   // fires on assignment LHS too
+  }
+  return super.visitIdentifier(node, v);
+}
+```
+
+The assignment target is therefore added to `referencedLocals` / `referencedFields`, and the
+declaration escapes `collectUnused`. Only a variable with no reference of any kind survives to a
+hint, so "assigned but never read" is invisible.
+
+### Scope
+
+Write-only detection applies to `LOCAL_VARIABLE` and `PRIVATE_FIELD` only. Private methods are not
+assignable, so the `PRIVATE_METHOD` reachability analysis is unchanged. Both targeted kinds are
+confined to a single compilation unit (locals are method-scoped; private members are accessible only
+within their declaring top-level class), so the existing per-file scan sees every possible read and
+no cross-file analysis is required.
+
+### Proposed fix
+
+Distinguish writes from reads in the reference phase, for locals and private fields. Add a
+`visitAssignment` override that scans the right-hand side normally but treats a bare
+`IdentifierTree` / `this`-qualified `MemberSelectTree` on the left-hand side as a **write**, not a
+use — a pure write must not mark the declaration referenced. Reads through the same node still
+count: leave `visitCompoundAssignment` (`+=`, which reads then writes), `visitUnary` (`x++`), and any
+use in the RHS or a qualifier/index expression (`a.f = x` reads `a`; `arr[i] = x` reads `arr`)
+unchanged so they continue to mark the declaration used. Only the bare simple-assignment target is
+suppressed, which keeps false positives near zero at the cost of leaving `++`/`--`-only variables
+conservatively counted as used.
+
+Keep the existing behaviour for every non-assignment position, and keep the `Unnecessary` tag,
+`lathe.unused` code, and message format from EG-019. A follow-on remove-declaration quick fix would
+also need to remove the now-dead assignment statements, which is out of scope here.
+
+### Regression targets
+
+- `UnusedDeclarationScannerTest.compile_localVariableAssignedNeverRead_reportsHint` (added,
+  `@Disabled`)
+- On implementation, add:
+  - a negative case where the same variable is read after assignment (`compile_localVariableAssignedThenRead_noHint`);
+  - a compound-assignment case (`count += 1;`) asserting the read half keeps it used;
+  - a private-field variant asserting write-only fields are flagged.
+
+---
+
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work

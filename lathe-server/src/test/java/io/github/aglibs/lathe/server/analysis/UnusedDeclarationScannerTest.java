@@ -9,6 +9,7 @@ import org.eclipse.lsp4j.DiagnosticTag;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 class UnusedDeclarationScannerTest {
@@ -206,6 +207,27 @@ class UnusedDeclarationScannerTest {
                 }
                 """))
         .isEmpty();
+  }
+
+  @Test
+  @Disabled("EG-035: assignment target is counted as a use, so write-only locals are not flagged")
+  void compile_localVariableAssignedNeverRead_reportsHint() {
+    // 'count' is declared, assigned, but its value is never read — the declaration and both
+    // writes are dead code, yet the scanner treats the assignment LHS as a use.
+    assertThat(
+            unusedHintsFor(
+                """
+                class Test {
+                  public void method() {
+                    int count = 0;
+                    count = compute();
+                  }
+                  private int compute() {
+                    return 1;
+                  }
+                }
+                """))
+        .hasSize(1);
   }
 
   @Test
