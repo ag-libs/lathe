@@ -57,21 +57,21 @@ No design required.
 Each item is a 1–10 line change in a single well-understood location.
 Deliver as a single PR.
 
-- [ ] **EG-027** — Add bounds check in `SourceLocator.toOffset`; return `OptionalInt.empty()`
+- [x] **EG-027** — Add bounds check in `SourceLocator.toOffset`; return `OptionalInt.empty()`
   for out-of-range positions so references, implementation, call hierarchy, and type hierarchy
   return empty results instead of `ArrayIndexOutOfBoundsException`.
   Enable the four regression targets listed in the gap.
 
-- [ ] **CQ-0045** — In `CandidateFactory.variableCandidate`, format `type` with
+- [x] **CQ-0045** — In `CandidateFactory.variableCandidate`, format `type` with
   `TypeDisplayFormatter` and pass it as `labelDescription`, mirroring `fieldCandidate`.
   Guard the `null`-type case with no placeholder.
   Enable the two `@Disabled` tests in `CompletionPresentationTest`.
 
-- [ ] **EG-023** — Extend the Object-method suppression applied by EG-008 to the `this.` and
+- [x] **EG-023** — Extend the Object-method suppression applied by EG-008 to the `this.` and
   `super.` member-access paths.
   Add `clone` and `finalize` to the suppression set alongside `wait`, `notify`, `notifyAll`.
 
-- [ ] **EG-033** — In `WorkspaceSymbolResolver`, resolve the declaration name position via
+- [x] **EG-033** — In `WorkspaceSymbolResolver`, resolve the declaration name position via
   `SourceLocator.declarationNamePosition` (already used by `MethodImplementationLocator`) and
   emit it as the symbol's `Range` instead of the constant `FILE_START`.
   Fall back to `FILE_START` when position resolution fails.
@@ -82,7 +82,7 @@ Deliver as a single PR.
   `this(...)`/`super(...)` invocation.
   Also constrain to first-statement position.
 
-- [ ] **EG-013** — In `ReferenceCandidateIndex.build()`, include each module config's
+- [x] **EG-013** — In `ReferenceCandidateIndex.build()`, include each module config's
   `originalGenSourcesDir()` alongside its `sourceRoots()`, mirroring the logic already used
   by `WorkspaceModuleRegistry.allSourceRoots()`.
   Enable the two regression targets in the gap.
@@ -95,7 +95,7 @@ Each item has a fully-specified implementation in the gap doc and most have disa
 Deliver as two or three PRs: FR-006/EG-014 together; EG-031 alone; EG-032, EG-034, and the
 completion filter cluster together or as two PRs.
 
-- [ ] **FR-006 + EG-014** — Make `ReferenceTarget.matches` override-aware for `ElementKind.METHOD`.
+- [x] **FR-006 + EG-014** — Make `ReferenceTarget.matches` override-aware for `ElementKind.METHOD`.
   Extract `ReferenceTarget.resolveMethodElement(elements)` as a shared helper, reused by
   `MethodImplementationLocator` (DRY).
   Accept a match when any of three conditions holds: exact owner+descriptor (current fast path),
@@ -130,10 +130,11 @@ completion filter cluster together or as two PRs.
   Add the two proposed regression targets in `SignatureHelpTest`.
 
 - [ ] **CQ-0043 + CQ-0046 + CQ-0047** (one PR, three related defects):
+  CQ-0046 is done (`6cc9e5e`); CQ-0043 and CQ-0047 are still accepted and gate this item.
   - *CQ-0043*: Remove the boolean-only branch from `CompletionCandidateRanker.expectedTypeAllows`
     so boolean-returning candidates are demoted by `sortText` rather than excluded.
     Re-baseline `argumentPosition_referenceTypeParam_booleansExcluded` to assert ranking, not absence.
-  - *CQ-0046*: Handle `NewClassTree` in `TypeResolver.resolveArgumentValueByPosition` so
+  - *CQ-0046* (done): Handle `NewClassTree` in `TypeResolver.resolveArgumentValueByPosition` so
     constructor argument slots resolve the constructor parameter type, mirroring the existing
     `visitMethodInvocation` branch.
     Enable the two `@Disabled` tests in `CompletionArgumentTest`.
@@ -153,11 +154,11 @@ All three gaps are in `TypeResolver`/`MemberAccessCompleter`.
 Investigate CQ-0044 first; the root cause is still a hypothesis.
 Deliver CQ-0030 and CQ-0042 first if CQ-0044 investigation takes time.
 
-- [ ] **CQ-0030** — Force reattribution in `MemberAccessCompleter` when the initial resolved
+- [x] **CQ-0030** — Force reattribution in `MemberAccessCompleter` when the initial resolved
   receiver type kind is `TYPEVAR`, just as it already does for `null` and `ERROR`.
   Enable `CompletionMemberAccessTest.memberAccess_classTypeVariable_afterChange_usesDeclaredBound`.
 
-- [ ] **CQ-0042** — In the receiver-resolution path, when the current path is a method invocation
+- [x] **CQ-0042** — In the receiver-resolution path, when the current path is a method invocation
   whose attributed type is `TypeKind.ERROR`, fall back to `Trees.getElement(path)` cast to
   `ExecutableElement` and use its declared return type.
   Run through the existing effective-completion-type logic (wildcard/type-variable unwrapping).

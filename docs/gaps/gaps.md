@@ -1919,7 +1919,7 @@ Update the existing `skipsWithoutCrash` test to expect the component location on
 
 ## EG-035 — Unused-declaration scan treats an assignment target as a use, so write-only variables are never flagged
 
-**Status: open — Target: M2**
+**Status: accepted — Target: M2**
 
 ### Observed behaviour
 
@@ -2717,7 +2717,7 @@ and `Collection<String>.iterator().next().§` returns `String` methods.
 ## CQ-0030 — Type-variable receivers do not expose declared bounds
 
 ID: CQ-0030
-Status: accepted
+Status: done
 Target: M2
 Tier: typed
 Failure mode: missing-candidates
@@ -2784,26 +2784,15 @@ For the generic method return probe,
 resolve receiver=|call.call()| type=null static=null reattributed=true
 ```
 
-Current narrowed behaviour:
-Direct source fixtures now resolve type-variable receivers correctly:
-class type variables,
-method type variables,
-unbounded method type variables,
-and unbounded `Callable<T>.call()` returns all have active regression coverage.
-
-The remaining failure is the stale-cache/edit-buffer path.
-When the cached attributed source is still the previous valid file and the changed buffer adds
-`configuration.§`,
-the cached receiver lookup resolves `configuration` as raw `T`.
-Because `T` is not `ERROR`,
-`MemberAccessCompleter` does not force a fresh reattribution.
-`CandidateGenerator` then receives a `TYPEVAR` rather than a `DeclaredType` and returns no
-candidates.
-
-This mirrors the live Dropwizard `Bootstrap<T extends Configuration>` probe:
-`configuration.§` inside the edited `run(T configuration, Environment environment)` body returns no
-items,
-while equivalent direct-source unit fixtures do expose the bound's members.
+Resolution (7c38a0b — `fix: recover method-chain member completion`):
+Both dimensions now resolve. Direct source fixtures resolve type-variable receivers (class type
+variables, method type variables, unbounded method type variables, and unbounded
+`Callable<T>.call()` returns), and the stale-cache/edit-buffer path is recovered. When the cached
+attributed source is the previous valid file and the changed buffer adds `configuration.§`,
+sentinel attribution is now used as a local recovery analysis so a `TYPEVAR` receiver is normalized
+to its declared bound before candidate generation, and the recovery result is not cached as if it
+represented the real editor content. `memberAccess_classTypeVariable_afterChange_usesDeclaredBound`
+covers the recovered stale-cache case.
 
 Expected Lathe behavior:
 Type-variable member completion should use the effective upper bound.
@@ -2851,7 +2840,7 @@ Local generic class bounds also work for
 ## CQ-0042 — Member access on a type-error receiver returns no candidates
 
 ID: CQ-0042
-Status: accepted
+Status: done
 Target: M2
 Tier: typed
 Failure mode: missing-candidates
@@ -2903,7 +2892,11 @@ Do not parse the invocation text.
 
 Regression coverage:
 `CompletionMemberAccessTest.memberAccess_typeErrorReceiver_fallsBackToElementReturnType`
-is present but disabled until the fix is implemented.
+and `CompletionMemberAccessTest.memberAccess_typeErrorMethodChain_returnsMembersWithoutFreshAnalysis`
+are enabled and passing after the 7c38a0b fix. The error-typed method invocation's return type is
+now recovered through javac trees and elements — with a conservative same-name/arity fallback when
+javac misattributes the selector during recovery — and the recovery analysis is not returned as a
+cacheable sentinel.
 
 Notes:
 Same root-cause family as CQ-0029, CQ-0030, and CQ-0040.
