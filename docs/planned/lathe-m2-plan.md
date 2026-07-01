@@ -77,10 +77,12 @@ Deliver as a single PR.
   Fall back to `FILE_START` when position resolution fails.
   Enable the two regression targets in the gap.
 
-- [ ] **CQ-0011** — In `KeywordProvider`, gate `this`/`super` constructor-invocation keyword
-  candidates on the enclosing constructor body not already containing an explicit
-  `this(...)`/`super(...)` invocation.
-  Also constrain to first-statement position.
+- ~~**CQ-0011** — gate `this`/`super` constructor-invocation keyword candidates~~ **Deferred to
+  backlog (2026-07-01).** The gate would suppress the bare `this`/`super` keywords, which are valid
+  expressions at every constructor statement position, so it removes a needed completion rather than
+  fixing a defect. The correct treatment is a future `this(...)`/`super(...)` call-shape snippet at
+  the legal first-statement slot, blocked until snippet completion exists. See the CQ-0011 re-triage
+  note in gaps.md.
 
 - [x] **EG-013** — In `ReferenceCandidateIndex.build()`, include each module config's
   `originalGenSourcesDir()` alongside its `sourceRoots()`, mirroring the logic already used

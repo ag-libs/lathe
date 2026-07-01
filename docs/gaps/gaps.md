@@ -3490,11 +3490,23 @@ or pick up one of the gaps explicitly assigned to M2.
 ## CQ-0011 — Constructor invocation keywords can be offered when an explicit invocation already exists
 
 ID: CQ-0011
-Status: accepted
-Target: M2
+Status: deferred
+Target: backlog
 Tier: semantic
 Failure mode: invalid-keyword-candidate
 Owner component: KeywordProvider / SentinelParser
+
+Re-triage (2026-07-01):
+Deferred out of M2. On review the accepted M2 approach — withholding the `this`/`super` keywords in
+constructor statement slots — is wrong from a developer's point of view. Lathe's keyword completion
+only ever inserts the bare identifier `this`/`super`, which is a valid and very common expression at
+every statement position in a constructor (`this.field = x;`, `super.init();`). Suppressing it to
+avoid the rare, self-diagnosing case of a second explicit invocation would remove a constantly
+needed completion and would violate this gap's own note ("should not block ordinary `this`
+expression completion"). The correct treatment is a future `this(...)`/`super(...)` call-shape
+snippet offered *only* at the legal first-statement slot, alongside the always-available bare
+keyword — a completion feature, not a suppression — which is blocked until constructor-invocation
+snippet completion exists.
 
 Project/file:
 `/home/ag-libs/git/dropwizard/dropwizard-jersey/src/main/java/io/dropwizard/jersey/DropwizardResourceConfig.java`
