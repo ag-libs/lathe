@@ -105,6 +105,18 @@ local FIXTURES = {
     0,
   },
   {
+    "blank line after a selector line that also closes the statement dedents to the statement base",
+    {
+      "    super(",
+      "        DbClientContext.builder()",
+      "            .statements(builder.statements())",
+      "            .build());",
+      "",
+    },
+    5,
+    4,
+  },
+  {
     "blank line after a wrapped statement inside a lambda body returns to the body indent",
     { "  items.forEach(", "      value -> {", "        var built =", "            make(value);", "" },
     5,

@@ -99,7 +99,10 @@ local function blank_selector_indent(prev_lnum, prev, next_lnum, next_line)
   if prev_lnum and (ends_with_open_bracket(prev) or ends_with_block_opener(prev)) then
     return nil
   end
-  if prev_lnum and starts_with_selector(prev) then
+  -- A selector line that also closes out its statement (e.g. `.build());`)
+  -- has finished the chain, not continued it: defer to the statement-end
+  -- dedent logic in heuristic_indent instead of staying at the chain depth.
+  if prev_lnum and starts_with_selector(prev) and not ends_statement(prev) then
     return vim.fn.indent(prev_lnum)
   end
   if next_lnum and starts_with_selector(next_line) then
@@ -117,12 +120,18 @@ end
 
 -- Indent of the first line of the statement that `lnum` belongs to, found by
 -- walking back across continuation lines. Used to dedent the line that follows
--- a completed multi-line statement back to the statement's base column.
+-- a completed multi-line statement back to the statement's base column. A
+-- selector line (`.foo()`) is a continuation of whatever precedes it even
+-- when that earlier line does not itself end with a continuation character
+-- (e.g. a closed call like `.builder()`), so the walk must also follow it.
 local function statement_start_indent(lnum)
   local l = lnum
   while l > 1 do
     local p = vim.fn.prevnonblank(l - 1)
-    if p <= 0 or not continues_into_next(line(p)) then
+    if p <= 0 then
+      break
+    end
+    if not continues_into_next(line(p)) and not starts_with_selector(line(l)) then
       break
     end
     l = p
