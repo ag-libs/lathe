@@ -22,12 +22,12 @@ import org.eclipse.lsp4j.services.LanguageClient;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
-class ReferenceProgressReporterTest {
+class ProgressReporterTest {
 
   @Test
   void open_unsupportedClient_sendsNoProgress() {
     final LanguageClient client = mock(LanguageClient.class);
-    final var reporter = new ReferenceProgressReporter(client);
+    final var reporter = new ProgressReporter(client);
     final var response = new CompletableFuture<Void>();
 
     final var task = reporter.open(null, response);
@@ -42,7 +42,7 @@ class ReferenceProgressReporterTest {
   @Test
   void task_completedSearch_sendsMonotonicProtocolSequence() {
     final LanguageClient client = mock(LanguageClient.class);
-    final var reporter = new ReferenceProgressReporter(client, 0);
+    final var reporter = new ProgressReporter(client, 0);
     final var response = new CompletableFuture<Void>();
     final var token = Either.<String, Integer>forLeft("request-token");
 
@@ -68,7 +68,7 @@ class ReferenceProgressReporterTest {
   @Test
   void task_rapidUpdates_throttlesReports() {
     final LanguageClient client = mock(LanguageClient.class);
-    final var reporter = new ReferenceProgressReporter(client, Long.MAX_VALUE);
+    final var reporter = new ProgressReporter(client, Long.MAX_VALUE);
     final var response = new CompletableFuture<Void>();
     final var task = reporter.open(Either.<String, Integer>forLeft("request-token"), response);
 
@@ -84,7 +84,7 @@ class ReferenceProgressReporterTest {
   void open_supportedClientWithoutToken_createsServerToken() {
     final LanguageClient client = mock(LanguageClient.class);
     when(client.createProgress(any())).thenReturn(CompletableFuture.completedFuture(null));
-    final var reporter = new ReferenceProgressReporter(client);
+    final var reporter = new ProgressReporter(client);
     reporter.setSupported(true);
     final var task = reporter.open(null, new CompletableFuture<Void>());
 
@@ -103,7 +103,7 @@ class ReferenceProgressReporterTest {
   @Test
   void cancel_activeToken_cancelsOnlyAssociatedResponse() {
     final LanguageClient client = mock(LanguageClient.class);
-    final var reporter = new ReferenceProgressReporter(client);
+    final var reporter = new ProgressReporter(client);
     final var first = new CompletableFuture<Void>();
     final var second = new CompletableFuture<Void>();
     final var firstToken = Either.<String, Integer>forLeft("first");
@@ -129,7 +129,7 @@ class ReferenceProgressReporterTest {
   @Test
   void finish_failedTask_reportsFailedOutcome() {
     final LanguageClient client = mock(LanguageClient.class);
-    final var reporter = new ReferenceProgressReporter(client);
+    final var reporter = new ProgressReporter(client);
     final var task =
         reporter.open(
             Either.<String, Integer>forLeft("request-token"), new CompletableFuture<Void>());
@@ -148,7 +148,7 @@ class ReferenceProgressReporterTest {
   @Test
   void finish_completedTask_removesCancellationAssociation() {
     final LanguageClient client = mock(LanguageClient.class);
-    final var reporter = new ReferenceProgressReporter(client);
+    final var reporter = new ProgressReporter(client);
     final var response = new CompletableFuture<Void>();
     final var token = Either.<String, Integer>forLeft("request-token");
     final var task = reporter.open(token, response);
@@ -163,7 +163,7 @@ class ReferenceProgressReporterTest {
   void task_notificationFailure_doesNotFailLifecycle() {
     final LanguageClient client = mock(LanguageClient.class);
     doThrow(new IllegalStateException("expected")).when(client).notifyProgress(any());
-    final var reporter = new ReferenceProgressReporter(client, 0);
+    final var reporter = new ProgressReporter(client, 0);
     final var task =
         reporter.open(
             Either.<String, Integer>forLeft("request-token"), new CompletableFuture<Void>());

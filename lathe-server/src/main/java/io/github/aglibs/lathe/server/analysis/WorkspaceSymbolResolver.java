@@ -5,34 +5,61 @@ import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
+import io.github.aglibs.lathe.server.ProgressReporter;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.SymbolInformation;
+import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 
 public final class WorkspaceSymbolResolver {
 
   private static final Range FILE_START = new Range(new Position(0, 0), new Position(0, 0));
+  private static final String BROWSE_TITLE = "Loading workspace symbols";
+  private static final int SEARCH_LIMIT = 100;
 
   private WorkspaceSymbolResolver() {}
 
   public static List<SymbolInformation> resolve(
       final String query, final WorkspaceTypeIndex typeIndex, final List<Path> sourceDirs) {
-    if (query.isBlank()) {
-      return List.of();
+    return resolve(query, typeIndex, sourceDirs, () -> {}, null);
+  }
+
+  public static List<SymbolInformation> resolve(
+      final String query,
+      final WorkspaceTypeIndex typeIndex,
+      final List<Path> sourceDirs,
+      final CancelChecker cancelChecker,
+      final ProgressReporter.Task progress) {
+    final boolean blank = query.isBlank();
+    final List<TypeIndexEntry> entries =
+        blank ? typeIndex.browseWorkspace() : typeIndex.search(query, SEARCH_LIMIT);
+    if (blank && progress != null) {
+      progress.begin(BROWSE_TITLE, entries.size());
     }
 
+    final var results = new ArrayList<SymbolInformation>();
     try (var parser = new SourceParser()) {
-      return typeIndex.search(query, 100).stream()
-          .map(entry -> toSymbolInformation(entry, sourceDirs, parser))
-          .filter(Objects::nonNull)
-          .toList();
+      for (final TypeIndexEntry entry : entries) {
+        cancelChecker.checkCanceled();
+
+        final SymbolInformation info = toSymbolInformation(entry, sourceDirs, parser);
+        if (info != null) {
+          results.add(info);
+        }
+
+        if (blank && progress != null) {
+          progress.advance();
+        }
+      }
     }
+
+    return List.copyOf(results);
   }
 
   private static SymbolInformation toSymbolInformation(

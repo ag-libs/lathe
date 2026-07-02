@@ -35,11 +35,25 @@ class WorkspaceSymbolTest {
   // --- resolve: query guards ---
 
   @Test
-  void resolve_emptyOrBlankQuery_returnsEmpty() throws IOException {
-    createSourceFile("com.example", "MyClass");
-    final var index = indexOf(entry("MyClass", "com.example"));
-    assertThat(WorkspaceSymbolResolver.resolve("", index, List.of(src))).isEmpty();
-    assertThat(WorkspaceSymbolResolver.resolve("   ", index, List.of(src))).isEmpty();
+  void resolve_blankQuery_returnsWorkspaceSymbols() throws IOException {
+    createSourceFile("com.example", "Alpha");
+    createSourceFile("com.example", "Beta");
+    final var index = indexOf(entry("Beta", "com.example"), entry("Alpha", "com.example"));
+
+    final List<SymbolInformation> result = WorkspaceSymbolResolver.resolve("", index, List.of(src));
+
+    assertThat(result).extracting(SymbolInformation::getName).containsExactly("Alpha", "Beta");
+  }
+
+  @Test
+  void resolve_blankQuery_acceptsWhitespaceQuery() throws IOException {
+    createSourceFile("com.example", "WorkspaceType");
+    final var index = indexOf(entry("WorkspaceType", "com.example"));
+
+    final List<SymbolInformation> result =
+        WorkspaceSymbolResolver.resolve("   ", index, List.of(src));
+
+    assertThat(result).extracting(SymbolInformation::getName).containsExactly("WorkspaceType");
   }
 
   // --- resolve: basic matching ---
@@ -54,6 +68,19 @@ class WorkspaceSymbolTest {
     assertThat(result.getFirst().getName()).isEqualTo("UserService");
     assertThat(result.getFirst().getKind()).isEqualTo(SymbolKind.Class);
     assertThat(result.getFirst().getContainerName()).isEqualTo("com.example");
+  }
+
+  @Test
+  void resolve_nonBlankQuery_keepsPrefixSearchBehavior() throws IOException {
+    createSourceFile("com.example", "FooService");
+    createSourceFile("com.example", "BarService");
+    final var index =
+        indexOf(entry("FooService", "com.example"), entry("BarService", "com.example"));
+
+    final List<SymbolInformation> result =
+        WorkspaceSymbolResolver.resolve("Foo", index, List.of(src));
+
+    assertThat(result).extracting(SymbolInformation::getName).containsExactly("FooService");
   }
 
   @Test

@@ -24,7 +24,7 @@ final class LatheWorkspaceService implements WorkspaceService {
   public CompletableFuture<
           Either<List<? extends SymbolInformation>, List<? extends WorkspaceSymbol>>>
       symbol(final WorkspaceSymbolParams params) {
-    return textDocumentService.workspaceSymbolFuture(params.getQuery()).thenApply(Either::forLeft);
+    return textDocumentService.workspaceSymbolFuture(params).thenApply(Either::forLeft);
   }
 
   @Override

@@ -319,6 +319,42 @@ from the Lathe cache, requests references at the class declaration, and asserts 
 The reactor-origin case is covered by
 `LspSmokeTest.references_fromReactorSource_findsUsageAcrossModules`.
 
+## FR-005 — Client response incident is not reproducibly covered
+
+Status: done — Target: M2.
+
+The original incident: a Helidon session's server log ended immediately after logging reference
+hits, with no exception, fatal JVM message, or RPC exit record, while Neovim never displayed the
+two locations. That did not establish a Lathe crash — it established that the test suite at the
+time stopped before JSON-RPC client receipt and could not distinguish a server response failure
+from an editor-side display or process failure.
+
+### Resolution
+
+`LspSmokeTest` (added for FR-004) now closes that gap directly: `references_fromReactorSource_-
+findsUsageAcrossModules`, `references_fromCachedJdkSource_findsReactorUsages`,
+`references_fromBaseMethod_findsOverrideDeclarationAndCallSite`, and
+`references_fromOverrideMethod_findsSupertypeTypedCallSite` each drive a real subprocess server
+through a real LSP4J client and call
+`server.getTextDocumentService().references(params).get(30, SECONDS)`, asserting on the actual
+`Location` values received — not server-side logs. That is the invoker-side requirement from this
+gap's "Required investigation support" list.
+
+The logging requirement is also already met: `WorkspaceSession.referencesFuture`'s existing log
+line, `"[references] %s %dms target=%s hits=%d"`, retains request URI, elapsed time, target name,
+and hit count.
+
+Not covered: an isolated unit-level test asserting `Location` serializability in isolation (the
+invoker test covers this implicitly, since LSP4J actually serializes the response over the wire).
+If that narrower gap matters later, open a new `documented` entry rather than reopening this one.
+
+### Regression test
+
+`LspSmokeTest.references_fromReactorSource_findsUsageAcrossModules`,
+`references_fromCachedJdkSource_findsReactorUsages`,
+`references_fromBaseMethod_findsOverrideDeclarationAndCallSite`,
+`references_fromOverrideMethod_findsSupertypeTypedCallSite`.
+
 ## FR-006 — Method references are override-aware
 
 Status: done — Target: M2.

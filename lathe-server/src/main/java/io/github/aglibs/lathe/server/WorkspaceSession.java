@@ -206,7 +206,7 @@ final class WorkspaceSession {
       final Position pos,
       final boolean includeDeclaration,
       final CancelChecker cancelChecker,
-      final ReferenceProgressReporter.Task progress) {
+      final ProgressReporter.Task progress) {
     cancelChecker.checkCanceled();
     final OpenDocument openFile = docs.get(uri);
     if (openFile == null) {
@@ -309,9 +309,10 @@ final class WorkspaceSession {
       final ReferenceTarget target,
       final boolean includeDeclaration,
       final CancelChecker cancelChecker,
-      final ReferenceProgressReporter.Task progress) {
+      final ProgressReporter.Task progress) {
+    final var progressTitle = "Finding references to %s".formatted(target.simpleName());
     if (target.scope() == ReferenceTarget.SearchScope.DECLARING_FILE) {
-      progress.begin(target.simpleName(), 1);
+      progress.begin(progressTitle, 1);
       return cursorWorker
           .searchReferences(
               openFile.uri(),
@@ -337,7 +338,7 @@ final class WorkspaceSession {
     final ModuleSourceConfig searchConfig = declaringConfigFor(target, cursorConfig);
     final List<ModuleSourceConfig> configs = planSearchScope(target, searchConfig);
     progress.begin(
-        target.simpleName(),
+        progressTitle,
         configs.stream()
             .map(config -> planSearchInputs(config, target, packageRel))
             .mapToInt(inputs -> inputs.openDocuments().size() + inputs.diskCandidates().size())
@@ -359,7 +360,7 @@ final class WorkspaceSession {
       final boolean includeDeclaration,
       final Path packageRel,
       final CancelChecker cancelChecker,
-      final ReferenceProgressReporter.Task progress) {
+      final ProgressReporter.Task progress) {
     cancelChecker.checkCanceled();
     final var worker = workspace.workerFor(config);
     final var inputs = planSearchInputs(config, target, packageRel);
@@ -725,7 +726,7 @@ final class WorkspaceSession {
   CompletableFuture<List<CallHierarchyIncomingCall>> incomingCallsFuture(
       final CallHierarchyItem item,
       final CancelChecker cancelChecker,
-      final ReferenceProgressReporter.Task progress) {
+      final ProgressReporter.Task progress) {
     cancelChecker.checkCanceled();
     final CallHierarchyItemData data = CallHierarchyItemDataCodec.decode(item.getData());
     if (data == null) {
@@ -739,6 +740,7 @@ final class WorkspaceSession {
             data.methodName(),
             data.erasedDescriptor(),
             data.scope());
+    final var progressTitle = "Finding callers of %s".formatted(target.simpleName());
 
     final var declaringPath = LatheUri.toPath(data.routingUri());
     final var declaringConfig = workspace.moduleSourceFor(declaringPath);
@@ -753,7 +755,7 @@ final class WorkspaceSession {
       if (worker == null) {
         return CompletableFuture.completedFuture(List.of());
       }
-      progress.begin(target.simpleName(), 1);
+      progress.begin(progressTitle, 1);
       final OpenDocument declaringDoc = docs.get(data.routingUri());
       if (declaringDoc != null) {
         return worker
@@ -797,7 +799,7 @@ final class WorkspaceSession {
             .flatMap(
                 config -> incomingCallFutures(config, target, packageRel, cancelChecker, progress))
             .toList();
-    progress.begin(target.simpleName(), searches.size());
+    progress.begin(progressTitle, searches.size());
     return joinCandidateResults(searches, cancelChecker)
         .thenApply(
             calls -> {
@@ -814,7 +816,7 @@ final class WorkspaceSession {
       final ReferenceTarget target,
       final Path packageRel,
       final CancelChecker cancelChecker,
-      final ReferenceProgressReporter.Task progress) {
+      final ProgressReporter.Task progress) {
     cancelChecker.checkCanceled();
     final var worker = workspace.workerFor(config);
     final var inputs = planSearchInputs(config, target, packageRel);
@@ -1067,11 +1069,13 @@ final class WorkspaceSession {
     return result;
   }
 
-  List<SymbolInformation> workspaceSymbol(final String query) {
+  List<SymbolInformation> workspaceSymbol(
+      final String query, final CancelChecker cancelChecker, final ProgressReporter.Task progress) {
+    cancelChecker.checkCanceled();
     final var t = Stopwatch.start();
     final List<Path> sourceDirs = typeSourceDirs();
     final List<SymbolInformation> results =
-        WorkspaceSymbolResolver.resolve(query, typeIndex, sourceDirs);
+        WorkspaceSymbolResolver.resolve(query, typeIndex, sourceDirs, cancelChecker, progress);
     LOG.info(
         () -> "[symbol] query=%s hits=%d %dms".formatted(query, results.size(), t.elapsedMs()));
     return results;

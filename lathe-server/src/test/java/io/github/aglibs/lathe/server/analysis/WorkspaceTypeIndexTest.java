@@ -168,6 +168,47 @@ class WorkspaceTypeIndexTest {
   }
 
   @Test
+  void browseWorkspace_reactorOnly_excludesStaticTypes() throws IOException {
+    final var shardPath = writeShard(tmp, "dep.json", shard(entry("DependencyType", "com.dep")));
+    final var packagePrivate =
+        new TypeIndexEntry(
+            "InternalType",
+            "com.example.InternalType",
+            "com.example",
+            TypeKind.CLASS,
+            false,
+            List.of());
+    final var index =
+        WorkspaceTypeIndex.build(
+            List.of(shardPath), List.of(List.of(entry("Service", "com.example"), packagePrivate)));
+
+    assertThat(index.browseWorkspace())
+        .extracting(TypeIndexEntry::binaryName)
+        .containsExactly("com.example.InternalType", "com.example.Service");
+  }
+
+  @Test
+  void browseWorkspace_sortedAlphabetically() {
+    final var index =
+        WorkspaceTypeIndex.build(
+            List.of(),
+            List.of(
+                List.of(
+                    entry("Zulu", "com.example"),
+                    entry("Alpha", "com.example"),
+                    entry("Middle", "com.example"))));
+
+    assertThat(index.browseWorkspace())
+        .extracting(TypeIndexEntry::binaryName)
+        .containsExactly("com.example.Alpha", "com.example.Middle", "com.example.Zulu");
+  }
+
+  @Test
+  void browseWorkspace_emptyIndex_returnsEmpty() {
+    assertThat(WorkspaceTypeIndex.empty().browseWorkspace()).isEmpty();
+  }
+
+  @Test
   void graph_directRelations_returnsImmediateTypes() {
     final var object = graphEntry("java.lang.Object", true);
     final var base = graphEntry("com.example.Base", true, "java.lang.Object");

@@ -21,7 +21,7 @@ final class LatheTextDocumentService implements TextDocumentService {
   private final ServerEventLoop worker = new ServerEventLoop();
   private final AtomicBoolean closed = new AtomicBoolean();
   private final long debounceMs;
-  private ReferenceProgressReporter progressReporter;
+  private ProgressReporter progressReporter;
   private WorkspaceSession session;
 
   LatheTextDocumentService() {
@@ -33,7 +33,7 @@ final class LatheTextDocumentService implements TextDocumentService {
   }
 
   void connect(final LanguageClient client) {
-    progressReporter = new ReferenceProgressReporter(client);
+    progressReporter = new ProgressReporter(client);
     worker.execute(() -> session = new WorkspaceSession(client, worker, debounceMs));
   }
 
@@ -325,7 +325,23 @@ final class LatheTextDocumentService implements TextDocumentService {
     return CompletableFuture.completedFuture(List.of());
   }
 
-  CompletableFuture<List<? extends SymbolInformation>> workspaceSymbolFuture(final String query) {
-    return worker.submit(() -> session.workspaceSymbol(query));
+  CompletableFuture<List<? extends SymbolInformation>> workspaceSymbolFuture(
+      final WorkspaceSymbolParams params) {
+    final var query = params.getQuery();
+    final var response = new CompletableFuture<List<? extends SymbolInformation>>();
+    final CancelChecker cancelChecker = new CompletableFutures.FutureCancelChecker(response);
+    final var progress = progressReporter.open(params.getWorkDoneToken(), response);
+    final CompletableFuture<List<SymbolInformation>> work =
+        worker.submit(() -> session.workspaceSymbol(query, cancelChecker, progress));
+    work.whenComplete(
+        (result, failure) -> {
+          progress.finish(failure);
+          if (failure == null) {
+            response.complete(result);
+          } else {
+            response.completeExceptionally(failure);
+          }
+        });
+    return response;
   }
 }

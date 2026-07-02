@@ -1555,7 +1555,7 @@ registration in `LatheLanguageServer`.
 
 ## EG-029 — `rangeFormat` ignores its range and formats the whole document
 
-**Status: accepted — Target: M2**
+**Status: accepted — Target: M3**
 
 ### Observed behaviour
 
@@ -2045,39 +2045,6 @@ At minimum:
 6. Request references from its declaration and assert project locations.
 
 The test must inspect returned URIs and ranges, not only result count.
-
-## FR-005 — Client response incident is not reproducibly covered
-
-Status: accepted — Target: M2.
-Observed incident; server defect not established.
-
-In the Helidon incident, the server log ended immediately after:
-
-```text
-[references] MongoDbClient.java element=Duration hits=2
-[references] MongoDbExecute.java element=Duration hits=0
-[references] MongoDbClient.java 12ms target=Duration hits=2
-```
-
-There was no server exception, fatal JVM message, shutdown record, or RPC exit record.
-Lathe therefore completed reference computation successfully, but Neovim did not display the two
-locations before the editor/session connection ended.
-
-This does not establish a Lathe crash.
-It establishes that the current tests stop before JSON-RPC client receipt and cannot distinguish a
-server response failure from an editor-side display or process failure.
-
-### Required investigation support
-
-- The invoker client must await and assert the actual references response.
-- A focused service test should verify that the `CompletableFuture` completes with serializable LSP
-  `Location` values.
-- Operation logging should retain the request URI, target, elapsed time, and final hit count.
-- If another incident occurs, capture the Neovim process exit status and RPC client-exit event in
-  addition to the server log.
-
-No production fix should be attributed to this incident until it is reproduced outside the editor or
-an RPC/client error is captured.
 
 
 # Code Action Gaps (CA-N)
@@ -3301,7 +3268,7 @@ or `super.member` access where those are otherwise legal.
 
 ID: CQ-0002
 Status: accepted
-Target: M2
+Target: M3
 Tier: assistive
 Failure mode: missing-candidate
 Owner component: SentinelInjector / SentinelParser

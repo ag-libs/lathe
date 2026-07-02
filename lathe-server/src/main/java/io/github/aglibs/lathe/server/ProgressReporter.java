@@ -6,6 +6,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.ProgressParams;
@@ -17,9 +18,9 @@ import org.eclipse.lsp4j.WorkDoneProgressReport;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.LanguageClient;
 
-final class ReferenceProgressReporter {
+public final class ProgressReporter {
 
-  private static final Logger LOG = Logger.getLogger(ReferenceProgressReporter.class.getName());
+  private static final Logger LOG = Logger.getLogger(ProgressReporter.class.getName());
   private static final long REPORT_INTERVAL_MS = 200;
 
   private final LanguageClient client;
@@ -29,11 +30,11 @@ final class ReferenceProgressReporter {
       new ConcurrentHashMap<>();
   private volatile boolean supported;
 
-  ReferenceProgressReporter(final LanguageClient client) {
+  ProgressReporter(final LanguageClient client) {
     this(client, REPORT_INTERVAL_MS);
   }
 
-  ReferenceProgressReporter(final LanguageClient client, final long reportIntervalMs) {
+  ProgressReporter(final LanguageClient client, final long reportIntervalMs) {
     this.client = client;
     this.reportIntervalMs = reportIntervalMs;
   }
@@ -49,7 +50,7 @@ final class ReferenceProgressReporter {
       token = requestedToken;
       createRequired = false;
     } else if (supported) {
-      token = Either.forLeft("lathe-references-%d".formatted(nextToken.incrementAndGet()));
+      token = Either.forLeft("lathe-progress-%d".formatted(nextToken.incrementAndGet()));
       createRequired = true;
     } else {
       return new Task(this, null, response, false);
@@ -84,7 +85,7 @@ final class ReferenceProgressReporter {
                   Level.WARNING,
                   failure,
                   () ->
-                      "[references-progress] %s create %dms failed"
+                      "[progress] %s create %dms failed"
                           .formatted(tokenText(token), timer.elapsedMs()));
               return null;
             });
@@ -93,9 +94,7 @@ final class ReferenceProgressReporter {
       LOG.log(
           Level.WARNING,
           failure,
-          () ->
-              "[references-progress] %s create %dms failed"
-                  .formatted(tokenText(token), timer.elapsedMs()));
+          () -> "[progress] %s create %dms failed".formatted(tokenText(token), timer.elapsedMs()));
     }
   }
 
@@ -108,9 +107,7 @@ final class ReferenceProgressReporter {
       LOG.log(
           Level.WARNING,
           failure,
-          () ->
-              "[references-progress] %s notify %dms failed"
-                  .formatted(tokenText(token), timer.elapsedMs()));
+          () -> "[progress] %s notify %dms failed".formatted(tokenText(token), timer.elapsedMs()));
     }
   }
 
@@ -118,7 +115,7 @@ final class ReferenceProgressReporter {
     return token.isLeft() ? token.getLeft() : String.valueOf(token.getRight());
   }
 
-  static final class Task {
+  public static final class Task {
 
     private enum State {
       PENDING,
@@ -126,7 +123,7 @@ final class ReferenceProgressReporter {
       ENDED
     }
 
-    private final ReferenceProgressReporter reporter;
+    private final ProgressReporter reporter;
     private final Either<String, Integer> token;
     private final CompletableFuture<?> response;
     private final boolean createRequired;
@@ -139,7 +136,7 @@ final class ReferenceProgressReporter {
     private long lastReportMs;
 
     private Task(
-        final ReferenceProgressReporter reporter,
+        final ProgressReporter reporter,
         final Either<String, Integer> token,
         final CompletableFuture<?> response,
         final boolean createRequired) {
@@ -150,7 +147,7 @@ final class ReferenceProgressReporter {
     }
 
     // Dispatch stays under this task lock to preserve begin/report/end order across module workers.
-    synchronized void begin(final String target, final int total) {
+    public synchronized void begin(final String title, final int total) {
       if (token == null || state != State.PENDING) {
         return;
       }
@@ -161,14 +158,23 @@ final class ReferenceProgressReporter {
         reporter.createProgress(token);
       }
       final var begin = new WorkDoneProgressBegin();
-      begin.setTitle("Finding references to %s".formatted(target));
+      begin.setTitle(title);
       begin.setCancellable(true);
-      begin.setMessage(message());
+      begin.setMessage("%d / %d".formatted(completed, total));
       begin.setPercentage(percentage());
       reporter.notifyProgress(token, begin);
     }
 
-    synchronized void advance(final boolean requiredAttribution, final int candidateHits) {
+    public synchronized void advance() {
+      if (token == null || state == State.ENDED) {
+        return;
+      }
+
+      completed++;
+      report(() -> "%d / %d".formatted(completed, total));
+    }
+
+    public synchronized void advance(final boolean requiredAttribution, final int candidateHits) {
       if (token == null || state == State.ENDED) {
         return;
       }
@@ -178,21 +184,27 @@ final class ReferenceProgressReporter {
         attributed++;
       }
       hits += candidateHits;
+      report(
+          () ->
+              "%d / %d candidates, attributed=%d, hits=%d"
+                  .formatted(completed, total, attributed, hits));
+    }
 
+    private void report(final Supplier<String> message) {
       final long elapsedMs = timer.elapsedMs();
       if (state != State.ACTIVE || elapsedMs - lastReportMs < reporter.reportIntervalMs) {
         return;
       }
 
       lastReportMs = elapsedMs;
-      final var report = new WorkDoneProgressReport();
-      report.setCancellable(true);
-      report.setMessage(message());
-      report.setPercentage(percentage());
-      reporter.notifyProgress(token, report);
+      final var progressReport = new WorkDoneProgressReport();
+      progressReport.setCancellable(true);
+      progressReport.setMessage(message.get());
+      progressReport.setPercentage(percentage());
+      reporter.notifyProgress(token, progressReport);
     }
 
-    synchronized void finish(final Throwable failure) {
+    public synchronized void finish(final Throwable failure) {
       if (state == State.ENDED) {
         return;
       }
@@ -208,11 +220,6 @@ final class ReferenceProgressReporter {
       } finally {
         reporter.remove(token, response);
       }
-    }
-
-    private String message() {
-      return "%d / %d candidates, attributed=%d, hits=%d"
-          .formatted(completed, total, attributed, hits);
     }
 
     private int percentage() {

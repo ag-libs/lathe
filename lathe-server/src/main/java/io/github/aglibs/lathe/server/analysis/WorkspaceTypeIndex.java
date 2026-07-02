@@ -196,6 +196,14 @@ public final class WorkspaceTypeIndex {
         .toList();
   }
 
+  public List<TypeIndexEntry> browseWorkspace() {
+    return bySimpleNameLower.values().stream()
+        .flatMap(List::stream)
+        .filter(entry -> reactorBinaryNames.contains(entry.binaryName()))
+        .sorted(Comparator.comparing(TypeIndexEntry::binaryName))
+        .toList();
+  }
+
   public List<String> searchByBinaryPrefix(final String prefix, final int limit) {
     final Set<String> seen = new LinkedHashSet<>();
     // "￿" (U+FFFF) is the highest BMP char — acts as an exclusive upper bound for all ASCII binary
