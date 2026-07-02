@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.analysis;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.IdentifierTree;
+import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.Tree;
@@ -19,6 +20,7 @@ import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Name;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.DeclaredType;
 import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.ParameterInformation;
 import org.eclipse.lsp4j.SignatureHelp;
@@ -88,6 +90,16 @@ final class SignatureHelpResolver {
         }
 
         callName = id.getName().toString();
+        overloads = candidates;
+        resolved = candidates.getFirst();
+      } else if (inv.getMethodSelect() instanceof final MemberSelectTree select) {
+        final List<ExecutableElement> candidates =
+            memberSelectCandidates(analysis, callPath, select);
+        if (candidates.isEmpty()) {
+          return null;
+        }
+
+        callName = select.getIdentifier().toString();
         overloads = candidates;
         resolved = candidates.getFirst();
       } else {
@@ -164,6 +176,20 @@ final class SignatureHelpResolver {
         .filter(e -> e.getKind() == ElementKind.METHOD && e.getSimpleName().equals(name))
         .map(e -> (ExecutableElement) e)
         .toList();
+  }
+
+  private static List<ExecutableElement> memberSelectCandidates(
+      final AttributedFileAnalysis analysis,
+      final TreePath callPath,
+      final MemberSelectTree select) {
+    final var receiverPath = new TreePath(new TreePath(callPath, select), select.getExpression());
+    final var receiverType = analysis.trees().getTypeMirror(receiverPath);
+    if (!(receiverType instanceof final DeclaredType declaredType)
+        || !(declaredType.asElement() instanceof final TypeElement owner)) {
+      return List.of();
+    }
+
+    return methodsNamed(analysis, owner, select.getIdentifier());
   }
 
   private static List<ExecutableElement> constructorsOf(

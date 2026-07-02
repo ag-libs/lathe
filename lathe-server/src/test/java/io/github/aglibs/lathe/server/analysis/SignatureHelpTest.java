@@ -88,6 +88,47 @@ class SignatureHelpTest {
   }
 
   @Test
+  void signatureHelp_qualifiedEmptyParens_paramMethod_returnsSignature() {
+    final var source =
+        """
+        class Other {
+          void target(String name, int count) {}
+        }
+        class Test {
+          void caller() { new Other().target(§); }
+        }
+        """;
+    final var help = signatureHelpAt(source);
+
+    assertThat(help).isNotNull();
+    assertThat(help.getSignatures()).hasSize(1);
+    assertThat(help.getSignatures().getFirst().getLabel()).contains("target");
+    assertThat(help.getSignatures().getFirst().getLabel()).contains("String name");
+    assertThat(help.getSignatures().getFirst().getLabel()).contains("int count");
+    assertThat(help.getActiveParameter()).isEqualTo(0);
+  }
+
+  @Test
+  void signatureHelp_qualifiedEmptyParens_zeroParamMethod_stillWorks() {
+    final var source =
+        """
+        class Other {
+          void target() {}
+        }
+        class Test {
+          void caller() { new Other().target(§); }
+        }
+        """;
+    final var help = signatureHelpAt(source);
+
+    assertThat(help).isNotNull();
+    assertThat(help.getSignatures()).hasSize(1);
+    assertThat(help.getSignatures().getFirst().getLabel()).contains("target");
+    assertThat(help.getSignatures().getFirst().getParameters()).isEmpty();
+    assertThat(help.getActiveParameter()).isEqualTo(0);
+  }
+
+  @Test
   void signatureHelp_nestedCall_resolvesInnermostInvocation() {
     final var source =
         """

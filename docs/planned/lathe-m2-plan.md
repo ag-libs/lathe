@@ -123,7 +123,7 @@ completion filter cluster together or as two PRs.
   `VariableTree` member exposed for the record component in the `RECORD` class tree.
   The regression now asserts the component declaration location.
 
-- [ ] **EG-032** — In `SignatureHelpResolver`, when the member-select path's `getElement` does
+- [x] **EG-032** — In `SignatureHelpResolver`, when the member-select path's `getElement` does
   not yield an `ExecutableElement` (because javac overload resolution failed with empty args),
   fall back to a by-name overload lookup on the receiver's declared type, mirroring the
   `IdentifierTree` branch.

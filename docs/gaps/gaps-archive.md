@@ -210,6 +210,23 @@ Regression coverage:
 
 ---
 
+## EG-032 — Signature help returns nothing for a qualified call with empty parentheses when the method has parameters
+
+**Status: done — Target: M2.**
+
+Qualified empty-argument calls now use the same by-name overload fallback that unqualified calls
+already used.
+When javac cannot resolve `receiver.method()` to an applicable `ExecutableElement`, the resolver
+looks up the receiver expression's declared type and lists methods with the selected name.
+This preserves the existing exact-resolution path when javac can resolve the call.
+
+Regression coverage:
+
+- `SignatureHelpTest.signatureHelp_qualifiedEmptyParens_paramMethod_returnsSignature`
+- `SignatureHelpTest.signatureHelp_qualifiedEmptyParens_zeroParamMethod_stillWorks`
+
+---
+
 ## EG-020 — `new` expression completion is not slot-aware
 
 **Status: done — Target: M2.**
