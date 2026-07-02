@@ -1069,13 +1069,11 @@ final class WorkspaceSession {
     return result;
   }
 
-  List<SymbolInformation> workspaceSymbol(
-      final String query, final CancelChecker cancelChecker, final ProgressReporter.Task progress) {
-    cancelChecker.checkCanceled();
+  List<SymbolInformation> workspaceSymbol(final String query) {
     final var t = Stopwatch.start();
     final List<Path> sourceDirs = typeSourceDirs();
     final List<SymbolInformation> results =
-        WorkspaceSymbolResolver.resolve(query, typeIndex, sourceDirs, cancelChecker, progress);
+        WorkspaceSymbolResolver.resolve(query, typeIndex, sourceDirs);
     LOG.info(
         () -> "[symbol] query=%s hits=%d %dms".formatted(query, results.size(), t.elapsedMs()));
     return results;

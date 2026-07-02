@@ -29,9 +29,6 @@ grep -n 'Target: M1' docs/gaps/gaps.md                         # the M1 slice
 Entries follow, grouped by area: exploration (EG) below, then Find References (FR), Code Actions
 (CA), and Completion (CQ).
 
-EG-005 is deferred to M2 because it requires building a secondary CamelCase initial index alongside
-the existing prefix structure,
-which is an enhancement rather than a correctness gap.
 EG-003 is deferred until after M2 because it requires `DocTrees` attribution of Javadoc comment
 positions,
 which is a non-trivial hover extension.
@@ -242,47 +239,6 @@ Delegate to the normal hover path with that type element.
 `HoverTest.hover_importDeclaration_resolvesImportedType`
 
 ---
-
-## EG-005 — Workspace symbol search uses strict prefix matching; CamelCase and infix queries find nothing
-
-**Status: accepted — Target: M2**
-
-### Observed behaviour
-
-```
-sym "ServerFactory"   → ServerFactory (interface), ServerFactoryImpl (JDK SASL internal)
-                        missing: AbstractServerFactory, DefaultServerFactory, SimpleServerFactory
-sym "TaskMgr"         → 0 results (no CamelCase abbreviation matching)
-sym "AbstractServer"  → AbstractServerFactory (correctly found by prefix)
-```
-
-Developers routinely search for types by a substring that appears in the middle of the class name,
-or by CamelCase initials.
-The current prefix-only contract makes workspace symbol search significantly less useful.
-
-### Root cause
-
-`WorkspaceTypeIndex.search(prefix, limit)` uses a prefix trie or sorted key structure.
-The lookup starts from the prefix and stops at the end of that alphabetic range.
-There is no infix scan or CamelCase decomposition path.
-
-### Proposed fix
-
-Add a secondary CamelCase initialism index entry alongside each type name.
-For example, `AbstractServerFactory` generates entries keyed on `ASF`, `ASFac`, `AS`, etc.
-For substring search, the most practical approach is a trigram or suffix index, or a sorted list
-of `(reverse-suffix, fqn)` pairs enabling suffix-prefix lookups.
-
-The minimal fix is CamelCase initial matching:
-decompose each type name into its uppercase-initial subsequences at index build time and store
-them in a secondary map.
-At query time, if no prefix hit is found, check whether the query matches any CamelCase
-abbreviation.
-
-### Regression targets
-
-`WorkspaceTypeIndexTest.search_camelCaseAbbreviation_findsMatchingTypes`
-`WorkspaceTypeIndexTest.search_infixSubstring_findsContainingTypes`
 
 ---
 

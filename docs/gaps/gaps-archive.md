@@ -290,6 +290,57 @@ python3 dev/explore.py /path/to/Scratch.java inject "java.util.List<String> ls =
 
 ---
 
+## EG-005 — Workspace symbol search uses strict prefix matching; CamelCase and infix queries find nothing
+
+Status: done — Target: M2.
+
+### Observed behaviour (original)
+
+```
+sym "ServerFactory"   → ServerFactory (interface), ServerFactoryImpl (JDK SASL internal)
+                        missing: AbstractServerFactory, DefaultServerFactory, SimpleServerFactory
+sym "TaskMgr"         → 0 results (no CamelCase abbreviation matching)
+sym "AbstractServer"  → AbstractServerFactory (correctly found by prefix)
+```
+
+### Resolution
+
+Implemented CamelCase-hump matching (`CamelCaseMatcher`), scoped to reactor-owned types and
+merged alongside the existing exact prefix search rather than replacing it:
+
+- `AbstractServerFactory`/`DefaultServerFactory`/`SimpleServerFactory` are now all reachable via
+  `"ServerFactory"` — the humps `[Server, Factory]` match a subsequence of candidate humps,
+  skipping the leading `Abstract`/`Default`/`Simple` hump.
+- `"TaskMgr"` now finds `TaskManager` — humps align, and `Mgr` matches `Manager` via a
+  subsequence-within-hump test (`M` anchors, `g`/`r` found in order within `anager`), not a
+  literal prefix.
+- `"AbstractServer"` (plain prefix) is unaffected, matches as before.
+
+Implemented differently than originally proposed: rather than a secondary pre-built CamelCase
+initialism index maintained alongside the reactor-scan lifecycle, matching is done as a live
+per-query scan (`WorkspaceTypeIndex.searchCamelCase`) over reactor-owned entries only. This was
+judged simpler with no meaningfully worse performance — the per-query scan is cheap (reactor-only,
+not the full JDK+dependency universe), and the expensive part (per-result `declarationRange`
+parse) stays bounded by the same result cap as the existing prefix path, so no new index structure
+or reactor-reload-lifecycle hook was needed.
+
+Descoped, not part of this fix: general infix/substring matching independent of CamelCase-hump
+boundaries (e.g. a raw substring like `"erverFac"` that doesn't start at a hump boundary). The
+gap's title mentioned both; only the CamelCase half is resolved here. File a new gap if plain
+infix matching is wanted later — it is a distinct feature, not an extension of this one.
+
+### Regression targets
+
+- `CamelCaseMatcherTest` — the matching algorithm in isolation (initials, partial-hump
+  abbreviations, hump-skipping, case-insensitivity, digit boundaries, negative cases).
+- `WorkspaceTypeIndexTest.searchCamelCase_reactorOnly_excludesStaticTypes`,
+  `searchCamelCase_abbreviatedHump_findsReactorMatch`, `searchCamelCase_limitsResults`,
+  `searchCamelCase_emptyIndex_returnsEmpty`.
+- `WorkspaceSymbolTest.resolve_camelCaseAbbreviation_findsReactorMatchMissedByPrefix`,
+  `resolve_prefixAndCamelCaseOverlap_deduplicatesResult`.
+
+---
+
 ## FR-001 — References from external source have no workspace search root
 
 Status: done — Target: M1.

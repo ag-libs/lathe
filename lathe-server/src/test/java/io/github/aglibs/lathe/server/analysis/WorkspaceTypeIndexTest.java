@@ -168,44 +168,46 @@ class WorkspaceTypeIndexTest {
   }
 
   @Test
-  void browseWorkspace_reactorOnly_excludesStaticTypes() throws IOException {
-    final var shardPath = writeShard(tmp, "dep.json", shard(entry("DependencyType", "com.dep")));
-    final var packagePrivate =
-        new TypeIndexEntry(
-            "InternalType",
-            "com.example.InternalType",
-            "com.example",
-            TypeKind.CLASS,
-            false,
-            List.of());
+  void searchCamelCase_reactorOnly_excludesStaticTypes() throws IOException {
+    final var shardPath =
+        writeShard(tmp, "dep.json", shard(entry("TaskManagerDependency", "com.dep")));
     final var index =
         WorkspaceTypeIndex.build(
-            List.of(shardPath), List.of(List.of(entry("Service", "com.example"), packagePrivate)));
+            List.of(shardPath), List.of(List.of(entry("TaskManager", "com.example"))));
 
-    assertThat(index.browseWorkspace())
+    assertThat(index.searchCamelCase("Mgr", 10))
         .extracting(TypeIndexEntry::binaryName)
-        .containsExactly("com.example.InternalType", "com.example.Service");
+        .containsExactly("com.example.TaskManager");
   }
 
   @Test
-  void browseWorkspace_sortedAlphabetically() {
+  void searchCamelCase_abbreviatedHump_findsReactorMatch() {
+    final var index =
+        WorkspaceTypeIndex.build(
+            List.of(), List.of(List.of(entry("AbstractServerFactory", "com.example"))));
+
+    assertThat(index.searchCamelCase("ASF", 10))
+        .extracting(TypeIndexEntry::binaryName)
+        .containsExactly("com.example.AbstractServerFactory");
+  }
+
+  @Test
+  void searchCamelCase_limitsResults() {
     final var index =
         WorkspaceTypeIndex.build(
             List.of(),
             List.of(
                 List.of(
-                    entry("Zulu", "com.example"),
-                    entry("Alpha", "com.example"),
-                    entry("Middle", "com.example"))));
+                    entry("TaskManagerOne", "com.example"),
+                    entry("TaskManagerTwo", "com.example"),
+                    entry("TaskManagerThree", "com.example"))));
 
-    assertThat(index.browseWorkspace())
-        .extracting(TypeIndexEntry::binaryName)
-        .containsExactly("com.example.Alpha", "com.example.Middle", "com.example.Zulu");
+    assertThat(index.searchCamelCase("Mgr", 2)).hasSize(2);
   }
 
   @Test
-  void browseWorkspace_emptyIndex_returnsEmpty() {
-    assertThat(WorkspaceTypeIndex.empty().browseWorkspace()).isEmpty();
+  void searchCamelCase_emptyIndex_returnsEmpty() {
+    assertThat(WorkspaceTypeIndex.empty().searchCamelCase("Mgr", 10)).isEmpty();
   }
 
   @Test

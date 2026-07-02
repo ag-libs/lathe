@@ -196,11 +196,16 @@ public final class WorkspaceTypeIndex {
         .toList();
   }
 
-  public List<TypeIndexEntry> browseWorkspace() {
+  // CamelCase-hump matching (e.g. "TaskMgr" -> TaskManager, "ASF" -> AbstractServerFactory) is
+  // scoped to reactor-owned types only, not JDK/dependency types: it is a supplementary layer on
+  // top of search()'s exact prefix match, not a replacement, so it deliberately does not touch
+  // search()'s existing contract or its completion/import-quickfix callers.
+  public List<TypeIndexEntry> searchCamelCase(final String query, final int limit) {
     return bySimpleNameLower.values().stream()
         .flatMap(List::stream)
         .filter(entry -> reactorBinaryNames.contains(entry.binaryName()))
-        .sorted(Comparator.comparing(TypeIndexEntry::binaryName))
+        .filter(entry -> CamelCaseMatcher.matches(query, entry.simpleName()))
+        .limit(limit)
         .toList();
   }
 

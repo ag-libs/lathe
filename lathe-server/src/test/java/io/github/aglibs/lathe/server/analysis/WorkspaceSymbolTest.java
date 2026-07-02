@@ -35,25 +35,12 @@ class WorkspaceSymbolTest {
   // --- resolve: query guards ---
 
   @Test
-  void resolve_blankQuery_returnsWorkspaceSymbols() throws IOException {
-    createSourceFile("com.example", "Alpha");
-    createSourceFile("com.example", "Beta");
-    final var index = indexOf(entry("Beta", "com.example"), entry("Alpha", "com.example"));
+  void resolve_emptyOrBlankQuery_returnsEmpty() throws IOException {
+    createSourceFile("com.example", "MyClass");
+    final var index = indexOf(entry("MyClass", "com.example"));
 
-    final List<SymbolInformation> result = WorkspaceSymbolResolver.resolve("", index, List.of(src));
-
-    assertThat(result).extracting(SymbolInformation::getName).containsExactly("Alpha", "Beta");
-  }
-
-  @Test
-  void resolve_blankQuery_acceptsWhitespaceQuery() throws IOException {
-    createSourceFile("com.example", "WorkspaceType");
-    final var index = indexOf(entry("WorkspaceType", "com.example"));
-
-    final List<SymbolInformation> result =
-        WorkspaceSymbolResolver.resolve("   ", index, List.of(src));
-
-    assertThat(result).extracting(SymbolInformation::getName).containsExactly("WorkspaceType");
+    assertThat(WorkspaceSymbolResolver.resolve("", index, List.of(src))).isEmpty();
+    assertThat(WorkspaceSymbolResolver.resolve("   ", index, List.of(src))).isEmpty();
   }
 
   // --- resolve: basic matching ---
@@ -81,6 +68,30 @@ class WorkspaceSymbolTest {
         WorkspaceSymbolResolver.resolve("Foo", index, List.of(src));
 
     assertThat(result).extracting(SymbolInformation::getName).containsExactly("FooService");
+  }
+
+  @Test
+  void resolve_camelCaseAbbreviation_findsReactorMatchMissedByPrefix() throws IOException {
+    createSourceFile("com.example", "AbstractServerFactory");
+    final var index = indexOf(entry("AbstractServerFactory", "com.example"));
+
+    final List<SymbolInformation> result =
+        WorkspaceSymbolResolver.resolve("ASF", index, List.of(src));
+
+    assertThat(result)
+        .extracting(SymbolInformation::getName)
+        .containsExactly("AbstractServerFactory");
+  }
+
+  @Test
+  void resolve_prefixAndCamelCaseOverlap_deduplicatesResult() throws IOException {
+    createSourceFile("com.example", "TaskManager");
+    final var index = indexOf(entry("TaskManager", "com.example"));
+
+    final List<SymbolInformation> result =
+        WorkspaceSymbolResolver.resolve("Task", index, List.of(src));
+
+    assertThat(result).extracting(SymbolInformation::getName).containsExactly("TaskManager");
   }
 
   @Test

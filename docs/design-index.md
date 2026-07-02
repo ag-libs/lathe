@@ -25,11 +25,7 @@ discovery via [gap-workflow.md](gaps/gap-workflow.md) and resolved entries in [g
 ## M2 — Neovim Public Beta
 
 - [Gaps](gaps/gaps.md) — active M2 gap registry.
-  EG-005 covers CamelCase and infix workspace-symbol matching;
   EG-003 is deferred until after M2.
-- [Workspace Symbol Browsing](planned/lathe-workspace-symbol-browse.md) — blank-query
-  `workspace/symbol` support scoped to reactor-owned types, enabling Telescope's static
-  `lsp_workspace_symbols` fuzzy picker; independent of EG-005.
 - [Find References gaps](gaps/gaps.md) — FR-002 external-source scope, FR-003 failure propagation, and FR-004
   integration coverage.
 - [Completion Expectations](planned/lathe-completion-expectations.md) — expected completion behavior.
@@ -70,6 +66,12 @@ M3 designs before implementation.
 
 ## Completed Designs
 
+- [CamelCase Workspace Symbol Matching](done/lathe-workspace-symbol-camelcase.md) — resolves
+  EG-005; IntelliJ-style CamelHumps abbreviation matching for `workspace/symbol`, scoped to
+  reactor-owned types, merged alongside the existing exact-prefix search.
+- [Workspace Symbol Browsing](done/lathe-workspace-symbol-browse.md) — superseded by the above;
+  blank-query browsing was implemented then reverted once CamelCase matching solved the underlying
+  problem more directly.
 - [Goto Implementation and Type Hierarchy](done/lathe-goto-implementation.md) — inheritance-index-backed type
   navigation and reactor method implementation across reactor, dependency, and JDK types.
 - [Event-Loop Starvation](done/lathe-event-loop-starvation.md) — diagnosis of synchronous index construction;

@@ -1,4 +1,13 @@
-# Lathe — Workspace Symbol Browsing (Blank-Query Support)
+# Lathe — Workspace Symbol Browsing (Blank-Query Support) — Superseded
+
+**Superseded by [CamelCase Workspace Symbol Matching](lathe-workspace-symbol-camelcase.md).**
+Implemented, then reverted: blank-query browsing shipped (`browseWorkspace()`, progress
+reporting, the whole parallelism evaluation below) but was rolled back once CamelCase-hump
+matching for non-blank queries turned out to solve the actual problem (finding a type by a
+shorthand name) more directly, without the multi-second uncapped-scan cost this design required.
+`workspace/symbol` now returns `List.of()` on a blank query again, exactly as before this document
+existed. Kept for the design reasoning below — particularly the parallelism rejection, which is
+still valid context if per-query cost ever needs revisiting.
 
 ## Problem
 

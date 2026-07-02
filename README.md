@@ -175,7 +175,7 @@ Lathe implements the following LSP endpoints. In Neovim 0.11+, most are mapped a
   - *(Lathe plugin automatically configures format-on-save)*
 - `textDocument/semanticTokens`: Highlights static and deprecated members, enum constants, type parameters, and annotations beyond what tree-sitter covers. Works automatically when the server attaches.
 - `textDocument/foldingRange`: Provides Java structural folding for classes, methods, blocks, and import groups. Works automatically with fold providers.
-- `workspace/symbol` and `textDocument/documentSymbol`: Search for types across the workspace, or list all symbols in the current file as an outline. A blank query browses every workspace-owned type instead of returning nothing, so pickers that fetch once and fuzzy-filter locally (e.g. Telescope's `lsp_workspace_symbols`) have a full list to work with. Long browses report work-done progress and support cancellation.
+- `workspace/symbol` and `textDocument/documentSymbol`: Search for types across the workspace, or list all symbols in the current file as an outline. Beyond exact-prefix matching, workspace symbol search also matches CamelCase-hump abbreviations against your own project's types — e.g. `ASF` or `ServerFactory` both find `AbstractServerFactory`, `TaskMgr` finds `TaskManager` — so you don't need to type a type's full prefix to find it.
   - Neovim API: `vim.lsp.buf.workspace_symbol()` / `vim.lsp.buf.document_symbol()`
   - Neovim default: `gO` (document symbols)
 
