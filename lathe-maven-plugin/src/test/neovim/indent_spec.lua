@@ -147,6 +147,18 @@ local FIXTURES = {
     0,
   },
   {
+    "javadoc: first body line indents to star column",
+    { "  /**", "" },
+    2,
+    3,
+  },
+  {
+    "javadoc: blank line after punctuated text stays at star column",
+    { "  /**", "   * Creates an instance.", "", "   */" },
+    3,
+    3,
+  },
+  {
     "regression: blank line between javadoc and constructor aligns with member indent",
     { "  /**", "   * Creates an instance.", "   */", "", "  Foo() {" },
     4,

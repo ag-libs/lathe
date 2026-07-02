@@ -55,6 +55,19 @@ local function starts_with_selector(text)
   return text:match("^%s*%.") ~= nil
 end
 
+local function starts_with_block_comment_open(text)
+  return trim(text):match("^/%*%*?") ~= nil
+end
+
+local function starts_with_block_comment_star(text)
+  local stripped = trim(text)
+  return stripped == "*" or stripped:match("^%*%s") ~= nil
+end
+
+local function is_block_comment_line(text)
+  return starts_with_block_comment_open(text) or starts_with_block_comment_star(text)
+end
+
 local function ends_with_block_comment_close(text)
   return trim(text):match("%*/$") ~= nil
 end
@@ -76,7 +89,7 @@ local function ends_with_operator(text)
   if stripped == "" then
     return false
   end
-  if ends_with_block_comment_close(stripped) then
+  if is_block_comment_line(stripped) then
     return false
   end
   if stripped:match("%-%>$") then
@@ -217,6 +230,12 @@ local function heuristic_indent(lnum, current, prev_lnum, prev)
     return selector_indent(prev_lnum, prev)
   end
   if starts_with_switch_label(current) then
+    return prev_indent
+  end
+  if starts_with_block_comment_open(prev) then
+    return prev_indent + 1
+  end
+  if starts_with_block_comment_star(prev) then
     return prev_indent
   end
   if ends_with_block_comment_close(prev) then
