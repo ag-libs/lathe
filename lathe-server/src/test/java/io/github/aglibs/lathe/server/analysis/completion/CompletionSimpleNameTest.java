@@ -13,10 +13,9 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 class CompletionSimpleNameTest extends CompletionTestSupport {
 
-  private static void assertLabelBefore(
-      final List<String> labels, final String earlier, final String later) {
-    assertThat(labels).contains(earlier, later);
-    assertThat(labels.indexOf(earlier)).isLessThan(labels.indexOf(later));
+  private static void assertLabelBefore(final List<String> labels) {
+    assertThat(labels).contains("text", "fromConfig");
+    assertThat(labels.indexOf("text")).isLessThan(labels.indexOf("fromConfig"));
   }
 
   @Test
@@ -94,7 +93,7 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
                     }
                 }"""));
 
-    assertLabelBefore(items, "text", "fromConfig");
+    assertLabelBefore(items);
   }
 
   @Test
@@ -113,7 +112,7 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
                     }
                 }"""));
 
-    assertLabelBefore(items, "text", "fromConfig");
+    assertLabelBefore(items);
   }
 
   @Test

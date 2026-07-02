@@ -27,6 +27,9 @@ discovery via [gap-workflow.md](gaps/gap-workflow.md) and resolved entries in [g
 - [Gaps](gaps/gaps.md) — active M2 gap registry.
   EG-005 covers CamelCase and infix workspace-symbol matching;
   EG-003 is deferred until after M2.
+- [Workspace Symbol Browsing](planned/lathe-workspace-symbol-browse.md) — blank-query
+  `workspace/symbol` support scoped to reactor-owned types, enabling Telescope's static
+  `lsp_workspace_symbols` fuzzy picker; independent of EG-005.
 - [Find References gaps](gaps/gaps.md) — FR-002 external-source scope, FR-003 failure propagation, and FR-004
   integration coverage.
 - [Completion Expectations](planned/lathe-completion-expectations.md) — expected completion behavior.
