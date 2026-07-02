@@ -146,6 +146,18 @@ local FIXTURES = {
     2,
     0,
   },
+  {
+    "regression: blank line between javadoc and constructor aligns with member indent",
+    { "  /**", "   * Creates an instance.", "   */", "", "  Foo() {" },
+    4,
+    2,
+  },
+  {
+    "regression: constructor after inserted javadoc blank stays at member indent",
+    { "  /**", "   * Creates an instance.", "   */", "", "  Foo() {" },
+    5,
+    2,
+  },
 }
 
 local function compute_indent(lines, target)

@@ -55,6 +55,10 @@ local function starts_with_selector(text)
   return text:match("^%s*%.") ~= nil
 end
 
+local function ends_with_block_comment_close(text)
+  return trim(text):match("%*/$") ~= nil
+end
+
 local function ends_with_block_opener(text)
   return trim(text):match("{%s*$") ~= nil
 end
@@ -70,6 +74,9 @@ end
 local function ends_with_operator(text)
   local stripped = trim(text)
   if stripped == "" then
+    return false
+  end
+  if ends_with_block_comment_close(stripped) then
     return false
   end
   if stripped:match("%-%>$") then
@@ -198,7 +205,7 @@ end
 -- how the current line starts, anchored to existing indentation. It is purely
 -- text-based, so it behaves identically while the buffer is mid-edit and
 -- unparseable -- which is when indentation is requested most.
-local function heuristic_indent(current, prev_lnum, prev)
+local function heuristic_indent(lnum, current, prev_lnum, prev)
   if not prev_lnum then
     return 0
   end
@@ -211,6 +218,16 @@ local function heuristic_indent(current, prev_lnum, prev)
   end
   if starts_with_switch_label(current) then
     return prev_indent
+  end
+  if ends_with_block_comment_close(prev) then
+    if trim(current) == "" then
+      local next_lnum = vim.fn.nextnonblank(lnum + 1)
+      if next_lnum > 0 then
+        return vim.fn.indent(next_lnum)
+      end
+    end
+
+    return math.max(prev_indent - 1, 0)
   end
   local continuation = continuation_indent(prev_lnum, prev)
   if continuation then
@@ -253,7 +270,7 @@ function M.compute(lnum, bufnr)
     return block
   end
 
-  return heuristic_indent(current, prev_lnum, prev)
+  return heuristic_indent(lnum, current, prev_lnum, prev)
 end
 
 function M.indentexpr()
