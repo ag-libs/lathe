@@ -215,22 +215,23 @@ class CompletionArgumentTest extends CompletionTestSupport {
   }
 
   @Test
-  void argumentPosition_referenceTypeParam_booleansExcluded() {
+  void argumentPosition_referenceTypeParam_booleansDemoted() {
     final var items =
-        labels(
-            fixture.complete(
-                """
-                class Test {
-                    static class Foo {}
-                    Foo getFoo() { return null; }
-                    boolean isReady() { return true; }
-                    void accept(Foo f) {}
-                    void m() {
-                        accept(§);
-                    }
-                }"""));
-    assertThat(items).contains("getFoo");
-    assertThat(items).doesNotContain("isReady()", "true", "false");
+        fixture.complete(
+            """
+            class Test {
+                static class Foo {}
+                Foo getFoo() { return null; }
+                boolean isReady() { return true; }
+                void accept(Foo f) {}
+                void m() {
+                    accept(§);
+                }
+            }""");
+    assertThat(labels(items)).contains("getFoo", "isReady").doesNotContain("true", "false");
+    final var getFoo = itemWithFilterText(items, "getFoo").orElseThrow();
+    final var isReady = itemWithFilterText(items, "isReady").orElseThrow();
+    assertThat(getFoo.getSortText()).isLessThan(isReady.getSortText());
   }
 
   // ── constructor call position ─────────────────────────────────────────────────

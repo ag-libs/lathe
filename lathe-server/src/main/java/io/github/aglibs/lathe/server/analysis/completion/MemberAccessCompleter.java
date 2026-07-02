@@ -283,6 +283,15 @@ final class MemberAccessCompleter {
       final ParsedSentinel parsed,
       final AttributedFileAnalysis snapshot) {
     final var base = SemanticCompletionContext.from(site, req, parsed, snapshot);
+    final boolean lambdaContext =
+        site.sentinelContext() == SentinelContext.LAMBDA_BODY
+            || TypeResolver.isInsideLambdaBody(site.cursorOffset(), snapshot);
+    if (base.expectedValue() instanceof ExpectedValue.Type(final var type)
+        && lambdaContext
+        && TypeResolver.isVoidFunctionalInterface(type, snapshot)) {
+      return base.asStatementContext();
+    }
+
     if (!(base.expectedValue() instanceof ExpectedValue.Unknown)) {
       return base;
     }
@@ -290,6 +299,16 @@ final class MemberAccessCompleter {
     final var outerValue = TypeResolver.resolveExpectedArgumentValue(site.cursorOffset(), snapshot);
     if (outerValue instanceof ExpectedValue.Unknown) {
       return base;
+    }
+
+    if (TypeResolver.isInsideVoidLambdaBody(site.cursorOffset(), snapshot)) {
+      return base.asStatementContext();
+    }
+
+    if (outerValue instanceof ExpectedValue.Type(final var type)
+        && lambdaContext
+        && TypeResolver.isVoidFunctionalInterface(type, snapshot)) {
+      return base.asStatementContext();
     }
 
     return base.withExpectedValue(outerValue);

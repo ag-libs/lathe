@@ -597,6 +597,33 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
         .anyMatch(l -> l.startsWith("toLowerCase"));
   }
 
+  static Stream<String> runnableLambdaBodyCases() {
+    return Stream.of("addTask(() -> scheduler.§);", "addTask(() -> { scheduler.§; });");
+  }
+
+  @ParameterizedTest
+  @MethodSource("runnableLambdaBodyCases")
+  void memberAccess_insideRunnableLambdaBody_offersVoidMethods(final String statement) {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        static class Scheduler {
+                            void tick() {}
+                            long now() { return 0; }
+                        }
+
+                        void addTask(Runnable task) {}
+
+                        void m(Scheduler scheduler) {
+                            %s
+                        }
+                    }"""
+                        .formatted(statement))))
+        .contains("tick", "now");
+  }
+
   // ── stream chains ─────────────────────────────────────────────────────────────
 
   @Test

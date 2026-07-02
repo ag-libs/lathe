@@ -194,6 +194,36 @@ final class TypeResolver {
     return result.get() != null ? result.get() : new ExpectedValue.Unknown();
   }
 
+  static boolean isInsideVoidLambdaBody(
+      final int cursorOffset, final AttributedFileAnalysis snapshot) {
+    final TreePath lambdaPath = findLambdaPathAtOffset(cursorOffset, snapshot);
+    if (lambdaPath == null) {
+      return false;
+    }
+
+    final TypeMirror samReturnType = resolveLambdaSamReturnType(lambdaPath, snapshot);
+    return samReturnType != null && samReturnType.getKind() == TypeKind.VOID;
+  }
+
+  static boolean isInsideLambdaBody(final int cursorOffset, final AttributedFileAnalysis snapshot) {
+    return findLambdaPathAtOffset(cursorOffset, snapshot) != null;
+  }
+
+  static boolean isVoidFunctionalInterface(
+      final TypeMirror type, final AttributedFileAnalysis snapshot) {
+    if (!(type instanceof final DeclaredType declared)) {
+      return false;
+    }
+
+    final ExecutableElement sam = findFunctionalInterfaceMethod(declared, snapshot);
+    if (sam == null) {
+      return false;
+    }
+
+    final ExecutableType memberType = (ExecutableType) snapshot.types().asMemberOf(declared, sam);
+    return memberType.getReturnType().getKind() == TypeKind.VOID;
+  }
+
   private static TypeElement receiverType(
       final TreePath invocationPath,
       final MemberSelectTree methodSelect,

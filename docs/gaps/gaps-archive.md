@@ -361,6 +361,37 @@ Regression coverage:
 
 # Completion (CQ) — resolved
 
+## CQ-0043 — Argument-position type filtering excludes boolean returns but lets other mismatched types through
+
+Status: done — Target: M2.
+
+Re-evaluation on 2026-07-02 found this gap was already resolved by prior completion-ranking work.
+Boolean-returning methods are present at non-boolean argument slots and are demoted behind directly
+assignable candidates instead of being deleted.
+Boolean literals remain filtered for incompatible non-boolean expected types, which matches the
+completion expectations.
+
+Regression coverage:
+
+- `CompletionArgumentTest.argumentPosition_referenceTypeParam_booleansDemoted`
+
+---
+
+## CQ-0047 — Member access inside a void-returning lambda body offers void methods
+
+Status: done — Target: M2.
+
+Member-access completion inside a lambda whose functional-interface method returns `void` now treats
+the site as a statement context.
+This prevents the enclosing argument type, such as `Runnable`, from making completion value-sensitive
+and filtering out void-returning receiver methods.
+
+Regression coverage:
+
+- `CompletionMemberAccessTest.memberAccess_insideRunnableLambdaBody_offersVoidMethods`
+
+---
+
 ## CQ-0036 — Empty constructor completion returns a complete narrow list
 
 ID: CQ-0036

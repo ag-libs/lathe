@@ -33,6 +33,16 @@ record SemanticCompletionContext(
         staticMemberResultContext);
   }
 
+  SemanticCompletionContext asStatementContext() {
+    return new SemanticCompletionContext(
+        analysis,
+        new ExpectedValue.Unknown(),
+        false,
+        inEqualityComparison,
+        inNonVoidMethod,
+        staticMemberResultContext);
+  }
+
   static SemanticCompletionContext from(
       final CompletionSite site,
       final CompletionRequest request,

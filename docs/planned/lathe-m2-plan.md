@@ -130,22 +130,19 @@ completion filter cluster together or as two PRs.
   The active-parameter computation already handles empty arg lists.
   Add the two proposed regression targets in `SignatureHelpTest`.
 
-- [ ] **CQ-0043 + CQ-0046 + CQ-0047** (one PR, three related defects):
-  CQ-0046 is done (`6cc9e5e`); CQ-0043 and CQ-0047 are still accepted and gate this item.
-  - *CQ-0043*: Remove the boolean-only branch from `CompletionCandidateRanker.expectedTypeAllows`
-    so boolean-returning candidates are demoted by `sortText` rather than excluded.
-    Re-baseline `argumentPosition_referenceTypeParam_booleansExcluded` to assert ranking, not absence.
+- [x] **CQ-0043 + CQ-0046 + CQ-0047**:
+  - *CQ-0043* (done): Re-evaluation showed boolean-returning methods are already present and
+    demoted at non-boolean argument slots.
+    Re-baseline `argumentPosition_referenceTypeParam_booleansExcluded` as
+    `argumentPosition_referenceTypeParam_booleansDemoted`.
   - *CQ-0046* (done): Handle `NewClassTree` in `TypeResolver.resolveArgumentValueByPosition` so
     constructor argument slots resolve the constructor parameter type, mirroring the existing
     `visitMethodInvocation` branch.
     Enable the two `@Disabled` tests in `CompletionArgumentTest`.
     Add `TypeResolverTest.resolveExpectedValue_constructorArgumentByPosition_resolvesParamType`.
-  - *CQ-0047*: When the completion site is inside a lambda body whose SAM returns `void`,
-    suppress the `resolveExpectedArgumentValue` fallback in `MemberAccessCompleter` so void-returning
-    methods are not excluded.
-    Model as a distinct "void/statement" expected value or skip the fallback when the nearest
-    enclosing lambda has a void SAM.
-    Add the two proposed regression targets in `CompletionMemberAccessTest`.
+  - *CQ-0047* (done): Treat member access inside void-SAM lambda bodies as statement context so
+    void-returning receiver methods are not filtered.
+    Add the parameterized regression in `CompletionMemberAccessTest`.
 
 ---
 
