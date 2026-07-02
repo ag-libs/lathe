@@ -2,6 +2,9 @@ package io.github.aglibs.lathe.server.analysis;
 
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.Tree;
+import com.sun.source.tree.VariableTree;
+import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -62,7 +65,8 @@ final class MethodImplementationLocator extends TreePathScanner<Void, Void> {
 
   @Override
   public Void visitClass(final ClassTree classTree, final Void unused) {
-    final var element = analysis.trees().getElement(getCurrentPath());
+    final var classPath = getCurrentPath();
+    final var element = analysis.trees().getElement(classPath);
     if (element instanceof final TypeElement candidateType
         && candidateBinaryNames.contains(
             analysis.elements().getBinaryName(candidateType).toString())) {
@@ -73,24 +77,42 @@ final class MethodImplementationLocator extends TreePathScanner<Void, Void> {
           .filter(method -> !method.getModifiers().contains(Modifier.ABSTRACT))
           .filter(method -> method.getSimpleName().contentEquals(target.simpleName()))
           .filter(method -> analysis.elements().overrides(method, targetMethod, candidateType))
-          .flatMap(method -> location(method).stream())
+          .flatMap(method -> location(method, classTree, classPath).stream())
           .forEach(results::add);
     }
 
     return super.visitClass(classTree, unused);
   }
 
-  private Optional<Location> location(final ExecutableElement method) {
+  private Optional<Location> location(
+      final ExecutableElement method, final ClassTree classTree, final TreePath classPath) {
     final var path = analysis.trees().getPath(method);
     final CompilationUnitTree tree = analysis.tree();
+    final String name = method.getSimpleName().toString();
+    if (path != null) {
+      return locationAtPath(path, tree, name);
+    }
+
+    if (classTree.getKind() != Tree.Kind.RECORD || !method.getParameters().isEmpty()) {
+      return Optional.empty();
+    }
+
+    for (final Tree member : classTree.getMembers()) {
+      if (member instanceof final VariableTree variable && variable.getName().contentEquals(name)) {
+        return locationAtPath(new TreePath(classPath, variable), tree, name);
+      }
+    }
+
+    return Optional.empty();
+  }
+
+  private Optional<Location> locationAtPath(
+      final TreePath path, final CompilationUnitTree tree, final String name) {
     try {
-      return SourceLocator.declarationNamePosition(
-              analysis.trees(), tree, path, method.getSimpleName().toString())
+      return SourceLocator.declarationNamePosition(analysis.trees(), tree, path, name)
           .map(
               start -> {
-                final var end =
-                    new Position(
-                        start.getLine(), start.getCharacter() + method.getSimpleName().length());
+                final var end = new Position(start.getLine(), start.getCharacter() + name.length());
                 return new Location(uri, new Range(start, end));
               });
     } catch (final IOException e) {

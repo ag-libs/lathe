@@ -190,6 +190,26 @@ Regression coverage:
 
 ---
 
+## EG-034 — `textDocument/implementation` on an interface method omits record component accessors that implement it
+
+**Status: done — Target: M2.**
+
+`textDocument/implementation` now returns records that implement an interface method through an
+implicit record component accessor.
+The accessor method was already found by javac and accepted by `Elements.overrides`; the result was
+dropped only because the synthesized accessor has no `MethodTree`.
+
+The resolved implementation first uses the normal method declaration path.
+When that path is absent for a zero-argument method in a `RECORD` class tree, it falls back to the
+matching `VariableTree` member for the record component and returns the component name location.
+This uses javac's AST shape for records and does not parse Java text.
+
+Regression coverage:
+
+- `MethodImplementationTest.methodImplementations_recordComponentAccessor_returnsComponentDeclaration`
+
+---
+
 ## EG-020 — `new` expression completion is not slot-aware
 
 **Status: done — Target: M2.**

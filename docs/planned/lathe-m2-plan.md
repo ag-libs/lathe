@@ -118,11 +118,10 @@ completion filter cluster together or as two PRs.
   (WARNING naming the inspected path).
   Enable the two `@Disabled` tests in `JdkSourceResolverTest`.
 
-- [ ] **EG-034** — In `MethodImplementationLocator`, when the implementing method is an implicit
-  record component accessor (`getPath(method)` yields no usable path), fall back to the position
-  of the matching `RecordComponentTree` in the record header.
-  Update the existing `methodImplementations_recordComponentAccessor_skipsWithoutCrash` test to
-  assert the component location instead.
+- [x] **EG-034** — In `MethodImplementationLocator`, when the implementing method is an implicit
+  record component accessor (`getPath(method)` yields no usable path), fall back to the matching
+  `VariableTree` member exposed for the record component in the `RECORD` class tree.
+  The regression now asserts the component declaration location.
 
 - [ ] **EG-032** — In `SignatureHelpResolver`, when the member-select path's `getElement` does
   not yield an `ExecutableElement` (because javac overload resolution failed with empty args),

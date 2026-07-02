@@ -63,12 +63,12 @@ class MethodImplementationTest {
   }
 
   @Test
-  void methodImplementations_recordComponentAccessor_skipsWithoutCrash() throws IOException {
+  void methodImplementations_recordComponentAccessor_returnsComponentDeclaration()
+      throws IOException {
     final String serviceContent = "interface HasText { String text(); }\n";
     final var serviceSource = Files.writeString(tempDir.resolve("HasText.java"), serviceContent);
     final var classDir = tempDir.resolve("classes");
     TestCompiler.compileToDir(classDir, serviceSource);
-    // record accessor for 'text' is compiler-synthesized: no MethodDecl node in the AST
     final String recordContent = "record Impl(String text) implements HasText {}\n";
     final var recordUri = tempDir.resolve("Impl.java").toUri().toString();
 
@@ -91,7 +91,10 @@ class MethodImplementationTest {
           candidateSession.methodImplementations(
               recordUri, recordContent, 1, target, Set.of("Impl"));
 
-      assertThat(locations).isEmpty();
+      assertThat(locations).hasSize(1);
+      assertThat(locations.getFirst().getUri()).isEqualTo(recordUri);
+      assertThat(locations.getFirst().getRange().getStart()).isEqualTo(new Position(0, 19));
+      assertThat(locations.getFirst().getRange().getEnd()).isEqualTo(new Position(0, 23));
     }
   }
 
