@@ -28,6 +28,7 @@ public final class CompletionEngine {
   private static final Logger LOG = Logger.getLogger(CompletionEngine.class.getName());
   private static final int STATIC_MEMBER_FIT_LIMIT = 20;
   private static final int MODULE_SEGMENT_LIMIT = 50;
+  private static final String INSTANCEOF_KEYWORD = "instanceof";
 
   private final SentinelParser sentinelParser;
   private final JavaSourceCompiler compiler;
@@ -159,9 +160,11 @@ public final class CompletionEngine {
     final var semanticContext = semanticContext(site, req, parsed);
     final boolean recoveredMixedStatement =
         shouldTreatTypeReferenceAsMixedSimpleName(parsed, injected);
+    final var instanceofCandidates = instanceofKeywordCandidates(injected, semanticContext);
     if (semanticContext != null
         && semanticContext.expectedValue() instanceof ExpectedValue.NoSlot
-        && !hasUppercasePrefix(injected)) {
+        && !hasUppercasePrefix(injected)
+        && instanceofCandidates.isEmpty()) {
       return CompletionOutcome.of(List.of());
     }
 
@@ -189,7 +192,7 @@ public final class CompletionEngine {
                     javacCandidates.size(),
                     enumCandidates.size(),
                     enumCaseCandidates.size(),
-                    keywordCandidates.size(),
+                    keywordCandidates.size() + instanceofCandidates.size(),
                     semanticContext != null ? semanticContext.expectedValue() : null));
     final var rankingContext =
         recoveredMixedStatement
@@ -203,7 +206,7 @@ public final class CompletionEngine {
       candidates = enumCaseCandidates;
     } else {
       candidates =
-          Stream.of(javacCandidates, enumCandidates, keywordCandidates)
+          Stream.of(javacCandidates, enumCandidates, keywordCandidates, instanceofCandidates)
               .flatMap(List::stream)
               .toList();
     }
@@ -310,6 +313,35 @@ public final class CompletionEngine {
 
     return new CandidateGenerator(semanticContext.analysis())
         .proposeUnqualifiedEnumConstantCandidates(typeEl, prefix);
+  }
+
+  private static List<CompletionCandidate> instanceofKeywordCandidates(
+      final SentinelInjectionResult injected, final SemanticCompletionContext semanticContext) {
+    if (!INSTANCEOF_KEYWORD.startsWith(injected.prefix())) {
+      return List.of();
+    }
+
+    if (injected.receiverText() != null || injected.hasDot() || semanticContext == null) {
+      return List.of();
+    }
+
+    final TypeMirror type =
+        TypeResolver.resolvePrecedingExpressionType(
+            injected.tokenStart(), semanticContext.analysis());
+    return isReferenceTypeForInstanceof(type)
+        ? List.of(KeywordProvider.keywordCandidate(INSTANCEOF_KEYWORD))
+        : List.of();
+  }
+
+  private static boolean isReferenceTypeForInstanceof(final TypeMirror type) {
+    if (type == null) {
+      return false;
+    }
+
+    return switch (type.getKind()) {
+      case ARRAY, DECLARED, INTERSECTION, NULL, TYPEVAR -> true;
+      default -> false;
+    };
   }
 
   private static boolean isCaseLabelTypePattern(

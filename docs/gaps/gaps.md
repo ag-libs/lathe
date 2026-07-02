@@ -2789,12 +2789,13 @@ which forced reattribution when a stale snapshot had already resolved the receiv
 ## CQ-0044 — Member access on a `var` local declared inside a lambda body returns no candidates
 
 ID: CQ-0044
-Status: accepted
+Status: done
 Target: M2
 Tier: typed
 Failure mode: missing-candidates
 Owner component: TypeResolver / CandidateGenerator
 Discovery: 2026-06-29, real-workspace validation pass
+Resolution: 2026-07-02, current explorer validation shows this no longer reproduces
 
 Cursor context:
 ```java
@@ -2810,6 +2811,12 @@ Lathe behavior:
 Completion after `runner.` returns an **empty popup** — zero members.
 `Runner` is a concrete type with a `public void validate()` declared directly on it, so the
 expected behavior is that `validate()` (and the rest of its members) are offered.
+
+Current behavior:
+Completion after `runner.` now offers `Runner.name()`, `Runner.validate()`, and inherited
+`Object` methods for all isolation probes below.
+The original failing shape, an explicitly typed local inside the same lambda, the same `var` local
+outside the lambda, and direct `new Runner().§` member access all pass through explorer.
 
 Expected Lathe behavior:
 Offer the members of `Runner`, including `validate()`, exactly as for any other concrete
@@ -2833,10 +2840,9 @@ Reproduction probes (to isolate the decisive factor):
 3. Try `new Runner(...).§` directly with no local — isolates constructor/JAR resolution.
 
 Suggested fix:
-Keep javac as the source of truth; do not parse the lambda or the declaration text.
-Confirm via the probes whether the failure is in `var`-local type inference or in attributing an
-incomplete lambda body, then route through the existing sentinel/recovery pipeline so the `var`
-local's initializer type is available for receiver resolution while the lambda body is mid-edit.
+No code fix is currently needed.
+Keep this entry as a regression note for the lambda-local `var` shape; if it regresses, preserve the
+constraint that javac remains the source of truth and avoid parsing the lambda or declaration text.
 
 Notes:
 Adjacent to CQ-0042 (type-error receiver returns no candidates) but distinct: there the receiver
@@ -3016,11 +3022,12 @@ but the boolean ones are filtered out.
 ## CQ-0048 — `instanceof` is never offered as a keyword candidate in expression position
 
 ID: CQ-0048
-Status: accepted
+Status: done
 Target: M2
 Tier: assistive
 Failure mode: missing-candidate
 Owner component: KeywordProvider
+Resolution: 2026-07-02, `instanceof` is offered after reference-typed expressions and suppressed after primitives
 
 Cursor context:
 ```java
@@ -3055,9 +3062,15 @@ Add `instanceof` as a keyword candidate offered in expression position when the 
 resolves (via javac attribution, not text scanning) to a reference type. Gate it on the receiver type
 being non-primitive so it is suppressed for primitive expressions.
 
+Implemented behavior:
+The simple-name completion path now supplements keyword candidates with `instanceof` when javac's
+recovered AST and attribution identify the preceding expression as reference-typed.
+Primitive expressions and statement-start keyword slots do not receive the candidate.
+
 Regression targets:
-- `CompletionSimpleNameTest.keyword_afterReferenceExpression_offersInstanceof` (proposed)
-- `CompletionSimpleNameTest.keyword_afterPrimitiveExpression_omitsInstanceof` (proposed, guard)
+- `CompletionSimpleNameTest.simpleName_afterReferenceExpression_offersInstanceof`
+- `CompletionSimpleNameTest.simpleName_afterPrimitiveExpression_omitsInstanceof`
+- `CompletionSimpleNameTest.simpleName_atStatementStart_omitsInstanceof`
 
 Notes:
 Distinct from CQ-0011 (constructor-invocation keyword over-offering): this is a *missing* assistive

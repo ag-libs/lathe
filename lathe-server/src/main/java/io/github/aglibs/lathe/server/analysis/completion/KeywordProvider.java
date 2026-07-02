@@ -68,7 +68,7 @@ final class KeywordProvider {
         .toList();
   }
 
-  private static CompletionCandidate keywordCandidate(final String keyword) {
+  static CompletionCandidate keywordCandidate(final String keyword) {
     return new CompletionCandidate(
         keyword,
         keyword,

@@ -5,6 +5,7 @@ import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.BinaryTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.ErroneousTree;
+import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.LambdaExpressionTree;
 import com.sun.source.tree.LiteralTree;
@@ -342,6 +343,98 @@ final class TypeResolver {
           () -> "[completion] scope resolve failed at offset %d".formatted(cursorOffset));
       return null;
     }
+  }
+
+  static TypeMirror resolvePrecedingExpressionType(
+      final int tokenStart, final AttributedFileAnalysis snapshot) {
+    final TreePath expressionPath = precedingExpressionPath(tokenStart, snapshot);
+    return expressionPath != null ? expressionType(expressionPath, snapshot) : null;
+  }
+
+  private static TypeMirror expressionType(
+      final TreePath expressionPath, final AttributedFileAnalysis snapshot) {
+    final TypeMirror type = snapshot.trees().getTypeMirror(expressionPath);
+    if (usableExpressionType(type)) {
+      return type;
+    }
+
+    if (expressionPath.getLeaf() instanceof final ParenthesizedTree parenthesized) {
+      return expressionType(new TreePath(expressionPath, parenthesized.getExpression()), snapshot);
+    }
+
+    final Element element = snapshot.trees().getElement(expressionPath);
+    if (element instanceof final ExecutableElement executable) {
+      return executable.getReturnType();
+    }
+
+    return element != null ? element.asType() : type;
+  }
+
+  private static TreePath precedingExpressionPath(
+      final int tokenStart, final AttributedFileAnalysis snapshot) {
+    if (snapshot == null || snapshot.trees() == null || snapshot.tree() == null) {
+      return null;
+    }
+
+    final var positions = snapshot.trees().getSourcePositions();
+    final var result = new AtomicReference<TreePath>();
+    final var resultEnd = new AtomicLong(Long.MIN_VALUE);
+    final var resultSpan = new AtomicLong(Long.MAX_VALUE);
+    new TreePathScanner<Void, Void>() {
+      @Override
+      public Void scan(final Tree tree, final Void unused) {
+        if (tree == null) {
+          return null;
+        }
+
+        final long start = positions.getStartPosition(snapshot.tree(), tree);
+        final long end = positions.getEndPosition(snapshot.tree(), tree);
+        if (tree instanceof ExpressionTree
+            && start >= 0
+            && end >= start
+            && end <= tokenStart
+            && sharesCompletionContainer(new TreePath(getCurrentPath(), tree), tokenStart, snapshot)
+            && isBetterExpression(end, end - start, resultEnd.get(), resultSpan.get())) {
+          result.set(new TreePath(getCurrentPath(), tree));
+          resultEnd.set(end);
+          resultSpan.set(end - start);
+        }
+
+        return super.scan(tree, unused);
+      }
+    }.scan(snapshot.tree(), null);
+    return result.get();
+  }
+
+  private static boolean sharesCompletionContainer(
+      final TreePath expressionPath, final int tokenStart, final AttributedFileAnalysis snapshot) {
+    final var positions = snapshot.trees().getSourcePositions();
+    for (TreePath current = expressionPath.getParentPath();
+        current != null;
+        current = current.getParentPath()) {
+      final Tree leaf = current.getLeaf();
+      final long start = positions.getStartPosition(snapshot.tree(), leaf);
+      final long end = positions.getEndPosition(snapshot.tree(), leaf);
+      if (start > tokenStart || tokenStart > end) {
+        continue;
+      }
+
+      return switch (leaf.getKind()) {
+        case COMPILATION_UNIT, CLASS, METHOD, BLOCK -> false;
+        default -> true;
+      };
+    }
+
+    return false;
+  }
+
+  private static boolean isBetterExpression(
+      final long end, final long span, final long bestEnd, final long bestSpan) {
+    return end > bestEnd || (end == bestEnd && span < bestSpan);
+  }
+
+  private static boolean usableExpressionType(final TypeMirror type) {
+    return type != null && type.getKind() != TypeKind.ERROR && type.getKind() != TypeKind.NONE;
   }
 
   // ── expected value resolution ─────────────────────────────────────────────────

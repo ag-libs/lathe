@@ -188,6 +188,51 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
   }
 
   @Test
+  void simpleName_afterReferenceExpression_offersInstanceof() {
+    final List<String> items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    void m(Object value) {
+                        if (value ins§) {}
+                    }
+                }"""));
+
+    assertThat(items).contains("instanceof");
+  }
+
+  @Test
+  void simpleName_afterPrimitiveExpression_omitsInstanceof() {
+    final List<String> items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    void m(int value) {
+                        if (value ins§) {}
+                    }
+                }"""));
+
+    assertThat(items).doesNotContain("instanceof");
+  }
+
+  @Test
+  void simpleName_atStatementStart_omitsInstanceof() {
+    final List<String> items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    void m() {
+                        ins§
+                    }
+                }"""));
+
+    assertThat(items).doesNotContain("instanceof");
+  }
+
+  @Test
   void returnPosition_referenceLocal_rankedAfterAssignableLocal() {
     final var items =
         fixture.complete(
