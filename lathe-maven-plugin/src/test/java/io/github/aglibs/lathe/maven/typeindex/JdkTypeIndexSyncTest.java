@@ -77,9 +77,9 @@ class JdkTypeIndexSyncTest extends AbstractCachePropertyTest {
   }
 
   @Test
-  void index_missingJavaHome_returnsUnchangedSource() {
+  void index_nullHome_returnsUnchangedSource() {
     useTempCache();
-    final JdkSource source = JdkSourceResolver.resolve(Map.of());
+    final JdkSource source = JdkSource.missing("vendor", "version", "cache-key", null);
 
     assertThat(JdkTypeIndexSync.index(source, LOG)).isSameAs(source);
   }

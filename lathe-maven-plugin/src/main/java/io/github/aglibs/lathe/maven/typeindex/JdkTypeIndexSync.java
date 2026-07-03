@@ -30,7 +30,7 @@ public final class JdkTypeIndexSync {
 
   public static JdkSource index(final JdkSource source, final Log log) {
     if (source.home() == null) {
-      log.debug("[type-index] skipping JDK type index because JAVA_HOME is unavailable");
+      log.debug("[type-index] skipping JDK type index because no JDK home is resolvable");
       return source;
     }
 
