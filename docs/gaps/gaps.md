@@ -379,25 +379,6 @@ printf 'complete after "handler.getServletContext()." filter wait\n' \
 
 ---
 
-## Status.md Correction Required
-
-The current `status.md` LSP Capability Matrix states:
-
-> Code actions | Implemented with M1 gaps | Missing imports, add throws,
-> try/catch wrapping, and variable declaration work. …
-
-Based on this session, the following items are **not working**:
-
-| Claim | Actual state |
-|---|---|
-| try/catch wrapping works | `TryCatchWrapProvider` is not implemented; the action is never returned (EG-002) |
-| variable declaration works | `DeclareVariableProvider` is not implemented; see code-action gap CA-2 below |
-
-Both items should be removed from the "implemented" list in `status.md` until the providers
-are in place and covered by tests.
-
----
-
 ## Timing Observations
 
 Collected from `FINE` logs during the session.

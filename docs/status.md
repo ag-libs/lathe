@@ -3,7 +3,7 @@
 This document records the implemented baseline and known user-visible gaps.
 The [roadmap](roadmap.md) defines milestone scope; the [design index](design-index.md) links detailed designs.
 
-Status last reviewed: 2026-06-24.
+Status last reviewed: 2026-07-03.
 
 ## Release State
 
@@ -47,7 +47,7 @@ Maven Central publication is planned for M3.
 | Semantic tokens | Partially implemented | Static/deprecated members, enum constants, type parameters, and annotations are covered. Class and import highlighting remain planned for M2. |
 | Full-document formatting | Implemented | google-java-format also reorders and removes imports. |
 | On-type formatting | M2 planned | Stub is not advertised; conservative indentation remains planned. |
-| Code actions | Implemented with M1 gaps | Missing imports and add-throws work. Try/catch wrapping and variable declaration are classified and dispatched but providers are not yet implemented. Missing-method stubs and new-type freshness remain. |
+| Code actions | Implemented with M1 gaps | Missing imports, add-throws, try/catch wrapping, variable declaration, and missing-method stubs all work. New reactor-type freshness for missing-import actions (CA-4) remains. |
 | Rename | M2 planned | Existing reference identity and roles provide part of the foundation. |
 | Inlay hints | M2 planned | Not implemented. |
 | Run/test/debug | Post-M3 | No execution or DAP surface is advertised. |
@@ -81,7 +81,7 @@ See [lathe-server-data-flow-recipe.md](done/lathe-server-data-flow-recipe.md) fo
 - Completion contexts, typed-slot filtering, type-index discovery, import insertion, and JDT-style presentation.
 - Exact javac-backed references with scope tightening, indexed candidate discovery, bounded transient closed-file
   analysis, work-done progress, and optional cancellation.
-- Missing-import and add-throws quick fixes. Try/catch wrapping and variable declaration are classified and dispatched but providers are not yet implemented.
+- Missing-import, add-throws, try/catch wrapping, variable declaration, and missing-method quick fixes.
 - Rich AST-backed Markdown Javadoc for hover, completion, and signature help.
 - Workspace/document symbols, folding ranges, formatting, import optimization, and unused-code diagnostics.
 - Maven-managed server distribution, unified JDK cache keys, POM staleness prompts, and packaged Neovim setup.
@@ -92,5 +92,4 @@ Detailed implementation designs and historical decisions are indexed under
 
 ## Known M1 Blockers
 
-- `MissingMethodImplProvider` is not implemented.
 - New reactor types may require Maven sync before missing-import actions discover them.
