@@ -276,10 +276,15 @@ final class ReferenceLocator extends SourceTreeLocator {
     }
 
     final var start = SourceLocator.offsetToPosition(cu, startOffset);
-    results.add(
-        new ReferenceMatch(
-            uri,
-            new Range(start, new Position(start.getLine(), start.getCharacter() + nameLength)),
-            role));
+    final var range =
+        new Range(start, new Position(start.getLine(), start.getCharacter() + nameLength));
+
+    // A record component's backing field and its canonical-constructor parameter share the header
+    // range, so the same identifier can be reached twice; never report one source range twice.
+    if (results.stream().anyMatch(match -> match.range().equals(range))) {
+      return;
+    }
+
+    results.add(new ReferenceMatch(uri, range, role));
   }
 }

@@ -1984,6 +1984,86 @@ At minimum:
 The test must inspect returned URIs and ranges, not only result count.
 
 
+## FR-008 — Find references on a record component returns nothing
+
+Status: done — Target: M2.
+
+### Observed behaviour
+
+Invoking `textDocument/references` on a record component in the record header returns no results,
+even when the component's generated accessor is called across the reactor.
+
+Reduced from a private reactor workspace (identifiers genericized). Given a record
+
+```java
+public record AppServerConfig(String bucket, ...) { }
+```
+
+and callers such as `AppServer.java`:
+
+```java
+new ReportService(config.bucket(), ...);
+```
+
+probing the `bucket` component declaration:
+
+```text
+def  <line>:<col>   -> resolves to the component declaration (correct)
+refs <line>:<col>   -> progress "0 / 1", then "(no references found)"
+```
+
+Definition resolves correctly, but references finds nothing despite multiple `config.bucket()`
+accessor call sites.
+
+### Root cause
+
+`SourceLocator.elementAt` resolves the cursor on a record-header component to an `Element` of kind
+`RECORD_COMPONENT`. In `ReferenceTarget.from`, `RECORD_COMPONENT` has no explicit case and falls
+through to the `default` branch, which stores `kind = RECORD_COMPONENT`.
+
+`ReferenceTarget.matches` then rejects every candidate at its first guard,
+`element.getKind() != kind`: accessor invocation sites resolve to an `ExecutableElement` of kind
+`METHOD` and the backing field to a `VariableElement` of kind `FIELD`, neither of which equals
+`RECORD_COMPONENT`. `resolveMethodElement` also short-circuits (`kind != METHOD`), so override-aware
+matching never runs. The candidate index still finds the file by name (hence `0 / 1`), but zero
+usages match inside it.
+
+### Proposed fix
+
+In `ReferenceTarget.from`, normalise a record component to its generated accessor via a
+`recordAccessorFor` helper that covers both the `RECORD_COMPONENT` element and the backing `FIELD`
+that javac actually reports for the header (`RecordComponentElement.getAccessor()`). The target then
+reuses the existing `METHOD` path: broad candidate discovery, descriptor matching, and
+public-accessor reactor scope all apply, so `x.name()` accessor invocations match reactor-wide —
+fixing the private-field `DECLARING_FILE` scope that would otherwise prevent any cross-file match.
+
+Other members backing the same component are the same logical member, so `ReferenceTarget.matches`
+additionally accepts them via `matchesRecordComponentMember`:
+
+- the backing `FIELD` (in-body reads and writes), and
+- the canonical constructor `PARAMETER` that javac reports for compact/canonical constructor bodies
+  (`Config { bucket = bucket.trim(); }`).
+
+A same-named `PARAMETER` of a *non-canonical* constructor is a distinct member and is excluded by
+comparing the constructor's parameter types against the record components in order. A same-named
+component in a *different* record is excluded by the enclosing binary-name check.
+
+Because the backing field and the canonical-constructor parameter share the component's header source
+range, `includeDeclaration` would report that single declaration once per synthetic member.
+`ReferenceLocator.addMatch` now enforces the invariant that a source range is never reported twice, so
+the header declaration appears exactly once.
+
+### Regression targets
+
+- `ReferenceLocatorTest.recordComponent_accessorInvocation_reportedThroughAccessor`
+- `ReferenceLocatorTest.recordComponent_backingFieldRead_countedAlongsideAccessor`
+- `ReferenceLocatorTest.recordComponent_compactConstructorUses_counted`
+- `ReferenceLocatorTest.recordComponent_nonCanonicalConstructorParameter_notMatched`
+- `ReferenceLocatorTest.recordComponent_includeDeclaration_reportsHeaderExactlyOnce`
+- `ReferenceLocatorTest.recordComponent_sameNameComponentInOtherRecord_notMatched`
+- `ReferenceLocatorTest.recordComponent_scope_reactorModulesFromPublicAccessor`
+
+
 # Code Action Gaps (CA-N)
 
 Gaps found during live probing of `textDocument/codeAction` on the Dropwizard and Helidon

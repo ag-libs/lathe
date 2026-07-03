@@ -294,6 +294,140 @@ class ReferenceLocatorTest {
         .anyMatch(l -> l.range().getStart().equals(posOf(source, "dbClient.dbType()", "dbType")));
   }
 
+  // --- record components ---
+
+  @Test
+  void recordComponent_accessorInvocation_reportedThroughAccessor() throws IOException {
+    final var source =
+        """
+        record Config(String bucket) {}
+        class Use {
+            String read(Config config) { return config.bucket(); }
+        }
+        """;
+    final var analysis = compile(source);
+    final var target = targetAt(analysis, "record Config(String bucket)", "bucket");
+
+    final List<ReferenceMatch> result = refs(analysis, target, false);
+
+    assertThat(result).hasSize(1);
+    assertThat(result.getFirst().range().getStart())
+        .isEqualTo(posOf(source, "config.bucket()", "bucket"));
+  }
+
+  @Test
+  void recordComponent_backingFieldRead_countedAlongsideAccessor() throws IOException {
+    final var source =
+        """
+        record Config(String bucket) {
+            String suffixed() { return bucket + "!"; }
+            String accessed() { return this.bucket(); }
+        }
+        """;
+    final var analysis = compile(source);
+    final var target = targetAt(analysis, "record Config(String bucket)", "bucket");
+
+    final List<ReferenceMatch> result = refs(analysis, target, false);
+
+    assertThat(result).hasSize(2);
+    assertThat(result)
+        .anyMatch(m -> m.range().getStart().equals(posOf(source, "return bucket +", "bucket")));
+    assertThat(result)
+        .anyMatch(m -> m.range().getStart().equals(posOf(source, "this.bucket()", "bucket")));
+  }
+
+  @Test
+  void recordComponent_compactConstructorUses_counted() throws IOException {
+    final var source =
+        """
+        record Config(String bucket) {
+            Config {
+                bucket = bucket.trim();
+            }
+        }
+        """;
+    final var analysis = compile(source);
+    final var target = targetAt(analysis, "record Config(String bucket)", "bucket");
+
+    final List<ReferenceMatch> result = refs(analysis, target, false);
+
+    assertThat(result).hasSize(2);
+    assertThat(result)
+        .anyMatch(m -> m.range().getStart().equals(posOf(source, "bucket = bucket", "bucket")));
+    assertThat(result)
+        .anyMatch(m -> m.range().getStart().equals(posOf(source, "= bucket.trim", "bucket")));
+  }
+
+  @Test
+  void recordComponent_nonCanonicalConstructorParameter_notMatched() throws IOException {
+    final var source =
+        """
+        record Config(String bucket) {
+            Config(String bucket, int unused) {
+                this(bucket.trim());
+            }
+        }
+        """;
+    final var analysis = compile(source);
+    final var target = targetAt(analysis, "record Config(String bucket)", "bucket");
+
+    final List<ReferenceMatch> result = refs(analysis, target, false);
+
+    // The two-arg constructor's 'bucket' parameter is a distinct member, not the component.
+    assertThat(result)
+        .noneMatch(m -> m.range().getStart().equals(posOf(source, "this(bucket.trim", "bucket")));
+  }
+
+  @Test
+  void recordComponent_includeDeclaration_reportsHeaderExactlyOnce() throws IOException {
+    final var source =
+        """
+        record Config(String bucket) {}
+        class Use {
+            String read(Config config) { return config.bucket(); }
+        }
+        """;
+    final var analysis = compile(source);
+    final var target = targetAt(analysis, "record Config(String bucket)", "bucket");
+
+    final List<ReferenceMatch> withoutDecl = refs(analysis, target, false);
+    final List<ReferenceMatch> withDecl = refs(analysis, target, true);
+
+    final var header = posOf(source, "record Config(String bucket)", "bucket");
+    // Excluded from usages: the component header is a declaration, not a reference.
+    assertThat(withoutDecl).noneMatch(m -> m.range().getStart().equals(header));
+    // Included exactly once: the backing field and canonical-constructor parameter share the header
+    // range, so without dedup the single declaration would be reported once per synthetic member.
+    assertThat(withDecl).hasSize(withoutDecl.size() + 1);
+    assertThat(withDecl).filteredOn(m -> m.range().getStart().equals(header)).hasSize(1);
+  }
+
+  @Test
+  void recordComponent_sameNameComponentInOtherRecord_notMatched() throws IOException {
+    final var source =
+        """
+        record Config(String bucket) {}
+        record Other(String bucket) {
+            String read() { return bucket; }
+        }
+        """;
+    final var analysis = compile(source);
+    final var target = targetAt(analysis, "record Config(String bucket)", "bucket");
+
+    final List<ReferenceMatch> result = refs(analysis, target, false);
+
+    // Other's identically named backing field belongs to a different record and must not match.
+    assertThat(result).isEmpty();
+  }
+
+  @Test
+  void recordComponent_scope_reactorModulesFromPublicAccessor() {
+    final var analysis = compile("record Config(String bucket) {}");
+    final var target = targetAt(analysis, "record Config(String bucket)", "bucket");
+
+    assertThat(target.scope()).isEqualTo(ReferenceTarget.SearchScope.REACTOR_MODULES);
+  }
+
   // --- constructors ---
 
   @Test
