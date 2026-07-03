@@ -185,8 +185,9 @@ feature milestone.
 
 ### Run, test, and debug
 
-Add Maven-delegated execution, streamed session/test events, cancellation, JDWP attachment, and Neovim run/test/debug
-integration.
+Add capture-replay execution — intercept Maven's Surefire/Failsafe/exec fork launch via a `jvm` shim, replay a fresh
+JVM against `.lathe/` bytecode (no recompilation), with streamed session/test events, cancellation, JDWP attachment,
+and Neovim run/test/debug integration.
 See [lathe-run-test-debug.md](planned/lathe-run-test-debug.md).
 
 ### VS Code support

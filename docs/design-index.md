@@ -57,7 +57,7 @@ M3 designs before implementation.
 
 ## Post-M3
 
-- [Run, Test, and Debug](planned/lathe-run-test-debug.md) — Maven-delegated execution and JDWP attachment.
+- [Run, Test, and Debug](planned/lathe-run-test-debug.md) — capture Maven's fork launch, replay against `.lathe/` bytecode, JDWP attachment.
 - [VS Code Semantic Tokens](planned/lathe-vscode-semantic-tokens.md) — semantic-token parity needed for supported VS Code
   integration.
 - [Sibling Recompilation](planned/lathe-sibling-recompilation.md) — closed-file diagnostics after API changes.
