@@ -6,7 +6,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -15,15 +14,6 @@ class JdkSourceResolverTest {
   @TempDir Path tmp;
 
   @Test
-  void resolve_missingJavaHome_returnsMissing() {
-    final JdkSource result = JdkSourceResolver.resolve(Map.of());
-    assertThat(result.isPresent()).isFalse();
-    assertThat(result.home()).isNull();
-    assertThat(result.cacheKey()).isNotBlank().doesNotContain(" ");
-  }
-
-  @Test
-  @Disabled("EG-031: when JAVA_HOME is unset, fall back to the running JVM's java.home")
   void resolve_javaHomeUnset_fallsBackToRunningJavaHome() throws IOException {
     final Path runningHome = Path.of(System.getProperty("java.home")).toRealPath();
 
@@ -33,7 +23,6 @@ class JdkSourceResolverTest {
   }
 
   @Test
-  @Disabled("EG-031: a JAVA_HOME pointing at a symlink into a JDK must resolve to the real home")
   void resolve_symlinkedHome_resolvesToRealPath() throws IOException {
     final Path realHome = tmp.resolve("real-jdk");
     Files.createDirectories(realHome.resolve("lib"));
@@ -48,10 +37,10 @@ class JdkSourceResolverTest {
   }
 
   @Test
-  void resolve_noSrcZip_returnsMissingWithHome() {
+  void resolve_noSrcZip_returnsMissingWithHome() throws IOException {
     final JdkSource result = JdkSourceResolver.resolve(Map.of("JAVA_HOME", tmp.toString()));
     assertThat(result.isPresent()).isFalse();
-    assertThat(result.home()).isEqualTo(tmp);
+    assertThat(result.home()).isEqualTo(tmp.toRealPath());
   }
 
   @Test
@@ -62,8 +51,8 @@ class JdkSourceResolverTest {
     final JdkSource result = JdkSourceResolver.resolve(Map.of("JAVA_HOME", tmp.toString()));
 
     assertThat(result.isPresent()).isTrue();
-    assertThat(result.home()).isEqualTo(tmp);
-    assertThat(result.sourceZip()).isEqualTo(tmp.resolve("lib/src.zip"));
+    assertThat(result.home()).isEqualTo(tmp.toRealPath());
+    assertThat(result.sourceZip()).isEqualTo(tmp.toRealPath().resolve("lib/src.zip"));
     assertThat(result.sourceDir().getParent().getFileName().toString()).isEqualTo("jdks");
     assertThat(result.cacheKey()).isNotBlank();
     assertThat(result.sourceDir().getFileName().toString()).isEqualTo(result.cacheKey());

@@ -26,12 +26,11 @@ public final class JdkSourceResolver {
   public static JdkSource resolve(final Map<String, String> env) {
     final var vendor = System.getProperty("java.vendor");
     final var version = System.getProperty("java.version");
-    final String javaHome = env.get("JAVA_HOME");
-    if (javaHome == null) {
+    final Path home = resolveHome(env.get("JAVA_HOME"));
+    if (home == null) {
       return JdkSource.missing(vendor, version, cacheKey(null, vendor, version), null);
     }
 
-    final var home = Path.of(javaHome);
     final var key = cacheKey(home, vendor, version);
     final var sourceZip = home.resolve("lib").resolve("src.zip");
     final var sourceDir =
@@ -41,6 +40,20 @@ public final class JdkSourceResolver {
     }
 
     return JdkSource.missing(vendor, version, key, home);
+  }
+
+  private static Path resolveHome(final String javaHome) {
+    final String raw = javaHome != null ? javaHome : System.getProperty("java.home");
+    if (raw == null) {
+      return null;
+    }
+
+    final Path path = Path.of(raw);
+    try {
+      return path.toRealPath();
+    } catch (final IOException e) {
+      return path;
+    }
   }
 
   static String cacheKey(final Path home, final String vendor, final String version) {
