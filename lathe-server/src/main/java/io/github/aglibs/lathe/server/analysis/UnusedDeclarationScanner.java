@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server.analysis;
 
+import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.MemberReferenceTree;
@@ -142,6 +143,30 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
       markReference(trees.getElement(getCurrentPath()));
     }
     return super.visitIdentifier(node, v);
+  }
+
+  @Override
+  public Void visitAssignment(final AssignmentTree node, final Void v) {
+    if (declarationPhase || !isPureWriteTarget(node.getVariable())) {
+      return super.visitAssignment(node, v);
+    }
+
+    // A bare `name = ...` or `this.field = ...` only writes the target, so its value is never
+    // observed here; skip the target and scan only the right-hand side, whose reads still count.
+    // Reads through the same variable (`x += 1`, `x++`, the `a` in `a.f = x`, the `arr` in
+    // `arr[i] = x`) go through the default traversal and keep the declaration used.
+    scan(node.getExpression(), null);
+    return null;
+  }
+
+  private static boolean isPureWriteTarget(final Tree target) {
+    if (target instanceof IdentifierTree) {
+      return true;
+    }
+
+    return target instanceof MemberSelectTree memberSelect
+        && memberSelect.getExpression() instanceof IdentifierTree qualifier
+        && qualifier.getName().contentEquals("this");
   }
 
   @Override

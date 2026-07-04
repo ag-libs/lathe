@@ -9,7 +9,6 @@ import org.eclipse.lsp4j.DiagnosticTag;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 class UnusedDeclarationScannerTest {
@@ -210,24 +209,83 @@ class UnusedDeclarationScannerTest {
   }
 
   @Test
-  @Disabled("EG-035: assignment target is counted as a use, so write-only locals are not flagged")
   void compile_localVariableAssignedNeverRead_reportsHint() {
     // 'count' is declared, assigned, but its value is never read — the declaration and both
-    // writes are dead code, yet the scanner treats the assignment LHS as a use.
+    // writes are dead code. The assignment LHS must not count as a use.
+    final var source =
+        """
+        class Test {
+          public void method() {
+            int count = 0;
+            count = compute();
+          }
+          private int compute() {
+            return 1;
+          }
+        }
+        """;
+
+    final List<Diagnostic> hints = unusedHintsFor(source);
+
+    assertThat(hints).hasSize(1);
+    assertThat(hints.getFirst().getRange().getStart())
+        .isEqualTo(SourceLocator.offsetToPosition(source, source.indexOf("count")));
+  }
+
+  @Test
+  void compile_localVariableAssignedThenRead_noHint() {
+    // The value is read after assignment, so the variable is genuinely used.
     assertThat(
             unusedHintsFor(
                 """
                 class Test {
-                  public void method() {
+                  public int method() {
                     int count = 0;
                     count = compute();
+                    return count;
                   }
                   private int compute() {
                     return 1;
                   }
                 }
                 """))
-        .hasSize(1);
+        .isEmpty();
+  }
+
+  @Test
+  void compile_localVariableCompoundAssignment_noHint() {
+    // `count += 1` reads before it writes, so the read half keeps the variable used.
+    assertThat(
+            unusedHintsFor(
+                """
+                class Test {
+                  public void method() {
+                    int count = 0;
+                    count += 1;
+                  }
+                }
+                """))
+        .isEmpty();
+  }
+
+  @Test
+  void compile_privateFieldWriteOnly_reportsHint() {
+    // 'cached' is only ever written (declaration + this-qualified assignment), never read.
+    final var source =
+        """
+        class Test {
+          private int cached = 0;
+          public void refresh() {
+            this.cached = 1;
+          }
+        }
+        """;
+
+    final List<Diagnostic> hints = unusedHintsFor(source);
+
+    assertThat(hints).hasSize(1);
+    assertThat(hints.getFirst().getRange().getStart())
+        .isEqualTo(SourceLocator.offsetToPosition(source, source.indexOf("cached")));
   }
 
   @Test

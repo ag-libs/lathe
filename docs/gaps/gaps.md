@@ -1827,7 +1827,7 @@ to `FILE_START` rather than dropping the symbol.
 
 ## EG-035 — Unused-declaration scan treats an assignment target as a use, so write-only variables are never flagged
 
-**Status: accepted — Target: M2**
+**Status: done — Target: M2**
 
 ### Observed behaviour
 
@@ -1892,14 +1892,28 @@ Keep the existing behaviour for every non-assignment position, and keep the `Unn
 `lathe.unused` code, and message format from EG-019. A follow-on remove-declaration quick fix would
 also need to remove the now-dead assignment statements, which is out of scope here.
 
+### Resolution (2026-07-04)
+
+`UnusedDeclarationScanner` gained a `visitAssignment` override (reference phase). When the LHS is a
+pure write target — a bare `IdentifierTree` or a `this`-qualified `MemberSelectTree` — it scans only
+the right-hand side (whose reads still count) and skips the target, so a write no longer marks the
+declaration used. Every other position is unchanged: `a.f = x` / `arr[i] = x` fall through to the
+default traversal (reading the qualifier/index and marking the member), and `+=` / `++` still read
+before writing. This keeps false positives near zero at the cost of leaving `++`/`--`-only variables
+conservatively counted as used. Scope is `LOCAL_VARIABLE` and `PRIVATE_FIELD` only, both confined to
+a single compilation unit, so no cross-file analysis is needed.
+
 ### Regression targets
 
-- `UnusedDeclarationScannerTest.compile_localVariableAssignedNeverRead_reportsHint` (added,
-  `@Disabled`)
-- On implementation, add:
-  - a negative case where the same variable is read after assignment (`compile_localVariableAssignedThenRead_noHint`);
-  - a compound-assignment case (`count += 1;`) asserting the read half keeps it used;
-  - a private-field variant asserting write-only fields are flagged.
+- `UnusedDeclarationScannerTest.compile_localVariableAssignedNeverRead_reportsHint` (write-only local;
+  verified failing without the fix)
+- `UnusedDeclarationScannerTest.compile_localVariableAssignedThenRead_noHint` (read after assignment)
+- `UnusedDeclarationScannerTest.compile_localVariableCompoundAssignment_noHint` (`+=` reads first)
+- `UnusedDeclarationScannerTest.compile_privateFieldWriteOnly_reportsHint` (write-only `this.field`;
+  verified failing without the fix)
+
+The field-read negative (a read keeps a private field used) is already covered by the existing
+`UnusedDeclarationScannerTest.compile_privateFieldReadInMethod_noHint`.
 
 ---
 
