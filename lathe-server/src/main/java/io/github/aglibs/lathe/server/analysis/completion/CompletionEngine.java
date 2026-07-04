@@ -449,7 +449,18 @@ public final class CompletionEngine {
 
     final List<CompletionItem> items =
         AnnotationCompletionProvider.completeArgumentValue(parsed, injected, analysis);
-    return new CompletionOutcome(items, req.cached() == null ? analysis : null);
+    if (!AnnotationCompletionProvider.isClassValuedElement(parsed, analysis)) {
+      return new CompletionOutcome(items, req.cached() == null ? analysis : null);
+    }
+
+    // A Class-typed value element (e.g. @ExtendWith's Class<? extends Extension>) expects a type
+    // name here, so offer type candidates alongside the value keywords (EG-038).
+    final var typeOutcome =
+        typeReferenceCompleter.completeSimpleNameTypeReferenceWithLang(
+            injected, req, TypeReferenceRole.ORDINARY);
+    final List<CompletionItem> merged =
+        Stream.concat(items.stream(), typeOutcome.items().stream()).toList();
+    return new CompletionOutcome(merged, req.cached() == null ? analysis : null);
   }
 
   private AttributedFileAnalysis resolveAnalysis(final CompletionRequest req) {

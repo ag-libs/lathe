@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 import org.eclipse.lsp4j.CompletionItemKind;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 class CompletionAnnotationTest extends CompletionTestSupport {
@@ -31,8 +30,6 @@ class CompletionAnnotationTest extends CompletionTestSupport {
   }
 
   @Test
-  @Disabled(
-      "EG-038: annotation value completion offers no type candidates for Class-typed elements")
   void annotationValue_classTypedElement_offersTypeCandidates() {
     // EG-038: a Class-typed annotation value element (like @ExtendWith's Class<? extends Extension>
     // value) should offer type candidates in value position. Currently only keywords are offered.
@@ -40,9 +37,10 @@ class CompletionAnnotationTest extends CompletionTestSupport {
             labels(
                 fixture.complete(
                     """
+                    package p;
                     @interface Uses { Class<?> value(); }
                     class Ext {}
-                    @Uses(§)
+                    @Uses(E§)
                     class Test {}""")))
         .contains("Ext");
   }

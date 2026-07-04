@@ -2038,7 +2038,7 @@ would add no coverage.
 
 ## EG-038 — Annotation value completion offers no type candidates for `Class`-typed elements
 
-**Status: accepted — Target: M2**
+**Status: done — Target: M2**
 
 ### Observed behaviour
 
@@ -2069,9 +2069,22 @@ constants, and returns only the `null` keyword — no type candidates.
 ### Proposed fix
 
 When the annotation element's (array-component) type is `java.lang.Class` (raw or `Class<? extends
-Bound>`), offer type-reference candidates in the value position, ideally filtered to the wildcard
-bound (`Extension` for `@ExtendWith`) — reusing the existing type-index / type-reference completion
-path rather than adding a parallel one.
+Bound>`), offer type-reference candidates in the value position, reusing the existing type-index /
+type-reference completion path rather than adding a parallel one.
+
+### Resolution (2026-07-04)
+
+`AnnotationCompletionProvider.isClassValuedElement` detects a `java.lang.Class` value element
+(unwrapping an array component). When true, `CompletionEngine.completeAnnotationArgumentValue` runs
+the existing `typeReferenceCompleter.completeSimpleNameTypeReferenceWithLang` and merges its type
+candidates with the value keywords — the same path the annotation-name (`ANNOTATION_CONTEXT`) and
+type-reference cases already use, so no parallel machinery. Validated with `dev/explore.py`:
+`inject "@ExtendWith(Mockito"` now returns 27 type candidates including
+`MockitoExtension  org.mockito.junit.jupiter.MockitoExtension`.
+
+Deliberately unbounded: candidates are filtered by the typed prefix but not by the wildcard bound
+(`Class<? extends Extension>` still offers any matching type), matching how type-reference completion
+behaves elsewhere. Bound-filtering to the declared upper bound is a possible future refinement.
 
 ### Probe commands
 
@@ -2082,9 +2095,9 @@ python3 dev/explore.py /path/to/SomethingTest.java inject "@ExtendWith(Mockito" 
 
 ### Regression targets
 
-- `CompletionAnnotationTest.annotationValue_classTypedElement_offersTypeCandidates` (added,
-  `@Disabled` pending fix — a `Class<?>`-valued element must offer a resolvable type in value
-  position; verified failing today).
+- `CompletionAnnotationTest.annotationValue_classTypedElement_offersTypeCandidates` — a
+  `Class<?>`-valued element offers a resolvable in-scope type in value position (verified failing
+  before the fix, passing after).
 
 ---
 

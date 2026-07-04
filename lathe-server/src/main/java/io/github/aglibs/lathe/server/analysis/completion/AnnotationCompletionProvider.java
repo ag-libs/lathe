@@ -61,6 +61,20 @@ final class AnnotationCompletionProvider {
         .toList();
   }
 
+  static boolean isClassValuedElement(
+      final ParsedSentinel parsed, final AttributedFileAnalysis analysis) {
+    final TypeMirror elementType =
+        resolveAnnotationElementType(
+            parsed.annotationTypeText(), parsed.enclosingMethodName(), analysis);
+    if (elementType == null) {
+      return false;
+    }
+
+    return annotationValueCompletionType(elementType) instanceof final DeclaredType declaredType
+        && declaredType.asElement() instanceof final TypeElement typeElement
+        && typeElement.getQualifiedName().contentEquals("java.lang.Class");
+  }
+
   private static TypeMirror annotationValueCompletionType(final TypeMirror elementType) {
     return elementType instanceof final ArrayType arrayType
         ? arrayType.getComponentType()
