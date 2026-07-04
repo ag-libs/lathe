@@ -1917,6 +1917,41 @@ The field-read negative (a read keeps a private field used) is already covered b
 
 ---
 
+## EG-036 — Write-only unused hint reads "Unused", not "assigned but never read"
+
+**Status: done — Target: M2**
+
+### Observed behaviour
+
+After EG-035, a variable that is assigned but never read is flagged, but with the same generic
+message as one never referenced at all (`Unused local variable 'count'`). IntelliJ distinguishes the
+two — *"Variable 'x' is never used"* vs *"Variable 'x' is assigned but never accessed"* — which tells
+the developer whether removing the declaration also means removing live-looking assignments.
+
+### Resolution (2026-07-04)
+
+`UnusedDeclarationScanner` records the target of each suppressed pure-write assignment in an
+`assignedTargets` set (populated in `visitAssignment`, kept out of the `referenced*` sets so it still
+counts as unused). `unusedDiag` then words the hint by that flag:
+
+- assigned but never read → `"<kind> '<name>' is assigned but never read"`
+- never referenced → the existing `"Unused <kind> '<name>'"`
+
+The `lathe.unused` code and `Unnecessary` tag are unchanged, so rendering and any quick fix are
+unaffected — only the human-readable text branches. A declaration with only an initializer and no
+later assignment (`int x = 0;`) keeps the "Unused" wording, matching IntelliJ (which reserves
+"assigned but never accessed" for explicit assignments).
+
+### Regression targets
+
+- `UnusedDeclarationScannerTest.compile_localVariableAssignedNeverRead_reportsHint` (asserts the
+  "assigned but never read" wording)
+- `UnusedDeclarationScannerTest.compile_privateFieldWriteOnly_reportsHint` (same, for a field)
+- `UnusedDeclarationScannerTest.unused_localVariable_messageNamesVariableAndKind` (never-referenced,
+  incl. an initialized-only `int x = 42;`, keeps the "Unused" wording)
+
+---
+
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work

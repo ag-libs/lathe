@@ -80,6 +80,10 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
   private final Set<Element> referencedFields = new HashSet<>();
   private final Set<Element> referencedLocals = new HashSet<>();
 
+  // targets of a suppressed pure-write assignment: used only to word the hint ("assigned but never
+  // read") when such a declaration turns out to be unused; never counts as a reference.
+  private final Set<Element> assignedTargets = new HashSet<>();
+
   private UnusedDeclarationScanner(final AttributedFileAnalysis analysis, final String content) {
     this.trees = analysis.trees();
     this.cu = analysis.tree();
@@ -155,6 +159,11 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
     // observed here; skip the target and scan only the right-hand side, whose reads still count.
     // Reads through the same variable (`x += 1`, `x++`, the `a` in `a.f = x`, the `arr` in
     // `arr[i] = x`) go through the default traversal and keep the declaration used.
+    final var target = trees.getElement(new TreePath(getCurrentPath(), node.getVariable()));
+    if (target != null) {
+      assignedTargets.add(target);
+    }
+
     scan(node.getExpression(), null);
     return null;
   }
@@ -244,7 +253,8 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
       final List<Diagnostic> results) {
     for (final var entry : candidates.entrySet()) {
       if (!used.contains(entry.getKey())) {
-        unusedDiag(entry.getValue()).ifPresent(results::add);
+        unusedDiag(entry.getValue(), assignedTargets.contains(entry.getKey()))
+            .ifPresent(results::add);
       }
     }
   }
@@ -262,7 +272,8 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
     return reached;
   }
 
-  private Optional<Diagnostic> unusedDiag(final Candidate candidate) {
+  private Optional<Diagnostic> unusedDiag(
+      final Candidate candidate, final boolean assignedButNeverRead) {
     if (candidate.nodeStart() < 0) {
       return Optional.empty();
     }
@@ -273,12 +284,12 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
     }
     final var start = SourceLocator.offsetToPosition(cu, nameOffset);
     final var end = new Position(start.getLine(), start.getCharacter() + candidate.name().length());
+    final String message =
+        assignedButNeverRead
+            ? "%s '%s' is assigned but never read".formatted(candidate.kind(), candidate.name())
+            : "Unused %s '%s'".formatted(candidate.kind(), candidate.name());
     final var diag =
-        new Diagnostic(
-            new Range(start, end),
-            "Unused %s '%s'".formatted(candidate.kind(), candidate.name()),
-            DiagnosticSeverity.Hint,
-            "lathe");
+        new Diagnostic(new Range(start, end), message, DiagnosticSeverity.Hint, "lathe");
     diag.setCode("lathe.unused");
     diag.setTags(List.of(DiagnosticTag.Unnecessary));
     return Optional.of(diag);

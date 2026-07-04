@@ -230,6 +230,8 @@ class UnusedDeclarationScannerTest {
     assertThat(hints).hasSize(1);
     assertThat(hints.getFirst().getRange().getStart())
         .isEqualTo(SourceLocator.offsetToPosition(source, source.indexOf("count")));
+    assertThat(hints.getFirst().getMessage().getLeft())
+        .isEqualTo("local variable 'count' is assigned but never read");
   }
 
   @Test
@@ -286,6 +288,8 @@ class UnusedDeclarationScannerTest {
     assertThat(hints).hasSize(1);
     assertThat(hints.getFirst().getRange().getStart())
         .isEqualTo(SourceLocator.offsetToPosition(source, source.indexOf("cached")));
+    assertThat(hints.getFirst().getMessage().getLeft())
+        .isEqualTo("private field 'cached' is assigned but never read");
   }
 
   @Test
