@@ -62,9 +62,9 @@ Three stages, decoupled in time.
 ```
 CAPTURE (push — rides the user's mvn test)      REPLAY (per run/debug, Maven-free)
 ────────────────────────────────────────       ─────────────────────────────────────
-user runs: mvn test  (MAVEN_ARGS=-Djvm=shim)    server reads .lathe/<rel>/test-launch.json
+user runs: mvn test  (<jvm>=shim, pluginMgmt)   server reads .lathe/<rel>/test-launch.json
   Surefire forks the test JVM →                   → rewrite reactor target/ → .lathe/
-  the shim (its bin/java) runs:                    → strip jacoco agent + ForkedBooter
+  the shim (its bin/java) runs:                    → strip jacoco agent + main class/booter args
     snapshot argv+argfile+env → .lathe/<rel>/      → keep JPMS flags verbatim
     then exec real java → TESTS RUN NORMALLY       → add runner + test selection
   server parses the bundle → test-launch.json      → java … (fresh JVM)
@@ -105,7 +105,8 @@ the active build JDK closely enough to pass validation.
 
 ### 3.2 The synthesized capture-JDK home
 
-Installed by `lathe:sync` (idempotent), keyed to the active build JDK (`$JAVA_HOME`):
+Installed by `lathe:sync` (idempotent), keyed to the `JdkSourceResolver`-resolved build JDK
+(`JAVA_HOME`, else the build JVM's `java.home`):
 
 ```
 ~/.cache/lathe/capture-jdk/
@@ -151,10 +152,14 @@ indistinguishable from a normal one. Three modes, selected by environment:
 `LATHE_CAPTURE_ONLY=1 mvn surefire:test` "refresh the launch line without paying for a test run." It is
 **user-invoked**, not a server command — the server never drives Maven.
 
-Fork detection (for the default surefire mode): **the invocation is the real fork iff
-`org.apache.maven.surefire.booter.ForkedBooter` appears in argv — including inside an `@argfile`** (in
-modular forks Surefire passes everything, main class included, via an `@argfile`, so the shim expands
-argfiles when scanning). Probe invocations lack `ForkedBooter` and pass straight through.
+Fork detection uses a **Lathe-owned marker, not a Surefire internal**: Lathe registers
+`LATHE_CAPTURE_FORK=1` via Surefire `<environmentVariables>` (§3.4), which Surefire sets on the real
+test fork's environment but **not** on its version/vm-info probe invocations. So the shim's detection is
+`[ "${LATHE_CAPTURE_FORK:-0}" = 1 ]` — it depends on no Surefire class name (`ForkedBooter` is used only
+as a corroborating sanity check in the parser, §3.5), needs no argfile expansion (that lives in the
+server-side parser), and is reliable under `mvnd` because Surefire sets configured env per fork rather
+than inheriting it from the shell/daemon. `<environmentVariables>` is a Map, so the marker survives
+`pluginManagement` merge even when a module adds its own env vars.
 
 The shim writes a **raw bundle** into `.lathe/<rel>/` (a `capture/` subdir):
 
@@ -186,19 +191,10 @@ fi
 
 [ "${LATHE_CAPTURE:-1}" = 0 ] && exec "$real" "$@"        # opt-out: run, never capture
 
-# Is THIS invocation the real test fork? Surefire also runs `jvm` for version/vm-info probes
-# BEFORE the fork; only the real fork carries ForkedBooter (inside an @argfile in modular forks).
-is_fork() {
-  for a in "$@"; do
-    case "$a" in
-      *ForkedBooter*) return 0 ;;
-      @*) f="${a#@}"; [ -f "$f" ] && grep -q ForkedBooter "$f" 2>/dev/null && return 0 ;;
-    esac
-  done
-  return 1
-}
-
-is_fork "$@" || exec "$real" "$@"                          # probe / non-fork → transparent, in EVERY mode
+# Is THIS the real test fork? Detect via a Lathe-owned marker set on the fork through Surefire
+# <environmentVariables> (§3.4) — NOT the ForkedBooter class name. Surefire's version/vm-info probes
+# don't carry it, so they pass straight through. No argfile expansion needed here (that's the parser's).
+[ "${LATHE_CAPTURE_FORK:-0}" = 1 ] || exec "$real" "$@"    # probe / non-fork → transparent, in EVERY mode
 
 # --- from here, this is the real test fork ---
 out=$(...)                                                 # walk up from $PWD (fork CWD = module dir) to .lathe/<rel>/capture
@@ -210,9 +206,10 @@ fi
 exec "$real" "$@"                                          # push default: run the tests
 ```
 
-The `is_fork` guard runs **unconditionally** (before the capture-only branch) so Surefire's probe
+The marker check runs **unconditionally** (before the capture-only branch) so Surefire's probe
 invocations pass through transparently in every mode — capturing a probe would either overwrite the
-template with `-version` noise (default mode) or break the probe by exiting (capture-only mode).
+template with `-version` noise (default mode) or break the probe by exiting (capture-only mode). Because
+the marker is Lathe-owned, a Surefire class-name rename in a minor upgrade cannot break detection.
 
 **Fail-open is the load-bearing rule:** the shim sits on the user's *real* test path, so every path
 that isn't capture-only ends in `exec "$real" "$@"` with the original argv. A snapshot failure means
@@ -238,12 +235,19 @@ empty** (which Surefire treats as "use the normal JVM") and is overridden per de
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
-        <configuration><jvm>${lathe.capture.jvm}</jvm></configuration>
+        <configuration>
+          <jvm>${lathe.capture.jvm}</jvm>
+          <!-- Lathe-owned fork discriminator; Map-merges, so a module's own env vars keep it -->
+          <environmentVariables><LATHE_CAPTURE_FORK>1</LATHE_CAPTURE_FORK></environmentVariables>
+        </configuration>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-failsafe-plugin</artifactId>
-        <configuration><jvm>${lathe.capture.jvm}</jvm></configuration>
+        <configuration>
+          <jvm>${lathe.capture.jvm}</jvm>
+          <environmentVariables><LATHE_CAPTURE_FORK>1</LATHE_CAPTURE_FORK></environmentVariables>
+        </configuration>
       </plugin>
     </plugins>
   </pluginManagement>
@@ -287,8 +291,11 @@ trivial shell, all parsing lives in Java. It:
    and splices in place → one flat, ordered token list.
 2. Recognizes standard JDK flags → `modulePath`, `classPath`, `patchModules`,
    `addOpens`/`addReads`/`addExports`/`addModules`, and the `-D`/`-X` remainder → `jvmArgs`.
-3. Splits at `forkedMainClass` (`ForkedBooter`) and discards the trailing booter args — the *only*
-   Surefire-internal knowledge in the parse.
+3. Splits at the **main class** — the first token that is neither a JVM option nor an option's value
+   (the JVM's own `java [options] MainClass [args]` grammar) — keeping everything before it and
+   discarding the main class and trailing booter args. This is **name-agnostic**: it does not depend on
+   the `ForkedBooter` string. The captured main class is compared against `ForkedBooter` only as a
+   corroborating **sanity check** (log a warning if it differs), never as the split mechanism.
 4. Derives `javaHome` from the capture-JDK `release` symlink's target (the resolved JDK home — the same
    anchor the shim uses for real java), `surefireVersion` from the `surefire-booter-<ver>.jar` classpath
    entry, `mainModule` from the `patchModules` key.
@@ -425,23 +432,42 @@ path):
 If any check fails, replay does not launch. This gate is about **presence**, not currency — whether the
 bytecode reflects the latest *saved* source is the "save, then run" concern handled by the LS save pass.
 
-**Resources — build-time via the shim; edit-time deferred (shim-only, stage 1).** Build-time freshness
-is already handled: the compiler shim's bulk copy of `target/classes` / `target/test-classes` includes
-Maven's *fully processed* resources — filtered, `targetPath`-mapped, everything — because
-`process-resources` ran before the compile the shim rode. Faithful for every config, no new code.
+**Resources.** Build-time freshness is already handled: the compiler shim's bulk copy of
+`target/classes` / `target/test-classes` includes Maven's *fully processed* resources — filtered,
+`targetPath`-mapped, everything — because `process-resources` ran before the compile the shim rode.
+Faithful for every config, no new code.
 
-The only gap is a **resource-only edit**: no `.java` is stale, so `maven-compiler-plugin` skips
-compilation, the shim never fires, and `.lathe/` keeps the old resource. **Stage 1 does not close this
-in the LSP.** The completeness gate above concerns *presence* (a compiled module's resources are
-present); the *currency* of an edited-but-unbuilt resource is a **documented limitation: run `mvn test`**
-(§11), after which the shim copies the processed output across.
+The gap is a **resource-only edit**: no `.java` is stale, so `maven-compiler-plugin` skips compilation,
+the shim never fires, and `.lathe/` keeps the old resource. (The completeness gate above concerns
+*presence*; this is *currency*.) It is closed simply: **the LSP always copies changed resources into
+`.lathe/`** — no filtering detection, no gate.
 
-*Fast-follow (not stage 1):* the LSP could refresh **provably-plain** resources itself via a
-`workspace/didChangeWatchedFiles` watcher on resource roots — a plain file copy, not a Maven run —
-gated on per-module resource config (roots + filtering flags) recorded by `lathe:sync`, and deferring
-filtered / `targetPath` / `includes`-`excludes` resources to `mvn test`. Deferred to keep stage 1 lean
-and to avoid silently copying unfiltered bytes where filtering was expected. The prior design's
-LSP-driven `resources:resources` refresh is **dropped** — it ran Maven.
+The LSP watches each module's resource roots via `workspace/didChangeWatchedFiles` and **byte-copies**
+`src/…/resources/<rel>` → `.lathe/<rel>/{classes,test-classes}/<rel>` on change (removes on delete).
+This uses `workspace/didChangeWatchedFiles` — a **workspace** capability, independent of the client's
+`java`-only document registration — **not** `textDocument/did*` (which never fires for non-`java`
+buffers, and Lathe must not register for resource filetypes). So a `.properties`/`.sql`/`.yaml` save is
+seen without treating it as an opened document. It fires on **disk save** (matching the "replay
+reflects last-saved state" semantics — unsaved edits aren't copied). It requires client support for
+`didChangeWatchedFiles` dynamic registration (modern Neovim 0.10+/VS Code have it); without it the
+auto-copy degrades to "run `lathe:refresh-resources`/build." Lathe already uses this channel for deleted
+`.java` sources (`lathe-design.md` §6). `lathe:sync` records each module's resource root dirs in
+`workspace.json` so the LSP watches the right directories (default `src/{main,test}/resources`).
+
+- For a **plain** (unfiltered) resource — the common case, and the one you hit editing a config file and
+  re-running a test — this is **exact**: Maven copies plain resources verbatim too, so the byte copy
+  matches.
+- For a **filtered** resource (Maven `${…}`/`@…@` substitution, `targetPath`, `includes`/`excludes`),
+  the copy is the *unfiltered* source — last-saved bytes, not Maven's substituted output. When faithful
+  filtering matters, run **`lathe:refresh-resources`** — a Lathe goal that reuses Maven's own
+  `MavenResourcesFiltering` to filter the module's resources **directly into
+  `.lathe/<rel>/{classes,test-classes}`** (lock-guarded, like the shim), with **no compilation and no
+  lifecycle phase** — far faster than `process-test-classes`, and faithful because the filtering is
+  Maven's, not reconstructed. (A normal build refreshes them via the shim too.) The *user* invokes it,
+  keeping the server free of Maven.
+
+The prior design's LSP-driven `resources:resources` refresh is **dropped** (it ran Maven);
+`lathe:refresh-resources` is the user-invoked, write-straight-to-`.lathe/` replacement.
 
 ---
 
@@ -456,12 +482,12 @@ Maven** here — it reads the template and spawns the replay JVM.
   `{ id, kind: main|test-class|test-method, label, moduleRel, uri, range }`; `id` is opaque-but-stable
   and carries erased param types for methods.
 - **`lathe.run` / `lathe.debug`** — accept a runnable `id` (or `{ module, testPattern }` for
-  package-wide runs). The server: reads `test-launch.json` (re-parsing the shim's bundle if the
-  freshness gate says it is missing/stale); if **no template exists**, returns a message
-  *"Run `mvn test` to enable run/debug for module `<rel>`"* (mirrors the compile-side "activate module"
-  prompt) — it does **not** capture; applies the replay transform + selection; verifies completeness
-  (§4.4); for `debug`, injects JDWP and starts the in-process DAP adapter (§7); spawns the JVM; returns
-  `{ sessionId, kind }` (debug adds `{ dapHost, dapPort }`) and streams via `lathe/sessionEvent`.
+  package-wide runs). The server: reads `test-launch.json` (first parsing a newer capture bundle into it
+  if the shim produced one); if the template is **missing or stale** (freshness gate, §3.5) it does
+  **not** capture — it returns *"Run `mvn test` to (re)capture module `<rel>`"* (mirrors the compile-side
+  "activate module" prompt); otherwise it applies the replay transform + selection, verifies completeness
+  (§4.4), for `debug` injects JDWP and starts the in-process DAP adapter (§7), spawns the JVM, and
+  returns `{ sessionId, kind }` (debug adds `{ dapHost, dapPort }`), streaming via `lathe/sessionEvent`.
 - **`lathe.session.cancel` / `lathe.session.list`** — `cancel` destroys the replay child process by
   `sessionId` (a plain child now — no `mvnd` to detach from); `list` returns live sessions. All are
   cancelled on LS shutdown.
@@ -470,6 +496,10 @@ Maven** here — it reads the template and spawns the replay JVM.
 
 ## 6. Streaming events — `lathe/sessionEvent`
 
+- `"notice"` — `{ level: "info"|"warn", message, command? }`, an advisory emitted before/at
+  `"started"` — the "not replayable here — run Maven" directives (`forkCount=0`, lifecycle IT — §11)
+  and the no-template hint (§5). Carries an optional `command` the editor can offer to run (e.g.
+  `mvn -pl <mod> lathe:refresh-resources` when the user wants faithful filtered resources).
 - `"started"` — `{ pid, jdwpPort? }`, once the JVM is up (and, for debug, JDWP is listening).
 - `"output"` — `{ channel: "stdout"|"stderr", data }`, the replayed program's own output verbatim (no
   Maven channel, no log filtering — Lathe launches java directly).
@@ -501,8 +531,9 @@ scan emits `"exit"` with captured stderr.
 
 ## 8. Failsafe and integration tests
 
-**Capture transfers for free.** Failsafe is Surefire's twin (same `ForkedBooter`, same `jvm`
-parameter), so the push shim intercepts identically. No new capture code; `kind` is `failsafe`.
+**Capture transfers for free.** Failsafe is Surefire's twin (same fork machinery, same `jvm` parameter,
+same `<environmentVariables>` marker registered for it in §3.4), so the push shim intercepts
+identically. No new capture code; `kind` is `failsafe`.
 
 **The lifecycle is the problem.** ITs run between `pre-integration-test` and `post-integration-test`
 (Maven-managed servers, containers, reserved ports). Replay does not run those phases, so:
@@ -535,9 +566,13 @@ Launch capture depends on **Surefire/Failsafe internals**, not a public API — 
 (Compile capture, by contrast, rides the *supported* Plexus SPI and is structurally more durable; this
 document's mechanism is the fragile tier.)
 
-Internals relied upon (validated on 3.5.5, none contractual): the `ForkedBooter` class name; the
-`@argfile` format and quoting; `jvm`-path validation (`endsWithJavaPath`) + `release`-file version
-detection; the modular argfile layout.
+Internals relied upon (validated on 3.5.5, none contractual): the `@argfile` format and quoting;
+`jvm`-path validation (`endsWithJavaPath`) + `release`-file version detection; the modular argfile
+layout. Deliberately **not** relied upon: the `ForkedBooter` class name — fork detection uses a
+Lathe-owned `<environmentVariables>` marker (§3.3) and the args-split uses the JVM's own command grammar
+(§3.5), so a Surefire class-name rename in a minor upgrade breaks neither. Two assumptions the marker
+adds — that Surefire applies `<environmentVariables>` to the real fork but **not** to its probes, and
+that a Map config child survives `pluginManagement` merge — are spike-verified (§15).
 
 **Why the `jvm` shim and not a supported SPI (checked).** Surefire's extension points do *not* reach
 the launch: `<forkNode>` / `ForkNodeFactory` customizes only the fork's **communication channel** (it
@@ -576,10 +611,11 @@ The escape hatch for every case below is the user running Maven directly.
   enable run/debug for module `<rel>`."* A captured template then survives later skip builds (the launch
   line is structural).
 - **Lifecycle-provisioned ITs** (§8) — *use `mvn verify`.*
-- **Resource-only edits** (§4.4) — a resource changed without a build is not reflected in `.lathe/`
-  until the next build (the compiler shim fires on compilation, not `process-resources`); *run
-  `mvn test`* to refresh. (A fast-follow may copy provably-plain resources in the LSP; filtered ones
-  always need `mvn test`.)
+- **Filtered resources** (§4.4) — the LSP always copies an edited resource to `.lathe/`, so the common
+  "edit a config file, run a test" loop just works for **plain** (unfiltered) resources (exact byte
+  copy). A **filtered** resource (Maven `${…}`/`@…@` substitution, `targetPath`, `includes`/`excludes`)
+  is copied *unfiltered* — for faithful substitution *run `lathe:refresh-resources`* (fast — filters
+  straight into `.lathe/`, no compile) or a normal build.
 - **Package/module-wide selection** (§9) — Surefire include/exclude/tag filtering not reproduced.
 - **Coverage** — JaCoCo stripped from replay; *use `mvn verify`.*
 - **Fork mode** — capture targets the **default single reused fork** (`forkCount=1`,
@@ -643,7 +679,7 @@ lathe-core → lathe-test-runner → lathe-compiler → lathe-server → lathe-m
 | `lathe-core` | `TestLaunchData` (schema), JDK argfile tokenizer, `LatheLayout` capture / `capture-jdk` constants, **capture-JDK synthesis helper**, **shim shell script (resource)** | shared by server + plugin; no new external deps |
 | `lathe-test-runner` (**NEW**, leaf) | bootstrap `main`: JUnit Platform `Launcher` + `TestExecutionListener` → NDJSON | **zero runtime deps**; `junit-platform-launcher` `provided`; **no `lathe-core` dep** (reimplements NDJSON); **no `module-info`** (runs as unnamed module in the replay JVM) |
 | `lathe-server` | parser, transform, freshness/completeness gates, discovery, commands, streaming, debug | embeds the runner jar; `java-debug` is a **stage-2-only** dep |
-| `lathe-maven-plugin` | `lathe:sync` calls the synthesis helper (capture-JDK: `bin/java` + absolute `release` symlink, from the `JdkSourceResolver`-resolved home); invoker + shell-shim tests | unchanged deps |
+| `lathe-maven-plugin` | `lathe:sync` calls the synthesis helper (capture-JDK: `bin/java` + absolute `release` symlink, from the `JdkSourceResolver`-resolved home) and records per-module `resourceRoots` in `workspace.json` (dirs only — no filtering detection); **new `lathe:refresh-resources` goal** (filters resources via `MavenResourcesFiltering` straight into `.lathe/`, lock-guarded, no compile); invoker + shell-shim tests | + `maven-filtering` (`MavenResourcesFiltering`) |
 
 **Runner → replay JVM.** `lathe-server` takes `lathe-test-runner` as a build dependency (reactor order
 + packaging), embeds its jar as a resource, and **materializes it to
@@ -676,6 +712,7 @@ mutually independent and may proceed in parallel.
 | Spike | Question | Pass criterion | Priority |
 |-------|----------|----------------|----------|
 | **S1** | the self-locating shim intercepts the modular Surefire fork on the supported version, execs real java so tests still run, and leaves a replayable bundle | one modular test runs green **and** a hand-replay of the parsed launch runs it green | **first — blocks step 3** |
+| **S1b** | the `<environmentVariables>` marker (`LATHE_CAPTURE_FORK`) reaches the real fork but **not** Surefire's probes, and survives `pluginManagement` merge when a module sets its own env vars (§3.3) | marker present on fork, absent on probe; present after merge | **first — the detection mechanism** |
 | S2 | `<systemPropertyVariables>` land in the argfile; configured env in `capture.env` (§3.6) | both observed | before "full fidelity" |
 | S3 | `.lathe/<rel>/test-classes` carries filtered test resources + `META-INF/services` (§4.4) | resource-reading test passes under replay | before resource work |
 | S4 | orphan `.class` removal leaves nothing stale (§4.4) | deleted-source class absent from `.lathe/` | before completeness sign-off |
@@ -700,14 +737,16 @@ parser is tested against reality, not a guess.
 3. **Shim + synthesis wiring** — wire `lathe:sync` to call the step-1 helper (the server never
    synthesizes it — push-only, no server-driven capture). *Tests* (`lathe-maven-plugin`,
    `ProcessBuilder` + a capture-JDK whose `release` points at a stub JDK whose `bin/java` records argv):
-   `LATHE_CAPTURE=0` → transparent, no bundle; probe → passthrough; modular fork → correct bundle then
-   exec; `LATHE_CAPTURE_ONLY=1` → bundle then exit, no exec; spaced paths survive; a forced snapshot
-   failure writes **no** `capture.ready` and still execs real java (fail-open); `lathe:sync` synthesis
-   produces a valid home.
+   `LATHE_CAPTURE=0` → transparent, no bundle; no marker (probe) → passthrough; `LATHE_CAPTURE_FORK=1`
+   (fork) → correct bundle then exec; `LATHE_CAPTURE_ONLY=1` + marker → bundle then exit, no exec; spaced
+   paths survive; a forced snapshot failure writes **no** `capture.ready` and still execs real java
+   (fail-open); `lathe:sync` synthesis produces a valid home.
 4. **Bundle parser** (server) — *approval gate.* Raw bundle → `TestLaunchData`, reusing the tokenizer +
    `Json`. *Tests* (fixture-driven, the vendored S1 bundle in `@TempDir`): assert module/classpath
-   partition, `patchModules`, `add-*`, `jvmArgs`, `ForkedBooter` split, `javaHome`/`surefireVersion`
-   derivation. Missing structural landmark (no `ForkedBooter`, no `patchModules`) → fail-closed.
+   partition, `patchModules`, `add-*`, `jvmArgs`, the **name-agnostic main-class split** (first
+   non-option token), `javaHome`/`surefireVersion` derivation, and the `ForkedBooter` sanity-check
+   warning when the main class differs. Missing structural landmark (no main-class token, no
+   `patchModules`) → fail-closed.
 5. **Freshness + completeness gates** (server) — freshness: POM + `module-info.java` content
    fingerprints (§3.5); completeness: the 4-step gate (§4.4). *Tests* (`@TempDir`): freshness — unchanged
    skips, each moved re-captures; completeness — lock present/stale/absent, missing params, empty output
@@ -715,7 +754,7 @@ parser is tested against reality, not a guess.
 6. **Replay transform + launch** (server) — `TestLaunchData` + reactor layout → `java` argv (§4.1);
    materialize the runner jar (step 2) to `~/.cache/lathe/` on first use; append runner + selector;
    launch; line-read the NDJSON sink (§4.3). *Tests:* unit — `target/→.lathe/` rewrite, JaCoCo +
-   `ForkedBooter` stripped, `add-*` verbatim, runner+selector appended; invoker (existing modular
+   main class + booter args stripped, `add-*` verbatim, runner+selector appended; invoker (existing modular
    `src/it` fixture) — a real `mvn test` under the shim captures, then replay runs one test green and
    NDJSON matches; `forkCount=0` → documented "run `mvn test`" (no crash).
 7. **Discovery + commands + streaming** (server) — *approval gate for command shapes.* `runnables.list`
@@ -726,6 +765,14 @@ parser is tested against reality, not a guess.
    missing template → the "run `mvn test`" message.
 8. **CI guardrail** (`lathe-maven-plugin` invoker) — **pinned Surefire/Failsafe version matrix**;
    capture+replay green on each supported version (§10).
+9. **Resource copy-on-change + `lathe:refresh-resources`** (§4.4) — `lathe:sync` records `resourceRoots`
+   in `workspace.json`; the server registers `workspace/didChangeWatchedFiles` on them and byte-copies a
+   changed resource into `.lathe/<rel>/{classes,test-classes}` (removes on delete) — no filtering
+   detection; the `lathe:refresh-resources` goal filters via `MavenResourcesFiltering` straight into
+   `.lathe/` with no compile. *Tests:* server — a watched-file change copies the file into `.lathe/`
+   (positive), a delete removes it (edge), a client without watch capability degrades cleanly (no
+   error); `lathe-maven-plugin` invoker — `lathe:refresh-resources` on the modular fixture filters a
+   `${…}`/`@…@` resource correctly into `.lathe/` without compiling.
 
 ### Stage 2 / 3 — test shape
 
@@ -761,12 +808,15 @@ sleeps; debug-handshake flakiness (real port, generous timeout, integration-only
    test-class/test-method, streaming `testResult`. The freshness win is real here and it stands alone.
 2. **Fast-follow — debug + self-provisioning Failsafe ITs.** Debug rides the same replay (§7);
    self-provisioning ITs reuse the capture verbatim (§8).
-3. **Deferred — LSP-side resource currency** (§4.4; stage 1 refreshes resources only through a
-   build/`mvn test`), **package/module-wide selection fidelity** (§9), and **`main` run/debug** (§12,
-   open issue).
+3. **Resource currency (§4.4).** The LSP copies *any* changed resource into `.lathe/` on save — no
+   filtering detection (the common "edit a config file, run a test" loop). `lathe:refresh-resources` is
+   the documented, fast way to get faithful *filtered* content into `.lathe/` when a filtered value
+   matters. Small and high-value — land it with or right after stage 1.
+4. **Deferred — package/module-wide selection fidelity** (§9) and **`main` run/debug** (§12, open
+   issue).
 
 Two hardening items **gate stage 1** (both fail silently if skipped, both undermine a green result):
 the **completeness invariant** (§4.4, verified before launch) and **capture integrity** (§3.3,
-`capture.ready` after payloads). Resources are refreshed only through a build (the compiler shim copy);
-an edited-but-unbuilt resource is a documented `mvn test` limitation — both the LSP-driven
-`resources:resources` refresh and the provably-plain watched-files copy are out of stage 1.
+`capture.ready` after payloads). Resources: plain resources are copied on change by the LSP (§4.4);
+filtered resources are Maven's job via `lathe:refresh-resources`; the dropped path is the LSP-driven
+`resources:resources` refresh (it ran Maven).
