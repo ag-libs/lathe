@@ -4,6 +4,10 @@ Post-M3 design.
 Builds on `lathe-design.md` (especially §5 Compiler Shim and §6 Module Model).
 Adopted only after the Neovim-focused Maven Central release is implemented and stable.
 
+**Implementation & testing plan:** [`lathe-run-test-debug-impl-plan.md`](lathe-run-test-debug-impl-plan.md) —
+build order, per-step tests, locked decisions, and the next-session starting point. This doc stays the *what/why*;
+the plan is the *how/in-what-order*.
+
 ---
 
 ## 1. Principle
@@ -796,7 +800,8 @@ protocol changes are needed to support VS Code alongside Neovim.
 ## 15. Rollout sequencing
 
 The three execution kinds do not carry equal confidence, and they should not ship together. Sequence by the
-confidence gradient the §1 scope table already draws:
+confidence gradient the §1 scope table already draws (per-step build/test detail in
+[`lathe-run-test-debug-impl-plan.md`](lathe-run-test-debug-impl-plan.md)):
 
 1. **Ship first — Surefire unit-test capture-replay.** `runnables.list`, `lathe.run` for test-class/test-method, and
    streaming `testResult`. This is the PoC-validated path and where the §1 freshness win is real; it is the
