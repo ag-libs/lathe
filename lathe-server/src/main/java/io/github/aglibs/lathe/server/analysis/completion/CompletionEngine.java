@@ -115,15 +115,54 @@ public final class CompletionEngine {
                   : completeSimpleName(parsed, injected, req, site);
           default -> CompletionOutcome.of(List.of());
         };
-    CompletionItemPresenter.applyReplacementRange(outcome.items(), site.replacementRange());
-    CompletionEditApplier.preserveExistingMethodCall(outcome.items(), req, injected.tokenEnd());
+    final var withOverrides = mergeOverrideCandidates(outcome, parsed, injected, req);
+    CompletionItemPresenter.applyReplacementRange(withOverrides.items(), site.replacementRange());
+    CompletionEditApplier.preserveExistingMethodCall(
+        withOverrides.items(), req, injected.tokenEnd());
+    final var analysis =
+        withOverrides.freshAnalysis() != null
+            ? withOverrides.freshAnalysis()
+            : resolveAnalysis(req);
+    CompletionEditApplier.applyNestedOuterImportEdits(
+        withOverrides.items(), injected.receiverText(), analysis);
+    CompletionEditApplier.applyStatementSemicolonEdits(
+        withOverrides.items(), site, analysis, req, injected.tokenStart());
+    return withOverrides;
+  }
+
+  // At a class-body member-declaration slot (inside a class, not inside a method body), the slot is
+  // typically parsed as a type reference; offer override/implement stubs for the enclosing type's
+  // inherited methods alongside whatever the context produced (EG-015).
+  private CompletionOutcome mergeOverrideCandidates(
+      final CompletionOutcome outcome,
+      final ParsedSentinel parsed,
+      final SentinelInjectionResult injected,
+      final CompletionRequest req) {
+    final boolean memberStartSlot =
+        (parsed.sentinelContext() == SentinelContext.TYPE_REFERENCE
+                || parsed.sentinelContext() == SentinelContext.VARIABLE_DECLARATION)
+            && !isRealNameSlot(parsed);
+    if (!memberStartSlot || parsed.enclosingClass() == null || parsed.enclosingMethod() != null) {
+      return outcome;
+    }
+
     final var analysis =
         outcome.freshAnalysis() != null ? outcome.freshAnalysis() : resolveAnalysis(req);
-    CompletionEditApplier.applyNestedOuterImportEdits(
-        outcome.items(), injected.receiverText(), analysis);
-    CompletionEditApplier.applyStatementSemicolonEdits(
-        outcome.items(), site, analysis, req, injected.tokenStart());
-    return outcome;
+    if (analysis == null) {
+      return outcome;
+    }
+
+    final List<CompletionCandidate> overrides =
+        OverrideCompletionProvider.propose(analysis, req.cursorOffset(), injected.prefix());
+    if (overrides.isEmpty()) {
+      return outcome;
+    }
+
+    final List<CompletionItem> merged =
+        Stream.concat(
+                overrides.stream().map(CompletionItemPresenter::present), outcome.items().stream())
+            .toList();
+    return new CompletionOutcome(merged, outcome.freshAnalysis(), outcome.incomplete());
   }
 
   private CompletionOutcome completeImport(

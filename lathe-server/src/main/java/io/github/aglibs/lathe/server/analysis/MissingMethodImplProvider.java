@@ -15,7 +15,6 @@ import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
-import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.ExecutableType;
@@ -162,27 +161,14 @@ final class MissingMethodImplProvider implements CodeActionProvider {
       final TypeDisplayFormatter formatter,
       final Types types,
       final DeclaredType classType) {
-    final ExecutableType exeType = (ExecutableType) types.asMemberOf(classType, method);
-    final String returnType = formatter.format(exeType.getReturnType());
-    final List<? extends TypeMirror> paramTypes = exeType.getParameterTypes();
-    final List<? extends VariableElement> paramElements = method.getParameters();
-    final var sb = new StringBuilder();
-    for (int i = 0; i < paramElements.size(); i++) {
-      if (i > 0) {
-        sb.append(", ");
-      }
-      sb.append(formatter.format(paramTypes.get(i)));
-      sb.append(" ");
-      sb.append(paramElements.get(i).getSimpleName());
-    }
     return """
 
 
             @Override
-            public %s %s(%s) {
+            public %s {
                 throw new UnsupportedOperationException();
             }"""
-        .formatted(returnType, method.getSimpleName(), sb);
+        .formatted(MethodStubRenderer.signature(method, classType, types, formatter));
   }
 
   private static Set<String> methodFqns(

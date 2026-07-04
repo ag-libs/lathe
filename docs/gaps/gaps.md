@@ -663,7 +663,7 @@ python3 dev/explore.py \
 
 ## EG-015 — Override/implement completion missing in class bodies
 
-**Status: accepted — Target: M2**
+**Status: done — Target: M2**
 
 ### Observed behaviour
 
@@ -707,6 +707,33 @@ class body, enumerates the inherited methods of the enclosing `TypeElement` (via
 plus `Object` methods), filters to those overridable and matching the typed prefix, and returns
 completion items whose insert text is the full overriding signature annotated with `@Override`.
 
+### Resolution (2026-07-04)
+
+New `OverrideCompletionProvider`: resolves the enclosing `TypeElement` from the cursor scope
+(`TypeResolver.resolveScope(...).getEnclosingClass()`), enumerates `Elements.getAllMembers`, keeps
+inherited `METHOD`s that are overridable (not `final`/`static`/`private`, not already declared in the
+class — `getAllMembers` returns the class's own version for overridden methods, which the
+enclosing-element check drops), matching the typed prefix (incl. `Object`'s `toString`/`equals`/
+`hashCode`), and renders each as an `@Override` stub candidate. `CompletionEngine.mergeOverrideCandidates`
+runs once after the context switch and merges these into the outcome — gated to a class-body
+member-start slot (`TYPE_REFERENCE`/`VARIABLE_DECLARATION`, not a real name slot, enclosing class
+present, not inside a method) so annotation value positions and new-member name slots are untouched.
+
+Stub text is shared with the implement-missing-methods code action via a new `MethodStubRenderer`
+(extracted from `MissingMethodImplProvider.buildStub` — the code action now delegates, so the two
+cannot drift). Validated with `dev/explore.py` on `ThailandCountryAdapter`: `toString` in the class
+body offers `@Override public String toString() { throw new UnsupportedOperationException(); }`,
+replacing the typed prefix.
+
+**v1 limitations (recorded, follow-ups):**
+- **No auto-import** of stub types — rendered as simple names; types outside `java.lang`/same package
+  need a manual import. `CompletionCandidate` carries a single `importEdit`; multi-import needs
+  `additionalTextEdits` plumbing. This is the natural first follow-on.
+- **No method-level type parameters** — overriding `<T> T m(...)` omits the leading `<T>`.
+- Body is always `throw new UnsupportedOperationException();` (no `super.m(...)` for concrete
+  overrides); visibility always `public`; `throws` omitted. Continuation-line indentation is
+  client-reindented (fixed relative indent otherwise).
+
 ### Probe commands
 
 ```bash
@@ -717,8 +744,10 @@ python3 dev/explore.py \
 
 ### Regression targets
 
-- `CompletionOverrideTest.completion_methodPrefixInClassBody_offersOverrideStub`
 - `CompletionOverrideTest.completion_objectMethodPrefix_offersToStringOverride`
+- `CompletionOverrideTest.completion_methodPrefixInClassBody_offersOverrideStub`
+- `CompletionOverrideTest.completion_insideMethodBody_noOverrideStub` (negative: not inside a method)
+- `CompletionOverrideTest.completion_finalInheritedMethod_notOffered` (negative: `final` excluded)
 
 ---
 
