@@ -2625,10 +2625,25 @@ and should be reconfirmed against valid syntax before being recorded as gaps.
 ## CQ-0035 — Parser fails to recognise enclosing method when closing `}` is missing (typed over)
 
 ID: CQ-0035
-Status: accepted
+Status: done
 Target: M2
 Tier: Basic
 Discovery: 2025-07-25, AppServerConfig.java compact constructor (sample-workspace)
+
+Resolved (2026-07-04): validated as no longer reproducing. Re-probing the compact constructor's
+overwritten closing brace on the sample workspace now shows `parsed valid=true class=DobServerConfig
+method=<init>` with context-aware completions (record component accessors for `n`, the full
+`ValidCheck.check()` receiver type for member access) — where the gap recorded `valid=false
+class=null method=null` and 0 items. Fixed incidentally by intervening sentinel/parse-recovery
+improvements (the deferral note already observed that simple injected cases were recovered by
+`forwardScan`; that recovery now covers this brace-count context too).
+
+Regression targets:
+- `CompletionSimpleNameTest.simpleName_overwrittenConstructorCloseBrace_recoversEnclosingScope` — a
+  reduced compact-constructor fixture whose closing brace is typed over; asserts the enclosing scope
+  is recovered and the component is offered. Lightweight guard only: per the note below the hard
+  failure needed a complex brace-count context that does not reduce to a minimal fixture, so the
+  documented `DobServerConfig.java` explorer probe remains the faithful reproduction.
 
 ### Description
 
