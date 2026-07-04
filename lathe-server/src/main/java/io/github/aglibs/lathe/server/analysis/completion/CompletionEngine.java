@@ -213,12 +213,15 @@ public final class CompletionEngine {
         enumEqualityCandidates(parsed, injected.prefix(), semanticContext, req);
     final var enumCaseCandidates =
         enumCaseLabelCandidates(parsed, injected.prefix(), semanticContext);
+    final var sealedCaseCandidates =
+        sealedCaseLabelCandidates(parsed, injected.prefix(), semanticContext);
 
     if (isStringCaseLabel(parsed, semanticContext)) {
       return CompletionOutcome.of(List.of());
     }
 
-    if (isCaseLabelTypePattern(parsed, enumCaseCandidates, semanticContext)) {
+    if (isCaseLabelTypePattern(parsed, enumCaseCandidates, semanticContext)
+        && sealedCaseCandidates.isEmpty()) {
       return typeReferenceCompleter.completeSimpleNameTypeReferenceWithLang(
           injected, req, TypeReferenceRole.ORDINARY);
     }
@@ -244,6 +247,9 @@ public final class CompletionEngine {
     final List<CompletionCandidate> candidates;
     if (parsed.sentinelContext() == SentinelContext.CASE_LABEL && !enumCaseCandidates.isEmpty()) {
       candidates = enumCaseCandidates;
+    } else if (parsed.sentinelContext() == SentinelContext.CASE_LABEL
+        && !sealedCaseCandidates.isEmpty()) {
+      candidates = sealedCaseCandidates;
     } else {
       candidates =
           Stream.of(javacCandidates, enumCandidates, keywordCandidates, instanceofCandidates)
@@ -252,6 +258,13 @@ public final class CompletionEngine {
     }
 
     final List<CompletionItem> items = presentSimpleNameCandidates(candidates, rankingContext);
+
+    // Sealed `case` labels are the permitted subtypes only; skip the uppercase type-index merge
+    // that
+    // would otherwise re-add each subtype as a plain type candidate (EG-022).
+    if (parsed.sentinelContext() == SentinelContext.CASE_LABEL && !sealedCaseCandidates.isEmpty()) {
+      return new CompletionOutcome(items, null);
+    }
 
     if (!hasUppercasePrefix(injected)) {
       return new CompletionOutcome(items, null);
@@ -424,6 +437,61 @@ public final class CompletionEngine {
     final var element = semanticContext.analysis().types().asElement(type);
     return element instanceof final TypeElement typeElement
         && "java.lang.String".equals(typeElement.getQualifiedName().toString());
+  }
+
+  private static List<CompletionCandidate> sealedCaseLabelCandidates(
+      final ParsedSentinel parsed,
+      final String prefix,
+      final SemanticCompletionContext semanticContext) {
+    if (parsed.sentinelContext() != SentinelContext.CASE_LABEL || semanticContext == null) {
+      return List.of();
+    }
+
+    if (!(semanticContext.expectedValue() instanceof ExpectedValue.Type(final TypeMirror type))
+        || type.getKind() != TypeKind.DECLARED) {
+      return List.of();
+    }
+
+    final var types = semanticContext.analysis().types();
+    if (!(types.asElement(type) instanceof final TypeElement selectorType)) {
+      return List.of();
+    }
+
+    return selectorType.getPermittedSubclasses().stream()
+        .map(types::asElement)
+        .filter(TypeElement.class::isInstance)
+        .map(TypeElement.class::cast)
+        .filter(subtype -> subtype.getSimpleName().toString().startsWith(prefix))
+        .map(CompletionEngine::sealedCaseCandidate)
+        .toList();
+  }
+
+  private static CompletionCandidate sealedCaseCandidate(final TypeElement subtype) {
+    final var name = subtype.getSimpleName().toString();
+    final var binding = decapitalize(name);
+    final CandidateKind kind =
+        switch (subtype.getKind()) {
+          case INTERFACE -> CandidateKind.TYPE_INTERFACE;
+          case ENUM -> CandidateKind.TYPE_ENUM;
+          default -> CandidateKind.TYPE_CLASS;
+        };
+    return new CompletionCandidate(
+        name,
+        name,
+        kind,
+        "permitted subtype",
+        "%s %s ->".formatted(name, binding),
+        false,
+        "0_sealed_%s".formatted(name),
+        null,
+        "permitted subtype",
+        null,
+        subtype.getQualifiedName().toString(),
+        null);
+  }
+
+  private static String decapitalize(final String name) {
+    return name.isEmpty() ? name : Character.toLowerCase(name.charAt(0)) + name.substring(1);
   }
 
   private static TypeElement expectedEnumType(final SemanticCompletionContext semanticContext) {

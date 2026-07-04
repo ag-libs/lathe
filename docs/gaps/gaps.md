@@ -1180,7 +1180,7 @@ python3 dev/explore.py /path/to/Scratch.java inject "Object o = new Oper"
 
 ## EG-022 — Sealed-type `switch`/`case` pattern completion offers arbitrary types
 
-**Status: accepted — Target: M2**
+**Status: done — Target: M2**
 
 ### Observed behaviour
 
@@ -1210,6 +1210,26 @@ It falls back to general type completion, which dumps the type index unranked.
 When the enclosing `switch` selector resolves to a sealed type (or any reference type), offer its
 permitted subtypes (for sealed types) or assignable subtypes as type-pattern `case` labels, with
 insert text of the form `case SubType name ->`.
+
+### Resolution (2026-07-04)
+
+`CompletionEngine.sealedCaseLabelCandidates` mirrors the enum-case path: in a `CASE_LABEL` slot whose
+expected (selector) type is a sealed `DECLARED` type, it offers the type's
+`getPermittedSubclasses()` as type-pattern labels (insert `SubType subType ->`). The general-type
+fallback (`isCaseLabelTypePattern`) is suppressed when sealed candidates exist, and the uppercase
+type-index merge is skipped for the sealed case-label so each permitted subtype appears once. Enum
+case completion is unchanged.
+
+Validated in a compiled sealed switch: `case Cir` offers a single `Circle` (`permitted subtype`),
+not the previous 112-type dump. Note: the explorer's `inject` cannot validate a *freshly injected*
+switch because it does not reattribute (stale cached analysis → selector type unresolved); the
+CompletionCaseTest fixtures and a compiled scratch file exercise the real (recompiled) editor flow.
+
+**v1 limitations (recorded):**
+- **Direct permitted subclasses only** — no recursion into nested sealed permits (e.g.
+  `ProvisionResponse` is itself sealed; its leaves are not expanded).
+- **No auto-import** of the subtype — rendered as a simple name (same limitation family as EG-015);
+  same-package works, otherwise a manual import is needed.
 
 ### Probe commands
 
