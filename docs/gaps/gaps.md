@@ -724,7 +724,20 @@ python3 dev/explore.py \
 
 ## EG-016 — Annotation-member completion missing
 
-**Status: accepted — Target: M2**
+**Status: done — Target: M2**
+
+Resolved: validated as implemented. `AnnotationCompletionProvider` (wired into `CompletionEngine`
+for the `ANNOTATION_ARGUMENT` / `ANNOTATION_ARGUMENT_VALUE` sentinel contexts) offers the annotation
+type's element methods as `name = ` items and, for enum-valued elements, the permitted constants.
+Validated with `dev/explore.py` on `HasMoreItems.java`: `inject "@Schema("` returns 73 element-name
+items (`description`, `required`, `requiredMode`, …). An earlier false-negative probe used
+`@JsonProperty(` in a file that did not import `JsonProperty`, so the type could not resolve.
+
+Regression targets (existing): `CompletionAnnotationTest.annotationArgument_emptyList_suggestsElementNames`
+(element names) and `CompletionAnnotationTest.annotationArgumentValue_enumElement_offersEnumConstants`
+(enum constants), plus siblings.
+
+Not covered here (see EG-038): a `Class`-typed value element offers no type candidates.
 
 ### Observed behaviour
 
@@ -2020,6 +2033,58 @@ walk back across several continuation lines). Both expect the body at the declar
 indent + 2. A constructor fixture is omitted deliberately: the indenter is text-based and cannot
 distinguish a method from a constructor (`Foo(` and `void method(` take the identical path), so it
 would add no coverage.
+
+---
+
+## EG-038 — Annotation value completion offers no type candidates for `Class`-typed elements
+
+**Status: accepted — Target: M2**
+
+### Observed behaviour
+
+Completion in the value position of an annotation whose element is `Class`-typed offers no type
+candidates. The canonical case is a JUnit `@ExtendWith`:
+
+```
+inject "@ExtendWith(Mockito"   → (no completions)
+complete after "@ExtendWith("  → only `null` [Keyword]
+```
+
+`org.mockito.junit.jupiter.MockitoExtension` is present in the workspace type index (source extracted
+under `~/.cache/lathe/deps/org.mockito:mockito-junit-jupiter:...`) and the files compile cleanly, so
+the type resolves — it is simply never offered. A developer typing an extension class inside
+`@ExtendWith(...)` (very common in test code) gets nothing.
+
+This is distinct from EG-016 (element names + enum constants), which is implemented and works. The
+difference: an annotation with a `value` element is classified as `ANNOTATION_ARGUMENT_VALUE`, and
+`@ExtendWith`'s `value` is `Class<? extends Extension>[]`.
+
+### Root cause
+
+`AnnotationCompletionProvider.completeArgumentValue` handles only enum-valued elements (enum constants)
+and keywords. It has no branch for a `Class`-typed (or otherwise reference-typed) value element, so
+for `@ExtendWith(` it computes the expected type `Class<? extends Extension>[]`, finds no enum
+constants, and returns only the `null` keyword — no type candidates.
+
+### Proposed fix
+
+When the annotation element's (array-component) type is `java.lang.Class` (raw or `Class<? extends
+Bound>`), offer type-reference candidates in the value position, ideally filtered to the wildcard
+bound (`Extension` for `@ExtendWith`) — reusing the existing type-index / type-reference completion
+path rather than adding a parallel one.
+
+### Probe commands
+
+```bash
+python3 dev/explore.py /path/to/SomethingTest.java complete after "@ExtendWith("
+python3 dev/explore.py /path/to/SomethingTest.java inject "@ExtendWith(Mockito" expect MockitoExtension
+```
+
+### Regression targets
+
+- `CompletionAnnotationTest.annotationValue_classTypedElement_offersTypeCandidates` (added,
+  `@Disabled` pending fix — a `Class<?>`-valued element must offer a resolvable type in value
+  position; verified failing today).
 
 ---
 
