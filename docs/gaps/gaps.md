@@ -526,45 +526,50 @@ printf 'refs "<component>,"\n' \
 
 ---
 
-## FR-011 — `builder()` reference search surfaces test hits; classify correct-vs-false-positive
+## FR-011 — `builder()` reference search surfaces test hits — verified correct, not a defect
 
-**Status: accepted — Target: M2**
+**Status: non-goal — verified correct behaviour; breadth cost tracked by FR-009**
 
 ### Observed behaviour
 
-Find References on a `builder()` factory returns matches in test sources that the reporter did not
-expect. It is unconfirmed whether those test hits are calls to the *same* type's `builder()`
-(correct references, merely surfaced slowly by the FR-009 breadth) or to a *different* type's
-`builder()` (a false positive).
+Find References on a generated `@Builder` factory `builder()` returned matches in test sources that
+appeared unexpected, while instance setters (`amount(BigDecimal)`, `taxAmount(BigDecimal)`) on the
+same builder returned zero references.
 
-### Root cause
+### Investigation (resolved)
 
-Two candidates, to be distinguished by reproduction:
+Reproduced against the generated builder of an `@Builder` record, searching each member from its
+declaration with reactor scope. Every result was correct:
 
-1. **Breadth only** — `builder` matches ~1000 token files (see FR-009); all are compiled and the
-   same-type `builder()` calls in tests are correct results. Closing this reduces to FR-009.
-2. **Over-match** — the FR-008 `matchesRecordComponentMember` early return in
-   `ReferenceTarget.matches` short-circuits before the `METHOD` descriptor/kind guards, or descriptor
-   matching admits an unrelated same-named `builder()`.
+| Symbol | Hits | Verdict |
+|---|---|---|
+| `builder()` (static factory) | 5, all in tests | genuine cross-module callers |
+| `kind(Kind)` (instance setter) | 5, all in tests | genuine cross-module callers |
+| `amount(BigDecimal)` (instance setter) | 0 | no callers exist |
+| `taxAmount(BigDecimal)` (instance setter) | 0 | no callers exist |
 
-### Proposed fix / next step
+The confusion had two sources, both correct matcher behaviour: (1) the record's component **accessor**
+`amount()` and the builder's **setter** `amount(BigDecimal)` share a simple name but differ by
+owner + descriptor, so they do not cross-match; (2) a sibling generated builder exposes
+identically-named setters, and its call sites correctly do not match the first builder's methods. The
+zero-reference setters simply have no callers — every chain of the builder under test only calls
+`.type(...).build()`. Instance-setter search from a generated source works: `type()` returned exactly
+its five call sites cross-module.
 
-Reproduce capturing result file paths and verify each hit's owning type equals the target's. If all
-hits are same-type, close as a duplicate of FR-009 (breadth). If any are cross-type, tighten the
-`METHOD` matching path and add a false-positive regression test.
+No matching defect exists. The only real cost — hundreds of files compiled to return ≤5 hits — is the
+candidate-breadth problem tracked by **FR-009**.
 
 ### Probe commands
 
 ```bash
-printf 'refs "builder()"\n' \
-  | python3 dev/explore.py /path/to/workspace/.../SomeType.java
-# Inspect each result path and confirm the referenced builder() belongs to SomeType.
+# From the generated builder, each search returns exactly the genuine call sites:
+printf 'refs "kind(Kind"\n' \
+  | python3 dev/explore.py --workspace /path/to/workspace /path/to/.../SomeRecordBuilder.java
 ```
 
 ### Regression targets
 
-- `ReferenceLocatorTest.references_sameNamedMethodDifferentOwner_excluded`
-- (or) closed as a duplicate of FR-009 once confirmed as breadth-only.
+None — no code change. Candidate-breadth coverage is under FR-009.
 
 ---
 
