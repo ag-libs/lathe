@@ -712,7 +712,7 @@ final class WorkspaceSession {
             List.of(),
             (worker, doc) ->
                 worker.outgoingCalls(
-                    item, doc.uri(), doc.content(), doc.version(), workspace.allSourceRoots()))
+                    item, doc.uri(), doc.content(), doc.version(), typeSourceDirs()))
         .thenApply(
             calls -> {
               LOG.fine(

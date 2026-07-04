@@ -507,7 +507,7 @@ callers "register" min 1
 
 ## EG-011 — Outgoing calls silently omits callees whose source is in extracted dep or JDK dirs
 
-**Status: accepted — Target: M2**
+**Status: done — Target: M2**
 
 ### Observed behaviour
 
@@ -546,9 +546,27 @@ callees.
 The callee items returned for dep/JDK targets should be marked with `SymbolKind.Method` and
 have the cache path as their `uri`, consistent with how `definition` navigates to dep sources.
 
+### Resolution (2026-07-04)
+
+`WorkspaceSession.outgoingCallsFuture` now passes `typeSourceDirs()` (reactor + JDK-module +
+dependency source dirs) instead of `workspace.allSourceRoots()` (reactor-only) — reusing the exact
+accessor already used by `workspaceSymbol` and the type-hierarchy features. `DefinitionLocator.findSourceFile`
+then resolves callees under `~/.cache/lathe/deps/` and `~/.cache/lathe/jdks/`, and the callee items
+carry the cache path as their `uri`, matching `definition`.
+
+Validated before/after with `dev/explore.py callees` on `DobServerConfig.java`'s compact
+constructor: reactor-only roots returned **0** callees (all its callees are JDK/dep), the fix returns
+**15**, including `check`/`notNull`/`validate` under the extracted `validcheck` dependency and the JDK
+`Objects`/`Duration`/etc. sources.
+
 ### Regression targets
 
-`CallHierarchyServiceTest.outgoingCalls_calleeInDependencySource_returnsDepCallee`
+`LspSmokeTest.outgoingCalls_calleeInCachedJdkSource_returnsJdkCallee` (invoker `multi-module` IT) —
+outgoing calls on `StringUtils.upper`, whose sole callee is `String.toUpperCase`, must include that
+JDK callee with a `/jdks/` cache URI; a reactor-only search root returns empty. This end-to-end
+placement mirrors how the external-source Find References scope (FR-004) is tested, exercising the
+real `WorkspaceSession` against a workspace with extracted dep/JDK sources (a service-level unit
+harness for `WorkspaceSession` does not exist).
 
 ---
 

@@ -17,6 +17,8 @@ import java.util.concurrent.LinkedBlockingQueue;
 import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams;
 import org.eclipse.lsp4j.CallHierarchyItem;
+import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
+import org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams;
 import org.eclipse.lsp4j.CallHierarchyPrepareParams;
 import org.eclipse.lsp4j.ClientCapabilities;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
@@ -300,6 +302,37 @@ class LspSmokeTest {
             .get(30, SECONDS);
 
     assertThat(calls).anyMatch(call -> call.getFrom().getUri().contains("Main.java"));
+  }
+
+  @Test
+  void outgoingCalls_calleeInCachedJdkSource_returnsJdkCallee() throws Exception {
+    // EG-011: StringUtils.upper's only callee is String.toUpperCase, whose source lives in the
+    // extracted JDK cache. Outgoing calls must include it — a reactor-only search root drops it.
+    final Path stringUtilsJava =
+        ROOT.resolve("core/src/main/java/com/example/core/StringUtils.java");
+    final var stringUtilsUri = stringUtilsJava.toUri().toString();
+    final var stringUtilsContent = Files.readString(stringUtilsJava);
+    openDoc(stringUtilsUri, stringUtilsContent);
+
+    final var prepParams = new CallHierarchyPrepareParams();
+    prepParams.setTextDocument(new TextDocumentIdentifier(stringUtilsUri));
+    prepParams.setPosition(findToken(stringUtilsContent, "public static String upper", "upper"));
+
+    final List<CallHierarchyItem> items =
+        server.getTextDocumentService().prepareCallHierarchy(prepParams).get(30, SECONDS);
+    assertThat(items).hasSize(1);
+
+    final List<CallHierarchyOutgoingCall> calls =
+        server
+            .getTextDocumentService()
+            .callHierarchyOutgoingCalls(new CallHierarchyOutgoingCallsParams(items.getFirst()))
+            .get(30, SECONDS);
+
+    assertThat(calls)
+        .anyMatch(
+            call ->
+                call.getTo().getName().equals("toUpperCase")
+                    && call.getTo().getUri().contains("/jdks/"));
   }
 
   @Test
