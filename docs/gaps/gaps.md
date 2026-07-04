@@ -340,6 +340,163 @@ Guidance that does not fall out of the fields:
 
 ---
 
+# Find References Gaps (FR)
+
+Active `textDocument/references` gaps discovered by live probing against a large `@Builder`-heavy
+reactor workspace. Resolved FR entries are in [gaps-archive.md](gaps-archive.md).
+
+## FR-009 — Member-reference search compiles every token-matching file (no hierarchy narrowing)
+
+**Status: accepted — Target: M2**
+
+### Observed behaviour
+
+Find References on a member whose simple name is common compiles hundreds of files to return a
+handful of hits. Measured against an `@Builder` record component accessor:
+
+| Metric | Value |
+|---|---|
+| Search wall-clock | ~27 s (open baseline ~3 s) |
+| Candidate files compiled | 370 |
+| Actual hits | 2 |
+| Files containing the member's simple name | 415 |
+| Files also referencing the declaring type | 2 |
+
+A common factory name (`builder()`) fans out to ~1000 token-matching files, all compiled.
+
+### Root cause
+
+`ReferenceCandidatePlanner.planCandidates` returns the raw simple-name candidate set for `METHOD`
+targets with no type-name filter (`ReferenceCandidatePlanner.java:91-92`). Record components
+normalise to their accessor (a `METHOD`) via `ReferenceTarget.recordAccessorFor` (FR-008), so
+component searches also take this broad path. Each candidate is then compiled with FAST javac in
+`searchReferencesTransient` — compilation, not the O(1) token lookup, dominates the wall-clock. The
+`FIELD` branch already narrows by the enclosing type's simple name; `METHOD` does not, deliberately,
+so that polymorphic (override) call sites are not missed.
+
+### Proposed fix
+
+Hierarchy-aware candidate narrowing. From the cursor compilation, compute the member's type family:
+
+- **method** — declaring type + supertypes that declare an overridden method + subtypes that
+  override it (the override family);
+- **field / enum constant** — declaring type + subtypes that inherit it;
+- **constructor / record accessor with no interface** — declaring type only.
+
+Narrow candidates to `files(memberName) ∩ (⋃ familyTypeSimpleNames ∪ staticImportSpellings)`. Fall
+back to the current broad simple-name search when the family cannot be bounded (e.g. a method on a
+widely-implemented interface), logging the fallback at `FINE`. Subtype resolution reuses the
+existing reactor type-index. This generalises the heuristic the `FIELD` branch already relies on;
+its false-negative surface (a receiver type never spelled at the call site) is the same one that
+branch already accepts, bounded by the static-import union and the broad fallback.
+
+This changes `ReferenceTarget` (public record — carries the family information and a `bounded` flag)
+and `ReferenceCandidatePlanner`; the multi-class / public-API design summary is pending approval
+before implementation.
+
+### Probe commands
+
+```bash
+# Against an @Builder record: refs on a component accessor.
+printf 'refs "<component>,"\n' \
+  | LATHE_DEBUG=1 python3 dev/explore.py /path/to/workspace/.../SomeRecord.java
+# Observe the candidate count in the work-done progress ("N / M candidates") against the hit count.
+```
+
+### Regression targets
+
+- `ReferenceCandidatePlannerTest.planCandidates_recordAccessorNoInterface_limitsToDeclaringTypeFiles`
+- `ReferenceCandidatePlannerTest.planCandidates_overriddenMethod_includesOverrideFamilyFiles`
+- `ReferenceCandidatePlannerTest.planCandidates_interfaceMethodUnbounded_fallsBackToBroad`
+
+---
+
+## FR-010 — Reference highlight lands on the wrong identifier in generated code
+
+**Status: accepted — Target: M2**
+
+### Observed behaviour
+
+Find References on a member reports a match whose highlighted range covers a *neighbouring*
+identifier (a similarly-named sibling such as `taxAmount` when searching `amount`) inside a generated
+builder class, instead of the intended occurrence. Reported against generated `@Builder` sources;
+not yet reproduced in a unit fixture (a broad accessor search returned correct ranges, so the defect
+appears specific to generated-source positions).
+
+### Root cause (hypothesis)
+
+`ReferenceLocator.addMatchAtIdentifier` (`ReferenceLocator.java:257-263`) computes the identifier
+start as `endPosition(node) - name.length()`, assuming the node ends exactly at the target
+identifier. In generated sources javac source positions can be synthetic or approximate, so
+`getEndPosition` may not land at the identifier end, painting the highlight over an adjacent token.
+`addDeclarationMatch` carries a similar assumption via `findIdentifierFrom` from a possibly-inaccurate
+node start. The semantic matcher is name-exact (`ReferenceTarget.matches` requires
+`simpleName.equals(...)`), so this is a range-computation defect, not a matching defect — the match
+count is right, the drawn range is wrong.
+
+### Proposed fix
+
+Derive the identifier range from a reliable name position (javac name-position API / existing
+`SourceLocator` helpers) rather than end-minus-length arithmetic. Reproduce with a generated-source
+fixture first, then fix and assert every returned range's text equals the searched name.
+
+### Probe commands
+
+```bash
+# refs on a component of an @Builder record; verify each returned range's text == the searched name.
+printf 'refs "<component>,"\n' \
+  | python3 dev/explore.py /path/to/workspace/.../SomeRecord.java
+```
+
+### Regression targets
+
+- `ReferenceLocatorTest.references_generatedBuilderMember_rangeCoversExactIdentifier`
+- `ReferenceLocatorTest.references_adjacentSimilarNames_noCrossHighlight`
+
+---
+
+## FR-011 — `builder()` reference search surfaces test hits; classify correct-vs-false-positive
+
+**Status: accepted — Target: M2**
+
+### Observed behaviour
+
+Find References on a `builder()` factory returns matches in test sources that the reporter did not
+expect. It is unconfirmed whether those test hits are calls to the *same* type's `builder()`
+(correct references, merely surfaced slowly by the FR-009 breadth) or to a *different* type's
+`builder()` (a false positive).
+
+### Root cause
+
+Two candidates, to be distinguished by reproduction:
+
+1. **Breadth only** — `builder` matches ~1000 token files (see FR-009); all are compiled and the
+   same-type `builder()` calls in tests are correct results. Closing this reduces to FR-009.
+2. **Over-match** — the FR-008 `matchesRecordComponentMember` early return in
+   `ReferenceTarget.matches` short-circuits before the `METHOD` descriptor/kind guards, or descriptor
+   matching admits an unrelated same-named `builder()`.
+
+### Proposed fix / next step
+
+Reproduce capturing result file paths and verify each hit's owning type equals the target's. If all
+hits are same-type, close as a duplicate of FR-009 (breadth). If any are cross-type, tighten the
+`METHOD` matching path and add a false-positive regression test.
+
+### Probe commands
+
+```bash
+printf 'refs "builder()"\n' \
+  | python3 dev/explore.py /path/to/workspace/.../SomeType.java
+# Inspect each result path and confirm the referenced builder() belongs to SomeType.
+```
+
+### Regression targets
+
+- `ReferenceLocatorTest.references_sameNamedMethodDifferentOwner_excluded`
+- (or) closed as a duplicate of FR-009 once confirmed as breadth-only.
+
+---
+
 # Completion Gaps (CQ)
 
 Active completion-quality gaps. Discovered and triaged via the completion appendix of the
