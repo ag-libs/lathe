@@ -155,7 +155,7 @@ code-action gap CA-1 should be applied alongside it.
 
 ## EG-003 — Hover returns null on positions inside Javadoc type-reference tags
 
-**Status: accepted — Target: M2**
+**Status: accepted — Target: M3**
 
 ### Observed behaviour
 
@@ -754,7 +754,7 @@ python3 dev/explore.py \
 
 ## EG-017 — `textDocument/documentHighlight` not implemented
 
-**Status: accepted — Target: M2**
+**Status: accepted — Target: M3**
 
 ### Observed behaviour
 
@@ -767,16 +767,43 @@ the symbol under the cursor as the cursor rests — is therefore unavailable.
 `LatheLanguageServer.initialize` registers no `documentHighlightProvider`, and there is no
 `documentHighlight` request handler in the server.
 
+Spec: [LSP 3.17 — Document Highlights Request](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentHighlight).
+Params are `TextDocumentPositionParams` (same cursor target as references); the response is
+`DocumentHighlight[]`, each a `range` plus optional `DocumentHighlightKind` (`Text=1`, `Read=2`,
+`Write=3`, default `Text`). Eclipse JDT LS implements this via `DocumentHighlightHandler`/
+`computeOccurrences` and returns the same LSP4J types Lathe uses, so this is parity work.
+
 ### Proposed fix
 
-Implement `textDocument/documentHighlight` as a file-scoped specialisation of the existing exact
-same-file reference matching.
+Server side: implement `textDocument/documentHighlight` as a file-scoped specialisation of the
+existing exact same-file reference matching.
 Reuse the `ReferenceTarget` identity already used by Find References, restrict the scan to the
-current document, and map each occurrence to a `DocumentHighlight` with `Read` or `Write` kind
-based on whether the occurrence is an assignment target.
+current document (run against the already-attributed open-file analysis — never recompile — and make
+it cancellable, since it fires per cursor-rest), and map each occurrence to a `DocumentHighlight`
+with `Read`/`Write` kind (`ReferenceRole.READ/WRITE → Read/Write`, otherwise `Text`) based on whether
+the occurrence is an assignment target. The range-dedup added for FR-008 already prevents a record
+component's header from being highlighted once per synthetic member.
 
-This is the highest value-to-effort item in this set: the same-file matching machinery already
-exists, and the feature is exercised continuously during normal editing.
+The same-file matching machinery already exists, so the server work is small and the feature is
+exercised continuously during normal editing.
+
+### Client integration (Neovim) — not server-only
+
+Advertising the capability is not sufficient for a visible effect in the shipped plugin:
+
+- `lua/lathe.lua` sends full `make_client_capabilities()` (so the capability negotiates), but wires
+  only a `format_on_save` `LspAttach` autocmd — there is **no** `document_highlight` autocmd, so
+  nothing highlights automatically.
+- Stock Neovim users need a buffer-local `LspAttach` block (mirroring the `format_on_save` one,
+  capability-guarded on `client:supports_method('textDocument/documentHighlight')`) that calls
+  `vim.lsp.buf.document_highlight()` on `CursorHold`/`CursorHoldI` and `vim.lsp.buf.clear_references()`
+  on `CursorMoved`/`CursorMovedI`, plus guidance to lower `updatetime` (~250ms; default 4000ms is too
+  slow) and ensure `LspReferenceText/Read/Write` highlight groups are visible.
+- `vim-illuminate` users get it for free: its default provider order is `{'lsp','treesitter','regex'}`,
+  so advertising the capability silently upgrades them to semantic LSP highlighting.
+
+This gap therefore ships as **server handler + a small `lathe.lua` autocmd** (behind an opt-out flag
+like `format_on_save`); a server-only change would leave the feature half-wired for stock users.
 
 ### Probe commands
 
@@ -792,7 +819,7 @@ capability and the absent handler in `LatheLanguageServer`.
 
 ## EG-018 — `textDocument/selectionRange` not implemented
 
-**Status: accepted — Target: M2**
+**Status: accepted — Target: M3**
 
 ### Observed behaviour
 
@@ -802,6 +829,13 @@ Expand-selection and shrink-selection (a common editing keystroke) are unavailab
 The `selectionRange` occurrences in the server source are unrelated: they are the
 `DocumentSymbol.selectionRange` and `CallHierarchyItem.selectionRange` fields, not the
 `textDocument/selectionRange` feature.
+
+Spec: [LSP 3.17 — Selection Range Request](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_selectionRange).
+Params carry `positions: Position[]` (multiple cursors); the response is a `SelectionRange[]` aligned
+to those positions, each a linked chain `{ range, parent? }` where every `parent` is a strictly
+larger enclosing range. This is request-driven (an explicit keystroke), not ambient, so latency is
+not critical. Eclipse JDT LS implements it (`SelectionRangeHandler`, PR #1101) by chaining ranges
+built from the AST, with extra handling for line/block comments — so this is parity work.
 
 ### Root cause
 
@@ -814,7 +848,23 @@ Implement `textDocument/selectionRange` syntactically.
 For each requested position, walk the enclosing `TreePath` from the leaf outward and emit a nested
 chain of `SelectionRange` entries (identifier → expression → statement → block → member → type).
 This needs only source positions, not type resolution, so it can run on the parsed tree without a
-full attribution pass.
+full attribution pass. Emit strictly-increasing ranges (dedup identical spans), and — as jdtls does
+— handle a cursor inside a comment, which is not an AST node and would otherwise have no enclosing
+leaf to walk from.
+
+### Client integration (Neovim) — low marginal value here
+
+Unlike EG-017, this needs no plugin wiring, and its payoff in Neovim is limited:
+
+- Neovim 0.12 exposes it built-in via `vim.lsp.buf.selection_range(direction, timeout_ms)` (positive
+  expands, negative shrinks) plus visual-mode `an`/`in` text objects; pre-0.12 users used the
+  `nvim-lsp-selection-range` plugin. A coder just binds keys — no `lathe.lua` change required beyond
+  advertising the capability.
+- Crucially, Neovim's `an`/`in` uses **Treesitter as the primary provider and LSP only as a
+  fallback**. Lathe's `ftplugin/java.lua` already starts the Java Treesitter parser, so users already
+  have expand/shrink selection today; the LSP version would rarely be reached. This is why EG-018 is
+  a weaker candidate than EG-017 (which filled a genuinely absent feature and auto-upgraded
+  vim-illuminate users).
 
 ### Probe commands
 
@@ -1437,7 +1487,7 @@ Returning `OptionalInt.empty()` or a sentinel failure result is preferable to ca
 
 ## EG-028 — `textDocument/onTypeFormatting` is a stub and is not registered
 
-**Status: accepted — Target: M2**
+**Status: accepted — Target: M3**
 
 ### Observed behaviour
 
@@ -1594,7 +1644,11 @@ revisited, add the tree-sitter chain-anchor rule and a fixture for the `.get()`-
 
 ## EG-031 — JDK source resolution depends solely on `JAVA_HOME`, and its absence is silent and undiagnosable
 
-**Status: accepted — Target: M2**
+**Status: done — Target: M2**
+
+Implemented in `7fe3e4b` (`JdkSourceResolver` falls back to the running JVM's `java.home` and
+canonicalizes via `toRealPath()`). Regression: `JdkSourceResolverTest.resolve_javaHomeUnset_fallsBackToRunningJavaHome`,
+`JdkSourceResolverTest.resolve_symlinkedHome_resolvesToRealPath`.
 
 ### Observed behaviour
 
@@ -3217,11 +3271,16 @@ or pick up one of the gaps explicitly assigned to M2.
 ## CQ-0011 — Constructor invocation keywords can be offered when an explicit invocation already exists
 
 ID: CQ-0011
-Status: deferred
+Status: non-goal
 Target: backlog
 Tier: semantic
 Failure mode: invalid-keyword-candidate
 Owner component: KeywordProvider / SentinelParser
+
+Closed (2026-07-04) as non-goal: suppressing the `this`/`super` keyword to avoid a second explicit
+invocation is the wrong treatment (see re-triage below). The only valid residual — a
+`this(...)`/`super(...)` call-shape snippet offered at the legal first-statement slot — is a separate
+future completion feature, not this suppression gap.
 
 Re-triage (2026-07-01):
 Deferred out of M2. On review the accepted M2 approach — withholding the `this`/`super` keywords in
