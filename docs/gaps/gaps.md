@@ -1175,7 +1175,13 @@ python3 dev/explore.py /path/to/Scratch.java inject "this."
 
 ## EG-024 — Type-name completion can offer types from modules the current module does not read
 
-**Status: accepted — Target: M2**
+**Status: done — Target: M2**
+
+Resolved by the CQ-0049 fix (2026-07-04): both type-index completion paths now gate candidates on
+`Trees.isAccessible(scope, typeElement)`, so an observable-but-unreadable type (here
+`com.sun.management.OperatingSystemMXBean` in `jdk.management`, not read by the current module) is no
+longer offered. The mechanism is type-agnostic and was live-verified on the equivalent JDK-module case
+(`javax.swing.JButton` / `java.desktop`) on `dob-core`; regression coverage lives on CQ-0049.
 
 ### Scope correction
 
@@ -3120,7 +3126,7 @@ from being a plain unconditional keyword addition.
 ## CQ-0049 — Type-index completion offers types from modules the current module does not read
 
 ID: CQ-0049
-Status: accepted
+Status: done
 Target: M1
 Tier: correctness
 Failure mode: invalid-candidate
@@ -3167,18 +3173,32 @@ element, threading the completion `scope` (already computed in
 for the `CompletionEngine.staticMemberFitCandidates` call site. Preserve the permissive fallback when
 no scope is available (mirroring `ImportCompletionProvider`'s `scope == null || …` guard).
 
+Resolved: 2026-07-04. Two leak sites shared the same root cause and were both gated on
+`Trees.isAccessible(scope, typeElement)`:
+1. `TypeIndexValidator` (plain type-reference via `TypeReferenceCompleter.completeSimpleNameTypeReference`
+   and static-member-fit via `CompletionEngine.staticMemberFitCandidates`) — the validator now takes the
+   completion `Scope` and enforces readability.
+2. `TypeReferenceCompleter.resolvesToInstantiableSubtype` (the `new X` / expected-type constructor-subtype
+   path, which never used the validator) — gained the same gate. The first pass missed this because the
+   original regression test only exercised the plain type-reference form; a live probe of `new JBut` on
+   `dob-core` surfaced it.
+
 Regression targets:
 - `CompletionTypeIndexTest.typeIndex_jpmsObservableButUnreadableModule_doesNotSuggestIndexedType`
-  (present, `@Disabled` pending fix — reproduces the gap via `--add-modules java.desktop` on a module
-  that does not `requires` it)
+  (enabled — plain type-reference path; reproduces via `--add-modules java.desktop` on a module that
+  does not `requires` it)
+- `CompletionTypeIndexTest.typeIndex_constructorSubtype_jpmsUnreadableModule_doesNotSuggestSubtype`
+  (the `new X` subtype path; verified failing without the fix)
+- `CompletionTypeIndexTest.typeIndex_constructorSubtype_jpmsReadablePackage_suggestsSubtype`
+  (guard: readable subtype still offered)
 - `CompletionTypeIndexTest.typeIndex_jpmsReadablePackage_suggestsIndexedType` (guard: `requires
   java.desktop` still offers `JButton`)
 - `CompletionTypeIndexTest.typeIndex_platformType_survivesValidator_jpmsModule` (guard: `java.base`
   types survive)
 
 Notes:
-Only the type-index type-reference path leaks; the member-access and import paths already enforce
-readability via `Trees.isAccessible`. The unit test that previously "covered" this
+The member-access and import paths already enforce readability via `Trees.isAccessible`; only the two
+type-index paths above skipped it. The unit test that previously "covered" this
 (`typeIndex_jpmsUnreadablePackage_doesNotSuggestIndexedType`) passed only because its minimal module
 graph never made `java.desktop` observable, so `getTypeElement` returned `null` for the wrong reason
 — it never exercised the observable-but-unreadable case that occurs in real multi-module workspaces.

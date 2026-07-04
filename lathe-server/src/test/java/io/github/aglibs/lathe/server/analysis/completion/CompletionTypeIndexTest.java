@@ -6,7 +6,6 @@ import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import java.io.IOException;
 import java.util.List;
 import org.eclipse.lsp4j.CompletionItemKind;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 class CompletionTypeIndexTest extends CompletionTestSupport {
@@ -219,9 +218,6 @@ class CompletionTypeIndexTest extends CompletionTestSupport {
   }
 
   @Test
-  @Disabled(
-      "CQ-0049: type-index completion offers observable-but-unreadable types "
-          + "(TypeIndexValidator gates on Elements.getTypeElement, not JPMS readability)")
   void typeIndex_jpmsObservableButUnreadableModule_doesNotSuggestIndexedType() throws IOException {
     // Reproduces the dob-core leak: a module the current module does not read is nonetheless in the
     // module graph. In a real workspace java.desktop is pulled in by a dependency's non-transitive
@@ -250,6 +246,65 @@ class CompletionTypeIndexTest extends CompletionTestSupport {
                     }""",
                     List.of("--add-modules", "java.desktop"))))
         .doesNotContain("JButton");
+  }
+
+  @Test
+  void typeIndex_constructorSubtype_jpmsUnreadableModule_doesNotSuggestSubtype()
+      throws IOException {
+    // The `new X` / expected-type path resolves subtypes through
+    // TypeReferenceCompleter.instantiableSubtypeCandidates, not TypeIndexValidator. It must apply
+    // the same JPMS readability gate: JButton is an observable-but-unreadable subtype of Object and
+    // must not be offered as a constructor candidate.
+    localFixture =
+        new CompletionFixture(
+            CompletionFixture.typeIndex(
+                tmp.resolve("index.json"),
+                CompletionFixture.typeEntry(
+                    "JButton", "javax.swing.JButton", TypeKind.CLASS, List.of("java.lang.Object"))),
+            tmp);
+    assertThat(
+            labels(
+                localFixture.completeWithJpms(
+                    """
+                    package com.example.app;
+
+                    class Test {
+                        void m() {
+                            Object o = new JBut§
+                        }
+                    }""",
+                    """
+                    module com.example.app {
+                    }""",
+                    List.of("--add-modules", "java.desktop"))))
+        .doesNotContain("JButton");
+  }
+
+  @Test
+  void typeIndex_constructorSubtype_jpmsReadablePackage_suggestsSubtype() throws IOException {
+    localFixture =
+        new CompletionFixture(
+            CompletionFixture.typeIndex(
+                tmp.resolve("index.json"),
+                CompletionFixture.typeEntry(
+                    "JButton", "javax.swing.JButton", TypeKind.CLASS, List.of("java.lang.Object"))),
+            tmp);
+    assertThat(
+            labels(
+                localFixture.completeWithJpms(
+                    """
+                    package com.example.app;
+
+                    class Test {
+                        void m() {
+                            Object o = new JBut§
+                        }
+                    }""",
+                    """
+                    module com.example.app {
+                      requires java.desktop;
+                    }""")))
+        .contains("JButton");
   }
 
   // ── argument position: importable types ───────────────────────────────────────

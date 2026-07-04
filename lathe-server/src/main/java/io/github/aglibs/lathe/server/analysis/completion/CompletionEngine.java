@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
 import com.sun.source.tree.ImportTree;
+import com.sun.source.tree.Scope;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
@@ -233,8 +234,9 @@ public final class CompletionEngine {
       return withTypes;
     }
 
+    final var scope = TypeResolver.resolveScope(semanticContext.analysis(), req.cursorOffset());
     final var staticFitCandidates =
-        staticMemberFitCandidates(injected.prefix(), semanticContext, req.typeIndex());
+        staticMemberFitCandidates(injected.prefix(), semanticContext, req.typeIndex(), scope);
     if (staticFitCandidates.isEmpty()) {
       return withTypes;
     }
@@ -473,7 +475,8 @@ public final class CompletionEngine {
   private List<CompletionCandidate> staticMemberFitCandidates(
       final String prefix,
       final SemanticCompletionContext context,
-      final WorkspaceTypeIndex typeIndex) {
+      final WorkspaceTypeIndex typeIndex,
+      final Scope scope) {
     if (typeIndex == null) {
       return List.of();
     }
@@ -482,7 +485,7 @@ public final class CompletionEngine {
       return List.of();
     }
 
-    final var validator = new TypeIndexValidator(context.analysis());
+    final var validator = new TypeIndexValidator(context.analysis(), scope);
     final Set<String> existingStaticImports =
         context.analysis().tree() != null
             ? context.analysis().tree().getImports().stream()
