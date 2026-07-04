@@ -325,6 +325,77 @@ Not probeable through `explore.py`; confirmed by both endpoints sharing the whol
 
 ---
 
+## EG-039 — Unused-hint mislabels exception and lambda parameters as "local variable"
+
+**Status: documented — Target: pending triage**
+
+### Observed behaviour
+
+The unused-declaration hint reports every unused variable it flags as a *local variable*, including
+kinds that are not local variables:
+
+```java
+try { risky(); } catch (final IllegalStateException e) { recover(); }   // "Unused local variable 'e'"
+map.forEach((k, v) -> System.out.println(k));                           // "Unused local variable 'v'"
+```
+
+Both are genuinely unused, so the *detection* is correct — this is not a false positive. The defect
+is the **kind label**: per JLS §4.12.3 ("Kinds of Variables"), an *exception parameter* (kind 7) and
+a *lambda parameter* (kind 6) are distinct variable kinds, neither of which is a *local variable*
+(kind 8). Calling `e` and `v` "local variable" is inaccurate.
+
+Verified against `UnusedDeclarationScanner` (open-mode compile):
+
+| Construct | Emitted message | JLS §4.12.3 kind | Correct? |
+|---|---|---|---|
+| unused `catch (T e)` | `Unused local variable 'e'` | exception parameter | ✗ |
+| unused lambda param `v` | `Unused local variable 'v'` | lambda parameter | ✗ |
+| unused `for (T s : xs)` | `Unused local variable 's'` | local variable | ✓ |
+| unused pattern binding | `Unused local variable '…'` | local variable (§14.30.1) | ✓ |
+| unused method parameter | *(not flagged)* | method parameter | — |
+
+The enhanced-for variable and switch/`instanceof` pattern bindings are *local variables* per the JLS
+(§14.14.2, §14.30.1), so their "local variable" label is correct and out of scope here.
+
+### Root cause
+
+`UnusedDeclarationScanner.visitVariable` (`UnusedDeclarationScanner.java:135-137`) assigns
+`Kind.LOCAL_VARIABLE` to any `VariableTree` whose parent is neither a `ClassTree` nor a `MethodTree`.
+A catch parameter (parent `CatchTree`) and a lambda parameter (parent `LambdaExpressionTree`) both
+fall into that catch-all branch, so both are described with the sole non-field, non-method label the
+scanner has — `local variable`. Method and constructor parameters are correctly excluded because
+their parent is a `MethodTree`.
+
+### Proposed fix
+
+Give the scanner the two missing kinds and classify by parent node in `visitVariable`:
+
+- parent `CatchTree` → `Kind.EXCEPTION_PARAMETER` ("exception parameter")
+- parent `LambdaExpressionTree` → `Kind.PARAMETER` ("parameter")
+- otherwise unchanged (`LOCAL_VARIABLE`)
+
+This is a bounded, single-class change (a new `Kind` label plus two `instanceof` guards). It touches
+only the message wording, not which declarations are flagged. Whether these genuinely-unused-but-not-
+freely-removable bindings should also drop the `Unnecessary` (strike-through) tag — since, pre-`_`
+(JEP 456, Java 22+), the name cannot simply be deleted — is a separate presentation question; this
+gap is scoped to the JLS-inaccurate kind label.
+
+### Probe commands
+
+```bash
+printf 'diagnostics\n' | python3 dev/explore.py /path/to/workspace/.../SomeFile.java
+# Any file with an unused catch parameter or unused lambda parameter reproduces it.
+```
+
+### Regression targets
+
+- `UnusedDeclarationScannerTest.compile_unusedCatchParameter_labelsExceptionParameter`
+- `UnusedDeclarationScannerTest.compile_unusedLambdaParameter_labelsParameter`
+- `UnusedDeclarationScannerTest.compile_unusedEnhancedForVariable_labelsLocalVariable` (boundary: still
+  "local variable")
+
+---
+
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work
