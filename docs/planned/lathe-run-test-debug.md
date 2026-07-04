@@ -58,7 +58,7 @@ report a green test for the wrong bytecode.
 |------|----------------|--------|-------|
 | Unit test (Surefire) | `-Djvm` shim on `surefire:test` | Lathe JVM against `.lathe/` | Primary case; fully validated by PoC |
 | Integration test (Failsafe) | `-Djvm` shim on `failsafe:integration-test` | Lathe JVM against `.lathe/` **iff** self-provisioning | Lifecycle-provisioned IT falls back to Maven `verify` — see §9 |
-| Main class (run/debug) | `-Dexec.executable` shim on `exec:exec` | Lathe JVM against `.lathe/` | Conditional on the project configuring exec — see §7 |
+| Main class (run/debug) | `-Dexec.executable` shim on `exec:exec` | Lathe JVM against `.lathe/` | **Classpath apps: shipped, no config** (spike-verified). Modular apps gated — see §7 |
 
 `mvnd` delegation survives only as an explicit fallback (§10), not as the default path.
 
@@ -145,6 +145,10 @@ appears in argv — including inside an `@argfile`.** In modular forks Surefire 
 included, via an `@argfile`, so the shim must expand argfiles when scanning. Probe invocations (e.g. the initial
 `@args` version/vm-info call observed in the PoC) do **not** contain `ForkedBooter` and are passed straight through.
 
+**Capture mode.** The shim serves two capture kinds, distinguished by `LATHE_CAPTURE_MODE` (set by Lathe): the
+default `surefire` uses the `ForkedBooter` discriminator above; `exec` (classpath `main` capture, §7.1) has no
+`ForkedBooter` and no probe, so the shim snapshots **unconditionally**.
+
 For the fork case the shim writes a **raw capture bundle** into `$LATHE_CAPTURE_OUT` — a **private per-capture temp
 directory the server created** (§3.5), not `.lathe/`:
 
@@ -163,8 +167,10 @@ Reference POSIX shim (`bin/java`):
 
 ```sh
 #!/bin/sh
-# Lathe sets LATHE_REAL_JAVA and LATHE_CAPTURE_OUT (a fresh private temp dir) on the driving invocation.
+# Lathe sets LATHE_REAL_JAVA, LATHE_CAPTURE_OUT (a fresh private temp dir),
+# and LATHE_CAPTURE_MODE (surefire|exec) on the driving invocation.
 is_fork() {
+  [ "${LATHE_CAPTURE_MODE:-surefire}" = exec ] && return 0   # exec capture: always snapshot
   for a in "$@"; do
     case "$a" in
       *ForkedBooter*) return 0 ;;
@@ -212,7 +218,7 @@ The **server** (not a spawned JVM) parses the raw bundle into `test-launch.json`
 
 `test-launch.json` records paths **as captured** (Maven's `target/` locations). The reactor-output rewrite to
 `.lathe/` happens at replay time, so the template stays a faithful record of Maven's decision and the rewrite logic
-lives in one place (§4.1), reusing the §6 classpath-remap.
+lives in one place (§4.1), reusing the `lathe-design.md` §6 classpath-remap.
 
 `TestLaunchData` schema (new record in `lathe-core.schema`, defensively-copied immutable collections, compact
 constructor validating invariants):
@@ -247,6 +253,8 @@ constructor validating invariants):
 
 Field notes:
 
+- `kind` — `surefire` | `failsafe` | `exec`; one `test-launch.json` schema serves all three (there is no separate
+  "run-launch" file — the `kind` discriminates). `surefireVersion`/`forkedMainClass` are Surefire/Failsafe-only.
 - `surefireVersion` — the Surefire version this template was captured from, so replay can force re-capture when a
   POM change moves the version and the argfile shape may have changed (§12).
 - `modulePath` / `classPath` — the partition **exactly as Surefire computed it**. This is the whole point of
@@ -406,12 +414,13 @@ module; keep them as captured.
   the selector. For overloaded or `@ParameterizedTest` methods, `selectMethod` needs the parameter types, so the
   discovery walk emits the **erased parameter types** in the `id` when a method has parameters. Package/module-wide
   runs select all discovered tests (see the selection-fidelity gap in §10).
-- **Results.** The bootstrap main registers a `TestExecutionListener` that emits one NDJSON record per test event on
-  a **dedicated results channel — not stdout**, so the program's own stdout/stderr can never corrupt the result
-  stream. Lathe opens the channel before spawning the JVM (an inherited file descriptor on POSIX, or a loopback
-  socket whose port is handed to the bootstrap main via a system property) and forwards each record as a
-  `testResult` `lathe/sessionEvent` in real time. This replaces the `surefire-reports/*.xml` `WatchService` tailing
-  of the previous design entirely — no XML, no watch race, and no stream multiplexing to untangle.
+- **Results.** The bootstrap main registers a `TestExecutionListener` that emits one NDJSON record per test event to
+  a **dedicated results sink — not stdout**, so the program's own output can never corrupt the stream. The KISS
+  default is an **append-only NDJSON file** in the session temp dir (its path handed to the bootstrap main via a
+  system property); the server line-reads it for near-real-time `testResult` `lathe/sessionEvent`s. It is a single
+  file Lathe owns and controls — far less racy than the old `surefire-reports/*.xml` tailing, and with no stream
+  multiplexing to untangle. A **loopback socket** is the optional upgrade if strictly live streaming is ever needed.
+  (An inherited fd is *not* an option — Java's `ProcessBuilder` only wires fds 0/1/2.)
 
 ### 4.4 Completeness invariant on `.lathe/`
 
@@ -422,16 +431,11 @@ This is a **distinct invariant from the freshness boundary of §1**, and the two
 bounds how *current* the bytecode is; completeness bounds whether the *whole* image is present. Replay **MUST
 verify completeness before launching** and fall back to Maven delegation (§11) if it cannot establish it — because a
 replay against an incomplete image can report a **green test for the wrong bytecode**, a failure mode strictly more
-dangerous than a stale diagnostic: the user trusts a pass. The completeness checks below are gating, not advisory.
+dangerous than a stale diagnostic: the user trusts a pass. The check below is gating, not advisory.
 
-- All classes for the module (and reactor deps) present in `.lathe/<rel>/classes` / `test-classes`, with orphans
-  removed (§6 orphan handling) so no stale `.class` shadows current source.
-- **Test resources included** — config files, `META-INF/services`, fixtures. The shim copies the entire output
-  directory (`lathe-design.md` §5 step 5), and `process-test-resources` runs before the test-compile shim fires, so
-  filtered resources are present in `target/test-classes` when copied. Verify this holds (§11).
-- A replayed run reflects **last-saved/compiled** state — the LS save pass writes `.class` to `.lathe/` on
-  `didSave`, so a saved buffer is reflected; unsaved buffer content is not. This is the expected "save, then run"
-  semantics.
+A replayed run reflects **last-saved/compiled** state: the LS save-pass writes `.class` to `.lathe/` on `didSave`, so
+a saved buffer is reflected and unsaved buffer content is not — the expected "save, then run" semantics. Completeness
+is about **presence** (is the whole image on disk?), a separate question from that currency.
 
 #### The completeness check — concrete gate
 
@@ -461,9 +465,13 @@ skips compilation when no `.java` is stale — so a **resource-only** edit never
 LS save-pass (which writes `.class`, not resources) does not cover it. A replayed run would then read a stale
 resource — the same "green test for the wrong image" hazard as the completeness check, via resources.
 
-**The gate.** Before launching, for the **completeness module set** (the module under test plus each reactor
-dependency whose output the transform points into `.lathe/`), compare the mtime of files under that module's captured
-resource roots against the `.lathe/` snapshot. Scope by role, because test scope is not transitive:
+**Stage-1 behavior (KISS).** Treat a stale resource like any incomplete image: **fall back to Maven delegation
+(§11)** for that run. One branch, no new captured data, always correct — this is what ships first.
+
+**Later optimization — currency refresh (keeps the fast path).** To avoid a Maven touch on every resource edit, the
+server refreshes only what changed. Before launching, for the **completeness module set** (the module under test plus
+each reactor dependency whose output the transform points into `.lathe/`), compare the mtime of files under that
+module's captured resource roots against the `.lathe/` snapshot. Scope by role, because test scope is not transitive:
 
 - **module under test** — its **main** and **test** resource roots.
 - **each upstream reactor dependency** — its **main** resource root only (a dependency's test resources are never on
@@ -525,11 +533,11 @@ Given a file URI, return everything runnable/debuggable in scope. One-pass AST w
 
 Accept a runnable `id` (or `{ module, testPattern }` for package/module-wide test runs). The server:
 
-1. Ensures a fresh `test-launch.json` (or run-launch for `main`) exists for the module — capturing if the freshness
-   gate (§3.6) says the template is missing or stale; otherwise reading the on-disk template (§3.7 — no in-memory
-   cache).
+1. Ensures a fresh `test-launch.json` (`kind` = surefire/failsafe/exec) exists for the module — capturing if the
+   freshness gate (§3.6) says the template is missing or stale; otherwise reading the on-disk template (§3.7 — no
+   in-memory cache).
 2. Applies the replay transform (§4.1) and selection.
-3. For `lathe.debug`, additionally injects JDWP (§8-debug) and starts the in-process DAP adapter.
+3. For `lathe.debug`, additionally injects JDWP (§8) and starts the in-process DAP adapter.
 4. Spawns the JVM, returns `{ sessionId, kind }` (debug also returns `{ dapHost, dapPort }`), and streams output,
    `testResult`, and lifecycle via `lathe/sessionEvent`.
 
@@ -561,33 +569,62 @@ Server-to-client notification carrying output and lifecycle for a session.
 
 ## 7. Run — main classes via exec capture
 
-Running a `main` class uses the **same executable-override trick**, applied to the exec plugin:
+Running a `main` class uses the **same executable-override trick**, applied to the exec plugin. The spike
+(July 2026, exec-maven-plugin 3.6.3 — the current latest) split the outcome sharply, so run-main ships
+**classpath-only**:
 
 ```
 mvnd -pl <moduleRel> exec:exec -Dexec.executable=~/.cache/lathe/capture-jdk/bin/java -Dexec.args="…"
 ```
 
 The shim intercepts and captures the resolved command line; Lathe replays it against `.lathe/` (repointing reactor
-outputs, adding JDWP for debug).
+outputs, adding JDWP for debug). **No POM declaration is needed** — `exec:exec` runs via fully-qualified coordinates
+(`org.codehaus.mojo:exec-maven-plugin:<ver>:exec`), verified in the spike.
 
-**Correct-by-construction constraint.** Unlike Surefire for tests, **no standard Maven component computes a modular
-application launch** — `exec:exec` only expands `%classpath`/`%modulepath` from whatever the project configured in
-`exec.args`; it does not derive `--add-modules` or `-m module/Main`. Lathe therefore **does not synthesize** a run
-launch. Run support is conditional on the project configuring an exec invocation (which Lathe captures faithfully).
-A project with no run configuration has nothing faithful to capture, and Lathe must not invent a partition — that
-would be the reconstruction the whole design avoids.
+### 7.1 Classpath apps — shipped, zero configuration
 
-**Pulling in the plugin does not rescue this.** `exec:exec` is invokable without project config (fully-qualified
-goal plus `-Dexec.*`), but that supplies only an interception vehicle, not a computed launch: `exec:exec` is a dumb
-runner that expands `%classpath`/`%modulepath` and runs whatever `exec.args` it is handed. Lathe would still have to
-author the modular launch itself — and a run launch is underspecified without project config anyway (no JVM args, no
-program args, no app-specific `--add-opens`; none of these live anywhere in the Maven model). So the gate stands:
-capture faithfully when the project — or a framework run-goal like `spring-boot:run`, a future growth path — computes
-a launch, otherwise fall back (§11).
+**Verified end to end.** For a non-modular launch, `%classpath` in `exec.args` expands to Maven's computed runtime
+classpath (dependencies + build output). The spike confirmed, with no plugin declaration: the shim captures the
+launch, the replayed JVM runs, and **JDWP debug attaches** (the injected `-agentlib:jdwp=…` listened as expected).
+So classpath `main` **run and debug work with zero project setup** — a genuine, faithful capability: `%classpath` is
+Maven's computation, the `main` class comes from discovery, Lathe invents nothing.
 
-> Status: the exec-capture path is designed but **not yet validated by PoC** (the Surefire path is). The implementing
-> agent should spike `exec:exec -Dexec.executable=<shim>` on a modular main before relying on it, mirroring §3's
-> Surefire spike.
+### 7.2 Modular apps — gated (Maven cannot hand us the module path)
+
+**Verified broken upstream.** There is no faithful, no-configuration way to run a *modular* app:
+
+- **`%modulepath` in `exec.args` is not substituted** — it passes through as the literal string `%modulepath`.
+  Confirmed empirically on 3.5.1 and 3.6.3 and in `ExecMojo` bytecode (the `%classpath` token is `ldc`'d and
+  replaced; the `%modulepath` token is *never* loaded for string replacement — only the structured `<modulepath/>`
+  `Arg` object is handled). This is not a documented limitation; the docs wrongly claim it works. Open PR
+  [#95 "fix: running modulepath commandline"](https://github.com/mojohaus/exec-maven-plugin/issues/95) has sat
+  unmerged since 2018.
+- **The structured `<modulepath/>` element** (which would require the project to declare the plugin) is itself buggy:
+  it writes an undocumented `@target/modulepath` argfile and mis-forms `-p`
+  ([#448](https://github.com/mojohaus/exec-maven-plugin/issues/448)), lists deps in the wrong order
+  ([#91](https://github.com/mojohaus/exec-maven-plugin/issues/91)), and breaks on spaces
+  ([#126](https://github.com/mojohaus/exec-maven-plugin/issues/126)).
+- **Running a modular app off `%classpath`** is *unfaithful* — the spike showed it loads as the unnamed module
+  (`isNamed()=false`, `getModule().getName()=null`), losing module identity, services, and strong encapsulation. Not
+  an acceptable substitute.
+
+So faithful modular run-main is **gated**: it works only when the project declares an exec launch (which Lathe would
+capture) or via a framework run-goal. Lathe **does not synthesize** the module-path partition — that is exactly the
+reconstruction the design avoids (§3.4).
+
+### 7.3 Parked modular follow-ups (each needs its own spike)
+
+- **Framework run-goals** (`spring-boot:run`, `quarkus:dev`) *compute and fork* a real launch, capturable with the
+  same shim trick — the highest-coverage path for real modular apps. Growth work.
+- **Compose captured sources.** The compiler shim's `lsp-params-classes.json` already holds a Maven-computed *main
+  compile* module-path partition (remapped to `.lathe/`); combined with exec `%classpath` (the runtime set) and the
+  discovery `main` class it could form a modular launch. Both inputs are captured, not invented — **but** composing
+  them re-introduces Lathe-side partition logic (cross-referencing artifacts, classifying runtime-only deps), i.e.
+  the automatic-module promotion §3.4 flags as unreproducible, plus a compile-vs-runtime scope gap. Candidate only
+  behind its own faithfulness spike; it must not gate the classpath ship.
+
+Debug rides on whichever run path exists (§8): available for classpath apps now, and for any gated/framework launch
+once that launch is capturable.
 
 ---
 
@@ -711,7 +748,8 @@ Open verification items before/at implementation (spike-level checks):
    reads `src/test/resources/…` passes under replay. Confirm the same for an upstream reactor dependency's main
    resource.
 3. Orphan `.class` removal leaves no stale classes visible to a replayed run (§4.4).
-4. The **exec-capture** path for `main` works on a modular project (§7).
+4. **Resolved (July 2026 spike):** classpath `main` exec-capture works with no declaration and JDWP debug attaches
+   (§7.1); modular `main` is blocked by the `%modulepath` gap (§7.2), so it is gated, not an open item.
 5. Failsafe capture works, and a **self-provisioning** IT replays green (§9).
 
 ---
@@ -766,15 +804,21 @@ confidence gradient the §1 scope table already draws:
 2. **Fast-follow — debug and self-provisioning Failsafe ITs.** Debug rides the same replay with a small added surface
    (§8); self-provisioning ITs reuse the Surefire capture verbatim (§9). Lifecycle-provisioned ITs remain
    Maven-delegated (§9) from day one.
-3. **Defer, mark experimental — `exec:exec` run-main and package/module-wide selection.** Run-main is not yet
-   PoC-validated and is available only when the project already configures exec (§7), so it will frequently be
-   unavailable or fall to delegation; do not present it alongside tests as a first-class feature until spiked.
-   Package/module-wide selection ships with the include/exclude fidelity gap (§10) documented, not silently narrowed.
+3. **Classpath `main` run + debug — shippable when convenient.** Spike-validated (§7.1): no plugin declaration,
+   `%classpath` computed by Maven, replay and JDWP debug both confirmed. Not on the test critical path, but a clean,
+   faithful, zero-config capability that can land alongside or shortly after debug.
+4. **Defer — modular run-main and package/module-wide selection.** Modular run is gated: `%modulepath` is broken
+   through the current exec-maven-plugin (§7.2, upstream PR #95 unmerged since 2018), so it needs declared exec
+   config or a framework run-goal, and the compose fallback needs its own spike (§7.3). Do not present modular run as
+   first-class. Package/module-wide selection ships with the include/exclude fidelity gap (§10) documented, not
+   silently narrowed.
 
 Two hardening items **gate stage 1**, because both fail *silently* if skipped and both undermine the trust a green
 test result carries:
 
 - **Completeness invariant (§4.4)** — verified before launch, never inferred from freshness.
-- **Capture-integrity handshake (§3.3, §3.5)** — fresh private temp dir + `capture.ready` marker, so a successful capture is a real
-  signal rather than a file-existence guess.
-```
+- **Capture-integrity handshake (§3.3, §3.5)** — fresh private temp dir + `capture.ready` marker, so a successful
+  capture is a real signal rather than a file-existence guess.
+
+Stage 1 handles stale resources by **falling back to Maven** (§4.4); the currency-refresh optimization (capture
+resource roots, `resources:testResources` + copy-back) is deferred, not part of the first milestone.
