@@ -1952,6 +1952,59 @@ later assignment (`int x = 0;`) keeps the "Unused" wording, matching IntelliJ (w
 
 ---
 
+## EG-037 — Body after a wrapped method/constructor declaration is over-indented
+
+**Status: done — Target: M2 (regression)**
+
+### Observed behaviour
+
+When a method or constructor declaration wraps its parameters onto a second line, the first line of
+the body (pressing Enter to start coding) indents one continuation level too deep. Validated with the
+Neovim indenter (`lathe-maven-plugin/src/main/neovim/lua/lathe/indent.lua`) on the text-heuristic
+(mid-edit) path:
+
+```java
+void method(
+    int a) {
+        // body lands at column 6, should be 2
+}
+```
+
+Headless indent computation returned 6 for the body line (single-line `void method() {` correctly
+returned 2).
+
+### Root cause
+
+`continuation_indent`'s `ends_with_block_opener` branch returned `prev_indent + BLOCK_INDENT`. When
+the `{` sits at the end of a wrapped declaration's continuation line (`    int a) {`, indent 4), that
+adds 2 to the continuation depth → 6, instead of anchoring to the statement's first line
+(`void method(` at 0) → 2.
+
+### Fix
+
+Anchor the block body to the statement start:
+
+```lua
+if ends_with_block_opener(prev) then
+  return statement_start_indent(prev_lnum) + BLOCK_INDENT
+end
+```
+
+`statement_start_indent` (added for EG-030) walks back across continuation lines; for a non-wrapped
+opener it equals `prev_indent`, so the common single-line case, nested blocks, and class bodies are
+unchanged.
+
+### Regression targets
+
+`lathe-maven-plugin/src/test/neovim/indent_spec.lua` — two fixtures: body after a wrapped single-param
+declaration, and after a multi-line multi-param declaration (which forces `statement_start_indent` to
+walk back across several continuation lines). Both expect the body at the declaration's base
+indent + 2. A constructor fixture is omitted deliberately: the indenter is text-based and cannot
+distinguish a method from a constructor (`Foo(` and `void method(` take the identical path), so it
+would add no coverage.
+
+---
+
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work

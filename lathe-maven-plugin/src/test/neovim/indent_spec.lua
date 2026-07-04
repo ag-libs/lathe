@@ -170,6 +170,18 @@ local FIXTURES = {
     5,
     2,
   },
+  {
+    "regression: body after wrapped method declaration indents from the declaration, not the wrap",
+    { "void method(", "    int a) {", "" },
+    3,
+    2,
+  },
+  {
+    "regression: body after multi-line wrapped method declaration",
+    { "void method(", "    int a,", "    int b) {", "" },
+    4,
+    2,
+  },
 }
 
 local function compute_indent(lines, target)

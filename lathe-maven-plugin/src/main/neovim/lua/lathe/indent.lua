@@ -169,7 +169,11 @@ end
 local function continuation_indent(prev_lnum, prev)
   local prev_indent = vim.fn.indent(prev_lnum)
   if ends_with_block_opener(prev) then
-    return prev_indent + BLOCK_INDENT
+    -- A block opener at the end of a wrapped declaration/statement (e.g. a method whose parameters
+    -- wrapped onto the next line) sits at continuation depth, so the body must indent from the
+    -- statement's first line, not that deeper column. statement_start_indent equals prev_indent when
+    -- the opener is not itself a continuation, leaving the common single-line case unchanged.
+    return statement_start_indent(prev_lnum) + BLOCK_INDENT
   end
   if ends_with_open_bracket(prev) then
     return prev_indent + CONTINUATION_INDENT
