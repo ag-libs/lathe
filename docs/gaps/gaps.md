@@ -1046,7 +1046,7 @@ or annotation type.
 
 ## EG-021 — Type-name completion ranks reactor-local types below dependency and JDK types
 
-**Status: accepted — Target: M2**
+**Status: done — Target: M2**
 
 ### Observed behaviour
 
@@ -1069,8 +1069,35 @@ symbol search; the two share the underlying `WorkspaceTypeIndex` ordering.
 ### Proposed fix
 
 Apply a reactor-origin sort boost in the type-completion result comparator, reusing the
-`TypeIndexEntry` origin information proposed for EG-006.
+`WorkspaceTypeIndex.isReactorType` origin information from EG-006.
 Reactor entries should outrank dependency and JDK entries for an equal prefix match.
+
+### Resolution (2026-07-04)
+
+`TypeReferenceCompleter.typeCandidateComparator` was made reactor-aware. Verified first that this
+matches modern IDEs: IntelliJ ranks project code above JDK/library via proximity weighers
+(`sdkOrLibrary`, `sameModule`) applied *beneath* match quality (JDT relies mainly on expected-type
+and case/prefix, with no strong project boost — so IntelliJ is the model here). Reactor origin is
+therefore a **tiebreaker beneath match quality**, not an override.
+
+Because Lathe lacks the usage statistics IDEs use to keep ubiquitous JDK types on top, a blanket
+reactor boost would bury `java.util.List` etc. under obscure project types (chosen approach: keep a
+common-platform tier above reactor). The comparator now grades candidates by `originRank` after the
+prefix-match key:
+
+- rank 0 — `java.lang` (exact; auto-imported, most ubiquitous)
+- rank 1 — other common platform packages, **exact match** (`java.util`, `java.io`, `java.time`,
+  `java.nio`, `java.math`)
+- rank 2 — reactor-local types (`WorkspaceTypeIndex.isReactorType`)
+- rank 3 — everything else (dependency / other JDK)
+
+then shorter-FQN, then lexicographic. Exact match matters: a live probe showed prefix-matching
+`java.lang.` wrongly elevated specialized subpackages (`java.lang.management.OperatingSystemMXBean`,
+`java.lang.classfile.…`) above reactor types; only the exact `java.lang`/`java.util`/… packages get
+the platform tier, subpackages fall to rank 3.
+
+Confirmed on `dob-server`: for prefix `Oper`, `com.telenordigital.payment.dob.*` reactor types now
+lead, above JDK `java.lang.management`/`java.lang.classfile` types.
 
 ### Probe commands
 
@@ -1080,7 +1107,14 @@ python3 dev/explore.py /path/to/Scratch.java inject "Object o = new Oper"
 
 ### Regression targets
 
-- `CompletionTypeRankingTest.completion_typePrefix_ranksReactorTypeFirst`
+- `CompletionTypeRankingTest.completion_typePrefix_ranksReactorTypeFirst` (reactor above dependency;
+  verified failing without the reactor tier)
+- `CompletionTypeRankingTest.completion_typePrefix_commonPlatformOutranksReactor` (java.util above
+  reactor)
+- `CompletionTypeRankingTest.completion_typePrefix_javaLangSubpackageDoesNotOutrankReactor`
+  (java.lang subpackages are not platform-tier)
+- `CompletionTypeIndexTest.typeIndex_candidates_javaLangRanksBeforeOtherPackages` (java.lang above
+  other platform packages — the rank 0 vs 1 boundary)
 
 ---
 

@@ -99,6 +99,14 @@ final class CompletionFixture implements AutoCloseable {
     return TempSourceCompiler.typeIndex(shardPath, entries);
   }
 
+  static WorkspaceTypeIndex typeIndex(
+      final Path shardPath,
+      final List<TypeIndexEntry> dependencyEntries,
+      final List<TypeIndexEntry> reactorEntries)
+      throws IOException {
+    return TempSourceCompiler.typeIndex(shardPath, dependencyEntries, reactorEntries);
+  }
+
   static TypeIndexEntry typeEntry(
       final String simpleName, final String qualifiedName, final TypeKind kind) {
     return typeEntry(simpleName, qualifiedName, kind, List.of());

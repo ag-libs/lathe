@@ -86,6 +86,21 @@ public final class TempSourceCompiler implements JavaSourceCompiler {
     return WorkspaceTypeIndex.build(List.of(shardPath));
   }
 
+  public static WorkspaceTypeIndex typeIndex(
+      final Path shardPath,
+      final List<TypeIndexEntry> dependencyEntries,
+      final List<TypeIndexEntry> reactorEntries)
+      throws IOException {
+    Json.write(
+        new TypeIndexFile(
+            "v1",
+            TypeIndexOrigin.dependency(
+                new DependencyTypeIndexOrigin("test:lib:1.0", "/lib.jar", 0L, 0L)),
+            dependencyEntries),
+        shardPath);
+    return WorkspaceTypeIndex.build(List.of(shardPath), List.of(reactorEntries));
+  }
+
   @Override
   public void close() {
     try {

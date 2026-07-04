@@ -35,6 +35,13 @@ final class TypeReferenceCompleter {
   private static final Set<String> OTHER_MODIFIER_KEYWORDS =
       Set.of("static", "final", "abstract", "synchronized", "transient", "volatile");
 
+  // Ubiquitous JDK packages kept above reactor types in type ranking: without usage statistics
+  // (which
+  // IDEs use to keep java.util.List etc. on top) a blanket reactor boost would bury these common
+  // types under obscure project types. Reactor origin is a tiebreaker below this tier.
+  private static final Set<String> COMMON_PLATFORM_PACKAGES =
+      Set.of("java.lang", "java.util", "java.io", "java.time", "java.nio", "java.math");
+
   private final JavaSourceCompiler compiler;
 
   TypeReferenceCompleter(final JavaSourceCompiler compiler) {
@@ -189,7 +196,7 @@ final class TypeReferenceCompleter {
     final var validator = new TypeIndexValidator(analysis, scope);
     final List<CompletionCandidate> typeCandidates =
         candidates.stream()
-            .sorted(typeCandidateComparator(injected.prefix()))
+            .sorted(typeCandidateComparator(injected.prefix(), req.typeIndex()))
             .filter(validator::isResolvable)
             .filter(entry -> typeIndexRoleAllows(entry, analysis, scope, role))
             .limit(TYPE_INDEX_RESULT_LIMIT)
@@ -432,7 +439,7 @@ final class TypeReferenceCompleter {
     return typeIndex.transitiveSubtypes(binaryName).stream()
         .filter(TypeReferenceCompleter::indexKindMaybeInstantiable)
         .filter(entry -> entry.simpleName().startsWith(prefix))
-        .sorted(typeCandidateComparator(prefix))
+        .sorted(typeCandidateComparator(prefix, typeIndex))
         .limit(TYPE_INDEX_RESULT_LIMIT)
         .filter(entry -> resolvesToInstantiableSubtype(entry, expectedEl, analysis, scope))
         .map(CandidateFactory::typeIndexCandidate)
@@ -552,11 +559,40 @@ final class TypeReferenceCompleter {
     return throwable != null && analysis.types().isAssignable(typeEl.asType(), throwable.asType());
   }
 
-  private static Comparator<TypeIndexEntry> typeCandidateComparator(final String prefix) {
+  private static Comparator<TypeIndexEntry> typeCandidateComparator(
+      final String prefix, final WorkspaceTypeIndex typeIndex) {
     return Comparator.comparing((TypeIndexEntry e) -> !e.simpleName().startsWith(prefix))
-        .thenComparing(e -> !"java.lang".equals(e.packageName()))
+        .thenComparingInt(e -> originRank(e, typeIndex))
         .thenComparingInt(e -> e.qualifiedName().length())
         .thenComparing(TypeIndexEntry::qualifiedName);
+  }
+
+  // Lower ranks sort first: core java.lang, then other ubiquitous platform packages, then
+  // reactor-local types, then everything else (dependency / other JDK). Reactor origin is a
+  // tiebreaker beneath match quality and the common-platform tier — without the usage statistics
+  // IDEs rely on, keeping java.* ubiquity on top avoids burying it under obscure project types.
+  private static int originRank(final TypeIndexEntry entry, final WorkspaceTypeIndex typeIndex) {
+    final String packageName = entry.packageName();
+    if ("java.lang".equals(packageName)) {
+      return 0;
+    }
+
+    // Exact match only: subpackages like java.lang.management or java.util.spi are specialized, not
+    // the auto-imported / everyday types, so they rank as ordinary JDK entries (below reactor).
+    if (COMMON_PLATFORM_PACKAGES.contains(packageName)) {
+      return 1;
+    }
+
+    if (isReactorEntry(entry, typeIndex)) {
+      return 2;
+    }
+
+    return 3;
+  }
+
+  private static boolean isReactorEntry(
+      final TypeIndexEntry entry, final WorkspaceTypeIndex typeIndex) {
+    return typeIndex != null && typeIndex.isReactorType(entry.binaryName());
   }
 
   private static CompletionOutcome mergeOutcomes(
