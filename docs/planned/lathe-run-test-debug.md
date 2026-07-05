@@ -65,10 +65,10 @@ CAPTURE (push — rides the user's mvn test)        REPLAY (per run/debug, Maven
 ──────────────────────────────────────────       ───────────────────────────────────────
 user runs: mvn test                               server reads .lathe/<rel>/test-launch.json
   Surefire forks the test JVM →                     → rewrite reactor target/ → .lathe/
-  lathe-junit LauncherSessionListener runs:         → strip jacoco + booter main/args
-    reads java.class.path / jdk.module.* /          → keep JPMS flags verbatim
-    getInputArguments(), writes test-launch.json     → add launcher + test selection
-    via lathe-core (tests run normally)              → java … (fresh JVM)
+  lathe-junit LauncherSessionListener runs:         → keep JPMS flags + jvmArgs verbatim
+    reads java.class.path / jdk.module.* /          → add launcher + test selection
+    getInputArguments(), writes test-launch.json     → java … (fresh JVM)
+    via lathe-core (tests run normally)
                                                           • JDWP-attachable (debug)
                                                           • real-time results via NDJSON
                                 DISCOVERY (source-derived, no Maven)
@@ -284,8 +284,13 @@ external (`~/.m2`, JDK) `--module-path`/`--class-path` entries, `--add-modules`,
 - any `modulePath`/`classPath` entry equal to a reactor module's main `outputDir` →
   `.lathe/<dep-rel>/classes`, and a test `outputDir` → `.lathe/<dep-rel>/test-classes`.
 
-**Strip:** the JaCoCo agent (`-javaagent:*jacoco*`) and the captured main class with its trailing booter
-arguments (recorded in §3.1 only so they can be removed).
+**Strip nothing.** Replay keeps every captured argument verbatim — including any `-javaagent`
+(coverage, Mockito/ByteBuddy, profilers). Lathe cannot tell a coverage agent from a test-required one
+at the argument level, and stripping is an optimization, not a correctness need, so the faithful choice
+is to replay exactly what the build launched. A user who wants an agent absent from Lathe replays
+removes it **at capture time** via a Lathe-specific Maven profile, so it never enters the fork and thus
+never the template — provenance the build owns, not a heuristic Lathe guesses. There is no captured
+booter main class to strip either: the listener never records `sun.java.command` (§3.1).
 
 **Substitute the executor:** append Lathe's launcher bootstrap and the test selection.
 
@@ -462,7 +467,9 @@ run.
 - **`main` without a test capture** — a module with no test run has no partition to borrow (§4.2).
 - **Package/module-wide selection** — exact for a named class/method; Surefire include/exclude/tag
   filtering for wide runs is not reproduced.
-- **Coverage** — the JaCoCo agent is stripped from replay; *use `mvn verify`* for coverage.
+- **Coverage** — replay keeps whatever agents the build captured (including a coverage agent) but does
+  not produce a coverage report; *use `mvn verify`* for coverage. To keep the coverage agent out of
+  replays, disable it at capture via a Lathe-specific profile.
 
 ---
 
