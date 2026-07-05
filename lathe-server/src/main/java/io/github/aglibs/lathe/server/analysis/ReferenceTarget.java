@@ -1,6 +1,9 @@
 package io.github.aglibs.lathe.server.analysis;
 
 import io.github.aglibs.validcheck.ValidCheck;
+import java.util.ArrayDeque;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -11,6 +14,8 @@ import javax.lang.model.element.Modifier;
 import javax.lang.model.element.RecordComponentElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
+import javax.lang.model.type.TypeMirror;
+import javax.lang.model.util.ElementFilter;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 
@@ -19,7 +24,9 @@ public record ReferenceTarget(
     String qualifiedName,
     String simpleName,
     String erasedDescriptor,
-    SearchScope scope) {
+    SearchScope scope,
+    List<String> overriddenDeclarers,
+    boolean overrideFamilyBounded) {
 
   public enum SearchScope {
     DECLARING_FILE,
@@ -33,7 +40,9 @@ public record ReferenceTarget(
         .notBlank(qualifiedName, "qualifiedName")
         .notBlank(simpleName, "simpleName")
         .notNull(scope, "scope")
+        .notNull(overriddenDeclarers, "overriddenDeclarers")
         .validate();
+    overriddenDeclarers = List.copyOf(overriddenDeclarers);
   }
 
   static ReferenceTarget from(final Element element, final Types types, final Elements elements) {
@@ -49,26 +58,44 @@ public record ReferenceTarget(
     return switch (kind) {
       case CLASS, INTERFACE, ENUM, RECORD, ANNOTATION_TYPE -> {
         final var te = (TypeElement) element;
-        yield new ReferenceTarget(kind, te.getQualifiedName().toString(), simpleName, null, scope);
+        yield new ReferenceTarget(
+            kind, te.getQualifiedName().toString(), simpleName, null, scope, List.of(), false);
       }
       case METHOD, CONSTRUCTOR -> {
         final var ee = (ExecutableElement) element;
         final var owner = (TypeElement) ee.getEnclosingElement();
+        final boolean method = kind == ElementKind.METHOD;
+        final List<String> declarers =
+            method ? overriddenDeclarers(ee, owner, types, elements) : List.of();
         yield new ReferenceTarget(
             kind,
             elements.getBinaryName(owner).toString(),
             simpleName,
             buildDescriptor(ee, types),
-            scope);
+            scope,
+            declarers,
+            method);
       }
       case FIELD, ENUM_CONSTANT -> {
         final var owner = (TypeElement) element.getEnclosingElement();
         yield new ReferenceTarget(
-            kind, elements.getBinaryName(owner).toString(), simpleName, null, scope);
+            kind,
+            elements.getBinaryName(owner).toString(),
+            simpleName,
+            null,
+            scope,
+            List.of(),
+            false);
       }
       default ->
           new ReferenceTarget(
-              kind, enclosingBinaryName(element, elements), simpleName, null, scope);
+              kind,
+              enclosingBinaryName(element, elements),
+              simpleName,
+              null,
+              scope,
+              List.of(),
+              false);
     };
   }
 
@@ -256,6 +283,51 @@ public record ReferenceTarget(
         && IntStream.range(0, parameters.size())
             .allMatch(
                 i -> types.isSameType(parameters.get(i).asType(), components.get(i).asType()));
+  }
+
+  /**
+   * Binary names of the supertypes (transitively) that declare a method this target method
+   * overrides. The reference-candidate planner uses these, together with the declaring type and its
+   * subtypes, to bound a method search to its override family instead of every file that spells the
+   * simple name. Empty when the method overrides nothing (e.g. a record accessor with no
+   * interface).
+   */
+  private static List<String> overriddenDeclarers(
+      final ExecutableElement method,
+      final TypeElement owner,
+      final Types types,
+      final Elements elements) {
+    final var declarers = new LinkedHashSet<String>();
+    final var visited = new HashSet<String>();
+    final var pending = new ArrayDeque<TypeMirror>(types.directSupertypes(owner.asType()));
+    while (!pending.isEmpty()) {
+      final var supertype = pending.removeFirst();
+      if (!(types.asElement(supertype) instanceof final TypeElement ste)) {
+        continue;
+      }
+
+      final var binaryName = elements.getBinaryName(ste).toString();
+      if (!visited.add(binaryName)) {
+        continue;
+      }
+
+      if (declaresOverridden(method, owner, ste, elements)) {
+        declarers.add(binaryName);
+      }
+
+      pending.addAll(types.directSupertypes(supertype));
+    }
+
+    return List.copyOf(declarers);
+  }
+
+  private static boolean declaresOverridden(
+      final ExecutableElement method,
+      final TypeElement owner,
+      final TypeElement supertype,
+      final Elements elements) {
+    return ElementFilter.methodsIn(supertype.getEnclosedElements()).stream()
+        .anyMatch(candidate -> elements.overrides(method, candidate, owner));
   }
 
   private static String buildDescriptor(final ExecutableElement method, final Types types) {

@@ -122,7 +122,9 @@ class MethodImplementationTest {
             "Service",
             "Service",
             null,
-            ReferenceTarget.SearchScope.REACTOR_MODULES);
+            ReferenceTarget.SearchScope.REACTOR_MODULES,
+            List.of(),
+            false);
 
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       assertThat(

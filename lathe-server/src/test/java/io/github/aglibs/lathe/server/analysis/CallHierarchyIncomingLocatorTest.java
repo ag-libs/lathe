@@ -107,7 +107,9 @@ class CallHierarchyIncomingLocatorTest {
         data.ownerBinaryName(),
         data.methodName(),
         data.erasedDescriptor(),
-        data.scope());
+        data.scope(),
+        List.of(),
+        false);
   }
 
   private SourceFeatureRequest request(final String content, final Position position) {

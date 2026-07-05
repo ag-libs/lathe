@@ -596,7 +596,9 @@ public final class SourceAnalysisSession implements AutoCloseable {
             data.ownerBinaryName(),
             data.methodName(),
             data.erasedDescriptor(),
-            data.scope());
+            data.scope(),
+            List.of(),
+            false);
     try {
       return CallHierarchyOutgoingLocator.scan(analysis, target, sourceRoots, definitionLocator);
     } catch (final IOException e) {

@@ -511,7 +511,7 @@ final class WorkspaceSession {
     final Set<String> openUris =
         openForConfig.stream().map(OpenDocument::uri).collect(Collectors.toUnmodifiableSet());
     final List<Path> sourceRoots = config.sourceRoots();
-    final var planner = new ReferenceCandidatePlanner(candidateIndex);
+    final var planner = new ReferenceCandidatePlanner(candidateIndex, typeIndex);
     final List<DiskCandidate> diskCandidates =
         planner.planCandidates(config, target).stream()
             .filter(uri -> !openUris.contains(uri))
@@ -739,7 +739,9 @@ final class WorkspaceSession {
             data.ownerBinaryName(),
             data.methodName(),
             data.erasedDescriptor(),
-            data.scope());
+            data.scope(),
+            List.of(),
+            false);
     final var progressTitle = "Finding callers of %s".formatted(target.simpleName());
 
     final var declaringPath = LatheUri.toPath(data.routingUri());
