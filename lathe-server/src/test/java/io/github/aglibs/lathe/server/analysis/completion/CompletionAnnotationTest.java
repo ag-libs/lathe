@@ -30,6 +30,22 @@ class CompletionAnnotationTest extends CompletionTestSupport {
   }
 
   @Test
+  void annotationValue_memberAccessOnNonEnumType_offersConstants() {
+    // CQ-0050: member access on a non-enum type inside a String-valued annotation element must not
+    // crash the ranker; it should offer the receiver type's constants like member access anywhere.
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    package p;
+                    class Test {
+                      @SuppressWarnings(java.io.File.§separator)
+                      void m() {}
+                    }""")))
+        .contains("separator");
+  }
+
+  @Test
   void annotationValue_classTypedElement_offersTypeCandidates() {
     // EG-038: a Class-typed annotation value element (like @ExtendWith's Class<? extends Extension>
     // value) should offer type candidates in value position. Currently only keywords are offered.

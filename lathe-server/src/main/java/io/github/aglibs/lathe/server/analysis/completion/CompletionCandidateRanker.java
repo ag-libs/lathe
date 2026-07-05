@@ -57,15 +57,35 @@ final class CompletionCandidateRanker {
       return baseSortText(candidate);
     }
 
-    final boolean matches =
-        candidate.valueType() != null
-            && context.analysis().types().isAssignable(candidate.valueType(), type);
+    final boolean matches = assignableToExpected(candidate.valueType(), type, context);
     final String base = baseSortText(candidate);
     return "%d_%d_%s"
         .formatted(
             matches ? 0 : 1,
             kindPriority(candidate.kind()),
             base != null ? base : candidate.name());
+  }
+
+  /**
+   * Best-effort assignability tie-break for value-slot ranking. {@code JavacTypes.isAssignable}
+   * throws {@link IllegalArgumentException} when handed a mirror whose kind is not a value type
+   * (package, executable, module, …), which can reach here as a candidate's {@code valueType()} in
+   * a typed slot such as an annotation value. Such a candidate is simply not assignable, so treat
+   * any rejection as a non-match rather than letting it abort the whole completion.
+   */
+  private static boolean assignableToExpected(
+      final TypeMirror valueType,
+      final TypeMirror expected,
+      final SemanticCompletionContext context) {
+    if (valueType == null) {
+      return false;
+    }
+
+    try {
+      return context.analysis().types().isAssignable(valueType, expected);
+    } catch (final IllegalArgumentException e) {
+      return false;
+    }
   }
 
   private static int kindPriority(final CandidateKind kind) {
