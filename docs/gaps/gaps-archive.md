@@ -6045,3 +6045,57 @@ It should not block ordinary `this` expression completion,
 `this.member` access,
 or `super.member` access where those are otherwise legal.
 
+---
+
+## CQ-0050 — Member-access completion crashes when its result feeds a typed value slot
+
+ID: CQ-0050
+Status: done
+Tier: typed
+Failure mode: server-side crash (empty completion)
+Owner component: CompletionCandidateRanker
+
+Discovered by exploration probing of a JAX-RS resource: `@Produces(MediaType.<caret>APPLICATION_JSON)`
+returned no completions. Context detection was correct (`sentinelCtx=MEMBER_ACCESS`, receiver
+resolved to `jakarta.ws.rs.core.MediaType`); the ranker then crashed and the empty result surfaced
+via the `WorkspaceSession` completion catch — so it degraded silently ("no completions", no visible
+error).
+
+### Root cause
+
+`CompletionCandidateRanker.sortText` used `context.analysis().types().isAssignable(candidate
+.valueType(), type)` as a value-slot ranking tie-break, reached only when `expectedValue` is an
+`ExpectedValue.Type` (e.g. an annotation element's declared type). `JavacTypes.isAssignable` throws
+`IllegalArgumentException` (via `validateTypeNotIn`) when handed a mirror whose kind is not a value
+type — a candidate whose `valueType()` is a package/executable/module/etc. mirror. That reached the
+ranker on the **attributed, complete** member-access path (an existing identifier after the cursor,
+as in real code), which is why an incomplete sentinel probe (`MediaType.<caret>` with nothing after)
+did not reproduce it.
+
+```
+java.lang.IllegalArgumentException
+  at com.sun.tools.javac.model.JavacTypes.validateTypeNotIn(JavacTypes.java:326)
+  at com.sun.tools.javac.model.JavacTypes.isAssignable(JavacTypes.java:107)
+  at CompletionCandidateRanker.sortText(CompletionCandidateRanker.java:62)
+```
+
+### Resolution
+
+The assignability check is a best-effort ranking signal, so it must never abort completion. Extracted
+`assignableToExpected(valueType, expected, context)`: returns `false` for a null `valueType` and
+catches `IllegalArgumentException` from `isAssignable` (a non-value-type candidate is simply not
+assignable to a value slot). Single-class change; no behavior change beyond not crashing.
+
+Distinct from the resolved **CQ-0001** (enum-typed annotation values → enum constants) and **EG-016**
+(annotation element-name completion): this was a ranker crash on a member select whose result feeds a
+typed slot, not an annotation routing choice — it can occur in any `ExpectedValue.Type` slot, with the
+annotation value being the observed trigger.
+
+Verified live after the fix: `@Produces(MediaType.<caret>)` returns the 34 `MediaType` members.
+
+### Regression target
+
+- `CompletionAnnotationTest.annotationValue_memberAccessOnNonEnumType_offersConstants`
+  (`@SuppressWarnings(java.io.File.<caret>separator)` — JDK-only, reproduces the crash without a
+  third-party dependency).
+
