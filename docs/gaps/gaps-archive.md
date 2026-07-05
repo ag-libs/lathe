@@ -377,9 +377,84 @@ The resolved implementation treats method candidate discovery as simple-name bas
 owner and override validation to javac attribution.
 Fields, constructors, and enum constants keep the narrower owner filter.
 
+Later superseded by **FR-009**, which replaced the broad simple-name method discovery with
+override-family narrowing (declaring type + overridden declarers + subtypes) while preserving this
+supertype-self-call coverage; the regression test was renamed accordingly.
+
 Regression coverage:
 
-- `ReferenceCandidatePlannerTest.planCandidates_overrideMethodTarget_returnsSuperclassSelfCallFile`
+- `ReferenceCandidatePlannerTest.planCandidates_overriddenMethod_includesOverrideFamilyFiles`
+
+---
+
+## FR-009 — Member-reference search compiles every token-matching file (no hierarchy narrowing)
+
+**Status: done — Target: M2.**
+Discovered against an `@Builder`-heavy reactor; confirmed on `payment-dob-lathe`
+(`DobServerConfig`).
+
+### Observed behaviour (historical)
+
+Find References on a member whose simple name is common compiled hundreds of files to return a
+handful of hits. `ReferenceCandidatePlanner.planCandidates` returned the raw simple-name candidate
+set for `METHOD` targets with no type filter; record components normalise to their accessor (a
+`METHOD`) via `ReferenceTarget.recordAccessorFor`, so component searches took the same broad path.
+Each candidate was then compiled with FAST javac in `searchReferencesTransient` — compilation, not
+the O(1) token lookup, dominated the wall-clock. The `FIELD` branch narrowed only by the enclosing
+type's simple name, which also *missed* a protected field read through a subtype-typed receiver in a
+file that never spelled the declaring type.
+
+### Resolution
+
+`planCandidates` now bounds method and field searches to the member's **override family** instead of
+the raw simple-name set (`files(memberName) ∩ ⋃ candidateUris(familySimpleName) ∪ static-import
+spellings`, via the shared `narrowToFamily`/`overrideFamily` helpers):
+
+- **method** — declaring type + the supertypes whose method it overrides (reactor *or* dependency) +
+  its overriding subtypes;
+- **field** — declaring type + subtypes that inherit it;
+- **constructor / enum constant** — declaring type only.
+
+The overridden declarers require javac member inspection, so they are computed in
+`ReferenceTarget.from` and carried on the record (`overriddenDeclarers` + `overrideFamilyBounded`);
+subtypes come from the reactor `WorkspaceTypeIndex`, now passed to the planner.
+
+Broad search is retained in exactly two cases so no genuine reference is missed: a target
+reconstructed from a call-hierarchy item (no javac context, `overrideFamilyBounded == false`), and a
+method overriding a `java.lang.Object` member (`equals`/`hashCode`/`toString`) — every type is an
+`Object` and receivers are rarely spelled `Object`, so family narrowing would drop most call sites.
+
+Accepted trade-off (as designed): a reference whose owner/receiver type is never textually spelled in
+its file is missed — the same surface the `FIELD` branch already accepted, now consistent across
+kinds.
+
+### Measured (payment-dob-lathe)
+
+| Search | Before | After |
+|---|---|---|
+| `DobServerConfig.name()` record accessor (overrides dependency `BaseConfig.name`) | 112 candidates, ~16.6 s, 1 hit | 8 candidates, ~4.8 s, 1 hit |
+| `ValidCheck.check()` static (overrides nothing) | 45 candidates, 74 hits | unchanged |
+
+The `name()` accessor is the interesting case: it overrides `BaseConfig.name()` in the `tdbase`
+dependency, so the fix narrows by the declarer simple names (`DobServerConfig`, `JerseyServiceConfig`,
+`ServiceConfig`, `BaseConfig`) rather than falling back to broad.
+
+### Probe commands
+
+```bash
+# Against an @Builder record: refs on a component accessor; watch "N / M candidates" vs hit count.
+printf 'refs <line>:<col>\n' \
+  | LATHE_DEBUG=1 python3 dev/explore.py /path/to/workspace/.../SomeRecord.java
+```
+
+### Regression targets
+
+- `ReferenceCandidatePlannerTest.planCandidates_recordAccessorNoInterface_limitsToDeclaringTypeFiles`
+- `ReferenceCandidatePlannerTest.planCandidates_overriddenMethod_includesOverrideFamilyFiles`
+- `ReferenceCandidatePlannerTest.planCandidates_overridesObjectMethod_fallsBackToBroad`
+- `ReferenceCandidatePlannerTest.planCandidates_overridesExternalInterface_narrowsByDeclarerName`
+- `ReferenceCandidatePlannerTest.planCandidates_protectedFieldInheritedInSubclass_includesSubclassFiles`
+- `ReferenceCandidatePlannerTest.planCandidates_fieldNoSubtypes_limitsToDeclaringTypeFiles`
 
 ---
 
