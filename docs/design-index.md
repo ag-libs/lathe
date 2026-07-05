@@ -46,10 +46,6 @@ discovery via [gap-workflow.md](gaps/gap-workflow.md) and resolved entries in [g
 - [LSP Progress Notifications](planned/lathe-lsp-progress.md) — work-done progress for workspace
   initialization and reload, visible via `vim.lsp.status()`.
 
-- [Analysis Cache Bounding](planned/lathe-analysis-cache-bounding.md) — shared, thread-safe
-  `AnalysisCache` with a global LRU cap (64) and recompile-on-miss for all readers, so a large or
-  bulk-access session cannot exhaust the heap and trigger the fatal-`Error` server exit.
-
 Rename, inlay hints, and additional M2 code actions require focused designs before implementation.
 
 ## M3 — 0.1.0 General Availability
@@ -117,3 +113,6 @@ M3 designs before implementation.
 
 - [Potential Design Policy](potential/README.md)
 - [Shared Workspace Server](potential/lathe-shared-workspace-server.md) — no active milestone commitment.
+- [Analysis Cache Bounding](potential/lathe-analysis-cache-bounding.md) — deferred hard-cap design for
+  per-open-file analysis retention; the issue is accepted but a lighter warning-based mitigation is
+  preferred first.

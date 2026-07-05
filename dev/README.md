@@ -72,6 +72,17 @@ see what the engine suggests there, then reset.
 
 No probes are hard-coded.  The file and the questions are entirely up to you.
 
+### Open-file limit
+
+The server retains an attributed analysis (tens of MB) for every open file and holds it until
+the file is closed, so a large open set pressures the heap.  Past a hardcoded threshold of
+**150 open files** the server emits a `window/showMessage` warning ("Lathe has N files open…").
+
+Scripted or agent-driven exploration **must respect this cap**: keep the open set under 150.
+When probing many files in one session, close each file before opening the next (open one, probe,
+close) rather than accumulating open documents.  Treat the warning message, if it appears, as a
+signal to stop opening and start closing.
+
 ### Usage
 
 **Interactive REPL**

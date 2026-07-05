@@ -396,6 +396,50 @@ printf 'diagnostics\n' | python3 dev/explore.py /path/to/workspace/.../SomeFile.
 
 ---
 
+## EG-040 — Attributed-analysis retention is unbounded; heavy sessions can OOM and kill the server
+
+**Status: done — Target: M2.** Mitigated by an advisory open-file-count warning; a hard memory cap
+remains deferred (`potential/lathe-analysis-cache-bounding.md`) for if real users hit OOM.
+
+### Observed behaviour
+
+Each open file's attributed javac `Context` is cached (`SourceAnalysisSession.cache`) and evicted only
+on `didClose`, so retained heap grows ~linearly with the number of open files — measured at ~29–31 MB
+per open file (open + member-access completion) against a large private workspace. Under an abusive
+sweep (~210 open files plus back-to-back reference searches) the JVM hit a fatal `Error`, and
+`CompilationWorker`'s "treat `Error` as fatal" path (`processTerminator.accept(FATAL_EXIT_STATUS)`)
+terminated the **whole server** — every LSP feature lost until the client relaunches.
+
+Normal editing (a few dozen buffers ≈ <1–2 GB) stays well within the ergonomic heap (~25% of RAM;
+≥8 GB on a ≥32 GB workstation), so this bites only pathological / bulk-access sessions.
+
+### Root cause
+
+One javac `Context` retained per open file, unshareable (javac symbols are per-`Context`). Retention
+is bounded by open-document count, not by any cap. See the analysis in the deferred design
+[lathe-analysis-cache-bounding.md](../potential/lathe-analysis-cache-bounding.md).
+
+### Resolution (mitigation shipped)
+
+A hard bound (shared, evicting `AnalysisCache`) was **deferred to potential** — eviction pulls in
+recompile-on-miss, cross-thread locking, and request-plumbing changes that are heavy for a risk that
+only appeared under abusive load. The shipped mitigation is intentionally minimal:
+`WorkspaceSession.onOpen` warns (once, edge-triggered, re-armed on close) via `window/showMessage`
+when the open-file count exceeds a hardcoded `OPEN_FILE_WARN_THRESHOLD` (150), advising the user to
+close files. It is advisory only — it does not prevent OOM; raising the JVM heap remains the ceiling
+(the M3 `LATHE_JVM_OPTS` knob, [lathe-launcher-jvm-opts.md](../planned/lathe-launcher-jvm-opts.md),
+is the planned first-class way; `JAVA_TOOL_OPTIONS=-Xmx…` works today).
+
+The hard cap stays available in [lathe-analysis-cache-bounding.md](../potential/lathe-analysis-cache-bounding.md)
+to revisit if scripted/AI-agent bulk-open sessions make the warning insufficient.
+
+### Regression targets
+
+- `LatheTextDocumentServiceTest.didOpen_pastOpenFileThreshold_warnsOnce`
+- `LatheTextDocumentServiceTest.didOpen_belowOpenFileThreshold_doesNotWarn`
+
+---
+
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work

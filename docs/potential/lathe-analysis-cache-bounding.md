@@ -1,5 +1,12 @@
 # Lathe — Bounding the Source-Analysis Cache
 
+**Status: deferred (potential).** The unbounded-retention *issue* is accepted (see the memory gap in
+[gaps.md](../gaps/gaps.md)), but this shared-cache-with-eviction design is deferred: the OOM only
+reproduced under an abusive synthetic load, and eviction pulls in recompile-on-miss, cross-thread
+locking, and request-plumbing changes that are heavy for the real risk. A lighter mitigation
+(heap-pressure warning + the M3 `LATHE_JVM_OPTS` heap knob) is being pursued first; revisit this
+design only if a hard memory ceiling proves necessary.
+
 ## Goal
 
 Bound the memory held by attributed source analyses so a large or bulk-access session cannot

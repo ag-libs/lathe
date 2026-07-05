@@ -32,6 +32,10 @@ final class DocumentRegistry {
     return documents.values();
   }
 
+  int count() {
+    return documents.size();
+  }
+
   boolean isStale(final OpenDocument snapshot, final long generation) {
     final OpenDocument current = documents.get(snapshot.uri());
     return current == null || current.generation() != generation;

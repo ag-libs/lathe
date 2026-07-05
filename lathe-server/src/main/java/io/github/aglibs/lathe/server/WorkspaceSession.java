@@ -78,6 +78,10 @@ final class WorkspaceSession {
 
   private static final Logger LOG = Logger.getLogger(WorkspaceSession.class.getName());
 
+  // Advisory heads-up: each open file retains an attributed analysis (~tens of MB), so a very large
+  // open set can pressure the heap. Warn once past this count; re-arm when it drops back under.
+  private static final int OPEN_FILE_WARN_THRESHOLD = 150;
+
   private final LanguageClient client;
   private final ServerEventLoop worker;
   private final long debounceMs;
@@ -90,6 +94,7 @@ final class WorkspaceSession {
   private final Map<ModuleSourceConfig, List<TypeIndexEntry>> reactorShards = new LinkedHashMap<>();
   private WorkspaceWatcher watcher;
   private boolean pomNotificationPending;
+  private boolean openFileWarningShown;
   private final DocumentRegistry docs = new DocumentRegistry();
   private final DiagnosticPublisher publisher;
 
@@ -132,6 +137,24 @@ final class WorkspaceSession {
     LOG.info(() -> "[open] %s".formatted(uri));
     candidateIndex.update(uri, content);
     compileAndPublish(snapshot, CompileMode.OPEN);
+    maybeWarnManyOpenFiles();
+  }
+
+  private void maybeWarnManyOpenFiles() {
+    final int open = docs.count();
+    if (openFileWarningShown || open <= OPEN_FILE_WARN_THRESHOLD) {
+      return;
+    }
+
+    openFileWarningShown = true;
+    LOG.warning(
+        () ->
+            "[open] %d files open exceeds %d — warned user"
+                .formatted(open, OPEN_FILE_WARN_THRESHOLD));
+    client.showMessage(
+        new MessageParams(
+            MessageType.Warning,
+            "Lathe has %d files open. Close unused files to reduce memory use.".formatted(open)));
   }
 
   void onChange(final String uri, final String content, final int version) {
@@ -158,6 +181,9 @@ final class WorkspaceSession {
     workspace.dropFromAllCaches(uri);
     publisher.publishEmpty(uri);
     reindexFromDisk(uri);
+    if (docs.count() <= OPEN_FILE_WARN_THRESHOLD) {
+      openFileWarningShown = false;
+    }
   }
 
   void onSave(final String uri, final String savedContent) {
