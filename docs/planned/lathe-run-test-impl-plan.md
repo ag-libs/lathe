@@ -46,10 +46,11 @@ invocation.
 | Artifact | Written by | Read by | Purpose |
 |---|---|---|---|
 | `.lathe/<rel>/test-launch.json` | `lathe-junit` capture listener (in the test fork) | server | The captured test-fork launch template (§4) |
-| `.lathe/<rel>/main-launch.json` *(optional cache)* | server | server | Derived `main` launch (§6); may be recomputed on demand instead |
+| `.lathe/<rel>/main-launch.json` | `lathe:sync` (plugin), every module, every build | server | Derived runtime launch template, main-class-agnostic (§3.4) |
 | `.lathe/<rel>/lsp-params-{classes,test-classes}.json` | compiler shim (existing) | server | Compile params + completeness signal |
 | `.lathe/<rel>/{classes,test-classes}` | compiler shim (existing) | replay JVM | The bytecode replay runs against |
-| `workspace.json` | `lathe:sync` (plugin) | server | Adds per-module **runtime classpath** + `resourceRoots` |
+| `workspace.json` | `lathe:sync` (plugin) | server | Adds per-module `resourceRoots` (runtime classpath now lives in `main-launch.json`) |
+| `.lathe-run.json` | user / editor | Neovim + server | Named run/debug configs; thin overlay only |
 | `~/.cache/lathe/lathe-test-runner.jar` | server (materialize on first use) | replay JVM | The replay executor (§7) |
 | Parent POM: `lathe-junit` test dep + Surefire pin | `lathe:init` (plugin) / committed | Maven build | Activates capture on the build |
 
@@ -106,21 +107,47 @@ editor: lathe.run(runnableId)
         └─ process exit      → SessionEvents("exit", code, elapsedMs)
 ```
 
-### 3.4 Replay — `main` (derived, not captured)
+### 3.4 Replay — `main` (derived by `lathe:sync`, not captured)
 
 ```
+mvn <any build reaching process-test-classes>
+  └─ lathe:sync → MainLaunchWriter.write(project)                     (every module, every build)
+       ├─ membership: MavenProject.getRuntimeClasspathElements()      ({compile,runtime}; no provided/test)
+       ├─ placement:  plexus-java LocationManager.resolvePaths        (same library Surefire uses)
+       └─ write .lathe/<rel>/main-launch.json                         (atomic; schemaVersion-stamped)
+
 editor: lathe.run(mainRunnableId)
-  ├─ membership: workspace.json runtime classpath for the module      (recorded by lathe:sync)
-  ├─ placement:  LaunchTemplateReader.read(moduleRel) → TestLaunchData (from a prior test run)
-  │                 └─ no template → notice "no launch yet — run `mvn test`, or run via Maven" → STOP
-  ├─ MainLaunchResolver.resolve(module, mainClass, runtimeCp, data):
-  │     ├─ keep only partition entries whose artifact is in runtimeCp  (drops provided/test/junit/booter)
-  │     ├─ drop --patch-module; reactor target/→.lathe/ rewrite
-  │     └─ launch `-m <module>/<mainClass>`   (classpath main: no -m, no borrowed partition)
+  ├─ MainLaunchReader.read(moduleRel) → MainLaunchData                (fresh, waits on lathe.lock)
+  │     └─ missing → notice "no launch yet — run a build" → STOP
+  ├─ CompletenessGate.verify(data, wsRoot)                            (§8) → fail → refuse, notice → STOP
+  ├─ ReplayTransform.forMain(data, wsRoot, module, mainClass) → argv  (rewrite + `-m <module>/<mainClass>`)
   └─ ReplayLauncher spawns `java …`; program output → SessionEvents
 ```
 
-### 3.5 Resource currency (deferred)
+The template is main-class-agnostic (one per module; `-m` is appended at launch) and carries no
+test-derived JVM args — user jvmArgs/args/env/cwd come from the `.lathe-run.json` overlay (§3.5).
+Classpath `main` is the same artifact with an empty module path, launched `java -cp … <MainClass>`.
+Freshness is structural: `lathe:sync` rewrites the file on every build, so it is never staler than
+`workspace.json`.
+
+### 3.5 User configuration
+
+```
+Neovim: :LatheRunConfig
+  ├─ read workspace .lathe-run.json
+  ├─ choose config via vim.ui.select
+  └─ workspace/executeCommand lathe.run(config)
+       ├─ server validates module / selector / cwd
+       ├─ base launch comes from test-launch.json or main-launch.json
+       ├─ reactor target/→.lathe/ rewrite
+       └─ overlay user args, jvmArgs, env, cwd, debug
+```
+
+The JSON config cannot edit module path, class path, `--patch-module`, captured `--add-*` directives,
+dependency placement, or rewrite rules.
+Those stay owned by Maven capture and Lathe launch logic.
+
+### 3.6 Resource currency (deferred)
 
 ```
 editor saves foo.properties  →  ResourceWatcher (workspace/didChangeWatchedFiles)
@@ -182,8 +209,10 @@ The runner runs from the class path (unnamed module) exactly as Surefire's boote
 `--add-reads … =ALL-UNNAMED` is what lets the module reflect into the test classes.
 
 ### 5.5 `main` (§3.4)
-As above, minus `--patch-module`, filtered to the runtime membership set, launching `-m
-<module>/<mainClass>` instead of the runner.
+Input is `main-launch.json` (not the test template), so there is nothing to filter or strip:
+apply the reactor rewrite (§5.2) to its module/class path and launch `-m <module>/<mainClass>`
+(or `java -cp … <MainClass>` when the module path is empty), with the `.lathe-run.json` overlay
+applied last.
 
 ---
 
@@ -221,9 +250,10 @@ lathe-maven-plugin`.
 | Class | Role | Key methods |
 |---|---|---|
 | `schema.TestLaunchData` (record) | Captured test-fork template | validating compact ctor |
-| `LatheLayout` (edit) | `TEST_LAUNCH_FILE`, `MAIN_LAUNCH_FILE`, `TEST_RUNNER_MAIN_CLASS`, `TEST_LAUNCH_SCHEMA_VERSION` | — |
+| `schema.MainLaunchData` (record) | Sync-derived runtime launch template (main-class-agnostic) | validating compact ctor |
+| `LatheLayout` (edit) | `TEST_LAUNCH_FILE`, `MAIN_LAUNCH_FILE`, `TEST_RUNNER_MAIN_CLASS`, `TEST_LAUNCH_SCHEMA_VERSION`, `MAIN_LAUNCH_SCHEMA_VERSION` | — |
 | `WorkspaceLocator` | Walk up to `.lathe/` | `findWorkspaceRoot(Path): Optional<Path>` |
-| `launch.ReplayTransform` | Pure template → argv | `forTest(data, wsRoot, sel)`, `forMain(data, runtimeCp, wsRoot, module, mainClass)` |
+| `launch.ReplayTransform` | Pure template → argv | `forTest(data, wsRoot, sel)`, `forMain(data, wsRoot, module, mainClass)` |
 | `launch.ReactorRewrite` | Pure path rewrite + jar-swap | `toLathe(path, wsRoot)`, `swapLatheJars(cp, runnerJar)` |
 | `launch.TestSelection` (record) | `{kind, value}` → runner flags | `toRunnerArgs(): List<String>` |
 
@@ -244,7 +274,8 @@ lathe-maven-plugin`.
 | Class | Role | Key methods |
 |---|---|---|
 | `InitMojo` → `PomSetup` | Add committed `lathe-junit` test dep + Surefire pin | `ensureCaptureDependency` |
-| `SyncMojo` → `RuntimeClasspathRecorder` | Record runtime classpath + `resourceRoots` into `workspace.json` | `record(project)` |
+| `SyncMojo` → `MainLaunchWriter` | Membership (`getRuntimeClasspathElements`) + placement (`plexus-java` `LocationManager`) → `main-launch.json`, every module, every build | `write(project)` |
+| `SyncMojo` → `ResourceRootsRecorder` | Record `resourceRoots` into `workspace.json` | `record(project)` |
 | `RefreshResourcesMojo` → `ResourceFilterer` *(deferred)* | Filter resources into `.lathe/` | `filterInto` |
 
 ### 7.5 `lathe-server` — LSP orchestration (reader only)
@@ -255,11 +286,13 @@ lathe-maven-plugin`.
 | `run.LaunchTemplateReader` | Read `test-launch.json` fresh, lock-aware | `read(moduleRel): Optional<TestLaunchData>` |
 | `run.LaunchFreshness` | POM + `module-info.java` fingerprints | `isStale(data, moduleRel): boolean` |
 | `run.CompletenessGate` | Pre-launch presence checks (§8) | `verify(data, wsRoot): Result` |
-| `run.MainLaunchResolver` | Derive `main` launch (membership ∩ placement) | `resolve(module, mainClass): List<String>` |
+| `run.MainLaunchReader` | Read `main-launch.json` fresh, lock-aware | `read(moduleRel): Optional<MainLaunchData>` |
 | `run.RunnerJarProvider` | Materialize embedded runner jar | `runnerJar(): Path` |
 | `run.ReplayLauncher` | Build argv + spawn | `launch(data, sel): ReplaySession` |
 | `run.ReplaySession` | Own the replay process + result stream | `start`, `cancel`, `pid` |
-| `run.RunCommands` | `executeCommand`: `runnables.list`, `run`, `debug`, `session.*` | one handler each |
+| `run.RunConfig` (record) | `.lathe-run.json` / command payload overlay | validating compact ctor |
+| `run.RunConfigReader` | Read root `.lathe-run.json` for editor commands | `read(): List<RunConfig>` |
+| `run.RunCommands` | `executeCommand`: `runnables.list`, `config.list`, `run`, `debug`, `session.*` | one handler each |
 | `run.SessionEvents` | Emit `lathe/sessionEvent` | `emit` |
 | `debug.DebugAdapter` *(stage 2)* | JDWP inject + in-process `java-debug` DAP | `attach` |
 | `resource.ResourceWatcher` *(deferred)* | `didChangeWatchedFiles` → copy into `.lathe/` | `onChange` |
@@ -282,17 +315,20 @@ lathe-maven-plugin`.
 
 ## 9. Build slices (each a reviewable commit)
 
-1. **`lathe-core`** — `TestLaunchData`, `WorkspaceLocator`, `LatheLayout`, `ReactorRewrite` +
-   `ReplayTransform`, `TestSelection` (pure, fully unit-tested).
+1. **`lathe-core`** — `TestLaunchData`, `MainLaunchData`, `WorkspaceLocator`, `LatheLayout`,
+   `ReactorRewrite` + `ReplayTransform`, `TestSelection` (pure, fully unit-tested).
 2. **`lathe-junit`** — capture listener + `LaunchCapture`.
 3. **`lathe-test-runner`** — runner + selectors.
 4. **Invoker wiring + capture assert** *(GO/NO-GO #1)* — Surefire pin, `lathe-junit` on `jpms`, `verify`
    asserts `test-launch.json`; **root-cause the exit-handshake crash here (§11)**.
 5. **Server replay (test)** — `LaunchTemplateReader`, `CompletenessGate`, `ReplayLauncher`,
    `RunnableScanner`, `run` command; smoke: `HelloTest` green from `.lathe/`.
-6. **`main` run** *(GO/NO-GO #2)* — `RuntimeClasspathRecorder` + `MainLaunchResolver`; modular
-   (`jpms` `HelloMain`) + classpath (`app` `Main`) green.
-7. **Deferred** — freshness refinement, capture-only filter, NDJSON streaming + `sessionEvent`, debug,
+6. **`main` run** *(GO/NO-GO #2)* — `MainLaunchWriter` (sync) + `MainLaunchReader` +
+   `ReplayTransform.forMain`; GO/NO-GO: the `plexus-java`-derived partition launches identically to a
+   real modular run — modular (`jpms` `HelloMain`) + classpath (`app` `Main`) green.
+7. **Root run configs** — `.lathe-run.json` schema, reader, Neovim picker command, and config overlay
+   validation.
+8. **Deferred** — freshness refinement, capture-only filter, NDJSON streaming + `sessionEvent`, debug,
    resource watch, `systemPropertyVariables` capture.
 
 ---
@@ -300,12 +336,16 @@ lathe-maven-plugin`.
 ## 10. Test fixtures (invoker `multi-module`)
 
 - **`jpms`** — modular (`module-info`, `requires validcheck`), a JUnit test, and (to be added) a
-  `HelloMain` → exercises modular test capture *and* modular `main` (the borrowed-placement path).
+  `HelloMain` → exercises modular test capture *and* modular `main` (the `plexus-java` placement path).
 - **`app`** — classpath `Main`, depends on reactor `core` (compile) + a `provided` processor → classpath
   `main`, provided-exclusion, reactor rewrite.
 - **`verify`** — reads `.lathe/` and spawns the replay via `ProcessBuilder`; asserts capture fidelity and
   green replay (test + main).
 - **Harness requirement:** the reactor must pin a modern Surefire (spike §11).
+- **Transient run/test/debug spike:** `MultiModuleTest` currently asserts the JPMS test params and
+  `.lathe/` bytecode mirror contain the replay-critical shape (`--patch-module`, `--add-reads`,
+  `ALL-UNNAMED`, main/test bytecode).
+  Promote or replace this with `test-launch.json` and replay assertions once capture code exists.
 
 ---
 
@@ -328,8 +368,15 @@ lathe-maven-plugin`.
 
 1. **Exit-handshake crash** — harness, Surefire/JDK-26, or the modular fork? (blocks slices 4–5)
 2. **`systemPropertyVariables`** — record plugin-side and merge at replay (confirm mechanism).
-3. **`main` JVM args** — which captured `--add-*`/`argLine` carry to a `main` run vs. are test-only.
-4. **`main-launch.json`** — persist a cache, or always derive on demand?
-5. **`lathe-server` package layout** — do the `run.*` classes above fit the existing command/discovery
+3. **`.lathe-run.json` schema** — exact field names and whether Neovim or the server creates the
+   skeleton file.
+4. **`lathe-server` package layout** — do the `run.*` classes above fit the existing command/discovery
    structure, or fold into current classes?
-6. **Runner delivery** — server-materialized from an embedded jar (current plan) vs. published coordinate.
+5. **Runner delivery** — server-materialized from an embedded jar (current plan) vs. published coordinate.
+
+Resolved since first draft:
+*`main` JVM args* — none carry over from the test capture; `main-launch.json` holds only what Maven
+knows, and user JVM args come from the `.lathe-run.json` overlay.
+*`main-launch.json` provenance* — written by `lathe:sync` for every module on every build
+(membership from runtime scope, placement via `plexus-java`), replacing both the server-derived
+cache and the borrowed-test-partition design.

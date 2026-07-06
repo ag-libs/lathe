@@ -1,7 +1,7 @@
 # Lathe — Run, Test, and Debug
 
-Design for running and debugging tests — and, later, `main` classes — against the bytecode Lathe
-already maintains in `.lathe/`, with no Maven recompilation per invocation.
+Design for running and debugging tests and `main` classes against the bytecode Lathe already maintains
+in `.lathe/`, with no Maven recompilation per invocation.
 Builds on `lathe-design.md` (especially §5 Compiler Shim and §6 Module Model).
 
 **Scope.**
@@ -323,35 +323,49 @@ Attach-only suffices; the DAP adapter wiring is out of scope here.
 A `main` run needs the module's **runtime** launch, which is neither the test launch nor the compile
 launch — and, unlike `test-launch.json`, it is **not captured**: no `main` launch happens during a
 normal build to ride.
-It is **derived by the server** from two inputs — one for *membership* (which artifacts), one for
-*placement* (the JPMS partition) — either on demand or cached to `main-launch.json`:
+Lathe is JPMS-first, so the supported design starts with the modular case instead of treating it as an
+edge case.
+The server still must not guess a module graph from jar names.
 
-- **Membership — from Maven, authoritatively.**
-  `lathe:sync` records the module's runtime-scoped classpath via
-  `MavenProject.getRuntimeClasspathElements()` into `workspace.json`.
-  This is the correct `{compile, runtime}` set, with `provided` and `test` excluded.
+The launch is therefore **derived on the Maven side, not the fork side**:
+`lathe:sync` writes `.lathe/<rel>/main-launch.json` for **every** module, on every build
+(it is auto-bound to `process-test-classes`, so the file is never staler than the last build —
+the same freshness contract as `workspace.json`, with no fingerprint dance).
+Each side of the derivation uses the actor that holds authoritative inputs:
+
+- **Membership — from Maven scopes.**
+  `MavenProject.getRuntimeClasspathElements()` is the correct `{compile, runtime}` set,
+  with `provided` and `test` excluded.
   Do **not** try to recover it by set arithmetic over the test and compile captures:
   scopes cannot be reconstructed from bare jar-path lists — `provided` sits in both captures and must be
   dropped, and `runtime` and `test` entries are indistinguishable once reduced to paths.
+  This is also why the in-fork capture listener can never write this file: the fork sees the effective
+  JVM but is scope-blind.
 
-- **Placement — borrowed from the test capture.**
-  Test scope is a superset of runtime scope, so **every runtime dependency already appears in
-  `test-launch.json`**, placed on module-path or class-path exactly as the JVM resolves it.
-  So Lathe **filters** the captured partition down to the runtime membership set rather than
-  reconstructing a partition itself — the placement is real, not inferred.
-  It then drops `--patch-module` (test-classes) and the junit/booter entries, rewrites the main module's
-  output to `.lathe/`, and launches `-m <mainModule>/<MainClass>`.
+- **Placement — computed with `plexus-java`, the same library Surefire uses.**
+  `lathe:sync` partitions the runtime membership into module path and class path via
+  `LocationManager.resolvePaths` — the exact code that partitioned the captured test fork —
+  so the derived placement is consistent with the captured one **by construction**,
+  not borrowed and filtered from it.
 
-**The one real gap** is that this needs a test capture to exist:
-a module that has been test-run at least once has a partition to borrow from.
-A thin launcher module with no tests has none — for those, the fallback is a documented limitation
-("run it via Maven") until a partition source exists.
-A non-modular (classpath) `main` is trivial and needs no borrowed partition.
+The template is **main-class-agnostic**: one file per module, holding only the runtime launch shape
+(paths and JPMS directives).
+The main class comes from the runnable or run config at launch time, appended by the server as
+`-m <mainModule>/<MainClass>`.
+A module with several mains needs no extra files, and per-service launch templates fall out of the
+per-module layout for free.
 
-Two details to settle when this lands:
-which captured JVM arguments carry over to a `main` run (an application's own `--add-opens`/`argLine`
-should be kept, test-only directives dropped), and confirming that the test fork's placement of a shared
-runtime modular dependency matches a plain `-m` launch.
+A non-modular (classpath) `main` is the same artifact with an empty module path,
+launched as `java -cp … <MainClass>` — no special-casing.
+
+No test-derived JVM arguments carry over: the template contains only what Maven knows,
+and user-supplied JVM args, program args, env, and cwd come from the run-config overlay (§4.4).
+Like `test-launch.json`, the file carries a `schemaVersion` stamp —
+the plugin version is committed in the POM while the server updates independently,
+so it is the same writer/reader split as §3.3.
+
+**To validate when this lands:** that the `plexus-java`-derived partition launches identically to a
+real modular run — asserted against the `jpms` invoker fixture (this is the slice's GO/NO-GO).
 
 ### 4.3 Completeness — gate before launch
 
@@ -373,6 +387,68 @@ rewritten path):
 
 This gate is about **presence**, not currency — whether the bytecode reflects the latest *saved* source
 is the "save, then run" concern handled by the LS save pass.
+
+### 4.4 User run configuration
+
+Lathe uses a user-authored JSON file at the workspace root for named run and debug configurations:
+`.lathe-run.json`.
+It is intentionally **outside** `.lathe/`, because `.lathe/` is generated and disposable.
+The Neovim integration keeps management minimal:
+open/create the file, list named configs with `vim.ui.select`, and pass the selected object to the
+server.
+Neovim does not construct Java command lines.
+
+Example:
+
+```json
+{
+  "schemaVersion": "1",
+  "configs": [
+    {
+      "name": "Run JPMS app",
+      "kind": "main",
+      "moduleRel": "app",
+      "mainClass": "com.example.app.Main",
+      "args": ["--port", "8080"],
+      "jvmArgs": ["-Xmx1g"],
+      "env": {
+        "APP_ENV": "dev"
+      },
+      "cwd": "app"
+    },
+    {
+      "name": "Debug HelloTest",
+      "kind": "test",
+      "moduleRel": "jpms",
+      "selector": {
+        "type": "method",
+        "value": "com.example.jpms.HelloTest#greet_returnsExpectedMessage"
+      },
+      "debug": true
+    }
+  ]
+}
+```
+
+Configuration is a thin overlay on top of captured or Maven-derived launch data.
+The server accepts user-owned fields:
+program args, additional JVM args, environment variables, working directory, debug mode, and the
+selected test or main target.
+It does **not** allow the JSON file to mutate launch-correctness fields:
+module path, class path, `--patch-module`, captured `--add-*` directives, dependency placement, or
+reactor rewrite behavior.
+
+Overlay semantics, pinned to avoid ambiguity at the runner:
+
+- `env` **merges into** the inherited process environment; it never replaces it.
+- `cwd` is resolved **relative to the workspace root** (absolute paths allowed).
+- `jvmArgs` are **appended after** the template's JVM args, so on duplicate `-D`/`-X` flags the
+  user's value wins (last-wins JVM semantics).
+
+For tests, precedence is:
+captured Maven launch, reactor rewrite, runner substitution, then user overlay.
+For `main`, precedence is:
+runtime launch metadata, reactor rewrite, then user overlay.
 
 ---
 
@@ -464,7 +540,9 @@ run.
   *Use `mvn verify`* for the former.
 - **Filtered resources** — a filtered resource edited in the editor is copied *unfiltered* (§5.1);
   for faithful substitution, run `lathe:refresh-resources` (§5.2) or a normal build.
-- **`main` without a test capture** — a module with no test run has no partition to borrow (§4.2).
+- **`main` before the first build** — `main-launch.json` is written by `lathe:sync`, so a fresh
+  checkout needs one build (any build that reaches `process-test-classes`) before `main` runs are
+  available; no test run is required (§4.2).
 - **Package/module-wide selection** — exact for a named class/method; Surefire include/exclude/tag
   filtering for wide runs is not reproduced.
 - **Coverage** — replay keeps whatever agents the build captured (including a coverage agent) but does
