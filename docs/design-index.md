@@ -114,5 +114,5 @@ M3 designs before implementation.
 - [Potential Design Policy](potential/README.md)
 - [Shared Workspace Server](potential/lathe-shared-workspace-server.md) — no active milestone commitment.
 - [Analysis Cache Bounding](potential/lathe-analysis-cache-bounding.md) — deferred hard-cap design for
-  per-open-file analysis retention; the issue is accepted but a lighter warning-based mitigation is
-  preferred first.
+  per-open-file analysis retention (event-loop LRU, eviction delegated to module workers); the issue
+  is accepted but a lighter warning-based mitigation is preferred first.

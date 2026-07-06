@@ -421,9 +421,11 @@ is bounded by open-document count, not by any cap. See the analysis in the defer
 
 ### Resolution (mitigation shipped)
 
-A hard bound (shared, evicting `AnalysisCache`) was **deferred to potential** — eviction pulls in
-recompile-on-miss, cross-thread locking, and request-plumbing changes that are heavy for a risk that
-only appeared under abusive load. The shipped mitigation is intentionally minimal:
+A hard bound (an evicting analysis cache) was **deferred to potential** — eviction pulls in
+recompile-on-miss and request-plumbing changes that are heavy for a risk that only appeared under
+abusive load. The deferred design has since been revised: an event-loop LRU that delegates eviction
+to the owning module worker, replacing the original shared-cache-with-global-lock shape.
+The shipped mitigation is intentionally minimal:
 `WorkspaceSession.onOpen` warns (once, edge-triggered, re-armed on close) via `window/showMessage`
 when the open-file count exceeds a hardcoded `OPEN_FILE_WARN_THRESHOLD` (150), advising the user to
 close files. It is advisory only — it does not prevent OOM; raising the JVM heap remains the ceiling
