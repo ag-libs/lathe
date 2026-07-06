@@ -468,7 +468,7 @@ class SignatureHelpTest {
     final var pos = SourceLocator.offsetToPosition(source, markerOffset);
     final var request =
         new SourceFeatureRequest(
-            TempSourceCompiler.TEST_URI, source, pos, List.of(), WorkspaceManifest.empty());
+            TempSourceCompiler.TEST_URI, source, 0, pos, List.of(), WorkspaceManifest.empty());
     return session.signatureHelp(request);
   }
 }

@@ -134,7 +134,9 @@ public final class SourceAnalysisSession implements AutoCloseable {
   }
 
   public void dropFromCache(final String uri) {
-    cache.remove(uri);
+    if (cache.remove(uri) != null) {
+      LOG.fine(() -> "[evict] %s dropped".formatted(uri));
+    }
   }
 
   public List<DocumentSymbol> documentSymbol(final String uri, final String content) {
@@ -157,13 +159,20 @@ public final class SourceAnalysisSession implements AutoCloseable {
     return ranges;
   }
 
-  public List<SemanticToken> semanticTokens(final String uri, final int expectedVersion) {
+  public List<SemanticToken> semanticTokens(
+      final String uri, final String content, final int expectedVersion) {
     final CachedFileAnalysis ctx = cache.get(uri);
-    if (ctx == null || ctx.version() != expectedVersion) {
+    if (ctx != null && ctx.version() == expectedVersion && ctx.content().equals(content)) {
+      return ctx.analysis().semanticTokens();
+    }
+
+    compile(uri, content, expectedVersion, CompileMode.OPEN);
+    final CachedFileAnalysis cached = cache.get(uri);
+    if (cached == null) {
       return null;
     }
 
-    return ctx.analysis().semanticTokens();
+    return cached.analysis().semanticTokens();
   }
 
   public SignatureHelp signatureHelp(final SourceFeatureRequest request) {
@@ -373,6 +382,21 @@ public final class SourceAnalysisSession implements AutoCloseable {
     return analysis != null
         ? MethodImplementationLocator.locate(analysis, target, candidateBinaryNames, uri)
         : List.of();
+  }
+
+  public List<Location> methodImplementationsTransient(
+      final String uri,
+      final String content,
+      final ReferenceTarget target,
+      final Set<String> candidateBinaryNames) {
+    final var t = Stopwatch.start();
+    final CompilerResult run = compiler.compile(uri, content, CompileMode.FAST, () -> {});
+    LOG.info(
+        () ->
+            "[compile:fast] %s %dms diags=%d"
+                .formatted(uri, t.elapsedMs(), run.diagnostics().size()));
+    return MethodImplementationLocator.locate(
+        run.fileAnalysis(), target, candidateBinaryNames, uri);
   }
 
   private Optional<Location> findDefinitionLocation(
@@ -740,8 +764,8 @@ public final class SourceAnalysisSession implements AutoCloseable {
   }
 
   private CursorContext resolve(final SourceFeatureRequest request) {
-    final var cached = currentCache(request.uri(), request.content());
-    final var analysis = cached != null ? cached.analysis() : null;
+    final var analysis =
+        ensureAttributedAnalysis(request.uri(), request.content(), request.version());
     if (analysis == null || analysis.tree() == null) {
       return null;
     }

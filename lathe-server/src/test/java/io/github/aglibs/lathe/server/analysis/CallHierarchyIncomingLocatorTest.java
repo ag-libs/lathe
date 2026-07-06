@@ -116,6 +116,7 @@ class CallHierarchyIncomingLocatorTest {
     return new SourceFeatureRequest(
         TempSourceCompiler.TEST_URI,
         content,
+        0,
         position,
         List.of(sourceRoot),
         WorkspaceManifest.empty());

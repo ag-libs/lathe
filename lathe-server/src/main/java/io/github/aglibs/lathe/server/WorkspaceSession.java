@@ -78,10 +78,6 @@ final class WorkspaceSession {
 
   private static final Logger LOG = Logger.getLogger(WorkspaceSession.class.getName());
 
-  // Advisory heads-up: each open file retains an attributed analysis (~tens of MB), so a very large
-  // open set can pressure the heap. Warn once past this count; re-arm when it drops back under.
-  private static final int OPEN_FILE_WARN_THRESHOLD = 150;
-
   private final LanguageClient client;
   private final ServerEventLoop worker;
   private final long debounceMs;
@@ -94,8 +90,8 @@ final class WorkspaceSession {
   private final Map<ModuleSourceConfig, List<TypeIndexEntry>> reactorShards = new LinkedHashMap<>();
   private WorkspaceWatcher watcher;
   private boolean pomNotificationPending;
-  private boolean openFileWarningShown;
   private final DocumentRegistry docs = new DocumentRegistry();
+  private final AnalysisLru analysisLru = new AnalysisLru();
   private final DiagnosticPublisher publisher;
 
   WorkspaceSession(
@@ -137,24 +133,6 @@ final class WorkspaceSession {
     LOG.info(() -> "[open] %s".formatted(uri));
     candidateIndex.update(uri, content);
     compileAndPublish(snapshot, CompileMode.OPEN);
-    maybeWarnManyOpenFiles();
-  }
-
-  private void maybeWarnManyOpenFiles() {
-    final int open = docs.count();
-    if (openFileWarningShown || open <= OPEN_FILE_WARN_THRESHOLD) {
-      return;
-    }
-
-    openFileWarningShown = true;
-    LOG.warning(
-        () ->
-            "[open] %d files open exceeds %d — warned user"
-                .formatted(open, OPEN_FILE_WARN_THRESHOLD));
-    client.showMessage(
-        new MessageParams(
-            MessageType.Warning,
-            "Lathe has %d files open. Close unused files to reduce memory use.".formatted(open)));
   }
 
   void onChange(final String uri, final String content, final int version) {
@@ -178,12 +156,10 @@ final class WorkspaceSession {
     docs.remove(uri);
     LOG.info(() -> "[close] %s".formatted(uri));
     worker.cancel(uri);
+    analysisLru.remove(uri);
     workspace.dropFromAllCaches(uri);
     publisher.publishEmpty(uri);
     reindexFromDisk(uri);
-    if (docs.count() <= OPEN_FILE_WARN_THRESHOLD) {
-      openFileWarningShown = false;
-    }
   }
 
   void onSave(final String uri, final String savedContent) {
@@ -212,6 +188,7 @@ final class WorkspaceSession {
     LOG.info(() -> "[delete] %s".formatted(uri));
     worker.cancel(uri);
     docs.remove(uri);
+    analysisLru.remove(uri);
     workspace.dropFromAllCaches(uri);
     candidateIndex.remove(uri);
     publisher.publishEmpty(uri);
@@ -241,7 +218,12 @@ final class WorkspaceSession {
 
     final var request =
         new SourceFeatureRequest(
-            openFile.uri(), openFile.content(), pos, workspace.allSourceRoots(), manifest);
+            openFile.uri(),
+            openFile.content(),
+            openFile.version(),
+            pos,
+            workspace.allSourceRoots(),
+            manifest);
 
     final var cursorWorker =
         switch (routeCompiler(uri)) {
@@ -252,6 +234,8 @@ final class WorkspaceSession {
     if (cursorWorker == null) {
       return CompletableFuture.completedFuture(List.of());
     }
+
+    touchAnalysisCache(openFile.uri());
 
     // Capture declaring module synchronously on the lathe-worker thread before any async hand-off
     final var cursorConfig = workspace.moduleSourceFor(LatheUri.toPath(uri));
@@ -395,6 +379,7 @@ final class WorkspaceSession {
             .map(
                 doc -> {
                   cancelChecker.checkCanceled();
+                  touchAnalysisCache(doc.uri());
                   return worker
                       .searchReferences(
                           doc.uri(),
@@ -554,7 +539,12 @@ final class WorkspaceSession {
         (worker, doc) -> {
           final var request =
               new SourceFeatureRequest(
-                  doc.uri(), doc.content(), pos, workspace.allSourceRoots(), manifest);
+                  doc.uri(),
+                  doc.content(),
+                  doc.version(),
+                  pos,
+                  workspace.allSourceRoots(),
+                  manifest);
           return worker
               .hover(request)
               .exceptionally(ex -> logAndReturn(ex, "[hover] failed for %s".formatted(uri), null));
@@ -568,7 +558,12 @@ final class WorkspaceSession {
         (worker, doc) -> {
           final var request =
               new SourceFeatureRequest(
-                  doc.uri(), doc.content(), pos, workspace.allSourceRoots(), manifest);
+                  doc.uri(),
+                  doc.content(),
+                  doc.version(),
+                  pos,
+                  workspace.allSourceRoots(),
+                  manifest);
           return worker
               .signatureHelp(request)
               .exceptionally(
@@ -588,7 +583,12 @@ final class WorkspaceSession {
         (worker, doc) -> {
           final var request =
               new SourceFeatureRequest(
-                  doc.uri(), doc.content(), pos, workspace.allSourceRoots(), manifest);
+                  doc.uri(),
+                  doc.content(),
+                  doc.version(),
+                  pos,
+                  workspace.allSourceRoots(),
+                  manifest);
           return worker
               .definition(request)
               .thenApply(location -> definitionResult(location.map(List::of).orElseGet(List::of)))
@@ -613,7 +613,12 @@ final class WorkspaceSession {
         (worker, doc) -> {
           final var request =
               new SourceFeatureRequest(
-                  doc.uri(), doc.content(), pos, workspace.allSourceRoots(), manifest);
+                  doc.uri(),
+                  doc.content(),
+                  doc.version(),
+                  pos,
+                  workspace.allSourceRoots(),
+                  manifest);
           return worker
               .declaration(request)
               .thenApply(location -> definitionResult(location.map(List::of).orElseGet(List::of)))
@@ -635,7 +640,12 @@ final class WorkspaceSession {
 
     final var request =
         new SourceFeatureRequest(
-            openFile.uri(), openFile.content(), pos, workspace.allSourceRoots(), manifest);
+            openFile.uri(),
+            openFile.content(),
+            openFile.version(),
+            pos,
+            workspace.allSourceRoots(),
+            manifest);
     final var indexSnapshot = typeIndex;
     final var cursorWorker =
         switch (routeCompiler(uri)) {
@@ -646,6 +656,8 @@ final class WorkspaceSession {
     if (cursorWorker == null) {
       return CompletableFuture.completedFuture(Either.forLeft(List.of()));
     }
+
+    touchAnalysisCache(openFile.uri());
 
     final var t = Stopwatch.start();
     return cursorWorker
@@ -720,9 +732,13 @@ final class WorkspaceSession {
 
     final String content = openFile != null ? openFile.content() : diskFile.content();
     final int version = openFile != null ? openFile.version() : 0;
-    return workspace
-        .workerFor(config.get())
-        .methodImplementations(uri, content, version, target, candidateBinaryNames);
+    final var worker = workspace.workerFor(config.get());
+    if (openFile != null) {
+      touchAnalysisCache(openFile.uri());
+      return worker.methodImplementations(uri, content, version, target, candidateBinaryNames);
+    }
+
+    return worker.methodImplementationsTransient(uri, content, target, candidateBinaryNames);
   }
 
   CompletableFuture<List<CallHierarchyOutgoingCall>> outgoingCallsFuture(
@@ -786,6 +802,7 @@ final class WorkspaceSession {
       progress.begin(progressTitle, 1);
       final OpenDocument declaringDoc = docs.get(data.routingUri());
       if (declaringDoc != null) {
+        touchAnalysisCache(declaringDoc.uri());
         return worker
             .searchIncomingCalls(
                 declaringDoc.uri(),
@@ -853,6 +870,7 @@ final class WorkspaceSession {
             .map(
                 doc -> {
                   cancelChecker.checkCanceled();
+                  touchAnalysisCache(doc.uri());
                   return worker
                       .searchIncomingCalls(
                           doc.uri(), doc.content(), doc.version(), target, cancelChecker)
@@ -887,7 +905,12 @@ final class WorkspaceSession {
             (worker, doc) -> {
               final var request =
                   new SourceFeatureRequest(
-                      doc.uri(), doc.content(), pos, workspace.allSourceRoots(), manifest);
+                      doc.uri(),
+                      doc.content(),
+                      doc.version(),
+                      pos,
+                      workspace.allSourceRoots(),
+                      manifest);
               return worker.prepareCallHierarchy(request);
             })
         .thenApply(
@@ -910,7 +933,12 @@ final class WorkspaceSession {
             (worker, doc) -> {
               final var request =
                   new SourceFeatureRequest(
-                      doc.uri(), doc.content(), pos, workspace.allSourceRoots(), manifest);
+                      doc.uri(),
+                      doc.content(),
+                      doc.version(),
+                      pos,
+                      workspace.allSourceRoots(),
+                      manifest);
               return worker.prepareTypeHierarchy(request, indexSnapshot);
             })
         .thenApply(
@@ -1056,7 +1084,7 @@ final class WorkspaceSession {
         null,
         (worker, doc) ->
             worker
-                .semanticTokens(uri, doc.version())
+                .semanticTokens(uri, doc.content(), doc.version())
                 .thenApply(WorkspaceSession::encodeTokensOrNull)
                 .exceptionally(
                     ex -> logAndReturn(ex, "[semanticTokens] failed for %s".formatted(uri), null)));
@@ -1337,6 +1365,7 @@ final class WorkspaceSession {
       final OpenDocument snapshot,
       final CompileMode mode,
       final AfterCompile afterCompile) {
+    touchAnalysisCache(snapshot.uri());
     final var request =
         new CompileRequest(
             snapshot.uri(), snapshot.content(), snapshot.version(), snapshot.generation(), mode);
@@ -1391,13 +1420,30 @@ final class WorkspaceSession {
     return routeFeature(uri, worker -> op.apply(worker, doc), fallback);
   }
 
+  private void touchAnalysisCache(final String uri) {
+    analysisLru
+        .touch(uri)
+        .ifPresent(
+            evictedUri -> {
+              LOG.fine(
+                  () -> "[evict] %s selected open=%d".formatted(evictedUri, analysisLru.size()));
+              workspace.dropFromAllCaches(evictedUri);
+            });
+  }
+
   private <T> CompletableFuture<T> routeFeature(
       final String uri,
       final Function<CompilationWorker, CompletableFuture<T>> operation,
       final T missingFallback) {
     return switch (routeCompiler(uri)) {
-      case CompilerRoute.Module module -> operation.apply(module.worker());
-      case CompilerRoute.External external -> operation.apply(external.worker());
+      case CompilerRoute.Module module -> {
+        touchAnalysisCache(uri);
+        yield operation.apply(module.worker());
+      }
+      case CompilerRoute.External external -> {
+        touchAnalysisCache(uri);
+        yield operation.apply(external.worker());
+      }
       case CompilerRoute.Missing ignored -> CompletableFuture.completedFuture(missingFallback);
     };
   }

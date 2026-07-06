@@ -53,7 +53,12 @@ final class ClassFileFixture implements AutoCloseable {
     final var pos = SourceLocator.offsetToPosition(source, markerOffset);
     final var request =
         new SourceFeatureRequest(
-            TempSourceCompiler.TEST_URI, source, pos, List.of(srcDir), WorkspaceManifest.empty());
+            TempSourceCompiler.TEST_URI,
+            source,
+            0,
+            pos,
+            List.of(srcDir),
+            WorkspaceManifest.empty());
     return session.signatureHelp(request);
   }
 

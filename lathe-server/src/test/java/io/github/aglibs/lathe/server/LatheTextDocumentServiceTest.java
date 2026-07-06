@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.Mockito.after;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
@@ -29,7 +28,6 @@ import org.eclipse.lsp4j.DidOpenTextDocumentParams;
 import org.eclipse.lsp4j.DocumentSymbol;
 import org.eclipse.lsp4j.HoverParams;
 import org.eclipse.lsp4j.Location;
-import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.ProgressParams;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
@@ -106,32 +104,6 @@ class LatheTextDocumentServiceTest {
     final var captor = ArgumentCaptor.forClass(PublishDiagnosticsParams.class);
     verify(client, timeout(DEBOUNCE_MS * 3)).publishDiagnostics(captor.capture());
     assertThat(captor.getValue().getUri()).isEqualTo(URI);
-  }
-
-  @Test
-  void didOpen_pastOpenFileThreshold_warnsOnce() {
-    for (int i = 0; i <= 150; i++) {
-      service.didOpen(
-          new DidOpenTextDocumentParams(
-              new TextDocumentItem("file:///w/F" + i + ".java", "java", 1, "class F" + i + " {}")));
-    }
-
-    verify(client, timeout(2000).times(1))
-        .showMessage(
-            argThat(
-                m -> m.getType() == MessageType.Warning && m.getMessage().contains("files open")));
-  }
-
-  @Test
-  void didOpen_belowOpenFileThreshold_doesNotWarn() {
-    for (int i = 0; i < 3; i++) {
-      service.didOpen(
-          new DidOpenTextDocumentParams(
-              new TextDocumentItem("file:///w/F" + i + ".java", "java", 1, "class F" + i + " {}")));
-    }
-
-    verify(client, after(300).never())
-        .showMessage(argThat(m -> m.getMessage().contains("files open")));
   }
 
   @Test

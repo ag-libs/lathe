@@ -44,6 +44,7 @@ class MethodImplementationTest {
               new SourceFeatureRequest(
                   TempSourceCompiler.TEST_URI,
                   serviceContent,
+                  0,
                   new Position(0, 27),
                   List.of(tempDir),
                   WorkspaceManifest.empty()));
@@ -80,6 +81,7 @@ class MethodImplementationTest {
               new SourceFeatureRequest(
                   TempSourceCompiler.TEST_URI,
                   serviceContent,
+                  0,
                   new Position(0, 27),
                   List.of(tempDir),
                   WorkspaceManifest.empty()));
@@ -107,6 +109,7 @@ class MethodImplementationTest {
           new SourceFeatureRequest(
               TempSourceCompiler.TEST_URI,
               content,
+              0,
               new Position(9999, 0),
               List.of(tempDir),
               WorkspaceManifest.empty());
@@ -131,6 +134,31 @@ class MethodImplementationTest {
               session.methodImplementations(
                   TempSourceCompiler.TEST_URI, "class Service {}", 1, target, Set.of("Service")))
           .isEmpty();
+    }
+  }
+
+  @Test
+  void methodImplementationsTransient_candidateFile_doesNotCacheAnalysis() {
+    final String uri = TempSourceCompiler.TEST_URI;
+    final String content = "class Impl { void run() {} }";
+    final var target =
+        new ReferenceTarget(
+            javax.lang.model.element.ElementKind.METHOD,
+            "Service",
+            "run",
+            "()V",
+            ReferenceTarget.SearchScope.REACTOR_MODULES,
+            List.of(),
+            false);
+    final var compiler = new CountingJavaSourceCompiler();
+
+    try (var session = new SourceAnalysisSession(compiler)) {
+      assertThat(session.methodImplementationsTransient(uri, content, target, Set.of("Impl")))
+          .isEmpty();
+      assertThat(session.methodImplementations(uri, content, 1, target, Set.of("Impl"))).isEmpty();
+
+      assertThat(compiler.count(CompileMode.FAST)).isEqualTo(1);
+      assertThat(compiler.count(CompileMode.OPEN)).isEqualTo(1);
     }
   }
 }

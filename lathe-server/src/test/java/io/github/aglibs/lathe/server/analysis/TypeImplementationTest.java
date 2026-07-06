@@ -38,7 +38,7 @@ class TypeImplementationTest {
       session.compile(uri, content, 1, CompileMode.OPEN);
 
       final List<Location> locations =
-          session.typeImplementations(request(uri, content, new Position(0, 12)), index);
+          session.typeImplementations(request(content, new Position(0, 12)), index);
 
       assertThat(locations)
           .extracting(location -> Path.of(location.getUri()).getFileName().toString())
@@ -56,16 +56,15 @@ class TypeImplementationTest {
 
       final List<Location> locations =
           session.typeImplementations(
-              request(uri, content, new Position(0, 22)), WorkspaceTypeIndex.empty());
+              request(content, new Position(0, 22)), WorkspaceTypeIndex.empty());
 
       assertThat(locations).isEmpty();
     }
   }
 
-  private SourceFeatureRequest request(
-      final String uri, final String content, final Position position) {
+  private SourceFeatureRequest request(final String content, final Position position) {
     return new SourceFeatureRequest(
-        uri, content, position, List.of(sourceRoot), WorkspaceManifest.empty());
+        "file:///Test.java", content, 0, position, List.of(sourceRoot), WorkspaceManifest.empty());
   }
 
   private void write(final String name, final String content) throws IOException {

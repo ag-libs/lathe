@@ -73,7 +73,7 @@ class SourceAnalysisSessionTest {
   }
 
   @Test
-  void hover_staleCache_returnsNull() {
+  void hover_staleCache_recompilesAndReturnsHover() {
     final String uri = TempSourceCompiler.TEST_URI;
     final String cachedContent = "class Test { String value; }";
     final String currentContent = "class Test { Integer value; }";
@@ -84,8 +84,38 @@ class SourceAnalysisSessionTest {
     try (var ctx = new SourceAnalysisSession(new TempSourceCompiler())) {
       ctx.compile(uri, cachedContent, 1, CompileMode.OPEN);
 
-      assertThat(ctx.hover(new SourceFeatureRequest(uri, currentContent, pos, List.of(), manifest)))
-          .isNull();
+      assertThat(
+              ctx.hover(new SourceFeatureRequest(uri, currentContent, 0, pos, List.of(), manifest)))
+          .isNotNull();
+    }
+  }
+
+  @Test
+  void semanticTokens_afterEviction_recompilesAndReturnsTokens() {
+    final String uri = TempSourceCompiler.TEST_URI;
+    final String content = "class Test { String value; }";
+    final var compiler = new CountingJavaSourceCompiler();
+
+    try (var ctx = new SourceAnalysisSession(compiler)) {
+      ctx.compile(uri, content, 1, CompileMode.OPEN);
+      ctx.dropFromCache(uri);
+
+      assertThat(ctx.semanticTokens(uri, content, 1)).isNotNull();
+      assertThat(compiler.count(CompileMode.OPEN)).isEqualTo(2);
+    }
+  }
+
+  @Test
+  void semanticTokens_versionMismatch_recompiles() {
+    final String uri = TempSourceCompiler.TEST_URI;
+    final String content = "class Test { String value; }";
+    final var compiler = new CountingJavaSourceCompiler();
+
+    try (var ctx = new SourceAnalysisSession(compiler)) {
+      ctx.compile(uri, content, 1, CompileMode.OPEN);
+
+      assertThat(ctx.semanticTokens(uri, content, 2)).isNotNull();
+      assertThat(compiler.count(CompileMode.OPEN)).isEqualTo(2);
     }
   }
 

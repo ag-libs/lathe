@@ -561,7 +561,8 @@ against open files, hover, semantic tokens — builds a fresh `JavacTask` from t
 When an attributed result is cached for later hover, definition, or semantic-token requests,
 the cached `AttributedFileAnalysis` retains the javac task-backed state needed by `Trees` and the attributed
 `CompilationUnitTree`.
-Those references are dropped when the cached context is replaced, invalidated, or dropped on `didClose`.
+Those references are dropped when the cached context is replaced, invalidated, evicted by the analysis LRU,
+dropped on `didClose`, or cleared during registry reload and server shutdown.
 
 The only durable per-module-source state is:
 
@@ -576,7 +577,8 @@ The only durable per-module-source state is:
   (`CLASS_OUTPUT` → `.lathe/<rel>/classes`, `SOURCE_OUTPUT` → `.lathe/<rel>/generated-sources`),
   and holds no attributed javac task state.
   `ModuleSourceCompiler` is closed when its `SourceAnalysisSession` closes during workspace reload or server shutdown.
-  There is no LRU — workers are created on demand and live for the duration of the current `WorkspaceModuleRegistry` snapshot.
+  There is no file-manager LRU — workers are created on demand and live for the duration of the current
+  `WorkspaceModuleRegistry` snapshot.
 
 _The temp-dir approach is straightforward to implement and test.
 An in-memory `JavaFileObject` implementation could replace it later to avoid the disk round-trip._
@@ -584,9 +586,11 @@ An in-memory `JavaFileObject` implementation could replace it later to avoid the
   Holds the post-attribution `AttributedFileAnalysis` from the most recent pass for each open file.
   The analysis includes `Trees`, `CompilationUnitTree`, and pre-computed semantic tokens.
   Because `Trees` is backed by javac task state, the analysis intentionally keeps that state reachable while cached.
-  At most one entry per currently-open file.
+  At most one entry per currently-open file, and the total retained interactive analyses are bounded by the
+  event-loop-owned analysis LRU, currently capped at 100 open-document analyses.
   The previous context is dropped when replaced by a new compile result,
   invalidated on next `didChange` for that file,
+  evicted by the analysis LRU,
   dropped on `didClose`,
   and cleared during registry reload or server shutdown.
   Used by hover, definition, and semantic-tokens to avoid re-running javac for read-only queries.
@@ -729,7 +733,7 @@ Target: ~1s p95.
 Delete the file from the module's temp directory.
 Drop and close its result cache entry.
 Publish empty diagnostics array to clear client display.
-Cached file managers remain bounded by the LRU and are closed on eviction or registry reload.
+Remove the file from the analysis LRU.
 
 ### File deletion
 
@@ -762,7 +766,7 @@ while the shim is mid-copy for a dependency during a parallel `mvnd -T N` build.
 **Resource cleanup.** `AttributedFileAnalysis` retains any javac task-backed state needed by cached `Trees`.
 The public `JavacTask` API has no supported close method,
 so cleanup means dropping cached context references when replaced,
-invalidated, dropped on `didClose`, or cleared during registry reload and server shutdown.
+invalidated, evicted by the analysis LRU, dropped on `didClose`, or cleared during registry reload and server shutdown.
 The closeable javac resource Lathe owns is the `StandardJavaFileManager` inside each `JavaSourceCompiler`;
 it is flushed after full passes and closed on workspace reload and server shutdown.
 

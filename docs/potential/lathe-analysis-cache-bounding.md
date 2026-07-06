@@ -1,13 +1,12 @@
 # Lathe — Bounding the Source-Analysis Cache
 
-**Status: deferred (potential); approach decided.**
-The unbounded-retention *issue* is accepted (EG-040 in [gaps.md](../gaps/gaps.md)) and mitigated by the shipped open-file-count warning;
-the hard cap remains deferred until real users hit OOM.
-This revision replaces the earlier shared-`AnalysisCache` design
+**Status: implemented.**
+The unbounded-retention *issue* is accepted as EG-040 in [gaps.md](../gaps/gaps.md).
+This design replaces the earlier shared-`AnalysisCache` design
 (see [Rejected Alternatives](#non-goals--rejected-alternatives))
 with an event-loop LRU that delegates eviction to the owning module worker,
 after review showed the shared cache fought the server's thread-confinement model.
-Step 0 below fixes a live retention leak and should ship independently of the deferral.
+The disk-candidate retention leak described in Step 0 shipped as part of the same implementation.
 
 ## Goal
 
@@ -164,28 +163,26 @@ so the user's hot buffers may be evicted and cost one recompile on next use.
 (The superseded shared-cache design had the identical property —
 its `getOrRecompute` promoted sweep entries in the same global LRU.)
 
-## Cap value: 64
+## Cap value: 100
 
-A single global `MAX_CACHED_ANALYSES = 64` on the `AnalysisLru`.
+A single global `MAX_CACHED_ANALYSES = 100` on the `AnalysisLru`.
 Sized against the binding constraint —
-the ~8 GB ergonomic heap on a 32 GB-RAM workstation (≈25% of RAM) —
-and ~31 MB per entry (realistic open + member-access completion):
+an 8 GB-RAM workstation running a Dropwizard-like project with import-heavy test files —
+using live probes against Helidon and Dropwizard:
 
-| Cap | Budget @ ~31 MB | Share of 8 GB heap | Share of 16 GB heap |
+| Probe | Heap used | RSS | Outcome |
 |---|---|---|---|
-| **64** | ~2.0 GB | ~25 % | ~12 % |
-| 100 | ~3.1 GB | ~39 % | ~19 % |
-| 128 | ~4.0 GB | ~50 % | ~25 % |
+| Helidon, 300 sorted Java files, after 128 opens | ~652 MB | ~1.1 GB | stable |
+| Dropwizard, 300 import-heavy test files, after 64 opens | ~1.1 GB | ~2.4 GB | stable |
+| Dropwizard, 300 import-heavy test files, after 100 opens | ~1.8 GB | ~2.7 GB | stable |
+| Dropwizard, 300 import-heavy test files, after 128 opens | ~2.3 GB | ~3.8 GB | stable |
 
-64 leaves ~6 GB of the 8 GB heap for the type/candidate indexes, per-module file managers,
-and the transient spikes of reference searches —
-the allocations that actually pushed the crash over the ceiling.
-It comfortably covers a realistic working set (developers juggle ~10–40 buffers),
-and recompile-on-miss makes the tail beyond 64 graceful rather than a cliff.
-Being count-based, it also absorbs the occasional heavier entry
-(the package/qualified-name completion anomaly, a separate follow-up) without blowing the budget.
+100 is the default because the Dropwizard test-file probe showed a clear increase between
+100 and 128 in the import-heavy case.
+It gives a larger hot set than 64 without spending the extra RSS observed at 128,
+and still keeps the server comfortably below the 300-file crash shape.
+Recompile-on-miss makes the tail beyond 100 graceful rather than a cliff.
 
-Bump to 100 only if the target is reliably a ≥16 GB heap (≥64 GB RAM).
 Heap-scaling the cap (`maxMemory × fraction / avgEntrySize`) is deliberately avoided for KISS —
 it adds complexity and leans on a per-entry-size estimate that varies.
 Keep it a single named constant so it is trivial to tune or make configurable later.
@@ -199,7 +196,7 @@ Much shorter than in the superseded design, because nothing is shared:
   serialized with every read and write of that entry.
 - The cap is **soft**: drops are asynchronous, so retention can transiently exceed the cap
   by the per-worker queue lag (see the sweep analysis above) — a few entries, ~31 MB each,
-  against a ~2 GB budget with ~6 GB headroom.
+  against a bounded interactive-analysis budget.
 - Every race degrades to one extra recompile, never a wrong or missing answer (given Phase A):
   a drop landing after a fresh re-cache discards a fresh entry;
   a touch arriving after the eviction decision drops a recently-used entry.
@@ -275,7 +272,7 @@ Much shorter than in the superseded design, because nothing is shared:
   or after a version race) and carries the only signature ripple (`version`, `content`).
 - Phase B behavior change: switching to an open file that fell out of the LRU costs one
   recompile (~250 ms, on the module thread), then it is hot again.
-  At cap 64, normal sessions (≤ cap hot files) never evict a truly-hot file.
+  At cap 100, normal sessions (≤ cap hot files) never evict a truly-hot file.
 - No public API or wire-format change; internal to `lathe-server`.
 - Observability: `FINE` log on eviction at the event loop (`[evict] uri open=N`)
   and on a recompute triggered by a miss in the session,

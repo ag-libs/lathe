@@ -207,6 +207,15 @@ public final class CompilationWorker {
         ctx -> ctx.methodImplementations(uri, content, version, target, candidateBinaryNames));
   }
 
+  public CompletableFuture<List<Location>> methodImplementationsTransient(
+      final String uri,
+      final String content,
+      final ReferenceTarget target,
+      final Set<String> candidateBinaryNames) {
+    return submit(
+        ctx -> ctx.methodImplementationsTransient(uri, content, target, candidateBinaryNames));
+  }
+
   public CompletableFuture<Optional<Location>> definition(final SourceFeatureRequest request) {
     return submit(ctx -> ctx.definition(request));
   }
@@ -290,8 +299,8 @@ public final class CompilationWorker {
   }
 
   public CompletableFuture<List<SemanticToken>> semanticTokens(
-      final String uri, final int expectedVersion) {
-    return submit(ctx -> ctx.semanticTokens(uri, expectedVersion));
+      final String uri, final String content, final int expectedVersion) {
+    return submit(ctx -> ctx.semanticTokens(uri, content, expectedVersion));
   }
 
   public void dropFromCache(final String uri) {

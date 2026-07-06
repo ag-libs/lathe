@@ -7,7 +7,12 @@ import java.util.List;
 import org.eclipse.lsp4j.Position;
 
 public record SourceFeatureRequest(
-    String uri, String content, Position pos, List<Path> sourceRoots, WorkspaceManifest manifest) {
+    String uri,
+    String content,
+    int version,
+    Position pos,
+    List<Path> sourceRoots,
+    WorkspaceManifest manifest) {
 
   public SourceFeatureRequest {
     ValidCheck.check()

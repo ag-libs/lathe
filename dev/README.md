@@ -74,14 +74,13 @@ No probes are hard-coded.  The file and the questions are entirely up to you.
 
 ### Open-file limit
 
-The server retains an attributed analysis (tens of MB) for every open file and holds it until
-the file is closed, so a large open set pressures the heap.  Past a hardcoded threshold of
-**150 open files** the server emits a `window/showMessage` warning ("Lathe has N files open…").
+The server retains attributed javac analysis for recently used open files.
+That cache is bounded by an LRU with a default cap of **100 open-document analyses**.
+Evicted documents stay open; the next feature request recompiles that file and re-enters it into the LRU.
 
-Scripted or agent-driven exploration **must respect this cap**: keep the open set under 150.
-When probing many files in one session, close each file before opening the next (open one, probe,
-close) rather than accumulating open documents.  Treat the warning message, if it appears, as a
-signal to stop opening and start closing.
+Scripted or agent-driven exploration should still avoid unbounded open sets on memory-constrained machines.
+When the goal does not require accumulated open documents, prefer open/probe/close loops.
+When stress-testing eviction, monitor heap/RSS and server logs with `LATHE_DEBUG=1`.
 
 ### Usage
 

@@ -398,8 +398,8 @@ printf 'diagnostics\n' | python3 dev/explore.py /path/to/workspace/.../SomeFile.
 
 ## EG-040 — Attributed-analysis retention is unbounded; heavy sessions can OOM and kill the server
 
-**Status: done — Target: M2.** Mitigated by an advisory open-file-count warning; a hard memory cap
-remains deferred (`potential/lathe-analysis-cache-bounding.md`) for if real users hit OOM.
+**Status: done — Target: M2.** Fixed with an event-loop LRU that bounds interactive attributed-analysis
+retention at 100 open-document analyses and delegates eviction to the owning module worker.
 
 ### Observed behaviour
 
@@ -419,26 +419,29 @@ One javac `Context` retained per open file, unshareable (javac symbols are per-`
 is bounded by open-document count, not by any cap. See the analysis in the deferred design
 [lathe-analysis-cache-bounding.md](../potential/lathe-analysis-cache-bounding.md).
 
-### Resolution (mitigation shipped)
+### Resolution
 
-A hard bound (an evicting analysis cache) was **deferred to potential** — eviction pulls in
-recompile-on-miss and request-plumbing changes that are heavy for a risk that only appeared under
-abusive load. The deferred design has since been revised: an event-loop LRU that delegates eviction
-to the owning module worker, replacing the original shared-cache-with-global-lock shape.
-The shipped mitigation is intentionally minimal:
-`WorkspaceSession.onOpen` warns (once, edge-triggered, re-armed on close) via `window/showMessage`
-when the open-file count exceeds a hardcoded `OPEN_FILE_WARN_THRESHOLD` (150), advising the user to
-close files. It is advisory only — it does not prevent OOM; raising the JVM heap remains the ceiling
+`WorkspaceSession` owns an event-loop-confined `AnalysisLru` over open-document URIs.
+On overflow, the event loop removes the eldest URI from the LRU and delegates the actual analysis drop through
+`WorkspaceModuleRegistry.dropFromAllCaches(uri)`, so javac-backed objects remain confined to module workers.
+Cache-only readers now recompile on miss:
+`SourceAnalysisSession.resolve()` uses `ensureAttributedAnalysis(...)`, and semantic tokens receive current content
+and rebuild when the cached version is missing or stale.
+
+The disk-candidate implementation-search leak is also fixed:
+closed candidate files use a transient FAST compile path and do not populate the interactive analysis cache.
+The cap was validated with 300-file probes against Helidon and import-heavy Dropwizard test classes;
+Dropwizard stayed stable with semantic tokens, hover, and definition requests after eviction.
+Raising the JVM heap can still provide more headroom for transient compile/search spikes
 (the M3 `LATHE_JVM_OPTS` knob, [lathe-launcher-jvm-opts.md](../planned/lathe-launcher-jvm-opts.md),
 is the planned first-class way; `JAVA_TOOL_OPTIONS=-Xmx…` works today).
 
-The hard cap stays available in [lathe-analysis-cache-bounding.md](../potential/lathe-analysis-cache-bounding.md)
-to revisit if scripted/AI-agent bulk-open sessions make the warning insufficient.
-
 ### Regression targets
 
-- `LatheTextDocumentServiceTest.didOpen_pastOpenFileThreshold_warnsOnce`
-- `LatheTextDocumentServiceTest.didOpen_belowOpenFileThreshold_doesNotWarn`
+- `AnalysisLruTest.touch_beyondCap_returnsEldest`
+- `SourceAnalysisSessionTest.semanticTokens_afterEviction_recompilesAndReturnsTokens`
+- `SourceAnalysisSessionTest.semanticTokens_versionMismatch_recompiles`
+- `MethodImplementationTest.methodImplementationsTransient_candidateFile_doesNotCacheAnalysis`
 
 ---
 

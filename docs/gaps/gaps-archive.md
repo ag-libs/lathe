@@ -6098,4 +6098,3 @@ Verified live after the fix: `@Produces(MediaType.<caret>)` returns the 34 `Medi
 - `CompletionAnnotationTest.annotationValue_memberAccessOnNonEnumType_offersConstants`
   (`@SuppressWarnings(java.io.File.<caret>separator)` — JDK-only, reproduces the crash without a
   third-party dependency).
-

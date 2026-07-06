@@ -59,7 +59,7 @@ class ExternalCompilerTest {
       final var definition =
           ctx.definition(
               new SourceFeatureRequest(
-                  usesSource.toUri().toString(), usesContent, helperPos, List.of(), manifest));
+                  usesSource.toUri().toString(), usesContent, 0, helperPos, List.of(), manifest));
 
       assertThat(diagnostics).isEmpty();
       assertThat(definition).isPresent();
@@ -100,11 +100,11 @@ class ExternalCompilerTest {
       // Hover over Helper: JavadocLocator finds helperSource via manifest.externalSourceDirs()
       // and calls parser.parse(helperSource). In the broken state this resets the compilation
       // FM's CLASS_PATH, causing the subsequent definition lookup to return empty.
-      ctx.hover(new SourceFeatureRequest(usesUri, usesContent, helperPos, List.of(), manifest));
+      ctx.hover(new SourceFeatureRequest(usesUri, usesContent, 0, helperPos, List.of(), manifest));
 
       final var definition =
           ctx.definition(
-              new SourceFeatureRequest(usesUri, usesContent, helperPos, List.of(), manifest));
+              new SourceFeatureRequest(usesUri, usesContent, 0, helperPos, List.of(), manifest));
 
       assertThat(definition).isPresent();
       assertThat(definition.get().getUri()).isEqualTo(helperSource.toUri().toString());

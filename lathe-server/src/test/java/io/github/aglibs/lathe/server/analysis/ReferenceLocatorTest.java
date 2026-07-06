@@ -78,6 +78,7 @@ class ReferenceLocatorTest {
     return new SourceFeatureRequest(
         TempSourceCompiler.TEST_URI,
         ReferenceLocatorTest.METHOD_SOURCE,
+        0,
         posOf(ReferenceLocatorTest.METHOD_SOURCE, "run();", "run"),
         List.of(),
         WorkspaceManifest.empty());
@@ -673,19 +674,23 @@ class ReferenceLocatorTest {
   void searchReferencesTransient_repeatedScans_returnMatchesWithoutCaching() {
     final var analysis = compile(TempSourceCompiler.TEST_URI, METHOD_SOURCE);
     final var target = targetAt(analysis, "void run()", "run");
-    final var request = requestAt();
+    final var countingCompiler = new CountingJavaSourceCompiler();
 
-    try (final var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+    try (final var session = new SourceAnalysisSession(countingCompiler)) {
       final List<ReferenceMatch> first =
           session.searchReferencesTransient(
               TempSourceCompiler.TEST_URI, METHOD_SOURCE, target, false);
       final List<ReferenceMatch> second =
           session.searchReferencesTransient(
               TempSourceCompiler.TEST_URI, METHOD_SOURCE, target, false);
+      final List<ReferenceMatch> cached =
+          session.searchReferences(TempSourceCompiler.TEST_URI, METHOD_SOURCE, 0, target, false);
 
       assertThat(first).hasSize(1);
       assertThat(second).isEqualTo(first);
-      assertThat(session.resolveTarget(request)).isNull();
+      assertThat(cached).isEqualTo(first);
+      assertThat(countingCompiler.count(CompileMode.FAST)).isEqualTo(2);
+      assertThat(countingCompiler.count(CompileMode.OPEN)).isEqualTo(1);
     }
   }
 
@@ -781,6 +786,7 @@ class ReferenceLocatorTest {
           new SourceFeatureRequest(
               TempSourceCompiler.TEST_URI,
               source,
+              0,
               new Position(9999, 0),
               List.of(),
               WorkspaceManifest.empty());

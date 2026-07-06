@@ -127,6 +127,7 @@ class HoverTest extends SampleFixture {
           new SourceFeatureRequest(
               TempSourceCompiler.TEST_URI,
               source,
+              0,
               pos,
               List.of(fixture.srcDir()),
               WorkspaceManifest.empty());
