@@ -364,7 +364,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
           ReferenceLocator.references(analysis, target, uri, includeDeclaration);
       LOG.fine(
           () ->
-              "[references] uri=%s element=%s hits=%d"
+              "[references:file] uri=%s element=%s hits=%d"
                   .formatted(uri, target.simpleName(), results.size()));
       return results;
     } catch (final IOException e) {

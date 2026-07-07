@@ -347,6 +347,7 @@ final class WorkspaceSession {
 
     final ModuleSourceConfig searchConfig = declaringConfigFor(target, cursorConfig);
     final List<ModuleSourceConfig> configs = planSearchScope(target, searchConfig);
+    final var planningTimer = Stopwatch.start();
     final List<ModuleSearchInputs> searchInputs =
         configs.stream()
             .map(
@@ -354,6 +355,32 @@ final class WorkspaceSession {
                     new ModuleSearchInputs(
                         workspace.workerFor(config), planSearchInputs(config, target, packageRel)))
             .toList();
+    final int openCount =
+        searchInputs.stream()
+            .map(ModuleSearchInputs::inputs)
+            .mapToInt(inputs -> inputs.openDocuments().size())
+            .sum();
+    final int diskCount =
+        searchInputs.stream()
+            .map(ModuleSearchInputs::inputs)
+            .mapToInt(inputs -> inputs.diskCandidates().size())
+            .sum();
+    final int maxModuleCandidates =
+        searchInputs.stream()
+            .map(ModuleSearchInputs::inputs)
+            .mapToInt(WorkspaceSearchInputs::size)
+            .max()
+            .orElse(0);
+    LOG.fine(
+        () ->
+            "[references:plan] %s planned modules=%d open=%d disk=%d maxModule=%d ready %dms"
+                .formatted(
+                    openFile.uri(),
+                    searchInputs.size(),
+                    openCount,
+                    diskCount,
+                    maxModuleCandidates,
+                    planningTimer.elapsedMs()));
     progress.begin(
         progressTitle,
         searchInputs.stream()
