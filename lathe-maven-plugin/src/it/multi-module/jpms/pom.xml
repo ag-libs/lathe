@@ -49,7 +49,6 @@
         <version>@surefire.version@</version>
         <configuration>
           <argLine>-Dlathe.fixture.argLine=from-argline</argLine>
-          <skipTests>true</skipTests>
           <systemPropertyVariables>
             <lathe.fixture.systemProperty>from-surefire</lathe.fixture.systemProperty>
           </systemPropertyVariables>

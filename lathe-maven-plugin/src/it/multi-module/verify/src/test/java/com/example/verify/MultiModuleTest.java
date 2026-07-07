@@ -157,7 +157,7 @@ class MultiModuleTest {
   void sync_jpmsSurefireConfig_declaresLaunchMarkers() throws IOException {
     final var content = read(ROOT.resolve("jpms/pom.xml"));
     assertThat(content).contains("maven-surefire-plugin");
-    assertThat(content).contains("3.5.5");
+    assertThat(content).contains("3.5.4");
     assertThat(content).contains("lathe.fixture.argLine");
     assertThat(content).contains("lathe.fixture.systemProperty");
   }

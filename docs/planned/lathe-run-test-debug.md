@@ -802,7 +802,7 @@ Each slice is a reviewable commit.
   `main`, provided-exclusion, reactor rewrite.
 - **`verify`** — reads `.lathe/` and spawns the replay via `ProcessBuilder`; asserts capture fidelity and
   green replay (test + main).
-- **Harness requirement:** the reactor must pin a modern Surefire (§14).
+- **Harness requirement:** the reactor must pin a modern Surefire (§14), currently 3.5.4.
 - **Transient run/test/debug spike:** `MultiModuleTest` currently asserts the JPMS test params and
   `.lathe/` bytecode mirror contain the replay-critical shape (`--patch-module`, `--add-reads`,
   `ALL-UNNAMED`, main/test bytecode).
@@ -820,25 +820,33 @@ Each slice is a reviewable commit.
   `-D`/`-X`, `@argfile`-expanded; `java.class.path` yields the class path.
 - **`<systemPropertyVariables>` is not visible** to `getInputArguments()` (booter properties file) →
   capture gap (§3.1).
-- **Open — must fix before slice 5:** Surefire 3.5.5 + JPMS module-path test launch exit-handshake
-  crash (`Tests run: 0`, "VM terminated without properly saying goodbye", `Process Exit Code: 0`).
-  Reproduces on both JDK 26 and JDK 25 (Corretto), so it is not JDK-26-specific; likely tied to
-  Surefire 3.5.5 + modular fork + JUnit Platform/Jupiter's fork protocol. The forked JVM's
-  `surefire-reports/*-jvmRun1.dump` shows the `main` thread parked 30s in
-  `ForkedBooter.acknowledgedExit` → `Semaphore.tryAcquire`, i.e. it never receives Surefire's
-  shutdown acknowledgement. Root-cause before relying on replay. Reproduce by removing
-  `<skipTests>true</skipTests>` from `lathe-maven-plugin/src/it/multi-module/jpms/pom.xml` and
-  running `mvn verify -pl lathe-maven-plugin -Dinvoker.test=multi-module`. Current workaround:
-  the `jpms` fixture keeps JPMS test *execution* skipped (`<skipTests>true</skipTests>`) while
-  still compiling JPMS tests and copying test resources, so `.lathe/` output coverage remains
-  useful without hitting the hang.
+- **Resolved — Surefire 3.5.5 forked-VM exit-handshake regression (not JPMS-specific).**
+  Surefire 3.5.5 hangs on **any** forked test run (`Tests run: 0`, "VM terminated without properly
+  saying goodbye", `Process Exit Code: 0`) whenever the enclosing `mvn` process is a
+  freshly-launched, standalone JVM rather than a long-running `mvnd` daemon. Bisected with a
+  throwaway single-module project (no reactor, no JPMS, no Lathe code at all): Surefire 3.1.0
+  through 3.5.4 all pass; 3.5.5 fails 100% of the time under a direct `mvn` invocation while
+  passing consistently through the `mvnd` client. The forked child always parks in
+  `ForkedBooter.acknowledgedExit` → `Semaphore.tryAcquire` (confirmed via
+  `surefire-reports/*-jvmRun1.dump`), meaning it sent its final "bye" event but the **parent**
+  Maven process never sent back the acknowledgement. A parent-side `jstack` while hung showed the
+  fork's event-consumer thread alive but the acknowledgement never arriving — consistent with
+  `maven-surefire-common`'s `ThreadedStreamConsumer.Pumper` (new in 3.5.5, diffed against 3.5.4)
+  now calling `MDC.setContextMap(...)`/`MDC.getCopyOfContextMap()` at the top of the event-pump
+  thread's `run()`, ahead of the loop that would otherwise deliver that final event; this remains
+  a lead, not a fully proven cause. Ruled out: JDK 25 vs 26, JPMS/module-path vs plain classpath,
+  `lathe-compiler`'s own logic (no-op passthrough with no `.lathe/` workspace still hung), TTY vs
+  pipe, Surefire's legacy-pipe vs TCP fork channel (`<forkNode>`), and stale `mvnd` daemons.
+  **Fix:** pinned `surefire.version` back to `3.5.4` in the root `pom.xml` (see the comment there).
+  The `jpms` fixture's `<skipTests>` workaround has been removed — JPMS tests execute normally
+  again under 3.5.4.
 
 ---
 
 ## 15. Open questions
 
-1. **Exit-handshake crash** — confirmed on JDK 26 and JDK 25, so not JDK-26-specific; harness,
-   Surefire 3.5.5, or the modular fork protocol? (blocks slices 4–5)
+1. ~~**Exit-handshake crash**~~ — resolved, see §14: Surefire 3.5.5 regression, pinned back to
+   3.5.4.
 2. **`systemPropertyVariables`** — record plugin-side and merge at replay (confirm mechanism).
 3. **`.lathe-run.json` schema** — exact field names and whether Neovim or the server creates the
    skeleton file.
