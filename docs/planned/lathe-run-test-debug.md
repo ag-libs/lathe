@@ -820,14 +820,25 @@ Each slice is a reviewable commit.
   `-D`/`-X`, `@argfile`-expanded; `java.class.path` yields the class path.
 - **`<systemPropertyVariables>` is not visible** to `getInputArguments()` (booter properties file) →
   capture gap (§3.1).
-- **Open — must fix before slice 5:** Surefire 3.5.5 + JDK 26 exit-handshake crash (`Tests run: 0`,
-  "VM terminated without properly saying goodbye"). Root-cause before relying on replay.
+- **Open — must fix before slice 5:** Surefire 3.5.5 + JPMS module-path test launch exit-handshake
+  crash (`Tests run: 0`, "VM terminated without properly saying goodbye", `Process Exit Code: 0`).
+  Reproduces on both JDK 26 and JDK 25 (Corretto), so it is not JDK-26-specific; likely tied to
+  Surefire 3.5.5 + modular fork + JUnit Platform/Jupiter's fork protocol. The forked JVM's
+  `surefire-reports/*-jvmRun1.dump` shows the `main` thread parked 30s in
+  `ForkedBooter.acknowledgedExit` → `Semaphore.tryAcquire`, i.e. it never receives Surefire's
+  shutdown acknowledgement. Root-cause before relying on replay. Reproduce by removing
+  `<skipTests>true</skipTests>` from `lathe-maven-plugin/src/it/multi-module/jpms/pom.xml` and
+  running `mvn verify -pl lathe-maven-plugin -Dinvoker.test=multi-module`. Current workaround:
+  the `jpms` fixture keeps JPMS test *execution* skipped (`<skipTests>true</skipTests>`) while
+  still compiling JPMS tests and copying test resources, so `.lathe/` output coverage remains
+  useful without hitting the hang.
 
 ---
 
 ## 15. Open questions
 
-1. **Exit-handshake crash** — harness, Surefire/JDK-26, or the modular fork? (blocks slices 4–5)
+1. **Exit-handshake crash** — confirmed on JDK 26 and JDK 25, so not JDK-26-specific; harness,
+   Surefire 3.5.5, or the modular fork protocol? (blocks slices 4–5)
 2. **`systemPropertyVariables`** — record plugin-side and merge at replay (confirm mechanism).
 3. **`.lathe-run.json` schema** — exact field names and whether Neovim or the server creates the
    skeleton file.

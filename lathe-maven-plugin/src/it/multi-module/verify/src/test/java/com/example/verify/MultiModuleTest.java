@@ -139,12 +139,28 @@ class MultiModuleTest {
   }
 
   @Test
+  void sync_appMainResources_written() {
+    assertThat(lathe("app/classes/com/example/app/app-resource.txt"))
+        .exists()
+        .hasContent("app-resource\n");
+  }
+
+  @Test
   void sync_appGeneratedSources_written() {
     assertThat(lathe("app/generated-sources/com/example/app/UserBuilder.java")).exists();
     assertThat(lathe("app/generated-sources/com/example/app/UserUpdater.java")).exists();
   }
 
   // --- jpms module: JPMS + test compilation ---
+
+  @Test
+  void sync_jpmsSurefireConfig_declaresLaunchMarkers() throws IOException {
+    final var content = read(ROOT.resolve("jpms/pom.xml"));
+    assertThat(content).contains("maven-surefire-plugin");
+    assertThat(content).contains("3.5.5");
+    assertThat(content).contains("lathe.fixture.argLine");
+    assertThat(content).contains("lathe.fixture.systemProperty");
+  }
 
   @Test
   void sync_jpmsModuleParams_written() throws IOException {
@@ -157,6 +173,11 @@ class MultiModuleTest {
   }
 
   @Test
+  void sync_jpmsMainBytecode_written() {
+    assertThat(lathe("jpms/classes/com/example/jpms/HelloMain.class")).exists();
+  }
+
+  @Test
   void sync_jpmsTestParams_written() throws IOException {
     final var params = lathe("jpms/lsp-params-test-classes.json");
     assertThat(params).exists();
@@ -165,8 +186,17 @@ class MultiModuleTest {
     assertThat(content).contains("src/test/java");
     assertThat(content).contains("validcheck");
     assertThat(content).contains("junit-jupiter-api");
+    assertThat(content).contains("junit-jupiter-params");
     assertThat(content).contains("patch-module");
     assertThat(content).contains("add-reads");
     assertThat(content).contains("ALL-UNNAMED");
+  }
+
+  @Test
+  void sync_jpmsTestBytecodeAndResources_written() {
+    assertThat(lathe("jpms/test-classes/com/example/jpms/HelloTest.class")).exists();
+    assertThat(lathe("jpms/test-classes/com/example/jpms/test-resource.txt"))
+        .exists()
+        .hasContent("jpms-test-resource\n");
   }
 }

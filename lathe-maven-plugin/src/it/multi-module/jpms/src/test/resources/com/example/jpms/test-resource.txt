@@ -1,0 +1,1 @@
+jpms-test-resource
