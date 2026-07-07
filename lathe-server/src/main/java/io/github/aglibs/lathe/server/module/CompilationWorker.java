@@ -10,6 +10,7 @@ import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
 import io.github.aglibs.lathe.server.analysis.SourceAnalysisSession;
 import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
+import io.github.aglibs.lathe.server.analysis.TransientSource;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
@@ -165,14 +166,15 @@ public final class CompilationWorker {
   }
 
   public CompletableFuture<List<ReferenceMatch>> searchReferencesTransient(
-      final String uri,
-      final String content,
+      final List<TransientSource> sources,
       final ReferenceTarget target,
       final boolean includeDeclaration,
+      final IntConsumer progressPerFile,
       final CancelChecker cancelChecker) {
     return submit(
         ctx ->
-            ctx.searchReferencesTransient(uri, content, target, includeDeclaration, cancelChecker),
+            ctx.searchReferencesTransient(
+                sources, target, includeDeclaration, progressPerFile, cancelChecker),
         cancelChecker);
   }
 

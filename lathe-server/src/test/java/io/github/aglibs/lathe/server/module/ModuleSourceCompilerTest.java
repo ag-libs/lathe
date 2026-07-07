@@ -2,11 +2,14 @@ package io.github.aglibs.lathe.server.module;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.sun.source.tree.ClassTree;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.server.TestCompiler;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.analysis.SourceAnalysisSession;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
+import io.github.aglibs.lathe.server.analysis.TransientAnalysis;
+import io.github.aglibs.lathe.server.analysis.TransientSource;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -150,6 +153,67 @@ class ModuleSourceCompilerTest {
 
       assertThat(result.diagnostics()).isEmpty();
     }
+  }
+
+  @Test
+  void analyzeBatch_multipleFiles_mapsEachAnalysisToItsUri() throws Exception {
+    final Path sourceRoot = td.resolve("src/main/java");
+    final Path fileA = sourceRoot.resolve("A.java");
+    final Path fileB = sourceRoot.resolve("B.java");
+    Files.createDirectories(sourceRoot);
+
+    final var config =
+        TestCompiler.moduleConfig(td.resolve(".lathe"), td.resolve("target/classes"), sourceRoot);
+
+    try (var compiler = new ModuleSourceCompiler(config, new CompilationAdmission(1))) {
+      final List<TransientAnalysis> analyses =
+          compiler.analyzeBatch(
+              List.of(
+                  new TransientSource(fileA.toUri().toString(), "class A { String a; }"),
+                  new TransientSource(fileB.toUri().toString(), "class B { String b; }")),
+              () -> {});
+
+      assertThat(analyses)
+          .extracting(TransientAnalysis::uri)
+          .containsExactlyInAnyOrder(fileA.toUri().toString(), fileB.toUri().toString());
+      for (final var analysis : analyses) {
+        final var expected = analysis.uri().endsWith("A.java") ? "A" : "B";
+        assertThat(declaredTypeName(analysis)).isEqualTo(expected);
+      }
+    }
+  }
+
+  @Test
+  void analyzeBatch_fileWithSyntaxError_stillReturnsValidFile() throws Exception {
+    final Path sourceRoot = td.resolve("src/main/java");
+    final Path broken = sourceRoot.resolve("Broken.java");
+    final Path valid = sourceRoot.resolve("Valid.java");
+    Files.createDirectories(sourceRoot);
+
+    final var config =
+        TestCompiler.moduleConfig(td.resolve(".lathe"), td.resolve("target/classes"), sourceRoot);
+
+    try (var compiler = new ModuleSourceCompiler(config, new CompilationAdmission(1))) {
+      final List<TransientAnalysis> analyses =
+          compiler.analyzeBatch(
+              List.of(
+                  new TransientSource(broken.toUri().toString(), "class Broken { void m( { } }"),
+                  new TransientSource(valid.toUri().toString(), "class Valid { String v; }")),
+              () -> {});
+
+      final var validAnalysis =
+          analyses.stream()
+              .filter(a -> a.uri().equals(valid.toUri().toString()))
+              .findFirst()
+              .orElseThrow();
+      assertThat(validAnalysis.analysis().tree()).isNotNull();
+      assertThat(declaredTypeName(validAnalysis)).isEqualTo("Valid");
+    }
+  }
+
+  private static String declaredTypeName(final TransientAnalysis analysis) {
+    final var declared = (ClassTree) analysis.analysis().tree().getTypeDecls().getFirst();
+    return declared.getSimpleName().toString();
   }
 
   @Test

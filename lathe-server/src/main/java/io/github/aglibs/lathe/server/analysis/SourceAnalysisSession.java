@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.IntConsumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
@@ -286,27 +287,25 @@ public final class SourceAnalysisSession implements AutoCloseable {
   }
 
   public List<ReferenceMatch> searchReferencesTransient(
-      final String uri,
-      final String content,
-      final ReferenceTarget target,
-      final boolean includeDeclaration) {
-    return searchReferencesTransient(uri, content, target, includeDeclaration, () -> {});
-  }
-
-  public List<ReferenceMatch> searchReferencesTransient(
-      final String uri,
-      final String content,
+      final List<TransientSource> sources,
       final ReferenceTarget target,
       final boolean includeDeclaration,
+      final IntConsumer progressPerFile,
       final CancelChecker cancelChecker) {
     final var t = Stopwatch.start();
-    final CompilerResult run = compiler.compile(uri, content, CompileMode.FAST, cancelChecker);
+    final List<TransientAnalysis> analyses = compiler.analyzeBatch(sources, cancelChecker);
     cancelChecker.checkCanceled();
-    LOG.info(
-        () ->
-            "[compile:fast] %s %dms diags=%d"
-                .formatted(uri, t.elapsedMs(), run.diagnostics().size()));
-    return locateReferences(uri, target, includeDeclaration, run.fileAnalysis());
+    LOG.fine(() -> "[references:batch] size=%d %dms".formatted(sources.size(), t.elapsedMs()));
+    final var results = new ArrayList<ReferenceMatch>();
+    for (final var analysis : analyses) {
+      cancelChecker.checkCanceled();
+      final List<ReferenceMatch> matches =
+          locateReferences(analysis.uri(), target, includeDeclaration, analysis.analysis());
+      results.addAll(matches);
+      progressPerFile.accept(matches.size());
+    }
+
+    return List.copyOf(results);
   }
 
   public List<CallHierarchyIncomingCall> searchIncomingCalls(

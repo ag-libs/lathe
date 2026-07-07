@@ -5,6 +5,7 @@ import com.sun.source.util.JavacTask;
 import com.sun.source.util.Trees;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.logging.Level;
@@ -42,6 +43,24 @@ public interface JavaSourceCompiler extends AutoCloseable {
     return compile(uri, content, CompileMode.FAST).fileAnalysis();
   }
 
+  /**
+   * Attributes several isolated candidates for reference search. The default falls back to one FAST
+   * compile per file; {@code ModuleSourceCompiler} overrides it with a single multi-file task that
+   * amortizes javac's fixed per-invocation cost across the batch.
+   */
+  default List<TransientAnalysis> analyzeBatch(
+      final List<TransientSource> sources, final CancelChecker cancelChecker) {
+    final var analyses = new ArrayList<TransientAnalysis>(sources.size());
+    for (final var source : sources) {
+      cancelChecker.checkCanceled();
+      final AttributedFileAnalysis analysis =
+          compile(source.uri(), source.content(), CompileMode.FAST, cancelChecker).fileAnalysis();
+      analyses.add(new TransientAnalysis(source.uri(), analysis));
+    }
+
+    return List.copyOf(analyses);
+  }
+
   StandardJavaFileManager fileManager();
 
   @Override
@@ -72,6 +91,11 @@ public interface JavaSourceCompiler extends AutoCloseable {
   static CompilationUnitTree safeCompile(final JavacTask task) throws IOException {
     final var it = task.parse().iterator();
     final CompilationUnitTree cu = it.hasNext() ? it.next() : null;
+    analyzeSafely(task);
+    return cu;
+  }
+
+  static void analyzeSafely(final JavacTask task) throws IOException {
     try {
       task.analyze();
     } catch (final RuntimeException e) {
@@ -81,8 +105,6 @@ public interface JavaSourceCompiler extends AutoCloseable {
       }
       LOG.log(Level.SEVERE, e, () -> "javac bug: analyze() crashed on sentinel-injected source");
     }
-
-    return cu;
   }
 
   static Error fatalErrorCause(final Throwable failure) {

@@ -11,6 +11,7 @@ import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.server.analysis.SourceAnalysisSession;
+import io.github.aglibs.lathe.server.analysis.TransientSource;
 import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
@@ -18,6 +19,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.IntConsumer;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DocumentSymbol;
 import org.eclipse.lsp4j.FoldingRange;
@@ -119,14 +121,16 @@ class CompilationWorkerTest {
   void searchReferencesTransient_activeRequest_delegatesToContext() {
     final String uri = "file:///A.java";
     final String content = "class A {}";
+    final List<TransientSource> sources = List.of(new TransientSource(uri, content));
     final ReferenceTarget target = mock(ReferenceTarget.class);
     final ReferenceMatch match = mock(ReferenceMatch.class);
+    final IntConsumer progress = hits -> {};
     final CancelChecker cancelChecker = () -> {};
-    when(context.searchReferencesTransient(uri, content, target, false, cancelChecker))
+    when(context.searchReferencesTransient(sources, target, false, progress, cancelChecker))
         .thenReturn(List.of(match));
 
     final var result =
-        worker.searchReferencesTransient(uri, content, target, false, cancelChecker).join();
+        worker.searchReferencesTransient(sources, target, false, progress, cancelChecker).join();
 
     assertThat(result).containsExactly(match);
   }
@@ -135,6 +139,8 @@ class CompilationWorkerTest {
   void searchReferencesTransient_cancelledWhileQueued_skipsContext() {
     final String uri = "file:///A.java";
     final String content = "class A {}";
+    final List<TransientSource> sources = List.of(new TransientSource(uri, content));
+    final IntConsumer progress = hits -> {};
     final var entered = new CountDownLatch(1);
     final var release = new CountDownLatch(1);
     final var cancelled = new AtomicBoolean();
@@ -157,13 +163,14 @@ class CompilationWorkerTest {
     final CompletableFuture<CompileResponse> blocker = worker.compile(request);
     await(entered);
     final CompletableFuture<List<ReferenceMatch>> cancelledFuture =
-        worker.searchReferencesTransient(uri, content, target, false, cancelChecker);
+        worker.searchReferencesTransient(sources, target, false, progress, cancelChecker);
     cancelled.set(true);
     release.countDown();
 
     blocker.join();
     assertThatThrownBy(cancelledFuture::join).hasCauseInstanceOf(CancellationException.class);
-    verify(context, never()).searchReferencesTransient(uri, content, target, false, cancelChecker);
+    verify(context, never())
+        .searchReferencesTransient(sources, target, false, progress, cancelChecker);
   }
 
   private void assertTermination(final Throwable failure, final int expectedStatus) {

@@ -676,13 +676,13 @@ class ReferenceLocatorTest {
     final var target = targetAt(analysis, "void run()", "run");
     final var countingCompiler = new CountingJavaSourceCompiler();
 
+    final List<TransientSource> sources =
+        List.of(new TransientSource(TempSourceCompiler.TEST_URI, METHOD_SOURCE));
     try (final var session = new SourceAnalysisSession(countingCompiler)) {
       final List<ReferenceMatch> first =
-          session.searchReferencesTransient(
-              TempSourceCompiler.TEST_URI, METHOD_SOURCE, target, false);
+          session.searchReferencesTransient(sources, target, false, hits -> {}, () -> {});
       final List<ReferenceMatch> second =
-          session.searchReferencesTransient(
-              TempSourceCompiler.TEST_URI, METHOD_SOURCE, target, false);
+          session.searchReferencesTransient(sources, target, false, hits -> {}, () -> {});
       final List<ReferenceMatch> cached =
           session.searchReferences(TempSourceCompiler.TEST_URI, METHOD_SOURCE, 0, target, false);
 

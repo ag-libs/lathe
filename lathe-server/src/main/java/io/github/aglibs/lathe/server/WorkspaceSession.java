@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import static java.util.logging.Level.SEVERE;
 
+import io.github.aglibs.lathe.core.CollectionUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
@@ -16,6 +17,7 @@ import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
 import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.server.analysis.TokenScanner;
+import io.github.aglibs.lathe.server.analysis.TransientSource;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyItemDataCodec;
 import io.github.aglibs.lathe.server.analysis.TypeSourceLocator;
 import io.github.aglibs.lathe.server.analysis.WorkspaceSymbolResolver;
@@ -77,6 +79,10 @@ import org.eclipse.lsp4j.services.LanguageClient;
 final class WorkspaceSession {
 
   private static final Logger LOG = Logger.getLogger(WorkspaceSession.class.getName());
+
+  // Small: attributing disk candidates in one javac task amortizes its fixed per-invocation cost,
+  // while a small batch bounds peak memory, cancellation latency, and analyze()-crash blast radius.
+  private static final int REFERENCE_BATCH_SIZE = 8;
 
   private final LanguageClient client;
   private final ServerEventLoop worker;
@@ -406,43 +412,60 @@ final class WorkspaceSession {
     cancelChecker.checkCanceled();
     final CompilationWorker worker = searchInputs.worker();
     final WorkspaceSearchInputs inputs = searchInputs.inputs();
-    return Stream.concat(
+    final Stream<CompletableFuture<List<Location>>> openSearches =
         inputs.openDocuments().stream()
             .map(
-                doc -> {
-                  cancelChecker.checkCanceled();
-                  touchAnalysisCache(doc.uri());
-                  return worker
-                      .searchReferences(
-                          doc.uri(),
-                          doc.content(),
-                          doc.version(),
-                          target,
-                          includeDeclaration,
-                          cancelChecker)
-                      .thenApply(WorkspaceSession::toLocations)
-                      .whenComplete(
-                          (locations, failure) -> {
-                            if (failure == null) {
-                              progress.advance(false, locations.size());
-                            }
-                          });
-                }),
-        inputs.diskCandidates().stream()
+                doc ->
+                    searchOpenDocument(
+                        worker, doc, target, includeDeclaration, cancelChecker, progress));
+    final Stream<CompletableFuture<List<Location>>> diskSearches =
+        CollectionUtil.partition(inputs.diskCandidates(), REFERENCE_BATCH_SIZE).stream()
             .map(
-                d -> {
-                  cancelChecker.checkCanceled();
-                  return worker
-                      .searchReferencesTransient(
-                          d.uri(), d.content(), target, includeDeclaration, cancelChecker)
-                      .thenApply(WorkspaceSession::toLocations)
-                      .whenComplete(
-                          (locations, failure) -> {
-                            if (failure == null) {
-                              progress.advance(true, locations.size());
-                            }
-                          });
-                }));
+                chunk ->
+                    searchDiskChunk(
+                        worker, chunk, target, includeDeclaration, cancelChecker, progress));
+    return Stream.concat(openSearches, diskSearches);
+  }
+
+  private CompletableFuture<List<Location>> searchOpenDocument(
+      final CompilationWorker worker,
+      final OpenDocument doc,
+      final ReferenceTarget target,
+      final boolean includeDeclaration,
+      final CancelChecker cancelChecker,
+      final ProgressReporter.Task progress) {
+    cancelChecker.checkCanceled();
+    touchAnalysisCache(doc.uri());
+    return worker
+        .searchReferences(
+            doc.uri(), doc.content(), doc.version(), target, includeDeclaration, cancelChecker)
+        .thenApply(WorkspaceSession::toLocations)
+        .whenComplete(
+            (locations, failure) -> {
+              if (failure == null) {
+                progress.advance(false, locations.size());
+              }
+            });
+  }
+
+  private CompletableFuture<List<Location>> searchDiskChunk(
+      final CompilationWorker worker,
+      final List<DiskCandidate> chunk,
+      final ReferenceTarget target,
+      final boolean includeDeclaration,
+      final CancelChecker cancelChecker,
+      final ProgressReporter.Task progress) {
+    cancelChecker.checkCanceled();
+    final List<TransientSource> sources =
+        chunk.stream().map(d -> new TransientSource(d.uri(), d.content())).toList();
+    return worker
+        .searchReferencesTransient(
+            sources,
+            target,
+            includeDeclaration,
+            hits -> progress.advance(true, hits),
+            cancelChecker)
+        .thenApply(WorkspaceSession::toLocations);
   }
 
   private List<ModuleSourceConfig> planSearchScope(

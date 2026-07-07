@@ -1,6 +1,8 @@
 package io.github.aglibs.lathe.server.module;
 
+import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.JavacTask;
+import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.analysis.CompilerResult;
@@ -8,9 +10,12 @@ import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import javax.lang.model.util.Elements;
+import javax.lang.model.util.Types;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
@@ -24,11 +29,6 @@ final class JavacRunner {
   JavacRunner(final StandardJavaFileManager fm, final CompilationAdmission admission) {
     this.fm = fm;
     this.admission = admission;
-  }
-
-  CompilerResult run(
-      final JavaFileObject sourceFile, final List<String> options, final CompileMode mode) {
-    return run(sourceFile, options, mode, () -> {});
   }
 
   CompilerResult run(
@@ -49,9 +49,44 @@ final class JavacRunner {
         });
   }
 
+  List<AttributedFileAnalysis> analyzeBatch(
+      final Iterable<? extends JavaFileObject> sourceFiles,
+      final List<String> options,
+      final CancelChecker cancelChecker) {
+    cancelChecker.checkCanceled();
+    return admission.run(
+        cancelChecker,
+        () -> {
+          final List<AttributedFileAnalysis> analyses = attributeBatch(sourceFiles, options);
+          cancelChecker.checkCanceled();
+          return analyses;
+        });
+  }
+
+  private List<AttributedFileAnalysis> attributeBatch(
+      final Iterable<? extends JavaFileObject> sourceFiles, final List<String> options) {
+    final var collector = new DiagnosticCollector<JavaFileObject>();
+    final var task = createTask(sourceFiles, options, collector);
+    try {
+      final Iterable<? extends CompilationUnitTree> units = task.parse();
+      JavaSourceCompiler.analyzeSafely(task);
+      final var trees = Trees.instance(task);
+      final Elements elements = task.getElements();
+      final Types types = task.getTypes();
+      final var analyses = new ArrayList<AttributedFileAnalysis>();
+      for (final var cu : units) {
+        analyses.add(new AttributedFileAnalysis(trees, elements, types, cu, null));
+      }
+
+      return List.copyOf(analyses);
+    } catch (final IOException e) {
+      throw new UncheckedIOException(e);
+    }
+  }
+
   private CompilerResult compileFull(final JavaFileObject sourceFile, final List<String> options) {
     final var collector = new DiagnosticCollector<JavaFileObject>();
-    final var task = createTask(sourceFile, options, collector);
+    final var task = createTask(List.of(sourceFile), options, collector);
     try {
       task.analyze();
       final Iterable<? extends JavaFileObject> generated = task.generate();
@@ -79,16 +114,16 @@ final class JavacRunner {
   }
 
   private JavacTask createTask(
-      final JavaFileObject sourceFile,
+      final Iterable<? extends JavaFileObject> sourceFiles,
       final List<String> options,
       final DiagnosticCollector<JavaFileObject> collector) {
     return (JavacTask)
-        JavaSourceCompiler.COMPILER.getTask(
-            null, fm, collector, options, null, List.of(sourceFile));
+        JavaSourceCompiler.COMPILER.getTask(null, fm, collector, options, null, sourceFiles);
   }
 
   private CompilerResult analyze(final JavaFileObject sourceFile, final List<String> options) {
     final var collector = new DiagnosticCollector<JavaFileObject>();
-    return JavaSourceCompiler.runAnalysis(createTask(sourceFile, options, collector), collector);
+    return JavaSourceCompiler.runAnalysis(
+        createTask(List.of(sourceFile), options, collector), collector);
   }
 }

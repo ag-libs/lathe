@@ -1,17 +1,23 @@
 package io.github.aglibs.lathe.server.module;
 
 import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.server.LatheUri;
+import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.analysis.CompilerResult;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
+import io.github.aglibs.lathe.server.analysis.TransientAnalysis;
+import io.github.aglibs.lathe.server.analysis.TransientSource;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
@@ -62,29 +68,53 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
       final String content,
       final CompileMode mode,
       final CancelChecker cancelChecker) {
+    final var tempFile = writeTempFile(uri, content);
+    final var options = buildOptions(config, compilerArgs, mode);
+    LOG.fine(() -> "[compile:%s] tempDir=%s opts=%s".formatted(mode.tag, tempDir, options));
+    final JavaFileObject jfo = fm.getJavaFileObjects(tempFile).iterator().next();
+    try {
+      return runner.run(jfo, options, mode, cancelChecker);
+    } finally {
+      if (mode == CompileMode.FULL) {
+        IOUtil.unchecked(fm::flush);
+      }
+    }
+  }
+
+  @Override
+  public List<TransientAnalysis> analyzeBatch(
+      final List<TransientSource> sources, final CancelChecker cancelChecker) {
+    final var options = buildOptions(config, compilerArgs, CompileMode.FAST);
+    final Map<Path, String> uriByTempFile = new HashMap<>();
+    final var tempFiles = new ArrayList<Path>(sources.size());
+    for (final var source : sources) {
+      cancelChecker.checkCanceled();
+      final var tempFile = writeTempFile(source.uri(), source.content());
+      tempFiles.add(tempFile);
+      uriByTempFile.put(tempFile.normalize(), source.uri());
+    }
+
+    final List<AttributedFileAnalysis> analyses =
+        runner.analyzeBatch(
+            fm.getJavaFileObjects(tempFiles.toArray(Path[]::new)), options, cancelChecker);
+    return analyses.stream().map(analysis -> toTransientAnalysis(analysis, uriByTempFile)).toList();
+  }
+
+  private static TransientAnalysis toTransientAnalysis(
+      final AttributedFileAnalysis analysis, final Map<Path, String> uriByTempFile) {
+    final Path sourcePath = Path.of(analysis.tree().getSourceFile().toUri()).normalize();
+    return new TransientAnalysis(uriByTempFile.get(sourcePath), analysis);
+  }
+
+  private Path writeTempFile(final String uri, final String content) {
     final var filePath = LatheUri.toPath(uri);
     final Path sourceRoot =
         config.sourceRoots().stream()
             .filter(filePath::startsWith)
             .max(Comparator.comparingInt(Path::getNameCount))
             .orElseGet(() -> generatedSourceRoot(filePath, uri));
-
     try {
-      final var tempFile = FileUtil.writeTempSourceFile(tempDir, sourceRoot, filePath, content);
-
-      final var options = buildOptions(config, compilerArgs, mode);
-      LOG.fine(
-          () ->
-              "[compile:%s] tempDir=%s root=%s opts=%s"
-                  .formatted(mode.tag, tempDir, sourceRoot, options));
-      final JavaFileObject jfo = fm.getJavaFileObjects(tempFile).iterator().next();
-      try {
-        return runner.run(jfo, options, mode, cancelChecker);
-      } finally {
-        if (mode == CompileMode.FULL) {
-          fm.flush();
-        }
-      }
+      return FileUtil.writeTempSourceFile(tempDir, sourceRoot, filePath, content);
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }
