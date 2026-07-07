@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.core.LatheBuildInfo;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintStream;
@@ -24,7 +25,8 @@ public final class LatheServer {
       Logger.getLogger("io.github.aglibs.lathe").setLevel(Level.FINE);
     }
 
-    LOG.info(() -> "[startup] Lathe language server starting");
+    LOG.info(
+        () -> "[startup] server %s starting".formatted(LatheBuildInfo.summary(LatheServer.class)));
     run(System.in, acquireStdout());
   }
 

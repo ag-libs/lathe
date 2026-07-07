@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.compiler;
 
 import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.core.LatheBuildInfo;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.Stopwatch;
 import java.io.IOException;
@@ -106,7 +107,11 @@ public final class LatheCompiler implements Compiler {
         FileUtil.replaceDir(genSources.toPath(), moduleDir.resolve(LatheLayout.GENERATED_SOURCES));
       }
 
-      LOG.info("[lathe] {} {}ms", moduleRel, sw.elapsedMs());
+      LOG.info(
+          "[lathe] {} {} capture complete {}ms",
+          moduleRel,
+          LatheBuildInfo.summary(LatheCompiler.class),
+          sw.elapsedMs());
     } catch (final IOException e) {
       LOG.warn("[lathe] {} post-compile step failed", moduleRel, e);
     }

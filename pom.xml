@@ -25,7 +25,9 @@
     <spotless.version>2.44.5</spotless.version>
     <google-java-format.version>1.35.0</google-java-format.version>
     <compiler.version>3.13.0</compiler.version>
+    <git-commit-id.version>10.0.0</git-commit-id.version>
     <surefire.version>3.5.5</surefire.version>
+    <jar.version>3.4.2</jar.version>
     <jacoco.version>0.8.14</jacoco.version>
     <!-- default empty so @{argLine} resolves when JaCoCo agent is not active -->
     <argLine></argLine>
@@ -159,6 +161,22 @@
           <version>${surefire.version}</version>
         </plugin>
         <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-jar-plugin</artifactId>
+          <version>${jar.version}</version>
+          <configuration>
+            <archive>
+              <manifest>
+                <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
+              </manifest>
+              <manifestEntries>
+                <Lathe-Build-Time>${git.build.time}</Lathe-Build-Time>
+                <Lathe-Git-Commit>${git.commit.id.abbrev}</Lathe-Git-Commit>
+              </manifestEntries>
+            </archive>
+          </configuration>
+        </plugin>
+        <plugin>
           <groupId>org.jacoco</groupId>
           <artifactId>jacoco-maven-plugin</artifactId>
           <version>${jacoco.version}</version>
@@ -181,6 +199,23 @@
       </plugins>
     </pluginManagement>
     <plugins>
+      <plugin>
+        <groupId>io.github.git-commit-id</groupId>
+        <artifactId>git-commit-id-maven-plugin</artifactId>
+        <version>${git-commit-id.version}</version>
+        <configuration>
+          <generateGitPropertiesFile>false</generateGitPropertiesFile>
+        </configuration>
+        <executions>
+          <execution>
+            <id>git-revision</id>
+            <goals>
+              <goal>revision</goal>
+            </goals>
+            <phase>initialize</phase>
+          </execution>
+        </executions>
+      </plugin>
       <plugin>
         <groupId>org.jacoco</groupId>
         <artifactId>jacoco-maven-plugin</artifactId>
