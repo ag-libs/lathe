@@ -347,33 +347,38 @@ final class WorkspaceSession {
 
     final ModuleSourceConfig searchConfig = declaringConfigFor(target, cursorConfig);
     final List<ModuleSourceConfig> configs = planSearchScope(target, searchConfig);
+    final List<ModuleSearchInputs> searchInputs =
+        configs.stream()
+            .map(
+                config ->
+                    new ModuleSearchInputs(
+                        workspace.workerFor(config), planSearchInputs(config, target, packageRel)))
+            .toList();
     progress.begin(
         progressTitle,
-        configs.stream()
-            .map(config -> planSearchInputs(config, target, packageRel))
-            .mapToInt(inputs -> inputs.openDocuments().size() + inputs.diskCandidates().size())
+        searchInputs.stream()
+            .map(ModuleSearchInputs::inputs)
+            .mapToInt(WorkspaceSearchInputs::size)
             .sum());
 
     final List<CompletableFuture<List<Location>>> searches =
-        configs.stream()
+        searchInputs.stream()
             .flatMap(
-                config ->
-                    searchFutures(
-                        config, target, includeDeclaration, packageRel, cancelChecker, progress))
+                inputs ->
+                    searchFutures(inputs, target, includeDeclaration, cancelChecker, progress))
             .toList();
     return joinCandidateResults(searches, cancelChecker);
   }
 
   private Stream<CompletableFuture<List<Location>>> searchFutures(
-      final ModuleSourceConfig config,
+      final ModuleSearchInputs searchInputs,
       final ReferenceTarget target,
       final boolean includeDeclaration,
-      final Path packageRel,
       final CancelChecker cancelChecker,
       final ProgressReporter.Task progress) {
     cancelChecker.checkCanceled();
-    final var worker = workspace.workerFor(config);
-    final var inputs = planSearchInputs(config, target, packageRel);
+    final CompilationWorker worker = searchInputs.worker();
+    final WorkspaceSearchInputs inputs = searchInputs.inputs();
     return Stream.concat(
         inputs.openDocuments().stream()
             .map(
@@ -503,7 +508,14 @@ final class WorkspaceSession {
   private record DiskCandidate(String uri, String content) {}
 
   private record WorkspaceSearchInputs(
-      List<OpenDocument> openDocuments, List<DiskCandidate> diskCandidates) {}
+      List<OpenDocument> openDocuments, List<DiskCandidate> diskCandidates) {
+
+    private int size() {
+      return openDocuments.size() + diskCandidates.size();
+    }
+  }
+
+  private record ModuleSearchInputs(CompilationWorker worker, WorkspaceSearchInputs inputs) {}
 
   private WorkspaceSearchInputs planSearchInputs(
       final ModuleSourceConfig config, final ReferenceTarget target, final Path packageRel) {
