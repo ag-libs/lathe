@@ -445,6 +445,62 @@ is the planned first-class way; `JAVA_TOOL_OPTIONS=-Xmx…` works today).
 
 ---
 
+## EG-041 — JDK/library source files get live diagnostics and code actions with no "read-only source" affordance
+
+**Status: documented**
+
+### Observed behaviour
+
+Opening a JDK source file (e.g. `String.java`, typically reached via "go to definition" from user
+code into the cached JDK sources under `~/.cache/lathe/jdks/<jdk-id>/...`) is treated identically to a
+workspace file. `didOpen` routes it through `WorkspaceSession.routeCompiler`, which resolves it to
+`CompilerRoute.External` (found via `WorkspaceManifest.externalSourceRootForFile`, since it isn't
+under any workspace module's source roots). Every feature dispatch — diagnostics, hover,
+definition, and `codeAction` — treats `External` the same as `Module`: `ExternalCompiler` compiles
+the file with real `javac` (adding `--patch-module` for the owning JDK module) and the server
+publishes real diagnostics and offers real code actions for it, exactly as for the user's own code.
+
+From a user's perspective this can be confusing: nothing in the editor signals that the buffer is
+a read-only, externally-sourced file rather than an editable part of the workspace. A user could
+see (harmless but unexpected) compiler diagnostics on `String.java`, or invoke a code action
+there, and wonder why the file isn't inert the way most editors/IDEs treat library sources opened
+via "go to definition".
+
+### Root cause
+
+There is no concept of "read-only source" in the server or in the LSP responses it sends. The only
+distinction tracked is `CompilerRoute` (`Module` / `External` / `Missing`), which controls how a
+file is *compiled*, not how it's *presented* to the user. LSP itself has no standard "this document
+is read-only" signal, so closing this gap needs either editor-side affordance (a marker the
+Neovim runtime can render) or deliberately suppressing some subset of features for `External`
+routes — neither of which exists today.
+
+### Proposed fix
+
+Not yet decided; options to weigh at triage:
+
+1. Suppress `codeAction` (and/or diagnostics) responses for `CompilerRoute.External` — closest to
+   how most IDEs treat decompiled/library sources, but loses a real capability users might want
+   (external files are genuinely compiled against real javac).
+2. Keep the current behavior but surface a clear affordance — e.g. a status-bar / virtual-text
+   marker in the Neovim runtime — so users know the buffer is an external, read-only source.
+3. Add a lightweight marker alongside `publishDiagnostics` (or a custom notification) so editor
+   integrations can render a read-only indicator without disabling any feature.
+
+### Probe commands
+
+```bash
+python3 dev/explore.py \
+  ~/.cache/lathe/jdks/<jdk-id>/java.base/java/lang/String.java \
+  diagnostics
+```
+
+### Regression targets
+
+None yet — undecided pending triage.
+
+---
+
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work
