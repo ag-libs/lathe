@@ -501,6 +501,183 @@ None yet — undecided pending triage.
 
 ---
 
+## EG-042 — Call hierarchy does not resolve from a call site, only from the method's own declaration
+
+**Status: documented — Target: pending triage**
+
+### Observed behaviour
+
+`textDocument/prepareCallHierarchy` returns items when invoked with the cursor on a method's
+declaration, but returns nothing when invoked with the cursor on a call site of that same method —
+confirmed symmetrically for both incoming and outgoing calls.
+
+```java
+// Declaration — works:
+void handle(ServerRequest req, ServerResponse res) throws Exception;   // ← cursor here: 3 callers found
+
+// Call site of the same method — fails:
+next.handler().handle(request, response);                              // ← cursor here: "(no call hierarchy item at this position)"
+```
+
+Outgoing calls show the identical shape: `feature.setup(realBuilder)` (a call site) also returns
+"(no call hierarchy item at this position)", while the declaration of the same method
+(`HttpFeature.setup`) resolves correctly.
+
+This means `<leader>ci`/`<leader>co` (`vim.lsp.buf.incoming_calls`/`outgoing_calls` in a Neovim
+client) only work when the cursor happens to be sitting on a method declaration — rarely how someone
+reaches for "who calls this" in practice. The IntelliJ-familiar workflow (cursor on a call you're
+currently looking at, invoke call hierarchy) fails silently instead of erroring, which reads as
+"broken" rather than "wrong position."
+
+### Root cause (hypothesis)
+
+`SourceAnalysisSession.prepareCallHierarchy` (line 546) resolves the cursor position via the shared
+`resolve(request)` → `SourceLocator.pathAt(trees, tree, offset)`, then calls
+`SourceLocator.elementAt(trees, path)` (`SourceLocator.java:115`) to find the enclosing method
+element, keeping only `ElementKind.METHOD`/`CONSTRUCTOR` results (lines 557-560).
+
+`elementAt` does have an explicit fallback for `MethodInvocationTree` (lines 122-127: if the walked
+path's leaf is a method invocation, resolve via `inv.getMethodSelect()`), so on its face it looks
+designed to handle call sites. Since `resolve()`'s `pathAt` is shared with hover/definition/references
+— all of which correctly resolve from call sites (confirmed: `refs` from a usage site returns real
+results) — the defect is likely specific to how `pathAt`/`elementAt` behave for the exact leaf node
+produced at a call site in this particular caller, not a general position-resolution problem. No
+`LOG.fine(...)` call exists anywhere in the prepare path today, so it isn't traceable from server
+logs alone; pinning the exact failing step needs either a debugger session or added logging.
+
+### Probe commands
+
+```bash
+# Works — cursor on the declaration:
+python3 dev/explore.py \
+  ~/git/helidon/webserver/webserver/src/main/java/io/helidon/webserver/http/Handler.java \
+  callers "handle(ServerRequest"
+
+# Fails — cursor on a call site of the same method:
+python3 dev/explore.py \
+  ~/git/helidon/webserver/webserver/src/main/java/io/helidon/webserver/http/HttpRoutingImpl.java \
+  callers "next.handler().handle"
+
+# Fails symmetrically for outgoing calls from a call site:
+python3 dev/explore.py \
+  ~/git/helidon/webserver/webserver/src/main/java/io/helidon/webserver/http/HttpRoutingImpl.java \
+  callees "feature.setup(realBuilder)"
+```
+
+### Regression targets
+
+None yet — undecided pending triage.
+
+---
+
+## EG-043 — Type hierarchy does not resolve from a usage/reference site, only from the type's own declaration
+
+**Status: documented — Target: pending triage**
+
+### Observed behaviour
+
+`textDocument/prepareTypeHierarchy` resolves correctly with the cursor on an interface's own
+declaration (e.g. `public interface HttpFeature`), returning full supertypes/subtypes — but returns
+nothing when the cursor is on a *usage* of that same type elsewhere in the code (a loop variable's
+declared type, a parameter type, etc.).
+
+```java
+public interface HttpFeature extends Supplier<HttpFeature>, ServerLifecycle {   // ← cursor here: works
+                                                                                  //   (2 supertypes, 20 subtypes)
+
+for (HttpFeature feature : features) {                                          // ← cursor here:
+                                                                                  //   "(no type hierarchy item at this position)"
+```
+
+Same shape of defect as EG-042, on the type-hierarchy side: `<leader>ts`/`<leader>ti` only work when
+the cursor happens to be on the type's own declaration, not on any of its (far more common) usage
+sites.
+
+### Root cause (hypothesis)
+
+`SourceAnalysisSession.prepareTypeHierarchy` (line 530) requires `SourceLocator.elementAt(...)` to
+resolve to a `TypeElement` (line 538); if the resolved element isn't a `TypeElement`, it returns
+`List.of()` immediately with no further attempt to map a usage-site reference back to the type it
+refers to. Likely the same underlying class of defect as EG-042 (both share `resolve()`/
+`elementAt`), but confirmed as a separate code path (`prepareTypeHierarchy` vs
+`prepareCallHierarchy`), so it may need an independent fix even if the root-cause pattern is shared.
+
+### Probe commands
+
+```bash
+# Works — cursor on the interface's own declaration:
+python3 dev/explore.py \
+  ~/git/helidon/webserver/webserver/src/main/java/io/helidon/webserver/http/HttpFeature.java \
+  hierarchy "HttpFeature"
+
+# Fails — cursor on a usage of the same type:
+python3 dev/explore.py \
+  ~/git/helidon/webserver/webserver/src/main/java/io/helidon/webserver/http/HttpRoutingImpl.java \
+  hierarchy "for (HttpFeature"
+```
+
+### Regression targets
+
+None yet — undecided pending triage.
+
+---
+
+## EG-044 — Call hierarchy does not aggregate calls made through a supertype/interface reference when queried from a concrete override
+
+**Status: documented — Target: pending triage**
+
+### Observed behaviour
+
+Querying incoming calls from an interface method's declaration finds real callers; querying the
+*same logical method* from a concrete class's `@Override` implementation returns zero callers, even
+though those real call sites almost certainly reach this override at runtime through polymorphic
+dispatch via an interface-typed reference.
+
+```java
+// HttpFeature.java — interface declaration:
+void setup(HttpRouting.Builder routing);        // ← callers: 3 found (real call sites)
+
+// HttpRoutingFeature.java — concrete @Override of the same method:
+public void setup(HttpRouting.Builder routing) { ... }   // ← callers: 0 found, despite 61 candidates scanned
+```
+
+All 3 real callers were found via `feature.setup(...)` where `feature` is statically typed as
+`HttpFeature` — none reference `HttpRoutingFeature` by its concrete type. From an IntelliJ-experience
+standpoint this is a significant usability gap: users are used to invoking call hierarchy from
+*either* the interface or an implementation and getting an aggregated, useful answer either way
+(IntelliJ resolves polymorphic call sites into the hierarchy of whichever override you asked about).
+Lathe's current behavior instead makes call hierarchy on an override look "broken" (zero results)
+unless the user knows to jump to the interface declaration first.
+
+### Root cause (hypothesis)
+
+Not yet traced to a specific class. Likely the incoming-calls search (`CallHierarchyIncomingLocator`)
+matches call sites strictly by the exact resolved method (the concrete override), rather than also
+matching call sites statically bound to an interface/supertype method that this override implements.
+A fix likely needs to expand the search to include call sites resolving to any method this override
+transitively implements/overrides. Not yet cross-checked against how Find References handles the
+equivalent override-vs-interface scenario for other symbol kinds.
+
+### Probe commands
+
+```bash
+# Interface declaration — finds real callers:
+python3 dev/explore.py \
+  ~/git/helidon/webserver/webserver/src/main/java/io/helidon/webserver/http/HttpFeature.java \
+  callers "void setup"
+
+# Concrete override of the same method — finds none:
+python3 dev/explore.py \
+  ~/git/helidon/webserver/webserver/src/main/java/io/helidon/webserver/http/HttpRoutingFeature.java \
+  callers "public void setup"
+```
+
+### Regression targets
+
+None yet — undecided pending triage.
+
+---
+
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work
