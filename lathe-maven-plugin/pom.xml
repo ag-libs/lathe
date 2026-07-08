@@ -137,6 +137,9 @@
           <projectsDirectory>src/it</projectsDirectory>
           <cloneProjectsTo>${project.build.directory}/it</cloneProjectsTo>
           <localRepositoryPath>${project.build.directory}/local-repo</localRepositoryPath>
+          <extraArtifacts>
+            <extraArtifact>io.github.ag-libs:lathe-junit:${project.version}:jar</extraArtifact>
+          </extraArtifacts>
           <settingsFile>src/it/settings.xml</settingsFile>
           <mavenOpts>-Dlathe.cache=${project.build.directory}/it-home/.cache/lathe -DlatheLocalRepo=${settings.localRepository}</mavenOpts>
         </configuration>

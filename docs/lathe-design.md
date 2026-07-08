@@ -96,7 +96,7 @@ lathe-server
 
 ### One-time POM configuration
 
-Two blocks in the parent `pom.xml`:
+Three blocks in the parent `pom.xml`:
 
 ```xml
 <!-- compiler shim -->
@@ -137,6 +137,23 @@ Two blocks in the parent `pom.xml`:
   </executions>
 </plugin>
 ```
+
+```xml
+<!-- test capture: enables run/test/debug against .lathe/ (see lathe-run-test-debug.md §3.4) -->
+<dependency>
+  <groupId>io.github.ag-libs</groupId>
+  <artifactId>lathe-junit</artifactId>
+  <version>0.1.0</version>
+  <scope>test</scope>
+</dependency>
+```
+
+The `lathe-junit` dependency is user-added, not plugin-injected: setting up Lathe already requires
+hand-editing the parent POM for the two blocks above, so this is a third line in that same one-time
+edit rather than a new category of friction.
+`lathe:init` never writes to or inspects `pom.xml`.
+Its absence is not a build error — the capture listener is `.lathe/`-gated and fails open, so a project
+without it simply has no test-launch capture, not a broken build.
 
 Maven only runs a third-party plugin during normal lifecycle builds when the plugin has bound executions.
 Lathe therefore still needs the two executions above for `mvn package`, `mvn install`,

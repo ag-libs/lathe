@@ -163,6 +163,23 @@ class MultiModuleTest {
   }
 
   @Test
+  void capture_jpmsTestLaunch_written() throws IOException {
+    final var launch = lathe("jpms/test-launch.json");
+    assertThat(launch).exists();
+    final var content = read(launch);
+    assertThat(content).contains("\"schemaVersion\"");
+    assertThat(content).contains("\"kind\": \"surefire\"");
+    assertThat(content).contains("\"mode\": \"MODULE\"");
+    assertThat(content).contains("\"mainModule\": \"com.example.jpms\"");
+    assertThat(content).contains("\"patchModules\"");
+    assertThat(content).contains("jpms/target/test-classes");
+    assertThat(content).contains("\"addReads\"");
+    assertThat(content).contains("\"addOpens\"");
+    assertThat(content).contains("lathe.fixture.argLine");
+    assertThat(content).contains("from-argline");
+  }
+
+  @Test
   void sync_jpmsModuleParams_written() throws IOException {
     final var params = lathe("jpms/lsp-params-classes.json");
     assertThat(params).exists();

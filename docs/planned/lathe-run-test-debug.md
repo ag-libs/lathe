@@ -251,7 +251,9 @@ If that ever becomes a concern, the escape is a tiny `lathe-schema` leaf shared 
 `lathe-junit` — not warranted now.
 
 It reaches the test classpath as **one committed `test`-scope dependency** in the parent POM, added by
-`lathe:init`:
+**the user**, alongside the compiler shim and plugin declaration blocks (`lathe-design.md` §3 —
+Lathe already requires hand-editing the parent POM for those, so this is a third line in that same
+one-time edit, not a new category of friction):
 
 ```xml
 <dependency>
@@ -280,6 +282,10 @@ A committed tooling dependency on the build is a deliberate, visible cost, consi
 and committed" philosophy of the compiler-shim setup.
 It is inert without `.lathe/`, and the listener it registers is instantiated per fork but returns
 immediately when no workspace is found.
+`lathe:init` never writes to or inspects `pom.xml` for this dependency — a Maven plugin silently
+rewriting (or even auditing) a committed, user-owned file is a materially bigger blast radius than
+generating files under the disposable `.lathe/` directory, and setup already documents this snippet
+alongside the compiler shim and plugin declaration (`lathe-design.md` §3).
 
 **Scope.**
 Capture is **JUnit-Platform-only**.
@@ -706,9 +712,11 @@ compact constructors do not duplicate the same `List.copyOf` + null-check invari
 
 ### 10.4 `lathe-maven-plugin` — push-side setup
 
+`lathe-junit` is a user-added, documented dependency (`lathe-design.md` §3), not something `InitMojo`
+writes or inspects.
+
 | Class | Role | Key methods |
 |---|---|---|
-| `InitMojo` → `PomSetup` | Add committed `lathe-junit` test dep + Surefire pin | `ensureCaptureDependency` |
 | `SyncMojo` → `MainLaunchWriter` | Membership (`getRuntimeClasspathElements`) + placement (`plexus-java` `LocationManager`) → `main-launch.json`, every module, every build | `write(project)` |
 | `SyncMojo` → `ResourceRootsRecorder` | Record `resourceRoots` into `workspace.json` | `record(project)` |
 | `RefreshResourcesMojo` → `ResourceFilterer` *(deferred)* | Filter resources into `.lathe/` | `filterInto` |
@@ -852,7 +860,8 @@ The order below is the implementation order unless a later discovery forces a de
 **Scope:**
 
 - Update the build order.
-- Add `lathe-junit` dependency injection through `lathe:init`.
+- Document `lathe-junit` as a user-added test-scope dependency (`lathe-design.md` §3) — `lathe:init`
+  neither writes nor inspects `pom.xml` for it.
 - Pin Surefire version as required.
 - Extend the invoker fixture to assert that `test-launch.json` exists.
 - Assert that modular launch fields are captured.
@@ -860,7 +869,6 @@ The order below is the implementation order unless a later discovery forces a de
 
 **Review focus:**
 
-- POM mutation behavior.
 - Surefire pin.
 - Generated and committed user-facing setup.
 
