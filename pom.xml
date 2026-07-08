@@ -10,6 +10,7 @@
   <modules>
     <module>lathe-core</module>
     <module>lathe-junit</module>
+    <module>lathe-test-runner</module>
     <module>lathe-compiler</module>
     <module>lathe-server</module>
     <module>lathe-maven-plugin</module>
@@ -52,6 +53,11 @@
       <dependency>
         <groupId>io.github.ag-libs</groupId>
         <artifactId>lathe-junit</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.github.ag-libs</groupId>
+        <artifactId>lathe-test-runner</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
