@@ -67,14 +67,17 @@ final class SyncCoordinator {
           projects.stream()
               .map(p -> workspaceRoot.relativize(p.getFile().toPath()).toString())
               .toList();
-      final var runnerJarPath = serverInstaller.resolveRunnerJar().toString();
+      final List<String> runnerClasspath =
+          serverInstaller.resolveRunnerClasspath(externalArtifacts).stream()
+              .map(Path::toString)
+              .toList();
       new WorkspaceManifestWriter(log)
           .write(
               workspaceRoot,
               enrichedSources,
               enrichedJdkSource,
               PluginProps.version(),
-              runnerJarPath,
+              runnerClasspath,
               pomPaths);
     }
   }

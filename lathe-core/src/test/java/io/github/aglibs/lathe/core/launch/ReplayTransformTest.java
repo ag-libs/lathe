@@ -39,7 +39,7 @@ final class ReplayTransformTest {
         ReplayTransform.forTest(
             data,
             WORKSPACE,
-            runner,
+            List.of(runner),
             new TestSelection(TestSelectionKind.METHOD, "com.example.app.HelloTest#greet"));
 
     assertThat(args)

@@ -9,9 +9,12 @@ import java.net.URLConnection;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.stream.Collectors;
+import org.apache.maven.artifact.Artifact;
 import org.apache.maven.plugin.logging.Log;
 import org.eclipse.aether.RepositorySystem;
 import org.eclipse.aether.RepositorySystemSession;
@@ -174,9 +177,58 @@ final class ServerInstaller {
   }
 
   private List<Path> resolveServerJars() throws SyncException {
-    final var artifact =
-        new DefaultArtifact(
-            PluginProps.groupId(), PluginProps.SERVER_ARTIFACT_ID, "jar", PluginProps.version());
+    return resolveTransitiveJars(
+        PluginProps.groupId(), PluginProps.SERVER_ARTIFACT_ID, PluginProps.version());
+  }
+
+  /**
+   * The runner jar plus whatever JUnit Platform launcher/engine jars the replay JVM needs.
+   * Surefire's own JUnit Platform provider carries junit-platform-launcher (and auto-detects the
+   * matching engine, e.g. junit-jupiter-engine) as a provider-internal dependency -- it never
+   * touches the project's own classpath, so captured test-launch.json never records it. Resolved
+   * here, at sync time, against whatever JUnit Platform/Jupiter version the reactor actually uses,
+   * so the versions match what the project resolved rather than a hardcoded pin.
+   */
+  List<Path> resolveRunnerClasspath(final Map<String, Artifact> externalArtifacts)
+      throws SyncException {
+    final var classpath = new ArrayList<Path>();
+    classpath.add(resolveRunnerJar());
+    classpath.addAll(resolveJUnitSupportJars(externalArtifacts));
+    return List.copyOf(classpath);
+  }
+
+  private List<Path> resolveJUnitSupportJars(final Map<String, Artifact> externalArtifacts)
+      throws SyncException {
+    final String platformVersion =
+        versionOf(externalArtifacts, "org.junit.platform", "junit-platform-commons");
+    final String jupiterVersion =
+        versionOf(externalArtifacts, "org.junit.jupiter", "junit-jupiter-api");
+    if (platformVersion == null || jupiterVersion == null) {
+      log.debug("[sync] no JUnit Jupiter dependency detected — skipping runner support jars");
+      return List.of();
+    }
+
+    final var jars = new ArrayList<Path>();
+    jars.addAll(
+        resolveTransitiveJars("org.junit.platform", "junit-platform-launcher", platformVersion));
+    jars.addAll(resolveTransitiveJars("org.junit.jupiter", "junit-jupiter-engine", jupiterVersion));
+    return List.copyOf(jars);
+  }
+
+  private static String versionOf(
+      final Map<String, Artifact> externalArtifacts,
+      final String groupId,
+      final String artifactId) {
+    return externalArtifacts.values().stream()
+        .filter(a -> groupId.equals(a.getGroupId()) && artifactId.equals(a.getArtifactId()))
+        .map(Artifact::getVersion)
+        .findFirst()
+        .orElse(null);
+  }
+
+  private List<Path> resolveTransitiveJars(
+      final String groupId, final String artifactId, final String version) throws SyncException {
+    final var artifact = new DefaultArtifact(groupId, artifactId, "jar", version);
     final var dep = new Dependency(artifact, JavaScopes.RUNTIME);
     final var collectRequest = new CollectRequest(dep, remoteRepositories);
     final var depRequest = new DependencyRequest(collectRequest, null);
@@ -190,9 +242,7 @@ final class ServerInstaller {
           .toList();
     } catch (final DependencyResolutionException e) {
       throw new SyncException(
-          "lathe:sync failed to resolve server artifacts for version %s"
-              .formatted(PluginProps.version()),
-          e);
+          "lathe:sync failed to resolve %s:%s:%s".formatted(groupId, artifactId, version), e);
     }
   }
 

@@ -8,7 +8,7 @@ public record WorkspaceManifestData(
     String schemaVersion,
     String workspaceRoot,
     String serverVersion,
-    String runnerJarPath,
+    List<String> runnerClasspath,
     JdkSourceData jdk,
     List<DependencyData> dependencySources,
     List<String> pomPaths) {
@@ -18,6 +18,7 @@ public record WorkspaceManifestData(
         .notBlank(schemaVersion, "schemaVersion")
         .notBlank(workspaceRoot, "workspaceRoot")
         .validate();
+    runnerClasspath = Objects.requireNonNullElse(runnerClasspath, List.of());
     dependencySources = Objects.requireNonNullElse(dependencySources, List.of());
     pomPaths = Objects.requireNonNullElse(pomPaths, List.of());
   }

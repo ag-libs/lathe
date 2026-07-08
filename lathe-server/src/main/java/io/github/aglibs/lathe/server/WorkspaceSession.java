@@ -142,18 +142,17 @@ final class WorkspaceSession {
 
   CompletableFuture<ReplayOutcome> runTestFuture(
       final String moduleRel, final TestSelection selection) {
-    final Optional<Path> runnerJar = manifest.runnerJarPath();
-    if (runnerJar.isEmpty()) {
+    final List<Path> runnerClasspath = manifest.runnerClasspath();
+    if (runnerClasspath.isEmpty()) {
       return CompletableFuture.completedFuture(
           ReplayOutcome.blocked(List.of("no lathe-test-runner jar recorded — run a build first")));
     }
 
     final Path root = workspaceRoot;
-    final Path runner = runnerJar.get();
     final var result = new CompletableFuture<ReplayOutcome>();
     final var thread =
         new Thread(
-            () -> launchReplay(root, runner, moduleRel, selection, result),
+            () -> launchReplay(root, runnerClasspath, moduleRel, selection, result),
             "lathe-replay-" + moduleRel);
     thread.setDaemon(true);
     thread.start();
@@ -162,7 +161,7 @@ final class WorkspaceSession {
 
   private static void launchReplay(
       final Path workspaceRoot,
-      final Path runnerJar,
+      final List<Path> runnerClasspath,
       final String moduleRel,
       final TestSelection selection,
       final CompletableFuture<ReplayOutcome> result) {
@@ -181,7 +180,7 @@ final class WorkspaceSession {
       }
 
       final var session =
-          ReplayLauncher.launch(template.get(), workspaceRoot, runnerJar, selection);
+          ReplayLauncher.launch(template.get(), workspaceRoot, runnerClasspath, selection);
       session
           .onExit()
           .thenApply(ReplayOutcome::completed)

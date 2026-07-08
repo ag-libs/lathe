@@ -24,16 +24,18 @@ class WorkspaceManifestTest extends SampleFixture {
   }
 
   @Test
-  void runnerJarPath_empty_returnsEmpty() {
-    assertThat(WorkspaceManifest.empty().runnerJarPath()).isEmpty();
+  void runnerClasspath_empty_returnsEmpty() {
+    assertThat(WorkspaceManifest.empty().runnerClasspath()).isEmpty();
   }
 
   @Test
-  void runnerJarPath_presentInManifest_returnsPath() throws Exception {
+  void runnerClasspath_presentInManifest_returnsPaths() throws Exception {
     final Path runnerJar = tmp.resolve("cache/lathe-test-runner.jar");
-    writeWorkspaceManifest(List.of(), null, runnerJar.toString());
+    final Path launcherJar = tmp.resolve("cache/junit-platform-launcher.jar");
+    writeWorkspaceManifest(List.of(), null, List.of(runnerJar.toString(), launcherJar.toString()));
 
-    assertThat(WorkspaceManifest.load(tmp).runnerJarPath()).hasValue(runnerJar);
+    assertThat(WorkspaceManifest.load(tmp).runnerClasspath())
+        .containsExactly(runnerJar, launcherJar);
   }
 
   @Test
@@ -48,7 +50,7 @@ class WorkspaceManifestTest extends SampleFixture {
     writeWorkspaceManifest(
         List.of(),
         new JdkSourceData("OpenJDK", "21.0.1", SourceStatus.MISSING, null, null, null, null),
-        null);
+        List.of());
 
     final var listType = compiled.task().getElements().getTypeElement("java.util.List");
     assertThat(WorkspaceManifest.load(tmp).originLabel(listType, compiled.fm()))
@@ -103,7 +105,7 @@ class WorkspaceManifestTest extends SampleFixture {
         List.of(),
         new JdkSourceData(
             "OpenJDK", "21.0.1", SourceStatus.MISSING, Path.of("/jdk"), null, null, typeIndex),
-        null);
+        List.of());
 
     assertThat(WorkspaceManifest.load(tmp).typeIndexShardPaths()).containsExactly(typeIndex);
   }
@@ -139,17 +141,23 @@ class WorkspaceManifestTest extends SampleFixture {
   }
 
   private void writeWorkspaceManifest(final List<DependencyData> deps) throws Exception {
-    writeWorkspaceManifest(deps, null, null);
+    writeWorkspaceManifest(deps, null, List.of());
   }
 
   private void writeWorkspaceManifest(
-      final List<DependencyData> deps, final JdkSourceData jdk, final String runnerJarPath)
+      final List<DependencyData> deps, final JdkSourceData jdk, final List<String> runnerClasspath)
       throws Exception {
     final Path latheDir = tmp.resolve(LatheLayout.LATHE_DIR);
     Files.createDirectories(latheDir);
     Json.write(
         new WorkspaceManifestData(
-            LatheLayout.SCHEMA_VERSION, tmp.toString(), null, runnerJarPath, jdk, deps, List.of()),
+            LatheLayout.SCHEMA_VERSION,
+            tmp.toString(),
+            null,
+            runnerClasspath,
+            jdk,
+            deps,
+            List.of()),
         latheDir.resolve(LatheLayout.WORKSPACE_JSON));
   }
 }

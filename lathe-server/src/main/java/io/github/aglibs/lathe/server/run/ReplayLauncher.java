@@ -14,10 +14,11 @@ public final class ReplayLauncher {
   public static ReplaySession launch(
       final TestLaunchData data,
       final Path workspaceRoot,
-      final Path runnerJar,
+      final List<Path> runnerClasspath,
       final TestSelection selection)
       throws IOException {
-    final List<String> argv = ReplayTransform.forTest(data, workspaceRoot, runnerJar, selection);
+    final List<String> argv =
+        ReplayTransform.forTest(data, workspaceRoot, runnerClasspath, selection);
     final Process process =
         new ProcessBuilder(argv)
             .redirectOutput(ProcessBuilder.Redirect.DISCARD)

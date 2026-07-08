@@ -13,4 +13,9 @@ module io.github.aglibs.lathe.server {
   requires com.google.googlejavaformat;
   requires io.github.aglibs.lathe.core;
   requires io.github.aglibs.validcheck;
+
+  // RunTarget/ReplayOutcome cross the JSON-RPC boundary as raw records, serialized reflectively
+  // by lsp4j's Gson layer -- without this, Gson can't call setAccessible on their accessors.
+  opens io.github.aglibs.lathe.server.run to
+      com.google.gson;
 }

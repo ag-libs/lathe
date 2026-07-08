@@ -18,11 +18,12 @@ public final class ReplayTransform {
   public static List<String> forTest(
       final TestLaunchData data,
       final Path workspaceRoot,
-      final Path runnerJar,
+      final List<Path> runnerClasspath,
       final TestSelection selection) {
     final List<String> modulePath = ReactorRewrite.toLathe(data.modulePath(), workspaceRoot);
     final List<String> classPath =
-        Stream.concat(data.classPath().stream(), Stream.of(runnerJar.toString())).toList();
+        Stream.concat(data.classPath().stream(), runnerClasspath.stream().map(Path::toString))
+            .toList();
     final List<String> rewrittenClassPath = ReactorRewrite.toLathe(classPath, workspaceRoot);
     final Map<String, String> patchModules =
         ReactorRewrite.toLathe(data.patchModules(), workspaceRoot);
