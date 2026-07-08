@@ -37,6 +37,7 @@ public final class WorkspaceManifest {
   private final Map<Path, List<Path>> sourceDirToClasspath;
   private final List<Path> typeIndexShardPaths;
   private final List<Path> pomPaths;
+  private final Path runnerJarPath;
 
   private WorkspaceManifest(
       final Map<Path, String> jarToGav,
@@ -46,7 +47,8 @@ public final class WorkspaceManifest {
       final Path jdkSourceDir,
       final Map<Path, List<Path>> sourceDirToClasspath,
       final List<Path> typeIndexShardPaths,
-      final List<Path> pomPaths) {
+      final List<Path> pomPaths,
+      final Path runnerJarPath) {
     this.jarToGav = jarToGav;
     this.jarToSourceDir = jarToSourceDir;
     this.sourceDirToJar = sourceDirToJar;
@@ -55,11 +57,12 @@ public final class WorkspaceManifest {
     this.sourceDirToClasspath = sourceDirToClasspath;
     this.typeIndexShardPaths = typeIndexShardPaths;
     this.pomPaths = pomPaths;
+    this.runnerJarPath = runnerJarPath;
   }
 
   public static WorkspaceManifest empty() {
     return new WorkspaceManifest(
-        Map.of(), Map.of(), Map.of(), null, null, Map.of(), List.of(), List.of());
+        Map.of(), Map.of(), Map.of(), null, null, Map.of(), List.of(), List.of(), null);
   }
 
   public static WorkspaceManifest load(final Path workspaceRoot) {
@@ -111,6 +114,10 @@ public final class WorkspaceManifest {
               .toList();
       final List<Path> resolvedPomPaths =
           data.pomPaths().stream().map(workspaceRoot::resolve).toList();
+      final Path runnerJarPath =
+          data.runnerJarPath() != null && !data.runnerJarPath().isBlank()
+              ? Path.of(data.runnerJarPath())
+              : null;
       return new WorkspaceManifest(
           jarToGav,
           jarToSourceDir,
@@ -119,7 +126,8 @@ public final class WorkspaceManifest {
           jdk != null ? jdk.sourceDir() : null,
           sourceDirToClasspath,
           typeIndexShardPaths,
-          resolvedPomPaths);
+          resolvedPomPaths,
+          runnerJarPath);
     } catch (final Exception e) {
       LOG.log(Level.WARNING, e, () -> "[manifest] failed to load workspace manifest");
       return empty();
@@ -157,6 +165,10 @@ public final class WorkspaceManifest {
 
   public List<Path> pomPaths() {
     return pomPaths;
+  }
+
+  public Optional<Path> runnerJarPath() {
+    return Optional.ofNullable(runnerJarPath);
   }
 
   public List<Path> externalSourceDirs() {
