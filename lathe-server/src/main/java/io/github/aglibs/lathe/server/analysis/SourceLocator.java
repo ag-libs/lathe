@@ -26,6 +26,7 @@ import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.DeclaredType;
 import javax.tools.Diagnostic;
 import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.Range;
 
 public final class SourceLocator {
 
@@ -43,6 +44,13 @@ public final class SourceLocator {
     final var lineMap = cu.getLineMap();
     return new Position(
         (int) lineMap.getLineNumber(offset) - 1, (int) lineMap.getColumnNumber(offset) - 1);
+  }
+
+  public static Range range(final Trees trees, final CompilationUnitTree cu, final Tree node) {
+    final var positions = trees.getSourcePositions();
+    final long start = positions.getStartPosition(cu, node);
+    final long end = positions.getEndPosition(cu, node);
+    return new Range(offsetToPosition(cu, start), offsetToPosition(cu, end));
   }
 
   public static TreePath pathAt(

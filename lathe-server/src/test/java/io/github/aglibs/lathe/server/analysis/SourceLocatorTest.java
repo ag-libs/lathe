@@ -350,4 +350,19 @@ class SourceLocatorTest extends SampleFixture {
   void offsetToPosition_beyondEnd_clampsToLength() {
     assertThat(offsetToPosition("hi", 100)).isEqualTo(new Position(0, 2));
   }
+
+  // --- range ---
+
+  @Test
+  void range_classDeclaration_matchesManuallyComputedStartAndEnd() {
+    final var classTree = pathAt(14, 13).getLeaf();
+    final var positions = compiled.trees().getSourcePositions();
+    final long start = positions.getStartPosition(compiled.cu(), classTree);
+    final long end = positions.getEndPosition(compiled.cu(), classTree);
+
+    final var range = SourceLocator.range(compiled.trees(), compiled.cu(), classTree);
+
+    assertThat(range.getStart()).isEqualTo(offsetToPosition(compiled.cu(), start));
+    assertThat(range.getEnd()).isEqualTo(offsetToPosition(compiled.cu(), end));
+  }
 }
