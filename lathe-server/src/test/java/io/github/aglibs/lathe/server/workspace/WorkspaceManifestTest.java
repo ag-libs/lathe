@@ -39,6 +39,7 @@ class WorkspaceManifestTest extends SampleFixture {
             LatheLayout.SCHEMA_VERSION,
             tmp.toString(),
             null,
+            null,
             new JdkSourceData("OpenJDK", "21.0.1", SourceStatus.MISSING, null, null, null, null),
             List.of(),
             List.of()),
@@ -100,6 +101,7 @@ class WorkspaceManifestTest extends SampleFixture {
             LatheLayout.SCHEMA_VERSION,
             tmp.toString(),
             null,
+            null,
             new JdkSourceData(
                 "OpenJDK", "21.0.1", SourceStatus.MISSING, Path.of("/jdk"), null, null, typeIndex),
             List.of(),
@@ -144,7 +146,7 @@ class WorkspaceManifestTest extends SampleFixture {
     Files.createDirectories(latheDir);
     Json.write(
         new WorkspaceManifestData(
-            LatheLayout.SCHEMA_VERSION, tmp.toString(), null, null, deps, List.of()),
+            LatheLayout.SCHEMA_VERSION, tmp.toString(), null, null, null, deps, List.of()),
         latheDir.resolve(LatheLayout.WORKSPACE_JSON));
   }
 }

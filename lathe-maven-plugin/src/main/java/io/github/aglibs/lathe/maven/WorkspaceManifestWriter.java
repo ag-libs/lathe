@@ -26,12 +26,14 @@ final class WorkspaceManifestWriter {
       final List<DependencySource> dependencySources,
       final JdkSource jdkSource,
       final String serverVersion,
+      final String runnerJarPath,
       final List<String> pomPaths) {
     final var data =
         new WorkspaceManifestData(
             LatheLayout.SCHEMA_VERSION,
             workspaceRoot.toString(),
             serverVersion,
+            runnerJarPath,
             jdkSource.toData(),
             dependencySources.stream().map(DependencySource::toData).toList(),
             pomPaths);

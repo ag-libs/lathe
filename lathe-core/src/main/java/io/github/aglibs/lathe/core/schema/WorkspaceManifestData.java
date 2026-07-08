@@ -8,6 +8,7 @@ public record WorkspaceManifestData(
     String schemaVersion,
     String workspaceRoot,
     String serverVersion,
+    String runnerJarPath,
     JdkSourceData jdk,
     List<DependencyData> dependencySources,
     List<String> pomPaths) {

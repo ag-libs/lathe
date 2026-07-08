@@ -57,8 +57,9 @@ final class SyncCoordinator {
     final JdkSource jdkSource = JdkSourceResolver.resolve();
     JdkSourceSync.extract(jdkSource, log);
     final JdkSource enrichedJdkSource = JdkTypeIndexSync.index(jdkSource, log);
-    new ServerInstaller(repositorySystem, session.getRepositorySession(), remoteRepos, log)
-        .install();
+    final var serverInstaller =
+        new ServerInstaller(repositorySystem, session.getRepositorySession(), remoteRepos, log);
+    serverInstaller.install();
     if (isPartialReactor() && !LatheFlags.isForcedSync()) {
       log.debug("[sync] partial reactor (-pl) — skipping workspace.json write");
     } else {
@@ -66,9 +67,15 @@ final class SyncCoordinator {
           projects.stream()
               .map(p -> workspaceRoot.relativize(p.getFile().toPath()).toString())
               .toList();
+      final var runnerJarPath = serverInstaller.resolveRunnerJar().toString();
       new WorkspaceManifestWriter(log)
           .write(
-              workspaceRoot, enrichedSources, enrichedJdkSource, PluginProps.version(), pomPaths);
+              workspaceRoot,
+              enrichedSources,
+              enrichedJdkSource,
+              PluginProps.version(),
+              runnerJarPath,
+              pomPaths);
     }
   }
 

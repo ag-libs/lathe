@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.compiler;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheBuildInfo;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.LatheWorkspace;
 import io.github.aglibs.lathe.core.Stopwatch;
 import java.io.IOException;
@@ -67,25 +68,35 @@ public final class LatheCompiler implements Compiler {
     final var latheCtx = ctx.get();
     final var moduleDir = latheCtx.moduleDir();
     final var moduleRel = latheCtx.moduleRel();
-    final var lockFile = moduleDir.resolve(LatheLayout.LOCK_FILE);
-
-    try {
-      Files.createDirectories(moduleDir);
-      Files.writeString(lockFile, "");
-    } catch (final IOException e) {
-      LOG.warn("[lathe] {} failed to create lock file", moduleRel, e);
-    }
+    final boolean locked = tryAcquireLock(moduleDir, moduleRel);
 
     try {
       final var result = javacCompiler.performCompile(config);
-      syncOutput(config, moduleDir, moduleRel, result);
+      if (locked) {
+        syncOutput(config, moduleDir, moduleRel, result);
+      } else {
+        LOG.warn("[lathe] {} skipping .lathe/ sync — lock unavailable", moduleRel);
+      }
+
       return result;
     } finally {
-      try {
-        Files.deleteIfExists(lockFile);
-      } catch (final IOException e) {
-        LOG.warn("[lathe] {} failed to delete lock file", moduleRel, e);
+      if (locked) {
+        try {
+          LatheLock.release(moduleDir);
+        } catch (final IOException e) {
+          LOG.warn("[lathe] {} failed to delete lock file", moduleRel, e);
+        }
       }
+    }
+  }
+
+  private boolean tryAcquireLock(final Path moduleDir, final Path moduleRel) {
+    try {
+      LatheLock.acquire(moduleDir);
+      return true;
+    } catch (final IOException e) {
+      LOG.warn("[lathe] {} failed to create lock file", moduleRel, e);
+      return false;
     }
   }
 

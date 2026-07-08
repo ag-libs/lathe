@@ -8,6 +8,7 @@ final class PluginProps {
 
   static final String GROUP_ID = "io.github.ag-libs";
   static final String SERVER_ARTIFACT_ID = "lathe-server";
+  static final String TEST_RUNNER_ARTIFACT_ID = "lathe-test-runner";
 
   private static final Properties PROPS = load();
 
