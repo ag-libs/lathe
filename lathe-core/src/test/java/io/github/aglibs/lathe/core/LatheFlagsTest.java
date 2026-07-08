@@ -9,7 +9,9 @@ class LatheFlagsTest {
 
   @AfterEach
   void clearProperty() {
-    System.clearProperty("lathe.skip");
+    System.clearProperty(LatheFlags.SKIP);
+    System.clearProperty(LatheFlags.FORCE_SYNC);
+    System.clearProperty(LatheFlags.TEST_CAPTURE_SKIP_EXECUTION);
   }
 
   @Test
@@ -19,13 +21,20 @@ class LatheFlagsTest {
 
   @Test
   void isDisabled_trueWhenSkipPropertyIsTrue() {
-    System.setProperty("lathe.skip", "true");
+    System.setProperty(LatheFlags.SKIP, "true");
     assertThat(LatheFlags.isDisabled()).isTrue();
   }
 
   @Test
   void isDisabled_falseWhenSkipPropertyIsFalse() {
-    System.setProperty("lathe.skip", "false");
+    System.setProperty(LatheFlags.SKIP, "false");
     assertThat(LatheFlags.isDisabled()).isFalse();
+  }
+
+  @Test
+  void isTestExecutionSkipped_trueWhenPropertyIsTrue() {
+    System.setProperty(LatheFlags.TEST_CAPTURE_SKIP_EXECUTION, "true");
+
+    assertThat(LatheFlags.isTestExecutionSkipped()).isTrue();
   }
 }

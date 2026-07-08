@@ -9,6 +9,7 @@
 
   <modules>
     <module>lathe-core</module>
+    <module>lathe-junit</module>
     <module>lathe-compiler</module>
     <module>lathe-server</module>
     <module>lathe-maven-plugin</module>
@@ -50,6 +51,11 @@
       </dependency>
       <dependency>
         <groupId>io.github.ag-libs</groupId>
+        <artifactId>lathe-junit</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.github.ag-libs</groupId>
         <artifactId>lathe-compiler</artifactId>
         <version>${project.version}</version>
       </dependency>
@@ -85,6 +91,11 @@
         <artifactId>junit-jupiter</artifactId>
         <version>${junit.version}</version>
         <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.junit.platform</groupId>
+        <artifactId>junit-platform-launcher</artifactId>
+        <version>${junit.version}</version>
       </dependency>
       <dependency>
         <groupId>org.assertj</groupId>

@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.compiler;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheBuildInfo;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.LatheWorkspace;
 import io.github.aglibs.lathe.core.Stopwatch;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -119,7 +120,7 @@ public final class LatheCompiler implements Compiler {
 
   private Optional<LatheContext> resolveLatheContext(final CompilerConfiguration config) {
     final var moduleRoot = config.getWorkingDirectory().toPath();
-    return WorkspaceDetector.findWorkspaceRoot(moduleRoot)
+    return LatheWorkspace.findRoot(moduleRoot)
         .map(
             workspaceRoot -> {
               final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
