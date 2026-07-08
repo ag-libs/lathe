@@ -19,6 +19,7 @@ import org.eclipse.lsp4j.services.WorkspaceService;
 final class LatheWorkspaceService implements WorkspaceService {
 
   private static final String RUN_TEST_COMMAND = "lathe.run.test";
+  private static final String LIST_RUNNABLES_COMMAND = "lathe.runnables.list";
 
   private final LatheTextDocumentService textDocumentService;
 
@@ -46,14 +47,23 @@ final class LatheWorkspaceService implements WorkspaceService {
 
   @Override
   public CompletableFuture<Object> executeCommand(final ExecuteCommandParams params) {
-    if (!RUN_TEST_COMMAND.equals(params.getCommand())) {
-      return CompletableFuture.completedFuture(null);
-    }
+    return switch (params.getCommand()) {
+      case RUN_TEST_COMMAND -> runTest(params);
+      case LIST_RUNNABLES_COMMAND -> listRunnables(params);
+      default -> CompletableFuture.completedFuture(null);
+    };
+  }
 
-    final var argument = parseRunTestArgument(params.getArguments().get(0));
+  private CompletableFuture<Object> runTest(final ExecuteCommandParams params) {
+    final var argument = parseRunTestArgument(params.getArguments().getFirst());
     return textDocumentService
         .runTestFuture(argument.moduleRel(), argument.selection())
         .thenApply(outcome -> outcome);
+  }
+
+  private CompletableFuture<Object> listRunnables(final ExecuteCommandParams params) {
+    final String uri = parseListRunnablesArgument(params.getArguments().getFirst());
+    return textDocumentService.runnablesFuture(uri).thenApply(targets -> targets);
   }
 
   private record RunTestArgument(String moduleRel, TestSelection selection) {}
@@ -65,5 +75,10 @@ final class LatheWorkspaceService implements WorkspaceService {
             TestSelectionKind.valueOf(json.get("selectorKind").getAsString()),
             json.get("selectorValue").getAsString());
     return new RunTestArgument(json.get("moduleRel").getAsString(), selection);
+  }
+
+  private static String parseListRunnablesArgument(final Object argument) {
+    final var json = (JsonObject) argument;
+    return json.get("uri").getAsString();
   }
 }

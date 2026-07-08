@@ -13,6 +13,7 @@ import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.server.analysis.TransientSource;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
+import io.github.aglibs.lathe.server.run.RunTarget;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.nio.file.Path;
 import java.util.List;
@@ -272,6 +273,11 @@ public final class CompilationWorker {
   public CompletableFuture<List<DocumentSymbol>> documentSymbol(
       final String uri, final String content) {
     return submit(ctx -> ctx.documentSymbol(uri, content));
+  }
+
+  public CompletableFuture<List<RunTarget>> runnables(
+      final String uri, final String content, final int expectedVersion, final String moduleRel) {
+    return submit(ctx -> ctx.runnables(uri, content, expectedVersion, moduleRel));
   }
 
   public CompletableFuture<List<FoldingRange>> foldingRange(

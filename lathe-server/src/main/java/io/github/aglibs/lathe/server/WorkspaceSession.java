@@ -35,6 +35,7 @@ import io.github.aglibs.lathe.server.run.CompletenessGate;
 import io.github.aglibs.lathe.server.run.LaunchTemplateReader;
 import io.github.aglibs.lathe.server.run.ReplayLauncher;
 import io.github.aglibs.lathe.server.run.ReplayOutcome;
+import io.github.aglibs.lathe.server.run.RunTarget;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -195,6 +196,28 @@ final class WorkspaceSession {
     } catch (final IOException e) {
       result.completeExceptionally(e);
     }
+  }
+
+  CompletableFuture<List<RunTarget>> runnablesFuture(final String uri) {
+    final OpenDocument doc = docs.get(uri);
+    if (doc == null) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
+    return switch (routeCompiler(uri)) {
+      case CompilerRoute.Module module -> {
+        touchAnalysisCache(uri);
+        yield module
+            .worker()
+            .runnables(uri, doc.content(), doc.version(), moduleRel(module.config()));
+      }
+      case CompilerRoute.External ignored -> CompletableFuture.completedFuture(List.of());
+      case CompilerRoute.Missing ignored -> CompletableFuture.completedFuture(List.of());
+    };
+  }
+
+  private String moduleRel(final ModuleSourceConfig config) {
+    return workspaceRoot.resolve(LatheLayout.LATHE_DIR).relativize(config.moduleDir()).toString();
   }
 
   void onOpen(final String uri, final String content, final int version) {

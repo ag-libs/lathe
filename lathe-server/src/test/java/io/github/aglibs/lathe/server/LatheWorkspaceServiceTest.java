@@ -5,10 +5,15 @@ import static org.mockito.Mockito.mock;
 
 import com.google.gson.JsonObject;
 import io.github.aglibs.lathe.server.run.ReplayOutcome;
+import io.github.aglibs.lathe.server.run.RunTarget;
+import io.github.aglibs.lathe.server.run.RunnableKind;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import org.eclipse.lsp4j.DidOpenTextDocumentParams;
 import org.eclipse.lsp4j.ExecuteCommandParams;
+import org.eclipse.lsp4j.TextDocumentItem;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -60,5 +65,47 @@ class LatheWorkspaceServiceTest {
     final var outcome = (ReplayOutcome) result;
     assertThat(outcome.launched()).isFalse();
     assertThat(outcome.blockedReasons()).anyMatch(reason -> reason.contains("run a build first"));
+  }
+
+  @Test
+  void executeCommand_listRunnables_returnsDiscoveredTargets() throws Exception {
+    final Path sourceRoot = tmp.resolve("module/src/test/java");
+    final Path source = sourceRoot.resolve("com/example/FooTest.java");
+    Files.createDirectories(source.getParent());
+    Files.writeString(
+        source,
+        """
+        package com.example;
+
+        import org.junit.jupiter.api.Test;
+
+        class FooTest {
+          @Test
+          void bar_condition_result() {
+          }
+        }
+        """);
+    TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
+    textDocumentService.initialize(tmp);
+    final String uri = source.toUri().toString();
+    textDocumentService.didOpen(
+        new DidOpenTextDocumentParams(
+            new TextDocumentItem(uri, "java", 1, Files.readString(source))));
+    final var argument = new JsonObject();
+    argument.addProperty("uri", uri);
+    final var params = new ExecuteCommandParams("lathe.runnables.list", List.of(argument));
+
+    final var result = service.executeCommand(params).get(5, TimeUnit.SECONDS);
+
+    assertThat(result).isInstanceOf(List.class);
+    @SuppressWarnings("unchecked")
+    final List<RunTarget> targets = (List<RunTarget>) result;
+    assertThat(targets)
+        .extracting(RunTarget::kind)
+        .contains(RunnableKind.TEST_METHOD, RunnableKind.TEST_CLASS);
+    assertThat(targets)
+        .filteredOn(t -> t.kind() == RunnableKind.TEST_METHOD)
+        .extracting(RunTarget::moduleRel)
+        .containsExactly("module");
   }
 }

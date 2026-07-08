@@ -9,8 +9,11 @@ import org.junit.jupiter.api.Test;
 
 class RunnableScannerTest {
 
+  private static final String URI = TempSourceCompiler.TEST_URI;
+  private static final String MODULE_REL = "app";
+
   @Test
-  void scan_mainMethod_returnsMainTarget() {
+  void runnables_mainMethod_returnsMainTarget() {
     final String source =
         """
         package demo;
@@ -31,7 +34,7 @@ class RunnableScannerTest {
   }
 
   @Test
-  void scan_nonPublicMain_returnsNoTargets() {
+  void runnables_packagePrivateStaticMain_returnsMainTarget() {
     final String source =
         """
         package demo;
@@ -42,11 +45,59 @@ class RunnableScannerTest {
         }
         """;
 
+    assertThat(scan(source)).extracting(RunTarget::kind).containsExactly(RunnableKind.MAIN);
+  }
+
+  @Test
+  void runnables_instanceMainNoArgs_returnsMainTarget() {
+    final String source =
+        """
+        package demo;
+
+        class App {
+          void main() {
+          }
+        }
+        """;
+
+    final var target = scan(source).getFirst();
+
+    assertThat(target.kind()).isEqualTo(RunnableKind.MAIN);
+    assertThat(target.id()).isEqualTo("demo.App#main");
+  }
+
+  @Test
+  void runnables_mainWithNonStringArrayParam_returnsNoTargets() {
+    final String source =
+        """
+        package demo;
+
+        class App {
+          void main(int arg) {
+          }
+        }
+        """;
+
     assertThat(scan(source)).isEmpty();
   }
 
   @Test
-  void scan_testMethod_returnsMethodAndClassAndPackageTargets() {
+  void runnables_mainWithTwoParams_returnsNoTargets() {
+    final String source =
+        """
+        package demo;
+
+        class App {
+          void main(String[] args, int extra) {
+          }
+        }
+        """;
+
+    assertThat(scan(source)).isEmpty();
+  }
+
+  @Test
+  void runnables_testMethod_returnsMethodAndClassAndPackageTargets() {
     final String source =
         """
         package demo;
@@ -72,7 +123,7 @@ class RunnableScannerTest {
   }
 
   @Test
-  void scan_parameterizedTestWithParams_erasesGenericParamTypes() {
+  void runnables_parameterizedTestWithGenericParams_erasesToFullyQualifiedTypes() {
     final String source =
         """
         package demo;
@@ -89,11 +140,32 @@ class RunnableScannerTest {
 
     final var method = scan(source).getFirst();
 
-    assertThat(method.id()).isEqualTo("demo.FooTest#bar_input_result(String,List)");
+    assertThat(method.id())
+        .isEqualTo("demo.FooTest#bar_input_result(java.lang.String,java.util.List)");
   }
 
   @Test
-  void scan_nestedClassWithTest_usesDollarSeparatedId() {
+  void runnables_primitiveAndArrayParams_qualifyCorrectly() {
+    final String source =
+        """
+        package demo;
+
+        import org.junit.jupiter.api.Test;
+
+        class FooTest {
+          @Test
+          void bar_input_result(int count, String[] names) {
+          }
+        }
+        """;
+
+    final var method = scan(source).getFirst();
+
+    assertThat(method.id()).isEqualTo("demo.FooTest#bar_input_result(int,java.lang.String[])");
+  }
+
+  @Test
+  void runnables_nestedClassWithTest_usesBinaryNameSeparator() {
     final String source =
         """
         package demo;
@@ -117,7 +189,7 @@ class RunnableScannerTest {
   }
 
   @Test
-  void scan_classWithoutTestAnnotations_returnsNoTargets() {
+  void runnables_classWithoutTestAnnotations_returnsNoTargets() {
     final String source =
         """
         package demo;
@@ -132,13 +204,9 @@ class RunnableScannerTest {
   }
 
   private static List<RunTarget> scan(final String source) {
-    try (var parser = new SourceParser()) {
-      return parser
-          .parseContent(
-              "file:///Test.java",
-              source,
-              (trees, tree) -> RunnableScanner.scan(trees, tree, "file:///Test.java", "app"))
-          .orElseThrow();
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(URI, source, 1, CompileMode.OPEN);
+      return session.runnables(URI, source, 1, MODULE_REL);
     }
   }
 }

@@ -1,16 +1,10 @@
 package io.github.aglibs.lathe.server.analysis;
 
-import com.sun.source.tree.AnnotationTree;
-import com.sun.source.tree.ArrayTypeTree;
 import com.sun.source.tree.ClassTree;
-import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.MethodTree;
-import com.sun.source.tree.ParameterizedTypeTree;
-import com.sun.source.tree.PrimitiveTypeTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.util.TreePathScanner;
-import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.server.run.RunTarget;
 import io.github.aglibs.lathe.server.run.RunnableKind;
 import java.util.ArrayDeque;
@@ -19,53 +13,61 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
-import javax.lang.model.element.Modifier;
+import javax.lang.model.element.AnnotationMirror;
+import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.TypeKind;
+import javax.lang.model.type.TypeMirror;
 import org.eclipse.lsp4j.Range;
 
+/**
+ * Walks the attributed AST for an open file, resolving each declaration's real {@code Element} so
+ * parameter-type erasure and binary names match javac's own semantics exactly (mirrors {@link
+ * ReferenceTarget}'s {@code buildDescriptor}/{@code getBinaryName} usage) -- unlike its syntax-only
+ * siblings {@link DocumentSymbolScanner}/{@link FoldingRangeScanner}, whose purposes never need
+ * overload-correct signatures.
+ */
 final class RunnableScanner extends TreePathScanner<Void, Void> {
 
   private static final Set<String> TEST_ANNOTATIONS =
       Set.of("Test", "ParameterizedTest", "TestFactory", "RepeatedTest");
 
-  private final Trees trees;
-  private final CompilationUnitTree compilationUnit;
+  private final AttributedFileAnalysis analysis;
   private final String uri;
   private final String moduleRel;
   private final List<RunTarget> targets = new ArrayList<>();
-  private final ArrayDeque<ClassScope> classStack = new ArrayDeque<>();
+  private final ArrayDeque<TypeElement> classStack = new ArrayDeque<>();
   private final Set<String> classesWithTests = new HashSet<>();
   private boolean packageEmitted;
 
   private RunnableScanner(
-      final Trees trees,
-      final CompilationUnitTree compilationUnit,
-      final String uri,
-      final String moduleRel) {
-    this.trees = trees;
-    this.compilationUnit = compilationUnit;
+      final AttributedFileAnalysis analysis, final String uri, final String moduleRel) {
+    this.analysis = analysis;
     this.uri = uri;
     this.moduleRel = moduleRel;
   }
 
   static List<RunTarget> scan(
-      final Trees trees,
-      final CompilationUnitTree compilationUnit,
-      final String uri,
-      final String moduleRel) {
-    final var scanner = new RunnableScanner(trees, compilationUnit, uri, moduleRel);
-    scanner.scan(compilationUnit, null);
+      final AttributedFileAnalysis analysis, final String uri, final String moduleRel) {
+    final var scanner = new RunnableScanner(analysis, uri, moduleRel);
+    scanner.scan(analysis.tree(), null);
     return scanner.targets;
   }
 
   @Override
   public Void visitClass(final ClassTree node, final Void unused) {
-    final var scope = new ClassScope(qualifiedName(node), node);
-    classStack.push(scope);
+    final var element = analysis.trees().getElement(getCurrentPath());
+    if (!(element instanceof final TypeElement typeElement)) {
+      return super.visitClass(node, unused);
+    }
+
+    classStack.push(typeElement);
     super.visitClass(node, unused);
     classStack.pop();
-    if (classesWithTests.contains(scope.qualifiedName())) {
-      targets.add(classTarget(scope));
+    final String binaryName = binaryName(typeElement);
+    if (classesWithTests.contains(binaryName)) {
+      targets.add(classTarget(node, typeElement, binaryName));
       emitPackageOnce();
     }
 
@@ -74,92 +76,85 @@ final class RunnableScanner extends TreePathScanner<Void, Void> {
 
   @Override
   public Void visitMethod(final MethodTree node, final Void unused) {
-    final ClassScope enclosing = classStack.peek();
-    if (isMainMethod(node)) {
+    final var element = analysis.trees().getElement(getCurrentPath());
+    if (!(element instanceof final ExecutableElement executable)) {
+      return super.visitMethod(node, unused);
+    }
+
+    final TypeElement enclosing = classStack.peek();
+    if (isMainMethod(executable)) {
       targets.add(mainTarget(node, enclosing));
-    } else if (isTestMethod(node) && enclosing != null) {
-      targets.add(methodTarget(node, enclosing));
-      classesWithTests.add(enclosing.qualifiedName());
+    } else if (isTestMethod(executable) && enclosing != null) {
+      targets.add(methodTarget(node, executable, enclosing));
+      classesWithTests.add(binaryName(enclosing));
     }
 
     return super.visitMethod(node, unused);
   }
 
-  private String qualifiedName(final ClassTree node) {
-    final String simpleName = node.getSimpleName().toString();
-    final ClassScope enclosing = classStack.peek();
-    if (enclosing != null) {
-      return "%s$%s".formatted(enclosing.qualifiedName(), simpleName);
-    }
-
-    final ExpressionTree pkg = compilationUnit.getPackageName();
-    return pkg != null ? "%s.%s".formatted(pkg, simpleName) : simpleName;
+  private String binaryName(final TypeElement type) {
+    return analysis.elements().getBinaryName(type).toString();
   }
 
-  private static boolean isMainMethod(final MethodTree node) {
-    final Set<Modifier> modifiers = node.getModifiers().getFlags();
-    return node.getName().contentEquals("main")
-        && modifiers.contains(Modifier.PUBLIC)
-        && modifiers.contains(Modifier.STATIC)
-        && isVoidReturn(node)
-        && hasSingleStringArrayParam(node);
-  }
-
-  private static boolean isVoidReturn(final MethodTree node) {
-    return node.getReturnType() instanceof final PrimitiveTypeTree primitive
-        && primitive.getPrimitiveTypeKind() == TypeKind.VOID;
-  }
-
-  private static boolean hasSingleStringArrayParam(final MethodTree node) {
-    if (node.getParameters().size() != 1) {
+  /**
+   * Matches both the classic {@code public static void main(String[])} and, since JDK 21+'s relaxed
+   * launch protocol (JEP 512, finalized in JDK 25), a bare instance {@code void main()} -- no
+   * {@code public}/{@code static} required, and either zero parameters or a single {@code
+   * String[]}.
+   */
+  private static boolean isMainMethod(final ExecutableElement element) {
+    if (!element.getSimpleName().contentEquals("main")
+        || element.getReturnType().getKind() != TypeKind.VOID) {
       return false;
     }
 
-    final Tree type = node.getParameters().getFirst().getType();
-    return type instanceof final ArrayTypeTree array && "String".equals(array.getType().toString());
+    return switch (element.getParameters().size()) {
+      case 0 -> true;
+      case 1 -> isStringArray(element.getParameters().getFirst().asType());
+      default -> false;
+    };
   }
 
-  private static boolean isTestMethod(final MethodTree node) {
-    return node.getModifiers().getAnnotations().stream().anyMatch(RunnableScanner::isTestType);
+  private static boolean isStringArray(final TypeMirror type) {
+    return type.getKind() == TypeKind.ARRAY
+        && ((ArrayType) type).getComponentType().toString().equals("java.lang.String");
   }
 
-  private static boolean isTestType(final AnnotationTree annotation) {
-    final String name = annotation.getAnnotationType().toString();
-    final int dot = name.lastIndexOf('.');
-    return TEST_ANNOTATIONS.contains(dot >= 0 ? name.substring(dot + 1) : name);
+  private static boolean isTestMethod(final ExecutableElement element) {
+    return element.getAnnotationMirrors().stream().anyMatch(RunnableScanner::isTestAnnotation);
   }
 
-  private static String erasedTypeName(final Tree typeTree) {
-    return typeTree instanceof final ParameterizedTypeTree parameterized
-        ? parameterized.getType().toString()
-        : typeTree.toString();
+  private static boolean isTestAnnotation(final AnnotationMirror mirror) {
+    return mirror.getAnnotationType().asElement() instanceof final TypeElement type
+        && TEST_ANNOTATIONS.contains(type.getSimpleName().toString());
   }
 
-  private RunTarget mainTarget(final MethodTree node, final ClassScope enclosing) {
-    final String fqcn = enclosing != null ? enclosing.qualifiedName() : "";
+  private RunTarget mainTarget(final MethodTree node, final TypeElement enclosing) {
+    final String fqcn = enclosing != null ? binaryName(enclosing) : "";
     return new RunTarget(
         "%s#main".formatted(fqcn), RunnableKind.MAIN, "main", moduleRel, uri, range(node));
   }
 
-  private RunTarget methodTarget(final MethodTree node, final ClassScope enclosing) {
-    final String fqcn = enclosing.qualifiedName();
-    final String methodName = node.getName().toString();
+  private RunTarget methodTarget(
+      final MethodTree node, final ExecutableElement element, final TypeElement enclosing) {
     final String erasedParams =
-        node.getParameters().stream()
-            .map(param -> erasedTypeName(param.getType()))
+        element.getParameters().stream()
+            .map(param -> analysis.types().erasure(param.asType()).toString())
             .collect(Collectors.joining(","));
-    final String id = "%s#%s(%s)".formatted(fqcn, methodName, erasedParams);
+    final String methodName = element.getSimpleName().toString();
+    final String id = "%s#%s(%s)".formatted(binaryName(enclosing), methodName, erasedParams);
     return new RunTarget(id, RunnableKind.TEST_METHOD, methodName, moduleRel, uri, range(node));
   }
 
-  private RunTarget classTarget(final ClassScope scope) {
+  private RunTarget classTarget(
+      final ClassTree node, final TypeElement element, final String binaryName) {
     return new RunTarget(
-        scope.qualifiedName(),
+        binaryName,
         RunnableKind.TEST_CLASS,
-        scope.tree().getSimpleName().toString(),
+        element.getSimpleName().toString(),
         moduleRel,
         uri,
-        range(scope.tree()));
+        range(node));
   }
 
   private void emitPackageOnce() {
@@ -167,7 +162,7 @@ final class RunnableScanner extends TreePathScanner<Void, Void> {
       return;
     }
 
-    final ExpressionTree pkg = compilationUnit.getPackageName();
+    final ExpressionTree pkg = analysis.tree().getPackageName();
     if (pkg == null) {
       return;
     }
@@ -176,12 +171,10 @@ final class RunnableScanner extends TreePathScanner<Void, Void> {
     final String name = pkg.toString();
     targets.add(
         new RunTarget(
-            name, RunnableKind.TEST_PACKAGE, name, moduleRel, uri, range(compilationUnit)));
+            name, RunnableKind.TEST_PACKAGE, name, moduleRel, uri, range(analysis.tree())));
   }
 
   private Range range(final Tree node) {
-    return SourceLocator.range(trees, compilationUnit, node);
+    return SourceLocator.range(analysis.trees(), analysis.tree(), node);
   }
-
-  private record ClassScope(String qualifiedName, ClassTree tree) {}
 }

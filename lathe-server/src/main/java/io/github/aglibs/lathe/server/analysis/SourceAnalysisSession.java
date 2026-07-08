@@ -8,6 +8,7 @@ import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionEngine;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionRequest;
+import io.github.aglibs.lathe.server.run.RunTarget;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
@@ -152,6 +153,20 @@ public final class SourceAnalysisSession implements AutoCloseable {
     return symbols;
   }
 
+  public List<RunTarget> runnables(
+      final String uri, final String content, final int expectedVersion, final String moduleRel) {
+    final var t = Stopwatch.start();
+    final CachedFileAnalysis cached = attributedAnalysis(uri, content, expectedVersion);
+    if (cached == null || cached.analysis() == null || cached.analysis().tree() == null) {
+      return List.of();
+    }
+
+    final var runnables = RunnableScanner.scan(cached.analysis(), uri, moduleRel);
+    LOG.fine(
+        () -> "[runnables] %s %dms targets=%d".formatted(uri, t.elapsedMs(), runnables.size()));
+    return runnables;
+  }
+
   public List<FoldingRange> foldingRange(final String uri, final String content) {
     final var t = Stopwatch.start();
     final var ranges =
@@ -162,18 +177,25 @@ public final class SourceAnalysisSession implements AutoCloseable {
 
   public List<SemanticToken> semanticTokens(
       final String uri, final String content, final int expectedVersion) {
+    final CachedFileAnalysis cached = attributedAnalysis(uri, content, expectedVersion);
+    return cached != null ? cached.analysis().semanticTokens() : null;
+  }
+
+  /**
+   * Returns the cached attributed analysis when it already matches {@code content}/{@code
+   * expectedVersion} (the common case -- compile-on-open/change/save already attributes for
+   * diagnostics, so this is normally free), otherwise forces one fresh compile and returns whatever
+   * lands in the cache afterward (possibly null, if compilation could not attribute at all).
+   */
+  private CachedFileAnalysis attributedAnalysis(
+      final String uri, final String content, final int expectedVersion) {
     final CachedFileAnalysis ctx = cache.get(uri);
     if (ctx != null && ctx.version() == expectedVersion && ctx.content().equals(content)) {
-      return ctx.analysis().semanticTokens();
+      return ctx;
     }
 
     compile(uri, content, expectedVersion, CompileMode.OPEN);
-    final CachedFileAnalysis cached = cache.get(uri);
-    if (cached == null) {
-      return null;
-    }
-
-    return cached.analysis().semanticTokens();
+    return cache.get(uri);
   }
 
   public SignatureHelp signatureHelp(final SourceFeatureRequest request) {
