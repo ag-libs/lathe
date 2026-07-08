@@ -21,9 +21,18 @@ public final class LatheLayout {
   public static final String LOCK_FILE = "lathe.lock";
   public static final String MODULE_INFO_JAVA = "module-info.java";
   public static final String GENERATED_SOURCES = "generated-sources";
+  public static final String TARGET_DIR = "target";
+  public static final String CLASSES_DIR = "classes";
+  public static final String TEST_CLASSES_DIR = "test-classes";
   public static final String PARAMS_FILE_PREFIX = "lsp-params-";
   public static final String DEPENDENCY_SOURCE_FILENAME = ".lathe-source.json";
   public static final String TYPE_INDEX_FILENAME = "index.json";
+  public static final String TEST_LAUNCH_FILE = "test-launch.json";
+  public static final String MAIN_LAUNCH_FILE = "main-launch.json";
+  public static final String TEST_LAUNCH_SCHEMA_VERSION = "1";
+  public static final String MAIN_LAUNCH_SCHEMA_VERSION = "1";
+  public static final String TEST_RUNNER_MAIN_CLASS =
+      "io.github.aglibs.lathe.runner.LatheTestRunner";
 
   private LatheLayout() {}
 
