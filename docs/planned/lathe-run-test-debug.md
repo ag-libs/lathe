@@ -772,25 +772,232 @@ There is no delegation fallback to guard: cases capture-replay cannot handle are
 
 ---
 
-## 12. Build slices
+## 12. Reviewable deliverables
 
-Each slice is a reviewable commit.
+Each deliverable is intended to be reviewed and committed separately.
+The order below is the implementation order unless a later discovery forces a design update.
 
-1. **`lathe-core`** — `TestLaunchData`, `MainLaunchData`, `WorkspaceLocator`, `LatheLayout`,
-   `ReactorRewrite` + `ReplayTransform`, `TestSelection` (pure, fully unit-tested).
-2. **`lathe-junit`** — capture listener + `LaunchCapture`.
-3. **`lathe-test-runner`** — runner + selectors.
-4. **Invoker wiring + capture assert** *(GO/NO-GO #1)* — Surefire pin, `lathe-junit` on `jpms`, `verify`
-   asserts `test-launch.json`; **root-cause the exit-handshake crash here (§14)**.
-5. **Server replay (test)** — `LaunchTemplateReader`, `CompletenessGate`, `ReplayLauncher`,
-   `RunnableScanner`, `run` command; smoke: `HelloTest` green from `.lathe/`.
-6. **`main` run** *(GO/NO-GO #2)* — `MainLaunchWriter` (sync) + `MainLaunchReader` +
-   `ReplayTransform.forMain`; GO/NO-GO: the `plexus-java`-derived partition launches identically to a
-   real modular run — modular (`jpms` `HelloMain`) + classpath (`app` `Main`) green.
-7. **Root run configs** — `.lathe-run.json` schema, reader, Neovim picker command, and config overlay
-   validation.
-8. **Deferred** — freshness refinement, capture-only filter, NDJSON streaming + `sessionEvent`, debug,
-   resource watch, `systemPropertyVariables` capture.
+### 12.1 Core launch schema and pure transform
+
+**Scope:**
+
+- Add `lathe-core` records for `TestLaunchData`, `MainLaunchData`, and `TestSelection`.
+- Add `LatheLayout` constants for launch file names, schema versions, and the test-runner main class.
+- Add `WorkspaceLocator`.
+- Add pure launch helpers: `ReactorRewrite`, `ReplayTransform.forTest(...)`, and
+  `ReplayTransform.forMain(...)`.
+
+**Review focus:**
+
+- Schema shape and validation invariants.
+- Reactor `target/` to `.lathe/` rewrite correctness.
+- No process spawning, Maven integration, or JUnit dependency in this slice.
+
+**Verification:**
+
+- Unit tests in `lathe-core`.
+
+**Commit prefix:** `feat: add launch schema and replay transforms`
+
+### 12.2 JUnit capture module
+
+**Scope:**
+
+- Add the `lathe-junit` module.
+- Implement `CaptureLauncherSessionListener`.
+- Implement pure `LaunchCapture` introspection logic.
+- Register the listener with ServiceLoader.
+- Write `.lathe/<rel>/test-launch.json` atomically.
+- Fail open on capture errors.
+- Exclude `lathe-junit`'s own jar from the captured class path.
+
+**Review focus:**
+
+- Capture does not break user test runs.
+- Captured JVM args and JPMS fields match this design.
+- `.lathe/` activation gate is correct.
+
+**Verification:**
+
+- Unit tests for `LaunchCapture`.
+- Small integration or invoker assertion that the listener fires and writes `test-launch.json`.
+
+**Commit prefix:** `feat: capture junit test launch templates`
+
+### 12.3 Test runner module
+
+**Scope:**
+
+- Add the `lathe-test-runner` module.
+- Implement `LatheTestRunner`.
+- Parse selectors for classes, methods, packages, and modules.
+- Drive the JUnit Platform launcher.
+- Return stable exit codes.
+
+**Review focus:**
+
+- Runner is independent from capture.
+- No runtime mode flag is shared with `lathe-junit`.
+- Selector parsing is deterministic.
+
+**Verification:**
+
+- Unit tests for selector parsing.
+- Runner smoke tests with a tiny fixture.
+
+**Commit prefix:** `feat: add junit replay test runner`
+
+### 12.4 Maven wiring and capture verification
+
+**Scope:**
+
+- Update the build order.
+- Add `lathe-junit` dependency injection through `lathe:init`.
+- Pin Surefire version as required.
+- Extend the invoker fixture to assert that `test-launch.json` exists.
+- Assert that modular launch fields are captured.
+- Assert classpath launch fields where relevant.
+
+**Review focus:**
+
+- POM mutation behavior.
+- Surefire pin.
+- Generated and committed user-facing setup.
+
+**Verification:**
+
+- `mvn verify -pl lathe-maven-plugin -Dinvoker.test=multi-module`
+
+**Commit prefix:** `feat: wire junit launch capture into maven setup`
+
+### 12.5 Server test replay
+
+**Scope:**
+
+- Add server-side readers and launch orchestration:
+  `LaunchTemplateReader`, `CompletenessGate`, `RunnerJarProvider`, `ReplayLauncher`, and
+  `ReplaySession`.
+- Add an initial command path for running one selected test from a captured template.
+- Materialize or locate `lathe-test-runner.jar`.
+- Spawn the replay JVM against `.lathe/`.
+
+**Review focus:**
+
+- Server remains Maven-free.
+- Completeness gate refuses unsafe launches.
+- Process lifecycle and cancellation behavior are explicit.
+
+**Verification:**
+
+- Server unit tests for readers and gates.
+- Invoker or integration smoke test: captured `HelloTest` replays green from `.lathe/`.
+
+**Commit prefix:** `feat: replay captured tests from lathe bytecode`
+
+### 12.6 Runnable discovery
+
+**Scope:**
+
+- Add `RunnableScanner`.
+- Add the `Runnable` record.
+- Discover `public static void main(String[])`.
+- Discover JUnit test classes and methods.
+- Expose a command for listing runnables in a file or module.
+
+**Review focus:**
+
+- Uses javac/tree APIs, not text parsing.
+- Stable runnable IDs, especially method selectors.
+- Source ranges and labels.
+
+**Verification:**
+
+- Server tests using existing compilation and analysis fixtures.
+
+**Commit prefix:** `feat: discover runnable tests and main classes`
+
+### 12.7 Main launch metadata
+
+**Scope:**
+
+- Add Maven-side `MainLaunchWriter`.
+- Write `.lathe/<rel>/main-launch.json` during `lathe:sync`.
+- Use Maven runtime classpath membership.
+- Use `plexus-java` placement for module path and class path.
+- Add server-side `MainLaunchReader`.
+- Integrate `ReplayTransform.forMain(...)`.
+
+**Review focus:**
+
+- Runtime scope correctness.
+- JPMS/classpath partition correctness.
+- No server-side classpath guessing.
+
+**Verification:**
+
+- Invoker fixture for modular `HelloMain`.
+- Invoker fixture for classpath `Main`.
+- Provided dependency is excluded.
+- Reactor dependency rewrites to `.lathe/`.
+
+**Commit prefix:** `feat: derive and replay main launches`
+
+### 12.8 Run config overlay
+
+**Scope:**
+
+- Add `.lathe-run.json` schema reader.
+- Add the `RunConfig` record.
+- Apply overlays for args, JVM args, env, cwd, and debug mode.
+- Add commands for listing and executing named configs.
+
+**Review focus:**
+
+- Overlay cannot mutate launch-correctness fields.
+- Path and cwd validation.
+- Duplicate JVM arg behavior is documented and tested.
+
+**Verification:**
+
+- Unit tests for config parsing and overlay semantics.
+- Server command tests.
+
+**Commit prefix:** `feat: add named run configuration overlays`
+
+### 12.9 Initial debug attach support
+
+**Scope:**
+
+- Add debug mode to replay launch.
+- Allocate or accept a JDWP port.
+- Inject the JDWP agent arg.
+- Surface process and session metadata needed by editor integration.
+- Do not implement a full DAP adapter in this slice unless the design is explicitly updated.
+
+**Review focus:**
+
+- Debug is a thin launch-mode change.
+- JDWP args are correctly ordered.
+- Session lifecycle remains cancellable.
+
+**Verification:**
+
+- Unit test command construction.
+- Manual smoke: JVM suspends and accepts attach.
+
+**Commit prefix:** `feat: add jdwp debug launch mode`
+
+### 12.10 Deferred fidelity and UX work
+
+Each deferred item should be its own later commit or small series:
+
+- NDJSON streaming test events: `feat: stream replay test events`
+- `lathe/sessionEvent` notifications.
+- Capture-only filter: `feat: add capture-only junit refresh mode`
+- Resource watcher copy-on-save.
+- `lathe:refresh-resources`: `feat: refresh resources for replay`
+- `systemPropertyVariables` merge.
+- Neovim picker and commands: `feat: add neovim run config commands`
 
 ---
 
