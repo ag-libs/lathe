@@ -1,5 +1,7 @@
 package io.github.aglibs.lathe.server.run;
 
+import java.util.concurrent.CompletableFuture;
+
 public final class ReplaySession {
 
   private final Process process;
@@ -16,7 +18,7 @@ public final class ReplaySession {
     process.destroy();
   }
 
-  public int awaitExit() throws InterruptedException {
-    return process.waitFor();
+  public CompletableFuture<Integer> onExit() {
+    return process.onExit().thenApply(Process::exitValue);
   }
 }

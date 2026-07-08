@@ -5,6 +5,7 @@ import static java.util.logging.Level.SEVERE;
 import io.github.aglibs.lathe.core.CollectionUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.Stopwatch;
+import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.analysis.CallHierarchyItemData;
@@ -30,6 +31,10 @@ import io.github.aglibs.lathe.server.module.ModuleNameDiscovery;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.lathe.server.module.WorkspaceModuleGraph;
 import io.github.aglibs.lathe.server.module.WorkspaceModuleRegistry;
+import io.github.aglibs.lathe.server.run.CompletenessGate;
+import io.github.aglibs.lathe.server.run.LaunchTemplateReader;
+import io.github.aglibs.lathe.server.run.ReplayLauncher;
+import io.github.aglibs.lathe.server.run.ReplayOutcome;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -132,6 +137,64 @@ final class WorkspaceSession {
 
   void close() {
     workspace.close();
+  }
+
+  CompletableFuture<ReplayOutcome> runTestFuture(
+      final String moduleRel, final TestSelection selection) {
+    final Optional<Path> runnerJar = manifest.runnerJarPath();
+    if (runnerJar.isEmpty()) {
+      return CompletableFuture.completedFuture(
+          ReplayOutcome.blocked(List.of("no lathe-test-runner jar recorded — run a build first")));
+    }
+
+    final Path root = workspaceRoot;
+    final Path runner = runnerJar.get();
+    final var result = new CompletableFuture<ReplayOutcome>();
+    final var thread =
+        new Thread(
+            () -> launchReplay(root, runner, moduleRel, selection, result),
+            "lathe-replay-" + moduleRel);
+    thread.setDaemon(true);
+    thread.start();
+    return result;
+  }
+
+  private static void launchReplay(
+      final Path workspaceRoot,
+      final Path runnerJar,
+      final String moduleRel,
+      final TestSelection selection,
+      final CompletableFuture<ReplayOutcome> result) {
+    try {
+      final var template = new LaunchTemplateReader(workspaceRoot).read(moduleRel);
+      if (template.isEmpty()) {
+        result.complete(
+            ReplayOutcome.blocked(List.of("no captured test-launch.json for " + moduleRel)));
+        return;
+      }
+
+      final var gate = CompletenessGate.verify(template.get(), workspaceRoot);
+      if (!gate.complete()) {
+        result.complete(ReplayOutcome.blocked(gate.reasons()));
+        return;
+      }
+
+      final var session =
+          ReplayLauncher.launch(template.get(), workspaceRoot, runnerJar, selection);
+      session
+          .onExit()
+          .thenApply(ReplayOutcome::completed)
+          .whenComplete(
+              (outcome, error) -> {
+                if (error != null) {
+                  result.completeExceptionally(error);
+                } else {
+                  result.complete(outcome);
+                }
+              });
+    } catch (final IOException e) {
+      result.completeExceptionally(e);
+    }
   }
 
   void onOpen(final String uri, final String content, final int version) {

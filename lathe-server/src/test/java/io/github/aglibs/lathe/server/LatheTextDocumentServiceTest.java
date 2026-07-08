@@ -9,6 +9,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
+import io.github.aglibs.lathe.core.launch.TestSelection;
+import io.github.aglibs.lathe.core.launch.TestSelectionKind;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -293,6 +295,19 @@ class LatheTextDocumentServiceTest {
 
     assertThat(calls).hasSize(1);
     assertThat(calls.getFirst().getFrom().getName()).isEqualTo("caller");
+  }
+
+  @Test
+  void runTestFuture_freshWorkspace_returnsBlockedOnMissingRunnerJar() throws Exception {
+    service.initialize(tmp);
+
+    final var outcome =
+        service
+            .runTestFuture("app", new TestSelection(TestSelectionKind.CLASS, "com.example.Foo"))
+            .get(5, TimeUnit.SECONDS);
+
+    assertThat(outcome.launched()).isFalse();
+    assertThat(outcome.blockedReasons()).anyMatch(reason -> reason.contains("run a build first"));
   }
 
   private static DidChangeTextDocumentParams changeParams(final String text) {

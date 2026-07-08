@@ -1,6 +1,8 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
+import io.github.aglibs.lathe.server.run.ReplayOutcome;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -327,5 +329,10 @@ final class LatheTextDocumentService implements TextDocumentService {
 
   CompletableFuture<List<? extends SymbolInformation>> workspaceSymbolFuture(final String query) {
     return worker.submit(() -> session.workspaceSymbol(query));
+  }
+
+  CompletableFuture<ReplayOutcome> runTestFuture(
+      final String moduleRel, final TestSelection selection) {
+    return worker.submit(() -> session.runTestFuture(moduleRel, selection)).thenCompose(f -> f);
   }
 }
