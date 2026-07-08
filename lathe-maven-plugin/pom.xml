@@ -104,16 +104,16 @@
         <artifactId>maven-plugin-plugin</artifactId>
         <version>${maven-plugin.version}</version>
       </plugin>
-      <!-- Runs the Neovim indent fixtures during `test`. The wrapper script
-           hard-fails under CI when nvim is absent and degrades gracefully on
-           local machines without it. -->
+      <!-- Runs every Neovim `*_spec.lua` fixture (indentation, workspace/cache-root
+           resolution, ...) during `test`. The wrapper script hard-fails under CI
+           when nvim is absent and degrades gracefully on local machines without it. -->
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>exec-maven-plugin</artifactId>
         <version>${exec-maven-plugin.version}</version>
         <executions>
           <execution>
-            <id>neovim-indent-spec</id>
+            <id>neovim-specs</id>
             <goals>
               <goal>exec</goal>
             </goals>
@@ -122,7 +122,7 @@
               <skip>${skipTests}</skip>
               <executable>bash</executable>
               <arguments>
-                <argument>${project.basedir}/src/test/neovim/run-indent-tests.sh</argument>
+                <argument>${project.basedir}/src/test/neovim/run-specs.sh</argument>
               </arguments>
             </configuration>
           </execution>

@@ -17,6 +17,7 @@
 -- invokes the buffer's indentexpr with v:lnum set the same way Neovim does.
 
 local indent = require("lathe.indent")
+local spec = require("spec_helper").new()
 
 -- {name, lines, target_line (1-based), expected_indent}
 local FIXTURES = {
@@ -194,20 +195,16 @@ local function compute_indent(lines, target)
   return indent.compute(target, vim.api.nvim_get_current_buf())
 end
 
-local failures = 0
 for _, fixture in ipairs(FIXTURES) do
   local name, lines, target, expected = fixture[1], fixture[2], fixture[3], fixture[4]
   local ok, actual = pcall(compute_indent, lines, target)
   if not ok then
-    failures = failures + 1
-    io.stderr:write(string.format("ERROR %s: %s\n", name, actual))
+    spec.fail(string.format("%s: %s", name, actual))
   elseif actual ~= expected then
-    failures = failures + 1
-    io.stderr:write(string.format("FAIL  %s: expected %d, got %d\n", name, expected, actual))
+    spec.fail(string.format("%s: expected %d, got %d", name, expected, actual))
   else
-    io.stdout:write(string.format("ok    %s (%d)\n", name, expected))
+    spec.ok(string.format("%s (%d)", name, expected))
   end
 end
 
-io.stdout:write(string.format("\n%d fixtures, %d failures\n", #FIXTURES, failures))
-vim.cmd(failures == 0 and "qa!" or "cq!")
+spec.finish(string.format("%d fixtures", #FIXTURES))
