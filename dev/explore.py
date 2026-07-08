@@ -257,13 +257,23 @@ _ACCEPT_SELECTOR_KEYWORDS = frozenset((
     "label", "filter-text", "label-detail", "detail-contains", "index",
 ))
 
-# RunTarget.kind -> TestSelectionKind. MAIN has no entry: main-class replay
-# (main-launch.json / ReplayTransform.forMain) is not implemented yet.
+# RunTarget.kind arrives as lsp4j's Gson layer serializes it: by ordinal, not
+# name (it registers a generic enum-adapter matching the LSP convention that
+# "kind" fields are integers, same as SymbolKind/DiagnosticSeverity). Ordinals
+# below match RunnableKind's declaration order in lathe-server.
+_RUNNABLE_KIND_NAMES = ("MAIN", "TEST_METHOD", "TEST_CLASS", "TEST_PACKAGE")
+
+# RunnableKind ordinal -> TestSelectionKind. MAIN (0) has no entry: main-class
+# replay (main-launch.json / ReplayTransform.forMain) is not implemented yet.
 _RUNNABLE_TO_SELECTOR_KIND = {
-    "TEST_METHOD": "METHOD",
-    "TEST_CLASS": "CLASS",
-    "TEST_PACKAGE": "PACKAGE",
+    1: "METHOD",
+    2: "CLASS",
+    3: "PACKAGE",
 }
+
+
+def _runnable_kind_name(kind: int) -> str:
+    return _RUNNABLE_KIND_NAMES[kind] if 0 <= kind < len(_RUNNABLE_KIND_NAMES) else f"?({kind})"
 
 
 # ── assertion helpers ─────────────────────────────────────────────────────────
@@ -1495,7 +1505,7 @@ class ExploreShell:
 
         print(f"  {len(targets)} runnable(s):")
         for i, t in enumerate(targets):
-            kind = t.get("kind", "?")
+            kind = _runnable_kind_name(t.get("kind", -1))
             label = t.get("label", "?")
             rid = t.get("id", "?")
             print(f"    [{i}] {kind:<12} {label:<24} {rid}")
@@ -1520,11 +1530,11 @@ class ExploreShell:
             return
 
         target = self._last_runnables[index]
-        kind = target.get("kind", "")
+        kind = target.get("kind", -1)
         selector_kind = _RUNNABLE_TO_SELECTOR_KIND.get(kind)
         if selector_kind is None:
             print(
-                f"  cannot run kind={kind!r} yet"
+                f"  cannot run kind={_runnable_kind_name(kind)} yet"
                 " (main-class replay is not implemented — only test methods/classes/packages)"
             )
             return

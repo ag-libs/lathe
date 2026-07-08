@@ -125,14 +125,26 @@ directory, such as dependency or JDK sources extracted into the Lathe cache.
 | `accept inject <code> [at <line>] <selector>` | Inject a temporary line, accept one completion, and show the edit |
 | `hover <line>:<col>` | Hover info (type, docs) at the given 0-based position |
 | `hover <text>` | Hover info at the first occurrence of `<text>` |
-| `definition <line>:<col>` | Declaration site of the symbol (alias: `def`) |
+| `sig <line>:<col>` | Signature help (overloads, active parameter) at the given 0-based position |
+| `sig after <text>` | Find first occurrence of `<text>`, show signature help right after it |
+| `definition <line>:<col>` | Definition site of the symbol (alias: `def`) |
+| `declaration <line>:<col>` | Declaration site of the symbol (alias: `decl`) |
 | `refs <line>:<col>` | Known call/use sites of the symbol (alias: `refs <text>`) |
 | `refs <text>` | Find first occurrence of `<text>`, request references there |
 | `impl <line>:<col>` | Concrete implementations of the type/method (alias: `implementation`, `impl <text>`) |
 | `impl <text>` | Find first occurrence of `<text>`, request implementations there |
 | `hierarchy <line>:<col>` | Full type hierarchy: item + supertypes + subtypes (alias: `hier`, `hierarchy <text>`) |
 | `hierarchy <text>` | Find first occurrence of `<text>`, show its type hierarchy |
+| `callers <line>:<col>` | Incoming callers of the method (alias: `callers <text>`) |
+| `callers <text>` | Find first occurrence of `<text>`, show its incoming callers |
+| `callees <line>:<col>` | Outgoing callees of the method (alias: `callees <text>`) |
+| `callees <text>` | Find first occurrence of `<text>`, show its outgoing callees |
+| `sym <query>` | Search the workspace type index for types matching `<query>` (prefix match) |
+| `symbols` | Hierarchical document symbols for the open file (alias: `outline`) |
+| `folds` | Folding ranges for the open file (alias: `folding`) |
 | `diagnostics` | Compiler errors and warnings (alias: `diag`) |
+| `runnables` | List discovered run targets (main methods, test methods/classes/packages), numbered for `run` |
+| `run <index> [expect-exit <n>]` | Replay the runnable at `<index>` from captured `.lathe/` bytecode; prints `[BLOCKED]`/`[PASSED]`/`[FAILED]` |
 | `inject <code> [at <line>]` | Insert a temporary line, complete at its end |
 | `reset` | Discard injected content, restore original server view |
 | `log [<n>]` | Last `<n>` relevant server log lines (default 20) |
@@ -340,18 +352,27 @@ from pathlib import Path
 
 file = Path("/home/ag-libs/git/helidon/.../Scheduling.java")
 with LatheClient.start(find_workspace_root(file)) as c:
-    diags   = c.open(file)
-    items   = c.completion(file, line=10, col=5)   # 0-based
-    hover   = c.hover(file, line=10, col=5)
-    defs    = c.definition(file, line=10, col=5)
-    refs    = c.references(file, line=10, col=5)
-    impls   = c.implementation(file, line=10, col=5)
-    hier    = c.prepare_type_hierarchy(file, line=10, col=5)
-    supers  = c.type_hierarchy_supertypes(hier[0]) if hier else []
-    subs    = c.type_hierarchy_subtypes(hier[0]) if hier else []
-    fmt     = c.formatting(file)
-    symbols = c.document_symbols(file)
-    diags   = c.save(file)                          # trigger re-analysis
+    diags    = c.open(file)
+    items    = c.completion(file, line=10, col=5)   # 0-based
+    hover    = c.hover(file, line=10, col=5)
+    sig      = c.signature_help(file, line=10, col=5)
+    defs     = c.definition(file, line=10, col=5)
+    decl     = c.declaration(file, line=10, col=5)
+    refs     = c.references(file, line=10, col=5)
+    impls    = c.implementation(file, line=10, col=5)
+    hier     = c.prepare_type_hierarchy(file, line=10, col=5)
+    supers   = c.type_hierarchy_supertypes(hier[0]) if hier else []
+    subs     = c.type_hierarchy_subtypes(hier[0]) if hier else []
+    chier    = c.prepare_call_hierarchy(file, line=10, col=5)
+    incoming = c.call_hierarchy_incoming(chier[0]) if chier else []
+    outgoing = c.call_hierarchy_outgoing(chier[0]) if chier else []
+    fmt      = c.formatting(file)
+    symbols  = c.document_symbols(file)
+    folds    = c.folding_ranges(file)
+    wsym     = c.workspace_symbol("MyClass")
+    runnable = c.runnables(file)                     # discover test/main targets
+    outcome  = c.run_test("module-rel", "METHOD", "com.example.FooTest#bar()")
+    diags    = c.save(file)                          # trigger re-analysis
 ```
 
 ### Environment variables
