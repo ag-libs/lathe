@@ -18,8 +18,8 @@ import org.eclipse.lsp4j.services.WorkspaceService;
 
 final class LatheWorkspaceService implements WorkspaceService {
 
-  private static final String RUN_TEST_COMMAND = "lathe.run.test";
-  private static final String LIST_RUNNABLES_COMMAND = "lathe.runnables.list";
+  static final String RUN_TEST_COMMAND = "lathe.run.test";
+  static final String LIST_RUNNABLES_COMMAND = "lathe.runnables.list";
 
   private final LatheTextDocumentService textDocumentService;
 

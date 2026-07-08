@@ -40,6 +40,15 @@ class LatheLanguageServerTest {
   }
 
   @Test
+  void createCapabilities_includesExecuteCommandProvider() {
+    final var capabilities = LatheLanguageServer.createCapabilities();
+
+    assertThat(capabilities.getExecuteCommandProvider().getCommands())
+        .containsExactlyInAnyOrder(
+            LatheWorkspaceService.RUN_TEST_COMMAND, LatheWorkspaceService.LIST_RUNNABLES_COMMAND);
+  }
+
+  @Test
   void cancelProgress_unknownToken_routesWithoutFailure() {
     final var server = new LatheLanguageServer();
     server.connect(mock(LanguageClient.class));

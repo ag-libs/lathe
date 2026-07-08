@@ -7,6 +7,7 @@ import java.util.logging.Logger;
 import org.eclipse.lsp4j.CodeActionKind;
 import org.eclipse.lsp4j.CodeActionOptions;
 import org.eclipse.lsp4j.CompletionOptions;
+import org.eclipse.lsp4j.ExecuteCommandOptions;
 import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.InitializeResult;
 import org.eclipse.lsp4j.InitializedParams;
@@ -72,6 +73,11 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     final var codeActionOptions = new CodeActionOptions(List.of(CodeActionKind.QuickFix));
     capabilities.setCodeActionProvider(codeActionOptions);
     capabilities.setWorkspaceSymbolProvider(true);
+    capabilities.setExecuteCommandProvider(
+        new ExecuteCommandOptions(
+            List.of(
+                LatheWorkspaceService.RUN_TEST_COMMAND,
+                LatheWorkspaceService.LIST_RUNNABLES_COMMAND)));
     return capabilities;
   }
 
