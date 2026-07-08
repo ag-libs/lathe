@@ -129,6 +129,20 @@ folds [assertions]     (alias: folding)
 diagnostics   (alias: diag)
     List errors and warnings the compiler reports for this file.
 
+runnables
+    List discovered run targets (main methods, test methods, test classes,
+    test packages) in the open file, numbered for use with 'run'.  Reflects
+    any pending injection, same as symbols/diagnostics.
+
+run <index> [expect-exit <n>]
+    Replay the runnable listed at <index> by the most recent 'runnables'
+    call, from captured .lathe/ bytecode -- no Maven, no recompilation.
+    Prints [BLOCKED] with the reasons if the replay couldn't launch (no
+    captured test-launch.json, no lathe-test-runner jar recorded, stale
+    build lock, etc.), or [PASSED]/[FAILED] with the process exit code.
+    MAIN targets cannot be run yet (main-class replay is not implemented).
+    With 'expect-exit <n>', fails the probe if the exit code does not match.
+
 inject <code> [at <line>] [<assertions>]
     Temporarily insert <code> as a new line into the file — at the start of
     the first method body when no line is given (1-based otherwise) — then
@@ -242,6 +256,14 @@ _ASSERTION_KEYWORDS = frozenset(("expect", "min", "max", "filter"))
 _ACCEPT_SELECTOR_KEYWORDS = frozenset((
     "label", "filter-text", "label-detail", "detail-contains", "index",
 ))
+
+# RunTarget.kind -> TestSelectionKind. MAIN has no entry: main-class replay
+# (main-launch.json / ReplayTransform.forMain) is not implemented yet.
+_RUNNABLE_TO_SELECTOR_KIND = {
+    "TEST_METHOD": "METHOD",
+    "TEST_CLASS": "CLASS",
+    "TEST_PACKAGE": "PACKAGE",
+}
 
 
 # ── assertion helpers ─────────────────────────────────────────────────────────
@@ -494,6 +516,7 @@ class ExploreShell:
         self._current: str = self._original
         self._version: int = 1
         self._injected: bool = False
+        self._last_runnables: list[dict] | None = None
         self.any_failure: bool = False  # set True if any assertion fails
 
     # ── command dispatch ──────────────────────────────────────────────────────
@@ -539,6 +562,8 @@ class ExploreShell:
             "folding":     self._cmd_folds,
             "diagnostics": self._cmd_diagnostics,
             "diag":        self._cmd_diagnostics,
+            "runnables":   self._cmd_runnables,
+            "run":         self._cmd_run,
             "inject":      self._cmd_inject,
             "reset":       self._cmd_reset,
             "log":         self._cmd_log,
@@ -1455,6 +1480,83 @@ class ExploreShell:
             tags  = d.get("tags", [])
             tag_str = " [unused]" if 1 in tags else ""
             print(f"  [{sev}] {start['line'] + 1}:{start['character'] + 1}  {msg}{tag_str}")
+
+    def _cmd_runnables(self, args: list[str]) -> None:
+        try:
+            targets = self._client.runnables(self._file)
+        except TimeoutError:
+            print("  TIMEOUT")
+            return
+
+        self._last_runnables = targets
+        if not targets:
+            print("  (no runnables found)")
+            return
+
+        print(f"  {len(targets)} runnable(s):")
+        for i, t in enumerate(targets):
+            kind = t.get("kind", "?")
+            label = t.get("label", "?")
+            rid = t.get("id", "?")
+            print(f"    [{i}] {kind:<12} {label:<24} {rid}")
+
+    def _cmd_run(self, args: list[str]) -> None:
+        if not args:
+            print("  usage: run <index> [expect-exit <n>]")
+            return
+
+        try:
+            index = int(args[0])
+        except ValueError:
+            print(f"  invalid index: {args[0]!r}  (run 'runnables' first, then 'run <index>')")
+            return
+
+        if not self._last_runnables:
+            print("  no runnables listed yet — run 'runnables' first")
+            return
+
+        if index < 0 or index >= len(self._last_runnables):
+            print(f"  index out of range: {index}  (have {len(self._last_runnables)})")
+            return
+
+        target = self._last_runnables[index]
+        kind = target.get("kind", "")
+        selector_kind = _RUNNABLE_TO_SELECTOR_KIND.get(kind)
+        if selector_kind is None:
+            print(
+                f"  cannot run kind={kind!r} yet"
+                " (main-class replay is not implemented — only test methods/classes/packages)"
+            )
+            return
+
+        module_rel = target.get("moduleRel", "")
+        selector_value = target.get("id", "")
+        print(f"  running {selector_value}  (module={module_rel}, kind={selector_kind})...")
+
+        try:
+            outcome = self._client.run_test(module_rel, selector_kind, selector_value)
+        except TimeoutError:
+            print("  TIMEOUT")
+            return
+
+        if not outcome.get("launched", False):
+            print("  [BLOCKED]")
+            for reason in outcome.get("blockedReasons", []):
+                print(f"    ✗  {reason}")
+            self.any_failure = True
+            return
+
+        exit_code = outcome.get("exitCode", -1)
+        status = "PASSED" if exit_code == 0 else "FAILED"
+        print(f"  [{status}] exit={exit_code}")
+
+        if len(args) >= 3 and args[1].lower() == "expect-exit":
+            expected = int(args[2])
+            if exit_code != expected:
+                print(f"    ✗  expected exit={expected}, got {exit_code}")
+                self.any_failure = True
+            else:
+                print(f"    ✓  exit matches expected {expected}")
 
     def _cmd_inject(self, args: list[str]) -> None:
         if not args:

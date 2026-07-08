@@ -528,6 +528,28 @@ class LatheClient:
         result = self.request("workspace/symbol", {"query": query})
         return result or []
 
+    def execute_command(self, command: str, arguments: list) -> Any:
+        """Send workspace/executeCommand and return the raw result."""
+        return self.request("workspace/executeCommand", {
+            "command": command,
+            "arguments": arguments,
+        })
+
+    def runnables(self, file: str | Path) -> list[dict]:
+        """List discovered run targets (main/test methods/classes/packages) in a file."""
+        uri = Path(file).resolve().as_uri()
+        result = self.execute_command("lathe.runnables.list", [{"uri": uri}])
+        return result or []
+
+    def run_test(self, module_rel: str, selector_kind: str, selector_value: str) -> dict:
+        """Trigger lathe.run.test. Returns a ReplayOutcome dict
+        ({launched, blockedReasons, exitCode})."""
+        return self.execute_command("lathe.run.test", [{
+            "moduleRel": module_rel,
+            "selectorKind": selector_kind,
+            "selectorValue": selector_value,
+        }])
+
     def implementation(self, file: str | Path, line: int, col: int) -> list[dict]:
         """Go-to-implementation at 0-based line/col. Returns list of Locations."""
         result = self.request("textDocument/implementation", {
