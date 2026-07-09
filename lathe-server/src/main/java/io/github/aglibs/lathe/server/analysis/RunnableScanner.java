@@ -67,7 +67,8 @@ final class RunnableScanner extends TreePathScanner<Void, Void> {
     classStack.pop();
     final String binaryName = binaryName(typeElement);
     if (classesWithTests.contains(binaryName)) {
-      targets.add(classTarget(node, typeElement, binaryName));
+      final TypeElement enclosing = classStack.peek();
+      targets.add(classTarget(node, typeElement, binaryName, enclosing));
       emitPackageOnce();
     }
 
@@ -132,7 +133,7 @@ final class RunnableScanner extends TreePathScanner<Void, Void> {
   private RunTarget mainTarget(final MethodTree node, final TypeElement enclosing) {
     final String fqcn = enclosing != null ? binaryName(enclosing) : "";
     return new RunTarget(
-        "%s#main".formatted(fqcn), RunnableKind.MAIN, "main", moduleRel, uri, range(node));
+        "%s#main".formatted(fqcn), fqcn, RunnableKind.MAIN, "main", moduleRel, uri, range(node));
   }
 
   private RunTarget methodTarget(
@@ -142,14 +143,21 @@ final class RunnableScanner extends TreePathScanner<Void, Void> {
             .map(param -> analysis.types().erasure(param.asType()).toString())
             .collect(Collectors.joining(","));
     final String methodName = element.getSimpleName().toString();
-    final String id = "%s#%s(%s)".formatted(binaryName(enclosing), methodName, erasedParams);
-    return new RunTarget(id, RunnableKind.TEST_METHOD, methodName, moduleRel, uri, range(node));
+    final String enclosingBinaryName = binaryName(enclosing);
+    final String id = "%s#%s(%s)".formatted(enclosingBinaryName, methodName, erasedParams);
+    return new RunTarget(
+        id, enclosingBinaryName, RunnableKind.TEST_METHOD, methodName, moduleRel, uri, range(node));
   }
 
   private RunTarget classTarget(
-      final ClassTree node, final TypeElement element, final String binaryName) {
+      final ClassTree node,
+      final TypeElement element,
+      final String binaryName,
+      final TypeElement enclosing) {
+    final String parentId = enclosing != null ? binaryName(enclosing) : packageName();
     return new RunTarget(
         binaryName,
+        parentId,
         RunnableKind.TEST_CLASS,
         element.getSimpleName().toString(),
         moduleRel,
@@ -162,16 +170,20 @@ final class RunnableScanner extends TreePathScanner<Void, Void> {
       return;
     }
 
-    final ExpressionTree pkg = analysis.tree().getPackageName();
-    if (pkg == null) {
+    final String name = packageName();
+    if (name.isEmpty()) {
       return;
     }
 
     packageEmitted = true;
-    final String name = pkg.toString();
     targets.add(
         new RunTarget(
-            name, RunnableKind.TEST_PACKAGE, name, moduleRel, uri, range(analysis.tree())));
+            name, "", RunnableKind.TEST_PACKAGE, name, moduleRel, uri, range(analysis.tree())));
+  }
+
+  private String packageName() {
+    final ExpressionTree pkg = analysis.tree().getPackageName();
+    return pkg != null ? pkg.toString() : "";
   }
 
   private Range range(final Tree node) {

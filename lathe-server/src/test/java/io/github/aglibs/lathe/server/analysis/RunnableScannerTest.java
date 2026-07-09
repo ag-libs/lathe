@@ -120,6 +120,9 @@ class RunnableScannerTest {
     assertThat(targets.get(0).id()).isEqualTo("demo.FooTest#bar_condition_result()");
     assertThat(targets.get(1).id()).isEqualTo("demo.FooTest");
     assertThat(targets.get(2).id()).isEqualTo("demo");
+    assertThat(targets.get(0).parentId()).isEqualTo(targets.get(1).id());
+    assertThat(targets.get(1).parentId()).isEqualTo(targets.get(2).id());
+    assertThat(targets.get(2).parentId()).isEmpty();
   }
 
   @Test
@@ -186,6 +189,40 @@ class RunnableScannerTest {
     assertThat(targets)
         .extracting(RunTarget::id)
         .contains("demo.Outer$Inner#nested_condition_result()", "demo.Outer$Inner");
+    final RunTarget innerClass =
+        targets.stream().filter(t -> t.id().equals("demo.Outer$Inner")).findFirst().orElseThrow();
+    assertThat(innerClass.parentId()).isEqualTo("demo.Outer");
+  }
+
+  @Test
+  void runnables_outerClassAlsoHasTest_innerClassParentIdIsOuterNotPackage() {
+    final String source =
+        """
+        package demo;
+
+        import org.junit.jupiter.api.Test;
+
+        class Outer {
+          @Test
+          void outer_condition_result() {
+          }
+
+          class Inner {
+            @Test
+            void inner_condition_result() {
+            }
+          }
+        }
+        """;
+
+    final List<RunTarget> targets = scan(source);
+    final RunTarget outerClass =
+        targets.stream().filter(t -> t.id().equals("demo.Outer")).findFirst().orElseThrow();
+    final RunTarget innerClass =
+        targets.stream().filter(t -> t.id().equals("demo.Outer$Inner")).findFirst().orElseThrow();
+
+    assertThat(innerClass.parentId()).isEqualTo(outerClass.id());
+    assertThat(outerClass.parentId()).isEqualTo("demo");
   }
 
   @Test
