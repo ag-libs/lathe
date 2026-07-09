@@ -23,11 +23,7 @@ public final class ReplayLauncher {
     final List<String> argv =
         ReplayTransform.forTest(data, workspaceRoot, runnerClasspath, selection);
     LOG.fine(() -> "[replay] argv=%s".formatted(argv));
-    final Process process =
-        new ProcessBuilder(argv)
-            .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-            .redirectError(ProcessBuilder.Redirect.DISCARD)
-            .start();
+    final Process process = new ProcessBuilder(argv).redirectErrorStream(true).start();
     return new ReplaySession(process);
   }
 }

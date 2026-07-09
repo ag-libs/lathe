@@ -17,7 +17,7 @@ final class ReplaySessionTest {
       throws IOException, ExecutionException, InterruptedException, TimeoutException {
     final var session = new ReplaySession(new ProcessBuilder("true").start());
 
-    assertThat(session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isZero();
+    assertThat(session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).exitCode()).isZero();
   }
 
   @Test
@@ -25,7 +25,17 @@ final class ReplaySessionTest {
       throws IOException, ExecutionException, InterruptedException, TimeoutException {
     final var session = new ReplaySession(new ProcessBuilder("false").start());
 
-    assertThat(session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isEqualTo(1);
+    assertThat(session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).exitCode()).isEqualTo(1);
+  }
+
+  @Test
+  void onExit_processPrintsOutput_capturesFullTranscript()
+      throws IOException, ExecutionException, InterruptedException, TimeoutException {
+    final var session =
+        new ReplaySession(new ProcessBuilder("sh", "-c", "echo one; echo two").start());
+
+    assertThat(session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).output())
+        .containsExactly("one", "two");
   }
 
   @Test
@@ -35,7 +45,7 @@ final class ReplaySessionTest {
 
     session.cancel();
 
-    assertThat(session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isNotZero();
+    assertThat(session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).exitCode()).isNotZero();
   }
 
   @Test

@@ -197,7 +197,6 @@ final class WorkspaceSession {
           ReplayLauncher.launch(template.get(), workspaceRoot, runnerClasspath, selection);
       session
           .onExit()
-          .thenApply(ReplayOutcome::completed)
           .whenComplete(
               (outcome, error) -> {
                 if (error != null) {
