@@ -44,6 +44,8 @@ discovery via [gap-workflow.md](gaps/gap-workflow.md) and resolved entries in [g
 
 - [LSP Progress Notifications](planned/lathe-lsp-progress.md) — work-done progress for workspace
   initialization and reload, visible via `vim.lsp.status()`.
+- [Javac Crash Capture](planned/lathe-javac-crash-capture.md) — local repro bundles for unhandled javac exceptions
+  without putting source text in normal logs.
 
 Rename, inlay hints, and additional M2 code actions require focused designs before implementation.
 
