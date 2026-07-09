@@ -35,6 +35,8 @@ discovery via [gap-workflow.md](gaps/gap-workflow.md) and resolved entries in [g
 - [New Type Creation](planned/lathe-new-type-creation.md) — scaffold a blank file's class/interface/enum/record via
   snippet completion, with no custom client-side UI.
 - [Google Indentation](planned/lathe-google-indent.md) — conservative on-type formatting.
+- [Formatting and Indentation Profiles](planned/lathe-formatting-profiles.md) — opt-in Google Java Format and
+  project-sensitive indentation defaults.
 - [Class/Import Semantic Highlighting](planned/lathe-class-import-semantic-highlighting.md) — Neovim-relevant semantic
   corrections for type references.
 - [Type Definition Navigation](planned/lathe-type-definition.md) — LSP `textDocument/typeDefinition` support for
