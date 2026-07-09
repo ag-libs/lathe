@@ -197,6 +197,40 @@ installed by `lathe:sync`:
 > **Note:** The `config` function is required. Without it, lazy.nvim only sources the
 > `ftplugin` (indentation), but the LSP server is never registered.
 
+### Test Runner (neotest)
+
+Lathe includes an adapter for [neotest](https://github.com/nvim-neotest/neotest): gutter
+signs for discovered test methods and classes, run-under-cursor, and pass/fail status.
+Discovery and execution both go through the already-running Lathe LSP server rather than a
+treesitter-query scan or a separate Maven invocation -- `lathe.runnables.list` for discovery
+(real attributed-analysis, not syntax guessing) and `lathe.run.test` to run, replaying from
+captured `.lathe/` bytecode with no recompilation per run.
+
+Recognizes files matching Surefire's own default include patterns (`Test*.java`,
+`*Test.java`, `*Tests.java`, `*TestCase.java`) as test files. These are hardcoded as a
+reasonable default for now; a project that overrides Surefire's `<includes>` won't be
+picked up correctly yet. Main methods aren't runnable yet either.
+
+```lua
+{
+  "nvim-neotest/neotest",
+  dependencies = { "nvim-neotest/nvim-nio", "nvim-lua/plenary.nvim" },
+  ft = "java",
+  config = function()
+    require("neotest").setup({
+      adapters = { require("lathe.neotest") },
+    })
+  end,
+}
+```
+
+> **Note:** Not part of `require('lathe').setup()` -- neotest is an optional dependency, so
+> the adapter is configured separately, the same way every neotest adapter is.
+
+> **Current limitation:** failure output in neotest's floating window is currently just an
+> exit code or blocked reason, not the full captured stdout/stderr -- wiring the full
+> transcript through is still pending.
+
 ### Debugging
 
 For debugging, you can enable verbose logging by setting `LATHE_DEBUG=1` before starting Neovim,

@@ -50,12 +50,22 @@ function M.filter_dir(name, _rel_path, _root)
   return name ~= "target" and name ~= ".lathe" and name ~= ".git"
 end
 
+-- Surefire's own default test-file include patterns (what Maven uses whenever a project
+-- doesn't override <includes> in its maven-surefire-plugin config): Test*.java,
+-- *Test.java, *Tests.java, *TestCase.java. Hardcoded here as a reasonable default rather
+-- than guessed at -- could be improved later by reading each module's real, possibly
+-- project-overridden <includes> at lathe:sync time (the same way runnerClasspath already
+-- reads real reactor state instead of assuming one) and recording it in workspace.json for
+-- this adapter to read, instead of assuming every project uses Surefire's defaults.
 function M.is_test_file(file_path)
   if not file_path:match("%.java$") then
     return false
   end
   local name = vim.fn.fnamemodify(file_path, ":t:r")
-  return name:match("Test$") ~= nil or name:match("^Test") ~= nil or name:match("Tests$") ~= nil
+  return name:match("^Test") ~= nil
+    or name:match("Test$") ~= nil
+    or name:match("Tests$") ~= nil
+    or name:match("TestCase$") ~= nil
 end
 
 --- Converts an LSP Range (0-based line/character, on start/end objects) into neotest's

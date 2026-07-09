@@ -128,4 +128,15 @@ do
   )
 end
 
+-- is_test_file mirrors Surefire's own default include patterns
+-- (Test*.java, *Test.java, *Tests.java, *TestCase.java).
+do
+  spec.check("Test*.java matches", adapter.is_test_file("/a/TestFoo.java"), true)
+  spec.check("*Test.java matches", adapter.is_test_file("/a/FooTest.java"), true)
+  spec.check("*Tests.java matches", adapter.is_test_file("/a/FooTests.java"), true)
+  spec.check("*TestCase.java matches", adapter.is_test_file("/a/FooTestCase.java"), true)
+  spec.check("plain class does not match", adapter.is_test_file("/a/Foo.java"), false)
+  spec.check("non-.java file does not match", adapter.is_test_file("/a/FooTest.txt"), false)
+end
+
 spec.finish()
