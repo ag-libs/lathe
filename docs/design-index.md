@@ -26,10 +26,9 @@ discovery via [gap-workflow.md](gaps/gap-workflow.md) and resolved entries in [g
 
 - [Gaps](gaps/gaps.md) — active M2 gap registry.
   EG-003 is deferred until after M2.
-- [Find References gaps](gaps/gaps.md) — FR-002 external-source scope, FR-003 failure propagation, and FR-004
-  integration coverage.
+- [Find References gaps](gaps/gaps.md) — active reference-search gaps.
 - [Completion Expectations](planned/lathe-completion-expectations.md) — expected completion behavior.
-- [Completion gaps (CQ)](gaps/gaps.md) — active completion-quality gaps, including generic bounds.
+- [Completion gaps (CQ)](gaps/gaps.md) — active completion-quality gaps.
 - [Declaration Name Completion](planned/lathe-declaration-name-completion.md) — M2 assistive completion for variable,
   field, parameter, and type-parameter names in declaration-name slots.
 - [Gap Workflow](gaps/gap-workflow.md) — reproducible gap discovery and triage (all areas).
@@ -98,6 +97,8 @@ M3 designs before implementation.
 - [Import Optimization](done/lathe-import-optimization.md)
 - [JDK Cache Key](done/lathe-jdk-cache-key.md)
 - [Lambda Completion](done/lathe-lambda-completion.md)
+- [M2 Gap Work Plan](done/lathe-m2-gap-work-plan.md) — archived historical checklist; current scope is in
+  [roadmap.md](roadmap.md), [status.md](status.md), and [gaps.md](gaps/gaps.md).
 - [Missing Import Code Action](done/lathe-missing-import-code-action.md)
 - [Refactoring and Renaming](done/lathe-refactoring-renaming.md)
 - [Rich Javadoc Rendering](done/lathe-rich-javadoc-rendering.md)

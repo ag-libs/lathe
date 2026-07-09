@@ -396,58 +396,9 @@ printf 'diagnostics\n' | python3 dev/explore.py /path/to/workspace/.../SomeFile.
 
 ---
 
-## EG-040 — Attributed-analysis retention is unbounded; heavy sessions can OOM and kill the server
-
-**Status: done — Target: M2.** Fixed with an event-loop LRU that bounds interactive attributed-analysis
-retention at 100 open-document analyses and delegates eviction to the owning module worker.
-
-### Observed behaviour
-
-Each open file's attributed javac `Context` is cached (`SourceAnalysisSession.cache`) and evicted only
-on `didClose`, so retained heap grows ~linearly with the number of open files — measured at ~29–31 MB
-per open file (open + member-access completion) against a large private workspace. Under an abusive
-sweep (~210 open files plus back-to-back reference searches) the JVM hit a fatal `Error`, and
-`CompilationWorker`'s "treat `Error` as fatal" path (`processTerminator.accept(FATAL_EXIT_STATUS)`)
-terminated the **whole server** — every LSP feature lost until the client relaunches.
-
-Normal editing (a few dozen buffers ≈ <1–2 GB) stays well within the ergonomic heap (~25% of RAM;
-≥8 GB on a ≥32 GB workstation), so this bites only pathological / bulk-access sessions.
-
-### Root cause
-
-One javac `Context` retained per open file, unshareable (javac symbols are per-`Context`). Retention
-is bounded by open-document count, not by any cap. See the analysis in the deferred design
-[lathe-analysis-cache-bounding.md](../potential/lathe-analysis-cache-bounding.md).
-
-### Resolution
-
-`WorkspaceSession` owns an event-loop-confined `AnalysisLru` over open-document URIs.
-On overflow, the event loop removes the eldest URI from the LRU and delegates the actual analysis drop through
-`WorkspaceModuleRegistry.dropFromAllCaches(uri)`, so javac-backed objects remain confined to module workers.
-Cache-only readers now recompile on miss:
-`SourceAnalysisSession.resolve()` uses `ensureAttributedAnalysis(...)`, and semantic tokens receive current content
-and rebuild when the cached version is missing or stale.
-
-The disk-candidate implementation-search leak is also fixed:
-closed candidate files use a transient FAST compile path and do not populate the interactive analysis cache.
-The cap was validated with 300-file probes against Helidon and import-heavy Dropwizard test classes;
-Dropwizard stayed stable with semantic tokens, hover, and definition requests after eviction.
-Raising the JVM heap can still provide more headroom for transient compile/search spikes
-(the M3 `LATHE_JVM_OPTS` knob, [lathe-launcher-jvm-opts.md](../planned/lathe-launcher-jvm-opts.md),
-is the planned first-class way; `JAVA_TOOL_OPTIONS=-Xmx…` works today).
-
-### Regression targets
-
-- `AnalysisLruTest.touch_beyondCap_returnsEldest`
-- `SourceAnalysisSessionTest.semanticTokens_afterEviction_recompilesAndReturnsTokens`
-- `SourceAnalysisSessionTest.semanticTokens_versionMismatch_recompiles`
-- `MethodImplementationTest.methodImplementationsTransient_candidateFile_doesNotCacheAnalysis`
-
----
-
 ## EG-041 — JDK/library source files get live diagnostics and code actions with no "read-only source" affordance
 
-**Status: documented**
+**Status: documented — Target: pending triage**
 
 ### Observed behaviour
 
@@ -739,53 +690,6 @@ printf 'refs "<component>,"\n' \
 
 - `ReferenceLocatorTest.references_generatedBuilderMember_rangeCoversExactIdentifier`
 - `ReferenceLocatorTest.references_adjacentSimilarNames_noCrossHighlight`
-
----
-
-## FR-011 — `builder()` reference search surfaces test hits — verified correct, not a defect
-
-**Status: non-goal — verified correct behaviour; breadth cost tracked by FR-009**
-
-### Observed behaviour
-
-Find References on a generated `@Builder` factory `builder()` returned matches in test sources that
-appeared unexpected, while instance setters (`amount(BigDecimal)`, `taxAmount(BigDecimal)`) on the
-same builder returned zero references.
-
-### Investigation (resolved)
-
-Reproduced against the generated builder of an `@Builder` record, searching each member from its
-declaration with reactor scope. Every result was correct:
-
-| Symbol | Hits | Verdict |
-|---|---|---|
-| `builder()` (static factory) | 5, all in tests | genuine cross-module callers |
-| `kind(Kind)` (instance setter) | 5, all in tests | genuine cross-module callers |
-| `amount(BigDecimal)` (instance setter) | 0 | no callers exist |
-| `taxAmount(BigDecimal)` (instance setter) | 0 | no callers exist |
-
-The confusion had two sources, both correct matcher behaviour: (1) the record's component **accessor**
-`amount()` and the builder's **setter** `amount(BigDecimal)` share a simple name but differ by
-owner + descriptor, so they do not cross-match; (2) a sibling generated builder exposes
-identically-named setters, and its call sites correctly do not match the first builder's methods. The
-zero-reference setters simply have no callers — every chain of the builder under test only calls
-`.type(...).build()`. Instance-setter search from a generated source works: `type()` returned exactly
-its five call sites cross-module.
-
-No matching defect exists. The only real cost — hundreds of files compiled to return ≤5 hits — is the
-candidate-breadth problem tracked by **FR-009**.
-
-### Probe commands
-
-```bash
-# From the generated builder, each search returns exactly the genuine call sites:
-printf 'refs "kind(Kind"\n' \
-  | python3 dev/explore.py --workspace /path/to/workspace /path/to/.../SomeRecordBuilder.java
-```
-
-### Regression targets
-
-None — no code change. Candidate-breadth coverage is under FR-009.
 
 ---
 

@@ -1,5 +1,12 @@
 # Lathe — M2 Gap Work Plan
 
+Archived historical work plan.
+This checklist is no longer authoritative for active M2 scope.
+Use [roadmap.md](../roadmap.md), [status.md](../status.md), and the active gap registry
+[gaps.md](../gaps/gaps.md) for current planning.
+
+---
+
 This is the working implementation plan for all gaps accepted into M2.
 Gap detail lives in [gaps.md](../gaps/gaps.md); this document tracks sequence, grouping,
 and subsumption relationships.
