@@ -227,10 +227,6 @@ picked up correctly yet. Main methods aren't runnable yet either.
 > **Note:** Not part of `require('lathe').setup()` -- neotest is an optional dependency, so
 > the adapter is configured separately, the same way every neotest adapter is.
 
-> **Current limitation:** failure output in neotest's floating window is currently just an
-> exit code or blocked reason, not the full captured stdout/stderr -- wiring the full
-> transcript through is still pending.
-
 ### Debugging
 
 For debugging, you can enable verbose logging by setting `LATHE_DEBUG=1` before starting Neovim,

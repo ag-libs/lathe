@@ -139,4 +139,83 @@ do
   spec.check("non-.java file does not match", adapter.is_test_file("/a/FooTest.txt"), false)
 end
 
+local function read_file(path)
+  local f = assert(io.open(path, "r"))
+  local content = f:read("*a")
+  f:close()
+  return content
+end
+
+-- results() must always write neotest.Result.output as a path to a file
+-- containing the real content, never raw text in the field itself.
+do
+  local passed = adapter.results({
+    context = {
+      position_id = "demo.FooTest#bar()",
+      outcome = { launched = true, exitCode = 0, output = { "line one", "line two" } },
+    },
+  })
+  local passed_result = passed["demo.FooTest#bar()"]
+  spec.check("passing result status", passed_result.status, "passed")
+  spec.check("passing result output file content", read_file(passed_result.output), "line one\nline two")
+
+  local failed = adapter.results({
+    context = {
+      position_id = "demo.FooTest#bar()",
+      outcome = { launched = true, exitCode = 1, output = { "boom" } },
+    },
+  })
+  local failed_result = failed["demo.FooTest#bar()"]
+  spec.check("failing result status", failed_result.status, "failed")
+  spec.check("failing result output file content", read_file(failed_result.output), "boom")
+
+  local blocked = adapter.results({
+    context = {
+      position_id = "demo.FooTest#bar()",
+      outcome = { launched = false, blockedReasons = { "no runner jar" } },
+    },
+  })
+  local blocked_result = blocked["demo.FooTest#bar()"]
+  spec.check("blocked result status", blocked_result.status, "failed")
+  spec.check(
+    "blocked result output file content",
+    read_file(blocked_result.output),
+    "BLOCKED: no runner jar"
+  )
+
+  local errored = adapter.results({
+    context = { position_id = "demo.FooTest#bar()", err = { message = "timeout" } },
+  })
+  local errored_result = errored["demo.FooTest#bar()"]
+  spec.check("errored result status", errored_result.status, "failed")
+end
+
+-- root() resolves the nearest .lathe marker walking up from a nested path,
+-- the same fixture-building approach as root_spec.lua's own coverage of
+-- lathe.get_root -- this is neotest's own project-root hook, a separate
+-- entry point from that one, so it gets its own direct check.
+do
+  local work = vim.fn.tempname()
+  local project = work .. "/project"
+  vim.fn.mkdir(project .. "/src/test/java/demo", "p")
+  local marker = io.open(project .. "/.lathe", "w")
+  marker:write("")
+  marker:close()
+
+  local nested = project .. "/src/test/java/demo/FooTest.java"
+  spec.check("root() finds the marked root from a nested path", adapter.root(nested), project)
+  spec.check("root() returns nil with no marker above", adapter.root(work), nil)
+
+  vim.fn.delete(work, "rf")
+end
+
+-- filter_dir() prunes build output and VCS/workspace-metadata directories
+-- from neotest's workspace-wide discovery walk.
+do
+  spec.check("filter_dir excludes target", adapter.filter_dir("target", "app/target", "/root"), false)
+  spec.check("filter_dir excludes .lathe", adapter.filter_dir(".lathe", ".lathe", "/root"), false)
+  spec.check("filter_dir excludes .git", adapter.filter_dir(".git", ".git", "/root"), false)
+  spec.check("filter_dir keeps src", adapter.filter_dir("src", "app/src", "/root"), true)
+end
+
 spec.finish()

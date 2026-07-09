@@ -195,23 +195,38 @@ function M.build_spec(args)
   }
 end
 
+--- neotest.Result.output must be a path to a file containing the output, not raw text --
+--- writes it to a fresh temp file every time, matching the convention other adapters use
+--- (neotest is the reader; it owns no cleanup contract with adapters).
+local function write_output_file(text)
+  local path = vim.fn.tempname()
+  local f = assert(io.open(path, "w"))
+  f:write(text)
+  f:close()
+  return path
+end
+
 function M.results(spec, _result, _tree)
   local ctx = spec.context
   if ctx.err then
+    local text = "lathe.run.test error: " .. vim.inspect(ctx.err)
     return {
       [ctx.position_id] = {
         status = "failed",
-        short = "lathe.run.test error: " .. vim.inspect(ctx.err),
+        short = text,
+        output = write_output_file(text),
       },
     }
   end
 
   local outcome = ctx.outcome
   if not outcome.launched then
+    local text = "BLOCKED: " .. table.concat(outcome.blockedReasons or {}, "; ")
     return {
       [ctx.position_id] = {
         status = "failed",
-        short = "BLOCKED: " .. table.concat(outcome.blockedReasons or {}, "; "),
+        short = text,
+        output = write_output_file(text),
       },
     }
   end
@@ -220,6 +235,7 @@ function M.results(spec, _result, _tree)
     [ctx.position_id] = {
       status = outcome.exitCode == 0 and "passed" or "failed",
       short = "exit=" .. tostring(outcome.exitCode),
+      output = write_output_file(table.concat(outcome.output or {}, "\n")),
     },
   }
 end
