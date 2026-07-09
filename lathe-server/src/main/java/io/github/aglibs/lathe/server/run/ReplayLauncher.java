@@ -6,8 +6,11 @@ import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.logging.Logger;
 
 public final class ReplayLauncher {
+
+  private static final Logger LOG = Logger.getLogger(ReplayLauncher.class.getName());
 
   private ReplayLauncher() {}
 
@@ -19,6 +22,7 @@ public final class ReplayLauncher {
       throws IOException {
     final List<String> argv =
         ReplayTransform.forTest(data, workspaceRoot, runnerClasspath, selection);
+    LOG.fine(() -> "[replay] argv=%s".formatted(argv));
     final Process process =
         new ProcessBuilder(argv)
             .redirectOutput(ProcessBuilder.Redirect.DISCARD)

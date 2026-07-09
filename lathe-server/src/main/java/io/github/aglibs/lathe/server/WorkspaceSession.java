@@ -144,15 +144,20 @@ final class WorkspaceSession {
       final String moduleRel, final TestSelection selection) {
     final List<Path> runnerClasspath = manifest.runnerClasspath();
     if (runnerClasspath.isEmpty()) {
+      LOG.warning(
+          () ->
+              "[replay] %s %s blocked no lathe-test-runner jar recorded"
+                  .formatted(moduleRel, selection.value()));
       return CompletableFuture.completedFuture(
           ReplayOutcome.blocked(List.of("no lathe-test-runner jar recorded — run a build first")));
     }
 
     final Path root = workspaceRoot;
+    final var t = Stopwatch.start();
     final var result = new CompletableFuture<ReplayOutcome>();
     final var thread =
         new Thread(
-            () -> launchReplay(root, runnerClasspath, moduleRel, selection, result),
+            () -> launchReplay(root, runnerClasspath, moduleRel, selection, t, result),
             "lathe-replay-" + moduleRel);
     thread.setDaemon(true);
     thread.start();
@@ -164,10 +169,15 @@ final class WorkspaceSession {
       final List<Path> runnerClasspath,
       final String moduleRel,
       final TestSelection selection,
+      final Stopwatch t,
       final CompletableFuture<ReplayOutcome> result) {
     try {
       final var template = new LaunchTemplateReader(workspaceRoot).read(moduleRel);
       if (template.isEmpty()) {
+        LOG.warning(
+            () ->
+                "[replay] %s %s blocked no captured test-launch.json"
+                    .formatted(moduleRel, selection.value()));
         result.complete(
             ReplayOutcome.blocked(List.of("no captured test-launch.json for " + moduleRel)));
         return;
@@ -175,6 +185,10 @@ final class WorkspaceSession {
 
       final var gate = CompletenessGate.verify(template.get(), workspaceRoot);
       if (!gate.complete()) {
+        LOG.warning(
+            () ->
+                "[replay] %s %s blocked reasons=%s"
+                    .formatted(moduleRel, selection.value(), gate.reasons()));
         result.complete(ReplayOutcome.blocked(gate.reasons()));
         return;
       }
@@ -187,12 +201,29 @@ final class WorkspaceSession {
           .whenComplete(
               (outcome, error) -> {
                 if (error != null) {
+                  LOG.log(
+                      Level.WARNING,
+                      error,
+                      () ->
+                          "[replay] %s %s failed %dms"
+                              .formatted(moduleRel, selection.value(), t.elapsedMs()));
                   result.completeExceptionally(error);
                 } else {
+                  LOG.info(
+                      () ->
+                          "[replay] %s %s exit=%d %dms"
+                              .formatted(
+                                  moduleRel, selection.value(), outcome.exitCode(), t.elapsedMs()));
                   result.complete(outcome);
                 }
               });
     } catch (final IOException e) {
+      LOG.log(
+          Level.WARNING,
+          e,
+          () ->
+              "[replay] %s %s failed to launch %dms"
+                  .formatted(moduleRel, selection.value(), t.elapsedMs()));
       result.completeExceptionally(e);
     }
   }
