@@ -253,33 +253,6 @@ do
   spec.check("unrelated class's method left untouched", results["demo.OtherTest#c()"], nil)
 end
 
--- Live output helpers append into a scratch-style buffer without requiring a
--- real LSP client or neotest process.
-do
-  local bufnr = vim.api.nvim_create_buf(false, true)
-
-  adapter._append_output_line(bufnr, "one")
-  adapter._append_output_line(bufnr, "two")
-
-  spec.check(
-    "live output appends first line without leading blank",
-    table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n"),
-    "one\ntwo"
-  )
-end
-
--- Starting a second run adds another header without clearing previous output,
--- so concurrent or back-to-back runs do not stomp each other's logs.
-do
-  adapter._append_output_header("demo.FooTest#one()")
-  adapter._append_output_header("demo.FooTest#two()")
-
-  local lines = vim.api.nvim_buf_get_lines(adapter._output_buffer(), 0, -1, false)
-  local content = table.concat(lines, "\n")
-  spec.check("first live output header remains", content:find("=== demo.FooTest#one() ===", 1, true) ~= nil, true)
-  spec.check("second live output header appears", content:find("=== demo.FooTest#two() ===", 1, true) ~= nil, true)
-end
-
 -- root() resolves the nearest .lathe marker walking up from a nested path,
 -- the same fixture-building approach as root_spec.lua's own coverage of
 -- lathe.get_root -- this is neotest's own project-root hook, a separate

@@ -27,9 +27,6 @@ end
 local M = {}
 M.name = "neotest-lathe"
 
-local output_bufnr
-local registered_output_handlers = {}
-
 -- RunnableKind ordinal -> neotest position type / TestSelectionKind. lsp4j's Gson layer
 -- serializes Java enums by ordinal, matching the LSP convention that kind fields like
 -- SymbolKind/DiagnosticSeverity are integers (see dev/explore.py's identical handling).
@@ -47,101 +44,6 @@ local function lathe_client()
   local clients = nio().lsp.get_clients({ name = "lathe" })
   return clients[1]
 end
-
-local function raw_lsp_client()
-  local clients = vim.lsp.get_clients({ name = "lathe" })
-  return clients[1]
-end
-
-local function append_output_line(bufnr, line)
-  if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
-    return
-  end
-
-  local line_count = vim.api.nvim_buf_line_count(bufnr)
-  local first_line = vim.api.nvim_buf_get_lines(bufnr, 0, 1, false)[1]
-  if line_count == 1 and first_line == "" then
-    vim.api.nvim_buf_set_lines(bufnr, 0, 1, false, { line })
-    return
-  end
-
-  vim.api.nvim_buf_set_lines(bufnr, -1, -1, false, { line })
-end
-
-local function ensure_output_buffer()
-  if output_bufnr and vim.api.nvim_buf_is_valid(output_bufnr) then
-    return output_bufnr
-  end
-
-  output_bufnr = vim.api.nvim_create_buf(false, true)
-  vim.bo[output_bufnr].buftype = "nofile"
-  vim.bo[output_bufnr].bufhidden = "hide"
-  vim.bo[output_bufnr].swapfile = false
-  pcall(vim.api.nvim_buf_set_name, output_bufnr, "Lathe Test Output")
-  return output_bufnr
-end
-
-local function scroll_output_windows(bufnr)
-  for _, win in ipairs(vim.api.nvim_list_wins()) do
-    if vim.api.nvim_win_get_buf(win) == bufnr then
-      vim.api.nvim_win_set_cursor(win, { vim.api.nvim_buf_line_count(bufnr), 0 })
-    end
-  end
-end
-
-local function append_live_output_line(line)
-  local bufnr = ensure_output_buffer()
-  append_output_line(bufnr, line)
-  scroll_output_windows(bufnr)
-end
-
-local function append_output_header(position_id)
-  append_live_output_line("=== " .. position_id .. " ===")
-end
-
-local function register_test_output_handler()
-  local client = raw_lsp_client()
-  if not client then
-    return
-  end
-
-  local id = client.id or client.name
-  if registered_output_handlers[id] then
-    return
-  end
-
-  client.handlers = client.handlers or {}
-  client.handlers["lathe/testOutput"] = function(_err, result, _ctx, _config)
-    if result and result.line ~= nil then
-      append_live_output_line(result.line)
-    end
-  end
-  registered_output_handlers[id] = true
-end
-
-function M.open_output()
-  local bufnr = ensure_output_buffer()
-  vim.cmd("botright split")
-  vim.api.nvim_win_set_buf(0, bufnr)
-  vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(bufnr), 0 })
-end
-
-function M._append_output_line(bufnr, line)
-  append_output_line(bufnr, line)
-end
-
-function M._append_output_header(position_id)
-  append_output_header(position_id)
-end
-
-function M._output_buffer()
-  return ensure_output_buffer()
-end
-
-pcall(vim.api.nvim_create_user_command, "LatheTestOutput", M.open_output, {
-  desc = "Open Lathe live test output",
-  force = true,
-})
 
 function M.root(dir)
   return vim.fs.root(dir, ".lathe")
@@ -266,9 +168,6 @@ function M.discover_positions(file_path)
 end
 
 local function class_spec(pos, client)
-  register_test_output_handler()
-  append_output_header(pos.id)
-
   local err, outcome = client.request.workspace_executeCommand({
     command = "lathe.run.test",
     arguments = { {
