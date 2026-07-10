@@ -1,256 +1,145 @@
-# Lathe — Live Test Output Streaming (neotest)
+# Lathe — Neotest Output Navigation
 
-Design for streaming captured replay output to the Neovim neotest adapter in real time, instead of
-revealing the full transcript only once a run completes (current behavior, already implemented).
-Builds on `lathe-run-test-debug.md` (§4.3 results, §10.5 server classes) and scopes the item that
-document lists as deferred (§12.10: "NDJSON streaming test events") for the neotest integration
-specifically, not the general NDJSON results-sink design.
+Design for making Lathe test failures feel natural in Neovim while keeping the standard neotest
+output workflow.
 
----
-
-## 1. Problem
-
-`ReplaySession` already captures a replayed test's merged stdout/stderr in full, and `neotest.lua`'s
-`results()` already surfaces that transcript once the run finishes.
-What is missing is *live* output: watching the transcript scroll while the test is still running,
-the way `mvn test` looks in a terminal.
-
-**neotest's own output surfaces cannot do this**, verified directly against the user's real,
-current-HEAD installed neotest (`~/.local/share/nvim/lazy/neotest`, commit from 2026-07-03):
-
-- `consumers/output_panel/init.lua`: `client.listeners.results = function(adapter_id, results,
-  partial) if partial then return end ...` — partial/streaming result events are explicitly
-  discarded. The panel only renders once a run is fully finished.
-- `consumers/output.lua`: `neotest.output.open()` is a one-shot read of `Result.output` at the
-  moment it's invoked; nothing re-renders it as content changes.
-- `RunSpec.stream` (the one genuinely incremental hook neotest exposes) feeds `results_callback`
-  with partial `neotest.Result` tables — i.e. per-position pass/fail *status* updates for a batch
-  process, not raw output text. It does not reach either output consumer above.
-
-The one live-capable built-in primitive is `attach` (`a` in the summary panel /
-`neotest.run.attach()`), which opens a real pty on neotest's own *spawned* process. Lathe's adapter
-spawns a dummy `{"true"}` as `RunSpec.command` (the actual replay happens over a separate,
-synchronous LSP round-trip inside `build_spec`), so there is nothing live to attach to today.
-
-Also relevant: `build_spec` currently blocks (via a yielding `nio.lsp` call) until the *entire* test
-finishes before returning a `RunSpec` at all — meaning even if neotest's own process-spawn
-mechanisms were reused, they would not start until after the real work is already done. Any design
-that reuses neotest's own live process tracking would need `build_spec` to return before the replay
-finishes, which is a further complication this design avoids (§3).
-
-### Prior art checked
-
-- **quicktest.nvim** (github.com/quolpr/quicktest.nvim, ~105 stars — small/niche, not the wide
-  precedent neotest itself is) implements live output via `plenary.job`'s `on_stdout` callback
-  appending into a scratch buffer incrementally. This validates the *UI* pattern (buffer +
-  incremental append via callback) but its data source is a locally spawned job — not applicable
-  as-is, since Lathe's replay JVM is spawned server-side, not by the Neovim client.
-- **neotest-golang** advertises "streaming results" but its docs don't specify the mechanism, and
-  its `build_spec` delegates to sub-modules not inspected here. Given the confirmed
-  `output_panel`/`output.lua` behavior above, it almost certainly means `RunSpec.stream`
-  status-per-subtest updates (natural fit for Go's own JSON-per-subtest protocol), not raw live
-  text — and even if it were, it wouldn't route through neotest's UI live either.
-
-Conclusion: no existing plugin solves "server-driven process → live text in neotest's UI." The UI
-pattern (buffer + incremental append) is proven; the data-delivery mechanism has to be custom.
+Live output streaming is deliberately deferred.
+The first goal is a copy/paste-clean output buffer with stack-trace navigation layered on top.
 
 ---
 
-## 2. Design
+## 1. Direction
 
-A custom LSP notification, `lathe/testOutput`, pushes each captured output line from the server to
-the client as `ReplaySession` reads it — independent of, and in addition to, the existing full
-buffered transcript used for the post-completion static output. The client renders incoming lines
-into a dedicated scratch buffer.
+Lathe keeps the existing replay model:
 
-This was chosen over reusing neotest's own process/stream machinery (e.g. having `build_spec` return
-immediately with a command that tails a server-written temp file, giving neotest's own `attach` and
-process tracking something live to watch) because:
+- the server launches the captured replay JVM;
+- `ReplaySession` captures the merged stdout/stderr transcript;
+- `ReplayOutcome.output` returns the full transcript after the run completes;
+- `neotest.lua` writes that transcript to the `neotest.Result.output` file.
 
-- neither `output_panel` nor `output.lua` render live regardless of what the spawned process does
-  (§1), so that approach would only benefit the little-used `attach` keybinding;
-- it would require restructuring `build_spec` to return before the replay finishes, plus a
-  temp-file/done-marker lifecycle to signal the wrapper process when to exit;
-- the notification approach needs no change to `build_spec`'s current synchronous shape, no new
-  process, and no temp-file lifecycle — strictly additive.
+The Neovim adapter does not create a Lathe-specific output command or custom output buffer.
+Users open output through neotest's normal UI.
 
-### 2.1 Server → client wire shape
-
-```
-notification "lathe/testOutput"
-{
-  "moduleRel": "app",
-  "selectorValue": "com.example.app.FooTest#bar_condition_result()",
-  "line": "  Caused by: java.lang.AssertionError: ..."
-}
-```
-
-Correlates by the same `(moduleRel, selectorValue)` key a test is already identified by elsewhere —
-no new run-id scheme introduced.
-One notification per captured line, matching `ReplaySession.drainOutput()`'s existing per-line read
-loop; batching is a possible later refinement, not needed for correctness.
-
-### 2.2 Why the LSP bootstrap must change
-
-LSP4J's `LanguageClient` interface has no `testOutput` method, and the server currently launches via
-`LSPLauncher.createServerLauncher(...)`, which hardcodes `LanguageClient` as the remote interface.
-Sending a custom notification requires an extended client interface and swapping in the lower-level
-`LSPLauncher.Builder<T>` (verified against the installed `org.eclipse.lsp4j` 1.0.0 jar via `javap`):
-
-```java
-new LSPLauncher.Builder<LatheLanguageClient>()
-    .setLocalService(server)
-    .setRemoteInterface(LatheLanguageClient.class)
-    .setInput(in)
-    .setOutput(out)
-    .setExecutorService(rpcExecutor)
-    .wrapMessages(consumer -> consumer)
-    .create();
-```
-
-`LSPLauncher.Builder` (not the bare `org.eclipse.lsp4j.jsonrpc.Launcher.Builder`) matters: it is
-LSP4J's own subclass that installs LSP4J's Gson type adapters (`Either<A,B>` and friends). Using the
-generic builder would silently break JSON (de)serialization for every other existing LSP feature
-(hover, completion, diagnostics, ...), not just the new notification.
+The adapter may decorate that output buffer after neotest opens it.
+Decorations must not change the buffer text.
 
 ---
 
-## 3. Server-side changes
+## 2. Prior Art
 
-| Class | Change |
-|---|---|
-| `server.LatheLanguageClient` *(new)* | `extends LanguageClient`; adds `@JsonNotification("lathe/testOutput") void testOutput(TestOutputParams params)`. Public — referenced from `server.run`. |
-| `server.run.TestOutputParams` *(new record)* | `{moduleRel, selectorValue, line}`. Compact ctor: `notBlank(moduleRel)`, `notBlank(selectorValue)`, `notNull(line)` (a blank captured line is valid content, so `notBlank` would be wrong here). |
-| `server.LatheServer` | `run(...)` swaps to the `LSPLauncher.Builder<LatheLanguageClient>` construction in §2.2. |
-| `server.LatheLanguageServer` | `connect(LanguageClient client)` (interface-mandated signature, cannot change) casts once: `textDocumentService.connect((LatheLanguageClient) client)`. Safe because the launcher above is built with `setRemoteInterface(LatheLanguageClient.class)`, so the proxy handed to `connect` always implements it. |
-| `server.LatheTextDocumentService` | `connect(...)` parameter and the `session` construction retyped to `LatheLanguageClient`. |
-| `server.WorkspaceSession` | `client` field retyped to `LatheLanguageClient`; threads it into `launchReplay(...)`. |
-| `server.run.ReplayLauncher` | `launch(...)` gains `client` and `moduleRel` parameters, passed to the new `ReplaySession` constructor. |
-| `server.run.ReplaySession` | Constructor gains `(LatheLanguageClient client, String moduleRel, String selectorValue)`. `drainOutput()` calls `client.testOutput(new TestOutputParams(moduleRel, selectorValue, line))` per line read, **in addition to** the existing in-memory buffering (unchanged — still backs `ReplayOutcome.output`, the static post-completion transcript). |
+VS Code's Java test runner, built around JDT LS, follows the same separation:
 
-No change to `ReplayOutcome`, `CompletenessGate`, `LaunchTemplateReader`, or the blocked-run paths —
-a blocked run (no jar, no template, gate failure) never reaches `ReplaySession` and has nothing to
-stream, same as today.
+- raw output is appended to the test run output;
+- stack traces are parsed separately;
+- resolved source locations are attached to test messages/UI metadata.
+
+The important lesson is that navigation is metadata, not rewritten stack-trace text.
+Lathe should follow that model in Neovim.
 
 ---
 
-## 4. Client-side changes (`neotest.lua`)
+## 3. Neovim Design
 
-- A module-level scratch buffer ("Lathe Test Output"), created lazily (`nofile` buftype), opened via
-  a new `<leader>tL` keymap (split, mirroring the existing `<leader>tO` output-panel keymap). Added
-  to the user's dotfiles alongside the other test keymaps.
-- `build_spec` appends a `=== <position id> ===` header line before issuing the request for
-  `test`/`namespace` positions. **Never clears the buffer** — clearing on every run start would let
-  two concurrently-running tests (`running.concurrent = true` is neotest's default) stomp each
-  other's in-progress output. Content simply accumulates across runs, like a log.
-- A `lathe/testOutput` handler is registered once on the **raw** `vim.lsp.Client` object
-  (`vim.lsp.get_clients({name="lathe"})[1]`), *not* the object `lathe_client()` currently returns.
-  Verified directly against `nio/lsp.lua`: `nio.lsp.get_clients(...)` returns a freshly-built plain
-  table exposing only `request`/`notify`/`supports_method`/`server_capabilities` — it has no
-  `.handlers` field. Verified directly against Neovim's own `client.lua`
-  (`/opt/nvim-linux-x86_64/share/nvim/runtime/lua/vim/lsp/client.lua`) that the *real* client object
-  has a mutable `handlers: table<string, lsp.Handler>` field that `_get_handler` consults ahead of
-  the global `vim.lsp.handlers` table — the correct, supported extension point.
-- The handler appends `result.line` to the output buffer and scrolls any window currently showing it
-  to the last line.
+Neither of neotest's own output surfaces backs its buffer with the transcript file itself — both
+were re-read directly from the installed plugin (`~/.local/share/nvim/lazy/neotest`) while designing
+this section, not assumed from memory:
 
-`RunSpec.command` is untouched (`{"true"}`) — the live view is entirely our own buffer fed by the
-notification, not routed through neotest's process/stream machinery, so none of the tail-file/done-
-marker mechanics considered and rejected in §2 are needed.
+- `consumers/output.lua`'s `open_output()` (the one-shot floating window, `neotest.output.open()`)
+  creates a fresh **anonymous** scratch buffer (`nvim_create_buf(false, true)`), pipes `Result.output`
+  through `lib.ui.open_term()` (`nvim_chan_send` into a terminal channel), and — reliably, at the end
+  of every call — sets `filetype = "neotest-output"` on it. The buffer is never named or otherwise
+  linked back to the transcript file path, so file-identity correlation is not possible. The `FileType
+  neotest-output` autocommand is the one dependable, generically-scoped hook: it fires exactly when a
+  fresh buffer holding Lathe's transcript text is about to be shown.
+- `consumers/output_panel/init.lua`'s buffer is a single **persistent** terminal buffer, shared across
+  the whole session and every adapter, appended to incrementally with no per-run separator and no
+  `FileType` set. There is no "buffer opened for this file" event to hook here at all; reliably
+  mapping newly-appended terminal lines back to source content would need to watch content deltas
+  (`nvim_buf_attach` with `on_lines`) against an inherently async terminal channel. Left out of the
+  first iteration (§5) as a materially different mechanism, not a smaller version of the same one.
 
----
+Because there is no real per-transcript buffer to key metadata off of, the design drops file-identity
+correlation entirely and resolves purely from the stack-frame text already sitting in the buffer:
 
-## 5. Testing strategy
+1. On `FileType neotest-output`, scan the buffer's lines for Java stack-frame lines (§4 pattern).
+2. For each candidate frame, query the already-running Lathe LSP server with the **standard**
+   `workspace/symbol` request (`LatheWorkspaceService.symbol`, backed by `WorkspaceSymbolResolver` /
+   `WorkspaceTypeIndex` — the same index the editor's own symbol search already uses), using the
+   frame's simple class name as the query string.
+3. Resolve among the returned `SymbolInformation` results per §4, and skip the frame on ambiguity or
+   a miss.
+4. For each resolved frame, add an extmark/highlight over the `(File.java:line)` span and a
+   buffer-local `<CR>` / `gF` mapping that jumps to the resolved `Location`.
 
-### Server (JUnit 5 + AssertJ + Mockito, following existing patterns)
+This needs **no new server-side command, no new notification type, and no metadata registered at
+output-write time** — `neotest.lua`'s existing `results()` / `write_output_file` path is completely
+untouched. The only new pieces are a Neovim-side `FileType neotest-output` autocommand and an LSP
+`workspace/symbol` request, made the same way `discover_positions` already makes `lathe.runnables.list`
+requests against `lathe_client()`.
 
-`LanguageClient` mocking already has established precedent in this codebase —
-`DiagnosticPublisherTest`, `ProgressReporterTest`, `LatheWorkspaceServiceTest`, and others all
-`mock(LanguageClient.class)` and assert with `verify(client, ...)`. `ReplaySessionTest` already
-spawns real processes (`ProcessBuilder("sh", "-c", ...)`) rather than mocking the process itself —
-only the client is a mock boundary, matching CLAUDE.md's "mock only at the boundary where a real
-object would require network I/O."
-
-Extend `ReplaySessionTest` (constructor now takes `client`/`moduleRel`/`selectorValue`):
-
-- `drainOutput_processPrintsLines_notifiesClientPerLine` — real `sh -c 'echo one; echo two'`
-  process; `verify(client, timeout(5000)).testOutput(new TestOutputParams("mod", "sel", "one"))`
-  and the same for `"two"`, in order (`InOrder`).
-- `drainOutput_processPrintsNothing_neverNotifies` — real `true` process;
-  `verify(client, never()).testOutput(any())`.
-- Existing tests (`onExit_processExitsZero_completesWithZero`, the `cancel(...)` test, etc.) gain the
-  new constructor args but assert unchanged behavior — confirms the notification wiring is additive.
-
-`TestOutputParams`'s compact constructor gets a small validation test alongside `ReplayOutcome`'s
-existing one (blank `moduleRel`/`selectorValue` rejected, `null` line rejected, blank line accepted).
-
-The `LatheServer`/`LatheLanguageServer` bootstrap change (the builder swap, the cast) is wiring, not
-logic — not independently unit-testable in a meaningful way. Confidence there comes from the `javap`
-verification in §2.2 (the *right* builder subclass is used) plus the fact that every existing
-server-side test that talks to a mocked or real `LanguageClient` continues to pass unmodified, which
-would catch a serialization regression indirectly.
-
-### Client (headless `neotest_spec.lua`, following the existing pattern)
-
-The pure, testable slice is small: appending a line to a buffer and scrolling. Extract that into a
-small local function (e.g. `append_output_line(bufnr, line)`) callable directly from a spec without
-a real LSP connection — mirroring how `_build_position_forest` was extracted specifically to stay
-testable without neotest/nio installed. Cover:
-
-- appending to a fresh buffer creates content;
-- the `=== <position id> ===` header is written without clearing prior content (the concurrency-
-  safety property from §4) — build two headers in sequence, assert both survive.
-
-**Not unit-testable, by design of this codebase's existing conventions**: the real
-`vim.lsp.Client.handlers` registration and an actual `lathe/testOutput` round-trip over a live LSP
-connection. This session's established pattern for exactly this class of thing (confirmed working
-end-to-end via `LATHE_DEBUG=1` and `~/.local/state/nvim/lsp.log`, e.g. the auto-glyph fix and the
-real `[replay] ... exit=0` log lines from the user's interactive session) is real, interactive
-verification against the user's actual Neovim session and actual Helidon workspace — not a headless
-script. That remains the verification step for this feature: run a real test, confirm
-`=== <position> ===` plus streamed lines appear in the `<leader>tL` buffer while the replay JVM is
-still running (not just after), and confirm log evidence of `testOutput` notifications being sent
-server-side (a `LOG.fine` per line, gated behind `LATHE_DEBUG=1` per this repo's logging
-conventions, consistent with the existing `[replay] argv=%s` line in `ReplayLauncher`).
+Copying the stack trace still copies exactly the original test output.
+No `file:///...` prefixes, resolved absolute paths, OSC-8 hyperlinks, or synthetic helper lines are
+inserted into the transcript — extmarks and buffer-local keymaps are display/interaction-only and
+never mutate buffer text.
 
 ---
 
-## 6. Known simplifications / non-goals
+## 4. Resolution Strategy
 
-- **One shared buffer, not one per position.** Concurrent runs (`running.concurrent = true` is
-  neotest's default) interleave into the same buffer, distinguished only by the `=== <position> ===`
-  headers. Per-position buffer management is a materially bigger jump in UI complexity for a case
-  that's rare in normal single-test-at-a-time usage; revisit only if it proves confusing in practice.
-- **No batching.** One `lathe/testOutput` notification per line. Fine for typical test output volume;
-  worth revisiting only if a pathologically chatty test (thousands of lines) is reported as sluggish.
-- **Cancellation is out of scope for this document**, as separately agreed — stopping an in-flight
-  replay is a distinct follow-up (`ReplaySession.cancel()` already exists but nothing calls it).
-- **No change to the static post-completion output path.** `results()` and the existing
-  `write_output_file`/`ReplayOutcome.output` machinery are unchanged; this is purely additive live
-  output alongside them.
+The first implementation should stay conservative:
+
+1. Parse only standard Java stack-frame lines matching `at <fqcn>.<method>(<SimpleFile>.java:<line>)`.
+2. Query `workspace/symbol` with the frame's simple class name — the last `.`-delimited segment of
+   the FQCN, with any `$Nested` suffix stripped.
+3. Among the results, prefer a `SymbolInformation` whose container/package matches the frame's FQCN
+   prefix. If exactly one candidate comes back, accept it even without a package match — a class name
+   being unique workspace-wide is the common case.
+4. Do nothing for ambiguous (multiple candidates, none matching the package) or empty results.
+
+Framework-frame filtering — skipping `java.base` / `org.junit.platform` / etc. frames before even
+attempting a lookup, as a cheap pre-filter — can be added later.
+The raw output should remain complete even when navigation metadata is incomplete.
 
 ---
 
-## 7. Reviewable deliverables
+## 5. Non-goals
 
-### 7.1 Server: notification plumbing
+- No live output buffer.
+- No custom `lathe/testOutput` LSP notification.
+- No custom `:LatheTestOutput` command.
+- No visible file links injected into stack traces.
+- No attempt to replace neotest's output panel.
+- No `output_panel` support in the first iteration — its shared, persistent terminal buffer has no
+  per-run hook to attach to (§3); revisit only as an explicit follow-up if it proves needed in
+  practice, not as a silent gap in this one.
 
-**Scope:** `LatheLanguageClient`, `TestOutputParams`, the `LSPLauncher.Builder` swap in
-`LatheServer`, the retyping through `LatheLanguageServer` → `LatheTextDocumentService` →
-`WorkspaceSession` → `ReplayLauncher` → `ReplaySession`, and `drainOutput()`'s per-line notify call.
+Streaming can be revisited after stack-trace navigation works well.
+If it returns, it should reuse the same parsing/navigation layer instead of introducing a separate
+Lathe-only output experience.
 
-**Verification:** extended `ReplaySessionTest` (§5); full existing server test suite passes
-unmodified (serialization-regression canary, §5).
+---
 
-**Commit prefix:** `feat: stream replay output over a custom LSP notification`
+## 6. Reviewable Deliverables
 
-### 7.2 Client: live output buffer
+### 6.1 Remove abandoned streaming prototype
 
-**Scope:** the `neotest.lua` buffer, handler registration on the raw client, `build_spec`'s header
-append, and the `<leader>tL` dotfiles keymap.
+**Scope:** delete the custom notification/client plumbing and Neovim scratch-buffer command.
+Keep the existing final-output file path through `ReplayOutcome.output` and `neotest.Result.output`.
 
-**Verification:** extracted pure-function spec coverage (§5); real interactive confirmation against
-the user's Helidon workspace (§5), the same verification standard used for the auto-glyph and output-
-capture work earlier in this effort.
+**Verification:** server replay tests and Neovim adapter specs pass.
 
-**Commit prefix:** `feat(neovim): show live streamed test output in neotest adapter`
+**Commit prefix:** `refactor: drop custom test output streaming prototype`
+
+### 6.2 Add stack-trace navigation for neotest output
+
+**Scope:** a `FileType neotest-output` autocommand that scans the buffer for Java stack-frame lines,
+resolves each via a `workspace/symbol` request, and adds extmark/highlight decoration plus
+buffer-local `<CR>` / `gF` jump mappings for resolved frames. No changes to `results()`,
+`write_output_file`, or any server-side code — `workspace/symbol` already exists.
+
+**Verification:** focused Neovim specs for stack-frame parsing (pure function, no neotest/nio
+dependency) and the `workspace/symbol` query-construction logic; manual verification against Helidon
+for real stack traces, confirming `<CR>` jumps to the right file/line and the transcript text is
+unchanged after decoration.
+
+**Commit prefix:** `feat(neovim): navigate stack traces in test output`
