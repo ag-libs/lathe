@@ -286,6 +286,87 @@ do
   spec.check("unrelated class's method left untouched", results["demo.OtherTest#c()"], nil)
 end
 
+-- With real per-test results on outcome.testResults, results() must mark
+-- exactly the methods that failed rather than fanning one aggregate status
+-- out to every sibling. Reuses the same minimal fake tree as the fan-out
+-- reproduction above. testResults carries JUnit MethodSource fields; the
+-- reconstructed position id must match RunnableScanner.methodTarget's
+-- "<class>#<method>(<erasedParams>)" format, including stripping the ", "
+-- JUnit uses between parameter types down to javac's ",".
+do
+  local function fake_tree(nodes_by_id)
+    local function node_for(id)
+      return {
+        data = function()
+          return nodes_by_id[id]
+        end,
+        iter_nodes = function()
+          local ids = {}
+          local function collect(i)
+            table.insert(ids, i)
+            for _, child_id in ipairs(nodes_by_id[i].children or {}) do
+              collect(child_id)
+            end
+          end
+          collect(id)
+          local idx = 0
+          return function()
+            idx = idx + 1
+            if ids[idx] then
+              return idx, node_for(ids[idx])
+            end
+          end
+        end,
+      }
+    end
+    return {
+      get_key = function(_, id)
+        return nodes_by_id[id] and node_for(id) or nil
+      end,
+    }
+  end
+
+  local nodes = {
+    ["demo.FooTest"] = {
+      id = "demo.FooTest",
+      children = { "demo.FooTest#a()", "demo.FooTest#b()", "demo.FooTest#c(java.lang.String,int)" },
+    },
+    ["demo.FooTest#a()"] = { id = "demo.FooTest#a()", children = {} },
+    ["demo.FooTest#b()"] = { id = "demo.FooTest#b()", children = {} },
+    ["demo.FooTest#c(java.lang.String,int)"] = {
+      id = "demo.FooTest#c(java.lang.String,int)",
+      children = {},
+    },
+  }
+  local tree = fake_tree(nodes)
+
+  local results = adapter.results({
+    context = {
+      position_id = "demo.FooTest",
+      outcome = {
+        launched = true,
+        exitCode = 1,
+        output = { "transcript" },
+        testResults = {
+          { className = "demo.FooTest", methodName = "a", methodParameterTypes = "", status = "passed", failureMessage = "", failureLine = -1 },
+          { className = "demo.FooTest", methodName = "b", methodParameterTypes = "", status = "failed", failureMessage = "expected true", failureLine = 12 },
+          { className = "demo.FooTest", methodName = "c", methodParameterTypes = "java.lang.String, int", status = "passed", failureMessage = "", failureLine = -1 },
+        },
+      },
+    },
+  }, nil, tree)
+
+  local method_a = results["demo.FooTest#a()"]
+  local method_b = results["demo.FooTest#b()"]
+  local method_c = results["demo.FooTest#c(java.lang.String,int)"]
+  spec.check("passing method marked passed, not the aggregate failure", method_a and method_a.status, "passed")
+  spec.check("failing method marked failed", method_b and method_b.status, "failed")
+  spec.check("failing method carries its failure message", method_b and method_b.short, "expected true")
+  spec.check("param method id reconstructed with spaces stripped", method_c and method_c.status, "passed")
+  spec.check("per-test result reuses the run transcript", read_file(method_a.output), "transcript")
+  spec.check("class namespace node still gets the aggregate status", results["demo.FooTest"].status, "failed")
+end
+
 -- root() resolves the nearest .lathe marker walking up from a nested path,
 -- the same fixture-building approach as root_spec.lua's own coverage of
 -- lathe.get_root -- this is neotest's own project-root hook, a separate
