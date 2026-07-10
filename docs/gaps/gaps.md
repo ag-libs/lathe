@@ -743,31 +743,32 @@ silently pruned.
 This is not record-specific; any public-method reference has the same blind spot. Records merely make
 it common, because config accessors are routinely reached through `var`/chained getters.
 
-### Proposed fix (approach B — additive member-invocation union)
+### Fix (approach A — drop override-family narrowing for methods)
 
-Keep override-family narrowing as the fast path, but stop treating it as the sole filter. Enrich
-`ReferenceCandidateIndex` to additionally record **member-select invocation** names — an identifier
-that appears in receiver-qualified call position (`.name(`, allowing intervening whitespace) — and
-expose `memberInvocationUris(simpleName)`. In `planMethodCandidates`, **union** the family-narrowed
-set with `memberInvocationUris(target.simpleName())`.
+Method targets now use the **broad simple-name candidate set** — every file that spells the method's
+simple name — with no override-family narrowing. `planMethodCandidates`, `overrideFamilyBounded`, and
+the `java.lang.Object` special-case are removed from the method path (`overrideFamily` /
+`narrowToFamily` remain for fields, constructors, and enum constants).
 
-Member-select position (a leading `.`) is deliberately required, rather than any `name(`:
+Rationale: the narrowing was a candidate-pruning optimization, not a correctness mechanism — javac
+still decides real matches in `ReferenceLocator`. It was the source of the false negative, and no
+purely textual heuristic can tell a genuine call on an unspelled receiver (`config.whitelist()`, want
+kept) from an unrelated same-named method (want dropped) without compiling. Reference search is an
+explicit, batched, cancellable, progress-reported action, and the batch-compilation path is cheap
+enough that compiling every file spelling the name is an acceptable trade for full correctness and a
+simpler planner. A member-invocation index (former "approach B") was considered but rejected as it
+adds a second index dimension and a position-aware text scan for no correctness gain over A.
 
-- It reaches `config.whitelist()` regardless of whether the receiver type is spelled — fixing the gap.
-- It excludes unqualified calls (`amount()`) and declarations (`int amount()`), which resolve
-  lexically or through the already-handled family / static-import paths, so the candidate set does not
-  collapse to the full broad search for common method names.
-
-The cost is compiling some files that invoke an unrelated same-named method through a member select;
-`ReferenceLocator` then correctly reports zero matches for them — a bounded performance cost, not a
-correctness regression.
+Trade-off: a reference search on a very common method name (`get`, `size`, `toString`) compiles more
+files than before. Mitigated by batching + cancellation; if a pathological case ever bites, a
+high-threshold cap (`size > N ? narrow : broad`) can be reintroduced without an index change.
 
 ### Regression targets
 
 - `ReferenceCandidatePlannerTest.planCandidates_methodInvokedOnUnspelledReceiver_includesCallSite`
-  (positive — fails before the fix)
-- `ReferenceCandidatePlannerTest.planCandidates_unqualifiedCallUnspelledOwner_excludesFile`
-  (negative — pins the member-select requirement so the union does not over-widen)
+  (positive — a call on a `var`/unspelled receiver is a candidate)
+- `ReferenceCandidatePlannerTest.planCandidates_methodNameNeverSpelled_excludesFile`
+  (negative — a file that never spells the method's simple name is not a candidate)
 
 ---
 
