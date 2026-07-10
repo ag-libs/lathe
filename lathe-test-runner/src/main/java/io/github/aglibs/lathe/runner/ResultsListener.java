@@ -121,6 +121,10 @@ final class ResultsListener implements TestExecutionListener {
   }
 
   private static MethodSource methodSource(final TestIdentifier id) {
+    if (id.isContainer()) {
+      return null;
+    }
+
     return id.getSource().orElse(null) instanceof final MethodSource source ? source : null;
   }
 

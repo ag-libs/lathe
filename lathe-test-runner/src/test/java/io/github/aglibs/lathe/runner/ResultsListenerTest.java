@@ -10,6 +10,8 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.platform.engine.discovery.DiscoverySelectors;
 import org.junit.platform.launcher.core.LauncherDiscoveryRequestBuilder;
 import org.junit.platform.launcher.core.LauncherFactory;
@@ -52,6 +54,17 @@ final class ResultsListenerTest {
     final String line = lineFor(runFixture(dir, MixedFixture.class), "aborted_test");
 
     assertThat(line).contains("\"status\":\"skipped\"");
+  }
+
+  @Test
+  void execute_parameterizedFixture_recordsInvocationsNotTheTemplateContainer(
+      @TempDir final Path dir) throws IOException {
+    final List<String> lines = runFixture(dir, ParameterizedFixture.class);
+
+    final long paramRecords =
+        lines.stream().filter(line -> line.contains("\"methodName\":\"param_test\"")).count();
+    assertThat(paramRecords).isEqualTo(2);
+    assertThat(lines).hasSize(3);
   }
 
   @Test
@@ -133,4 +146,14 @@ final class MixedFixture {
   void aborted_test() {
     Assumptions.assumeTrue(false, "precondition not met");
   }
+}
+
+final class ParameterizedFixture {
+
+  @Test
+  void plain_test() {}
+
+  @ParameterizedTest
+  @ValueSource(strings = {"a", "b"})
+  void param_test(final String value) {}
 }

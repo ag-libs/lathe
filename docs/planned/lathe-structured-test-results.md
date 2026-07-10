@@ -163,6 +163,16 @@ pre-implementation plan:
   sibling design `lathe-test-diagnostics-and-refresh.md` (§4 there), which this design unblocks for
   class/package runs.
 
+* **`@ParameterizedTest`/`@RepeatedTest` (Risks, Open Question 2 resolved) — method-level roll-up,
+  no per-invocation granularity.** The runner skips container identifiers (`TestIdentifier.isContainer()`),
+  so the parameterized *template* container produces no record; only the per-invocation results are
+  written. All invocations of one method carry identical `MethodSource` identity, so they reconstruct
+  to the method's single position id — Lathe discovers exactly one position per method from
+  compile-time analysis and can't know the runtime invocation count, so there is nowhere to hang
+  per-invocation nodes. The adapter therefore collapses them worst-status-wins: a method with any
+  failing invocation shows failed, independent of invocation order. Per-invocation UI granularity is
+  a separate, larger feature (server-synthesized dynamic positions) and remains out of scope.
+
 * **The runner depends on JUnit Platform only — deliberately no `lathe-core`.** The runner rides the
   user's own test classpath inside the replay fork, so any dependency it drags in (gson and
   validcheck, via `lathe-core`) would pollute that classpath and risk shadowing the user's own

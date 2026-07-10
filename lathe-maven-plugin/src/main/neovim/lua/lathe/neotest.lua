@@ -357,13 +357,26 @@ function M.results(spec, _result, tree)
     end
   end
 
-  local results = { [ctx.position_id] = result }
-
+  -- Real per-test statuses first, so they win over the aggregate on any node
+  -- they cover (including the run's own position_id for a single-method run).
+  local results = {}
   if ctx.outcome and ctx.outcome.testResults then
     for _, tr in ipairs(ctx.outcome.testResults) do
-      results[test_result_position_id(tr)] = test_result(tr, result.output)
+      local id = test_result_position_id(tr)
+      -- A @ParameterizedTest/@RepeatedTest emits one record per invocation,
+      -- all collapsing onto the method's single position id (Lathe discovers
+      -- one position per method from compile-time analysis; it can't know the
+      -- runtime invocation count). Roll them up worst-status-wins so a method
+      -- with any failing invocation shows failed, not whichever invocation
+      -- happened to be written last.
+      local existing = results[id]
+      if not existing or existing.status ~= "failed" then
+        results[id] = test_result(tr, result.output)
+      end
     end
   end
+
+  results[ctx.position_id] = results[ctx.position_id] or result
 
   local subtree = tree and tree:get_key(ctx.position_id)
   if subtree then

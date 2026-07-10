@@ -367,6 +367,38 @@ do
   spec.check("class namespace node still gets the aggregate status", results["demo.FooTest"].status, "failed")
 end
 
+-- A @ParameterizedTest emits one record per invocation, all collapsing onto
+-- the method's single position id. results() must roll them up
+-- worst-status-wins -- a method with any failing invocation shows failed,
+-- independent of the order the invocation records arrive in.
+do
+  local function run(invocations)
+    return adapter.results({
+      context = {
+        position_id = "demo.FooTest#p(java.lang.String)",
+        outcome = { launched = true, exitCode = 1, output = { "t" }, testResults = invocations },
+      },
+    })["demo.FooTest#p(java.lang.String)"]
+  end
+
+  local function invocation(status, message)
+    return {
+      className = "demo.FooTest",
+      methodName = "p",
+      methodParameterTypes = "java.lang.String",
+      status = status,
+      failureMessage = message or "",
+      failureLine = -1,
+    }
+  end
+
+  local pass_then_fail = run({ invocation("passed"), invocation("failed", "second blew up") })
+  local fail_then_pass = run({ invocation("failed", "first blew up"), invocation("passed") })
+  spec.check("passed invocation does not mask a later failure", pass_then_fail.status, "failed")
+  spec.check("a later passing invocation does not clear an earlier failure", fail_then_pass.status, "failed")
+  spec.check("rolled-up failure keeps a failure message", fail_then_pass.short, "first blew up")
+end
+
 -- root() resolves the nearest .lathe marker walking up from a nested path,
 -- the same fixture-building approach as root_spec.lua's own coverage of
 -- lathe.get_root -- this is neotest's own project-root hook, a separate
