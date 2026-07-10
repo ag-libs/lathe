@@ -1,12 +1,22 @@
 package io.github.aglibs.lathe.runner;
 
-import io.github.aglibs.lathe.core.launch.TestSelectionKind;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.platform.engine.DiscoverySelector;
 import org.junit.platform.engine.discovery.DiscoverySelectors;
 
 final class TestSelectorParser {
+
+  /**
+   * Selector flags. Mirror {@code TestSelectionKind}'s {@code runnerFlag()} values in {@code
+   * lathe-core} (the server emits them via {@code TestSelection.toRunnerArgs()}) by value only: the
+   * runner must not depend on {@code lathe-core}. A drift-guard test pins these equal.
+   */
+  static final String SELECT_CLASS = "--select-class";
+
+  static final String SELECT_METHOD = "--select-method";
+  static final String SELECT_PACKAGE = "--select-package";
+  static final String SELECT_MODULE = "--select-module";
 
   private TestSelectorParser() {}
 
@@ -32,11 +42,12 @@ final class TestSelectorParser {
       throw new IllegalArgumentException("Blank value for selector %s".formatted(flag));
     }
 
-    return switch (TestSelectionKind.fromRunnerFlag(flag)) {
-      case CLASS -> DiscoverySelectors.selectClass(value);
-      case METHOD -> DiscoverySelectors.selectMethod(value);
-      case PACKAGE -> DiscoverySelectors.selectPackage(value);
-      case MODULE -> DiscoverySelectors.selectModule(value);
+    return switch (flag) {
+      case SELECT_CLASS -> DiscoverySelectors.selectClass(value);
+      case SELECT_METHOD -> DiscoverySelectors.selectMethod(value);
+      case SELECT_PACKAGE -> DiscoverySelectors.selectPackage(value);
+      case SELECT_MODULE -> DiscoverySelectors.selectModule(value);
+      default -> throw new IllegalArgumentException("Unknown selector %s".formatted(flag));
     };
   }
 }
