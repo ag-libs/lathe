@@ -143,3 +143,46 @@ for real stack traces, confirming `<CR>` jumps to the right file/line and the tr
 unchanged after decoration.
 
 **Commit prefix:** `feat(neovim): navigate stack traces in test output`
+
+---
+
+## 7. Shipped
+
+Implemented and verified interactively against Helidon (real `MongoDbClientTest` failures).
+Three things came up during that verification that this document didn't anticipate:
+
+**7.1 Async terminal-buffer reflow.** Scanning a buffer with several distinct unresolved classes
+means several yielding `workspace/symbol` round-trips inside one `nio.run` coroutine. Between the
+scan's initial read and a later frame's `nvim_buf_set_extmark` call, the terminal-channel buffer can
+still be reflowing content on the main loop, so a line captured at scan start is not guaranteed to
+match the line's live length later — this crashed `nvim_buf_set_extmark` with "Invalid 'end_col'" the
+first time it was tested against real, multi-frame output. Fixed by re-reading the line's live text
+immediately before each extmark call rather than trusting the text captured at scan start, with a
+defensive `math.min` clamp on `end_col` besides.
+
+**7.2 Jump target.** `<CR>` / `gF` originally called `:edit` in "the current window" — which, since
+the keymap is buffer-local to the output buffer, is always the output window itself (float or
+split). Jumping replaced the output view instead of navigating to source. Fixed by tracking the most
+recently entered window showing a `java`-filetype buffer (a `BufEnter` autocommand) and switching to
+it before running `:edit`, falling back to the old behavior if no such window exists yet.
+
+**7.3 A docked window without `output_panel`.** §5 scopes `output_panel` out for good reason (no
+per-run hook), but the underlying want it serves — a window that stays docked rather than a one-shot
+float — doesn't actually require it. `output.lua`'s own `open()` already accepts an `opts.open_win`
+override; `lathe.neotest.open_output()` supplies one that does `:split` instead of letting it float.
+Same buffer, same terminal rendering, same `FileType neotest-output` decoration hook — only the
+window shape differs. This became the recommended replacement for an `output_panel.toggle()`-bound
+keymap: rebinding it to `open_output()` gets a docked window *with* navigation, which `output_panel`
+cannot offer without the deferred `nvim_buf_attach` work.
+
+**7.4 Known caveat, not fixed.** `output.lua` tracks its currently-open window in a single
+module-level upvalue shared across *every* call, regardless of `opts.open_win`. Having both a plain
+`output.open()` float and an `open_output()` split open in the same session at once can make one call
+steal focus onto the other's window rather than opening its own — an edge case (simultaneous use of
+both), and fixing it would mean wrapping or shadowing neotest's own function, which isn't warranted
+for how rarely it comes up.
+
+**7.5 Buffer cleanup.** `output.lua`'s scratch buffers are created with `bufhidden=hide`, not `wipe`,
+so closing the output window hides the buffer without wiping it — a `BufWipeout`-only cleanup
+autocommand for the per-buffer decoration tables would almost never fire. Cleanup listens on
+`BufHidden` too, which fires reliably the moment a buffer stops being shown anywhere.

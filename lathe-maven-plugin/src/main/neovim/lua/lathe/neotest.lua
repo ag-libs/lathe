@@ -24,6 +24,14 @@ local function Tree()
   return require("neotest.types").Tree
 end
 
+local function stacktrace()
+  return require("lathe.stacktrace")
+end
+
+local function neotest_api()
+  return require("neotest")
+end
+
 local M = {}
 M.name = "neotest-lathe"
 
@@ -273,5 +281,199 @@ function M.results(spec, _result, tree)
   end
   return results
 end
+
+-- Stack-trace navigation for neotest's own output UI
+-- (docs/done/lathe-test-output-streaming.md). Neither of neotest's output
+-- surfaces (consumers/output.lua, consumers/output_panel/init.lua) backs its
+-- buffer with the transcript file itself -- both render through
+-- lib.ui.open_term(), a terminal-channel buffer. output.lua's floating
+-- window is the one that reliably sets filetype=neotest-output on a fresh
+-- buffer, so that FileType event -- not any correlation to the transcript
+-- file's path -- is the hook. output_panel's persistent, shared buffer has
+-- no equivalent per-run hook and is out of scope for now.
+
+local STACKTRACE_NS = vim.api.nvim_create_namespace("lathe_stacktrace")
+local STACKTRACE_HL = "LatheStackFrame"
+vim.api.nvim_set_hl(0, STACKTRACE_HL, { link = "Underlined", default = true })
+
+-- clear = true so re-requiring this module (e.g. a plugin-manager reload)
+-- replaces rather than duplicates these autocmds, matching lathe.lua's own
+-- LathePlugin augroup.
+local STACKTRACE_AUGROUP = vim.api.nvim_create_augroup("LatheStacktrace", { clear = true })
+
+local frame_locations = {}
+local jump_keymaps_set = {}
+
+-- Tracks the most recently entered window showing a Java buffer, so a jump
+-- from the output window (float or split, both keyed off the same
+-- FileType neotest-output hook) lands in the editor window the source was
+-- already open in, instead of replacing the output window's own buffer --
+-- there is no other way to recover "the window before this one" here: by
+-- the time FileType neotest-output fires, output.lua has already finished
+-- its own enter/restore focus handling (see its open_output()), so the
+-- current window at that point is always the output window itself, not
+-- whatever was focused beforehand.
+local last_java_win
+
+vim.api.nvim_create_autocmd("BufEnter", {
+  group = STACKTRACE_AUGROUP,
+  callback = function(ev)
+    if vim.bo[ev.buf].filetype == "java" then
+      last_java_win = vim.api.nvim_get_current_win()
+    end
+  end,
+})
+
+local function jump_to_resolved_frame(bufnr)
+  local locations = frame_locations[bufnr]
+  local row = vim.api.nvim_win_get_cursor(0)[1]
+  local location = locations and locations[row]
+  if not location then
+    return
+  end
+
+  if last_java_win and vim.api.nvim_win_is_valid(last_java_win) then
+    vim.api.nvim_set_current_win(last_java_win)
+  end
+
+  vim.cmd("edit " .. vim.fn.fnameescape(vim.uri_to_fname(location.uri)))
+  vim.api.nvim_win_set_cursor(0, { location.range.start.line + 1, location.range.start.character })
+end
+
+local function ensure_jump_keymaps(bufnr)
+  if jump_keymaps_set[bufnr] then
+    return
+  end
+
+  jump_keymaps_set[bufnr] = true
+  local opts = { buffer = bufnr, desc = "Lathe: jump to resolved stack frame" }
+  for _, key in ipairs({ "<CR>", "gF" }) do
+    vim.keymap.set("n", key, function()
+      jump_to_resolved_frame(bufnr)
+    end, opts)
+  end
+end
+
+--- Highlights the `File.java:line` span so navigation is visible without
+--- changing the line's text -- copying the transcript still copies exactly
+--- what the replay JVM printed. Re-reads the line's live content rather than
+--- trusting the text captured at scan start: decorate_stack_frames yields on
+--- an LSP round-trip per unresolved class, and a terminal-channel buffer
+--- (neotest renders output via nvim_open_term, not plain nvim_buf_set_lines)
+--- can still be reflowing content on the main loop while that's happening,
+--- so a line's length by the time this runs is not guaranteed to match what
+--- was read at scan start.
+local function highlight_frame_span(bufnr, row0, frame)
+  local current_text = vim.api.nvim_buf_get_lines(bufnr, row0, row0 + 1, false)[1]
+  if not current_text then
+    return
+  end
+
+  local span = ("%s:%d"):format(frame.file, frame.line)
+  local col_start = current_text:find(span, 1, true)
+  if not col_start then
+    return
+  end
+
+  vim.api.nvim_buf_set_extmark(bufnr, STACKTRACE_NS, row0, col_start - 1, {
+    end_col = math.min(col_start - 1 + #span, #current_text),
+    hl_group = STACKTRACE_HL,
+  })
+end
+
+--- Scans one already-rendered neotest-output buffer for stack frames and
+--- resolves each via the standard workspace/symbol request -- no new
+--- server-side command, no metadata recorded when the transcript was
+--- written; resolution works from the frame text alone (§4).
+local function decorate_stack_frames(bufnr)
+  local client = lathe_client()
+  if not client then
+    return
+  end
+
+  nio().run(function()
+    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    local resolved_by_class = {}
+    local locations = {}
+    frame_locations[bufnr] = locations
+
+    for row0, text in ipairs(lines) do
+      local frame = stacktrace().parse_frame(text)
+      if frame then
+        local cache_key = frame.simple_name .. "#" .. frame.package
+        if resolved_by_class[cache_key] == nil then
+          local _err, symbols = client.request.workspace_symbol({ query = frame.simple_name }, bufnr)
+          resolved_by_class[cache_key] = stacktrace().pick_candidate(frame, symbols) or false
+        end
+
+        local candidate = resolved_by_class[cache_key]
+        if candidate then
+          highlight_frame_span(bufnr, row0 - 1, frame)
+          locations[row0] = candidate.location
+        end
+      end
+    end
+
+    ensure_jump_keymaps(bufnr)
+  end)
+end
+
+local MAX_OUTPUT_SPLIT_HEIGHT = 20
+local output_split_win
+
+local function output_split_is_focused()
+  return output_split_win
+    and vim.api.nvim_win_is_valid(output_split_win)
+    and vim.api.nvim_get_current_win() == output_split_win
+end
+
+--- Opens the last run's output in a docked split rather than output.lua's
+--- default floating window -- same buffer, same terminal rendering, same
+--- FileType-triggered stack-trace decoration above, only the window shape
+--- differs. output.lua's own open() already supports this via opts.open_win;
+--- this is a thin convenience wrapper, not a new output mechanism. Toggles:
+--- a second call while that split is the current window closes it, matching
+--- the toggle behavior of neotest's own output_panel.toggle().
+function M.open_output(opts)
+  if output_split_is_focused() then
+    vim.api.nvim_win_close(output_split_win, true)
+    output_split_win = nil
+    return
+  end
+
+  local open_opts = vim.tbl_extend("force", { enter = true, last_run = true }, opts or {}, {
+    open_win = function(win_opts)
+      vim.cmd("botright split")
+      vim.api.nvim_win_set_height(0, math.min(win_opts.height, MAX_OUTPUT_SPLIT_HEIGHT))
+      output_split_win = vim.api.nvim_get_current_win()
+      return output_split_win
+    end,
+  })
+
+  neotest_api().output.open(open_opts)
+end
+
+-- output.lua's scratch buffers are created via nvim_create_buf(false, true),
+-- which defaults to bufhidden=hide, not wipe -- so closing the output window
+-- hides the buffer but almost never actually wipes it, and BufWipeout alone
+-- would leave these tables growing for the rest of the session. BufHidden
+-- fires reliably the moment a buffer stops being shown in any window, which
+-- is also the point these entries become unreachable (the jump keymaps are
+-- buffer-local, so nothing can use them once hidden).
+vim.api.nvim_create_autocmd({ "BufHidden", "BufWipeout" }, {
+  group = STACKTRACE_AUGROUP,
+  callback = function(ev)
+    frame_locations[ev.buf] = nil
+    jump_keymaps_set[ev.buf] = nil
+  end,
+})
+
+vim.api.nvim_create_autocmd("FileType", {
+  group = STACKTRACE_AUGROUP,
+  pattern = "neotest-output",
+  callback = function(ev)
+    decorate_stack_frames(ev.buf)
+  end,
+})
 
 return M
