@@ -31,9 +31,38 @@ final class LatheTestRunnerTest {
 
     assertThat(
             LatheTestRunner.run(
-                new String[] {}, new PrintStream(err, true, StandardCharsets.UTF_8)))
+                new String[] {}, System.out, new PrintStream(err, true, StandardCharsets.UTF_8)))
         .isEqualTo(LatheTestRunner.EXIT_USAGE);
     assertThat(err.toString(StandardCharsets.UTF_8)).contains("No test selectors provided");
+  }
+
+  @Test
+  void run_failingFixture_printsFailureStackTraceToOut() {
+    final var out = new ByteArrayOutputStream();
+
+    final int code =
+        LatheTestRunner.run(
+            new String[] {TestSelectorParser.SELECT_CLASS, FailingFixture.class.getName()},
+            new PrintStream(out, true, StandardCharsets.UTF_8),
+            System.err);
+
+    assertThat(code).isEqualTo(LatheTestRunner.EXIT_FAILURE);
+    final String text = out.toString(StandardCharsets.UTF_8);
+    assertThat(text).contains("failing_test_returnsRed").contains("expected");
+    // The client's stack-frame parser keys on the "at <fqcn>(<File>.java:<line>)" shape.
+    assertThat(text).containsPattern("at .+\\.java:\\d+\\)");
+  }
+
+  @Test
+  void run_passingFixture_printsNothingToOut() {
+    final var out = new ByteArrayOutputStream();
+
+    LatheTestRunner.run(
+        new String[] {TestSelectorParser.SELECT_CLASS, PassingFixture.class.getName()},
+        new PrintStream(out, true, StandardCharsets.UTF_8),
+        System.err);
+
+    assertThat(out.toString(StandardCharsets.UTF_8)).isEmpty();
   }
 
   @Test
