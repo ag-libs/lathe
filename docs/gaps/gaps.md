@@ -693,6 +693,185 @@ printf 'refs "<component>,"\n' \
 
 ---
 
+## FR-011 — Method call on a `var`/chained receiver is dropped when the receiver type is never spelled
+
+**Status: accepted — Target: M2**
+
+### Observed behaviour
+
+Find References on a record component reports **no matches outside the declaring record**, even though
+a genuine call site exists. Reproduced against a validation workspace: a record accessor is invoked
+on a receiver whose type is inferred and never written in the calling file.
+
+```java
+// FeatureConfig.java — the record; component 'whitelist' has an implicit accessor whitelist()
+public record FeatureConfig(boolean enabled, List<String> whitelist, ...) { ... }
+
+// RequestContext.java — the call site, in a different module. Note: FeatureConfig is NEVER spelled
+// here (no import, no explicit type); its type flows in through `var` from a getter chain.
+final var config = getConfig().feature();          // config's type FeatureConfig is inferred
+return config != null
+    && config.enabled()
+    && (msisdn == null || !config.whitelist().contains(msisdn));   // <-- missed reference
+```
+
+Clicking `whitelist` in the record returns only the declaration; `config.whitelist()` above is not
+reported.
+
+### Root cause
+
+The defect is in **candidate planning**, not in reference matching. `ReferenceLocator`/
+`ReferenceTarget.matches` would match `config.whitelist()` correctly — but the file is pruned before
+javac ever compiles it.
+
+1. The record component is normalised to its public accessor method (`ReferenceTarget.from` →
+   `recordAccessorFor`), producing a `METHOD` target with `overrideFamilyBounded = true` and empty
+   `overriddenDeclarers` (a record accessor overrides nothing).
+2. `ReferenceCandidatePlanner.planMethodCandidates` (`ReferenceCandidatePlanner.java:116-131`) takes
+   the override-family narrowing path and calls `narrowToFamily`.
+3. `narrowToFamily` (`ReferenceCandidatePlanner.java:153-170`) **intersects** the files that spell the
+   member simple name (`whitelist`) with the files that spell a family type's simple name
+   (`FeatureConfig`). The call site spells `whitelist` but not `FeatureConfig`, so it is filtered out.
+
+The override-family heuristic assumes a genuine call site textually spells the receiver's static type
+name (the doc comment at `ReferenceCandidatePlanner.java:105-114` explicitly relies on
+`baseConfig.name()` spelling the type). That assumption breaks whenever the receiver type is never
+written: `var` bound from a factory/getter chain, a chained call (`getConfig().feature().whitelist()`),
+a generic type variable, or a wildcard capture. The result is a **false negative** — a real reference
+silently pruned.
+
+This is not record-specific; any public-method reference has the same blind spot. Records merely make
+it common, because config accessors are routinely reached through `var`/chained getters.
+
+### Proposed fix (approach B — additive member-invocation union)
+
+Keep override-family narrowing as the fast path, but stop treating it as the sole filter. Enrich
+`ReferenceCandidateIndex` to additionally record **member-select invocation** names — an identifier
+that appears in receiver-qualified call position (`.name(`, allowing intervening whitespace) — and
+expose `memberInvocationUris(simpleName)`. In `planMethodCandidates`, **union** the family-narrowed
+set with `memberInvocationUris(target.simpleName())`.
+
+Member-select position (a leading `.`) is deliberately required, rather than any `name(`:
+
+- It reaches `config.whitelist()` regardless of whether the receiver type is spelled — fixing the gap.
+- It excludes unqualified calls (`amount()`) and declarations (`int amount()`), which resolve
+  lexically or through the already-handled family / static-import paths, so the candidate set does not
+  collapse to the full broad search for common method names.
+
+The cost is compiling some files that invoke an unrelated same-named method through a member select;
+`ReferenceLocator` then correctly reports zero matches for them — a bounded performance cost, not a
+correctness regression.
+
+### Regression targets
+
+- `ReferenceCandidatePlannerTest.planCandidates_methodInvokedOnUnspelledReceiver_includesCallSite`
+  (positive — fails before the fix)
+- `ReferenceCandidatePlannerTest.planCandidates_unqualifiedCallUnspelledOwner_excludesFile`
+  (negative — pins the member-select requirement so the union does not over-widen)
+
+---
+
+## FR-012 — Type references miss a same-package generated file that uses the type without importing it
+
+**Status: accepted — Target: M2**
+
+### Observed behaviour
+
+Find References on a `@Builder` record **type** does not report the generated builder, even though the
+builder plainly references the record. Reproduced against a validation workspace: the record's
+generated builder lives in the same package, in the annotation-processor output root, and names the
+record without an import.
+
+```java
+// FeatureConfig.java — src/main/java, the annotated record
+package com.example.app.config;
+public record FeatureConfig(boolean enabled, List<String> whitelist, ...) { ... }
+
+// FeatureConfigBuilder.java — target/generated-sources/annotations, SAME package, NO import of the
+// record; references the type by simple name only.
+package com.example.app.config;
+public final class FeatureConfigBuilder {
+  public FeatureConfig build() { return new FeatureConfig(...); }   // <-- missed type reference
+}
+```
+
+References on `FeatureConfig` return the source-tree usages but omit the generated builder.
+
+### Root cause
+
+Candidate-planning prune, not a matching defect. The generated builder **is** in the candidate index
+(`ReferenceCandidateIndex.allSourceRoots` indexes `originalGenSourcesDir` alongside `sourceRoots`), so
+it appears in `simpleCandidates` for the token `FeatureConfig`. But `planTypeCandidates`
+(`ReferenceCandidatePlanner.java:64-103`) keeps a same-package file only through
+`isInPackage(path, config.sourceRoots(), packageRel)` (`ReferenceCandidatePlanner.java:101, 177-182`),
+which resolves `packageRel` against **`config.sourceRoots()` only** — never
+`config.originalGenSourcesDir()`. The builder's parent directory sits under the generated-sources
+root, matches no regular source root, and is pruned.
+
+The import-token branch still finds generated files that use an explicit or wildcard import, so only
+the **same-package, no-import** shape is lost — which is exactly how the generated builder (and
+updater/companion types) reference the record they belong to.
+
+### Proposed fix
+
+Have the same-package filter consider the generated-sources root in addition to the regular source
+roots: resolve `packageRel` against `config.sourceRoots()` ∪ `{config.originalGenSourcesDir()}` (when
+non-null). Minimal and localized to `planTypeCandidates` / `isInPackage`.
+
+### Regression targets
+
+- `ReferenceCandidatePlannerTest.planCandidates_typeUsedInSamePackageGeneratedSource_includesGeneratedFile`
+  (positive — fails before the fix)
+- `ReferenceCandidatePlannerTest.planCandidates_typeInGeneratedSourceDifferentPackage_excludesFile`
+  (negative — generated-root awareness must still respect package boundaries)
+
+---
+
+## FR-013 — Constructor references select no candidates because the target is keyed on `<init>`
+
+**Status: accepted — Target: M2**
+
+### Observed behaviour
+
+Find References on a record/class **constructor** returns nothing outside the declaring file — in
+particular it omits the generated builder's `new FeatureConfig(...)` call. Reproduced against a
+validation workspace:
+
+```java
+// FeatureConfigBuilder.java — generated
+public FeatureConfig build() {
+  return new FeatureConfig(enabled, whitelist, ...);   // <-- missed constructor reference
+}
+```
+
+### Root cause
+
+Candidate-planning prune. A constructor's `ReferenceTarget.simpleName` is javac's constructor name
+**`<init>`** (`ReferenceTarget.from` uses `element.getSimpleName()` for the `CONSTRUCTOR` case,
+`ReferenceTarget.java:54-78`). `planCandidates` opens with
+`simpleCandidates = index.candidateUris(target.simpleName())` — i.e. `candidateUris("<init>")`.
+`<init>` is never an identifier token in any source file, so the set is **empty**, and the guard at
+`ReferenceCandidatePlanner.java:31-33` returns `Set.of()` before the constructor branch
+(`ReferenceCandidatePlanner.java:49-51`) ever runs. Every constructor reference search therefore
+selects zero external candidates; the `new FeatureConfig(...)` call site is never compiled or matched.
+
+### Proposed fix
+
+For a `CONSTRUCTOR` target, key the initial candidate lookup on the **declaring type's simple name**
+(derived from `target.qualifiedName()`), not `target.simpleName()`. The existing constructor branch
+`narrowToFamily(Set.of(target.qualifiedName()), …)` then bounds the search to files spelling the type
+name — the generated builder among them. Pairs with FR-012 so the same-package generated builder both
+survives the simple-name lookup and passes the package filter.
+
+### Regression targets
+
+- `ReferenceCandidatePlannerTest.planCandidates_constructorInvokedViaNew_includesCallSite`
+  (positive — fails before the fix; target keyed on `<init>`)
+- `ReferenceCandidatePlannerTest.planCandidates_constructorOwnerNameNotSpelled_excludesFile`
+  (negative — a file that never spells the type stays out)
+
+---
+
 # Completion Gaps (CQ)
 
 Active completion-quality gaps. Discovered and triaged via the completion appendix of the

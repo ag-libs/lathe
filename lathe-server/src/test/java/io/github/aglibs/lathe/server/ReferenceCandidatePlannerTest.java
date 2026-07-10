@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Set;
 import javax.lang.model.element.ElementKind;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -92,6 +93,35 @@ class ReferenceCandidatePlannerTest {
 
   private static ReferenceTarget field(final String ownerBinaryName, final String simpleName) {
     return target(ElementKind.FIELD, ownerBinaryName, simpleName, null, List.of());
+  }
+
+  private static ReferenceTarget constructor(
+      final String ownerBinaryName, final String descriptor) {
+    // javac reports a constructor's simple name as "<init>"; ReferenceTarget.from carries that
+    // through verbatim — exactly what the planner must not key its candidate lookup on (FR-013).
+    return target(ElementKind.CONSTRUCTOR, ownerBinaryName, "<init>", descriptor, List.of());
+  }
+
+  private Path gen() throws IOException {
+    return Files.createDirectories(root.resolve("gen"));
+  }
+
+  private Path writeGen(final Path genRoot, final String name, final String content)
+      throws IOException {
+    final Path file = genRoot.resolve(name);
+    Files.createDirectories(file.getParent());
+    return Files.writeString(file, content);
+  }
+
+  private ModuleSourceConfig configWithGen(final Path genRoot) {
+    return TestCompiler.moduleConfig(
+        root.resolve(".lathe/module"), root.resolve("target/classes"), src, genRoot);
+  }
+
+  private Set<String> planWith(final ModuleSourceConfig cfg, final ReferenceTarget target) {
+    final var index = ReferenceCandidateIndex.build(List.of(cfg));
+    return new ReferenceCandidatePlanner(index, WorkspaceTypeIndex.empty())
+        .planCandidates(cfg, target);
   }
 
   @Test
@@ -286,6 +316,56 @@ class ReferenceCandidatePlannerTest {
         .containsExactlyInAnyOrder(uri(rec), uri(caller));
   }
 
+  @Disabled("FR-011 — deferred; fix requires candidate-index changes (see docs/gaps/gaps.md)")
+  @Test
+  void planCandidates_methodInvokedOnUnspelledReceiver_includesCallSite() throws IOException {
+    // FR-011: a record accessor called on a receiver whose type is inferred (var from a getter
+    // chain) and therefore never spelled in the calling file. Family narrowing intersects on the
+    // declaring type's simple name, which this file never writes, so it must be reached through the
+    // member-select invocation (.amount() call position) instead.
+    final Path rec =
+        write(
+            "Config.java",
+            """
+            package com.example;
+            record Config(int amount) {}
+            """);
+    final Path caller =
+        write(
+            "Caller.java",
+            """
+            package com.example;
+            class Caller {
+              int read(Holder h) {
+                var c = h.config();
+                return c.amount();
+              }
+            }
+            """);
+
+    assertThat(plan(method("com.example.Config", "amount", "()", List.of())))
+        .contains(uri(caller), uri(rec));
+  }
+
+  @Disabled("FR-011 — deferred; fix requires candidate-index changes (see docs/gaps/gaps.md)")
+  @Test
+  void planCandidates_unqualifiedCallUnspelledOwner_excludesFile() throws IOException {
+    // FR-011 boundary: an unqualified amount() resolves lexically, never to an unrelated record's
+    // accessor. With no receiver-qualified call site, the member-invocation union must not widen to
+    // include it.
+    write(
+        "Lexical.java",
+        """
+        package com.example;
+        class Lexical {
+          int amount() { return 1; }
+          int total() { return amount() + amount(); }
+        }
+        """);
+
+    assertThat(plan(method("com.example.Config", "amount", "()", List.of()))).isEmpty();
+  }
+
   @Test
   void planCandidates_protectedFieldInheritedInSubclass_includesSubclassFiles() throws IOException {
     final Path base =
@@ -349,5 +429,105 @@ class ReferenceCandidatePlannerTest {
 
     assertThat(plan(target(ElementKind.CLASS, "java.lang.String", "String", null, List.of())))
         .containsExactly(uri(fileG));
+  }
+
+  @Test
+  void planCandidates_typeUsedInSamePackageGeneratedSource_includesGeneratedFile()
+      throws IOException {
+    // FR-012: the generated builder is in the record's package but under the generated-sources
+    // root,
+    // and names the record without importing it. It is indexed, so the same-package filter must
+    // consult the generated root (not just sourceRoots) to keep it.
+    write(
+        "com/example/Config.java",
+        """
+        package com.example;
+        public record Config(int amount) {}
+        """);
+    final Path genRoot = gen();
+    final Path builder =
+        writeGen(
+            genRoot,
+            "com/example/ConfigBuilder.java",
+            """
+            package com.example;
+            public final class ConfigBuilder {
+              public Config build() {
+                return new Config(0);
+              }
+            }
+            """);
+
+    assertThat(planWith(configWithGen(genRoot), type("com.example.Config", "Config")))
+        .contains(uri(builder));
+  }
+
+  @Test
+  void planCandidates_typeInGeneratedSourceDifferentPackage_excludesFile() throws IOException {
+    // A generated file in a DIFFERENT package that merely spells the simple name must stay excluded
+    // even once the same-package filter is generated-root aware.
+    write(
+        "com/example/Config.java",
+        """
+        package com.example;
+        public record Config(int amount) {}
+        """);
+    final Path genRoot = gen();
+    final Path other =
+        writeGen(
+            genRoot,
+            "com/other/Unrelated.java",
+            """
+            package com.other;
+            class Unrelated {
+              int Config = 1;
+            }
+            """);
+
+    assertThat(planWith(configWithGen(genRoot), type("com.example.Config", "Config")))
+        .doesNotContain(uri(other));
+  }
+
+  @Test
+  void planCandidates_constructorInvokedViaNew_includesCallSite() throws IOException {
+    // FR-013: the constructor target is keyed on javac's "<init>" name, which no source spells, so
+    // planning returns nothing. The caller constructs Config but is dropped before the type-name
+    // narrowing even runs.
+    write(
+        "Config.java",
+        """
+        package com.example;
+        public record Config(int amount) {}
+        """);
+    final Path caller =
+        write(
+            "Factory.java",
+            """
+            package com.example;
+            class Factory {
+              Config make() {
+                return new Config(0);
+              }
+            }
+            """);
+
+    assertThat(plan(constructor("com.example.Config", "(int)"))).contains(uri(caller));
+  }
+
+  @Test
+  void planCandidates_constructorOwnerNameNotSpelled_excludesFile() throws IOException {
+    // A file that never spells the type is not a candidate for its constructor.
+    write(
+        "Elsewhere.java",
+        """
+        package com.example;
+        class Elsewhere {
+          int run() {
+            return 42;
+          }
+        }
+        """);
+
+    assertThat(plan(constructor("com.example.Config", "(int)"))).isEmpty();
   }
 }

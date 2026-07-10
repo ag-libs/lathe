@@ -26,13 +26,18 @@ final class ReferenceCandidatePlanner {
   }
 
   Set<String> planCandidates(final ModuleSourceConfig config, final ReferenceTarget target) {
-    final var simpleName = target.simpleName();
-    final Set<String> simpleCandidates = index.candidateUris(simpleName);
+    final var kind = target.kind();
+    // A constructor's simple name is javac's "<init>", which no source file ever spells; key
+    // candidate discovery on the declaring type's simple name instead (FR-013).
+    final var lookupName =
+        kind == ElementKind.CONSTRUCTOR
+            ? simpleNameOf(target.qualifiedName())
+            : target.simpleName();
+    final Set<String> simpleCandidates = index.candidateUris(lookupName);
     if (simpleCandidates.isEmpty()) {
       return Set.of();
     }
 
-    final var kind = target.kind();
     if (kind == ElementKind.LOCAL_VARIABLE
         || kind == ElementKind.PARAMETER
         || kind == ElementKind.EXCEPTION_PARAMETER
@@ -95,10 +100,11 @@ final class ReferenceCandidatePlanner {
     }
     final Stream<String> importTokens = tokensBuilder.build();
 
+    final List<Path> packageRoots = packageSearchRoots(config);
     return Stream.concat(
             importTokens.flatMap(token -> index.candidateUris(token).stream()),
             simpleCandidates.stream()
-                .filter(uri -> isInPackage(LatheUri.toPath(uri), config.sourceRoots(), packageRel)))
+                .filter(uri -> isInPackage(LatheUri.toPath(uri), packageRoots, packageRel)))
         .collect(Collectors.toUnmodifiableSet());
   }
 
@@ -172,6 +178,21 @@ final class ReferenceCandidatePlanner {
   private static String simpleNameOf(final String binaryName) {
     final int cut = Math.max(binaryName.lastIndexOf('.'), binaryName.lastIndexOf('$'));
     return cut < 0 ? binaryName : binaryName.substring(cut + 1);
+  }
+
+  /**
+   * The regular source roots plus the generated-sources root (when present). Generated companions
+   * such as a record's {@code @Builder} live in the annotation-processor output root and reference
+   * the record by simple name only (same package, no import), so the same-package filter must
+   * consider that root too (FR-012).
+   */
+  static List<Path> packageSearchRoots(final ModuleSourceConfig config) {
+    if (config.originalGenSourcesDir() == null) {
+      return config.sourceRoots();
+    }
+
+    return Stream.concat(config.sourceRoots().stream(), Stream.of(config.originalGenSourcesDir()))
+        .toList();
   }
 
   private static boolean isInPackage(
