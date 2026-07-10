@@ -37,13 +37,13 @@ class ServerInstallerTest {
     assertThat(neovim.resolve("lua/lathe/indent.lua")).hasContent("return {}");
     assertThat(neovim.resolve("ftplugin/java.lua")).hasContent("vim.bo.shiftwidth = 2");
     assertThat(neovim.resolve("after/indent/java.lua")).hasContent("vim.bo.indentexpr = ''");
-    assertThat(neovim.resolve(LatheLayout.NEOVIM_MARKER)).exists();
+    assertThat(neovim.resolve(LatheLayout.NVIM_MARKER)).exists();
   }
 
   @Test
   void installNeovimBundle_existingRuntime_replacesRuntime() throws IOException {
     final Path versionDir = tmp.resolve("server");
-    final Path stale = versionDir.resolve(LatheLayout.NEOVIM_DIR).resolve("stale.lua");
+    final Path stale = versionDir.resolve(LatheLayout.NVIM_DIR).resolve("stale.lua");
     Files.createDirectories(stale.getParent());
     Files.writeString(stale, "stale");
 
@@ -97,6 +97,6 @@ class ServerInstallerTest {
   }
 
   private static Path neovimDir(final Path versionDir) {
-    return versionDir.resolve(LatheLayout.NEOVIM_DIR);
+    return versionDir.resolve(LatheLayout.NVIM_DIR);
   }
 }

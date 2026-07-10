@@ -31,8 +31,8 @@ import org.eclipse.aether.util.artifact.JavaScopes;
 
 final class ServerInstaller {
 
-  private static final String NEOVIM_BUNDLE_RESOURCE =
-      "/META-INF/lathe/%s".formatted(LatheLayout.NEOVIM_BUNDLE);
+  private static final String NVIM_BUNDLE_RESOURCE =
+      "/META-INF/lathe/%s".formatted(LatheLayout.NVIM_BUNDLE);
   private static final String MARKER_SCHEMA = "schema";
   private static final String MARKER_BUNDLE_SIZE = "bundleSize";
   private static final String MARKER_BUNDLE_MODIFIED = "bundleModified";
@@ -106,7 +106,7 @@ final class ServerInstaller {
   }
 
   private void installNeovim(final Path versionDir) throws IOException {
-    final URL bundleUrl = ServerInstaller.class.getResource(NEOVIM_BUNDLE_RESOURCE);
+    final URL bundleUrl = ServerInstaller.class.getResource(NVIM_BUNDLE_RESOURCE);
     if (bundleUrl == null) {
       throw new IOException("Neovim runtime bundle not found");
     }
@@ -115,7 +115,7 @@ final class ServerInstaller {
     connection.setUseCaches(false);
     final long bundleSize = connection.getContentLengthLong();
     final long bundleModified = connection.getLastModified();
-    final Path neovimDir = versionDir.resolve(LatheLayout.NEOVIM_DIR);
+    final Path neovimDir = versionDir.resolve(LatheLayout.NVIM_DIR);
     if (isNeovimCurrent(neovimDir, bundleSize, bundleModified)) {
       log.debug("[server] Neovim runtime unchanged — skipping unzip");
       return;
@@ -133,7 +133,7 @@ final class ServerInstaller {
       final long bundleSize,
       final long bundleModified)
       throws IOException {
-    final Path neovimDir = versionDir.resolve(LatheLayout.NEOVIM_DIR);
+    final Path neovimDir = versionDir.resolve(LatheLayout.NVIM_DIR);
     if (isNeovimCurrent(neovimDir, bundleSize, bundleModified)) {
       return false;
     }
@@ -149,7 +149,7 @@ final class ServerInstaller {
 
   private static boolean isNeovimCurrent(
       final Path neovimDir, final long bundleSize, final long bundleModified) {
-    final Path marker = neovimDir.resolve(LatheLayout.NEOVIM_MARKER);
+    final Path marker = neovimDir.resolve(LatheLayout.NVIM_MARKER);
     if (!Files.exists(marker)) {
       return false;
     }
@@ -171,7 +171,7 @@ final class ServerInstaller {
     properties.setProperty(MARKER_SCHEMA, LatheLayout.SCHEMA_VERSION);
     properties.setProperty(MARKER_BUNDLE_SIZE, Long.toString(bundleSize));
     properties.setProperty(MARKER_BUNDLE_MODIFIED, Long.toString(bundleModified));
-    try (final var out = Files.newOutputStream(neovimDir.resolve(LatheLayout.NEOVIM_MARKER))) {
+    try (final var out = Files.newOutputStream(neovimDir.resolve(LatheLayout.NVIM_MARKER))) {
       properties.store(out, null);
     }
   }
