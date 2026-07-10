@@ -43,11 +43,14 @@ local function flatten(forest)
   return by_id
 end
 
--- Case 1: method -> class -> package. The package is a tracked node too:
--- selectPackage resolves against the real classpath at run time, not against
--- whichever single file happened to report it, so a package position built
--- from just this file's discovery still runs every class in that package
--- correctly once wired to the same "namespace" treatment a class gets.
+-- Case 1: method -> class -> package. The package is deliberately not a
+-- tracked node here: nesting it under whichever single file's discovery
+-- happened to report it puts it at the wrong tree level (a file is inside
+-- its package, not the reverse). Package-level running is bound instead to
+-- the directory node (see _package_for_dir's own coverage below), so the
+-- class must fall through to the file root directly, not get silently
+-- dropped because it's "grouped" under the package's id in the parent-
+-- linking pass.
 do
   local targets = {
     {
@@ -69,7 +72,7 @@ do
     {
       id = "demo",
       parentId = "",
-      kind = 3, -- TEST_PACKAGE
+      kind = 3, -- TEST_PACKAGE, excluded from the forest entirely
       label = "demo",
       moduleRel = "demo",
       range = { start = { line = 0, character = 0 }, ["end"] = { line = 8, character = 1 } },
@@ -81,11 +84,7 @@ do
 
   spec.check("root is the file", forest[1].type, "file")
   spec.check("forest has file root + one top-level entry", #forest, 2)
-
-  local package_pos = by_id["demo"]
-  spec.check("package reachable from forest", package_pos ~= nil, true)
-  spec.check("package type", package_pos and package_pos.type, "namespace")
-  spec.check("package selector kind", package_pos and package_pos.lathe_selector_kind, "PACKAGE")
+  spec.check("package excluded from forest", by_id["demo"], nil)
 
   local class_pos = by_id["demo.FooTest"]
   spec.check("class reachable from forest", class_pos ~= nil, true)
@@ -96,6 +95,40 @@ do
   spec.check("method reachable from forest", method_pos ~= nil, true)
   spec.check("method type", method_pos and method_pos.type, "test")
   spec.check("method selector kind", method_pos and method_pos.lathe_selector_kind, "METHOD")
+end
+
+-- _package_for_dir: derives {moduleRel, package} from a directory path in
+-- standard Maven layout, the same convention RunnableScanner.packageName()
+-- uses server-side. Pure function, no workspace/LSP needed.
+do
+  local module_rel, package_name = adapter._package_for_dir(
+    "/home/user/git/helidon/dbclient/mongodb/src/test/java/io/helidon/dbclient/mongodb",
+    "/home/user/git/helidon"
+  )
+  spec.check("moduleRel derived from standard layout", module_rel, "dbclient/mongodb")
+  spec.check("package derived from standard layout", package_name, "io.helidon.dbclient.mongodb")
+
+  local single_module_rel, single_package = adapter._package_for_dir(
+    "/workspace/demo/src/main/java/demo", "/workspace"
+  )
+  spec.check("moduleRel for a single-module project", single_module_rel, "demo")
+  spec.check("package for src/main (not just src/test)", single_package, "demo")
+
+  spec.check(
+    "nil for the module root itself (no src/*/java segment)",
+    adapter._package_for_dir("/home/user/git/helidon/dbclient/mongodb", "/home/user/git/helidon"),
+    nil
+  )
+  spec.check(
+    "nil for the default/unnamed package (src/test/java itself)",
+    adapter._package_for_dir("/workspace/demo/src/test/java", "/workspace"),
+    nil
+  )
+  spec.check(
+    "nil when the derived module path escapes the workspace root",
+    adapter._package_for_dir("/other/place/src/test/java/demo", "/workspace"),
+    nil
+  )
 end
 
 -- Case 2: nested class. Inner's real parent is Outer -- a class that itself

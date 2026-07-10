@@ -40,13 +40,13 @@ M.name = "neotest-lathe"
 -- SymbolKind/DiagnosticSeverity are integers (see dev/explore.py's identical handling).
 -- Ordinals match RunnableKind's declaration order in lathe-server: MAIN, TEST_METHOD,
 -- TEST_CLASS, TEST_PACKAGE. MAIN(0) has no entry: main-class replay isn't implemented
--- yet. TEST_PACKAGE(3) maps to "namespace" like a class does -- selectPackage resolves
--- against the real classpath at run time, not against whatever single file happened to
--- report the package, so a package position built from just one file's discovery still
--- runs every class in that package correctly; cross-file listing is covered separately
--- by neotest's own directory-position aggregation.
-local POSITION_TYPE = { [1] = "test", [2] = "namespace", [3] = "namespace" }
-local SELECTOR_KIND = { [1] = "METHOD", [2] = "CLASS", [3] = "PACKAGE" }
+-- yet. TEST_PACKAGE(3) has no entry either: a package spans multiple files, so nesting
+-- it as a child of whichever single file's discovery happened to report it puts it at
+-- the wrong level in the tree (file contains package, not the other way around).
+-- Package-level running is instead bound to the directory node neotest's own tree walk
+-- already creates at the right level -- see build_spec's "dir" handling below.
+local POSITION_TYPE = { [1] = "test", [2] = "namespace" }
+local SELECTOR_KIND = { [1] = "METHOD", [2] = "CLASS" }
 
 local function lathe_client()
   local clients = nio().lsp.get_clients({ name = "lathe" })
@@ -175,6 +175,30 @@ function M.discover_positions(file_path)
   return build_tree(file_path, targets)
 end
 
+--- Derives {moduleRel, package} from a directory path, mirroring how Maven's
+--- own layout (and RunnableScanner.packageName() server-side) resolve package
+--- identity from source layout: <module>/src/(test|main)/java/<package/as/dirs>.
+--- Pure and workspace_root-parameterized (no M.root() call inside) so it's
+--- directly unit-testable. Returns nil for anything that doesn't match that
+--- shape -- the module root itself, a path above src/, a non-Maven-standard
+--- layout, or the default/unnamed package (RunnableScanner.emitPackageOnce
+--- skips that one too) -- so build_spec can safely fall back to neotest's own
+--- decomposition instead of guessing at a selector that might run the wrong
+--- (or nothing at all) thing.
+function M._package_for_dir(dir_path, workspace_root)
+  local module_abs, package_path = dir_path:match("^(.-)/src/[^/]+/java/(.*)$")
+  if not module_abs or package_path == "" then
+    return nil
+  end
+
+  if not vim.startswith(module_abs, workspace_root) then
+    return nil
+  end
+  local module_rel = module_abs:sub(#workspace_root + 2)
+  local package_name = package_path:gsub("/", ".")
+  return module_rel, package_name
+end
+
 local function class_spec(pos, client)
   local err, outcome = client.request.workspace_executeCommand({
     command = "lathe.run.test",
@@ -202,9 +226,30 @@ function M.build_spec(args)
     return class_spec(pos, client)
   end
 
+  if pos.type == "dir" then
+    -- A directory is a Java package 1:1 in standard Maven layout -- bind
+    -- running it to a single PACKAGE-selector run (selectPackage resolves
+    -- against the real classpath and already includes subpackages
+    -- recursively, so this covers everything under the directory in one
+    -- JVM launch) instead of letting neotest fall through to running every
+    -- file underneath individually. Falls back to normal decomposition
+    -- (return nil) for anything that doesn't look like a package directory.
+    local workspace_root = M.root(pos.path)
+    if not workspace_root then
+      return nil
+    end
+    local module_rel, package_name = M._package_for_dir(pos.path, workspace_root)
+    if not module_rel then
+      return nil
+    end
+    return class_spec({
+      id = package_name,
+      lathe_module_rel = module_rel,
+      lathe_selector_kind = "PACKAGE",
+    }, client)
+  end
+
   if pos.type ~= "file" then
-    -- No direct run for dir positions; neotest breaks the tree down
-    -- and calls build_spec on each child instead.
     return nil
   end
 
@@ -223,7 +268,15 @@ function M.build_spec(args)
     end
   end
   if #specs == 0 then
-    return nil
+    -- Returning nil here routes into neotest's own fallback
+    -- (_run_broken_down_tree), which finds zero runnable leaf nodes and
+    -- returns without ever calling results_callback -- the "running" status
+    -- set at the start of run_tree for this position never gets cleared, so
+    -- its glyph spins forever. Return a real no-op spec instead so results()
+    -- always fires and clears it, with a message explaining why nothing ran.
+    local reason = vim.fn.bufloaded(pos.path) == 1 and "no tests found in this file"
+      or ("open " .. vim.fn.fnamemodify(pos.path, ":t") .. " to discover its tests before running")
+    return { command = { "true" }, context = { position_id = pos.id, skip_reason = reason } }
   end
   return specs
 end
@@ -255,7 +308,9 @@ end
 function M.results(spec, _result, tree)
   local ctx = spec.context
   local result
-  if ctx.err then
+  if ctx.skip_reason then
+    result = { status = "skipped", short = ctx.skip_reason }
+  elseif ctx.err then
     local text = "lathe.run.test error: " .. vim.inspect(ctx.err)
     result = { status = "failed", short = text, output = write_output_file(text) }
   else
