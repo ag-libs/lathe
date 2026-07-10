@@ -60,11 +60,19 @@ public final class TestCompiler {
 
   public static ModuleSourceConfig moduleConfig(
       final Path moduleDir, final Path outputDir, final Path sourceRoot) {
+    return moduleConfig(moduleDir, outputDir, sourceRoot, null);
+  }
+
+  public static ModuleSourceConfig moduleConfig(
+      final Path moduleDir,
+      final Path outputDir,
+      final Path sourceRoot,
+      final Path generatedSourcesDir) {
     return new ModuleSourceConfig(
         moduleDir,
         "classes",
         outputDir,
-        null,
+        generatedSourcesDir,
         List.of(sourceRoot),
         List.of(),
         List.of(),

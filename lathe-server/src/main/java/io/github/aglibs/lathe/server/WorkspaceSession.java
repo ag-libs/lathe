@@ -638,7 +638,7 @@ final class WorkspaceSession {
         .orElse(null);
   }
 
-  private static boolean isInPackageScope(
+  static boolean isInPackageScope(
       final Path path, final List<Path> sourceRoots, final Path packageRel) {
     if (packageRel == null) {
       return sourceRoots.stream().anyMatch(path::startsWith);
@@ -684,6 +684,10 @@ final class WorkspaceSession {
 
   private WorkspaceSearchInputs planSearchInputs(
       final ModuleSourceConfig config, final ReferenceTarget target, final Path packageRel) {
+    // Include the generated-sources root so a module's annotation-processor output (a record's
+    // @Builder) is in scope; it references the record by simple name and never lives under a
+    // regular source root (FR-012/FR-013).
+    final List<Path> searchRoots = ReferenceCandidatePlanner.packageSearchRoots(config);
     final List<OpenDocument> openForConfig =
         docs.all().stream()
             .filter(
@@ -692,18 +696,15 @@ final class WorkspaceSession {
                         .moduleSourceFor(LatheUri.toPath(doc.uri()))
                         .map(c -> c.equals(config))
                         .orElse(false))
-            .filter(
-                doc ->
-                    isInPackageScope(LatheUri.toPath(doc.uri()), config.sourceRoots(), packageRel))
+            .filter(doc -> isInPackageScope(LatheUri.toPath(doc.uri()), searchRoots, packageRel))
             .toList();
     final Set<String> openUris =
         openForConfig.stream().map(OpenDocument::uri).collect(Collectors.toUnmodifiableSet());
-    final List<Path> sourceRoots = config.sourceRoots();
     final var planner = new ReferenceCandidatePlanner(candidateIndex, typeIndex);
     final List<DiskCandidate> diskCandidates =
         planner.planCandidates(config, target).stream()
             .filter(uri -> !openUris.contains(uri))
-            .filter(uri -> isInPackageScope(LatheUri.toPath(uri), sourceRoots, packageRel))
+            .filter(uri -> isInPackageScope(LatheUri.toPath(uri), searchRoots, packageRel))
             .flatMap(uri -> readDiskCandidate(uri).stream())
             .toList();
     return new WorkspaceSearchInputs(openForConfig, diskCandidates);

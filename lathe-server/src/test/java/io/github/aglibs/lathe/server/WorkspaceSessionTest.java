@@ -6,6 +6,7 @@ import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
@@ -124,8 +125,41 @@ class WorkspaceSessionTest {
     assertThat(outputDir.resolve("Helper.class")).doesNotExist();
   }
 
+  @Test
+  void isInPackageScope_generatedSourcesCandidate_reactorScope_inScope() {
+    // FR-012/FR-013: a reactor-scoped search uses a null packageRel; the generated builder lives
+    // under the generated-sources root, never under a regular source root, yet must stay in scope.
+    final var sourceRoot = tmp.resolve("module/src/main/java");
+    final var genRoot = tmp.resolve("module/target/generated-sources/annotations");
+    final var genCandidate = genRoot.resolve("com/example/FooBuilder.java");
+    final List<Path> roots = ReferenceCandidatePlanner.packageSearchRoots(configWithGen(genRoot));
+
+    assertThat(WorkspaceSession.isInPackageScope(genCandidate, roots, null)).isTrue();
+    assertThat(
+            WorkspaceSession.isInPackageScope(
+                sourceRoot.resolve("com/example/Foo.java"), roots, null))
+        .isTrue();
+  }
+
+  @Test
+  void isInPackageScope_pathOutsideEverySearchRoot_notInScope() {
+    final var genRoot = tmp.resolve("module/target/generated-sources/annotations");
+    final var outside = tmp.resolve("other-module/target/classes/com/example/Bar.java");
+    final List<Path> roots = ReferenceCandidatePlanner.packageSearchRoots(configWithGen(genRoot));
+
+    assertThat(WorkspaceSession.isInPackageScope(outside, roots, null)).isFalse();
+  }
+
   private ModuleSourceConfig config(final Path sourceRoot) {
     return TestCompiler.moduleConfig(
         tmp.resolve(".lathe/module"), tmp.resolve("module/target/classes"), sourceRoot);
+  }
+
+  private ModuleSourceConfig configWithGen(final Path genRoot) {
+    return TestCompiler.moduleConfig(
+        tmp.resolve(".lathe/module"),
+        tmp.resolve("module/target/classes"),
+        tmp.resolve("module/src/main/java"),
+        genRoot);
   }
 }
