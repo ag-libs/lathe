@@ -7,14 +7,11 @@ import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
-import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.lang.model.element.ElementKind;
 
 final class ReferenceCandidatePlanner {
-
-  private static final Logger LOG = Logger.getLogger(ReferenceCandidatePlanner.class.getName());
 
   private final ReferenceCandidateIndex index;
   private final WorkspaceTypeIndex typeIndex;
@@ -59,10 +56,11 @@ final class ReferenceCandidatePlanner {
       return narrowToFamily(overrideFamily(target), target, simpleCandidates);
     }
 
-    if (kind == ElementKind.METHOD) {
-      return planMethodCandidates(target, simpleCandidates);
-    }
-
+    // Methods (and any other unhandled kind) use the broad simple-name candidate set. Override-
+    // family narrowing dropped call sites whose receiver type is never spelled in the file — a var
+    // bound from a getter chain, a chained call, or a generic type variable (FR-011). Reference
+    // search is explicit, batched, and cancellable, so compiling every file that spells the method
+    // name is an acceptable trade; the reference locator rejects the non-matches.
     return simpleCandidates;
   }
 
@@ -106,34 +104,6 @@ final class ReferenceCandidatePlanner {
             simpleCandidates.stream()
                 .filter(uri -> isInPackage(LatheUri.toPath(uri), packageRoots, packageRel)))
         .collect(Collectors.toUnmodifiableSet());
-  }
-
-  /**
-   * A method resolves through its declaring type, the supertypes whose method it overrides (reactor
-   * or dependency), and its overriding subtypes. Narrowing candidates to that override family —
-   * declaring type, every overridden declarer's simple name, and subtypes — avoids compiling every
-   * file that merely spells the simple name, while still reaching polymorphic call sites through an
-   * interface-typed receiver such as {@code baseConfig.name()}. Two cases still need the broad
-   * search: a target reconstructed from a call-hierarchy item ({@code !overrideFamilyBounded}), and
-   * an {@code Object} method ({@code equals}/{@code hashCode}/{@code toString}) — every type is an
-   * {@code Object} and receivers are rarely spelled {@code Object}, so family narrowing would drop
-   * most genuine call sites.
-   */
-  private Set<String> planMethodCandidates(
-      final ReferenceTarget target, final Set<String> simpleCandidates) {
-    if (!target.overrideFamilyBounded()) {
-      return simpleCandidates;
-    }
-
-    if (target.overriddenDeclarers().contains("java.lang.Object")) {
-      LOG.fine(
-          () ->
-              "[references] %s overrides java.lang.Object — broad candidate search"
-                  .formatted(target.simpleName()));
-      return simpleCandidates;
-    }
-
-    return narrowToFamily(overrideFamily(target), target, simpleCandidates);
   }
 
   /**
