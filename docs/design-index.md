@@ -111,6 +111,9 @@ M3 designs before implementation.
 - [Superseded Source URI Scheme](done/lathe-source-uri-scheme.md)
 - [Stale-POM Detection](done/lathe-stale-pom-detection.md)
 - [Structural Navigation](done/lathe-structural-navigation.md)
+- [Structured Per-Test Results](done/lathe-structured-test-results.md) — real per-method pass/fail/skip from a
+  class/package replay run (runner NDJSON sink → `ReplayOutcome.testResults` → neotest), replacing the aggregate
+  status fan-out; follow-on to [Run, Test, and Debug](planned/lathe-run-test-debug.md).
 - [Unused-Code Diagnostics](done/lathe-unused-code-diagnostics.md)
 - [Unused Record Components](done/lathe-unused-record-components.md)
 
