@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.core.launch;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.LaunchMode;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
@@ -19,6 +20,7 @@ final class ReplayTransformTest {
   @Test
   void forTest_capturedTemplate_buildsRunnerCommand() {
     final var runner = Path.of("/cache/lathe-test-runner.jar");
+    final var resultsSink = Path.of("/tmp/lathe-results.ndjson");
     final var data =
         new TestLaunchData(
             "1",
@@ -40,12 +42,14 @@ final class ReplayTransformTest {
             data,
             WORKSPACE,
             List.of(runner),
-            new TestSelection(TestSelectionKind.METHOD, "com.example.app.HelloTest#greet"));
+            new TestSelection(TestSelectionKind.METHOD, "com.example.app.HelloTest#greet"),
+            resultsSink);
 
     assertThat(args)
         .containsExactly(
             "/jdk/bin/java",
             "-Dfoo=bar",
+            "-D%s=%s".formatted(LatheFlags.RESULTS_SINK, resultsSink),
             "--module-path",
             "/workspace/.lathe/app/classes",
             "--class-path",

@@ -1,9 +1,12 @@
 package io.github.aglibs.lathe.server.run;
 
+import io.github.aglibs.lathe.core.Json;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -16,11 +19,13 @@ public final class ReplaySession {
   private static final Logger LOG = Logger.getLogger(ReplaySession.class.getName());
 
   private final Process process;
+  private final Path resultsSink;
   private final List<String> output = Collections.synchronizedList(new ArrayList<>());
   private final CompletableFuture<Void> outputDrained = new CompletableFuture<>();
 
-  ReplaySession(final Process process) {
+  ReplaySession(final Process process, final Path resultsSink) {
     this.process = process;
+    this.resultsSink = resultsSink;
     final var reader = new Thread(this::drainOutput, "lathe-replay-output-" + process.pid());
     reader.setDaemon(true);
     reader.start();
@@ -43,7 +48,9 @@ public final class ReplaySession {
         .onExit()
         .thenCombine(
             outputDrained,
-            (exited, ignored) -> ReplayOutcome.completed(exited.exitValue(), List.copyOf(output)));
+            (exited, ignored) ->
+                ReplayOutcome.completed(
+                    exited.exitValue(), List.copyOf(output), readTestResults()));
   }
 
   private void drainOutput() {
@@ -58,6 +65,50 @@ public final class ReplaySession {
       LOG.log(Level.FINE, e, () -> "[replay] output read failed pid=%d".formatted(process.pid()));
     } finally {
       outputDrained.complete(null);
+    }
+  }
+
+  private List<TestResult> readTestResults() {
+    if (resultsSink == null || !Files.exists(resultsSink)) {
+      return List.of();
+    }
+
+    try {
+      final var results = new ArrayList<TestResult>();
+      for (final String line : Files.readAllLines(resultsSink, StandardCharsets.UTF_8)) {
+        final TestResult parsed = parse(line);
+        if (parsed != null) {
+          results.add(parsed);
+        }
+      }
+
+      return List.copyOf(results);
+    } catch (final IOException e) {
+      LOG.log(Level.FINE, e, () -> "[replay] results read failed sink=%s".formatted(resultsSink));
+      return List.of();
+    } finally {
+      deleteQuietly(resultsSink);
+    }
+  }
+
+  private static TestResult parse(final String line) {
+    if (line.isBlank()) {
+      return null;
+    }
+
+    try {
+      return Json.fromJson(line, TestResult.class);
+    } catch (final RuntimeException e) {
+      LOG.log(Level.FINE, e, () -> "[replay] results parse skipped a malformed record");
+      return null;
+    }
+  }
+
+  private static void deleteQuietly(final Path path) {
+    try {
+      Files.deleteIfExists(path);
+    } catch (final IOException e) {
+      LOG.log(Level.FINE, e, () -> "[replay] results sink cleanup failed sink=%s".formatted(path));
     }
   }
 }
