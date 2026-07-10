@@ -43,10 +43,11 @@ local function flatten(forest)
   return by_id
 end
 
--- Case 1: method -> class -> package. The package is deliberately not a
--- tracked node (it spans multiple files), so the class must fall through to
--- the file root directly, not get silently dropped because it's "grouped"
--- under the package's id in the parent-linking pass.
+-- Case 1: method -> class -> package. The package is a tracked node too:
+-- selectPackage resolves against the real classpath at run time, not against
+-- whichever single file happened to report it, so a package position built
+-- from just this file's discovery still runs every class in that package
+-- correctly once wired to the same "namespace" treatment a class gets.
 do
   local targets = {
     {
@@ -68,7 +69,7 @@ do
     {
       id = "demo",
       parentId = "",
-      kind = 3, -- TEST_PACKAGE, excluded from the forest entirely
+      kind = 3, -- TEST_PACKAGE
       label = "demo",
       moduleRel = "demo",
       range = { start = { line = 0, character = 0 }, ["end"] = { line = 8, character = 1 } },
@@ -80,7 +81,11 @@ do
 
   spec.check("root is the file", forest[1].type, "file")
   spec.check("forest has file root + one top-level entry", #forest, 2)
-  spec.check("package excluded from forest", by_id["demo"], nil)
+
+  local package_pos = by_id["demo"]
+  spec.check("package reachable from forest", package_pos ~= nil, true)
+  spec.check("package type", package_pos and package_pos.type, "namespace")
+  spec.check("package selector kind", package_pos and package_pos.lathe_selector_kind, "PACKAGE")
 
   local class_pos = by_id["demo.FooTest"]
   spec.check("class reachable from forest", class_pos ~= nil, true)
@@ -95,8 +100,8 @@ end
 
 -- Case 2: nested class. Inner's real parent is Outer -- a class that itself
 -- has no test of its own, so Outer is not a tracked node either. Inner must
--- still fall through to the file root (not vanish), the same fallback that
--- handles the package case above.
+-- still fall through to the file root (not vanish) rather than being
+-- silently dropped for lacking a tracked parent.
 do
   local targets = {
     {
@@ -121,11 +126,7 @@ do
   local by_id = flatten(forest)
 
   spec.check("nested case: forest has file root + one top-level entry", #forest, 2)
-  spec.check(
-    "nested class reachable despite untracked enclosing class",
-    by_id["demo.Outer$Inner"] ~= nil,
-    true
-  )
+  spec.check("nested class reachable despite untracked enclosing class", by_id["demo.Outer$Inner"] ~= nil, true)
 end
 
 -- is_test_file mirrors Surefire's own default include patterns
@@ -149,45 +150,134 @@ end
 -- results() must always write neotest.Result.output as a path to a file
 -- containing the real content, never raw text in the field itself.
 do
-  local passed = adapter.results({
-    context = {
-      position_id = "demo.FooTest#bar()",
-      outcome = { launched = true, exitCode = 0, output = { "line one", "line two" } },
-    },
-  })
-  local passed_result = passed["demo.FooTest#bar()"]
-  spec.check("passing result status", passed_result.status, "passed")
-  spec.check("passing result output file content", read_file(passed_result.output), "line one\nline two")
+  local POS_ID = "demo.FooTest#bar()"
+  local function result_for(context)
+    return adapter.results({ context = context })[POS_ID]
+  end
 
-  local failed = adapter.results({
-    context = {
-      position_id = "demo.FooTest#bar()",
-      outcome = { launched = true, exitCode = 1, output = { "boom" } },
-    },
+  local passed = result_for({
+    position_id = POS_ID,
+    outcome = { launched = true, exitCode = 0, output = { "line one", "line two" } },
   })
-  local failed_result = failed["demo.FooTest#bar()"]
-  spec.check("failing result status", failed_result.status, "failed")
-  spec.check("failing result output file content", read_file(failed_result.output), "boom")
+  spec.check("passing result status", passed.status, "passed")
+  spec.check("passing result output file content", read_file(passed.output), "line one\nline two")
 
-  local blocked = adapter.results({
-    context = {
-      position_id = "demo.FooTest#bar()",
-      outcome = { launched = false, blockedReasons = { "no runner jar" } },
-    },
+  local failed = result_for({
+    position_id = POS_ID,
+    outcome = { launched = true, exitCode = 1, output = { "boom" } },
   })
-  local blocked_result = blocked["demo.FooTest#bar()"]
-  spec.check("blocked result status", blocked_result.status, "failed")
+  spec.check("failing result status", failed.status, "failed")
+  spec.check("failing result output file content", read_file(failed.output), "boom")
+
+  local blocked = result_for({
+    position_id = POS_ID,
+    outcome = { launched = false, blockedReasons = { "no runner jar" } },
+  })
+  spec.check("blocked result status", blocked.status, "failed")
+  spec.check("blocked result output file content", read_file(blocked.output), "BLOCKED: no runner jar")
+
+  local errored = result_for({ position_id = POS_ID, err = { message = "timeout" } })
+  spec.check("errored result status", errored.status, "failed")
+end
+
+-- results() must resolve every descendant of the position actually run, not
+-- just that position's own id. Reproduces the "stuck running forever" bug:
+-- neotest.Client:run_tree marks every id in the run's whole subtree as
+-- running up front (client/init.lua's update_running(adapter_id, root.id,
+-- pos_ids), built from tree:iter()), but only clears whichever ids
+-- results() returns -- so a class or package result that reports just its
+-- own id leaves every sibling method/class stuck showing "running"
+-- indefinitely. A minimal fake tree (get_key/iter_nodes only) reproduces
+-- this without requiring the real neotest.types.Tree, keeping this spec
+-- installable-neotest-independent like the rest of the file. Also proves
+-- results() scopes correctly to just the run position's own subtree (via
+-- tree:get_key), not the whole tree it's handed -- build_spec's file-run
+-- fan-out passes the same outer file tree to every per-class results()
+-- call, so naively resolving "everything in tree" would incorrectly stamp
+-- sibling classes' methods with the wrong class's result.
+do
+  local function fake_tree(nodes_by_id)
+    local function node_for(id)
+      return {
+        data = function()
+          return nodes_by_id[id]
+        end,
+        iter_nodes = function()
+          local ids = {}
+          local function collect(i)
+            table.insert(ids, i)
+            for _, child_id in ipairs(nodes_by_id[i].children or {}) do
+              collect(child_id)
+            end
+          end
+          collect(id)
+          local idx = 0
+          return function()
+            idx = idx + 1
+            if ids[idx] then
+              return idx, node_for(ids[idx])
+            end
+          end
+        end,
+      }
+    end
+    return {
+      get_key = function(_, id)
+        return nodes_by_id[id] and node_for(id) or nil
+      end,
+    }
+  end
+
+  local nodes = {
+    ["demo.FooTest"] = { id = "demo.FooTest", children = { "demo.FooTest#a()", "demo.FooTest#b()" } },
+    ["demo.FooTest#a()"] = { id = "demo.FooTest#a()", children = {} },
+    ["demo.FooTest#b()"] = { id = "demo.FooTest#b()", children = {} },
+    ["demo.OtherTest"] = { id = "demo.OtherTest", children = { "demo.OtherTest#c()" } },
+    ["demo.OtherTest#c()"] = { id = "demo.OtherTest#c()", children = {} },
+  }
+  local tree = fake_tree(nodes)
+
+  local results = adapter.results({
+    context = {
+      position_id = "demo.FooTest",
+      outcome = { launched = true, exitCode = 0, output = { "ok" } },
+    },
+  }, nil, tree)
+
+  local method_a = results["demo.FooTest#a()"]
+  spec.check("class result present", results["demo.FooTest"] ~= nil, true)
+  spec.check("sibling method a resolved, not stuck running", method_a ~= nil, true)
+  spec.check("sibling method b resolved, not stuck running", results["demo.FooTest#b()"] ~= nil, true)
+  spec.check("method a inherits class status", method_a and method_a.status, "passed")
+  spec.check("unrelated class in the same outer tree left untouched", results["demo.OtherTest"], nil)
+  spec.check("unrelated class's method left untouched", results["demo.OtherTest#c()"], nil)
+end
+
+-- Live output helpers append into a scratch-style buffer without requiring a
+-- real LSP client or neotest process.
+do
+  local bufnr = vim.api.nvim_create_buf(false, true)
+
+  adapter._append_output_line(bufnr, "one")
+  adapter._append_output_line(bufnr, "two")
+
   spec.check(
-    "blocked result output file content",
-    read_file(blocked_result.output),
-    "BLOCKED: no runner jar"
+    "live output appends first line without leading blank",
+    table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n"),
+    "one\ntwo"
   )
+end
 
-  local errored = adapter.results({
-    context = { position_id = "demo.FooTest#bar()", err = { message = "timeout" } },
-  })
-  local errored_result = errored["demo.FooTest#bar()"]
-  spec.check("errored result status", errored_result.status, "failed")
+-- Starting a second run adds another header without clearing previous output,
+-- so concurrent or back-to-back runs do not stomp each other's logs.
+do
+  adapter._append_output_header("demo.FooTest#one()")
+  adapter._append_output_header("demo.FooTest#two()")
+
+  local lines = vim.api.nvim_buf_get_lines(adapter._output_buffer(), 0, -1, false)
+  local content = table.concat(lines, "\n")
+  spec.check("first live output header remains", content:find("=== demo.FooTest#one() ===", 1, true) ~= nil, true)
+  spec.check("second live output header appears", content:find("=== demo.FooTest#two() ===", 1, true) ~= nil, true)
 end
 
 -- root() resolves the nearest .lathe marker walking up from a nested path,
