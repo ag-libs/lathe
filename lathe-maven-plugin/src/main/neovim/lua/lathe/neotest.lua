@@ -292,19 +292,49 @@ local function write_output_file(text)
   return path
 end
 
+local TEST_STATUS = { passed = "passed", failed = "failed", skipped = "skipped" }
+
+--- Rebuilds a method's RunTarget position id from a structured TestResult's
+--- JUnit MethodSource fields, matching RunnableScanner.methodTarget's format
+--- exactly: "<binaryClassName>#<methodName>(<erasedParams>)". JUnit joins
+--- parameter types with ", " whereas javac's erasure joins with "," and no
+--- space, so whitespace is stripped; the dominant zero-arg case is
+--- "<class>#<method>()" identically on both sides. A signature shape that
+--- doesn't reconstruct identically (arrays, @ParameterizedTest dynamic ids)
+--- simply won't match a tree id and falls through to the aggregate fan-out.
+local function test_result_position_id(tr)
+  local params = (tr.methodParameterTypes or ""):gsub("%s", "")
+  return string.format("%s#%s(%s)", tr.className, tr.methodName, params)
+end
+
+--- One structured per-test result. Status only for now -- result.errors /
+--- vim.diagnostic from failureLine is deferred to the diagnostics design
+--- (docs/planned/lathe-test-diagnostics-and-refresh.md). Reuses the run's
+--- shared transcript as output (a class/package run is one JVM, so there is
+--- only the one transcript) and surfaces the failure message as `short`.
+local function test_result(tr, output)
+  local res = { status = TEST_STATUS[tr.status] or "failed", output = output }
+  if tr.failureMessage and tr.failureMessage ~= "" then
+    res.short = tr.failureMessage
+  end
+  return res
+end
+
 --- neotest.Client:run_tree marks every id in the run's whole subtree as
 --- "running" up front (client/init.lua's update_running, built from
 --- tree:iter()) but only clears whichever ids results() returns -- a class
 --- or package result naming just its own id leaves every descendant
---- method/class stuck showing "running" forever. There's no per-test
---- breakdown available (ReplayOutcome only carries an aggregate exit code
---- and raw output, not individual test results), so every descendant gets
---- the same aggregate status rather than none at all. Scoped to just the
---- run position's own subtree via tree:get_key(ctx.position_id), not the
---- whole tree parameter -- build_spec's file-run fan-out (one spec per
---- class) passes the same outer file tree to every class's results() call,
---- so resolving "everything in tree" would incorrectly stamp sibling
---- classes' methods with the wrong class's result.
+--- method/class stuck showing "running" forever. Real per-test statuses from
+--- outcome.testResults are mapped first, so exactly the methods that failed
+--- are marked failed; any descendant not covered by a structured result (an
+--- id-mapping miss, the class namespace node itself, or an older outcome with
+--- no testResults) still inherits the aggregate status via the fan-out, so
+--- nothing is left stuck running. Scoped to just the run position's own
+--- subtree via tree:get_key(ctx.position_id), not the whole tree parameter --
+--- build_spec's file-run fan-out (one spec per class) passes the same outer
+--- file tree to every class's results() call, so resolving "everything in
+--- tree" would incorrectly stamp sibling classes' methods with the wrong
+--- class's result.
 function M.results(spec, _result, tree)
   local ctx = spec.context
   local result
@@ -327,7 +357,27 @@ function M.results(spec, _result, tree)
     end
   end
 
-  local results = { [ctx.position_id] = result }
+  -- Real per-test statuses first, so they win over the aggregate on any node
+  -- they cover (including the run's own position_id for a single-method run).
+  local results = {}
+  if ctx.outcome and ctx.outcome.testResults then
+    for _, tr in ipairs(ctx.outcome.testResults) do
+      local id = test_result_position_id(tr)
+      -- A @ParameterizedTest/@RepeatedTest emits one record per invocation,
+      -- all collapsing onto the method's single position id (Lathe discovers
+      -- one position per method from compile-time analysis; it can't know the
+      -- runtime invocation count). Roll them up worst-status-wins so a method
+      -- with any failing invocation shows failed, not whichever invocation
+      -- happened to be written last.
+      local existing = results[id]
+      if not existing or existing.status ~= "failed" then
+        results[id] = test_result(tr, result.output)
+      end
+    end
+  end
+
+  results[ctx.position_id] = results[ctx.position_id] or result
+
   local subtree = tree and tree:get_key(ctx.position_id)
   if subtree then
     for _, node in subtree:iter_nodes() do

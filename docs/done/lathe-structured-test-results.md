@@ -141,6 +141,53 @@ existing safety net instead of replacing it outright.
    existing "stuck running" reproduction in `neotest_spec.lua`, but asserting *distinct* statuses
    for sibling methods instead of one shared one.
 
+## As-built decisions (updates to the plan above)
+
+Recording where the implementation settled, so this doc reflects the code rather than the
+pre-implementation plan:
+
+* **Transport: sink file (§3, Open Question 1 resolved).** The runner writes NDJSON — one
+  `TestRecord` per line, appended and flushed as each method finishes — to a temp file whose path
+  the server passes via `-Dlathe.results.sink`. The server reads it after the process exits and the
+  stdout drain completes, then deletes it. Chosen over the stdout-block option so structured data
+  never has to be parsed back out of arbitrary test `println` output.
+
+* **Id-mapping (§2) deferred out of Java, into the adapter.** The runner ships JUnit's raw
+  `MethodSource` identity (`className` / `methodName` / `methodParameterTypes`) verbatim; it does
+  **not** translate to Lathe's `RunTarget` id format. That mapping is `lathe.neotest.lua`'s job when
+  it consumes `testResults` (deliverable 4). This keeps the runner analysis-free and avoids a
+  javac-shaped concern in a module that has no javac.
+
+* **`failureLine` added** (not in the original field list) — the topmost stack frame declared by the
+  test's own class, or `-1`. It exists to feed the `result.errors`/`vim.diagnostic` work in the
+  sibling design `lathe-test-diagnostics-and-refresh.md` (§4 there), which this design unblocks for
+  class/package runs.
+
+* **`@ParameterizedTest`/`@RepeatedTest` (Risks, Open Question 2 resolved) — method-level roll-up,
+  no per-invocation granularity.** The runner skips container identifiers (`TestIdentifier.isContainer()`),
+  so the parameterized *template* container produces no record; only the per-invocation results are
+  written. All invocations of one method carry identical `MethodSource` identity, so they reconstruct
+  to the method's single position id — Lathe discovers exactly one position per method from
+  compile-time analysis and can't know the runtime invocation count, so there is nowhere to hang
+  per-invocation nodes. The adapter therefore collapses them worst-status-wins: a method with any
+  failing invocation shows failed, independent of invocation order. Per-invocation UI granularity is
+  a separate, larger feature (server-synthesized dynamic positions) and remains out of scope.
+
+* **The runner depends on JUnit Platform only — deliberately no `lathe-core`.** The runner rides the
+  user's own test classpath inside the replay fork, so any dependency it drags in (gson and
+  validcheck, via `lathe-core`) would pollute that classpath and risk shadowing the user's own
+  versions. Its `resolveRunnerJar` resolution is non-transitive, so `lathe-core` is not present in
+  the fork regardless. Consequences:
+  * `ResultsListener`/`TestRecord` hand-roll NDJSON (no gson) and validate with plain JDK checks
+    (no ValidCheck).
+  * The two cross-process wire contracts lathe-core would otherwise own are **duplicated by value**
+    in the runner and pinned by a drift-guard unit test (`inlinedWireLiterals_…`, which reads
+    lathe-core at *test* scope only): the results-sink property name (`LatheTestRunner.RESULTS_SINK`
+    ↔ `LatheFlags.RESULTS_SINK`) and the four selector flags (`TestSelectorParser.SELECT_*` ↔
+    `TestSelectionKind.runnerFlag()`). This is a deliberate exception to the "shared keys live only
+    in `LatheFlags`/`LatheLayout`" rule, forced by classpath isolation and the same in kind as the
+    already-duplicated `TestRecord`/`TestResult` field names.
+
 ## Open Questions
 
 1. Sink-file vs. structured-stdout-block (§3) — leaning sink-file, not yet decided against the

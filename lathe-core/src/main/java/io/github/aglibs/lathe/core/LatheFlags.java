@@ -5,6 +5,7 @@ public final class LatheFlags {
   public static final String SKIP = "lathe.skip";
   public static final String FORCE_SYNC = "lathe.sync.force";
   public static final String TEST_CAPTURE_SKIP_EXECUTION = "latheSkipTests";
+  public static final String RESULTS_SINK = "lathe.results.sink";
 
   private LatheFlags() {}
 

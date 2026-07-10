@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.core.launch;
 
+import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.LaunchMode;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
@@ -19,7 +20,8 @@ public final class ReplayTransform {
       final TestLaunchData data,
       final Path workspaceRoot,
       final List<Path> runnerClasspath,
-      final TestSelection selection) {
+      final TestSelection selection,
+      final Path resultsSink) {
     final List<String> modulePath = ReactorRewrite.toLathe(data.modulePath(), workspaceRoot);
     final List<String> classPath =
         Stream.concat(data.classPath().stream(), runnerClasspath.stream().map(Path::toString))
@@ -29,6 +31,7 @@ public final class ReplayTransform {
         ReactorRewrite.toLathe(data.patchModules(), workspaceRoot);
 
     final var args = baseJavaArgs(data.javaHome(), data.jvmArgs());
+    args.add("-D%s=%s".formatted(LatheFlags.RESULTS_SINK, resultsSink));
     addRuntimeShape(
         args,
         modulePath,
