@@ -129,3 +129,6 @@ M3 designs before implementation.
 - [Lowercase CamelCase Symbol Search](potential/lathe-lowercase-camel-symbol-search.md) — let
   `workspace/symbol` CamelHumps matching span humps from an all-lowercase query, so users need not
   capitalize boundaries; refines EG-005.
+- [Maven Extension for Automatic POM Setup](potential/lathe-maven-extension-auto-setup.md) — replace
+  the manual three-block parent-POM edit with a single Maven core extension that injects the
+  compiler/plugin/dependency config and the Surefire/Failsafe capture shim in memory, editing no POM.
