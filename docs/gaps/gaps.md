@@ -629,6 +629,66 @@ None yet — undecided pending triage.
 
 ---
 
+## EG-045 — Hover on a component reference inside a record's compact constructor resolves to the callee's parameter
+
+**Status: documented — Target: pending triage**
+
+### Observed behaviour
+
+Hover on a bare reference to a record component **inside the compact constructor body** returns the
+wrong symbol: it resolves to the formal parameter of the method the component is passed to, not to the
+component itself.
+
+```java
+public record Config(String bucket) {
+    public Config {
+        check(bucket, "bucket");   // ← hover on `bucket` → "Object value" (check's parameter!)
+    }
+    static void check(Object value, String name) {}
+}
+```
+
+Hover is correct everywhere else the same component appears — verified against a validation workspace:
+
+| Hover position | Result | Correct? |
+|---|---|---|
+| component in the record header | the component (`T bucket`) | ✓ |
+| accessor call `x.bucket()` | the accessor (`T bucket()`) | ✓ |
+| ordinary method argument (a local/param elsewhere) | that argument's own type | ✓ |
+| **bare component ref inside the compact constructor** | the *callee's* first parameter (`Object value`) | ✗ |
+
+At the same failing position, `definition` correctly jumps to the component declaration, so the
+symbol is resolvable — only the hover path mis-resolves it. Shares its trigger with the references
+defect [FR-014](#fr-014--find-references-from-a-component-reference-inside-a-records-compact-constructor-returns-only-that-one-occurrence),
+and belongs to the same resolve-from-usage-site family as EG-042 / EG-043.
+
+### Root cause (hypothesis)
+
+The bare reference is the implicit canonical-constructor `PARAMETER`, whose source position overlaps
+the record header (the backing field and the canonical-ctor parameter share the header range). The
+hover position→element path appears not to find that parameter's attributed element at the in-body
+position and falls back to the enclosing `MethodInvocationTree`, resolving to the invoked method's
+formal parameter (`check(Object value, …)` → `value`). `definition` uses a different resolver
+(`DeclarationLocator`) and is unaffected — so this is specific to the hover resolution path, not the
+shared `resolve()`/`elementAt` position mapping (ordinary arguments hover correctly).
+
+### Probe commands
+
+```bash
+# `bucket,` lands the cursor on the compact-constructor use.
+# Expected: the component's type. Bug: the callee's parameter ("Object value").
+printf 'hover "bucket,"\n' | python3 dev/explore.py /path/to/workspace/.../Config.java
+```
+
+### Regression targets
+
+- `HoverTest.hover_recordComponentInCompactConstructor_resolvesComponentNotCalleeParameter`
+  (positive — the failing case)
+- `HoverTest.hover_ordinaryMethodArgument_resolvesArgumentNotCalleeParameter`
+  (boundary — ordinary arguments must keep resolving to the argument, not the callee's parameter)
+
+---
+
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work
@@ -870,6 +930,77 @@ survives the simple-name lookup and passes the package filter.
   (positive — fails before the fix; target keyed on `<init>`)
 - `ReferenceCandidatePlannerTest.planCandidates_constructorOwnerNameNotSpelled_excludesFile`
   (negative — a file that never spells the type stays out)
+
+---
+
+## FR-014 — Find References from a component reference inside a record's compact constructor returns only that one occurrence
+
+**Status: documented — Target: pending triage**
+
+### Observed behaviour
+
+Find References is asymmetric for a record component. Invoked from the component in the record
+header it finds every use; invoked from a bare reference to that same component **inside the compact
+constructor body** it returns only that one occurrence.
+
+```java
+// Config.java — component `bucket` has an implicit accessor bucket()
+public record Config(String bucket) {
+    public Config {
+        check(bucket, "bucket");   // ← Find References here: only this line is reported
+    }
+    static void check(Object value, String name) {}
+    String read() { return bucket; }   // this genuine use is missed from the compact-ctor query
+}
+```
+
+From the header `bucket`: all uses (backing-field reads, the compact-ctor reference, external
+accessor calls). From the compact-ctor `bucket`: a single self-match, and the candidate planner only
+even evaluates one candidate (the search is silently file-scoped).
+
+`definition` from the same compact-ctor position resolves correctly to the component; only
+`references` collapses. Shares its trigger with the hover defect [EG-045](#eg-045--hover-on-a-component-reference-inside-a-records-compact-constructor-resolves-to-the-callees-parameter).
+
+### Root cause
+
+`SourceAnalysisSession.resolveTarget` resolves the cursor via `SourceLocator.elementAt`, which inside
+the compact constructor returns the **implicit canonical-constructor `PARAMETER`** (javac models each
+record component as a same-named formal parameter of the canonical constructor). `ReferenceTarget.from`
+then calls `recordAccessorFor` (`ReferenceTarget.java:109`), which normalises a `RECORD_COMPONENT`
+element and a record's backing `FIELD` to the public accessor — **but not the canonical-constructor
+`PARAMETER`**. So `from` falls through to the `default` branch and builds a `kind=PARAMETER`,
+`scope=DECLARING_FILE` target that matches only same-named parameters in the one file → the single
+self-hit.
+
+The matching side already handles this member: `matchesRecordComponentMember`
+(`ReferenceTarget.java:246`) explicitly counts "the canonical constructor `PARAMETER` that javac
+reports for compact/canonical constructor bodies" — but that only fires when the target was built
+**from the accessor**. The gap is purely entry-point normalisation, which is why the search works
+from the declaration and not from the use. Every existing record test in `ReferenceLocatorTest` builds
+its target from the header, so the asymmetry was never exercised.
+
+### Proposed fix
+
+Extend `recordAccessorFor` (threading `Types` through its single caller in `from`) to also normalise a
+canonical-constructor `PARAMETER` of a record to its component's accessor, reusing the existing
+`enclosingRecord`, `isCanonicalConstructorParameter`, and `componentNamed` helpers. Single-class change
+in `ReferenceTarget`; no public API change, no new abstraction. Makes references (and the shared
+`resolveTarget` consumers) symmetric from either end.
+
+### Probe commands
+
+```bash
+# `bucket,` (component + comma) lands the cursor on the compact-constructor use, not the header.
+# Expected: all reference sites. Bug: a single self-match.
+printf 'refs "bucket,"\n' | python3 dev/explore.py /path/to/workspace/.../Config.java
+```
+
+### Regression targets
+
+- `ReferenceLocatorTest.recordComponent_fromCompactConstructorParameterUse_findsAllReferences`
+  (positive — target built from the compact-ctor use finds the same sites as from the header)
+- `ReferenceLocatorTest.recordComponent_fromNonCanonicalConstructorParameter_notNormalized`
+  (negative — a non-canonical constructor's same-named parameter stays file-scoped, not normalised)
 
 ---
 

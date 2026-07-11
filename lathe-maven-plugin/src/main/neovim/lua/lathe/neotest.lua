@@ -504,13 +504,19 @@ local function decorate_stack_frames(bufnr)
     return
   end
 
-  -- neotest renders output into a terminal buffer sized to the editor width, so
-  -- a frame longer than the window wraps across grid rows. Rejoin rows into
-  -- logical lines before parsing, then map matches back to the physical rows.
-  local width = vim.o.columns
-
   nio().run(function()
     local raw = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    -- neotest renders output into a terminal buffer, which hard-wraps a frame
+    -- longer than the render window across grid rows. The wrap width is NOT
+    -- reliably vim.o.columns: the terminal renders at whatever window was
+    -- current when the output was sent (a narrow split, for instance), so a
+    -- 119-column editor can still wrap at 62. Every wrapped row is exactly the
+    -- wrap width, so the longest line in the buffer is that width empirically.
+    local width = 0
+    for _, line in ipairs(raw) do
+      width = math.max(width, #line)
+    end
+
     local logical = stacktrace().unwrap(raw, width)
     local resolved_by_class = {}
     local locations = {}
