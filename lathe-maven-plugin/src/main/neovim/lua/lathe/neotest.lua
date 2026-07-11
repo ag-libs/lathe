@@ -28,10 +28,6 @@ local function stacktrace()
   return require("lathe.stacktrace")
 end
 
-local function neotest_api()
-  return require("neotest")
-end
-
 local M = {}
 M.name = "neotest-lathe"
 
@@ -51,6 +47,136 @@ local SELECTOR_KIND = { [1] = "METHOD", [2] = "CLASS" }
 local function lathe_client()
   local clients = nio().lsp.get_clients({ name = "lathe" })
   return clients[1]
+end
+
+-- ===== Live test-output surface (streamed via the lathe/testOutput notification) =====
+-- One docked scratch buffer shows a run's console output as it streams, with stderr
+-- distinguished from stdout. It replaces neotest's render-once float: the buffer is
+-- appended to live (so it is always current by construction, no reopen dance), and once a
+-- run finishes it is decorated with the same stack-frame navigation used before. build_spec
+-- runs a file's per-class specs sequentially inline, so a run is single-threaded here: one
+-- token, one buffer, reset once at the start.
+
+local LIVE_OUTPUT_NS = vim.api.nvim_create_namespace("lathe_test_output")
+local STDERR_HL = "LatheTestStderr"
+vim.api.nvim_set_hl(0, STDERR_HL, { link = "DiagnosticError", default = true })
+local MAX_LIVE_HEIGHT = 20
+local STDERR_STREAM = 1 -- TranscriptLine.Stream.STDERR ordinal
+
+local live_bufnr
+local live_win
+local run_counter = 0
+
+--- A per-run correlation token the server echoes on each streamed line. Unique within a
+--- session; the server tags notifications with it and a blank one disables streaming.
+local function next_token()
+  run_counter = run_counter + 1
+  return "run-" .. run_counter
+end
+
+local function live_buffer()
+  if live_bufnr and vim.api.nvim_buf_is_valid(live_bufnr) then
+    return live_bufnr
+  end
+
+  live_bufnr = vim.api.nvim_create_buf(false, true)
+  vim.bo[live_bufnr].bufhidden = "hide"
+  vim.bo[live_bufnr].filetype = "lathe-test-output"
+  vim.bo[live_bufnr].modifiable = false
+  return live_bufnr
+end
+
+local function live_is_open()
+  return live_win ~= nil and vim.api.nvim_win_is_valid(live_win)
+end
+
+--- Empties the live buffer at the start of a run so it always shows the current one.
+local function live_reset()
+  local buf = live_buffer()
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, {})
+  vim.bo[buf].modifiable = false
+  vim.api.nvim_buf_clear_namespace(buf, LIVE_OUTPUT_NS, 0, -1)
+end
+
+--- Appends one streamed line, coloring stderr, and follows the tail while the window is
+--- open but not focused (so scrolling up to read stays sticky).
+local function live_append(stream, text)
+  local buf = live_buffer()
+  local count = vim.api.nvim_buf_line_count(buf)
+  local first_empty = count == 1 and vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1] == ""
+  local row = first_empty and 0 or count
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, row, first_empty and 1 or row, false, { text })
+  vim.bo[buf].modifiable = false
+  if stream == STDERR_STREAM then
+    pcall(vim.api.nvim_buf_set_extmark, buf, LIVE_OUTPUT_NS, row, 0, {
+      end_row = row + 1,
+      hl_group = STDERR_HL,
+      hl_eol = true,
+    })
+  end
+
+  if live_is_open() and vim.api.nvim_get_current_win() ~= live_win then
+    pcall(vim.api.nvim_win_set_cursor, live_win, { vim.api.nvim_buf_line_count(buf), 0 })
+  end
+end
+
+--- Opens the docked live-output window, or toggles it closed / focuses it if already open.
+--- This is the single output surface; neotest's floating output is not used.
+function M.open_output()
+  if live_is_open() then
+    if vim.api.nvim_get_current_win() == live_win then
+      vim.api.nvim_win_close(live_win, true)
+      live_win = nil
+    else
+      vim.api.nvim_set_current_win(live_win)
+    end
+
+    return
+  end
+
+  local buf = live_buffer()
+  local prev = vim.api.nvim_get_current_win()
+  vim.cmd("botright split")
+  vim.api.nvim_win_set_height(0, MAX_LIVE_HEIGHT)
+  live_win = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(live_win, buf)
+  vim.api.nvim_set_current_win(prev)
+end
+
+--- Test hook: the live output buffer's current lines, or nil if it has none yet.
+function M._live_output_lines()
+  if not (live_bufnr and vim.api.nvim_buf_is_valid(live_bufnr)) then
+    return nil
+  end
+
+  return vim.api.nvim_buf_get_lines(live_bufnr, 0, -1, false)
+end
+
+--- Test hook: the 0-based rows in the live buffer currently marked as stderr.
+function M._live_output_stderr_rows()
+  if not (live_bufnr and vim.api.nvim_buf_is_valid(live_bufnr)) then
+    return {}
+  end
+
+  local rows = {}
+  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(live_bufnr, LIVE_OUTPUT_NS, 0, -1, {})) do
+    rows[#rows + 1] = mark[2]
+  end
+  return rows
+end
+
+-- Streamed lines arrive on any run; append them on the main loop (buffer edits must not
+-- run inside the LSP callback's fast context).
+vim.lsp.handlers["lathe/testOutput"] = function(_err, result)
+  if not result or not result.line then
+    return
+  end
+
+  vim.schedule(function()
+    live_append(result.line.stream, result.line.text)
+  end)
 end
 
 function M.root(dir)
@@ -199,13 +325,14 @@ function M._package_for_dir(dir_path, workspace_root)
   return module_rel, package_name
 end
 
-local function class_spec(pos, client)
+local function class_spec(pos, client, token)
   local err, outcome = client.request.workspace_executeCommand({
     command = "lathe.run.test",
     arguments = { {
       moduleRel = pos.lathe_module_rel,
       selectorKind = pos.lathe_selector_kind,
       selectorValue = pos.id,
+      token = token,
     } },
   }, 0)
 
@@ -222,8 +349,13 @@ function M.build_spec(args)
     return nil
   end
 
+  -- One token per user run action; build_spec runs a file's class specs sequentially
+  -- inline, so a single token and one buffer reset cover the whole run.
+  local token = next_token()
+  live_reset()
+
   if pos.type == "test" or pos.type == "namespace" then
-    return class_spec(pos, client)
+    return class_spec(pos, client, token)
   end
 
   if pos.type == "dir" then
@@ -246,7 +378,7 @@ function M.build_spec(args)
       id = package_name,
       lathe_module_rel = module_rel,
       lathe_selector_kind = "PACKAGE",
-    }, client)
+    }, client, token)
   end
 
   if pos.type ~= "file" then
@@ -264,7 +396,7 @@ function M.build_spec(args)
   for _, node in args.tree:iter_nodes() do
     local child = node:data()
     if child.type == "namespace" and child.lathe_selector_kind == "CLASS" then
-      table.insert(specs, class_spec(child, client))
+      table.insert(specs, class_spec(child, client, token))
     end
   end
   if #specs == 0 then
@@ -397,19 +529,16 @@ function M.results(spec, _result, tree)
     end
   end
 
-  M._refresh_docked_output()
+  M._decorate_live_output()
   return results
 end
 
--- Stack-trace navigation for neotest's own output UI
--- (docs/done/lathe-test-output-streaming.md). Neither of neotest's output
--- surfaces (consumers/output.lua, consumers/output_panel/init.lua) backs its
--- buffer with the transcript file itself -- both render through
--- lib.ui.open_term(), a terminal-channel buffer. output.lua's floating
--- window is the one that reliably sets filetype=neotest-output on a fresh
--- buffer, so that FileType event -- not any correlation to the transcript
--- file's path -- is the hook. output_panel's persistent, shared buffer has
--- no equivalent per-run hook and is out of scope for now.
+-- Stack-trace navigation for the live output buffer
+-- (docs/planned/lathe-neotest-streaming.md). Resolution works from the frame text alone
+-- (§4 of docs/done/lathe-test-output-streaming.md) -- no server-side command and no metadata
+-- recorded when the transcript streamed. _decorate_live_output() drives it once a run
+-- finishes; the functions below take an explicit bufnr so they apply to the live buffer the
+-- same way they once applied to neotest's output buffer.
 
 local STACKTRACE_NS = vim.api.nvim_create_namespace("lathe_stacktrace")
 local STACKTRACE_HL = "LatheStackFrame"
@@ -423,15 +552,9 @@ local STACKTRACE_AUGROUP = vim.api.nvim_create_augroup("LatheStacktrace", { clea
 local frame_locations = {}
 local jump_keymaps_set = {}
 
--- Tracks the most recently entered window showing a Java buffer, so a jump
--- from the output window (float or split, both keyed off the same
--- FileType neotest-output hook) lands in the editor window the source was
--- already open in, instead of replacing the output window's own buffer --
--- there is no other way to recover "the window before this one" here: by
--- the time FileType neotest-output fires, output.lua has already finished
--- its own enter/restore focus handling (see its open_output()), so the
--- current window at that point is always the output window itself, not
--- whatever was focused beforehand.
+-- Tracks the most recently entered window showing a Java buffer, so a jump from the docked
+-- output window lands in the editor window the source was already open in, instead of
+-- replacing the output window's own buffer.
 local last_java_win
 
 vim.api.nvim_create_autocmd("BufEnter", {
@@ -512,16 +635,16 @@ local function highlight_frame_span(bufnr, frame_line, frame)
   return placed
 end
 
--- The neotest-output terminal buffer renders asynchronously, so the FileType
--- hook can fire before the transcript is in the grid. Re-scan a few times until
--- a frame appears (or the buffer really has none) rather than decorating once
--- against empty content.
+-- Decoration runs once a run finishes, when the live buffer already holds the streamed
+-- lines, so the first scan normally finds them. The bounded re-scan is kept as a cheap
+-- guard against being called a tick early.
 local DECORATE_MAX_ATTEMPTS = 12
 local DECORATE_RETRY_MS = 50
 
---- Collects the frames in a neotest-output buffer, rejoining terminal-wrapped
---- rows first. Returns a list of { frame = <parse_frame result>, line = <unwrap
---- entry> }. The wrap width is the longest line in the buffer: the terminal
+--- Collects the frames in the output buffer, rejoining any terminal-wrapped rows first
+--- (a no-op for the plain live buffer, retained so the same code also handles a
+--- terminal-backed buffer). Returns a list of { frame = <parse_frame result>, line =
+--- <unwrap entry> }. The wrap width is the longest line in the buffer: a terminal
 --- renders at whatever window was current when output was sent (a narrow split,
 --- say), so it is NOT reliably vim.o.columns, but every wrapped row is exactly
 --- that width, so the longest line reveals it empirically.
@@ -568,10 +691,9 @@ local function resolve_frames(client, bufnr, frames)
   return resolved
 end
 
---- Scans one already-rendered neotest-output buffer for stack frames and
---- resolves each via the standard workspace/symbol request -- no new
---- server-side command, no metadata recorded when the transcript was
---- written; resolution works from the frame text alone (§4).
+--- Scans the output buffer for stack frames and resolves each via the standard
+--- workspace/symbol request -- no new server-side command, no metadata recorded when the
+--- transcript streamed; resolution works from the frame text alone (§4).
 local function decorate_stack_frames(bufnr, attempt)
   attempt = attempt or 1
   if not vim.api.nvim_buf_is_valid(bufnr) then
@@ -620,88 +742,36 @@ local function decorate_stack_frames(bufnr, attempt)
   end)
 end
 
-local MAX_OUTPUT_SPLIT_HEIGHT = 20
-local output_split_win
+local live_decorate_pending = false
 
-local function output_split_is_open()
-  return output_split_win ~= nil and vim.api.nvim_win_is_valid(output_split_win)
-end
-
-local function output_split_is_focused()
-  return output_split_is_open() and vim.api.nvim_get_current_win() == output_split_win
-end
-
---- Opens the last run's output in a docked split rather than output.lua's
---- default floating window -- same buffer, same terminal rendering, same
---- FileType-triggered stack-trace decoration above, only the window shape
---- differs. output.lua's own open() already supports this via opts.open_win;
---- this is a thin convenience wrapper, not a new output mechanism. Toggles:
---- a second call while that split is the current window closes it, matching
---- the toggle behavior of neotest's own output_panel.toggle().
-function M.open_output(opts)
-  if output_split_is_focused() then
-    vim.api.nvim_win_close(output_split_win, true)
-    output_split_win = nil
+--- Once a run finishes (from results()), decorate the live buffer's stack frames the same
+--- way the neotest output surface used to be. Coalesced so a multi-spec file run decorates
+--- once, and the frame namespace is cleared first so a re-run does not stack duplicate marks
+--- onto the buffer that live_reset() already emptied.
+function M._decorate_live_output()
+  if live_decorate_pending or not (live_bufnr and vim.api.nvim_buf_is_valid(live_bufnr)) then
     return
   end
 
-  local open_opts = vim.tbl_extend("force", { enter = true, last_run = true }, opts or {}, {
-    open_win = function(win_opts)
-      vim.cmd("botright split")
-      vim.api.nvim_win_set_height(0, math.min(win_opts.height, MAX_OUTPUT_SPLIT_HEIGHT))
-      output_split_win = vim.api.nvim_get_current_win()
-      return output_split_win
-    end,
-  })
-
-  neotest_api().output.open(open_opts)
-end
-
-local refresh_pending = false
-
---- Keeps the docked output split current across runs. output.lua only rebuilds
---- its buffer when it has no tracked window, so a split left open shows the
---- first run's output forever. When a run finishes (called from results()),
---- close the split and reopen it -- deferred one tick so neotest's last-run
---- bookkeeping has settled, coalesced so a multi-spec run refreshes once, and
---- with enter=false so focus stays in the editor. No-op when the split is
---- closed, so users who don't dock output are unaffected.
-function M._refresh_docked_output()
-  if refresh_pending or not output_split_is_open() then
-    return
-  end
-
-  refresh_pending = true
+  live_decorate_pending = true
   vim.schedule(function()
-    refresh_pending = false
-    if output_split_is_open() then
-      pcall(vim.api.nvim_win_close, output_split_win, true)
-      output_split_win = nil
-      M.open_output({ enter = false })
+    live_decorate_pending = false
+    if live_bufnr and vim.api.nvim_buf_is_valid(live_bufnr) then
+      vim.api.nvim_buf_clear_namespace(live_bufnr, STACKTRACE_NS, 0, -1)
+      decorate_stack_frames(live_bufnr)
     end
   end)
 end
 
--- output.lua's scratch buffers are created via nvim_create_buf(false, true),
--- which defaults to bufhidden=hide, not wipe -- so closing the output window
--- hides the buffer but almost never actually wipes it, and BufWipeout alone
--- would leave these tables growing for the rest of the session. BufHidden
--- fires reliably the moment a buffer stops being shown in any window, which
--- is also the point these entries become unreachable (the jump keymaps are
--- buffer-local, so nothing can use them once hidden).
+-- The live buffer is created with bufhidden=hide, so closing its window hides rather than
+-- wipes it and BufWipeout alone would leak the per-buffer decoration tables. BufHidden fires
+-- the moment the buffer stops being shown, which is also when its buffer-local jump keymaps
+-- become unreachable.
 vim.api.nvim_create_autocmd({ "BufHidden", "BufWipeout" }, {
   group = STACKTRACE_AUGROUP,
   callback = function(ev)
     frame_locations[ev.buf] = nil
     jump_keymaps_set[ev.buf] = nil
-  end,
-})
-
-vim.api.nvim_create_autocmd("FileType", {
-  group = STACKTRACE_AUGROUP,
-  pattern = "neotest-output",
-  callback = function(ev)
-    decorate_stack_frames(ev.buf)
   end,
 })
 

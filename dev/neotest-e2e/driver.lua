@@ -24,6 +24,7 @@ local METHOD_IDS = {
   "com.example.jpms.HelloTest#greet_returnsExpectedMessage()",
   "com.example.jpms.HelloTest#greet_name_returnsPersonalGreeting(java.lang.String)",
   "com.example.jpms.HelloTest#greet_resource_returnsExpectedContent()",
+  "com.example.jpms.HelloTest#greet_prints_writesToBothStreams()",
 }
 
 --- Drives one position subtree through build_spec + results, launching the real
@@ -163,6 +164,20 @@ for _, line in ipairs(transcript or {}) do
   end
 end
 spec.check("transcript entries carry text", entries_well_formed, true)
+
+-- O1/O3: a run of HelloTest (which includes a test that prints to both streams) streams its
+-- console output live into the docked buffer, with stderr distinguished. Each run resets the
+-- buffer, so this reflects the last run above; the printing test runs under all of them.
+-- Streamed lines are appended via vim.schedule, so wait for the stdout line before asserting.
+local adapter = require("lathe.neotest")
+vim.wait(3000, function()
+  local lines = adapter._live_output_lines()
+  return lines ~= nil and vim.tbl_contains(lines, "hello on stdout")
+end, 25)
+local live_lines = adapter._live_output_lines() or {}
+spec.check("O1 stdout line streamed to live buffer", vim.tbl_contains(live_lines, "hello on stdout"), true)
+spec.check("O1 stderr line streamed to live buffer", vim.tbl_contains(live_lines, "warning on stderr"), true)
+spec.check("O3 stderr line is highlighted", #adapter._live_output_stderr_rows() > 0, true)
 
 -- R1: a directory run binds to a single package selector (keyed by the package
 -- name, not the dir path) and reports passed.
