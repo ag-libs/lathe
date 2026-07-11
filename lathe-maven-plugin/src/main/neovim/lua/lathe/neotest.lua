@@ -468,20 +468,28 @@ end
 --- can still be reflowing content on the main loop while that's happening,
 --- so a line's length by the time this runs is not guaranteed to match what
 --- was read at scan start.
-local function highlight_frame_span(bufnr, row0, frame)
-  local current_text = vim.api.nvim_buf_get_lines(bufnr, row0, row0 + 1, false)[1]
-  if not current_text then
-    return
-  end
-
+--- Underlines the `File.java:line` span of a (possibly terminal-wrapped) frame.
+--- `frame_line` is one unwrap() entry: its joined `text` plus the physical grid
+--- `rows` it spans. The span's byte offset in the joined text maps to a physical
+--- row/col via `width` (the wrap column); the extmark end is clamped to that
+--- row so a span straddling a wrap boundary still gets a visible cue.
+local function highlight_frame_span(bufnr, frame_line, frame, width)
   local span = ("%s:%d"):format(frame.file, frame.line)
-  local col_start = current_text:find(span, 1, true)
-  if not col_start then
+  local offset = frame_line.text:find(span, 1, true)
+  if not offset then
     return
   end
 
-  vim.api.nvim_buf_set_extmark(bufnr, STACKTRACE_NS, row0, col_start - 1, {
-    end_col = math.min(col_start - 1 + #span, #current_text),
+  local row_index = width > 0 and math.floor((offset - 1) / width) or 0
+  local row0 = frame_line.rows[row_index + 1] - 1
+  local col0 = width > 0 and (offset - 1) % width or (offset - 1)
+  local row_text = vim.api.nvim_buf_get_lines(bufnr, row0, row0 + 1, false)[1]
+  if not row_text then
+    return
+  end
+
+  vim.api.nvim_buf_set_extmark(bufnr, STACKTRACE_NS, row0, col0, {
+    end_col = math.min(col0 + #span, #row_text),
     hl_group = STACKTRACE_HL,
   })
 end
@@ -496,14 +504,20 @@ local function decorate_stack_frames(bufnr)
     return
   end
 
+  -- neotest renders output into a terminal buffer sized to the editor width, so
+  -- a frame longer than the window wraps across grid rows. Rejoin rows into
+  -- logical lines before parsing, then map matches back to the physical rows.
+  local width = vim.o.columns
+
   nio().run(function()
-    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    local raw = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    local logical = stacktrace().unwrap(raw, width)
     local resolved_by_class = {}
     local locations = {}
     frame_locations[bufnr] = locations
 
-    for row0, text in ipairs(lines) do
-      local frame = stacktrace().parse_frame(text)
+    for _, frame_line in ipairs(logical) do
+      local frame = stacktrace().parse_frame(frame_line.text)
       if frame then
         local cache_key = frame.simple_name .. "#" .. frame.package
         if resolved_by_class[cache_key] == nil then
@@ -513,8 +527,10 @@ local function decorate_stack_frames(bufnr)
 
         local candidate = resolved_by_class[cache_key]
         if candidate then
-          highlight_frame_span(bufnr, row0 - 1, frame)
-          locations[row0] = candidate.location
+          highlight_frame_span(bufnr, frame_line, frame, width)
+          for _, row in ipairs(frame_line.rows) do
+            locations[row] = candidate.location
+          end
         end
       end
     end

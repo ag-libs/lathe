@@ -75,6 +75,24 @@ do
   )
 end
 
+-- parse_frame: a module token can carry a version (app@1.0-SNAPSHOT/...),
+-- whose "@" and "-" are not word characters; the whole "<module>/" prefix must
+-- still be stripped so the class resolves.
+do
+  check_frame_fields(
+    "versioned module frame",
+    stacktrace.parse_frame(
+      "\tat com.example.app@1.0-SNAPSHOT/com.example.app.pipeline.rules.DiscountWrapperTest.fails(DiscountWrapperTest.java:68)"
+    ),
+    {
+      { "fqcn", "com.example.app.pipeline.rules.DiscountWrapperTest" },
+      { "simple_name", "DiscountWrapperTest" },
+      { "package", "com.example.app.pipeline.rules" },
+      { "line", 68 },
+    }
+  )
+end
+
 -- parse_frame: trailing " ~[...]" JVM location info does not break the match
 -- (pattern is not anchored to end-of-line).
 do
@@ -130,6 +148,34 @@ do
   )
   spec.check("empty results are unresolved", stacktrace.pick_candidate(pick_frame, {}), nil)
   spec.check("nil results are unresolved", stacktrace.pick_candidate(pick_frame, nil), nil)
+end
+
+-- unwrap: a logical line longer than the terminal width is hard-wrapped across
+-- rows of exactly `width` cells; unwrap rejoins them and records the physical
+-- rows spanned, while short lines pass through untouched. This is what lets a
+-- long JPMS frame parse: at 80 cols the 185-char frame splits into 3 rows,
+-- none of which matches on its own.
+do
+  local frame = "\tat com.example.app@1.0-SNAPSHOT/com.example.app.pipeline.rules.DiscountWrapperTest.fails(DiscountWrapperTest.java:68)"
+  local width = 80
+  -- Emulate the terminal grid: split the frame into width-sized rows.
+  local rows = { "log line" }
+  local i = 1
+  while i <= #frame do
+    table.insert(rows, frame:sub(i, i + width - 1))
+    i = i + width
+  end
+  table.insert(rows, "tail line")
+
+  local logical = stacktrace.unwrap(rows, width)
+  spec.check("short lines stay separate (first)", logical[1].text, "log line")
+  spec.check("wrapped frame rejoined to full length", logical[2].text, frame)
+  spec.check("rejoined frame spans every wrapped row", #logical[2].rows, math.ceil(#frame / width))
+  spec.check("rejoined frame now parses", stacktrace.parse_frame(logical[2].text).simple_name, "DiscountWrapperTest")
+  spec.check("trailing short line stays separate", logical[3].text, "tail line")
+
+  -- width <= 0 disables joining (each row is its own logical line).
+  spec.check("no-wrap mode keeps rows split", #stacktrace.unwrap(rows, 0), #rows)
 end
 
 spec.finish()

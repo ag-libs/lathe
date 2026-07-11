@@ -25,17 +25,17 @@ end
 
 --- Parses one line of captured test output into a stack frame, or returns
 --- nil for anything else (`Caused by:` lines, `... N more`, blank lines,
---- non-Java frames). JPMS-style frames (`java.base/java.lang.Thread.run(...)`)
---- have their leading `<module>/` stripped so package splitting stays
---- accurate for framework frames, even though those never resolve to a
---- workspace source file anyway.
+--- non-Java frames). JPMS-style frames have their leading `<module>/` stripped
+--- so package splitting stays accurate. The module token can carry a version
+--- (`app@1.0-SNAPSHOT/pkg.Cls...`), whose `@`/`-` are not word characters, so
+--- everything up to the first `/` is stripped rather than only word chars.
 function M.parse_frame(text)
   local fqcn, _method, file, line_str = text:match(FRAME_PATTERN)
   if not fqcn then
     return nil
   end
 
-  fqcn = fqcn:gsub("^[%w.]+/", "")
+  fqcn = fqcn:gsub("^[^/]+/", "")
   local package, simple_name = split_class(fqcn)
   return {
     fqcn = fqcn,
@@ -66,6 +66,35 @@ function M.pick_candidate(frame, symbols)
   end
 
   return nil
+end
+
+--- Rejoins terminal-wrapped grid rows into logical lines. neotest renders test
+--- output into a terminal buffer sized to the editor width (see neotest's
+--- lib.ui.open_term), so a logical line longer than `width` is hard-wrapped
+--- across consecutive rows of exactly `width` cells, the last one shorter.
+--- Without this, a long stack frame (e.g. a JPMS `module@version/`-qualified
+--- one) is split across rows and matches nothing. Returns a list of
+--- { text = <joined line>, rows = { <1-based physical row indices> } } so a
+--- caller can map a match on the joined text back to the physical rows it
+--- spans, for highlighting and jump registration. `width <= 0` disables
+--- joining (returns each row as its own logical line).
+function M.unwrap(lines, width)
+  local logical = {}
+  local i = 1
+  while i <= #lines do
+    local text = lines[i]
+    local rows = { i }
+    while width > 0 and #lines[i] == width and i < #lines do
+      i = i + 1
+      text = text .. lines[i]
+      table.insert(rows, i)
+    end
+
+    table.insert(logical, { text = text, rows = rows })
+    i = i + 1
+  end
+
+  return logical
 end
 
 return M
