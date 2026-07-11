@@ -108,49 +108,45 @@ A running test can be stopped.
 `build_spec` call, so neotest's stop may not reach it.
 *Criteria:* stopping a run terminates the replay JVM and clears the running state promptly.
 
-**R6 — Live per-test status.** ⬜
+**R6 — Live per-test status.** ✅
 Tests mark pass/fail one by one *as the run proceeds*, not all at once when it finishes — the
 IntelliJ progress feel.
-*Current:* neotest receives every status together when `run.test` returns, so a long class/package
-run shows a spinner and then an all-at-once update. Verified against the runner, a passing run also
-emits no console output (statuses live in the NDJSON sink, not stdout), so live status can only come
-from streaming the sink's per-test events, not the console.
+*Shipped (Deliverable 4):* the server tails the results sink and emits `lathe/testEvent` per method
+as it finishes (4a); the adapter's async run model fires the run without blocking and yields each
+result to neotest via `spec.stream`, so positions mark live (4b). The final authoritative
+`testResults` still reconcile in `results()`.
 *Criteria:* during a multi-method run, each method's gutter/summary status updates as that method
-completes. Delivered by [lathe-neotest-streaming.md](lathe-neotest-streaming.md) deliverable 4
-(`lathe/testEvent`).
+completes.
 
 ### 3.3 Output and following
 
-**O1 — Live streaming.** ❌
+**O1 — Live streaming.** ✅
 Output appears incrementally while the test runs, not only after it exits.
-*Current:* the run is one blocking command that returns the whole transcript at process exit;
-neotest has no process to tail.
+*Shipped:* the server splits and streams each drained line via `lathe/testOutput` (Deliverables 1,
+2a); the adapter appends it to the live docked buffer (2b).
 *Criteria:* lines are visible in the output surface while the JVM is still running.
-*Approach: [Decision 1 — A](#4-decisions) (server streams via a `lathe/testOutput` notification).*
 
-**O2 — Follow.** ❌
+**O2 — Follow.** ✅
 The output view auto-scrolls to the tail as new output arrives (IntelliJ console follow), until the
 user scrolls up.
+*Shipped:* `live_append` moves the cursor to the tail while the window is open but unfocused (2b).
 *Criteria:* a long-running test keeps the newest line in view without manual scrolling.
 
-**O3 — stdout vs stderr distinguished.** ❌
+**O3 — stdout vs stderr distinguished.** ✅
 The two streams are visually separable (color).
-*Current:* impossible today — the launcher merges them with `redirectErrorStream(true)` before
-anything downstream can tell them apart.
+*Shipped:* `ReplayLauncher` no longer merges the streams; each `TranscriptLine` carries its stream
+tag (Deliverable 1) and the adapter highlights stderr lines (2b).
 *Criteria:* stderr lines render in a distinct highlight from stdout lines.
-*Requires a server change to stop merging the streams.*
 
-**O4 — One docked surface.** 🟡
+**O4 — One docked surface.** ✅
 There is a single, obvious output window — a docked terminal, not a floating one.
-*Current:* both neotest's default float and the adapter's docked split exist and can conflict for
-focus.
-*Criteria:* the float is **removed** ([Decision 2](#4-decisions)); the docked surface is the only
-output window the run flow ever opens.
+*Shipped:* neotest's float is off the path; `open_output` toggles the one docked live buffer (2b).
+*Criteria:* the docked surface is the only output window the run flow ever opens.
 
-**O5 — Fresh across runs.** ❌
+**O5 — Fresh across runs.** ✅
 A docked output window left open shows the *latest* run, not the first.
-*Current:* neotest's output rebuilds its buffer only when it has no tracked window, so a persistent
-split goes stale.
+*Shipped:* the live buffer is reset at the start of each run and appended to as it streams, so it is
+current by construction (2b).
 *Criteria:* running a different test updates the docked window's content without the user closing
 and reopening it.
 
