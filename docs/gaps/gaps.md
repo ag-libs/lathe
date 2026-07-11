@@ -631,7 +631,12 @@ None yet — undecided pending triage.
 
 ## EG-045 — Hover on a component reference inside a record's compact constructor resolves to the callee's parameter
 
-**Status: documented — Target: pending triage**
+**Status: done — Target: M3**
+
+Fixed: `SourceLocator.masksParameterContext` now suppresses the argument param-hint for a record's
+canonical-constructor `PARAMETER` (a compact-ctor component reference), mirroring the existing
+`FIELD` mask, so hover falls through to normal resolution and shows the component. Verified live.
+Regression targets below are implemented and passing.
 
 ### Observed behaviour
 
@@ -691,7 +696,13 @@ printf 'hover "bucket,"\n' | python3 dev/explore.py /path/to/workspace/.../Confi
 
 ## EG-046 — Hover on a call argument shows synthetic `arg0` parameter names while signature help shows the real names
 
-**Status: documented — Target: pending triage**
+**Status: done — Target: M3**
+
+Fixed: the `SourceAnalysisSession.hover` argument param-hint branch now formats through the shared
+`resolveParamNames` + `isSyntheticName` + `TypeDisplayFormatter` path (via `HoverFormatter.formatParam`),
+matching signature help and method-name hover; the divergent `HoverFormatter.formatParameter` was
+removed. Verified live on line 84 of the validation workspace — string-literal arguments now show
+`name` / `defaultObj` instead of `arg0` / `arg1`. Regression target below is implemented and passing.
 
 ### Observed behaviour
 

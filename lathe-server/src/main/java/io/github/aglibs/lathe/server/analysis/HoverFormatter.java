@@ -75,8 +75,4 @@ public final class HoverFormatter {
             : param.getSimpleName().toString();
     return SourceParser.isSyntheticName(name) ? typeName : "%s %s".formatted(typeName, name);
   }
-
-  public static String formatParameter(final VariableElement param) {
-    return "```java\n%s %s\n```".formatted(param.asType(), param.getSimpleName());
-  }
 }

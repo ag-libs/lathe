@@ -221,8 +221,13 @@ public final class SourceAnalysisSession implements AutoCloseable {
     final VariableElement param =
         SourceLocator.parameterElementAt(cur.analysis().trees(), cur.path());
     if (param != null) {
+      final var callee = (ExecutableElement) param.getEnclosingElement();
+      final int index = callee.getParameters().indexOf(param);
+      final List<String> paramNames = parser.resolveParamNames(callee, allRoots(request));
+      final var fmt = new TypeDisplayFormatter(cur.analysis().types());
+      final String label = HoverFormatter.formatParam(param, fmt, paramNames, index);
       LOG.fine(() -> "[hover] param=%s %dms".formatted(param, t.elapsedMs()));
-      return new Hover(new MarkupContent("markdown", HoverFormatter.formatParameter(param)));
+      return new Hover(new MarkupContent("markdown", "```java\n%s\n```".formatted(label)));
     }
 
     final Element element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());

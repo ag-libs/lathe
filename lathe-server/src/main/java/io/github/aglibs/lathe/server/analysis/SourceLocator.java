@@ -21,6 +21,7 @@ import java.util.stream.IntStream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.RecordComponentElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.DeclaredType;
@@ -226,7 +227,7 @@ public final class SourceLocator {
       return null;
     }
     final var leafElement = trees.getElement(path);
-    if (leafElement != null && masksParameterContext(leafElement.getKind())) {
+    if (leafElement != null && masksParameterContext(leafElement)) {
       return null;
     }
     TreePath argPath = path;
@@ -264,11 +265,41 @@ public final class SourceLocator {
     return null;
   }
 
-  private static boolean masksParameterContext(final ElementKind kind) {
-    return switch (kind) {
+  /**
+   * Suppresses the argument param-hint when the cursor's own element is a named symbol worth
+   * showing on its own — types, fields, enum constants, and a record component referenced inside
+   * the compact constructor. javac models that component reference as the canonical-constructor
+   * {@code PARAMETER}, so without this it would show the callee's parameter instead of the
+   * component (as a backing-field read elsewhere in the record body already does).
+   */
+  private static boolean masksParameterContext(final Element element) {
+    return switch (element.getKind()) {
       case ANNOTATION_TYPE, CLASS, ENUM, ENUM_CONSTANT, FIELD, INTERFACE, RECORD -> true;
+      case PARAMETER -> isRecordComponentParameter(element);
       default -> false;
     };
+  }
+
+  private static boolean isRecordComponentParameter(final Element parameter) {
+    final var constructor = parameter.getEnclosingElement();
+    if (constructor.getKind() != ElementKind.CONSTRUCTOR) {
+      return false;
+    }
+
+    final var owner = constructor.getEnclosingElement();
+    if (owner.getKind() != ElementKind.RECORD) {
+      return false;
+    }
+
+    final List<? extends RecordComponentElement> components =
+        ((TypeElement) owner).getRecordComponents();
+    final List<? extends VariableElement> params =
+        ((ExecutableElement) constructor).getParameters();
+    return params.size() == components.size()
+        && IntStream.range(0, params.size())
+            .allMatch(
+                i ->
+                    params.get(i).getSimpleName().contentEquals(components.get(i).getSimpleName()));
   }
 
   public static int identifierEnd(final String content, final int start) {

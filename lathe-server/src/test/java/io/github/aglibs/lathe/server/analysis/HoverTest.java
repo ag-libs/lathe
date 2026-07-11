@@ -14,10 +14,30 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.nio.file.Path;
 import java.util.List;
+import org.eclipse.lsp4j.Hover;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class HoverTest extends SampleFixture {
+
+  // Drives the real SourceAnalysisSession.hover() path (unlike hoverAt, which bypasses the
+  // argument param-hint branch). `token` is located as the first occurrence at/after `after`.
+  private static String hoverText(final String source, final String after, final String token) {
+    try (final var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+      final int offset = source.indexOf(token, source.indexOf(after));
+      final var request =
+          new SourceFeatureRequest(
+              TempSourceCompiler.TEST_URI,
+              source,
+              0,
+              SourceLocator.offsetToPosition(source, offset),
+              List.of(),
+              WorkspaceManifest.empty());
+      final Hover hover = session.hover(request);
+      return hover == null ? null : hover.getContents().getRight().getValue();
+    }
+  }
 
   @Test
   void hover_type_showsClassJavadoc() {
@@ -107,6 +127,53 @@ class HoverTest extends SampleFixture {
     final var md = hoverAt(4, 17);
     assertThat(md).isPresent();
     assertThat(md.get()).contains("List");
+  }
+
+  // --- argument param-hint (EG-045, EG-046) ---
+
+  @Test
+  void hover_recordComponentInCompactConstructor_resolvesComponentNotCalleeParameter() {
+    // EG-045: hovering the bare component reference inside the compact constructor must show the
+    // component itself, not the callee's parameter (`Object value`). Mirrors the FIELD-read case.
+    final var source =
+        """
+        record Config(String bucket) {
+            Config { check(bucket, "bucket"); }
+            static void check(Object value, String name) {}
+        }
+        """;
+    final var md = hoverText(source, "check(", "bucket");
+    assertThat(md).contains("bucket").doesNotContain("value");
+  }
+
+  @Test
+  void hover_classFileDependencyArgument_showsSourceParameterName(@TempDir final Path tmpDir)
+      throws Exception {
+    // EG-046: hovering an argument whose callee is a class-file dependency compiled without
+    // -parameters must show the resolved source name, not the synthetic `arg0`.
+    try (final var fixture = new ClassFileFixture(tmpDir)) {
+      final var source =
+          """
+          class Test {
+              void caller() { new Greeter("x").greet("hello", 1); }
+          }
+          """;
+      fixture.session().compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+      final var pos = SourceLocator.offsetToPosition(source, source.indexOf("\"hello\""));
+      final var request =
+          new SourceFeatureRequest(
+              TempSourceCompiler.TEST_URI,
+              source,
+              0,
+              pos,
+              List.of(fixture.srcDir()),
+              WorkspaceManifest.empty());
+      final var hover = fixture.session().hover(request);
+
+      assertThat(hover).isNotNull();
+      final var md = hover.getContents().getRight().getValue();
+      assertThat(md).contains("name").doesNotContain("arg0");
+    }
   }
 
   // --- class-file dependency ---
