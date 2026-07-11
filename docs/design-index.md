@@ -126,3 +126,6 @@ M3 designs before implementation.
 - [Analysis Cache Bounding](potential/lathe-analysis-cache-bounding.md) — deferred hard-cap design for
   per-open-file analysis retention (event-loop LRU, eviction delegated to module workers); the issue
   is accepted but a lighter warning-based mitigation is preferred first.
+- [Lowercase CamelCase Symbol Search](potential/lathe-lowercase-camel-symbol-search.md) — let
+  `workspace/symbol` CamelHumps matching span humps from an all-lowercase query, so users need not
+  capitalize boundaries; refines EG-005.
