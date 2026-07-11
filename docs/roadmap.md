@@ -194,7 +194,7 @@ See [lathe-run-test-debug.md](planned/lathe-run-test-debug.md).
 
 Provide a supported VS Code integration, complete identifier-level semantic-token coverage, workspace-diagnostics UX,
 and editor-specific installation and testing.
-See [lathe-vscode-semantic-tokens.md](planned/lathe-vscode-semantic-tokens.md).
+See [lathe-semantic-tokens.md](planned/lathe-semantic-tokens.md).
 
 ### Quality tooling
 

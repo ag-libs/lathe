@@ -1,23 +1,34 @@
-# Lathe — VS Code Semantic Token Coverage
+# Lathe — Semantic Token Coverage
+
+## Motivation
+
+This work is editor-agnostic. It was originally scoped for VS Code, but a Neovim user has also
+requested distinct highlighting for local variables versus class fields — so the semantic-token
+improvements below benefit every supported editor, not only VS Code.
 
 ## Background
 
-VS Code syntax highlighting works in two layers, the same way Neovim does:
+Editor syntax highlighting works in two layers:
 
-1. **TextMate grammar** (base layer) — VS Code ships a built-in `java.tmLanguage.json`.
-   Regex-based. Covers keywords, string and comment literals, and coarse patterns
-   (e.g. `[A-Z][A-Za-z]*` as a probable type name). Applied before any LSP.
+1. **Base layer** — a lexer/grammar applied before any LSP.
+   In VS Code this is a regex-based TextMate grammar (`java.tmLanguage.json`); in Neovim it is
+   tree-sitter. Both cover keywords, string and comment literals, and coarse patterns
+   (e.g. `[A-Z][A-Za-z]*` as a probable type name).
 2. **Semantic tokens** (overlay layer) — LSP-provided, applied on top.
-   VS Code themes map them via `@lsp.type.<name>` and `@lsp.mod.<name>` CSS-like selectors.
-   Can be disabled per-user with `"editor.semanticHighlighting.enabled": false`.
+   VS Code themes map them via `@lsp.type.<name>` and `@lsp.mod.<name>` selectors;
+   Neovim maps them via `@lsp.type.<name>` highlight groups.
+   Can be disabled per-user (e.g. `"editor.semanticHighlighting.enabled": false` in VS Code).
 
-The key difference from Neovim is the strength of the base layer.
-Neovim uses tree-sitter, which produces a precise AST and can reliably classify identifiers.
+The difference between editors is the strength of the base layer.
+Neovim's tree-sitter produces a precise AST and can classify many identifiers on its own, but its
+classification is not always correct or complete — the local-variable-vs-field distinction that
+prompted this work is a case tree-sitter does not reliably resolve, so Neovim needs LSP semantic
+tokens for it too.
 VS Code's TextMate grammar is regex-based and cannot distinguish a local variable from a field
-from a parameter without semantic information from the LSP.
+from a parameter at all without semantic information from the LSP.
 
-Consequently, VS Code depends on the LSP to emit semantic tokens for essentially all identifier
-categories — the same way `vscode-java` (Red Hat / jdtls) does.
+Consequently, both editors depend on the LSP to emit semantic tokens for the identifier
+categories the base layer cannot classify — the same way `vscode-java` (Red Hat / jdtls) does.
 
 ## What Lathe currently emits
 
