@@ -935,7 +935,12 @@ survives the simple-name lookup and passes the package filter.
 
 ## FR-014 — Find References from a component reference inside a record's compact constructor returns only that one occurrence
 
-**Status: documented — Target: pending triage**
+**Status: done — Target: M2**
+
+Fixed: `ReferenceTarget.recordAccessorFor` now normalises the implicit canonical-constructor
+`PARAMETER` to the component's accessor (as it already did for `RECORD_COMPONENT` and the backing
+`FIELD`), so Find References is symmetric from the header and the compact-ctor use. Verified live —
+the compact-ctor query now returns all sites. Regression targets below are implemented and passing.
 
 ### Observed behaviour
 

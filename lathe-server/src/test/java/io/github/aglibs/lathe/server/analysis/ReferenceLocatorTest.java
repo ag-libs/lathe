@@ -429,6 +429,52 @@ class ReferenceLocatorTest {
     assertThat(target.scope()).isEqualTo(ReferenceTarget.SearchScope.REACTOR_MODULES);
   }
 
+  @Test
+  void recordComponent_fromCompactConstructorParameterUse_findsAllReferences() throws IOException {
+    final var source =
+        """
+        record Config(String bucket) {
+            Config {
+                bucket = bucket.trim();
+            }
+            String read() { return bucket; }
+        }
+        """;
+    final var analysis = compile(source);
+    // Target built from the compact-ctor USE, not the record header.
+    final var target = targetAt(analysis, "= bucket.trim", "bucket");
+
+    final List<ReferenceMatch> result = refs(analysis, target, false);
+
+    // Same sites the header-built target finds: both compact-ctor occurrences + the read().
+    assertThat(result)
+        .anyMatch(m -> m.range().getStart().equals(posOf(source, "bucket = bucket", "bucket")))
+        .anyMatch(m -> m.range().getStart().equals(posOf(source, "= bucket.trim", "bucket")))
+        .anyMatch(m -> m.range().getStart().equals(posOf(source, "return bucket", "bucket")));
+  }
+
+  @Test
+  void recordComponent_fromNonCanonicalConstructorParameter_notNormalized() throws IOException {
+    final var source =
+        """
+        record Config(String bucket) {
+            Config(String bucket, int unused) {
+                this(bucket.trim());
+            }
+        }
+        """;
+    final var analysis = compile(source);
+    // Target built from the NON-canonical ctor's same-named parameter use.
+    final var target = targetAt(analysis, "this(bucket.trim", "bucket");
+
+    final List<ReferenceMatch> result = refs(analysis, target, false);
+
+    // A distinct member: stays file-scoped and must not pull in the record component's own sites.
+    assertThat(target.scope()).isEqualTo(ReferenceTarget.SearchScope.DECLARING_FILE);
+    assertThat(result)
+        .allMatch(m -> m.range().getStart().equals(posOf(source, "this(bucket.trim", "bucket")));
+  }
+
   // --- constructors ---
 
   @Test

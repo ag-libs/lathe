@@ -46,7 +46,7 @@ public record ReferenceTarget(
   }
 
   static ReferenceTarget from(final Element element, final Types types, final Elements elements) {
-    final var accessor = recordAccessorFor(element);
+    final var accessor = recordAccessorFor(element, types);
     if (accessor != null) {
       return from(accessor, types, elements);
     }
@@ -100,16 +100,29 @@ public record ReferenceTarget(
   }
 
   /**
-   * A record component (resolved either as a {@code RECORD_COMPONENT} element or, as javac usually
-   * reports the header, its backing {@code FIELD}) is normalised to its generated accessor. The
-   * accessor is the public, reactor-visible symbol that call sites resolve to, giving broad
-   * candidate discovery and the correct search scope; backing-field reads inside the record body
-   * are matched separately in {@link #matches}.
+   * A record component is normalised to its generated accessor, whichever way javac reported the
+   * cursor symbol: a {@code RECORD_COMPONENT} element, its backing {@code FIELD} (the header, as
+   * javac usually reports it), or the implicit canonical-constructor {@code PARAMETER} that a bare
+   * reference inside the compact/canonical constructor body resolves to. The accessor is the
+   * public, reactor-visible symbol that call sites resolve to, giving broad candidate discovery and
+   * the correct search scope; the backing field and canonical-constructor parameter are then
+   * matched separately in {@link #matches} via {@link #matchesRecordComponentMember}. A same-named
+   * parameter of a non-canonical constructor is a distinct member and is not normalised.
    */
-  private static ExecutableElement recordAccessorFor(final Element element) {
+  private static ExecutableElement recordAccessorFor(final Element element, final Types types) {
     final var kind = element.getKind();
     if (kind == ElementKind.RECORD_COMPONENT) {
       return ((RecordComponentElement) element).getAccessor();
+    }
+
+    if (kind == ElementKind.PARAMETER) {
+      final var record = enclosingRecord(element);
+      if (record == null || !isCanonicalConstructorParameter(element, record, types)) {
+        return null;
+      }
+
+      final var canonicalComponent = componentNamed(record, element.getSimpleName());
+      return canonicalComponent == null ? null : canonicalComponent.getAccessor();
     }
 
     if (kind != ElementKind.FIELD) {
