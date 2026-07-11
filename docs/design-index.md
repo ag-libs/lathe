@@ -62,6 +62,7 @@ M3 designs before implementation.
 
 - [Run, Test, and Debug](planned/lathe-run-test-debug.md) — push-capture Surefire's fork launch (shim rides `mvn test`), replay against `.lathe/` bytecode, JDWP attachment; design + implementation/testing plan merged.
 - [Neotest Experience](planned/lathe-neotest-experience.md) — IntelliJ-parity acceptance spec for the Neovim neotest client: behavioral criteria (discovery, streaming, output surface, failure navigation) as the forward-looking authority; consolidates and supersedes the diagnostics/streaming planning stances.
+- [Neotest Streaming and Thin-Adapter](planned/lathe-neotest-streaming.md) — Phase 2 implementation design of record: server-streamed `lathe/testOutput` notifications with stdout/stderr split, server-side test-id mapping, and consolidated single-launch file runs.
 - [VS Code Semantic Tokens](planned/lathe-vscode-semantic-tokens.md) — semantic-token parity needed for supported VS Code
   integration.
 - [Sibling Recompilation](planned/lathe-sibling-recompilation.md) — closed-file diagnostics after API changes.

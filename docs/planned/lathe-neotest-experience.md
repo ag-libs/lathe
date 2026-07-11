@@ -251,7 +251,8 @@ as-built note) to the server, which alone has javac; and design the streaming su
 the separate stdout/stderr drain in `ReplayLauncher`, and the token-correlated completion carrying
 the final `ReplayOutcome` — with the command shape kept open for a later JDWP attach (Decision 4).
 This is a public-API change → **STOP-and-design**: a structured summary and explicit approval before
-any code.
+any code. The design is settled in
+[lathe-neotest-streaming.md](lathe-neotest-streaming.md).
 
 ### Phase 3 — implement behaviors against the harness
 Each a small series, gated green by Phase 1:
