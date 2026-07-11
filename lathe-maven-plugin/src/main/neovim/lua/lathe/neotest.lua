@@ -179,6 +179,38 @@ vim.lsp.handlers["lathe/testOutput"] = function(_err, result)
   end)
 end
 
+local TEST_STATUS = { passed = "passed", failed = "failed", skipped = "skipped" }
+
+--- One structured per-test result mapped to a neotest.Result. `output` is the run's shared
+--- transcript path, or nil while streaming live (the transcript file is written only once the
+--- run finishes, in results()).
+local function test_result(tr, output)
+  local res = { status = TEST_STATUS[tr.status] or "failed", output = output }
+  if tr.failureMessage and tr.failureMessage ~= "" then
+    res.short = tr.failureMessage
+  end
+  return res
+end
+
+-- Per-run event queues: the lathe/testEvent handler pushes each result onto the queue for its
+-- run token; the spec's stream iterator (build_spec below) drains it and hands neotest the
+-- position result, so each method's gutter/summary status flips the moment it finishes rather
+-- than all at once when the run ends. STREAM_DONE is a sentinel the run puts when it completes
+-- (a queue cannot carry nil).
+local event_queues = {}
+local STREAM_DONE = {}
+
+vim.lsp.handlers["lathe/testEvent"] = function(_err, result)
+  if not (result and result.result and result.token) then
+    return
+  end
+
+  local queue = event_queues[result.token]
+  if queue then
+    queue.put_nowait({ position_id = result.result.positionId, result = test_result(result.result, nil) })
+  end
+end
+
 function M.root(dir)
   return vim.fs.root(dir, ".lathe")
 end
@@ -325,20 +357,45 @@ function M._package_for_dir(dir_path, workspace_root)
   return module_rel, package_name
 end
 
-local function class_spec(pos, client, token)
-  local err, outcome = client.request.workspace_executeCommand({
-    command = "lathe.run.test",
-    arguments = { {
-      moduleRel = pos.lathe_module_rel,
-      selectorKind = pos.lathe_selector_kind,
-      selectorValue = pos.id,
-      token = token,
-    } },
-  }, 0)
+--- Builds a spec that runs one selector (a class, or a package for a directory) without blocking:
+--- the replay is fired asynchronously and its per-test results stream in via lathe/testEvent, so
+--- neotest can mark positions live. build_spec must return fast (neotest polls spec.stream only
+--- after build_spec returns), so the run cannot happen inline here. `command = {"true"}` is a no-op
+--- process neotest still needs; the real work rides the stream and the run token.
+local function class_spec(pos, client)
+  local token = next_token()
+  local queue = nio().control.queue()
+  event_queues[token] = queue
+  local result_future = nio().control.future()
+
+  nio().run(function()
+    local err, outcome = client.request.workspace_executeCommand({
+      command = "lathe.run.test",
+      arguments = { {
+        moduleRel = pos.lathe_module_rel,
+        selectorKind = pos.lathe_selector_kind,
+        selectorValue = pos.id,
+        token = token,
+      } },
+    }, 0)
+    -- Every testEvent for this run has already been handled (they precede the run.test response
+    -- on the wire), so the queue holds them all before this close sentinel.
+    queue.put_nowait(STREAM_DONE)
+    result_future.set({ err = err, outcome = outcome })
+  end)
 
   return {
     command = { "true" },
-    context = { position_id = pos.id, err = err, outcome = outcome },
+    context = { position_id = pos.id, token = token, result_future = result_future },
+    stream = function()
+      return function()
+        local item = queue.get()
+        if item == STREAM_DONE then
+          return nil
+        end
+        return { [item.position_id] = item.result }
+      end
+    end,
   }
 end
 
@@ -349,13 +406,12 @@ function M.build_spec(args)
     return nil
   end
 
-  -- One token per user run action; build_spec runs a file's class specs sequentially
-  -- inline, so a single token and one buffer reset cover the whole run.
-  local token = next_token()
+  -- Reset the shared console buffer once per user run action; each class_spec below mints its own
+  -- run token, so a file's classes (run concurrently by neotest) stay routed to distinct streams.
   live_reset()
 
   if pos.type == "test" or pos.type == "namespace" then
-    return class_spec(pos, client, token)
+    return class_spec(pos, client)
   end
 
   if pos.type == "dir" then
@@ -378,7 +434,7 @@ function M.build_spec(args)
       id = package_name,
       lathe_module_rel = module_rel,
       lathe_selector_kind = "PACKAGE",
-    }, client, token)
+    }, client)
   end
 
   if pos.type ~= "file" then
@@ -396,7 +452,7 @@ function M.build_spec(args)
   for _, node in args.tree:iter_nodes() do
     local child = node:data()
     if child.type == "namespace" and child.lathe_selector_kind == "CLASS" then
-      table.insert(specs, class_spec(child, client, token))
+      table.insert(specs, class_spec(child, client))
     end
   end
   if #specs == 0 then
@@ -436,21 +492,6 @@ local function transcript_text(lines)
   return table.concat(parts, "\n")
 end
 
-local TEST_STATUS = { passed = "passed", failed = "failed", skipped = "skipped" }
-
---- One structured per-test result. Status only for now -- result.errors /
---- vim.diagnostic from failureLine is deferred to the diagnostics design
---- (docs/planned/lathe-test-diagnostics-and-refresh.md). Reuses the run's
---- shared transcript as output (a class/package run is one JVM, so there is
---- only the one transcript) and surfaces the failure message as `short`.
-local function test_result(tr, output)
-  local res = { status = TEST_STATUS[tr.status] or "failed", output = output }
-  if tr.failureMessage and tr.failureMessage ~= "" then
-    res.short = tr.failureMessage
-  end
-  return res
-end
-
 --- neotest.Client:run_tree marks every id in the run's whole subtree as
 --- "running" up front (client/init.lua's update_running, built from
 --- tree:iter()) but only clears whichever ids results() returns -- a class
@@ -468,6 +509,19 @@ end
 --- class's result.
 function M.results(spec, _result, tree)
   local ctx = spec.context
+
+  -- neotest calls results() as soon as the no-op "true" process exits, which is well before the
+  -- async replay finishes -- so wait for the run here, then read its outcome. The per-test
+  -- statuses were already applied live via spec.stream; this pass provides the authoritative
+  -- reconciliation, the run-position aggregate, and the output file. Runs in neotest's async
+  -- context, so the wait yields. Pure-function specs set ctx.outcome directly (no result_future).
+  if ctx.result_future then
+    local finished = ctx.result_future.wait()
+    ctx.err = finished.err
+    ctx.outcome = finished.outcome
+    event_queues[ctx.token] = nil
+  end
+
   local result
   if ctx.skip_reason then
     result = { status = "skipped", short = ctx.skip_reason }

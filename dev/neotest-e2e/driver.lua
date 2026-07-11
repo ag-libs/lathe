@@ -26,6 +26,7 @@ local METHOD_IDS = {
   "com.example.jpms.HelloTest#greet_resource_returnsExpectedContent()",
   "com.example.jpms.HelloTest#greet_prints_writesToBothStreams()",
 }
+local PRINTING_METHOD_ID = "com.example.jpms.HelloTest#greet_prints_writesToBothStreams()"
 
 --- Drives one position subtree through build_spec + results, launching the real
 --- replay. build_spec returns a single spec table (`.command` present) for a
@@ -98,6 +99,20 @@ nio.run(function()
   local ok, err = pcall(function()
     local adapter = require("lathe.neotest")
 
+    -- Capture the live per-test event stream (R6) by wrapping the adapter's own handler, so its
+    -- queue routing is preserved and we also see every result as it is emitted mid-run.
+    local events = {}
+    local inner = vim.lsp.handlers["lathe/testEvent"]
+    vim.lsp.handlers["lathe/testEvent"] = function(e, result, ...)
+      if result and result.result then
+        events[#events + 1] = { positionId = result.result.positionId, status = result.result.status }
+      end
+      if inner then
+        return inner(e, result, ...)
+      end
+    end
+    captured.events = events
+
     local tree = adapter.discover_positions(test_file)
     captured.discovered = tree ~= nil
     if not tree then
@@ -112,16 +127,36 @@ nio.run(function()
 
     local class_subtree = tree:get_key(CLASS_ID)
     local class_built = adapter.build_spec({ tree = class_subtree })
-    captured.class_transcript = class_built.context
-      and class_built.context.outcome
-      and class_built.context.outcome.output
+    -- results() awaits the async run and sets context.outcome, so read the transcript after it.
     captured.class_results = adapter.results(class_built, nil, class_subtree)
+    captured.class_transcript = class_built.context.outcome and class_built.context.outcome.output
 
     captured.dir_results = run_position(adapter, dir_tree(package_dir))
 
     local file_results = run_position(adapter, tree)
     captured.file_results = file_results
     captured.file_has_output = file_results ~= nil and file_results[test_file] ~= nil
+
+    -- R6 (stream contract): drive spec.stream directly for a single method and drain it, the exact
+    -- interface neotest's runner iterates to mark positions live. It must yield the method's result
+    -- keyed by its positionId before the stream ends. Use the printing method so this final run
+    -- leaves the console buffer populated for the O1/O3 checks below (each run resets it).
+    local method_id = PRINTING_METHOD_ID
+    local method_built = adapter.build_spec({ tree = tree:get_key(method_id) })
+    local streamed = {}
+    local iterator = method_built.stream()
+    while true do
+      local batch = iterator()
+      if batch == nil then
+        break
+      end
+
+      for position_id, r in pairs(batch) do
+        streamed[position_id] = r.status
+      end
+    end
+    adapter.results(method_built, nil, tree:get_key(method_id))
+    captured.method_stream_status = streamed[method_id]
   end)
   captured.err = (not ok) and tostring(err) or nil
   done = true
@@ -149,6 +184,20 @@ for _, id in ipairs(METHOD_IDS) do
   local r = class_results[id]
   spec.check("R3 method status passed: " .. id, r and r.status, "passed")
 end
+
+-- R6: every method's result streamed in live via lathe/testEvent during the run (not just at the
+-- end). Runs above emit events too, but the class/dir/file runs all cover HelloTest, so each
+-- method's positionId must have appeared as a passed event.
+local streamed_status = {}
+for _, ev in ipairs(captured.events or {}) do
+  if ev.status == "passed" then
+    streamed_status[ev.positionId] = "passed"
+  end
+end
+for _, id in ipairs(METHOD_IDS) do
+  spec.check("R6 method streamed a live event: " .. id, streamed_status[id], "passed")
+end
+spec.check("R6 spec.stream yields the method result to neotest", captured.method_stream_status, "passed")
 
 -- Deliverable 1: the replay transcript arrives as a list of stdout/stderr-tagged
 -- {stream, text} lines, not a flat string list. A passing run legitimately emits
