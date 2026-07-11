@@ -11,6 +11,8 @@ import static org.mockito.Mockito.verify;
 
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
+import io.github.aglibs.lathe.server.analysis.TypeHierarchyItemData;
+import io.github.aglibs.lathe.server.analysis.TypeHierarchyItemDataCodec;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -33,11 +35,15 @@ import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.ProgressParams;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
+import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.ReferenceContext;
 import org.eclipse.lsp4j.ReferenceParams;
+import org.eclipse.lsp4j.SymbolKind;
 import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.TextDocumentItem;
+import org.eclipse.lsp4j.TypeHierarchyItem;
+import org.eclipse.lsp4j.TypeHierarchySubtypesParams;
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
 import org.eclipse.lsp4j.WorkDoneProgressCancelParams;
 import org.eclipse.lsp4j.WorkDoneProgressEnd;
@@ -315,6 +321,36 @@ class LatheTextDocumentServiceTest {
     final var change = new TextDocumentContentChangeEvent();
     change.setText(text);
     return new DidChangeTextDocumentParams(id, List.of(change));
+  }
+
+  @Test
+  void typeHierarchySubtypes_declarationFileNotOpen_stillResolvesSubtypes() throws Exception {
+    // EG-043: type-hierarchy relations must not require the type's declaration file to be open.
+    final Path sourceRoot = tmp.resolve("module/src/main/java");
+    final Path pkg = sourceRoot.resolve("com/example");
+    Files.createDirectories(pkg);
+    final Path api = pkg.resolve("Api.java");
+    final Path impl = pkg.resolve("Impl.java");
+    Files.writeString(api, "package com.example; public interface Api {}\n");
+    Files.writeString(impl, "package com.example; public class Impl implements Api {}\n");
+    // Compile both into the module's reactor classes dir so the reactor scan indexes Impl <: Api.
+    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), api, impl);
+    TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
+    service.initialize(tmp);
+
+    // Item for Api whose routingUri is Api.java — which is never opened (only usages would be).
+    final var data = new TypeHierarchyItemData("com.example.Api", api.toUri().toString());
+    final var range = new Range(new Position(0, 0), new Position(0, 0));
+    final var item =
+        new TypeHierarchyItem("Api", SymbolKind.Interface, api.toUri().toString(), range, range);
+    item.setData(TypeHierarchyItemDataCodec.encode(data));
+
+    final List<TypeHierarchyItem> subtypes =
+        service
+            .typeHierarchySubtypes(new TypeHierarchySubtypesParams(item))
+            .get(5, TimeUnit.SECONDS);
+
+    assertThat(subtypes).extracting(TypeHierarchyItem::getName).contains("Impl");
   }
 
   private Path writeWorkspaceSource() throws Exception {

@@ -452,59 +452,6 @@ None yet — undecided pending triage.
 
 ---
 
-## EG-043 — Type hierarchy from a usage site prepares the item but returns no subtypes
-
-**Status: documented — Target: pending triage**
-
-Re-scoped after live re-verification (2026-07-11). The originally documented symptom — "returns
-nothing / no type hierarchy item at this position" on a usage site — was a **probe-positioning
-artifact**: the old probe `hierarchy "for (HttpFeature"` places the cursor on the `for` keyword,
-which has no `TypeElement`, so `prepareTypeHierarchy` correctly returns nothing. On a genuine
-type-name cursor, prepare **succeeds**. A different, real defect remains, captured below.
-
-### Observed behaviour
-
-With the cursor on a genuine *usage* of a type (a field/parameter/local declared type, resolved
-cross-file from the classpath), `prepareTypeHierarchy` returns the correct item (right interface,
-right FQN) and correct supertypes, but its **subtypes come back empty** — whereas the same type
-queried from its own declaration returns the full subtype set.
-
-```text
-cursor on the interface's own declaration → item + supertypes + subtypes (e.g. 2 subtypes)
-cursor on a cross-file usage of that type → item + supertypes, but subtypes: (none)   ← defect
-```
-
-### Root cause (hypothesis)
-
-Not yet pinned, and specifically **not** a position-resolution defect: `elementAt` resolves the
-usage-site `TypeElement` fine (the item prepares), so this is unlike the (invalid) EG-042. The
-subtype set is the only thing that differs by cursor site, which points at the subtype-resolution
-path (`typeHierarchySubtypes` / the workspace type-index lookup / the prepared item's URI-module
-context) behaving differently when the open file is a *user* of the type rather than its *declaration*.
-
-Crucially, this does **not** reproduce in the single-file or cross-file (`extraClasspath`) unit
-harness — there, a usage-site prepare resolves subtypes from the `WorkspaceTypeIndex` correctly. So
-the cause lives in live workspace/index/module wiring the harness does not model, and pinning it
-needs a live-probe investigation (or a fuller multi-module test fixture) before a faithful
-regression test can be written.
-
-### Probe commands
-
-```bash
-# Baseline — cursor on the type's own declaration: full supertypes + subtypes.
-python3 dev/explore.py <decl-file> hierarchy "interface <TypeName>"
-
-# Defect — cursor on a cross-file usage (field/param type): item prepares, subtypes empty.
-python3 dev/explore.py <using-file> hierarchy "<TypeName> <fieldOrParamName>"
-```
-
-### Regression targets
-
-None yet — blocked on a live root-cause; the unit harness does not reproduce the empty-subtypes
-symptom.
-
----
-
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work

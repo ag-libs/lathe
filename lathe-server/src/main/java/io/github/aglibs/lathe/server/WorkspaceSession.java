@@ -1139,10 +1139,10 @@ final class WorkspaceSession {
     final var indexSnapshot = typeIndex;
     final List<Path> sourceDirs = typeSourceDirs();
     final var t = Stopwatch.start();
-    return openDocFeature(
+    return routeFeature(
             data.routingUri(),
-            List.of(),
-            (worker, doc) -> worker.typeHierarchySupertypes(item, indexSnapshot, sourceDirs))
+            worker -> worker.typeHierarchySupertypes(item, indexSnapshot, sourceDirs),
+            List.of())
         .thenApply(
             items -> {
               LOG.fine(
@@ -1163,10 +1163,10 @@ final class WorkspaceSession {
     final var indexSnapshot = typeIndex;
     final List<Path> sourceDirs = typeSourceDirs();
     final var t = Stopwatch.start();
-    return openDocFeature(
+    return routeFeature(
             data.routingUri(),
-            List.of(),
-            (worker, doc) -> worker.typeHierarchySubtypes(item, indexSnapshot, sourceDirs))
+            worker -> worker.typeHierarchySubtypes(item, indexSnapshot, sourceDirs),
+            List.of())
         .thenApply(
             items -> {
               LOG.fine(

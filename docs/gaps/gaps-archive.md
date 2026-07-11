@@ -59,6 +59,38 @@ fast-path). No `ReferenceTarget` API change.
 
 ---
 
+## EG-043 — Type hierarchy relations required the type's declaration file to be open
+
+**Status: done — Target: M3.**
+
+Type-hierarchy subtypes/supertypes came back empty whenever the type's **declaration** source file
+was not currently open — most visibly when the feature was invoked from a *usage* site (a field /
+parameter / local declared type), where the declaration is typically closed.
+
+Root cause: `WorkspaceSession.typeHierarchySubtypesFuture` / `typeHierarchySupertypesFuture` routed
+the computation through `openDocFeature(data.routingUri(), …)`, which returns the empty fallback when
+`docs.get(routingUri) == null`. `routingUri` is the type's **declaration** source (set by
+`TypeHierarchyResolver` to the located declaration file). The lambda ignored the `doc` argument
+entirely — the computation needs only the workspace type index + global source dirs + the parser,
+which reads declaration sources from disk (`TypeSourceLocator.locate`), so the open-document gate was
+spurious.
+
+Fix: both futures now use `routeFeature(data.routingUri(), …)` instead of `openDocFeature`, routing
+by URI to a worker without requiring the document to be open (mirrors `codeActionFuture`). A reactor
+type's `routingUri` routes to its `Module` worker and computes regardless of which file is open.
+
+Corrections to the earlier (re-scoped) triage: the defect affected **both** supertypes and subtypes
+(prior probing only saw subtypes differ because the probed interface had no supertypes); the trigger
+is really "declaration file not open", of which usage-site invocation is the common case, not a
+distinct "usage-site resolution" defect; and it **is** unit-reproducible — the earlier test exercised
+`SourceAnalysisSession` directly, one layer below the `WorkspaceSession` gate where the bug lived.
+
+### Regression targets
+
+- `LatheTextDocumentServiceTest.typeHierarchySubtypes_declarationFileNotOpen_stillResolvesSubtypes`
+
+---
+
 ## EG-012 — `textDocument/declaration`: navigate an override to its contract method
 
 **Status: done — Target: M1.**
