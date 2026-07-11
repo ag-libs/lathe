@@ -511,13 +511,6 @@ The release slice is derived from the gap fields, not maintained as an ordered l
 for a release is every gap with `Status: accepted` and the matching `Target` (see
 [gap-process.md](gap-process.md)).
 
-Guidance that does not fall out of the fields:
-
-- Do **EG-007** (WARNING flood) early — it improves log signal for debugging everything else.
-- Implement **EG-023 with EG-008** (shared `Object`-method suppression list).
-- Implement **EG-021 with EG-006** (shared reactor-origin ranking).
-- **EG-014** and **EG-015** reuse the override-resolution walk from **EG-012** (already implemented).
-
 ---
 
 # Find References Gaps (FR)
