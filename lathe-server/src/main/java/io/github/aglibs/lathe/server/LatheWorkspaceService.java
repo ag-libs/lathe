@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server;
 
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
@@ -57,7 +58,7 @@ final class LatheWorkspaceService implements WorkspaceService {
   private CompletableFuture<Object> runTest(final ExecuteCommandParams params) {
     final var argument = parseRunTestArgument(params.getArguments().getFirst());
     return textDocumentService
-        .runTestFuture(argument.moduleRel(), argument.selection(), argument.token())
+        .runTestFuture(argument.moduleRel(), argument.selections(), argument.token())
         .thenApply(outcome -> outcome);
   }
 
@@ -66,16 +67,23 @@ final class LatheWorkspaceService implements WorkspaceService {
     return textDocumentService.runnablesFuture(uri).thenApply(targets -> targets);
   }
 
-  private record RunTestArgument(String moduleRel, TestSelection selection, String token) {}
+  private record RunTestArgument(String moduleRel, List<TestSelection> selections, String token) {}
 
   private static RunTestArgument parseRunTestArgument(final Object argument) {
     final var json = (JsonObject) argument;
-    final var selection =
-        new TestSelection(
-            TestSelectionKind.valueOf(json.get("selectorKind").getAsString()),
-            json.get("selectorValue").getAsString());
+    final List<TestSelection> selections =
+        json.getAsJsonArray("selections").asList().stream()
+            .map(JsonElement::getAsJsonObject)
+            .map(LatheWorkspaceService::parseSelection)
+            .toList();
     final String token = json.has("token") ? json.get("token").getAsString() : "";
-    return new RunTestArgument(json.get("moduleRel").getAsString(), selection, token);
+    return new RunTestArgument(json.get("moduleRel").getAsString(), selections, token);
+  }
+
+  private static TestSelection parseSelection(final JsonObject json) {
+    return new TestSelection(
+        TestSelectionKind.valueOf(json.get("selectorKind").getAsString()),
+        json.get("selectorValue").getAsString());
   }
 
   private static String parseListRunnablesArgument(final Object argument) {

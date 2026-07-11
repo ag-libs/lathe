@@ -135,7 +135,9 @@ nio.run(function()
 
     local file_results = run_position(adapter, tree)
     captured.file_results = file_results
-    captured.file_has_output = file_results ~= nil and file_results[test_file] ~= nil
+    captured.file_has_output = file_results ~= nil
+      and file_results[test_file] ~= nil
+      and file_results[test_file].output ~= nil
 
     -- R6 (stream contract): drive spec.stream directly for a single method and drain it, the exact
     -- interface neotest's runner iterates to mark positions live. It must yield the method's result
@@ -237,16 +239,8 @@ spec.check(
   "passed"
 )
 
--- R2: a file run should surface output reachable from the file position. Known
--- gap today (the per-class fan-out never keys output onto the file id), so it is
--- recorded pending rather than failed until Phase 3 fixes it.
-if captured.file_has_output then
-  spec.check("R2 file run output reachable from file position", captured.file_has_output, true)
-else
-  spec.pending(
-    "R2 file run output reachable from file position",
-    "file-run fan-out keys output per class, never onto the file position id"
-  )
-end
+-- R2: a file run is one consolidated CLASS-selector launch keyed to the file position, so its
+-- result (with output) is reachable from that position.
+spec.check("R2 file run output reachable from file position", captured.file_has_output, true)
 
 spec.finish("neotest-e2e")

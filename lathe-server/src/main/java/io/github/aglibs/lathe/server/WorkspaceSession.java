@@ -145,13 +145,13 @@ final class WorkspaceSession {
   }
 
   CompletableFuture<ReplayOutcome> runTestFuture(
-      final String moduleRel, final TestSelection selection, final String token) {
+      final String moduleRel, final List<TestSelection> selections, final String token) {
     final List<Path> runnerClasspath = manifest.runnerClasspath();
     if (runnerClasspath.isEmpty()) {
       LOG.warning(
           () ->
               "[replay] %s %s blocked no lathe-test-runner jar recorded"
-                  .formatted(moduleRel, selection.value()));
+                  .formatted(moduleRel, selectionLabel(selections)));
       return CompletableFuture.completedFuture(
           ReplayOutcome.blocked(List.of("no lathe-test-runner jar recorded — run a build first")));
     }
@@ -165,11 +165,15 @@ final class WorkspaceSession {
         new Thread(
             () ->
                 launchReplay(
-                    root, runnerClasspath, moduleRel, selection, onLine, onResult, t, result),
+                    root, runnerClasspath, moduleRel, selections, onLine, onResult, t, result),
             "lathe-replay-" + moduleRel);
     thread.setDaemon(true);
     thread.start();
     return result;
+  }
+
+  private static String selectionLabel(final List<TestSelection> selections) {
+    return selections.stream().map(TestSelection::value).collect(Collectors.joining(", "));
   }
 
   /**
@@ -203,7 +207,7 @@ final class WorkspaceSession {
       final Path workspaceRoot,
       final List<Path> runnerClasspath,
       final String moduleRel,
-      final TestSelection selection,
+      final List<TestSelection> selections,
       final Consumer<TranscriptLine> onLine,
       final Consumer<TestResult> onResult,
       final Stopwatch t,
@@ -214,7 +218,7 @@ final class WorkspaceSession {
         LOG.warning(
             () ->
                 "[replay] %s %s blocked no captured test-launch.json"
-                    .formatted(moduleRel, selection.value()));
+                    .formatted(moduleRel, selectionLabel(selections)));
         result.complete(
             ReplayOutcome.blocked(List.of("no captured test-launch.json for " + moduleRel)));
         return;
@@ -225,14 +229,14 @@ final class WorkspaceSession {
         LOG.warning(
             () ->
                 "[replay] %s %s blocked reasons=%s"
-                    .formatted(moduleRel, selection.value(), gate.reasons()));
+                    .formatted(moduleRel, selectionLabel(selections), gate.reasons()));
         result.complete(ReplayOutcome.blocked(gate.reasons()));
         return;
       }
 
       final var session =
           ReplayLauncher.launch(
-              template.get(), workspaceRoot, runnerClasspath, selection, onLine, onResult);
+              template.get(), workspaceRoot, runnerClasspath, selections, onLine, onResult);
       session
           .onExit()
           .whenComplete(
@@ -243,14 +247,17 @@ final class WorkspaceSession {
                       error,
                       () ->
                           "[replay] %s %s failed %dms"
-                              .formatted(moduleRel, selection.value(), t.elapsedMs()));
+                              .formatted(moduleRel, selectionLabel(selections), t.elapsedMs()));
                   result.completeExceptionally(error);
                 } else {
                   LOG.info(
                       () ->
                           "[replay] %s %s exit=%d %dms"
                               .formatted(
-                                  moduleRel, selection.value(), outcome.exitCode(), t.elapsedMs()));
+                                  moduleRel,
+                                  selectionLabel(selections),
+                                  outcome.exitCode(),
+                                  t.elapsedMs()));
                   result.complete(outcome);
                 }
               });
@@ -260,7 +267,7 @@ final class WorkspaceSession {
           e,
           () ->
               "[replay] %s %s failed to launch %dms"
-                  .formatted(moduleRel, selection.value(), t.elapsedMs()));
+                  .formatted(moduleRel, selectionLabel(selections), t.elapsedMs()));
       result.completeExceptionally(e);
     }
   }

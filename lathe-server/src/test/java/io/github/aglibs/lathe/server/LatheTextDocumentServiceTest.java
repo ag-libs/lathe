@@ -309,7 +309,8 @@ class LatheTextDocumentServiceTest {
 
     final var outcome =
         service
-            .runTestFuture("app", new TestSelection(TestSelectionKind.CLASS, "com.example.Foo"), "")
+            .runTestFuture(
+                "app", List.of(new TestSelection(TestSelectionKind.CLASS, "com.example.Foo")), "")
             .get(5, TimeUnit.SECONDS);
 
     assertThat(outcome.launched()).isFalse();

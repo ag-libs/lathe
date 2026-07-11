@@ -83,10 +83,11 @@ Run nearest test (method), run class, run file, run package/directory — each l
 *Criteria:* each level launches exactly one logical run and reports a status for the invoked
 position.
 
-**R2 — File run shows output.** ❌
+**R2 — File run shows output.** ✅
 Running a whole file yields visible, consolidated output for the file.
-*Current:* a file run fans out to one spec per class; no result carries output for the *file*
-position, so opening output on it shows nothing.
+*Shipped (Deliverable 5):* a file run is one consolidated launch — `run.test` takes a list of
+selections, so all the file's classes run in one JVM and the single result (with output) attaches
+to the file position.
 *Criteria:* running a file produces output reachable from the file position, covering every class
 that ran.
 

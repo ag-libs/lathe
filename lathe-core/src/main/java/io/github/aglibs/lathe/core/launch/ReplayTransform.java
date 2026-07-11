@@ -20,7 +20,7 @@ public final class ReplayTransform {
       final TestLaunchData data,
       final Path workspaceRoot,
       final List<Path> runnerClasspath,
-      final TestSelection selection,
+      final List<TestSelection> selections,
       final Path resultsSink) {
     final List<String> modulePath = ReactorRewrite.toLathe(data.modulePath(), workspaceRoot);
     final List<String> classPath =
@@ -42,7 +42,7 @@ public final class ReplayTransform {
         data.addExports(),
         data.addModules());
     args.add(LatheLayout.TEST_RUNNER_MAIN_CLASS);
-    args.addAll(selection.toRunnerArgs());
+    selections.forEach(selection -> args.addAll(selection.toRunnerArgs()));
     return List.copyOf(args);
   }
 

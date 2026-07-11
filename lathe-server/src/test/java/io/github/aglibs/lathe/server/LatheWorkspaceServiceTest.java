@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import io.github.aglibs.lathe.server.run.ReplayOutcome;
 import io.github.aglibs.lathe.server.run.RunTarget;
@@ -53,10 +54,14 @@ class LatheWorkspaceServiceTest {
   @Test
   void executeCommand_runTestFreshWorkspace_returnsBlockedOnMissingRunnerJar() throws Exception {
     textDocumentService.initialize(tmp);
+    final var selection = new JsonObject();
+    selection.addProperty("selectorKind", "CLASS");
+    selection.addProperty("selectorValue", "com.example.Foo");
+    final var selections = new JsonArray();
+    selections.add(selection);
     final var argument = new JsonObject();
     argument.addProperty("moduleRel", "app");
-    argument.addProperty("selectorKind", "CLASS");
-    argument.addProperty("selectorValue", "com.example.Foo");
+    argument.add("selections", selections);
     final var params = new ExecuteCommandParams("lathe.run.test", List.of(argument));
 
     final var result = service.executeCommand(params).get(5, TimeUnit.SECONDS);

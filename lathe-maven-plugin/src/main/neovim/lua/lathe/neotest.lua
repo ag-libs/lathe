@@ -357,12 +357,14 @@ function M._package_for_dir(dir_path, workspace_root)
   return module_rel, package_name
 end
 
---- Builds a spec that runs one selector (a class, or a package for a directory) without blocking:
---- the replay is fired asynchronously and its per-test results stream in via lathe/testEvent, so
---- neotest can mark positions live. build_spec must return fast (neotest polls spec.stream only
---- after build_spec returns), so the run cannot happen inline here. `command = {"true"}` is a no-op
---- process neotest still needs; the real work rides the stream and the run token.
-local function class_spec(pos, client)
+--- Builds a spec that runs one or more selectors (a method, class, a package for a directory, or
+--- every class in a file) in a single replay JVM, without blocking: the run is fired asynchronously
+--- and its per-test results stream in via lathe/testEvent, so neotest can mark positions live.
+--- build_spec must return fast (neotest polls spec.stream only after build_spec returns), so the run
+--- cannot happen inline here. `command = {"true"}` is a no-op process neotest still needs; the real
+--- work rides the stream and the run token. `position_id` is the run position's own id, so its
+--- aggregate result and output attach to it.
+local function run_spec(position_id, module_rel, selections, client)
   local token = next_token()
   local queue = nio().control.queue()
   event_queues[token] = queue
@@ -372,9 +374,8 @@ local function class_spec(pos, client)
     local err, outcome = client.request.workspace_executeCommand({
       command = "lathe.run.test",
       arguments = { {
-        moduleRel = pos.lathe_module_rel,
-        selectorKind = pos.lathe_selector_kind,
-        selectorValue = pos.id,
+        moduleRel = module_rel,
+        selections = selections,
         token = token,
       } },
     }, 0)
@@ -386,7 +387,7 @@ local function class_spec(pos, client)
 
   return {
     command = { "true" },
-    context = { position_id = pos.id, token = token, result_future = result_future },
+    context = { position_id = position_id, token = token, result_future = result_future },
     stream = function()
       return function()
         local item = queue.get()
@@ -411,7 +412,9 @@ function M.build_spec(args)
   live_reset()
 
   if pos.type == "test" or pos.type == "namespace" then
-    return class_spec(pos, client)
+    return run_spec(pos.id, pos.lathe_module_rel, {
+      { selectorKind = pos.lathe_selector_kind, selectorValue = pos.id },
+    }, client)
   end
 
   if pos.type == "dir" then
@@ -430,10 +433,8 @@ function M.build_spec(args)
     if not module_rel then
       return nil
     end
-    return class_spec({
-      id = package_name,
-      lathe_module_rel = module_rel,
-      lathe_selector_kind = "PACKAGE",
+    return run_spec(package_name, module_rel, {
+      { selectorKind = "PACKAGE", selectorValue = package_name },
     }, client)
   end
 
@@ -441,32 +442,31 @@ function M.build_spec(args)
     return nil
   end
 
-  -- Bind file-run to class-run: one lathe.run.test call per CLASS in this
-  -- file (never PACKAGE -- that would run every other class in the same
-  -- package too -- and never per-method, which is what neotest's own
-  -- fallback decomposition does if build_spec returns nil here: it skips
-  -- straight to every leaf "test" node in the subtree via run_pos_types
-  -- ("test"), spawning one replay JVM per method concurrently instead of
-  -- one per class.
-  local specs = {}
+  -- Bind file-run to one CLASS-selector run over every class in the file (never PACKAGE -- that
+  -- would run every other class in the same package too -- and never per-method, which is what
+  -- neotest's own fallback decomposition does if build_spec returns nil: it spawns one replay JVM
+  -- per method). A single run means one JVM, one transcript, and one result attached to the file
+  -- position, so opening its output works.
+  local selections = {}
+  local module_rel
   for _, node in args.tree:iter_nodes() do
     local child = node:data()
     if child.type == "namespace" and child.lathe_selector_kind == "CLASS" then
-      table.insert(specs, class_spec(child, client))
+      selections[#selections + 1] = { selectorKind = "CLASS", selectorValue = child.id }
+      module_rel = module_rel or child.lathe_module_rel
     end
   end
-  if #specs == 0 then
-    -- Returning nil here routes into neotest's own fallback
-    -- (_run_broken_down_tree), which finds zero runnable leaf nodes and
-    -- returns without ever calling results_callback -- the "running" status
-    -- set at the start of run_tree for this position never gets cleared, so
-    -- its glyph spins forever. Return a real no-op spec instead so results()
-    -- always fires and clears it, with a message explaining why nothing ran.
+  if #selections == 0 then
+    -- Returning nil here routes into neotest's own fallback (_run_broken_down_tree), which finds
+    -- zero runnable leaf nodes and returns without ever calling results_callback -- the "running"
+    -- status set at the start of run_tree for this position never gets cleared, so its glyph spins
+    -- forever. Return a real no-op spec instead so results() always fires and clears it, with a
+    -- message explaining why nothing ran.
     local reason = vim.fn.bufloaded(pos.path) == 1 and "no tests found in this file"
       or ("open " .. vim.fn.fnamemodify(pos.path, ":t") .. " to discover its tests before running")
     return { command = { "true" }, context = { position_id = pos.id, skip_reason = reason } }
   end
-  return specs
+  return run_spec(pos.id, module_rel, selections, client)
 end
 
 --- neotest.Result.output must be a path to a file containing the output, not raw text --

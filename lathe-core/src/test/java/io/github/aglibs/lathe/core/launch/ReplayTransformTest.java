@@ -42,7 +42,7 @@ final class ReplayTransformTest {
             data,
             WORKSPACE,
             List.of(runner),
-            new TestSelection(TestSelectionKind.METHOD, "com.example.app.HelloTest#greet"),
+            List.of(new TestSelection(TestSelectionKind.METHOD, "com.example.app.HelloTest#greet")),
             resultsSink);
 
     assertThat(args)
@@ -69,6 +69,45 @@ final class ReplayTransformTest {
             LatheLayout.TEST_RUNNER_MAIN_CLASS,
             "--select-method",
             "com.example.app.HelloTest#greet");
+  }
+
+  @Test
+  void forTest_multipleSelections_appendsEachSelectorAfterTheMainClass() {
+    final var runner = Path.of("/cache/lathe-test-runner.jar");
+    final var resultsSink = Path.of("/tmp/lathe-results.ndjson");
+    final var data =
+        new TestLaunchData(
+            "1",
+            "surefire",
+            LaunchMode.MODULE,
+            "/jdk",
+            "com.example.app",
+            List.of("/workspace/app/target/classes"),
+            List.of("/workspace/app/target/test-classes"),
+            Map.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of());
+
+    final List<String> args =
+        ReplayTransform.forTest(
+            data,
+            WORKSPACE,
+            List.of(runner),
+            List.of(
+                new TestSelection(TestSelectionKind.CLASS, "com.example.app.FooTest"),
+                new TestSelection(TestSelectionKind.CLASS, "com.example.app.BarTest")),
+            resultsSink);
+
+    assertThat(args)
+        .endsWith(
+            LatheLayout.TEST_RUNNER_MAIN_CLASS,
+            "--select-class",
+            "com.example.app.FooTest",
+            "--select-class",
+            "com.example.app.BarTest");
   }
 
   @Test

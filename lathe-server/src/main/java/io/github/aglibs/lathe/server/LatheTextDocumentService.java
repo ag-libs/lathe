@@ -333,9 +333,9 @@ final class LatheTextDocumentService implements TextDocumentService {
   }
 
   CompletableFuture<ReplayOutcome> runTestFuture(
-      final String moduleRel, final TestSelection selection, final String token) {
+      final String moduleRel, final List<TestSelection> selections, final String token) {
     return worker
-        .submit(() -> session.runTestFuture(moduleRel, selection, token))
+        .submit(() -> session.runTestFuture(moduleRel, selections, token))
         .thenCompose(f -> f);
   }
 
