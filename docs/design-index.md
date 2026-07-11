@@ -138,3 +138,6 @@ M3 designs before implementation.
 - [Find Instantiations of a Type](potential/lathe-find-instantiations.md) — type-scoped
   instantiation query matching `NewClassTree` sites (handles synthetic default/record constructors)
   surfaced as a command/code action, rather than a constructor-scoped `references` filter.
+- [Basic Refactorings (Rename, Move, Extract)](potential/lathe-basic-refactorings.md) — rename
+  (`prepareRename`/`rename`, already M2), move and extract method/variable/field via
+  `refactor.move`/`refactor.extract` code actions returning `WorkspaceEdit`s.
