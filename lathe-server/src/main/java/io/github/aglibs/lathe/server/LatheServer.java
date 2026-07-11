@@ -12,8 +12,6 @@ import java.util.logging.Level;
 import java.util.logging.LogManager;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.jsonrpc.Launcher;
-import org.eclipse.lsp4j.launch.LSPLauncher;
-import org.eclipse.lsp4j.services.LanguageClient;
 
 public final class LatheServer {
 
@@ -34,8 +32,14 @@ public final class LatheServer {
       throws ExecutionException, InterruptedException {
     final var server = new LatheLanguageServer();
     final ExecutorService rpcExecutor = Executors.newCachedThreadPool(LatheServer::newRpcThread);
-    final Launcher<LanguageClient> launcher =
-        LSPLauncher.createServerLauncher(server, in, out, rpcExecutor, consumer -> consumer);
+    final Launcher<LatheLanguageClient> launcher =
+        new Launcher.Builder<LatheLanguageClient>()
+            .setLocalService(server)
+            .setRemoteInterface(LatheLanguageClient.class)
+            .setInput(in)
+            .setOutput(out)
+            .setExecutorService(rpcExecutor)
+            .create();
     server.connect(launcher.getRemoteProxy());
     final Future<?> listening = launcher.startListening();
     LOG.info(() -> "[startup] Lathe language server ready");

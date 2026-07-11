@@ -57,7 +57,7 @@ final class LatheWorkspaceService implements WorkspaceService {
   private CompletableFuture<Object> runTest(final ExecuteCommandParams params) {
     final var argument = parseRunTestArgument(params.getArguments().getFirst());
     return textDocumentService
-        .runTestFuture(argument.moduleRel(), argument.selection())
+        .runTestFuture(argument.moduleRel(), argument.selection(), argument.token())
         .thenApply(outcome -> outcome);
   }
 
@@ -66,7 +66,7 @@ final class LatheWorkspaceService implements WorkspaceService {
     return textDocumentService.runnablesFuture(uri).thenApply(targets -> targets);
   }
 
-  private record RunTestArgument(String moduleRel, TestSelection selection) {}
+  private record RunTestArgument(String moduleRel, TestSelection selection, String token) {}
 
   private static RunTestArgument parseRunTestArgument(final Object argument) {
     final var json = (JsonObject) argument;
@@ -74,7 +74,8 @@ final class LatheWorkspaceService implements WorkspaceService {
         new TestSelection(
             TestSelectionKind.valueOf(json.get("selectorKind").getAsString()),
             json.get("selectorValue").getAsString());
-    return new RunTestArgument(json.get("moduleRel").getAsString(), selection);
+    final String token = json.has("token") ? json.get("token").getAsString() : "";
+    return new RunTestArgument(json.get("moduleRel").getAsString(), selection, token);
   }
 
   private static String parseListRunnablesArgument(final Object argument) {

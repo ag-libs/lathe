@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -21,13 +22,16 @@ public final class ReplaySession {
 
   private final Process process;
   private final Path resultsSink;
+  private final Consumer<TranscriptLine> onLine;
   private final List<TranscriptLine> output = Collections.synchronizedList(new ArrayList<>());
   private final CompletableFuture<Void> stdoutDrained = new CompletableFuture<>();
   private final CompletableFuture<Void> stderrDrained = new CompletableFuture<>();
 
-  ReplaySession(final Process process, final Path resultsSink) {
+  ReplaySession(
+      final Process process, final Path resultsSink, final Consumer<TranscriptLine> onLine) {
     this.process = process;
     this.resultsSink = resultsSink;
+    this.onLine = onLine;
     startDrain(process.getInputStream(), TranscriptLine.Stream.STDOUT, stdoutDrained);
     startDrain(process.getErrorStream(), TranscriptLine.Stream.STDERR, stderrDrained);
   }
@@ -74,7 +78,9 @@ public final class ReplaySession {
     try (var reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
       String line;
       while ((line = reader.readLine()) != null) {
-        output.add(new TranscriptLine(stream, line));
+        final var tagged = new TranscriptLine(stream, line);
+        output.add(tagged);
+        onLine.accept(tagged);
       }
     } catch (final IOException e) {
       LOG.log(

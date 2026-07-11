@@ -18,4 +18,10 @@ module io.github.aglibs.lathe.server {
   // by lsp4j's Gson layer -- without this, Gson can't call setAccessible on their accessors.
   opens io.github.aglibs.lathe.server.run to
       com.google.gson;
+
+  // LatheLanguageClient is our custom JSON-RPC remote interface; lsp4j.jsonrpc reflects on its
+  // methods to build the client proxy, so its package must be accessible to that module. Only the
+  // public interface is exposed; the rest of the package stays package-private.
+  exports io.github.aglibs.lathe.server to
+      org.eclipse.lsp4j.jsonrpc;
 }

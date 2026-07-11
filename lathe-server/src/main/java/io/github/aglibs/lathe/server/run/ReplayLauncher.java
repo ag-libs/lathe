@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.function.Consumer;
 import java.util.logging.Logger;
 
 public final class ReplayLauncher {
@@ -19,13 +20,14 @@ public final class ReplayLauncher {
       final TestLaunchData data,
       final Path workspaceRoot,
       final List<Path> runnerClasspath,
-      final TestSelection selection)
+      final TestSelection selection,
+      final Consumer<TranscriptLine> onLine)
       throws IOException {
     final Path resultsSink = Files.createTempFile("lathe-results-", ".ndjson");
     final List<String> argv =
         ReplayTransform.forTest(data, workspaceRoot, runnerClasspath, selection, resultsSink);
     LOG.fine(() -> "[replay] argv=%s".formatted(argv));
     final Process process = new ProcessBuilder(argv).start();
-    return new ReplaySession(process, resultsSink);
+    return new ReplaySession(process, resultsSink, onLine);
   }
 }

@@ -36,6 +36,8 @@ import io.github.aglibs.lathe.server.run.LaunchTemplateReader;
 import io.github.aglibs.lathe.server.run.ReplayLauncher;
 import io.github.aglibs.lathe.server.run.ReplayOutcome;
 import io.github.aglibs.lathe.server.run.RunTarget;
+import io.github.aglibs.lathe.server.run.TestOutputParams;
+import io.github.aglibs.lathe.server.run.TranscriptLine;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -141,7 +143,7 @@ final class WorkspaceSession {
   }
 
   CompletableFuture<ReplayOutcome> runTestFuture(
-      final String moduleRel, final TestSelection selection) {
+      final String moduleRel, final TestSelection selection, final String token) {
     final List<Path> runnerClasspath = manifest.runnerClasspath();
     if (runnerClasspath.isEmpty()) {
       LOG.warning(
@@ -152,16 +154,31 @@ final class WorkspaceSession {
           ReplayOutcome.blocked(List.of("no lathe-test-runner jar recorded — run a build first")));
     }
 
+    final Consumer<TranscriptLine> onLine = streamConsumer(token);
     final Path root = workspaceRoot;
     final var t = Stopwatch.start();
     final var result = new CompletableFuture<ReplayOutcome>();
     final var thread =
         new Thread(
-            () -> launchReplay(root, runnerClasspath, moduleRel, selection, t, result),
+            () -> launchReplay(root, runnerClasspath, moduleRel, selection, onLine, t, result),
             "lathe-replay-" + moduleRel);
     thread.setDaemon(true);
     thread.start();
     return result;
+  }
+
+  /**
+   * Streams each drained transcript line to the client over the run token so the client can render
+   * it live. Fired from {@code ReplaySession}'s drain threads, not the worker: the payload is
+   * immutable and carries no session state, and lsp4j serializes the writes, so publishing off the
+   * worker is safe here. A blank token (no live surface listening) yields a no-op.
+   */
+  private Consumer<TranscriptLine> streamConsumer(final String token) {
+    if (token.isBlank()) {
+      return line -> {};
+    }
+
+    return line -> ((LatheLanguageClient) client).testOutput(new TestOutputParams(token, line));
   }
 
   private static void launchReplay(
@@ -169,6 +186,7 @@ final class WorkspaceSession {
       final List<Path> runnerClasspath,
       final String moduleRel,
       final TestSelection selection,
+      final Consumer<TranscriptLine> onLine,
       final Stopwatch t,
       final CompletableFuture<ReplayOutcome> result) {
     try {
@@ -194,7 +212,7 @@ final class WorkspaceSession {
       }
 
       final var session =
-          ReplayLauncher.launch(template.get(), workspaceRoot, runnerClasspath, selection);
+          ReplayLauncher.launch(template.get(), workspaceRoot, runnerClasspath, selection, onLine);
       session
           .onExit()
           .whenComplete(
