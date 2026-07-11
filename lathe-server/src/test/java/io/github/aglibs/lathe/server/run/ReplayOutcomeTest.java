@@ -21,7 +21,9 @@ final class ReplayOutcomeTest {
   void completed_withTestResults_carriesAndCopiesThem() {
     final var result = new TestResult("pkg.FooTest", "bar", "", "failed", "boom", 7);
 
-    final ReplayOutcome outcome = ReplayOutcome.completed(1, List.of("line"), List.of(result));
+    final ReplayOutcome outcome =
+        ReplayOutcome.completed(
+            1, List.of(new TranscriptLine(TranscriptLine.Stream.STDOUT, "line")), List.of(result));
 
     assertThat(outcome.launched()).isTrue();
     assertThat(outcome.testResults()).containsExactly(result);

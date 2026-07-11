@@ -24,6 +24,17 @@ local adapter = require("lathe.neotest")
 
 local FILE = "/workspace/demo/src/test/java/demo/FooTest.java"
 
+--- Builds the {stream, text} tagged transcript shape ReplayOutcome.output now
+--- carries (stream 0 = stdout) from plain strings, so these fixtures mirror the
+--- real wire shape the adapter consumes.
+local function transcript(...)
+  local lines = {}
+  for _, text in ipairs({ ... }) do
+    lines[#lines + 1] = { stream = 0, text = text }
+  end
+  return lines
+end
+
 --- Flattens the nested-list forest (Tree.from_list's expected shape: a leaf position
 --- table, or `{position, child_subtree, ...}`) into a plain id -> position map, so
 --- assertions can check reachability and fields without hand-walking the nesting.
@@ -190,14 +201,14 @@ do
 
   local passed = result_for({
     position_id = POS_ID,
-    outcome = { launched = true, exitCode = 0, output = { "line one", "line two" } },
+    outcome = { launched = true, exitCode = 0, output = transcript("line one", "line two") },
   })
   spec.check("passing result status", passed.status, "passed")
   spec.check("passing result output file content", read_file(passed.output), "line one\nline two")
 
   local failed = result_for({
     position_id = POS_ID,
-    outcome = { launched = true, exitCode = 1, output = { "boom" } },
+    outcome = { launched = true, exitCode = 1, output = transcript("boom") },
   })
   spec.check("failing result status", failed.status, "failed")
   spec.check("failing result output file content", read_file(failed.output), "boom")
@@ -273,7 +284,7 @@ do
   local results = adapter.results({
     context = {
       position_id = "demo.FooTest",
-      outcome = { launched = true, exitCode = 0, output = { "ok" } },
+      outcome = { launched = true, exitCode = 0, output = transcript("ok") },
     },
   }, nil, tree)
 
@@ -346,7 +357,7 @@ do
       outcome = {
         launched = true,
         exitCode = 1,
-        output = { "transcript" },
+        output = transcript("transcript"),
         testResults = {
           { className = "demo.FooTest", methodName = "a", methodParameterTypes = "", status = "passed", failureMessage = "", failureLine = -1 },
           { className = "demo.FooTest", methodName = "b", methodParameterTypes = "", status = "failed", failureMessage = "expected true", failureLine = 12 },
@@ -376,7 +387,7 @@ do
     return adapter.results({
       context = {
         position_id = "demo.FooTest#p(java.lang.String)",
-        outcome = { launched = true, exitCode = 1, output = { "t" }, testResults = invocations },
+        outcome = { launched = true, exitCode = 1, output = transcript("t"), testResults = invocations },
       },
     })["demo.FooTest#p(java.lang.String)"]
   end

@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.run;
 import io.github.aglibs.lathe.core.Json;
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -20,15 +21,27 @@ public final class ReplaySession {
 
   private final Process process;
   private final Path resultsSink;
-  private final List<String> output = Collections.synchronizedList(new ArrayList<>());
-  private final CompletableFuture<Void> outputDrained = new CompletableFuture<>();
+  private final List<TranscriptLine> output = Collections.synchronizedList(new ArrayList<>());
+  private final CompletableFuture<Void> stdoutDrained = new CompletableFuture<>();
+  private final CompletableFuture<Void> stderrDrained = new CompletableFuture<>();
 
   ReplaySession(final Process process, final Path resultsSink) {
     this.process = process;
     this.resultsSink = resultsSink;
-    final var reader = new Thread(this::drainOutput, "lathe-replay-output-" + process.pid());
-    reader.setDaemon(true);
-    reader.start();
+    startDrain(process.getInputStream(), TranscriptLine.Stream.STDOUT, stdoutDrained);
+    startDrain(process.getErrorStream(), TranscriptLine.Stream.STDERR, stderrDrained);
+  }
+
+  private void startDrain(
+      final InputStream in,
+      final TranscriptLine.Stream stream,
+      final CompletableFuture<Void> drained) {
+    final var thread =
+        new Thread(
+            () -> drain(in, stream, drained),
+            "lathe-replay-%s-%d".formatted(stream, process.pid()));
+    thread.setDaemon(true);
+    thread.start();
   }
 
   public long pid() {
@@ -44,27 +57,30 @@ public final class ReplaySession {
    * is always the full captured transcript, never a partial read racing the pipe close.
    */
   public CompletableFuture<ReplayOutcome> onExit() {
+    final CompletableFuture<Void> drained = CompletableFuture.allOf(stdoutDrained, stderrDrained);
     return process
         .onExit()
         .thenCombine(
-            outputDrained,
+            drained,
             (exited, ignored) ->
                 ReplayOutcome.completed(
                     exited.exitValue(), List.copyOf(output), readTestResults()));
   }
 
-  private void drainOutput() {
-    try (var in =
-        new BufferedReader(
-            new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+  private void drain(
+      final InputStream in,
+      final TranscriptLine.Stream stream,
+      final CompletableFuture<Void> drained) {
+    try (var reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
       String line;
-      while ((line = in.readLine()) != null) {
-        output.add(line);
+      while ((line = reader.readLine()) != null) {
+        output.add(new TranscriptLine(stream, line));
       }
     } catch (final IOException e) {
-      LOG.log(Level.FINE, e, () -> "[replay] output read failed pid=%d".formatted(process.pid()));
+      LOG.log(
+          Level.FINE, e, () -> "[replay] %s read failed pid=%d".formatted(stream, process.pid()));
     } finally {
-      outputDrained.complete(null);
+      drained.complete(null);
     }
   }
 

@@ -7,7 +7,7 @@ public record ReplayOutcome(
     boolean launched,
     List<String> blockedReasons,
     int exitCode,
-    List<String> output,
+    List<TranscriptLine> output,
     List<TestResult> testResults) {
 
   public ReplayOutcome {
@@ -26,7 +26,7 @@ public record ReplayOutcome(
   }
 
   public static ReplayOutcome completed(
-      final int exitCode, final List<String> output, final List<TestResult> testResults) {
+      final int exitCode, final List<TranscriptLine> output, final List<TestResult> testResults) {
     return new ReplayOutcome(true, List.of(), exitCode, output, testResults);
   }
 }

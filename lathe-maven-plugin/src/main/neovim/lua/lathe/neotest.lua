@@ -292,6 +292,18 @@ local function write_output_file(text)
   return path
 end
 
+--- Flattens a replay transcript -- a list of {stream, text} tagged lines -- into
+--- one string in arrival order. The stdout/stderr tag is preserved on the wire
+--- for later per-stream coloring; this plain flatten is what backs the current
+--- output file.
+local function transcript_text(lines)
+  local parts = {}
+  for _, line in ipairs(lines or {}) do
+    parts[#parts + 1] = line.text
+  end
+  return table.concat(parts, "\n")
+end
+
 local TEST_STATUS = { passed = "passed", failed = "failed", skipped = "skipped" }
 
 --- Rebuilds a method's RunTarget position id from a structured TestResult's
@@ -352,7 +364,7 @@ function M.results(spec, _result, tree)
       result = {
         status = outcome.exitCode == 0 and "passed" or "failed",
         short = "exit=" .. tostring(outcome.exitCode),
-        output = write_output_file(table.concat(outcome.output or {}, "\n")),
+        output = write_output_file(transcript_text(outcome.output)),
       }
     end
   end

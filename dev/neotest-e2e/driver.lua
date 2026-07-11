@@ -109,7 +109,13 @@ nio.run(function()
     end
     captured.ids = ids
 
-    captured.class_results = run_position(adapter, tree:get_key(CLASS_ID))
+    local class_subtree = tree:get_key(CLASS_ID)
+    local class_built = adapter.build_spec({ tree = class_subtree })
+    captured.class_transcript = class_built.context
+      and class_built.context.outcome
+      and class_built.context.outcome.output
+    captured.class_results = adapter.results(class_built, nil, class_subtree)
+
     captured.dir_results = run_position(adapter, dir_tree(package_dir))
 
     local file_results = run_position(adapter, tree)
@@ -142,6 +148,21 @@ for _, id in ipairs(METHOD_IDS) do
   local r = class_results[id]
   spec.check("R3 method status passed: " .. id, r and r.status, "passed")
 end
+
+-- Deliverable 1: the replay transcript arrives as a list of stdout/stderr-tagged
+-- {stream, text} lines, not a flat string list. A passing run legitimately emits
+-- no console output (LatheTestRunner prints only failing tests), so this asserts
+-- the shape, not non-emptiness; the stdout/stderr tagging itself is proven in
+-- ReplaySessionTest. Entries, when present, must carry text.
+local transcript = captured.class_transcript
+spec.check("transcript arrives as a list", type(transcript) == "table", true)
+local entries_well_formed = true
+for _, line in ipairs(transcript or {}) do
+  if type(line.text) ~= "string" then
+    entries_well_formed = false
+  end
+end
+spec.check("transcript entries carry text", entries_well_formed, true)
 
 -- R1: a directory run binds to a single package selector (keyed by the package
 -- name, not the dir path) and reports passed.

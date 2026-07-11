@@ -25,7 +25,7 @@ public final class ReplayLauncher {
     final List<String> argv =
         ReplayTransform.forTest(data, workspaceRoot, runnerClasspath, selection, resultsSink);
     LOG.fine(() -> "[replay] argv=%s".formatted(argv));
-    final Process process = new ProcessBuilder(argv).redirectErrorStream(true).start();
+    final Process process = new ProcessBuilder(argv).start();
     return new ReplaySession(process, resultsSink);
   }
 }

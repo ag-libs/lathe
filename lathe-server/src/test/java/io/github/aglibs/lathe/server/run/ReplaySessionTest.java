@@ -33,13 +33,25 @@ final class ReplaySessionTest {
   }
 
   @Test
-  void onExit_processPrintsOutput_capturesFullTranscript()
+  void onExit_processPrintsStdout_capturesLinesTaggedStdout()
       throws IOException, ExecutionException, InterruptedException, TimeoutException {
     final var session =
         new ReplaySession(new ProcessBuilder("sh", "-c", "echo one; echo two").start(), null);
 
     assertThat(session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).output())
-        .containsExactly("one", "two");
+        .containsExactly(
+            new TranscriptLine(TranscriptLine.Stream.STDOUT, "one"),
+            new TranscriptLine(TranscriptLine.Stream.STDOUT, "two"));
+  }
+
+  @Test
+  void onExit_processPrintsStderr_capturesLinesTaggedStderr()
+      throws IOException, ExecutionException, InterruptedException, TimeoutException {
+    final var session =
+        new ReplaySession(new ProcessBuilder("sh", "-c", "echo err 1>&2").start(), null);
+
+    assertThat(session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).output())
+        .containsExactly(new TranscriptLine(TranscriptLine.Stream.STDERR, "err"));
   }
 
   @Test
@@ -48,10 +60,10 @@ final class ReplaySessionTest {
     final Path sink = dir.resolve("results.ndjson");
     Files.writeString(
         sink,
-        "{\"className\":\"pkg.FooTest\",\"methodName\":\"passes\",\"methodParameterTypes\":\"\","
-            + "\"status\":\"passed\",\"failureMessage\":\"\",\"failureLine\":-1}\n"
-            + "{\"className\":\"pkg.FooTest\",\"methodName\":\"fails\",\"methodParameterTypes\":\"\","
-            + "\"status\":\"failed\",\"failureMessage\":\"boom\",\"failureLine\":12}\n",
+        """
+        {"className":"pkg.FooTest","methodName":"passes","methodParameterTypes":"","status":"passed","failureMessage":"","failureLine":-1}
+        {"className":"pkg.FooTest","methodName":"fails","methodParameterTypes":"","status":"failed","failureMessage":"boom","failureLine":12}
+        """,
         StandardCharsets.UTF_8);
     final var session = new ReplaySession(new ProcessBuilder("true").start(), sink);
 
@@ -75,9 +87,10 @@ final class ReplaySessionTest {
     final Path sink = dir.resolve("results.ndjson");
     Files.writeString(
         sink,
-        "not json at all\n"
-            + "{\"className\":\"pkg.FooTest\",\"methodName\":\"passes\",\"methodParameterTypes\":\"\","
-            + "\"status\":\"passed\",\"failureMessage\":\"\",\"failureLine\":-1}\n",
+        """
+        not json at all
+        {"className":"pkg.FooTest","methodName":"passes","methodParameterTypes":"","status":"passed","failureMessage":"","failureLine":-1}
+        """,
         StandardCharsets.UTF_8);
     final var session = new ReplaySession(new ProcessBuilder("true").start(), sink);
 
