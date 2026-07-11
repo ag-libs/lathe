@@ -384,6 +384,8 @@ function M.results(spec, _result, tree)
       results[node:data().id] = results[node:data().id] or result
     end
   end
+
+  M._refresh_docked_output()
   return results
 end
 
@@ -459,84 +461,145 @@ local function ensure_jump_keymaps(bufnr)
   end
 end
 
---- Highlights the `File.java:line` span so navigation is visible without
---- changing the line's text -- copying the transcript still copies exactly
---- what the replay JVM printed. Re-reads the line's live content rather than
---- trusting the text captured at scan start: decorate_stack_frames yields on
---- an LSP round-trip per unresolved class, and a terminal-channel buffer
---- (neotest renders output via nvim_open_term, not plain nvim_buf_set_lines)
---- can still be reflowing content on the main loop while that's happening,
---- so a line's length by the time this runs is not guaranteed to match what
---- was read at scan start.
---- Underlines the `File.java:line` span of a (possibly terminal-wrapped) frame.
---- `frame_line` is one unwrap() entry: its joined `text` plus the physical grid
---- `rows` it spans. The span's byte offset in the joined text maps to a physical
---- row/col via `width` (the wrap column); the extmark end is clamped to that
---- row so a span straddling a wrap boundary still gets a visible cue.
-local function highlight_frame_span(bufnr, frame_line, frame, width)
+--- Underlines the `File.java:line` span of a resolved frame. `frame_line` is
+--- one unwrap() entry: `text` is the rejoined logical line and `rows` are the
+--- physical grid rows it spans. The span is located in the joined text, then
+--- projected back onto the physical rows -- clamped to each row -- so it is
+--- underlined even when a terminal wrap splits it across a row boundary, while
+--- still marking only the file:line, not the whole frame. Returns whether any
+--- extmark was placed.
+local function highlight_frame_span(bufnr, frame_line, frame)
   local span = ("%s:%d"):format(frame.file, frame.line)
-  local offset = frame_line.text:find(span, 1, true)
-  if not offset then
-    return
+  local start = frame_line.text:find(span, 1, true)
+  if not start then
+    return false
   end
 
-  local row_index = width > 0 and math.floor((offset - 1) / width) or 0
-  local row0 = frame_line.rows[row_index + 1] - 1
-  local col0 = width > 0 and (offset - 1) % width or (offset - 1)
-  local row_text = vim.api.nvim_buf_get_lines(bufnr, row0, row0 + 1, false)[1]
-  if not row_text then
-    return
+  local span_start = start - 1
+  local span_end = span_start + #span
+  local consumed = 0
+  local placed = false
+  for index, row in ipairs(frame_line.rows) do
+    -- Segment against the row text captured at unwrap time, not a fresh
+    -- nvim_buf_get_lines: the terminal buffer can reflow between the scan and
+    -- here, and a re-read would no longer line up with frame_line.text.
+    local row_len = #frame_line.texts[index]
+    local seg_start = math.max(span_start, consumed)
+    local seg_end = math.min(span_end, consumed + row_len)
+    if seg_start < seg_end then
+      pcall(vim.api.nvim_buf_set_extmark, bufnr, STACKTRACE_NS, row - 1, seg_start - consumed, {
+        end_col = seg_end - consumed,
+        hl_group = STACKTRACE_HL,
+      })
+      placed = true
+    end
+
+    consumed = consumed + row_len
   end
 
-  vim.api.nvim_buf_set_extmark(bufnr, STACKTRACE_NS, row0, col0, {
-    end_col = math.min(col0 + #span, #row_text),
-    hl_group = STACKTRACE_HL,
-  })
+  return placed
+end
+
+-- The neotest-output terminal buffer renders asynchronously, so the FileType
+-- hook can fire before the transcript is in the grid. Re-scan a few times until
+-- a frame appears (or the buffer really has none) rather than decorating once
+-- against empty content.
+local DECORATE_MAX_ATTEMPTS = 12
+local DECORATE_RETRY_MS = 50
+
+--- Collects the frames in a neotest-output buffer, rejoining terminal-wrapped
+--- rows first. Returns a list of { frame = <parse_frame result>, line = <unwrap
+--- entry> }. The wrap width is the longest line in the buffer: the terminal
+--- renders at whatever window was current when output was sent (a narrow split,
+--- say), so it is NOT reliably vim.o.columns, but every wrapped row is exactly
+--- that width, so the longest line reveals it empirically.
+local function frames_in_buffer(bufnr)
+  local raw = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  local width = 0
+  for _, line in ipairs(raw) do
+    width = math.max(width, #line)
+  end
+
+  local frames = {}
+  for _, line in ipairs(stacktrace().unwrap(raw, width)) do
+    local frame = stacktrace().parse_frame(line.text)
+    if frame then
+      frames[#frames + 1] = { frame = frame, line = line }
+    end
+  end
+
+  return frames
+end
+
+--- Identity of a frame's class for resolution caching: the simple name alone
+--- would collide for same-named classes in different packages, which
+--- pick_candidate distinguishes by package.
+local function frame_key(frame)
+  return frame.simple_name .. "#" .. frame.package
+end
+
+--- Resolves the source location of each distinct class in `frames` via
+--- workspace/symbol. Returns frame_key -> location (or false). Runs in an nio
+--- context; this is the only async step, so it is kept separate from the (fast,
+--- synchronous) highlight pass that follows a fresh re-scan.
+local function resolve_frames(client, bufnr, frames)
+  local resolved = {}
+  for _, entry in ipairs(frames) do
+    local frame = entry.frame
+    if resolved[frame_key(frame)] == nil then
+      local _err, symbols = client.request.workspace_symbol({ query = frame.simple_name }, bufnr)
+      local candidate = stacktrace().pick_candidate(frame, symbols)
+      resolved[frame_key(frame)] = candidate and candidate.location or false
+    end
+  end
+
+  return resolved
 end
 
 --- Scans one already-rendered neotest-output buffer for stack frames and
 --- resolves each via the standard workspace/symbol request -- no new
 --- server-side command, no metadata recorded when the transcript was
 --- written; resolution works from the frame text alone (§4).
-local function decorate_stack_frames(bufnr)
+local function decorate_stack_frames(bufnr, attempt)
+  attempt = attempt or 1
+  if not vim.api.nvim_buf_is_valid(bufnr) then
+    return
+  end
+
+  local frames = frames_in_buffer(bufnr)
+  if #frames == 0 then
+    if attempt < DECORATE_MAX_ATTEMPTS then
+      vim.defer_fn(function()
+        decorate_stack_frames(bufnr, attempt + 1)
+      end, DECORATE_RETRY_MS)
+    end
+
+    return
+  end
+
   local client = lathe_client()
   if not client then
     return
   end
 
   nio().run(function()
-    local raw = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-    -- neotest renders output into a terminal buffer, which hard-wraps a frame
-    -- longer than the render window across grid rows. The wrap width is NOT
-    -- reliably vim.o.columns: the terminal renders at whatever window was
-    -- current when the output was sent (a narrow split, for instance), so a
-    -- 119-column editor can still wrap at 62. Every wrapped row is exactly the
-    -- wrap width, so the longest line in the buffer is that width empirically.
-    local width = 0
-    for _, line in ipairs(raw) do
-      width = math.max(width, #line)
+    local resolved = resolve_frames(client, bufnr, frames)
+
+    -- Re-scan after the async resolution: a terminal buffer can reflow while
+    -- the LSP request is in flight, so highlight against a fresh, self-
+    -- consistent read rather than the frames captured before resolution.
+    if not vim.api.nvim_buf_is_valid(bufnr) then
+      return
     end
 
-    local logical = stacktrace().unwrap(raw, width)
-    local resolved_by_class = {}
     local locations = {}
     frame_locations[bufnr] = locations
-
-    for _, frame_line in ipairs(logical) do
-      local frame = stacktrace().parse_frame(frame_line.text)
-      if frame then
-        local cache_key = frame.simple_name .. "#" .. frame.package
-        if resolved_by_class[cache_key] == nil then
-          local _err, symbols = client.request.workspace_symbol({ query = frame.simple_name }, bufnr)
-          resolved_by_class[cache_key] = stacktrace().pick_candidate(frame, symbols) or false
-        end
-
-        local candidate = resolved_by_class[cache_key]
-        if candidate then
-          highlight_frame_span(bufnr, frame_line, frame, width)
-          for _, row in ipairs(frame_line.rows) do
-            locations[row] = candidate.location
-          end
+    for _, entry in ipairs(frames_in_buffer(bufnr)) do
+      local location = resolved[frame_key(entry.frame)]
+      if location then
+        highlight_frame_span(bufnr, entry.line, entry.frame)
+        for _, row in ipairs(entry.line.rows) do
+          locations[row] = location
         end
       end
     end
@@ -548,10 +611,12 @@ end
 local MAX_OUTPUT_SPLIT_HEIGHT = 20
 local output_split_win
 
+local function output_split_is_open()
+  return output_split_win ~= nil and vim.api.nvim_win_is_valid(output_split_win)
+end
+
 local function output_split_is_focused()
-  return output_split_win
-    and vim.api.nvim_win_is_valid(output_split_win)
-    and vim.api.nvim_get_current_win() == output_split_win
+  return output_split_is_open() and vim.api.nvim_get_current_win() == output_split_win
 end
 
 --- Opens the last run's output in a docked split rather than output.lua's
@@ -578,6 +643,31 @@ function M.open_output(opts)
   })
 
   neotest_api().output.open(open_opts)
+end
+
+local refresh_pending = false
+
+--- Keeps the docked output split current across runs. output.lua only rebuilds
+--- its buffer when it has no tracked window, so a split left open shows the
+--- first run's output forever. When a run finishes (called from results()),
+--- close the split and reopen it -- deferred one tick so neotest's last-run
+--- bookkeeping has settled, coalesced so a multi-spec run refreshes once, and
+--- with enter=false so focus stays in the editor. No-op when the split is
+--- closed, so users who don't dock output are unaffected.
+function M._refresh_docked_output()
+  if refresh_pending or not output_split_is_open() then
+    return
+  end
+
+  refresh_pending = true
+  vim.schedule(function()
+    refresh_pending = false
+    if output_split_is_open() then
+      pcall(vim.api.nvim_win_close, output_split_win, true)
+      output_split_win = nil
+      M.open_output({ enter = false })
+    end
+  end)
 end
 
 -- output.lua's scratch buffers are created via nvim_create_buf(false, true),

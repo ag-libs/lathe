@@ -174,6 +174,12 @@ do
   spec.check("rejoined frame now parses", stacktrace.parse_frame(logical[2].text).simple_name, "DiscountWrapperTest")
   spec.check("trailing short line stays separate", logical[3].text, "tail line")
 
+  -- The per-row texts are captured so the highlighter can segment the file:line
+  -- span across rows without re-reading a (possibly reflowed) terminal buffer:
+  -- texts are parallel to rows and concatenate back to the joined text.
+  spec.check("row texts parallel to rows", #logical[2].texts, #logical[2].rows)
+  spec.check("row texts concatenate to the joined line", table.concat(logical[2].texts), logical[2].text)
+
   -- width <= 0 disables joining (each row is its own logical line).
   spec.check("no-wrap mode keeps rows split", #stacktrace.unwrap(rows, 0), #rows)
 end

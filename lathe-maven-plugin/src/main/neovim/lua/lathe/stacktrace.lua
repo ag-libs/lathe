@@ -85,13 +85,15 @@ function M.unwrap(lines, width)
   while i <= #lines do
     local text = lines[i]
     local rows = { i }
+    local texts = { lines[i] }
     while width > 0 and #lines[i] == width and i < #lines do
       i = i + 1
       text = text .. lines[i]
       table.insert(rows, i)
+      table.insert(texts, lines[i])
     end
 
-    table.insert(logical, { text = text, rows = rows })
+    table.insert(logical, { text = text, rows = rows, texts = texts })
     i = i + 1
   end
 
