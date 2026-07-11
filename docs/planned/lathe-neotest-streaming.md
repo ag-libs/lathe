@@ -75,6 +75,24 @@ arbitrary child `println` output; tagging (for color) is the chosen trade.
 `run.test` args are a JSON object; a later optional `debug`/`suspend` field does not disturb the
 token model or the streaming path. Noted, not built.
 
+### 3.4 A second channel — live per-test results
+
+Verified against the runner: a passing replay run emits *no* console output — `LatheTestRunner`
+writes to stdout only for failing tests (display name + stack trace), while every test's pass/fail
+is written to the NDJSON results sink, flushed as each method finishes. So the console stream
+(§3.1–3.3) carries test `println`s and failure traces but is empty on a clean green run, and the
+IntelliJ-defining "tests light up one by one as the run proceeds" comes from the *sink events*, not
+stdout.
+
+The server therefore streams a second, result channel alongside the console one, over the same run
+token: `ReplaySession` tails the sink as records are appended and emits each as a `lathe/testEvent`
+notification `{token, <TestResult>}` (carrying the server-side `positionId` from Design B, so the
+client knows which position to mark). The adapter marks that position live, mid-run, instead of
+stamping every result at once when `run.test` returns. The final `ReplayOutcome.testResults` read at
+exit stays the authoritative reconciliation, so a missed or late-flushed event still resolves. This
+channel fires on every test regardless of pass/fail, so it is also the deterministically testable
+half of streaming — unlike the console channel, which is empty on green runs.
+
 ## 4. Design B — Relocate id-mapping (thin-adapter)
 
 Add `positionId` to `TestResult`, computed server-side when the NDJSON results are read, by
@@ -97,15 +115,18 @@ position (R2). `dir → package` stays in Lua (it works and is not the pain poin
 Each is its own commit series and is gated green by extending the Phase-1 harness
 (`dev/neotest-e2e.sh`) with a spec for the behavior it lands.
 
-1. **stdout/stderr split** — `ReplayLauncher` stops merging; `ReplaySession` dual-drains into
-   `List<TranscriptLine>`; `ReplayOutcome.output` reshaped; server tests and the Lua `results()`
-   `table.concat` adapt. Server-only, unit-testable; prerequisite for tagged streaming and the O3
-   data.
-2. **Streaming notification + live buffer** — `runToken` arg, `LatheLanguageClient`,
+1. **stdout/stderr split** *(done)* — `ReplayLauncher` stops merging; `ReplaySession` dual-drains
+   into `List<TranscriptLine>`; `ReplayOutcome.output` reshaped; server tests and the Lua
+   `results()` adapt. Server-only, unit-testable; prerequisite for tagged streaming and the O3 data.
+2. **Console streaming notification + live buffer** — `runToken` arg, `LatheLanguageClient`,
    `lathe/testOutput` emission, and the adapter's handler + live docked buffer + stderr color +
    float removal. Delivers O1/O2/O3/O4/O5.
 3. **id-mapping → server** — `positionId` on `TestResult`; adapter simplification (Design B).
-4. **file-run consolidation** — `List<TestSelection>` through `run.test`/`ReplayTransform`; single
+   Prerequisite for deliverable 4.
+4. **Live per-test result events** — `ReplaySession` tails the sink and emits `lathe/testEvent`
+   `{token, <TestResult>}` as each method finishes; the adapter marks that position live, mid-run
+   (§3.4). Delivers the IntelliJ progress feel — experience-spec criterion R6.
+5. **file-run consolidation** — `List<TestSelection>` through `run.test`/`ReplayTransform`; single
    file-run launch (Design C, fixes R2).
 
 ## 7. Risks and open items
@@ -117,4 +138,7 @@ Each is its own commit series and is gated green by extending the Phase-1 harnes
 - **`positionId` normalization fidelity** — the known signature-shape edge cases (generics, arrays,
   varargs, `@ParameterizedTest`) carry over from the structured-results risks; the Java helper gets
   the same unit-test matrix, and unmapped results still fall back to the aggregate as today.
+- **Sink tailing** (deliverable 4) — watching the NDJSON sink for appends mid-run must tolerate
+  partial/last-flushed lines and reconcile against the authoritative whole-file read at exit, so a
+  dropped or half-written event never leaves a position stuck or mis-marked.
 </content>

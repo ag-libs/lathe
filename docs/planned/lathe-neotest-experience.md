@@ -108,6 +108,17 @@ A running test can be stopped.
 `build_spec` call, so neotest's stop may not reach it.
 *Criteria:* stopping a run terminates the replay JVM and clears the running state promptly.
 
+**R6 — Live per-test status.** ⬜
+Tests mark pass/fail one by one *as the run proceeds*, not all at once when it finishes — the
+IntelliJ progress feel.
+*Current:* neotest receives every status together when `run.test` returns, so a long class/package
+run shows a spinner and then an all-at-once update. Verified against the runner, a passing run also
+emits no console output (statuses live in the NDJSON sink, not stdout), so live status can only come
+from streaming the sink's per-test events, not the console.
+*Criteria:* during a multi-method run, each method's gutter/summary status updates as that method
+completes. Delivered by [lathe-neotest-streaming.md](lathe-neotest-streaming.md) deliverable 4
+(`lathe/testEvent`).
+
 ### 3.3 Output and following
 
 **O1 — Live streaming.** ❌
