@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 import org.eclipse.lsp4j.CallHierarchyIncomingCall;
@@ -30,6 +31,7 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
 
   private final Map<Element, TreePath> callerPaths = new LinkedHashMap<>();
   private final Map<Element, List<Range>> callerRanges = new LinkedHashMap<>();
+  private final ExecutableElement targetMethod;
 
   private CallHierarchyIncomingLocator(
       final Trees trees,
@@ -37,14 +39,18 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
       final String content,
       final ReferenceTarget target,
       final Types types,
-      final Elements elements) {
+      final Elements elements,
+      final ExecutableElement targetMethod) {
     super(trees, cu, content, target, types, elements);
+    this.targetMethod = targetMethod;
   }
 
   static List<CallHierarchyIncomingCall> scan(
       final AttributedFileAnalysis analysis, final ReferenceTarget target, final String fileUri)
       throws IOException {
     final var content = sourceContent(analysis);
+    final ExecutableElement targetMethod =
+        target.resolveMethodElement(analysis.elements(), analysis.types());
     final var locator =
         new CallHierarchyIncomingLocator(
             analysis.trees(),
@@ -52,7 +58,8 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
             content,
             target,
             analysis.types(),
-            analysis.elements());
+            analysis.elements(),
+            targetMethod);
     locator.scan(analysis.tree(), null);
     return locator.buildResults(fileUri);
   }
@@ -67,7 +74,7 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
     final var name = node.getName().toString();
     if (!name.equals("this") && !name.equals("super")) {
       final var element = trees.getElement(getCurrentPath());
-      if (target.matches(element, types, elements)) {
+      if (target.matchesWithOverrides(element, types, elements, targetMethod)) {
         final var parent = getCurrentPath().getParentPath().getLeaf();
         if (!(parent instanceof MethodTree)
             && !(parent instanceof VariableTree)
@@ -84,7 +91,7 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
   public Void visitMemberSelect(final MemberSelectTree node, final Void ignored) {
     scan(node.getExpression(), null);
     final var element = SourceLocator.elementAt(trees, getCurrentPath());
-    if (target.matches(element, types, elements)) {
+    if (target.matchesWithOverrides(element, types, elements, targetMethod)) {
       final var parent = getCurrentPath().getParentPath().getLeaf();
       if (parent instanceof final MethodInvocationTree inv && inv.getMethodSelect() == node) {
         final String idName = node.getIdentifier().toString();
@@ -101,7 +108,7 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
   @Override
   public Void visitNewClass(final NewClassTree node, final Void ignored) {
     final var element = trees.getElement(getCurrentPath());
-    if (target.matches(element, types, elements)) {
+    if (target.matchesWithOverrides(element, types, elements, targetMethod)) {
       final var id = node.getIdentifier();
       final String name =
           id instanceof final MemberSelectTree mst
@@ -122,7 +129,7 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
   public Void visitMemberReference(final MemberReferenceTree node, final Void ignored) {
     scan(node.getQualifierExpression(), null);
     final var element = trees.getElement(getCurrentPath());
-    if (target.matches(element, types, elements)) {
+    if (target.matchesWithOverrides(element, types, elements, targetMethod)) {
       final String name = node.getName().toString();
       final long startOff =
           SourceLocator.findIdentifierFrom(content, positions.getStartPosition(cu, node), name);

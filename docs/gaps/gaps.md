@@ -452,180 +452,56 @@ None yet — undecided pending triage.
 
 ---
 
-## EG-042 — Call hierarchy does not resolve from a call site, only from the method's own declaration
+## EG-043 — Type hierarchy from a usage site prepares the item but returns no subtypes
 
 **Status: documented — Target: pending triage**
 
+Re-scoped after live re-verification (2026-07-11). The originally documented symptom — "returns
+nothing / no type hierarchy item at this position" on a usage site — was a **probe-positioning
+artifact**: the old probe `hierarchy "for (HttpFeature"` places the cursor on the `for` keyword,
+which has no `TypeElement`, so `prepareTypeHierarchy` correctly returns nothing. On a genuine
+type-name cursor, prepare **succeeds**. A different, real defect remains, captured below.
+
 ### Observed behaviour
 
-`textDocument/prepareCallHierarchy` returns items when invoked with the cursor on a method's
-declaration, but returns nothing when invoked with the cursor on a call site of that same method —
-confirmed symmetrically for both incoming and outgoing calls.
+With the cursor on a genuine *usage* of a type (a field/parameter/local declared type, resolved
+cross-file from the classpath), `prepareTypeHierarchy` returns the correct item (right interface,
+right FQN) and correct supertypes, but its **subtypes come back empty** — whereas the same type
+queried from its own declaration returns the full subtype set.
 
-```java
-// Declaration — works:
-void handle(ServerRequest req, ServerResponse res) throws Exception;   // ← cursor here: 3 callers found
-
-// Call site of the same method — fails:
-next.handler().handle(request, response);                              // ← cursor here: "(no call hierarchy item at this position)"
+```text
+cursor on the interface's own declaration → item + supertypes + subtypes (e.g. 2 subtypes)
+cursor on a cross-file usage of that type → item + supertypes, but subtypes: (none)   ← defect
 ```
-
-Outgoing calls show the identical shape: `feature.setup(realBuilder)` (a call site) also returns
-"(no call hierarchy item at this position)", while the declaration of the same method
-(`HttpFeature.setup`) resolves correctly.
-
-This means `<leader>ci`/`<leader>co` (`vim.lsp.buf.incoming_calls`/`outgoing_calls` in a Neovim
-client) only work when the cursor happens to be sitting on a method declaration — rarely how someone
-reaches for "who calls this" in practice. The IntelliJ-familiar workflow (cursor on a call you're
-currently looking at, invoke call hierarchy) fails silently instead of erroring, which reads as
-"broken" rather than "wrong position."
 
 ### Root cause (hypothesis)
 
-`SourceAnalysisSession.prepareCallHierarchy` (line 546) resolves the cursor position via the shared
-`resolve(request)` → `SourceLocator.pathAt(trees, tree, offset)`, then calls
-`SourceLocator.elementAt(trees, path)` (`SourceLocator.java:115`) to find the enclosing method
-element, keeping only `ElementKind.METHOD`/`CONSTRUCTOR` results (lines 557-560).
+Not yet pinned, and specifically **not** a position-resolution defect: `elementAt` resolves the
+usage-site `TypeElement` fine (the item prepares), so this is unlike the (invalid) EG-042. The
+subtype set is the only thing that differs by cursor site, which points at the subtype-resolution
+path (`typeHierarchySubtypes` / the workspace type-index lookup / the prepared item's URI-module
+context) behaving differently when the open file is a *user* of the type rather than its *declaration*.
 
-`elementAt` does have an explicit fallback for `MethodInvocationTree` (lines 122-127: if the walked
-path's leaf is a method invocation, resolve via `inv.getMethodSelect()`), so on its face it looks
-designed to handle call sites. Since `resolve()`'s `pathAt` is shared with hover/definition/references
-— all of which correctly resolve from call sites (confirmed: `refs` from a usage site returns real
-results) — the defect is likely specific to how `pathAt`/`elementAt` behave for the exact leaf node
-produced at a call site in this particular caller, not a general position-resolution problem. No
-`LOG.fine(...)` call exists anywhere in the prepare path today, so it isn't traceable from server
-logs alone; pinning the exact failing step needs either a debugger session or added logging.
+Crucially, this does **not** reproduce in the single-file or cross-file (`extraClasspath`) unit
+harness — there, a usage-site prepare resolves subtypes from the `WorkspaceTypeIndex` correctly. So
+the cause lives in live workspace/index/module wiring the harness does not model, and pinning it
+needs a live-probe investigation (or a fuller multi-module test fixture) before a faithful
+regression test can be written.
 
 ### Probe commands
 
 ```bash
-# Works — cursor on the declaration:
-python3 dev/explore.py \
-  ~/git/helidon/webserver/webserver/src/main/java/io/helidon/webserver/http/Handler.java \
-  callers "handle(ServerRequest"
+# Baseline — cursor on the type's own declaration: full supertypes + subtypes.
+python3 dev/explore.py <decl-file> hierarchy "interface <TypeName>"
 
-# Fails — cursor on a call site of the same method:
-python3 dev/explore.py \
-  ~/git/helidon/webserver/webserver/src/main/java/io/helidon/webserver/http/HttpRoutingImpl.java \
-  callers "next.handler().handle"
-
-# Fails symmetrically for outgoing calls from a call site:
-python3 dev/explore.py \
-  ~/git/helidon/webserver/webserver/src/main/java/io/helidon/webserver/http/HttpRoutingImpl.java \
-  callees "feature.setup(realBuilder)"
+# Defect — cursor on a cross-file usage (field/param type): item prepares, subtypes empty.
+python3 dev/explore.py <using-file> hierarchy "<TypeName> <fieldOrParamName>"
 ```
 
 ### Regression targets
 
-None yet — undecided pending triage.
-
----
-
-## EG-043 — Type hierarchy does not resolve from a usage/reference site, only from the type's own declaration
-
-**Status: documented — Target: pending triage**
-
-### Observed behaviour
-
-`textDocument/prepareTypeHierarchy` resolves correctly with the cursor on an interface's own
-declaration (e.g. `public interface HttpFeature`), returning full supertypes/subtypes — but returns
-nothing when the cursor is on a *usage* of that same type elsewhere in the code (a loop variable's
-declared type, a parameter type, etc.).
-
-```java
-public interface HttpFeature extends Supplier<HttpFeature>, ServerLifecycle {   // ← cursor here: works
-                                                                                  //   (2 supertypes, 20 subtypes)
-
-for (HttpFeature feature : features) {                                          // ← cursor here:
-                                                                                  //   "(no type hierarchy item at this position)"
-```
-
-Same shape of defect as EG-042, on the type-hierarchy side: `<leader>ts`/`<leader>ti` only work when
-the cursor happens to be on the type's own declaration, not on any of its (far more common) usage
-sites.
-
-### Root cause (hypothesis)
-
-`SourceAnalysisSession.prepareTypeHierarchy` (line 530) requires `SourceLocator.elementAt(...)` to
-resolve to a `TypeElement` (line 538); if the resolved element isn't a `TypeElement`, it returns
-`List.of()` immediately with no further attempt to map a usage-site reference back to the type it
-refers to. Likely the same underlying class of defect as EG-042 (both share `resolve()`/
-`elementAt`), but confirmed as a separate code path (`prepareTypeHierarchy` vs
-`prepareCallHierarchy`), so it may need an independent fix even if the root-cause pattern is shared.
-
-### Probe commands
-
-```bash
-# Works — cursor on the interface's own declaration:
-python3 dev/explore.py \
-  ~/git/helidon/webserver/webserver/src/main/java/io/helidon/webserver/http/HttpFeature.java \
-  hierarchy "HttpFeature"
-
-# Fails — cursor on a usage of the same type:
-python3 dev/explore.py \
-  ~/git/helidon/webserver/webserver/src/main/java/io/helidon/webserver/http/HttpRoutingImpl.java \
-  hierarchy "for (HttpFeature"
-```
-
-### Regression targets
-
-None yet — undecided pending triage.
-
----
-
-## EG-044 — Call hierarchy does not aggregate calls made through a supertype/interface reference when queried from a concrete override
-
-**Status: documented — Target: pending triage**
-
-### Observed behaviour
-
-Querying incoming calls from an interface method's declaration finds real callers; querying the
-*same logical method* from a concrete class's `@Override` implementation returns zero callers, even
-though those real call sites almost certainly reach this override at runtime through polymorphic
-dispatch via an interface-typed reference.
-
-```java
-// HttpFeature.java — interface declaration:
-void setup(HttpRouting.Builder routing);        // ← callers: 3 found (real call sites)
-
-// HttpRoutingFeature.java — concrete @Override of the same method:
-public void setup(HttpRouting.Builder routing) { ... }   // ← callers: 0 found, despite 61 candidates scanned
-```
-
-All 3 real callers were found via `feature.setup(...)` where `feature` is statically typed as
-`HttpFeature` — none reference `HttpRoutingFeature` by its concrete type. From an IntelliJ-experience
-standpoint this is a significant usability gap: users are used to invoking call hierarchy from
-*either* the interface or an implementation and getting an aggregated, useful answer either way
-(IntelliJ resolves polymorphic call sites into the hierarchy of whichever override you asked about).
-Lathe's current behavior instead makes call hierarchy on an override look "broken" (zero results)
-unless the user knows to jump to the interface declaration first.
-
-### Root cause (hypothesis)
-
-Not yet traced to a specific class. Likely the incoming-calls search (`CallHierarchyIncomingLocator`)
-matches call sites strictly by the exact resolved method (the concrete override), rather than also
-matching call sites statically bound to an interface/supertype method that this override implements.
-A fix likely needs to expand the search to include call sites resolving to any method this override
-transitively implements/overrides. Not yet cross-checked against how Find References handles the
-equivalent override-vs-interface scenario for other symbol kinds.
-
-### Probe commands
-
-```bash
-# Interface declaration — finds real callers:
-python3 dev/explore.py \
-  ~/git/helidon/webserver/webserver/src/main/java/io/helidon/webserver/http/HttpFeature.java \
-  callers "void setup"
-
-# Concrete override of the same method — finds none:
-python3 dev/explore.py \
-  ~/git/helidon/webserver/webserver/src/main/java/io/helidon/webserver/http/HttpRoutingFeature.java \
-  callers "public void setup"
-```
-
-### Regression targets
-
-None yet — undecided pending triage.
+None yet — blocked on a live root-cause; the unit harness does not reproduce the empty-subtypes
+symptom.
 
 ---
 
