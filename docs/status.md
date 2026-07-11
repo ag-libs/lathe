@@ -3,7 +3,7 @@
 This document records the implemented baseline and known user-visible gaps.
 The [roadmap](roadmap.md) defines milestone scope; the [design index](design-index.md) links detailed designs.
 
-Status last reviewed: 2026-07-03.
+Status last reviewed: 2026-07-11.
 
 ## Release State
 
@@ -37,7 +37,7 @@ Maven Central publication is planned for M3.
 | Completion | Implemented with M2 gaps | Member, type, import, constructor, lambda, argument, keyword, and typed-slot completion. Method references and generic-bound receivers remain. |
 | Completion presentation | Implemented | Label details, generic display, receiver substitution, documentation, and import edits. |
 | Signature help | Implemented | Overloads, active parameters, constructors, parameter names, and Javadoc. |
-| Find References | Implemented with M2 gaps | Exact same-file, module, and reactor search with transient closed-file analysis, process-wide compilation admission, work-done progress, optional cancellation, and fatal `Error` handling. External-source scope remains. |
+| Find References | Implemented with M2 gaps | Exact same-file, module, and reactor search with transient closed-file analysis, process-wide compilation admission, work-done progress, optional cancellation, and fatal `Error` handling. Candidate-planning gaps for `var`/chained receivers, same-package generated builders, constructors, and compact-constructor component uses are resolved (FR-011/012/013/014). Generated-code highlight range (FR-010) and external-source scope remain. |
 | Implementation | Implemented | Type implementations use indexed transitive subtypes; method implementations are reactor-only and javac-validated. |
 | Type hierarchy | Implemented | Prepare, direct supertypes, and direct subtypes cover source-backed reactor, dependency, and JDK types. |
 | Call hierarchy | Implemented | `prepareCallHierarchy`, `incomingCalls`, and `outgoingCalls`. Incoming calls reuse the reference candidate pipeline with work-done progress and cancellation. |
@@ -46,7 +46,7 @@ Maven Central publication is planned for M3.
 | Folding ranges | Implemented | Java structural folding is available. |
 | Semantic tokens | Partially implemented | Static/deprecated members, enum constants, type parameters, and annotations are covered. Class and import highlighting remain planned for M2. |
 | Full-document formatting | Implemented | google-java-format also reorders and removes imports. |
-| On-type formatting | M2 planned | Stub is not advertised; conservative indentation remains planned. |
+| On-type formatting | M3 planned | Stub is not advertised; conservative indentation remains planned (EG-028, depends on range formatting EG-029). |
 | Code actions | Implemented with M1 gaps | Missing imports, add-throws, try/catch wrapping, variable declaration, and missing-method stubs all work. New reactor-type freshness for missing-import actions (CA-4) remains. |
 | Rename | M2 planned | Existing reference identity and roles provide part of the foundation. |
 | Inlay hints | M2 planned | Not implemented. |

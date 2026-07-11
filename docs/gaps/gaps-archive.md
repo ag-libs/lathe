@@ -458,6 +458,420 @@ printf 'refs <line>:<col>\n' \
 
 ---
 
+## EG-045 — Hover on a component reference inside a record's compact constructor resolves to the callee's parameter
+
+**Status: done — Target: M3**
+
+Fixed: `SourceLocator.masksParameterContext` now suppresses the argument param-hint for a record's
+canonical-constructor `PARAMETER` (a compact-ctor component reference), mirroring the existing
+`FIELD` mask, so hover falls through to normal resolution and shows the component. Verified live.
+Regression targets below are implemented and passing.
+
+### Observed behaviour
+
+Hover on a bare reference to a record component **inside the compact constructor body** returns the
+wrong symbol: it resolves to the formal parameter of the method the component is passed to, not to the
+component itself.
+
+```java
+public record Config(String bucket) {
+    public Config {
+        check(bucket, "bucket");   // ← hover on `bucket` → "Object value" (check's parameter!)
+    }
+    static void check(Object value, String name) {}
+}
+```
+
+Hover is correct everywhere else the same component appears — verified against a validation workspace:
+
+| Hover position | Result | Correct? |
+|---|---|---|
+| component in the record header | the component (`T bucket`) | ✓ |
+| accessor call `x.bucket()` | the accessor (`T bucket()`) | ✓ |
+| ordinary method argument (a local/param elsewhere) | that argument's own type | ✓ |
+| **bare component ref inside the compact constructor** | the *callee's* first parameter (`Object value`) | ✗ |
+
+At the same failing position, `definition` correctly jumps to the component declaration, so the
+symbol is resolvable — only the hover path mis-resolves it. Shares its trigger with the references
+defect [FR-014](#fr-014--find-references-from-a-component-reference-inside-a-records-compact-constructor-returns-only-that-one-occurrence),
+and belongs to the same resolve-from-usage-site family as EG-042 / EG-043.
+
+### Root cause (hypothesis)
+
+The bare reference is the implicit canonical-constructor `PARAMETER`, whose source position overlaps
+the record header (the backing field and the canonical-ctor parameter share the header range). The
+hover position→element path appears not to find that parameter's attributed element at the in-body
+position and falls back to the enclosing `MethodInvocationTree`, resolving to the invoked method's
+formal parameter (`check(Object value, …)` → `value`). `definition` uses a different resolver
+(`DeclarationLocator`) and is unaffected — so this is specific to the hover resolution path, not the
+shared `resolve()`/`elementAt` position mapping (ordinary arguments hover correctly).
+
+### Probe commands
+
+```bash
+# `bucket,` lands the cursor on the compact-constructor use.
+# Expected: the component's type. Bug: the callee's parameter ("Object value").
+printf 'hover "bucket,"\n' | python3 dev/explore.py /path/to/workspace/.../Config.java
+```
+
+### Regression targets
+
+- `HoverTest.hover_recordComponentInCompactConstructor_resolvesComponentNotCalleeParameter`
+  (positive — the failing case)
+- `HoverTest.hover_ordinaryMethodArgument_resolvesArgumentNotCalleeParameter`
+  (boundary — ordinary arguments must keep resolving to the argument, not the callee's parameter)
+
+---
+
+## EG-046 — Hover on a call argument shows synthetic `arg0` parameter names while signature help shows the real names
+
+**Status: done — Target: M3**
+
+Fixed: the `SourceAnalysisSession.hover` argument param-hint branch now formats through the shared
+`resolveParamNames` + `isSyntheticName` + `TypeDisplayFormatter` path (via `HoverFormatter.formatParam`),
+matching signature help and method-name hover; the divergent `HoverFormatter.formatParameter` was
+removed. Verified live on line 84 of the validation workspace — string-literal arguments now show
+`name` / `defaultObj` instead of `arg0` / `arg1`. Regression target below is implemented and passing.
+
+### Observed behaviour
+
+Hovering an argument at a call site shows a synthetic parameter name (`arg0`, `arg1`, …) whenever the
+callee comes from a dependency or the JDK compiled without javac `-parameters`. Signature help on the
+same call shows the **real** names (and highlights the active parameter). Confirmed against a
+validation workspace, hovering the arguments of a JDK call `Objects.requireNonNullElse(x, 10)`:
+
+| Probe | Result |
+|---|---|
+| `hover` on argument 0 (`x`) | `T arg0` |
+| `hover` on argument 1 (`10`) | `T arg1` |
+| `sig` on the call | `T requireNonNullElse([T obj], T defaultObj)` — real names, active parameter highlighted |
+
+The two features disagree about the same method's parameters: hover surfaces the raw class-file
+placeholder, signature help surfaces the declared source name.
+
+### Root cause — and why signature help is correct
+
+The `arg0` class-file limitation was already solved once (see
+`docs/done/lathe-signature-help.md`): when a class file lacks a `MethodParameters` attribute, javac
+synthesises `arg0`/`arg1`, so `SourceParser.resolveParamNames` does an on-demand, AST-only parse of
+the callee's `.java` source (from the dependency / JDK source cache) to recover the declared names,
+and `SourceParser.isSyntheticName` suppresses any remaining `argN` (falling back to type-only
+display). Both consumers that show good names wire this in:
+
+- **Signature help** — `SignatureHelpResolver` calls `resolveParamNames` (line ~248). **This is why it
+  is correct.**
+- **Method-name hover** — `SourceAnalysisSession.hover` (line ~239) resolves `sourceParamNames` and
+  passes them to `HoverFormatter.format` → `formatParam`, which also applies `isSyntheticName`.
+
+The **argument param-hint** branch of hover never got this treatment. When the cursor is on an
+argument, `SourceAnalysisSession.hover` (lines ~221-225) takes an early branch on
+`SourceLocator.parameterElementAt` and formats via a *separate* method, `HoverFormatter.formatParameter`:
+
+```java
+public static String formatParameter(final VariableElement param) {
+  return "```java\n%s %s\n```".formatted(param.asType(), param.getSimpleName());  // raw name + raw type
+}
+```
+
+It prints `param.getSimpleName()` directly — no `resolveParamNames`, no `isSyntheticName` suppression,
+no `TypeDisplayFormatter`. So it shows the class-file placeholder `arg0`, and the type without the
+display formatting the rest of hover uses. It is simply a path that drifted from the resolution the
+other two share.
+
+### Proposed fix
+
+Format the param-hint through the same resolution the other paths use. From the `param` returned by
+`parameterElementAt`, recover the callee and index without changing its signature —
+`callee = (ExecutableElement) param.getEnclosingElement()`,
+`idx = callee.getParameters().indexOf(param)` — then resolve
+`parser.resolveParamNames(callee, allRoots)`, apply `isSyntheticName` suppression, and format with a
+`TypeDisplayFormatter` (reusing `HoverFormatter.formatParam`). Delete the divergent
+`formatParameter`. This makes argument hover consistent with signature help and method-name hover.
+
+Shares the param-hint code path with [EG-045](#eg-045--hover-on-a-component-reference-inside-a-records-compact-constructor-resolves-to-the-callees-parameter)
+(which fires the branch for the wrong element); the two are best fixed together.
+
+### Probe commands
+
+```bash
+# Hover an argument of a JDK/dependency call whose class file lacks -parameters, then compare to sig.
+# Expected (after fix): hover shows the same real names as sig; today it shows argN.
+printf 'hover "<arg-token>"\nsig after "requireNonNullElse("\n' \
+  | python3 dev/explore.py /path/to/workspace/.../SomeFile.java
+```
+
+### Regression targets
+
+- `HoverTest.hover_classFileDependencyArgument_showsSourceParameterName`
+  (positive — argument hover shows the resolved source name, mirroring
+  `signatureHelp_classFileDependency_showsSourceParameterNames`)
+- `HoverTest.hover_classFileArgumentNoSource_fallsBackToTypeOnly`
+  (boundary — when no source is resolvable, suppress `argN` and show type-only, never the placeholder)
+
+---
+
+## FR-011 — Method call on a `var`/chained receiver is dropped when the receiver type is never spelled
+
+**Status: done — Target: M2**
+
+Fixed: candidate planning no longer narrows method targets to the override family, so a call on a `var`/chained/unspelled receiver is compiled and matched. Merged in 0b9d366; regression targets below pass.
+
+### Observed behaviour
+
+Find References on a record component reports **no matches outside the declaring record**, even though
+a genuine call site exists. Reproduced against a validation workspace: a record accessor is invoked
+on a receiver whose type is inferred and never written in the calling file.
+
+```java
+// FeatureConfig.java — the record; component 'whitelist' has an implicit accessor whitelist()
+public record FeatureConfig(boolean enabled, List<String> whitelist, ...) { ... }
+
+// RequestContext.java — the call site, in a different module. Note: FeatureConfig is NEVER spelled
+// here (no import, no explicit type); its type flows in through `var` from a getter chain.
+final var config = getConfig().feature();          // config's type FeatureConfig is inferred
+return config != null
+    && config.enabled()
+    && (msisdn == null || !config.whitelist().contains(msisdn));   // <-- missed reference
+```
+
+Clicking `whitelist` in the record returns only the declaration; `config.whitelist()` above is not
+reported.
+
+### Root cause
+
+The defect is in **candidate planning**, not in reference matching. `ReferenceLocator`/
+`ReferenceTarget.matches` would match `config.whitelist()` correctly — but the file is pruned before
+javac ever compiles it.
+
+1. The record component is normalised to its public accessor method (`ReferenceTarget.from` →
+   `recordAccessorFor`), producing a `METHOD` target with `overrideFamilyBounded = true` and empty
+   `overriddenDeclarers` (a record accessor overrides nothing).
+2. `ReferenceCandidatePlanner.planMethodCandidates` (`ReferenceCandidatePlanner.java:116-131`) takes
+   the override-family narrowing path and calls `narrowToFamily`.
+3. `narrowToFamily` (`ReferenceCandidatePlanner.java:153-170`) **intersects** the files that spell the
+   member simple name (`whitelist`) with the files that spell a family type's simple name
+   (`FeatureConfig`). The call site spells `whitelist` but not `FeatureConfig`, so it is filtered out.
+
+The override-family heuristic assumes a genuine call site textually spells the receiver's static type
+name (the doc comment at `ReferenceCandidatePlanner.java:105-114` explicitly relies on
+`baseConfig.name()` spelling the type). That assumption breaks whenever the receiver type is never
+written: `var` bound from a factory/getter chain, a chained call (`getConfig().feature().whitelist()`),
+a generic type variable, or a wildcard capture. The result is a **false negative** — a real reference
+silently pruned.
+
+This is not record-specific; any public-method reference has the same blind spot. Records merely make
+it common, because config accessors are routinely reached through `var`/chained getters.
+
+### Fix (approach A — drop override-family narrowing for methods)
+
+Method targets now use the **broad simple-name candidate set** — every file that spells the method's
+simple name — with no override-family narrowing. `planMethodCandidates`, `overrideFamilyBounded`, and
+the `java.lang.Object` special-case are removed from the method path (`overrideFamily` /
+`narrowToFamily` remain for fields, constructors, and enum constants).
+
+Rationale: the narrowing was a candidate-pruning optimization, not a correctness mechanism — javac
+still decides real matches in `ReferenceLocator`. It was the source of the false negative, and no
+purely textual heuristic can tell a genuine call on an unspelled receiver (`config.whitelist()`, want
+kept) from an unrelated same-named method (want dropped) without compiling. Reference search is an
+explicit, batched, cancellable, progress-reported action, and the batch-compilation path is cheap
+enough that compiling every file spelling the name is an acceptable trade for full correctness and a
+simpler planner. A member-invocation index (former "approach B") was considered but rejected as it
+adds a second index dimension and a position-aware text scan for no correctness gain over A.
+
+Trade-off: a reference search on a very common method name (`get`, `size`, `toString`) compiles more
+files than before. Mitigated by batching + cancellation; if a pathological case ever bites, a
+high-threshold cap (`size > N ? narrow : broad`) can be reintroduced without an index change.
+
+### Regression targets
+
+- `ReferenceCandidatePlannerTest.planCandidates_methodInvokedOnUnspelledReceiver_includesCallSite`
+  (positive — a call on a `var`/unspelled receiver is a candidate)
+- `ReferenceCandidatePlannerTest.planCandidates_methodNameNeverSpelled_excludesFile`
+  (negative — a file that never spells the method's simple name is not a candidate)
+
+---
+
+## FR-012 — Type references miss a same-package generated file that uses the type without importing it
+
+**Status: done — Target: M2**
+
+Fixed: the same-package candidate filter now also considers the generated-sources root, so a generated builder in the same package (no import) is found. Merged in 4cc7196; regression targets below pass.
+
+### Observed behaviour
+
+Find References on a `@Builder` record **type** does not report the generated builder, even though the
+builder plainly references the record. Reproduced against a validation workspace: the record's
+generated builder lives in the same package, in the annotation-processor output root, and names the
+record without an import.
+
+```java
+// FeatureConfig.java — src/main/java, the annotated record
+package com.example.app.config;
+public record FeatureConfig(boolean enabled, List<String> whitelist, ...) { ... }
+
+// FeatureConfigBuilder.java — target/generated-sources/annotations, SAME package, NO import of the
+// record; references the type by simple name only.
+package com.example.app.config;
+public final class FeatureConfigBuilder {
+  public FeatureConfig build() { return new FeatureConfig(...); }   // <-- missed type reference
+}
+```
+
+References on `FeatureConfig` return the source-tree usages but omit the generated builder.
+
+### Root cause
+
+Candidate-planning prune, not a matching defect. The generated builder **is** in the candidate index
+(`ReferenceCandidateIndex.allSourceRoots` indexes `originalGenSourcesDir` alongside `sourceRoots`), so
+it appears in `simpleCandidates` for the token `FeatureConfig`. But `planTypeCandidates`
+(`ReferenceCandidatePlanner.java:64-103`) keeps a same-package file only through
+`isInPackage(path, config.sourceRoots(), packageRel)` (`ReferenceCandidatePlanner.java:101, 177-182`),
+which resolves `packageRel` against **`config.sourceRoots()` only** — never
+`config.originalGenSourcesDir()`. The builder's parent directory sits under the generated-sources
+root, matches no regular source root, and is pruned.
+
+The import-token branch still finds generated files that use an explicit or wildcard import, so only
+the **same-package, no-import** shape is lost — which is exactly how the generated builder (and
+updater/companion types) reference the record they belong to.
+
+### Proposed fix
+
+Have the same-package filter consider the generated-sources root in addition to the regular source
+roots: resolve `packageRel` against `config.sourceRoots()` ∪ `{config.originalGenSourcesDir()}` (when
+non-null). Minimal and localized to `planTypeCandidates` / `isInPackage`.
+
+### Regression targets
+
+- `ReferenceCandidatePlannerTest.planCandidates_typeUsedInSamePackageGeneratedSource_includesGeneratedFile`
+  (positive — fails before the fix)
+- `ReferenceCandidatePlannerTest.planCandidates_typeInGeneratedSourceDifferentPackage_excludesFile`
+  (negative — generated-root awareness must still respect package boundaries)
+
+---
+
+## FR-013 — Constructor references select no candidates because the target is keyed on `<init>`
+
+**Status: done — Target: M2**
+
+Fixed: a CONSTRUCTOR target now keys candidate lookup on the declaring type's simple name instead of `<init>`, so `new Type(...)` sites (including the generated builder) are found. Merged in 4cc7196; regression targets below pass.
+
+### Observed behaviour
+
+Find References on a record/class **constructor** returns nothing outside the declaring file — in
+particular it omits the generated builder's `new FeatureConfig(...)` call. Reproduced against a
+validation workspace:
+
+```java
+// FeatureConfigBuilder.java — generated
+public FeatureConfig build() {
+  return new FeatureConfig(enabled, whitelist, ...);   // <-- missed constructor reference
+}
+```
+
+### Root cause
+
+Candidate-planning prune. A constructor's `ReferenceTarget.simpleName` is javac's constructor name
+**`<init>`** (`ReferenceTarget.from` uses `element.getSimpleName()` for the `CONSTRUCTOR` case,
+`ReferenceTarget.java:54-78`). `planCandidates` opens with
+`simpleCandidates = index.candidateUris(target.simpleName())` — i.e. `candidateUris("<init>")`.
+`<init>` is never an identifier token in any source file, so the set is **empty**, and the guard at
+`ReferenceCandidatePlanner.java:31-33` returns `Set.of()` before the constructor branch
+(`ReferenceCandidatePlanner.java:49-51`) ever runs. Every constructor reference search therefore
+selects zero external candidates; the `new FeatureConfig(...)` call site is never compiled or matched.
+
+### Proposed fix
+
+For a `CONSTRUCTOR` target, key the initial candidate lookup on the **declaring type's simple name**
+(derived from `target.qualifiedName()`), not `target.simpleName()`. The existing constructor branch
+`narrowToFamily(Set.of(target.qualifiedName()), …)` then bounds the search to files spelling the type
+name — the generated builder among them. Pairs with FR-012 so the same-package generated builder both
+survives the simple-name lookup and passes the package filter.
+
+### Regression targets
+
+- `ReferenceCandidatePlannerTest.planCandidates_constructorInvokedViaNew_includesCallSite`
+  (positive — fails before the fix; target keyed on `<init>`)
+- `ReferenceCandidatePlannerTest.planCandidates_constructorOwnerNameNotSpelled_excludesFile`
+  (negative — a file that never spells the type stays out)
+
+---
+
+## FR-014 — Find References from a component reference inside a record's compact constructor returns only that one occurrence
+
+**Status: done — Target: M2**
+
+Fixed: `ReferenceTarget.recordAccessorFor` now normalises the implicit canonical-constructor
+`PARAMETER` to the component's accessor (as it already did for `RECORD_COMPONENT` and the backing
+`FIELD`), so Find References is symmetric from the header and the compact-ctor use. Verified live —
+the compact-ctor query now returns all sites. Regression targets below are implemented and passing.
+
+### Observed behaviour
+
+Find References is asymmetric for a record component. Invoked from the component in the record
+header it finds every use; invoked from a bare reference to that same component **inside the compact
+constructor body** it returns only that one occurrence.
+
+```java
+// Config.java — component `bucket` has an implicit accessor bucket()
+public record Config(String bucket) {
+    public Config {
+        check(bucket, "bucket");   // ← Find References here: only this line is reported
+    }
+    static void check(Object value, String name) {}
+    String read() { return bucket; }   // this genuine use is missed from the compact-ctor query
+}
+```
+
+From the header `bucket`: all uses (backing-field reads, the compact-ctor reference, external
+accessor calls). From the compact-ctor `bucket`: a single self-match, and the candidate planner only
+even evaluates one candidate (the search is silently file-scoped).
+
+`definition` from the same compact-ctor position resolves correctly to the component; only
+`references` collapses. Shares its trigger with the hover defect [EG-045](#eg-045--hover-on-a-component-reference-inside-a-records-compact-constructor-resolves-to-the-callees-parameter).
+
+### Root cause
+
+`SourceAnalysisSession.resolveTarget` resolves the cursor via `SourceLocator.elementAt`, which inside
+the compact constructor returns the **implicit canonical-constructor `PARAMETER`** (javac models each
+record component as a same-named formal parameter of the canonical constructor). `ReferenceTarget.from`
+then calls `recordAccessorFor` (`ReferenceTarget.java:109`), which normalises a `RECORD_COMPONENT`
+element and a record's backing `FIELD` to the public accessor — **but not the canonical-constructor
+`PARAMETER`**. So `from` falls through to the `default` branch and builds a `kind=PARAMETER`,
+`scope=DECLARING_FILE` target that matches only same-named parameters in the one file → the single
+self-hit.
+
+The matching side already handles this member: `matchesRecordComponentMember`
+(`ReferenceTarget.java:246`) explicitly counts "the canonical constructor `PARAMETER` that javac
+reports for compact/canonical constructor bodies" — but that only fires when the target was built
+**from the accessor**. The gap is purely entry-point normalisation, which is why the search works
+from the declaration and not from the use. Every existing record test in `ReferenceLocatorTest` builds
+its target from the header, so the asymmetry was never exercised.
+
+### Proposed fix
+
+Extend `recordAccessorFor` (threading `Types` through its single caller in `from`) to also normalise a
+canonical-constructor `PARAMETER` of a record to its component's accessor, reusing the existing
+`enclosingRecord`, `isCanonicalConstructorParameter`, and `componentNamed` helpers. Single-class change
+in `ReferenceTarget`; no public API change, no new abstraction. Makes references (and the shared
+`resolveTarget` consumers) symmetric from either end.
+
+### Probe commands
+
+```bash
+# `bucket,` (component + comma) lands the cursor on the compact-constructor use, not the header.
+# Expected: all reference sites. Bug: a single self-match.
+printf 'refs "bucket,"\n' | python3 dev/explore.py /path/to/workspace/.../Config.java
+```
+
+### Regression targets
+
+- `ReferenceLocatorTest.recordComponent_fromCompactConstructorParameterUse_findsAllReferences`
+  (positive — target built from the compact-ctor use finds the same sites as from the header)
+- `ReferenceLocatorTest.recordComponent_fromNonCanonicalConstructorParameter_notNormalized`
+  (negative — a non-canonical constructor's same-named parameter stays file-scoped, not normalised)
+
+---
+
 # Completion (CQ) — resolved
 
 ## CQ-0043 — Argument-position type filtering excludes boolean returns but lets other mismatched types through
