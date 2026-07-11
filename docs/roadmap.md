@@ -78,10 +78,13 @@ See [gaps.md](gaps/gaps.md).
 - Add basic `module-info.java` directive completion for module names, exported/opened packages,
   service types, provider types, directive keywords, and module annotation contexts (CQ-0041).
 
-### Code-action and index freshness gaps
+### Code-action and index freshness gaps ✓
 
 - Implement `MissingMethodImplProvider` for unimplemented abstract methods (CA-3).
 - Make new and renamed reactor types available to missing-import actions without a manual Maven sync (CA-4).
+  Done for types from a prior sync and types declared in an open, already-compiled file. The residual
+  closed-file case is folded into the broader source/branch-switch staleness gap (WS-1), which is
+  Post-M3 work.
 
 ### Find References hardening
 

@@ -47,7 +47,7 @@ Maven Central publication is planned for M3.
 | Semantic tokens | Partially implemented | Static/deprecated members, enum constants, type parameters, and annotations are covered. Class and import highlighting remain planned for M2. |
 | Full-document formatting | Implemented | google-java-format also reorders and removes imports. |
 | On-type formatting | M3 planned | Stub is not advertised; conservative indentation remains planned (EG-028, depends on range formatting EG-029). |
-| Code actions | Implemented with M1 gaps | Missing imports, add-throws, try/catch wrapping, variable declaration, and missing-method stubs all work. New reactor-type freshness for missing-import actions (CA-4) remains. |
+| Code actions | Implemented | Missing imports, add-throws, try/catch wrapping, variable declaration, and missing-method stubs all work. Missing-import actions now offer reactor types from a prior sync or from an open, already-compiled file (CA-4). Types created or renamed in a closed file await a sync — see the source/branch-switch staleness gap WS-1. |
 | Rename | M2 planned | Existing reference identity and roles provide part of the foundation. |
 | Inlay hints | M2 planned | Not implemented. |
 | Run/test/debug | Post-M3 | No execution or DAP surface is advertised. |
@@ -92,4 +92,8 @@ Detailed implementation designs and historical decisions are indexed under
 
 ## Known M1 Blockers
 
-- New reactor types may require Maven sync before missing-import actions discover them.
+- None outstanding. CA-4 (missing-import actions for not-yet-synced reactor types) is resolved for
+  the common cases — types from a prior sync and types declared in an open, already-compiled file.
+- Known limitation, not M1-scoped: the reactor mirror and type index go stale after a source change
+  or branch switch until the next `mvn process-test-classes`, so types created or renamed in closed
+  files are not discovered until a sync. Tracked as WS-1.

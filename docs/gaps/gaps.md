@@ -15,6 +15,7 @@ Each gap keeps its area prefix; the area is the discovery family, not a strict f
 | `FR-NNN` | references | `textDocument/references` scope, failure propagation, coverage |
 | `CA-N` | code-action | `textDocument/codeAction` providers |
 | `CQ-NNNN` | completion | Completion quality; checked against the completion [expectations](../planned/lathe-completion-expectations.md) contract |
+| `WS-N` | workspace lifecycle | Workspace freshness and lifecycle: reactor mirror / type-index staleness, source watching, sync prompting, and reload |
 
 ## Finding the work for a release
 
@@ -27,7 +28,7 @@ grep -n 'Target: M1' docs/gaps/gaps.md                         # the M1 slice
 ```
 
 Entries follow, grouped by area: exploration (EG) below, then Find References (FR), Code Actions
-(CA), and Completion (CQ).
+(CA), Completion (CQ), and Workspace Lifecycle (WS).
 
 EG-003 is deferred until after M2 because it requires `DocTrees` attribution of Javadoc comment
 positions,
@@ -585,3 +586,80 @@ Future method-reference completion test class or `CompletionEngineTest` method-r
 
 Notes:
 This matches the existing deferred method-reference gap in the historical completion docs.
+
+---
+
+# Workspace Lifecycle Gaps (WS)
+
+Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
+prompting, and reload. Resolved WS entries are in [gaps-archive.md](gaps-archive.md).
+
+## WS-1 — Reactor mirror and type index go silently stale after a source change or branch switch
+
+**Status: accepted — Target: Post-M3**
+
+Discovered by workflow analysis (not live probing) while reconciling CA-4; recorded here because it
+is the general problem of which CA-4's closed-file residual is one facet.
+
+### Observed behaviour
+
+Switching git branches — or otherwise changing source files outside the editor — leaves Lathe
+describing the **previous** state of the workspace, usually with no prompt:
+
+- After `git checkout <branch>` where only Java sources differ (the common case), the watcher
+  reports `NO_CHANGE` and the user is never told to re-sync. The `.lathe/` mirrored bytecode and the
+  reactor type-index shards continue to reflect the old branch until the next
+  `mvn process-test-classes`.
+- Types **added** on the new branch are missing from completion, missing-import actions, and
+  `workspace/symbol` (CA-4's open-file enrichment only softens this for a file the user actually
+  opens).
+- Types **removed** on the new branch linger as phantom entries: completion offers them and
+  missing-import actions insert an `import` for a class that no longer exists.
+- `definition`, `references`, and `typeHierarchy` into non-open reactor sources resolve against the
+  stale mirror and can point at old-branch files or positions.
+
+If the branch differs in POM files, `WorkspaceWatcher` fingerprints the POMs and does raise the
+advisory "run `mvn process-test-classes`" prompt — but that path only fires on POM changes, not on
+source changes, and `reload()` merely re-reads the still-stale `.lathe/` from disk (it does not
+re-run Maven).
+
+### Root cause
+
+Staleness detection is intentionally coarse and keyed only to Lathe's own artifacts:
+
+- `WorkspaceWatcher.poll()` checks exactly two things — `workspace.json` mtime (→ full `reload()`)
+  and POM fingerprints (mtime + size → advisory sync prompt). It never inspects source-root
+  contents.
+- `LatheWorkspaceService.didChangeWatchedFiles` acts **only** on `FileChangeType.Deleted` events;
+  `Created` and `Changed` events on non-open source files are dropped.
+- The reactor type index and the `.lathe/` mirror are produced only by `lathe:sync` and are never
+  invalidated by filesystem source changes.
+
+The `lathe-lightweight-watcher.md` design's Non-Goals claim source watching "is already handled via
+LSP `workspace/didChangeWatchedFiles`" — the deletion-only implementation makes that claim
+inaccurate today.
+
+### Proposed fix
+
+Not yet decided; options to weigh when scheduled, cheapest first:
+
+1. Detect that a tracked source root's newest mtime is ahead of the last recorded sync and raise the
+   same advisory sync prompt already used for `POM_CHANGED` — no invalidation, just an honest nudge.
+2. Act on `Created`/`Changed` watched-file events (not only `Deleted`) to invalidate or refresh the
+   affected reactor type-index entries between syncs.
+3. A fuller freshness model that reconciles the reactor index and mirror with on-disk sources
+   without a Maven round trip; overlaps with [Sibling Recompilation](../planned/lathe-sibling-recompilation.md)
+   and the [Reactor Type Index](../planned/lathe-reactor-type-index.md) freshness follow-ups.
+
+This subsumes CA-4's remaining closed-file case (new/renamed types in files the user has not opened),
+which is only discoverable today after a manual sync.
+
+### Probe commands
+
+Not probeable through `explore.py`; reproduced by checking out a branch that adds and removes a
+reactor type, then requesting completion / missing-import actions without running
+`mvn process-test-classes`.
+
+### Regression targets
+
+None yet — to be defined when the fix is scheduled.

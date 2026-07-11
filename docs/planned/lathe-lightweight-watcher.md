@@ -18,7 +18,7 @@ Replace the recursive file-system walk with a **lightweight, targeted modificati
 ## Non-Goals
 
 * Implementing a fully event-driven recursive `WatchService` wrapper.
-* Watching directories for non-Lathe files (e.g., watching Java source files, which is already handled via LSP `workspace/didChangeWatchedFiles`).
+* Watching directories for non-Lathe files (e.g., watching Java source files). Note that the current `workspace/didChangeWatchedFiles` handler acts only on `Deleted` events; `Created`/`Changed` source events are dropped, so source watching is *not* fully handled today. Closing that gap is tracked separately as WS-1 (source/branch-switch staleness), not by this watcher redesign.
 
 ## Proposed Design
 

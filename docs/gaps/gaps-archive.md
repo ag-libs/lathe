@@ -5537,6 +5537,23 @@ The fix should make newly-created project types available to missing-import code
 fresh in-memory reactor index state,
 without weakening the provider's existing type-index validation path for dependencies and JDK types.
 
+### Resolution
+
+Resolved 2026-06-28 (`fix(CA-4): offer import actions for reactor types not yet on the classpath`)
+in three parts:
+
+1. `WorkspaceTypeIndex.isReactorType(fqName)` exposes the tracked reactor binary-name set.
+2. `ImportQuickFixProvider` trusts a known reactor entry when `getTypeElement()` returns null and
+   offers the import without the accessibility guard, preserving that guard for dependency/JDK
+   entries.
+3. `WorkspaceSession.codeActionFuture()` enriches the type-index snapshot with entries derived from
+   already-compiled open files via `CompilationUnitTree.getTypeDecls()` (no text parsing).
+
+This covers types from a prior sync and types declared in an open, already-compiled file. The
+residual case — types created or renamed in a **closed** file, discoverable today only after a
+Maven sync — is folded into the broader source/branch-switch staleness gap WS-1 (see
+[gaps.md](gaps.md)) rather than tracked as a code-action bug.
+
 ---
 
 ## CQ-0041 — `module-info.java` directive slots return no completion candidates
