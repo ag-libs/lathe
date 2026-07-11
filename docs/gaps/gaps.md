@@ -689,6 +689,87 @@ printf 'hover "bucket,"\n' | python3 dev/explore.py /path/to/workspace/.../Confi
 
 ---
 
+## EG-046 — Hover on a call argument shows synthetic `arg0` parameter names while signature help shows the real names
+
+**Status: documented — Target: pending triage**
+
+### Observed behaviour
+
+Hovering an argument at a call site shows a synthetic parameter name (`arg0`, `arg1`, …) whenever the
+callee comes from a dependency or the JDK compiled without javac `-parameters`. Signature help on the
+same call shows the **real** names (and highlights the active parameter). Confirmed against a
+validation workspace, hovering the arguments of a JDK call `Objects.requireNonNullElse(x, 10)`:
+
+| Probe | Result |
+|---|---|
+| `hover` on argument 0 (`x`) | `T arg0` |
+| `hover` on argument 1 (`10`) | `T arg1` |
+| `sig` on the call | `T requireNonNullElse([T obj], T defaultObj)` — real names, active parameter highlighted |
+
+The two features disagree about the same method's parameters: hover surfaces the raw class-file
+placeholder, signature help surfaces the declared source name.
+
+### Root cause — and why signature help is correct
+
+The `arg0` class-file limitation was already solved once (see
+`docs/done/lathe-signature-help.md`): when a class file lacks a `MethodParameters` attribute, javac
+synthesises `arg0`/`arg1`, so `SourceParser.resolveParamNames` does an on-demand, AST-only parse of
+the callee's `.java` source (from the dependency / JDK source cache) to recover the declared names,
+and `SourceParser.isSyntheticName` suppresses any remaining `argN` (falling back to type-only
+display). Both consumers that show good names wire this in:
+
+- **Signature help** — `SignatureHelpResolver` calls `resolveParamNames` (line ~248). **This is why it
+  is correct.**
+- **Method-name hover** — `SourceAnalysisSession.hover` (line ~239) resolves `sourceParamNames` and
+  passes them to `HoverFormatter.format` → `formatParam`, which also applies `isSyntheticName`.
+
+The **argument param-hint** branch of hover never got this treatment. When the cursor is on an
+argument, `SourceAnalysisSession.hover` (lines ~221-225) takes an early branch on
+`SourceLocator.parameterElementAt` and formats via a *separate* method, `HoverFormatter.formatParameter`:
+
+```java
+public static String formatParameter(final VariableElement param) {
+  return "```java\n%s %s\n```".formatted(param.asType(), param.getSimpleName());  // raw name + raw type
+}
+```
+
+It prints `param.getSimpleName()` directly — no `resolveParamNames`, no `isSyntheticName` suppression,
+no `TypeDisplayFormatter`. So it shows the class-file placeholder `arg0`, and the type without the
+display formatting the rest of hover uses. It is simply a path that drifted from the resolution the
+other two share.
+
+### Proposed fix
+
+Format the param-hint through the same resolution the other paths use. From the `param` returned by
+`parameterElementAt`, recover the callee and index without changing its signature —
+`callee = (ExecutableElement) param.getEnclosingElement()`,
+`idx = callee.getParameters().indexOf(param)` — then resolve
+`parser.resolveParamNames(callee, allRoots)`, apply `isSyntheticName` suppression, and format with a
+`TypeDisplayFormatter` (reusing `HoverFormatter.formatParam`). Delete the divergent
+`formatParameter`. This makes argument hover consistent with signature help and method-name hover.
+
+Shares the param-hint code path with [EG-045](#eg-045--hover-on-a-component-reference-inside-a-records-compact-constructor-resolves-to-the-callees-parameter)
+(which fires the branch for the wrong element); the two are best fixed together.
+
+### Probe commands
+
+```bash
+# Hover an argument of a JDK/dependency call whose class file lacks -parameters, then compare to sig.
+# Expected (after fix): hover shows the same real names as sig; today it shows argN.
+printf 'hover "<arg-token>"\nsig after "requireNonNullElse("\n' \
+  | python3 dev/explore.py /path/to/workspace/.../SomeFile.java
+```
+
+### Regression targets
+
+- `HoverTest.hover_classFileDependencyArgument_showsSourceParameterName`
+  (positive — argument hover shows the resolved source name, mirroring
+  `signatureHelp_classFileDependency_showsSourceParameterNames`)
+- `HoverTest.hover_classFileArgumentNoSource_fallsBackToTypeOnly`
+  (boundary — when no source is resolvable, suppress `argN` and show type-only, never the placeholder)
+
+---
+
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work
