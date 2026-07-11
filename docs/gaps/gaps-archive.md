@@ -7,6 +7,58 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-042 — Call hierarchy "does not resolve from a call site" — invalid (probe-positioning artifact)
+
+**Status: non-goal.**
+Reclassified after live re-verification: `prepareCallHierarchy` already resolves from a call site
+when the cursor is on the **method name**. Confirmed on a live workspace across unqualified (`foo()`),
+qualified (`x.foo()`), chained-receiver (`a.b().c()`), and JDK-target call sites — each prepares an
+item and finds callers. Same-CU unit coverage in `CallHierarchyPrepareTest` and
+`CallHierarchyIncomingLocatorTest` corroborates it.
+
+The original report was a **cursor-positioning artifact of the probe**, not a server defect: the
+probe command `callers "next.handler().handle"` places the cursor at the *start* of the match — on
+the receiver `next` (a variable), whose element is not a method, so `prepareCallHierarchy` correctly
+returns "(no call hierarchy item at this position)". The gap's own "works" probe
+(`callers "handle(ServerRequest"`) started on the method name, which is why declaration vs. call-site
+looked asymmetric; on a genuine method-name cursor there is no asymmetry.
+
+No code change; nothing to implement. (Helidon, used in the original probe, was not checked out at
+re-verification time; the artifact/contrast was reproduced on an equivalent live workspace instead.)
+
+---
+
+## EG-044 — Call hierarchy now aggregates polymorphic calls made through a supertype/interface reference when queried from a concrete override
+
+**Status: done — Target: M3.**
+
+Incoming call hierarchy queried from a concrete `@Override` previously returned zero callers: real
+call sites bind statically to the interface/supertype method (`feature.setup(...)` where `feature`
+is interface-typed), and the incoming search matched call sites by *exact* resolved method, so the
+override's own binary-name + erased descriptor never matched them.
+
+Root cause: `CallHierarchyIncomingLocator` gated every candidate call site with
+`ReferenceTarget.matches(...)` (exact owner + descriptor). Candidate-*file* discovery was already
+override-aware (the report noted "61 candidates scanned"), so only the per-site matcher was too
+strict.
+
+Fix (one class, `CallHierarchyIncomingLocator`): resolve the target's `ExecutableElement` once via
+`ReferenceTarget.resolveMethodElement`, then match call sites with
+`ReferenceTarget.matchesWithOverrides(...)` — the same override-aware matcher already shipped for
+Find References (EG-014) and `textDocument/implementation`. It accepts a call site whose resolved
+method overrides, or is overridden by, the queried method (both directions), so querying from either
+the interface method or a concrete override now yields the polymorphic call sites. Constructors are
+unaffected (the override branch applies only to `METHOD`; exact calls still hit the `matches`
+fast-path). No `ReferenceTarget` API change.
+
+### Regression targets
+
+- `CallHierarchyIncomingLocatorTest.searchIncomingCalls_polymorphicCallThroughInterface_findsCallerFromOverride`
+- `CallHierarchyIncomingLocatorTest.searchIncomingCalls_unrelatedSameNamedMethod_notReportedFromOverride`
+  (boundary: an unrelated same-named method on an unrelated type must not be over-matched)
+
+---
+
 ## EG-012 — `textDocument/declaration`: navigate an override to its contract method
 
 **Status: done — Target: M1.**
@@ -493,8 +545,7 @@ Hover is correct everywhere else the same component appears — verified against
 
 At the same failing position, `definition` correctly jumps to the component declaration, so the
 symbol is resolvable — only the hover path mis-resolves it. Shares its trigger with the references
-defect [FR-014](#fr-014--find-references-from-a-component-reference-inside-a-records-compact-constructor-returns-only-that-one-occurrence),
-and belongs to the same resolve-from-usage-site family as EG-042 / EG-043.
+defect [FR-014](#fr-014--find-references-from-a-component-reference-inside-a-records-compact-constructor-returns-only-that-one-occurrence).
 
 ### Root cause (hypothesis)
 

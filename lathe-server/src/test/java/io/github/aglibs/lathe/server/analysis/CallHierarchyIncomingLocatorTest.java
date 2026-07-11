@@ -100,6 +100,65 @@ class CallHierarchyIncomingLocatorTest {
     }
   }
 
+  @Test
+  void searchIncomingCalls_polymorphicCallThroughInterface_findsCallerFromOverride() {
+    final String content =
+        """
+        interface Feature { void setup(); }
+        class FeatureImpl implements Feature { public void setup() {} }
+        class Runner { void run(Feature f) { f.setup(); } }
+        """;
+    // caret on the override 'setup' declaration in FeatureImpl
+    final var caret =
+        SourceLocator.offsetToPosition(content, content.indexOf("void setup() {}") + 5);
+    final var request = request(content, caret);
+
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(request.uri(), content, 1, CompileMode.OPEN);
+
+      final List<CallHierarchyItem> items = session.prepareCallHierarchy(request);
+      assertThat(items).hasSize(1);
+      assertThat(items.getFirst().getName()).isEqualTo("setup");
+
+      final List<CallHierarchyIncomingCall> calls =
+          session.searchIncomingCalls(
+              TempSourceCompiler.TEST_URI, content, 1, targetFrom(items.getFirst()), () -> {});
+
+      assertThat(calls).hasSize(1);
+      assertThat(calls.getFirst().getFrom().getName()).isEqualTo("run");
+    }
+  }
+
+  @Test
+  void searchIncomingCalls_unrelatedSameNamedMethod_notReportedFromOverride() {
+    final String content =
+        """
+        interface Feature { void setup(); }
+        class FeatureImpl implements Feature { public void setup() {} }
+        class Unrelated { void setup() {} }
+        class Runner { void run(Unrelated u) { u.setup(); } }
+        """;
+    // caret on the override 'setup' declaration in FeatureImpl
+    final var caret =
+        SourceLocator.offsetToPosition(content, content.indexOf("void setup() {}") + 5);
+    final var request = request(content, caret);
+
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(request.uri(), content, 1, CompileMode.OPEN);
+
+      final List<CallHierarchyItem> items = session.prepareCallHierarchy(request);
+      assertThat(items).hasSize(1);
+
+      // u.setup() targets Unrelated.setup(), which neither overrides nor is overridden by
+      // FeatureImpl.setup(); it must not be reported.
+      final List<CallHierarchyIncomingCall> calls =
+          session.searchIncomingCalls(
+              TempSourceCompiler.TEST_URI, content, 1, targetFrom(items.getFirst()), () -> {});
+
+      assertThat(calls).isEmpty();
+    }
+  }
+
   private static ReferenceTarget targetFrom(final CallHierarchyItem item) {
     final CallHierarchyItemData data = CallHierarchyItemDataCodec.decode(item.getData());
     return new ReferenceTarget(
