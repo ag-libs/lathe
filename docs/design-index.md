@@ -132,3 +132,9 @@ M3 designs before implementation.
 - [Maven Extension for Automatic POM Setup](potential/lathe-maven-extension-auto-setup.md) — replace
   the manual three-block parent-POM edit with a single Maven core extension that injects the
   compiler/plugin/dependency config and the Surefire/Failsafe capture shim in memory, editing no POM.
+- [Fuzzy Method-Name Symbol Search in the Reactor](potential/lathe-reactor-method-symbol-search.md) —
+  extend `workspace/symbol` beyond type names to fuzzy method-name search by reusing the Find
+  References token index (fuzzy key scan) plus a parse-only method collector; moderate, not soon.
+- [Find Instantiations of a Type](potential/lathe-find-instantiations.md) — type-scoped
+  instantiation query matching `NewClassTree` sites (handles synthetic default/record constructors)
+  surfaced as a command/code action, rather than a constructor-scoped `references` filter.
