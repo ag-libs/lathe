@@ -27,6 +27,12 @@ function M.new()
     end
   end
 
+  --- Record a known, not-yet-implemented behaviour without failing the suite, so
+  --- the gap stays visible in output and flips to a real `check` when built.
+  function reporter.pending(name, reason)
+    io.stdout:write(string.format("pend  %s (%s)\n", name, reason or ""))
+  end
+
   --- Print the failure count (prefixed with an optional summary label) and
   --- exit the way run-specs.sh expects: `qa!` if every check passed, `cq!`
   --- otherwise.

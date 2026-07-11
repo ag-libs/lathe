@@ -11,8 +11,30 @@ All files live in `dev/` and are never shipped with the distribution.
 |---|---|
 | `nvim.sh` | Build server + open Neovim with Lathe attached |
 | `check-nvim.sh` | Headless Neovim smoke check for the Lathe runtime |
+| `neotest-e2e.sh` | Headless end-to-end check of the neotest adapter against a live server + real replay |
 | `lsp.py` | Python LSP client library and CLI diagnostics tool |
 | `explore.py` | Interactive LSP shell — explore any file like an engineer would |
+
+---
+
+## neotest-e2e.sh — end-to-end neotest adapter harness
+
+Drives the real neotest adapter (`lathe.neotest`) through a headless Neovim against a live Lathe
+server and a real replay run over the built `multi-module` invoker fixture — discovery, run, and
+per-test results as a user would drive them. It is the red/green signal the
+[neotest experience spec](../docs/planned/lathe-neotest-experience.md) is written against; each
+assertion names the acceptance-criterion id (D1, D3, R1, R3, …) it covers, and known gaps are
+printed as `pend` rather than failing until the behaviour is built.
+
+```bash
+# one-time: build the fixture so .lathe/ and the launcher cache exist
+mvn verify -pl lathe-maven-plugin -Dinvoker.test=multi-module
+
+./dev/neotest-e2e.sh
+```
+
+Assumes `nvim` plus the `neotest`, `nvim-nio`, and `plenary.nvim` plugins are installed. The driver
+is `dev/neotest-e2e/driver.lua`; it reuses `spec_helper.lua` from the plugin's Neovim spec suite.
 
 ---
 
