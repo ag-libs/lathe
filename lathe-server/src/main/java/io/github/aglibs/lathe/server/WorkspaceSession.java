@@ -36,7 +36,9 @@ import io.github.aglibs.lathe.server.run.LaunchTemplateReader;
 import io.github.aglibs.lathe.server.run.ReplayLauncher;
 import io.github.aglibs.lathe.server.run.ReplayOutcome;
 import io.github.aglibs.lathe.server.run.RunTarget;
+import io.github.aglibs.lathe.server.run.TestEventParams;
 import io.github.aglibs.lathe.server.run.TestOutputParams;
+import io.github.aglibs.lathe.server.run.TestResult;
 import io.github.aglibs.lathe.server.run.TranscriptLine;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
@@ -155,12 +157,15 @@ final class WorkspaceSession {
     }
 
     final Consumer<TranscriptLine> onLine = streamConsumer(token);
+    final Consumer<TestResult> onResult = resultConsumer(token);
     final Path root = workspaceRoot;
     final var t = Stopwatch.start();
     final var result = new CompletableFuture<ReplayOutcome>();
     final var thread =
         new Thread(
-            () -> launchReplay(root, runnerClasspath, moduleRel, selection, onLine, t, result),
+            () ->
+                launchReplay(
+                    root, runnerClasspath, moduleRel, selection, onLine, onResult, t, result),
             "lathe-replay-" + moduleRel);
     thread.setDaemon(true);
     thread.start();
@@ -181,12 +186,26 @@ final class WorkspaceSession {
     return line -> ((LatheLanguageClient) client).testOutput(new TestOutputParams(token, line));
   }
 
+  /**
+   * Streams each per-test result the sink tailer sees to the client over the run token, so it can
+   * mark that position live mid-run. Same off-worker publication rationale as {@link
+   * #streamConsumer}; a blank token yields a no-op.
+   */
+  private Consumer<TestResult> resultConsumer(final String token) {
+    if (token.isBlank()) {
+      return result -> {};
+    }
+
+    return result -> ((LatheLanguageClient) client).testEvent(new TestEventParams(token, result));
+  }
+
   private static void launchReplay(
       final Path workspaceRoot,
       final List<Path> runnerClasspath,
       final String moduleRel,
       final TestSelection selection,
       final Consumer<TranscriptLine> onLine,
+      final Consumer<TestResult> onResult,
       final Stopwatch t,
       final CompletableFuture<ReplayOutcome> result) {
     try {
@@ -212,7 +231,8 @@ final class WorkspaceSession {
       }
 
       final var session =
-          ReplayLauncher.launch(template.get(), workspaceRoot, runnerClasspath, selection, onLine);
+          ReplayLauncher.launch(
+              template.get(), workspaceRoot, runnerClasspath, selection, onLine, onResult);
       session
           .onExit()
           .whenComplete(

@@ -20,20 +20,40 @@ public final class ReplaySession {
 
   private static final Logger LOG = Logger.getLogger(ReplaySession.class.getName());
 
+  private static final long TAIL_POLL_MS = 25;
+
   private final Process process;
   private final Path resultsSink;
   private final Consumer<TranscriptLine> onLine;
+  private final Consumer<TestResult> onResult;
   private final List<TranscriptLine> output = Collections.synchronizedList(new ArrayList<>());
   private final CompletableFuture<Void> stdoutDrained = new CompletableFuture<>();
   private final CompletableFuture<Void> stderrDrained = new CompletableFuture<>();
+  private final CompletableFuture<Void> tailerDone = new CompletableFuture<>();
 
   ReplaySession(
-      final Process process, final Path resultsSink, final Consumer<TranscriptLine> onLine) {
+      final Process process,
+      final Path resultsSink,
+      final Consumer<TranscriptLine> onLine,
+      final Consumer<TestResult> onResult) {
     this.process = process;
     this.resultsSink = resultsSink;
     this.onLine = onLine;
+    this.onResult = onResult;
     startDrain(process.getInputStream(), TranscriptLine.Stream.STDOUT, stdoutDrained);
     startDrain(process.getErrorStream(), TranscriptLine.Stream.STDERR, stderrDrained);
+    startTailer();
+  }
+
+  private void startTailer() {
+    if (resultsSink == null) {
+      tailerDone.complete(null);
+      return;
+    }
+
+    final var thread = new Thread(this::tailResults, "lathe-replay-events-" + process.pid());
+    thread.setDaemon(true);
+    thread.start();
   }
 
   private void startDrain(
@@ -61,7 +81,8 @@ public final class ReplaySession {
    * is always the full captured transcript, never a partial read racing the pipe close.
    */
   public CompletableFuture<ReplayOutcome> onExit() {
-    final CompletableFuture<Void> drained = CompletableFuture.allOf(stdoutDrained, stderrDrained);
+    final CompletableFuture<Void> drained =
+        CompletableFuture.allOf(stdoutDrained, stderrDrained, tailerDone);
     return process
         .onExit()
         .thenCombine(
@@ -69,6 +90,48 @@ public final class ReplaySession {
             (exited, ignored) ->
                 ReplayOutcome.completed(
                     exited.exitValue(), List.copyOf(output), readTestResults()));
+  }
+
+  // Best-effort live feed: re-read the sink each poll and emit records past the ones already sent,
+  // so a position can be marked the moment its method finishes. Correctness is not on this path --
+  // the authoritative testResults come from the whole-file read in onExit, which runs only after
+  // this tailer completes (tailerDone) -- so a record missed here is still reconciled at the end.
+  private void tailResults() {
+    int emitted = 0;
+    try {
+      while (process.isAlive()) {
+        emitted = emitNewResults(emitted);
+        Thread.sleep(TAIL_POLL_MS);
+      }
+
+      emitNewResults(emitted);
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+    } finally {
+      tailerDone.complete(null);
+    }
+  }
+
+  private int emitNewResults(final int alreadyEmitted) {
+    if (!Files.exists(resultsSink)) {
+      return alreadyEmitted;
+    }
+
+    final List<String> lines;
+    try {
+      lines = Files.readAllLines(resultsSink, StandardCharsets.UTF_8);
+    } catch (final IOException e) {
+      return alreadyEmitted;
+    }
+
+    for (int index = alreadyEmitted; index < lines.size(); index++) {
+      final TestResult parsed = parse(lines.get(index));
+      if (parsed != null) {
+        onResult.accept(parsed);
+      }
+    }
+
+    return lines.size();
   }
 
   private void drain(

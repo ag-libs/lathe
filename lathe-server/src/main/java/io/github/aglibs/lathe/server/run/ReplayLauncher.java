@@ -21,13 +21,14 @@ public final class ReplayLauncher {
       final Path workspaceRoot,
       final List<Path> runnerClasspath,
       final TestSelection selection,
-      final Consumer<TranscriptLine> onLine)
+      final Consumer<TranscriptLine> onLine,
+      final Consumer<TestResult> onResult)
       throws IOException {
     final Path resultsSink = Files.createTempFile("lathe-results-", ".ndjson");
     final List<String> argv =
         ReplayTransform.forTest(data, workspaceRoot, runnerClasspath, selection, resultsSink);
     LOG.fine(() -> "[replay] argv=%s".formatted(argv));
     final Process process = new ProcessBuilder(argv).start();
-    return new ReplaySession(process, resultsSink, onLine);
+    return new ReplaySession(process, resultsSink, onLine, onResult);
   }
 }

@@ -20,9 +20,10 @@ final class ReplaySessionTest {
 
   private static final long TIMEOUT_SECONDS = 5;
   private static final Consumer<TranscriptLine> NO_STREAM = line -> {};
+  private static final Consumer<TestResult> NO_EVENTS = result -> {};
 
   private static ReplaySession replaySession(final Process process, final Path resultsSink) {
-    return new ReplaySession(process, resultsSink, NO_STREAM);
+    return new ReplaySession(process, resultsSink, NO_STREAM, NO_EVENTS);
   }
 
   @Test
@@ -69,7 +70,10 @@ final class ReplaySessionTest {
     final List<TranscriptLine> streamed = Collections.synchronizedList(new ArrayList<>());
     final var session =
         new ReplaySession(
-            new ProcessBuilder("sh", "-c", "echo out; echo err 1>&2").start(), null, streamed::add);
+            new ProcessBuilder("sh", "-c", "echo out; echo err 1>&2").start(),
+            null,
+            streamed::add,
+            NO_EVENTS);
 
     session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
@@ -77,6 +81,28 @@ final class ReplaySessionTest {
         .containsExactlyInAnyOrder(
             new TranscriptLine(TranscriptLine.Stream.STDOUT, "out"),
             new TranscriptLine(TranscriptLine.Stream.STDERR, "err"));
+  }
+
+  @Test
+  void onExit_resultsSinkWithRecords_streamsEachToTheResultConsumer(@TempDir final Path dir)
+      throws IOException, ExecutionException, InterruptedException, TimeoutException {
+    final Path sink = dir.resolve("results.ndjson");
+    Files.writeString(
+        sink,
+        """
+        {"className":"pkg.FooTest","methodName":"passes","methodParameterTypes":"","status":"passed","failureMessage":"","failureLine":-1}
+        {"className":"pkg.FooTest","methodName":"fails","methodParameterTypes":"","status":"failed","failureMessage":"boom","failureLine":12}
+        """,
+        StandardCharsets.UTF_8);
+    final List<TestResult> streamed = Collections.synchronizedList(new ArrayList<>());
+    final var session =
+        new ReplaySession(new ProcessBuilder("true").start(), sink, NO_STREAM, streamed::add);
+
+    session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+    assertThat(streamed)
+        .extracting(TestResult::positionId)
+        .containsExactly("pkg.FooTest#passes()", "pkg.FooTest#fails()");
   }
 
   @Test
