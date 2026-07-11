@@ -474,7 +474,7 @@ Regression coverage:
 ## FR-009 — Member-reference search compiles every token-matching file (no hierarchy narrowing)
 
 **Status: done — Target: M2.**
-Discovered against an `@Builder`-heavy reactor; confirmed on `payment-dob-lathe`
+Discovered against an `@Builder`-heavy reactor; confirmed on `sample-workspace`
 (`DobServerConfig`).
 
 ### Observed behaviour (historical)
@@ -512,7 +512,7 @@ Accepted trade-off (as designed): a reference whose owner/receiver type is never
 its file is missed — the same surface the `FIELD` branch already accepted, now consistent across
 kinds.
 
-### Measured (payment-dob-lathe)
+### Measured (sample-workspace)
 
 | Search | Before | After |
 |---|---|---|
@@ -4274,7 +4274,7 @@ then shorter-FQN, then lexicographic. Exact match matters: a live probe showed p
 `java.lang.classfile.…`) above reactor types; only the exact `java.lang`/`java.util`/… packages get
 the platform tier, subpackages fall to rank 3.
 
-Confirmed on `dob-server`: for prefix `Oper`, `com.telenordigital.payment.dob.*` reactor types now
+Confirmed on `app-server`: for prefix `Oper`, `com.example.app.*` reactor types now
 lead, above JDK `java.lang.management`/`java.lang.classfile` types.
 
 ### Probe commands
@@ -4413,7 +4413,7 @@ Resolved by the CQ-0049 fix (2026-07-04): both type-index completion paths now g
 `Trees.isAccessible(scope, typeElement)`, so an observable-but-unreadable type (here
 `com.sun.management.OperatingSystemMXBean` in `jdk.management`, not read by the current module) is no
 longer offered. The mechanism is type-agnostic and was live-verified on the equivalent JDK-module case
-(`javax.swing.JButton` / `java.desktop`) on `dob-core`; regression coverage lives on CQ-0049.
+(`javax.swing.JButton` / `java.desktop`) on `app-core`; regression coverage lives on CQ-0049.
 
 ### Scope correction
 
@@ -6426,11 +6426,11 @@ class Test {
 
 Lathe behavior:
 `JButton` (`javax.swing.JButton`, module `java.desktop`) is offered as a completion candidate even
-though the enclosing module never `requires java.desktop`. Confirmed on the `payment-dob-lathe`
-workspace: in `dob-core` (whose `module-info.java` does not read `java.desktop`) Swing and other
+though the enclosing module never `requires java.desktop`. Confirmed on the `sample-workspace`
+workspace: in `app-core` (whose `module-info.java` does not read `java.desktop`) Swing and other
 unread-module types complete via the type-index path, while a real `import javax.swing.JButton;`
 correctly fails to compile. `java.desktop` is pulled into the module graph by a dependency's
-non-transitive `requires`, so it is *observable* but not *readable* by `dob-core`.
+non-transitive `requires`, so it is *observable* but not *readable* by `app-core`.
 
 Expected Lathe behavior:
 Type-index candidates must be filtered by JPMS readability from the current compilation unit's
@@ -6463,7 +6463,7 @@ Resolved: 2026-07-04. Two leak sites shared the same root cause and were both ga
 2. `TypeReferenceCompleter.resolvesToInstantiableSubtype` (the `new X` / expected-type constructor-subtype
    path, which never used the validator) — gained the same gate. The first pass missed this because the
    original regression test only exercised the plain type-reference form; a live probe of `new JBut` on
-   `dob-core` surfaced it.
+   `app-core` surfaced it.
 
 Regression targets:
 - `CompletionTypeIndexTest.typeIndex_jpmsObservableButUnreadableModule_doesNotSuggestIndexedType`

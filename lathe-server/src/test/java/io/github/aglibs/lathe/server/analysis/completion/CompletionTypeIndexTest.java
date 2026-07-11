@@ -219,7 +219,7 @@ class CompletionTypeIndexTest extends CompletionTestSupport {
 
   @Test
   void typeIndex_jpmsObservableButUnreadableModule_doesNotSuggestIndexedType() throws IOException {
-    // Reproduces the dob-core leak: a module the current module does not read is nonetheless in the
+    // Reproduces the observable-but-unreadable module leak: a module the current module does not read is nonetheless in the
     // module graph. In a real workspace java.desktop is pulled in by a dependency's non-transitive
     // `requires`; here --add-modules puts it in the graph directly. Either way it is *observable*
     // (Elements.getTypeElement resolves javax.swing.JButton) but not *readable* by com.example.app
