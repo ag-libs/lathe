@@ -1282,16 +1282,29 @@ final class WorkspaceSession {
   }
 
   CompletableFuture<List<FoldingRange>> foldingRangeFuture(final String uri) {
-    return openDocFeature(
-        uri,
-        List.of(),
-        (worker, doc) ->
-            worker
-                .foldingRange(uri, doc.content())
-                .exceptionally(
-                    ex ->
-                        logAndReturn(
-                            ex, "[foldingRange] failed for %s".formatted(uri), List.of())));
+    final OpenDocument doc = docs.get(uri);
+    if (doc == null) {
+      LOG.warning(() -> "[foldingRange] %s no folds document not open".formatted(uri));
+      return CompletableFuture.completedFuture(List.of());
+    }
+
+    return switch (routeCompiler(uri)) {
+      case CompilerRoute.Module module -> foldWith(module.worker(), uri, doc);
+      case CompilerRoute.External external -> foldWith(external.worker(), uri, doc);
+      case CompilerRoute.Missing ignored -> {
+        LOG.fine(() -> "[foldingRange] %s skipped route=missing ranges=0".formatted(uri));
+        yield CompletableFuture.completedFuture(List.of());
+      }
+    };
+  }
+
+  private CompletableFuture<List<FoldingRange>> foldWith(
+      final CompilationWorker worker, final String uri, final OpenDocument doc) {
+    touchAnalysisCache(uri);
+    return worker
+        .foldingRange(uri, doc.content())
+        .exceptionally(
+            ex -> logAndReturn(ex, "[foldingRange] failed for %s".formatted(uri), List.of()));
   }
 
   List<? extends TextEdit> format(final String tag, final String uri) {
