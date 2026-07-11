@@ -102,6 +102,9 @@ final class ReplaySessionTest {
               assertThat(r.status()).isEqualTo("failed");
               assertThat(r.failureMessage()).isEqualTo("boom");
               assertThat(r.failureLine()).isEqualTo(12);
+              // positionId is absent from the sink NDJSON; it must be derived server-side while
+              // deserializing, which only happens if Gson runs the record's compact constructor.
+              assertThat(r.positionId()).isEqualTo("pkg.FooTest#fails()");
             });
     assertThat(Files.exists(sink)).isFalse();
   }

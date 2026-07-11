@@ -438,19 +438,6 @@ end
 
 local TEST_STATUS = { passed = "passed", failed = "failed", skipped = "skipped" }
 
---- Rebuilds a method's RunTarget position id from a structured TestResult's
---- JUnit MethodSource fields, matching RunnableScanner.methodTarget's format
---- exactly: "<binaryClassName>#<methodName>(<erasedParams>)". JUnit joins
---- parameter types with ", " whereas javac's erasure joins with "," and no
---- space, so whitespace is stripped; the dominant zero-arg case is
---- "<class>#<method>()" identically on both sides. A signature shape that
---- doesn't reconstruct identically (arrays, @ParameterizedTest dynamic ids)
---- simply won't match a tree id and falls through to the aggregate fan-out.
-local function test_result_position_id(tr)
-  local params = (tr.methodParameterTypes or ""):gsub("%s", "")
-  return string.format("%s#%s(%s)", tr.className, tr.methodName, params)
-end
-
 --- One structured per-test result. Status only for now -- result.errors /
 --- vim.diagnostic from failureLine is deferred to the diagnostics design
 --- (docs/planned/lathe-test-diagnostics-and-refresh.md). Reuses the run's
@@ -506,7 +493,7 @@ function M.results(spec, _result, tree)
   local results = {}
   if ctx.outcome and ctx.outcome.testResults then
     for _, tr in ipairs(ctx.outcome.testResults) do
-      local id = test_result_position_id(tr)
+      local id = tr.positionId
       -- A @ParameterizedTest/@RepeatedTest emits one record per invocation,
       -- all collapsing onto the method's single position id (Lathe discovers
       -- one position per method from compile-time analysis; it can't know the

@@ -19,7 +19,7 @@ final class ReplayOutcomeTest {
 
   @Test
   void completed_withTestResults_carriesAndCopiesThem() {
-    final var result = new TestResult("pkg.FooTest", "bar", "", "failed", "boom", 7);
+    final var result = new TestResult("pkg.FooTest", "bar", "", "failed", "boom", 7, "");
 
     final ReplayOutcome outcome =
         ReplayOutcome.completed(

@@ -300,10 +300,9 @@ end
 -- With real per-test results on outcome.testResults, results() must mark
 -- exactly the methods that failed rather than fanning one aggregate status
 -- out to every sibling. Reuses the same minimal fake tree as the fan-out
--- reproduction above. testResults carries JUnit MethodSource fields; the
--- reconstructed position id must match RunnableScanner.methodTarget's
--- "<class>#<method>(<erasedParams>)" format, including stripping the ", "
--- JUnit uses between parameter types down to javac's ",".
+-- reproduction above. Each testResults entry carries its server-derived
+-- positionId (RunnableScanner.methodTarget's "<class>#<method>(<erasedParams>)"
+-- format); results() keys off it directly, no client-side reconstruction.
 do
   local function fake_tree(nodes_by_id)
     local function node_for(id)
@@ -359,9 +358,9 @@ do
         exitCode = 1,
         output = transcript("transcript"),
         testResults = {
-          { className = "demo.FooTest", methodName = "a", methodParameterTypes = "", status = "passed", failureMessage = "", failureLine = -1 },
-          { className = "demo.FooTest", methodName = "b", methodParameterTypes = "", status = "failed", failureMessage = "expected true", failureLine = 12 },
-          { className = "demo.FooTest", methodName = "c", methodParameterTypes = "java.lang.String, int", status = "passed", failureMessage = "", failureLine = -1 },
+          { positionId = "demo.FooTest#a()", status = "passed", failureMessage = "", failureLine = -1 },
+          { positionId = "demo.FooTest#b()", status = "failed", failureMessage = "expected true", failureLine = 12 },
+          { positionId = "demo.FooTest#c(java.lang.String,int)", status = "passed", failureMessage = "", failureLine = -1 },
         },
       },
     },
@@ -373,7 +372,7 @@ do
   spec.check("passing method marked passed, not the aggregate failure", method_a and method_a.status, "passed")
   spec.check("failing method marked failed", method_b and method_b.status, "failed")
   spec.check("failing method carries its failure message", method_b and method_b.short, "expected true")
-  spec.check("param method id reconstructed with spaces stripped", method_c and method_c.status, "passed")
+  spec.check("param method keyed by its server positionId", method_c and method_c.status, "passed")
   spec.check("per-test result reuses the run transcript", read_file(method_a.output), "transcript")
   spec.check("class namespace node still gets the aggregate status", results["demo.FooTest"].status, "failed")
 end
@@ -394,9 +393,7 @@ do
 
   local function invocation(status, message)
     return {
-      className = "demo.FooTest",
-      methodName = "p",
-      methodParameterTypes = "java.lang.String",
+      positionId = "demo.FooTest#p(java.lang.String)",
       status = status,
       failureMessage = message or "",
       failureLine = -1,
