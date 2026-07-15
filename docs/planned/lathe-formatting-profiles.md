@@ -49,8 +49,8 @@ Indentation should therefore be paired with the selected formatting/style profil
 - Implement a general Java formatter.
 - Parse arbitrary Checkstyle indentation rules in the first slice.
 - Run project-specific external formatters.
-- Implement `textDocument/onTypeFormatting`.
-- Fix range formatting.
+- Implement `textDocument/onTypeFormatting` in the first slice (deferred — see "Future Work — Range-Aware Formatting").
+- Fix range formatting in the first slice (deferred — see "Future Work — Range-Aware Formatting").
 - Dynamically re-register formatting capabilities after initialization.
 - Support every `.editorconfig` glob rule in the first slice.
 
@@ -196,6 +196,11 @@ Capability behavior:
 The formatting handler should still defensively return no edits when formatting is disabled.
 This protects clients that send formatting requests despite the advertised capabilities.
 
+The `rangeFormatting` and `onTypeFormatting` handlers must apply the same defensive gating: their
+capabilities stay unadvertised and the handlers return no edits regardless of profile, so a client
+that calls them anyway does not trigger a whole-document rewrite (see "Future Work — Range-Aware
+Formatting").
+
 `JavaFormatter` can remain unchanged in the first slice.
 It remains the implementation behind `formatter = "google"`.
 
@@ -221,6 +226,53 @@ Checkstyle XML file into a complete formatting engine.
 The first slice should not parse Checkstyle.
 Future work may infer basic indentation hints from Checkstyle where the mapping is obvious, such as tab width or
 indentation properties, but this should remain a separate design.
+
+## Future Work — Range-Aware Formatting
+
+This is deferred feature work to implement **once this formatting design has landed**; it is not part
+of the first slice. It absorbs the findings previously tracked as gaps EG-029 and EG-028 (now
+retired as standalone gaps).
+
+### Current behaviour (the finding)
+
+`textDocument/rangeFormatting` and `textDocument/onTypeFormatting` have handlers today, but their
+capabilities are **not advertised** (only `documentFormattingProvider` is), so a spec-compliant
+client never invokes them — the defect is dormant. If a client calls `rangeFormatting` anyway, it
+delegates to the same whole-document path as `formatting`
+(`JavaFormatter.format` → `Formatter().formatSourceAndFixImports(content)`): it ignores the request's
+range and reformats — and reorders and removes imports across — the entire document. `onTypeFormatting`
+is a stub returning no edits.
+
+### Near-term (this design's slice)
+
+Keep both capabilities unadvertised and make the handlers return no edits regardless of profile, as
+noted under Server Changes. This neutralises the dormant range-format hazard for opt-in
+`formatter = "google"` users without implementing anything new.
+
+### The feature (after this design lands)
+
+- Add a range path in `JavaFormatter` using GJF `Formatter.formatSource(text, ranges)`, deriving the
+  character range(s) from the request's LSP range and emitting only the resulting in-range edits (no
+  import fixing, which is inherently whole-file). Keep the whole-document path for `formatting`.
+- Advertise `documentRangeFormattingProvider` only when `formatter = "google"`, alongside
+  `documentFormattingProvider`.
+- This range-scoped path is the prerequisite for conservative on-type formatting (below).
+
+### On-type formatting (also deferred; absorbs former gap EG-028)
+
+`textDocument/onTypeFormatting` is a stub returning no edits, and its capability is not registered,
+so no client invokes it. If pursued, it can only be a **partial** improvement: GJF parses the whole
+compilation unit and throws on unparseable input, and the most useful trigger — newline inside a
+wrapped expression or record header — fires exactly when the buffer is not parseable, so a
+GJF-backed handler returns nothing there. The realistic scope is triggers that *complete* a parseable
+file (`}`, `;`): once the file parses, run the range-scoped path above over the touched lines and
+return conservative brace/statement edits. The CLAUDE.md "no ad hoc Java parsing" rule rules out a
+hand-rolled indentation model.
+
+Priority is low and editor-dependent. In Neovim, error-tolerant client-side indentation (tree-sitter,
+plus the indentation profiles above) already covers live typing, so a server-side handler adds
+little. On-type formatting is mainly relevant to a VS Code integration, which is a later release, so
+it is not a Neovim focus and stays deferred behind both this design and the range-aware path.
 
 ## Tests
 

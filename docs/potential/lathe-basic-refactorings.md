@@ -39,8 +39,9 @@ reactor-owned sources; dependency/JDK sources are read-only.
   vs. modified locals, `final`-ity, and thrown exceptions for an arbitrary selected region needs
   javac data/control-flow analysis, not text parsing. This is the heaviest piece and likely gates
   the milestone; extract-variable/field are much lighter.
-- **Selection semantics.** Extract needs a meaningful selection range; relates to the range-format /
-  selection work (EG-029). Define how a partial or syntactically-incomplete selection is rejected.
+- **Selection semantics.** Extract needs a meaningful selection range; relates to the range-aware
+  formatting work deferred in `lathe-formatting-profiles.md`. Define how a partial or
+  syntactically-incomplete selection is rejected.
 - **WorkspaceEdit resource operations.** Move needs `documentChanges` with `RenameFile`/`CreateFile`;
   confirm the client capability (`workspace.workspaceEdit.resourceOperations`) and Neovim support.
 - **Naming and collisions.** Generated method/variable/field names, and conflict detection (name

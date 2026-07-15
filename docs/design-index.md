@@ -36,7 +36,8 @@ discovery via [gap-workflow.md](gaps/gap-workflow.md) and resolved entries in [g
   snippet completion, with no custom client-side UI.
 - [Google Indentation](planned/lathe-google-indent.md) — conservative on-type formatting.
 - [Formatting and Indentation Profiles](planned/lathe-formatting-profiles.md) — opt-in Google Java Format and
-  project-sensitive indentation defaults.
+  project-sensitive indentation defaults; also carries the deferred range-aware / on-type formatting
+  feature (absorbs former gaps EG-029 and EG-028), to be implemented once the profiles design lands.
 - [Class/Import Semantic Highlighting](planned/lathe-class-import-semantic-highlighting.md) — Neovim-relevant semantic
   corrections for type references.
 - [Type Definition Navigation](planned/lathe-type-definition.md) — LSP `textDocument/typeDefinition` support for

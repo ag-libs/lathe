@@ -274,6 +274,37 @@ Regression coverage:
 
 ---
 
+## EG-028 — `textDocument/onTypeFormatting` is a stub and is not registered
+
+**Status: non-goal (as a standalone gap) — findings folded into the formatting design.**
+
+`textDocument/onTypeFormatting` is a stub returning no edits, and its capability is not registered,
+so no client invokes it. It can only ever be a partial improvement (GJF parses the whole compilation
+unit and returns nothing on the unparseable-newline trigger), its priority is low, and it is mainly
+relevant to a later VS Code integration rather than the Neovim focus — where error-tolerant
+client-side indentation already covers live typing. Retired as a standalone gap: the finding and its
+deferred scope are tracked in
+[lathe-formatting-profiles.md](../planned/lathe-formatting-profiles.md), "Future Work — Range-Aware
+Formatting" (On-type formatting), to be considered only after that design and the range-aware path
+land.
+
+---
+
+## EG-029 — `rangeFormat` ignores its range and formats the whole document
+
+**Status: non-goal (as a standalone gap) — findings folded into the formatting design.**
+
+`textDocument/rangeFormatting` delegates to the whole-document `JavaFormatter.format`
+(`formatSourceAndFixImports`), ignoring the request's range. In practice it is dormant — the
+`documentRangeFormattingProvider` capability is not advertised, so a compliant client never calls it.
+Retired as a standalone gap: the finding, the near-term defensive gating, and the range-aware
+formatting feature (GJF `formatSource(text, ranges)`, the prerequisite for conservative
+`onTypeFormatting`) are now tracked in
+[lathe-formatting-profiles.md](../planned/lathe-formatting-profiles.md), "Future Work — Range-Aware
+Formatting", to be implemented once that formatting design lands.
+
+---
+
 ## EG-034 — `textDocument/implementation` on an interface method omits record component accessors that implement it
 
 **Status: done — Target: M2.**
