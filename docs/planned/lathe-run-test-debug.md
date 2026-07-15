@@ -109,7 +109,7 @@ Discovery is independent and always source-derived.
 | `workspace.json` | `lathe:sync` (plugin) | server | Adds per-module `resourceRoots` (runtime classpath lives in `main-launch.json`) |
 | `.lathe-run.json` | user / editor | Neovim + server | Named run/debug configs; thin overlay only (§8) |
 | `~/.cache/lathe/lathe-test-runner.jar` | server (materialize on first use) | replay JVM | The replay executor (§5) |
-| Parent POM: `lathe-junit` test dep + Surefire pin | `lathe:init` (plugin) / committed | Maven build | Activates capture on the build |
+| Parent POM: `lathe-junit` test dep + Surefire pin | user (committed by hand; `lathe:init` does **not** inject it) | Maven build | Activates capture on the build |
 
 `<rel>` is the module path relative to the workspace root (`workspaceRoot.relativize(moduleDir)`), the
 same key the compiler shim uses.

@@ -130,6 +130,55 @@ They are resolved on demand by Maven instead of being guessed from POM text.
 The write is skipped when the content is unchanged, so a no-op build does not trigger
 a server reload.
 
+## Test Capture
+
+The neotest test runner (see [Neovim Setup](#test-runner-neotest)) replays tests from the captured
+`.lathe/` bytecode with no recompilation. To know *how* to launch that replay JVM — the exact
+classpath, module path, and JVM arguments Maven's Surefire fork used — Lathe captures the real launch
+from inside the test fork. That capture is done by `lathe-junit`, a small published artifact you add
+as a `test`-scoped dependency where every test module inherits it (usually the parent POM):
+
+```xml
+<dependencies>
+    <dependency>
+        <groupId>io.github.ag-libs</groupId>
+        <artifactId>lathe-junit</artifactId>
+        <version>${lathe.version}</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+No `maven-surefire-plugin` configuration is needed: `lathe-junit` registers a JUnit Platform
+`LauncherSessionListener` through the standard service-loader SPI, and Surefire's JUnit Platform
+provider auto-detects it.
+
+On any build that actually runs tests (`mvn test`, `mvn verify`, `mvn install`), the listener fires
+once per module, before test execution, and writes `.lathe/<module>/test-launch.json`. It records —
+from live JVM introspection, not by parsing Surefire's command line:
+
+- `java.home` (replay uses the same JDK),
+- the fork classpath (with `lathe-junit`'s own jar removed, so replay never has to strip it),
+- the module path and module directives (`--patch-module`, `--add-opens` / `--add-reads` /
+  `--add-exports`, `--add-modules`),
+- and the remaining JVM args from `<argLine>`.
+
+Because these are read *after* the JVM expanded Surefire's argfile, the captured template is the
+**effective, interpreted** launch — the module graph the tests actually ran under — rather than a
+guess reconstructed from POM text.
+
+Requirements and current limits:
+
+- **A modern, JPMS-capable Surefire (e.g. 3.5.5+).** An old Surefire forks non-modularly and yields
+  an empty argument list, so nothing meaningful is captured. Pin `maven-surefire-plugin` to a recent
+  version if your build inherits an older one.
+- **JUnit Platform (JUnit 5/6, or the JUnit 4 vintage engine).** The listener rides the JUnit
+  Platform launcher; pure TestNG forks are not captured.
+- **`<systemPropertyVariables>` are not captured yet** — Surefire sets them via a booter properties
+  file that is invisible to JVM introspection. Known gap.
+- A module whose tests are skipped or absent produces no `test-launch.json`, so its tests are not
+  runnable from the editor until a build actually forks them.
+
 ## Neovim Setup
 
 Lathe provides a distributable plugin for Neovim 0.11+ that configures native LSP,
@@ -206,6 +255,11 @@ treesitter-query scan or a separate Maven invocation -- `lathe.runnables.list` f
 (real attributed-analysis, not syntax guessing) and `lathe.run.test` to run, replaying from
 captured `.lathe/` bytecode with no recompilation per run.
 
+> **Prerequisite:** running tests requires the [Test Capture](#test-capture) setup (the
+> `lathe-junit` test dependency). Discovery works without it, but a run has no captured
+> `test-launch.json` to replay until a build with `lathe-junit` on the test classpath has run the
+> tests at least once.
+
 Recognizes files matching Surefire's own default include patterns (`Test*.java`,
 `*Test.java`, `*Tests.java`, `*TestCase.java`) as test files. These are hardcoded as a
 reasonable default for now; a project that overrides Surefire's `<includes>` won't be
@@ -226,6 +280,37 @@ picked up correctly yet. Main methods aren't runnable yet either.
 
 > **Note:** Not part of `require('lathe').setup()` -- neotest is an optional dependency, so
 > the adapter is configured separately, the same way every neotest adapter is.
+
+### Running Tests
+
+The Lathe plugin adds no key mappings, and neotest ships none either, so bind the actions you
+want. A useful starting set:
+
+```lua
+local neotest = require("neotest")
+local lathe = require("lathe.neotest")
+
+vim.keymap.set("n", "<leader>tt", neotest.run.run,                                        { desc = "Test: run nearest" })
+vim.keymap.set("n", "<leader>tf", function() neotest.run.run(vim.fn.expand("%")) end,     { desc = "Test: run file" })
+vim.keymap.set("n", "<leader>tp", function() neotest.run.run(vim.fn.expand("%:p:h")) end, { desc = "Test: run package (current dir)" })
+vim.keymap.set("n", "<leader>tl", neotest.run.run_last,                                   { desc = "Test: run last" })
+vim.keymap.set("n", "<leader>tS", neotest.run.stop,                                       { desc = "Test: stop" })
+vim.keymap.set("n", "<leader>ts", neotest.summary.toggle,                                 { desc = "Test: toggle summary tree" })
+vim.keymap.set("n", "<leader>to", lathe.open_output,                                      { desc = "Test: output (docked, navigable)" })
+```
+
+Console output streams live into a docked split at the bottom of the screen; toggle it with
+`<leader>to` (`require("lathe.neotest").open_output()`). stdout and stderr are distinguished,
+and pressing `<CR>` or `gF` on a stack-trace frame in that window jumps straight to the failing
+source line.
+
+Use this docked window rather than neotest's built-in floating output
+(`require("neotest").output.open(...)` / `:Neotest output`): the float shows raw text only,
+without Lathe's source-link navigation.
+
+Pass/fail status also shows as gutter signs and in the summary tree (`<leader>ts`). Discovery is
+automatic -- opening a test file shows its runnable tests, and adding, renaming, or removing a
+`@Test` method updates them on save, with no manual refresh.
 
 ### Debugging
 
@@ -286,7 +371,7 @@ Configure Lathe in this Maven project.
 
 Use version 0.1.0-SNAPSHOT unless the repository already defines a Lathe version property.
 
-Install two pieces:
+Install three pieces:
 
 1. Configure maven-compiler-plugin so Java modules use the Lathe compiler shim.
    Add dependency io.github.ag-libs:lathe-compiler:${lathe.version}
@@ -299,12 +384,22 @@ Install two pieces:
    Do not specify phases; init defaults to initialize and sync defaults to process-test-classes.
    Set <inherited>false</inherited> so both goals run once at the reactor root.
 
+3. Add io.github.ag-libs:lathe-junit:${lathe.version} as a <scope>test</scope> dependency
+   where every test module inherits it (usually the parent POM). This enables the editor test
+   runner by capturing each module's real test-fork launch into .lathe/<module>/test-launch.json.
+   It needs no maven-surefire-plugin configuration (it self-registers via the JUnit Platform SPI),
+   but requires a JPMS-capable Surefire (e.g. 3.5.5+); if the build inherits an older Surefire,
+   pin maven-surefire-plugin to a recent version. Skip this piece if the project only needs LSP
+   code intelligence and not the test runner.
+
 Do not assume the reactor root POM is the parent POM.
 Inspect the Maven structure first.
 If Java modules inherit compiler configuration from a separate parent POM,
 put the compiler shim there.
 If standalone modules or example projects define their own compiler plugin configuration,
 add the shim there as well.
+The lathe-junit test dependency belongs wherever test modules inherit their common dependencies,
+which may again be a different POM from the reactor root.
 
 After editing, run:
 

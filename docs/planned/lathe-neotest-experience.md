@@ -64,10 +64,20 @@ tree with no manual re-trigger; discovery invoked before the server is ready res
 rather than caching "no tests". *Validated:* e2e driver's eager-discover-before-attach check and a
 real-project cold open (5 positions resolved).
 
-**D2 — Discovery stays current.** 🟡
+**D2 — Discovery stays current.** ✅
 Adding, renaming, or removing a test updates the runnable set.
+*As built:* satisfied by construction, no dedicated code. neotest core re-runs discovery on
+`BufWritePost` (client/init.lua's `{BufAdd, BufWritePost}` autocmd → `_update_positions` →
+`adapter.discover_positions`), and our `discover_positions` is a live `lathe.runnables.list` LSP
+round-trip rather than a cached parse: the server scans the attributed AST of the exact document
+content it currently tracks. So every save-triggered re-discovery reflects server-side truth, and
+because `runnables` attributes the requested content+version there is no ordering race with the
+save-compile. Even a `didChange`-only edit (no save) is reflected, since the server tracks buffer
+content live.
 *Criteria:* after an edit that adds a `@Test` method and a save, the new method appears as a
 position without reopening the file.
+*Validated:* `dev/neotest-e2e/verify_d2.lua` drives add / rename / remove (each with a save) plus
+add-without-save against the live server over the multi-module fixture — all reflected.
 
 **D3 — All runnable kinds.** ✅
 Everything IntelliJ would offer a gutter run icon for is discoverable: `@Test`,
