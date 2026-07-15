@@ -308,9 +308,11 @@ Use this docked window rather than neotest's built-in floating output
 (`require("neotest").output.open(...)` / `:Neotest output`): the float shows raw text only,
 without Lathe's source-link navigation.
 
-Pass/fail status also shows as gutter signs and in the summary tree (`<leader>ts`). Discovery is
-automatic -- opening a test file shows its runnable tests, and adding, renaming, or removing a
-`@Test` method updates them on save, with no manual refresh.
+Pass/fail status also shows as gutter signs and in the summary tree (`<leader>ts`), and a failing
+test places a diagnostic on its failing assertion line (jump between them with `]d` / `[d`), so you
+can reach a failure without opening the output window. Discovery is automatic -- opening a test file
+shows its runnable tests, and adding, renaming, or removing a `@Test` method updates them on save,
+with no manual refresh.
 
 ### Debugging
 

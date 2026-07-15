@@ -274,6 +274,14 @@ local function test_result(tr, output)
   local res = { status = TEST_STATUS[tr.status] or "failed", output = output }
   if tr.failureMessage and tr.failureMessage ~= "" then
     res.short = tr.failureMessage
+    -- Feed neotest's built-in diagnostic consumer (F1): a failed test becomes a vim.diagnostic on
+    -- its failing line. failureLine is a 1-based Java source line, -1 when unresolved; neotest's
+    -- error.line is 0-based, and omitting it lets neotest fall back to the position's start line.
+    local entry = { message = tr.failureMessage }
+    if tr.failureLine and tr.failureLine > 0 then
+      entry.line = tr.failureLine - 1
+    end
+    res.errors = { entry }
   end
   return res
 end

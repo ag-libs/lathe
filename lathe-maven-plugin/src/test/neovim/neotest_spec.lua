@@ -372,6 +372,21 @@ do
   spec.check("passing method marked passed, not the aggregate failure", method_a and method_a.status, "passed")
   spec.check("failing method marked failed", method_b and method_b.status, "failed")
   spec.check("failing method carries its failure message", method_b and method_b.short, "expected true")
+  -- F1: a failing method exposes a neotest.Result.error so neotest's diagnostic consumer sets a
+  -- vim.diagnostic on the failing line. failureLine is a 1-based Java source line; neotest wants
+  -- 0-based, so 12 -> 11. Passing methods (failureLine -1, empty message) expose no diagnostic.
+  spec.check("failing method exposes one diagnostic error", method_b and method_b.errors and #method_b.errors, 1)
+  spec.check(
+    "diagnostic message is the failure message",
+    method_b and method_b.errors and method_b.errors[1].message,
+    "expected true"
+  )
+  spec.check(
+    "diagnostic line is 0-based (failureLine 12 -> 11)",
+    method_b and method_b.errors and method_b.errors[1].line,
+    11
+  )
+  spec.check("passing method exposes no diagnostics", method_a and method_a.errors, nil)
   spec.check("param method keyed by its server positionId", method_c and method_c.status, "passed")
   spec.check("per-test result reuses the run transcript", read_file(method_a.output), "transcript")
   spec.check("class namespace node still gets the aggregate status", results["demo.FooTest"].status, "failed")

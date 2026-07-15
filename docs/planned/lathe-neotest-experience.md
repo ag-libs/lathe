@@ -178,16 +178,23 @@ re-parsing transcript text.
 
 ### 3.4 Failure navigation
 
-**F1 — Inline failure diagnostics.** ⬜
+**F1 — Inline failure diagnostics.** ✅
 Failures show as `vim.diagnostic` on the failing line, always fresh, with no output window needed —
 the jdtls / standard-adapter pattern (option D from the folded-in diagnostics doc).
-*Current:* `testResults` carry `failureLine`/`failureMessage`; the adapter never populates
-`result.errors`, which neotest's built-in diagnostic consumer reads.
+*As built:* `test_result` now maps a failed `TestResult` into `neotest.Result.errors` (`{ message =
+failureMessage, line = failureLine - 1 }`), the shape neotest's built-in diagnostic consumer reads.
+`failureLine` is a 1-based Java source line (server-derived from the failure's stack frame in the
+test class), converted to neotest's 0-based `error.line`; when unresolved (`-1`) the line is omitted
+and neotest falls back to the position's start line. neotest replaces diagnostics per position on
+each new result, so they stay fresh. Applies to method, class, and package/file runs alike, since
+they all flow per-test results through the same mapper.
 *Criteria:* a failing test sets a diagnostic at its failure line, replaced (not appended) on the
 next run; unblocked for class/package runs now that per-test results ship.
 
-**F2 — Jump to failure.** 🟡
+**F2 — Jump to failure.** ✅
 From a failure, reach the exact assertion line.
+*As built:* satisfied by F1 — the inline diagnostic makes `]d` / quickfix land on the failing line —
+and by O6, where `<CR>`/`gF` on a stack frame in the output window jumps to source.
 *Criteria:* satisfied by F1 (diagnostic `]d`/quickfix) and/or O6; at least one path lands on the
 failing line.
 
