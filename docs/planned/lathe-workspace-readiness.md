@@ -1,13 +1,17 @@
-# Lathe — Workspace Readiness Signal and Neotest Discovery Logging
+# Lathe — Workspace Readiness via Progress, and Neotest Discovery Logging
 
-Fixes the long-standing startup race where features fire before the server is ready — reproduced
-concretely as neotest showing no tests when a test file is opened as the first buffer
-(experience-spec **D1**). It is written as the *proud, long-standing* fix, not an adapter-local
-workaround: a **server-wide readiness signal** plus **client gating**, the same mechanism mature
-language servers use. It also closes a logging blind spot that made the race invisible.
+Fixes the long-standing startup race where a feature fires before the server has loaded the
+workspace — reproduced concretely as neotest showing no tests when a test file is the first buffer
+opened (experience-spec **D1**). The fix is the *proud, standards-based* one: the server reports
+workspace load/reload as standard **`$/progress`**, and the client **gates discovery on that
+progress's completion**. One mechanism gives three things — a visible loading bar in
+`vim.lsp.status()`, a readiness gate, and it implements the init/reload scope of the planned
+[lathe-lsp-progress.md](lathe-lsp-progress.md) (which is **not yet implemented** — verified: today
+`initialize()` only sends a `showMessage` toast; `ProgressReporter` is wired only to reference/call
+searches).
 
-Related: completes/uses [lathe-lsp-progress.md](lathe-lsp-progress.md) (the `$/progress` mechanism)
-and resolves D1 in [lathe-neotest-experience.md](lathe-neotest-experience.md).
+The logging half (§4) is already implemented (commit `fb3c5d1`); it is documented here for the full
+picture.
 
 ---
 
@@ -21,133 +25,119 @@ ATTACHED                            => true
 AFTER-ATTACH discover               => tree with 5 positions
 ```
 
-Discovery works perfectly *once the client is attached and the workspace is loaded*. But:
-
-- The neotest config eagerly calls `neotest.run.get_tree_from_args(...)` on plugin load, and neotest
-  does its own on-open discovery — both fire seconds **before** the Lathe JVM has attached.
-- `discover_positions` gives up immediately when the client isn't present
-  (`if not lathe_client() then return nil end`), with no wait and no retry. neotest caches "no tests"
-  and never re-discovers → empty summary/gutter.
-
-The only readiness cue the server emits is a `showMessage("Lathe: workspace ready.")` **toast** —
-human-facing, not a structured signal a client can gate on. And the client side is silent
-(`neotest.lua` logs nothing), so the miss leaves no trace.
+Discovery works perfectly *once the workspace is loaded*. But the neotest config eagerly calls
+`neotest.run.get_tree_from_args(...)` on plugin load, and neotest also discovers on open — both fire
+seconds before the Lathe JVM has attached and scanned the workspace. `discover_positions` then gives
+up immediately (`if not lathe_client() then return nil end`), neotest caches "no tests," and never
+re-discovers. The only readiness cue the server emits is a `showMessage` toast — human-facing, not a
+signal a client can gate on.
 
 ## 2. How mature servers solve this (precedent)
 
-The same class of bug — "a client request fired before the server finished loading" — is solved the
-same way across the ecosystem: **the server emits an explicit readiness signal; clients gate work on
-it.** No polling, no racing.
+The same class of bug is solved the same way everywhere: **the server signals readiness; the client
+gates work on it.** No polling, no racing.
 
-- **jdtls** sends a custom `language/status` notification; clients wait for `result.type ==
-  "ServiceReady"` before sending project-dependent requests (position ops, discovery). It also
-  carries `workDone/totalWork` for a progress bar before the terminal `ServiceReady`.
-- **rust-analyzer** sends `experimental/serverStatus` (`{health, quiescent, message}`) — richer than
-  plain `$/progress` because it signals *readiness* (`quiescent`) and health, not just a percentage;
-  the client advertises a `serverStatusNotification` capability and gates on it. `$/progress` remains
-  the visible init bar. (Lesson also learned there: scope `$/progress` to load/reload — do **not**
-  emit it per keystroke.)
+- **rust-analyzer** emits standard `$/progress` for its indexing/loading; editors render it and know
+  the server is ready when it ends. (It adds `experimental/serverStatus` for health/quiescence on
+  top — out of scope here.) Lesson also taken: scope progress to load/reload, never per keystroke.
+- **jdtls** carries `workDone/totalWork` progress during project import and a terminal
+  `language/status: ServiceReady`; clients wait for ready before project-dependent requests.
 
-Lathe already has the two ingredients: a `ProgressReporter` (used today for reference-search
-work-done progress) and a custom-notification channel (`LatheLanguageClient`, added for
-`lathe/testOutput`/`lathe/testEvent`). This design uses both.
+We follow the rust-analyzer shape: **standard `$/progress` for the workspace load, and its `end` is
+the readiness edge** — no Lathe-specific notification needed.
 
 ## 3. Design
 
-### 3.1 Server — a structured readiness signal
+### 3.1 Server — report workspace load/reload as `$/progress`
 
-- **Discrete gate-able event.** Add `lathe/status` to `LatheLanguageClient`:
-  `{ state: "loading" | "ready" }` (room to add `health`/`reason` later, rust-analyzer style). Emit
-  `loading` when a workspace load/reload begins and `ready` at the point that today sends the
-  `workspace ready` toast (`WorkspaceSession`). This is the jdtls `ServiceReady` analog and the
-  signal clients await. It is **server-wide**, not neotest-specific.
-- **Visible progress (already planned).** Emit `$/progress` work-done (`begin` → `end`) for
-  workspace init/reload via the existing `ProgressReporter`, so it renders in `vim.lsp.status()`.
-  This is the scope of [lathe-lsp-progress.md](lathe-lsp-progress.md); `lathe/status: ready` and the
-  progress `end` mark the same moment. Scoped to load/reload only.
-- The existing `showMessage` toast can stay (or become a thin client-side reaction to
-  `state="ready"`) — a decision, not a blocker.
+This is the init/reload scope of `lathe-lsp-progress`, implemented here.
 
-### 3.2 Client — gate discovery on readiness, event-driven
+- Wrap the worker's workspace load (`WorkspaceSession.initialize`) and each reload in a progress
+  task under a **stable, recognizable title constant** (e.g. `"Lathe: indexing workspace"`):
+  `progress.begin(title)` when the scan starts → `progress.end()` when it completes (where the
+  `workspace ready` toast is sent today).
+- Server-initiated progress is **already supported**: `ProgressReporter.open(null, response)` mints
+  its own token and sends `window/workDoneProgress/create` when the client advertises
+  `window.workDoneProgress`. The `response` future (used only for cancel bookkeeping) is the load
+  future or a placeholder.
+- The recognizable title is the contract the client keys on to tell workspace progress apart from
+  feature progress (`"Finding references…"`), which also uses `$/progress`. It lives as a constant
+  the server owns.
+- `ProgressReporter` already logs `[progress] …`; keep the `workspace ready` toast (or let the
+  client raise it) as a separate UX nicety.
 
-- Register a `lathe/status` handler that resolves a per-client **`nio` "ready" event** on
-  `state="ready"` (and re-arms it on `state="loading"` for reload).
-- `discover_positions`: if the workspace isn't ready yet, **`await` the ready event** (bounded by a
-  timeout) before calling `runnables.list`. This is suspending on an event — the normal async
-  pattern — not an `nio.sleep` poll loop. Per the repro, once ready, `runnables.list` compiles the
-  file on demand and returns positions, so readiness is a sufficient gate.
-- **Self-heal the early miss (push).** On `state="ready"`, re-trigger neotest discovery for the open
-  Java buffers (the eager `get_tree_from_args` path), so a summary that cached empty before attach
-  fills in the moment the server is ready — the user does not have to re-open the file.
+### 3.2 Client — gate discovery on the progress completion
 
-### 3.3 Logging (existing frameworks only — no custom log)
+- Register an **`LspProgress`** autocmd (first-class in Neovim ≥0.10). When an event from the lathe
+  client carries the workspace title with `value.kind == "end"`, set a **persistent `ready` flag**,
+  fire an `nio` event, and **re-trigger discovery for open Java buffers** so anything neotest cached
+  empty before attach refills — the user never re-opens the file.
+- `discover_positions`: if `ready`, proceed; else `await` the ready event, bounded by a timeout. The
+  eager `get_tree_from_args` and neotest's on-open discovery both now *suspend* until ready instead
+  of returning `nil`.
+- **Missed-edge safety:** if the progress `end` fired before the autocmd was registered (adapter
+  loaded very late) the flag stays false; on await timeout the adapter **tries `runnables.list`
+  anyway** rather than giving up — the workspace is loaded by then, so it succeeds. A missed signal
+  degrades to a slightly slower first discovery, never a broken one.
 
-An audit of the neotest paths found the run/replay side already well covered (`[replay]` warnings +
-INFO exit) and the file lifecycle logged (`[open]/[change]/[close]/[save]` — which shows whether
-`didOpen` reached the server, key to this race), but two genuine blind spots:
+### 3.3 Why `loading` is not a separate signal
 
-- **The discovery command path is silent.** `LatheWorkspaceService` has no LOG calls, and
-  `runnablesFuture` logs neither the no-open-doc miss nor the target count.
-- **The client adapter is completely silent.** `neotest.lua` has zero log lines, so nothing on the
-  client side of the flow can be seen.
+An earlier draft proposed a `lathe/status {loading|ready}` notification. Dropped: the only thing the
+gate needs is the **ready edge**, which the progress `end` already provides; the "loading" UX is the
+progress *bar* itself. One mechanism, not two.
 
-**Principle: no duplication — each side logs only what *it* alone can see.** The server owns the
-discovery outcome and the run; the client logs only the client-side facts that never reach the
-server. Close exactly the gaps, using the current frameworks — server JUL (`LATHE_DEBUG=1` →
-`FINE`), client `vim.lsp.log` (`:LspLog`) directly (no wrapper module) — in the house format
-`[operation] target detail Xms outcome`:
+## 4. Logging (implemented — commit `fb3c5d1`)
 
-- **Server (JUL) — the discovery outcome, which the run path already covers:**
-  - `[runnables] <uri> no open doc → empty` — the silent miss that explains "no tests" when the
-    client *is* attached but the file isn't analyzed yet.
-  - `[runnables] <uri> Xms targets=N` — the result.
-  - `[status] <root> loading` / `ready Xms` — from §3.1 (lands with the readiness fix).
-- **Client (`vim.lsp.log`) — only the client-only signal:**
-  - `[discover] <file> client=absent → nil` — the race: the request was *never sent* because no
-    client had attached, so the server cannot log it. This is the one line that pinpoints D1.
-  - (With the fix, §3.2:) `[discover] … awaiting ready` and `[status] ready → re-discovering K
-    buffers` — also client-only.
-  - No run/results line (the server's `[replay] … exit` already covers a run), no timing (kept
-    simple, per the client's minimal role).
+Existing frameworks only (server JUL / `LATHE_DEBUG`, client `vim.lsp.log`), **no duplication** —
+each side logs only what it alone can see:
 
-Quiet by default, on under `LATHE_DEBUG` (matching the server); one line per distinct outcome.
+- **Server:** `runnablesFuture` logs the discovery outcomes it owns — `[runnables] <uri> no open
+  doc → empty` and `[runnables] <uri> Xms targets=N`. (Run path already logs `[replay] … exit`.)
+- **Client:** one line — `[discover] <file> client=absent → nil`, the request that is never sent so
+  the server cannot see it. The readiness work adds `[status] ready → re-discovering K buffers` and
+  an await-timeout warning.
 
-## 4. Decisions to confirm
+## 5. Does this actually fix the race?
 
-1. **Gate signal shape:** custom `lathe/status {state}` (recommended — a clean, explicit gate like
-   jdtls/rust-analyzer) as the primary readiness event, with `$/progress` as the complementary
-   visible bar. Alternative: gate purely on `$/progress` `end` and skip the custom notification
-   (fewer moving parts, but progress-end is a fuzzier gate and couples us to nvim's progress
-   aggregation).
-2. **Client log sink:** ~~confirm~~ **Resolved** — `vim.lsp.log` (`:LspLog`), used directly, no
-   custom log module.
-3. **Await timeout** in `discover_positions` when readiness never arrives (server crash / no
-   workspace): what bound, and what to log/return on timeout (`nil`, so neotest simply shows no
-   tests, plus a `WARN`).
+Yes, for the reproduced case (opening a test file first — D1), because discovery no longer *races*:
+it **suspends until the workspace-load progress ends**, then proceeds (the repro shows discovery
+returns real positions once loaded), and the ready edge **re-discovers** anything cached empty
+earlier. The eager `get_tree_from_args` that triggers the bug is itself gated.
 
-## 5. Verification
+Honest bounds on the claim:
+
+- Depends on the client advertising `window.workDoneProgress` — Neovim does by default; if a client
+  did not, `open` degrades to a no-op task and discovery falls back to the timeout→try-anyway path
+  (still works, just without the visible bar).
+- A missed progress `end` (late adapter load) degrades to timeout→try-anyway, not failure.
+- It fixes **open-file** discovery. It does **not** make the project-wide summary populate for files
+  you have not opened — that needs closed-file/treesitter discovery (§7), a separate effort.
+
+## 6. Decisions to confirm
+
+1. **Await timeout** in `discover_positions` when readiness never arrives — proposed **~30s**
+   (matches a cold JVM start), then **try `runnables.list` anyway** (degrade, not give up) + a
+   `WARN`. OK?
+2. **Workspace-progress title** — a fixed constant the client matches on (e.g. `"Lathe: indexing
+   workspace"`). Confirm wording; it is user-visible in `vim.lsp.status()`.
+
+## 7. Verification
 
 - **Harness:** a spec that calls `discover_positions` **immediately, without waiting for attach**
-  (reproducing the eager path) and asserts it still resolves to the real tree once ready — locking
-  D1 out. This is the case the current harness never exercised (it waits for attach first), which is
-  why the race shipped.
-- **Manual:** open a test file as the first buffer in the real project → tests appear without
-  re-opening.
+  (the eager path that ships broken today) and asserts it still resolves to the real tree — the case
+  the current harness never exercised, which is why the race shipped. It exercises the await-until-
+  ready gate end to end.
+- **Manual:** `LATHE_DEBUG=1 vi …DiscountWrapperTest.java` as the first buffer → tests appear
+  without re-opening; `vim.lsp.status()` shows the indexing bar; `:LspLog` shows the flow.
 
-## 6. Non-goals / later
+## 8. Non-goals / later
 
 - **Treesitter discovery fast-path** (project-wide / closed-file discovery, so the summary populates
-  for unopened files too, like `neotest-java`) — a separate, larger change; the readiness signal
-  here does not need it.
-- Fine-grained `$/progress` reporting (percentages per module) — left to
-  [lathe-lsp-progress.md](lathe-lsp-progress.md).
+  for unopened files like `neotest-java`) — separate, larger; not needed by this fix.
+- `experimental/serverStatus`-style health reporting — out of scope; `$/progress` covers readiness.
 
-## 7. Why this is the right fix
+## 9. Relationship to lathe-lsp-progress
 
-- It matches the established pattern (jdtls `ServiceReady`, rust-analyzer `serverStatus`) rather than
-  polling or an adapter-local `nio.sleep` hack.
-- The readiness signal is **server-wide and reusable**, so it addresses the whole class of
-  "fired-before-ready" races — not just neotest discovery — which is the category of intermittent
-  startup problems seen before.
-- It advances an already-planned roadmap item (`lathe-lsp-progress`) instead of bolting on
-  throwaway code, and the logging pass makes this and future startup issues diagnosable in seconds.
+This implements that doc's **workspace init/reload** scope (the `$/progress` begin→end lifecycle) and
+consumes it as the readiness signal. Remaining lsp-progress ideas (per-module percentages, reload
+granularity) stay in [lathe-lsp-progress.md](lathe-lsp-progress.md) as follow-ups.
