@@ -701,8 +701,8 @@ vim.api.nvim_create_autocmd("BufEnter", {
 local function jump_to_resolved_frame(bufnr)
   local locations = frame_locations[bufnr]
   local row = vim.api.nvim_win_get_cursor(0)[1]
-  local location = locations and locations[row]
-  if not location then
+  local target = locations and locations[row]
+  if not target then
     return
   end
 
@@ -710,8 +710,11 @@ local function jump_to_resolved_frame(bufnr)
     vim.api.nvim_set_current_win(last_java_win)
   end
 
-  vim.cmd("edit " .. vim.fn.fnameescape(vim.uri_to_fname(location.uri)))
-  vim.api.nvim_win_set_cursor(0, { location.range.start.line + 1, location.range.start.character })
+  vim.cmd("edit " .. vim.fn.fnameescape(vim.uri_to_fname(target.uri)))
+  -- Java stack-trace line numbers are 1-based, as is the cursor row; clamp defensively in case the
+  -- resolved file has drifted from the line the trace named.
+  local line = math.max(1, math.min(target.line, vim.api.nvim_buf_line_count(0)))
+  vim.api.nvim_win_set_cursor(0, { line, 0 })
 end
 
 local function ensure_jump_keymaps(bufnr)
@@ -728,43 +731,23 @@ local function ensure_jump_keymaps(bufnr)
   end
 end
 
---- Underlines the `File.java:line` span of a resolved frame. `frame_line` is
---- one unwrap() entry: `text` is the rejoined logical line and `rows` are the
---- physical grid rows it spans. The span is located in the joined text, then
---- projected back onto the physical rows -- clamped to each row -- so it is
---- underlined even when a terminal wrap splits it across a row boundary, while
---- still marking only the file:line, not the whole frame. Returns whether any
---- extmark was placed.
-local function highlight_frame_span(bufnr, frame_line, frame)
-  local span = ("%s:%d"):format(frame.file, frame.line)
-  local start = frame_line.text:find(span, 1, true)
+--- Underlines the `File.java:line` span of a resolved frame so the clickable
+--- target reads as a link. `entry` is one frames_in_buffer() record: `text` is
+--- the buffer row and `row` its 1-based index. Marks only the file:line span,
+--- not the whole frame. Returns whether an extmark was placed.
+local function highlight_frame_span(bufnr, entry)
+  local span = ("%s:%d"):format(entry.frame.file, entry.frame.line)
+  local start = entry.text:find(span, 1, true)
   if not start then
     return false
   end
 
   local span_start = start - 1
-  local span_end = span_start + #span
-  local consumed = 0
-  local placed = false
-  for index, row in ipairs(frame_line.rows) do
-    -- Segment against the row text captured at unwrap time, not a fresh
-    -- nvim_buf_get_lines: the terminal buffer can reflow between the scan and
-    -- here, and a re-read would no longer line up with frame_line.text.
-    local row_len = #frame_line.texts[index]
-    local seg_start = math.max(span_start, consumed)
-    local seg_end = math.min(span_end, consumed + row_len)
-    if seg_start < seg_end then
-      pcall(vim.api.nvim_buf_set_extmark, bufnr, STACKTRACE_NS, row - 1, seg_start - consumed, {
-        end_col = seg_end - consumed,
-        hl_group = STACKTRACE_HL,
-      })
-      placed = true
-    end
-
-    consumed = consumed + row_len
-  end
-
-  return placed
+  pcall(vim.api.nvim_buf_set_extmark, bufnr, STACKTRACE_NS, entry.row - 1, span_start, {
+    end_col = span_start + #span,
+    hl_group = STACKTRACE_HL,
+  })
+  return true
 end
 
 -- Decoration runs once a run finishes, when the live buffer already holds the streamed
@@ -773,25 +756,17 @@ end
 local DECORATE_MAX_ATTEMPTS = 12
 local DECORATE_RETRY_MS = 50
 
---- Collects the frames in the output buffer, rejoining any terminal-wrapped rows first
---- (a no-op for the plain live buffer, retained so the same code also handles a
---- terminal-backed buffer). Returns a list of { frame = <parse_frame result>, line =
---- <unwrap entry> }. The wrap width is the longest line in the buffer: a terminal
---- renders at whatever window was current when output was sent (a narrow split,
---- say), so it is NOT reliably vim.o.columns, but every wrapped row is exactly
---- that width, so the longest line reveals it empirically.
+--- Collects the stack frames in the output buffer. The live buffer holds one
+--- logical line per row (we append transcript lines directly -- no terminal
+--- hard-wrap to undo), so each frame maps to a single row. Returns a list of
+--- { frame = <parse_frame result>, row = <1-based buffer row>, text = <row text> }.
 local function frames_in_buffer(bufnr)
   local raw = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-  local width = 0
-  for _, line in ipairs(raw) do
-    width = math.max(width, #line)
-  end
-
   local frames = {}
-  for _, line in ipairs(stacktrace().unwrap(raw, width)) do
-    local frame = stacktrace().parse_frame(line.text)
+  for i, text in ipairs(raw) do
+    local frame = stacktrace().parse_frame(text)
     if frame then
-      frames[#frames + 1] = { frame = frame, line = line }
+      frames[#frames + 1] = { frame = frame, row = i, text = text }
     end
   end
 
@@ -851,9 +826,8 @@ local function decorate_stack_frames(bufnr, attempt)
   nio().run(function()
     local resolved = resolve_frames(client, bufnr, frames)
 
-    -- Re-scan after the async resolution: a terminal buffer can reflow while
-    -- the LSP request is in flight, so highlight against a fresh, self-
-    -- consistent read rather than the frames captured before resolution.
+    -- Re-scan after the async resolution: more lines may have streamed in while the LSP request
+    -- was in flight, so highlight against a fresh read rather than the pre-resolution frames.
     if not vim.api.nvim_buf_is_valid(bufnr) then
       return
     end
@@ -863,10 +837,11 @@ local function decorate_stack_frames(bufnr, attempt)
     for _, entry in ipairs(frames_in_buffer(bufnr)) do
       local location = resolved[frame_key(entry.frame)]
       if location then
-        highlight_frame_span(bufnr, entry.line, entry.frame)
-        for _, row in ipairs(entry.line.rows) do
-          locations[row] = location
-        end
+        highlight_frame_span(bufnr, entry)
+        -- Jump to the frame's own line in the resolved file. workspace/symbol only locates the
+        -- class (its declaration), so location.range points at the class, not the failing line --
+        -- pair the resolved uri with the frame's parsed line instead.
+        locations[entry.row] = { uri = location.uri, line = entry.frame.line }
       end
     end
 

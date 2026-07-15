@@ -68,36 +68,4 @@ function M.pick_candidate(frame, symbols)
   return nil
 end
 
---- Rejoins terminal-wrapped grid rows into logical lines. neotest renders test
---- output into a terminal buffer whose wrap column is the window it rendered in
---- (not necessarily the editor width), so a logical line longer than `width` is
---- hard-wrapped across consecutive rows of exactly `width` cells, the last one
---- shorter. Callers pass the empirical wrap width -- the longest buffer line.
---- Without this, a long stack frame (e.g. a JPMS `module@version/`-qualified
---- one) is split across rows and matches nothing. Returns a list of
---- { text = <joined line>, rows = { <1-based physical row indices> } } so a
---- caller can map a match on the joined text back to the physical rows it
---- spans, for highlighting and jump registration. `width <= 0` disables
---- joining (returns each row as its own logical line).
-function M.unwrap(lines, width)
-  local logical = {}
-  local i = 1
-  while i <= #lines do
-    local text = lines[i]
-    local rows = { i }
-    local texts = { lines[i] }
-    while width > 0 and #lines[i] == width and i < #lines do
-      i = i + 1
-      text = text .. lines[i]
-      table.insert(rows, i)
-      table.insert(texts, lines[i])
-    end
-
-    table.insert(logical, { text = text, rows = rows, texts = texts })
-    i = i + 1
-  end
-
-  return logical
-end
-
 return M
