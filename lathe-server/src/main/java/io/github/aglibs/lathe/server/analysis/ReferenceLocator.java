@@ -255,11 +255,31 @@ final class ReferenceLocator extends SourceTreeLocator {
   }
 
   private void addMatchAtIdentifier(final Tree node, final String name, final ReferenceRole role) {
-    final long endPos = positions.getEndPosition(cu, node);
-    final long nameStart = endPos - name.length();
-    if (endPos >= 0 && nameStart >= 0) {
+    // Locate the selector by text from a reliable anchor instead of end-minus-name.length(): a
+    // node's end position can be approximate in generated sources, slicing the range onto a
+    // neighbouring identifier (FR-010). Anchoring on the receiver end also avoids matching an
+    // earlier occurrence of the name inside the receiver (e.g. `amount.amount`).
+    final long anchor = identifierAnchor(node);
+    if (anchor < 0) {
+      return;
+    }
+
+    final long nameStart = SourceLocator.findIdentifierFrom(content, anchor, name);
+    if (nameStart >= 0) {
       addMatch(nameStart, name.length(), role);
     }
+  }
+
+  private long identifierAnchor(final Tree node) {
+    if (node instanceof final MemberSelectTree ms) {
+      return positions.getEndPosition(cu, ms.getExpression());
+    }
+
+    if (node instanceof final MemberReferenceTree mr) {
+      return positions.getEndPosition(cu, mr.getQualifierExpression());
+    }
+
+    return positions.getStartPosition(cu, node);
   }
 
   private void addDeclarationMatch(final Tree node, final String name) {

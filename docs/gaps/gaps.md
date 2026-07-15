@@ -466,47 +466,7 @@ for a release is every gap with `Status: accepted` and the matching `Target` (se
 Active `textDocument/references` gaps discovered by live probing against a large `@Builder`-heavy
 reactor workspace. Resolved FR entries are in [gaps-archive.md](gaps-archive.md).
 
-## FR-010 — Reference highlight lands on the wrong identifier in generated code
-
-**Status: accepted — Target: M2**
-
-### Observed behaviour
-
-Find References on a member reports a match whose highlighted range covers a *neighbouring*
-identifier (a similarly-named sibling such as `taxAmount` when searching `amount`) inside a generated
-builder class, instead of the intended occurrence. Reported against generated `@Builder` sources;
-not yet reproduced in a unit fixture (a broad accessor search returned correct ranges, so the defect
-appears specific to generated-source positions).
-
-### Root cause (hypothesis)
-
-`ReferenceLocator.addMatchAtIdentifier` (`ReferenceLocator.java:257-263`) computes the identifier
-start as `endPosition(node) - name.length()`, assuming the node ends exactly at the target
-identifier. In generated sources javac source positions can be synthetic or approximate, so
-`getEndPosition` may not land at the identifier end, painting the highlight over an adjacent token.
-`addDeclarationMatch` carries a similar assumption via `findIdentifierFrom` from a possibly-inaccurate
-node start. The semantic matcher is name-exact (`ReferenceTarget.matches` requires
-`simpleName.equals(...)`), so this is a range-computation defect, not a matching defect — the match
-count is right, the drawn range is wrong.
-
-### Proposed fix
-
-Derive the identifier range from a reliable name position (javac name-position API / existing
-`SourceLocator` helpers) rather than end-minus-length arithmetic. Reproduce with a generated-source
-fixture first, then fix and assert every returned range's text equals the searched name.
-
-### Probe commands
-
-```bash
-# refs on a component of an @Builder record; verify each returned range's text == the searched name.
-printf 'refs "<component>,"\n' \
-  | python3 dev/explore.py /path/to/workspace/.../SomeRecord.java
-```
-
-### Regression targets
-
-- `ReferenceLocatorTest.references_generatedBuilderMember_rangeCoversExactIdentifier`
-- `ReferenceLocatorTest.references_adjacentSimilarNames_noCrossHighlight`
+No active FR gaps remain; resolved entries are in [gaps-archive.md](gaps-archive.md).
 
 ---
 

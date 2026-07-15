@@ -693,6 +693,49 @@ printf 'hover "<arg-token>"\nsig after "requireNonNullElse("\n' \
 
 ---
 
+## FR-010 — Reference highlight lands on the wrong identifier in generated code
+
+**Status: done — Target: M2**
+
+### Observed behaviour
+
+Find References on a member reported a match whose highlighted range covered a *neighbouring*
+identifier (a similarly-named sibling such as `taxAmount` when searching `amount`) inside a generated
+builder class, instead of the intended occurrence. Reported against generated `@Builder` sources.
+
+### Root cause
+
+`ReferenceLocator.addMatchAtIdentifier` computed the identifier start as
+`endPosition(node) - name.length()`, assuming the node ends exactly at the target identifier. When
+javac source positions are approximate (as they can be for generated sources), `getEndPosition` need
+not land at the identifier end, so the end-minus-length arithmetic slices the range onto an adjacent
+token. The semantic matcher is name-exact, so this was a range-computation defect, not a matching
+defect — the match count was right, the drawn range was wrong.
+
+### Resolution
+
+`addMatchAtIdentifier` now locates the selector by text from a reliable anchor instead of the
+arithmetic: it anchors on the receiver end (`getEndPosition(node.getExpression())` for a
+`MemberSelectTree`, `getQualifierExpression()` for a `MemberReferenceTree`, else the node start) and
+reuses the existing `SourceLocator.findIdentifierFrom` helper — the same approach `addDeclarationMatch`
+already uses. Anchoring after the receiver also prevents matching an earlier occurrence of the name
+inside the receiver (e.g. `amount.amount`). No new abstraction; the existing range-start tests in
+`ReferenceLocatorTest` (`field_memberSelect_reportsNamePosition`,
+`field_parameterWithSameName_notConfusedWithField`, `method_overload_doesNotMatchSibling`) guard
+against regressions.
+
+Note: the original symptom is **no longer reproducible** in the validation workspace. Live probing
+with `dev/explore.py` over the `@Builder`-heavy reactor (including the literal `amount`/`taxAmount`
+record shape) returned correct ranges for every reference — the on-disk generated sources now carry
+accurate javac positions, so the end-minus-length arithmetic no longer had an inaccurate position to
+trip on. The fix is therefore defensive hardening that removes the latent fragility rather than a
+change verified against a live reproduction. A synthetic-position unit repro was declined as
+disproportionate (it would require faking `SourcePositions`); a Unicode-escaped-identifier repro was
+also explored and dropped because covering it would need either javac internals or bespoke
+escape scanning, both out of scope.
+
+---
+
 ## FR-011 — Method call on a `var`/chained receiver is dropped when the receiver type is never spelled
 
 **Status: done — Target: M2**
