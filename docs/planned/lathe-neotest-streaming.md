@@ -34,6 +34,10 @@ pushes output lines to the client; neotest never runs the process.
 3. **Run completion:** `lathe.run.test` still resolves with the full `ReplayOutcome` at process exit;
    streaming notifications are additive. `build_spec`/`results()`'s current await is untouched — the
    smallest, proven diff.
+   **↳ Revised during Deliverable 4 — see [§8 As-built](#8-as-built-reconciliation).** This
+   "untouched await" assumption did not survive contact with neotest's runner: it blocks on
+   `build_spec` and only polls `spec.stream` afterwards, so a live gutter update is impossible while
+   the run happens inside `build_spec`. The run model was restructured to be non-blocking instead.
 
 **Caveat carried by decision 1 (documented, not hidden):** splitting stdout and stderr into two OS
 pipes means cross-stream *interleaving* is best-effort by arrival order — exact within each stream,
@@ -115,19 +119,20 @@ position (R2). `dir → package` stays in Lua (it works and is not the pain poin
 Each is its own commit series and is gated green by extending the Phase-1 harness
 (`dev/neotest-e2e.sh`) with a spec for the behavior it lands.
 
-1. **stdout/stderr split** *(done)* — `ReplayLauncher` stops merging; `ReplaySession` dual-drains
-   into `List<TranscriptLine>`; `ReplayOutcome.output` reshaped; server tests and the Lua
+1. **stdout/stderr split** *(done — `d6037c3`)* — `ReplayLauncher` stops merging; `ReplaySession`
+   dual-drains into `List<TranscriptLine>`; `ReplayOutcome.output` reshaped; server tests and the Lua
    `results()` adapt. Server-only, unit-testable; prerequisite for tagged streaming and the O3 data.
-2. **Console streaming notification + live buffer** — `runToken` arg, `LatheLanguageClient`,
-   `lathe/testOutput` emission, and the adapter's handler + live docked buffer + stderr color +
-   float removal. Delivers O1/O2/O3/O4/O5.
-3. **id-mapping → server** — `positionId` on `TestResult`; adapter simplification (Design B).
-   Prerequisite for deliverable 4.
-4. **Live per-test result events** — `ReplaySession` tails the sink and emits `lathe/testEvent`
-   `{token, <TestResult>}` as each method finishes; the adapter marks that position live, mid-run
-   (§3.4). Delivers the IntelliJ progress feel — experience-spec criterion R6.
-5. **file-run consolidation** — `List<TestSelection>` through `run.test`/`ReplayTransform`; single
-   file-run launch (Design C, fixes R2).
+2. **Console streaming notification + live buffer** *(done — `a427c60` server, `ee4fb1e` client)* —
+   `runToken` arg, `LatheLanguageClient`, `lathe/testOutput` emission, and the adapter's handler +
+   live docked buffer + stderr color + float removal. Delivers O1/O2/O3/O4/O5.
+3. **id-mapping → server** *(done — `2efde09`)* — `positionId` on `TestResult`; adapter
+   simplification (Design B). Prerequisite for deliverable 4.
+4. **Live per-test result events** *(done — `feab926` server, `0fefc76` client)* — `ReplaySession`
+   tails the sink and emits `lathe/testEvent` `{token, <TestResult>}` as each method finishes; the
+   adapter marks that position live, mid-run (§3.4, §8). Delivers the IntelliJ progress feel —
+   experience-spec criterion R6.
+5. **file-run consolidation** *(done — `e361661`)* — `List<TestSelection>` through
+   `run.test`/`ReplayTransform`; single file-run launch (Design C, fixes R2).
 
 ## 7. Risks and open items
 
@@ -141,4 +146,47 @@ Each is its own commit series and is gated green by extending the Phase-1 harnes
 - **Sink tailing** (deliverable 4) — watching the NDJSON sink for appends mid-run must tolerate
   partial/last-flushed lines and reconcile against the authoritative whole-file read at exit, so a
   dropped or half-written event never leaves a position stuck or mis-marked.
-</content>
+
+## 8. As-built reconciliation
+
+Phase 2 shipped (Deliverables 1–5, all green against the harness). Where the build diverged from the
+plan above:
+
+**The run model became asynchronous (revises Decision 3).** Reading neotest's runner
+(`client/runner.lua`, `client/strategies/init.lua`) showed it calls `build_spec` and *blocks* on it,
+then runs the spec's process and only *afterwards* polls `spec.stream` — and `ProcessTracker:run`
+returns as soon as the no-op `"true"` process exits, firing `stream_processor` in a detached
+`nio.run` it never awaits. So the original "run inside `build_spec`, keep the blocking return, leave
+`results()` untouched" plan left no window for live gutter marks. As built:
+
+- `build_spec` no longer runs the test. `run_spec(position_id, module_rel, selections, client)` mints
+  a token, fires `run.test` on `nio.run` (not awaited), and returns immediately with
+  `command = {"true"}`, a `result_future`, and a `stream` function.
+- The `lathe/testEvent` handler pushes each result onto a per-token `nio.control.queue`; the spec's
+  `stream` iterator drains it and yields `{[positionId] = result}` to neotest, which marks each
+  position the moment its method finishes. A `STREAM_DONE` sentinel (a queue cannot carry `nil`)
+  closes the stream once the run completes.
+- `results()` now *awaits* `result_future` before reading the outcome (neotest calls it as soon as
+  the no-op process exits, i.e. before the real run finishes), then does the same authoritative
+  fan-out and output-file write. It runs in neotest's async context, so the wait yields.
+
+This brings the adapter into line with neotest's intended model (`build_spec` describes, neotest
+runs); the old inline-blocking call was the real deviation.
+
+**One token per run, not per class.** With file runs consolidated (Deliverable 5) each user run is a
+single `run_spec` with one token, so the "concurrent file classes each need a token" concern from
+§3.1 no longer applies — the classes run in one JVM under one token.
+
+**Reference check (why this shape is worth it).** Confirmed against the sources: `neotest-java`
+(rcasia) collects results only after the process exits by parsing `TEST-*.xml` reports — no `stream`,
+no live status; `nvim-jdtls` streams JUnit socket events into its *own* UI (dap-repl + `vim.diagnostic`
++ quickfix), not a neotest surface. No Java neotest adapter does live per-test streaming, so this
+async-`stream` model is novel and ahead of both references.
+
+**Held to plan:** the transcript split and tagging (§2.1, §3.1), the `lathe/testOutput` console
+channel (§3.2), the sink-tailed `lathe/testEvent` result channel (§3.4), server-side `positionId`
+(Design B), and the multi-selection file consolidation (Design C) all shipped as described. The
+best-effort tailer + authoritative exit read (§7) held.
+
+**Deferred (tracked in the experience spec):** F1 (inline `vim.diagnostic` from `failureLine`, now
+cheaply unblocked by `positionId` + the event payload) and O7 (output folding).
