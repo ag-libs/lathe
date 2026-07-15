@@ -94,7 +94,13 @@ final class WorkspaceSession {
   // while a small batch bounds peak memory, cancellation latency, and analyze()-crash blast radius.
   private static final int REFERENCE_BATCH_SIZE = 8;
 
+  // Title of the $/progress task reported while the workspace loads/reloads. The neotest adapter
+  // matches on it to gate discovery on readiness, so it is a cross-process contract: keep it in
+  // sync with the mirror in lua/lathe/neotest.lua. Also user-visible via vim.lsp.status().
+  static final String WORKSPACE_PROGRESS_TITLE = "Lathe: indexing workspace";
+
   private final LanguageClient client;
+  private final ProgressReporter progressReporter;
   private final ServerEventLoop worker;
   private final long debounceMs;
   private Path workspaceRoot;
@@ -111,8 +117,12 @@ final class WorkspaceSession {
   private final DiagnosticPublisher publisher;
 
   WorkspaceSession(
-      final LanguageClient client, final ServerEventLoop worker, final long debounceMs) {
+      final LanguageClient client,
+      final ProgressReporter progressReporter,
+      final ServerEventLoop worker,
+      final long debounceMs) {
     this.client = client;
+    this.progressReporter = progressReporter;
     this.worker = worker;
     this.debounceMs = debounceMs;
     this.publisher = new DiagnosticPublisher(client, docs);
@@ -120,6 +130,18 @@ final class WorkspaceSession {
 
   void initialize(final Path root) {
     this.workspaceRoot = root;
+    final var progress = progressReporter.open(null, new CompletableFuture<>());
+    progress.begin(WORKSPACE_PROGRESS_TITLE, 1);
+    final var t = Stopwatch.start();
+    try {
+      loadWorkspace(root);
+    } finally {
+      progress.finish(null);
+      LOG.info(() -> "[workspace] ready %dms".formatted(t.elapsedMs()));
+    }
+  }
+
+  private void loadWorkspace(final Path root) {
     final boolean configured = Files.isDirectory(root.resolve(LatheLayout.LATHE_DIR));
     manifest = WorkspaceManifest.load(root);
     workspace = WorkspaceModuleRegistry.scan(root, manifest);
@@ -1555,6 +1577,16 @@ final class WorkspaceSession {
 
   private void reload() {
     LOG.info(() -> "[reload] workspace changed, reloading");
+    final var progress = progressReporter.open(null, new CompletableFuture<>());
+    progress.begin(WORKSPACE_PROGRESS_TITLE, 1);
+    try {
+      reloadWorkspace();
+    } finally {
+      progress.finish(null);
+    }
+  }
+
+  private void reloadWorkspace() {
     final var newManifest = WorkspaceManifest.load(workspaceRoot);
     if (watcher != null) {
       watcher.updatePomPaths(newManifest.pomPaths());

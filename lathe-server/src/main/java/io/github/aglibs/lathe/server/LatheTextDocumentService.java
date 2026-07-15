@@ -37,7 +37,8 @@ final class LatheTextDocumentService implements TextDocumentService {
 
   void connect(final LanguageClient client) {
     progressReporter = new ProgressReporter(client);
-    worker.execute(() -> session = new WorkspaceSession(client, worker, debounceMs));
+    worker.execute(
+        () -> session = new WorkspaceSession(client, progressReporter, worker, debounceMs));
   }
 
   void setWorkDoneProgressSupported(final boolean supported) {

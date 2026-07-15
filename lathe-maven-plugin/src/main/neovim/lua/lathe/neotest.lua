@@ -41,6 +41,82 @@ local function debug_log(msg)
   end
 end
 
+-- Workspace readiness gate. The Lathe server reports workspace load/reload as a $/progress task
+-- under this title (mirrors WorkspaceSession.WORKSPACE_PROGRESS_TITLE); discovery is gated on that
+-- progress ending, so a discovery that fires before the server is ready suspends instead of caching
+-- "no tests" (the D1 startup race). Neovim backfills the begin title onto the end event, so the
+-- title alone identifies the workspace-load completion.
+local WORKSPACE_PROGRESS_TITLE = "Lathe: indexing workspace"
+local READY_TIMEOUT_MS = 30000
+local READY_AUGROUP = vim.api.nvim_create_augroup("LatheNeotestReady", { clear = true })
+local workspace_ready = false
+local ready_event
+
+local function signal_ready()
+  if workspace_ready then
+    return
+  end
+
+  workspace_ready = true
+  if ready_event then
+    ready_event.set()
+  end
+end
+
+--- Re-runs neotest discovery for open Java test buffers once the workspace is ready, so a summary
+--- that cached "no tests" before the server loaded fills in without the user re-opening the file.
+local function rediscover_open_buffers()
+  debug_log("[status] workspace ready → re-discovering open buffers")
+  nio().run(function()
+    for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+      if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].filetype == "java" then
+        local name = vim.api.nvim_buf_get_name(buf)
+        if name ~= "" and M.is_test_file(name) then
+          -- Wrap the whole access: neotest.run is nil until neotest.setup() has run (e.g. the
+          -- direct-drive harness never sets it up), and indexing it must not error the autocmd.
+          pcall(function()
+            require("neotest").run.get_tree_from_args(name)
+          end)
+        end
+      end
+    end
+  end)
+end
+
+vim.api.nvim_create_autocmd("LspProgress", {
+  group = READY_AUGROUP,
+  pattern = "end",
+  callback = function(ev)
+    local client = vim.lsp.get_client_by_id(ev.data.client_id)
+    if not client or client.name ~= "lathe" then
+      return
+    end
+
+    local value = ev.data.params and ev.data.params.value
+    if value and value.title == WORKSPACE_PROGRESS_TITLE then
+      signal_ready()
+      rediscover_open_buffers()
+    end
+  end,
+})
+
+--- Suspends until the workspace has loaded (the $/progress end above), bounded by a timeout after
+--- which discovery is attempted anyway -- so a missed progress edge degrades to a slower first
+--- discovery, never a broken one. Event-driven (no polling); called from neotest's async discovery.
+local function await_ready()
+  if workspace_ready then
+    return
+  end
+
+  ready_event = ready_event or nio().control.event()
+  nio().first({
+    ready_event.wait,
+    function()
+      nio().sleep(READY_TIMEOUT_MS)
+    end,
+  })
+end
+
 -- RunnableKind ordinal -> neotest position type / TestSelectionKind. lsp4j's Gson layer
 -- serializes Java enums by ordinal, matching the LSP convention that kind fields like
 -- SymbolKind/DiagnosticSeverity are integers (see dev/explore.py's identical handling).
@@ -325,9 +401,12 @@ local function build_tree(file_path, targets)
 end
 
 function M.discover_positions(file_path)
+  -- Gate on workspace readiness so an early discovery suspends until the server has loaded, rather
+  -- than racing it and caching "no tests" (D1).
+  await_ready()
+
   local client = lathe_client()
   if not client then
-    -- The startup race: neotest asked to discover before the Lathe LSP client attached.
     debug_log("[discover] " .. file_path .. " client=absent → nil")
     return nil
   end

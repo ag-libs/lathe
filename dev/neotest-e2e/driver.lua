@@ -73,16 +73,14 @@ end
 require("lathe").setup()
 vim.cmd("edit " .. test_file)
 
--- The D1 acceptance criterion is really about neotest's *discovery scheduling*
--- racing the LSP attach and caching "no tests"; this harness calls the adapter
--- directly, so it cannot reproduce that caching race and instead pins the
--- adapter-level facts underneath it: the client does come up on a cold open, and
--- discovery returns a real tree once it has. Reproducing the scheduling race
--- needs driving neotest's own discovery consumer and is left to the D1 fix.
-spec.pending(
-  "D1 discovery-vs-attach scheduling race",
-  "needs neotest's discovery consumer, not a direct adapter call — deferred to the D1 fix"
-)
+-- D1: discovery fired immediately, before the LSP has attached (the eager path that returned nil
+-- and cached "no tests" before the readiness gate). It must now suspend on workspace readiness and
+-- resolve to the real tree. This is the exact race, reproduced -- run it before any attach wait.
+local eager_done, eager_tree = false, nil
+nio.run(function()
+  eager_tree = require("lathe.neotest").discover_positions(test_file)
+  eager_done = true
+end)
 
 local attached = vim.wait(30000, function()
   return #vim.lsp.get_clients({ name = "lathe" }) > 0
@@ -92,6 +90,11 @@ if not attached then
   spec.finish("neotest-e2e")
   return
 end
+
+vim.wait(45000, function()
+  return eager_done
+end, 50)
+spec.check("D1 discovery before attach resolves (not nil)", eager_tree ~= nil, true)
 
 local captured = {}
 local done = false

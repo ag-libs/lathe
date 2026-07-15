@@ -52,14 +52,17 @@ can assert it mechanically; where the two disagree, the harness wins and this ta
 
 ### 3.1 Discovery
 
-**D1 — Cold-open discovery.** ❌
+**D1 — Cold-open discovery.** ✅
 Opening a test file as the *first* buffer in a session still discovers its runnable tests.
-*Current:* races on startup — the adapter returns no tree when the LSP client hasn't attached yet,
-and the server returns an empty list until the file's `didOpen`/first compile lands, and neotest
-does not retry either miss.
+*As built:* the server publishes a `$/progress` work-done report (title "Lathe: indexing workspace")
+around initial workspace load and reload; the adapter suspends `discover_positions` on that
+readiness signal (racing a ~30s timeout that then tries anyway) and re-triggers discovery for open
+buffers when the signal ends. Discovery invoked before the client has attached now resolves to the
+real tree once the server is ready instead of caching "no tests".
 *Criteria:* with a cold server, opening a test file and waiting for attach yields the full position
 tree with no manual re-trigger; discovery invoked before the server is ready resolves once it is,
-rather than caching "no tests".
+rather than caching "no tests". *Validated:* e2e driver's eager-discover-before-attach check and a
+real-project cold open (5 positions resolved).
 
 **D2 — Discovery stays current.** 🟡
 Adding, renaming, or removing a test updates the runnable set.
