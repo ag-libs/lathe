@@ -275,15 +275,25 @@ final class WorkspaceSession {
   CompletableFuture<List<RunTarget>> runnablesFuture(final String uri) {
     final OpenDocument doc = docs.get(uri);
     if (doc == null) {
+      LOG.fine(() -> "[runnables] %s no open doc → empty".formatted(uri));
       return CompletableFuture.completedFuture(List.of());
     }
 
+    final var t = Stopwatch.start();
     return switch (routeCompiler(uri)) {
       case CompilerRoute.Module module -> {
         touchAnalysisCache(uri);
         yield module
             .worker()
-            .runnables(uri, doc.content(), doc.version(), moduleRel(module.config()));
+            .runnables(uri, doc.content(), doc.version(), moduleRel(module.config()))
+            .thenApply(
+                targets -> {
+                  LOG.fine(
+                      () ->
+                          "[runnables] %s %dms targets=%d"
+                              .formatted(uri, t.elapsedMs(), targets.size()));
+                  return targets;
+                });
       }
       case CompilerRoute.External ignored -> CompletableFuture.completedFuture(List.of());
       case CompilerRoute.Missing ignored -> CompletableFuture.completedFuture(List.of());

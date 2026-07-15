@@ -31,6 +31,16 @@ end
 local M = {}
 M.name = "neotest-lathe"
 
+-- Troubleshooting log for the adapter. Writes to Neovim's LSP log (:LspLog) -- the same place the
+-- Lathe server's own stderr lands -- gated on LATHE_DEBUG so it matches the server's debug switch
+-- (LATHE_DEBUG=1) and stays silent otherwise. Format mirrors the server's "[operation] target
+-- detail Xms outcome" convention.
+local function debug_log(msg)
+  if vim.env.LATHE_DEBUG then
+    vim.lsp.log.info("[lathe.neotest] " .. msg)
+  end
+end
+
 -- RunnableKind ordinal -> neotest position type / TestSelectionKind. lsp4j's Gson layer
 -- serializes Java enums by ordinal, matching the LSP convention that kind fields like
 -- SymbolKind/DiagnosticSeverity are integers (see dev/explore.py's identical handling).
@@ -317,6 +327,8 @@ end
 function M.discover_positions(file_path)
   local client = lathe_client()
   if not client then
+    -- The startup race: neotest asked to discover before the Lathe LSP client attached.
+    debug_log("[discover] " .. file_path .. " client=absent → nil")
     return nil
   end
 
