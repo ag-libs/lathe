@@ -239,10 +239,9 @@ final class WorkspaceSession {
       return Optional.empty();
     }
 
-    final var t = Stopwatch.start();
     try {
       FileUtil.copyFileAtomically(file, dest.get());
-      LOG.fine(() -> "[resource] %s copied %dms".formatted(uri, t.elapsedMs()));
+      LOG.info(() -> "[resource] %s → %s".formatted(uri, dest.get()));
       return dest;
     } catch (final IOException e) {
       LOG.log(Level.WARNING, e, () -> "[resource] copy failed for %s".formatted(uri));

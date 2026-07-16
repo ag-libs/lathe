@@ -17,10 +17,8 @@ class ResourceRootIndexTest {
 
   private static List<ResourceRootData> standardRoots() {
     return List.of(
-        new ResourceRootData(
-            "app/src/main/resources", "app/target/classes", "", false),
-        new ResourceRootData(
-            "app/src/test/resources", "app/target/test-classes", "", false));
+        new ResourceRootData("app/src/main/resources", "app/target/classes", "", false),
+        new ResourceRootData("app/src/test/resources", "app/target/test-classes", "", false));
   }
 
   @Test
