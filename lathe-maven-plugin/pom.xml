@@ -140,6 +140,7 @@
           <extraArtifacts>
             <extraArtifact>io.github.ag-libs:lathe-junit:${project.version}:jar</extraArtifact>
             <extraArtifact>io.github.ag-libs:lathe-test-runner:${project.version}:jar</extraArtifact>
+            <extraArtifact>io.github.ag-libs:lathe-maven-extension:${project.version}:jar</extraArtifact>
           </extraArtifacts>
           <settingsFile>src/it/settings.xml</settingsFile>
           <mavenOpts>-Dlathe.cache=${project.build.directory}/it-home/.cache/lathe -DlatheLocalRepo=${settings.localRepository}</mavenOpts>
