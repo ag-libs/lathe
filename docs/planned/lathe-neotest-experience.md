@@ -194,12 +194,28 @@ Stack frames in output jump to source (`<CR>`/`gF`).
 *Current:* shipped; terminal-wrap-aware; jumps to the last-focused Java window.
 *Criteria:* a frame for a workspace class underlines the `File.java:line` span and jumps correctly.
 
-**O7 — Fold output regions.** ⬜
+**O7 — Fold output regions.** ⬜ (deferred)
 Output can be collapsed (e.g. per-test sections, or a run command with a fold option).
-*In scope* ([Decision 3](#4-decisions)).
-*Criteria:* the docked output supports collapsing output into foldable regions; folding must key off
-structure the stream already carries (per-run / per-test boundaries, stdout-vs-stderr) rather than
-re-parsing transcript text.
+*Deferred.* The stream carries only the stdout/stderr tag per line — no per-test output boundaries —
+so the cheap tag-only fold is useless (failure stack traces print to stdout, not stderr), and the
+useful per-test fold would need the runner to emit boundary structure plus fiddly window-local fold
+plumbing for a live-appended buffer. Low value too: the failure signal is already reachable via O6
+(navigable frames) and F1 (inline diagnostics) without scrolling raw output. Superseded in practice
+by O8, which surfaces the one piece of output structure users actually asked to see — the run
+command.
+
+**O8 — Show the run command.** ✅
+The exact replay command that ran the tests is visible in the output surface.
+*As built:* `ReplayLauncher` emits the joined launch `argv` as the run's first line, tagged
+`TranscriptLine.Stream.COMMAND` (appended to the enum so `STDOUT`/`STDERR` ordinals stay stable),
+before any process output. The client renders it dimmed (linked to `Comment`) at the top of the
+docked buffer, unprefixed so it stays copy-pasteable. A file/class/dir run is one consolidated launch
+(R2), so it is one command line per user action.
+*Verified:* e2e driver asserts the first live line is the highlighted command and shows the `java`
+invocation; `_live_output_stderr_rows` now filters by highlight so the command line is not miscounted
+as stderr.
+*Criteria:* after a run, the docked output's first line is the launch command, visually distinct from
+test output.
 
 ### 3.4 Failure navigation
 

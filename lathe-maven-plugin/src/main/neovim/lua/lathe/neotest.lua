@@ -153,8 +153,11 @@ end
 local LIVE_OUTPUT_NS = vim.api.nvim_create_namespace("lathe_test_output")
 local STDERR_HL = "LatheTestStderr"
 vim.api.nvim_set_hl(0, STDERR_HL, { link = "DiagnosticError", default = true })
+local COMMAND_HL = "LatheTestCommand"
+vim.api.nvim_set_hl(0, COMMAND_HL, { link = "Comment", default = true })
 local MAX_LIVE_HEIGHT = 20
 local STDERR_STREAM = 1 -- TranscriptLine.Stream.STDERR ordinal
+local COMMAND_STREAM = 2 -- TranscriptLine.Stream.COMMAND ordinal (the replay launch command)
 
 local live_bufnr
 local live_win
@@ -202,10 +205,11 @@ local function live_append(stream, text)
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, row, first_empty and 1 or row, false, { text })
   vim.bo[buf].modifiable = false
-  if stream == STDERR_STREAM then
+  local hl = (stream == STDERR_STREAM and STDERR_HL) or (stream == COMMAND_STREAM and COMMAND_HL)
+  if hl then
     pcall(vim.api.nvim_buf_set_extmark, buf, LIVE_OUTPUT_NS, row, 0, {
       end_row = row + 1,
-      hl_group = STDERR_HL,
+      hl_group = hl,
       hl_eol = true,
     })
   end
@@ -247,17 +251,31 @@ function M._live_output_lines()
   return vim.api.nvim_buf_get_lines(live_bufnr, 0, -1, false)
 end
 
---- Test hook: the 0-based rows in the live buffer currently marked as stderr.
-function M._live_output_stderr_rows()
+--- 0-based rows in the live buffer carrying an extmark of the given highlight group. stderr and the
+--- command line share LIVE_OUTPUT_NS, so filter by hl_group to tell them apart.
+local function live_output_rows(hl_group)
   if not (live_bufnr and vim.api.nvim_buf_is_valid(live_bufnr)) then
     return {}
   end
 
   local rows = {}
-  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(live_bufnr, LIVE_OUTPUT_NS, 0, -1, {})) do
-    rows[#rows + 1] = mark[2]
+  local marks = vim.api.nvim_buf_get_extmarks(live_bufnr, LIVE_OUTPUT_NS, 0, -1, { details = true })
+  for _, mark in ipairs(marks) do
+    if mark[4] and mark[4].hl_group == hl_group then
+      rows[#rows + 1] = mark[2]
+    end
   end
   return rows
+end
+
+--- Test hook: the 0-based rows in the live buffer currently marked as stderr.
+function M._live_output_stderr_rows()
+  return live_output_rows(STDERR_HL)
+end
+
+--- Test hook: the 0-based rows in the live buffer currently marked as the launch command.
+function M._live_output_command_rows()
+  return live_output_rows(COMMAND_HL)
 end
 
 -- Streamed lines arrive on any run; append them on the main loop (buffer edits must not

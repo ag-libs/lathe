@@ -233,6 +233,17 @@ spec.check("O1 stdout line streamed to live buffer", vim.tbl_contains(live_lines
 spec.check("O1 stderr line streamed to live buffer", vim.tbl_contains(live_lines, "warning on stderr"), true)
 spec.check("O3 stderr line is highlighted", #adapter._live_output_stderr_rows() > 0, true)
 
+-- O8: the replay launch command is surfaced as the buffer's first line, highlighted as a command,
+-- so the user can see (and copy) what ran the tests. It is emitted before any process output.
+local command_rows = adapter._live_output_command_rows()
+spec.check("O8 command line is highlighted", #command_rows, 1)
+spec.check("O8 command is the first line", command_rows[1], 0)
+spec.check(
+  "O8 command line shows the java invocation",
+  live_lines[1] ~= nil and live_lines[1]:find("java", 1, true) ~= nil,
+  true
+)
+
 -- R1: a directory run binds to a single package selector (keyed by the package
 -- name, not the dir path) and reports passed.
 local dir_results = captured.dir_results or {}

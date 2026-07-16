@@ -304,9 +304,10 @@ server-side, so Lathe cancels it by asking the server to kill the replay JVM (SI
 SIGKILL for a hung test). Use this to stop a test that hangs.
 
 Console output streams live into a docked split at the bottom of the screen; toggle it with
-`<leader>to` (`require("lathe.neotest").open_output()`). stdout and stderr are distinguished,
-and pressing `<CR>` or `gF` on a stack-trace frame in that window jumps straight to the failing
-source line.
+`<leader>to` (`require("lathe.neotest").open_output()`). The first line (dimmed) is the exact
+`java` replay command that ran the tests, so you can see and copy what executed. stdout and stderr
+are distinguished, and pressing `<CR>` or `gF` on a stack-trace frame in that window jumps straight
+to the failing source line.
 
 Use this docked window rather than neotest's built-in floating output
 (`require("neotest").output.open(...)` / `:Neotest output`): the float shows raw text only,

@@ -28,6 +28,9 @@ public final class ReplayLauncher {
     final List<String> argv =
         ReplayTransform.forTest(data, workspaceRoot, runnerClasspath, selections, resultsSink);
     LOG.fine(() -> "[replay] argv=%s".formatted(argv));
+    // Surface the launch command as the run's first output line, before any process output, so the
+    // client can show what ran the tests. COMMAND-tagged so the client renders it distinctly.
+    onLine.accept(new TranscriptLine(TranscriptLine.Stream.COMMAND, String.join(" ", argv)));
     final Process process = new ProcessBuilder(argv).start();
     return new ReplaySession(process, resultsSink, onLine, onResult);
   }
