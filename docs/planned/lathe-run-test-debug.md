@@ -156,11 +156,16 @@ This makes the captured template the **interpreted** launch, which is what repla
 about the resulting module graph, not about how Surefire tokenized its command line.
 
 **Known capture gap.**
-`<systemPropertyVariables>` are set by Surefire via a booter properties file (`System.setProperty` inside
-the fork) and do **not** appear in `getInputArguments()`.
+`<systemPropertyVariables>` are set by Surefire *inside* the fork via `System.setProperty`, read from an
+effective-system-properties file it passes as the fork's fourth program argument
+(`ForkedBooter args[3]`), so they never reach the JVM command line and do **not** appear in
+`getInputArguments()`.
 They are therefore *not* captured from introspection.
-Resolution (deferred, §15): `lathe:sync` records the module's configured `systemPropertyVariables` into
-`workspace.json`, and replay merges them as `-D` args.
+Reading `args[3]` directly would require `sun.java.command` plus Surefire's private temp-file/argument
+layout — rejected as unstable.
+Resolution (see §15, resolved): `lathe:sync` reproduces Surefire's own effective-properties recipe from
+the Maven model, records the merged map per module in `workspace.json`, and replay merges the entries as
+`-D` args.
 
 **Precondition:** a modern Surefire (JPMS-capable, e.g. 3.5.5) — an unpinned/old Surefire runs the fork
 non-modularly and yields an empty `getInputArguments()`/`jdk.module.*` (§14).
@@ -1004,7 +1009,7 @@ Each deferred item should be its own later commit or small series:
 - Capture-only filter: `feat: add capture-only junit refresh mode`
 - Resource watcher copy-on-save.
 - `lathe:refresh-resources`: `feat: refresh resources for replay`
-- `systemPropertyVariables` merge.
+- `systemPropertyVariables` merge (sync recipe, §15.1): `feat: replay merges sync-captured system properties`.
 - Neovim picker and commands: `feat: add neovim run config commands`
 
 ---
@@ -1033,8 +1038,9 @@ Each deferred item should be its own later commit or small series:
   (flat class path, empty `getInputArguments()`/`jdk.module.*`).
 - Modular `getInputArguments()` yields `--module-path=`/`--patch-module=`/`--add-*` plus `argLine`
   `-D`/`-X`, `@argfile`-expanded; `java.class.path` yields the class path.
-- **`<systemPropertyVariables>` is not visible** to `getInputArguments()` (booter properties file) →
-  capture gap (§3.1).
+- **`<systemPropertyVariables>` is not visible** to `getInputArguments()` — Surefire applies them in-fork
+  via `System.setProperty` from `ForkedBooter args[3]`, a program argument absent from
+  `getInputArguments()` → capture gap (§3.1), resolved by the `lathe:sync` recipe (§15.1).
 - **Resolved — Surefire 3.5.5 forked-VM exit-handshake regression (not JPMS-specific).**
   Surefire 3.5.5 hangs on **any** forked test run (`Tests run: 0`, "VM terminated without properly
   saying goodbye", `Process Exit Code: 0`) whenever the enclosing `mvn` process is a
@@ -1062,7 +1068,7 @@ Each deferred item should be its own later commit or small series:
 
 1. ~~**Exit-handshake crash**~~ — resolved, see §14: Surefire 3.5.5 regression, pinned back to
    3.5.4.
-2. **`systemPropertyVariables`** — record plugin-side and merge at replay (confirm mechanism).
+2. ~~**`systemPropertyVariables`**~~ — resolved; see the sync recipe below.
 3. **`.lathe-run.json` schema** — exact field names and whether Neovim or the server creates the
    skeleton file.
 4. **`lathe-server` package layout** — do the `run.*` classes above fit the existing command/discovery
@@ -1077,3 +1083,51 @@ knows, and user JVM args come from the `.lathe-run.json` overlay.
 cache and the borrowed-test-partition design.
 *Replay executor delivery mechanism* — a separate `lathe-test-runner` jar, appended to the class path at
 replay time, rather than reusing `lathe-junit`'s jar under a runtime mode flag (§11).
+
+### 15.1 `systemPropertyVariables` — resolved: `lathe:sync` recipe
+
+The capture listener cannot see `<systemPropertyVariables>` (§3.1): Surefire applies them inside the fork
+via `System.setProperty`, reading an effective-system-properties file passed as `ForkedBooter`'s fourth
+program argument (`args[3]`).
+Program arguments never appear in `getInputArguments()`, and locating the file would require
+`sun.java.command` plus Surefire's private temp-file/argument-order layout — an undocumented, version-
+specific contract we decline to depend on.
+The authoritative source is instead the effective Maven model, read by `lathe:sync`.
+
+**Recipe — mirror `AbstractSurefireMojo.calculateEffectiveProperties` (Surefire 3.x).**
+For each module, read the effective `maven-surefire-plugin` configuration and merge, later source winning:
+
+1. `<systemProperties>` (deprecated parameter; usually empty),
+2. `<systemPropertiesFile>` contents (if configured),
+3. `<systemPropertyVariables>`,
+4. the two synthetic keys Surefire always adds: `basedir` (module base directory) and `localRepository`
+   (local repository path).
+
+`lathe:sync` records the merged map per module in `workspace.json`.
+At replay, `ReplayLauncher` passes the map into `ReplayTransform.forTest`, which emits each entry as a
+`-D<key>=<value>` argument ahead of the runner main class, alongside the module graph captured in
+`test-launch.json`.
+The map is produced by `sync` (which can read the model), never by the in-fork listener (which cannot see
+these values), so the capture-written `test-launch.json` is left untouched.
+
+**Constraints and residual gaps (documented in §9):**
+
+- **Profile consistency.**
+  `<systemPropertyVariables>` declared inside an active `<profile>` are part of the effective model, so
+  `sync` captures them — but only under the profiles active in the invocation that ran `sync`.
+  Because `sync` binds to `process-test-classes`, a normal `mvn -P… test`/`verify` runs `sync` and the
+  test fork under the same active profiles, so they agree.
+  Cross-invocation staleness (the last `sync` ran under different profiles than the build being replayed)
+  is possible; the stale-workspace detection is the backstop.
+- **`${surefire.forkNumber}` placeholder.**
+  Surefire substitutes this per fork at runtime; the model value is unsubstituted.
+  Replay is single-fork, so substitute `1` — noted as a minor fidelity gap.
+- **Ad-hoc CLI `-Dkey=value`.**
+  With `promoteUserPropertiesToSystemProperties` (Surefire ≥ 3.4, default `true`), a `-Dkey=value` on the
+  `mvn` command line is promoted into the fork's system properties, but it is a session user-property, not
+  POM config, so neither introspection nor this recipe records it.
+  Editor replay therefore uses the *canonical* build configuration, not a single run's ad-hoc override; if
+  parity is later required, `sync` may additionally snapshot `MavenSession.getUserProperties()` when the
+  flag is set.
+  Values routed through `<argLine>-Dkey=value</argLine>` are unaffected — those ride the JVM command line,
+  appear in `getInputArguments()`, and are already captured in `jvmArgs`.
