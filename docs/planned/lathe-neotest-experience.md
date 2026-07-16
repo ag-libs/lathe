@@ -90,9 +90,11 @@ as an explicit deferral, not a silent miss.
 
 ### 3.2 Running
 
-**R1 — Run at every level.** 🟡
+**R1 — Run at every level.** ✅
 Run nearest test (method), run class, run file, run package/directory — each launches and reports.
-*Current:* method / class / directory work; file-run launches but see R2.
+*As built:* method, class, and package/directory each bind to a single selector run; file-run is one
+consolidated CLASS-selector launch (R2). All four levels are exercised by the e2e driver and report a
+status for the invoked position.
 *Criteria:* each level launches exactly one logical run and reports a status for the invoked
 position.
 
