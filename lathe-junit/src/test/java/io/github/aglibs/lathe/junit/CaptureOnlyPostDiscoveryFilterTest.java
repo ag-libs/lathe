@@ -10,19 +10,19 @@ final class CaptureOnlyPostDiscoveryFilterTest {
 
   @AfterEach
   void clearProperty() {
-    System.clearProperty(LatheFlags.TEST_CAPTURE_SKIP_EXECUTION);
+    System.clearProperty(LatheFlags.CAPTURE_ONLY);
   }
 
   @Test
-  void apply_skipPropertyUnset_includesDescriptor() {
+  void apply_captureOnlyUnset_includesDescriptor() {
     final var filter = new CaptureOnlyPostDiscoveryFilter();
 
     assertThat(filter.apply(null).included()).isTrue();
   }
 
   @Test
-  void apply_skipPropertyTrue_excludesDescriptor() {
-    System.setProperty(LatheFlags.TEST_CAPTURE_SKIP_EXECUTION, "true");
+  void apply_captureOnlyTrue_excludesDescriptor() {
+    System.setProperty(LatheFlags.CAPTURE_ONLY, "true");
     final var filter = new CaptureOnlyPostDiscoveryFilter();
 
     assertThat(filter.apply(null).excluded()).isTrue();

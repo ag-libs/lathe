@@ -9,8 +9,8 @@ public final class CaptureOnlyPostDiscoveryFilter implements PostDiscoveryFilter
 
   @Override
   public FilterResult apply(final TestDescriptor descriptor) {
-    return LatheFlags.isTestExecutionSkipped()
-        ? FilterResult.excluded("Lathe test execution skipped")
+    return LatheFlags.isCaptureOnly()
+        ? FilterResult.excluded("Lathe capture-only: test execution skipped")
         : FilterResult.included("Lathe test execution enabled");
   }
 }

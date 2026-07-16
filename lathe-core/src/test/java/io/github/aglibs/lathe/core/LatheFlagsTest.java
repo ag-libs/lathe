@@ -11,7 +11,7 @@ class LatheFlagsTest {
   void clearProperty() {
     System.clearProperty(LatheFlags.SKIP);
     System.clearProperty(LatheFlags.FORCE_SYNC);
-    System.clearProperty(LatheFlags.TEST_CAPTURE_SKIP_EXECUTION);
+    System.clearProperty(LatheFlags.CAPTURE_ONLY);
   }
 
   @Test
@@ -32,9 +32,14 @@ class LatheFlagsTest {
   }
 
   @Test
-  void isTestExecutionSkipped_trueWhenPropertyIsTrue() {
-    System.setProperty(LatheFlags.TEST_CAPTURE_SKIP_EXECUTION, "true");
+  void isCaptureOnly_falseByDefault() {
+    assertThat(LatheFlags.isCaptureOnly()).isFalse();
+  }
 
-    assertThat(LatheFlags.isTestExecutionSkipped()).isTrue();
+  @Test
+  void isCaptureOnly_trueWhenPropertyIsTrue() {
+    System.setProperty(LatheFlags.CAPTURE_ONLY, "true");
+
+    assertThat(LatheFlags.isCaptureOnly()).isTrue();
   }
 }
