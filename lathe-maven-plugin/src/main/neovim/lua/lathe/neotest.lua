@@ -239,6 +239,9 @@ function M.open_output()
   vim.api.nvim_win_set_height(0, MAX_LIVE_HEIGHT)
   live_win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(live_win, buf)
+  -- No wrap: the first line is the full replay command (a very long line); wrapping it would spill
+  -- across the whole window. Unwrapped it stays one row, scroll-right to read, still copy-pasteable.
+  vim.wo[live_win].wrap = false
   vim.api.nvim_set_current_win(prev)
 end
 
