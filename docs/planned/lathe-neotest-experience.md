@@ -118,10 +118,14 @@ The IntelliJ staple: repeat the last run, and repeat only the failures.
 *Criteria:* after a run with failures, re-run-failed launches exactly the failed set and nothing
 else.
 
-**R5 — Cancel.** ❌
-A running test can be stopped.
-*Current:* the server can destroy the replay process, but the run executes inside a synchronous
-`build_spec` call, so neotest's stop may not reach it.
+**R5 — Cancel.** ❌ (designed — [lathe-test-cancel.md](lathe-test-cancel.md))
+A running test can be stopped — the motivating case is a *hung* test (infinite loop / deadlock),
+which fast replay does not mitigate.
+*Design:* the run is already async and off-worker, so the server can hold a worker-confined
+`token → ReplaySession` map, expose a `lathe.run.cancel` command, and escalate the kill
+SIGTERM→SIGKILL non-blockingly; the client's `M.stop()` fires cancel for the active token(s), which
+unblocks `results()` and clears the glyph. neotest's own `run.stop()` cannot reach an async
+server-owned run, so stop is Lathe's verb (`<leader>tS` → `require("lathe.neotest").stop()`).
 *Criteria:* stopping a run terminates the replay JVM and clears the running state promptly.
 
 **R6 — Live per-test status.** ✅
