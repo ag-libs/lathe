@@ -163,9 +163,10 @@ effective-system-properties file it passes as the fork's fourth program argument
 They are therefore *not* captured from introspection.
 Reading `args[3]` directly would require `sun.java.command` plus Surefire's private temp-file/argument
 layout — rejected as unstable.
-Resolution (see §15, resolved): `lathe:sync` reproduces Surefire's own effective-properties recipe from
-the Maven model, records the merged map per module in `workspace.json`, and replay merges the entries as
-`-D` args.
+Resolution (designed, **deferred** — §15.1): capture the values outside `getInputArguments()` and have
+replay emit them as `-D` args. The preferred design is the hybrid — `lathe:sync` records the declared
+keys, the in-fork listener records their applied values. Not implemented; no validated project needs
+it, and `<argLine>-Dkey=value</argLine>` is the escape hatch (§9).
 
 **Precondition:** a modern Surefire (JPMS-capable, e.g. 3.5.5) — an unpinned/old Surefire runs the fork
 non-modularly and yields an empty `getInputArguments()`/`jdk.module.*` (§14).
@@ -1009,7 +1010,8 @@ Each deferred item should be its own later commit or small series:
 - Capture-only filter: `feat: add capture-only junit refresh mode`
 - Resource watcher copy-on-save.
 - `lathe:refresh-resources`: `feat: refresh resources for replay`
-- `systemPropertyVariables` merge (sync recipe, §15.1): `feat: replay merges sync-captured system properties`.
+- `systemPropertyVariables` merge (§15.1) — **deferred** (no validated project needs it; `<argLine>` is
+  the escape hatch): `feat: replay merges sync-captured system properties`.
 - Neovim picker and commands: `feat: add neovim run config commands`
 
 ---
@@ -1038,9 +1040,12 @@ Each deferred item should be its own later commit or small series:
   (flat class path, empty `getInputArguments()`/`jdk.module.*`).
 - Modular `getInputArguments()` yields `--module-path=`/`--patch-module=`/`--add-*` plus `argLine`
   `-D`/`-X`, `@argfile`-expanded; `java.class.path` yields the class path.
-- **`<systemPropertyVariables>` is not visible** to `getInputArguments()` — Surefire applies them in-fork
-  via `System.setProperty` from `ForkedBooter args[3]`, a program argument absent from
-  `getInputArguments()` → capture gap (§3.1), resolved by the `lathe:sync` recipe (§15.1).
+- **`<systemPropertyVariables>` is not captured** — Surefire applies them in-fork via
+  `System.setProperty` from `ForkedBooter args[3]`, a program argument absent from
+  `getInputArguments()` (§3.1). **Deferred, not implemented** — no current validation project uses it,
+  so building the capture is speculative. **Workaround:** put a test-critical property in
+  `<argLine>-Dkey=value</argLine>`; it rides the JVM command line and is already captured as `jvmArgs`.
+  The design for capturing the rest is §15.1.
 - **Resolved — Surefire 3.5.5 forked-VM exit-handshake regression (not JPMS-specific).**
   Surefire 3.5.5 hangs on **any** forked test run (`Tests run: 0`, "VM terminated without properly
   saying goodbye", `Process Exit Code: 0`) whenever the enclosing `mvn` process is a
@@ -1068,7 +1073,8 @@ Each deferred item should be its own later commit or small series:
 
 1. ~~**Exit-handshake crash**~~ — resolved, see §14: Surefire 3.5.5 regression, pinned back to
    3.5.4.
-2. ~~**`systemPropertyVariables`**~~ — resolved; see the sync recipe below.
+2. **`systemPropertyVariables`** — design settled (hybrid: sync keys + fork values), implementation
+   **deferred**; see §15.1.
 3. **`.lathe-run.json` schema** — exact field names and whether Neovim or the server creates the
    skeleton file.
 4. **`lathe-server` package layout** — do the `run.*` classes above fit the existing command/discovery
@@ -1084,7 +1090,25 @@ cache and the borrowed-test-partition design.
 *Replay executor delivery mechanism* — a separate `lathe-test-runner` jar, appended to the class path at
 replay time, rather than reusing `lathe-junit`'s jar under a runtime mode flag (§11).
 
-### 15.1 `systemPropertyVariables` — resolved: `lathe:sync` recipe
+### 15.1 `systemPropertyVariables` — design (implementation deferred)
+
+**Status:** deferred, not implemented. No project currently validated against Lathe uses
+`<systemPropertyVariables>`, so building capture is speculative; the escape hatch is
+`<argLine>-Dkey=value</argLine>` (already captured, §9). This section is the design for when a real
+project needs it.
+
+**Preferred approach when implemented — hybrid: `sync` supplies the keys, the fork supplies the
+values.** `lathe:sync` records only the *declared key names* from `<systemPropertyVariables>` (literal
+element names — no `${}` interpolation, no merge-order mirroring), and the in-fork capture listener
+reads `System.getProperty(key)` for exactly those keys (Surefire has already applied the interpolated
+value) into `test-launch.json`; replay emits `-D<key>=<value>`. This avoids both hard parts of the
+full model-read below — no interpolation (the fork holds the real value) and no denylist (the keys are
+exact) — at the cost of the listener reading sync's key list. A pure in-fork
+`System.getProperties()`-snapshot approach is rejected: nothing distinguishes test-injected keys from
+the JVM's own defaults, so replay would clobber env/path properties (`user.dir`, `java.io.tmpdir`, …).
+
+The full model-read recipe below (read the effective config entirely in `sync`) is the fallback if the
+capture↔sync coupling of the hybrid is undesirable.
 
 The capture listener cannot see `<systemPropertyVariables>` (§3.1): Surefire applies them inside the fork
 via `System.setProperty`, reading an effective-system-properties file passed as `ForkedBooter`'s fourth
