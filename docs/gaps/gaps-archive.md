@@ -6788,3 +6788,39 @@ printf 'refs "kind(Kind"\n' \
 
 None — no code change.
 Candidate-breadth coverage is under FR-009.
+
+## CQ-0051 — Void-returning members dropped from member completion (stale-cache value-slot misclassification)
+
+Status: done — Target: M2.
+Tier: correctness. Failure mode: missing-candidate.
+
+Member-access completion after `Receiver.` dropped every `void`-returning method (e.g. a util type's
+`sleepXxx`) at a plain statement, reappearing on retry. Completion answered from a stale completion
+cache (`reattributed=false`): the just-typed `.` was not yet in the cache, so the current cursor
+offset mapped, in the stale tree, into a following expression and marked the statement value-sensitive;
+`CompletionCandidateRanker` then filtered the void members.
+
+Fixed by keying the `MemberAccessCompleter` reattribution guard on the completion-token start
+(`SentinelInjectionResult.tokenStart`, i.e. through the receiver's dot) rather than the receiver end,
+so a cache missing the dot reattributes against the current content and the statement is classified
+correctly.
+
+Regression:
+`CompletionMemberAccessTest#memberAccess_staleCacheValueSensitiveOffset_stillOffersVoidStaticMethods`
+with the fresh-cache contrast `memberAccess_freshCacheStatement_offersVoidStaticMethods`.
+
+## CQ-0052 — Member completion on an unimported ambiguous simple name surfaced only one candidate type
+
+Status: done — Target: M3.
+Tier: assistive. Failure mode: missing-candidates.
+
+For an unimported `Receiver.` whose simple name matched several classpath types (e.g. multiple
+`ThreadUtils`, or `java.util.Objects` vs Guava's `com.google.common.base.Objects`), member completion
+offered only the first candidate type's members; members unique to the others were never shown, even
+though the missing-import code action listed all candidates.
+
+Fixed in `MemberAccessCompleter.fallback`: aggregate members across every same-named candidate type,
+each carrying its own import edit, instead of returning on the first match.
+
+Regression:
+`CompletionTypeIndexTest#memberAccess_unimportedAmbiguousSimpleName_suggestsMembersFromAllCandidates`.

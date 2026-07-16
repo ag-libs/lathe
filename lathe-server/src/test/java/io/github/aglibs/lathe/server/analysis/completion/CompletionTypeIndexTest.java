@@ -144,6 +144,32 @@ class CompletionTypeIndexTest extends CompletionTestSupport {
         .anyMatch(l -> l.startsWith("requireNonNull"));
   }
 
+  // CQ-0052: when an unimported simple name matches several classpath types (here two unrelated
+  // `Objects` classes), member completion must aggregate static members across all candidates —
+  // each with its own auto-import — instead of surfacing only the first candidate's members.
+  // `requireNonNull` is unique to java.util.Objects; `equal` is unique to Guava's Objects.
+  @Test
+  void memberAccess_unimportedAmbiguousSimpleName_suggestsMembersFromAllCandidates()
+      throws IOException {
+    localFixture =
+        new CompletionFixture(
+            CompletionFixture.typeIndex(
+                tmp.resolve("index.json"),
+                CompletionFixture.typeEntry("Objects", "java.util.Objects", TypeKind.CLASS),
+                CompletionFixture.typeEntry(
+                    "Objects", "com.google.common.base.Objects", TypeKind.CLASS)));
+    assertThat(
+            labels(
+                localFixture.complete(
+                    """
+                    class Test {
+                        void m() {
+                            Objects.§
+                        }
+                    }""")))
+        .contains("requireNonNull", "equal");
+  }
+
   // ── FQN navigation: JPMS visibility ──────────────────────────────────────────
 
   @Test

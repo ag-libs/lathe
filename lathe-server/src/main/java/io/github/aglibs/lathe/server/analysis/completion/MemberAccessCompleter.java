@@ -4,6 +4,7 @@ import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.ImportAnalyzer;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
@@ -222,6 +223,10 @@ final class MemberAccessCompleter {
 
     final var scope = TypeResolver.resolveScope(snapshot, cursorOffset);
 
+    // CQ-0052: an unimported simple name may match several classpath types (e.g. two `Objects`).
+    // Offer members from every candidate, each carrying its own import edit, rather than returning
+    // only the first match's members.
+    final var aggregated = new ArrayList<CompletionItem>();
     for (final var candidate : typeIndex.search(lookupName, 200)) {
       if (!candidate.simpleName().equals(lookupName)) {
         continue;
@@ -249,13 +254,15 @@ final class MemberAccessCompleter {
               .stream()
               .map(CompletionItemPresenter::present)
               .toList();
-      if (!items.isEmpty()) {
-        applyTypeImportEdit(items, candidate.qualifiedName(), snapshot);
-        return CompletionOutcome.of(items);
+      if (items.isEmpty()) {
+        continue;
       }
+
+      applyTypeImportEdit(items, candidate.qualifiedName(), snapshot);
+      aggregated.addAll(items);
     }
 
-    return CompletionOutcome.of(List.of());
+    return CompletionOutcome.of(List.copyOf(aggregated));
   }
 
   static List<CompletionCandidate> resolvePackageCandidates(
