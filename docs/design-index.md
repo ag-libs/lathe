@@ -55,6 +55,11 @@ Rename, inlay hints, and additional M2 code actions require focused designs befo
 ## M3 — 0.1.0 General Availability
 
 - [Launcher JVM Options](planned/lathe-launcher-jvm-opts.md) — `LATHE_JVM_OPTS` support.
+- [Maven Extension for Automatic POM Setup](planned/lathe-maven-extension.md) — replace the manual
+  three-block parent-POM edit with a single Maven core extension registered in `.mvn/extensions.xml`
+  that injects the compiler/plugin/dependency config and test-fork capture wiring into the effective
+  model in memory (extension-wins merge, `lathe.capture.only` signal, Surefire documented not pinned);
+  editing no POM. Sequence after Maven Central publishing.
 
 Maven Central publishing, release automation, compatibility policy, and clean-install qualification require dedicated
 M3 designs before implementation.
@@ -130,9 +135,6 @@ M3 designs before implementation.
 - [Lowercase CamelCase Symbol Search](potential/lathe-lowercase-camel-symbol-search.md) — let
   `workspace/symbol` CamelHumps matching span humps from an all-lowercase query, so users need not
   capitalize boundaries; refines EG-005.
-- [Maven Extension for Automatic POM Setup](potential/lathe-maven-extension-auto-setup.md) — replace
-  the manual three-block parent-POM edit with a single Maven core extension that injects the
-  compiler/plugin/dependency config and the Surefire/Failsafe capture shim in memory, editing no POM.
 - [Fuzzy Method-Name Symbol Search in the Reactor](potential/lathe-reactor-method-symbol-search.md) —
   extend `workspace/symbol` beyond type names to fuzzy method-name search by reusing the Find
   References token index (fuzzy key scan) plus a parse-only method collector; moderate, not soon.
