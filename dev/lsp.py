@@ -550,6 +550,12 @@ class LatheClient:
             "selectorValue": selector_value,
         }])
 
+    def refresh_resource(self, file: str | Path) -> str | None:
+        """Trigger lathe.resource.refresh for a changed resource file. Returns the .lathe/
+        destination the server copied it to, or None if it maps to no resource root."""
+        uri = Path(file).resolve().as_uri()
+        return self.execute_command("lathe.resource.refresh", [{"uri": uri}])
+
     def implementation(self, file: str | Path, line: int, col: int) -> list[dict]:
         """Go-to-implementation at 0-based line/col. Returns list of Locations."""
         result = self.request("textDocument/implementation", {

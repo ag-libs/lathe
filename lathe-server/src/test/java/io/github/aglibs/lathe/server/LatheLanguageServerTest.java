@@ -47,7 +47,8 @@ class LatheLanguageServerTest {
         .containsExactlyInAnyOrder(
             LatheWorkspaceService.RUN_TEST_COMMAND,
             LatheWorkspaceService.CANCEL_TEST_COMMAND,
-            LatheWorkspaceService.LIST_RUNNABLES_COMMAND);
+            LatheWorkspaceService.LIST_RUNNABLES_COMMAND,
+            LatheWorkspaceService.RESOURCE_REFRESH_COMMAND);
   }
 
   @Test

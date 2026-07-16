@@ -38,6 +38,7 @@ public final class WorkspaceManifest {
   private final List<Path> typeIndexShardPaths;
   private final List<Path> pomPaths;
   private final List<Path> runnerClasspath;
+  private final ResourceRootIndex resourceRoots;
 
   private WorkspaceManifest(
       final Map<Path, String> jarToGav,
@@ -48,7 +49,8 @@ public final class WorkspaceManifest {
       final Map<Path, List<Path>> sourceDirToClasspath,
       final List<Path> typeIndexShardPaths,
       final List<Path> pomPaths,
-      final List<Path> runnerClasspath) {
+      final List<Path> runnerClasspath,
+      final ResourceRootIndex resourceRoots) {
     this.jarToGav = jarToGav;
     this.jarToSourceDir = jarToSourceDir;
     this.sourceDirToJar = sourceDirToJar;
@@ -58,11 +60,21 @@ public final class WorkspaceManifest {
     this.typeIndexShardPaths = typeIndexShardPaths;
     this.pomPaths = pomPaths;
     this.runnerClasspath = runnerClasspath;
+    this.resourceRoots = resourceRoots;
   }
 
   public static WorkspaceManifest empty() {
     return new WorkspaceManifest(
-        Map.of(), Map.of(), Map.of(), null, null, Map.of(), List.of(), List.of(), List.of());
+        Map.of(),
+        Map.of(),
+        Map.of(),
+        null,
+        null,
+        Map.of(),
+        List.of(),
+        List.of(),
+        List.of(),
+        ResourceRootIndex.empty());
   }
 
   public static WorkspaceManifest load(final Path workspaceRoot) {
@@ -124,7 +136,8 @@ public final class WorkspaceManifest {
           sourceDirToClasspath,
           typeIndexShardPaths,
           resolvedPomPaths,
-          runnerClasspath);
+          runnerClasspath,
+          ResourceRootIndex.build(workspaceRoot, data.resourceRoots()));
     } catch (final Exception e) {
       LOG.log(Level.WARNING, e, () -> "[manifest] failed to load workspace manifest");
       return empty();
@@ -154,6 +167,10 @@ public final class WorkspaceManifest {
 
   public boolean containsFile(final Path file) {
     return externalSourceRootForFile(file).isPresent();
+  }
+
+  public Optional<Path> resourceDestination(final Path file) {
+    return resourceRoots.destinationFor(file);
   }
 
   public List<Path> typeIndexShardPaths() {

@@ -63,6 +63,19 @@ public final class FileUtil {
     }
   }
 
+  // Temp file + atomic rename so a concurrent reader (a replay JVM reading .lathe/) never sees a
+  // partial file.
+  public static void copyFileAtomically(final Path src, final Path dest) throws IOException {
+    Files.createDirectories(dest.getParent());
+    final var tmp = Files.createTempFile(dest.getParent(), ".lathe-copy-", ".tmp");
+    try {
+      Files.copy(src, tmp, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
+      moveReplacing(tmp, dest);
+    } finally {
+      Files.deleteIfExists(tmp);
+    }
+  }
+
   public static void deleteDir(final Path dir) throws IOException {
     try (final var walk = Files.walk(dir)) {
       final List<Path> sorted = walk.sorted(Comparator.reverseOrder()).toList();
