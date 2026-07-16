@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.maven;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.ResourceRootData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.maven.dependency.DependencySource;
 import io.github.aglibs.lathe.maven.jdk.JdkSource;
@@ -27,7 +28,8 @@ final class WorkspaceManifestWriter {
       final JdkSource jdkSource,
       final String serverVersion,
       final List<String> runnerClasspath,
-      final List<String> pomPaths) {
+      final List<String> pomPaths,
+      final List<ResourceRootData> resourceRoots) {
     final var data =
         new WorkspaceManifestData(
             LatheLayout.SCHEMA_VERSION,
@@ -36,7 +38,8 @@ final class WorkspaceManifestWriter {
             runnerClasspath,
             jdkSource.toData(),
             dependencySources.stream().map(DependencySource::toData).toList(),
-            pomPaths);
+            pomPaths,
+            resourceRoots);
     final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
     final var manifestPath = latheDir.resolve(LatheLayout.WORKSPACE_JSON);
     final var newContent = Json.toJson(data);

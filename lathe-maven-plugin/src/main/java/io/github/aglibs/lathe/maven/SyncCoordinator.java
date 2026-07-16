@@ -78,7 +78,8 @@ final class SyncCoordinator {
               enrichedJdkSource,
               PluginProps.version(),
               runnerClasspath,
-              pomPaths);
+              pomPaths,
+              ModuleResourcesReader.read(workspaceRoot, projects));
     }
   }
 

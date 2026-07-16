@@ -22,6 +22,7 @@ final class LatheWorkspaceService implements WorkspaceService {
   static final String RUN_TEST_COMMAND = "lathe.run.test";
   static final String CANCEL_TEST_COMMAND = "lathe.run.cancel";
   static final String LIST_RUNNABLES_COMMAND = "lathe.runnables.list";
+  static final String RESOURCE_REFRESH_COMMAND = "lathe.resource.refresh";
 
   private final LatheTextDocumentService textDocumentService;
 
@@ -53,6 +54,7 @@ final class LatheWorkspaceService implements WorkspaceService {
       case RUN_TEST_COMMAND -> runTest(params);
       case CANCEL_TEST_COMMAND -> cancelTest(params);
       case LIST_RUNNABLES_COMMAND -> listRunnables(params);
+      case RESOURCE_REFRESH_COMMAND -> refreshResource(params);
       default -> CompletableFuture.completedFuture(null);
     };
   }
@@ -72,6 +74,11 @@ final class LatheWorkspaceService implements WorkspaceService {
   private CompletableFuture<Object> listRunnables(final ExecuteCommandParams params) {
     final String uri = parseListRunnablesArgument(params.getArguments().getFirst());
     return textDocumentService.runnablesFuture(uri).thenApply(targets -> targets);
+  }
+
+  private CompletableFuture<Object> refreshResource(final ExecuteCommandParams params) {
+    final String uri = parseListRunnablesArgument(params.getArguments().getFirst());
+    return textDocumentService.refreshResourceFuture(uri).thenApply(dest -> dest);
   }
 
   private static String parseCancelArgument(final Object argument) {

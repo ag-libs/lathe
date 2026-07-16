@@ -157,6 +157,7 @@ class WorkspaceManifestTest extends SampleFixture {
             runnerClasspath,
             jdk,
             deps,
+            List.of(),
             List.of()),
         latheDir.resolve(LatheLayout.WORKSPACE_JSON));
   }

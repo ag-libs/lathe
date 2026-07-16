@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server;
 import static java.util.logging.Level.SEVERE;
 
 import io.github.aglibs.lathe.core.CollectionUtil;
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.launch.TestSelection;
@@ -225,6 +226,28 @@ final class WorkspaceSession {
 
     LOG.info(() -> "[cancel] %s pid=%d".formatted(token, session.pid()));
     session.cancel();
+  }
+
+  // Copies a changed resource into .lathe/ so a resource-only edit is picked up without a rebuild.
+  // Returns the .lathe/ destination written, or empty if the file maps to no resource root or the
+  // copy failed.
+  Optional<Path> refreshResource(final String uri) {
+    final var file = LatheUri.toPath(uri);
+    final Optional<Path> dest = manifest.resourceDestination(file);
+    if (dest.isEmpty()) {
+      LOG.fine(() -> "[resource] %s not a tracked resource → ignored".formatted(uri));
+      return Optional.empty();
+    }
+
+    final var t = Stopwatch.start();
+    try {
+      FileUtil.copyFileAtomically(file, dest.get());
+      LOG.fine(() -> "[resource] %s copied %dms".formatted(uri, t.elapsedMs()));
+      return dest;
+    } catch (final IOException e) {
+      LOG.log(Level.WARNING, e, () -> "[resource] copy failed for %s".formatted(uri));
+      return Optional.empty();
+    }
   }
 
   private static String selectionLabel(final List<TestSelection> selections) {

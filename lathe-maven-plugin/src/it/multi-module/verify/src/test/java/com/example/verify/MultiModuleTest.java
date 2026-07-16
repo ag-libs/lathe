@@ -93,6 +93,18 @@ class MultiModuleTest {
   }
 
   @Test
+  void sync_workspaceJson_recordsResourceRoots() throws IOException {
+    final var content = read(lathe("workspace.json"));
+    assertThat(content).contains("\"resourceRoots\"");
+    // Real roots + real build output from the Maven model (app has a main resource, jpms a test
+    // one), so the server can refresh .lathe/ on a resource edit without assuming the layout.
+    assertThat(content).contains("app/src/main/resources");
+    assertThat(content).contains("app/target/classes");
+    assertThat(content).contains("jpms/src/test/resources");
+    assertThat(content).contains("jpms/target/test-classes");
+  }
+
+  @Test
   void sync_depTypeIndexShard_created() throws IOException {
     final var shard =
         LATHE_CACHE

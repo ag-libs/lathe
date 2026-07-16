@@ -16,7 +16,7 @@ public final class LatheLayout {
   public static final String NVIM_DIR = "neovim";
   public static final String NVIM_BUNDLE = "lathe-neovim.zip";
   public static final String NVIM_MARKER = ".lathe-neovim.properties";
-  public static final String SCHEMA_VERSION = "2";
+  public static final String SCHEMA_VERSION = "3";
   public static final String WORKSPACE_JSON = "workspace.json";
   public static final String LOCK_FILE = "lathe.lock";
   public static final String MODULE_INFO_JAVA = "module-info.java";
