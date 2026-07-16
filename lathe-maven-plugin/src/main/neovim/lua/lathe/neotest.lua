@@ -31,10 +31,11 @@ end
 local M = {}
 M.name = "neotest-lathe"
 
--- Troubleshooting log for the adapter. Writes to Neovim's LSP log (:LspLog) -- the same place the
--- Lathe server's own stderr lands -- gated on LATHE_DEBUG so it matches the server's debug switch
--- (LATHE_DEBUG=1) and stays silent otherwise. Format mirrors the server's "[operation] target
--- detail Xms outcome" convention.
+-- Troubleshooting log for the adapter. Emits at INFO to Neovim's LSP log (:LspLog), gated on
+-- LATHE_DEBUG so it matches the server's debug switch. We deliberately do NOT raise nvim's global
+-- LSP log level (that is a process-wide setting affecting every server), so these lines appear only
+-- when the user has themselves set the LSP log level to INFO or lower. Format mirrors the server's
+-- "[operation] target detail Xms outcome" convention.
 local function debug_log(msg)
   if vim.env.LATHE_DEBUG then
     vim.lsp.log.info("[lathe.neotest] " .. msg)
@@ -52,15 +53,18 @@ local READY_AUGROUP = vim.api.nvim_create_augroup("LatheNeotestReady", { clear =
 local workspace_ready = false
 local ready_event
 
+--- Marks the workspace ready on the first ready signal. Returns true only on that first transition
+--- (false on every later reload's progress), so callers can run first-ready-only work exactly once.
 local function signal_ready()
   if workspace_ready then
-    return
+    return false
   end
 
   workspace_ready = true
   if ready_event then
     ready_event.set()
   end
+  return true
 end
 
 --- Re-runs neotest discovery for open Java test buffers once the workspace is ready, so a summary
@@ -94,8 +98,11 @@ vim.api.nvim_create_autocmd("LspProgress", {
 
     local value = ev.data.params and ev.data.params.value
     if value and value.title == WORKSPACE_PROGRESS_TITLE then
-      signal_ready()
-      rediscover_open_buffers()
+      -- Only on the first ready transition: after that, neotest's own BufWritePost/CursorHold
+      -- discovery keeps open buffers current, so re-sweeping on every reload is pure duplication.
+      if signal_ready() then
+        rediscover_open_buffers()
+      end
     end
   end,
 })

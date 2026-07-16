@@ -75,13 +75,6 @@ function M.setup(opts)
   local root = cache_root()
   local launcher = root .. '/current/lathe-launcher.sh'
 
-  -- LATHE_DEBUG is the debug switch for the server (enables FINE logs); mirror it on the client so
-  -- the adapter's own vim.lsp.log lines are actually written -- the default LSP log level is WARN,
-  -- which would otherwise drop them. Only ever raise verbosity, never lower a level the user chose.
-  if vim.env.LATHE_DEBUG and vim.lsp.log.get_level() > vim.log.levels.INFO then
-    vim.lsp.log.set_level(vim.log.levels.INFO)
-  end
-
   local augroup = vim.api.nvim_create_augroup('LathePlugin', { clear = true })
 
   vim.lsp.config('lathe', {
