@@ -546,6 +546,18 @@ reconstructed.
 The *user* invokes it, keeping the server free of Maven.
 A normal build refreshes the same content via the shim.
 
+### 6.3 Candidate: resource dual-output via the Maven extension (may supersede 6.1/6.2)
+
+Once the Maven extension exists ([lathe-maven-extension.md §3.4(e)](lathe-maven-extension.md)), the
+same currency gap is solvable without the copy-on-change watcher (§6.1) or the `lathe:refresh-resources`
+goal (§6.2). The extension injects a second `maven-resources-plugin` execution per module that writes
+processed resources into `.lathe/<rel>/{classes,test-classes}` alongside `target/` (dual-output, not
+redirect); the user refreshes with a plain `mvn process-test-resources` (instant under mvnd), and the
+resources land where replay reads them, filtered by Maven itself. The server stays a pure reader. This
+depends on the extension milestone, so it is a candidate — §6.1/§6.2 remain the design of record until
+the extension lands. See the extension doc for the constraints (dual-output not redirect; phase not
+single goal).
+
 ---
 
 ## 7. Discovery

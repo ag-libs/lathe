@@ -132,6 +132,33 @@ listener is `.lathe/`-gated and fails open — no capture, not a broken build). 
 documented in the setup guide and surfaced by the server's readiness messaging rather than forced
 onto the effective build, keeping the extension's footprint on third-party plugins minimal.
 
+**(e) Resource dual-output to `.lathe/` — candidate, not committed.**
+Because the extension already rewrites each project's model in memory, it can also solve the
+resource-currency gap ([lathe-run-test-debug.md §6](lathe-run-test-debug.md)) far more cheaply than
+the copy-on-change watcher (§6.1) or the `lathe:refresh-resources` goal (§6.2). Replay reads resources
+from `.lathe/`, which only refreshes on a compile (via the shim); a resource-only edit leaves it stale.
+Instead of new server or goal machinery, the extension could inject a second resource execution
+(`maven-resources-plugin:copy-resources`, per project, bound to `process-resources` /
+`process-test-resources`) that writes the module's *processed* resources into
+`.lathe/<rel>/{classes,test-classes}` alongside Maven's normal `target/` output.
+
+The user then refreshes with a plain `mvn process-test-resources` — instant under mvnd — and the
+resources land where replay reads them, filtered by Maven itself. This keeps the **server a pure
+reader** (it never runs Maven; the user does), needs no filtering reconstruction, and would supersede
+§6.1/§6.2 entirely.
+
+Key constraints:
+
+- **Dual-output, not redirect.** `target/{classes,test-classes}` must stay Maven's real output
+  (`package`/jar, IDEs, other tooling read it); a second execution writes an additional copy to
+  `.lathe/`, rather than repointing `${project.build.outputDirectory}`. (A full redirect would also
+  eliminate the shim copy, but disturbs everything that assumes `target/` — out of scope here.)
+- **Phase, not single goal.** The injected copy rides the `process-(test-)resources` *phase*; a bare
+  `mvn resources:resources` runs only that one goal and would skip the injected execution, so the
+  documented refresh command is `mvn process-test-resources`.
+- **Depends on the extension existing** — this is why it is a candidate here rather than in the
+  standalone §6 design: it ships with the extension milestone, not before.
+
 ### 3.5 Driving the workspace refresh
 
 With `lathe-junit` on both test classpaths, the workspace refresh rides the ordinary test lifecycle:
