@@ -5,10 +5,10 @@ workspace — reproduced concretely as neotest showing no tests when a test file
 opened (experience-spec **D1**). The fix is the *proud, standards-based* one: the server reports
 workspace load/reload as standard **`$/progress`**, and the client **gates discovery on that
 progress's completion**. One mechanism gives three things — a visible loading bar in
-`vim.lsp.status()`, a readiness gate, and it implements the init/reload scope of the planned
-[lathe-lsp-progress.md](lathe-lsp-progress.md) (which is **not yet implemented** — verified: today
-`initialize()` only sends a `showMessage` toast; `ProgressReporter` is wired only to reference/call
-searches).
+`vim.lsp.status()`, a readiness gate, and it implements the init/reload scope of
+[lathe-lsp-progress.md](lathe-lsp-progress.md) (whose broader scope — other long-running operations —
+remains planned; before this fix `initialize()` only sent a `showMessage` toast and `ProgressReporter`
+was wired only to reference/call searches).
 
 The logging half (§4) is already implemented (commit `fb3c5d1`); it is documented here for the full
 picture.

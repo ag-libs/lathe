@@ -19,7 +19,8 @@ When status wording in a feature design conflicts with this roadmap, this roadma
 | M2 | Neovim Public Beta | `0.1.0-beta.N` | Public Neovim users | Build from source |
 | M3 | 0.1.0 General Availability | `0.1.0` | Public Neovim users | Maven Central |
 
-Run/test/debug integration and VS Code support are post-M3 work.
+Neovim run/test integration has shipped (capture-replay test execution via the neotest adapter);
+the debugger (DAP / JDWP attach) and VS Code support are post-M3 work.
 
 ---
 
@@ -142,7 +143,8 @@ See [gaps.md](gaps/gaps.md) for EG-005 and accepted M2 completion-gap detail.
 - Public Neovim users can install from source and perform normal Java editing, navigation, and refactoring workflows.
 - Every advertised LSP capability has end-to-end coverage and documented limitations.
 - Public setup, compatibility, troubleshooting, and diagnostics-collection documentation is complete.
-- Run/test/debug, VS Code, and Maven Central publication are explicitly documented as later scope.
+- Debug (DAP), VS Code, and Maven Central publication are explicitly documented as later scope
+  (Neovim run/test execution has shipped).
 
 ---
 
@@ -186,12 +188,15 @@ feature milestone.
 
 ## Post-M3
 
-### Run, test, and debug
+### Debug
 
-Add capture-replay execution — intercept Maven's Surefire/Failsafe/exec fork launch via a `jvm` shim, replay a fresh
-JVM against `.lathe/` bytecode (no recompilation), with streamed session/test events, cancellation, JDWP attachment,
-and Neovim run/test/debug integration.
-See [lathe-run-test-debug.md](planned/lathe-run-test-debug.md).
+Capture-replay **test execution** has shipped for Neovim — capture rides the `mvn test` fork, replay
+runs a fresh JVM against `.lathe/` bytecode (no recompilation) with streamed output/test events,
+cancellation, and the neotest adapter (discovery, run at every level, inline diagnostics). What
+remains post-M3 is the **debugger**: launch the replay JVM suspended and attach JDWP, plus named run
+configs and arg/env/cwd overlay.
+See [lathe-run-test-debug.md](planned/lathe-run-test-debug.md) and the shipped scope in
+[lathe-neotest-experience.md](planned/lathe-neotest-experience.md).
 
 ### VS Code support
 

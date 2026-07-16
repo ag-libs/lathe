@@ -188,5 +188,7 @@ channel (§3.2), the sink-tailed `lathe/testEvent` result channel (§3.4), serve
 (Design B), and the multi-selection file consolidation (Design C) all shipped as described. The
 best-effort tailer + authoritative exit read (§7) held.
 
-**Deferred (tracked in the experience spec):** F1 (inline `vim.diagnostic` from `failureLine`, now
-cheaply unblocked by `positionId` + the event payload) and O7 (output folding).
+**Shipped since (tracked in the experience spec):** F1 (inline `vim.diagnostic` from `failureLine`,
+mapped to `neotest.Result.errors`), R5 (cancel/stop), and O8 (the replay command shown as the first
+output line).
+**Deferred:** O7 (output folding) and R4 re-run-failed.

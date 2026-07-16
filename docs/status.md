@@ -50,7 +50,8 @@ Maven Central publication is planned for M3.
 | Code actions | Implemented | Missing imports, add-throws, try/catch wrapping, variable declaration, and missing-method stubs all work. Missing-import actions now offer reactor types from a prior sync or from an open, already-compiled file (CA-4). Types created or renamed in a closed file await a sync — see the source/branch-switch staleness gap WS-1. |
 | Rename | M2 planned | Existing reference identity and roles provide part of the foundation. |
 | Inlay hints | M2 planned | Not implemented. |
-| Run/test/debug | Post-M3 | No execution or DAP surface is advertised. |
+| Run/test | Implemented (Neovim) | neotest adapter: discovery, run at every level, live-streamed output, inline failure diagnostics, cancel/stop, and the replay command shown as the first output line. Replays from captured `.lathe/` bytecode, no Maven. |
+| Debug | Post-M3 | No DAP surface is advertised; suspended-launch + JDWP attach is later scope. |
 
 ## Editor Support
 

@@ -5,6 +5,11 @@
 Surface long-running server operations (workspace initialization, workspace reload) as LSP progress
 notifications so that editors render a visible status bar entry via `vim.lsp.status()` or equivalent.
 
+**Status:** the workspace init/reload scope is **implemented** — `WorkspaceSession` reports load and
+reload as `$/progress` (title `"Lathe: indexing workspace"`), which the neotest cold-open readiness
+gate consumes (see [lathe-workspace-readiness.md](lathe-workspace-readiness.md)). The broader scope
+below — progress for other long-running operations — remains planned.
+
 ---
 
 ## LSP Protocol Recap
