@@ -836,6 +836,55 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
         .anyMatch(l -> l.startsWith("toLowerCase"));
   }
 
+  // CQ-0051: a plain statement `Type.` served from a STALE cache is mis-classified as a
+  // value-sensitive slot, so void-returning static methods are dropped. Here the cached content
+  // lacks the `Thread.` line, so the current cursor offset maps, in the stale tree, into the
+  // boolean argument of f(...). The receiver `Thread` still resolves globally from the stale
+  // snapshot, so no reattribution happens and the void sleep/yield are filtered — even though the
+  // current content is a statement where a void call is valid.
+  @Test
+  void memberAccess_staleCacheValueSensitiveOffset_stillOffersVoidStaticMethods() {
+    final var cached =
+        """
+        class Test {
+            void f(boolean b) {}
+            boolean ready = true;
+            void m() {
+                f(ready);
+            }
+        }""";
+    final var marked =
+        """
+        class Test {
+            void f(boolean b) {}
+            boolean ready = true;
+            void m() {
+                Thread.§
+                f(ready);
+            }
+        }""";
+    assertThat(labels(fixture.completeWithCache(cached, marked))).contains("sleep", "yield");
+  }
+
+  // Contrast for the above: identical current content, but a fresh (matching) cache classifies the
+  // statement correctly and offers the void static methods. Pins the bug to cache staleness.
+  @Test
+  void memberAccess_freshCacheStatement_offersVoidStaticMethods() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        void f(boolean b) {}
+                        boolean ready = true;
+                        void m() {
+                            Thread.§
+                            f(ready);
+                        }
+                    }""")))
+        .contains("sleep", "yield");
+  }
+
   // ── real-world patterns ───────────────────────────────────────────────────────
 
   @Test

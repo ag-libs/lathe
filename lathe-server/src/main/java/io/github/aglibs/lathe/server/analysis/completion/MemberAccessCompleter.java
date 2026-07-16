@@ -50,10 +50,16 @@ final class MemberAccessCompleter {
         initialResolved != null
             && (initialResolved.type().getKind() == TypeKind.ERROR
                 || initialResolved.type().getKind() == TypeKind.TYPEVAR);
+    // CQ-0051: expected-value inference reads the snapshot tree at the current cursor offset. When
+    // the cached snapshot diverges from the current content at or before the receiver, that offset
+    // is misaligned and can land in an unrelated following expression, wrongly marking the slot
+    // value-sensitive (which drops void members). Reattribute so the context is read from the
+    // current tree, even when the stale snapshot happens to resolve the receiver.
+    final boolean staleReceiverContext = staleBeforeReceiver(req, site);
     final boolean shouldReattribute =
         compiler != null
             && (methodChainReceiver || !req.noDiff())
-            && (initialResolved == null || initialUnusable);
+            && (initialResolved == null || initialUnusable || staleReceiverContext);
     final AttributedFileAnalysis reattributedAnalysis;
     final AttributedFileAnalysis cacheableAnalysis;
     if (shouldReattribute) {
@@ -175,6 +181,19 @@ final class MemberAccessCompleter {
 
   private static boolean isMethodChainReceiver(final ParsedSentinel parsed) {
     return parsed.receiverText() != null && parsed.receiverText().indexOf('(') >= 0;
+  }
+
+  private static boolean staleBeforeReceiver(
+      final CompletionRequest req, final CompletionSite site) {
+    final int receiverEnd = site.receiverEndOffset();
+    if (req.cached() == null || req.noDiff() || receiverEnd < 0) {
+      return false;
+    }
+
+    // receiverEnd precedes the sentinel injection point, so it is a valid offset into the raw
+    // content; the cache is trustworthy for the value-context lookup only if it matches the current
+    // content through the receiver. regionMatches returns false when the cache is shorter.
+    return !req.content().regionMatches(0, req.cached().content(), 0, receiverEnd);
   }
 
   private static boolean hasDeclaredReceiver(final ResolvedReceiver resolved) {
