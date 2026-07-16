@@ -5,11 +5,9 @@ It uses Maven itself as the source of truth:
 the compiler shim records the exact `javac` parameters Maven used,
 and the Maven plugin refreshes workspace metadata and dependency sources.
 
-Lathe setup has two parts:
-
-- `lathe-compiler` is configured as the `maven-compiler-plugin` compiler.
-- `lathe-maven-plugin` declares two goals in the reactor root:
-  `init` (auto-bound to `initialize`) and `sync` (auto-bound to `process-test-classes`).
+Setup is a single `.mvn/extensions.xml` registration.
+The Lathe Maven extension injects the compiler shim, the `init`/`sync` goals, and the test-capture
+dependency into the effective build in memory, so no `pom.xml` edits are needed.
 
 Project documentation:
 
@@ -31,70 +29,31 @@ mvn install -DskipTests
 
 ## Installation
 
-Choose the Lathe version once in the POM where you manage plugin versions:
+Register the Lathe Maven extension once, in `.mvn/extensions.xml` at the reactor root (the directory
+you run `mvn` from):
 
 ```xml
-<properties>
-    <lathe.version>0.1.0-SNAPSHOT</lathe.version>
-</properties>
+<extensions>
+    <extension>
+        <groupId>io.github.ag-libs</groupId>
+        <artifactId>lathe-maven-extension</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </extension>
+</extensions>
 ```
 
-Configure the compiler shim wherever the effective `maven-compiler-plugin` configuration
-for Java modules is defined.
-For a simple project, this is usually the parent POM:
+That is the only edit — no `pom.xml` changes anywhere. Before the build runs, the extension injects
+into the effective model, in memory:
 
-```xml
-<plugin>
-    <groupId>org.apache.maven.plugins</groupId>
-    <artifactId>maven-compiler-plugin</artifactId>
-    <dependencies>
-        <dependency>
-            <groupId>io.github.ag-libs</groupId>
-            <artifactId>lathe-compiler</artifactId>
-            <version>${lathe.version}</version>
-        </dependency>
-    </dependencies>
-    <configuration>
-        <compilerId>lathe</compilerId>
-    </configuration>
-</plugin>
-```
+- the `lathe-compiler` shim on `maven-compiler-plugin` (selected via `maven.compiler.compilerId=lathe`),
+  for every module — including modules with their own compiler configuration or a separate parent POM;
+- the `lathe-maven-plugin` `init` (bound to `initialize`) and `sync` (bound to `process-test-classes`)
+  goals, once at the reactor root;
+- the `lathe-junit` test-scope dependency that enables run/test capture, for every module.
 
-Keep any existing compiler configuration.
-Only add the `lathe-compiler` dependency and `<compilerId>lathe</compilerId>`.
-
-Bind both goals in the reactor root POM:
-
-```xml
-<plugin>
-    <groupId>io.github.ag-libs</groupId>
-    <artifactId>lathe-maven-plugin</artifactId>
-    <version>${lathe.version}</version>
-    <inherited>false</inherited>
-    <executions>
-        <execution>
-            <id>lathe-init</id>
-            <goals>
-                <goal>init</goal>
-            </goals>
-        </execution>
-        <execution>
-            <id>lathe-sync</id>
-            <goals>
-                <goal>sync</goal>
-            </goals>
-        </execution>
-    </executions>
-</plugin>
-```
-
-Do not add explicit `<phase>` elements.
-`init` defaults to `initialize` (the first Maven phase, before `compile`).
-`sync` defaults to `process-test-classes` (after main and test compilation).
-
-The `<inherited>false</inherited>` entry is important in multi-module reactors.
-Both goals are reactor-level steps and should run once from the root,
-not once for every child module.
+All injected artifacts use the extension's own version, so they stay in lockstep with the version you
+register. Because the extension operates on each resolved project directly, split reactor-root/parent
+layouts and per-module compiler blocks need no special handling.
 
 Initialize Lathe with:
 
@@ -135,19 +94,8 @@ a server reload.
 The neotest test runner (see [Neovim Setup](#test-runner-neotest)) replays tests from the captured
 `.lathe/` bytecode with no recompilation. To know *how* to launch that replay JVM — the exact
 classpath, module path, and JVM arguments Maven's Surefire fork used — Lathe captures the real launch
-from inside the test fork. That capture is done by `lathe-junit`, a small published artifact you add
-as a `test`-scoped dependency where every test module inherits it (usually the parent POM):
-
-```xml
-<dependencies>
-    <dependency>
-        <groupId>io.github.ag-libs</groupId>
-        <artifactId>lathe-junit</artifactId>
-        <version>${lathe.version}</version>
-        <scope>test</scope>
-    </dependency>
-</dependencies>
-```
+from inside the test fork. That capture is done by `lathe-junit`, a small `test`-scoped dependency the
+extension injects into every module — nothing to add by hand.
 
 No `maven-surefire-plugin` configuration is needed: `lathe-junit` registers a JUnit Platform
 `LauncherSessionListener` through the standard service-loader SPI, and Surefire's JUnit Platform
@@ -354,76 +302,14 @@ to avoid overwriting the full workspace manifest with a partial view.
 Module params files are still written by the compiler shim for compiled modules.
 To force a workspace manifest write from a partial build, pass `-Dlathe.sync.force=true`.
 
-## Non-Trivial Maven Projects
-
-Some projects have a reactor root that is not the same POM as the parent used by Java modules.
-In that layout, install the two Lathe pieces in different places:
-
-- Put `lathe-maven-plugin` with `<inherited>false</inherited>` in the reactor root POM,
-  the POM from which users run `mvn clean process-test-classes`.
-- Put the `maven-compiler-plugin` Lathe configuration in every parent or standalone POM
-  that controls Java compilation for modules in the reactor.
-
-Do not assume the top-level reactor POM is inherited by every module.
-Check each module's effective compiler configuration.
-If a module has its own `maven-compiler-plugin` block,
-add the Lathe compiler dependency and `<compilerId>lathe</compilerId>` there too.
-
-## Agent Installation Prompt
-
-Use this prompt when asking an agent to configure Lathe in an existing Maven project:
-
-```text
-Configure Lathe in this Maven project.
-
-Use version 0.1.0-SNAPSHOT unless the repository already defines a Lathe version property.
-
-Install three pieces:
-
-1. Configure maven-compiler-plugin so Java modules use the Lathe compiler shim.
-   Add dependency io.github.ag-libs:lathe-compiler:${lathe.version}
-   to the effective maven-compiler-plugin configuration and set <compilerId>lathe</compilerId>.
-   Preserve all existing compiler configuration, annotation processor paths,
-   release/source/target settings, compiler args, plugin management, and executions.
-
-2. Bind io.github.ag-libs:lathe-maven-plugin:${lathe.version} in the reactor root POM.
-   Add two executions: id lathe-init with goal init, and id lathe-sync with goal sync.
-   Do not specify phases; init defaults to initialize and sync defaults to process-test-classes.
-   Set <inherited>false</inherited> so both goals run once at the reactor root.
-
-3. Add io.github.ag-libs:lathe-junit:${lathe.version} as a <scope>test</scope> dependency
-   where every test module inherits it (usually the parent POM). This enables the editor test
-   runner by capturing each module's real test-fork launch into .lathe/<module>/test-launch.json.
-   It needs no maven-surefire-plugin configuration (it self-registers via the JUnit Platform SPI),
-   but requires a JPMS-capable Surefire (e.g. 3.5.5+); if the build inherits an older Surefire,
-   pin maven-surefire-plugin to a recent version. Skip this piece if the project only needs LSP
-   code intelligence and not the test runner.
-
-Do not assume the reactor root POM is the parent POM.
-Inspect the Maven structure first.
-If Java modules inherit compiler configuration from a separate parent POM,
-put the compiler shim there.
-If standalone modules or example projects define their own compiler plugin configuration,
-add the shim there as well.
-The lathe-junit test dependency belongs wherever test modules inherit their common dependencies,
-which may again be a different POM from the reactor root.
-
-After editing, run:
-
-mvn clean process-test-classes
-
-If mvnd is used, stop the daemon after installing updated Lathe JARs so it picks up the new version:
-
-mvnd --stop
-```
-
 ## Troubleshooting
 
 ### Neovim Info: `.lathe` directory not found
 
-This means `lathe:init` has not run, or the POM is misconfigured.
-Run `mvn lathe:init` (or `mvn clean process-test-classes` if the POM is configured)
-at the reactor root to initialize Lathe. If `.lathe/` is still missing, verify the plugin configuration in your POM.
+This means `lathe:init` has not run, or the extension is not registered.
+Run `mvn clean process-test-classes` at the reactor root to initialize Lathe.
+If `.lathe/` is still missing, verify that `.mvn/extensions.xml` registers `lathe-maven-extension`
+and that you are running `mvn` from the directory that contains `.mvn/`.
 
 ### Missing params file (`Run mvn process-test-classes to activate module`)
 

@@ -94,82 +94,49 @@ lathe-server
 
 ## 3. Setup & User Configuration
 
-### One-time POM configuration
+### One-time setup: the Maven extension
 
-Three blocks in the parent `pom.xml`:
-
-```xml
-<!-- compiler shim -->
-<plugin>
-  <groupId>org.apache.maven.plugins</groupId>
-  <artifactId>maven-compiler-plugin</artifactId>
-  <dependencies>
-    <dependency>
-      <groupId>io.github.ag-libs</groupId>
-      <artifactId>lathe-compiler</artifactId>
-      <version>0.1.0</version>
-    </dependency>
-  </dependencies>
-  <configuration>
-    <compilerId>lathe</compilerId>
-  </configuration>
-</plugin>
-
-<!-- init + sync goals: bind to initialize and process-test-classes -->
-<plugin>
-  <groupId>io.github.ag-libs</groupId>
-  <artifactId>lathe-maven-plugin</artifactId>
-  <version>0.1.0</version>
-  <inherited>false</inherited>
-  <executions>
-    <execution>
-      <id>lathe-init</id>
-      <goals>
-        <goal>init</goal>
-      </goals>
-    </execution>
-    <execution>
-      <id>lathe-sync</id>
-      <goals>
-        <goal>sync</goal>
-      </goals>
-    </execution>
-  </executions>
-</plugin>
-```
+Setup is a single `.mvn/extensions.xml` registration at the reactor root — no `pom.xml` edits:
 
 ```xml
-<!-- test capture: enables run/test/debug against .lathe/ (see lathe-run-test-debug.md §3.4) -->
-<dependency>
-  <groupId>io.github.ag-libs</groupId>
-  <artifactId>lathe-junit</artifactId>
-  <version>0.1.0</version>
-  <scope>test</scope>
-</dependency>
+<extensions>
+  <extension>
+    <groupId>io.github.ag-libs</groupId>
+    <artifactId>lathe-maven-extension</artifactId>
+    <version>0.1.0</version>
+  </extension>
+</extensions>
 ```
 
-The `lathe-junit` dependency is user-added, not plugin-injected: setting up Lathe already requires
-hand-editing the parent POM for the two blocks above, so this is a third line in that same one-time
-edit rather than a new category of friction.
-`lathe:init` never writes to or inspects `pom.xml`.
-Its absence is not a build error — the capture listener is `.lathe/`-gated and fails open, so a project
-without it simply has no test-launch capture, not a broken build.
+The extension (`lathe-maven-extension`, an `AbstractMavenLifecycleParticipant`) mutates the resolved
+reactor model in memory at `afterProjectsRead()`, injecting into the effective build what the user
+would otherwise hand-edit — see [lathe-maven-extension.md](planned/lathe-maven-extension.md):
 
-Maven only runs a third-party plugin during normal lifecycle builds when the plugin has bound executions.
-Lathe therefore still needs the two executions above for `mvn package`, `mvn install`,
-or `mvn process-test-classes` to refresh the workspace automatically.
-Both mojos declare their default phase via `@Mojo(defaultPhase = ...)`, so those executions can omit `<phase>`.
-`init` defaults to `initialize` (before compilation); `sync` defaults to `process-test-classes` (after test compilation).
-`<inherited>false</inherited>` ensures both goals run once from the reactor root, not once per module.
-Any normal `mvn process-test-classes`, `mvn package`, or `mvn install` run heals Lathe state automatically.
+- the `lathe-compiler` shim on `maven-compiler-plugin`, selected via the
+  `maven.compiler.compilerId=lathe` property, for every module;
+- the `lathe-maven-plugin` `init` (default phase `initialize`) and `sync` (default phase
+  `process-test-classes`) executions, once at the reactor root only;
+- the `lathe-junit` test-scope capture dependency, for every module.
+
+All injected artifacts use the extension's own version, so they stay in lockstep. Because the
+extension operates on each resolved `MavenProject` directly, split reactor-root/parent layouts and
+per-module compiler blocks need no special handling.
+
+Maven only runs a third-party plugin during normal lifecycle builds when it has bound executions, so
+the injected `init`/`sync` executions are what let any `mvn process-test-classes`, `mvn package`, or
+`mvn install` refresh Lathe automatically. `lathe:init` never writes to or inspects `pom.xml`, and
+the capture listener is `.lathe/`-gated and fails open, so a build without capture is degraded, not
+broken.
 
 ### Initializing
+
+With the extension registered, the injected `lathe:init` runs on any build that reaches the
+`initialize` phase, creating `.lathe/` at the session top-level project if missing — so a plain
+`mvn process-test-classes` initializes Lathe. It can also be invoked directly:
 
 ```bash
 mvn io.github.ag-libs:lathe-maven-plugin:VERSION:init
 ```
-
-Create `.lathe/` at the Maven session top-level project if missing.
 
 `lathe:init` does not validate Maven configuration.
 Maven setup can be inherited from parents, profiles, plugin management, or external build conventions,
@@ -180,8 +147,7 @@ Lathe actually needs.
 ### Ongoing workflow
 
 ```bash
-mvn io.github.ag-libs:lathe-maven-plugin:VERSION:init       # once: create .lathe/
-mvnd process-test-classes                                   # refresh Lathe — shim writes params, sync refreshes metadata
+mvnd process-test-classes    # refresh Lathe — init creates .lathe/, shim writes params, sync refreshes metadata
 ```
 
 Run `mvnd process-test-classes` when you want to refresh Lathe directly;
@@ -204,8 +170,8 @@ Stale-POM detection compares watched POM modification time and size against the 
 `workspace.json` and surfaces:
 "Maven project changed. Run `mvn process-test-classes` to refresh Lathe."
 
-Re-run `lathe:init` when setting up a checkout or after changing Lathe POM configuration.
-The next `process-test-classes`, `package`, or `install` run refreshes params and synchronized metadata.
+After cloning a checkout or changing the `.mvn/extensions.xml` registration, run a build:
+the next `process-test-classes`, `package`, or `install` run refreshes params and synchronized metadata.
 
 ### JVM customization
 
