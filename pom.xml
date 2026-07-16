@@ -13,6 +13,7 @@
     <module>lathe-test-runner</module>
     <module>lathe-compiler</module>
     <module>lathe-server</module>
+    <module>lathe-maven-extension</module>
     <module>lathe-maven-plugin</module>
   </modules>
 

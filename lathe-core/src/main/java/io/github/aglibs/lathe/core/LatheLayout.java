@@ -34,6 +34,21 @@ public final class LatheLayout {
   public static final String TEST_RUNNER_MAIN_CLASS =
       "io.github.aglibs.lathe.runner.LatheTestRunner";
 
+  // Maven coordinates and keys for the in-memory model injection performed by
+  // lathe-maven-extension.
+  public static final String LATHE_GROUP_ID = "io.github.ag-libs";
+  public static final String COMPILER_ARTIFACT_ID = "lathe-compiler";
+  public static final String PLUGIN_ARTIFACT_ID = "lathe-maven-plugin";
+  public static final String JUNIT_ARTIFACT_ID = "lathe-junit";
+  public static final String COMPILER_ID = "lathe";
+  public static final String MAVEN_COMPILER_ID_PROPERTY = "maven.compiler.compilerId";
+  public static final String MAVEN_COMPILER_PLUGIN_GROUP_ID = "org.apache.maven.plugins";
+  public static final String MAVEN_COMPILER_PLUGIN_ARTIFACT_ID = "maven-compiler-plugin";
+  public static final String INIT_GOAL = "init";
+  public static final String SYNC_GOAL = "sync";
+  public static final String INIT_EXECUTION_ID = "lathe-init";
+  public static final String SYNC_EXECUTION_ID = "lathe-sync";
+
   private LatheLayout() {}
 
   public static Path userCacheRoot() {
