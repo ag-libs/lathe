@@ -45,7 +45,9 @@ class LatheLanguageServerTest {
 
     assertThat(capabilities.getExecuteCommandProvider().getCommands())
         .containsExactlyInAnyOrder(
-            LatheWorkspaceService.RUN_TEST_COMMAND, LatheWorkspaceService.LIST_RUNNABLES_COMMAND);
+            LatheWorkspaceService.RUN_TEST_COMMAND,
+            LatheWorkspaceService.CANCEL_TEST_COMMAND,
+            LatheWorkspaceService.LIST_RUNNABLES_COMMAND);
   }
 
   @Test

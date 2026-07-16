@@ -343,4 +343,12 @@ final class LatheTextDocumentService implements TextDocumentService {
   CompletableFuture<List<RunTarget>> runnablesFuture(final String uri) {
     return worker.submit(() -> session.runnablesFuture(uri)).thenCompose(f -> f);
   }
+
+  CompletableFuture<Object> cancelRunFuture(final String token) {
+    return worker.submit(
+        () -> {
+          session.cancelRun(token);
+          return null;
+        });
+  }
 }

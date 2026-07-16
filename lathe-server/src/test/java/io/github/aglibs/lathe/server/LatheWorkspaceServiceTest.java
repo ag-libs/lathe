@@ -52,6 +52,18 @@ class LatheWorkspaceServiceTest {
   }
 
   @Test
+  void executeCommand_cancelUnknownToken_completesWithoutError() throws Exception {
+    textDocumentService.initialize(tmp);
+    final var argument = new JsonObject();
+    argument.addProperty("token", "no-such-token");
+    final var params = new ExecuteCommandParams("lathe.run.cancel", List.of(argument));
+
+    final var result = service.executeCommand(params).get(5, TimeUnit.SECONDS);
+
+    assertThat(result).isNull();
+  }
+
+  @Test
   void executeCommand_runTestFreshWorkspace_returnsBlockedOnMissingRunnerJar() throws Exception {
     textDocumentService.initialize(tmp);
     final var selection = new JsonObject();

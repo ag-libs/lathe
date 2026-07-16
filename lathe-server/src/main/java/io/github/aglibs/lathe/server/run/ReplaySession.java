@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -21,6 +22,10 @@ public final class ReplaySession {
   private static final Logger LOG = Logger.getLogger(ReplaySession.class.getName());
 
   private static final long TAIL_POLL_MS = 25;
+
+  // A JVM wedged in a tight loop or deadlock may ignore the graceful SIGTERM from destroy();
+  // escalate to a forcible SIGKILL if it is still alive this long after cancel was requested.
+  private static final long CANCEL_GRACE_MS = 2_000;
 
   private final Process process;
   private final Path resultsSink;
@@ -74,6 +79,17 @@ public final class ReplaySession {
 
   public void cancel() {
     process.destroy();
+    process
+        .onExit()
+        .orTimeout(CANCEL_GRACE_MS, TimeUnit.MILLISECONDS)
+        .whenComplete((exited, error) -> forceKillIfAlive());
+  }
+
+  private void forceKillIfAlive() {
+    if (process.isAlive()) {
+      LOG.fine(() -> "[cancel] pid=%d force-kill (ignored SIGTERM)".formatted(process.pid()));
+      process.destroyForcibly();
+    }
   }
 
   /**

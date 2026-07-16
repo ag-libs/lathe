@@ -118,14 +118,22 @@ The IntelliJ staple: repeat the last run, and repeat only the failures.
 *Criteria:* after a run with failures, re-run-failed launches exactly the failed set and nothing
 else.
 
-**R5 — Cancel.** ❌ (designed — [lathe-test-cancel.md](lathe-test-cancel.md))
+**R5 — Cancel.** ✅ ([lathe-test-cancel.md](lathe-test-cancel.md))
 A running test can be stopped — the motivating case is a *hung* test (infinite loop / deadlock),
 which fast replay does not mitigate.
-*Design:* the run is already async and off-worker, so the server can hold a worker-confined
-`token → ReplaySession` map, expose a `lathe.run.cancel` command, and escalate the kill
-SIGTERM→SIGKILL non-blockingly; the client's `M.stop()` fires cancel for the active token(s), which
-unblocks `results()` and clears the glyph. neotest's own `run.stop()` cannot reach an async
-server-owned run, so stop is Lathe's verb (`<leader>tS` → `require("lathe.neotest").stop()`).
+*As built:* `WorkspaceSession` holds a worker-confined `token → ReplaySession` map (registered/removed
+via marshaled `worker.execute`, so it keeps the single-threaded discipline of every other field);
+`lathe.run.cancel` looks a run up by token and calls `ReplaySession.cancel()`, which does
+`process.destroy()` (SIGTERM) and escalates to `destroyForcibly()` (SIGKILL) via
+`onExit().orTimeout(...)` on a background thread — non-blocking, so the worker is never held. The
+client's `M.stop()` fires cancel for the active tokens it already tracks (`event_queues`), which lets
+the awaited `run.test` return, unblocks `results()`, and clears the glyph. Stop is Lathe's verb
+(`<leader>tS` → `require("lathe.neotest").stop()`); neotest's `run.stop()` cannot reach an async,
+server-owned run.
+*Verified:* `ReplaySessionTest.cancel_processIgnoringSigterm_forceKillsAfterGrace` proves the
+SIGTERM→SIGKILL escalation (a `trap '' TERM` process that only the forcible kill can stop);
+`LatheWorkspaceServiceTest` covers command routing (unknown token → no-op). Full-loop e2e is manual:
+a deliberately hung test can't live in the invoker fixture (it would hang the fixture's own build).
 *Criteria:* stopping a run terminates the replay JVM and clears the running state promptly.
 
 **R6 — Live per-test status.** ✅

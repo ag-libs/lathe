@@ -20,6 +20,7 @@ import org.eclipse.lsp4j.services.WorkspaceService;
 final class LatheWorkspaceService implements WorkspaceService {
 
   static final String RUN_TEST_COMMAND = "lathe.run.test";
+  static final String CANCEL_TEST_COMMAND = "lathe.run.cancel";
   static final String LIST_RUNNABLES_COMMAND = "lathe.runnables.list";
 
   private final LatheTextDocumentService textDocumentService;
@@ -50,6 +51,7 @@ final class LatheWorkspaceService implements WorkspaceService {
   public CompletableFuture<Object> executeCommand(final ExecuteCommandParams params) {
     return switch (params.getCommand()) {
       case RUN_TEST_COMMAND -> runTest(params);
+      case CANCEL_TEST_COMMAND -> cancelTest(params);
       case LIST_RUNNABLES_COMMAND -> listRunnables(params);
       default -> CompletableFuture.completedFuture(null);
     };
@@ -62,9 +64,19 @@ final class LatheWorkspaceService implements WorkspaceService {
         .thenApply(outcome -> outcome);
   }
 
+  private CompletableFuture<Object> cancelTest(final ExecuteCommandParams params) {
+    final String token = parseCancelArgument(params.getArguments().getFirst());
+    return textDocumentService.cancelRunFuture(token);
+  }
+
   private CompletableFuture<Object> listRunnables(final ExecuteCommandParams params) {
     final String uri = parseListRunnablesArgument(params.getArguments().getFirst());
     return textDocumentService.runnablesFuture(uri).thenApply(targets -> targets);
+  }
+
+  private static String parseCancelArgument(final Object argument) {
+    final var json = (JsonObject) argument;
+    return json.has("token") ? json.get("token").getAsString() : "";
   }
 
   private record RunTestArgument(String moduleRel, List<TestSelection> selections, String token) {}

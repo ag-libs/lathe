@@ -312,6 +312,35 @@ vim.lsp.handlers["lathe/testEvent"] = function(_err, result)
   end
 end
 
+--- Stops all in-flight runs. event_queues holds exactly the live run tokens (set in run_spec, cleared
+--- in results()), so a cancel is sent for each: the server destroys the replay JVM, which lets the
+--- awaited run.test return, unblocks results(), and clears neotest's running state. This is Lathe's
+--- own stop verb -- neotest's run.stop() targets a process, and our real replay runs server-side, so
+--- its stop cannot reach it. Bind it (e.g. <leader>tS).
+function M.stop()
+  local tokens = {}
+  for token in pairs(event_queues) do
+    tokens[#tokens + 1] = token
+  end
+  if #tokens == 0 then
+    return
+  end
+
+  nio().run(function()
+    local client = lathe_client()
+    if not client then
+      return
+    end
+
+    for _, token in ipairs(tokens) do
+      client.request.workspace_executeCommand({
+        command = "lathe.run.cancel",
+        arguments = { { token = token } },
+      })
+    end
+  end)
+end
+
 function M.root(dir)
   return vim.fs.root(dir, ".lathe")
 end

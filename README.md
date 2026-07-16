@@ -294,10 +294,14 @@ vim.keymap.set("n", "<leader>tt", neotest.run.run,                              
 vim.keymap.set("n", "<leader>tf", function() neotest.run.run(vim.fn.expand("%")) end,     { desc = "Test: run file" })
 vim.keymap.set("n", "<leader>tp", function() neotest.run.run(vim.fn.expand("%:p:h")) end, { desc = "Test: run package (current dir)" })
 vim.keymap.set("n", "<leader>tl", neotest.run.run_last,                                   { desc = "Test: run last" })
-vim.keymap.set("n", "<leader>tS", neotest.run.stop,                                       { desc = "Test: stop" })
+vim.keymap.set("n", "<leader>tS", lathe.stop,                                             { desc = "Test: stop / cancel run" })
 vim.keymap.set("n", "<leader>ts", neotest.summary.toggle,                                 { desc = "Test: toggle summary tree" })
 vim.keymap.set("n", "<leader>to", lathe.open_output,                                      { desc = "Test: output (docked, navigable)" })
 ```
+
+Stop uses `require("lathe.neotest").stop()`, not neotest's `run.stop()`: the replay runs
+server-side, so Lathe cancels it by asking the server to kill the replay JVM (SIGTERM, escalating to
+SIGKILL for a hung test). Use this to stop a test that hangs.
 
 Console output streams live into a docked split at the bottom of the screen; toggle it with
 `<leader>to` (`require("lathe.neotest").open_output()`). stdout and stderr are distinguished,

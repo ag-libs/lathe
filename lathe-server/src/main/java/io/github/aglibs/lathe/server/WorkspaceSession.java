@@ -35,6 +35,7 @@ import io.github.aglibs.lathe.server.run.CompletenessGate;
 import io.github.aglibs.lathe.server.run.LaunchTemplateReader;
 import io.github.aglibs.lathe.server.run.ReplayLauncher;
 import io.github.aglibs.lathe.server.run.ReplayOutcome;
+import io.github.aglibs.lathe.server.run.ReplaySession;
 import io.github.aglibs.lathe.server.run.RunTarget;
 import io.github.aglibs.lathe.server.run.TestEventParams;
 import io.github.aglibs.lathe.server.run.TestOutputParams;
@@ -116,6 +117,12 @@ final class WorkspaceSession {
   private final AnalysisLru analysisLru = new AnalysisLru();
   private final DiagnosticPublisher publisher;
 
+  // In-flight replays keyed by run token, so a cancel can reach the right ReplaySession. A plain
+  // map, not a concurrent one: it is mutated only on the worker thread. The run and exit threads
+  // marshal put/remove via worker.execute (see runTestFuture) rather than touching it directly,
+  // keeping the single-threaded discipline of every other field here.
+  private final Map<String, ReplaySession> activeRuns = new HashMap<>();
+
   WorkspaceSession(
       final LanguageClient client,
       final ProgressReporter progressReporter,
@@ -183,15 +190,41 @@ final class WorkspaceSession {
     final Path root = workspaceRoot;
     final var t = Stopwatch.start();
     final var result = new CompletableFuture<ReplayOutcome>();
+    // Register/deregister the run by token so a cancel can reach it. Marshaled onto the worker so
+    // activeRuns keeps the single-threaded discipline of every other field. Removal covers the
+    // blocked/error paths too (removing an unregistered token is a no-op).
+    result.whenComplete((outcome, error) -> worker.execute(() -> activeRuns.remove(token)));
+    final Consumer<ReplaySession> onStart =
+        session -> worker.execute(() -> activeRuns.put(token, session));
+
     final var thread =
         new Thread(
             () ->
                 launchReplay(
-                    root, runnerClasspath, moduleRel, selections, onLine, onResult, t, result),
+                    root,
+                    runnerClasspath,
+                    moduleRel,
+                    selections,
+                    onLine,
+                    onResult,
+                    onStart,
+                    t,
+                    result),
             "lathe-replay-" + moduleRel);
     thread.setDaemon(true);
     thread.start();
     return result;
+  }
+
+  void cancelRun(final String token) {
+    final ReplaySession session = activeRuns.get(token);
+    if (session == null) {
+      LOG.fine(() -> "[cancel] %s no active run".formatted(token));
+      return;
+    }
+
+    LOG.info(() -> "[cancel] %s pid=%d".formatted(token, session.pid()));
+    session.cancel();
   }
 
   private static String selectionLabel(final List<TestSelection> selections) {
@@ -232,6 +265,7 @@ final class WorkspaceSession {
       final List<TestSelection> selections,
       final Consumer<TranscriptLine> onLine,
       final Consumer<TestResult> onResult,
+      final Consumer<ReplaySession> onStart,
       final Stopwatch t,
       final CompletableFuture<ReplayOutcome> result) {
     try {
@@ -259,6 +293,7 @@ final class WorkspaceSession {
       final var session =
           ReplayLauncher.launch(
               template.get(), workspaceRoot, runnerClasspath, selections, onLine, onResult);
+      onStart.accept(session);
       session
           .onExit()
           .whenComplete(
