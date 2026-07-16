@@ -113,8 +113,19 @@ failing method in a 20-method class does not mark all 20.
 *Criteria:* mixed pass/fail/skip class marks each method correctly, including `@ParameterizedTest`
 rolled up worst-status-wins.
 
-**R4 — Re-run and re-run-failed.** 🟡
+**R4 — Re-run and re-run-failed.** 🟡 (re-run done; re-run-failed deferred)
 The IntelliJ staple: repeat the last run, and repeat only the failures.
+*Re-run:* satisfied by neotest's native `run_last` — it stores the last position and replays
+`neotest.run.run(position)`, which re-invokes our `build_spec` on the same code path as the first run
+(bound in the README as `<leader>tl`). No adapter work needed.
+*Re-run-failed — deferred.* Low value here: fast replay removes most of the time saving, and it is
+structurally awkward. neotest has no native "run failed" and can only run a single position (which
+fans out to *all* descendants, not a filtered subset), so updating the tree/diagnostics requires one
+`neotest.run.run(id)` per failed method — N replay JVMs, and N concurrent `build_spec` calls each
+reset the one docked output buffer (status/diagnostics stay correct; the output panel degrades).
+Finding the failed set also means reading neotest's semi-internal `Client:get_results`. Revisit only
+if the per-position approach's caveats become acceptable or a consolidated failed-set run path is
+built.
 *Criteria:* after a run with failures, re-run-failed launches exactly the failed set and nothing
 else.
 
