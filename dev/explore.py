@@ -143,6 +143,12 @@ run <index> [expect-exit <n>]
     MAIN targets cannot be run yet (main-class replay is not implemented).
     With 'expect-exit <n>', fails the probe if the exit code does not match.
 
+refresh <resource-path>
+    Verify resource refresh: edit <resource-path> with a unique marker, send
+    lathe.resource.refresh, and confirm the server copied it into .lathe/
+    (reading back the destination it reports), then restore the original.
+    Fails the probe if the file maps to no resource root or the copy is stale.
+
 inject <code> [at <line>] [<assertions>]
     Temporarily insert <code> as a new line into the file — at the start of
     the first method body when no line is given (1-based otherwise) — then
@@ -574,6 +580,7 @@ class ExploreShell:
             "diag":        self._cmd_diagnostics,
             "runnables":   self._cmd_runnables,
             "run":         self._cmd_run,
+            "refresh":     self._cmd_refresh,
             "inject":      self._cmd_inject,
             "reset":       self._cmd_reset,
             "log":         self._cmd_log,
@@ -1567,6 +1574,48 @@ class ExploreShell:
                 self.any_failure = True
             else:
                 print(f"    ✓  exit matches expected {expected}")
+
+    def _cmd_refresh(self, args: list[str]) -> None:
+        if not args:
+            print("  usage: refresh <resource-path>")
+            return
+
+        resource = Path(args[0]).expanduser().resolve()
+        if not resource.is_file():
+            print(f"  not a file: {resource}")
+            self.any_failure = True
+            return
+
+        # Edit the resource with a unique marker, ask the server to refresh it into .lathe/, then
+        # confirm the copy reflects the edit — the same round-trip the editor's save-autocmd drives.
+        original = resource.read_bytes()
+        marker = f"lathe-refresh-check-{time.time_ns()}".encode()
+        try:
+            resource.write_bytes(original + b"\n" + marker)
+            try:
+                dest = self._client.refresh_resource(resource)
+            except TimeoutError:
+                print("  TIMEOUT")
+                self.any_failure = True
+                return
+
+            if not dest:
+                print(
+                    f"  ✗  server mapped {resource} to no resource root"
+                    " (sync the workspace; check the file is under a resource directory)"
+                )
+                self.any_failure = True
+                return
+
+            dest_path = Path(dest)
+            copied = dest_path.read_bytes() if dest_path.is_file() else b""
+            if marker in copied:
+                print(f"  ✓  refreshed → {dest}")
+            else:
+                print(f"  ✗  .lathe copy did not reflect the edit: {dest}")
+                self.any_failure = True
+        finally:
+            resource.write_bytes(original)
 
     def _cmd_inject(self, args: list[str]) -> None:
         if not args:
