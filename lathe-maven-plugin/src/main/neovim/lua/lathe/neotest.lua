@@ -344,9 +344,15 @@ function M.stop()
     tokens[#tokens + 1] = token
   end
   if #tokens == 0 then
+    vim.notify("No test runs to stop", vim.log.levels.WARN, { title = "Lathe" })
     return
   end
 
+  vim.notify(
+    "Stopping " .. (#tokens == 1 and "1 test run" or (#tokens .. " test runs")),
+    vim.log.levels.INFO,
+    { title = "Lathe" }
+  )
   nio().run(function()
     local client = lathe_client()
     if not client then
@@ -520,7 +526,8 @@ end
 --- cannot happen inline here. `command = {"true"}` is a no-op process neotest still needs; the real
 --- work rides the stream and the run token. `position_id` is the run position's own id, so its
 --- aggregate result and output attach to it.
-local function run_spec(position_id, module_rel, selections, client)
+local function run_spec(position_id, module_rel, selections, client, label)
+  vim.notify("Running " .. label, vim.log.levels.INFO, { title = "Lathe" })
   local token = next_token()
   local queue = nio().control.queue()
   event_queues[token] = queue
@@ -570,7 +577,7 @@ function M.build_spec(args)
   if pos.type == "test" or pos.type == "namespace" then
     return run_spec(pos.id, pos.lathe_module_rel, {
       { selectorKind = pos.lathe_selector_kind, selectorValue = pos.id },
-    }, client)
+    }, client, pos.name)
   end
 
   if pos.type == "dir" then
@@ -591,7 +598,7 @@ function M.build_spec(args)
     end
     return run_spec(package_name, module_rel, {
       { selectorKind = "PACKAGE", selectorValue = package_name },
-    }, client)
+    }, client, package_name)
   end
 
   if pos.type ~= "file" then
@@ -622,7 +629,7 @@ function M.build_spec(args)
       or ("open " .. vim.fn.fnamemodify(pos.path, ":t") .. " to discover its tests before running")
     return { command = { "true" }, context = { position_id = pos.id, skip_reason = reason } }
   end
-  return run_spec(pos.id, module_rel, selections, client)
+  return run_spec(pos.id, module_rel, selections, client, pos.name)
 end
 
 --- neotest.Result.output must be a path to a file containing the output, not raw text --
