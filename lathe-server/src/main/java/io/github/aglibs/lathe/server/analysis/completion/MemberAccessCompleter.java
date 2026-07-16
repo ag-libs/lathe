@@ -51,15 +51,16 @@ final class MemberAccessCompleter {
             && (initialResolved.type().getKind() == TypeKind.ERROR
                 || initialResolved.type().getKind() == TypeKind.TYPEVAR);
     // CQ-0051: expected-value inference reads the snapshot tree at the current cursor offset. When
-    // the cached snapshot diverges from the current content at or before the receiver, that offset
-    // is misaligned and can land in an unrelated following expression, wrongly marking the slot
-    // value-sensitive (which drops void members). Reattribute so the context is read from the
-    // current tree, even when the stale snapshot happens to resolve the receiver.
-    final boolean staleReceiverContext = staleBeforeReceiver(req, site);
+    // the cached snapshot diverges from the current content before the completion token (e.g. the
+    // just-typed `.` is not in the cache yet), that offset is misaligned and can land in an
+    // unrelated following expression, wrongly marking the slot value-sensitive (which drops void
+    // members). Reattribute so the context is read from the current tree, even when the stale
+    // snapshot happens to resolve the receiver.
+    final boolean staleBeforeToken = staleBeforeCompletionToken(req, injected);
     final boolean shouldReattribute =
         compiler != null
             && (methodChainReceiver || !req.noDiff())
-            && (initialResolved == null || initialUnusable || staleReceiverContext);
+            && (initialResolved == null || initialUnusable || staleBeforeToken);
     final AttributedFileAnalysis reattributedAnalysis;
     final AttributedFileAnalysis cacheableAnalysis;
     if (shouldReattribute) {
@@ -183,17 +184,19 @@ final class MemberAccessCompleter {
     return parsed.receiverText() != null && parsed.receiverText().indexOf('(') >= 0;
   }
 
-  private static boolean staleBeforeReceiver(
-      final CompletionRequest req, final CompletionSite site) {
-    final int receiverEnd = site.receiverEndOffset();
-    if (req.cached() == null || req.noDiff() || receiverEnd < 0) {
+  private static boolean staleBeforeCompletionToken(
+      final CompletionRequest req, final SentinelInjectionResult injected) {
+    final int tokenStart = injected.tokenStart();
+    if (req.cached() == null || req.noDiff() || tokenStart < 0) {
       return false;
     }
 
-    // receiverEnd precedes the sentinel injection point, so it is a valid offset into the raw
-    // content; the cache is trustworthy for the value-context lookup only if it matches the current
-    // content through the receiver. regionMatches returns false when the cache is shorter.
-    return !req.content().regionMatches(0, req.cached().content(), 0, receiverEnd);
+    // tokenStart is where the completed member name begins (just past the receiver's dot), a raw
+    // content offset. The cache is trustworthy for the value-context lookup only if it matches the
+    // current content up to there — i.e. the receiver AND the dot are present in the cache. The
+    // member-name prefix after tokenStart may differ freely. regionMatches returns false when the
+    // cache is shorter than tokenStart.
+    return !req.content().regionMatches(0, req.cached().content(), 0, tokenStart);
   }
 
   private static boolean hasDeclaredReceiver(final ResolvedReceiver resolved) {

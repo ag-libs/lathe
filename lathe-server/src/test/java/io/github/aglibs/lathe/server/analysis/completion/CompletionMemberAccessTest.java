@@ -836,12 +836,13 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
         .anyMatch(l -> l.startsWith("toLowerCase"));
   }
 
-  // CQ-0051: a plain statement `Type.` served from a STALE cache is mis-classified as a
-  // value-sensitive slot, so void-returning static methods are dropped. Here the cached content
-  // lacks the `Thread.` line, so the current cursor offset maps, in the stale tree, into the
-  // boolean argument of f(...). The receiver `Thread` still resolves globally from the stale
-  // snapshot, so no reattribution happens and the void sleep/yield are filtered — even though the
-  // current content is a statement where a void call is valid.
+  // CQ-0051: faithful to the live race — completion fires ~8ms after the dot is typed, so the cache
+  // still holds the content from BEFORE the dot (receiver `Thread` present, dot absent). The
+  // current
+  // cursor offset (past the dot) then maps, in the stale tree, into the boolean argument of f(...),
+  // wrongly marking the statement value-sensitive and dropping the void sleep/yield. The receiver
+  // still resolves from the stale snapshot, so the reattribution guard must key on the completion
+  // token start (through the dot), not merely the receiver end.
   @Test
   void memberAccess_staleCacheValueSensitiveOffset_stillOffersVoidStaticMethods() {
     final var cached =
@@ -850,6 +851,7 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
             void f(boolean b) {}
             boolean ready = true;
             void m() {
+                Thread
                 f(ready);
             }
         }""";
