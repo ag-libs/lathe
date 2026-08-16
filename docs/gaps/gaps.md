@@ -16,6 +16,7 @@ Each gap keeps its area prefix; the area is the discovery family, not a strict f
 | `CA-N` | code-action | `textDocument/codeAction` providers |
 | `CQ-NNNN` | completion | Completion quality; checked against the completion [expectations](../planned/lathe-completion-expectations.md) contract |
 | `WS-N` | workspace lifecycle | Workspace freshness and lifecycle: reactor mirror / type-index staleness, source watching, sync prompting, and reload |
+| `TE-N` | test execution | Maven test-fork capture, replay launch fidelity, and test-classpath isolation |
 
 ## Finding the work for a release
 
@@ -28,7 +29,7 @@ grep -n 'Target: M1' docs/gaps/gaps.md                         # the M1 slice
 ```
 
 Entries follow, grouped by area: exploration (EG) below, then Find References (FR), Code Actions
-(CA), Completion (CQ), and Workspace Lifecycle (WS).
+(CA), Completion (CQ), Workspace Lifecycle (WS), and Test Execution (TE).
 
 EG-003 is deferred until after M2 because it requires `DocTrees` attribution of Javadoc comment
 positions,
@@ -532,3 +533,76 @@ reactor type, then requesting completion / missing-import actions without runnin
 ### Regression targets
 
 None yet — to be defined when the fix is scheduled.
+
+---
+
+# Test Execution Gaps (TE)
+
+Capture/replay gaps involving the Maven test fork, the recorded launch template, and the standalone
+replay JVM.
+
+## TE-1 — Capture-only dependencies leak into the recorded replay classpath
+
+**Status: deferred — Target: backlog**
+
+Discovered by inspecting Helidon's captured `test-launch.json` files after enabling Lathe through
+`.mvn/extensions.xml`.
+
+### Observed behaviour
+
+The extension adds `lathe-junit` at test scope to every Maven project.
+That dependency also adds `lathe-core` and its runtime dependency closure to the real test compile
+and Surefire/Failsafe runtime classpaths.
+
+The capture listener deliberately removes only its own `lathe-junit` jar before writing
+`test-launch.json`.
+Existing Helidon captures consequently omit `lathe-junit` but retain capture-implementation jars such
+as `lathe-core`, Gson, ValidCheck, and Error Prone annotations.
+`ReplayTransform.forTest` preserves those entries and then appends the separate test-runner classpath.
+
+These retained jars are unnecessary for replay and can change its observable dependency environment.
+They may mask a missing project test dependency, participate in version mediation, or affect
+classpath/module-path behavior.
+
+### Root cause
+
+`CaptureLauncherSessionListener` needs `lathe-core` for workspace layout, schema serialization, and
+atomic writes, so Maven correctly resolves that dependency closure for the original test fork.
+`LaunchCapture.capturedClassPath` knows only the listener's own code-source location and filters that
+single path; it does not identify or remove the listener artifact's transitive dependency closure.
+
+The structural guard against replay recapture remains valid because `lathe-junit` itself is absent and
+therefore its ServiceLoader providers cannot run during replay.
+The narrower guarantee does not imply that the rest of the capture implementation is absent.
+
+### Proposed fix
+
+Not yet decided.
+Evaluate the dependency and packaging boundary in a separate design session before implementation.
+Candidate directions include making the capture artifact self-contained without exporting its
+implementation closure to consuming projects, or recording and removing the complete capture-only
+artifact closure while preserving jars that the project independently declares.
+
+Any solution must preserve:
+
+- the listener's fail-open behavior during Maven tests;
+- the structural guarantee that replay cannot recapture itself;
+- the user's independently declared dependency versions and classpath order;
+- both classpath and JPMS Surefire/Failsafe launches.
+
+### Probe commands
+
+Run a Helidon test fork with the Lathe extension enabled, then inspect a generated launch template:
+
+```bash
+cd ../helidon
+mvn test -Dlathe.capture.only=true -pl dbclient/dbclient -am
+grep -E 'lathe-(junit|core)|gson|validcheck|error_prone_annotations' \
+  .lathe/dbclient/dbclient/test-launch.json
+```
+
+Expected current result: `lathe-junit` is absent while its runtime dependency closure remains.
+
+### Regression targets
+
+None yet — to be defined with the approved design.

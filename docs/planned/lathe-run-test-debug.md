@@ -790,6 +790,12 @@ the one file every future replay trusts, with nothing in the output to flag it.
 Excluding the jar from the classpath at capture time makes that failure mode structurally impossible: a
 class that is not on the class path cannot be instantiated by `ServiceLoader`, regardless of any system
 property.
+This guarantee is specifically about the `lathe-junit` jar and its registered providers.
+The current filter removes only that jar, while `lathe-core` and its transitive runtime dependencies
+remain in the recorded class path and therefore in replay.
+That capture-only dependency leakage is tracked as
+[TE-1](../gaps/gaps.md#te-1--capture-only-dependencies-leak-into-the-recorded-replay-classpath) and is
+deferred pending a separate dependency-boundary design.
 This is a different situation from capture-only mode (§3.5), whose runtime-flag failure mode is confined
 to "ran/didn't run tests" and is immediately visible.
 

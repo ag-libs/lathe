@@ -21,6 +21,8 @@ Each keeps its area prefix:
 | `FR-NNN` | references | `textDocument/references` scope, failure propagation, coverage |
 | `CA-N` | code-action | `textDocument/codeAction` providers |
 | `CQ-NNNN` | completion | Completion quality |
+| `WS-N` | workspace lifecycle | Reactor mirror and type-index freshness, source watching, sync prompting, and reload |
+| `TE-N` | test execution | Maven test-fork capture, replay launch fidelity, and test-classpath isolation |
 
 Resolved (`done` / `non-goal`) entries move to [gaps-archive.md](gaps-archive.md).
 Discovery and triage follow the single [gap workflow](gap-workflow.md).
