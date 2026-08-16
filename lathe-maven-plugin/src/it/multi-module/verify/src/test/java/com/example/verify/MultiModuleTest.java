@@ -217,8 +217,10 @@ class MultiModuleTest {
     assertThat(content).contains("junit-jupiter-api");
     assertThat(content).contains("junit-jupiter-params");
     assertThat(content).contains("patch-module");
-    assertThat(content).contains("add-reads");
-    assertThat(content).contains("ALL-UNNAMED");
+    assertThat(content)
+        .contains(
+            "\"--add-reads\",\n    \"com.example.jpms\\u003djava.compiler\"",
+            "\"--add-reads\",\n    \"com.example.jpms\\u003dALL-UNNAMED\"");
   }
 
   @Test

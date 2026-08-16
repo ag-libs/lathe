@@ -37,11 +37,9 @@ final class ParamsWriter {
   }
 
   private static List<String> compilerArgs(final CompilerConfiguration config) {
-    final var map = config.getCustomCompilerArgumentsAsMap();
-    if (map == null || map.isEmpty()) {
-      return List.of();
-    }
-    return map.entrySet().stream().flatMap(ParamsWriter::streamCompilerArg).toList();
+    return config.getCustomCompilerArgumentsEntries().stream()
+        .flatMap(ParamsWriter::streamCompilerArg)
+        .toList();
   }
 
   private static Stream<String> streamCompilerArg(final Map.Entry<String, String> e) {

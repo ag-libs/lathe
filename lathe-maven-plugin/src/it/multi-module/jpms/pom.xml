@@ -40,6 +40,10 @@
         <configuration>
           <compilerArgs>
             <arg>-Xlint:all</arg>
+            <arg>--add-modules</arg>
+            <arg>java.compiler</arg>
+            <arg>--add-reads</arg>
+            <arg>com.example.jpms=java.compiler</arg>
           </compilerArgs>
         </configuration>
       </plugin>
