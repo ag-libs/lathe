@@ -6824,3 +6824,51 @@ each carrying its own import edit, instead of returning on the first match.
 
 Regression:
 `CompletionTypeIndexTest#memberAccess_unimportedAmbiguousSimpleName_suggestsMembersFromAllCandidates`.
+
+---
+
+# Test Execution (TE) — resolved
+
+## TE-1 — Capture-only dependencies leak into the recorded replay classpath
+
+**Status: done — Target: backlog.**
+
+Discovered by inspecting Helidon's captured `test-launch.json` files after enabling Lathe through
+`.mvn/extensions.xml`.
+
+### Observed behaviour
+
+The extension adds `lathe-junit` at test scope to every Maven project.
+That dependency also added `lathe-core` and its runtime dependency closure (Gson, ValidCheck, Error
+Prone annotations) to the real test compile and Surefire/Failsafe runtime classpaths.
+The capture listener removed only its own `lathe-junit` jar before writing `test-launch.json`, so the
+captures omitted `lathe-junit` but retained the rest of the closure, and `ReplayTransform.forTest`
+carried those entries into replay — masking missing project test dependencies, participating in
+version mediation, and polluting the in-fork classloader.
+
+### Root cause
+
+`LaunchCapture.capturedClassPath` filters only the listener's own code-source path; it never
+identified or removed the listener artifact's transitive dependency closure, which Maven had
+legitimately resolved onto the fork classpath.
+
+### Fix
+
+Packaging-only change to `lathe-junit`, per
+[lathe-capture-dependency-isolation.md](../planned/lathe-capture-dependency-isolation.md) (Option A).
+`lathe-junit` is repackaged with `maven-shade-plugin` as a shaded uber-jar that bundles its compile
+closure (`lathe-core`, Gson, ValidCheck) under a relocated `io.github.aglibs.lathe.junit.shaded.*`
+package and publishes a dependency-reduced POM. Error Prone annotations are excluded from the bundle,
+`module-info.class` and each bundled dependency's `META-INF/maven`/`META-INF/proguard` metadata are
+filtered out, and the `ServicesResourceTransformer` keeps the JUnit provider files consistent. Because
+the capture listener already filters `lathe-junit`'s own jar by `CodeSource`, moving the closure
+inside that jar means the single-jar filter now sweeps the entire closure out of both the fork
+classpath and `test-launch.json`. Relocation also prevents any clash with a consumer's own copy of
+those libraries. Dogfooding self-capture is disabled with a per-module Surefire `lathe.skip` flag;
+no Java, schema, or server read-path change was needed.
+
+### Regression targets
+
+None — packaging-only change, verified manually via shaded-jar inspection (every class under
+`io.github.aglibs.lathe.junit`, no un-relocated foreign packages, dependency-reduced POM leaves
+consumers zero inherited compile dependencies). No automated regression test was added.

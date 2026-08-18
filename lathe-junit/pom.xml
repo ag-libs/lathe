@@ -10,6 +10,10 @@
 
   <artifactId>lathe-junit</artifactId>
 
+  <properties>
+    <maven-shade-plugin.version>3.6.0</maven-shade-plugin.version>
+  </properties>
+
   <dependencies>
     <dependency>
       <groupId>io.github.ag-libs</groupId>
@@ -39,6 +43,78 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <systemPropertyVariables>
+            <lathe.skip>true</lathe.skip>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>${maven-shade-plugin.version}</version>
+        <executions>
+          <execution>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <phase>package</phase>
+            <configuration>
+              <createDependencyReducedPom>true</createDependencyReducedPom>
+              <dependencyReducedPomLocation>${project.build.directory}/dependency-reduced-pom.xml</dependencyReducedPomLocation>
+              <artifactSet>
+                <excludes>
+                  <exclude>com.google.errorprone:error_prone_annotations</exclude>
+                </excludes>
+              </artifactSet>
+              <relocations>
+                <relocation>
+                  <pattern>com.google.gson</pattern>
+                  <shadedPattern>io.github.aglibs.lathe.junit.shaded.gson</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>io.github.aglibs.lathe.core</pattern>
+                  <shadedPattern>io.github.aglibs.lathe.junit.shaded.core</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>io.github.aglibs.validcheck</pattern>
+                  <shadedPattern>io.github.aglibs.lathe.junit.shaded.validcheck</shadedPattern>
+                </relocation>
+              </relocations>
+              <transformers>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"></transformer>
+              </transformers>
+              <filters>
+                <filter>
+                  <artifact>*:*</artifact>
+                  <excludes>
+                    <exclude>module-info.class</exclude>
+                    <exclude>META-INF/versions/*/module-info.class</exclude>
+                  </excludes>
+                </filter>
+                <filter>
+                  <artifact>com.google.code.gson:gson</artifact>
+                  <excludes>
+                    <exclude>META-INF/maven/**</exclude>
+                    <exclude>META-INF/proguard/**</exclude>
+                  </excludes>
+                </filter>
+                <filter>
+                  <artifact>io.github.ag-libs:lathe-core</artifact>
+                  <excludes>
+                    <exclude>META-INF/maven/**</exclude>
+                  </excludes>
+                </filter>
+                <filter>
+                  <artifact>io.github.ag-libs.validcheck:validcheck</artifact>
+                  <excludes>
+                    <exclude>META-INF/maven/**</exclude>
+                  </excludes>
+                </filter>
+              </filters>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>
