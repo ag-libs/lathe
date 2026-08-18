@@ -950,14 +950,23 @@ The order below is the implementation order unless a later discovery forces a de
 
 ### 12.7 Main launch metadata
 
+**Status:** writer half implemented. `MainLaunchWriter` runs in `lathe:sync` and writes
+`.lathe/<rel>/main-launch.json` for every non-`pom` module on every build, deriving runtime-scope
+membership from `getRuntimeClasspathElements()` and module-path/class-path placement from
+`plexus-java` `LocationManager.resolvePaths`. The launched module's own output is prepended to the
+module path (plexus partitions dependencies only, so `-m <module>/<Main>` would otherwise not
+resolve the main class). Covered by invoker fixtures for the modular (`jpms/HelloMain`) and
+classpath (`app/Main`) cases. The server-side `MainLaunchReader` and the `ReplayTransform.forMain`
+launch path remain deferred, along with the Neovim run surface (neotest kind-0 / glyph).
+
 **Scope:**
 
-- Add Maven-side `MainLaunchWriter`.
-- Write `.lathe/<rel>/main-launch.json` during `lathe:sync`.
-- Use Maven runtime classpath membership.
-- Use `plexus-java` placement for module path and class path.
-- Add server-side `MainLaunchReader`.
-- Integrate `ReplayTransform.forMain(...)`.
+- Add Maven-side `MainLaunchWriter`. ✓
+- Write `.lathe/<rel>/main-launch.json` during `lathe:sync`. ✓
+- Use Maven runtime classpath membership. ✓
+- Use `plexus-java` placement for module path and class path. ✓
+- Add server-side `MainLaunchReader`. *(deferred)*
+- Integrate `ReplayTransform.forMain(...)`. *(deferred)*
 
 **Review focus:**
 

@@ -17,6 +17,7 @@ import org.apache.maven.artifact.Artifact;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.project.MavenProject;
+import org.codehaus.plexus.languages.java.jpms.LocationManager;
 import org.eclipse.aether.RepositorySystem;
 import org.eclipse.aether.repository.RemoteRepository;
 
@@ -60,6 +61,8 @@ final class SyncCoordinator {
     final var serverInstaller =
         new ServerInstaller(repositorySystem, session.getRepositorySession(), remoteRepos, log);
     serverInstaller.install();
+    final var mainLaunchWriter = new MainLaunchWriter(new LocationManager(), log);
+    projects.forEach(project -> mainLaunchWriter.write(workspaceRoot, project));
     if (isPartialReactor() && !LatheFlags.isForcedSync()) {
       log.debug("[sync] partial reactor (-pl) — skipping workspace.json write");
     } else {

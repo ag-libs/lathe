@@ -230,4 +230,33 @@ class MultiModuleTest {
         .exists()
         .hasContent("jpms-test-resource\n");
   }
+
+  // --- main-launch templates (derived by lathe:sync for every module) ---
+
+  @Test
+  void sync_jpmsMainLaunch_recordsModularPlacement() throws IOException {
+    final var launch = lathe("jpms/main-launch.json");
+    assertThat(launch).exists();
+    final var content = read(launch);
+    assertThat(content).contains("\"schemaVersion\": \"1\"");
+    assertThat(content).contains("\"mode\": \"MODULE\"");
+    assertThat(content).contains("\"mainModule\": \"com.example.jpms\"");
+    // The launched module's own output leads the module path; its required module follows.
+    assertThat(content).contains("jpms/target/classes");
+    assertThat(content).contains("validcheck");
+    assertThat(content).contains("\"classPath\": []");
+  }
+
+  @Test
+  void sync_appMainLaunch_recordsClasspathPlacement() throws IOException {
+    final var launch = lathe("app/main-launch.json");
+    assertThat(launch).exists();
+    final var content = read(launch);
+    assertThat(content).contains("\"mode\": \"CLASSPATH\"");
+    assertThat(content).contains("\"modulePath\": []");
+    assertThat(content).contains("app/target/classes");
+    assertThat(content).contains("slf4j-api");
+    // A classpath launch has no main module; the field is omitted, not blank.
+    assertThat(content).doesNotContain("mainModule");
+  }
 }

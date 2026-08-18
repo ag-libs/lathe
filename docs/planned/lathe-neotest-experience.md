@@ -84,7 +84,9 @@ Everything IntelliJ would offer a gutter run icon for is discoverable: `@Test`,
 `@ParameterizedTest`, `@RepeatedTest`, `@TestFactory`, JUnit 4 and TestNG `@Test`, nested test
 classes, and `main`.
 *Current:* server recognizes these (run-test-debug §7); adapter maps method/class/package.
-`main` replay is not yet wired (POSITION_TYPE has no entry for kind 0).
+`main` replay is not yet wired end-to-end: the launch template `.lathe/<rel>/main-launch.json` is
+now derived by `lathe:sync` (run-test-debug §12.7), but the server-side reader/launch path and the
+client surface (POSITION_TYPE has no entry for kind 0) remain.
 *Criteria:* a fixture covering each kind produces the expected position for each; `main` is tracked
 as an explicit deferral, not a silent miss.
 
