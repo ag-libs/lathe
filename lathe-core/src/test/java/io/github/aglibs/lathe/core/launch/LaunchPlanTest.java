@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
-final class ReplayTransformTest {
+final class LaunchPlanTest {
 
   private static final Path WORKSPACE = Path.of("/workspace");
 
@@ -38,7 +38,7 @@ final class ReplayTransformTest {
             List.of("-Dfoo=bar"));
 
     final List<String> args =
-        ReplayTransform.forTest(
+        LaunchPlan.forTest(
             data,
             WORKSPACE,
             List.of(runner),
@@ -92,7 +92,7 @@ final class ReplayTransformTest {
             List.of());
 
     final List<String> args =
-        ReplayTransform.forTest(
+        LaunchPlan.forTest(
             data,
             WORKSPACE,
             List.of(runner),
@@ -127,7 +127,7 @@ final class ReplayTransformTest {
             List.of("-Xmx512m"));
 
     final List<String> args =
-        ReplayTransform.forMain(data, WORKSPACE, "com.example.app.Main", List.of("--port", "8080"));
+        LaunchPlan.forMain(data, WORKSPACE, "com.example.app.Main", List.of("--port", "8080"));
 
     assertThat(args)
         .containsExactly(
@@ -162,7 +162,7 @@ final class ReplayTransformTest {
             List.of());
 
     final List<String> args =
-        ReplayTransform.forMain(data, WORKSPACE, "com.example.app.Main", List.of());
+        LaunchPlan.forMain(data, WORKSPACE, "com.example.app.Main", List.of());
 
     assertThat(args)
         .containsExactly(

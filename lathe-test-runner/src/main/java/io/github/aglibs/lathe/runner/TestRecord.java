@@ -5,7 +5,7 @@ import java.util.Objects;
 /**
  * One method-level test outcome captured from JUnit Platform, serialized as a single NDJSON line to
  * the results sink. The field names here are the wire contract read back on the server by {@code
- * ReplayOutcome}'s {@code TestResult}; keep both sides in sync.
+ * LaunchOutcome}'s {@code TestResult}; keep both sides in sync.
  *
  * <p>The runner rides the replayed test classpath, so it stays as thin as possible: no gson (NDJSON
  * is hand-rolled, one line per record) and no ValidCheck (invariants use plain JDK checks), keeping

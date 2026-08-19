@@ -2,7 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
-import io.github.aglibs.lathe.server.run.ReplayOutcome;
+import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.RunTarget;
 import java.nio.file.Path;
 import java.util.List;
@@ -333,7 +333,7 @@ final class LatheTextDocumentService implements TextDocumentService {
     return worker.submit(() -> session.workspaceSymbol(query));
   }
 
-  CompletableFuture<ReplayOutcome> runTestFuture(
+  CompletableFuture<LaunchOutcome> runTestFuture(
       final String moduleRel, final List<TestSelection> selections, final String token) {
     return worker
         .submit(() -> session.runTestFuture(moduleRel, selections, token))

@@ -16,20 +16,20 @@ import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-final class ReplaySessionTest {
+final class LaunchSessionTest {
 
   private static final long TIMEOUT_SECONDS = 5;
   private static final Consumer<TranscriptLine> NO_STREAM = line -> {};
   private static final Consumer<TestResult> NO_EVENTS = result -> {};
 
-  private static ReplaySession replaySession(final Process process, final Path resultsSink) {
-    return new ReplaySession(process, resultsSink, NO_STREAM, NO_EVENTS);
+  private static LaunchSession launchSession(final Process process, final Path resultsSink) {
+    return new LaunchSession(process, resultsSink, NO_STREAM, NO_EVENTS);
   }
 
   @Test
   void onExit_processExitsZero_completesWithZero()
       throws IOException, ExecutionException, InterruptedException, TimeoutException {
-    final var session = replaySession(new ProcessBuilder("true").start(), null);
+    final var session = launchSession(new ProcessBuilder("true").start(), null);
 
     assertThat(session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).exitCode()).isZero();
   }
@@ -37,7 +37,7 @@ final class ReplaySessionTest {
   @Test
   void onExit_processExitsNonZero_completesWithExitCode()
       throws IOException, ExecutionException, InterruptedException, TimeoutException {
-    final var session = replaySession(new ProcessBuilder("false").start(), null);
+    final var session = launchSession(new ProcessBuilder("false").start(), null);
 
     assertThat(session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).exitCode()).isEqualTo(1);
   }
@@ -46,7 +46,7 @@ final class ReplaySessionTest {
   void onExit_processPrintsStdout_capturesLinesTaggedStdout()
       throws IOException, ExecutionException, InterruptedException, TimeoutException {
     final var session =
-        replaySession(new ProcessBuilder("sh", "-c", "echo one; echo two").start(), null);
+        launchSession(new ProcessBuilder("sh", "-c", "echo one; echo two").start(), null);
 
     assertThat(session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).output())
         .containsExactly(
@@ -58,7 +58,7 @@ final class ReplaySessionTest {
   void onExit_processPrintsStderr_capturesLinesTaggedStderr()
       throws IOException, ExecutionException, InterruptedException, TimeoutException {
     final var session =
-        replaySession(new ProcessBuilder("sh", "-c", "echo err 1>&2").start(), null);
+        launchSession(new ProcessBuilder("sh", "-c", "echo err 1>&2").start(), null);
 
     assertThat(session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).output())
         .containsExactly(new TranscriptLine(TranscriptLine.Stream.STDERR, "err"));
@@ -69,7 +69,7 @@ final class ReplaySessionTest {
       throws IOException, ExecutionException, InterruptedException, TimeoutException {
     final List<TranscriptLine> streamed = Collections.synchronizedList(new ArrayList<>());
     final var session =
-        new ReplaySession(
+        new LaunchSession(
             new ProcessBuilder("sh", "-c", "echo out; echo err 1>&2").start(),
             null,
             streamed::add,
@@ -96,7 +96,7 @@ final class ReplaySessionTest {
         StandardCharsets.UTF_8);
     final List<TestResult> streamed = Collections.synchronizedList(new ArrayList<>());
     final var session =
-        new ReplaySession(new ProcessBuilder("true").start(), sink, NO_STREAM, streamed::add);
+        new LaunchSession(new ProcessBuilder("true").start(), sink, NO_STREAM, streamed::add);
 
     session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
@@ -116,9 +116,9 @@ final class ReplaySessionTest {
         {"className":"pkg.FooTest","methodName":"fails","methodParameterTypes":"","status":"failed","failureMessage":"boom","failureLine":12}
         """,
         StandardCharsets.UTF_8);
-    final var session = replaySession(new ProcessBuilder("true").start(), sink);
+    final var session = launchSession(new ProcessBuilder("true").start(), sink);
 
-    final ReplayOutcome outcome = session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    final LaunchOutcome outcome = session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
     assertThat(outcome.testResults()).hasSize(2);
     assertThat(outcome.testResults())
@@ -146,7 +146,7 @@ final class ReplaySessionTest {
         {"className":"pkg.FooTest","methodName":"passes","methodParameterTypes":"","status":"passed","failureMessage":"","failureLine":-1}
         """,
         StandardCharsets.UTF_8);
-    final var session = replaySession(new ProcessBuilder("true").start(), sink);
+    final var session = launchSession(new ProcessBuilder("true").start(), sink);
 
     assertThat(session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).testResults()).hasSize(1);
   }
@@ -155,7 +155,7 @@ final class ReplaySessionTest {
   void onExit_missingResultsSink_returnsEmptyTestResults(@TempDir final Path dir)
       throws IOException, ExecutionException, InterruptedException, TimeoutException {
     final var session =
-        replaySession(new ProcessBuilder("true").start(), dir.resolve("absent.ndjson"));
+        launchSession(new ProcessBuilder("true").start(), dir.resolve("absent.ndjson"));
 
     assertThat(session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).testResults()).isEmpty();
   }
@@ -163,7 +163,7 @@ final class ReplaySessionTest {
   @Test
   void cancel_runningProcess_completesOnExitNonZero()
       throws IOException, ExecutionException, InterruptedException, TimeoutException {
-    final var session = replaySession(new ProcessBuilder("sleep", "30").start(), null);
+    final var session = launchSession(new ProcessBuilder("sleep", "30").start(), null);
 
     session.cancel();
 
@@ -179,7 +179,7 @@ final class ReplaySessionTest {
     // is a shell builtin (no forked child to inherit and hold the stdout/stderr pipes open), so
     // killing the shell closes them and the drains complete.
     final var session =
-        replaySession(new ProcessBuilder("sh", "-c", "trap '' TERM; read _").start(), null);
+        launchSession(new ProcessBuilder("sh", "-c", "trap '' TERM; read _").start(), null);
 
     session.cancel();
 
@@ -188,7 +188,7 @@ final class ReplaySessionTest {
 
   @Test
   void pid_startedProcess_returnsPositivePid() throws IOException {
-    final var session = replaySession(new ProcessBuilder("sleep", "0").start(), null);
+    final var session = launchSession(new ProcessBuilder("sleep", "0").start(), null);
 
     assertThat(session.pid()).isPositive();
   }

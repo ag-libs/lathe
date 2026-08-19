@@ -33,10 +33,10 @@ import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.lathe.server.module.WorkspaceModuleGraph;
 import io.github.aglibs.lathe.server.module.WorkspaceModuleRegistry;
 import io.github.aglibs.lathe.server.run.CompletenessGate;
+import io.github.aglibs.lathe.server.run.LaunchOutcome;
+import io.github.aglibs.lathe.server.run.LaunchSession;
 import io.github.aglibs.lathe.server.run.LaunchTemplateReader;
-import io.github.aglibs.lathe.server.run.ReplayLauncher;
-import io.github.aglibs.lathe.server.run.ReplayOutcome;
-import io.github.aglibs.lathe.server.run.ReplaySession;
+import io.github.aglibs.lathe.server.run.Launcher;
 import io.github.aglibs.lathe.server.run.RunTarget;
 import io.github.aglibs.lathe.server.run.TestEventParams;
 import io.github.aglibs.lathe.server.run.TestOutputParams;
@@ -118,11 +118,11 @@ final class WorkspaceSession {
   private final AnalysisLru analysisLru = new AnalysisLru();
   private final DiagnosticPublisher publisher;
 
-  // In-flight replays keyed by run token, so a cancel can reach the right ReplaySession. A plain
+  // In-flight replays keyed by run token, so a cancel can reach the right LaunchSession. A plain
   // map, not a concurrent one: it is mutated only on the worker thread. The run and exit threads
   // marshal put/remove via worker.execute (see runTestFuture) rather than touching it directly,
   // keeping the single-threaded discipline of every other field here.
-  private final Map<String, ReplaySession> activeRuns = new HashMap<>();
+  private final Map<String, LaunchSession> activeRuns = new HashMap<>();
 
   WorkspaceSession(
       final LanguageClient client,
@@ -174,34 +174,34 @@ final class WorkspaceSession {
     workspace.close();
   }
 
-  CompletableFuture<ReplayOutcome> runTestFuture(
+  CompletableFuture<LaunchOutcome> runTestFuture(
       final String moduleRel, final List<TestSelection> selections, final String token) {
     final List<Path> runnerClasspath = manifest.runnerClasspath();
     if (runnerClasspath.isEmpty()) {
       LOG.warning(
           () ->
-              "[replay] %s %s blocked no lathe-test-runner jar recorded"
+              "[launch] %s %s blocked no lathe-test-runner jar recorded"
                   .formatted(moduleRel, selectionLabel(selections)));
       return CompletableFuture.completedFuture(
-          ReplayOutcome.blocked(List.of("no lathe-test-runner jar recorded — run a build first")));
+          LaunchOutcome.blocked(List.of("no lathe-test-runner jar recorded — run a build first")));
     }
 
     final Consumer<TranscriptLine> onLine = streamConsumer(token);
     final Consumer<TestResult> onResult = resultConsumer(token);
     final Path root = workspaceRoot;
     final var t = Stopwatch.start();
-    final var result = new CompletableFuture<ReplayOutcome>();
+    final var result = new CompletableFuture<LaunchOutcome>();
     // Register/deregister the run by token so a cancel can reach it. Marshaled onto the worker so
     // activeRuns keeps the single-threaded discipline of every other field. Removal covers the
     // blocked/error paths too (removing an unregistered token is a no-op).
     result.whenComplete((outcome, error) -> worker.execute(() -> activeRuns.remove(token)));
-    final Consumer<ReplaySession> onStart =
+    final Consumer<LaunchSession> onStart =
         session -> worker.execute(() -> activeRuns.put(token, session));
 
     final var thread =
         new Thread(
             () ->
-                launchReplay(
+                launchTest(
                     root,
                     runnerClasspath,
                     moduleRel,
@@ -211,14 +211,14 @@ final class WorkspaceSession {
                     onStart,
                     t,
                     result),
-            "lathe-replay-" + moduleRel);
+            "lathe-launch-" + moduleRel);
     thread.setDaemon(true);
     thread.start();
     return result;
   }
 
   void cancelRun(final String token) {
-    final ReplaySession session = activeRuns.get(token);
+    final LaunchSession session = activeRuns.get(token);
     if (session == null) {
       LOG.fine(() -> "[cancel] %s no active run".formatted(token));
       return;
@@ -255,7 +255,7 @@ final class WorkspaceSession {
 
   /**
    * Streams each drained transcript line to the client over the run token so the client can render
-   * it live. Fired from {@code ReplaySession}'s drain threads, not the worker: the payload is
+   * it live. Fired from {@code LaunchSession}'s drain threads, not the worker: the payload is
    * immutable and carries no session state, and lsp4j serializes the writes, so publishing off the
    * worker is safe here. A blank token (no live surface listening) yields a no-op.
    */
@@ -280,25 +280,25 @@ final class WorkspaceSession {
     return result -> ((LatheLanguageClient) client).testEvent(new TestEventParams(token, result));
   }
 
-  private static void launchReplay(
+  private static void launchTest(
       final Path workspaceRoot,
       final List<Path> runnerClasspath,
       final String moduleRel,
       final List<TestSelection> selections,
       final Consumer<TranscriptLine> onLine,
       final Consumer<TestResult> onResult,
-      final Consumer<ReplaySession> onStart,
+      final Consumer<LaunchSession> onStart,
       final Stopwatch t,
-      final CompletableFuture<ReplayOutcome> result) {
+      final CompletableFuture<LaunchOutcome> result) {
     try {
       final var template = new LaunchTemplateReader(workspaceRoot).read(moduleRel);
       if (template.isEmpty()) {
         LOG.warning(
             () ->
-                "[replay] %s %s blocked no captured test-launch.json"
+                "[launch] %s %s blocked no captured test-launch.json"
                     .formatted(moduleRel, selectionLabel(selections)));
         result.complete(
-            ReplayOutcome.blocked(List.of("no captured test-launch.json for " + moduleRel)));
+            LaunchOutcome.blocked(List.of("no captured test-launch.json for " + moduleRel)));
         return;
       }
 
@@ -306,14 +306,14 @@ final class WorkspaceSession {
       if (!gate.complete()) {
         LOG.warning(
             () ->
-                "[replay] %s %s blocked reasons=%s"
+                "[launch] %s %s blocked reasons=%s"
                     .formatted(moduleRel, selectionLabel(selections), gate.reasons()));
-        result.complete(ReplayOutcome.blocked(gate.reasons()));
+        result.complete(LaunchOutcome.blocked(gate.reasons()));
         return;
       }
 
       final var session =
-          ReplayLauncher.launch(
+          Launcher.launch(
               template.get(), workspaceRoot, runnerClasspath, selections, onLine, onResult);
       onStart.accept(session);
       session
@@ -325,13 +325,13 @@ final class WorkspaceSession {
                       Level.WARNING,
                       error,
                       () ->
-                          "[replay] %s %s failed %dms"
+                          "[launch] %s %s failed %dms"
                               .formatted(moduleRel, selectionLabel(selections), t.elapsedMs()));
                   result.completeExceptionally(error);
                 } else {
                   LOG.info(
                       () ->
-                          "[replay] %s %s exit=%d %dms"
+                          "[launch] %s %s exit=%d %dms"
                               .formatted(
                                   moduleRel,
                                   selectionLabel(selections),
@@ -345,7 +345,7 @@ final class WorkspaceSession {
           Level.WARNING,
           e,
           () ->
-              "[replay] %s %s failed to launch %dms"
+              "[launch] %s %s failed to launch %dms"
                   .formatted(moduleRel, selectionLabel(selections), t.elapsedMs()));
       result.completeExceptionally(e);
     }

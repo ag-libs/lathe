@@ -5,7 +5,7 @@ import static org.mockito.Mockito.mock;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
-import io.github.aglibs.lathe.server.run.ReplayOutcome;
+import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.RunTarget;
 import io.github.aglibs.lathe.server.run.RunnableKind;
 import java.nio.file.Files;
@@ -78,8 +78,8 @@ class LatheWorkspaceServiceTest {
 
     final var result = service.executeCommand(params).get(5, TimeUnit.SECONDS);
 
-    assertThat(result).isInstanceOf(ReplayOutcome.class);
-    final var outcome = (ReplayOutcome) result;
+    assertThat(result).isInstanceOf(LaunchOutcome.class);
+    final var outcome = (LaunchOutcome) result;
     assertThat(outcome.launched()).isFalse();
     assertThat(outcome.blockedReasons()).anyMatch(reason -> reason.contains("run a build first"));
   }

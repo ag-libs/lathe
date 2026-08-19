@@ -24,7 +24,7 @@ local adapter = require("lathe.neotest")
 
 local FILE = "/workspace/demo/src/test/java/demo/FooTest.java"
 
---- Builds the {stream, text} tagged transcript shape ReplayOutcome.output now
+--- Builds the {stream, text} tagged transcript shape LaunchOutcome.output now
 --- carries (stream 0 = stdout) from plain strings, so these fixtures mirror the
 --- real wire shape the adapter consumes.
 local function transcript(...)

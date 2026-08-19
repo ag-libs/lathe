@@ -12,9 +12,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 
-public final class ReplayTransform {
+public final class LaunchPlan {
 
-  private ReplayTransform() {}
+  private LaunchPlan() {}
 
   public static List<String> forTest(
       final TestLaunchData data,

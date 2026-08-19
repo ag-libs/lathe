@@ -7,11 +7,11 @@ import io.github.aglibs.validcheck.ValidationException;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-final class ReplayOutcomeTest {
+final class LaunchOutcomeTest {
 
   @Test
   void blocked_reasons_hasEmptyTestResults() {
-    final ReplayOutcome outcome = ReplayOutcome.blocked(List.of("no runner jar"));
+    final LaunchOutcome outcome = LaunchOutcome.blocked(List.of("no runner jar"));
 
     assertThat(outcome.launched()).isFalse();
     assertThat(outcome.testResults()).isEmpty();
@@ -21,8 +21,8 @@ final class ReplayOutcomeTest {
   void completed_withTestResults_carriesAndCopiesThem() {
     final var result = new TestResult("pkg.FooTest", "bar", "", "failed", "boom", 7, "");
 
-    final ReplayOutcome outcome =
-        ReplayOutcome.completed(
+    final LaunchOutcome outcome =
+        LaunchOutcome.completed(
             1, List.of(new TranscriptLine(TranscriptLine.Stream.STDOUT, "line")), List.of(result));
 
     assertThat(outcome.launched()).isTrue();
@@ -33,7 +33,7 @@ final class ReplayOutcomeTest {
 
   @Test
   void constructor_nullTestResults_isRejected() {
-    assertThatThrownBy(() -> new ReplayOutcome(true, List.of(), 0, List.of(), null))
+    assertThatThrownBy(() -> new LaunchOutcome(true, List.of(), 0, List.of(), null))
         .isInstanceOf(ValidationException.class);
   }
 }

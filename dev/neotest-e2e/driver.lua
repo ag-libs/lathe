@@ -208,7 +208,7 @@ spec.check("R6 spec.stream yields the method result to neotest", captured.method
 -- {stream, text} lines, not a flat string list. A passing run legitimately emits
 -- no console output (LatheTestRunner prints only failing tests), so this asserts
 -- the shape, not non-emptiness; the stdout/stderr tagging itself is proven in
--- ReplaySessionTest. Entries, when present, must carry text.
+-- LaunchSessionTest. Entries, when present, must carry text.
 local transcript = captured.class_transcript
 spec.check("transcript arrives as a list", type(transcript) == "table", true)
 local entries_well_formed = true

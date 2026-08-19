@@ -1,6 +1,6 @@
 package io.github.aglibs.lathe.server.run;
 
-import io.github.aglibs.lathe.core.launch.ReplayTransform;
+import io.github.aglibs.lathe.core.launch.LaunchPlan;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import java.io.IOException;
@@ -10,13 +10,13 @@ import java.util.List;
 import java.util.function.Consumer;
 import java.util.logging.Logger;
 
-public final class ReplayLauncher {
+public final class Launcher {
 
-  private static final Logger LOG = Logger.getLogger(ReplayLauncher.class.getName());
+  private static final Logger LOG = Logger.getLogger(Launcher.class.getName());
 
-  private ReplayLauncher() {}
+  private Launcher() {}
 
-  public static ReplaySession launch(
+  public static LaunchSession launch(
       final TestLaunchData data,
       final Path workspaceRoot,
       final List<Path> runnerClasspath,
@@ -26,12 +26,12 @@ public final class ReplayLauncher {
       throws IOException {
     final Path resultsSink = Files.createTempFile("lathe-results-", ".ndjson");
     final List<String> argv =
-        ReplayTransform.forTest(data, workspaceRoot, runnerClasspath, selections, resultsSink);
-    LOG.fine(() -> "[replay] argv=%s".formatted(argv));
+        LaunchPlan.forTest(data, workspaceRoot, runnerClasspath, selections, resultsSink);
+    LOG.fine(() -> "[launch] argv=%s".formatted(argv));
     // Surface the launch command as the run's first output line, before any process output, so the
     // client can show what ran the tests. COMMAND-tagged so the client renders it distinctly.
     onLine.accept(new TranscriptLine(TranscriptLine.Stream.COMMAND, String.join(" ", argv)));
     final Process process = new ProcessBuilder(argv).start();
-    return new ReplaySession(process, resultsSink, onLine, onResult);
+    return new LaunchSession(process, resultsSink, onLine, onResult);
   }
 }

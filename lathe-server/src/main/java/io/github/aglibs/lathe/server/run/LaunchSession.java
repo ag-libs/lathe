@@ -17,9 +17,9 @@ import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-public final class ReplaySession {
+public final class LaunchSession {
 
-  private static final Logger LOG = Logger.getLogger(ReplaySession.class.getName());
+  private static final Logger LOG = Logger.getLogger(LaunchSession.class.getName());
 
   private static final long TAIL_POLL_MS = 25;
 
@@ -36,7 +36,7 @@ public final class ReplaySession {
   private final CompletableFuture<Void> stderrDrained = new CompletableFuture<>();
   private final CompletableFuture<Void> tailerDone = new CompletableFuture<>();
 
-  ReplaySession(
+  LaunchSession(
       final Process process,
       final Path resultsSink,
       final Consumer<TranscriptLine> onLine,
@@ -56,7 +56,7 @@ public final class ReplaySession {
       return;
     }
 
-    final var thread = new Thread(this::tailResults, "lathe-replay-events-" + process.pid());
+    final var thread = new Thread(this::tailResults, "lathe-launch-events-" + process.pid());
     thread.setDaemon(true);
     thread.start();
   }
@@ -68,7 +68,7 @@ public final class ReplaySession {
     final var thread =
         new Thread(
             () -> drain(in, stream, drained),
-            "lathe-replay-%s-%d".formatted(stream, process.pid()));
+            "lathe-launch-%s-%d".formatted(stream, process.pid()));
     thread.setDaemon(true);
     thread.start();
   }
@@ -96,7 +96,7 @@ public final class ReplaySession {
    * Waits for both process exit and output draining to complete, so the returned outcome's output
    * is always the full captured transcript, never a partial read racing the pipe close.
    */
-  public CompletableFuture<ReplayOutcome> onExit() {
+  public CompletableFuture<LaunchOutcome> onExit() {
     final CompletableFuture<Void> drained =
         CompletableFuture.allOf(stdoutDrained, stderrDrained, tailerDone);
     return process
@@ -104,7 +104,7 @@ public final class ReplaySession {
         .thenCombine(
             drained,
             (exited, ignored) ->
-                ReplayOutcome.completed(
+                LaunchOutcome.completed(
                     exited.exitValue(), List.copyOf(output), readTestResults()));
   }
 
@@ -163,7 +163,7 @@ public final class ReplaySession {
       }
     } catch (final IOException e) {
       LOG.log(
-          Level.FINE, e, () -> "[replay] %s read failed pid=%d".formatted(stream, process.pid()));
+          Level.FINE, e, () -> "[launch] %s read failed pid=%d".formatted(stream, process.pid()));
     } finally {
       drained.complete(null);
     }
@@ -185,7 +185,7 @@ public final class ReplaySession {
 
       return List.copyOf(results);
     } catch (final IOException e) {
-      LOG.log(Level.FINE, e, () -> "[replay] results read failed sink=%s".formatted(resultsSink));
+      LOG.log(Level.FINE, e, () -> "[launch] results read failed sink=%s".formatted(resultsSink));
       return List.of();
     } finally {
       deleteQuietly(resultsSink);
@@ -200,7 +200,7 @@ public final class ReplaySession {
     try {
       return Json.fromJson(line, TestResult.class);
     } catch (final RuntimeException e) {
-      LOG.log(Level.FINE, e, () -> "[replay] results parse skipped a malformed record");
+      LOG.log(Level.FINE, e, () -> "[launch] results parse skipped a malformed record");
       return null;
     }
   }
@@ -209,7 +209,7 @@ public final class ReplaySession {
     try {
       Files.deleteIfExists(path);
     } catch (final IOException e) {
-      LOG.log(Level.FINE, e, () -> "[replay] results sink cleanup failed sink=%s".formatted(path));
+      LOG.log(Level.FINE, e, () -> "[launch] results sink cleanup failed sink=%s".formatted(path));
     }
   }
 }

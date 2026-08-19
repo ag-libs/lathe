@@ -3,14 +3,14 @@ package io.github.aglibs.lathe.server.run;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.util.List;
 
-public record ReplayOutcome(
+public record LaunchOutcome(
     boolean launched,
     List<String> blockedReasons,
     int exitCode,
     List<TranscriptLine> output,
     List<TestResult> testResults) {
 
-  public ReplayOutcome {
+  public LaunchOutcome {
     ValidCheck.check()
         .notNull(blockedReasons, "blockedReasons")
         .notNull(output, "output")
@@ -21,12 +21,12 @@ public record ReplayOutcome(
     testResults = List.copyOf(testResults);
   }
 
-  public static ReplayOutcome blocked(final List<String> reasons) {
-    return new ReplayOutcome(false, reasons, -1, List.of(), List.of());
+  public static LaunchOutcome blocked(final List<String> reasons) {
+    return new LaunchOutcome(false, reasons, -1, List.of(), List.of());
   }
 
-  public static ReplayOutcome completed(
+  public static LaunchOutcome completed(
       final int exitCode, final List<TranscriptLine> output, final List<TestResult> testResults) {
-    return new ReplayOutcome(true, List.of(), exitCode, output, testResults);
+    return new LaunchOutcome(true, List.of(), exitCode, output, testResults);
   }
 }
