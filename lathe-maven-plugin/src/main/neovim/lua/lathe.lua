@@ -115,6 +115,36 @@ function M.setup(opts)
     })
   end
 
+  -- Run surface: gutter signs for `main` methods plus :LatheRun to replay the buffer's main
+  -- class from .lathe/ bytecode. Tests keep going through the neotest adapter; this is the
+  -- main-only path (RunnableKind.MAIN, which neotest excludes). Signs refresh when the server
+  -- attaches and after each save, since an edit can add or remove a main.
+  local run = require('lathe.run')
+  vim.api.nvim_create_autocmd('LspAttach', {
+    group = augroup,
+    callback = function(args)
+      local client = vim.lsp.get_client_by_id(args.data.client_id)
+      if client and client.name == 'lathe' then
+        run.refresh_signs(args.buf)
+      end
+    end,
+  })
+  vim.api.nvim_create_autocmd('BufWritePost', {
+    group = augroup,
+    pattern = '*.java',
+    callback = function(ev)
+      if #vim.lsp.get_clients({ name = 'lathe', bufnr = ev.buf }) > 0 then
+        run.refresh_signs(ev.buf)
+      end
+    end,
+  })
+  vim.api.nvim_create_user_command('LatheRun', function()
+    run.run(vim.api.nvim_get_current_buf())
+  end, { desc = 'Lathe: run the main class in the current buffer' })
+  vim.api.nvim_create_user_command('LatheRunStop', function()
+    run.stop()
+  end, { desc = 'Lathe: stop the active main run' })
+
   local cache_pattern = root .. '/**'
   vim.api.nvim_create_autocmd('BufReadPre', {
     group = augroup,

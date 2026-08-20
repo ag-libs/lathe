@@ -950,7 +950,7 @@ The order below is the implementation order unless a later discovery forces a de
 
 ### 12.7 Main launch metadata
 
-**Status:** server-side replay implemented; only the Neovim run surface remains. The push side
+**Status:** complete. The push side
 (`MainLaunchWriter` in `lathe:sync`) writes `.lathe/<rel>/main-launch.json` for every non-`pom`
 module on every build, deriving runtime-scope membership from `getRuntimeClasspathElements()` and
 module-path/class-path placement from `plexus-java` `LocationManager.resolvePaths`. The launched
@@ -961,8 +961,11 @@ modular (`jpms/HelloMain`) and classpath (`app/Main`) cases. The server now read
 argv (`LaunchPlan.forMain`), and spawns the replay JVM through the shared `Launcher.launch` — with
 no results sink, since a `main` run emits no JUnit event stream — streamed and cancellable exactly
 like a test run via the `lathe.run.main` command. Program args are still `List.of()` here; the
-`.lathe-run.json` overlay (§8, slice 12.8) supplies them. The only remaining piece is the Neovim
-run surface (neotest kind-0 / glyph), tracked separately.
+`.lathe-run.json` overlay (§8, slice 12.8) supplies them. The Neovim surface is a standalone
+main-only path rather than a neotest position: a `▶` gutter sign on each discovered `main` plus a
+`:LatheRun`/`:LatheRunStop` pair driving `lathe.run.main`, streaming into the same console buffer as
+tests (extracted to a shared `lathe.output` module). Tests stay with the neotest adapter — a `main`
+is not a test — so neotest deliberately keeps excluding `RunnableKind.MAIN`.
 
 **Scope:**
 
@@ -973,7 +976,8 @@ run surface (neotest kind-0 / glyph), tracked separately.
 - Add server-side `MainLaunchReader`. ✓
 - Integrate `ReplayTransform.forMain(...)` (as `LaunchPlan.forMain`) behind the `lathe.run.main`
   command. ✓
-- Neovim run surface (neotest kind-0 / glyph). *(deferred)*
+- Neovim run surface: `▶` gutter sign + `:LatheRun`/`:LatheRunStop`, main-only (standalone, not a
+  neotest position). ✓
 
 **Review focus:**
 
