@@ -950,14 +950,19 @@ The order below is the implementation order unless a later discovery forces a de
 
 ### 12.7 Main launch metadata
 
-**Status:** writer half implemented. `MainLaunchWriter` runs in `lathe:sync` and writes
-`.lathe/<rel>/main-launch.json` for every non-`pom` module on every build, deriving runtime-scope
-membership from `getRuntimeClasspathElements()` and module-path/class-path placement from
-`plexus-java` `LocationManager.resolvePaths`. The launched module's own output is prepended to the
-module path (plexus partitions dependencies only, so `-m <module>/<Main>` would otherwise not
-resolve the main class). Covered by invoker fixtures for the modular (`jpms/HelloMain`) and
-classpath (`app/Main`) cases. The server-side `MainLaunchReader` and the `ReplayTransform.forMain`
-launch path remain deferred, along with the Neovim run surface (neotest kind-0 / glyph).
+**Status:** server-side replay implemented; only the Neovim run surface remains. The push side
+(`MainLaunchWriter` in `lathe:sync`) writes `.lathe/<rel>/main-launch.json` for every non-`pom`
+module on every build, deriving runtime-scope membership from `getRuntimeClasspathElements()` and
+module-path/class-path placement from `plexus-java` `LocationManager.resolvePaths`. The launched
+module's own output is prepended to the module path (plexus partitions dependencies only, so `-m
+<module>/<Main>` would otherwise not resolve the main class). Covered by invoker fixtures for the
+modular (`jpms/HelloMain`) and classpath (`app/Main`) cases. The server now reads that template
+(`MainLaunchReader`, lock-aware), gates it (`CompletenessGate.verify(MainLaunchData)`), builds the
+argv (`LaunchPlan.forMain`), and spawns the replay JVM through the shared `Launcher.launch` — with
+no results sink, since a `main` run emits no JUnit event stream — streamed and cancellable exactly
+like a test run via the `lathe.run.main` command. Program args are still `List.of()` here; the
+`.lathe-run.json` overlay (§8, slice 12.8) supplies them. The only remaining piece is the Neovim
+run surface (neotest kind-0 / glyph), tracked separately.
 
 **Scope:**
 
@@ -965,8 +970,10 @@ launch path remain deferred, along with the Neovim run surface (neotest kind-0 /
 - Write `.lathe/<rel>/main-launch.json` during `lathe:sync`. ✓
 - Use Maven runtime classpath membership. ✓
 - Use `plexus-java` placement for module path and class path. ✓
-- Add server-side `MainLaunchReader`. *(deferred)*
-- Integrate `ReplayTransform.forMain(...)`. *(deferred)*
+- Add server-side `MainLaunchReader`. ✓
+- Integrate `ReplayTransform.forMain(...)` (as `LaunchPlan.forMain`) behind the `lathe.run.main`
+  command. ✓
+- Neovim run surface (neotest kind-0 / glyph). *(deferred)*
 
 **Review focus:**
 

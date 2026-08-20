@@ -20,6 +20,7 @@ import org.eclipse.lsp4j.services.WorkspaceService;
 final class LatheWorkspaceService implements WorkspaceService {
 
   static final String RUN_TEST_COMMAND = "lathe.run.test";
+  static final String RUN_MAIN_COMMAND = "lathe.run.main";
   static final String CANCEL_TEST_COMMAND = "lathe.run.cancel";
   static final String LIST_RUNNABLES_COMMAND = "lathe.runnables.list";
   static final String RESOURCE_REFRESH_COMMAND = "lathe.resource.refresh";
@@ -52,6 +53,7 @@ final class LatheWorkspaceService implements WorkspaceService {
   public CompletableFuture<Object> executeCommand(final ExecuteCommandParams params) {
     return switch (params.getCommand()) {
       case RUN_TEST_COMMAND -> runTest(params);
+      case RUN_MAIN_COMMAND -> runMain(params);
       case CANCEL_TEST_COMMAND -> cancelTest(params);
       case LIST_RUNNABLES_COMMAND -> listRunnables(params);
       case RESOURCE_REFRESH_COMMAND -> refreshResource(params);
@@ -63,6 +65,13 @@ final class LatheWorkspaceService implements WorkspaceService {
     final var argument = parseRunTestArgument(params.getArguments().getFirst());
     return textDocumentService
         .runTestFuture(argument.moduleRel(), argument.selections(), argument.token())
+        .thenApply(outcome -> outcome);
+  }
+
+  private CompletableFuture<Object> runMain(final ExecuteCommandParams params) {
+    final var argument = parseRunMainArgument(params.getArguments().getFirst());
+    return textDocumentService
+        .runMainFuture(argument.moduleRel(), argument.mainClass(), argument.token())
         .thenApply(outcome -> outcome);
   }
 
@@ -97,6 +106,15 @@ final class LatheWorkspaceService implements WorkspaceService {
             .toList();
     final String token = json.has("token") ? json.get("token").getAsString() : "";
     return new RunTestArgument(json.get("moduleRel").getAsString(), selections, token);
+  }
+
+  private record RunMainArgument(String moduleRel, String mainClass, String token) {}
+
+  private static RunMainArgument parseRunMainArgument(final Object argument) {
+    final var json = (JsonObject) argument;
+    final String token = json.has("token") ? json.get("token").getAsString() : "";
+    return new RunMainArgument(
+        json.get("moduleRel").getAsString(), json.get("mainClass").getAsString(), token);
   }
 
   private static TestSelection parseSelection(final JsonObject json) {

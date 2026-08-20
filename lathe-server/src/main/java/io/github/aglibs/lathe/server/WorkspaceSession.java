@@ -6,6 +6,7 @@ import io.github.aglibs.lathe.core.CollectionUtil;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.Stopwatch;
+import io.github.aglibs.lathe.core.launch.LaunchPlan;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
@@ -37,6 +38,7 @@ import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.LaunchSession;
 import io.github.aglibs.lathe.server.run.LaunchTemplateReader;
 import io.github.aglibs.lathe.server.run.Launcher;
+import io.github.aglibs.lathe.server.run.MainLaunchReader;
 import io.github.aglibs.lathe.server.run.RunTarget;
 import io.github.aglibs.lathe.server.run.TestEventParams;
 import io.github.aglibs.lathe.server.run.TestOutputParams;
@@ -312,34 +314,17 @@ final class WorkspaceSession {
         return;
       }
 
-      final var session =
-          Launcher.launch(
-              template.get(), workspaceRoot, runnerClasspath, selections, onLine, onResult);
+      final Path resultsSink = Files.createTempFile("lathe-results-", ".ndjson");
+      final List<String> argv =
+          LaunchPlan.forTest(
+              template.get(), workspaceRoot, runnerClasspath, selections, resultsSink);
+      final var session = Launcher.launch(argv, resultsSink, onLine, onResult);
       onStart.accept(session);
+      final String label = selectionLabel(selections);
       session
           .onExit()
           .whenComplete(
-              (outcome, error) -> {
-                if (error != null) {
-                  LOG.log(
-                      Level.WARNING,
-                      error,
-                      () ->
-                          "[launch] %s %s failed %dms"
-                              .formatted(moduleRel, selectionLabel(selections), t.elapsedMs()));
-                  result.completeExceptionally(error);
-                } else {
-                  LOG.info(
-                      () ->
-                          "[launch] %s %s exit=%d %dms"
-                              .formatted(
-                                  moduleRel,
-                                  selectionLabel(selections),
-                                  outcome.exitCode(),
-                                  t.elapsedMs()));
-                  result.complete(outcome);
-                }
-              });
+              (outcome, error) -> completeRun(moduleRel, label, t, result, outcome, error));
     } catch (final IOException e) {
       LOG.log(
           Level.WARNING,
@@ -347,6 +332,101 @@ final class WorkspaceSession {
           () ->
               "[launch] %s %s failed to launch %dms"
                   .formatted(moduleRel, selectionLabel(selections), t.elapsedMs()));
+      result.completeExceptionally(e);
+    }
+  }
+
+  // Shared completion for both test and main replay: propagate a spawn/exit failure, or log the
+  // exit code and hand the outcome back to the caller's run future.
+  private static void completeRun(
+      final String moduleRel,
+      final String label,
+      final Stopwatch t,
+      final CompletableFuture<LaunchOutcome> result,
+      final LaunchOutcome outcome,
+      final Throwable error) {
+    if (error != null) {
+      LOG.log(
+          Level.WARNING,
+          error,
+          () -> "[launch] %s %s failed %dms".formatted(moduleRel, label, t.elapsedMs()));
+      result.completeExceptionally(error);
+      return;
+    }
+
+    LOG.info(
+        () ->
+            "[launch] %s %s exit=%d %dms"
+                .formatted(moduleRel, label, outcome.exitCode(), t.elapsedMs()));
+    result.complete(outcome);
+  }
+
+  CompletableFuture<LaunchOutcome> runMainFuture(
+      final String moduleRel, final String mainClass, final String token) {
+    final Consumer<TranscriptLine> onLine = streamConsumer(token);
+    final Path root = workspaceRoot;
+    final var t = Stopwatch.start();
+    final var result = new CompletableFuture<LaunchOutcome>();
+    result.whenComplete((outcome, error) -> worker.execute(() -> activeRuns.remove(token)));
+    final Consumer<LaunchSession> onStart =
+        session -> worker.execute(() -> activeRuns.put(token, session));
+
+    final var thread =
+        new Thread(
+            () -> launchMain(root, moduleRel, mainClass, onLine, onStart, t, result),
+            "lathe-launch-" + moduleRel);
+    thread.setDaemon(true);
+    thread.start();
+    return result;
+  }
+
+  private static void launchMain(
+      final Path workspaceRoot,
+      final String moduleRel,
+      final String mainClass,
+      final Consumer<TranscriptLine> onLine,
+      final Consumer<LaunchSession> onStart,
+      final Stopwatch t,
+      final CompletableFuture<LaunchOutcome> result) {
+    try {
+      final var template = new MainLaunchReader(workspaceRoot).read(moduleRel);
+      if (template.isEmpty()) {
+        LOG.warning(
+            () ->
+                "[launch] %s %s blocked no derived main-launch.json"
+                    .formatted(moduleRel, mainClass));
+        result.complete(
+            LaunchOutcome.blocked(List.of("no derived main-launch.json for " + moduleRel)));
+        return;
+      }
+
+      final var gate = CompletenessGate.verify(template.get(), workspaceRoot);
+      if (!gate.complete()) {
+        LOG.warning(
+            () ->
+                "[launch] %s %s blocked reasons=%s"
+                    .formatted(moduleRel, mainClass, gate.reasons()));
+        result.complete(LaunchOutcome.blocked(gate.reasons()));
+        return;
+      }
+
+      // A main run has no JUnit result stream, so it spawns with a null sink and a no-op result
+      // consumer; the derived module/class path from main-launch.json is all replay needs.
+      final List<String> argv =
+          LaunchPlan.forMain(template.get(), workspaceRoot, mainClass, List.of());
+      final var session = Launcher.launch(argv, null, onLine, ignored -> {});
+      onStart.accept(session);
+      session
+          .onExit()
+          .whenComplete(
+              (outcome, error) -> completeRun(moduleRel, mainClass, t, result, outcome, error));
+    } catch (final IOException e) {
+      LOG.log(
+          Level.WARNING,
+          e,
+          () ->
+              "[launch] %s %s failed to launch %dms"
+                  .formatted(moduleRel, mainClass, t.elapsedMs()));
       result.completeExceptionally(e);
     }
   }

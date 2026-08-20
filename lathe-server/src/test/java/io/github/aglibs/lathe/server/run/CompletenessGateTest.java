@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.LaunchMode;
+import io.github.aglibs.lathe.core.schema.MainLaunchData;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -54,7 +55,29 @@ final class CompletenessGateTest {
 
     assertThat(result.complete()).isFalse();
     assertThat(result.reasons()).hasSize(1);
-    assertThat(result.reasons().get(0)).contains("test-classes");
+    assertThat(result.reasons().getFirst()).contains("test-classes");
+  }
+
+  @Test
+  void verify_mainMissingOutput_returnsIncompleteWithReason() throws IOException {
+    final var data = mainLaunch();
+
+    final CompletenessResult result = CompletenessGate.verify(data, workspaceRoot);
+
+    assertThat(result.complete()).isFalse();
+    assertThat(result.reasons()).hasSize(1);
+    assertThat(result.reasons().getFirst()).contains(LatheLayout.CLASSES_DIR);
+  }
+
+  @Test
+  void verify_mainOutputPopulated_returnsOk() throws IOException {
+    final var data = mainLaunch();
+    seedModule("jpms", LatheLayout.CLASSES_DIR);
+
+    final CompletenessResult result = CompletenessGate.verify(data, workspaceRoot);
+
+    assertThat(result.complete()).isTrue();
+    assertThat(result.reasons()).isEmpty();
   }
 
   private void seedModule(final String moduleRel, final String sourceTree) throws IOException {
@@ -64,6 +87,21 @@ final class CompletenessGateTest {
     final Path outputDir = moduleDir.resolve(sourceTree);
     Files.createDirectories(outputDir);
     Files.writeString(outputDir.resolve("Placeholder.class"), "bytes");
+  }
+
+  private MainLaunchData mainLaunch() {
+    return new MainLaunchData(
+        "1",
+        LaunchMode.MODULE,
+        "/jdk",
+        "com.example.jpms",
+        List.of(workspaceRoot.resolve("jpms/target/classes").toString(), "/m2/validcheck.jar"),
+        List.of(),
+        List.of(),
+        List.of(),
+        List.of(),
+        List.of(),
+        List.of());
   }
 
   private TestLaunchData testLaunch() {

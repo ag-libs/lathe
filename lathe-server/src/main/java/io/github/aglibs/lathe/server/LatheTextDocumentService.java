@@ -340,6 +340,13 @@ final class LatheTextDocumentService implements TextDocumentService {
         .thenCompose(f -> f);
   }
 
+  CompletableFuture<LaunchOutcome> runMainFuture(
+      final String moduleRel, final String mainClass, final String token) {
+    return worker
+        .submit(() -> session.runMainFuture(moduleRel, mainClass, token))
+        .thenCompose(f -> f);
+  }
+
   CompletableFuture<List<RunTarget>> runnablesFuture(final String uri) {
     return worker.submit(() -> session.runnablesFuture(uri)).thenCompose(f -> f);
   }

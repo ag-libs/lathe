@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.run;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.launch.ReactorRewrite;
+import io.github.aglibs.lathe.core.schema.MainLaunchData;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -22,7 +23,24 @@ public final class CompletenessGate {
 
   public static CompletenessResult verify(final TestLaunchData data, final Path workspaceRoot)
       throws IOException {
-    final Map<Path, Set<String>> touched = latheTouchedDirs(data, workspaceRoot);
+    final List<String> paths =
+        Stream.concat(
+                Stream.concat(data.modulePath().stream(), data.classPath().stream()),
+                data.patchModules().values().stream())
+            .toList();
+    return verify(paths, workspaceRoot);
+  }
+
+  public static CompletenessResult verify(final MainLaunchData data, final Path workspaceRoot)
+      throws IOException {
+    final List<String> paths =
+        Stream.concat(data.modulePath().stream(), data.classPath().stream()).toList();
+    return verify(paths, workspaceRoot);
+  }
+
+  private static CompletenessResult verify(final List<String> paths, final Path workspaceRoot)
+      throws IOException {
+    final Map<Path, Set<String>> touched = latheTouchedDirs(paths, workspaceRoot);
     final var reasons = new ArrayList<String>();
     for (final Map.Entry<Path, Set<String>> entry : touched.entrySet()) {
       final Path moduleDir = entry.getKey();
@@ -63,12 +81,10 @@ public final class CompletenessGate {
   }
 
   private static Map<Path, Set<String>> latheTouchedDirs(
-      final TestLaunchData data, final Path workspaceRoot) {
+      final List<String> paths, final Path workspaceRoot) {
     final Path latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR).normalize();
     final List<Path> candidates =
-        Stream.concat(
-                Stream.concat(data.modulePath().stream(), data.classPath().stream()),
-                data.patchModules().values().stream())
+        paths.stream()
             .map(path -> Path.of(ReactorRewrite.toLathe(path, workspaceRoot)).normalize())
             .filter(candidate -> isLatheSourceTreeDir(candidate, latheDir))
             .toList();

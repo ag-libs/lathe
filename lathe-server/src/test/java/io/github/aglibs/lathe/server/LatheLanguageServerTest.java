@@ -46,6 +46,7 @@ class LatheLanguageServerTest {
     assertThat(capabilities.getExecuteCommandProvider().getCommands())
         .containsExactlyInAnyOrder(
             LatheWorkspaceService.RUN_TEST_COMMAND,
+            LatheWorkspaceService.RUN_MAIN_COMMAND,
             LatheWorkspaceService.CANCEL_TEST_COMMAND,
             LatheWorkspaceService.LIST_RUNNABLES_COMMAND,
             LatheWorkspaceService.RESOURCE_REFRESH_COMMAND);
@@ -55,7 +56,7 @@ class LatheLanguageServerTest {
   void cancelProgress_unknownToken_routesWithoutFailure() {
     final var server = new LatheLanguageServer();
     server.connect(mock(LanguageClient.class));
-    final var params = new WorkDoneProgressCancelParams(Either.<String, Integer>forLeft("unknown"));
+    final var params = new WorkDoneProgressCancelParams(Either.forLeft("unknown"));
 
     assertThatCode(() -> server.cancelProgress(params)).doesNotThrowAnyException();
     server.shutdown().join();
