@@ -138,10 +138,12 @@ run <index> [expect-exit <n>]
     Replay the runnable listed at <index> by the most recent 'runnables'
     call, from captured .lathe/ bytecode -- no Maven, no recompilation.
     Prints [BLOCKED] with the reasons if the replay couldn't launch (no
-    captured test-launch.json, no lathe-test-runner jar recorded, stale
-    build lock, etc.), or [PASSED]/[FAILED] with the process exit code.
-    MAIN targets cannot be run yet (main-class replay is not implemented).
-    With 'expect-exit <n>', fails the probe if the exit code does not match.
+    captured launch template, no lathe-test-runner jar recorded, stale
+    build lock, etc.), or [PASSED]/[FAILED] with the process exit code and
+    the tail of the streamed output. A MAIN target replays from its module's
+    derived main-launch.json via lathe.run.main; test targets via
+    lathe.run.test. With 'expect-exit <n>', fails the probe if the exit code
+    does not match.
 
 refresh <resource-path>
     Verify resource refresh: edit <resource-path> with a unique marker, send
@@ -269,8 +271,9 @@ _ACCEPT_SELECTOR_KEYWORDS = frozenset((
 # below match RunnableKind's declaration order in lathe-server.
 _RUNNABLE_KIND_NAMES = ("MAIN", "TEST_METHOD", "TEST_CLASS", "TEST_PACKAGE")
 
-# RunnableKind ordinal -> TestSelectionKind. MAIN (0) has no entry: main-class
-# replay (main-launch.json / ReplayTransform.forMain) is not implemented yet.
+# RunnableKind ordinal -> TestSelectionKind, for the test run path (lathe.run.test). MAIN (0) has
+# no entry: it is not a test selector -- a main replays via lathe.run.main from its module's derived
+# main-launch.json, handled as a dedicated branch in _cmd_run.
 _RUNNABLE_TO_SELECTOR_KIND = {
     1: "METHOD",
     2: "CLASS",
@@ -1538,20 +1541,24 @@ class ExploreShell:
 
         target = self._last_runnables[index]
         kind = target.get("kind", -1)
-        selector_kind = _RUNNABLE_TO_SELECTOR_KIND.get(kind)
-        if selector_kind is None:
-            print(
-                f"  cannot run kind={_runnable_kind_name(kind)} yet"
-                " (main-class replay is not implemented — only test methods/classes/packages)"
-            )
-            return
-
         module_rel = target.get("moduleRel", "")
-        selector_value = target.get("id", "")
-        print(f"  running {selector_value}  (module={module_rel}, kind={selector_kind})...")
 
         try:
-            outcome = self._client.run_test(module_rel, selector_kind, selector_value)
+            if kind == 0:
+                # MAIN: the target's parentId is the fully-qualified class; the module's derived
+                # main-launch.json supplies the runtime module/class path.
+                main_class = target.get("parentId", "")
+                print(f"  running {main_class}  (module={module_rel}, kind=MAIN)...")
+                outcome = self._client.run_main(module_rel, main_class)
+            else:
+                selector_kind = _RUNNABLE_TO_SELECTOR_KIND.get(kind)
+                if selector_kind is None:
+                    print(f"  cannot run kind={_runnable_kind_name(kind)}")
+                    return
+
+                selector_value = target.get("id", "")
+                print(f"  running {selector_value}  (module={module_rel}, kind={selector_kind})...")
+                outcome = self._client.run_test(module_rel, selector_kind, selector_value)
         except TimeoutError:
             print("  TIMEOUT")
             return
@@ -1562,6 +1569,14 @@ class ExploreShell:
                 print(f"    ✗  {reason}")
             self.any_failure = True
             return
+
+        transcript = outcome.get("output") or []
+        if transcript:
+            print("  --- output (last 40 lines) ---")
+            for line in transcript[-40:]:
+                tag = {1: "err", 2: "cmd"}.get(line.get("stream", 0), "out")
+                print(f"    {tag}| {line.get('text', '')}")
+            print("  --- end output ---")
 
         exit_code = outcome.get("exitCode", -1)
         status = "PASSED" if exit_code == 0 else "FAILED"

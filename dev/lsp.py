@@ -550,6 +550,15 @@ class LatheClient:
             "selectorValue": selector_value,
         }])
 
+    def run_main(self, module_rel: str, main_class: str, timeout: int = 120) -> dict:
+        """Trigger lathe.run.main. The server holds the response open until the replay JVM
+        exits, so this uses a longer timeout than a normal request. Returns a LaunchOutcome
+        dict ({launched, blockedReasons, exitCode, output, testResults})."""
+        return self.request("workspace/executeCommand", {
+            "command": "lathe.run.main",
+            "arguments": [{"moduleRel": module_rel, "mainClass": main_class}],
+        }, timeout=timeout)
+
     def refresh_resource(self, file: str | Path) -> str | None:
         """Trigger lathe.resource.refresh for a changed resource file. Returns the .lathe/
         destination the server copied it to, or None if it maps to no resource root."""
