@@ -269,7 +269,7 @@ _ACCEPT_SELECTOR_KEYWORDS = frozenset((
 # name (it registers a generic enum-adapter matching the LSP convention that
 # "kind" fields are integers, same as SymbolKind/DiagnosticSeverity). Ordinals
 # below match RunnableKind's declaration order in lathe-server.
-_RUNNABLE_KIND_NAMES = ("MAIN", "TEST_METHOD", "TEST_CLASS", "TEST_PACKAGE")
+_RUNNABLE_KIND_NAMES = ("MAIN", "TEST_METHOD", "TEST_CLASS", "TEST_PACKAGE", "MAIN_CLASS")
 
 # RunnableKind ordinal -> TestSelectionKind, for the test run path (lathe.run.test). MAIN (0) has
 # no entry: it is not a test selector -- a main replays via lathe.run.main from its module's derived
@@ -1544,11 +1544,11 @@ class ExploreShell:
         module_rel = target.get("moduleRel", "")
 
         try:
-            if kind == 0:
-                # MAIN: the target's parentId is the fully-qualified class; the module's derived
-                # main-launch.json supplies the runtime module/class path.
-                main_class = target.get("parentId", "")
-                print(f"  running {main_class}  (module={module_rel}, kind=MAIN)...")
+            if kind in (0, 4):
+                # A main: MAIN(0)'s parentId is the fully-qualified class, MAIN_CLASS(4)'s id is.
+                # Either launches the same class from the module's derived main-launch.json.
+                main_class = target.get("parentId", "") if kind == 0 else target.get("id", "")
+                print(f"  running {main_class}  (module={module_rel}, kind={_runnable_kind_name(kind)})...")
                 outcome = self._client.run_main(module_rel, main_class)
             else:
                 selector_kind = _RUNNABLE_TO_SELECTOR_KIND.get(kind)

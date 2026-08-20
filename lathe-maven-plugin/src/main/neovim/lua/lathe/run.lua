@@ -11,9 +11,11 @@ local output = require("lathe.output")
 
 local M = {}
 
--- RunnableKind.MAIN ordinal: lsp4j serializes the enum by ordinal, matching lathe.neotest's
--- POSITION_TYPE keys (MAIN, TEST_METHOD, TEST_CLASS, TEST_PACKAGE).
+-- RunnableKind ordinals (lsp4j serializes the enum by ordinal): MAIN(0) is the main method,
+-- MAIN_CLASS(4) is its enclosing class declaration. Both are gutter-signed and launch the same
+-- class; TEST_* (1-3) are neotest's. See lathe.neotest's POSITION_TYPE for the test mapping.
 local RUN_KIND_MAIN = 0
+local RUN_KIND_MAIN_CLASS = 4
 
 local SIGN_NS = vim.api.nvim_create_namespace("lathe_run_signs")
 local SIGN_HL = "LatheRunnable"
@@ -29,22 +31,39 @@ local function lathe_client()
   return vim.lsp.get_clients({ name = "lathe" })[1]
 end
 
---- The MAIN runnable to launch for a cursor position: the main whose declaration range
---- contains `cursor_line` (0-based), else the file's only main if there is exactly one, else
---- nil (no main, or several with the cursor on none -- ambiguous). Pure over the raw
---- lathe.runnables.list targets, so it is unit-testable without a live client.
+local function in_range(range, line)
+  return range ~= nil and line >= range.start.line and line <= range["end"].line
+end
+
+--- The MAIN (method) runnable to launch for a cursor position: the main whose method range
+--- contains `cursor_line` (0-based); else the main whose class range contains it (running from
+--- the class gutter); else the file's only main if there is exactly one; else nil (no main, or
+--- several with the cursor on none). Always returns a MAIN target -- a MAIN_CLASS hit resolves to
+--- its class's method (id == the method's parentId) so the launch path is unchanged. Pure over the
+--- raw lathe.runnables.list targets, so it is unit-testable without a live client.
 function M._main_target_for(targets, cursor_line)
   local mains = {}
+  local main_by_class = {}
   for _, t in ipairs(targets) do
     if t.kind == RUN_KIND_MAIN then
       mains[#mains + 1] = t
+      main_by_class[t.parentId] = t
     end
   end
 
+  -- Method range wins when the cursor is on the method line (the class range encloses it).
   for _, t in ipairs(mains) do
-    local r = t.range
-    if r and cursor_line >= r.start.line and cursor_line <= r["end"].line then
+    if in_range(t.range, cursor_line) then
       return t
+    end
+  end
+
+  for _, t in ipairs(targets) do
+    if t.kind == RUN_KIND_MAIN_CLASS and in_range(t.range, cursor_line) then
+      local method = main_by_class[t.id]
+      if method then
+        return method
+      end
     end
   end
 
@@ -62,7 +81,7 @@ local function place_signs(bufnr, targets)
 
   vim.api.nvim_buf_clear_namespace(bufnr, SIGN_NS, 0, -1)
   for _, t in ipairs(targets) do
-    if t.kind == RUN_KIND_MAIN and t.range then
+    if (t.kind == RUN_KIND_MAIN or t.kind == RUN_KIND_MAIN_CLASS) and t.range then
       pcall(vim.api.nvim_buf_set_extmark, bufnr, SIGN_NS, t.range.start.line, 0, {
         sign_text = SIGN_TEXT,
         sign_hl_group = SIGN_HL,

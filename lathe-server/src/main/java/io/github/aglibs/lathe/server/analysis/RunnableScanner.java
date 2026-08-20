@@ -39,6 +39,7 @@ final class RunnableScanner extends TreePathScanner<Void, Void> {
   private final List<RunTarget> targets = new ArrayList<>();
   private final ArrayDeque<TypeElement> classStack = new ArrayDeque<>();
   private final Set<String> classesWithTests = new HashSet<>();
+  private final Set<String> classesWithMain = new HashSet<>();
   private boolean packageEmitted;
 
   private RunnableScanner(
@@ -68,8 +69,15 @@ final class RunnableScanner extends TreePathScanner<Void, Void> {
     final String binaryName = binaryName(typeElement);
     if (classesWithTests.contains(binaryName)) {
       final TypeElement enclosing = classStack.peek();
-      targets.add(classTarget(node, typeElement, binaryName, enclosing));
+      targets.add(
+          classLevelTarget(node, typeElement, binaryName, enclosing, RunnableKind.TEST_CLASS));
       emitPackageOnce();
+    }
+
+    if (classesWithMain.contains(binaryName)) {
+      targets.add(
+          classLevelTarget(
+              node, typeElement, binaryName, classStack.peek(), RunnableKind.MAIN_CLASS));
     }
 
     return null;
@@ -85,6 +93,9 @@ final class RunnableScanner extends TreePathScanner<Void, Void> {
     final TypeElement enclosing = classStack.peek();
     if (isMainMethod(executable)) {
       targets.add(mainTarget(node, enclosing));
+      if (enclosing != null) {
+        classesWithMain.add(binaryName(enclosing));
+      }
     } else if (isTestMethod(executable) && enclosing != null) {
       targets.add(methodTarget(node, executable, enclosing));
       classesWithTests.add(binaryName(enclosing));
@@ -149,16 +160,20 @@ final class RunnableScanner extends TreePathScanner<Void, Void> {
         id, enclosingBinaryName, RunnableKind.TEST_METHOD, methodName, moduleRel, uri, range(node));
   }
 
-  private RunTarget classTarget(
+  // A class-level target ranged over the class declaration. TEST_CLASS groups a test file's
+  // methods; MAIN_CLASS marks the class enclosing a main so the gutter reaches the class line. Both
+  // use id == binaryName, so a MAIN/TEST method target's parentId pairs with its class here.
+  private RunTarget classLevelTarget(
       final ClassTree node,
       final TypeElement element,
       final String binaryName,
-      final TypeElement enclosing) {
+      final TypeElement enclosing,
+      final RunnableKind kind) {
     final String parentId = enclosing != null ? binaryName(enclosing) : packageName();
     return new RunTarget(
         binaryName,
         parentId,
-        RunnableKind.TEST_CLASS,
+        kind,
         element.getSimpleName().toString(),
         moduleRel,
         uri,

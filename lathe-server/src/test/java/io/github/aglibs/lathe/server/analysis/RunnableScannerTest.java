@@ -26,11 +26,20 @@ class RunnableScannerTest {
 
     final List<RunTarget> targets = scan(source);
 
-    assertThat(targets).hasSize(1);
-    final var target = targets.getFirst();
-    assertThat(target.kind()).isEqualTo(RunnableKind.MAIN);
-    assertThat(target.id()).isEqualTo("demo.App#main");
-    assertThat(target.label()).isEqualTo("main");
+    assertThat(targets)
+        .extracting(RunTarget::kind)
+        .containsExactly(RunnableKind.MAIN, RunnableKind.MAIN_CLASS);
+    final RunTarget method = targets.get(0);
+    final RunTarget mainClass = targets.get(1);
+    assertThat(method.id()).isEqualTo("demo.App#main");
+    assertThat(method.label()).isEqualTo("main");
+    assertThat(mainClass.id()).isEqualTo("demo.App");
+    assertThat(mainClass.parentId()).isEqualTo("demo");
+    // The method target's parentId pairs with the class-level target's id, so a client can link
+    // them; the class target ranges the class declaration line (above the method line).
+    assertThat(method.parentId()).isEqualTo(mainClass.id());
+    assertThat(mainClass.range().getStart().getLine())
+        .isLessThan(method.range().getStart().getLine());
   }
 
   @Test
@@ -45,7 +54,9 @@ class RunnableScannerTest {
         }
         """;
 
-    assertThat(scan(source)).extracting(RunTarget::kind).containsExactly(RunnableKind.MAIN);
+    assertThat(scan(source))
+        .extracting(RunTarget::kind)
+        .containsExactly(RunnableKind.MAIN, RunnableKind.MAIN_CLASS);
   }
 
   @Test
@@ -64,6 +75,30 @@ class RunnableScannerTest {
 
     assertThat(target.kind()).isEqualTo(RunnableKind.MAIN);
     assertThat(target.id()).isEqualTo("demo.App#main");
+  }
+
+  @Test
+  void runnables_nestedClassWithMain_mainClassParentIdIsOuter() {
+    final String source =
+        """
+        package demo;
+
+        class Outer {
+          static class Inner {
+            public static void main(String[] args) {
+            }
+          }
+        }
+        """;
+
+    final List<RunTarget> targets = scan(source);
+
+    assertThat(targets)
+        .extracting(RunTarget::id)
+        .containsExactly("demo.Outer$Inner#main", "demo.Outer$Inner");
+    final RunTarget mainClass =
+        targets.stream().filter(t -> t.kind() == RunnableKind.MAIN_CLASS).findFirst().orElseThrow();
+    assertThat(mainClass.parentId()).isEqualTo("demo.Outer");
   }
 
   @Test

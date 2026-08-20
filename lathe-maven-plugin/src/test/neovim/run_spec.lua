@@ -17,15 +17,23 @@ local run = require("lathe.run")
 
 local MAIN = 0
 local TEST_METHOD = 1
+local MAIN_CLASS = 4
 
---- Builds a runnable target with a single-line-ish range, mirroring the RunTarget wire shape
---- (0-based LSP range on start/end objects).
+--- Builds a runnable target with a range, mirroring the RunTarget wire shape (0-based LSP range on
+--- start/end objects). MAIN_CLASS carries id == fqcn and ranges the class; MAIN carries fqcn#main
+--- and parentId == fqcn, so a MAIN_CLASS hit resolves to its MAIN via that link.
 local function target(kind, fqcn, start_line, end_line)
+  local id = fqcn .. "#main"
+  if kind == MAIN_CLASS then
+    id = fqcn
+  elseif kind == TEST_METHOD then
+    id = fqcn .. "#test()"
+  end
   return {
-    id = kind == MAIN and (fqcn .. "#main") or (fqcn .. "#test()"),
+    id = id,
     parentId = fqcn,
     kind = kind,
-    label = kind == MAIN and "main" or "test",
+    label = kind == MAIN and "main" or "class",
     moduleRel = "app",
     uri = "file:///ws/app/src/main/java/x/" .. fqcn .. ".java",
     range = {
@@ -75,6 +83,40 @@ do
   }
   local picked = run._main_target_for(targets, 22)
   spec.check("multiple mains, cursor in B -> B", picked and picked.parentId, "com.example.B")
+end
+
+-- Case 6: cursor on the class declaration (in the class range, not the method) resolves to that
+-- class's main method -- so :LatheRun works from the class gutter, not just the method.
+do
+  local targets = {
+    target(MAIN, "com.example.App", 12, 14),
+    target(MAIN_CLASS, "com.example.App", 10, 20),
+  }
+  local picked = run._main_target_for(targets, 10)
+  spec.check("cursor on class line -> its main", picked and picked.id, "com.example.App#main")
+end
+
+-- Case 7: cursor on the method line still returns the method target (method range wins, since the
+-- class range encloses it).
+do
+  local targets = {
+    target(MAIN, "com.example.App", 12, 14),
+    target(MAIN_CLASS, "com.example.App", 10, 20),
+  }
+  local picked = run._main_target_for(targets, 13)
+  spec.check("method precedence over class", picked and picked.kind, MAIN)
+end
+
+-- Case 8: several mains, cursor on class B's declaration resolves to B's main (not ambiguous).
+do
+  local targets = {
+    target(MAIN, "com.example.A", 12, 14),
+    target(MAIN_CLASS, "com.example.A", 10, 20),
+    target(MAIN, "com.example.B", 32, 34),
+    target(MAIN_CLASS, "com.example.B", 30, 40),
+  }
+  local picked = run._main_target_for(targets, 30)
+  spec.check("cursor on class B -> B's main", picked and picked.id, "com.example.B#main")
 end
 
 spec.finish("run_spec")
