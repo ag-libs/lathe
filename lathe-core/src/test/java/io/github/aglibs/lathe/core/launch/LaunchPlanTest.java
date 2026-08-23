@@ -44,7 +44,8 @@ final class LaunchPlanTest {
             List.of(runner),
             List.of(new TestSelection(TestSelectionKind.METHOD, "com.example.app.HelloTest#greet")),
             resultsSink,
-            LaunchOverlay.NONE);
+            LaunchOverlay.NONE,
+            JdwpOptions.NONE);
 
     assertThat(args)
         .containsExactly(
@@ -101,7 +102,8 @@ final class LaunchPlanTest {
                 new TestSelection(TestSelectionKind.CLASS, "com.example.app.FooTest"),
                 new TestSelection(TestSelectionKind.CLASS, "com.example.app.BarTest")),
             resultsSink,
-            LaunchOverlay.NONE);
+            LaunchOverlay.NONE,
+            JdwpOptions.NONE);
 
     assertThat(args)
         .endsWith(
@@ -240,7 +242,8 @@ final class LaunchPlanTest {
             List.of(runner),
             List.of(new TestSelection(TestSelectionKind.CLASS, "com.example.app.FooTest")),
             resultsSink,
-            overlay);
+            overlay,
+            JdwpOptions.NONE);
 
     assertThat(args)
         .containsExactly(
@@ -260,5 +263,74 @@ final class LaunchPlanTest {
             "--select-class",
             "com.example.app.FooTest",
             "extra-arg");
+  }
+
+  @Test
+  void forTest_debug_emitsSuspendedJdwpAgentBeforeRunner() {
+    final var runner = Path.of("/cache/lathe-test-runner.jar");
+    final var resultsSink = Path.of("/tmp/lathe-results.ndjson");
+    final var data =
+        new TestLaunchData(
+            "1",
+            "surefire",
+            LaunchMode.MODULE,
+            "/jdk",
+            "com.example.app",
+            List.of("/workspace/app/target/classes"),
+            List.of("/workspace/app/target/test-classes"),
+            Map.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of());
+
+    final List<String> args =
+        LaunchPlan.forTest(
+            data,
+            WORKSPACE,
+            List.of(runner),
+            List.of(new TestSelection(TestSelectionKind.CLASS, "com.example.app.FooTest")),
+            resultsSink,
+            LaunchOverlay.NONE,
+            new JdwpOptions(5005));
+
+    final String agent =
+        "-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=127.0.0.1:5005";
+    assertThat(args).contains(agent);
+    assertThat(args.indexOf(agent)).isLessThan(args.indexOf(LatheLayout.TEST_RUNNER_MAIN_CLASS));
+  }
+
+  @Test
+  void forTest_noDebug_omitsJdwpAgent() {
+    final var runner = Path.of("/cache/lathe-test-runner.jar");
+    final var resultsSink = Path.of("/tmp/lathe-results.ndjson");
+    final var data =
+        new TestLaunchData(
+            "1",
+            "surefire",
+            LaunchMode.MODULE,
+            "/jdk",
+            "com.example.app",
+            List.of("/workspace/app/target/classes"),
+            List.of("/workspace/app/target/test-classes"),
+            Map.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of());
+
+    final List<String> args =
+        LaunchPlan.forTest(
+            data,
+            WORKSPACE,
+            List.of(runner),
+            List.of(new TestSelection(TestSelectionKind.CLASS, "com.example.app.FooTest")),
+            resultsSink,
+            LaunchOverlay.NONE,
+            JdwpOptions.NONE);
+
+    assertThat(args).noneMatch(arg -> arg.startsWith("-agentlib:jdwp"));
   }
 }

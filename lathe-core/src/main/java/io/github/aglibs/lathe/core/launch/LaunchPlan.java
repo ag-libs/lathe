@@ -22,7 +22,8 @@ public final class LaunchPlan {
       final List<Path> runnerClasspath,
       final List<TestSelection> selections,
       final Path resultsSink,
-      final LaunchOverlay overlay) {
+      final LaunchOverlay overlay,
+      final JdwpOptions jdwp) {
     final List<String> modulePath = ReactorRewrite.toLathe(data.modulePath(), workspaceRoot);
     final List<String> classPath =
         Stream.concat(data.classPath().stream(), runnerClasspath.stream().map(Path::toString))
@@ -32,6 +33,10 @@ public final class LaunchPlan {
         ReactorRewrite.toLathe(data.patchModules(), workspaceRoot);
 
     final var args = baseJavaArgs(data.javaHome(), data.jvmArgs(), overlay.jvmArgs());
+    if (jdwp.enabled()) {
+      args.add(jdwp.agentArg());
+    }
+
     args.add("-D%s=%s".formatted(LatheFlags.RESULTS_SINK, resultsSink));
     addRuntimeShape(
         args,

@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server.run;
 
+import io.github.aglibs.lathe.core.launch.JdwpOptions;
 import io.github.aglibs.lathe.core.launch.LaunchOverlay;
 import io.github.aglibs.lathe.core.launch.LaunchPlan;
 import io.github.aglibs.lathe.core.launch.TestSelection;
@@ -42,7 +43,8 @@ public final class RunOverlay {
             runnerClasspath,
             selections,
             resultsSink,
-            launchOverlay(item, workspaceRoot));
+            launchOverlay(item, workspaceRoot),
+            JdwpOptions.NONE);
     return new ResolvedLaunch(argv, item.env(), resolveCwd(item, workspaceRoot));
   }
 
