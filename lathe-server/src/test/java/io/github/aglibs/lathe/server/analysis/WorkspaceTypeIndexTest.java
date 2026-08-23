@@ -129,6 +129,45 @@ class WorkspaceTypeIndexTest {
   }
 
   @Test
+  void searchSymbols_packagePrivateTopLevelType_foundButSearchExcludesIt() throws IOException {
+    final var shard =
+        writeShard(
+            tmp,
+            "shard.json",
+            shard(
+                graphEntry("com.example.PublicType", true),
+                graphEntry("com.example.impl.InternalType", false)));
+
+    final var index = WorkspaceTypeIndex.build(List.of(shard));
+
+    // Completion/import path (search) still sees only the public, referenceable type.
+    assertThat(index.search("InternalType", 10)).isEmpty();
+    assertThat(index.search("PublicType", 10))
+        .extracting(TypeIndexEntry::binaryName)
+        .containsExactly("com.example.PublicType");
+    // Symbol path (searchSymbols) also sees the package-private type, so a stack frame into a
+    // dependency's internal impl class can resolve to its source.
+    assertThat(index.searchSymbols("InternalType", 10))
+        .extracting(TypeIndexEntry::binaryName)
+        .containsExactly("com.example.impl.InternalType");
+    assertThat(index.searchSymbols("PublicType", 10))
+        .extracting(TypeIndexEntry::binaryName)
+        .containsExactly("com.example.PublicType");
+  }
+
+  @Test
+  void searchSymbols_nestedType_excludedLikeSearch() throws IOException {
+    final var shard =
+        writeShard(tmp, "shard.json", shard(graphEntry("com.example.Outer$Inner", false)));
+
+    final var index = WorkspaceTypeIndex.build(List.of(shard));
+
+    // Nested types are queried through their top-level simple name, so neither map indexes them.
+    assertThat(index.searchSymbols("Inner", 10)).isEmpty();
+    assertThat(index.search("Inner", 10)).isEmpty();
+  }
+
+  @Test
   void build_reactorEntries_mergedWithShardEntries() throws IOException {
     final var shard = writeShard(tmp, "shard.json", shard(entry("Alpha", "com.a")));
 

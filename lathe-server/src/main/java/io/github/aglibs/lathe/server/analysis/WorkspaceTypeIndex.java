@@ -33,6 +33,10 @@ public final class WorkspaceTypeIndex {
   private final List<TypeIndexEntry> staticEntries;
   private final Set<String> reactorBinaryNames;
   private final NavigableMap<String, List<TypeIndexEntry>> bySimpleNameLower;
+  // Like bySimpleNameLower but with no visibility filter: every top-level type, including
+  // package-private ones. Backs searchSymbols() (workspace/symbol + stack-frame navigation), which
+  // must locate a dependency's internal impl classes; completion/import stay on bySimpleNameLower.
+  private final NavigableMap<String, List<TypeIndexEntry>> symbolsBySimpleNameLower;
   private final NavigableMap<String, TypeIndexEntry> byBinaryName;
   private final Map<String, List<TypeIndexEntry>> directSubtypesByParent;
 
@@ -40,11 +44,13 @@ public final class WorkspaceTypeIndex {
       final List<TypeIndexEntry> staticEntries,
       final Set<String> reactorBinaryNames,
       final NavigableMap<String, List<TypeIndexEntry>> bySimpleNameLower,
+      final NavigableMap<String, List<TypeIndexEntry>> symbolsBySimpleNameLower,
       final NavigableMap<String, TypeIndexEntry> byBinaryName,
       final Map<String, List<TypeIndexEntry>> directSubtypesByParent) {
     this.staticEntries = staticEntries;
     this.reactorBinaryNames = reactorBinaryNames;
     this.bySimpleNameLower = bySimpleNameLower;
+    this.symbolsBySimpleNameLower = symbolsBySimpleNameLower;
     this.byBinaryName = byBinaryName;
     this.directSubtypesByParent = directSubtypesByParent;
   }
@@ -53,6 +59,7 @@ public final class WorkspaceTypeIndex {
     return new WorkspaceTypeIndex(
         List.of(),
         Set.of(),
+        Collections.emptyNavigableMap(),
         Collections.emptyNavigableMap(),
         Collections.emptyNavigableMap(),
         Map.of());
@@ -122,6 +129,18 @@ public final class WorkspaceTypeIndex {
                     Collectors.collectingAndThen(Collectors.toList(), List::copyOf)));
     final NavigableMap<String, List<TypeIndexEntry>> map =
         Collections.unmodifiableNavigableMap(mutable);
+    // No visibility filter: every top-level type, so workspace/symbol can resolve package-private
+    // dependency classes (a stack frame's internal impl class) to their extracted source.
+    final TreeMap<String, List<TypeIndexEntry>> symbolMutable =
+        deduped.stream()
+            .filter(TypeIndexEntry::isTopLevel)
+            .collect(
+                Collectors.groupingBy(
+                    e -> e.simpleName().toLowerCase(),
+                    TreeMap::new,
+                    Collectors.collectingAndThen(Collectors.toList(), List::copyOf)));
+    final NavigableMap<String, List<TypeIndexEntry>> symbolMap =
+        Collections.unmodifiableNavigableMap(symbolMutable);
     final var byBinaryName = new TreeMap<String, TypeIndexEntry>();
     for (final TypeIndexEntry entry : deduped) {
       byBinaryName.put(entry.binaryName(), entry);
@@ -141,6 +160,7 @@ public final class WorkspaceTypeIndex {
         staticEntries,
         reactorBinaryNames,
         map,
+        symbolMap,
         Collections.unmodifiableNavigableMap(byBinaryName),
         Map.copyOf(directSubtypesByParent));
   }
@@ -180,6 +200,22 @@ public final class WorkspaceTypeIndex {
   }
 
   public List<TypeIndexEntry> search(final String prefix, final int limit) {
+    return prefixMatches(bySimpleNameLower, prefix, limit);
+  }
+
+  // Same exact-prefix match as search(), but over the visibility-unfiltered symbol map, so
+  // workspace/symbol -- and the stack-frame navigation that resolves frames through it -- can find
+  // package-private top-level dependency types (a trace's internal impl classes) and link them to
+  // their extracted source. Completion and import quickfixes deliberately stay on search(), which
+  // excludes non-public types that cannot be referenced or imported.
+  public List<TypeIndexEntry> searchSymbols(final String prefix, final int limit) {
+    return prefixMatches(symbolsBySimpleNameLower, prefix, limit);
+  }
+
+  private List<TypeIndexEntry> prefixMatches(
+      final NavigableMap<String, List<TypeIndexEntry>> index,
+      final String prefix,
+      final int limit) {
     if (prefix.isEmpty()) {
       return List.of();
     }
@@ -189,7 +225,7 @@ public final class WorkspaceTypeIndex {
         Comparator.<TypeIndexEntry, Boolean>comparing(
                 e -> !reactorBinaryNames.contains(e.binaryName()))
             .thenComparing(TypeIndexEntry::binaryName);
-    return bySimpleNameLower.subMap(lower, lower + "￿").values().stream()
+    return index.subMap(lower, lower + "￿").values().stream()
         .flatMap(List::stream)
         .sorted(order)
         .limit(limit)

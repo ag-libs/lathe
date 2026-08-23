@@ -43,7 +43,8 @@ public final class WorkspaceSymbolResolver {
     return List.copyOf(results);
   }
 
-  // Exact prefix search covers everything (JDK, dependencies, reactor) and stays untouched.
+  // Exact prefix search over the symbol index covers everything (JDK, dependencies, reactor),
+  // including package-private top-level types so a stack frame's internal impl class resolves.
   // CamelCase-hump matching is a supplementary, reactor-only layer on top, so a type like
   // AbstractServerFactory is still reachable via "ServerFactory" or "ASF" even though it doesn't
   // start with either. Prefix matches win on overlap; the combined list stays capped at
@@ -52,7 +53,7 @@ public final class WorkspaceSymbolResolver {
       final String query, final WorkspaceTypeIndex typeIndex) {
     final var seen = new LinkedHashSet<String>();
     final var merged = new ArrayList<TypeIndexEntry>();
-    for (final TypeIndexEntry entry : typeIndex.search(query, SEARCH_LIMIT)) {
+    for (final TypeIndexEntry entry : typeIndex.searchSymbols(query, SEARCH_LIMIT)) {
       if (seen.add(entry.binaryName())) {
         merged.add(entry);
       }
