@@ -199,9 +199,10 @@ needed at once.
 | `IStackFrameManager` | 1 (mandatory) | Frame/variable id bookkeeping; typically the `core` default suffices. |
 | `ICompletionsProvider` | 2 | REPL / debug-console completions. Optional; can return empty initially. |
 | `IEvaluationProvider` | 4 | Expression evaluation / watches. **Hard** — java-debug's evaluator leans on the JDT expression compiler; a javac-based equivalent is its own sub-project. Deferred. |
-| `IHotCodeReplaceProvider` | 4 | Redefine classes from refreshed `.lathe/` bytecode on save. Deferred. |
+| `IHotCodeReplaceProvider` | 0 (no-op) → 4 | Redefine classes from refreshed `.lathe/` bytecode on save. **Phase 0 finding:** the adapter's `initialize` handler subscribes to HCR events, so a **no-op** provider must be registered from Phase 0 (`LatheHotCodeReplaceProvider`, returning `Observable.never()`); the real redefinition impl is deferred to Phase 4. |
 
-Minimal attach (Phase 1) needs only the first three; the last two gate the advanced phases.
+Minimal attach (Phase 1) needs the first three; a no-op HCR provider is already registered (Phase 0);
+evaluation is the only provider still fully deferred.
 
 ---
 
@@ -269,6 +270,17 @@ Open concern to resolve in Phase 0: `core` and its deps are likely **not** modul
 automatic modules. Options: `requires` the automatic modules, or isolate the adapter behind a small
 in-process boundary loaded via a dedicated classloader. This is the main integration risk and is the
 Phase 0 GO/NO-GO.
+
+**Phase 0 outcome (resolved):** the simple `requires`-automatic-modules path works — no classloader
+isolation needed. `com.microsoft.java.debug.core:0.53.1` is a non-modular jar (no
+`Automatic-Module-Name`), so it resolves as the automatic module `com.microsoft.java.debug.core`; its
+closure is `commons-lang3`, `rxjava`, `reactive-streams`, `commons-io` — **it pulls neither lsp4j nor
+gson**, so Lathe's lsp4j 1.0.0 / gson 2.14.0 are untouched (gson is read from Lathe's existing module).
+`lathe-server/module-info` needs just `requires com.microsoft.java.debug.core;` and `requires
+io.reactivex.rxjava2;` (the latter only because the no-op HCR provider returns an rxjava `Observable`);
+the remaining transitive automatic modules are resolved as a group. The launcher requires no change —
+`ServerInstaller` builds `--module-path` from `lathe-server`'s resolved runtime closure, so the new jars
+are included automatically (§ run/test/debug launcher).
 
 ---
 
@@ -352,8 +364,8 @@ first and deliver test+main+config debug together in one Phase-3 push. Phase 4 f
 
 ## 16. Open decisions
 
-1. **JPMS embedding of `java-debug.core`** (§12) — `requires` automatic modules vs. an isolating
-   classloader. Phase 0 resolves this.
+1. ~~**JPMS embedding of `java-debug.core`** (§12)~~ — **resolved (Phase 0):** plain `requires` of the
+   automatic modules; no isolating classloader. See §12 outcome.
 2. **Cancellation command** — reuse `lathe.run.cancel` vs. a dedicated `lathe.debug.cancel` (§10).
 3. **Evaluation strategy** (Phase 4) — ecj/JDT eval dependency vs. a javac-based evaluator vs. leaving
    eval a documented limitation.

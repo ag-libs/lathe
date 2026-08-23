@@ -4,6 +4,9 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
+import io.github.aglibs.lathe.server.debug.DapHost;
+import io.github.aglibs.lathe.server.debug.DebugStartResult;
+import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import org.eclipse.lsp4j.DidChangeConfigurationParams;
@@ -24,6 +27,7 @@ final class LatheWorkspaceService implements WorkspaceService {
   static final String CANCEL_TEST_COMMAND = "lathe.run.cancel";
   static final String LIST_RUNNABLES_COMMAND = "lathe.runnables.list";
   static final String RESOURCE_REFRESH_COMMAND = "lathe.resource.refresh";
+  static final String DEBUG_START_COMMAND = "lathe.debug.start";
 
   private final LatheTextDocumentService textDocumentService;
 
@@ -57,8 +61,20 @@ final class LatheWorkspaceService implements WorkspaceService {
       case CANCEL_TEST_COMMAND -> cancelTest(params);
       case LIST_RUNNABLES_COMMAND -> listRunnables(params);
       case RESOURCE_REFRESH_COMMAND -> refreshResource(params);
+      case DEBUG_START_COMMAND -> debugStart();
       default -> CompletableFuture.completedFuture(null);
     };
+  }
+
+  // Phase 0 scaffold: stand up an in-process DAP host and hand its port back to the client.
+  // Launching and attaching to a suspended debuggee (jdwp port) arrives in Phase 1.
+  private CompletableFuture<Object> debugStart() {
+    try {
+      final var host = DapHost.start();
+      return CompletableFuture.completedFuture(new DebugStartResult(host.port()));
+    } catch (final IOException e) {
+      return CompletableFuture.failedFuture(e);
+    }
   }
 
   private CompletableFuture<Object> runTest(final ExecuteCommandParams params) {
