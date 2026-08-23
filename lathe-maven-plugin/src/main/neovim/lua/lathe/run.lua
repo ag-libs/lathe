@@ -8,6 +8,8 @@
 -- whether the neotest adapter is configured.
 
 local output = require("lathe.output")
+-- Safe to require at load: lathe.stackdecorate is core-only (no neotest/nio), like lathe.output.
+local stackdecorate = require("lathe.stackdecorate")
 
 local M = {}
 
@@ -134,6 +136,10 @@ local function on_finished(target, err, outcome)
     ("%s exited %d"):format(target.parentId, code),
     code == 0 and vim.log.levels.INFO or vim.log.levels.WARN
   )
+
+  -- Hyperlink any stack frames the run streamed into the shared output buffer, the same way the
+  -- test path does once neotest's results() lands -- a main run has no results() hook of its own.
+  stackdecorate.decorate_live_output()
 end
 
 local function launch_main(client, target)
