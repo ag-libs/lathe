@@ -43,7 +43,8 @@ final class LaunchPlanTest {
             WORKSPACE,
             List.of(runner),
             List.of(new TestSelection(TestSelectionKind.METHOD, "com.example.app.HelloTest#greet")),
-            resultsSink);
+            resultsSink,
+            LaunchOverlay.NONE);
 
     assertThat(args)
         .containsExactly(
@@ -99,7 +100,8 @@ final class LaunchPlanTest {
             List.of(
                 new TestSelection(TestSelectionKind.CLASS, "com.example.app.FooTest"),
                 new TestSelection(TestSelectionKind.CLASS, "com.example.app.BarTest")),
-            resultsSink);
+            resultsSink,
+            LaunchOverlay.NONE);
 
     assertThat(args)
         .endsWith(
@@ -127,7 +129,11 @@ final class LaunchPlanTest {
             List.of("-Xmx512m"));
 
     final List<String> args =
-        LaunchPlan.forMain(data, WORKSPACE, "com.example.app.Main", List.of("--port", "8080"));
+        LaunchPlan.forMain(
+            data,
+            WORKSPACE,
+            "com.example.app.Main",
+            new LaunchOverlay(List.of(), List.of("--port", "8080"), List.of(), List.of()));
 
     assertThat(args)
         .containsExactly(
@@ -162,7 +168,7 @@ final class LaunchPlanTest {
             List.of());
 
     final List<String> args =
-        LaunchPlan.forMain(data, WORKSPACE, "com.example.app.Main", List.of());
+        LaunchPlan.forMain(data, WORKSPACE, "com.example.app.Main", LaunchOverlay.NONE);
 
     assertThat(args)
         .containsExactly(
@@ -170,5 +176,89 @@ final class LaunchPlanTest {
             "--class-path",
             String.join(File.pathSeparator, "/workspace/.lathe/app/classes", "/m2/lib.jar"),
             "com.example.app.Main");
+  }
+
+  @Test
+  void forMain_overlay_appendsJvmArgsClasspathAndProgramArgs() {
+    final var data =
+        new MainLaunchData(
+            "1",
+            LaunchMode.CLASSPATH,
+            "/jdk",
+            "",
+            List.of(),
+            List.of("/workspace/app/target/classes"),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of("-Xmx256m"));
+    final var overlay =
+        new LaunchOverlay(
+            List.of("-Dprofile=prod"), List.of("--flag"), List.of("/abs/config"), List.of());
+
+    final List<String> args = LaunchPlan.forMain(data, WORKSPACE, "com.example.app.Main", overlay);
+
+    assertThat(args)
+        .containsExactly(
+            "/jdk/bin/java",
+            "-Xmx256m",
+            "-Dprofile=prod",
+            "--class-path",
+            String.join(File.pathSeparator, "/workspace/.lathe/app/classes", "/abs/config"),
+            "com.example.app.Main",
+            "--flag");
+  }
+
+  @Test
+  void forTest_overlay_appendsJvmArgsPathsAfterDerivedAndProgramArgs() {
+    final var runner = Path.of("/cache/lathe-test-runner.jar");
+    final var resultsSink = Path.of("/tmp/lathe-results.ndjson");
+    final var data =
+        new TestLaunchData(
+            "1",
+            "surefire",
+            LaunchMode.MODULE,
+            "/jdk",
+            "com.example.app",
+            List.of("/workspace/app/target/classes"),
+            List.of("/workspace/app/target/test-classes"),
+            Map.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of("-Dfoo=bar"));
+    final var overlay =
+        new LaunchOverlay(
+            List.of("-Dfoo=baz"), List.of("extra-arg"), List.of("/abs/cp"), List.of("/abs/mp"));
+
+    final List<String> args =
+        LaunchPlan.forTest(
+            data,
+            WORKSPACE,
+            List.of(runner),
+            List.of(new TestSelection(TestSelectionKind.CLASS, "com.example.app.FooTest")),
+            resultsSink,
+            overlay);
+
+    assertThat(args)
+        .containsExactly(
+            "/jdk/bin/java",
+            "-Dfoo=bar",
+            "-Dfoo=baz",
+            "-D%s=%s".formatted(LatheFlags.RESULTS_SINK, resultsSink),
+            "--module-path",
+            String.join(File.pathSeparator, "/workspace/.lathe/app/classes", "/abs/mp"),
+            "--class-path",
+            String.join(
+                File.pathSeparator,
+                "/workspace/.lathe/app/test-classes",
+                "/cache/lathe-test-runner.jar",
+                "/abs/cp"),
+            LatheLayout.TEST_RUNNER_MAIN_CLASS,
+            "--select-class",
+            "com.example.app.FooTest",
+            "extra-arg");
   }
 }

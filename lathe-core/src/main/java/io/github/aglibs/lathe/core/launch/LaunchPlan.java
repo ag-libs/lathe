@@ -21,7 +21,8 @@ public final class LaunchPlan {
       final Path workspaceRoot,
       final List<Path> runnerClasspath,
       final List<TestSelection> selections,
-      final Path resultsSink) {
+      final Path resultsSink,
+      final LaunchOverlay overlay) {
     final List<String> modulePath = ReactorRewrite.toLathe(data.modulePath(), workspaceRoot);
     final List<String> classPath =
         Stream.concat(data.classPath().stream(), runnerClasspath.stream().map(Path::toString))
@@ -30,12 +31,12 @@ public final class LaunchPlan {
     final Map<String, String> patchModules =
         ReactorRewrite.toLathe(data.patchModules(), workspaceRoot);
 
-    final var args = baseJavaArgs(data.javaHome(), data.jvmArgs());
+    final var args = baseJavaArgs(data.javaHome(), data.jvmArgs(), overlay.jvmArgs());
     args.add("-D%s=%s".formatted(LatheFlags.RESULTS_SINK, resultsSink));
     addRuntimeShape(
         args,
-        modulePath,
-        rewrittenClassPath,
+        append(modulePath, overlay.modulePathAppend()),
+        append(rewrittenClassPath, overlay.classpathAppend()),
         patchModules,
         data.addOpens(),
         data.addReads(),
@@ -43,6 +44,7 @@ public final class LaunchPlan {
         data.addModules());
     args.add(LatheLayout.TEST_RUNNER_MAIN_CLASS);
     selections.forEach(selection -> args.addAll(selection.toRunnerArgs()));
+    args.addAll(overlay.programArgs());
     return List.copyOf(args);
   }
 
@@ -50,15 +52,15 @@ public final class LaunchPlan {
       final MainLaunchData data,
       final Path workspaceRoot,
       final String mainClass,
-      final List<String> programArgs) {
+      final LaunchOverlay overlay) {
     final List<String> modulePath = ReactorRewrite.toLathe(data.modulePath(), workspaceRoot);
     final List<String> classPath = ReactorRewrite.toLathe(data.classPath(), workspaceRoot);
 
-    final var args = baseJavaArgs(data.javaHome(), data.jvmArgs());
+    final var args = baseJavaArgs(data.javaHome(), data.jvmArgs(), overlay.jvmArgs());
     addRuntimeShape(
         args,
-        modulePath,
-        classPath,
+        append(modulePath, overlay.modulePathAppend()),
+        append(classPath, overlay.classpathAppend()),
         Map.of(),
         data.addOpens(),
         data.addReads(),
@@ -71,15 +73,23 @@ public final class LaunchPlan {
       args.add(mainClass);
     }
 
-    args.addAll(programArgs);
+    args.addAll(overlay.programArgs());
     return List.copyOf(args);
   }
 
-  private static ArrayList<String> baseJavaArgs(final String javaHome, final List<String> jvmArgs) {
+  private static ArrayList<String> baseJavaArgs(
+      final String javaHome,
+      final List<String> templateJvmArgs,
+      final List<String> overlayJvmArgs) {
     final var args = new ArrayList<String>();
     args.add(Path.of(javaHome, "bin", "java").toString());
-    args.addAll(jvmArgs);
+    args.addAll(templateJvmArgs);
+    args.addAll(overlayJvmArgs);
     return args;
+  }
+
+  private static List<String> append(final List<String> base, final List<String> extra) {
+    return Stream.concat(base.stream(), extra.stream()).toList();
   }
 
   private static void addRuntimeShape(

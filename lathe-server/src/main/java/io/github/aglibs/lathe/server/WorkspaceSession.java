@@ -6,8 +6,8 @@ import io.github.aglibs.lathe.core.CollectionUtil;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.Stopwatch;
-import io.github.aglibs.lathe.core.launch.LaunchPlan;
 import io.github.aglibs.lathe.core.launch.TestSelection;
+import io.github.aglibs.lathe.core.schema.RunKind;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.analysis.CallHierarchyItemData;
@@ -39,6 +39,10 @@ import io.github.aglibs.lathe.server.run.LaunchSession;
 import io.github.aglibs.lathe.server.run.LaunchTemplateReader;
 import io.github.aglibs.lathe.server.run.Launcher;
 import io.github.aglibs.lathe.server.run.MainLaunchReader;
+import io.github.aglibs.lathe.server.run.ResolvedLaunch;
+import io.github.aglibs.lathe.server.run.RunConfigReader;
+import io.github.aglibs.lathe.server.run.RunItem;
+import io.github.aglibs.lathe.server.run.RunOverlay;
 import io.github.aglibs.lathe.server.run.RunTarget;
 import io.github.aglibs.lathe.server.run.TestEventParams;
 import io.github.aglibs.lathe.server.run.TestOutputParams;
@@ -315,10 +319,14 @@ final class WorkspaceSession {
       }
 
       final Path resultsSink = Files.createTempFile("lathe-results-", ".ndjson");
-      final List<String> argv =
-          LaunchPlan.forTest(
-              template.get(), workspaceRoot, runnerClasspath, selections, resultsSink);
-      final var session = Launcher.launch(argv, resultsSink, onLine, onResult);
+      final RunItem overlay =
+          new RunConfigReader(workspaceRoot).read().defaultFor(moduleRel, RunKind.TEST);
+      final ResolvedLaunch resolved =
+          RunOverlay.applyToTest(
+              template.get(), workspaceRoot, runnerClasspath, selections, resultsSink, overlay);
+      final var session =
+          Launcher.launch(
+              resolved.argv(), resultsSink, onLine, onResult, resolved.env(), resolved.cwd());
       onStart.accept(session);
       final String label = selectionLabel(selections);
       session
@@ -412,9 +420,13 @@ final class WorkspaceSession {
 
       // A main run has no JUnit result stream, so it spawns with a null sink and a no-op result
       // consumer; the derived module/class path from main-launch.json is all replay needs.
-      final List<String> argv =
-          LaunchPlan.forMain(template.get(), workspaceRoot, mainClass, List.of());
-      final var session = Launcher.launch(argv, null, onLine, ignored -> {});
+      final RunItem overlay =
+          new RunConfigReader(workspaceRoot).read().defaultFor(moduleRel, RunKind.MAIN);
+      final ResolvedLaunch resolved =
+          RunOverlay.applyToMain(template.get(), workspaceRoot, mainClass, overlay);
+      final var session =
+          Launcher.launch(
+              resolved.argv(), null, onLine, ignored -> {}, resolved.env(), resolved.cwd());
       onStart.accept(session);
       session
           .onExit()

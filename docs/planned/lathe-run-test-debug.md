@@ -107,7 +107,7 @@ Discovery is independent and always source-derived.
 | `.lathe/<rel>/lsp-params-{classes,test-classes}.json` | compiler shim (existing) | server | Compile params + completeness signal |
 | `.lathe/<rel>/{classes,test-classes}` | compiler shim (existing) | replay JVM | The bytecode replay runs against |
 | `workspace.json` | `lathe:sync` (plugin) | server | Adds per-module `resourceRoots` (runtime classpath lives in `main-launch.json`) |
-| `lathe-run.json` | user (hand-authored; Lathe never writes it) | server | Named run/debug configs, shared layer; thin overlay only, at reactor root, checkable (§8) |
+| `lathe-run.json` | user (hand-authored; Lathe never writes it) | server | Run-config overlays, shared layer; thin overlay only, at reactor root, checkable (§8) |
 | `.lathe/run.json` | user (hand-authored; Lathe never writes it) | server | Machine-local run-config layer, field-merged over `lathe-run.json`; gitignored (§8.3) |
 | `~/.cache/lathe/lathe-test-runner.jar` | server (materialize on first use) | replay JVM | The replay executor (§5) |
 | Parent POM: `lathe-junit` test dep + Surefire pin | user (committed by hand; `lathe:init` does **not** inject it) | Maven build | Activates capture on the build |
@@ -588,7 +588,7 @@ custom include/exclude patterns are a fidelity gap (§9).
 
 ## 8. User run configuration
 
-Lathe reads named run/debug configurations from two user-authored JSON files that share one schema and
+Lathe reads run/debug configuration overlays from two user-authored JSON files that share one schema and
 merge into a single effective overlay:
 
 - **`lathe-run.json`** at the reactor root — the **shared** layer, checkable and meant to be committed.
@@ -599,7 +599,7 @@ Both cover the whole reactor, both are read by the server, and the client never 
 lines.
 Neither is **created by Lathe** (`lathe:sync` writes neither) and both are **absent by default** — every
 run works with no file present, meaning "use the built-in defaults for everything".
-A user creates a file only to override a default overlay or add a named config.
+A user creates a file only to customize how a run launches.
 
 The split follows how established tools scope run configs — VS Code `launch.json` and IntelliJ run
 configurations are project-scoped with a committed-vs-local divide, not user-global.
@@ -609,85 +609,65 @@ Precedence and merge rules are §8.3.
 
 ### 8.1 File shape
 
-Each layer (§8) is one JSON object with two arrays, `defaults` and `configs`, that hold the **same
-`RunItem` shape** — the object only partitions one uniform record into two buckets, so there is no
-wrapper type per bucket and no schema version.
-Every field is optional; an **omitted key means "use the generated default"**, so a user writes only the
-fields they actually set:
+Each layer (§8) is a JSON **array** of `RunItem` entries — no wrapper object, no schema version.
+Every field is optional except `kind`; an **omitted key means "use the generated default"**, so a user
+writes only the fields they actually set:
 
 ```json
-{
-  "defaults": [
-    { "module": "app", "kind": "main", "jvmArgs": ["-Dprofile=dev"] }
-  ],
-  "configs": [
-    { "module": "app", "kind": "main", "name": "prod",
-      "mainClass": "com.example.app.Main",
-      "jvmArgs": ["-Dprofile=prod"], "env": { "APP_ENV": "prod" },
-      "classpathAppend": ["config/prod"], "modulePathAppend": ["libs/plugin.jar"],
-      "description": "Prod profile run" },
+[
+  { "kind": "TEST", "jvmArgs": ["-Duser.timezone=UTC"] },
 
-    { "module": "jpms", "kind": "test", "name": "smoke",
-      "selector": { "type": "method",
-                    "value": "com.example.jpms.HelloTest#greet_returnsExpectedMessage" },
-      "description": "Single smoke test" }
-  ]
-}
+  { "module": "services/app", "kind": "MAIN",
+    "jvmArgs": ["-Dspring.profiles.active=dev"],
+    "args": ["--port", "8080"], "env": { "APP_ENV": "dev" },
+    "cwd": "services/app", "classpathAppend": ["config/dev"] }
+]
 ```
 
-An absent file, an empty object `{}`, or empty arrays all mean the same thing: every run uses the
-built-in defaults.
+An absent file, or an empty array `[]`, means every run uses the built-in defaults.
 
 `RunItem` fields:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `module` | string | Module the item targets (the `<rel>` key of §2.1) |
-| `kind` | `"main"` \| `"test"` | Run kind; the extension point for future kinds |
-| `name` | string | Config name (required in `configs`, ignored in `defaults`) |
-| `mainClass` | string | Pinned main target (`kind:main` only) |
-| `selector` | object | Pinned test target (`kind:test` only) |
+| `module` | string | Module the entry scopes to (the `<rel>` key of §2.1); **omit ⇒ all modules** of `kind` (§8.2) |
+| `kind` | `"MAIN"` \| `"TEST"` | Run kind; the only required field; the extension point for future kinds |
 | `args` | array | Program arguments |
 | `jvmArgs` | array | Additional JVM arguments |
 | `env` | object | Environment variables |
 | `cwd` | string | Working directory |
 | `classpathAppend` | array | Extra class-path entries |
 | `modulePathAppend` | array | Extra module-path entries |
-| `debug` | bool | Launch under the debugger (reserved; behavior deferred to §12.9) |
-| `description` | string | Free-text note (JSON has no comments); ignored by the server |
 
-In code this is a single `RunItem` record deserialized identically for every element of both arrays,
-with a compact constructor that validates the `kind`↔target relationship and the per-bucket rules of
-§8.2.
+In code this is a single `RunItem` record deserialized identically for every array element, with a
+compact constructor that requires `kind` and normalizes every collection to immutable-empty.
 
-### 8.2 Defaults, named configs, and target resolution
+### 8.2 Scope and resolution
 
-**`defaults[]`** holds the per-`(module, kind)` overlay applied to gutter/neotest runs. An item here:
+An entry is scoped by `(module, kind)`. `module` is optional: an entry that **omits `module`** is the
+**workspace-wide default** for its `kind`, applied to every module; an entry that sets `module` is that
+module's default. `(module, kind)` is unique per file (a module-less entry is the `(all, kind)` key).
 
-- is keyed by `(module, kind)` (unique per pair); `name` is ignored if present,
-- **may not** pin `mainClass`/`selector` — it is inherently editor-derived, applied to whatever runnable
-  the user launches from the gutter,
-- is **optional** — when no `defaults` item matches the launched `(module, kind)`, the server applies a
-  built-in all-default overlay, so gutter/neotest runs work with no file at all.
+Gutter/neotest runs resolve their overlay **most-specific-wins**:
 
-**`configs[]`** holds named configs, selected explicitly (`:LatheRun {name}`, §12.8), unique per
-`(module, kind, name)`.
-A named config's target is optional:
+1. the entry for the launched `(module, kind)`, if any;
+2. otherwise the module-less entry for `kind` — the workspace-wide default;
+3. otherwise a built-in all-default overlay — so runs work with no file at all.
 
-- **Pinned** — `mainClass`/`selector` set → runs that specific target regardless of the cursor.
-  Only pinned targets can go stale (a renamed class/method no longer matches the stored string); this is
-  the user's deliberate choice and shares the selector-fidelity limitation of §9.
-- **Editor-derived** — target omitted → applies the overlay to the runnable under the cursor at launch,
-  resolved by `RunnableScanner`; nothing is stored, so nothing goes stale.
-  This mode requires the invoking command to carry the document URI + position.
+The winning entry is applied **as a whole**; a module-specific entry is not field-merged with the
+workspace-wide one. (The shared/local *layers* of the chosen entry still merge, §8.3.) Targets are
+always editor-derived here — the overlay applies to whatever runnable the user launches from the gutter.
 
-`kind` stays explicit rather than inferred from which target field is set, so the target shape is
-validated against a declared kind and future kinds slot in cleanly.
+Named, explicitly-selected configurations are a later slice (§12.8): they add a `name` (the selection
+handle) and an optional pinned target (`mainClass`/`selector`) to entries in the **same array**. A
+nameless entry stays an auto-applied default; a named one is selected explicitly and composes on top of
+the matching default. Until then those fields are absent from the schema.
 
 ### 8.3 Layering and merge
 
-The two layers (§8) are read independently — each lock-aware, each treated as empty when absent — and
-merged into one effective overlay before target resolution.
+The two layers (§8) are read independently — each treated as empty when absent — and field-merged,
+local over shared, per `(module, kind)` before resolution.
+Lathe never writes these files, so no lock is taken.
 Precedence is git-style, most-specific wins:
 
 ```
@@ -698,14 +678,13 @@ Merge is **field-level**: the local layer overrides only the keys it sets and in
 shared layer (and, for still-unset keys, the built-in default).
 Per field type:
 
-- **scalars** (`mainClass`, `selector`, `cwd`, `debug`) — the local value replaces the shared value.
+- **scalars** (`cwd`) — the local value replaces the shared value.
 - **lists** (`args`, `jvmArgs`, `classpathAppend`, `modulePathAppend`) — **concatenated**, shared entries
   first then local, preserving the append-after-derived invariant of §8.4.
 - **`env`** — **unioned**, with the local value winning on a key conflict.
 
-Merging happens per `(module, kind, name)` for `configs` and per `(module, kind)` for `defaults`.
-An item present in only one layer applies unchanged, and either layer may introduce a brand-new named
-config — so the local layer can both tweak a shared config and add machine-only ones.
+An entry present in only one layer applies unchanged; either layer may introduce a new `(module, kind)`
+entry.
 
 ### 8.4 Overlay semantics
 
@@ -743,23 +722,23 @@ runtime launch metadata, reactor rewrite, then user overlay.
 ### 8.5 Lifecycle
 
 ```
-Neovim: :LatheRun {name}            (gutter/neotest run resolves the module's `defaults` item)
-  ├─ server reads lathe-run.json + .lathe/run.json fresh if present (lock-aware, each layer)
-  ├─ field-merge layers (local over shared over built-in default)
-  ├─ resolve RunItem: defaults by (module, kind), or configs by (module, kind, name)
-  │   target editor-derived when unpinned
+Neovim: gutter/neotest run of (module, kind)
+  ├─ server reads lathe-run.json + .lathe/run.json fresh if present (each layer, array)
+  ├─ field-merge layers per (module, kind) (local over shared)
+  ├─ resolve RunItem most-specific: (module, kind) → (any, kind) → built-in
+  │   target editor-derived
   ├─ base launch from test-launch.json / main-launch.json
   ├─ reactor target/→.lathe/ rewrite
-  ├─ overlay args, jvmArgs, env, cwd, classpathAppend, modulePathAppend, debug
+  ├─ overlay args, jvmArgs, env, cwd, classpathAppend, modulePathAppend
   └─ snapshot the fully resolved launch into the session (immutable)
 ```
 
 The server reads both layers **fresh on every run** and **snapshots** the fully resolved launch into the
 `ReplaySession` at launch time.
-Nothing read later can mutate a running launch, so two runs of different configs — or a gutter default
-and a named config — execute concurrently with no shared state.
-Selection lives in the client command line for now (`:LatheRun {name}`, with server-provided name
-completion); a future VSCode client swaps the command for a QuickPick over the same list, no server
+Nothing read later can mutate a running launch, so two runs — a gutter run of one module and another —
+execute concurrently with no shared state.
+Explicit selection (`:LatheRun {name}`) is a later slice; a future VSCode client swaps the command for a
+QuickPick over the same list, no server
 change.
 
 ---
@@ -807,8 +786,8 @@ run.
   survives. This is the accepted cost of keeping the local layer out of git.
 - **Run configs are entirely hand-authored** — Lathe never writes either layer, so there are no seeded
   stubs to discover the schema from; the user authors from the documented shape (§8.1). An absent file,
-  or a `(module, kind)` with no `defaults` item, falls back to the built-in all-default overlay, so
-  gutter/neotest runs always work — a config is needed only to override a default or add a named run.
+  or no entry matching the launched `(module, kind)`, falls back to the built-in all-default overlay, so
+  gutter/neotest runs always work — a config is needed only to customize a run.
 
 ---
 
@@ -872,9 +851,11 @@ writes or inspects.
 | `run.RunnerJarProvider` | Materialize embedded runner jar | `runnerJar(): Path` |
 | `run.ReplayLauncher` | Build argv + spawn | `launch(data, sel): ReplaySession` |
 | `run.ReplaySession` | Own the replay process + result stream | `start`, `cancel`, `pid` |
-| `run.RunItem` (record) | One `lathe-run.json` array element / command payload overlay | validating compact ctor (kind↔target, per-bucket rules) |
-| `run.RunConfigReader` | Read `lathe-run.json` + `.lathe/run.json` fresh if present, lock-aware; field-merge local over shared, then index `defaults` by `(module, kind)` and `configs` by `(module, kind, name)` | `read(): RunOverlaySet` |
-| `run.RunOverlay` | Apply a resolved `RunItem` onto a launch template (§8.4) | `apply(launch, item): ResolvedLaunch` |
+| `run.RunItem` (record) | One `lathe-run.json` array element — a `(module, kind)`-scoped overlay | validating compact ctor (requires `kind`; `module` optional) |
+| `run.RunConfigReader` | Read `lathe-run.json` + `.lathe/run.json` fresh if present; field-merge local over shared per `(module, kind)` | `read(): RunOverlaySet` |
+| `run.RunOverlaySet` (record) | Merged entries; resolves a run's overlay most-specific-wins (`(module, kind)` → module-less → built-in) | `defaultFor(module, kind): RunItem` |
+| `run.RunOverlay` | Apply a resolved `RunItem` onto a launch template (§8.4) | `applyToMain`/`applyToTest`: `ResolvedLaunch` |
+| `run.ResolvedLaunch` (record) | The final argv + process `env` + `cwd` handed to `Launcher` | — |
 | `run.RunCommands` | `executeCommand`: `runnables.list`, `config.list`, `run`, `debug`, `session.*` | one handler each |
 | `run.SessionEvents` | Emit `lathe/sessionEvent` | `emit` |
 | `debug.DebugAdapter` *(stage 2)* | JDWP inject + in-process `java-debug` DAP | `attach` |
@@ -1118,24 +1099,24 @@ is not a test — so neotest deliberately keeps excluding `RunnableKind.MAIN`.
 ### 12.8 Run config overlay
 
 This slice is **server-only**: a reader/resolver that merges and applies the user-authored run-config
-layers (`lathe-run.json` + `.lathe/run.json`).
-Lathe never writes either file, so there is no plugin side. `debug` is reserved in the schema only; its
-launch behavior is deferred to §12.9.
+layers (`lathe-run.json` + `.lathe/run.json`) to gutter/neotest runs.
+Lathe never writes either file, so there is no plugin side.
+Explicit named-config selection and pinned targets are a follow-up (§8.2); this slice ships the
+auto-applied `(module, kind)` defaults only.
 
 **Scope (server):**
 
-- Add the `RunItem` record (§8.1) with a validating compact constructor: `kind`↔target relationship and
-  the per-bucket rules (`defaults` items target-less and name-less; `configs` items named).
-- Add `RunConfigReader` — read both layers (`lathe-run.json` + `.lathe/run.json`) fresh and lock-aware
-  **if present** (absent layer → empty; both absent → built-in defaults); field-merge local over shared
-  (§8.3), then index `defaults` by `(module, kind)` and `configs` by `(module, kind, name)`.
+- Add the `RunItem` record (§8.1) — a `(module, kind)`-scoped overlay; compact constructor requires
+  `kind`, leaves `module` optional, and normalizes collections to immutable-empty.
+- Add `RunConfigReader` — read both layers (each a JSON array) fresh **if present** (absent/malformed
+  layer → empty; both absent → built-in defaults); field-merge local over shared per `(module, kind)`
+  (§8.3) into a `RunOverlaySet`.
 - Add `RunOverlay` — apply a resolved `RunItem` onto a launch template per §8.4 (`args`, `jvmArgs`,
   `env`, `cwd`, `classpathAppend`, `modulePathAppend`), including the `--class-path`/`--module-path`
-  merge; a `(module, kind)` with no `defaults` item resolves to the built-in all-default overlay.
-- Resolve target: pinned (`mainClass`/`selector`) or editor-derived from the runnable under the cursor.
+  merge and the process-level env/cwd.
+- Resolve per run most-specific-wins: `(module, kind)` → module-less `(kind)` → built-in.
 - Snapshot the resolved launch into the session at launch (concurrency).
-- Add `config.list` and wire `run`/`debug` to accept a `(module, kind, name)` selection plus optional
-  editor context; surface as `:LatheRun {name}` with server-provided name completion.
+- Wire the existing `run.test`/`run.main` paths to resolve and apply the overlay (no new command).
 
 **Review focus:**
 
@@ -1143,9 +1124,8 @@ launch behavior is deferred to §12.9.
   appended after derived entries.
 - Path, cwd, and append-entry resolution (workspace-root-relative; absolute allowed).
 - Duplicate JVM arg (last-wins) and `env`-merge behavior documented and tested.
-- `defaults` items may not pin a target or a name; `configs` uniqueness `(module, kind, name)` enforced.
-- Layer precedence (local over shared over built-in) and field-level merge (scalar override, list
-  concat, `env` union).
+- Layer precedence (local over shared) and field-level merge (scalar override, list concat, `env`
+  union); most-specific-wins across scope (module entry used whole, not merged with the module-less one).
 - Absent file and unmatched `(module, kind)` both fall back to the built-in default — gutter/neotest
   never require a file.
 
@@ -1153,11 +1133,11 @@ launch behavior is deferred to §12.9.
 
 - Unit tests for `RunItem` parsing/validation and per-field overlay semantics (append, merge, additive
   paths, omitted-as-default).
-- Reader test: absent file → built-in defaults; empty object and empty arrays behave identically;
-  two-layer field merge (scalar override, list concat, `env` union, local-wins) and precedence.
-- Server command tests for `config.list`, pinned vs. editor-derived `run`, and concurrent snapshots.
+- Reader test: absent file → built-in default; two-layer field merge (scalar override, list concat,
+  `env` union, local-wins); module entry wins over the module-less one.
+- `RunOverlay` tests: env/cwd applied, append paths resolved workspace-root-relative.
 
-**Commit prefix:** `feat: add named run configuration overlays`
+**Commit prefix:** `feat: add run configuration overlays`
 
 ### 12.9 Initial debug attach support
 
@@ -1258,11 +1238,12 @@ Each deferred item should be its own later commit or small series:
 2. **`systemPropertyVariables`** — design settled (hybrid: sync keys + fork values), implementation
    **deferred**; see §15.1.
 3. ~~**`lathe-run.json` schema and ownership**~~ — resolved (§8): two user-authored layers — checkable
-   `lathe-run.json` at the reactor root plus gitignored `.lathe/run.json` — sharing one object with
-   `defaults`/`configs` arrays over a uniform `RunItem` (omitted-key = default, no schema version),
-   `defaults` keyed by `(module, kind)` and `configs` by `(module, kind, name)`. Lathe writes neither;
-   the server field-merges the layers (local over shared), resolves, and falls back to built-in defaults
-   when both are absent.
+   `lathe-run.json` at the reactor root plus gitignored `.lathe/run.json` — each a JSON array of a
+   uniform `RunItem` (`kind` required, `module` optional ⇒ all modules, omitted-key = default, no schema
+   version). Lathe writes neither; the server field-merges the layers (local over shared) per
+   `(module, kind)`, resolves most-specific-wins (`(module, kind)` → module-less → built-in), and falls
+   back to built-in defaults when both are absent. Named, selectable configs come later as `name`-bearing
+   entries in the same array (§8.2).
 4. **`lathe-server` package layout** — do the `run.*` classes above fit the existing command/discovery
    structure, or fold into current classes?
 5. **Runner delivery** — server-materialized from an embedded jar (current plan) vs. published coordinate.
