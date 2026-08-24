@@ -38,13 +38,29 @@ public final class TypeSourceLocator {
 
   public static Optional<Path> findSourceFile(
       final TypeIndexEntry entry, final List<Path> sourceRoots) {
-    final String className = entry.className();
+    return findSourceFile(entry.packageName(), entry.className(), sourceRoots);
+  }
+
+  /**
+   * The source file declaring a type named by its fully-qualified binary name — a binary name nests
+   * with {@code $}, so its last {@code .} is the package/top-level-class boundary.
+   */
+  public static Optional<Path> findSourceFile(
+      final String binaryName, final List<Path> sourceRoots) {
+    final int lastDot = binaryName.lastIndexOf('.');
+    final String packageName = lastDot >= 0 ? binaryName.substring(0, lastDot) : "";
+    final String className = lastDot >= 0 ? binaryName.substring(lastDot + 1) : binaryName;
+    return findSourceFile(packageName, className, sourceRoots);
+  }
+
+  private static Optional<Path> findSourceFile(
+      final String packageName, final String className, final List<Path> sourceRoots) {
     final int nestedType = className.indexOf('$');
     final String topLevelName = nestedType >= 0 ? className.substring(0, nestedType) : className;
     final String relativePath =
-        entry.packageName().isEmpty()
+        packageName.isEmpty()
             ? topLevelName + ".java"
-            : "%s/%s.java".formatted(entry.packageName().replace('.', '/'), topLevelName);
+            : "%s/%s.java".formatted(packageName.replace('.', '/'), topLevelName);
     return sourceRoots.stream()
         .map(root -> root.resolve(relativePath))
         .filter(Files::isRegularFile)

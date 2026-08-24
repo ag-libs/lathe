@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server.analysis;
 
 import com.sun.source.tree.ClassTree;
+import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
@@ -165,6 +166,39 @@ public final class SourceAnalysisSession implements AutoCloseable {
     LOG.fine(
         () -> "[runnables] %s %dms targets=%d".formatted(uri, t.elapsedMs(), runnables.size()));
     return runnables;
+  }
+
+  /**
+   * The binary name (e.g. {@code com.example.Outer$Inner}) of the class enclosing a 1-based line,
+   * from the already-attributed analysis of an open file — the mapping the debug adapter's
+   * source-lookup provider needs to arm a JDI breakpoint. Empty when the file is not
+   * open/attributed or the line is outside any class.
+   */
+  public Optional<String> enclosingBinaryName(final String uri, final int oneBasedLine) {
+    final CachedFileAnalysis cached = cache.get(uri);
+    if (cached == null || cached.analysis() == null || cached.analysis().tree() == null) {
+      return Optional.empty();
+    }
+
+    final AttributedFileAnalysis analysis = cached.analysis();
+    final CompilationUnitTree cu = analysis.tree();
+    final long offset = SourceLocator.toOffset(cu, oneBasedLine - 1, 0);
+    if (offset == javax.tools.Diagnostic.NOPOS) {
+      return Optional.empty();
+    }
+
+    for (TreePath p = SourceLocator.pathAt(analysis.trees(), cu, offset);
+        p != null;
+        p = p.getParentPath()) {
+      if (p.getLeaf() instanceof ClassTree) {
+        final Element element = analysis.trees().getElement(p);
+        if (element instanceof final TypeElement type) {
+          return Optional.of(analysis.elements().getBinaryName(type).toString());
+        }
+      }
+    }
+
+    return Optional.empty();
   }
 
   public List<FoldingRange> foldingRange(final String uri, final String content) {

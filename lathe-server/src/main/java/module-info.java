@@ -15,13 +15,15 @@ module io.github.aglibs.lathe.server {
   requires io.github.aglibs.validcheck;
 
   // Microsoft java-debug ships as a non-modular jar, so it resolves as the automatic module
-  // `com.microsoft.java.debug.core`; it hosts the DAP ProtocolServer in-process (docs/planned/
-  // lathe-debug-support.md). Its own deps (commons-lang3, rxjava, commons-io) are read transitively
-  // as an automatic module and need no explicit requires here.
+  // `com.microsoft.java.debug.core`; it hosts the DAP ProtocolServer in-process. Its own deps
+  // (commons-lang3, rxjava, commons-io) are read transitively as an automatic module and need no
+  // explicit requires here.
   requires com.microsoft.java.debug.core;
   // The adapter's initialize subscribes to hot-code-replace events, so a no-op HCR provider is
   // registered; it returns an rxjava Observable. Hot code replace itself is a Phase 4 feature.
   requires io.reactivex.rxjava2;
+  // JDI (com.sun.jdi) backs the virtual-machine-manager provider's attach connector.
+  requires jdk.jdi;
 
   // RunTarget/LaunchOutcome cross the JSON-RPC boundary as raw records, serialized reflectively
   // by lsp4j's Gson layer -- without this, Gson can't call setAccessible on their accessors.

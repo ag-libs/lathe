@@ -202,6 +202,47 @@ class SourceAnalysisSessionTest {
   }
 
   @Test
+  void enclosingBinaryName_attributedNesting_resolvesTopNestedAndAnonymous() {
+    final String uri = TempSourceCompiler.TEST_URI;
+    final String source =
+        """
+        class Outer {
+          Runnable r =
+              new Runnable() {
+                public void run() {
+                  int b = 2;
+                }
+              };
+
+          void a() {
+            int x = 1;
+          }
+
+          static class Inner {
+            void c() {
+              int y = 3;
+            }
+          }
+        }
+        """;
+
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(uri, source, 1, CompileMode.OPEN);
+
+      assertThat(session.enclosingBinaryName(uri, 5)).contains("Outer$1");
+      assertThat(session.enclosingBinaryName(uri, 11)).contains("Outer");
+      assertThat(session.enclosingBinaryName(uri, 16)).contains("Outer$Inner");
+    }
+  }
+
+  @Test
+  void enclosingBinaryName_fileNotAttributed_returnsEmpty() {
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      assertThat(session.enclosingBinaryName(TempSourceCompiler.TEST_URI, 1)).isEmpty();
+    }
+  }
+
+  @Test
   void searchReferences_sourceReadFailure_throwsUncheckedIOException() throws IOException {
     final String uri = TempSourceCompiler.TEST_URI;
     final String content =

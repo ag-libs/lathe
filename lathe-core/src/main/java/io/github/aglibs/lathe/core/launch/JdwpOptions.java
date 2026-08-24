@@ -4,9 +4,9 @@ import io.github.aglibs.validcheck.ValidCheck;
 
 /**
  * The debug mode of a launch. When {@link #enabled()}, the launched JVM opens a suspended JDWP
- * server agent on {@code port} for the debug adapter to attach to
- * (docs/planned/lathe-debug-support.md §5); {@link #NONE} is a plain run. Mirrors the {@link
- * LaunchOverlay#NONE} convention so a launch always carries a value rather than a nullable flag.
+ * server agent on {@code port} for the debug adapter to attach to; {@link #NONE} is a plain run.
+ * Mirrors the {@link LaunchOverlay#NONE} convention so a launch always carries a value rather than
+ * a nullable flag.
  */
 public record JdwpOptions(int port) {
 

@@ -280,6 +280,11 @@ public final class CompilationWorker {
     return submit(ctx -> ctx.runnables(uri, content, expectedVersion, moduleRel));
   }
 
+  public CompletableFuture<Optional<String>> enclosingBinaryName(
+      final String uri, final int oneBasedLine) {
+    return submit(ctx -> ctx.enclosingBinaryName(uri, oneBasedLine));
+  }
+
   public CompletableFuture<List<FoldingRange>> foldingRange(
       final String uri, final String content) {
     return submit(ctx -> ctx.foldingRange(uri, content));

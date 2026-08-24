@@ -11,9 +11,9 @@ import java.util.logging.Logger;
 /**
  * Hosts the Microsoft java-debug {@link ProtocolServer} in-process. It opens a loopback DAP socket
  * and, when the editor's debug client connects, bridges that connection to a {@link
- * LatheProviderContext} on a session thread — no separate adapter process (docs/planned/
- * lathe-debug-support.md §6). Phase 0 proves the adapter runs under JPMS and answers the DAP
- * handshake; launching and attaching to a suspended debuggee arrives in Phase 1.
+ * LatheProviderContext} on a session thread — no separate adapter process. Phase 0 proves the
+ * adapter runs under JPMS and answers the DAP handshake; launching and attaching to a suspended
+ * debuggee arrives in Phase 1.
  */
 public final class DapHost {
 
