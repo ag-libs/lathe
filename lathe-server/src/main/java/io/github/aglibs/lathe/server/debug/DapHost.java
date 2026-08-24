@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server.debug;
 
+import com.microsoft.java.debug.core.adapter.IProviderContext;
 import com.microsoft.java.debug.core.adapter.ProtocolServer;
 import java.io.IOException;
 import java.net.InetAddress;
@@ -10,24 +11,25 @@ import java.util.logging.Logger;
 
 /**
  * Hosts the Microsoft java-debug {@link ProtocolServer} in-process. It opens a loopback DAP socket
- * and, when the editor's debug client connects, bridges that connection to a {@link
- * LatheProviderContext} on a session thread — no separate adapter process. Phase 0 proves the
- * adapter runs under JPMS and answers the DAP handshake; launching and attaching to a suspended
- * debuggee arrives in Phase 1.
+ * and, when the editor's debug client connects, bridges that connection to the given provider
+ * context on a session thread — no separate adapter process. A debug session passes a context wired
+ * to the launched module (source lookup + VM manager); the handshake path passes a bare context.
  */
 public final class DapHost {
 
   private static final Logger LOG = Logger.getLogger(DapHost.class.getName());
 
   private final ServerSocket serverSocket;
+  private final IProviderContext context;
 
-  private DapHost(final ServerSocket serverSocket) {
+  private DapHost(final ServerSocket serverSocket, final IProviderContext context) {
     this.serverSocket = serverSocket;
+    this.context = context;
   }
 
-  public static DapHost start() throws IOException {
+  public static DapHost start(final IProviderContext context) throws IOException {
     final var serverSocket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress());
-    final var host = new DapHost(serverSocket);
+    final var host = new DapHost(serverSocket, context);
     final int port = host.port();
     final var thread = new Thread(host::serve, "lathe-dap-%d".formatted(port));
     thread.setDaemon(true);
@@ -47,8 +49,7 @@ public final class DapHost {
   private void serve() {
     try (final Socket client = serverSocket.accept()) {
       final var protocolServer =
-          new ProtocolServer(
-              client.getInputStream(), client.getOutputStream(), new LatheProviderContext());
+          new ProtocolServer(client.getInputStream(), client.getOutputStream(), context);
       protocolServer.run();
     } catch (final IOException e) {
       LOG.log(Level.FINE, e, () -> "[debug] dap session ended");

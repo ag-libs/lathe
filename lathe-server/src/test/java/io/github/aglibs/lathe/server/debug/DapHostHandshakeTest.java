@@ -29,7 +29,7 @@ final class DapHostHandshakeTest {
   @Test
   @Timeout(10)
   void initialize_overDapSocket_returnsCapabilities() throws IOException {
-    final DapHost host = DapHost.start();
+    final DapHost host = DapHost.start(new LatheProviderContext());
     try (final Socket client = new Socket(InetAddress.getLoopbackAddress(), host.port())) {
       writeMessage(client.getOutputStream(), INITIALIZE_REQUEST);
 

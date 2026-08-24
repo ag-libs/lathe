@@ -35,7 +35,8 @@ public final class RunOverlay {
       final List<Path> runnerClasspath,
       final List<TestSelection> selections,
       final Path resultsSink,
-      final RunItem item) {
+      final RunItem item,
+      final JdwpOptions jdwp) {
     final List<String> argv =
         LaunchPlan.forTest(
             template,
@@ -44,7 +45,7 @@ public final class RunOverlay {
             selections,
             resultsSink,
             launchOverlay(item, workspaceRoot),
-            JdwpOptions.NONE);
+            jdwp);
     return new ResolvedLaunch(argv, item.env(), resolveCwd(item, workspaceRoot));
   }
 

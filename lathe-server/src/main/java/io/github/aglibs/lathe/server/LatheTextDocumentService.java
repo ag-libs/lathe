@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
+import io.github.aglibs.lathe.server.debug.DebugStartResult;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.RunTarget;
 import java.nio.file.Path;
@@ -345,6 +346,11 @@ final class LatheTextDocumentService implements TextDocumentService {
     return worker
         .submit(() -> session.runMainFuture(moduleRel, mainClass, token))
         .thenCompose(f -> f);
+  }
+
+  CompletableFuture<DebugStartResult> debugStartFuture(
+      final String moduleRel, final List<TestSelection> selections, final String token) {
+    return worker.submit(() -> session.debugStart(moduleRel, selections, token));
   }
 
   CompletableFuture<List<RunTarget>> runnablesFuture(final String uri) {

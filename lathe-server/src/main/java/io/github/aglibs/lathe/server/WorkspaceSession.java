@@ -6,6 +6,7 @@ import io.github.aglibs.lathe.core.CollectionUtil;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.Stopwatch;
+import io.github.aglibs.lathe.core.launch.JdwpOptions;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.schema.RunKind;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
@@ -26,6 +27,9 @@ import io.github.aglibs.lathe.server.analysis.TypeSourceLocator;
 import io.github.aglibs.lathe.server.analysis.WorkspaceSymbolResolver;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
+import io.github.aglibs.lathe.server.debug.DapHost;
+import io.github.aglibs.lathe.server.debug.DebugStartResult;
+import io.github.aglibs.lathe.server.debug.LatheProviderContext;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.module.CompileRequest;
 import io.github.aglibs.lathe.server.module.CompileResponse;
@@ -50,6 +54,8 @@ import io.github.aglibs.lathe.server.run.TestResult;
 import io.github.aglibs.lathe.server.run.TranscriptLine;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.net.ServerSocket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
@@ -129,6 +135,7 @@ final class WorkspaceSession {
   // marshal put/remove via worker.execute (see runTestFuture) rather than touching it directly,
   // keeping the single-threaded discipline of every other field here.
   private final Map<String, LaunchSession> activeRuns = new HashMap<>();
+  private final Map<String, DapHost> activeDebugHosts = new HashMap<>();
 
   WorkspaceSession(
       final LanguageClient client,
@@ -234,6 +241,99 @@ final class WorkspaceSession {
     session.cancel();
   }
 
+  /**
+   * Launches the selected test suspended under a JDWP agent and opens an in-process DAP host wired
+   * to the module's source model, returning the ports the editor's debug client attaches to. Runs
+   * on the session worker; the launched JVM is tracked by {@code token} so {@link #cancelRun} kills
+   * it, and the DAP host is closed when the debuggee exits.
+   */
+  DebugStartResult debugStart(
+      final String moduleRel, final List<TestSelection> selections, final String token) {
+    final List<Path> runnerClasspath = manifest.runnerClasspath();
+    if (runnerClasspath.isEmpty()) {
+      throw new IllegalStateException("no lathe-test-runner jar recorded — run a build first");
+    }
+
+    final ModuleSourceConfig config = configFor(moduleRel);
+
+    try {
+      final var template = new LaunchTemplateReader(workspaceRoot).read(moduleRel);
+      if (template.isEmpty()) {
+        throw new IllegalStateException("no captured test-launch.json for " + moduleRel);
+      }
+
+      final var gate = CompletenessGate.verify(template.get(), workspaceRoot);
+      if (!gate.complete()) {
+        throw new IllegalStateException("debug launch incomplete: " + gate.reasons());
+      }
+
+      final int jdwpPort = freePort();
+      final Path resultsSink = Files.createTempFile("lathe-results-", ".ndjson");
+      final RunItem overlay =
+          new RunConfigReader(workspaceRoot).read().defaultFor(moduleRel, RunKind.TEST);
+      final ResolvedLaunch resolved =
+          RunOverlay.applyToTest(
+              template.get(),
+              workspaceRoot,
+              runnerClasspath,
+              selections,
+              resultsSink,
+              overlay,
+              new JdwpOptions(jdwpPort));
+      final var session =
+          Launcher.launch(
+              resolved.argv(),
+              resultsSink,
+              streamConsumer(token),
+              resultConsumer(token),
+              resolved.env(),
+              resolved.cwd());
+      activeRuns.put(token, session);
+      session
+          .onExit()
+          .whenComplete((outcome, error) -> worker.execute(() -> endDebugSession(token)));
+
+      final var host =
+          DapHost.start(
+              new LatheProviderContext(workspace.workerFor(config), config.sourceRoots()));
+      activeDebugHosts.put(token, host);
+      LOG.info(
+          () ->
+              "[debug] %s %s dap=%d jdwp=%d"
+                  .formatted(moduleRel, selectionLabel(selections), host.port(), jdwpPort));
+      return new DebugStartResult(host.port(), jdwpPort);
+    } catch (final IOException e) {
+      throw new UncheckedIOException(e);
+    }
+  }
+
+  private void endDebugSession(final String token) {
+    activeRuns.remove(token);
+    final DapHost host = activeDebugHosts.remove(token);
+    if (host == null) {
+      return;
+    }
+
+    try {
+      host.close();
+    } catch (final IOException e) {
+      LOG.log(Level.FINE, e, () -> "[debug] %s dap host close failed".formatted(token));
+    }
+  }
+
+  private ModuleSourceConfig configFor(final String moduleRel) {
+    return workspace.allConfigs().stream()
+        .filter(config -> moduleRel(config).equals(moduleRel))
+        .findFirst()
+        .orElseThrow(() -> new IllegalStateException("no module for " + moduleRel));
+  }
+
+  private static int freePort() throws IOException {
+    try (final var socket = new ServerSocket(0)) {
+      return socket.getLocalPort();
+    }
+  }
+
   // Copies a changed resource into .lathe/ so a resource-only edit is picked up without a rebuild.
   // Returns the .lathe/ destination written, or empty if the file maps to no resource root or the
   // copy failed.
@@ -323,7 +423,13 @@ final class WorkspaceSession {
           new RunConfigReader(workspaceRoot).read().defaultFor(moduleRel, RunKind.TEST);
       final ResolvedLaunch resolved =
           RunOverlay.applyToTest(
-              template.get(), workspaceRoot, runnerClasspath, selections, resultsSink, overlay);
+              template.get(),
+              workspaceRoot,
+              runnerClasspath,
+              selections,
+              resultsSink,
+              overlay,
+              JdwpOptions.NONE);
       final var session =
           Launcher.launch(
               resolved.argv(), resultsSink, onLine, onResult, resolved.env(), resolved.cwd());
