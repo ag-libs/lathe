@@ -21,7 +21,7 @@ local TEST_CLASS = 2
 local TEST_PACKAGE = 3
 
 --- Builds a runnable target with a range, mirroring the RunTarget wire shape (0-based LSP range on
---- start/end objects). The id doubles as the selectorValue lathe.debug.start receives.
+--- start/end objects). The id doubles as the selectorValue lathe.debug.test receives.
 local function target(kind, id, start_line, end_line)
   return {
     id = id,
@@ -78,14 +78,24 @@ do
   spec.check("cursor outside all -> nil", dap._test_target_for(targets, 0), nil)
 end
 
--- Case 6: the resolved selection maps the kind ordinal to the server's TestSelectionKind name.
+-- Case 6: the resolved test selection maps the kind ordinal to the server's TestSelectionKind name.
 do
   local target_class = target(TEST_CLASS, "com.example.AppTest", 8, 20)
-  local config = dap._config_for(target_class)
-  spec.check("config selectorKind", config.lathe_selections[1].selectorKind, "CLASS")
-  spec.check("config selectorValue", config.lathe_selections[1].selectorValue, "com.example.AppTest")
-  spec.check("config moduleRel", config.lathe_module_rel, "app")
-  spec.check("config request", config.request, "attach")
+  local config = dap._test_config_for(target_class)
+  spec.check("test config selectorKind", config.lathe_selections[1].selectorKind, "CLASS")
+  spec.check("test config selectorValue", config.lathe_selections[1].selectorValue, "com.example.AppTest")
+  spec.check("test config moduleRel", config.lathe_module_rel, "app")
+  spec.check("test config request", config.request, "attach")
+end
+
+-- Case 7: a MAIN target (from lathe.run's discovery) builds a main config carrying the class, not a
+-- selection -- lathe_main_class is what routes the adapter to lathe.debug.main.
+do
+  local main = { parentId = "com.example.App", moduleRel = "app", kind = 0 }
+  local config = dap._main_config_for(main)
+  spec.check("main config mainClass", config.lathe_main_class, "com.example.App")
+  spec.check("main config moduleRel", config.lathe_module_rel, "app")
+  spec.check("main config no selections", config.lathe_selections, nil)
 end
 
 spec.finish("dap_spec")

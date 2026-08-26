@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end debug harness for Lathe: drives the full attach flow -- lathe.debug.start launches a
+# End-to-end debug harness for Lathe: drives the full attach flow -- lathe.debug.test launches a
 # captured test suspended under a JDWP agent and opens an in-process DAP host; the probe speaks raw
 # DAP to it exactly as nvim-dap would, sets a breakpoint in HelloTest, and asserts it stops,
 # inspects, and resumes green. This is the automatable Phase 1 GO/NO-GO -- no editor, no human.
@@ -21,6 +21,9 @@ cache="$repo/lathe-maven-plugin/target/it-home/.cache/lathe"
 default_file="$fixture/jpms/src/test/java/com/example/jpms/HelloTest.java"
 default_line=16
 default_method=greet_returnsExpectedMessage
+default_main_file="$fixture/jpms/src/main/java/com/example/jpms/HelloMain.java"
+default_main_line=8
+default_main_class=com.example.jpms.HelloMain
 
 fail() {
   echo "[debug-e2e] $1" >&2
@@ -61,9 +64,19 @@ command -v python3 >/dev/null 2>&1 || fail "python3 not found on PATH"
 
 export LATHE_LAUNCHER="$cache/current/lathe-launcher.sh"
 
-echo "[debug-e2e] probing $file:$line (method $method)"
+echo "[debug-e2e] probing test $file:$line (method $method)"
 python3 "$here/debug_probe.py" \
   --workspace "$workspace" \
   "$file" \
   --line "$line" \
   --method "$method"
+
+# On the default fixture, also exercise main-class debug (Part A). set -e aborts if either fails.
+if [ "$workspace" = "$fixture" ] && [ "$file" = "$default_file" ]; then
+  echo "[debug-e2e] probing main $default_main_file:$default_main_line ($default_main_class)"
+  python3 "$here/debug_probe.py" \
+    --workspace "$workspace" \
+    "$default_main_file" \
+    --line "$default_main_line" \
+    --main "$default_main_class"
+fi

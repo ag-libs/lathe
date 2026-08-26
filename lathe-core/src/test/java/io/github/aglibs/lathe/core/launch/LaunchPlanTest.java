@@ -135,7 +135,8 @@ final class LaunchPlanTest {
             data,
             WORKSPACE,
             "com.example.app.Main",
-            new LaunchOverlay(List.of(), List.of("--port", "8080"), List.of(), List.of()));
+            new LaunchOverlay(List.of(), List.of("--port", "8080"), List.of(), List.of()),
+            JdwpOptions.NONE);
 
     assertThat(args)
         .containsExactly(
@@ -170,7 +171,8 @@ final class LaunchPlanTest {
             List.of());
 
     final List<String> args =
-        LaunchPlan.forMain(data, WORKSPACE, "com.example.app.Main", LaunchOverlay.NONE);
+        LaunchPlan.forMain(
+            data, WORKSPACE, "com.example.app.Main", LaunchOverlay.NONE, JdwpOptions.NONE);
 
     assertThat(args)
         .containsExactly(
@@ -199,7 +201,8 @@ final class LaunchPlanTest {
         new LaunchOverlay(
             List.of("-Dprofile=prod"), List.of("--flag"), List.of("/abs/config"), List.of());
 
-    final List<String> args = LaunchPlan.forMain(data, WORKSPACE, "com.example.app.Main", overlay);
+    final List<String> args =
+        LaunchPlan.forMain(data, WORKSPACE, "com.example.app.Main", overlay, JdwpOptions.NONE);
 
     assertThat(args)
         .containsExactly(
@@ -330,6 +333,55 @@ final class LaunchPlanTest {
             resultsSink,
             LaunchOverlay.NONE,
             JdwpOptions.NONE);
+
+    assertThat(args).noneMatch(arg -> arg.startsWith("-agentlib:jdwp"));
+  }
+
+  @Test
+  void forMain_debug_emitsSuspendedJdwpAgentBeforeMainClass() {
+    final var data =
+        new MainLaunchData(
+            "1",
+            LaunchMode.CLASSPATH,
+            "/jdk",
+            "",
+            List.of(),
+            List.of("/workspace/app/target/classes"),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of());
+
+    final List<String> args =
+        LaunchPlan.forMain(
+            data, WORKSPACE, "com.example.app.Main", LaunchOverlay.NONE, new JdwpOptions(5005));
+
+    final String agent =
+        "-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=127.0.0.1:5005";
+    assertThat(args).contains(agent);
+    assertThat(args.indexOf(agent)).isLessThan(args.indexOf("com.example.app.Main"));
+  }
+
+  @Test
+  void forMain_noDebug_omitsJdwpAgent() {
+    final var data =
+        new MainLaunchData(
+            "1",
+            LaunchMode.CLASSPATH,
+            "/jdk",
+            "",
+            List.of(),
+            List.of("/workspace/app/target/classes"),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of());
+
+    final List<String> args =
+        LaunchPlan.forMain(
+            data, WORKSPACE, "com.example.app.Main", LaunchOverlay.NONE, JdwpOptions.NONE);
 
     assertThat(args).noneMatch(arg -> arg.startsWith("-agentlib:jdwp"));
   }

@@ -30,7 +30,7 @@ module io.github.aglibs.lathe.server {
   opens io.github.aglibs.lathe.server.run to
       com.google.gson;
 
-  // DebugStartResult crosses the JSON-RPC boundary the same way (§10 lathe.debug.start result).
+  // DebugStartResult crosses the JSON-RPC boundary the same way (the debug.test/debug.main result).
   opens io.github.aglibs.lathe.server.debug to
       com.google.gson;
 

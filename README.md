@@ -267,10 +267,67 @@ can reach a failure without opening the output window. Discovery is automatic --
 shows its runnable tests, and adding, renaming, or removing a `@Test` method updates them on save,
 with no manual refresh.
 
-### Debugging
+### Debugger (nvim-dap)
 
-For debugging, you can enable verbose logging by setting `LATHE_DEBUG=1` before starting Neovim,
-or configuring it in your environment:
+Lathe can debug a captured test or `main` class with breakpoints, stepping, call stack, and variable
+inspection, using [nvim-dap](https://github.com/mfussenegger/nvim-dap) as the client.
+There is no separate debug-adapter process and Lathe never runs Maven: the language server launches
+the replay JVM under a JDWP agent (suspended) and hosts Microsoft's `java-debug` adapter in-process,
+so debugging has the same footprint as a normal replay plus one JVM flag.
+
+> **Prerequisite:** the same [Test Capture](#test-capture) setup as the test runner (a captured
+> launch template to replay), plus `nvim-dap` installed and loaded **before**
+> `require('lathe').setup()` — Lathe registers the `lathe` debug adapter during setup, so declare
+> `nvim-dap` as a dependency of your Lathe spec to guarantee the load order.
+
+```lua
+{ "mfussenegger/nvim-dap" },
+
+-- ...and make your Lathe spec depend on it so :LatheDebug registers:
+{
+  dir = "/path/to/lathe/runtime",  -- however you load Lathe
+  ft = "java",
+  dependencies = { "mfussenegger/nvim-dap" },
+  config = function()
+    require("lathe").setup()
+  end,
+}
+```
+
+> **Note:** you do **not** call any `nvim-dap` `setup()` or register an adapter yourself —
+> `require('lathe').setup()` registers the `lathe` adapter. If `nvim-dap` is not installed the
+> `:LatheDebug` command is simply not created, and the rest of Lathe is unaffected.
+
+`:LatheDebug` debugs the test or `main` class under the cursor — the innermost test (method, class,
+or package) that contains it, otherwise a `main` — resolved through the same `lathe.runnables.list`
+discovery the run and test surfaces use. Breakpoints, stepping, and stopping are nvim-dap's — bind
+the actions you want:
+
+```lua
+local dap = require("dap")
+local widgets = require("dap.ui.widgets")
+
+vim.keymap.set("n", "<leader>dd", "<cmd>LatheDebug<cr>",  { desc = "Debug: test/main under cursor" })
+vim.keymap.set("n", "<leader>db", dap.toggle_breakpoint,  { desc = "Debug: toggle breakpoint" })
+vim.keymap.set("n", "<leader>dc", dap.continue,           { desc = "Debug: continue / start" })
+vim.keymap.set("n", "<leader>do", dap.step_over,          { desc = "Debug: step over" })
+vim.keymap.set("n", "<leader>di", dap.step_into,          { desc = "Debug: step into" })
+vim.keymap.set("n", "<leader>dO", dap.step_out,           { desc = "Debug: step out" })
+vim.keymap.set("n", "<leader>dv", function() widgets.centered_float(widgets.scopes) end,
+                                                          { desc = "Debug: variables (scopes)" })
+vim.keymap.set("n", "<leader>dt", dap.terminate,          { desc = "Debug: terminate" })
+```
+
+Set a breakpoint with `<leader>db`, then `<leader>dd` to launch and attach; execution stops on the
+line. Inspect locals with `<leader>dv` (the scopes float) or a UI plugin like
+[nvim-dap-ui](https://github.com/rcarriga/nvim-dap-ui) /
+[nvim-dap-view](https://github.com/igorlfs/nvim-dap-view), which render their variables panel from
+the DAP scopes/variables requests.
+
+### Verbose Logging
+
+For troubleshooting, you can enable verbose logging by setting `LATHE_DEBUG=1` before starting
+Neovim, or configuring it in your environment:
 
 ```bash
 export LATHE_DEBUG=1

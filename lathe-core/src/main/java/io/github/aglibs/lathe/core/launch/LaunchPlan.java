@@ -57,11 +57,16 @@ public final class LaunchPlan {
       final MainLaunchData data,
       final Path workspaceRoot,
       final String mainClass,
-      final LaunchOverlay overlay) {
+      final LaunchOverlay overlay,
+      final JdwpOptions jdwp) {
     final List<String> modulePath = ReactorRewrite.toLathe(data.modulePath(), workspaceRoot);
     final List<String> classPath = ReactorRewrite.toLathe(data.classPath(), workspaceRoot);
 
     final var args = baseJavaArgs(data.javaHome(), data.jvmArgs(), overlay.jvmArgs());
+    if (jdwp.enabled()) {
+      args.add(jdwp.agentArg());
+    }
+
     addRuntimeShape(
         args,
         append(modulePath, overlay.modulePathAppend()),

@@ -9,7 +9,9 @@ import io.github.aglibs.lathe.core.PortUtil;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.launch.JdwpOptions;
 import io.github.aglibs.lathe.core.launch.TestSelection;
+import io.github.aglibs.lathe.core.schema.MainLaunchData;
 import io.github.aglibs.lathe.core.schema.RunKind;
+import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.analysis.CallHierarchyItemData;
@@ -39,6 +41,7 @@ import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.lathe.server.module.WorkspaceModuleGraph;
 import io.github.aglibs.lathe.server.module.WorkspaceModuleRegistry;
 import io.github.aglibs.lathe.server.run.CompletenessGate;
+import io.github.aglibs.lathe.server.run.CompletenessResult;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.LaunchSession;
 import io.github.aglibs.lathe.server.run.LaunchTemplateReader;
@@ -248,25 +251,20 @@ final class WorkspaceSession {
    * on the session worker; the launched JVM is tracked by {@code token} so {@link #cancelRun} kills
    * it, and the DAP host is closed when the debuggee exits.
    */
-  DebugStartResult debugStart(
+  DebugStartResult debugTest(
       final String moduleRel, final List<TestSelection> selections, final String token) {
     final List<Path> runnerClasspath = manifest.runnerClasspath();
     if (runnerClasspath.isEmpty()) {
       throw new IllegalStateException("no lathe-test-runner jar recorded — run a build first");
     }
 
-    final List<ModuleSourceConfig> configs = configsFor(moduleRel);
-
     try {
-      final var template = new LaunchTemplateReader(workspaceRoot).read(moduleRel);
-      if (template.isEmpty()) {
-        throw new IllegalStateException("no captured test-launch.json for " + moduleRel);
-      }
-
-      final var gate = CompletenessGate.verify(template.get(), workspaceRoot);
-      if (!gate.complete()) {
-        throw new IllegalStateException("debug launch incomplete: " + gate.reasons());
-      }
+      final TestLaunchData template =
+          new LaunchTemplateReader(workspaceRoot)
+              .read(moduleRel)
+              .orElseThrow(
+                  () -> new IllegalStateException("no captured test-launch.json for " + moduleRel));
+      assertLaunchComplete(CompletenessGate.verify(template, workspaceRoot));
 
       final int jdwpPort = PortUtil.free();
       final Path resultsSink = Files.createTempFile("lathe-results-", ".ndjson");
@@ -274,7 +272,7 @@ final class WorkspaceSession {
           new RunConfigReader(workspaceRoot).read().defaultFor(moduleRel, RunKind.TEST);
       final ResolvedLaunch resolved =
           RunOverlay.applyToTest(
-              template.get(),
+              template,
               workspaceRoot,
               runnerClasspath,
               selections,
@@ -289,31 +287,89 @@ final class WorkspaceSession {
               resultConsumer(token),
               resolved.env(),
               resolved.cwd());
-      activeRuns.put(token, session);
-      session
-          .onExit()
-          .whenComplete((outcome, error) -> worker.execute(() -> endDebugSession(token)));
-
-      // Launcher spawns the JVM and returns before its -agentlib:jdwp socket is listening; wait for
-      // it here so the editor's debug client (which sends attach once, no retry) never races the
-      // agent. suspend=y guarantees the socket opens shortly and then parks before main.
-      if (!PortUtil.awaitAccepting(jdwpPort, JDWP_READY_TIMEOUT_MS)) {
-        throw new IllegalStateException(
-            "jdwp agent did not start listening on port %d within %dms"
-                .formatted(jdwpPort, JDWP_READY_TIMEOUT_MS));
-      }
-
-      final List<Path> sourceRoots =
-          configs.stream().flatMap(c -> c.sourceRoots().stream()).distinct().toList();
-      final var host = DapHost.start(new LatheProviderContext(workspace, sourceRoots));
-      activeDebugHosts.put(token, host);
-      LOG.info(
-          () ->
-              "[debug] %s %s dap=%d jdwp=%d"
-                  .formatted(moduleRel, selectionLabel(selections), host.port(), jdwpPort));
-      return new DebugStartResult(host.port(), jdwpPort);
+      return attachDebugHost(moduleRel, token, session, jdwpPort, selectionLabel(selections));
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
+    }
+  }
+
+  /**
+   * Launches the module's {@code mainClass} suspended under a JDWP agent and opens a DAP host — the
+   * main-class twin of {@link #debugTest}. A main run has no JUnit result stream, so it spawns with
+   * a null sink and a no-op result consumer.
+   */
+  DebugStartResult debugMain(final String moduleRel, final String mainClass, final String token) {
+    try {
+      final MainLaunchData template =
+          new MainLaunchReader(workspaceRoot)
+              .read(moduleRel)
+              .orElseThrow(
+                  () -> new IllegalStateException("no derived main-launch.json for " + moduleRel));
+      assertLaunchComplete(CompletenessGate.verify(template, workspaceRoot));
+
+      final int jdwpPort = PortUtil.free();
+      final RunItem overlay =
+          new RunConfigReader(workspaceRoot).read().defaultFor(moduleRel, RunKind.MAIN);
+      final ResolvedLaunch resolved =
+          RunOverlay.applyToMain(
+              template, workspaceRoot, mainClass, overlay, new JdwpOptions(jdwpPort));
+      final var session =
+          Launcher.launch(
+              resolved.argv(),
+              null,
+              streamConsumer(token),
+              ignored -> {},
+              resolved.env(),
+              resolved.cwd());
+      return attachDebugHost(moduleRel, token, session, jdwpPort, mainClass);
+    } catch (final IOException e) {
+      throw new UncheckedIOException(e);
+    }
+  }
+
+  /**
+   * Shared debug tail: track the launched JVM under {@code token}, wait for its JDWP agent to start
+   * listening, open the DAP host wired to the workspace's source routing, and return the ports. The
+   * host is closed when the debuggee exits.
+   */
+  private DebugStartResult attachDebugHost(
+      final String moduleRel,
+      final String token,
+      final LaunchSession session,
+      final int jdwpPort,
+      final String label)
+      throws IOException {
+    activeRuns.put(token, session);
+    session.onExit().whenComplete((outcome, error) -> worker.execute(() -> endDebugSession(token)));
+
+    // Launcher spawns the JVM and returns before its -agentlib:jdwp socket is listening; wait for
+    // it
+    // here so the editor's debug client (which sends attach once, no retry) never races the agent.
+    // suspend=y guarantees the socket opens shortly and then parks before main.
+    if (!PortUtil.awaitAccepting(jdwpPort, JDWP_READY_TIMEOUT_MS)) {
+      throw new IllegalStateException(
+          "jdwp agent did not start listening on port %d within %dms"
+              .formatted(jdwpPort, JDWP_READY_TIMEOUT_MS));
+    }
+
+    final List<Path> sourceRoots =
+        configsFor(moduleRel).stream().flatMap(c -> c.sourceRoots().stream()).distinct().toList();
+    // The debuggee is a replay Lathe owns, so a client disconnect terminates it (launch semantics)
+    // rather than leaving it running as a plain attach would -- otherwise a long-running debuggee
+    // would be orphaned when the user stops debugging.
+    final var host =
+        DapHost.start(
+            new LatheProviderContext(workspace, sourceRoots),
+            () -> worker.execute(() -> cancelRun(token)));
+    activeDebugHosts.put(token, host);
+    LOG.info(
+        () -> "[debug] %s %s dap=%d jdwp=%d".formatted(moduleRel, label, host.port(), jdwpPort));
+    return new DebugStartResult(host.port(), jdwpPort);
+  }
+
+  private static void assertLaunchComplete(final CompletenessResult gate) {
+    if (!gate.complete()) {
+      throw new IllegalStateException("debug launch incomplete: " + gate.reasons());
     }
   }
 
@@ -538,7 +594,8 @@ final class WorkspaceSession {
       final RunItem overlay =
           new RunConfigReader(workspaceRoot).read().defaultFor(moduleRel, RunKind.MAIN);
       final ResolvedLaunch resolved =
-          RunOverlay.applyToMain(template.get(), workspaceRoot, mainClass, overlay);
+          RunOverlay.applyToMain(
+              template.get(), workspaceRoot, mainClass, overlay, JdwpOptions.NONE);
       final var session =
           Launcher.launch(
               resolved.argv(), null, onLine, ignored -> {}, resolved.env(), resolved.cwd());

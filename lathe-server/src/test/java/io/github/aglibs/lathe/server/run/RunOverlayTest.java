@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.run;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.core.launch.JdwpOptions;
 import io.github.aglibs.lathe.core.schema.LaunchMode;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
 import io.github.aglibs.lathe.core.schema.RunKind;
@@ -43,7 +44,8 @@ final class RunOverlayTest {
             List.of());
 
     final ResolvedLaunch resolved =
-        RunOverlay.applyToMain(classpathTemplate(), WORKSPACE, "com.example.app.Main", item);
+        RunOverlay.applyToMain(
+            classpathTemplate(), WORKSPACE, "com.example.app.Main", item, JdwpOptions.NONE);
 
     assertThat(resolved.env()).containsEntry("APP_ENV", "prod");
     assertThat(resolved.cwd()).isEqualTo(Path.of("/workspace/run-dir"));
@@ -58,7 +60,8 @@ final class RunOverlayTest {
             "app", RunKind.MAIN, null, null, Map.of(), "/abs/dir", List.of("/abs/cp"), List.of());
 
     final ResolvedLaunch resolved =
-        RunOverlay.applyToMain(classpathTemplate(), WORKSPACE, "com.example.app.Main", item);
+        RunOverlay.applyToMain(
+            classpathTemplate(), WORKSPACE, "com.example.app.Main", item, JdwpOptions.NONE);
 
     assertThat(resolved.cwd()).isEqualTo(Path.of("/abs/dir"));
     assertThat(resolved.argv()).anyMatch(arg -> arg.contains("/abs/cp"));
@@ -71,7 +74,8 @@ final class RunOverlayTest {
             classpathTemplate(),
             WORKSPACE,
             "com.example.app.Main",
-            RunItem.empty("app", RunKind.MAIN));
+            RunItem.empty("app", RunKind.MAIN),
+            JdwpOptions.NONE);
 
     assertThat(resolved.cwd()).isNull();
     assertThat(resolved.env()).isEmpty();

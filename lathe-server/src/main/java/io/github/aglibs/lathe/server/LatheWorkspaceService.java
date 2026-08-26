@@ -24,7 +24,8 @@ final class LatheWorkspaceService implements WorkspaceService {
   static final String CANCEL_TEST_COMMAND = "lathe.run.cancel";
   static final String LIST_RUNNABLES_COMMAND = "lathe.runnables.list";
   static final String RESOURCE_REFRESH_COMMAND = "lathe.resource.refresh";
-  static final String DEBUG_START_COMMAND = "lathe.debug.start";
+  static final String DEBUG_TEST_COMMAND = "lathe.debug.test";
+  static final String DEBUG_MAIN_COMMAND = "lathe.debug.main";
 
   private final LatheTextDocumentService textDocumentService;
 
@@ -58,15 +59,23 @@ final class LatheWorkspaceService implements WorkspaceService {
       case CANCEL_TEST_COMMAND -> cancelTest(params);
       case LIST_RUNNABLES_COMMAND -> listRunnables(params);
       case RESOURCE_REFRESH_COMMAND -> refreshResource(params);
-      case DEBUG_START_COMMAND -> debugStart(params);
+      case DEBUG_TEST_COMMAND -> debugTest(params);
+      case DEBUG_MAIN_COMMAND -> debugMain(params);
       default -> CompletableFuture.completedFuture(null);
     };
   }
 
-  private CompletableFuture<Object> debugStart(final ExecuteCommandParams params) {
+  private CompletableFuture<Object> debugTest(final ExecuteCommandParams params) {
     final var argument = parseRunTestArgument(params.getArguments().getFirst());
     return textDocumentService
-        .debugStartFuture(argument.moduleRel(), argument.selections(), argument.token())
+        .debugTestFuture(argument.moduleRel(), argument.selections(), argument.token())
+        .thenApply(result -> result);
+  }
+
+  private CompletableFuture<Object> debugMain(final ExecuteCommandParams params) {
+    final var argument = parseRunMainArgument(params.getArguments().getFirst());
+    return textDocumentService
+        .debugMainFuture(argument.moduleRel(), argument.mainClass(), argument.token())
         .thenApply(result -> result);
   }
 

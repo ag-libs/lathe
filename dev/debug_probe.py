@@ -2,7 +2,7 @@
 """End-to-end debug probe for Lathe -- the automatable Phase 1 GO/NO-GO.
 
 Drives the whole debug flow with no editor and no human: it asks the live Lathe server to
-`lathe.debug.start` a captured test (launching it suspended under a JDWP agent and opening an
+`lathe.debug.test` a captured test (launching it suspended under a JDWP agent and opening an
 in-process DAP host), then speaks raw DAP to that host exactly as nvim-dap would --
 initialize -> attach -> setBreakpoints -> configurationDone -> stopped -> stackTrace/scopes/
 variables -> continue -> terminated. It asserts the breakpoint stops on the expected line and
@@ -10,7 +10,7 @@ prints the inspected frame, then exits 0 (green) or 1 (red).
 
 Only the Microsoft java-debug adapter speaks DAP/JDWP; this probe is a thin client. It reuses
 `lsp.LatheClient` to open the file (so the module worker attributes it -- the source-lookup
-provider reads that cache) and to issue `lathe.debug.start`.
+provider reads that cache) and to issue `lathe.debug.test`.
 
 Usage:
     python3 dev/debug_probe.py --workspace <root> <TestFile.java> --line <N> [--method <name>]
@@ -131,7 +131,8 @@ class DapClient:
 
 # ── probe choreography ───────────────────────────────────────────────────────
 
-TEST_METHOD_KIND = 1  # RunnableKind ordinal
+MAIN_KIND = 0  # RunnableKind ordinals
+TEST_METHOD_KIND = 1
 
 
 def select_target(client: LatheClient, file: Path, method: str | None) -> dict:
@@ -148,23 +149,38 @@ def select_target(client: LatheClient, file: Path, method: str | None) -> dict:
     return {"moduleRel": picked["moduleRel"], "selectorValue": picked["id"]}
 
 
-def run_probe(workspace: Path, file: Path, line: int, method: str | None) -> int:
+def resolve_main_module(client: LatheClient, file: Path, main_class: str) -> str:
+    """The moduleRel of the MAIN runnable whose class is `main_class`, from the file's discovery."""
+    for target in client.runnables(file):
+        if target.get("kind") == MAIN_KIND and target.get("parentId") == main_class:
+            return target["moduleRel"]
+    raise SystemExit(f"[probe] no main class '{main_class}' discovered in {file}")
+
+
+def run_probe(workspace: Path, file: Path, line: int, method: str | None,
+              main_class: str | None, detach: bool = False) -> int:
     with LatheClient.start(workspace) as lathe:
         lathe.open(file)  # attribute the file in the module worker (source lookup reads that cache)
-        sel = select_target(lathe, file, method)
-        print(f"[probe] debugging {sel['selectorValue']} (module {sel['moduleRel']}), "
-              f"breakpoint {file.name}:{line}")
+        if main_class:
+            module_rel = resolve_main_module(lathe, file, main_class)
+            print(f"[probe] debugging main {main_class} (module {module_rel}), "
+                  f"breakpoint {file.name}:{line}")
+            result = lathe.debug_main(module_rel, main_class)
+        else:
+            sel = select_target(lathe, file, method)
+            print(f"[probe] debugging {sel['selectorValue']} (module {sel['moduleRel']}), "
+                  f"breakpoint {file.name}:{line}")
+            result = lathe.debug_test(sel["moduleRel"], [{
+                "selectorKind": "METHOD",
+                "selectorValue": sel["selectorValue"],
+            }])
 
-        result = lathe.debug_start(sel["moduleRel"], [{
-            "selectorKind": "METHOD",
-            "selectorValue": sel["selectorValue"],
-        }])
         dap_port, jdwp_port = result["dapPort"], result["jdwpPort"]
         print(f"[probe] dapPort={dap_port} jdwpPort={jdwp_port}")
 
         dap = DapClient("127.0.0.1", dap_port)
         try:
-            rc = _drive(dap, file, line, jdwp_port)
+            rc = (_drive_detach if detach else _drive)(dap, file, line, jdwp_port)
         except BaseException:
             _dump_server_log(lathe)
             raise
@@ -229,6 +245,42 @@ def _drive(dap: DapClient, file: Path, line: int, jdwp_port: int) -> int:
     return 0
 
 
+def _drive_detach(dap: DapClient, file: Path, line: int, jdwp_port: int) -> int:
+    """Stop at the breakpoint, then disconnect (as nvim-dap does when you stop debugging) and verify
+    the debuggee is torn down -- its JDWP socket closes -- rather than left as an orphaned JVM."""
+    dap.request("initialize", {"adapterID": "lathe", "clientID": "lathe-probe",
+                               "linesStartAt1": True, "columnsStartAt1": True, "pathFormat": "path"})
+    _attach_with_retry(dap, jdwp_port)
+    dap.wait_event("initialized")
+    dap.request("setBreakpoints", {"source": {"path": str(file)}, "breakpoints": [{"line": line}]})
+    dap.request("configurationDone")
+    dap.wait_event("stopped")
+    print("[probe] stopped at breakpoint; sending disconnect(terminateDebuggee=true)")
+
+    dap.request("disconnect", {"terminateDebuggee": True})
+    if _await_port_closed(jdwp_port, timeout=10.0):
+        print("[probe] PASS: debuggee torn down on disconnect (jdwp port closed, no orphan)")
+        return 0
+
+    print("[probe] FAIL: debuggee still alive after disconnect (jdwp port open -- orphaned JVM)")
+    return 1
+
+
+def _await_port_closed(port: int, timeout: float) -> bool:
+    """True once a connection to the loopback `port` is refused (the debuggee JVM has exited)."""
+    remaining = timeout
+    step = 0.25
+    while remaining > 0:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+                pass
+        except OSError:
+            return True
+        time.sleep(step)
+        remaining -= step
+    return False
+
+
 def _attach_with_retry(dap: DapClient, jdwp_port: int, attempts: int = 40, delay: float = 0.5):
     """Attach, retrying while the debuggee's JDWP agent is still coming up. Launcher spawns the JVM
     and returns before the -agentlib:jdwp socket is listening, so the first attach can race the
@@ -257,14 +309,18 @@ def _dump_variables(dap: DapClient, frame_id: int):
 def main() -> int:
     parser = argparse.ArgumentParser(description="Lathe debug e2e probe")
     parser.add_argument("--workspace", required=True, type=Path, help="Lathe workspace root")
-    parser.add_argument("file", type=Path, help="test source file to breakpoint")
+    parser.add_argument("file", type=Path, help="source file to breakpoint")
     parser.add_argument("--line", required=True, type=int, help="1-based breakpoint line")
     parser.add_argument("--method", help="substring of the test method id to debug")
+    parser.add_argument("--main", dest="main_class",
+                        help="fully-qualified main class to debug (instead of a test)")
+    parser.add_argument("--detach", action="store_true",
+                        help="stop at the breakpoint, then disconnect and verify no orphaned JVM")
     args = parser.parse_args()
 
     workspace = args.workspace.resolve()
     file = args.file.resolve()
-    return run_probe(workspace, file, args.line, args.method)
+    return run_probe(workspace, file, args.line, args.method, args.main_class, args.detach)
 
 
 if __name__ == "__main__":

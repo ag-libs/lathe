@@ -14,6 +14,10 @@ import java.util.logging.Logger;
  * and, when the editor's debug client connects, bridges that connection to the given provider
  * context on a session thread — no separate adapter process. A debug session passes a context wired
  * to the launched module (source lookup + VM manager); the handshake path passes a bare context.
+ *
+ * <p>When the client disconnects, {@code onSessionEnd} runs. The debuggee is a replay Lathe owns
+ * (launch semantics), so the session context terminates it there rather than leaving it running as
+ * an attach client normally would.
  */
 public final class DapHost {
 
@@ -21,15 +25,21 @@ public final class DapHost {
 
   private final ServerSocket serverSocket;
   private final IProviderContext context;
+  private final Runnable onSessionEnd;
 
-  private DapHost(final ServerSocket serverSocket, final IProviderContext context) {
+  private DapHost(
+      final ServerSocket serverSocket,
+      final IProviderContext context,
+      final Runnable onSessionEnd) {
     this.serverSocket = serverSocket;
     this.context = context;
+    this.onSessionEnd = onSessionEnd;
   }
 
-  public static DapHost start(final IProviderContext context) throws IOException {
+  public static DapHost start(final IProviderContext context, final Runnable onSessionEnd)
+      throws IOException {
     final var serverSocket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress());
-    final var host = new DapHost(serverSocket, context);
+    final var host = new DapHost(serverSocket, context, onSessionEnd);
     final int port = host.port();
     final var thread = new Thread(host::serve, "lathe-dap-%d".formatted(port));
     thread.setDaemon(true);
@@ -53,6 +63,8 @@ public final class DapHost {
       protocolServer.run();
     } catch (final IOException e) {
       LOG.log(Level.FINE, e, () -> "[debug] dap session ended");
+    } finally {
+      onSessionEnd.run();
     }
   }
 }

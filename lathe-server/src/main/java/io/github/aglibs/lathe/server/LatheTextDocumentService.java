@@ -348,9 +348,14 @@ final class LatheTextDocumentService implements TextDocumentService {
         .thenCompose(f -> f);
   }
 
-  CompletableFuture<DebugStartResult> debugStartFuture(
+  CompletableFuture<DebugStartResult> debugTestFuture(
       final String moduleRel, final List<TestSelection> selections, final String token) {
-    return worker.submit(() -> session.debugStart(moduleRel, selections, token));
+    return worker.submit(() -> session.debugTest(moduleRel, selections, token));
+  }
+
+  CompletableFuture<DebugStartResult> debugMainFuture(
+      final String moduleRel, final String mainClass, final String token) {
+    return worker.submit(() -> session.debugMain(moduleRel, mainClass, token));
   }
 
   CompletableFuture<List<RunTarget>> runnablesFuture(final String uri) {

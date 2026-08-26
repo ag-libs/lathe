@@ -145,9 +145,10 @@ function M.setup(opts)
     run.stop()
   end, { desc = 'Lathe: stop the active main run' })
 
-  -- Debug surface: :LatheDebug attaches nvim-dap to the test under the cursor, replayed under a
-  -- suspended JDWP agent (server-side lathe.debug.start). Optional -- the command is only wired
-  -- when nvim-dap is present, so a runtime without it loads unaffected.
+  -- Debug surface: :LatheDebug attaches nvim-dap to the test or main class under the cursor,
+  -- replayed under a suspended JDWP agent (server-side lathe.debug.test / lathe.debug.main).
+  -- Optional -- the command is only wired when nvim-dap is present, so a runtime without it loads
+  -- unaffected.
   if require('lathe.dap').setup() then
     vim.api.nvim_create_user_command('LatheDebug', function()
       require('lathe.dap').debug(vim.api.nvim_get_current_buf())

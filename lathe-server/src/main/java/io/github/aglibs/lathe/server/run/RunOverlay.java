@@ -23,9 +23,11 @@ public final class RunOverlay {
       final MainLaunchData template,
       final Path workspaceRoot,
       final String mainClass,
-      final RunItem item) {
+      final RunItem item,
+      final JdwpOptions jdwp) {
     final List<String> argv =
-        LaunchPlan.forMain(template, workspaceRoot, mainClass, launchOverlay(item, workspaceRoot));
+        LaunchPlan.forMain(
+            template, workspaceRoot, mainClass, launchOverlay(item, workspaceRoot), jdwp);
     return new ResolvedLaunch(argv, item.env(), resolveCwd(item, workspaceRoot));
   }
 

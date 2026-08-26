@@ -550,16 +550,29 @@ class LatheClient:
             "selectorValue": selector_value,
         }])
 
-    def debug_start(self, module_rel: str, selections: list[dict],
-                    token: str = "probe", timeout: int = 60) -> dict:
-        """Trigger lathe.debug.start. Launches the selected test suspended under a JDWP agent and
+    def debug_test(self, module_rel: str, selections: list[dict],
+                   token: str = "probe", timeout: int = 60) -> dict:
+        """Trigger lathe.debug.test. Launches the selected test suspended under a JDWP agent and
         opens an in-process DAP host, returning a DebugStartResult dict ({dapPort, jdwpPort}).
         Returns as soon as the host is listening -- it does not block until the debuggee exits."""
         return self.request("workspace/executeCommand", {
-            "command": "lathe.debug.start",
+            "command": "lathe.debug.test",
             "arguments": [{
                 "moduleRel": module_rel,
                 "selections": selections,
+                "token": token,
+            }],
+        }, timeout=timeout)
+
+    def debug_main(self, module_rel: str, main_class: str,
+                   token: str = "probe", timeout: int = 60) -> dict:
+        """Trigger lathe.debug.main. Launches the module's main class suspended under a JDWP agent
+        and opens an in-process DAP host, returning a DebugStartResult dict ({dapPort, jdwpPort})."""
+        return self.request("workspace/executeCommand", {
+            "command": "lathe.debug.main",
+            "arguments": [{
+                "moduleRel": module_rel,
+                "mainClass": main_class,
                 "token": token,
             }],
         }, timeout=timeout)

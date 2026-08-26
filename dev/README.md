@@ -44,7 +44,7 @@ is `dev/neotest-e2e/driver.lua`; it reuses `spec_helper.lua` from the plugin's N
 
 Drives the whole debug flow with no editor and no human — the automatable Phase 1 GO/NO-GO for
 [debug support](../docs/planned/lathe-debug-support.md). It asks the live server to
-`lathe.debug.start` a captured test (launched suspended under a JDWP agent, with an in-process DAP
+`lathe.debug.test` a captured test (launched suspended under a JDWP agent, with an in-process DAP
 host), then `debug_probe.py` speaks raw DAP to that host exactly as nvim-dap would —
 `initialize → attach → setBreakpoints → configurationDone → stopped → stackTrace/scopes/variables →
 continue → terminated` — and asserts the breakpoint stops on the expected line, inspects the frame,

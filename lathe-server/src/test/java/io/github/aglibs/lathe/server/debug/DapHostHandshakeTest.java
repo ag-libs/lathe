@@ -29,9 +29,9 @@ final class DapHostHandshakeTest {
   @Test
   @Timeout(10)
   void initialize_overDapSocket_returnsCapabilities() throws IOException {
-    final DapHost host = DapHost.start(new LatheProviderContext());
+    final DapHost host = DapHost.start(new LatheProviderContext(), () -> {});
     try (final Socket client = new Socket(InetAddress.getLoopbackAddress(), host.port())) {
-      writeMessage(client.getOutputStream(), INITIALIZE_REQUEST);
+      writeMessage(client.getOutputStream());
 
       final String response = readMessage(client.getInputStream());
 
@@ -44,8 +44,8 @@ final class DapHostHandshakeTest {
     }
   }
 
-  private static void writeMessage(final OutputStream out, final String json) throws IOException {
-    final byte[] body = json.getBytes(StandardCharsets.UTF_8);
+  private static void writeMessage(final OutputStream out) throws IOException {
+    final byte[] body = DapHostHandshakeTest.INITIALIZE_REQUEST.getBytes(StandardCharsets.UTF_8);
     out.write(
         "%s%d\r\n\r\n".formatted(CONTENT_LENGTH, body.length).getBytes(StandardCharsets.UTF_8));
     out.write(body);

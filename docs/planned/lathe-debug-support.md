@@ -228,17 +228,19 @@ in-process hosting.
 
 Sibling of the existing run commands (`lathe.run.test`, `lathe.run.cancel`, `lathe.runnables.list`).
 
-- **`lathe.debug.start`** — args `{ uri | selector, moduleRel }`; returns `{ dapPort, jdwpPort }`.
-  Reads the template, gates completeness, allocates ports, launches the suspended JVM, opens the
+- **`lathe.debug.test`** — args `{ moduleRel, selections, token }`; returns `{ dapPort, jdwpPort }`.
+  Reads the test template, gates completeness, allocates ports, launches the suspended JVM, opens the
   DAP socket, and readies the in-process `ProtocolServer`.
+- **`lathe.debug.main`** — args `{ moduleRel, mainClass, token }`; the main-class twin, reading
+  `main-launch.json` instead. Siblings of `lathe.run.test` / `lathe.run.main`.
 - **Cancellation / lifecycle** — reuse the existing session mechanism (`lathe.run.cancel` +
   `LaunchSession`), extended to also detach the adapter and close the DAP socket. A dedicated
   `lathe.debug.cancel` is added only if the reuse proves awkward.
 - **Session events** — reuse the run event channel for transcript/results; DAP stop/continue/variables
   flow over the DAP socket directly, not over LSP.
 
-The main-class variant (`lathe.debug.start` with a `main` selector) is unlocked in Phase 3 once
-`main-launch.json` exists (slice 12.7).
+The main-class variant (`lathe.debug.main`) is implemented in Phase 3, reading the derived
+`main-launch.json` (slice 12.7).
 
 ---
 
