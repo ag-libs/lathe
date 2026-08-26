@@ -4,7 +4,9 @@ import com.sun.jdi.ArrayReference;
 import com.sun.jdi.BooleanValue;
 import com.sun.jdi.ByteValue;
 import com.sun.jdi.CharValue;
+import com.sun.jdi.ClassLoaderReference;
 import com.sun.jdi.ClassNotLoadedException;
+import com.sun.jdi.ClassObjectReference;
 import com.sun.jdi.ClassType;
 import com.sun.jdi.DoubleValue;
 import com.sun.jdi.Field;
@@ -41,8 +43,10 @@ import com.sun.source.tree.TypeCastTree;
 import com.sun.source.tree.UnaryTree;
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.server.analysis.AttributedExpression;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+import java.util.logging.Logger;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
@@ -54,11 +58,14 @@ import javax.lang.model.type.TypeMirror;
  * fields, array elements) run entirely against JDI mirrors; operators compute host-side using
  * javac's already-decided types, and {@code instanceof} against the live runtime type. Reads run no
  * debuggee code; method and constructor invocation and {@code String} concatenation (v2) do, on the
- * suspended thread under the provider's per-thread invocation lock. Assignment and lambdas are not
- * supported and raise {@link EvaluationException}.
+ * suspended thread under the provider's per-thread invocation lock. Referencing a static member of
+ * a class the debuggee has not loaded yet force-loads and initialises it (running its static
+ * initialiser), matching what the debuggee would see if it referenced the class itself. Assignment
+ * and lambdas are not supported and raise {@link EvaluationException}.
  */
 final class JdiInterpreter {
 
+  private static final Logger LOG = Logger.getLogger(JdiInterpreter.class.getName());
   private static final int SINGLE_THREADED = ObjectReference.INVOKE_SINGLE_THREADED;
 
   private final AttributedExpression attr;
@@ -68,6 +75,10 @@ final class JdiInterpreter {
   // Captured up front: a JDI invocation resumes the thread and invalidates the StackFrame, so
   // frame.thread() would fail on a chained call -- the ThreadReference itself stays valid.
   private final ThreadReference thread;
+  // The stopped code's loader, captured up front for the same reason: it is the loader used to
+  // force-load a cold class (null means bootstrap), and forcing it must give the type the same
+  // visibility the frame has.
+  private final ClassLoaderReference frameLoader;
 
   JdiInterpreter(
       final AttributedExpression attr, final StackFrame frame, final GuardedInvoker invoker) {
@@ -76,6 +87,7 @@ final class JdiInterpreter {
     this.vm = frame.virtualMachine();
     this.invoker = invoker;
     this.thread = frame.thread();
+    this.frameLoader = frame.location().declaringType().classLoader();
   }
 
   /**
@@ -490,11 +502,41 @@ final class JdiInterpreter {
 
   private ReferenceType resolveType(final String binaryName) {
     final List<ReferenceType> classes = vm.classesByName(binaryName);
-    if (classes.isEmpty()) {
-      throw new EvaluationException("class not loaded: " + binaryName);
+    if (!classes.isEmpty()) {
+      return classes.getFirst();
     }
 
-    return classes.getFirst();
+    return forceLoad(binaryName);
+  }
+
+  /**
+   * Loads a class the debuggee has not touched yet by invoking {@code Class.forName(name, true,
+   * loader)} on the suspended thread -- the only way JDI can trigger a load. Initialising ({@code
+   * true}) runs the class's static initialiser, matching the JVM semantics the debuggee would see
+   * if it referenced the class itself; a static-field read needs it. Uses the stopped frame's
+   * loader so the cold class resolves with the same visibility.
+   */
+  private ReferenceType forceLoad(final String binaryName) {
+    final ClassType classClass = (ClassType) resolveType("java.lang.Class");
+    final Method forName =
+        classClass
+            .methodsByName(
+                "forName", "(Ljava/lang/String;ZLjava/lang/ClassLoader;)Ljava/lang/Class;")
+            .stream()
+            .findFirst()
+            .orElseThrow(() -> new EvaluationException("Class.forName is unavailable"));
+    // Arrays.asList, not List.of: frameLoader is null for the bootstrap loader, which JDI accepts.
+    final List<Value> arguments =
+        Arrays.asList(vm.mirrorOf(binaryName), vm.mirrorOf(true), frameLoader);
+    final Value loaded =
+        invoker.invoke(
+            () -> classClass.invokeMethod(thread(), forName, arguments, SINGLE_THREADED));
+    if (loaded instanceof final ClassObjectReference reflected) {
+      LOG.fine(() -> "[eval] force-loaded %s".formatted(binaryName));
+      return reflected.reflectedType();
+    }
+
+    throw new EvaluationException("class not loaded: " + binaryName);
   }
 
   private Value mirrorNumeric(final TypeKind kind, final double floating, final long integral) {

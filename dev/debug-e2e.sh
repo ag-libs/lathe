@@ -86,6 +86,9 @@ if [ "$workspace" = "$fixture" ] && [ "$file" = "$default_file" ]; then
   echo "[debug-e2e] evaluating expressions at $default_main_file:$default_main_line"
   python3 "${eval_common[@]}" --eval "args.length" --expect "0"
   python3 "${eval_common[@]}" --eval "1 + 2" --expect "3"
+  # A class the debuggee has not touched yet: referencing it force-loads (and initialises) it in the
+  # debuggee rather than failing "class not loaded". java.time.Month is cold at main and locale-free.
+  python3 "${eval_common[@]}" --eval "java.time.Month.of(3).getValue()" --expect "3"
   echo "[debug-e2e] conditional breakpoints"
   python3 "${eval_common[@]}" --condition "args.length == 0"
   python3 "${eval_common[@]}" --condition "args.length == 99" --expect-nostop
