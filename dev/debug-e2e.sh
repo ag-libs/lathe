@@ -71,7 +71,8 @@ python3 "$here/debug_probe.py" \
   --line "$line" \
   --method "$method"
 
-# On the default fixture, also exercise main-class debug (Part A). set -e aborts if either fails.
+# On the default fixture, also exercise main-class debug (Part A) and read-only expression
+# evaluation (eval v1). set -e aborts the harness if any probe fails.
 if [ "$workspace" = "$fixture" ] && [ "$file" = "$default_file" ]; then
   echo "[debug-e2e] probing main $default_main_file:$default_main_line ($default_main_class)"
   python3 "$here/debug_probe.py" \
@@ -79,4 +80,13 @@ if [ "$workspace" = "$fixture" ] && [ "$file" = "$default_file" ]; then
     "$default_main_file" \
     --line "$default_main_line" \
     --main "$default_main_class"
+
+  eval_common=("$here/debug_probe.py" --workspace "$workspace" "$default_main_file"
+    --line "$default_main_line" --main "$default_main_class")
+  echo "[debug-e2e] evaluating expressions at $default_main_file:$default_main_line"
+  python3 "${eval_common[@]}" --eval "args.length" --expect "0"
+  python3 "${eval_common[@]}" --eval "1 + 2" --expect "3"
+  echo "[debug-e2e] conditional breakpoints"
+  python3 "${eval_common[@]}" --condition "args.length == 0"
+  python3 "${eval_common[@]}" --condition "args.length == 99" --expect-nostop
 fi

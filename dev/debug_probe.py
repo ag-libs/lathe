@@ -158,7 +158,9 @@ def resolve_main_module(client: LatheClient, file: Path, main_class: str) -> str
 
 
 def run_probe(workspace: Path, file: Path, line: int, method: str | None,
-              main_class: str | None, detach: bool = False) -> int:
+              main_class: str | None, detach: bool = False,
+              eval_expr: str | None = None, expect: str | None = None,
+              condition: str | None = None, expect_stop: bool = True) -> int:
     with LatheClient.start(workspace) as lathe:
         lathe.open(file)  # attribute the file in the module worker (source lookup reads that cache)
         if main_class:
@@ -180,7 +182,14 @@ def run_probe(workspace: Path, file: Path, line: int, method: str | None,
 
         dap = DapClient("127.0.0.1", dap_port)
         try:
-            rc = (_drive_detach if detach else _drive)(dap, file, line, jdwp_port)
+            if condition is not None:
+                rc = _drive_condition(dap, file, line, jdwp_port, condition, expect_stop)
+            elif eval_expr is not None:
+                rc = _drive_eval(dap, file, line, jdwp_port, eval_expr, expect)
+            elif detach:
+                rc = _drive_detach(dap, file, line, jdwp_port)
+            else:
+                rc = _drive(dap, file, line, jdwp_port)
         except BaseException:
             _dump_server_log(lathe)
             raise
@@ -239,6 +248,61 @@ def _drive(dap: DapClient, file: Path, line: int, jdwp_port: int) -> int:
 
     if reason != "breakpoint" or stop_line != line:
         print(f"[probe] FAIL: expected a breakpoint stop at line {line}, got {reason} @ {stop_line}")
+        return 1
+
+    print("[probe] PASS")
+    return 0
+
+
+def _drive_eval(
+    dap: DapClient, file: Path, line: int, jdwp_port: int, expr: str, expect: str | None) -> int:
+    """Stop at the breakpoint, then send a DAP `evaluate` for `expr` against the top frame (as a
+    watch/hover does) and check the rendered result -- the read-only expression-evaluation GO/NO-GO."""
+    dap.request("initialize", {"adapterID": "lathe", "clientID": "lathe-probe",
+                               "linesStartAt1": True, "columnsStartAt1": True, "pathFormat": "path"})
+    _attach_with_retry(dap, jdwp_port)
+    dap.wait_event("initialized")
+    dap.request("setBreakpoints", {"source": {"path": str(file)}, "breakpoints": [{"line": line}]})
+    dap.request("configurationDone")
+
+    stopped = dap.wait_event("stopped")
+    thread_id = stopped["body"]["threadId"]
+    frame_id = dap.request("stackTrace", {"threadId": thread_id})["body"]["stackFrames"][0]["id"]
+
+    result = dap.request(
+        "evaluate", {"expression": expr, "frameId": frame_id, "context": "watch"})["body"]["result"]
+    print(f"[probe] evaluate({expr!r}) = {result}")
+
+    dap.request("continue", {"threadId": thread_id})
+    if expect is not None and expect != result:
+        print(f"[probe] FAIL: expected {expect!r}, got {result!r}")
+        return 1
+
+    print("[probe] PASS")
+    return 0
+
+
+def _drive_condition(
+    dap: DapClient, file: Path, line: int, jdwp_port: int, condition: str, expect_stop: bool) -> int:
+    """Set a conditional breakpoint and verify it suspends only when the condition holds -- exercises
+    evaluateForBreakpoint (the adapter evaluates the condition on each hit and inverts the result)."""
+    dap.request("initialize", {"adapterID": "lathe", "clientID": "lathe-probe",
+                               "linesStartAt1": True, "columnsStartAt1": True, "pathFormat": "path"})
+    _attach_with_retry(dap, jdwp_port)
+    dap.wait_event("initialized")
+    dap.request("setBreakpoints",
+                {"source": {"path": str(file)}, "breakpoints": [{"line": line, "condition": condition}]})
+    dap.request("configurationDone")
+
+    try:
+        event = dap.wait_event("stopped")
+        stopped = True
+        dap.request("continue", {"threadId": event["body"]["threadId"]})
+    except RuntimeError:
+        stopped = False  # debuggee ran to termination without the condition ever holding
+
+    print(f"[probe] condition {condition!r}: stopped={stopped} (expected {expect_stop})")
+    if stopped != expect_stop:
         return 1
 
     print("[probe] PASS")
@@ -316,11 +380,18 @@ def main() -> int:
                         help="fully-qualified main class to debug (instead of a test)")
     parser.add_argument("--detach", action="store_true",
                         help="stop at the breakpoint, then disconnect and verify no orphaned JVM")
+    parser.add_argument("--eval", dest="eval_expr",
+                        help="evaluate this expression at the breakpoint (via DAP evaluate)")
+    parser.add_argument("--expect", help="assert the evaluated result equals this string")
+    parser.add_argument("--condition", help="set a conditional breakpoint with this expression")
+    parser.add_argument("--expect-nostop", dest="expect_nostop", action="store_true",
+                        help="with --condition, expect the breakpoint NOT to suspend")
     args = parser.parse_args()
 
     workspace = args.workspace.resolve()
     file = args.file.resolve()
-    return run_probe(workspace, file, args.line, args.method, args.main_class, args.detach)
+    return run_probe(workspace, file, args.line, args.method, args.main_class, args.detach,
+                     args.eval_expr, args.expect, args.condition, not args.expect_nostop)
 
 
 if __name__ == "__main__":

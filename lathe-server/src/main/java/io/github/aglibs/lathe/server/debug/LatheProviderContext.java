@@ -14,26 +14,32 @@ import java.util.List;
  * The seam between Lathe and Microsoft java-debug: it supplies Lathe's implementations of the
  * adapter's provider interfaces. Every context registers the virtual-machine-manager provider (for
  * JDI attach), the no-op hot-code-replace provider the adapter's {@code initialize} subscribes to,
- * and the no-op evaluation and completions providers its {@code attach} handler requires;
- * stack-frame management uses java-debug's own default. A session context additionally registers
- * the {@link LatheSourceLookUpProvider} bound to the workspace's URI→worker routing (so each
- * breakpoint resolves against its owning module's worker) and the launched module's source roots;
- * the no-arg context (no source lookup) is used only for the handshake path.
+ * and the no-op completions provider its {@code attach} handler requires; stack-frame management
+ * uses java-debug's own default. A session context additionally registers the {@link
+ * LatheSourceLookUpProvider} and the real {@link LatheEvaluationProvider}, both bound to the
+ * workspace's URI→worker routing and the launched module's source roots; the no-arg handshake
+ * context registers only a {@link NoEvaluationProvider} and no source lookup.
  */
 public final class LatheProviderContext extends ProviderContext {
 
   public LatheProviderContext() {
-    registerProvider(IHotCodeReplaceProvider.class, new LatheHotCodeReplaceProvider());
-    registerProvider(IEvaluationProvider.class, new LatheEvaluationProvider());
-    registerProvider(ICompletionsProvider.class, new LatheCompletionsProvider());
-    registerProvider(
-        IVirtualMachineManagerProvider.class, new LatheVirtualMachineManagerProvider());
+    registerCommon();
+    registerProvider(IEvaluationProvider.class, new NoEvaluationProvider());
   }
 
   public LatheProviderContext(
       final WorkspaceModuleRegistry workspace, final List<Path> sourceRoots) {
-    this();
+    registerCommon();
+    registerProvider(
+        IEvaluationProvider.class, new LatheEvaluationProvider(workspace, sourceRoots));
     registerProvider(
         ISourceLookUpProvider.class, new LatheSourceLookUpProvider(workspace, sourceRoots));
+  }
+
+  private void registerCommon() {
+    registerProvider(IHotCodeReplaceProvider.class, new LatheHotCodeReplaceProvider());
+    registerProvider(ICompletionsProvider.class, new LatheCompletionsProvider());
+    registerProvider(
+        IVirtualMachineManagerProvider.class, new LatheVirtualMachineManagerProvider());
   }
 }
