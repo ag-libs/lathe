@@ -1176,6 +1176,46 @@ Each deferred item should be its own later commit or small series:
 - Neovim run config command line (`:LatheRun {name}` with server-provided completion; no picker):
   `feat: add neovim run config commands`
 
+### 12.11 Shipped debug surface — DAP adapter and expression evaluation
+
+The narrow §12.9 launch-mode slice grew, by explicit design updates, into a full attach debugger for
+the Neovim workflow. What shipped, beyond §12.9's launch-mode change:
+
+**In-process DAP host.**
+The server hosts the Microsoft `com.microsoft.java.debug.core` adapter in-process (attach-only, no
+jdtls) and attaches it over JDWP to the suspended replay JVM.
+`lathe.debug.test` and `lathe.debug.main` launch a captured test or `main` class suspended under a
+JDWP agent, wait for the agent to accept, open the host, and return `{dapPort, jdwpPort}`.
+A client disconnect terminates the replay (launch semantics), not a bare detach.
+The Neovim client speaks DAP to that host (`nvim-dap`, `:LatheDebug`); `dev/debug_probe.py` and
+`dev/debug-e2e.sh` drive the same flow headless as the automatable GO/NO-GO.
+
+**Expression evaluation** (watches, hover, console, conditional breakpoints — a real
+`IEvaluationProvider`, not the adapter's default).
+A two-stage engine: Stage 1 splices `var __LATHE_EVAL__ = (EXPR);` into the frame and lets javac
+attribute it (no ad-hoc Java parsing); Stage 2 interprets the attributed tree over the suspended JDI
+frame, bridging each resolved symbol to JDI by binary name + erased JVM descriptor. Shipped:
+
+- **Reads** (no debuggee code): literals, locals/parameters, `this`/`super`, instance/static fields,
+  array access and `length`, casts, `instanceof` against the live runtime type, and the full operator
+  set (arithmetic, relational, logical, bitwise, width-correct shifts, ternary), with boxed-primitive
+  auto-unboxing.
+- **Invocation** (runs debuggee code on the suspended thread, serialized per-thread): instance and
+  static method calls, constructors, chained calls, and `String` concatenation (operands rendered as
+  `+` would, objects via a `toString` invocation).
+- **Cold classes**: referencing a static member of a not-yet-loaded class force-loads and initialises
+  it via `Class.forName(name, true, loader)` on the frame's loader, rather than failing
+  "class not loaded".
+
+**Remaining eval gaps** (deferred, not blockers):
+
+- **Assignment / `setVariable` (v3)** — write support; mutates debuggee state, its own later design.
+- **Array creation** — `new int[]{…}` / `new T[n]` (`NEW_ARRAY`) is unsupported; reads of existing
+  arrays work.
+- **Object-scoped `evaluate`** — the `(expression, ObjectReference, thread)` overload is unsupported.
+
+**Commit prefixes:** `feat(debug): …` (attach orchestration, evaluation slices, force-load).
+
 ---
 
 ## 13. Test fixtures (invoker `multi-module`)

@@ -192,10 +192,16 @@ feature milestone.
 
 Capture-replay **test execution** has shipped for Neovim — capture rides the `mvn test` fork, replay
 runs a fresh JVM against `.lathe/` bytecode (no recompilation) with streamed output/test events,
-cancellation, and the neotest adapter (discovery, run at every level, inline diagnostics). What
-remains post-M3 is the **debugger**: launch the replay JVM suspended and attach JDWP, plus named run
-configs and arg/env/cwd overlay.
-See [lathe-run-test-debug.md](planned/lathe-run-test-debug.md) and the shipped scope in
+cancellation, and the neotest adapter (discovery, run at every level, inline diagnostics).
+
+The **debugger** has since shipped for Neovim too: the server hosts the Microsoft java-debug DAP
+adapter in-process (attach-only) and attaches it over JDWP to a suspended replay of a test or `main`
+class, driven by an `nvim-dap` client (`:LatheDebug`). Breakpoints, stepping, inspection, conditional
+breakpoints, and expression evaluation (reads, method/constructor invocation, `String` concat, and
+force-loading cold classes) all work. What remains is expression **write** support
+(assignment/`setVariable`), array-creation and object-scoped evaluation, plus named run configs and
+arg/env/cwd overlay.
+See [lathe-run-test-debug.md](planned/lathe-run-test-debug.md) §12.11 and the shipped scope in
 [lathe-neotest-experience.md](planned/lathe-neotest-experience.md).
 
 ### VS Code support

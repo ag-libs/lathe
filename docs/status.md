@@ -3,7 +3,7 @@
 This document records the implemented baseline and known user-visible gaps.
 The [roadmap](roadmap.md) defines milestone scope; the [design index](design-index.md) links detailed designs.
 
-Status last reviewed: 2026-07-11.
+Status last reviewed: 2026-08-26.
 
 ## Release State
 
@@ -51,7 +51,7 @@ Maven Central publication is planned for M3.
 | Rename | M2 planned | Existing reference identity and roles provide part of the foundation. |
 | Inlay hints | M2 planned | Not implemented. |
 | Run/test | Implemented (Neovim) | neotest adapter: discovery, run at every level, live-streamed output, inline failure diagnostics, cancel/stop, and the replay command shown as the first output line. Replays from captured `.lathe/` bytecode, no Maven. |
-| Debug | Post-M3 | No DAP surface is advertised; suspended-launch + JDWP attach is later scope. |
+| Debug | Implemented (Neovim) | In-process DAP adapter (Microsoft java-debug, attach-only) over JDWP to a suspended replay; `lathe.debug.test`/`lathe.debug.main` and an `nvim-dap` client (`:LatheDebug`). Breakpoints, stepping, inspection, conditional breakpoints, and expression evaluation for watches/hover/console — reads, method/constructor invocation, `String` concat, and force-loading cold classes. Gaps: assignment (`setVariable`), array creation, object-scoped evaluate. |
 
 ## Editor Support
 
