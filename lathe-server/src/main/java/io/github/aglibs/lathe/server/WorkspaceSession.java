@@ -5,6 +5,7 @@ import static java.util.logging.Level.SEVERE;
 import io.github.aglibs.lathe.core.CollectionUtil;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.PortUtil;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.launch.JdwpOptions;
 import io.github.aglibs.lathe.core.launch.TestSelection;
@@ -55,7 +56,6 @@ import io.github.aglibs.lathe.server.run.TranscriptLine;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.net.ServerSocket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
@@ -107,6 +107,7 @@ final class WorkspaceSession {
   // Small: attributing disk candidates in one javac task amortizes its fixed per-invocation cost,
   // while a small batch bounds peak memory, cancellation latency, and analyze()-crash blast radius.
   private static final int REFERENCE_BATCH_SIZE = 8;
+  private static final long JDWP_READY_TIMEOUT_MS = 15_000;
 
   // Title of the $/progress task reported while the workspace loads/reloads. The neotest adapter
   // matches on it to gate discovery on readiness, so it is a cross-process contract: keep it in
@@ -254,7 +255,7 @@ final class WorkspaceSession {
       throw new IllegalStateException("no lathe-test-runner jar recorded — run a build first");
     }
 
-    final ModuleSourceConfig config = configFor(moduleRel);
+    final List<ModuleSourceConfig> configs = configsFor(moduleRel);
 
     try {
       final var template = new LaunchTemplateReader(workspaceRoot).read(moduleRel);
@@ -267,7 +268,7 @@ final class WorkspaceSession {
         throw new IllegalStateException("debug launch incomplete: " + gate.reasons());
       }
 
-      final int jdwpPort = freePort();
+      final int jdwpPort = PortUtil.free();
       final Path resultsSink = Files.createTempFile("lathe-results-", ".ndjson");
       final RunItem overlay =
           new RunConfigReader(workspaceRoot).read().defaultFor(moduleRel, RunKind.TEST);
@@ -293,9 +294,18 @@ final class WorkspaceSession {
           .onExit()
           .whenComplete((outcome, error) -> worker.execute(() -> endDebugSession(token)));
 
-      final var host =
-          DapHost.start(
-              new LatheProviderContext(workspace.workerFor(config), config.sourceRoots()));
+      // Launcher spawns the JVM and returns before its -agentlib:jdwp socket is listening; wait for
+      // it here so the editor's debug client (which sends attach once, no retry) never races the
+      // agent. suspend=y guarantees the socket opens shortly and then parks before main.
+      if (!PortUtil.awaitAccepting(jdwpPort, JDWP_READY_TIMEOUT_MS)) {
+        throw new IllegalStateException(
+            "jdwp agent did not start listening on port %d within %dms"
+                .formatted(jdwpPort, JDWP_READY_TIMEOUT_MS));
+      }
+
+      final List<Path> sourceRoots =
+          configs.stream().flatMap(c -> c.sourceRoots().stream()).distinct().toList();
+      final var host = DapHost.start(new LatheProviderContext(workspace, sourceRoots));
       activeDebugHosts.put(token, host);
       LOG.info(
           () ->
@@ -321,17 +331,16 @@ final class WorkspaceSession {
     }
   }
 
-  private ModuleSourceConfig configFor(final String moduleRel) {
-    return workspace.allConfigs().stream()
-        .filter(config -> moduleRel(config).equals(moduleRel))
-        .findFirst()
-        .orElseThrow(() -> new IllegalStateException("no module for " + moduleRel));
-  }
-
-  private static int freePort() throws IOException {
-    try (final var socket = new ServerSocket(0)) {
-      return socket.getLocalPort();
+  private List<ModuleSourceConfig> configsFor(final String moduleRel) {
+    final List<ModuleSourceConfig> configs =
+        workspace.allConfigs().stream()
+            .filter(config -> moduleRel(config).equals(moduleRel))
+            .toList();
+    if (configs.isEmpty()) {
+      throw new IllegalStateException("no module for " + moduleRel);
     }
+
+    return configs;
   }
 
   // Copies a changed resource into .lathe/ so a resource-only edit is picked up without a rebuild.

@@ -145,6 +145,15 @@ function M.setup(opts)
     run.stop()
   end, { desc = 'Lathe: stop the active main run' })
 
+  -- Debug surface: :LatheDebug attaches nvim-dap to the test under the cursor, replayed under a
+  -- suspended JDWP agent (server-side lathe.debug.start). Optional -- the command is only wired
+  -- when nvim-dap is present, so a runtime without it loads unaffected.
+  if require('lathe.dap').setup() then
+    vim.api.nvim_create_user_command('LatheDebug', function()
+      require('lathe.dap').debug(vim.api.nvim_get_current_buf())
+    end, { desc = 'Lathe: debug the test under the cursor' })
+  end
+
   local cache_pattern = root .. '/**'
   vim.api.nvim_create_autocmd('BufReadPre', {
     group = augroup,

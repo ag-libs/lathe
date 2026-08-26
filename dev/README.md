@@ -12,6 +12,8 @@ All files live in `dev/` and are never shipped with the distribution.
 | `nvim.sh` | Build server + open Neovim with Lathe attached |
 | `check-nvim.sh` | Headless Neovim smoke check for the Lathe runtime |
 | `neotest-e2e.sh` | Headless end-to-end check of the neotest adapter against a live server + real replay |
+| `debug-e2e.sh` | Headless end-to-end check of the debug attach flow (DAP over JDWP) against a live server + real replay |
+| `debug_probe.py` | Raw DAP client the debug harness drives (launch → attach → breakpoint → inspect → resume) |
 | `lsp.py` | Python LSP client library and CLI diagnostics tool |
 | `explore.py` | Interactive LSP shell — explore any file like an engineer would |
 
@@ -35,6 +37,38 @@ mvn verify -pl lathe-maven-plugin -Dinvoker.test=multi-module
 
 Assumes `nvim` plus the `neotest`, `nvim-nio`, and `plenary.nvim` plugins are installed. The driver
 is `dev/neotest-e2e/driver.lua`; it reuses `spec_helper.lua` from the plugin's Neovim spec suite.
+
+---
+
+## debug-e2e.sh — end-to-end debug attach harness
+
+Drives the whole debug flow with no editor and no human — the automatable Phase 1 GO/NO-GO for
+[debug support](../docs/planned/lathe-debug-support.md). It asks the live server to
+`lathe.debug.start` a captured test (launched suspended under a JDWP agent, with an in-process DAP
+host), then `debug_probe.py` speaks raw DAP to that host exactly as nvim-dap would —
+`initialize → attach → setBreakpoints → configurationDone → stopped → stackTrace/scopes/variables →
+continue → terminated` — and asserts the breakpoint stops on the expected line, inspects the frame,
+and resumes green.
+
+```bash
+# builds the server (debug adds jars to the module path) and the multi-module fixture, then probes
+./dev/debug-e2e.sh
+
+# reuse an already-built fixture (skip the mvn build)
+SKIP_BUILD=1 ./dev/debug-e2e.sh
+```
+
+By default it breakpoints `HelloTest.java:16` in the public `multi-module` invoker fixture. A
+different workspace/file can be probed by passing them through (e.g. a local project):
+
+```bash
+./dev/debug-e2e.sh /abs/workspace /abs/workspace/.../SomeTest.java 42 methodName
+```
+
+Only `python3` is required — no Neovim, no nvim-dap. On failure it prints the server-side debug log
+(the DAP host and source-lookup path) to show the cause. Because debug puts the java-debug jars on
+the server's module path, the fixture's launcher must come from a freshly installed server, so the
+harness builds by default; `SKIP_BUILD=1` reuses whatever is already built.
 
 ---
 

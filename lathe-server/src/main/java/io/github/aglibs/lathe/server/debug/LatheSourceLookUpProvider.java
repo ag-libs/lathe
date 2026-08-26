@@ -8,6 +8,7 @@ import com.microsoft.java.debug.core.protocol.Types;
 import io.github.aglibs.lathe.server.LatheUri;
 import io.github.aglibs.lathe.server.analysis.TypeSourceLocator;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
+import io.github.aglibs.lathe.server.module.WorkspaceModuleRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
@@ -17,19 +18,22 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Maps between the debug adapter and Lathe's source model for a single module (Phase 1): a source
- * line to the enclosing class binary name (so JDI can arm a breakpoint) and a class name back to
- * its source file. Line resolution goes through the module's {@link CompilationWorker}, reusing the
- * attributed analysis of the open file — so nested and anonymous classes resolve to the exact
- * binary name javac assigns. Multi-module lookup is Phase 2; expression support is deferred.
+ * Maps between the debug adapter and Lathe's source model: a source line to the enclosing class
+ * binary name (so JDI can arm a breakpoint) and a class name back to its source file. Each source
+ * URI is routed through the workspace to its owning module's {@link CompilationWorker} — main,
+ * test, or an upstream reactor module — reusing the attributed analysis of the open file so nested
+ * and anonymous classes resolve to the exact binary name javac assigns. A file belongs to exactly
+ * one source tree, so the routing is unambiguous. Class-to-source lookup still spans the launched
+ * module's source roots (cross-module reverse lookup is Phase 2); expression support is deferred.
  */
 public final class LatheSourceLookUpProvider implements ISourceLookUpProvider {
 
-  private final CompilationWorker worker;
+  private final WorkspaceModuleRegistry workspace;
   private final List<Path> sourceRoots;
 
-  public LatheSourceLookUpProvider(final CompilationWorker worker, final List<Path> sourceRoots) {
-    this.worker = worker;
+  public LatheSourceLookUpProvider(
+      final WorkspaceModuleRegistry workspace, final List<Path> sourceRoots) {
+    this.workspace = workspace;
     this.sourceRoots = List.copyOf(sourceRoots);
   }
 
@@ -93,7 +97,10 @@ public final class LatheSourceLookUpProvider implements ISourceLookUpProvider {
   }
 
   private Optional<String> classNameAt(final String uri, final int line) {
-    return worker.enclosingBinaryName(uri, line).join();
+    return workspace
+        .moduleSourceFor(LatheUri.toPath(uri))
+        .map(workspace::workerFor)
+        .flatMap(worker -> worker.enclosingBinaryName(uri, line).join());
   }
 
   private String sourceUri(final String fullyQualifiedName) {
