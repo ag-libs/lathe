@@ -89,4 +89,8 @@ if [ "$workspace" = "$fixture" ] && [ "$file" = "$default_file" ]; then
   echo "[debug-e2e] conditional breakpoints"
   python3 "${eval_common[@]}" --condition "args.length == 0"
   python3 "${eval_common[@]}" --condition "args.length == 99" --expect-nostop
+
+  echo "[debug-e2e] this / instanceof at the test breakpoint"
+  python3 "$here/debug_probe.py" --workspace "$workspace" "$file" --line "$line" --method "$method" \
+    --eval "this instanceof java.lang.Object" --expect "true"
 fi

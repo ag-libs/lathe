@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.debug;
 
 import com.sun.jdi.ArrayReference;
 import com.sun.jdi.BooleanValue;
+import com.sun.jdi.ClassType;
 import com.sun.jdi.Field;
 import com.sun.jdi.LocalVariable;
 import com.sun.jdi.ObjectReference;
@@ -14,6 +15,7 @@ import com.sun.source.tree.ArrayAccessTree;
 import com.sun.source.tree.BinaryTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
+import com.sun.source.tree.InstanceOfTree;
 import com.sun.source.tree.LiteralTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.ParenthesizedTree;
@@ -23,6 +25,8 @@ import com.sun.source.tree.UnaryTree;
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.server.analysis.AttributedExpression;
 import java.util.List;
+import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 
@@ -30,8 +34,9 @@ import javax.lang.model.type.TypeMirror;
  * Stage 2 of read-only expression evaluation: walks the attributed expression tree bottom-up over
  * the suspended JDI frame, producing a {@link Value}. Reads (literals, locals, {@code this},
  * fields, array elements) run entirely against JDI mirrors; operators compute host-side using
- * javac's already-decided types. No debuggee code runs. Anything outside the v1 read-only subset
- * (method calls, assignment, lambdas, string concatenation) raises {@link EvaluationException}.
+ * javac's already-decided types, and {@code instanceof} against the live runtime type. No debuggee
+ * code runs. Anything outside the read-only subset (method calls, assignment, lambdas, string
+ * concatenation) raises {@link EvaluationException}.
  */
 final class JdiInterpreter {
 
@@ -54,12 +59,13 @@ final class JdiInterpreter {
     return switch (leaf) {
       case ParenthesizedTree p -> eval(child(path, p.getExpression()));
       case LiteralTree literal -> literal(literal);
-      case IdentifierTree ignored -> readSymbol(path, null);
+      case IdentifierTree identifier -> identifier(path, identifier);
       case MemberSelectTree select -> memberSelect(path, select);
       case UnaryTree unary -> unary(path, unary);
       case BinaryTree binary -> binary(path, binary);
       case ArrayAccessTree array -> arrayAccess(path, array);
       case TypeCastTree cast -> cast(path, cast);
+      case InstanceOfTree instanceOf -> instanceOf(path, instanceOf);
       default ->
           throw new EvaluationException("unsupported expression: " + leaf.getKind().toString());
     };
@@ -87,6 +93,24 @@ final class JdiInterpreter {
     }
 
     return readSymbol(path, select.getExpression());
+  }
+
+  private Value identifier(final TreePath path, final IdentifierTree identifier) {
+    final var name = identifier.getName();
+    if ("this".contentEquals(name) || "super".contentEquals(name)) {
+      return thisObject(name.toString());
+    }
+
+    return readSymbol(path, null);
+  }
+
+  private ObjectReference thisObject(final String keyword) {
+    final ObjectReference self = frame.thisObject();
+    if (self == null) {
+      throw new EvaluationException("'%s' is not available in a static context".formatted(keyword));
+    }
+
+    return self;
   }
 
   /** Reads a local/field/static identified by the resolved symbol at {@code path}. */
@@ -153,6 +177,46 @@ final class JdiInterpreter {
     }
 
     return value;
+  }
+
+  private Value instanceOf(final TreePath path, final InstanceOfTree node) {
+    if (!(eval(child(path, node.getExpression())) instanceof final ObjectReference object)) {
+      return vm.mirrorOf(false);
+    }
+
+    final String target = targetBinaryName(child(path, node.getType()));
+    return vm.mirrorOf(isSubtype(object.referenceType(), target));
+  }
+
+  /** True when {@code type} is, extends, or implements the class/interface named {@code target}. */
+  private static boolean isSubtype(final ReferenceType type, final String target) {
+    if (type.name().equals(target)) {
+      return true;
+    }
+
+    if (type instanceof final ClassType classType) {
+      for (ClassType superclass = classType.superclass();
+          superclass != null;
+          superclass = superclass.superclass()) {
+        if (superclass.name().equals(target)) {
+          return true;
+        }
+      }
+
+      return classType.allInterfaces().stream().anyMatch(each -> each.name().equals(target));
+    }
+
+    return false;
+  }
+
+  private String targetBinaryName(final TreePath typePath) {
+    final TypeMirror type = typeOf(typePath);
+    if (type instanceof final DeclaredType declared
+        && declared.asElement() instanceof final TypeElement element) {
+      return attr.elements().getBinaryName(element).toString();
+    }
+
+    return type.toString();
   }
 
   private Value unary(final TreePath path, final UnaryTree unary) {
