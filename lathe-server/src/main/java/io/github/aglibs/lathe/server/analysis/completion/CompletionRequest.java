@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
 import io.github.aglibs.lathe.server.analysis.CachedFileAnalysis;
+import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.util.List;
@@ -26,16 +27,7 @@ public record CompletionRequest(
   }
 
   int cursorOffset() {
-    int offset = 0;
-    int line = 0;
-    for (int i = 0; i < content.length() && line < pos.getLine(); i++) {
-      if (content.charAt(i) == '\n') {
-        line++;
-        offset = i + 1;
-      }
-    }
-
-    return offset + pos.getCharacter();
+    return SourceLocator.toOffset(content, pos.getLine(), pos.getCharacter());
   }
 
   boolean noDiff() {

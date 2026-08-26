@@ -20,7 +20,10 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
+import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
+import javax.lang.model.type.TypeKind;
 import javax.tools.StandardJavaFileManager;
 import org.eclipse.lsp4j.*;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
@@ -240,6 +243,73 @@ class SourceAnalysisSessionTest {
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       assertThat(session.enclosingBinaryName(TempSourceCompiler.TEST_URI, 1)).isEmpty();
     }
+  }
+
+  private static final String EVAL_SAMPLE =
+      """
+      class Sample {
+        int field = 3;
+
+        void run(String arg) {
+          int local = 5;
+          System.out.println(arg);
+        }
+      }
+      """;
+
+  // The System.out.println line (1-based 6) is the breakpoint; arg, local, and field are in scope.
+  private static final int EVAL_LINE = 6;
+
+  // Attributes the expression at the sample's breakpoint line and runs the assertions on the
+  // resolved node while the compile session is still open (Trees are valid only until it closes).
+  private static void withAttribute(
+      final String expression, final Consumer<AttributedExpression> assertions) {
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      final var attr =
+          session.attributeExpression(
+              TempSourceCompiler.TEST_URI, EVAL_SAMPLE, EVAL_LINE, expression);
+      assertThat(attr).isPresent();
+      assertions.accept(attr.get());
+    }
+  }
+
+  private static TypeKind typeKind(final AttributedExpression e) {
+    return e.trees().getTypeMirror(e.expression()).getKind();
+  }
+
+  private static Element element(final AttributedExpression e) {
+    return e.trees().getElement(e.expression());
+  }
+
+  @Test
+  void attributeExpression_localVariable_resolvesToLocalAndType() {
+    withAttribute(
+        "local",
+        e -> {
+          assertThat(element(e).getKind()).isEqualTo(ElementKind.LOCAL_VARIABLE);
+          assertThat(element(e).getSimpleName().toString()).isEqualTo("local");
+          assertThat(typeKind(e)).isEqualTo(TypeKind.INT);
+        });
+  }
+
+  @Test
+  void attributeExpression_field_resolvesToFieldInEnclosingClass() {
+    withAttribute(
+        "field",
+        e -> {
+          assertThat(element(e).getKind()).isEqualTo(ElementKind.FIELD);
+          assertThat(element(e).getSimpleName().toString()).isEqualTo("field");
+        });
+  }
+
+  @Test
+  void attributeExpression_arithmetic_resolvesToPrimitiveType() {
+    withAttribute("local + field", e -> assertThat(typeKind(e)).isEqualTo(TypeKind.INT));
+  }
+
+  @Test
+  void attributeExpression_unresolvedName_attributesButTypeIsError() {
+    withAttribute("nonexistent", e -> assertThat(typeKind(e)).isEqualTo(TypeKind.ERROR));
   }
 
   @Test

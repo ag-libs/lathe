@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.module;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
+import io.github.aglibs.lathe.server.analysis.AttributedExpression;
 import io.github.aglibs.lathe.server.analysis.CodeActionRequest;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
 import io.github.aglibs.lathe.server.analysis.ReferenceMatch;
@@ -283,6 +284,11 @@ public final class CompilationWorker {
   public CompletableFuture<Optional<String>> enclosingBinaryName(
       final String uri, final int oneBasedLine) {
     return submit(ctx -> ctx.enclosingBinaryName(uri, oneBasedLine));
+  }
+
+  public CompletableFuture<Optional<AttributedExpression>> attributeExpression(
+      final String uri, final String content, final int oneBasedLine, final String expression) {
+    return submit(ctx -> ctx.attributeExpression(uri, content, oneBasedLine, expression));
   }
 
   public CompletableFuture<List<FoldingRange>> foldingRange(

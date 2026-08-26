@@ -97,6 +97,20 @@ public final class SourceLocator {
     return new Position(line, col);
   }
 
+  /** The offset of a 0-based {@code line}/{@code character} in raw text, before it is parsed. */
+  public static int toOffset(final String content, final int line, final int character) {
+    int offset = 0;
+    int currentLine = 0;
+    for (int i = 0; i < content.length() && currentLine < line; i++) {
+      if (content.charAt(i) == '\n') {
+        currentLine++;
+        offset = i + 1;
+      }
+    }
+
+    return offset + character;
+  }
+
   public static Optional<Position> declarationNamePosition(
       final Trees trees, final CompilationUnitTree cu, final TreePath path, final String name)
       throws IOException {

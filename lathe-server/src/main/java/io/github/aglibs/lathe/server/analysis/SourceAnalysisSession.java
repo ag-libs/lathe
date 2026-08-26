@@ -201,6 +201,32 @@ public final class SourceAnalysisSession implements AutoCloseable {
     return Optional.empty();
   }
 
+  /**
+   * Attributes a debugger expression in the scope of a suspended frame (Stage 1 of expression
+   * evaluation): splices {@code var __LATHE_EVAL__ = (expression);} into {@code content} at {@code
+   * oneBasedLine}, attributes the whole unit, and lifts the attributed initializer subtree. Uses a
+   * transient FAST compile that does not touch the open-document cache. Empty when the unit cannot
+   * be attributed or the spliced statement did not land in a resolvable scope.
+   */
+  public Optional<AttributedExpression> attributeExpression(
+      final String uri, final String content, final int oneBasedLine, final String expression) {
+    final var t = Stopwatch.start();
+    final String spliced = ExpressionSplice.at(content, oneBasedLine, expression);
+    final AttributedFileAnalysis analysis =
+        compiler.compile(uri, spliced, CompileMode.FAST).fileAnalysis();
+    final Optional<AttributedExpression> result =
+        ExpressionSplice.locate(analysis)
+            .map(
+                path ->
+                    new AttributedExpression(
+                        path, analysis.trees(), analysis.elements(), analysis.types()));
+    LOG.fine(
+        () ->
+            "[eval:attribute] %s line=%d %dms resolved=%s"
+                .formatted(uri, oneBasedLine, t.elapsedMs(), result.isPresent()));
+    return result;
+  }
+
   public List<FoldingRange> foldingRange(final String uri, final String content) {
     final var t = Stopwatch.start();
     final var ranges =
