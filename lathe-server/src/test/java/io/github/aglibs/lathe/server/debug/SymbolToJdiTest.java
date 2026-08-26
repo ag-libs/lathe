@@ -16,6 +16,10 @@ final class SymbolToJdiTest {
         static int shared = 1;
         int field = 3;
 
+        int add(int a, long[] b) {
+          return a;
+        }
+
         void run(String arg) {
           int local = 5;
           System.out.println(arg);
@@ -23,8 +27,8 @@ final class SymbolToJdiTest {
       }
       """;
 
-  // The println line (1-based 7) is the breakpoint; local, arg, field, and shared are in scope.
-  private static final int LINE = 7;
+  // The println line (1-based 11) is the breakpoint; local, arg, field, shared, add, run in scope.
+  private static final int LINE = 11;
 
   private static AttributedExpression attribute(
       final SourceAnalysisSession session, final String expression) {
@@ -37,7 +41,7 @@ final class SymbolToJdiTest {
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       final AttributedExpression attr = attribute(session, expression);
       final var element = attr.trees().getElement(attr.expression());
-      assertions.accept(SymbolToJdi.toRef(element, attr.elements()).orElseThrow());
+      assertions.accept(SymbolToJdi.toRef(element, attr.types(), attr.elements()).orElseThrow());
     }
   }
 
@@ -62,21 +66,37 @@ final class SymbolToJdiTest {
   }
 
   @Test
+  void toRef_instanceMethod_carriesErasedSignature() {
+    withRef(
+        "arg.length()",
+        ref ->
+            assertThat(ref)
+                .isEqualTo(new JdiRef.Method("java.lang.String", "length", "()I", false)));
+  }
+
+  @Test
+  void toRef_methodWithPrimitiveAndArrayParams_describesSignature() {
+    withRef(
+        "add(1, null)",
+        ref -> assertThat(ref).isEqualTo(new JdiRef.Method("Sample", "add", "(I[J)I", false)));
+  }
+
+  @Test
+  void toRef_voidMethodWithReferenceParam_describesSignature() {
+    withRef(
+        "run(arg)",
+        ref ->
+            assertThat(ref)
+                .isEqualTo(new JdiRef.Method("Sample", "run", "(Ljava/lang/String;)V", false)));
+  }
+
+  @Test
   void toRef_nestedType_usesDollarBinaryName() {
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       final AttributedExpression attr = attribute(session, "field");
       final var nested = attr.elements().getTypeElement("java.util.Map.Entry");
-      assertThat(SymbolToJdi.toRef(nested, attr.elements()))
+      assertThat(SymbolToJdi.toRef(nested, attr.types(), attr.elements()))
           .contains(new JdiRef.Type("java.util.Map$Entry"));
-    }
-  }
-
-  @Test
-  void toRef_method_isUnsupportedInV1() {
-    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
-      final AttributedExpression attr = attribute(session, "arg.length()");
-      final var element = attr.trees().getElement(attr.expression());
-      assertThat(SymbolToJdi.toRef(element, attr.elements())).isEmpty();
     }
   }
 
@@ -84,7 +104,7 @@ final class SymbolToJdiTest {
   void toRef_null_returnsEmpty() {
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       final AttributedExpression attr = attribute(session, "field");
-      assertThat(SymbolToJdi.toRef(null, attr.elements())).isEmpty();
+      assertThat(SymbolToJdi.toRef(null, attr.types(), attr.elements())).isEmpty();
     }
   }
 }

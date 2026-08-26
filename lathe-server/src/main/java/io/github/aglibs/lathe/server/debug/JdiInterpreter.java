@@ -116,13 +116,15 @@ final class JdiInterpreter {
   /** Reads a local/field/static identified by the resolved symbol at {@code path}. */
   private Value readSymbol(final TreePath path, final ExpressionTree receiver) {
     final JdiRef ref =
-        SymbolToJdi.toRef(attr.trees().getElement(path), attr.elements())
+        SymbolToJdi.toRef(attr.trees().getElement(path), attr.types(), attr.elements())
             .orElseThrow(() -> new EvaluationException("cannot resolve: " + path.getLeaf()));
     return switch (ref) {
       case JdiRef.Local local -> readLocal(local.name());
       case JdiRef.Field field -> readField(path, field, receiver);
       case JdiRef.Type type ->
           throw new EvaluationException("'%s' is a type, not a value".formatted(type.binaryName()));
+      case JdiRef.Method ignored ->
+          throw new EvaluationException("method invocation is not supported yet (v2)");
     };
   }
 

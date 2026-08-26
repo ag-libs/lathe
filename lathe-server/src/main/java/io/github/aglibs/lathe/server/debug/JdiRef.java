@@ -9,7 +9,7 @@ import io.github.aglibs.validcheck.ValidCheck;
  * for casts / {@code instanceof} / a static receiver). Method-descriptor bridging arrives with
  * method invocation in v2.
  */
-sealed interface JdiRef permits JdiRef.Local, JdiRef.Field, JdiRef.Type {
+sealed interface JdiRef permits JdiRef.Local, JdiRef.Field, JdiRef.Type, JdiRef.Method {
 
   record Local(String name) implements JdiRef {
     public Local {
@@ -29,6 +29,21 @@ sealed interface JdiRef permits JdiRef.Local, JdiRef.Field, JdiRef.Type {
   record Type(String binaryName) implements JdiRef {
     public Type {
       ValidCheck.check().notNull(binaryName, "binaryName").validate();
+    }
+  }
+
+  /**
+   * A method or constructor, resolved against JDI by declaring type + name + erased JVM signature
+   * (a constructor is named {@code <init>}). Used by v2 method invocation.
+   */
+  record Method(String declaringBinaryName, String name, String jvmSignature, boolean isStatic)
+      implements JdiRef {
+    public Method {
+      ValidCheck.check()
+          .notNull(declaringBinaryName, "declaringBinaryName")
+          .notNull(name, "name")
+          .notNull(jvmSignature, "jvmSignature")
+          .validate();
     }
   }
 }
