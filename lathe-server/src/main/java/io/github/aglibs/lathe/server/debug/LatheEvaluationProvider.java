@@ -2,6 +2,10 @@ package io.github.aglibs.lathe.server.debug;
 
 import com.microsoft.java.debug.core.IEvaluatableBreakpoint;
 import com.microsoft.java.debug.core.adapter.IEvaluationProvider;
+import com.sun.jdi.ClassNotLoadedException;
+import com.sun.jdi.IncompatibleThreadStateException;
+import com.sun.jdi.InvalidTypeException;
+import com.sun.jdi.InvocationException;
 import com.sun.jdi.Location;
 import com.sun.jdi.Method;
 import com.sun.jdi.ObjectReference;
@@ -91,22 +95,44 @@ final class LatheEvaluationProvider implements IEvaluationProvider {
       final Value[] args,
       final ThreadReference thread,
       final boolean invokeSuper) {
+    try {
+      return CompletableFuture.completedFuture(
+          invokeGuarded(
+              thread,
+              () -> {
+                final Method method =
+                    object.referenceType().methodsByName(methodName, methodSignature).stream()
+                        .findFirst()
+                        .orElseThrow(
+                            () ->
+                                new EvaluationException(
+                                    "no method %s%s".formatted(methodName, methodSignature)));
+                final List<Value> arguments = args == null ? List.of() : Arrays.asList(args);
+                return object.invokeMethod(
+                    thread, method, arguments, ObjectReference.INVOKE_SINGLE_THREADED);
+              }));
+    } catch (final Exception e) {
+      return CompletableFuture.failedFuture(evaluationError(methodName, e));
+    }
+  }
+
+  /**
+   * Runs a JDI invocation under {@code thread}'s serialization lock — the seam the interpreter uses
+   * so a call made while evaluating honours the same per-thread discipline as this provider's own
+   * invocations (the held lock is also what {@link #isInEvaluation} observes).
+   */
+  private Value invokeGuarded(
+      final ThreadReference thread, final JdiInterpreter.InvocationBody body) {
     final ReentrantLock lock =
         perThread.computeIfAbsent(thread.uniqueID(), id -> new ReentrantLock());
     lock.lock();
     try {
-      final Method method =
-          object.referenceType().methodsByName(methodName, methodSignature).stream()
-              .findFirst()
-              .orElseThrow(
-                  () ->
-                      new EvaluationException(
-                          "no method %s%s".formatted(methodName, methodSignature)));
-      final List<Value> arguments = args == null ? List.of() : Arrays.asList(args);
-      return CompletableFuture.completedFuture(
-          object.invokeMethod(thread, method, arguments, ObjectReference.INVOKE_SINGLE_THREADED));
-    } catch (final Exception e) {
-      return CompletableFuture.failedFuture(evaluationError(methodName, e));
+      return body.run();
+    } catch (final InvalidTypeException
+        | ClassNotLoadedException
+        | IncompatibleThreadStateException
+        | InvocationException e) {
+      throw new EvaluationException("invocation failed: " + e.getMessage(), e);
     } finally {
       lock.unlock();
     }
@@ -140,7 +166,9 @@ final class LatheEvaluationProvider implements IEvaluationProvider {
                 file.toUri().toString(), content, location.lineNumber(), expression)
             .join()
             .orElseThrow(() -> new EvaluationException("could not attribute: " + expression));
-    final Value value = new JdiInterpreter(attributed, frame).evaluate();
+    final ThreadReference thread = frame.thread();
+    final Value value =
+        new JdiInterpreter(attributed, frame, body -> invokeGuarded(thread, body)).evaluate();
     LOG.fine(() -> "[eval] %s @ %s".formatted(expression, location));
     return value;
   }

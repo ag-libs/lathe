@@ -90,7 +90,9 @@ if [ "$workspace" = "$fixture" ] && [ "$file" = "$default_file" ]; then
   python3 "${eval_common[@]}" --condition "args.length == 0"
   python3 "${eval_common[@]}" --condition "args.length == 99" --expect-nostop
 
-  echo "[debug-e2e] this / instanceof at the test breakpoint"
-  python3 "$here/debug_probe.py" --workspace "$workspace" "$file" --line "$line" --method "$method" \
-    --eval "this instanceof java.lang.Object" --expect "true"
+  echo "[debug-e2e] this / instanceof / method calls at the test breakpoint"
+  test_eval=("$here/debug_probe.py" --workspace "$workspace" "$file" --line "$line" --method "$method")
+  python3 "${test_eval[@]}" --eval "this instanceof java.lang.Object" --expect "true"
+  python3 "${test_eval[@]}" --eval '"hi".toUpperCase().length()' --expect "2"
+  python3 "${test_eval[@]}" --eval '"a" + 1 + true' --expect '"a1true"'
 fi
