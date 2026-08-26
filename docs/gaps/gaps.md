@@ -17,6 +17,7 @@ Each gap keeps its area prefix; the area is the discovery family, not a strict f
 | `CQ-NNNN` | completion | Completion quality; checked against the completion [expectations](../planned/lathe-completion-expectations.md) contract |
 | `WS-N` | workspace lifecycle | Workspace freshness and lifecycle: reactor mirror / type-index staleness, source watching, sync prompting, and reload |
 | `TE-N` | test execution | Maven test-fork capture, replay launch fidelity, and test-classpath isolation |
+| `DB-N` | debug & evaluation | In-process DAP adapter and expression-evaluator scope, fidelity, and coverage |
 
 ## Finding the work for a release
 
@@ -542,3 +543,149 @@ Capture/replay gaps involving the Maven test fork, the recorded launch template,
 replay JVM. Resolved TE entries are in [gaps-archive.md](gaps-archive.md).
 
 No active TE gaps remain; resolved entries are in [gaps-archive.md](gaps-archive.md).
+
+---
+
+# Debug & Evaluation Gaps (DB)
+
+Gaps in the in-process DAP adapter and the two-stage expression evaluator (see
+[lathe-run-test-debug.md](../planned/lathe-run-test-debug.md) §12.11). The debug surface is complete
+for the current milestone — breakpoints, stepping, inspection, conditional breakpoints, and
+read/invoke expression evaluation all work — so the entries below are the deliberately deferred
+remainder, re-triaged in a future round.
+
+## DB-1 — Expression evaluation is read/invoke only; no assignment or `setVariable`
+
+**Status: deferred — Target: backlog**
+
+### Observed behaviour
+
+The evaluator computes values (reads, method/constructor invocation, `String` concat) but cannot
+write: an assignment expression raises `EvaluationException`, and the DAP `setVariable` request is not
+backed by a write path. A watch or console `x = 5`, a field write, or editing a variable in the
+Variables pane therefore does nothing.
+
+### Expected behaviour
+
+`x = expr`, field writes, and array-element writes assign into the suspended frame and return the
+assigned value; the DAP `setVariable` request mutates the named variable. This is the deferred eval
+"v3" — it mutates debuggee state and warrants its own design (type coercion/boxing on the write side,
+final-field policy, event suppression) before implementation.
+
+### Probe commands
+
+```bash
+python3 dev/debug_probe.py --workspace <ws> <MainFile.java> --line <N> --main <Class> \
+  --eval "x = 5"          # today: EvaluationException (assignment unsupported)
+```
+
+### Regression targets
+
+None yet — to be defined when the fix is scheduled.
+
+---
+
+## DB-2 — Array-creation expressions (`new T[]{…}` / `new T[n]`) are unsupported
+
+**Status: deferred — Target: backlog**
+
+### Observed behaviour
+
+A `NewArray` tree raises `EvaluationException: unsupported expression: NEW_ARRAY`. Reads of existing
+arrays (indexing, `.length`) work; only *creating* an array in an expression fails, which also blocks
+calls whose argument is an array literal (e.g. `java.util.BitSet.valueOf(new long[]{…})`).
+
+### Expected behaviour
+
+`new int[]{1, 2, 3}`, `new String[4]`, and `new long[]{}` allocate a JDI array (via
+`ArrayType.newInstance`), fill any initialiser elements, and evaluate to the mirror. Low marginal
+value in watches, hence deferred.
+
+### Probe commands
+
+```bash
+python3 dev/debug_probe.py --workspace <ws> <MainFile.java> --line <N> --main <Class> \
+  --eval "new int[]{1,2,3}[0]"   # today: EvaluationException NEW_ARRAY
+```
+
+### Regression targets
+
+None yet — to be defined when the fix is scheduled.
+
+---
+
+## DB-3 — Object-scoped `evaluate` overload is unsupported
+
+**Status: deferred — Target: backlog**
+
+### Observed behaviour
+
+`IEvaluationProvider.evaluate(expression, ObjectReference, thread)` returns a failed future
+("object-scoped evaluation is not supported yet"). Only the thread/frame-scoped overload and
+`evaluateForBreakpoint` are implemented. The adapter uses the frame-scoped path for watches, hover,
+console, and conditional breakpoints, so this is not user-visible today; it would matter for evaluate
+requests that supply a receiver object instead of a frame.
+
+### Expected behaviour
+
+Evaluate an expression with a supplied `ObjectReference` as the implicit receiver/`this`, reusing the
+Stage-2 interpreter against that object rather than a stack frame.
+
+### Probe commands
+
+Not reproducible through `debug_probe.py` today (the probe only issues frame-scoped `evaluate`);
+exercised by a DAP client that sends `evaluate` with an object scope.
+
+### Regression targets
+
+None yet — to be defined when the fix is scheduled.
+
+---
+
+## DB-4 — Debug-console / REPL code completion returns nothing
+
+**Status: deferred — Target: backlog**
+
+### Observed behaviour
+
+The DAP `completions` request is fully plumbed but not answered: java-debug advertises
+`supportsCompletionsRequest = true` and Lathe already registers a `LatheCompletionsProvider`, but that
+provider is a stub whose `codeComplete(frame, snippet, line, column)` returns an empty list. In the
+`nvim-dap` REPL, omni-completion (`i_CTRL-X_CTRL-O`) therefore offers nothing, so the REPL is a plain
+buffer where a complete expression evaluates and a partial one just does nothing.
+
+### Expected behaviour
+
+Typing a partial expression at a breakpoint offers completions in the frame's scope (locals,
+parameters, `this`, fields, visible types/imports, members after `.`), exactly as the editor's LSP
+completion does at that source line.
+
+### Design sketch (why this is a small slice)
+
+The plumbing exists on both ends. The provider is already registered and invoked; the client is free
+(`nvim-dap` wires the REPL `omnifunc` to the `completions` request whenever the adapter advertises it,
+and `cmp-dap` bridges it into `nvim-cmp` for as-you-type completion). The remaining work is the
+provider body, and it reuses machinery that already exists:
+
+- Frame → source file → module worker: the same resolution `LatheEvaluationProvider` already does
+  (extract it into a shared helper).
+- Splice the snippet into the frame's source line (the `ExpressionSplice` / `attributeExpression`
+  path used by evaluation) to place the cursor in the method's lexical scope.
+- Call the existing content-based `CompilationWorker.complete(uri, content, version, position, …)` —
+  the same transient path used for closed-file analysis — and map `CompletionOutcome` items to
+  `Types.CompletionItem` (label, text, type, `start`/`length` replace range).
+
+Unlike evaluation, completion is pure read-only source analysis: it uses only the frame's *location*
+(file/line for scope), never runtime state, so there is no JDI interpretation, no debuggee invocation,
+and no per-thread lock. The only real fidelity risk is the `start`/`length` replace range so the REPL
+swaps the correct prefix.
+
+### Probe commands
+
+Not reproducible through `debug_probe.py` today (the probe issues `evaluate`, not `completions`);
+exercised by a DAP client sending `completions` at a frame, or by `i_CTRL-X_CTRL-O` in the `nvim-dap`
+REPL.
+
+### Regression targets
+
+None yet — to be defined when the fix is scheduled.
