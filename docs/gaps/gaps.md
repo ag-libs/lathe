@@ -648,16 +648,23 @@ None yet — to be defined when the fix is scheduled.
 
 ---
 
-## DB-3 — Object-scoped `evaluate` overload is unsupported
+## DB-3 — Object-scoped `evaluate` overload — done
 
-**Status: accepted — Target: M3**
+**Status: done — Target: M3**
 
 Invoked only by java-debug's `JavaLogicalStructure` to render collections/maps in the Variables view
-(it evaluates member expressions such as `size()` / `toArray()` with `this` = the object). Supporting
-it turns on the logical collection/map views; without it those variables fall back to their raw
-fields. Planned approach: attribute the expression against an accessible type of the object with an
-injected typed receiver, and interpret with that receiver bound to the object (best-effort, graceful
-fallback).
+(it evaluates member expressions such as `size()` / `toArray()` with `this` = the object). Now
+implemented: `LatheEvaluationProvider.evaluate(expression, object, thread)` attributes the expression
+against an *accessible* type of the object (the runtime type when public, else the nearest public
+supertype — since types like `java.util.ImmutableCollections$ListN` can't be named in source) via a
+synthetic typed receiver (`SourceAnalysisSession.attributeReceiverExpression`), then interprets it
+with that receiver bound to the object (a `JdiInterpreter` seed binding). Reuses the Stage-2
+interpreter; any failure falls back to the raw field view. Collection/map logical views now populate.
+
+### Regression targets
+
+`dev/debug-e2e.sh` object-scoped case: at a test-scope `main`, expanding an `ArrayList` local yields
+its logical elements (`0="alpha"`, …) rather than raw fields, via the `debug_probe.py --expand` mode.
 
 ### Observed behaviour
 

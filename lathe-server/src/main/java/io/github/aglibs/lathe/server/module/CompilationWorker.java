@@ -291,6 +291,11 @@ public final class CompilationWorker {
     return submit(ctx -> ctx.attributeExpression(uri, content, oneBasedLine, expression));
   }
 
+  public CompletableFuture<Optional<AttributedExpression>> attributeReceiverExpression(
+      final String uri, final String receiverType, final String receiver, final String expression) {
+    return submit(ctx -> ctx.attributeReceiverExpression(uri, receiverType, receiver, expression));
+  }
+
   public CompletableFuture<List<FoldingRange>> foldingRange(
       final String uri, final String content) {
     return submit(ctx -> ctx.foldingRange(uri, content));

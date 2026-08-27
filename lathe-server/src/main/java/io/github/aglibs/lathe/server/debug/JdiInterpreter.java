@@ -42,6 +42,7 @@ import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.server.analysis.AttributedExpression;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.logging.Logger;
 import javax.lang.model.element.TypeElement;
@@ -75,18 +76,23 @@ final class JdiInterpreter {
   // force-load a cold class (null means bootstrap), and forcing it must give the type the same
   // visibility the frame has.
   private final ClassLoaderReference frameLoader;
+  // Names bound to values that are not frame locals -- object-scoped evaluation binds the synthetic
+  // receiver here so the interpreter resolves it to the given object rather than a frame slot.
+  private final Map<String, Value> seed;
 
   JdiInterpreter(
       final AttributedExpression attr,
       final StackFrame frame,
       final int depth,
-      final GuardedInvoker invoker) {
+      final GuardedInvoker invoker,
+      final Map<String, Value> seed) {
     this.attr = attr;
     this.vm = frame.virtualMachine();
     this.invoker = invoker;
     this.thread = frame.thread();
     this.depth = depth;
     this.frameLoader = frame.location().declaringType().classLoader();
+    this.seed = Map.copyOf(seed);
   }
 
   /**
@@ -201,6 +207,11 @@ final class JdiInterpreter {
   }
 
   private Value readLocal(final String name) {
+    final Value bound = seed.get(name);
+    if (bound != null) {
+      return bound;
+    }
+
     try {
       final StackFrame current = frame();
       final LocalVariable variable = current.visibleVariableByName(name);

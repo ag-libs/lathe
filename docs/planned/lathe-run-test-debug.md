@@ -1206,6 +1206,11 @@ frame, bridging each resolved symbol to JDI by binary name + erased JVM descript
 - **Cold classes**: referencing a static member of a not-yet-loaded class force-loads and initialises
   it via `Class.forName(name, true, loader)` on the frame's loader, rather than failing
   "class not loaded".
+- **Object-scoped** (DB-3): the adapter's logical collection/map views call `evaluate` with an object
+  as the implicit receiver rather than a frame; Lathe attributes the expression against an accessible
+  type of the object (its public runtime type, else the nearest public supertype) with a synthetic
+  typed receiver bound to the object, so `size()`/`toArray()`-style member expressions resolve and
+  the logical views populate.
 
 **Robustness.** The interpreter re-fetches the frame on every read (`thread.frame(depth)`) rather than
 caching it: a debuggee invocation (a call, `String` concat, or a cold-class force-load) resumes the

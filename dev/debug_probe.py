@@ -161,7 +161,8 @@ def run_probe(workspace: Path, file: Path, line: int, method: str | None,
               main_class: str | None, detach: bool = False,
               eval_expr: str | None = None, expect: str | None = None,
               condition: str | None = None, expect_stop: bool = True,
-              complete: str | None = None, expect_item: str | None = None) -> int:
+              complete: str | None = None, expect_item: str | None = None,
+              expand: str | None = None, expect_child: str | None = None) -> int:
     with LatheClient.start(workspace) as lathe:
         lathe.open(file)  # attribute the file in the module worker (source lookup reads that cache)
         if main_class:
@@ -187,6 +188,8 @@ def run_probe(workspace: Path, file: Path, line: int, method: str | None,
                 rc = _drive_condition(dap, file, line, jdwp_port, condition, expect_stop)
             elif complete is not None:
                 rc = _drive_complete(dap, file, line, jdwp_port, complete, expect_item)
+            elif expand is not None:
+                rc = _drive_expand(dap, file, line, jdwp_port, expand, expect_child)
             elif eval_expr is not None:
                 rc = _drive_eval(dap, file, line, jdwp_port, eval_expr, expect)
             elif detach:
@@ -317,6 +320,51 @@ def _drive_complete(
     return 0
 
 
+def _drive_expand(
+    dap: DapClient, file: Path, line: int, jdwp_port: int, var: str, expect_child: str | None) -> int:
+    """Stop at the breakpoint and expand the local `var` (its `variables` request), asserting a child
+    contains `expect_child`. Expanding a collection/map triggers the adapter's logical structure,
+    which calls the object-scoped `evaluate` overload (`size()`/`toArray()` with `this` = the object)
+    -- the object-scoped-evaluation GO/NO-GO (DB-3). Without it the expansion falls back to raw
+    fields (`elementData`, `size`), so a logical element among the children proves the overload ran."""
+    dap.request("initialize", {"adapterID": "lathe", "clientID": "lathe-probe",
+                               "linesStartAt1": True, "columnsStartAt1": True, "pathFormat": "path"})
+    _attach_with_retry(dap, jdwp_port)
+    dap.wait_event("initialized")
+    dap.request("setBreakpoints", {"source": {"path": str(file)}, "breakpoints": [{"line": line}]})
+    dap.request("configurationDone")
+
+    stopped = dap.wait_event("stopped")
+    thread_id = stopped["body"]["threadId"]
+    frame_id = dap.request("stackTrace", {"threadId": thread_id})["body"]["stackFrames"][0]["id"]
+
+    target_ref = None
+    for scope in dap.request("scopes", {"frameId": frame_id})["body"]["scopes"]:
+        ref = scope.get("variablesReference")
+        if not ref:
+            continue
+        for v in dap.request("variables", {"variablesReference": ref})["body"]["variables"]:
+            if v["name"] == var:
+                target_ref = v.get("variablesReference")
+    if not target_ref:
+        print(f"[probe] FAIL: local {var!r} not found or not expandable")
+        dap.request("continue", {"threadId": thread_id})
+        return 1
+
+    children = dap.request("variables", {"variablesReference": target_ref})["body"]["variables"]
+    shown = [f"{c['name']}={c.get('value')}" for c in children]
+    print(f"[probe] expand({var}) = {shown[:12]}")
+
+    dap.request("continue", {"threadId": thread_id})
+    if expect_child is not None and not any(
+            expect_child == c.get("name") or expect_child in (c.get("value") or "") for c in children):
+        print(f"[probe] FAIL: expected a child {expect_child!r} in {shown[:20]}")
+        return 1
+
+    print("[probe] PASS")
+    return 0
+
+
 def _drive_condition(
     dap: DapClient, file: Path, line: int, jdwp_port: int, condition: str, expect_stop: bool) -> int:
     """Set a conditional breakpoint and verify it suspends only when the condition holds -- exercises
@@ -425,13 +473,17 @@ def main() -> int:
                         help="request debug-console completions for this text (cursor at end)")
     parser.add_argument("--expect-item", dest="expect_item",
                         help="assert this label is among the completions")
+    parser.add_argument("--expand",
+                        help="expand this local variable (exercises object-scoped eval / logical views)")
+    parser.add_argument("--expect-child", dest="expect_child",
+                        help="with --expand, assert a child name or value contains this")
     args = parser.parse_args()
 
     workspace = args.workspace.resolve()
     file = args.file.resolve()
     return run_probe(workspace, file, args.line, args.method, args.main_class, args.detach,
                      args.eval_expr, args.expect, args.condition, not args.expect_nostop,
-                     args.complete, args.expect_item)
+                     args.complete, args.expect_item, args.expand, args.expect_child)
 
 
 if __name__ == "__main__":

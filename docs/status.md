@@ -51,7 +51,7 @@ Maven Central publication is planned for M3.
 | Rename | M2 planned | Existing reference identity and roles provide part of the foundation. |
 | Inlay hints | M2 planned | Not implemented. |
 | Run/test | Implemented (Neovim) | neotest adapter: discovery, run at every level, live-streamed output, inline failure diagnostics, cancel/stop, and the replay command shown as the first output line. Replays from captured `.lathe/` bytecode, no Maven. Runs a `main()` at any scope, including one located in test sources of a modular module (routed through the module's captured test launch). |
-| Debug | Implemented (Neovim) | In-process DAP adapter (Microsoft java-debug, attach-only) over JDWP to a suspended replay; `lathe.debug.test`/`lathe.debug.main` (test, main, and test-scope main) and an `nvim-dap` client (`:LatheDebug`). Breakpoints, stepping, inspection, conditional breakpoints, expression evaluation for watches/hover/console (reads, method/constructor invocation, `String` concat, force-loading cold classes), and debug-console code completion. Gaps: assignment (`setVariable`), array creation, and object-scoped evaluation (collection/map logical views). |
+| Debug | Implemented (Neovim) | In-process DAP adapter (Microsoft java-debug, attach-only) over JDWP to a suspended replay; `lathe.debug.test`/`lathe.debug.main` (test, main, and test-scope main) and an `nvim-dap` client (`:LatheDebug`). Breakpoints, stepping, inspection, conditional breakpoints, expression evaluation for watches/hover/console (reads, method/constructor invocation, `String` concat, force-loading cold classes, and object-scoped evaluation for collection/map logical views), and debug-console code completion. Gaps: assignment (`setVariable`) and array creation. |
 
 ## Editor Support
 

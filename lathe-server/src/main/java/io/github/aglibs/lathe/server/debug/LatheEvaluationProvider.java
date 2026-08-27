@@ -2,15 +2,19 @@ package io.github.aglibs.lathe.server.debug;
 
 import com.microsoft.java.debug.core.IEvaluatableBreakpoint;
 import com.microsoft.java.debug.core.adapter.IEvaluationProvider;
+import com.sun.jdi.ClassType;
+import com.sun.jdi.InterfaceType;
 import com.sun.jdi.Location;
 import com.sun.jdi.Method;
 import com.sun.jdi.ObjectReference;
+import com.sun.jdi.ReferenceType;
 import com.sun.jdi.StackFrame;
 import com.sun.jdi.ThreadReference;
 import com.sun.jdi.Value;
 import io.github.aglibs.lathe.server.analysis.AttributedExpression;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.module.WorkspaceModuleRegistry;
+import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -35,6 +39,10 @@ final class LatheEvaluationProvider implements IEvaluationProvider {
 
   private static final Logger LOG = Logger.getLogger(LatheEvaluationProvider.class.getName());
 
+  // The synthetic parameter object-scoped evaluation attributes the expression against and binds to
+  // the target object (see interpretOn); an unlikely name so it never shadows a real member.
+  private static final String RECEIVER = "__LATHE_RECV__";
+
   private final FrameSources frames;
 
   // One per-JDI-thread lock does both jobs the contract needs: it serializes that thread's whole
@@ -58,8 +66,74 @@ final class LatheEvaluationProvider implements IEvaluationProvider {
   @Override
   public CompletableFuture<Value> evaluate(
       final String expression, final ObjectReference object, final ThreadReference thread) {
-    return CompletableFuture.failedFuture(
-        new EvaluationException("object-scoped evaluation is not supported yet"));
+    return withThreadLock(
+        thread,
+        () -> {
+          try {
+            return CompletableFuture.completedFuture(interpretOn(expression, object, thread));
+          } catch (final Exception e) {
+            return CompletableFuture.failedFuture(evaluationError(expression, e));
+          }
+        });
+  }
+
+  /**
+   * Object-scoped evaluation: attribute {@code expression} against an accessible type of {@code
+   * object} (so its members resolve) and interpret it with the synthetic receiver bound to the
+   * object. Used by the adapter's logical collection/map views. Uses the thread's top frame only
+   * for a compilation context (module worker) and the interpreter's up-front captures.
+   */
+  private Value interpretOn(
+      final String expression, final ObjectReference object, final ThreadReference thread)
+      throws Exception {
+    final StackFrame frame = thread.frame(0);
+    final Path file =
+        frames
+            .fileFor(frame.location())
+            .orElseThrow(() -> new EvaluationException("source not found for " + frame.location()));
+    final CompilationWorker worker =
+        frames
+            .workerFor(file)
+            .orElseThrow(() -> new EvaluationException("no module worker for " + file));
+    final String receiverType = accessibleTypeName(object.referenceType()).replace('$', '.');
+    final AttributedExpression attributed =
+        worker
+            .attributeReceiverExpression(
+                file.toUri().toString(), receiverType, RECEIVER, expression)
+            .join()
+            .orElseThrow(() -> new EvaluationException("could not attribute: " + expression));
+    final Value value =
+        new JdiInterpreter(
+                attributed, frame, 0, body -> invokeGuarded(thread, body), Map.of(RECEIVER, object))
+            .evaluate();
+    LOG.fine(() -> "[eval:object] %s on %s".formatted(expression, object.referenceType().name()));
+    return value;
+  }
+
+  /**
+   * The most-derived public type in {@code type}'s hierarchy — the runtime type when it is public,
+   * else the nearest public superclass (e.g. {@code AbstractCollection}/{@code AbstractMap}, which
+   * still declare the logical-structure members), falling back to a public interface. Non-public
+   * runtime types (e.g. {@code java.util.ImmutableCollections$ListN}) cannot be named in source, so
+   * attribution must target an accessible supertype.
+   */
+  private static String accessibleTypeName(final ReferenceType type) {
+    ReferenceType current = type;
+    while (current != null) {
+      if (Modifier.isPublic(current.modifiers()) && !"java.lang.Object".equals(current.name())) {
+        return current.name();
+      }
+
+      current = current instanceof final ClassType classType ? classType.superclass() : null;
+    }
+
+    final List<InterfaceType> interfaces =
+        type instanceof final ClassType classType ? classType.allInterfaces() : List.of();
+    return interfaces.stream()
+        .filter(candidate -> Modifier.isPublic(candidate.modifiers()))
+        .map(ReferenceType::name)
+        .findFirst()
+        .orElse("java.lang.Object");
   }
 
   @Override
@@ -185,7 +259,7 @@ final class LatheEvaluationProvider implements IEvaluationProvider {
             .join()
             .orElseThrow(() -> new EvaluationException("could not attribute: " + expression));
     final Value value =
-        new JdiInterpreter(attributed, frame, depth, body -> invokeGuarded(thread, body))
+        new JdiInterpreter(attributed, frame, depth, body -> invokeGuarded(thread, body), Map.of())
             .evaluate();
     LOG.fine(() -> "[eval] %s @ %s".formatted(expression, location));
     return value;

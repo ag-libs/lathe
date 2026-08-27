@@ -83,12 +83,17 @@ if [ "$workspace" = "$fixture" ] && [ "$file" = "$default_file" ]; then
 
   # A main() in the jpms module's TEST sources: it can only run via the module's captured test launch
   # (test-classes patched into the module), not the main launch -- the LaunchPlan.forTestMain path.
+  tester="$fixture/jpms/src/test/java/com/example/jpms/HelloTester.java"
   echo "[debug-e2e] probing a test-scope main (com.example.jpms.HelloTester)"
   python3 "$here/debug_probe.py" \
-    --workspace "$workspace" \
-    "$fixture/jpms/src/test/java/com/example/jpms/HelloTester.java" \
-    --line 12 \
-    --main com.example.jpms.HelloTester
+    --workspace "$workspace" "$tester" --line 17 --main com.example.jpms.HelloTester
+
+  # Expanding the `items` list triggers the adapter's logical structure, which calls the
+  # object-scoped evaluate overload (DB-3) -- a logical element among the children proves it ran.
+  echo "[debug-e2e] object-scoped evaluation (expand a collection at the test-scope main)"
+  python3 "$here/debug_probe.py" \
+    --workspace "$workspace" "$tester" --line 17 --main com.example.jpms.HelloTester \
+    --expand items --expect-child alpha
 
   eval_common=("$here/debug_probe.py" --workspace "$workspace" "$default_main_file"
     --line "$default_main_line" --main "$default_main_class")

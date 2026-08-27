@@ -258,6 +258,35 @@ public final class SourceAnalysisSession implements AutoCloseable {
     return result;
   }
 
+  /**
+   * Attributes an expression evaluated against an object of {@code receiverType} rather than a
+   * stack frame (the debugger's object-scoped evaluation, used by logical collection/map views):
+   * the expression is spliced as {@code receiver.EXPR} inside a synthetic static method that takes
+   * {@code receiver} of that type, so javac resolves the members against the object's type. The
+   * interpreter then binds {@code receiver} to the actual object. {@code receiverType} is a source
+   * type name (nested types written with {@code .}).
+   */
+  public Optional<AttributedExpression> attributeReceiverExpression(
+      final String uri, final String receiverType, final String receiver, final String expression) {
+    final var t = Stopwatch.start();
+    final String content =
+        "final class __LATHE_OBJ__ { static void __e(%s %s) { var %s = (%s.%s); } }"
+            .formatted(receiverType, receiver, ExpressionSplice.SENTINEL, receiver, expression);
+    final AttributedFileAnalysis analysis =
+        compiler.compile(uri, content, CompileMode.FAST).fileAnalysis();
+    final Optional<AttributedExpression> result =
+        ExpressionSplice.locate(analysis)
+            .map(
+                path ->
+                    new AttributedExpression(
+                        path, analysis.trees(), analysis.elements(), analysis.types()));
+    LOG.fine(
+        () ->
+            "[eval:attribute-receiver] %s type=%s %dms resolved=%s"
+                .formatted(uri, receiverType, t.elapsedMs(), result.isPresent()));
+    return result;
+  }
+
   public List<FoldingRange> foldingRange(final String uri, final String content) {
     final var t = Stopwatch.start();
     final var ranges =
