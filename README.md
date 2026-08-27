@@ -16,6 +16,15 @@ Project documentation:
 - [Design index](docs/design-index.md)
 - [Architecture](docs/lathe-design.md)
 
+## Demo
+
+<!-- TODO: replace with an inline demo clip (upload the MP4 to a GitHub issue/release and paste
+     the user-attachments URL here so it renders as an inline player). Keep it ~40s: diagnostics,
+     run a `main`, set a breakpoint, step, inspect a variable. Record against a public or
+     `com.example` project only -- never a private codebase. -->
+
+_Demo video coming soon — a short run-and-debug session._
+
 
 ## Building from Source (Internal Preview)
 
