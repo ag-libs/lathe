@@ -66,7 +66,6 @@ M3 designs before implementation.
 
 ## Post-M3
 
-- [Run, Test, and Debug](planned/lathe-run-test-debug.md) — push-capture Surefire's fork launch (shim rides `mvn test`), replay against `.lathe/` bytecode, JDWP attachment; design + implementation/testing plan merged.
 - [Neotest Experience](planned/lathe-neotest-experience.md) — IntelliJ-parity acceptance spec for the Neovim neotest client: behavioral criteria (discovery, streaming, output surface, failure navigation). **Substantially implemented** (discovery, run at every level, streaming output, inline diagnostics, cancel, show-command); see status.md. Remaining: debug (C1–C3) and a few deferred niceties (R4 re-run-failed, O7 fold).
 - [Neotest Streaming and Thin-Adapter](planned/lathe-neotest-streaming.md) — Phase 2 implementation design of record: server-streamed `lathe/testOutput` notifications with stdout/stderr split, server-side test-id mapping, and consolidated single-launch file runs.
 - [Workspace Readiness via Progress](planned/lathe-workspace-readiness.md) — fixes the cold-open discovery race (experience-spec D1) by reporting workspace load/reload as standard `$/progress` and gating discovery on its completion; also the neotest discovery-logging notes.
@@ -79,6 +78,7 @@ M3 designs before implementation.
 
 ## Completed Designs
 
+- [Run, Test, and Debug](done/lathe-run-test-debug.md) — capture-replay of tests (shim rides `mvn test`, replay against `.lathe/` bytecode) and `main` classes, plus the in-process DAP debugger over JDWP: breakpoints/stepping/inspection, conditional breakpoints, expression evaluation (reads, invocation, `String` concat, cold-class force-load, object-scoped for logical views), debug-console completion, and run/debug of a test-scope `main`. Deferred tail tracked as TE/DB backlog gaps.
 - [CamelCase Workspace Symbol Matching](done/lathe-workspace-symbol-camelcase.md) — resolves
   EG-005; IntelliJ-style CamelHumps abbreviation matching for `workspace/symbol`, scoped to
   reactor-owned types, merged alongside the existing exact-prefix search.
@@ -123,7 +123,7 @@ M3 designs before implementation.
 - [Structural Navigation](done/lathe-structural-navigation.md)
 - [Structured Per-Test Results](done/lathe-structured-test-results.md) — real per-method pass/fail/skip from a
   class/package replay run (runner NDJSON sink → `ReplayOutcome.testResults` → neotest), replacing the aggregate
-  status fan-out; follow-on to [Run, Test, and Debug](planned/lathe-run-test-debug.md).
+  status fan-out; follow-on to [Run, Test, and Debug](done/lathe-run-test-debug.md).
 - [Unused-Code Diagnostics](done/lathe-unused-code-diagnostics.md)
 - [Unused Record Components](done/lathe-unused-record-components.md)
 

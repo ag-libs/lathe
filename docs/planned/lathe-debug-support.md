@@ -1,7 +1,7 @@
 # Lathe — Debug Support (DAP over JDWP)
 
 Design and phased development plan for debugging Lathe replay launches.
-It expands [lathe-run-test-debug.md](lathe-run-test-debug.md) §4.3 (debug is one JDWP argument),
+It expands [lathe-run-test-debug.md](../done/lathe-run-test-debug.md) §4.3 (debug is one JDWP argument),
 §10.5 (`debug.DebugAdapter`), and §12.9 (initial debug attach slice) into the full "ultimate debug"
 feature set, and records the architecture decisions taken in design discussion.
 

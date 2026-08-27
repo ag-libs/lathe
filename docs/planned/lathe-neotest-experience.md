@@ -24,7 +24,7 @@ Match the IntelliJ run-tests experience for neotest users:
 - there is one obvious output surface, not a confusing mix.
 
 Non-negotiable framing carried over from
-[lathe-run-test-debug.md](lathe-run-test-debug.md): the client never constructs Java command
+[lathe-run-test-debug.md](../done/lathe-run-test-debug.md): the client never constructs Java command
 lines, never runs Maven, and stays as thin as possible.
 Decision logic belongs in the server (javac-backed, unit-testable) so the Lua surface the
 maintainer cannot easily review stays minimal — see [Phase 2](#phase-2--thin-adapter-split).
@@ -363,5 +363,5 @@ history of what is built:
   id-mapping-in-Lua as-built decision is revisited by Phase 2.
 
 The server-side design of record — capture/replay, `.lathe-run.json` schema (§8), and the Surefire
-3.5.5 regression note (§14) — stays in **`planned/lathe-run-test-debug.md`**, referenced, not
+3.5.5 regression note (§14) — stays in **`done/lathe-run-test-debug.md`**, referenced, not
 replaced.

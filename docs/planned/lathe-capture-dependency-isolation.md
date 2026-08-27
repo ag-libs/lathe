@@ -4,7 +4,7 @@ This document describes the design that resolves gap
 [TE-1](../gaps/gaps.md#te-1--capture-only-dependencies-leak-into-the-recorded-replay-classpath):
 *capture-only dependencies leak into the recorded replay classpath*.
 It builds on the run/test capture and replay model in
-[lathe-run-test-debug.md](lathe-run-test-debug.md).
+[lathe-run-test-debug.md](../done/lathe-run-test-debug.md).
 
 ---
 

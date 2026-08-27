@@ -576,14 +576,42 @@ None yet — to be defined when the fix is scheduled.
 Capture/replay gaps involving the Maven test fork, the recorded launch template, and the standalone
 replay JVM. Resolved TE entries are in [gaps-archive.md](gaps-archive.md).
 
-No active TE gaps remain; resolved entries are in [gaps-archive.md](gaps-archive.md).
+## TE-1 — `<systemPropertyVariables>` are not carried into the replay launch
+
+**Status: deferred — Target: backlog**
+
+Surefire applies `<systemPropertyVariables>` inside the fork via `System.setProperty` from a program
+argument that never appears in `getInputArguments()`, so the capture listener cannot see them and
+replay omits them. No project validated against Lathe uses them today; the escape hatch is
+`<argLine>-Dkey=value</argLine>` (captured as `jvmArgs`). The design — `lathe:sync` reads the
+effective Surefire model (or a hybrid where sync supplies the key names and the fork supplies the
+values) — is in [lathe-run-test-debug.md](../done/lathe-run-test-debug.md) §15.1.
+
+### Regression targets
+
+None yet — to be defined when the fix is scheduled.
+
+## TE-2 — No named run-configuration selection (`:LatheRun {name}`)
+
+**Status: deferred — Target: backlog**
+
+The run-config overlay data model (a checkable `lathe-run.json` plus a gitignored `.lathe/run.json`,
+field-merged per `(module, kind)`) is implemented, but only the built-in default and `(module, kind)`
+overlays resolve; there is no command to select a *named* config. `:LatheRun {name}` (with
+server-provided completion; a picker in a future VS Code client) is the planned surface. Gutter and
+neotest runs work without it — a named config is only needed to customize a run. Design:
+[lathe-run-test-debug.md](../done/lathe-run-test-debug.md) §8.2, §12.10.
+
+### Regression targets
+
+None yet — to be defined when the fix is scheduled.
 
 ---
 
 # Debug & Evaluation Gaps (DB)
 
 Gaps in the in-process DAP adapter and the two-stage expression evaluator (see
-[lathe-run-test-debug.md](../planned/lathe-run-test-debug.md) §12.11). The debug surface is complete
+[lathe-run-test-debug.md](../done/lathe-run-test-debug.md) §12.11). The debug surface is complete
 for the current milestone — breakpoints, stepping, inspection, conditional breakpoints, and
 read/invoke expression evaluation all work — so the entries below are the deliberately deferred
 remainder, re-triaged in a future round.

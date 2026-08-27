@@ -36,7 +36,7 @@ aggregate status.
 
 ## Non-Goals
 
-* Streaming/live results while a run is in flight (`docs/planned/lathe-run-test-debug.md` §15 already
+* Streaming/live results while a run is in flight (`docs/done/lathe-run-test-debug.md` §15 already
   tracks NDJSON streaming as a separate, deferred item — this design produces one complete result set
   per replay, read after the process exits, same shape as today's `output` capture).
 * Fixing the underlying "stuck running forever" mitigation itself — that fix stays; this replaces
@@ -82,7 +82,7 @@ options:
   recognizes and extracts it, leaving ordinary test `System.out` output untouched in the surrounding
   transcript.
 * **Sink file** — the runner writes a JSON report to a fresh temp file (path passed via a system
-  property, matching `docs/planned/lathe-run-test-debug.md` §4.3's already-planned NDJSON sink
+  property, matching `docs/done/lathe-run-test-debug.md` §4.3's already-planned NDJSON sink
   convention) and the parent reads it after the process exits.
 
 Leaning toward the sink-file approach since it doesn't require parsing structured data out of a

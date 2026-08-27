@@ -202,7 +202,7 @@ inspection, conditional breakpoints, expression evaluation (reads, method/constr
 object-scoped evaluation (collection/map logical views, scheduled) and the deferred write path
 (assignment/`setVariable`) plus array-creation; named run configs (`:LatheRun {name}`) are the main
 run-config UX gap.
-See [lathe-run-test-debug.md](planned/lathe-run-test-debug.md) §12.11–§12.12 and the shipped scope in
+See [lathe-run-test-debug.md](done/lathe-run-test-debug.md) §12.11–§12.12 and the shipped scope in
 [lathe-neotest-experience.md](planned/lathe-neotest-experience.md).
 
 ### VS Code support

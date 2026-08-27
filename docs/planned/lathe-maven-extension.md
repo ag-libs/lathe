@@ -132,7 +132,7 @@ Add `io.github.ag-libs:lathe-junit:${latheVersion}` at `test` scope to every pro
 `<dependencies>` if absent (extension-wins on version). This puts the capture
 `LauncherSessionListener` on both the Surefire (unit) and Failsafe (integration) test-runtime
 classpaths through the normal test scope, so capture activates on any `mvn test` / `mvn verify`
-fork ([lathe-run-test-debug.md §3](lathe-run-test-debug.md)).
+fork ([lathe-run-test-debug.md §3](../done/lathe-run-test-debug.md)).
 
 **(d) Surefire / Failsafe — document, do not inject (§5).**
 The extension does **not** pin or floor the Surefire/Failsafe version. Capture requires a
@@ -143,7 +143,7 @@ onto the effective build, keeping the extension's footprint on third-party plugi
 
 **(e) Resource dual-output to `.lathe/` — candidate, not committed.**
 Because the extension already rewrites each project's model in memory, it can also solve the
-resource-currency gap ([lathe-run-test-debug.md §6](lathe-run-test-debug.md)) far more cheaply than
+resource-currency gap ([lathe-run-test-debug.md §6](../done/lathe-run-test-debug.md)) far more cheaply than
 the copy-on-change watcher (§6.1) or the `lathe:refresh-resources` goal (§6.2). Replay reads resources
 from `.lathe/`, which only refreshes on a compile (via the shim); a resource-only edit leaves it stale.
 Instead of new server or goal machinery, the extension could inject a second resource execution
@@ -177,7 +177,7 @@ launch, in addition to the existing `process-test-classes`-bound `lathe:sync`.
 For "refresh / capture the fork template **without running the suite**", introduce a capture-scoped
 signal `-Dlathe.capture.only` (§5). It replaces the current skip-framed
 `latheSkipTests` (`LatheFlags.TEST_CAPTURE_SKIP_EXECUTION`) and converges with the
-`CaptureOnlyPostDiscoveryFilter` sketched in [lathe-run-test-debug.md](lathe-run-test-debug.md) — one
+`CaptureOnlyPostDiscoveryFilter` sketched in [lathe-run-test-debug.md](../done/lathe-run-test-debug.md) — one
 capture-only concept rather than a Lathe-specific "skip tests" flag beside Maven's own `-DskipTests`
 / `-Dmaven.test.skip`. (`-Dmaven.test.skip` skips test compilation, so there is no fork and no
 capture — documented as the one case where capture cannot run.)
