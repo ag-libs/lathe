@@ -65,6 +65,9 @@ import java.util.*;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
@@ -267,27 +270,24 @@ final class WorkspaceSession {
       assertLaunchComplete(CompletenessGate.verify(template, workspaceRoot));
 
       final int jdwpPort = PortUtil.free();
+      final var jdwp = new JdwpOptions(jdwpPort);
+      final var jdwpReady = new CompletableFuture<Void>();
       final Path resultsSink = Files.createTempFile("lathe-results-", ".ndjson");
       final RunItem overlay =
           new RunConfigReader(workspaceRoot).read().defaultFor(moduleRel, RunKind.TEST);
       final ResolvedLaunch resolved =
           RunOverlay.applyToTest(
-              template,
-              workspaceRoot,
-              runnerClasspath,
-              selections,
-              resultsSink,
-              overlay,
-              new JdwpOptions(jdwpPort));
+              template, workspaceRoot, runnerClasspath, selections, resultsSink, overlay, jdwp);
       final var session =
           Launcher.launch(
               resolved.argv(),
               resultsSink,
-              streamConsumer(token),
+              jdwpReadyConsumer(jdwp, jdwpReady, streamConsumer(token)),
               resultConsumer(token),
               resolved.env(),
               resolved.cwd());
-      return attachDebugHost(moduleRel, token, session, jdwpPort, selectionLabel(selections));
+      return attachDebugHost(
+          moduleRel, token, session, jdwpPort, jdwpReady, selectionLabel(selections));
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }
@@ -308,20 +308,21 @@ final class WorkspaceSession {
       assertLaunchComplete(CompletenessGate.verify(template, workspaceRoot));
 
       final int jdwpPort = PortUtil.free();
+      final var jdwp = new JdwpOptions(jdwpPort);
+      final var jdwpReady = new CompletableFuture<Void>();
       final RunItem overlay =
           new RunConfigReader(workspaceRoot).read().defaultFor(moduleRel, RunKind.MAIN);
       final ResolvedLaunch resolved =
-          RunOverlay.applyToMain(
-              template, workspaceRoot, mainClass, overlay, new JdwpOptions(jdwpPort));
+          RunOverlay.applyToMain(template, workspaceRoot, mainClass, overlay, jdwp);
       final var session =
           Launcher.launch(
               resolved.argv(),
               null,
-              streamConsumer(token),
+              jdwpReadyConsumer(jdwp, jdwpReady, streamConsumer(token)),
               ignored -> {},
               resolved.env(),
               resolved.cwd());
-      return attachDebugHost(moduleRel, token, session, jdwpPort, mainClass);
+      return attachDebugHost(moduleRel, token, session, jdwpPort, jdwpReady, mainClass);
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }
@@ -337,19 +338,30 @@ final class WorkspaceSession {
       final String token,
       final LaunchSession session,
       final int jdwpPort,
+      final CompletableFuture<Void> jdwpReady,
       final String label)
       throws IOException {
     activeRuns.put(token, session);
     session.onExit().whenComplete((outcome, error) -> worker.execute(() -> endDebugSession(token)));
 
-    // Launcher spawns the JVM and returns before its -agentlib:jdwp socket is listening; wait for
-    // it
-    // here so the editor's debug client (which sends attach once, no retry) never races the agent.
-    // suspend=y guarantees the socket opens shortly and then parks before main.
-    if (!PortUtil.awaitAccepting(jdwpPort, JDWP_READY_TIMEOUT_MS)) {
+    // Launcher spawns the JVM and returns before its -agentlib:jdwp socket is listening. Gate on
+    // the
+    // agent's own "Listening for transport ... at address:" banner (surfaced through the drain and
+    // completed onto jdwpReady by jdwpReadyConsumer) rather than probing the port with a throwaway
+    // TCP connect, which the agent reports as a failed debugger handshake. The DapHost's java-debug
+    // connection is then the only connection the agent ever sees, so the editor's attach (once, no
+    // retry) never races a probe. suspend=y guarantees the banner prints shortly, then parks.
+    try {
+      jdwpReady.get(JDWP_READY_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException(
+          "interrupted while waiting for the jdwp agent on port %d".formatted(jdwpPort), e);
+    } catch (final ExecutionException | TimeoutException e) {
       throw new IllegalStateException(
           "jdwp agent did not start listening on port %d within %dms"
-              .formatted(jdwpPort, JDWP_READY_TIMEOUT_MS));
+              .formatted(jdwpPort, JDWP_READY_TIMEOUT_MS),
+          e);
     }
 
     final List<Path> sourceRoots =
@@ -436,6 +448,25 @@ final class WorkspaceSession {
     }
 
     return line -> ((LatheLanguageClient) client).testOutput(new TestOutputParams(token, line));
+  }
+
+  /**
+   * Wraps a transcript consumer so the debug worker learns the JDWP agent is listening the moment
+   * the JVM prints its readiness banner -- completing {@code ready} -- while still forwarding every
+   * line downstream. Lets {@link #attachDebugHost} gate on the banner instead of a throwaway TCP
+   * probe the agent would misread as a failed handshake. Package-private for direct unit coverage
+   * of the readiness gate without launching a suspended JVM.
+   */
+  static Consumer<TranscriptLine> jdwpReadyConsumer(
+      final JdwpOptions jdwp,
+      final CompletableFuture<Void> ready,
+      final Consumer<TranscriptLine> downstream) {
+    return line -> {
+      downstream.accept(line);
+      if (jdwp.isListeningLine(line.text())) {
+        ready.complete(null);
+      }
+    };
   }
 
   /**

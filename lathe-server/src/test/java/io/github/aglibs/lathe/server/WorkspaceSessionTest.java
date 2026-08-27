@@ -2,12 +2,17 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.core.launch.JdwpOptions;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
+import io.github.aglibs.lathe.server.run.TranscriptLine;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -148,6 +153,41 @@ class WorkspaceSessionTest {
     final List<Path> roots = ReferenceCandidatePlanner.packageSearchRoots(configWithGen(genRoot));
 
     assertThat(WorkspaceSession.isInPackageScope(outside, roots, null)).isFalse();
+  }
+
+  // The debug readiness gate: attachDebugHost waits on the future jdwpReadyConsumer completes when
+  // the JVM's JDWP "Listening for transport ..." banner is drained -- replacing the old TCP probe
+  // that the agent misread as a failed handshake. Covered here at the consumer, so no suspended JVM
+  // or socket is needed; a probe-based test would exercise only the removed
+  // PortUtil.awaitAccepting.
+  @Test
+  void jdwpReadyConsumer_listeningBanner_completesReadyAndForwards() {
+    final var ready = new CompletableFuture<Void>();
+    final var seen = new AtomicReference<TranscriptLine>();
+    final Consumer<TranscriptLine> consumer =
+        WorkspaceSession.jdwpReadyConsumer(new JdwpOptions(37591), ready, seen::set);
+
+    final var banner =
+        new TranscriptLine(
+            TranscriptLine.Stream.STDOUT, "Listening for transport dt_socket at address: 37591");
+    consumer.accept(banner);
+
+    assertThat(ready).isCompleted();
+    assertThat(seen.get()).isEqualTo(banner);
+  }
+
+  @Test
+  void jdwpReadyConsumer_nonBannerLine_forwardsWithoutCompleting() {
+    final var ready = new CompletableFuture<Void>();
+    final var seen = new AtomicReference<TranscriptLine>();
+    final Consumer<TranscriptLine> consumer =
+        WorkspaceSession.jdwpReadyConsumer(new JdwpOptions(37591), ready, seen::set);
+
+    final var line = new TranscriptLine(TranscriptLine.Stream.STDOUT, "Starting AppServer");
+    consumer.accept(line);
+
+    assertThat(ready).isNotCompleted();
+    assertThat(seen.get()).isEqualTo(line);
   }
 
   private ModuleSourceConfig config(final Path sourceRoot) {

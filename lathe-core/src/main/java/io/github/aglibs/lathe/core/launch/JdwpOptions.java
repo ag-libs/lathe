@@ -10,6 +10,8 @@ import io.github.aglibs.validcheck.ValidCheck;
  */
 public record JdwpOptions(int port) {
 
+  private static final String TRANSPORT = "dt_socket";
+
   /** A normal, non-debug run. */
   public static final JdwpOptions NONE = new JdwpOptions(0);
 
@@ -22,7 +24,18 @@ public record JdwpOptions(int port) {
   }
 
   public String agentArg() {
-    return "-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=127.0.0.1:%d"
-        .formatted(port);
+    return "-agentlib:jdwp=transport=%s,server=y,suspend=y,address=127.0.0.1:%d"
+        .formatted(TRANSPORT, port);
+  }
+
+  /**
+   * Whether {@code line} is the JVM's "agent is listening" banner for this launch's port. The JDWP
+   * agent prints it to stdout the moment its socket is ready to accept the debugger, so it is the
+   * signal to attach -- used to gate the debug attach on the banner instead of a throwaway TCP
+   * probe the agent would misread as a failed debugger handshake.
+   */
+  public boolean isListeningLine(final String line) {
+    return line.contains("Listening for transport %s at address:".formatted(TRANSPORT))
+        && line.strip().endsWith(Integer.toString(port));
   }
 }
