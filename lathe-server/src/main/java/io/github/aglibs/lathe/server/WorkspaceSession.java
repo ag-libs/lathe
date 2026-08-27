@@ -46,6 +46,7 @@ import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.LaunchSession;
 import io.github.aglibs.lathe.server.run.LaunchTemplateReader;
 import io.github.aglibs.lathe.server.run.Launcher;
+import io.github.aglibs.lathe.server.run.MainClassScope;
 import io.github.aglibs.lathe.server.run.MainLaunchReader;
 import io.github.aglibs.lathe.server.run.ResolvedLaunch;
 import io.github.aglibs.lathe.server.run.RunConfigReader;
@@ -300,20 +301,15 @@ final class WorkspaceSession {
    */
   DebugStartResult debugMain(final String moduleRel, final String mainClass, final String token) {
     try {
-      final MainLaunchData template =
-          new MainLaunchReader(workspaceRoot)
-              .read(moduleRel)
-              .orElseThrow(
-                  () -> new IllegalStateException("no derived main-launch.json for " + moduleRel));
-      assertLaunchComplete(CompletenessGate.verify(template, workspaceRoot));
-
       final int jdwpPort = PortUtil.free();
       final var jdwp = new JdwpOptions(jdwpPort);
+      final MainLaunchPlan plan = resolveMainLaunch(workspaceRoot, moduleRel, mainClass, jdwp);
+      if (plan.blocked()) {
+        throw new IllegalStateException("debug launch incomplete: " + plan.blockedReasons());
+      }
+
       final var jdwpReady = new CompletableFuture<Void>();
-      final RunItem overlay =
-          new RunConfigReader(workspaceRoot).read().defaultFor(moduleRel, RunKind.MAIN);
-      final ResolvedLaunch resolved =
-          RunOverlay.applyToMain(template, workspaceRoot, mainClass, overlay, jdwp);
+      final ResolvedLaunch resolved = plan.launch();
       final var session =
           Launcher.launch(
               resolved.argv(),
@@ -326,6 +322,73 @@ final class WorkspaceSession {
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }
+  }
+
+  /**
+   * A resolved main launch, or the reasons it is blocked — returned so run and debug report it
+   * their own way.
+   */
+  private record MainLaunchPlan(ResolvedLaunch launch, List<String> blockedReasons) {
+    static MainLaunchPlan ready(final ResolvedLaunch launch) {
+      return new MainLaunchPlan(launch, List.of());
+    }
+
+    static MainLaunchPlan blocked(final List<String> reasons) {
+      return new MainLaunchPlan(null, List.copyOf(reasons));
+    }
+
+    boolean blocked() {
+      return launch == null;
+    }
+  }
+
+  /**
+   * Resolves the launch for a {@code main} run/debug, choosing the template by the class's source
+   * scope: a {@code main} in the module's test sources runs against the captured test template (its
+   * test-classes patched into the module, the full test-scope graph), with the user's class as the
+   * entry point instead of the JUnit runner; a main-scope class uses the derived main template.
+   * Blocked (missing template / incomplete capture) is returned, not thrown, so each caller reports
+   * it its own way.
+   */
+  private static MainLaunchPlan resolveMainLaunch(
+      final Path workspaceRoot,
+      final String moduleRel,
+      final String mainClass,
+      final JdwpOptions jdwp)
+      throws IOException {
+    final RunItem overlay =
+        new RunConfigReader(workspaceRoot).read().defaultFor(moduleRel, RunKind.MAIN);
+    if (MainClassScope.isTestScope(workspaceRoot, moduleRel, mainClass)) {
+      final Optional<TestLaunchData> template =
+          new LaunchTemplateReader(workspaceRoot).read(moduleRel);
+      if (template.isEmpty()) {
+        return MainLaunchPlan.blocked(
+            List.of(
+                "no captured test launch for %s; run `mvn test` to capture it"
+                    .formatted(moduleRel)));
+      }
+
+      final CompletenessResult gate = CompletenessGate.verify(template.get(), workspaceRoot);
+      if (!gate.complete()) {
+        return MainLaunchPlan.blocked(gate.reasons());
+      }
+
+      return MainLaunchPlan.ready(
+          RunOverlay.applyToTestMain(template.get(), workspaceRoot, mainClass, overlay, jdwp));
+    }
+
+    final Optional<MainLaunchData> template = new MainLaunchReader(workspaceRoot).read(moduleRel);
+    if (template.isEmpty()) {
+      return MainLaunchPlan.blocked(List.of("no derived main-launch.json for " + moduleRel));
+    }
+
+    final CompletenessResult gate = CompletenessGate.verify(template.get(), workspaceRoot);
+    if (!gate.complete()) {
+      return MainLaunchPlan.blocked(gate.reasons());
+    }
+
+    return MainLaunchPlan.ready(
+        RunOverlay.applyToMain(template.get(), workspaceRoot, mainClass, overlay, jdwp));
   }
 
   /**
@@ -599,34 +662,20 @@ final class WorkspaceSession {
       final Stopwatch t,
       final CompletableFuture<LaunchOutcome> result) {
     try {
-      final var template = new MainLaunchReader(workspaceRoot).read(moduleRel);
-      if (template.isEmpty()) {
-        LOG.warning(
-            () ->
-                "[launch] %s %s blocked no derived main-launch.json"
-                    .formatted(moduleRel, mainClass));
-        result.complete(
-            LaunchOutcome.blocked(List.of("no derived main-launch.json for " + moduleRel)));
-        return;
-      }
-
-      final var gate = CompletenessGate.verify(template.get(), workspaceRoot);
-      if (!gate.complete()) {
+      final MainLaunchPlan plan =
+          resolveMainLaunch(workspaceRoot, moduleRel, mainClass, JdwpOptions.NONE);
+      if (plan.blocked()) {
         LOG.warning(
             () ->
                 "[launch] %s %s blocked reasons=%s"
-                    .formatted(moduleRel, mainClass, gate.reasons()));
-        result.complete(LaunchOutcome.blocked(gate.reasons()));
+                    .formatted(moduleRel, mainClass, plan.blockedReasons()));
+        result.complete(LaunchOutcome.blocked(plan.blockedReasons()));
         return;
       }
 
       // A main run has no JUnit result stream, so it spawns with a null sink and a no-op result
-      // consumer; the derived module/class path from main-launch.json is all replay needs.
-      final RunItem overlay =
-          new RunConfigReader(workspaceRoot).read().defaultFor(moduleRel, RunKind.MAIN);
-      final ResolvedLaunch resolved =
-          RunOverlay.applyToMain(
-              template.get(), workspaceRoot, mainClass, overlay, JdwpOptions.NONE);
+      // consumer; the resolved module/class path is all replay needs.
+      final ResolvedLaunch resolved = plan.launch();
       final var session =
           Launcher.launch(
               resolved.argv(), null, onLine, ignored -> {}, resolved.env(), resolved.cwd());

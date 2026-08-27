@@ -81,6 +81,15 @@ if [ "$workspace" = "$fixture" ] && [ "$file" = "$default_file" ]; then
     --line "$default_main_line" \
     --main "$default_main_class"
 
+  # A main() in the jpms module's TEST sources: it can only run via the module's captured test launch
+  # (test-classes patched into the module), not the main launch -- the LaunchPlan.forTestMain path.
+  echo "[debug-e2e] probing a test-scope main (com.example.jpms.HelloTester)"
+  python3 "$here/debug_probe.py" \
+    --workspace "$workspace" \
+    "$fixture/jpms/src/test/java/com/example/jpms/HelloTester.java" \
+    --line 12 \
+    --main com.example.jpms.HelloTester
+
   eval_common=("$here/debug_probe.py" --workspace "$workspace" "$default_main_file"
     --line "$default_main_line" --main "$default_main_class")
   echo "[debug-e2e] evaluating expressions at $default_main_file:$default_main_line"

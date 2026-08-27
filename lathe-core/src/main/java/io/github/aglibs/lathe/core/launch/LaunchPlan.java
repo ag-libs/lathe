@@ -76,15 +76,61 @@ public final class LaunchPlan {
         data.addReads(),
         data.addExports(),
         data.addModules());
-    if (data.mode() == LaunchMode.MODULE) {
+    addMainEntry(args, data.mode(), data.mainModule(), mainClass, overlay);
+    return List.copyOf(args);
+  }
+
+  /**
+   * A {@code main} class that lives in a module's test sources: it runs against the module's
+   * captured test launch template (which patches the test-classes into the module and carries the
+   * test-scope dependency graph), with the user's class as the entry point instead of the JUnit
+   * runner — the only faithful way to run a test-scope {@code main}, since its class is not on the
+   * main module path. Differs from {@link #forTest} only in the entry point (no runner, no
+   * selections, no results sink).
+   */
+  public static List<String> forTestMain(
+      final TestLaunchData data,
+      final Path workspaceRoot,
+      final String mainClass,
+      final LaunchOverlay overlay,
+      final JdwpOptions jdwp) {
+    final List<String> modulePath = ReactorRewrite.toLathe(data.modulePath(), workspaceRoot);
+    final List<String> classPath = ReactorRewrite.toLathe(data.classPath(), workspaceRoot);
+    final Map<String, String> patchModules =
+        ReactorRewrite.toLathe(data.patchModules(), workspaceRoot);
+
+    final var args = baseJavaArgs(data.javaHome(), data.jvmArgs(), overlay.jvmArgs());
+    if (jdwp.enabled()) {
+      args.add(jdwp.agentArg());
+    }
+
+    addRuntimeShape(
+        args,
+        append(modulePath, overlay.modulePathAppend()),
+        append(classPath, overlay.classpathAppend()),
+        patchModules,
+        data.addOpens(),
+        data.addReads(),
+        data.addExports(),
+        data.addModules());
+    addMainEntry(args, data.mode(), data.mainModule(), mainClass, overlay);
+    return List.copyOf(args);
+  }
+
+  private static void addMainEntry(
+      final List<String> args,
+      final LaunchMode mode,
+      final String mainModule,
+      final String mainClass,
+      final LaunchOverlay overlay) {
+    if (mode == LaunchMode.MODULE) {
       args.add("-m");
-      args.add("%s/%s".formatted(data.mainModule(), mainClass));
+      args.add("%s/%s".formatted(mainModule, mainClass));
     } else {
       args.add(mainClass);
     }
 
     args.addAll(overlay.programArgs());
-    return List.copyOf(args);
   }
 
   private static ArrayList<String> baseJavaArgs(

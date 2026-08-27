@@ -31,6 +31,18 @@ public final class RunOverlay {
     return new ResolvedLaunch(argv, item.env(), resolveCwd(item, workspaceRoot));
   }
 
+  public static ResolvedLaunch applyToTestMain(
+      final TestLaunchData template,
+      final Path workspaceRoot,
+      final String mainClass,
+      final RunItem item,
+      final JdwpOptions jdwp) {
+    final List<String> argv =
+        LaunchPlan.forTestMain(
+            template, workspaceRoot, mainClass, launchOverlay(item, workspaceRoot), jdwp);
+    return new ResolvedLaunch(argv, item.env(), resolveCwd(item, workspaceRoot));
+  }
+
   public static ResolvedLaunch applyToTest(
       final TestLaunchData template,
       final Path workspaceRoot,

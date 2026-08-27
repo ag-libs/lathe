@@ -364,6 +364,108 @@ final class LaunchPlanTest {
   }
 
   @Test
+  void forTestMain_modularTemplate_patchesTestClassesAndRunsMainNotRunner() {
+    final var data =
+        new TestLaunchData(
+            "1",
+            "surefire",
+            LaunchMode.MODULE,
+            "/jdk",
+            "com.example.app",
+            List.of("/workspace/app/target/classes"),
+            List.of("/m2/junit.jar"),
+            Map.of("com.example.app", "/workspace/app/target/test-classes"),
+            List.of("com.example.app/com.example.app=ALL-UNNAMED"),
+            List.of("com.example.app=ALL-UNNAMED"),
+            List.of(),
+            List.of("ALL-MODULE-PATH"),
+            List.of("-Dfoo=bar"));
+
+    final List<String> args =
+        LaunchPlan.forTestMain(
+            data, WORKSPACE, "com.example.app.tool.Tester", LaunchOverlay.NONE, JdwpOptions.NONE);
+
+    assertThat(args)
+        .containsExactly(
+            "/jdk/bin/java",
+            "-Dfoo=bar",
+            "--module-path",
+            "/workspace/.lathe/app/classes",
+            "--class-path",
+            "/m2/junit.jar",
+            "--patch-module",
+            "com.example.app=/workspace/.lathe/app/test-classes",
+            "--add-opens",
+            "com.example.app/com.example.app=ALL-UNNAMED",
+            "--add-reads",
+            "com.example.app=ALL-UNNAMED",
+            "--add-modules",
+            "ALL-MODULE-PATH",
+            "-m",
+            "com.example.app/com.example.app.tool.Tester");
+    assertThat(args).doesNotContain(LatheLayout.TEST_RUNNER_MAIN_CLASS);
+    assertThat(args).noneMatch(arg -> arg.startsWith("-D" + LatheFlags.RESULTS_SINK));
+  }
+
+  @Test
+  void forTestMain_classpathTemplate_runsMainOnTestClasspath() {
+    final var data =
+        new TestLaunchData(
+            "1",
+            "surefire",
+            LaunchMode.CLASSPATH,
+            "/jdk",
+            "",
+            List.of(),
+            List.of("/workspace/app/target/test-classes", "/m2/junit.jar"),
+            Map.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of());
+
+    final List<String> args =
+        LaunchPlan.forTestMain(
+            data, WORKSPACE, "com.example.app.Tester", LaunchOverlay.NONE, JdwpOptions.NONE);
+
+    assertThat(args)
+        .containsExactly(
+            "/jdk/bin/java",
+            "--class-path",
+            String.join(File.pathSeparator, "/workspace/.lathe/app/test-classes", "/m2/junit.jar"),
+            "com.example.app.Tester");
+  }
+
+  @Test
+  void forTestMain_debug_emitsSuspendedJdwpAgentBeforeEntry() {
+    final var data =
+        new TestLaunchData(
+            "1",
+            "surefire",
+            LaunchMode.MODULE,
+            "/jdk",
+            "com.example.app",
+            List.of("/workspace/app/target/classes"),
+            List.of(),
+            Map.of("com.example.app", "/workspace/app/target/test-classes"),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of());
+
+    final List<String> args =
+        LaunchPlan.forTestMain(
+            data, WORKSPACE, "com.example.app.Tester", LaunchOverlay.NONE, new JdwpOptions(5005));
+
+    final String agent =
+        "-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=127.0.0.1:5005";
+    assertThat(args).contains(agent);
+    assertThat(args.indexOf(agent)).isLessThan(args.indexOf("-m"));
+  }
+
+  @Test
   void forMain_noDebug_omitsJdwpAgent() {
     final var data =
         new MainLaunchData(
