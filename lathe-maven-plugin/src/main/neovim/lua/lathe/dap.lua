@@ -9,6 +9,8 @@
 -- adapter's own pcall(require, "dap"), so a runtime without nvim-dap loads unaffected.
 
 local output = require("lathe.output")
+-- Safe to require at load: lathe.stackdecorate is core-only (no neotest/nio), like lathe.output.
+local stackdecorate = require("lathe.stackdecorate")
 
 local M = {}
 
@@ -179,6 +181,20 @@ function M.debug(bufnr)
   end, bufnr)
 end
 
+-- Once a Lathe debug session ends, hyperlink the stack frames the debuggee streamed into the
+-- shared output buffer -- the debug twin of lathe.run's on_finished / lathe.neotest's results(),
+-- which both call this after their run completes. The debug launch request returns at attach
+-- (ports allocated), long before the debuggee exits, so the DAP `terminated`/`exited` events are
+-- the only client-side "run finished" signal. Scoped to type == "lathe" because dap.listeners are
+-- global (other adapters must not trigger it); decorate_live_output is idempotent -- it clears its
+-- namespace and re-scans -- so firing on both events is safe. Exposed as M._ so the guard is unit
+-- testable without a live nvim-dap session.
+function M._decorate_on_session_end(session)
+  if session and session.config and session.config.type == "lathe" then
+    stackdecorate.decorate_live_output()
+  end
+end
+
 --- Registers the `lathe` nvim-dap adapter. Returns false (a no-op) when nvim-dap is absent, so
 --- lathe.setup can skip the :LatheDebug command on runtimes without it.
 function M.setup()
@@ -188,6 +204,8 @@ function M.setup()
   end
 
   dap.adapters.lathe = start_adapter
+  dap.listeners.after.event_terminated.lathe_decorate = M._decorate_on_session_end
+  dap.listeners.after.event_exited.lathe_decorate = M._decorate_on_session_end
   return true
 end
 

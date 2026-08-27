@@ -1,11 +1,16 @@
--- Verifies lathe.dap._test_target_for: the pure selection of which TEST runnable a :LatheDebug
--- should attach to for a given cursor line, over the flat lathe.runnables.list target list.
--- Exercises method-in-range, class fallback, package fallback, innermost precedence, and the
--- no-test case.
+-- Verifies lathe.dap:
+--   * _test_target_for: the pure selection of which TEST runnable a :LatheDebug should attach to
+--     for a given cursor line, over the flat lathe.runnables.list target list -- method-in-range,
+--     class fallback, package fallback, innermost precedence, and the no-test case.
+--   * _decorate_on_session_end: the DAP session-end guard that hyperlinks the streamed stack frames
+--     only for a Lathe session (dap.listeners are global, so other adapters must not trigger it).
 --
--- Self-contained: lathe.dap requires only lathe.output, which uses core Neovim APIs (no
--- nvim-dap/nio), so this loads on any machine -- run-specs.sh runs every *_spec.lua
--- unconditionally.
+-- Self-contained: lathe.dap requires only lathe.output and lathe.stackdecorate, both core Neovim
+-- APIs (no nvim-dap/nio), so this loads on any machine -- run-specs.sh runs every *_spec.lua
+-- unconditionally. The session-end cases stub lathe.stackdecorate with a call spy so the guard is
+-- asserted synchronously; the real decoration is covered by stackdecorate_spec. The stub is
+-- injected before requiring lathe.dap (which binds the module at load) and is isolated because each
+-- spec runs in its own nvim process.
 --
 -- Run headless from the repo root (or via run-specs.sh):
 --   nvim --headless --clean -u NONE \
@@ -14,6 +19,14 @@
 --     -l lathe-maven-plugin/src/test/neovim/dap_spec.lua
 
 local spec = require("spec_helper").new()
+
+local decorate_calls = 0
+package.loaded["lathe.stackdecorate"] = {
+  decorate_live_output = function()
+    decorate_calls = decorate_calls + 1
+  end,
+}
+
 local dap = require("lathe.dap")
 
 local TEST_METHOD = 1
@@ -96,6 +109,28 @@ do
   spec.check("main config mainClass", config.lathe_main_class, "com.example.App")
   spec.check("main config moduleRel", config.lathe_module_rel, "app")
   spec.check("main config no selections", config.lathe_selections, nil)
+end
+
+-- Case 8: a Lathe debug session ending triggers decoration of the shared output buffer -- the debug
+-- twin of the run/test completion hooks.
+do
+  decorate_calls = 0
+  dap._decorate_on_session_end({ config = { type = "lathe" } })
+  spec.check("lathe session end -> decorate", decorate_calls, 1)
+end
+
+-- Case 9: a non-Lathe session must not decorate, since dap.listeners are registered globally.
+do
+  decorate_calls = 0
+  dap._decorate_on_session_end({ config = { type = "python" } })
+  spec.check("non-lathe session end -> no decorate", decorate_calls, 0)
+end
+
+-- Case 10: a malformed session event (no config) is ignored rather than erroring.
+do
+  decorate_calls = 0
+  dap._decorate_on_session_end({})
+  spec.check("session without config -> no decorate", decorate_calls, 0)
 end
 
 spec.finish("dap_spec")
