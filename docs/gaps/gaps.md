@@ -387,6 +387,40 @@ Active completion-quality gaps. Discovered and triaged via the completion append
 [gap workflow](gap-workflow.md); checked against the completion [expectations](../planned/lathe-completion-expectations.md)
 contract. Resolved CQ entries are in [gaps-archive.md](gaps-archive.md).
 
+## CQ-0053 — Member completion on an array-typed receiver returns nothing
+
+**Status: documented — Target: pending triage**
+
+### Observed behaviour
+
+Member completion after `.` on a value whose static type is an **array** returns no candidates: for
+a local `String[] args`, `args.` offers nothing, where `.length`, `.clone()`, and the `Object`
+members are expected. Object, `String`, and `this` receivers complete normally, and `args[0].` (an
+element, type `String`) offers the full `String` API — so the gap is specific to the array type,
+not to locals or member access in general.
+
+### Root cause (suspected)
+
+The member-access completer does not special-case the synthetic members of an array type
+(`length`, `clone()`) or resolve `Object`'s members against an `ArrayType` receiver. Not yet
+isolated to a component.
+
+### Probe commands
+
+Surfaced through debug-console completion (DB-4) but shared by the editor path (same
+`CompletionEngine`):
+
+```bash
+python3 dev/debug_probe.py --workspace <ws> <MainFile.java> --line <N> --main <Class> \
+  --complete "args."          # String[] local -> today: 0 items
+python3 dev/debug_probe.py --workspace <ws> <MainFile.java> --line <N> --main <Class> \
+  --complete "args[0]."       # element (String) -> full String API, works
+```
+
+### Regression targets
+
+None yet — to be defined when the fix is scheduled.
+
 ## CQ-0002 — Method-reference completion returns no candidates
 
 ID: CQ-0002
@@ -644,48 +678,57 @@ None yet — to be defined when the fix is scheduled.
 
 ## DB-4 — Debug-console / REPL code completion returns nothing
 
-**Status: deferred — Target: backlog**
+**Status: done — Target: M3**
 
-### Observed behaviour
+### Observed behaviour (resolved)
 
-The DAP `completions` request is fully plumbed but not answered: java-debug advertises
-`supportsCompletionsRequest = true` and Lathe already registers a `LatheCompletionsProvider`, but that
-provider is a stub whose `codeComplete(frame, snippet, line, column)` returns an empty list. In the
-`nvim-dap` REPL, omni-completion (`i_CTRL-X_CTRL-O`) therefore offers nothing, so the REPL is a plain
-buffer where a complete expression evaluates and a partial one just does nothing.
+The DAP `completions` request was fully plumbed but unanswered: java-debug advertises
+`supportsCompletionsRequest = true` and Lathe registered a `LatheCompletionsProvider`, but the
+provider was a stub returning an empty list, so the `nvim-dap` REPL offered nothing.
 
-### Expected behaviour
+### Resolution
 
-Typing a partial expression at a breakpoint offers completions in the frame's scope (locals,
-parameters, `this`, fields, visible types/imports, members after `.`), exactly as the editor's LSP
-completion does at that source line.
+`LatheCompletionsProvider` now answers `codeComplete(frame, snippet, line, column)` by running
+Lathe's ordinary completion engine at the frame's source line — reusing only javac/engine outputs,
+with no ad-hoc Java parsing:
 
-### Design sketch (why this is a small slice)
+- Frame → source file → module worker via the shared `FrameSources` helper (extracted from
+  `LatheEvaluationProvider`).
+- The snippet is spliced as the initializer of a throwaway local (`var __LATHE_COMPLETE__ =` on the
+  frame's line, the snippet on the next line) so it sits in an **expression** position — a bare
+  statement only surfaces keywords. This is source-text construction (like `ExpressionSplice`), not
+  parsing.
+- Completion runs through a new `SourceAnalysisSession.completeTransient` /
+  `CompilationWorker.completeTransient` that (a) never touches the open-document cache, and (b)
+  attributes the **unmodified** file (FAST, uncached) as the completion's baseline analysis — which
+  the semantic completer requires to resolve the frame's locals/params/members (without it only
+  keywords and type-index candidates survive).
+- `CompletionOutcome` items map to `Types.CompletionItem` using the engine's own javac-derived
+  replacement range as the DAP `start`/`number`; the request's LSP trigger context is ignored by the
+  engine (it derives context from the content), so no snippet inspection is needed.
 
-The plumbing exists on both ends. The provider is already registered and invoked; the client is free
-(`nvim-dap` wires the REPL `omnifunc` to the `completions` request whenever the adapter advertises it,
-and `cmp-dap` bridges it into `nvim-cmp` for as-you-type completion). The remaining work is the
-provider body, and it reuses machinery that already exists:
+The client is free: `nvim-dap` wires the REPL `omnifunc` to the `completions` request automatically,
+and a completion plugin (`cmp-dap`, or a blink.cmp source) can surface it as-you-type.
 
-- Frame → source file → module worker: the same resolution `LatheEvaluationProvider` already does
-  (extract it into a shared helper).
-- Splice the snippet into the frame's source line (the `ExpressionSplice` / `attributeExpression`
-  path used by evaluation) to place the cursor in the method's lexical scope.
-- Call the existing content-based `CompilationWorker.complete(uri, content, version, position, …)` —
-  the same transient path used for closed-file analysis — and map `CompletionOutcome` items to
-  `Types.CompletionItem` (label, text, type, `start`/`length` replace range).
+Verified: locals (`arg`→`args`), static imports (`asser`→`assertEquals`), static members
+(`System.`), members on `this`/objects/`String`, and types all complete. A frame with no debuggee
+interaction — pure read-only source analysis, no JDI, no invocation lock.
 
-Unlike evaluation, completion is pure read-only source analysis: it uses only the frame's *location*
-(file/line for scope), never runtime state, so there is no JDI interpretation, no debuggee invocation,
-and no per-thread lock. The only real fidelity risk is the `start`/`length` replace range so the REPL
-swaps the correct prefix.
+**Known limitation (separate gap, not DB-4):** member completion on an **array-typed** receiver
+(`args.` where `args` is `String[]`) returns nothing — `args[0].` (element) and object/`String`
+receivers work. This is a pre-existing completion-engine gap (the editor path shares it), tracked as
+[CQ-0053](#cq-0053--member-completion-on-an-array-typed-receiver-returns-nothing).
 
 ### Probe commands
 
-Not reproducible through `debug_probe.py` today (the probe issues `evaluate`, not `completions`);
-exercised by a DAP client sending `completions` at a frame, or by `i_CTRL-X_CTRL-O` in the `nvim-dap`
-REPL.
+```bash
+python3 dev/debug_probe.py --workspace <ws> <MainFile.java> --line <N> --main <Class> \
+  --complete "arg" --expect-item "args"          # local param
+python3 dev/debug_probe.py --workspace <ws> <TestFile.java> --line <N> --method <m> \
+  --complete "asser" --expect-item "assertEquals" # static import
+```
 
 ### Regression targets
 
-None yet — to be defined when the fix is scheduled.
+- `LatheCompletionsMappingTest` (LSP→DAP item mapping, replace-range and kind).
+- `dev/debug-e2e.sh` debug-console completion cases (local, static member, static import, `this.`).
