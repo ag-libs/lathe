@@ -160,7 +160,8 @@ def resolve_main_module(client: LatheClient, file: Path, main_class: str) -> str
 def run_probe(workspace: Path, file: Path, line: int, method: str | None,
               main_class: str | None, detach: bool = False,
               eval_expr: str | None = None, expect: str | None = None,
-              condition: str | None = None, expect_stop: bool = True) -> int:
+              condition: str | None = None, expect_stop: bool = True,
+              complete: str | None = None, expect_item: str | None = None) -> int:
     with LatheClient.start(workspace) as lathe:
         lathe.open(file)  # attribute the file in the module worker (source lookup reads that cache)
         if main_class:
@@ -184,6 +185,8 @@ def run_probe(workspace: Path, file: Path, line: int, method: str | None,
         try:
             if condition is not None:
                 rc = _drive_condition(dap, file, line, jdwp_port, condition, expect_stop)
+            elif complete is not None:
+                rc = _drive_complete(dap, file, line, jdwp_port, complete, expect_item)
             elif eval_expr is not None:
                 rc = _drive_eval(dap, file, line, jdwp_port, eval_expr, expect)
             elif detach:
@@ -276,6 +279,38 @@ def _drive_eval(
     dap.request("continue", {"threadId": thread_id})
     if expect is not None and expect != result:
         print(f"[probe] FAIL: expected {expect!r}, got {result!r}")
+        return 1
+
+    print("[probe] PASS")
+    return 0
+
+
+def _drive_complete(
+    dap: DapClient, file: Path, line: int, jdwp_port: int, text: str, expect_item: str | None) -> int:
+    """Stop at the breakpoint, then send a DAP `completions` for `text` (cursor at end) against the
+    top frame -- the debug-console completion GO/NO-GO (DB-4). Asserts `expect_item` is offered.
+    Cursor-at-end sidesteps the 0-vs-1-based column question: the provider clamps to the snippet
+    length either way, which is the common REPL case (complete what you just typed)."""
+    dap.request("initialize", {"adapterID": "lathe", "clientID": "lathe-probe",
+                               "linesStartAt1": True, "columnsStartAt1": True, "pathFormat": "path"})
+    _attach_with_retry(dap, jdwp_port)
+    dap.wait_event("initialized")
+    dap.request("setBreakpoints", {"source": {"path": str(file)}, "breakpoints": [{"line": line}]})
+    dap.request("configurationDone")
+
+    stopped = dap.wait_event("stopped")
+    thread_id = stopped["body"]["threadId"]
+    frame_id = dap.request("stackTrace", {"threadId": thread_id})["body"]["stackFrames"][0]["id"]
+
+    targets = dap.request(
+        "completions",
+        {"frameId": frame_id, "text": text, "column": len(text) + 1})["body"]["targets"]
+    labels = [t.get("label") for t in targets]
+    print(f"[probe] completions({text!r}) = {len(labels)} items: {labels[:12]}")
+
+    dap.request("continue", {"threadId": thread_id})
+    if expect_item is not None and expect_item not in labels:
+        print(f"[probe] FAIL: expected an item {expect_item!r}, got {labels[:20]}")
         return 1
 
     print("[probe] PASS")
@@ -386,12 +421,17 @@ def main() -> int:
     parser.add_argument("--condition", help="set a conditional breakpoint with this expression")
     parser.add_argument("--expect-nostop", dest="expect_nostop", action="store_true",
                         help="with --condition, expect the breakpoint NOT to suspend")
+    parser.add_argument("--complete",
+                        help="request debug-console completions for this text (cursor at end)")
+    parser.add_argument("--expect-item", dest="expect_item",
+                        help="assert this label is among the completions")
     args = parser.parse_args()
 
     workspace = args.workspace.resolve()
     file = args.file.resolve()
     return run_probe(workspace, file, args.line, args.method, args.main_class, args.detach,
-                     args.eval_expr, args.expect, args.condition, not args.expect_nostop)
+                     args.eval_expr, args.expect, args.condition, not args.expect_nostop,
+                     args.complete, args.expect_item)
 
 
 if __name__ == "__main__":

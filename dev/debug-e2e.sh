@@ -98,4 +98,12 @@ if [ "$workspace" = "$fixture" ] && [ "$file" = "$default_file" ]; then
   python3 "${test_eval[@]}" --eval "this instanceof java.lang.Object" --expect "true"
   python3 "${test_eval[@]}" --eval '"hi".toUpperCase().length()' --expect "2"
   python3 "${test_eval[@]}" --eval '"a" + 1 + true' --expect '"a1true"'
+
+  echo "[debug-e2e] debug-console completions (DB-4)"
+  # Frame-scoped completion via the DAP completions request: a local param, a static member, a
+  # static import, and a member on `this` -- all resolved by the ordinary completion engine.
+  python3 "${eval_common[@]}" --complete "arg" --expect-item "args"
+  python3 "${eval_common[@]}" --complete "System." --expect-item "getProperty"
+  python3 "${test_eval[@]}" --complete "asser" --expect-item "assertEquals"
+  python3 "${test_eval[@]}" --complete "this." --expect-item "toString"
 fi

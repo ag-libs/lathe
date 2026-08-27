@@ -359,7 +359,7 @@ final class WorkspaceSession {
     // would be orphaned when the user stops debugging.
     final var host =
         DapHost.start(
-            new LatheProviderContext(workspace, sourceRoots),
+            new LatheProviderContext(workspace, sourceRoots, typeIndex),
             () -> worker.execute(() -> cancelRun(token)));
     activeDebugHosts.put(token, host);
     LOG.info(

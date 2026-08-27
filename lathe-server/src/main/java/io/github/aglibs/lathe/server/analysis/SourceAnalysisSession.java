@@ -136,6 +136,37 @@ public final class SourceAnalysisSession implements AutoCloseable {
     return outcome;
   }
 
+  /**
+   * Completion over transient content that neither reads nor writes the open-document cache — the
+   * debug console splices REPL text into a frame's source ({@code content}) and completes there, so
+   * the synthetic buffer must never displace the real file's cached analysis. {@code baseline} is
+   * the unmodified file: it is attributed fresh (FAST, uncached) and supplied as the completion's
+   * prior analysis, which the semantic completer needs to resolve the frame's locals, parameters,
+   * and members — without it only keywords and type-index candidates surface.
+   */
+  public CompletionOutcome completeTransient(
+      final String uri,
+      final String baseline,
+      final String content,
+      final Position pos,
+      final CompletionContext context,
+      final WorkspaceTypeIndex typeIndex,
+      final List<String> moduleNames) {
+    final var t = Stopwatch.start();
+    final AttributedFileAnalysis analysis =
+        compiler.compile(uri, baseline, CompileMode.FAST).fileAnalysis();
+    final CachedFileAnalysis prior =
+        analysis != null ? new CachedFileAnalysis(baseline, -1, analysis) : null;
+    final var request =
+        new CompletionRequest(uri, content, pos, context, prior, typeIndex, moduleNames);
+    final var outcome = completionEngine.complete(request);
+    LOG.fine(
+        () ->
+            "[completion:transient] %s %dms items=%d"
+                .formatted(uri, t.elapsedMs(), outcome.items().size()));
+    return outcome;
+  }
+
   public void dropFromCache(final String uri) {
     if (cache.remove(uri) != null) {
       LOG.fine(() -> "[evict] %s dropped".formatted(uri));

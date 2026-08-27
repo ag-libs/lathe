@@ -308,6 +308,20 @@ public final class CompilationWorker {
         ctx -> ctx.complete(uri, content, version, position, context, typeIndex, moduleNames));
   }
 
+  public CompletableFuture<CompletionOutcome> completeTransient(
+      final String uri,
+      final String baseline,
+      final String content,
+      final Position position,
+      final CompletionContext context,
+      final WorkspaceTypeIndex typeIndex,
+      final List<String> moduleNames) {
+    return submit(
+        ctx ->
+            ctx.completeTransient(
+                uri, baseline, content, position, context, typeIndex, moduleNames));
+  }
+
   public CompletableFuture<List<Either<Command, CodeAction>>> codeAction(
       final String uri,
       final String content,

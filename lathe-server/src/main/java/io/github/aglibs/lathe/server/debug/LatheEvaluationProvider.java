@@ -13,7 +13,6 @@ import com.sun.jdi.StackFrame;
 import com.sun.jdi.ThreadReference;
 import com.sun.jdi.Value;
 import io.github.aglibs.lathe.server.analysis.AttributedExpression;
-import io.github.aglibs.lathe.server.analysis.TypeSourceLocator;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.module.WorkspaceModuleRegistry;
 import java.nio.file.Files;
@@ -21,7 +20,6 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
@@ -40,8 +38,7 @@ final class LatheEvaluationProvider implements IEvaluationProvider {
 
   private static final Logger LOG = Logger.getLogger(LatheEvaluationProvider.class.getName());
 
-  private final WorkspaceModuleRegistry workspace;
-  private final List<Path> sourceRoots;
+  private final FrameSources frames;
 
   // One per-JDI-thread lock does both jobs the contract needs: it serializes that thread's method
   // invocations (JDI forbids overlapping invocations on a thread) while allowing different threads
@@ -50,8 +47,7 @@ final class LatheEvaluationProvider implements IEvaluationProvider {
   private final Map<Long, ReentrantLock> perThread = new ConcurrentHashMap<>();
 
   LatheEvaluationProvider(final WorkspaceModuleRegistry workspace, final List<Path> sourceRoots) {
-    this.workspace = workspace;
-    this.sourceRoots = List.copyOf(sourceRoots);
+    this.frames = new FrameSources(workspace, sourceRoots);
   }
 
   @Override
@@ -153,12 +149,14 @@ final class LatheEvaluationProvider implements IEvaluationProvider {
 
   private Value interpret(final String expression, final StackFrame frame) throws Exception {
     final Location location = frame.location();
-    final Path file = frameSource(location);
+    final Path file =
+        frames
+            .fileFor(location)
+            .orElseThrow(() -> new EvaluationException("source not found for " + location));
     final String content = Files.readString(file);
     final CompilationWorker worker =
-        workspace
-            .moduleSourceFor(file)
-            .map(workspace::workerFor)
+        frames
+            .workerFor(file)
             .orElseThrow(() -> new EvaluationException("no module worker for " + file));
     final AttributedExpression attributed =
         worker
@@ -171,19 +169,6 @@ final class LatheEvaluationProvider implements IEvaluationProvider {
         new JdiInterpreter(attributed, frame, body -> invokeGuarded(thread, body)).evaluate();
     LOG.fine(() -> "[eval] %s @ %s".formatted(expression, location));
     return value;
-  }
-
-  private Path frameSource(final Location location) throws Exception {
-    final String sourcePath = location.sourcePath();
-    final Optional<Path> onSourceRoot =
-        sourceRoots.stream()
-            .map(root -> root.resolve(sourcePath))
-            .filter(Files::exists)
-            .findFirst();
-    return onSourceRoot.orElseGet(
-        () ->
-            TypeSourceLocator.findSourceFile(location.declaringType().name(), sourceRoots)
-                .orElseThrow(() -> new EvaluationException("source not found for " + sourcePath)));
   }
 
   private static EvaluationException evaluationError(final String expression, final Throwable e) {
