@@ -89,6 +89,9 @@ if [ "$workspace" = "$fixture" ] && [ "$file" = "$default_file" ]; then
   # A class the debuggee has not touched yet: referencing it force-loads (and initialises) it in the
   # debuggee rather than failing "class not loaded". java.time.Month is cold at main and locale-free.
   python3 "${eval_common[@]}" --eval "java.time.Month.of(3).getValue()" --expect "3"
+  # An invocation mid-expression (the force-load above is a Class.forName call) resumes the thread and
+  # invalidates the frame; the following local read must come off a re-fetched frame, not a stale one.
+  python3 "${eval_common[@]}" --eval "java.time.Month.of(3).getValue() + args.length" --expect "3"
   echo "[debug-e2e] conditional breakpoints"
   python3 "${eval_common[@]}" --condition "args.length == 0"
   python3 "${eval_common[@]}" --condition "args.length == 99" --expect-nostop

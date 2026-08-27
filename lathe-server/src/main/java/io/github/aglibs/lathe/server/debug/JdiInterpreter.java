@@ -5,7 +5,6 @@ import com.sun.jdi.BooleanValue;
 import com.sun.jdi.ByteValue;
 import com.sun.jdi.CharValue;
 import com.sun.jdi.ClassLoaderReference;
-import com.sun.jdi.ClassNotLoadedException;
 import com.sun.jdi.ClassObjectReference;
 import com.sun.jdi.ClassType;
 import com.sun.jdi.DoubleValue;
@@ -13,8 +12,6 @@ import com.sun.jdi.Field;
 import com.sun.jdi.FloatValue;
 import com.sun.jdi.IncompatibleThreadStateException;
 import com.sun.jdi.IntegerValue;
-import com.sun.jdi.InvalidTypeException;
-import com.sun.jdi.InvocationException;
 import com.sun.jdi.LocalVariable;
 import com.sun.jdi.LongValue;
 import com.sun.jdi.Method;
@@ -69,25 +66,43 @@ final class JdiInterpreter {
   private static final int SINGLE_THREADED = ObjectReference.INVOKE_SINGLE_THREADED;
 
   private final AttributedExpression attr;
-  private final StackFrame frame;
   private final VirtualMachine vm;
   private final GuardedInvoker invoker;
-  // Captured up front: a JDI invocation resumes the thread and invalidates the StackFrame, so
-  // frame.thread() would fail on a chained call -- the ThreadReference itself stays valid.
+  // Captured up front, valid across a resume; the frame is NOT cached (see frame()).
   private final ThreadReference thread;
+  private final int depth;
   // The stopped code's loader, captured up front for the same reason: it is the loader used to
   // force-load a cold class (null means bootstrap), and forcing it must give the type the same
   // visibility the frame has.
   private final ClassLoaderReference frameLoader;
 
   JdiInterpreter(
-      final AttributedExpression attr, final StackFrame frame, final GuardedInvoker invoker) {
+      final AttributedExpression attr,
+      final StackFrame frame,
+      final int depth,
+      final GuardedInvoker invoker) {
     this.attr = attr;
-    this.frame = frame;
     this.vm = frame.virtualMachine();
     this.invoker = invoker;
     this.thread = frame.thread();
+    this.depth = depth;
     this.frameLoader = frame.location().declaringType().classLoader();
+  }
+
+  /**
+   * The current frame at this evaluation's depth, re-fetched on every access. A debuggee invocation
+   * (a method/constructor call, or a cold-class force-load during symbol resolution) resumes the
+   * thread and permanently invalidates every prior {@link StackFrame}, so a cached frame would
+   * throw {@code InvalidStackFrameException} on the next read. The thread is suspended again
+   * between invocations (and the provider holds its evaluation lock), so re-fetching always yields
+   * a valid frame for the same suspended location.
+   */
+  private StackFrame frame() {
+    try {
+      return thread.frame(depth);
+    } catch (final IncompatibleThreadStateException e) {
+      throw new EvaluationException("thread is not suspended", e);
+    }
   }
 
   /**
@@ -102,11 +117,7 @@ final class JdiInterpreter {
 
   @FunctionalInterface
   interface InvocationBody {
-    Value run()
-        throws InvalidTypeException,
-            ClassNotLoadedException,
-            IncompatibleThreadStateException,
-            InvocationException;
+    Value run() throws Exception;
   }
 
   Value evaluate() {
@@ -167,7 +178,7 @@ final class JdiInterpreter {
   }
 
   private ObjectReference thisObject(final String keyword) {
-    final ObjectReference self = frame.thisObject();
+    final ObjectReference self = frame().thisObject();
     if (self == null) {
       throw new EvaluationException("'%s' is not available in a static context".formatted(keyword));
     }
@@ -191,12 +202,13 @@ final class JdiInterpreter {
 
   private Value readLocal(final String name) {
     try {
-      final LocalVariable variable = frame.visibleVariableByName(name);
+      final StackFrame current = frame();
+      final LocalVariable variable = current.visibleVariableByName(name);
       if (variable == null) {
         throw new EvaluationException("local '%s' is not visible in this frame".formatted(name));
       }
 
-      return frame.getValue(variable);
+      return current.getValue(variable);
     } catch (final com.sun.jdi.AbsentInformationException e) {
       throw new EvaluationException("no local-variable table for this frame", e);
     }
@@ -215,7 +227,7 @@ final class JdiInterpreter {
       return declaring.getValue(jdiField);
     }
 
-    final Value target = recv != null ? eval(child(path, recv)) : frame.thisObject();
+    final Value target = recv != null ? eval(child(path, recv)) : frame().thisObject();
     if (!(target instanceof final ObjectReference object)) {
       throw new EvaluationException(
           "cannot read field '%s' of a non-object".formatted(field.name()));
@@ -333,7 +345,12 @@ final class JdiInterpreter {
 
   private ObjectReference invocationReceiver(final TreePath path, final ExpressionTree select) {
     if (select instanceof final MemberSelectTree member) {
-      if (!(eval(child(path, member.getExpression())) instanceof final ObjectReference object)) {
+      final Value target = eval(child(path, member.getExpression()));
+      if (target == null) {
+        throw new EvaluationException("cannot call '%s' on null".formatted(member.getIdentifier()));
+      }
+
+      if (!(target instanceof final ObjectReference object)) {
         throw new EvaluationException("cannot invoke a method on a non-object");
       }
 

@@ -2,10 +2,6 @@ package io.github.aglibs.lathe.server.debug;
 
 import com.microsoft.java.debug.core.IEvaluatableBreakpoint;
 import com.microsoft.java.debug.core.adapter.IEvaluationProvider;
-import com.sun.jdi.ClassNotLoadedException;
-import com.sun.jdi.IncompatibleThreadStateException;
-import com.sun.jdi.InvalidTypeException;
-import com.sun.jdi.InvocationException;
 import com.sun.jdi.Location;
 import com.sun.jdi.Method;
 import com.sun.jdi.ObjectReference;
@@ -23,6 +19,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
 import java.util.logging.Logger;
 
 /**
@@ -40,10 +37,12 @@ final class LatheEvaluationProvider implements IEvaluationProvider {
 
   private final FrameSources frames;
 
-  // One per-JDI-thread lock does both jobs the contract needs: it serializes that thread's method
-  // invocations (JDI forbids overlapping invocations on a thread) while allowing different threads
-  // to invoke in parallel, and its held state is the in-evaluation signal that isInEvaluation reads
-  // without blocking (via isLocked()) from the event-hub thread to suppress nested events.
+  // One per-JDI-thread lock does both jobs the contract needs: it serializes that thread's whole
+  // evaluations (an invocation momentarily resumes the thread, which invalidates every StackFrame,
+  // so a concurrent evaluation reading a frame on the same thread would throw
+  // InvalidStackFrameException) while allowing different threads to evaluate in parallel, and its
+  // held state is the in-evaluation signal that isInEvaluation reads without blocking (via
+  // isLocked()) from the event-hub thread to suppress nested events.
   private final Map<Long, ReentrantLock> perThread = new ConcurrentHashMap<>();
 
   LatheEvaluationProvider(final WorkspaceModuleRegistry workspace, final List<Path> sourceRoots) {
@@ -53,11 +52,7 @@ final class LatheEvaluationProvider implements IEvaluationProvider {
   @Override
   public CompletableFuture<Value> evaluate(
       final String expression, final ThreadReference thread, final int depth) {
-    try {
-      return CompletableFuture.completedFuture(interpret(expression, thread.frame(depth)));
-    } catch (final Exception e) {
-      return CompletableFuture.failedFuture(evaluationError(expression, e));
-    }
+    return evaluateGuarded(expression, thread, depth);
   }
 
   @Override
@@ -76,10 +71,37 @@ final class LatheEvaluationProvider implements IEvaluationProvider {
           new EvaluationException("only conditional breakpoints are supported yet (no logpoints)"));
     }
 
+    return evaluateGuarded(condition, thread, 0);
+  }
+
+  /**
+   * Interprets {@code expression} at {@code depth} under {@code thread}'s serialization lock, held
+   * for the whole evaluation so a frame read never races another evaluation's invocation on the
+   * same thread. The lock is reentrant, so the interpreter's own invocations (via {@link
+   * #invokeGuarded}) re-enter it rather than deadlock.
+   */
+  private CompletableFuture<Value> evaluateGuarded(
+      final String expression, final ThreadReference thread, final int depth) {
+    return withThreadLock(
+        thread,
+        () -> {
+          try {
+            return CompletableFuture.completedFuture(interpret(expression, thread, depth));
+          } catch (final Exception e) {
+            return CompletableFuture.failedFuture(evaluationError(expression, e));
+          }
+        });
+  }
+
+  /** Runs {@code body} under {@code thread}'s reentrant serialization lock. */
+  private <T> T withThreadLock(final ThreadReference thread, final Supplier<T> body) {
+    final ReentrantLock lock =
+        perThread.computeIfAbsent(thread.uniqueID(), id -> new ReentrantLock());
+    lock.lock();
     try {
-      return CompletableFuture.completedFuture(interpret(condition, thread.frame(0)));
-    } catch (final Exception e) {
-      return CompletableFuture.failedFuture(evaluationError(condition, e));
+      return body.get();
+    } finally {
+      lock.unlock();
     }
   }
 
@@ -119,19 +141,15 @@ final class LatheEvaluationProvider implements IEvaluationProvider {
    */
   private Value invokeGuarded(
       final ThreadReference thread, final JdiInterpreter.InvocationBody body) {
-    final ReentrantLock lock =
-        perThread.computeIfAbsent(thread.uniqueID(), id -> new ReentrantLock());
-    lock.lock();
-    try {
-      return body.run();
-    } catch (final InvalidTypeException
-        | ClassNotLoadedException
-        | IncompatibleThreadStateException
-        | InvocationException e) {
-      throw new EvaluationException("invocation failed: " + e.getMessage(), e);
-    } finally {
-      lock.unlock();
-    }
+    return withThreadLock(
+        thread,
+        () -> {
+          try {
+            return body.run();
+          } catch (final Exception e) {
+            throw new EvaluationException("invocation failed: " + e.getMessage(), e);
+          }
+        });
   }
 
   @Override
@@ -142,12 +160,14 @@ final class LatheEvaluationProvider implements IEvaluationProvider {
 
   @Override
   public void clearState(final ThreadReference thread) {
-    // The invocation lock releases in invokeMethod's finally, so there is no lingering state to
-    // clear; drop the entry when it is idle to keep the map bounded to live threads.
+    // The lock releases in evaluateGuarded/invokeGuarded's finally, so there is no lingering state
+    // to clear; drop the entry when it is idle to keep the map bounded to live threads.
     perThread.computeIfPresent(thread.uniqueID(), (id, lock) -> lock.isLocked() ? lock : null);
   }
 
-  private Value interpret(final String expression, final StackFrame frame) throws Exception {
+  private Value interpret(final String expression, final ThreadReference thread, final int depth)
+      throws Exception {
+    final StackFrame frame = thread.frame(depth);
     final Location location = frame.location();
     final Path file =
         frames
@@ -164,9 +184,9 @@ final class LatheEvaluationProvider implements IEvaluationProvider {
                 file.toUri().toString(), content, location.lineNumber(), expression)
             .join()
             .orElseThrow(() -> new EvaluationException("could not attribute: " + expression));
-    final ThreadReference thread = frame.thread();
     final Value value =
-        new JdiInterpreter(attributed, frame, body -> invokeGuarded(thread, body)).evaluate();
+        new JdiInterpreter(attributed, frame, depth, body -> invokeGuarded(thread, body))
+            .evaluate();
     LOG.fine(() -> "[eval] %s @ %s".formatted(expression, location));
     return value;
   }
