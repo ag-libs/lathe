@@ -1207,21 +1207,52 @@ frame, bridging each resolved symbol to JDI by binary name + erased JVM descript
   it via `Class.forName(name, true, loader)` on the frame's loader, rather than failing
   "class not loaded".
 
-**Remaining eval gaps** (deferred, not blockers):
+**Robustness.** The interpreter re-fetches the frame on every read (`thread.frame(depth)`) rather than
+caching it: a debuggee invocation (a call, `String` concat, or a cold-class force-load) resumes the
+thread and invalidates every prior `StackFrame`, so a cached frame would throw
+`InvalidStackFrameException` mid-evaluation. The provider also holds a per-thread lock across the
+*whole* evaluation, so a concurrent evaluation (e.g. a Watches-panel re-eval) cannot read a frame
+while another invocation on that thread has it resumed.
 
-- **Assignment / `setVariable` (v3)** — write support; mutates debuggee state, its own later design.
-- **Array creation** — `new int[]{…}` / `new T[n]` (`NEW_ARRAY`) is unsupported; reads of existing
-  arrays work.
-- **Object-scoped `evaluate`** — the `(expression, ObjectReference, thread)` overload is unsupported.
+**Debug-console completion** (DB-4). The DAP `completions` request runs Lathe's ordinary completion
+engine at the frame's source line — the snippet is spliced as an expression initializer so locals,
+parameters, `this`, fields, static members/imports, and members after `.` complete exactly as in the
+editor. Uses only javac/engine output (a cache-free `completeTransient` with the real file attributed
+as the baseline analysis); the client (`nvim-dap` omnifunc, or a completion-plugin source) surfaces it.
 
-**Commit prefixes:** `feat(debug): …` (attach orchestration, evaluation slices, force-load).
+**Remaining eval gaps** (deferred, not blockers) — tracked as DB-1/DB-2 and CQ-0053:
+
+- **Assignment / `setVariable`** (DB-1) — write support; mutates debuggee state, its own later design.
+- **Array creation** (DB-2) — `new int[]{…}` / `new T[n]` (`NEW_ARRAY`) is unsupported; reads of
+  existing arrays work.
+- **Array-typed-receiver completion** (CQ-0053) — `args.` on a `String[]` offers nothing; a
+  pre-existing completion-engine gap shared by the editor path.
+
+**Commit prefixes:** `feat(debug): …` (attach orchestration, evaluation slices, force-load,
+completion).
+
+### 12.12 Run/debug a `main()` located in test sources
+
+A `main()` in `src/test/java` (a modular module's test-scoped tool) is discovered as a main runnable
+but cannot use the derived `main-launch.json`: that template carries only the module's *main* output,
+so the class — compiled into the module's *test* output and patched into the module at test time — is
+"not found in module".
+
+Such a class runs against the module's captured **`test-launch.json`** instead (its test-classes are
+already patched into the module and its full test-scope graph is captured), with the user's class as
+the entry point in place of the JUnit runner (`LaunchPlan.forTestMain`). The server routes by the
+class's mirrored output (`MainClassScope.isTestScope`: test-classes only ⇒ test-scope); a test-scope
+main with no captured test launch blocks with a clear "run `mvn test` to capture it". Reusing the
+capture is deliberate — test code, unlike main code, actually runs during the build, so its exact
+modular placement is captured rather than re-derived. Run and debug share the path.
 
 ---
 
 ## 13. Test fixtures (invoker `multi-module`)
 
-- **`jpms`** — modular (`module-info`, `requires validcheck`), a JUnit test, and (to be added) a
-  `HelloMain` → exercises modular test capture *and* modular `main` (the `plexus-java` placement path).
+- **`jpms`** — modular (`module-info`, `requires validcheck`), a JUnit test, a `HelloMain`, and a
+  test-scoped `HelloTester` `main` → exercises modular test capture, modular `main` (the `plexus-java`
+  placement path), *and* the test-scope-main launch (§12.12).
 - **`app`** — classpath `Main`, depends on reactor `core` (compile) + a `provided` processor → classpath
   `main`, provided-exclusion, reactor rewrite.
 - **`verify`** — reads `.lathe/` and spawns the replay via `ProcessBuilder`; asserts capture fidelity and

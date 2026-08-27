@@ -650,7 +650,14 @@ None yet — to be defined when the fix is scheduled.
 
 ## DB-3 — Object-scoped `evaluate` overload is unsupported
 
-**Status: deferred — Target: backlog**
+**Status: accepted — Target: M3**
+
+Invoked only by java-debug's `JavaLogicalStructure` to render collections/maps in the Variables view
+(it evaluates member expressions such as `size()` / `toArray()` with `this` = the object). Supporting
+it turns on the logical collection/map views; without it those variables fall back to their raw
+fields. Planned approach: attribute the expression against an accessible type of the object with an
+injected typed receiver, and interpret with that receiver bound to the object (best-effort, graceful
+fallback).
 
 ### Observed behaviour
 

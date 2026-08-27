@@ -195,13 +195,14 @@ runs a fresh JVM against `.lathe/` bytecode (no recompilation) with streamed out
 cancellation, and the neotest adapter (discovery, run at every level, inline diagnostics).
 
 The **debugger** has since shipped for Neovim too: the server hosts the Microsoft java-debug DAP
-adapter in-process (attach-only) and attaches it over JDWP to a suspended replay of a test or `main`
-class, driven by an `nvim-dap` client (`:LatheDebug`). Breakpoints, stepping, inspection, conditional
-breakpoints, and expression evaluation (reads, method/constructor invocation, `String` concat, and
-force-loading cold classes) all work. What remains is expression **write** support
-(assignment/`setVariable`), array-creation and object-scoped evaluation, plus named run configs and
-arg/env/cwd overlay.
-See [lathe-run-test-debug.md](planned/lathe-run-test-debug.md) §12.11 and the shipped scope in
+adapter in-process (attach-only) and attaches it over JDWP to a suspended replay of a test, `main`, or
+test-scoped `main` class, driven by an `nvim-dap` client (`:LatheDebug`). Breakpoints, stepping,
+inspection, conditional breakpoints, expression evaluation (reads, method/constructor invocation,
+`String` concat, force-loading cold classes), and debug-console completion all work. What remains is
+object-scoped evaluation (collection/map logical views, scheduled) and the deferred write path
+(assignment/`setVariable`) plus array-creation; named run configs (`:LatheRun {name}`) are the main
+run-config UX gap.
+See [lathe-run-test-debug.md](planned/lathe-run-test-debug.md) §12.11–§12.12 and the shipped scope in
 [lathe-neotest-experience.md](planned/lathe-neotest-experience.md).
 
 ### VS Code support
