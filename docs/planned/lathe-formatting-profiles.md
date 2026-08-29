@@ -9,6 +9,9 @@ project-sensitive choice.
 The goal is to avoid rewriting projects that do not use Google Java Format while keeping Lathe's Java indentation useful
 during normal editing.
 
+This design targets **Neovim 0.12+**. The `editor_config` profile relies on Neovim's built-in
+EditorConfig support (enabled by default since 0.9), so Lathe never parses `.editorconfig` itself.
+
 ## Problem
 
 Lathe currently exposes server-side document formatting unconditionally and the Neovim plugin formats on save by
@@ -52,7 +55,7 @@ Indentation should therefore be paired with the selected formatting/style profil
 - Implement `textDocument/onTypeFormatting` in the first slice (deferred — see "Future Work — Range-Aware Formatting").
 - Fix range formatting in the first slice (deferred — see "Future Work — Range-Aware Formatting").
 - Dynamically re-register formatting capabilities after initialization.
-- Support every `.editorconfig` glob rule in the first slice.
+- Parse `.editorconfig` in Lathe — Neovim's built-in EditorConfig handles it (see `editor_config` profile).
 
 ## User Configuration
 
@@ -72,6 +75,7 @@ Supported values:
 indent_style = "editor_config" | "google"
 formatter = nil | "google"
 format_on_save = true | false
+continuation_indent = nil | <number>
 ```
 
 Defaults:
@@ -80,7 +84,12 @@ Defaults:
 indent_style = "editor_config"
 formatter = nil
 format_on_save = false
+continuation_indent = nil
 ```
+
+`continuation_indent` overrides the continuation width for both profiles.
+When `nil`, the width is derived as twice the block indent (see "Continuation indent is a heuristic" below).
+When set to a number, that value is used verbatim as the continuation width in display columns.
 
 Users who want the current Google-format-on-save workflow can configure:
 
@@ -101,27 +110,56 @@ The plugin may warn once or silently ignore it; silently ignoring keeps setup qu
 
 This is the default.
 
-The Neovim plugin should walk upward from the buffer path and read the nearest `.editorconfig`.
-The first slice only needs:
+Lathe does **not** parse `.editorconfig` itself. Neovim 0.12+ ships built-in EditorConfig support
+that is enabled by default (`vim.g.editorconfig = true`), and it already does everything a
+hand-rolled parser would: it walks upward from the buffer path, honours `root = true`, matches
+sections (including brace-list globs like `[*.{java,kt}]`) with correct EditorConfig precedence, and
+maps the resolved properties onto buffer-local options:
 
-- `root = true`
-- `[*]`
-- `[*.java]`
-- `indent_style`
-- `indent_size`
-- `tab_width`
+- `indent_style` → `expandtab` (`space` sets it, `tab` clears it);
+- `indent_size` → `shiftwidth` and `softtabstop`;
+- `tab_width` → `tabstop`.
 
-For Java buffers:
+The `editor_config` profile therefore **consumes the buffer-local options Neovim has already
+resolved** rather than reading any file. Because EditorConfig resolution is per-buffer and
+path-sensitive, these values are read per buffer, not cached once at setup — two buffers in the same
+session under different `.editorconfig` roots resolve independently.
 
-- `indent_style = space`, `indent_size = N`:
-  use spaces, block indent `N`, continuation indent `2N`.
-- `indent_style = tab`:
-  use tabs, block indent from `indent_size` when numeric, otherwise `tab_width`, otherwise `4`.
-  Continuation indent remains twice the block width in display columns.
-- missing or unsupported values:
-  fallback to block indent `4`, continuation indent `8`.
+#### Resolving indentation for a Java buffer
 
-Dropwizard's `.editorconfig` therefore gives 4-space block indentation and 8-space continuation indentation.
+Read the effective buffer-local options and derive Lathe's indentation:
+
+- spaces (`expandtab` set):
+  block indent is the effective `shiftwidth` (falling back to `tabstop` when `shiftwidth = 0`, per
+  Vim's own rule); continuation indent per "Continuation indent is a heuristic".
+- tabs (`noexpandtab`):
+  block indent is one tab; `tabstop` supplies the display width. Continuation indent follows the
+  heuristic below, expressed in display columns.
+- no resolved width (native editorconfig disabled, no matching `.editorconfig`, or the option is
+  unset/zero with no tab fallback):
+  fall back to block indent `4`, continuation indent `8`.
+
+Dropwizard's `.editorconfig` (`indent_size = 4`) therefore surfaces as `shiftwidth = 4`, giving
+4-space block indentation and (by default) 8-space continuation indentation — with no Lathe parsing
+involved.
+
+#### Dependency on native EditorConfig
+
+This profile relies on Neovim's built-in EditorConfig being active. It is on by default; a user who
+sets `vim.g.editorconfig = false` (or `vim.b.editorconfig = false`) opts out, and the fallback above
+then applies. Lathe does not attempt to re-enable or replace it — there is a single source of truth
+for `.editorconfig`, which avoids the two systems fighting over the same buffer options.
+
+#### Continuation indent is a heuristic
+
+EditorConfig has no continuation-indent concept, so Neovim resolves nothing for it. Deriving
+continuation indent as `2 × block` is a **heuristic** borrowed from the Google Java Format ratio
+(2→4). It is not implied by any `.editorconfig` key and will not match every project's wrapped-line
+convention (many 4-space Java styles wrap at 4, not 8).
+
+The `continuation_indent` option (see "User Configuration") lets a user pin the continuation width
+explicitly. When it is set, it overrides the `2 × block` derivation for both profiles. When it is
+`nil`, the `2 × block` default applies.
 
 This profile is indentation-only.
 It does not imply any full-document formatter.
@@ -140,6 +178,8 @@ This preserves the existing Lathe Neovim indenter behavior:
 This profile pairs naturally with `formatter = "google"`, but users may still select Google indentation without
 enabling full-document formatting.
 
+A non-`nil` `continuation_indent` overrides the `4` continuation width here too.
+
 ## Neovim Plugin Changes
 
 `lathe.lua` should own user options and pass indentation settings into `lathe.indent`.
@@ -154,25 +194,38 @@ Planned behavior:
 
 - `format_on_save` defaults to false.
 - `formatter` defaults to nil.
-- `ftplugin/java.lua` should keep Java indentation wiring but stop hardcoding Google indentation widths.
-- `lathe.indent` should expose a setup/config function and keep profile state in the module.
-- The plugin should apply buffer-local `expandtab`, `shiftwidth`, `softtabstop`, and `tabstop` according to the
-  resolved indentation profile.
+- `lathe.indent` should expose a setup/config function that records the selected profile and the
+  optional `continuation_indent`. Block/continuation widths for `editor_config` are read from
+  buffer-local options per buffer (see below), not stored as module constants.
+- For the `editor_config` profile, the plugin **does not** set `expandtab`, `shiftwidth`,
+  `softtabstop`, or `tabstop` — Neovim's built-in EditorConfig owns them. `ftplugin/java.lua` must
+  stop hardcoding `shiftwidth = 2` / `softtabstop = 2` / `tabstop = 2`, because those values run at
+  `FileType` time and would clobber the EditorConfig-resolved options.
+- For the `google` profile, the plugin sets buffer-local `expandtab`, `shiftwidth = 2`,
+  `softtabstop = 2`, and `tabstop = 2` explicitly.
+- The `indentexpr` wiring in `after/indent/java.lua` stays; `lathe.indent` reads the resolved
+  buffer-local options at indent time, so setup ordering relative to EditorConfig does not matter.
 - The plugin should install the save-format autocmd only when:
 
 ```lua
 opts.formatter == "google" and opts.format_on_save == true
 ```
 
-The setup function should also send server initialization options:
+The setup function should also send server initialization options through the existing
+`vim.lsp.config('lathe', { ... })` call (0.11+ config API, already used by the plugin):
 
 ```lua
-init_options = {
-  lathe = {
-    formatter = opts.formatter,
+vim.lsp.config('lathe', {
+  -- existing cmd/filetypes/root_dir/capabilities ...
+  init_options = {
+    lathe = {
+      formatter = opts.formatter,
+    },
   },
-}
+})
 ```
+
+This is new wiring: the plugin does not send `init_options` today.
 
 ## Server Changes
 
@@ -276,11 +329,19 @@ it is not a Neovim focus and stays deferred behind both this design and the rang
 
 ## Tests
 
-Neovim tests:
+Neovim tests. Because Lathe consumes buffer-local options rather than parsing `.editorconfig`, the
+`editor_config` tests set the resolved options (`expandtab`/`shiftwidth`/`tabstop`) to stand in for
+what native EditorConfig produces, rather than asserting on file parsing:
 
 - default setup uses `editor_config`.
-- a project `.editorconfig` with `indent_size = 4` yields 4-space block indentation.
-- `indent_style = "google"` preserves the current 2/4 behavior.
+- with `expandtab` and `shiftwidth = 4`, block indent is 4 and continuation is 8.
+- with `noexpandtab` and `tabstop = 4`, indentation uses a tab and 4-column display width.
+- with `shiftwidth = 0`, block indent falls back to `tabstop` (Vim's rule).
+- no resolved width (native editorconfig disabled / options unset) falls back to 4-space block,
+  8-space continuation.
+- the `editor_config` profile does not overwrite EditorConfig-resolved `shiftwidth`/`tabstop`.
+- `continuation_indent = N` overrides the derived width in both `editor_config` and `google`.
+- `indent_style = "google"` sets `expandtab` and 2/4 behavior.
 - format-on-save autocmd is not installed by default.
 - format-on-save autocmd is installed only with `formatter = "google"` and `format_on_save = true`.
 
