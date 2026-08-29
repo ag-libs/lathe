@@ -371,6 +371,84 @@ Per the chosen option 1 (suppress for `CompilerRoute.External`):
 
 ---
 
+## EG-047 — Go-to-definition on a record accessor lands on the file, not the component
+
+**Status: accepted — Target: M2**
+
+### Observed behaviour
+
+`textDocument/definition` on a record-accessor use (e.g. `config.bucket()`), or on the synthetic
+accessor itself, navigates to the top of the record's source file (`0:0`) instead of the `bucket`
+component in the record header.
+
+```bash
+python3 dev/explore.py <ws>/.../AppServerConfig.java def <line>:<col>   # on a config.bucket() use
+# today: AppServerConfig.java 0:0 ; expected: the `bucket` component in the record header
+```
+
+### Root cause
+
+A record accessor is **synthetic**: `Trees.getPath(element)` is null and no declaration site is
+found, so `DefinitionLocator.parsePosition` falls back to `new Position(0, 0)`
+(`DefinitionLocator.java:110`).
+
+### Proposed direction
+
+When the definition target is (or normalises to) a record component, redirect to the component in the
+record header. Reuse the references-side machinery that already maps this: `ReferenceTarget`'s
+accessor ↔ `RecordComponentElement` normalisation (`recordAccessorFor` / `componentNamed`) and
+`SourceLocator`'s record-component-in-header handling (`SourceLocator.java:284`, `:297-317`). Intercept
+before the file-top fallback and return the component-name position. javac elements only — no text
+scanning beyond the existing name-position helper.
+
+### Regression targets
+
+None yet — to be defined when scheduled (def on an accessor use → component header; def on the accessor
+declaration → component; cross-module use).
+
+---
+
+## EG-048 — Go-to-definition on an incomplete method call lands on the file, not the method
+
+**Status: deferred — Target: backlog**
+
+### Observed behaviour
+
+With a partially-typed call (`foo(`, missing arguments), `textDocument/definition` navigates to the
+file top instead of the method. When the name is overloaded it should return multiple candidate
+locations so the client shows a picker; when unambiguous it should resolve to the single method.
+
+```bash
+python3 dev/explore.py <ws>/.../Foo.java def <line>:<col>   # cursor in `foo(<incomplete>`
+# today: Foo.java 0:0 ; expected: the method declaration, or a location list for overloads
+```
+
+### Root cause
+
+The invocation is erroneous, so javac cannot attribute the method element; `SourceLocator.elementAt`
+yields null and definition takes the file-top fallback. The pipeline also returns at most one
+location — `WorkspaceSession.definitionFuture` maps `Optional<Location>` to a 0-or-1 list (`:1250`) —
+so overloads cannot be offered even though the LSP result type (`Either<List<Location>, …>`) allows
+many.
+
+### Proposed direction
+
+Recover the intended target with the existing sentinel/recovery pipeline
+(`SentinelInjector` / `SentinelParser`) already used for completion on incomplete input: obtain the
+receiver, method name, and argument index from `ParsedSentinel`. Enumerate the accessible
+`ExecutableElement`s of that name on the receiver type and return **all** declaration locations
+(single → jump, many → picker); extend `definitionFuture` to build a `List<Location>`. No ad-hoc
+parsing — sentinel pipeline + javac elements only (AGENTS.md).
+
+Deferred: the recovery integration, overload enumeration, and multi-location plumbing are the largest
+of the three and are not in the current release slice.
+
+### Regression targets
+
+None yet — re-triaged from backlog when scheduled.
+
+---
+
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work
@@ -385,6 +463,46 @@ Active `textDocument/references` gaps discovered by live probing against a large
 reactor workspace. Resolved FR entries are in [gaps-archive.md](gaps-archive.md).
 
 No active FR gaps remain; resolved entries are in [gaps-archive.md](gaps-archive.md).
+
+---
+
+# Code Action Gaps (CA)
+
+Active `textDocument/codeAction` provider gaps. Resolved CA entries are in
+[gaps-archive.md](gaps-archive.md).
+
+## CA-5 — No code action to replace `var` with the inferred type
+
+**Status: accepted — Target: M2**
+
+### Observed behaviour
+
+On a `var` local declaration, no code action offers to replace `var` with the inferred explicit type.
+Expected: a `Refactor` action *"Replace 'var' with '<Type>'"* that rewrites the declaration and adds
+any needed import. (Code actions are not exposed by `dev/explore.py`; verified in-editor and via the
+code-action test harness.)
+
+### Root cause
+
+`SourceAnalysisSession.codeAction` dispatches only by `DiagnosticPayload.Kind` (`TYPE_REF`,
+`UNREPORTED_EXCEPTION`, `VARIABLE_REF`, `MISSING_METHOD_IMPL`). A `var` declaration is valid Java and
+raises no diagnostic, so no provider is invoked.
+
+### Proposed direction
+
+Add a request-driven (non-diagnostic) code-action path: when a `codeAction` range sits on a `var`
+`VariableTree`, offer the refactor via a new `ReplaceVarProvider` invoked from a context scan rather
+than the error-driven `Kind` switch. Detect the `var` declaration with `CodeActionSupport.pathAt`,
+infer the type via `Trees.getTypeMirror` (as `DeclareVariableProvider` already does), render it with
+`TypeDisplayFormatter`, and add an import via `ImportAnalyzer.importEdit`. Skip when the type is
+undenotable (error/null, intersection, capture/wildcard, anonymous), where keeping `var` is correct.
+Kind `Refactor`, no attached diagnostics.
+
+### Regression targets
+
+None yet — to be defined when scheduled (positive: `var s = "x"` → `String`, `var l = new
+ArrayList<String>()`; negative: undenotable capture from a chained stream; `var` in a field
+initialiser).
 
 ---
 

@@ -116,6 +116,7 @@ It remains a build-from-source release.
   references located *inside* external sources (source browsing) is deliberately deferred — not M2
   scope — see [Find References](done/lathe-find-references.md); there is no active FR gap.
 - Consider partial-result streaming only if post-M1 measurements show material result latency or memory pressure.
+- Go-to-definition on a record accessor resolves to the component in the header, not the file top ([EG-047](gaps/gaps.md)).
 
 ### Completion and search
 
@@ -132,7 +133,7 @@ CamelCase initial matching for workspace symbol search (EG-005) has shipped — 
 - Implement conservative on-type indentation without advertising unsupported formatting behavior.
 - Implement prepare-rename and exact reactor rename edits.
 - Implement useful Java inlay hints.
-- Complete the richer code actions accepted for M2.
+- Complete the richer code actions accepted for M2, including a "replace `var` with the inferred type" action ([CA-5](gaps/gaps.md)).
 - Complete Neovim-relevant semantic highlighting where tree-sitter cannot classify identifiers correctly.
 - Implement LSP work-done progress notifications for workspace initialization and reload.
 
