@@ -239,7 +239,7 @@ capability and the absent handler in `LatheLanguageServer`.
 
 ## EG-039 — Unused-hint mislabels exception and lambda parameters as "local variable"
 
-**Status: documented — Target: pending triage**
+**Status: accepted — Target: M2**
 
 ### Observed behaviour
 
@@ -310,7 +310,7 @@ printf 'diagnostics\n' | python3 dev/explore.py /path/to/workspace/.../SomeFile.
 
 ## EG-041 — JDK/library source files get live diagnostics and code actions with no "read-only source" affordance
 
-**Status: documented — Target: pending triage**
+**Status: accepted — Target: M2**
 
 ### Observed behaviour
 
@@ -340,11 +340,14 @@ routes — neither of which exists today.
 
 ### Proposed fix
 
-Not yet decided; options to weigh at triage:
+Triage decision (M2): **option 1** — suppress `codeAction` and diagnostics for `CompilerRoute.External`
+routes. It is a bounded, server-only change that removes the confusing rough edge for the public beta;
+the editor-side affordance options remain available later if a read-only indicator is wanted. Options
+considered:
 
-1. Suppress `codeAction` (and/or diagnostics) responses for `CompilerRoute.External` — closest to
-   how most IDEs treat decompiled/library sources, but loses a real capability users might want
-   (external files are genuinely compiled against real javac).
+1. **Chosen.** Suppress `codeAction` (and/or diagnostics) responses for `CompilerRoute.External` —
+   closest to how most IDEs treat decompiled/library sources, but loses a real capability users might
+   want (external files are genuinely compiled against real javac).
 2. Keep the current behavior but surface a clear affordance — e.g. a status-bar / virtual-text
    marker in the Neovim runtime — so users know the buffer is an external, read-only source.
 3. Add a lightweight marker alongside `publishDiagnostics` (or a custom notification) so editor
@@ -360,7 +363,11 @@ python3 dev/explore.py \
 
 ### Regression targets
 
-None yet — undecided pending triage.
+Per the chosen option 1 (suppress for `CompilerRoute.External`):
+
+- opening an external JDK/dependency source publishes no diagnostics.
+- a `codeAction` request on an external source returns no actions.
+- a workspace (`Module`) source is unaffected — diagnostics and code actions still fire.
 
 ---
 
@@ -389,7 +396,7 @@ contract. Resolved CQ entries are in [gaps-archive.md](gaps-archive.md).
 
 ## CQ-0053 — Member completion on an array-typed receiver returns nothing
 
-**Status: documented — Target: pending triage**
+**Status: accepted — Target: M2**
 
 ### Observed behaviour
 
