@@ -34,7 +34,7 @@ Maven Central publication is planned for M3.
 | Hover | Implemented | Includes source-backed Javadoc rendering. |
 | Definition | Implemented | Supports reactor and extracted dependency/JDK sources where available. |
 | Declaration | Implemented | `textDocument/declaration` navigates an overriding method (at its declaration site or a call site) to its root contract method in the superclass or interface; falls back to `definition` for non-overriding symbols. |
-| Completion | Implemented with M2 gaps | Member, type, import, constructor, lambda, argument, keyword, and typed-slot completion. Method references and generic-bound receivers remain. |
+| Completion | Implemented with M2 gaps | Member, type, import, constructor, lambda, argument, keyword, and typed-slot completion. Array-typed-receiver member completion is the accepted M2 gap (CQ-0053); method references and generic-bound receivers are deferred. |
 | Completion presentation | Implemented | Label details, generic display, receiver substitution, documentation, and import edits. |
 | Signature help | Implemented | Overloads, active parameters, constructors, parameter names, and Javadoc. |
 | Find References | Implemented | Exact same-file, module, and reactor search with transient closed-file analysis, process-wide compilation admission, work-done progress, optional cancellation, and fatal `Error` handling. Candidate-planning gaps for `var`/chained receivers, same-package generated builders, constructors, and compact-constructor component uses are resolved (FR-011/012/013/014). Generated-code highlight range is hardened (FR-010, receiver-anchored range lookup). Invoking references from an external (dependency/JDK) symbol returns reactor results (search scope tops out at reactor modules); returning references located *inside* external sources (source browsing) is deliberately deferred, not an active gap — see `lathe-find-references.md`. |
@@ -44,12 +44,12 @@ Maven Central publication is planned for M3.
 | Workspace symbols | Implemented | Type-name lookup uses `WorkspaceTypeIndex`. |
 | Document symbols | Implemented | File outline support is available. |
 | Folding ranges | Implemented | Java structural folding is available. |
-| Semantic tokens | Partially implemented | Static/deprecated members, enum constants, type parameters, and annotations are covered. Class and import highlighting remain planned for M2. |
+| Semantic tokens | Partially implemented | Static/deprecated members, enum constants, type parameters, and annotations are covered. Class, import, and local-variable-vs-field highlighting are deferred to the backlog. |
 | Full-document formatting | Implemented (opt-in) | Advertised only when the client sets `formatter = "google"`; off by default so non-GJF projects are not rewritten. google-java-format also reorders and removes imports. Indentation is a separate client-side profile (`indent_style`). See `lathe-formatting-profiles.md`. |
 | On-type formatting | Deferred | Stub; capability not advertised. Deferred feature work in `lathe-formatting-profiles.md`, depending on range-aware formatting — low priority and mainly relevant to a later VS Code integration, not the Neovim focus. |
 | Code actions | Implemented | Missing imports, add-throws, try/catch wrapping, variable declaration, and missing-method stubs all work. Missing-import actions now offer reactor types from a prior sync or from an open, already-compiled file (CA-4). Types created or renamed in a closed file await a sync — see the source/branch-switch staleness gap WS-1. |
 | Rename | M2 planned | Existing reference identity and roles provide part of the foundation. |
-| Inlay hints | M2 planned | Not implemented. |
+| Inlay hints | Deferred (backlog) | Not implemented. |
 | Run/test | Implemented (Neovim) | neotest adapter: discovery, run at every level, live-streamed output, inline failure diagnostics, cancel/stop, and the replay command shown as the first output line. Replays from captured `.lathe/` bytecode, no Maven. Runs a `main()` at any scope, including one located in test sources of a modular module (routed through the module's captured test launch). |
 | Debug | Implemented (Neovim) | In-process DAP adapter (Microsoft java-debug, attach-only) over JDWP to a suspended replay; `lathe.debug.test`/`lathe.debug.main` (test, main, and test-scope main) and an `nvim-dap` client (`:LatheDebug`). Breakpoints, stepping, inspection, conditional breakpoints, expression evaluation for watches/hover/console (reads, method/constructor invocation, `String` concat, force-loading cold classes, and object-scoped evaluation for collection/map logical views), and debug-console code completion. Gaps: assignment (`setVariable`) and array creation. |
 

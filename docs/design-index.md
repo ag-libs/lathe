@@ -28,8 +28,8 @@ discovery via [gap-workflow.md](gaps/gap-workflow.md) and resolved entries in [g
 - [Find References gaps](gaps/gaps.md) — active reference-search gaps.
 - [Completion Expectations](planned/lathe-completion-expectations.md) — expected completion behavior.
 - [Completion gaps (CQ)](gaps/gaps.md) — active completion-quality gaps.
-- [Declaration Name Completion](planned/lathe-declaration-name-completion.md) — M2 assistive completion for variable,
-  field, parameter, and type-parameter names in declaration-name slots.
+- [Declaration Name Completion](planned/lathe-declaration-name-completion.md) — assistive completion for variable,
+  field, parameter, and type-parameter names in declaration-name slots. Deferred to the backlog.
 - [Gap Workflow](gaps/gap-workflow.md) — reproducible gap discovery and triage (all areas).
 - [New Type Creation](planned/lathe-new-type-creation.md) — scaffold a blank file's class/interface/enum/record via
   snippet completion, with no custom client-side UI.
@@ -46,7 +46,9 @@ discovery via [gap-workflow.md](gaps/gap-workflow.md) and resolved entries in [g
 - [Javac Crash Capture](planned/lathe-javac-crash-capture.md) — local repro bundles for unhandled javac exceptions
   without putting source text in normal logs.
 
-Rename, inlay hints, and additional M2 code actions require focused designs before implementation.
+Rename and the additional M2 code actions require focused designs before implementation. Inlay hints,
+on-type indentation, semantic-highlighting expansion, declaration-name completion, and progress
+notifications are deferred to the backlog and re-triaged after the beta (see the [roadmap](roadmap.md)).
 
 ## M3 — 0.1.0 General Availability
 

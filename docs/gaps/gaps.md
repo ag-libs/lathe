@@ -449,6 +449,42 @@ None yet — re-triaged from backlog when scheduled.
 
 ---
 
+## EG-049 — Go-to-definition falls back to the file top on unresolved targets
+
+**Status: accepted — Target: M2**
+
+### Observed behaviour
+
+When `textDocument/definition` cannot locate a declaration position for the resolved target — a
+synthetic member, or any element whose declaration site is not found — it returns a location at the top
+of the file (`0:0`) instead of no result. Jumping to the top of a file reads as a bug and is worse than
+returning nothing (the client keeps the cursor put or reports "no definition").
+
+```bash
+python3 dev/explore.py <ws>/.../Foo.java def <line>:<col>   # target with no resolvable declaration
+# today: Foo.java 0:0 ; expected: no result
+```
+
+### Root cause
+
+`DefinitionLocator.parsePosition` returns `new Position(0, 0)` when the declaration name position cannot
+be found (`DefinitionLocator.java:110`); the caller wraps it in a `Location` rather than treating "no
+position" as "no definition".
+
+### Proposed direction
+
+Return an empty result (no `Location`) when no declaration position is found, instead of `0:0`. This is
+the general safety net behind the specific record-accessor redirect (EG-047): with both in place,
+records resolve to their component and anything else that cannot be located returns nothing rather than
+a misleading jump. javac elements only.
+
+### Regression targets
+
+None yet — to be defined when scheduled (unresolved/synthetic target → empty result; a normal symbol
+still resolves to its declaration).
+
+---
+
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work
@@ -693,6 +729,39 @@ reactor type, then requesting completion / missing-import actions without runnin
 ### Regression targets
 
 None yet — to be defined when the fix is scheduled.
+
+---
+
+## WS-2 — No re-sync prompt after a source-only branch switch
+
+**Status: accepted — Target: M2**
+
+The minimal, public-beta slice of WS-1: make staleness *honest* without the full freshness model. WS-1
+remains the backlog umbrella for actual invalidation/reconciliation.
+
+### Observed behaviour
+
+After a `git checkout` that changes only Java sources, `WorkspaceWatcher.poll()` reports `NO_CHANGE` and
+the user is never told to re-sync, so completion, missing-import, `workspace/symbol`, and navigation
+silently reflect the *previous* branch until the next `mvn process-test-classes`. For a public user
+switching branches daily, silent staleness reads as "Lathe is wrong."
+
+### Root cause
+
+Staleness detection is keyed only to Lathe's own artifacts: `WorkspaceWatcher.poll()` checks
+`workspace.json` mtime and POM fingerprints, never source-root contents (see WS-1 root cause).
+
+### Proposed direction
+
+WS-1 option 1 (cheapest): detect that a tracked source root's newest mtime is ahead of the last recorded
+sync and raise the same advisory "run `mvn process-test-classes`" prompt already used for `POM_CHANGED` —
+detection and an honest nudge, no invalidation. Full auto-invalidation / no-Maven freshness (WS-1
+options 2–3) stays backlog.
+
+### Regression targets
+
+None yet — to be defined when scheduled (source newer than last sync → advisory prompt; no prompt when
+in sync).
 
 ---
 

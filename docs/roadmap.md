@@ -84,8 +84,8 @@ See [gaps.md](gaps/gaps.md).
 - Implement `MissingMethodImplProvider` for unimplemented abstract methods (CA-3).
 - Make new and renamed reactor types available to missing-import actions without a manual Maven sync (CA-4).
   Done for types from a prior sync and types declared in an open, already-compiled file. The residual
-  closed-file case is folded into the broader source/branch-switch staleness gap (WS-1), which is
-  Post-M3 work.
+  closed-file case is folded into the broader source/branch-switch staleness gap (WS-1); its full
+  no-Maven freshness model stays backlog, while an advisory re-sync prompt (WS-2) lands in M2.
 
 ### Find References hardening
 
@@ -106,56 +106,69 @@ See [gaps.md](gaps/gaps.md).
 
 ## M2 — Neovim Public Beta
 
-M2 completes the planned LSP editing, navigation, and refactoring set needed for normal Java development in Neovim.
-It remains a build-from-source release.
+M2 is a **lean public beta**: the goal is a Lathe that is reliable and trustworthy on real projects,
+distributed publicly (build from source; Maven Central is M3), and documented — not a broad new-feature
+milestone. Run/test execution (neotest) and the debugger (in-process DAP over a suspended JDWP replay:
+breakpoints, stepping, inspection, conditional breakpoints, expression evaluation) already ship and are
+headline capabilities of the beta.
 
-The M2 beta already ships two capabilities beyond the core LSP set — run/test execution (neotest) and
-the debugger (in-process DAP over a suspended JDWP replay: breakpoints, stepping, inspection,
-conditional breakpoints, and expression evaluation) — which are headline differentiators of the beta.
-The remaining M2 work below completes the editing/navigation/refactoring set; the only deferred debug
-work is the DB-1 (assignment/`setVariable`) and DB-2 (array-creation) evaluation tail.
+Scope is deliberately narrow — reliability and trust, the triaged correctness gaps, rename, and public
+onboarding. The broader editing-feature set is deferred to the backlog and re-triaged after the beta
+ships (see "Deferred to backlog" below).
 
-### Navigation and references
+### Reliability and trust
 
-- Find References failure propagation and invoker coverage are done (M1); invoking references from an
-  external (dependency/JDK) symbol already returns reactor results (regression-only). Returning
-  references located *inside* external sources (source browsing) is deliberately deferred — not M2
-  scope — see [Find References](done/lathe-find-references.md); there is no active FR gap.
-- Consider partial-result streaming only if post-M1 measurements show material result latency or memory pressure.
-- Go-to-definition on a record accessor resolves to the component in the header, not the file top ([EG-047](gaps/gaps.md)).
+- Raise an advisory re-sync prompt when sources change or a git branch switches, so the workspace never
+  goes silently stale ([WS-2](gaps/gaps.md)); the full no-Maven freshness model (WS-1) remains deferred.
+- Go-to-definition returns no result instead of the file top on unresolved targets ([EG-049](gaps/gaps.md)).
+- Give JDK/dependency sources a read-only affordance instead of live diagnostics and code actions ([EG-041](gaps/gaps.md)).
+- Surface server-crash / module-failure clearly and provide one-command diagnostics collection.
+- Establish a measured cold-index budget and a documented "known limits" page for large, arbitrary reactors.
 
-### Completion and search
+### Correctness gaps (triaged)
 
-- Implement generic-bound receiver completion for wildcard and type-variable upper bounds.
-- Implement declaration-name completion for variables, fields, parameters, and type parameters.
-- Close additional reproducible completion gaps accepted into the M2 gap log.
+- Label unused exception/lambda parameters by their JLS kind, not "local variable" ([EG-039](gaps/gaps.md)).
+- Go-to-definition on a record accessor resolves to the component, not the file top ([EG-047](gaps/gaps.md)).
+- Add a "replace `var` with the inferred type" code action ([CA-5](gaps/gaps.md)).
+- Member completion on an array-typed receiver ([CQ-0053](gaps/gaps.md)).
 
-CamelCase initial matching for workspace symbol search (EG-005) has shipped — see
-[CamelCase Workspace Symbol Matching](done/lathe-workspace-symbol-camelcase.md) and the archived
-[EG-005](gaps/gaps-archive.md). See [gaps.md](gaps/gaps.md) for accepted M2 completion-gap detail.
+### Refactoring
 
-### Editing and refactoring
+- Implement prepare-rename and exact reactor rename edits, correctness-gated with explicit non-goals —
+  a wrong cross-module rename corrupts code, so it ships tested or it is not advertised.
 
-- Implement conservative on-type indentation without advertising unsupported formatting behavior.
-- Implement prepare-rename and exact reactor rename edits.
-- Implement useful Java inlay hints.
-- Complete the richer code actions accepted for M2, including a "replace `var` with the inferred type" action ([CA-5](gaps/gaps.md)).
-- Complete Neovim-relevant semantic highlighting where tree-sitter cannot classify identifiers correctly.
-- Implement LSP work-done progress notifications for workspace initialization and reload.
+### Run, test, and debug (shipped)
 
-### Workspace behavior
+- Run/test execution (neotest) and the debugger (DAP/JDWP attach) are shipped headline capabilities; the
+  only deferred debug tail is DB-1 (assignment/`setVariable`) and DB-2 (array-creation) evaluation.
 
-- Re-evaluate source watching and closed-file invalidation against the current lightweight watcher before adding work.
-- Optimize reactor indexing only where M1/M2 measurements identify a material bottleneck.
-- Keep Neovim as the only supported editor integration.
+### Onboarding and docs
+
+- Build-from-source public setup, getting-started, troubleshooting, diagnostics collection, and the
+  known-limits page. Maven Central publication is M3.
+
+### Deferred to backlog
+
+Re-triaged after the beta ships; explicitly **not** M2 scope:
+
+- Inlay hints; conservative on-type indentation.
+- Neovim-relevant semantic highlighting (including local-variable-vs-field) —
+  see [lathe-semantic-tokens.md](planned/lathe-semantic-tokens.md).
+- Generic-bound receiver completion; declaration-name completion.
+- Reference partial-result streaming (revisit only if measurements show latency/memory pressure).
+- Work-done progress for workspace initialization and reload.
+- Full no-Maven workspace freshness (WS-1); go-to-definition on an incomplete method call
+  ([EG-048](gaps/gaps.md)); references *inside* external sources (source browsing).
 
 ### Exit criteria
 
-- Public Neovim users can install from source and perform normal Java editing, navigation, and refactoring workflows.
+- Public Neovim users install from source and perform normal Java editing, navigation, and refactoring
+  (including rename) reliably — including after a branch switch, where they are prompted to re-sync
+  rather than shown stale results.
 - Every advertised LSP capability has end-to-end coverage and documented limitations.
-- Public setup, compatibility, troubleshooting, and diagnostics-collection documentation is complete.
-- VS Code support is explicitly documented as later scope, and Maven Central publication as M3.
-  Neovim run/test execution and the debugger have shipped and are part of the beta.
+- Setup, compatibility, troubleshooting, diagnostics-collection, and known-limits documentation is complete.
+- VS Code support and Maven Central publication are explicitly documented as later scope; run/test and
+  the debugger have shipped as part of the beta.
 
 ---
 
