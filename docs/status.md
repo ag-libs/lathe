@@ -32,7 +32,7 @@ Maven Central publication is planned for M3.
 |---|---|---|
 | Diagnostics | Implemented | Fast change diagnostics, full save diagnostics, and unused private/local hints. Duplicate `cant.resolve` errors on the same line are deduplicated; unused-declaration scan is suppressed when compilation has errors. |
 | Hover | Implemented | Includes source-backed Javadoc rendering. |
-| Definition | Implemented | Supports reactor and extracted dependency/JDK sources where available. |
+| Definition | Implemented with M2 gaps | Supports reactor and extracted dependency/JDK sources where available. Go-to-definition on a record accessor lands on the file rather than the component (EG-047), and an unresolved target falls back to the file top instead of returning no result (EG-049). |
 | Declaration | Implemented | `textDocument/declaration` navigates an overriding method (at its declaration site or a call site) to its root contract method in the superclass or interface; falls back to `definition` for non-overriding symbols. |
 | Completion | Implemented with M2 gaps | Member, type, import, constructor, lambda, argument, keyword, and typed-slot completion. Array-typed-receiver member completion is the accepted M2 gap (CQ-0053); method references and generic-bound receivers are deferred. |
 | Completion presentation | Implemented | Label details, generic display, receiver substitution, documentation, and import edits. |
