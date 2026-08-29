@@ -1,13 +1,18 @@
 # Lathe — Debug Support (DAP over JDWP)
 
 Design and phased development plan for debugging Lathe replay launches.
-It expands [lathe-run-test-debug.md](../done/lathe-run-test-debug.md) §4.3 (debug is one JDWP argument),
+It expands [lathe-run-test-debug.md](lathe-run-test-debug.md) §4.3 (debug is one JDWP argument),
 §10.5 (`debug.DebugAdapter`), and §12.9 (initial debug attach slice) into the full "ultimate debug"
 feature set, and records the architecture decisions taken in design discussion.
 
-This is a **planning document**: no code exists yet.
-The runtime flow, the process model, and the phase boundaries are the authoritative reference for the
-implementation slices that follow.
+**Status: implemented.**
+The debugger has shipped for Neovim: the server hosts the Microsoft java-debug DAP adapter in-process
+(attach-only) over JDWP to a suspended replay of a test, `main`, or test-scoped `main`, driven by an
+`nvim-dap` client (`:LatheDebug`) — breakpoints, stepping, inspection, conditional breakpoints,
+expression evaluation (see [lathe-debug-expression-evaluation.md](lathe-debug-expression-evaluation.md)),
+and debug-console completion. The deferred tail is tracked as gaps DB-1 (assignment / `setVariable`)
+and DB-2 (array-creation expressions). The runtime flow, process model, and phase boundaries below
+remain the authoritative architecture reference.
 
 ---
 

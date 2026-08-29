@@ -1,10 +1,11 @@
 # Lathe — Capture Dependency Isolation (TE-1)
 
-This document describes the design that resolves gap
-[TE-1](../gaps/gaps.md#te-1--capture-only-dependencies-leak-into-the-recorded-replay-classpath):
-*capture-only dependencies leak into the recorded replay classpath*.
+**Status: implemented.** This document describes the design that resolved gap
+[TE-1](../gaps/gaps-archive.md#te-1--capture-only-dependencies-leak-into-the-recorded-replay-classpath):
+*capture-only dependencies leak into the recorded replay classpath*. Shipped via the shaded
+`lathe-junit` uber-jar (Option A below); the gap is archived as done.
 It builds on the run/test capture and replay model in
-[lathe-run-test-debug.md](../done/lathe-run-test-debug.md).
+[lathe-run-test-debug.md](lathe-run-test-debug.md).
 
 ---
 

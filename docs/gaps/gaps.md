@@ -576,9 +576,12 @@ None yet — to be defined when the fix is scheduled.
 Capture/replay gaps involving the Maven test fork, the recorded launch template, and the standalone
 replay JVM. Resolved TE entries are in [gaps-archive.md](gaps-archive.md).
 
-## TE-1 — `<systemPropertyVariables>` are not carried into the replay launch
+## TE-3 — `<systemPropertyVariables>` are not carried into the replay launch
 
 **Status: deferred — Target: backlog**
+
+(Renumbered from TE-1, which is already used by the archived capture-dependency-leak gap in
+[gaps-archive.md](gaps-archive.md#te-1--capture-only-dependencies-leak-into-the-recorded-replay-classpath).)
 
 Surefire applies `<systemPropertyVariables>` inside the fork via `System.setProperty` from a program
 argument that never appears in `getInputArguments()`, so the capture listener cannot see them and

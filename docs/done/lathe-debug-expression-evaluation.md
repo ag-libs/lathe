@@ -7,9 +7,13 @@ This refines [lathe-debug-support.md](lathe-debug-support.md) §8 (provider cont
 (advanced), and resolves its **open decision #3** (evaluation strategy) in favour of a **javac
 front-end + JDI tree-interpreter**, delivered **basic-first and grown on demand**.
 
-This is a **planning document**: no evaluation code exists yet.
-The seam, the two-stage architecture, and the phase boundaries are the authoritative reference for
-the implementation slices.
+**Status: implemented.**
+Expression evaluation has shipped: reads, method/constructor invocation, `String` concat,
+`instanceof`, explicit `this`/`super`, force-loading cold classes, and object-scoped evaluation for
+collection/map logical views, used by conditional breakpoints, watches/hover, and the debug console.
+The deferred tail is the write path — gap DB-1 (assignment / `setVariable`) — and DB-2
+(array-creation expressions). The seam, the two-stage architecture, and the phase boundaries below
+remain the authoritative reference.
 
 ---
 

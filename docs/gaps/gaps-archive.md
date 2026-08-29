@@ -6855,7 +6855,7 @@ legitimately resolved onto the fork classpath.
 ### Fix
 
 Packaging-only change to `lathe-junit`, per
-[lathe-capture-dependency-isolation.md](../planned/lathe-capture-dependency-isolation.md) (Option A).
+[lathe-capture-dependency-isolation.md](../done/lathe-capture-dependency-isolation.md) (Option A).
 `lathe-junit` is repackaged with `maven-shade-plugin` as a shaded uber-jar that bundles its compile
 closure (`lathe-core`, Gson, ValidCheck) under a relocated `io.github.aglibs.lathe.junit.shaded.*`
 package and publishes a dependency-reduced POM. Error Prone annotations are excluded from the bundle,

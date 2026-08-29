@@ -111,7 +111,10 @@ It remains a build-from-source release.
 
 ### Navigation and references
 
-- Complete external-source Find References scope, failure propagation, and invoker coverage.
+- Find References failure propagation and invoker coverage are done (M1); invoking references from an
+  external (dependency/JDK) symbol already returns reactor results (regression-only). Returning
+  references located *inside* external sources (source browsing) is deliberately deferred — not M2
+  scope — see [Find References](done/lathe-find-references.md); there is no active FR gap.
 - Consider partial-result streaming only if post-M1 measurements show material result latency or memory pressure.
 
 ### Completion and search
@@ -119,9 +122,10 @@ It remains a build-from-source release.
 - Implement generic-bound receiver completion for wildcard and type-variable upper bounds.
 - Implement declaration-name completion for variables, fields, parameters, and type parameters.
 - Close additional reproducible completion gaps accepted into the M2 gap log.
-- Add CamelCase initial matching to workspace symbol search (EG-005).
 
-See [gaps.md](gaps/gaps.md) for EG-005 and accepted M2 completion-gap detail.
+CamelCase initial matching for workspace symbol search (EG-005) has shipped — see
+[CamelCase Workspace Symbol Matching](done/lathe-workspace-symbol-camelcase.md) and the archived
+[EG-005](gaps/gaps-archive.md). See [gaps.md](gaps/gaps.md) for accepted M2 completion-gap detail.
 
 ### Editing and refactoring
 

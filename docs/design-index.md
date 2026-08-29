@@ -76,6 +76,15 @@ M3 designs before implementation.
 ## Completed Designs
 
 - [Run, Test, and Debug](done/lathe-run-test-debug.md) — capture-replay of tests (shim rides `mvn test`, replay against `.lathe/` bytecode) and `main` classes, plus the in-process DAP debugger over JDWP: breakpoints/stepping/inspection, conditional breakpoints, expression evaluation (reads, invocation, `String` concat, cold-class force-load, object-scoped for logical views), debug-console completion, and run/debug of a test-scope `main`. Deferred tail tracked as TE/DB backlog gaps.
+- [Debug Support (DAP over JDWP)](done/lathe-debug-support.md) — the phased architecture behind the
+  shipped debugger (in-process java-debug host, suspended-JDWP attach, process model). Deferred tail:
+  DB-1 (assignment/`setVariable`), DB-2 (array creation).
+- [Debugger Expression Evaluation](done/lathe-debug-expression-evaluation.md) — the javac front-end +
+  JDI tree-interpreter behind watch/hover/console/conditional-breakpoint evaluation (reads, invocation,
+  `String` concat, cold-class force-load, object-scoped views). Write path deferred as DB-1.
+- [Capture Dependency Isolation](done/lathe-capture-dependency-isolation.md) — resolves the archived
+  TE-1 (capture-only dependency leak) by shading `lathe-junit` into a relocated uber-jar with a
+  dependency-reduced POM, so no capture jars reach the consumer classpath or the recorded template.
 - [Formatting and Indentation Profiles](done/lathe-formatting-profiles.md) — opt-in Google Java Format
   (`formatter = "google"`, gated server capability) split from always-on client indentation
   (`indent_style` = `editor_config` default | `google`); the range-aware / on-type formatting tail

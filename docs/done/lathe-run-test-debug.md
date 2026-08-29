@@ -893,13 +893,12 @@ Excluding the jar from the classpath at capture time makes that failure mode str
 class that is not on the class path cannot be instantiated by `ServiceLoader`, regardless of any system
 property.
 This guarantee is specifically about the `lathe-junit` jar and its registered providers.
-The current filter removes only that jar, while `lathe-core` and its transitive runtime dependencies
-remain in the recorded class path and therefore in replay.
-That capture-only dependency leakage is tracked as
-[TE-1](../gaps/gaps.md#te-1--capture-only-dependencies-leak-into-the-recorded-replay-classpath) and is
-deferred pending a separate dependency-boundary design.
-This is a different situation from capture-only mode (§3.5), whose runtime-flag failure mode is confined
-to "ran/didn't run tests" and is immediately visible.
+The `CodeSource` filter removes only that one jar, so `lathe-core` and its transitive runtime closure
+would otherwise have leaked into the recorded class path and replay. That leak was resolved by
+repackaging `lathe-junit` as a shaded uber-jar that bundles the closure under a relocated package with
+a dependency-reduced POM, so the single-jar filter now sweeps the entire closure out — see
+[Capture Dependency Isolation](../done/lathe-capture-dependency-isolation.md) and the archived
+[TE-1](../gaps/gaps-archive.md#te-1--capture-only-dependencies-leak-into-the-recorded-replay-classpath).
 
 There is no delegation fallback to guard: cases capture-replay cannot handle are documented limitations
 (§9), not server-driven Maven runs.
