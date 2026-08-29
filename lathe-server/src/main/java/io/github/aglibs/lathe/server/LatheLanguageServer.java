@@ -1,5 +1,7 @@
 package io.github.aglibs.lathe.server;
 
+import com.google.gson.JsonObject;
+import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.server.analysis.TokenScanner;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -37,20 +39,25 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
   @Override
   public CompletableFuture<InitializeResult> initialize(final InitializeParams params) {
     final var rootUri = rootUri(params);
-    LOG.fine(() -> "[initialize] rootUri=%s client=%s".formatted(rootUri, params.getClientInfo()));
+    final var formattingEnabled = formattingEnabled(params);
+    LOG.fine(
+        () ->
+            "[initialize] rootUri=%s client=%s formatting=%s"
+                .formatted(rootUri, params.getClientInfo(), formattingEnabled));
 
     textDocumentService.setWorkDoneProgressSupported(workDoneProgressSupported(params));
+    textDocumentService.setFormattingEnabled(formattingEnabled);
     if (rootUri != null) {
       textDocumentService.initialize(LatheUri.toPath(rootUri));
     } else {
       LOG.warning(() -> "[initialize] no rootUri — module registry not available");
     }
 
-    final var capabilities = createCapabilities();
+    final var capabilities = createCapabilities(formattingEnabled);
     return CompletableFuture.completedFuture(new InitializeResult(capabilities));
   }
 
-  static ServerCapabilities createCapabilities() {
+  static ServerCapabilities createCapabilities(final boolean formattingEnabled) {
     final var capabilities = new ServerCapabilities();
     capabilities.setTextDocumentSync(TextDocumentSyncKind.Full);
     capabilities.setCompletionProvider(new CompletionOptions(false, List.of(".")));
@@ -61,7 +68,10 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     final var semanticTokensOptions = new SemanticTokensWithRegistrationOptions(legend);
     semanticTokensOptions.setFull(true);
     capabilities.setSemanticTokensProvider(semanticTokensOptions);
-    capabilities.setDocumentFormattingProvider(true);
+    if (formattingEnabled) {
+      capabilities.setDocumentFormattingProvider(true);
+    }
+
     capabilities.setDefinitionProvider(true);
     capabilities.setDeclarationProvider(true);
     capabilities.setImplementationProvider(true);
@@ -124,6 +134,22 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     }
 
     return params.getRootUri();
+  }
+
+  private static boolean formattingEnabled(final InitializeParams params) {
+    if (!(params.getInitializationOptions() instanceof JsonObject options)) {
+      return false;
+    }
+
+    final var lathe = options.get(LatheFlags.INIT_OPTIONS_KEY);
+    if (lathe == null || !lathe.isJsonObject()) {
+      return false;
+    }
+
+    final var formatter = lathe.getAsJsonObject().get(LatheFlags.FORMATTER_OPTION);
+    return formatter != null
+        && formatter.isJsonPrimitive()
+        && LatheFlags.FORMATTER_GOOGLE.equals(formatter.getAsString());
   }
 
   private static boolean workDoneProgressSupported(final InitializeParams params) {

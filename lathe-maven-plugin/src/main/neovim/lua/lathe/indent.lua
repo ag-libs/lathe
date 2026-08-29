@@ -1,7 +1,48 @@
 local M = {}
 
-local BLOCK_INDENT = 2
-local CONTINUATION_INDENT = 4
+-- Profile config supplied by lathe.setup(). `indent_style` selects the profile ("editor_config" or
+-- "google"); `continuation_indent`, when non-nil, pins the continuation width, otherwise it is
+-- derived as twice the block width.
+M.config = { indent_style = "editor_config", continuation_indent = nil }
+
+-- Block indent baseline, in spaces, applied per profile by apply_buffer_options. For editor_config
+-- this is only a fallback: native EditorConfig runs after ftplugins and overrides it when a matching
+-- `.editorconfig` exists. For google it is the fixed 2-space width.
+local BASELINE_BLOCK = { editor_config = 4, google = 2 }
+
+function M.setup(opts)
+  opts = opts or {}
+  M.config.indent_style = opts.indent_style or M.config.indent_style
+  M.config.continuation_indent = opts.continuation_indent
+end
+
+-- Apply the profile's baseline indent options to a Java buffer. Called from ftplugin/java.lua at
+-- FileType time; for editor_config, native EditorConfig applies afterward and takes precedence.
+function M.apply_buffer_options(bufnr)
+  local block = BASELINE_BLOCK[M.config.indent_style] or BASELINE_BLOCK.editor_config
+  vim.bo[bufnr].expandtab = true
+  vim.bo[bufnr].shiftwidth = block
+  vim.bo[bufnr].softtabstop = block
+  vim.bo[bufnr].tabstop = block
+end
+
+-- Block indent width, in display columns, for the current buffer: the effective 'shiftwidth',
+-- falling back to 'tabstop' when 'shiftwidth' is 0 (Vim's own rule). Those buffer-local options are
+-- set by native EditorConfig (editor_config profile) or the ftplugin baseline (google, or the
+-- 4-space fallback), so the indenter follows whichever width the profile resolved.
+local function block_width()
+  local sw = vim.bo.shiftwidth
+  if sw > 0 then
+    return sw
+  end
+  return vim.bo.tabstop
+end
+
+-- Continuation indent width: the pinned `continuation_indent` when configured, otherwise twice the
+-- block width. EditorConfig has no continuation concept, so this ratio is Lathe's heuristic.
+local function continuation_width()
+  return M.config.continuation_indent or block_width() * 2
+end
 
 local BLOCK_NODES = {
   annotation_type_body = true,
@@ -109,7 +150,7 @@ local function selector_indent(prev_lnum, prev)
   if starts_with_selector(prev) then
     return vim.fn.indent(prev_lnum)
   end
-  return vim.fn.indent(prev_lnum) + CONTINUATION_INDENT
+  return vim.fn.indent(prev_lnum) + continuation_width()
 end
 
 local function blank_selector_indent(prev_lnum, prev, next_lnum, next_line)
@@ -159,11 +200,12 @@ local function statement_start_indent(lnum)
   return vim.fn.indent(l)
 end
 
--- Indentation dictated by how the previous line ends, anchored to Google Java
--- Format's block (+2) and continuation (+4) model. The offset is measured from
--- the previous line itself, except for list separators: GJF breaks after the
--- opening bracket, so every wrapped item sits at the same column and a comma
--- keeps the next item aligned rather than stair-stepping it deeper.
+-- Indentation dictated by how the previous line ends, anchored to a block /
+-- continuation model whose widths come from the active profile (block_width /
+-- continuation_width). The offset is measured from the previous line itself,
+-- except for list separators: a wrapped list breaks after the opening bracket,
+-- so every wrapped item sits at the same column and a comma keeps the next item
+-- aligned rather than stair-stepping it deeper.
 -- Returns nil when the previous line neither opens a block nor continues an
 -- expression, leaving the base indent to the caller.
 local function continuation_indent(prev_lnum, prev)
@@ -173,16 +215,16 @@ local function continuation_indent(prev_lnum, prev)
     -- wrapped onto the next line) sits at continuation depth, so the body must indent from the
     -- statement's first line, not that deeper column. statement_start_indent equals prev_indent when
     -- the opener is not itself a continuation, leaving the common single-line case unchanged.
-    return statement_start_indent(prev_lnum) + BLOCK_INDENT
+    return statement_start_indent(prev_lnum) + block_width()
   end
   if ends_with_open_bracket(prev) then
-    return prev_indent + CONTINUATION_INDENT
+    return prev_indent + continuation_width()
   end
   if ends_with_comma(prev) then
     return prev_indent
   end
   if ends_with_operator(prev) then
-    return prev_indent + CONTINUATION_INDENT
+    return prev_indent + continuation_width()
   end
   return nil
 end
@@ -228,7 +270,7 @@ local function heuristic_indent(lnum, current, prev_lnum, prev)
   end
   local prev_indent = vim.fn.indent(prev_lnum)
   if starts_with_closer(current) then
-    return math.max(prev_indent - BLOCK_INDENT, 0)
+    return math.max(prev_indent - block_width(), 0)
   end
   if starts_with_selector(current) then
     return selector_indent(prev_lnum, prev)

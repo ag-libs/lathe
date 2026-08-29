@@ -8,8 +8,13 @@
 -- Override the cache location by setting LATHE_CACHE in your environment.
 --
 -- Options (all optional):
---   capabilities     LSP capabilities table; defaults to vim.lsp.protocol.make_client_capabilities()
---   format_on_save   boolean; format buffer on write via lathe (default: true)
+--   capabilities        LSP capabilities table; defaults to vim.lsp.protocol.make_client_capabilities()
+--   indent_style        "editor_config" | "google"; Java indentation profile (default: "editor_config").
+--                       editor_config follows Neovim's built-in EditorConfig (4-space fallback);
+--                       google uses fixed 2-space / 4-space Google Java Format indentation.
+--   continuation_indent number; pins the wrapped-line continuation width (default: twice the block width).
+--   formatter           nil | "google"; enables on-demand Google Java Format via the server (default: nil).
+--   format_on_save      boolean; format on write; only wired when formatter == "google" (default: false).
 --
 -- Set LATHE_DEBUG=1 in the environment to enable debug logging in the server process.
 -- Requires the Java Treesitter parser for indentation (:TSInstall java).
@@ -75,6 +80,11 @@ function M.setup(opts)
   local root = cache_root()
   local launcher = root .. '/current/lathe-launcher.sh'
 
+  require('lathe.indent').setup({
+    indent_style = opts.indent_style,
+    continuation_indent = opts.continuation_indent,
+  })
+
   local augroup = vim.api.nvim_create_augroup('LathePlugin', { clear = true })
 
   vim.lsp.config('lathe', {
@@ -93,10 +103,13 @@ function M.setup(opts)
       end
     end,
     capabilities = opts.capabilities or vim.lsp.protocol.make_client_capabilities(),
+    init_options = { lathe = { formatter = opts.formatter } },
   })
   vim.lsp.enable('lathe')
 
-  local format_on_save = opts.format_on_save ~= false
+  -- Format-on-save is only meaningful with the Google formatter enabled; without it the server does
+  -- not advertise formatting, so wiring the autocmd would be a no-op.
+  local format_on_save = opts.formatter == 'google' and opts.format_on_save == true
   if format_on_save then
     vim.api.nvim_create_autocmd('LspAttach', {
       group = augroup,

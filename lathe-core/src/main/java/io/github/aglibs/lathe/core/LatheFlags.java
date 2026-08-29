@@ -7,6 +7,12 @@ public final class LatheFlags {
   public static final String CAPTURE_ONLY = "lathe.capture.only";
   public static final String RESULTS_SINK = "lathe.results.sink";
 
+  // LSP initialization option keys, sent by the editor client as
+  // {"lathe": {"formatter": "google"}} and read by the server to gate formatting.
+  public static final String INIT_OPTIONS_KEY = "lathe";
+  public static final String FORMATTER_OPTION = "formatter";
+  public static final String FORMATTER_GOOGLE = "google";
+
   private LatheFlags() {}
 
   public static boolean isDisabled() {

@@ -29,7 +29,10 @@ import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.DidCloseTextDocumentParams;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
+import org.eclipse.lsp4j.DocumentFormattingParams;
+import org.eclipse.lsp4j.DocumentRangeFormattingParams;
 import org.eclipse.lsp4j.DocumentSymbol;
+import org.eclipse.lsp4j.FormattingOptions;
 import org.eclipse.lsp4j.HoverParams;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
@@ -42,6 +45,7 @@ import org.eclipse.lsp4j.SymbolKind;
 import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.TextDocumentItem;
+import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.TypeHierarchyItem;
 import org.eclipse.lsp4j.TypeHierarchySubtypesParams;
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
@@ -122,6 +126,39 @@ class LatheTextDocumentServiceTest {
     verify(client, timeout(DEBOUNCE_MS * 3)).publishDiagnostics(captor.capture());
     assertThat(captor.getValue().getUri()).isEqualTo(URI);
     assertThat(captor.getValue().getDiagnostics()).isEmpty();
+  }
+
+  @Test
+  void formatting_disabled_returnsEmptyEdits() throws Exception {
+    final List<? extends TextEdit> edits =
+        service.formatting(formattingParams()).get(5, TimeUnit.SECONDS);
+
+    assertThat(edits).isEmpty();
+  }
+
+  @Test
+  void formatting_enabled_delegatesToFormatter() throws Exception {
+    service.initialize(tmp);
+    service.setFormattingEnabled(true);
+    service.didOpen(
+        new DidOpenTextDocumentParams(
+            new TextDocumentItem(URI, "java", 1, "class Foo {\nint x;\n}\n")));
+
+    final List<? extends TextEdit> edits =
+        service.formatting(formattingParams()).get(5, TimeUnit.SECONDS);
+
+    assertThat(edits).isNotEmpty();
+  }
+
+  @Test
+  void rangeFormatting_anyProfile_returnsEmptyEdits() throws Exception {
+    service.setFormattingEnabled(true);
+    final var params = new DocumentRangeFormattingParams();
+    params.setTextDocument(new TextDocumentIdentifier(URI));
+    params.setRange(new Range(new Position(0, 0), new Position(0, 0)));
+    params.setOptions(new FormattingOptions(2, true));
+
+    assertThat(service.rangeFormatting(params).get(5, TimeUnit.SECONDS)).isEmpty();
   }
 
   @Test
@@ -322,6 +359,13 @@ class LatheTextDocumentServiceTest {
     final var change = new TextDocumentContentChangeEvent();
     change.setText(text);
     return new DidChangeTextDocumentParams(id, List.of(change));
+  }
+
+  private static DocumentFormattingParams formattingParams() {
+    final var params = new DocumentFormattingParams();
+    params.setTextDocument(new TextDocumentIdentifier(URI));
+    params.setOptions(new FormattingOptions(2, true));
+    return params;
   }
 
   @Test

@@ -1,7 +1,7 @@
-vim.bo.expandtab = true
-vim.bo.shiftwidth = 2
-vim.bo.softtabstop = 2
-vim.bo.tabstop = 2
+-- Apply the resolved indentation profile's baseline widths. For the editor_config profile these are
+-- a 4-space fallback that Neovim's built-in EditorConfig overrides afterward (it runs after
+-- ftplugins); for the google profile they are the fixed 2-space widths.
+require("lathe.indent").apply_buffer_options(vim.api.nvim_get_current_buf())
 
 vim.bo.autoindent = true
 vim.bo.smartindent = false

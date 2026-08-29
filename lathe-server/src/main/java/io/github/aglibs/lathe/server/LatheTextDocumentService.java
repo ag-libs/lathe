@@ -27,6 +27,7 @@ final class LatheTextDocumentService implements TextDocumentService {
   private final long debounceMs;
   private ProgressReporter progressReporter;
   private WorkspaceSession session;
+  private volatile boolean formattingEnabled;
 
   LatheTextDocumentService() {
     this(DEFAULT_DEBOUNCE_MS);
@@ -44,6 +45,10 @@ final class LatheTextDocumentService implements TextDocumentService {
 
   void setWorkDoneProgressSupported(final boolean supported) {
     progressReporter.setSupported(supported);
+  }
+
+  void setFormattingEnabled(final boolean enabled) {
+    formattingEnabled = enabled;
   }
 
   void cancelProgress(final WorkDoneProgressCancelParams params) {
@@ -303,6 +308,10 @@ final class LatheTextDocumentService implements TextDocumentService {
   @Override
   public CompletableFuture<List<? extends TextEdit>> formatting(
       final DocumentFormattingParams params) {
+    if (!formattingEnabled) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
     final var uri = params.getTextDocument().getUri();
     return worker.submit(() -> session.format("format", uri));
   }
@@ -310,8 +319,10 @@ final class LatheTextDocumentService implements TextDocumentService {
   @Override
   public CompletableFuture<List<? extends TextEdit>> rangeFormatting(
       final DocumentRangeFormattingParams params) {
-    final var uri = params.getTextDocument().getUri();
-    return worker.submit(() -> session.format("rangeFormat", uri));
+    // Capability is never advertised; delegating to the whole-document formatter would ignore the
+    // requested range and reformat — and reorder/remove imports across — the entire file, so a
+    // client that calls this anyway gets no edits regardless of profile.
+    return CompletableFuture.completedFuture(List.of());
   }
 
   @Override

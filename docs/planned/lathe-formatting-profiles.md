@@ -137,18 +137,28 @@ Read the effective buffer-local options and derive Lathe's indentation:
   heuristic below, expressed in display columns.
 - no resolved width (native editorconfig disabled, no matching `.editorconfig`, or the option is
   unset/zero with no tab fallback):
-  fall back to block indent `4`, continuation indent `8`.
+  the 4-space baseline below applies, giving block indent `4`, continuation indent `8`.
 
 Dropwizard's `.editorconfig` (`indent_size = 4`) therefore surfaces as `shiftwidth = 4`, giving
 4-space block indentation and (by default) 8-space continuation indentation — with no Lathe parsing
 involved.
 
-#### Dependency on native EditorConfig
+#### Baseline, ordering, and dependency on native EditorConfig
 
-This profile relies on Neovim's built-in EditorConfig being active. It is on by default; a user who
-sets `vim.g.editorconfig = false` (or `vim.b.editorconfig = false`) opts out, and the fallback above
-then applies. Lathe does not attempt to re-enable or replace it — there is a single source of truth
-for `.editorconfig`, which avoids the two systems fighting over the same buffer options.
+Neovim applies EditorConfig **after** ftplugins and `FileType` autocommands (its autocmd fires on
+`BufRead`/`BufNewFile`, which run after filetype detection). EditorConfig therefore resolves *last*
+and wins over anything an ftplugin set.
+
+The `editor_config` profile relies on this ordering: `ftplugin/java.lua` sets a conservative
+**4-space Java baseline** (`expandtab`, `shiftwidth = 4`, `softtabstop = 4`, `tabstop = 4`), and when
+a matching `.editorconfig` exists native EditorConfig overrides that baseline afterward with the
+project's values. This is what delivers the fallback above: with no matching `.editorconfig` (or with
+EditorConfig disabled via `vim.g.editorconfig = false` / `vim.b.editorconfig = false`), the 4-space
+baseline stands; otherwise the project's `.editorconfig` wins. There is a single source of truth for
+`.editorconfig` — Neovim's — and the baseline only fills the gap when it resolves nothing.
+
+Nvim also records the properties it applied in `vim.b.editorconfig`, which tests use to assert that a
+project `.editorconfig` took precedence over the baseline.
 
 #### Continuation indent is a heuristic
 
@@ -197,10 +207,11 @@ Planned behavior:
 - `lathe.indent` should expose a setup/config function that records the selected profile and the
   optional `continuation_indent`. Block/continuation widths for `editor_config` are read from
   buffer-local options per buffer (see below), not stored as module constants.
-- For the `editor_config` profile, the plugin **does not** set `expandtab`, `shiftwidth`,
-  `softtabstop`, or `tabstop` — Neovim's built-in EditorConfig owns them. `ftplugin/java.lua` must
-  stop hardcoding `shiftwidth = 2` / `softtabstop = 2` / `tabstop = 2`, because those values run at
-  `FileType` time and would clobber the EditorConfig-resolved options.
+- For the `editor_config` profile, `ftplugin/java.lua` sets a conservative 4-space Java baseline
+  (`expandtab`, `shiftwidth = 4`, `softtabstop = 4`, `tabstop = 4`). It must stop hardcoding the
+  Google `2 / 2 / 2` widths. Because Neovim applies EditorConfig after `FileType` (see "Baseline,
+  ordering, and dependency on native EditorConfig"), a matching `.editorconfig` overrides this
+  baseline; when none matches, the baseline is the documented 4-space fallback.
 - For the `google` profile, the plugin sets buffer-local `expandtab`, `shiftwidth = 2`,
   `softtabstop = 2`, and `tabstop = 2` explicitly.
 - The `indentexpr` wiring in `after/indent/java.lua` stays; `lathe.indent` reads the resolved
@@ -339,7 +350,10 @@ what native EditorConfig produces, rather than asserting on file parsing:
 - with `shiftwidth = 0`, block indent falls back to `tabstop` (Vim's rule).
 - no resolved width (native editorconfig disabled / options unset) falls back to 4-space block,
   8-space continuation.
-- the `editor_config` profile does not overwrite EditorConfig-resolved `shiftwidth`/`tabstop`.
+- `ftplugin/java.lua` applies the 4-space baseline for `editor_config` and the 2-space widths for
+  `google`.
+- a project `.editorconfig` (applied by native EditorConfig after `FileType`) overrides the
+  `editor_config` baseline — asserted via the resolved `shiftwidth`/`vim.b.editorconfig`.
 - `continuation_indent = N` overrides the derived width in both `editor_config` and `google`.
 - `indent_style = "google"` sets `expandtab` and 2/4 behavior.
 - format-on-save autocmd is not installed by default.

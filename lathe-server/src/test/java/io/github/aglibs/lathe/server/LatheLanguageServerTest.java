@@ -14,14 +14,13 @@ class LatheLanguageServerTest {
 
   @Test
   void createCapabilities_supportedFeatures_advertisesProviders() {
-    final var capabilities = LatheLanguageServer.createCapabilities();
+    final var capabilities = LatheLanguageServer.createCapabilities(false);
 
     assertThat(capabilities.getTextDocumentSync().getLeft()).isEqualTo(TextDocumentSyncKind.Full);
     assertThat(capabilities.getCompletionProvider()).isNotNull();
     assertThat(capabilities.getHoverProvider().getLeft()).isTrue();
     assertThat(capabilities.getSignatureHelpProvider()).isNotNull();
     assertThat(capabilities.getSemanticTokensProvider()).isNotNull();
-    assertThat(capabilities.getDocumentFormattingProvider().getLeft()).isTrue();
     assertThat(capabilities.getDefinitionProvider().getLeft()).isTrue();
     assertThat(capabilities.getImplementationProvider().getLeft()).isTrue();
     assertThat(capabilities.getTypeHierarchyProvider().getLeft()).isTrue();
@@ -33,15 +32,29 @@ class LatheLanguageServerTest {
   }
 
   @Test
+  void createCapabilities_formattingDisabled_omitsFormattingProvider() {
+    final var capabilities = LatheLanguageServer.createCapabilities(false);
+
+    assertThat(capabilities.getDocumentFormattingProvider()).isNull();
+  }
+
+  @Test
+  void createCapabilities_formattingEnabled_advertisesFormattingProvider() {
+    final var capabilities = LatheLanguageServer.createCapabilities(true);
+
+    assertThat(capabilities.getDocumentFormattingProvider().getLeft()).isTrue();
+  }
+
+  @Test
   void createCapabilities_includesCallHierarchyProvider() {
-    final var capabilities = LatheLanguageServer.createCapabilities();
+    final var capabilities = LatheLanguageServer.createCapabilities(false);
 
     assertThat(capabilities.getCallHierarchyProvider().getLeft()).isTrue();
   }
 
   @Test
   void createCapabilities_includesExecuteCommandProvider() {
-    final var capabilities = LatheLanguageServer.createCapabilities();
+    final var capabilities = LatheLanguageServer.createCapabilities(false);
 
     assertThat(capabilities.getExecuteCommandProvider().getCommands())
         .containsExactlyInAnyOrder(
