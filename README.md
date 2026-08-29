@@ -4,11 +4,7 @@ Lathe is a Java language server for Maven projects.
 It uses Maven itself as the source of truth:
 the compiler shim records the exact `javac` parameters Maven used,
 and the Maven plugin refreshes workspace metadata and dependency sources.
-Because those are the exact parameters Maven computed — the module path, `--add-opens`,
-`--patch-module`, and the rest — modular (JPMS) projects work out of the box.
-Analysis runs on the JDK's own Java Compiler Tree API (`com.sun.source`, javac's front end), so
-diagnostics, resolution, and completion match `javac` exactly rather than approximating it with a
-separate parser.
+Analysis runs on the standard Java Compiler Tree API (`com.sun.source`, `javac`'s front end).
 
 Setup is a single `.mvn/extensions.xml` registration.
 The Lathe Maven extension injects the compiler shim, the `init`/`sync` goals, and the test-capture
@@ -28,7 +24,7 @@ _Demo video coming soon — a short run-and-debug session._
 - **Java 21+** — Lathe runs on the same JDK your Maven build uses.
 - **Maven 3.x** — Maven 4 is not supported yet.
 
-Test run and debug additionally need a modern, JPMS-capable Surefire (3.5.5+) and **JUnit Platform**
+Test run and debug additionally need a modern, JPMS-capable Surefire (3.5.5+) and JUnit Platform
 (JUnit 5/6, or JUnit 4 via the vintage engine) for capture; code intelligence, formatting, and
 `main`-class runs work without them. See [test-capture.md](docs/guide/test-capture.md) for capture
 requirements and limits, and [Editors](#editors) for per-editor prerequisites.
