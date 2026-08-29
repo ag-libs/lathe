@@ -284,7 +284,7 @@ unit and returns nothing on the unparseable-newline trigger), its priority is lo
 relevant to a later VS Code integration rather than the Neovim focus — where error-tolerant
 client-side indentation already covers live typing. Retired as a standalone gap: the finding and its
 deferred scope are tracked in
-[lathe-formatting-profiles.md](../planned/lathe-formatting-profiles.md), "Future Work — Range-Aware
+[lathe-formatting-profiles.md](../done/lathe-formatting-profiles.md), "Future Work — Range-Aware
 Formatting" (On-type formatting), to be considered only after that design and the range-aware path
 land.
 
@@ -300,7 +300,7 @@ land.
 Retired as a standalone gap: the finding, the near-term defensive gating, and the range-aware
 formatting feature (GJF `formatSource(text, ranges)`, the prerequisite for conservative
 `onTypeFormatting`) are now tracked in
-[lathe-formatting-profiles.md](../planned/lathe-formatting-profiles.md), "Future Work — Range-Aware
+[lathe-formatting-profiles.md](../done/lathe-formatting-profiles.md), "Future Work — Range-Aware
 Formatting", to be implemented once that formatting design lands.
 
 ---

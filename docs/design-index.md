@@ -35,9 +35,6 @@ discovery via [gap-workflow.md](gaps/gap-workflow.md) and resolved entries in [g
 - [New Type Creation](planned/lathe-new-type-creation.md) — scaffold a blank file's class/interface/enum/record via
   snippet completion, with no custom client-side UI.
 - [Google Indentation](planned/lathe-google-indent.md) — conservative on-type formatting.
-- [Formatting and Indentation Profiles](planned/lathe-formatting-profiles.md) — opt-in Google Java Format and
-  project-sensitive indentation defaults; also carries the deferred range-aware / on-type formatting
-  feature (absorbs former gaps EG-029 and EG-028), to be implemented once the profiles design lands.
 - [Class/Import Semantic Highlighting](planned/lathe-class-import-semantic-highlighting.md) — Neovim-relevant semantic
   corrections for type references.
 - [Type Definition Navigation](planned/lathe-type-definition.md) — LSP `textDocument/typeDefinition` support for
@@ -79,6 +76,10 @@ M3 designs before implementation.
 ## Completed Designs
 
 - [Run, Test, and Debug](done/lathe-run-test-debug.md) — capture-replay of tests (shim rides `mvn test`, replay against `.lathe/` bytecode) and `main` classes, plus the in-process DAP debugger over JDWP: breakpoints/stepping/inspection, conditional breakpoints, expression evaluation (reads, invocation, `String` concat, cold-class force-load, object-scoped for logical views), debug-console completion, and run/debug of a test-scope `main`. Deferred tail tracked as TE/DB backlog gaps.
+- [Formatting and Indentation Profiles](done/lathe-formatting-profiles.md) — opt-in Google Java Format
+  (`formatter = "google"`, gated server capability) split from always-on client indentation
+  (`indent_style` = `editor_config` default | `google`); the range-aware / on-type formatting tail
+  (absorbs former gaps EG-029 and EG-028) remains deferred.
 - [CamelCase Workspace Symbol Matching](done/lathe-workspace-symbol-camelcase.md) — resolves
   EG-005; IntelliJ-style CamelHumps abbreviation matching for `workspace/symbol`, scoped to
   reactor-owned types, merged alongside the existing exact-prefix search.

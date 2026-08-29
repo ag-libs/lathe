@@ -3,7 +3,7 @@
 This document records the implemented baseline and known user-visible gaps.
 The [roadmap](roadmap.md) defines milestone scope; the [design index](design-index.md) links detailed designs.
 
-Status last reviewed: 2026-08-26.
+Status last reviewed: 2026-08-29.
 
 ## Release State
 
@@ -45,7 +45,7 @@ Maven Central publication is planned for M3.
 | Document symbols | Implemented | File outline support is available. |
 | Folding ranges | Implemented | Java structural folding is available. |
 | Semantic tokens | Partially implemented | Static/deprecated members, enum constants, type parameters, and annotations are covered. Class and import highlighting remain planned for M2. |
-| Full-document formatting | Implemented | google-java-format also reorders and removes imports. |
+| Full-document formatting | Implemented (opt-in) | Advertised only when the client sets `formatter = "google"`; off by default so non-GJF projects are not rewritten. google-java-format also reorders and removes imports. Indentation is a separate client-side profile (`indent_style`). See `lathe-formatting-profiles.md`. |
 | On-type formatting | Deferred | Stub; capability not advertised. Deferred feature work in `lathe-formatting-profiles.md`, depending on range-aware formatting — low priority and mainly relevant to a later VS Code integration, not the Neovim focus. |
 | Code actions | Implemented | Missing imports, add-throws, try/catch wrapping, variable declaration, and missing-method stubs all work. Missing-import actions now offer reactor types from a prior sync or from an open, already-compiled file (CA-4). Types created or renamed in a closed file await a sync — see the source/branch-switch staleness gap WS-1. |
 | Rename | M2 planned | Existing reference identity and roles provide part of the foundation. |

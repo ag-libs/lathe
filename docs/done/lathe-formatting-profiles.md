@@ -2,7 +2,11 @@
 
 ## Status
 
-Planned.
+Implemented.
+The profiles ship as described: `indent_style` (`editor_config` default | `google`), the opt-in
+`formatter = "google"` server gate, `format_on_save` defaulting off, and `continuation_indent`. The
+range-aware and on-type formatting work under "Future Work — Range-Aware Formatting" remains deferred.
+
 This design changes Lathe's default formatting behavior from "Google Java Format on save" to an explicit,
 project-sensitive choice.
 

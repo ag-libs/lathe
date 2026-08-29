@@ -46,4 +46,10 @@ spec.check("google, no save: no format-on-save autocmd", lspattach_count(), 1)
 lathe.setup({ format_on_save = true })
 spec.check("save without formatter: gated off", lspattach_count(), 1)
 
+-- Indent profile options propagate from lathe.setup into the lathe.indent module.
+lathe.setup({ indent_style = "google", continuation_indent = 3 })
+local indent = require("lathe.indent")
+spec.check("indent_style propagates to lathe.indent", indent.config.indent_style, "google")
+spec.check("continuation_indent propagates to lathe.indent", indent.config.continuation_indent, 3)
+
 spec.finish()

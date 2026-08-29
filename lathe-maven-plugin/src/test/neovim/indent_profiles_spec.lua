@@ -25,6 +25,8 @@ indent.setup({ indent_style = "google" })
 indent.apply_buffer_options(0)
 spec.check("google: expandtab", vim.bo.expandtab, true)
 spec.check("google: shiftwidth", vim.bo.shiftwidth, 2)
+spec.check("google: softtabstop", vim.bo.softtabstop, 2)
+spec.check("google: tabstop", vim.bo.tabstop, 2)
 spec.check("google: block indent", compute({ "void m() {", "body();" }, 2), 2)
 spec.check("google: continuation indent", compute({ "var x =", "y;" }, 2), 4)
 
@@ -33,6 +35,8 @@ indent.setup({ indent_style = "editor_config" })
 indent.apply_buffer_options(0)
 spec.check("editor_config: expandtab baseline", vim.bo.expandtab, true)
 spec.check("editor_config: shiftwidth baseline", vim.bo.shiftwidth, 4)
+spec.check("editor_config: softtabstop baseline", vim.bo.softtabstop, 4)
+spec.check("editor_config: tabstop baseline", vim.bo.tabstop, 4)
 spec.check("editor_config: block indent", compute({ "void m() {", "body();" }, 2), 4)
 spec.check("editor_config: continuation indent", compute({ "var x =", "y;" }, 2), 8)
 
@@ -49,6 +53,11 @@ spec.check("shiftwidth=0 falls back to tabstop", compute({ "void m() {", "body()
 indent.setup({ indent_style = "google", continuation_indent = 3 })
 indent.apply_buffer_options(0)
 spec.check("continuation_indent override", compute({ "var x =", "y;" }, 2), 3)
+
+-- An unknown indent_style falls back to the editor_config 4-space baseline.
+indent.setup({ indent_style = "bogus" })
+indent.apply_buffer_options(0)
+spec.check("unknown indent_style falls back to 4-space baseline", vim.bo.shiftwidth, 4)
 
 -- Native EditorConfig runs after ftplugins and overrides the editor_config baseline. Exercise the
 -- real runtime resolver against an on-disk `.editorconfig` to confirm the precedence the design
