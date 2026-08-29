@@ -129,7 +129,9 @@ class LspSmokeTest {
     assertThat(caps.getImplementationProvider()).isNotNull();
     assertThat(caps.getTypeHierarchyProvider()).isNotNull();
     assertThat(caps.getReferencesProvider()).isNotNull();
-    assertThat(caps.getDocumentFormattingProvider()).isNotNull();
+    // Formatting is opt-in: advertised only when the client sends the formatter="google" init
+    // option. This smoke test initializes without it, so the capability must be absent by default.
+    assertThat(caps.getDocumentFormattingProvider()).isNull();
     assertThat(caps.getSemanticTokensProvider()).isNotNull();
   }
 
