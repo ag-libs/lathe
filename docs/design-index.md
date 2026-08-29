@@ -38,6 +38,9 @@ discovery via [gap-workflow.md](gaps/gap-workflow.md) and resolved entries in [g
   corrections for type references.
 - [Type Definition Navigation](planned/lathe-type-definition.md) — LSP `textDocument/typeDefinition` support for
   Neovim 0.12's default `grt` mapping.
+- [Rename](planned/lathe-rename.md) — `textDocument/rename` + `prepareRename` built on the Find References
+  pipeline (occurrence ranges → `WorkspaceEdit`, no `ASTRewrite`); scoped to the common cases for M2,
+  correctness-gated (freshness refusal + minimal conflict checks), with explicit non-goals.
 - [Lightweight Watcher](planned/lathe-lightweight-watcher.md) — partially stale design to re-evaluate before adding
   source watching.
 
@@ -46,7 +49,7 @@ discovery via [gap-workflow.md](gaps/gap-workflow.md) and resolved entries in [g
 - [Javac Crash Capture](planned/lathe-javac-crash-capture.md) — local repro bundles for unhandled javac exceptions
   without putting source text in normal logs.
 
-Rename and the additional M2 code actions require focused designs before implementation. Inlay hints,
+The additional M2 code actions require a focused design before implementation. Inlay hints,
 on-type indentation, semantic-highlighting expansion, declaration-name completion, and progress
 notifications are deferred to the backlog and re-triaged after the beta (see the [roadmap](roadmap.md)).
 
