@@ -4,6 +4,8 @@ Lathe is a Java language server for Maven projects.
 It uses Maven itself as the source of truth:
 the compiler shim records the exact `javac` parameters Maven used,
 and the Maven plugin refreshes workspace metadata and dependency sources.
+Because those are the exact parameters Maven computed — the module path, `--add-opens`,
+`--patch-module`, and the rest — modular (JPMS) projects work out of the box.
 Analysis runs on the JDK's own Java Compiler Tree API (`com.sun.source`, javac's front end), so
 diagnostics, resolution, and completion match `javac` exactly rather than approximating it with a
 separate parser.
@@ -60,6 +62,9 @@ mvn clean test -Dlathe.capture.only=true -DfailIfNoTests=false
 `-Dlathe.capture.only=true` forks each module to snapshot its test-launch template but skips executing
 the tests; `-DfailIfNoTests=false` keeps the empty run green; `clean` forces a first compile through
 the Lathe shim.
+
+> **Tip:** the [Maven Daemon (`mvnd`)](https://github.com/apache/maven-mvnd) noticeably speeds up these
+> builds — run it in place of `mvn` where you can.
 
 You rarely run this again: capture rides every normal test build (`mvn test`, `verify`, `install`), so
 the templates stay fresh automatically. For a lighter refresh of just LSP intelligence and `main`-class
