@@ -1,5 +1,9 @@
 # Lathe — MissingMethodImplProvider Design
 
+**Status: implemented.** Shipped as gap CA-3 (archived): `MissingMethodImplProvider` generates
+`@Override` stubs for unimplemented abstract methods, wired into `SourceAnalysisSession.codeAction()`.
+Sections 2–3 below describe the pre-implementation state and remain as design history.
+
 ## 1. Goal
 
 Implement a `codeAction` quick-fix for `compiler.err.does.not.override.abstract`

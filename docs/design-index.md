@@ -16,7 +16,6 @@ discovery via [gap-workflow.md](gaps/gap-workflow.md) and resolved entries in [g
 - [Gaps](gaps/gaps.md) — the single active gap registry (EG/FR/CA/CQ); resolved entries in
   [gaps-archive.md](gaps/gaps-archive.md). Lifecycle in [gap-process.md](gaps/gap-process.md); discovery in
   [gap-workflow.md](gaps/gap-workflow.md).
-- [MissingMethodImplProvider](planned/lathe-missing-method-impl.md) — generation of abstract-method stubs.
 - [M1 Refactoring](done/lathe-m1-refactoring.md) — single consolidated refactoring plan: documentation accuracy,
   fail-fast propagation, DRY/structural extractions, god-class decomposition, naming, and test-suite hygiene. ✓
 - [Reactor Type Index](planned/lathe-reactor-type-index.md) — implemented baseline and freshness follow-ups.
@@ -85,6 +84,8 @@ M3 designs before implementation.
 - [Capture Dependency Isolation](done/lathe-capture-dependency-isolation.md) — resolves the archived
   TE-1 (capture-only dependency leak) by shading `lathe-junit` into a relocated uber-jar with a
   dependency-reduced POM, so no capture jars reach the consumer classpath or the recorded template.
+- [MissingMethodImplProvider](done/lathe-missing-method-impl.md) — the `codeAction` quick-fix that
+  generates `@Override` stubs for unimplemented abstract methods (resolves the archived gap CA-3).
 - [Formatting and Indentation Profiles](done/lathe-formatting-profiles.md) — opt-in Google Java Format
   (`formatter = "google"`, gated server capability) split from always-on client indentation
   (`indent_style` = `editor_config` default | `google`); the range-aware / on-type formatting tail
