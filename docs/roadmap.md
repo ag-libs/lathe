@@ -19,8 +19,8 @@ When status wording in a feature design conflicts with this roadmap, this roadma
 | M2 | Neovim Public Beta | `0.1.0-beta.N` | Public Neovim users | Build from source |
 | M3 | 0.1.0 General Availability | `0.1.0` | Public Neovim users | Maven Central |
 
-Neovim run/test integration has shipped (capture-replay test execution via the neotest adapter);
-the debugger (DAP / JDWP attach) and VS Code support are post-M3 work.
+Neovim run/test execution (capture-replay via the neotest adapter) and the debugger (in-process DAP
+over JDWP attach) have both shipped and are part of the M2 beta; VS Code support is post-M3 work.
 
 ---
 
@@ -109,6 +109,12 @@ See [gaps.md](gaps/gaps.md).
 M2 completes the planned LSP editing, navigation, and refactoring set needed for normal Java development in Neovim.
 It remains a build-from-source release.
 
+The M2 beta already ships two capabilities beyond the core LSP set — run/test execution (neotest) and
+the debugger (in-process DAP over a suspended JDWP replay: breakpoints, stepping, inspection,
+conditional breakpoints, and expression evaluation) — which are headline differentiators of the beta.
+The remaining M2 work below completes the editing/navigation/refactoring set; the only deferred debug
+work is the DB-1 (assignment/`setVariable`) and DB-2 (array-creation) evaluation tail.
+
 ### Navigation and references
 
 - Find References failure propagation and invoker coverage are done (M1); invoking references from an
@@ -148,8 +154,8 @@ CamelCase initial matching for workspace symbol search (EG-005) has shipped — 
 - Public Neovim users can install from source and perform normal Java editing, navigation, and refactoring workflows.
 - Every advertised LSP capability has end-to-end coverage and documented limitations.
 - Public setup, compatibility, troubleshooting, and diagnostics-collection documentation is complete.
-- Debug (DAP), VS Code, and Maven Central publication are explicitly documented as later scope
-  (Neovim run/test execution has shipped).
+- VS Code support is explicitly documented as later scope, and Maven Central publication as M3.
+  Neovim run/test execution and the debugger have shipped and are part of the beta.
 
 ---
 
@@ -199,14 +205,15 @@ Capture-replay **test execution** has shipped for Neovim — capture rides the `
 runs a fresh JVM against `.lathe/` bytecode (no recompilation) with streamed output/test events,
 cancellation, and the neotest adapter (discovery, run at every level, inline diagnostics).
 
-The **debugger** has since shipped for Neovim too: the server hosts the Microsoft java-debug DAP
-adapter in-process (attach-only) and attaches it over JDWP to a suspended replay of a test, `main`, or
+The **debugger** shipped for Neovim ahead of this original post-M3 slot and is now a capability of the
+M2 beta (see "M2 — Neovim Public Beta"): the server hosts the Microsoft java-debug DAP adapter
+in-process (attach-only) and attaches it over JDWP to a suspended replay of a test, `main`, or
 test-scoped `main` class, driven by an `nvim-dap` client (`:LatheDebug`). Breakpoints, stepping,
 inspection, conditional breakpoints, expression evaluation (reads, method/constructor invocation,
-`String` concat, force-loading cold classes), and debug-console completion all work. What remains is
-object-scoped evaluation (collection/map logical views, scheduled) and the deferred write path
-(assignment/`setVariable`) plus array-creation; named run configs (`:LatheRun {name}`) are the main
-run-config UX gap.
+`String` concat, force-loading cold classes, and object-scoped collection/map logical views), and
+debug-console completion all work. The remaining tail is the write path — DB-1
+(assignment/`setVariable`) — and DB-2 (array-creation); named run configs (`:LatheRun {name}`, TE-2)
+are the main run-config UX gap.
 See [lathe-run-test-debug.md](done/lathe-run-test-debug.md) §12.11–§12.12 and the shipped scope in
 [lathe-neotest-experience.md](planned/lathe-neotest-experience.md).
 
