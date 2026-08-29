@@ -9,6 +9,18 @@ Before making non-trivial changes, read the relevant design document first:
 - Overall design: `docs/lathe-design.md`
 - Roadmap: `docs/roadmap.md`
 
+### Documentation map
+
+Which file answers which question:
+
+- **Behavior / how-to** (user-facing) → `README.md` (editor-agnostic feature reference) and
+  `docs/guide/` (`installation.md`, `run-configuration.md`, `test-capture.md`, and per-editor
+  cheatsheets under `editors/`, e.g. `editors/neovim.md`).
+- **Design / why** → `docs/design-index.md`, then the specific design doc under `docs/planned/`
+  or `docs/done/`.
+- **What's implemented** → `docs/status.md`.
+- **Active work items** (authoritative, by ID) → `docs/gaps/gaps.md`.
+
 ## Working style
 
 - **CRITICAL**: If a change touches multiple classes, changes a public API, or introduces a new

@@ -10,9 +10,10 @@ exhaustive *reference* material, not the getting-started or usage flow.
 VS Code is planned but later; the multi-editor structure is deliberately **deferred** to when that work
 starts (§7), not built day one.
 
-**Status.** Design only — not yet implemented.
-This document is an outline, not the final copy.
-The `## Demo` placeholder has already been added to the current `README.md`.
+**Status.** Implemented, with a course correction during the work — see §10.
+The Neovim-first hub described in §§1–9 was superseded by an **editor-agnostic** structure: the README
+is now a Neovim-free feature reference, and the Neovim keymaps live in a per-editor cheatsheet under
+`docs/guide/editors/`. §§1–9 are retained as the design history; §10 records what actually shipped.
 
 **Scope.**
 In: trimming `README.md`; extracting reference guides under `docs/guide/`
@@ -197,3 +198,27 @@ Keep this cheap; defer the rest to §7.
    `neovim.md`; add the condensed "How it works" with links; keep Setup and the Neovim usage flow inline.
 3. Add the `CLAUDE.md` "Documentation map" and the README "Documentation" links.
 4. Verify links and completeness; land as one docs commit.
+
+## 10. What shipped — editor-agnostic restructure
+
+During implementation the Neovim-first framing (§§1–9) kept reading as "Lathe is a Neovim tool,"
+because the feature index routed into the Neovim guide. Reviewer feedback surfaced this repeatedly, so
+the structure was corrected to put the editor-agnostic story first. This adopts — now, not deferred
+(§7) — the `editors/` split, justified by the public "editor-agnostic language server" positioning and
+the imminent VS Code client.
+
+Shipped structure:
+
+- **`README.md`** is a **Neovim-free feature reference**: `Setup` (Maven only), a `Features` section of
+  editor-agnostic capability tables (code intelligence, diagnostics/formatting, run/test/debug — *what
+  each does*, **no key mappings**), an `Editors` table routing to per-editor guides, `How it works`,
+  and generic troubleshooting.
+- **`docs/guide/editors/neovim.md`** is the **Neovim cheatsheet**: install plus the keymap tables (the
+  action, its command/API, Neovim default, and a suggested mapping) for every session. VS Code becomes
+  a sibling `editors/vscode.md` when it lands.
+- **`docs/guide/`** keeps the editor-agnostic concept docs (`installation.md`, `run-configuration.md`,
+  `test-capture.md`).
+
+Net rule: the README (and concept docs) say *what Lathe does*; the `editors/*` cheatsheets say *how you
+bind it* in a given client. The feature index never points at an editor — only the `Editors` section
+does.
