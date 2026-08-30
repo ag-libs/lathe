@@ -41,6 +41,18 @@ Note `-DskipTests` is **not** a substitute — it skips the fork entirely, so no
 If your build sets `<failIfNoTests>true</failIfNoTests>`, add `-DfailIfNoTests=false` so the
 test-free run stays green.
 
+## Resources
+
+Saving a resource file (`.properties`, `.sql`, `.yaml`, …) inside a Lathe workspace copies it straight
+into `.lathe/`, so the next run, test, or debug **replay** uses the new contents — no rebuild, no `mvn`.
+The editor forwards each non-Java save to the server, which maps it against the resource roots
+`lathe:sync` recorded and byte-copies it into `.lathe/<module>/{classes,test-classes}`.
+
+This is exact for **plain** resources, which Maven copies verbatim anyway. For **filtered** resources —
+those Maven processes with `${…}`/`@…@` substitution, a `targetPath`, or `includes`/`excludes` — the
+copy is the **raw source**: placeholders are not substituted. To refresh filtered resources faithfully,
+run a normal build (`mvn process-test-classes`), which re-filters them through Maven.
+
 ## Requirements and current limits
 
 - **A modern, JPMS-capable Surefire (e.g. 3.5.5+).**
