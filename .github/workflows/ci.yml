@@ -13,16 +13,22 @@ concurrency:
 
 jobs:
   build:
-    name: Build & verify (JDK 21, ubuntu)
+    name: Build & verify (JDK ${{ matrix.java }}, ubuntu)
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 21 is the release baseline (see release.yml); 26 guards forward
+        # compatibility (e.g. JDK-specific CompletableFuture cancellation shapes).
+        java: [ '21', '26' ]
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Set up JDK 21
+      - name: Set up JDK ${{ matrix.java }}
         uses: actions/setup-java@v5
         with:
-          java-version: '21'
+          java-version: ${{ matrix.java }}
           distribution: 'temurin'
           cache: maven
 
@@ -55,6 +61,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v5
         with:
-          name: surefire-reports
+          name: surefire-reports-jdk${{ matrix.java }}
           path: '**/target/surefire-reports/'
           retention-days: 7

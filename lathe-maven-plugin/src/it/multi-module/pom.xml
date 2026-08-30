@@ -18,7 +18,11 @@
   </modules>
 
   <properties>
-    <maven.compiler.release>25</maven.compiler.release>
+    <!-- Target Lathe's own baseline (21) so this IT compiles on every CI JDK in
+         the matrix; the fixture uses no release-25 features and asserts nothing
+         about the release, and modern-JDK coverage lives in the external test
+         projects (dropwizard/helidon on Java 25). -->
+    <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>
 </project>
