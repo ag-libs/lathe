@@ -1,14 +1,21 @@
 # Lathe
 
-Lathe is a Java language server for Maven projects.
-It uses Maven itself as the source of truth:
-the compiler shim records the exact `javac` parameters Maven used,
-and the Maven plugin refreshes workspace metadata and dependency sources.
-Analysis runs on the standard Java Compiler Tree API (`com.sun.source`, `javac`'s front end).
+Lathe is a Java language server for Maven projects. It provides code
+intelligence, diagnostics, and run/test/debug.
 
-Setup is a single `.mvn/extensions.xml` registration.
-The Lathe Maven extension injects the compiler shim, the `init`/`sync` goals, and the test-capture
-dependency into the effective build in memory, so no `pom.xml` edits are needed.
+Lathe takes its project model from your Maven build rather than reconstructing
+one. Each time you build, Lathe records the exact `javac` parameters and
+classpath Maven used and refreshes its workspace state, so diagnostics and
+completion always match your latest build. Analysis runs on javac's
+own front end — the JDK Compiler Tree API from the `jdk.compiler` module — so
+Lathe reports what `javac` reports. Runs and debug sessions replay from captured
+bytecode without recompiling, reproducing the launch Maven would use.
+
+Setup is a single `.mvn/extensions.xml` registration; no `pom.xml` edits are
+needed. The extension injects its compiler integration, the `init`/`sync` goals,
+and the test-capture dependency into the build in memory.
+
+Lathe currently ships a Neovim client; a VS Code client is in progress.
 
 ## Demo
 
@@ -18,56 +25,6 @@ dependency into the effective build in memory, so no `pom.xml` edits are needed.
      `com.example` project only -- never a private codebase. -->
 
 _Demo video coming soon — a short run-and-debug session._
-
-## Requirements
-
-- **Java 21+** — Lathe runs on the same JDK your Maven build uses.
-- **Maven 3.x** — Maven 4 is not supported yet.
-
-Test run and debug additionally need a modern, JPMS-capable Surefire (3.5.5+) and JUnit Platform
-(JUnit 5/6, or JUnit 4 via the vintage engine) for capture; code intelligence, formatting, and
-`main`-class runs work without them. See [test-capture.md](docs/guide/test-capture.md) for capture
-requirements and limits, and [Editors](#editors) for per-editor prerequisites.
-
-## Setup
-
-> Publishing to a Maven repository is pending — for now, [build from source](docs/guide/installation.md) first.
-
-Register the extension once, in `.mvn/extensions.xml` at the reactor root (the directory you run `mvn`
-from):
-
-```xml
-
-<extensions>
-  <extension>
-    <groupId>io.github.ag-libs</groupId>
-    <artifactId>lathe-maven-extension</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
-  </extension>
-</extensions>
-```
-
-Then generate the Lathe metadata and add `.lathe/` to `.gitignore`. This first run captures every
-launch template — compiler params, the workspace manifest, and each module's run/test launch —
-**without running your test suite**:
-
-```bash
-mvn clean test -Dlathe.capture.only=true -DfailIfNoTests=false
-```
-
-`-Dlathe.capture.only=true` forks each module to snapshot its test-launch template but skips executing
-the tests; `-DfailIfNoTests=false` keeps the empty run green; `clean` forces a first compile through
-the Lathe shim.
-
-> **Tip:** the [Maven Daemon (`mvnd`)](https://github.com/apache/maven-mvnd) noticeably speeds up these
-> builds — run it in place of `mvn` where you can.
-
-You rarely run this again: capture rides every normal test build (`mvn test`, `verify`, `install`), so
-the templates stay fresh automatically. For a lighter refresh of just LSP intelligence and `main`-class
-runs (no test capture), use `mvn process-test-classes`.
-
-For **manual POM configuration** (and when to prefer it over the extension), plus what the build
-writes, see [installation.md](docs/guide/installation.md).
 
 ## Features
 
@@ -125,7 +82,70 @@ Lathe ships a client for Neovim; VS Code is coming.
 | Neovim  | Supported   | [Neovim cheatsheet](docs/guide/editors/neovim.md) — install and keymaps |
 | VS Code | Coming soon | —                                                                       |
 
+## Requirements
+
+- **Java 21+** — the same JDK your Maven build uses.
+- **Maven 3.x**
+
+Test run and debug have additional requirements (Surefire and JUnit Platform
+versions); see [test-capture.md](docs/guide/test-capture.md).
+
+## Setup
+
+> Publishing to a Maven repository is pending — for now, [build from source](docs/guide/installation.md) first.
+
+Register the extension once, in `.mvn/extensions.xml` at the reactor root (the directory you run `mvn`
+from):
+
+```xml
+<extensions>
+  <extension>
+    <groupId>io.github.ag-libs</groupId>
+    <artifactId>lathe-maven-extension</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </extension>
+</extensions>
+```
+
+Then generate the Lathe metadata and add `.lathe/` to `.gitignore`:
+
+```bash
+mvn clean test -Dlathe.capture.only=true
+```
+
+This captures every launch template — compiler params, the workspace manifest, and each module's
+run/test launch — without running your test suite. `-Dlathe.capture.only=true` forks each module to
+snapshot its launch template but skips executing the tests; `clean` forces a first compile through
+Lathe.
+
+> **Tip:** the [Maven Daemon (`mvnd`)](https://github.com/apache/maven-mvnd) noticeably speeds up these
+> builds — run it in place of `mvn` where you can.
+
+You rarely run this again. Every normal test build (`mvn test`, `verify`, `install`) refreshes the
+templates automatically. For a lighter refresh of just LSP intelligence and `main`-class runs (no test
+capture), use `mvn process-test-classes`.
+
+For **manual POM configuration** (and when to prefer it over the extension), plus what the build
+writes, see [installation.md](docs/guide/installation.md).
+
 ## How it works
+
+### Build capture
+
+During a Maven compile, Lathe's compiler integration records the exact `javac`
+parameters and classpath for each module into `.lathe/`, and the `sync` goal
+writes the workspace manifest (`workspace.json`) describing the reactor. The
+language server reads these files, so diagnostics, completion, and navigation
+reflect the same inputs your build compiled with. Every build refreshes them, so
+the model tracks your project as it changes.
+
+### Dependency & JDK sources
+
+`lathe:sync` resolves your dependencies' `-sources` JARs through Maven and
+extracts them, along with the JDK's own sources, under `~/.cache/lathe/`. That is
+what lets go-to-definition step into library and JDK code. A dependency with no
+published `-sources` JAR is skipped — navigation to it is unavailable, with no
+error.
 
 ### Test capture
 
@@ -147,6 +167,17 @@ extra class-/module-path entries with an optional **overlay** (`lathe-run.json` 
 `.lathe/run.json`) — applied by the server, and unable to change launch-correctness fields.
 Schema and selection rules: [run-configuration.md](docs/guide/run-configuration.md).
 
+## Files and caches
+
+Lathe writes two kinds of data:
+
+- **`.lathe/`** in your project — per-build metadata (compiler params, the workspace manifest,
+  run/test launch templates). Add it to `.gitignore`. Details:
+  [installation.md](docs/guide/installation.md#what-and-where-lathe-writes).
+- **`~/.cache/lathe/`** on your machine — the unpacked language server and editor client, the
+  dependency and JDK **source** trees `lathe:sync` extracts, and the symbol index. Regenerable and
+  safe to delete; relocate with `-Dlathe.cache=<dir>`.
+
 ## Opt-out and CI
 
 Lathe is active by default and skips automatically in CI:
@@ -160,8 +191,8 @@ Lathe is active by default and skips automatically in CI:
 ## Partial builds
 
 When Maven is invoked with `-pl`, `lathe:sync` skips writing `workspace.json` to avoid overwriting the
-full workspace manifest with a partial view. Module params files are still written by the compiler shim
-for compiled modules. To force a workspace manifest write from a partial build, pass
+full workspace manifest with a partial view. Module params files are still written by Lathe's compiler
+integration for compiled modules. To force a workspace manifest write from a partial build, pass
 `-Dlathe.sync.force=true`.
 
 ## Documentation
@@ -177,14 +208,16 @@ for compiled modules. To force a workspace manifest write from a partial build, 
 
 ### `.lathe` directory not found
 
-`lathe:init` has not run, or the extension is not registered.
+`lathe:init` has not run, or Lathe is not registered in the build.
 Run `mvn process-test-classes` at the reactor root.
-If `.lathe/` is still missing, verify that `.mvn/extensions.xml` registers `lathe-maven-extension` and
-that you are running `mvn` from the directory that contains `.mvn/`.
+If `.lathe/` is still missing, verify Lathe is registered — a core extension in `.mvn/extensions.xml`,
+a build extension in the reactor-root `pom.xml`, or the manual wiring (see
+[installation.md](docs/guide/installation.md)). With the `.mvn/extensions.xml` route, also confirm you
+are running `mvn` from the directory that contains `.mvn/`.
 
 ### Missing params for a module (`Run mvn process-test-classes to activate module`)
 
-The server cannot find the compiler-shim parameters for the module you are editing.
+The server cannot find Lathe's compiler parameters for the module you are editing.
 Re-run `mvn process-test-classes` to regenerate them.
 
 ### Server not attaching or crashing

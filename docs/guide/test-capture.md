@@ -28,16 +28,18 @@ guess reconstructed from POM text.
 
 ## Capture without running tests
 
-To refresh the launch templates without paying for a test run, add `-Dlathe.capture.only=true` (with
-`-DfailIfNoTests=false`): each module still forks and writes its `test-launch.json`, but a
-post-discovery filter excludes every test from execution, so nothing actually runs.
+To refresh the launch templates without paying for a test run, add `-Dlathe.capture.only=true`: each
+module still forks and writes its `test-launch.json`, but a post-discovery filter excludes every test
+from execution, so nothing actually runs.
 
 ```bash
-mvn test -Dlathe.capture.only=true -DfailIfNoTests=false
+mvn test -Dlathe.capture.only=true
 ```
 
 This is the recommended [first-time setup](installation.md#initialize).
 Note `-DskipTests` is **not** a substitute — it skips the fork entirely, so nothing is captured.
+If your build sets `<failIfNoTests>true</failIfNoTests>`, add `-DfailIfNoTests=false` so the
+test-free run stays green.
 
 ## Requirements and current limits
 

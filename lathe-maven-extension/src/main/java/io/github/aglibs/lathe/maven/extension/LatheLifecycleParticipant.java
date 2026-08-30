@@ -7,10 +7,11 @@ import org.apache.maven.AbstractMavenLifecycleParticipant;
 import org.apache.maven.execution.MavenSession;
 
 /**
- * Injects all Lathe build wiring into the effective reactor model in memory, so a project needs
- * only a {@code .mvn/extensions.xml} registration and no POM edits. Registered as a Maven core
- * extension (Sisu {@code @Named} component); {@code afterProjectsRead} is the single hook and
- * delegates all model changes to {@link LatheModelInjector}.
+ * Injects all Lathe build wiring into the effective reactor model in memory, so a project needs only
+ * to register the extension and no per-piece POM edits. Registered either as a Maven core extension
+ * ({@code .mvn/extensions.xml}) or as a build extension ({@code <build><extensions>} in the
+ * reactor-root POM); both reach the single {@code afterProjectsRead} hook, which runs after the
+ * reactor model is read and delegates all model changes to {@link LatheModelInjector}.
  */
 @Named("lathe")
 @Singleton
