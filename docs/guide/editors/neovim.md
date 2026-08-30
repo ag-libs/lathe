@@ -3,8 +3,9 @@
 The Neovim client: how to install it and a suggested keymap for every action, so you can wire your own
 config. For *what* each feature does (editor-agnostic), see the
 [feature reference in the README](../../../README.md#features).
-Requires **Neovim 0.12+** (the default `editor_config` indent profile uses Neovim's native
-EditorConfig support) and the Java Treesitter parser for indentation (`:TSInstall java`).
+Requires **Neovim 0.11.7+** (0.12+ recommended) and the Java Treesitter parser for indentation
+(`:TSInstall java`). The default `editor_config` indent profile needs Neovim's native EditorConfig
+support (0.12+); on 0.11.x, select a different indent profile.
 
 Lathe adds **no key mappings of its own** — it provides LSP endpoints, the `:Lathe*` commands, and a
 few Lua entry points; you bind the ones you want. Each section below is a table of what's available:

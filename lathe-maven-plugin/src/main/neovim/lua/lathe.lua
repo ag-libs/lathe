@@ -1,4 +1,4 @@
--- Lathe LSP plugin for Neovim (requires Neovim 0.11+).
+-- Lathe LSP plugin for Neovim (requires Neovim 0.11.7+; 0.12+ recommended).
 --
 -- Installation: copy this file (or symlink it) into your Neovim config and call:
 --   require('lathe').setup()
