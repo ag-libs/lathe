@@ -7,6 +7,30 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-047 — Go-to-definition on a record accessor lands on the file, not the component
+
+**Status: done — Target: M2.**
+
+`textDocument/definition` on a record-accessor use (e.g. `config.bucket()`) or on the synthetic
+accessor itself resolved to nothing (originally the file top `0:0`; after EG-049, no result) instead
+of the component in the record header. A record accessor is synthetic — `Trees.getPath` is null and
+no declaration site is found — so the normal resolution is empty.
+
+Fixed in `DefinitionLocator`: when the normal resolution of an element is empty **and** the element
+is a record's canonical accessor (a no-arg `METHOD` on a `RECORD` whose `RecordComponentElement`
+reports it as its accessor), retry resolution against the component's backing field. The backing
+field is kind `FIELD`, so the existing `SourceLocator.declarationPath` field-in-`ClassTree` matcher
+lands on the component name in the record header with no new tree-scanning code. The retry only fires
+on empty, so an explicitly-declared accessor (which has its own declaration site) resolves directly
+and is never redirected.
+
+Regression targets: `DefinitionLocatorTest.locate_recordAccessor_externalFile_redirectsToComponent`
+(synthetic accessor → header component position) and
+`locate_explicitRecordAccessor_externalFile_returnsAccessorNotComponent` (user-written accessor body
+resolves to its own declaration, not the header).
+
+---
+
 ## EG-049 — Go-to-definition falls back to the file top on unresolved targets
 
 **Status: done — Target: M2.**

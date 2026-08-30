@@ -71,7 +71,6 @@ ships (see "Deferred to backlog" below).
 ### Correctness gaps (triaged)
 
 - Label unused exception/lambda parameters by their JLS kind, not "local variable" ([EG-039](gaps/gaps.md)).
-- Go-to-definition on a record accessor resolves to the component, not the file top ([EG-047](gaps/gaps.md)).
 - Add a "replace `var` with the inferred type" code action ([CA-5](gaps/gaps.md)).
 - Member completion on an array-typed receiver ([CQ-0053](gaps/gaps.md)).
 

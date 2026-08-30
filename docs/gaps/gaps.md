@@ -371,43 +371,6 @@ Per the chosen option 1 (suppress for `CompilerRoute.External`):
 
 ---
 
-## EG-047 — Go-to-definition on a record accessor lands on the file, not the component
-
-**Status: accepted — Target: M2**
-
-### Observed behaviour
-
-`textDocument/definition` on a record-accessor use (e.g. `config.bucket()`), or on the synthetic
-accessor itself, navigates to the top of the record's source file (`0:0`) instead of the `bucket`
-component in the record header.
-
-```bash
-python3 dev/explore.py <ws>/.../AppServerConfig.java def <line>:<col>   # on a config.bucket() use
-# today: AppServerConfig.java 0:0 ; expected: the `bucket` component in the record header
-```
-
-### Root cause
-
-A record accessor is **synthetic**: `Trees.getPath(element)` is null and no declaration site is
-found, so `DefinitionLocator.parsePosition` falls back to `new Position(0, 0)`
-(`DefinitionLocator.java:110`).
-
-### Proposed direction
-
-When the definition target is (or normalises to) a record component, redirect to the component in the
-record header. Reuse the references-side machinery that already maps this: `ReferenceTarget`'s
-accessor ↔ `RecordComponentElement` normalisation (`recordAccessorFor` / `componentNamed`) and
-`SourceLocator`'s record-component-in-header handling (`SourceLocator.java:284`, `:297-317`). Intercept
-before the file-top fallback and return the component-name position. javac elements only — no text
-scanning beyond the existing name-position helper.
-
-### Regression targets
-
-None yet — to be defined when scheduled (def on an accessor use → component header; def on the accessor
-declaration → component; cross-module use).
-
----
-
 ## EG-048 — Go-to-definition on an incomplete method call lands on the file, not the method
 
 **Status: deferred — Target: backlog**

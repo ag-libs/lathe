@@ -9,6 +9,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Function;
+import javax.lang.model.element.Element;
+import javax.lang.model.element.TypeElement;
 import org.eclipse.lsp4j.Location;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -46,7 +49,7 @@ class DefinitionLocatorTest extends SampleFixture {
   @Test
   void locate_sameFile_typeReference_returnsDeclaration() {
     // "Status" in return type of getStatus()
-    final var location = definitionAt("Status getStatus", "Status");
+    final var location = definitionAt(pathAt("Status getStatus", "Status"));
 
     assertThat(location).isPresent();
     assertThat(location.get().getUri()).endsWith("Sample.java");
@@ -321,8 +324,58 @@ class DefinitionLocatorTest extends SampleFixture {
     assertThat(location.get().getRange().getStart().getCharacter()).isEqualTo(29);
   }
 
+  @Test
+  void locate_recordAccessor_externalFile_redirectsToComponent(@TempDir final Path tempDir)
+      throws IOException {
+    // A synthetic record accessor has no declaration site of its own; go-to-definition redirects it
+    // to the component in the record header rather than returning no result (EG-047).
+    final var location =
+        locateExternalElement(
+            tempDir,
+            "public record Point(int x, int y) {}",
+            "Point",
+            DefinitionLocatorTest::recordAccessor);
+
+    assertThat(location).isPresent();
+    assertThat(location.get().getUri()).endsWith("Point.java");
+    // "x" component in the record header: line 0, col 24 of "public record Point(int x, ...".
+    assertThat(location.get().getRange().getStart().getLine()).isEqualTo(0);
+    assertThat(location.get().getRange().getStart().getCharacter()).isEqualTo(24);
+  }
+
+  @Test
+  void locate_explicitRecordAccessor_externalFile_returnsAccessorNotComponent(
+      @TempDir final Path tempDir) throws IOException {
+    // A user-written accessor body has its own declaration site and resolves there; the EG-047
+    // redirect only fires for synthetic accessors (whose direct resolution is empty). The explicit
+    // "x()" is on line 1, distinct from the header component on line 0.
+    final var source =
+        """
+        public record Point(int x, int y) {
+          public int x() {
+            return x;
+          }
+        }
+        """;
+    final var location =
+        locateExternalElement(tempDir, source, "Point", DefinitionLocatorTest::recordAccessor);
+
+    assertThat(location).isPresent();
+    assertThat(location.get().getUri()).endsWith("Point.java");
+    assertThat(location.get().getRange().getStart().getLine()).isEqualTo(1);
+  }
+
   private static Optional<Location> locateExternalMember(
       final Path tempDir, final String source, final String typeName, final String memberName)
+      throws IOException {
+    return locateExternalElement(tempDir, source, typeName, type -> memberNamed(type, memberName));
+  }
+
+  private static Optional<Location> locateExternalElement(
+      final Path tempDir,
+      final String source,
+      final String typeName,
+      final Function<TypeElement, Element> selector)
       throws IOException {
     final var srcDir = tempDir.resolve("src");
     Files.createDirectories(srcDir);
@@ -338,11 +391,7 @@ class DefinitionLocatorTest extends SampleFixture {
 
     try (final var parsed = TestCompiler.parseWithClasspath(userSrc, classDir)) {
       final var type = parsed.task().getElements().getTypeElement(typeName);
-      final var member =
-          type.getEnclosedElements().stream()
-              .filter(e -> e.getSimpleName().contentEquals(memberName))
-              .findFirst()
-              .orElseThrow();
+      final var member = selector.apply(type);
       assertThat(parsed.trees().getPath(member)).isNull();
 
       return new DefinitionLocator(parsed.parser())
@@ -350,8 +399,19 @@ class DefinitionLocatorTest extends SampleFixture {
     }
   }
 
-  private Optional<Location> definitionAt(final String expression, final String token) {
-    return definitionAt(pathAt(expression, token));
+  private static Element memberNamed(final TypeElement type, final String memberName) {
+    return type.getEnclosedElements().stream()
+        .filter(e -> e.getSimpleName().contentEquals(memberName))
+        .findFirst()
+        .orElseThrow();
+  }
+
+  private static Element recordAccessor(final TypeElement record) {
+    return record.getRecordComponents().stream()
+        .filter(component -> component.getSimpleName().contentEquals("x"))
+        .findFirst()
+        .orElseThrow()
+        .getAccessor();
   }
 
   private Optional<Location> definitionAt(final int line, final int character) {

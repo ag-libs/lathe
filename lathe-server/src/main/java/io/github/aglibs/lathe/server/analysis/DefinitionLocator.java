@@ -13,6 +13,7 @@ import java.util.logging.Logger;
 import java.util.stream.Stream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.ModuleElement;
 import javax.lang.model.element.PackageElement;
 import javax.lang.model.element.TypeElement;
@@ -39,6 +40,20 @@ public final class DefinitionLocator {
       return Optional.empty();
     }
 
+    final var direct = locateElement(element, trees, sourceRoots, sourceUri);
+    if (direct.isPresent()) {
+      return direct;
+    }
+
+    final var component = recordComponentField(element);
+    return component == null ? direct : locateElement(component, trees, sourceRoots, sourceUri);
+  }
+
+  private Optional<Location> locateElement(
+      final Element element,
+      final Trees trees,
+      final List<Path> sourceRoots,
+      final String sourceUri) {
     final var path = trees.getPath(element);
     if (path != null) {
       final var cu = path.getCompilationUnit();
@@ -74,6 +89,38 @@ public final class DefinitionLocator {
                                       .formatted(file, lspPos.getLine(), lspPos.getCharacter()));
                           return new Location(file.toUri().toString(), new Range(lspPos, lspPos));
                         }));
+  }
+
+  /**
+   * A synthetic record accessor has no declaration site, so it resolves to nothing; redirect it to
+   * the component's backing field, whose declaration is the component name in the record header
+   * (EG-047). Returns null unless {@code element} is a record's canonical accessor — an explicit
+   * accessor with a body resolves directly and never reaches this fallback.
+   */
+  private static Element recordComponentField(final Element element) {
+    if (!(element instanceof final ExecutableElement accessor)
+        || accessor.getKind() != ElementKind.METHOD
+        || !accessor.getParameters().isEmpty()) {
+      return null;
+    }
+
+    if (!(accessor.getEnclosingElement() instanceof final TypeElement record)
+        || record.getKind() != ElementKind.RECORD) {
+      return null;
+    }
+
+    final boolean isAccessor =
+        record.getRecordComponents().stream()
+            .anyMatch(component -> component.getAccessor().equals(accessor));
+    if (!isAccessor) {
+      return null;
+    }
+
+    return record.getEnclosedElements().stream()
+        .filter(member -> member.getKind() == ElementKind.FIELD)
+        .filter(member -> member.getSimpleName().contentEquals(accessor.getSimpleName()))
+        .findFirst()
+        .orElse(null);
   }
 
   public static Optional<Path> findSourceFile(final Element element, final List<Path> sourceRoots) {
