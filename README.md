@@ -1,19 +1,18 @@
 # Lathe
 
-Lathe is a Java language server for Maven projects. It provides code
-intelligence, diagnostics, and run/test/debug.
+Lathe is a Java language server for Maven projects. It provides code intelligence, diagnostics, and
+run/test/debug.
 
-Lathe takes its project model from your Maven build rather than reconstructing
-one. Each time you build, Lathe records the exact `javac` parameters and
-classpath Maven used and refreshes its workspace state, so diagnostics and
-completion always match your latest build. Analysis runs on javac's
-own front end — the JDK Compiler Tree API from the `jdk.compiler` module — so
-Lathe reports what `javac` reports. Runs and debug sessions replay from captured
-bytecode without recompiling, reproducing the launch Maven would use.
+Lathe takes its project model from your Maven build rather than reconstructing one. Each time you
+build, Lathe records the exact `javac` parameters and classpath Maven used and refreshes its workspace
+state, so diagnostics and completion always match your latest build. Analysis runs on javac's own front
+end — the JDK Compiler Tree API from the `jdk.compiler` module — so Lathe reports what `javac` reports.
+Runs and debug sessions replay from captured bytecode without recompiling, reproducing the launch Maven
+would use.
 
-Setup is a single `.mvn/extensions.xml` registration; no `pom.xml` edits are
-needed. The extension injects its compiler integration, the `init`/`sync` goals,
-and the test-capture dependency into the build in memory.
+Setup is a single extension registration; no per-piece `pom.xml` edits are needed. The extension
+injects its compiler integration, the `init`/`sync` goals, and the test-capture dependency into the
+build in memory.
 
 Lathe currently ships a Neovim client; a VS Code client is in progress.
 
@@ -132,20 +131,18 @@ writes, see [installation.md](docs/guide/installation.md).
 
 ### Build capture
 
-During a Maven compile, Lathe's compiler integration records the exact `javac`
-parameters and classpath for each module into `.lathe/`, and the `sync` goal
-writes the workspace manifest (`workspace.json`) describing the reactor. The
-language server reads these files, so diagnostics, completion, and navigation
-reflect the same inputs your build compiled with. Every build refreshes them, so
-the model tracks your project as it changes.
+During a Maven compile, Lathe's compiler integration records the exact `javac` parameters and classpath
+for each module into `.lathe/`, and the `sync` goal writes the workspace manifest (`workspace.json`)
+describing the reactor. The language server reads these files, so diagnostics, completion, and
+navigation reflect the same inputs your build compiled with. Every build refreshes them, so the model
+tracks your project as it changes.
 
 ### Dependency & JDK sources
 
-`lathe:sync` resolves your dependencies' `-sources` JARs through Maven and
-extracts them, along with the JDK's own sources, under `~/.cache/lathe/`. That is
-what lets go-to-definition step into library and JDK code. A dependency with no
-published `-sources` JAR is skipped — navigation to it is unavailable, with no
-error.
+`lathe:sync` resolves your dependencies' `-sources` JARs through Maven and extracts them, along with the
+JDK's own sources, under `~/.cache/lathe/`. That is what lets go-to-definition step into library and JDK
+code. A dependency with no published `-sources` JAR is skipped — navigation to it is unavailable, with
+no error.
 
 ### Test capture
 
