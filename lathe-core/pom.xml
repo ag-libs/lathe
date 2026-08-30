@@ -10,6 +10,9 @@
 
   <artifactId>lathe-core</artifactId>
 
+  <name>lathe-core</name>
+  <description>Lathe shared utilities: workspace layout and property-file helpers.</description>
+
   <dependencies>
     <dependency>
       <groupId>com.google.code.gson</groupId>

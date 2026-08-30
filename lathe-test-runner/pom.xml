@@ -10,6 +10,9 @@
 
   <artifactId>lathe-test-runner</artifactId>
 
+  <name>lathe-test-runner</name>
+  <description>Lathe standalone runner that replays tests and main methods.</description>
+
   <dependencies>
     <dependency>
       <groupId>org.junit.platform</groupId>

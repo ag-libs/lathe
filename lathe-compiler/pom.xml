@@ -10,6 +10,9 @@
 
   <artifactId>lathe-compiler</artifactId>
 
+  <name>lathe-compiler</name>
+  <description>Lathe Plexus compiler that records the exact javac parameters.</description>
+
   <dependencies>
     <dependency>
       <groupId>io.github.ag-libs</groupId>

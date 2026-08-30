@@ -1,5 +1,8 @@
 # Lathe
 
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.ag-libs/lathe-maven-extension?label=Maven%20Central)](https://central.sonatype.com/artifact/io.github.ag-libs/lathe-maven-extension)
+[![CI](https://github.com/ag-libs/lathe/actions/workflows/ci.yml/badge.svg)](https://github.com/ag-libs/lathe/actions/workflows/ci.yml)
+
 Lathe is a Java language server for Maven projects. It provides code intelligence, diagnostics, and
 run/test/debug.
 
@@ -228,6 +231,8 @@ Feedback, bug reports, and questions are welcome — please [open an issue](http
 
 If you would like to contribute code, please open an issue to discuss the change before opening a pull
 request. Thank you for trying Lathe.
+
+Maintainers: see [RELEASING.md](RELEASING.md) for the release process.
 
 ## License
 

@@ -10,6 +10,9 @@
 
   <artifactId>lathe-server</artifactId>
 
+  <name>lathe-server</name>
+  <description>Lathe language server (LSP and DAP).</description>
+
   <dependencies>
     <dependency>
       <groupId>io.github.ag-libs</groupId>

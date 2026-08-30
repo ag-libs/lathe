@@ -7,6 +7,25 @@
   <version>0.1.0-SNAPSHOT</version>
   <packaging>pom</packaging>
 
+  <name>lathe-parent</name>
+  <description>Lathe — a Java language server for Maven projects.</description>
+  <url>https://github.com/ag-libs/lathe</url>
+
+  <licenses>
+    <license>
+      <name>Apache License, Version 2.0</name>
+      <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <id>agavrilov76</id>
+      <name>Alexey Gavrilov</name>
+      <url>https://github.com/agavrilov76</url>
+    </developer>
+  </developers>
+
   <modules>
     <module>lathe-core</module>
     <module>lathe-junit</module>
@@ -16,6 +35,20 @@
     <module>lathe-maven-extension</module>
     <module>lathe-maven-plugin</module>
   </modules>
+
+  <scm>
+    <connection>scm:git:https://github.com/ag-libs/lathe.git</connection>
+    <developerConnection>scm:git:https://github.com/ag-libs/lathe.git</developerConnection>
+    <tag>HEAD</tag>
+    <url>https://github.com/ag-libs/lathe/tree/main</url>
+  </scm>
+
+  <distributionManagement>
+    <repository>
+      <id>central</id>
+      <url>https://central.sonatype.com/</url>
+    </repository>
+  </distributionManagement>
 
   <properties>
     <maven.compiler.release>21</maven.compiler.release>
@@ -44,6 +77,12 @@
     <gson.version>2.14.0</gson.version>
     <validcheck.version>0.11.0</validcheck.version>
     <java-debug.version>0.53.1</java-debug.version>
+
+    <!-- release plugin versions (activated by the release profile) -->
+    <maven-source.version>3.3.1</maven-source.version>
+    <maven-javadoc.version>3.11.2</maven-javadoc.version>
+    <maven-gpg.version>3.2.7</maven-gpg.version>
+    <central-publishing.version>0.8.0</central-publishing.version>
   </properties>
 
   <dependencyManagement>
@@ -230,6 +269,30 @@
             </execution>
           </executions>
         </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-source-plugin</artifactId>
+          <version>${maven-source.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-javadoc-plugin</artifactId>
+          <version>${maven-javadoc.version}</version>
+          <configuration>
+            <doclint>none</doclint>
+            <quiet>true</quiet>
+          </configuration>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-gpg-plugin</artifactId>
+          <version>${maven-gpg.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>org.sonatype.central</groupId>
+          <artifactId>central-publishing-maven-plugin</artifactId>
+          <version>${central-publishing.version}</version>
+        </plugin>
       </plugins>
     </pluginManagement>
     <plugins>
@@ -256,4 +319,61 @@
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <profile>
+      <id>release</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-source-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>attach-sources</id>
+                <goals>
+                  <goal>jar-no-fork</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-javadoc-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>attach-javadocs</id>
+                <goals>
+                  <goal>jar</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-gpg-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>sign-artifacts</id>
+                <goals>
+                  <goal>sign</goal>
+                </goals>
+                <phase>verify</phase>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.sonatype.central</groupId>
+            <artifactId>central-publishing-maven-plugin</artifactId>
+            <extensions>true</extensions>
+            <configuration>
+              <publishingServerId>central</publishingServerId>
+              <autoPublish>true</autoPublish>
+              <waitUntil>published</waitUntil>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>
