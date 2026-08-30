@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build & verify (JDK 21, ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Set up Neovim
+        # The Neovim client specs run during `verify` (run-specs.sh via
+        # exec-maven-plugin); the script hard-fails the build under CI when nvim
+        # is absent, so it must be on PATH. `stable` is >= the supported 0.11.7 floor.
+        uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: stable
+
+      - name: Build, test, install
+        # `install` (not just `verify`) so the maven-invoker integration tests in
+        # lathe-maven-plugin resolve the freshly built lathe artifacts from the
+        # local repository.
+        run: mvn -B --no-transfer-progress clean install
+
+      - name: Verify javadoc and sources generate
+        # Catch javadoc/source-jar breakage here rather than mid-release, since
+        # the release profile requires both for Maven Central.
+        run: mvn -B --no-transfer-progress -DskipTests javadoc:jar source:jar-no-fork
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: '**/target/surefire-reports/'
+          retention-days: 7
