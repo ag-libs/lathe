@@ -313,7 +313,7 @@ final class LatheTextDocumentService implements TextDocumentService {
     }
 
     final var uri = params.getTextDocument().getUri();
-    return worker.submit(() -> session.format("format", uri));
+    return worker.submit(() -> session.format(uri));
   }
 
   @Override
