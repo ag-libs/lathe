@@ -9,7 +9,7 @@ Status last reviewed: 2026-08-29.
 
 Lathe is at the M1 Internal Preview stage.
 It must be built from source and is supported for the Neovim workflow only.
-Maven Central publication is planned for M3.
+Maven Central publication is in the Backlog (scheduled after public-beta feedback).
 
 ## Build and Workspace Lifecycle
 
@@ -17,6 +17,7 @@ Maven Central publication is planned for M3.
 |---|---|---|
 | Compiler parameter capture | Implemented | Plexus compiler shim delegates to javac and writes JSON params. |
 | Maven lifecycle integration | Implemented | `lathe:init` and `lathe:sync` have default lifecycle phases. |
+| Automatic build wiring | Implemented | A Maven core extension (`.mvn/extensions.xml`) injects the compiler shim, `init`/`sync` goals, and the capture dependency into the effective model in memory — no `pom.xml` edits. Manual POM setup is also supported. |
 | Reactor output mirroring | Implemented | Classes, test classes, and generated sources are mirrored under `.lathe/`. |
 | Dependency/JDK source sync | Implemented | Sources are extracted under `~/.cache/lathe/`. |
 | Type-index shards | Implemented | Dependency, JDK, and reactor type candidates are available. |
@@ -24,7 +25,7 @@ Maven Central publication is planned for M3.
 | Server launcher installation | Implemented | Maven installs versioned launchers and updates the `current` symlink. |
 | POM staleness detection | Implemented | Neovim receives a sync prompt after Maven project changes. |
 | Inheritance index | Implemented | Dependency, JDK, and reactor entries include direct supertypes in immutable snapshots. |
-| Maven Central distribution | M3 planned | Current setup requires a source build. |
+| Maven Central distribution | Backlog | Current setup requires a source build. |
 
 ## LSP Capability Matrix
 
@@ -58,7 +59,7 @@ Maven Central publication is planned for M3.
 | Editor | Status |
 |---|---|
 | Neovim | Current and supported target; distributable plugin is in `neovim/`. |
-| VS Code | Post-M3; no supported extension or full semantic-token parity. |
+| VS Code | Backlog; no supported extension or full semantic-token parity. |
 | Other LSP clients | May work, but are not qualified or supported before their roadmap scope is defined. |
 
 ## Implemented Architecture

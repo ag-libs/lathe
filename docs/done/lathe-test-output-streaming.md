@@ -1,7 +1,7 @@
 # Lathe — Neotest Output Navigation
 
 > **Forward-looking stance superseded** by
-> [planned/lathe-neotest-experience.md](../planned/lathe-neotest-experience.md).
+> [done/lathe-neotest-experience.md](../done/lathe-neotest-experience.md).
 > This document remains the accurate record of what shipped (stack-trace navigation, the docked
 > split). Its non-goals "no live output buffer / no custom `lathe/testOutput` notification" are
 > **reversed** by that spec (behaviors O1–O3); its shipped navigation (O6) and docked split

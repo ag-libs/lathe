@@ -110,7 +110,7 @@ Setup is a single `.mvn/extensions.xml` registration at the reactor root — no 
 
 The extension (`lathe-maven-extension`, an `AbstractMavenLifecycleParticipant`) mutates the resolved
 reactor model in memory at `afterProjectsRead()`, injecting into the effective build what the user
-would otherwise hand-edit — see [lathe-maven-extension.md](planned/lathe-maven-extension.md):
+would otherwise hand-edit — see [lathe-maven-extension.md](done/lathe-maven-extension.md):
 
 - the `lathe-compiler` shim on `maven-compiler-plugin`, selected via the
   `maven.compiler.compilerId=lathe` property, for every module;

@@ -1,7 +1,7 @@
 # Lathe — Structured Per-Test Results
 
 > **Forward-looking stance superseded** by
-> [planned/lathe-neotest-experience.md](../planned/lathe-neotest-experience.md).
+> [done/lathe-neotest-experience.md](../done/lathe-neotest-experience.md).
 > This document remains the accurate record of what shipped (real per-method pass/fail/skip,
 > behavior R3). Its as-built decision to keep the JUnit→Lathe id mapping in Lua is **revisited** by
 > that spec's Phase 2 (thin-adapter split).

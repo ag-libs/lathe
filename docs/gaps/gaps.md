@@ -40,7 +40,7 @@ which is a non-trivial hover extension.
 
 ## EG-003 — Hover returns null on positions inside Javadoc type-reference tags
 
-**Status: accepted — Target: M3**
+**Status: accepted — Target: backlog**
 
 ### Observed behaviour
 
@@ -113,7 +113,7 @@ These are reference data, not gap items.
 
 ## EG-017 — `textDocument/documentHighlight` not implemented
 
-**Status: accepted — Target: M3**
+**Status: accepted — Target: backlog**
 
 ### Observed behaviour
 
@@ -178,7 +178,7 @@ capability and the absent handler in `LatheLanguageServer`.
 
 ## EG-018 — `textDocument/selectionRange` not implemented
 
-**Status: accepted — Target: M3**
+**Status: accepted — Target: backlog**
 
 ### Observed behaviour
 
@@ -586,7 +586,7 @@ None yet — to be defined when the fix is scheduled.
 
 ID: CQ-0002
 Status: accepted
-Target: M3
+Target: backlog
 Tier: assistive
 Failure mode: missing-candidate
 Owner component: SentinelInjector / SentinelParser
@@ -662,7 +662,7 @@ prompting, and reload. Resolved WS entries are in [gaps-archive.md](gaps-archive
 
 ## WS-1 — Reactor mirror and type index go silently stale after a source change or branch switch
 
-**Status: accepted — Target: Post-M3**
+**Status: accepted — Target: backlog**
 
 Discovered by workflow analysis (not live probing) while reconciling CA-4; recorded here because it
 is the general problem of which CA-4's closed-file residual is one facet.
@@ -875,7 +875,7 @@ None yet — to be defined when the fix is scheduled.
 
 ## DB-3 — Object-scoped `evaluate` overload — done
 
-**Status: done — Target: M3**
+**Status: done — Target: M2**
 
 Invoked only by java-debug's `JavaLogicalStructure` to render collections/maps in the Variables view
 (it evaluates member expressions such as `size()` / `toArray()` with `this` = the object). Now
@@ -917,7 +917,7 @@ None yet — to be defined when the fix is scheduled.
 
 ## DB-4 — Debug-console / REPL code completion returns nothing
 
-**Status: done — Target: M3**
+**Status: done — Target: M2**
 
 ### Observed behaviour (resolved)
 

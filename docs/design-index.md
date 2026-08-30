@@ -23,62 +23,72 @@ discovery via [gap-workflow.md](gaps/gap-workflow.md) and resolved entries in [g
 
 ## M2 — Neovim Public Beta
 
-- [Gaps](gaps/gaps.md) — active M2 gap registry.
-  EG-003 is deferred until after M2.
-- [Find References gaps](gaps/gaps.md) — active reference-search gaps.
-- [Completion Expectations](planned/lathe-completion-expectations.md) — expected completion behavior.
-- [Completion gaps (CQ)](gaps/gaps.md) — active completion-quality gaps.
-- [Declaration Name Completion](planned/lathe-declaration-name-completion.md) — assistive completion for variable,
-  field, parameter, and type-parameter names in declaration-name slots. Deferred to the backlog.
+Reliability, the triaged gaps, and rename — see the [roadmap](roadmap.md) for scope.
+
+- [Gaps](gaps/gaps.md) — active gap registry; the M2 slice is every `Status: accepted — Target: M2`
+  entry (EG-039, EG-041, EG-047, EG-049, CA-5, CQ-0053, WS-2). EG-003 is deferred until after M2.
+- [Completion Expectations](planned/lathe-completion-expectations.md) — completion behavioral contract (reference).
 - [Gap Workflow](gaps/gap-workflow.md) — reproducible gap discovery and triage (all areas).
+- [Rename](planned/lathe-rename.md) — `textDocument/rename` + `prepareRename` on the Find References
+  pipeline (occurrence ranges → `WorkspaceEdit`, no `ASTRewrite`); scoped to the common cases,
+  correctness-gated (freshness refusal + minimal conflict checks), with explicit non-goals.
+- [Javac Crash Capture](planned/lathe-javac-crash-capture.md) — local repro bundles for unhandled javac
+  exceptions without source text in normal logs; backs the crash-surfacing reliability work.
+- [Lightweight Watcher](planned/lathe-lightweight-watcher.md) — partially stale design to re-evaluate for the
+  WS-2 source-staleness re-sync prompt.
+
+## Backlog — unscheduled, re-triaged after the beta
+
+Everything beyond M2. The next release (general availability + Maven Central distribution) is scheduled
+only after public-beta feedback (see the [roadmap](roadmap.md)).
+
+**Editing features (deferred from M2):**
+
+- [Declaration Name Completion](planned/lathe-declaration-name-completion.md) — names in variable/field/parameter/
+  type-parameter declaration slots.
 - [New Type Creation](planned/lathe-new-type-creation.md) — scaffold a blank file's class/interface/enum/record via
   snippet completion, with no custom client-side UI.
 - [Google Indentation](planned/lathe-google-indent.md) — conservative on-type formatting.
-- [Class/Import Semantic Highlighting](planned/lathe-class-import-semantic-highlighting.md) — Neovim-relevant semantic
-  corrections for type references.
-- [Type Definition Navigation](planned/lathe-type-definition.md) — LSP `textDocument/typeDefinition` support for
-  Neovim 0.12's default `grt` mapping.
-- [Rename](planned/lathe-rename.md) — `textDocument/rename` + `prepareRename` built on the Find References
-  pipeline (occurrence ranges → `WorkspaceEdit`, no `ASTRewrite`); scoped to the common cases for M2,
-  correctness-gated (freshness refusal + minimal conflict checks), with explicit non-goals.
-- [Lightweight Watcher](planned/lathe-lightweight-watcher.md) — partially stale design to re-evaluate before adding
-  source watching.
+- [Type Definition Navigation](planned/lathe-type-definition.md) — `textDocument/typeDefinition` for Neovim's `grt`.
+- [Semantic Tokens](planned/lathe-semantic-tokens.md) — full identifier-level coverage (local-var-vs-field, class,
+  import) for Neovim and VS Code; the
+  [Class/Import Semantic Highlighting](planned/lathe-class-import-semantic-highlighting.md) slice is part of it.
 
-- [LSP Progress Notifications](planned/lathe-lsp-progress.md) — work-done progress for workspace
-  initialization and reload, visible via `vim.lsp.status()`.
-- [Javac Crash Capture](planned/lathe-javac-crash-capture.md) — local repro bundles for unhandled javac exceptions
-  without putting source text in normal logs.
+**Reliability and further work:**
 
-The additional M2 code actions require a focused design before implementation. Inlay hints,
-on-type indentation, semantic-highlighting expansion, declaration-name completion, and progress
-notifications are deferred to the backlog and re-triaged after the beta (see the [roadmap](roadmap.md)).
-
-## M3 — 0.1.0 General Availability
-
-- [Launcher JVM Options](planned/lathe-launcher-jvm-opts.md) — `LATHE_JVM_OPTS` support.
-- [Maven Extension for Automatic POM Setup](planned/lathe-maven-extension.md) — replace the manual
-  three-block parent-POM edit with a single Maven core extension registered in `.mvn/extensions.xml`
-  that injects the compiler/plugin/dependency config and test-fork capture wiring into the effective
-  model in memory (extension-wins merge, `lathe.capture.only` signal, Surefire documented not pinned);
-  editing no POM. Sequence after Maven Central publishing.
-
-Maven Central publishing, release automation, compatibility policy, and clean-install qualification require dedicated
-M3 designs before implementation.
-
-## Post-M3
-
-- [Neotest Experience](planned/lathe-neotest-experience.md) — IntelliJ-parity acceptance spec for the Neovim neotest client: behavioral criteria (discovery, streaming, output surface, failure navigation). **Substantially implemented** (discovery, run at every level, streaming output, inline diagnostics, cancel, show-command); see status.md. Remaining: debug (C1–C3) and a few deferred niceties (R4 re-run-failed, O7 fold).
-- [Neotest Streaming and Thin-Adapter](planned/lathe-neotest-streaming.md) — Phase 2 implementation design of record: server-streamed `lathe/testOutput` notifications with stdout/stderr split, server-side test-id mapping, and consolidated single-launch file runs.
-- [Workspace Readiness via Progress](planned/lathe-workspace-readiness.md) — fixes the cold-open discovery race (experience-spec D1) by reporting workspace load/reload as standard `$/progress` and gating discovery on its completion; also the neotest discovery-logging notes.
-- [Test-Run Cancellation](planned/lathe-test-cancel.md) — stopping a running or hung test replay (experience-spec R5): a worker-confined `token → ReplaySession` map, a `lathe.run.cancel` command, and a non-blocking SIGTERM→SIGKILL escalation, triggered by the client's `M.stop()`.
-- [Semantic Tokens](planned/lathe-semantic-tokens.md) — editor-agnostic identifier-level semantic-token coverage
-  (local-variable-vs-field distinction, full method/field/class coverage) for Neovim and VS Code.
 - [Sibling Recompilation](planned/lathe-sibling-recompilation.md) — closed-file diagnostics after API changes.
 - [Differential Testing Against jdtls](planned/lathe-jdtls-differential-testing.md) — semantic LSP-response
-  comparison against Eclipse JDT LS to surface behavioral gaps; post-M2 quality tooling.
+  comparison against Eclipse JDT LS to surface behavioral gaps.
+
+**GA and distribution:**
+
+- [Launcher JVM Options](planned/lathe-launcher-jvm-opts.md) — `LATHE_JVM_OPTS` support.
+- Maven Central publishing, release automation, compatibility policy, and clean-install qualification need
+  dedicated designs. (The Maven core extension for automatic POM setup has **shipped** — see Completed
+  Designs — and is the primary install path; it does not depend on Maven Central.)
+
+**VS Code:** a supported integration; depends on the full semantic-token coverage above.
 
 ## Completed Designs
 
+- [Maven Extension for Automatic POM Setup](done/lathe-maven-extension.md) — a Maven core extension
+  registered in `.mvn/extensions.xml` that injects the compiler shim, `init`/`sync` goals, and the
+  test-capture dependency into the effective model in memory (extension-wins merge, `lathe.capture.only`
+  signal, Surefire documented not pinned), so no `pom.xml` edits are needed. **The primary install path**
+  (README Setup); manual POM setup is also documented.
+- [Neotest Experience](done/lathe-neotest-experience.md) — IntelliJ-parity acceptance spec for the Neovim
+  neotest client; substantially implemented (discovery, run at every level, streaming output, inline
+  diagnostics, cancel, show-command). Remaining tail: debug (C1–C3), R4 (re-run-failed), O7 (fold).
+- [Neotest Streaming and Thin-Adapter](done/lathe-neotest-streaming.md) — server-streamed `lathe/testOutput`
+  notifications with stdout/stderr split, server-side test-id mapping, and consolidated single-launch file runs.
+- [Workspace Readiness via Progress](done/lathe-workspace-readiness.md) — reports workspace load/reload as
+  `$/progress` and gates discovery on its completion, fixing the cold-open discovery race (D1).
+- [Test-Run Cancellation](done/lathe-test-cancel.md) — stop a running/hung replay (R5): a worker-confined
+  `token → ReplaySession` map, a `lathe.run.cancel` command, and non-blocking SIGTERM→SIGKILL escalation.
+- [LSP Progress Notifications](done/lathe-lsp-progress.md) — work-done progress for workspace initialization
+  and reload, visible via `vim.lsp.status()`.
+- [README & User-Guide Restructure](done/lathe-readme-restructure.md) — editor-agnostic README plus
+  `docs/guide/` guides and the Neovim cheatsheet.
 - [Run, Test, and Debug](done/lathe-run-test-debug.md) — capture-replay of tests (shim rides `mvn test`, replay against `.lathe/` bytecode) and `main` classes, plus the in-process DAP debugger over JDWP: breakpoints/stepping/inspection, conditional breakpoints, expression evaluation (reads, invocation, `String` concat, cold-class force-load, object-scoped for logical views), debug-console completion, and run/debug of a test-scope `main`. Deferred tail tracked as TE/DB backlog gaps.
 - [Debug Support (DAP over JDWP)](done/lathe-debug-support.md) — the phased architecture behind the
   shipped debugger (in-process java-debug host, suspended-JDWP attach, process model). Deferred tail:

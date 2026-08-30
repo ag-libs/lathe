@@ -550,7 +550,7 @@ A normal build refreshes the same content via the shim.
 
 ### 6.3 Candidate: resource dual-output via the Maven extension (may supersede 6.1/6.2)
 
-Once the Maven extension exists ([lathe-maven-extension.md §3.4(e)](../planned/lathe-maven-extension.md)), the
+Once the Maven extension exists ([lathe-maven-extension.md §3.4(e)](../done/lathe-maven-extension.md)), the
 same currency gap is solvable without the copy-on-change watcher (§6.1) or the `lathe:refresh-resources`
 goal (§6.2). The extension injects a second `maven-resources-plugin` execution per module that writes
 processed resources into `.lathe/<rel>/{classes,test-classes}` alongside `target/` (dual-output, not

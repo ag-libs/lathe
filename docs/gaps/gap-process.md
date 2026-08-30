@@ -51,8 +51,8 @@ Every gap carries `Status` and `Target`.
 
 | Target | Meaning |
 |---|---|
-| `M1` / `M2` / `M3` | Scheduled for that release. |
-| `backlog` | Deferred; re-triaged in a future round. |
+| `M1` / `M2` | Scheduled for that release. |
+| `backlog` | Deferred; re-triaged in a future round. Everything beyond M2 is `backlog` until public-beta feedback sets the next release. |
 
 `Target` is the single source of truth for milestone assignment.
 The roadmap references gaps by id and target rather than re-describing them, so a gap's milestone is
@@ -63,7 +63,7 @@ never stated in two places that can drift.
 ## Lifecycle
 
 ```
- documented ──triage──► accepted (Target: M1|M2|M3) ──► in-progress ──► done (+ regression test)
+ documented ──triage──► accepted (Target: M1|M2) ──► in-progress ──► done (+ regression test)
      │                      ▲                                                      │
      ├──► deferred (Target: backlog) ───────────────── next round ◄───────────────┘
      └──► non-goal (rejected)
