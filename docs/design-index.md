@@ -36,11 +36,13 @@ Reliability, the triaged gaps, and rename — see the [roadmap](roadmap.md) for 
   exceptions without source text in normal logs; backs the crash-surfacing reliability work.
 - [Lightweight Watcher](planned/lathe-lightweight-watcher.md) — partially stale design to re-evaluate for the
   WS-2 source-staleness re-sync prompt.
+- **Maven Central beta publishing** — release automation, signing, staging, and released coordinates so
+  users install without building from source; needs a dedicated design.
 
 ## Backlog — unscheduled, re-triaged after the beta
 
-Everything beyond M2. The next release (general availability + Maven Central distribution) is scheduled
-only after public-beta feedback (see the [roadmap](roadmap.md)).
+Everything beyond M2. The next release — general availability (a stable `0.1.0`) — is scheduled only
+after public-beta feedback (see the [roadmap](roadmap.md)).
 
 **Editing features (deferred from M2):**
 
@@ -60,12 +62,12 @@ only after public-beta feedback (see the [roadmap](roadmap.md)).
 - [Differential Testing Against jdtls](planned/lathe-jdtls-differential-testing.md) — semantic LSP-response
   comparison against Eclipse JDT LS to surface behavioral gaps.
 
-**GA and distribution:**
+**General availability (promote the beta to `0.1.0`):**
 
+- Promote the Maven Central beta to a stable `0.1.0`: versioning/compatibility/support policies, remove
+  preview/beta terminology, rollback, and full clean-install/upgrade qualification. (Maven Central *beta*
+  publishing itself is M2.)
 - [Launcher JVM Options](planned/lathe-launcher-jvm-opts.md) — `LATHE_JVM_OPTS` support.
-- Maven Central publishing, release automation, compatibility policy, and clean-install qualification need
-  dedicated designs. (The Maven core extension for automatic POM setup has **shipped** — see Completed
-  Designs — and is the primary install path; it does not depend on Maven Central.)
 
 **VS Code:** a supported integration; depends on the full semantic-token coverage above.
 

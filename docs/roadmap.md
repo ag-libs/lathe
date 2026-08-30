@@ -16,12 +16,13 @@ When status wording in a feature design conflicts with this roadmap, this roadma
 | Milestone | Name | Version | Audience | Distribution |
 |---|---|---|---|---|
 | M1 | Internal Preview | `0.1.0-SNAPSHOT` | Internal daily use | Build from source |
-| M2 | Neovim Public Beta | `0.1.0-beta.N` | Public Neovim users | Build from source |
+| M2 | Neovim Public Beta | `0.1.0-beta.N` | Public Neovim users | Maven Central (beta) |
 
-M1 (internal) is complete and M2 (public beta) is the active milestone. Everything beyond M2 — general
-availability, Maven Central distribution, VS Code, and further features — is unscheduled and lives in
-the [Backlog](#backlog); the next release is planned only after public-beta feedback. Run/test execution
-and the debugger have shipped and are part of the M2 beta.
+M1 (internal) is complete and M2 (public beta) is the active milestone. M2 publishes beta artifacts to
+Maven Central, so public users install from released coordinates rather than building from source.
+Everything beyond M2 — general availability (a stable `0.1.0`), VS Code, and further features — is
+unscheduled and lives in the [Backlog](#backlog); the next release is planned only after public-beta
+feedback. Run/test execution and the debugger have shipped and are part of the M2 beta.
 
 ---
 
@@ -50,7 +51,7 @@ prompt WS-2 in M2; full freshness in the Backlog).
 ## M2 — Neovim Public Beta
 
 M2 is a **lean public beta**: the goal is a Lathe that is reliable and trustworthy on real projects,
-distributed publicly (build from source; Maven Central is Backlog), and documented — not a broad new-feature
+distributed publicly via Maven Central (beta artifacts), and documented — not a broad new-feature
 milestone. Run/test execution (neotest) and the debugger (in-process DAP over a suspended JDWP replay:
 breakpoints, stepping, inspection, conditional breakpoints, expression evaluation) already ship and are
 headline capabilities of the beta.
@@ -87,10 +88,17 @@ ships (see "Deferred to backlog" below).
 - Run/test execution (neotest) and the debugger (DAP/JDWP attach) are shipped headline capabilities; the
   only deferred debug tail is DB-1 (assignment/`setVariable`) and DB-2 (array-creation) evaluation.
 
+### Distribution (Maven Central beta)
+
+- Publish `lathe-core`, `lathe-compiler`, `lathe-server`, and `lathe-maven-plugin` as beta artifacts
+  (`0.1.0-beta.N`) to Maven Central — source/Javadoc JARs, signatures, checksums, POM/licensing/SCM
+  metadata, reproducible release automation, and staging verification.
+- Public users install from released coordinates instead of building from source.
+
 ### Onboarding and docs
 
-- Build-from-source public setup, getting-started, troubleshooting, diagnostics collection, and the
-  known-limits page. Maven Central publication is Backlog (planned after beta feedback).
+- Getting-started, troubleshooting, diagnostics collection, and the known-limits page, using the released
+  Maven coordinates.
 
 ### Not in M2
 
@@ -101,29 +109,28 @@ references are **not** M2 scope — they are in the [Backlog](#backlog).
 
 ### Exit criteria
 
-- Public Neovim users install from source and perform normal Java editing, navigation, and refactoring
-  (including rename) reliably — including after a branch switch, where they are prompted to re-sync
-  rather than shown stale results.
+- Public Neovim users install from Maven Central (beta coordinates) and perform normal Java editing,
+  navigation, and refactoring (including rename) reliably — including after a branch switch, where they
+  are prompted to re-sync rather than shown stale results.
+- Beta artifacts are published to Maven Central and pass its validation (signatures, POM metadata).
 - Every advertised LSP capability has end-to-end coverage and documented limitations.
 - Setup, compatibility, troubleshooting, diagnostics-collection, and known-limits documentation is complete.
-- VS Code support and Maven Central publication are in the [Backlog](#backlog) (unscheduled); run/test
-  and the debugger have shipped as part of the beta.
+- VS Code support and general availability (a stable `0.1.0`) are in the [Backlog](#backlog)
+  (unscheduled); run/test and the debugger have shipped as part of the beta.
 
 ---
 
 ## Backlog
 
-Unscheduled. The next release after the M2 public beta — general availability and its distribution — is
+Unscheduled. The next release after the M2 public beta — general availability (a stable `0.1.0`) — is
 planned only once beta feedback is in. Items are grouped, not ordered.
 
-### General availability and distribution (Maven Central)
+### General availability (promote the beta to `0.1.0`)
 
-- Publish `lathe-core`, `lathe-compiler`, `lathe-server`, and `lathe-maven-plugin` under stable
-  coordinates, with source/Javadoc JARs, signatures, checksums, POM/licensing/SCM metadata, reproducible
-  release automation, staging verification, and rollback.
-- Define versioning, compatibility, and support policies; the supported JDK, Maven/mvnd, OS, and Neovim
-  versions; full release CI (invoker, Neovim, large-workspace, clean-install, upgrade).
-- Replace build-from-source docs with released coordinates; remove preview/beta terminology.
+- Promote the Maven Central beta to a stable `0.1.0` under stable coordinates: remove preview/beta
+  terminology; define versioning, compatibility, and support policies and the supported JDK, Maven/mvnd,
+  OS, and Neovim versions; add rollback and full release qualification CI (large-workspace, clean-install,
+  and upgrade verification).
 - Support `LATHE_JVM_OPTS` in the generated launcher; finalize manifest module metadata where it improves
   startup, staleness detection, or upgrades.
 

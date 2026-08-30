@@ -9,7 +9,7 @@ Status last reviewed: 2026-08-29.
 
 Lathe is at the M1 Internal Preview stage.
 It must be built from source and is supported for the Neovim workflow only.
-Maven Central publication is in the Backlog (scheduled after public-beta feedback).
+Maven Central publication is planned for M2 (beta artifacts); a stable GA release follows after beta feedback.
 
 ## Build and Workspace Lifecycle
 
@@ -25,7 +25,7 @@ Maven Central publication is in the Backlog (scheduled after public-beta feedbac
 | Server launcher installation | Implemented | Maven installs versioned launchers and updates the `current` symlink. |
 | POM staleness detection | Implemented | Neovim receives a sync prompt after Maven project changes. |
 | Inheritance index | Implemented | Dependency, JDK, and reactor entries include direct supertypes in immutable snapshots. |
-| Maven Central distribution | Backlog | Current setup requires a source build. |
+| Maven Central distribution | M2 planned | Current setup requires a source build. |
 
 ## LSP Capability Matrix
 
