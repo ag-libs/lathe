@@ -168,7 +168,13 @@ class CompilationWorkerTest {
     release.countDown();
 
     blocker.join();
-    assertThatThrownBy(cancelledFuture::join).hasCauseInstanceOf(CancellationException.class);
+    // CompletableFuture.join() reports a cancellation either as a bare
+    // CancellationException or wrapped with it as the cause, depending on the JDK
+    // (bare on 21.0.12, wrapped on 26); accept both.
+    assertThatThrownBy(cancelledFuture::join)
+        .satisfiesAnyOf(
+            thrown -> assertThat(thrown).isInstanceOf(CancellationException.class),
+            thrown -> assertThat(thrown).hasCauseInstanceOf(CancellationException.class));
     verify(context, never())
         .searchReferencesTransient(sources, target, false, progress, cancelChecker);
   }

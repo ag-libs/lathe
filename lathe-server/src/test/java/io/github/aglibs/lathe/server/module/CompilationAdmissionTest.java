@@ -106,7 +106,12 @@ class CompilationAdmissionTest {
     await(checked);
     cancelled.set(true);
 
-    assertThatThrownBy(waiting::join).hasCauseInstanceOf(CancellationException.class);
+    // CompletableFuture.join() reports a cancellation either bare or wrapped as
+    // the cause depending on the JDK (bare on 21.0.x, wrapped on 26); accept both.
+    assertThatThrownBy(waiting::join)
+        .satisfiesAnyOf(
+            thrown -> assertThat(thrown).isInstanceOf(CancellationException.class),
+            thrown -> assertThat(thrown).hasCauseInstanceOf(CancellationException.class));
     release.countDown();
     holder.join();
     assertThat(admission.run(() -> "available")).isEqualTo("available");
