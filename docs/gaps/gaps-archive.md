@@ -7,6 +7,30 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-049 — Go-to-definition falls back to the file top on unresolved targets
+
+**Status: done — Target: M2.**
+
+`textDocument/definition` returned a location at the top of the file (`0:0`) whenever it could not
+locate a declaration position for the resolved target — a synthetic member, or any element whose
+declaration site was not found — instead of returning no result. Jumping to the top of a file reads
+as a bug and is worse than returning nothing.
+
+Root cause: `DefinitionLocator.parsePosition` returned `new Position(0, 0)` on a missing declaration
+name position, and the caller wrapped it in a `Location`. Fixed by changing `parsePosition` to return
+`Optional<Position>` (empty when no position is found) and having the two definition callers —
+`DefinitionLocator.locate` (reactor path) and `SourceAnalysisSession.findDefinitionLocation`
+(external-source fallback) — propagate the empty as "no result". The call-hierarchy callers
+(`CallHierarchyOutgoingLocator`, `SourceAnalysisSession` outgoing item) keep their prior behaviour by
+defaulting to `0:0`. This is the general safety net behind the record-accessor redirect (EG-047).
+
+Regression targets: `DefinitionLocatorTest.locate_syntheticMember_sourceFileButNoDeclaration_returnsEmpty`
+(a record's synthetic `toString` resolves to a source file but has no declaration site → empty result);
+`locate_method_externalFile_returnsLocation` and `locate_field_externalFile_returnsLocation` still
+resolve normal external symbols to their declaration.
+
+---
+
 ## EG-042 — Call hierarchy "does not resolve from a call site" — invalid (probe-positioning artifact)
 
 **Status: non-goal.**

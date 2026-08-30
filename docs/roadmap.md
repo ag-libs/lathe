@@ -64,7 +64,6 @@ ships (see "Deferred to backlog" below).
 
 - Raise an advisory re-sync prompt when sources change or a git branch switches, so the workspace never
   goes silently stale ([WS-2](gaps/gaps.md)); the full no-Maven freshness model (WS-1) remains deferred.
-- Go-to-definition returns no result instead of the file top on unresolved targets ([EG-049](gaps/gaps.md)).
 - Give JDK/dependency sources a read-only affordance instead of live diagnostics and code actions ([EG-041](gaps/gaps.md)).
 - Surface server-crash / module-failure clearly and provide one-command diagnostics collection.
 - Establish a measured cold-index budget and a documented "known limits" page for large, arbitrary reactors.

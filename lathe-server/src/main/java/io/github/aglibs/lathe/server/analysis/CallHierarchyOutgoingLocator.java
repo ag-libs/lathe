@@ -137,7 +137,8 @@ final class CallHierarchyOutgoingLocator extends SourceTreeLocator {
       DefinitionLocator.findSourceFile(calleeElement, sourceRoots)
           .ifPresent(
               file -> {
-                final var pos = definitionLocator.parsePosition(file, calleeElement);
+                final var pos =
+                    definitionLocator.parsePosition(file, calleeElement).orElse(new Position(0, 0));
                 final var pointRange = new Range(pos, pos);
                 final var uri = file.toUri().toString();
                 final var calleeItem =

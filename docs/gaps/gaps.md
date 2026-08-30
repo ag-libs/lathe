@@ -449,42 +449,6 @@ None yet — re-triaged from backlog when scheduled.
 
 ---
 
-## EG-049 — Go-to-definition falls back to the file top on unresolved targets
-
-**Status: accepted — Target: M2**
-
-### Observed behaviour
-
-When `textDocument/definition` cannot locate a declaration position for the resolved target — a
-synthetic member, or any element whose declaration site is not found — it returns a location at the top
-of the file (`0:0`) instead of no result. Jumping to the top of a file reads as a bug and is worse than
-returning nothing (the client keeps the cursor put or reports "no definition").
-
-```bash
-python3 dev/explore.py <ws>/.../Foo.java def <line>:<col>   # target with no resolvable declaration
-# today: Foo.java 0:0 ; expected: no result
-```
-
-### Root cause
-
-`DefinitionLocator.parsePosition` returns `new Position(0, 0)` when the declaration name position cannot
-be found (`DefinitionLocator.java:110`); the caller wraps it in a `Location` rather than treating "no
-position" as "no definition".
-
-### Proposed direction
-
-Return an empty result (no `Location`) when no declaration position is found, instead of `0:0`. This is
-the general safety net behind the specific record-accessor redirect (EG-047): with both in place,
-records resolve to their component and anything else that cannot be located returns nothing rather than
-a misleading jump. javac elements only.
-
-### Regression targets
-
-None yet — to be defined when scheduled (unresolved/synthetic target → empty result; a normal symbol
-still resolves to its declaration).
-
----
-
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work

@@ -556,11 +556,14 @@ public final class SourceAnalysisSession implements AutoCloseable {
               .manifest()
               .externalSourceRoot(element, compiler.fileManager())
               .flatMap(root -> DefinitionLocator.findSourceFile(element, List.of(root)))
-              .map(
-                  file -> {
-                    final var lspPos = definitionLocator.parsePosition(file, element);
-                    return new Location(file.toUri().toString(), new Range(lspPos, lspPos));
-                  });
+              .flatMap(
+                  file ->
+                      definitionLocator
+                          .parsePosition(file, element)
+                          .map(
+                              lspPos ->
+                                  new Location(
+                                      file.toUri().toString(), new Range(lspPos, lspPos))));
     }
 
     return result;
@@ -729,7 +732,8 @@ public final class SourceAnalysisSession implements AutoCloseable {
     return DefinitionLocator.findSourceFile(element, allRoots(request))
         .map(
             file -> {
-              final var pos = definitionLocator.parsePosition(file, element);
+              final var pos =
+                  definitionLocator.parsePosition(file, element).orElse(new Position(0, 0));
               final var pointRange = new Range(pos, pos);
               final var uri = file.toUri().toString();
               return CallHierarchyItemDataCodec.buildItem(

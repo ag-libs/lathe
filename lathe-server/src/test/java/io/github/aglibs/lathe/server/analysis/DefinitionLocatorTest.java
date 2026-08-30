@@ -210,6 +210,18 @@ class DefinitionLocatorTest extends SampleFixture {
   }
 
   @Test
+  void locate_syntheticMember_sourceFileButNoDeclaration_returnsEmpty(@TempDir final Path tempDir)
+      throws IOException {
+    // A generated member (a record's synthetic toString) resolves to a source file but has no
+    // declaration site in it; definition must return no result rather than a file-top (0,0) jump
+    // (EG-049). toString is used rather than an accessor, which EG-047 redirects to its component.
+    final var location =
+        locateExternalMember(tempDir, "public record Point(int x, int y) {}", "Point", "toString");
+
+    assertThat(location).isNotPresent();
+  }
+
+  @Test
   void findSourceFile_packagePath_returnsFile(@TempDir final Path tempDir) throws IOException {
     final var pkgDir = tempDir.resolve("src/com/example");
     Files.createDirectories(pkgDir);
@@ -291,7 +303,7 @@ class DefinitionLocatorTest extends SampleFixture {
 
   @Test
   void locate_method_externalFile_returnsLocation(@TempDir final Path tempDir) throws IOException {
-    final var location = locateGreeterMember(tempDir, "greet");
+    final var location = locateExternalMember(tempDir, GREETER_SOURCE, "Greeter", "greet");
 
     assertThat(location).isPresent();
     assertThat(location.get().getUri()).endsWith("Greeter.java");
@@ -301,7 +313,7 @@ class DefinitionLocatorTest extends SampleFixture {
 
   @Test
   void locate_field_externalFile_returnsLocation(@TempDir final Path tempDir) throws IOException {
-    final var location = locateGreeterMember(tempDir, "DEFAULT_NAME");
+    final var location = locateExternalMember(tempDir, GREETER_SOURCE, "Greeter", "DEFAULT_NAME");
 
     assertThat(location).isPresent();
     assertThat(location.get().getUri()).endsWith("Greeter.java");
@@ -309,24 +321,25 @@ class DefinitionLocatorTest extends SampleFixture {
     assertThat(location.get().getRange().getStart().getCharacter()).isEqualTo(29);
   }
 
-  private static Optional<Location> locateGreeterMember(final Path tempDir, final String memberName)
+  private static Optional<Location> locateExternalMember(
+      final Path tempDir, final String source, final String typeName, final String memberName)
       throws IOException {
     final var srcDir = tempDir.resolve("src");
     Files.createDirectories(srcDir);
-    final var greeterSrc = srcDir.resolve("Greeter.java");
-    Files.writeString(greeterSrc, GREETER_SOURCE);
+    final var typeSrc = srcDir.resolve(typeName + ".java");
+    Files.writeString(typeSrc, source);
 
     final var classDir = tempDir.resolve("classes");
     Files.createDirectories(classDir);
-    TestCompiler.compileToDir(classDir, greeterSrc);
+    TestCompiler.compileToDir(classDir, typeSrc);
 
     final var userSrc = tempDir.resolve("User.java");
-    Files.writeString(userSrc, "public class User { public void run(Greeter g) { g.greet(); } }");
+    Files.writeString(userSrc, "public class User { %s ref; }".formatted(typeName));
 
     try (final var parsed = TestCompiler.parseWithClasspath(userSrc, classDir)) {
-      final var greeterElement = parsed.task().getElements().getTypeElement("Greeter");
+      final var type = parsed.task().getElements().getTypeElement(typeName);
       final var member =
-          greeterElement.getEnclosedElements().stream()
+          type.getEnclosedElements().stream()
               .filter(e -> e.getSimpleName().contentEquals(memberName))
               .findFirst()
               .orElseThrow();

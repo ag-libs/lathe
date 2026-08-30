@@ -63,15 +63,17 @@ public final class DefinitionLocator {
     }
 
     return findSourceFile(element, sourceRoots)
-        .map(
-            file -> {
-              final var lspPos = parsePosition(file, element);
-              LOG.fine(
-                  () ->
-                      "[definition] reactor %s %d:%d"
-                          .formatted(file, lspPos.getLine(), lspPos.getCharacter()));
-              return new Location(file.toUri().toString(), new Range(lspPos, lspPos));
-            });
+        .flatMap(
+            file ->
+                parsePosition(file, element)
+                    .map(
+                        lspPos -> {
+                          LOG.fine(
+                              () ->
+                                  "[definition] reactor %s %d:%d"
+                                      .formatted(file, lspPos.getLine(), lspPos.getCharacter()));
+                          return new Location(file.toUri().toString(), new Range(lspPos, lspPos));
+                        }));
   }
 
   public static Optional<Path> findSourceFile(final Element element, final List<Path> sourceRoots) {
@@ -104,10 +106,15 @@ public final class DefinitionLocator {
         .findFirst();
   }
 
-  public Position parsePosition(final Path sourceFile, final Element element) {
-    return parser
-        .parseFile(sourceFile, (trees, cu) -> parseDeclarationPosition(trees, cu, element))
-        .orElse(new Position(0, 0));
+  /**
+   * The declaration-name position of {@code element} in {@code sourceFile}, or empty when it cannot
+   * be located (e.g. a synthetic member with no declaration site). Definition callers propagate the
+   * empty as "no result" rather than jumping to the file top; call-hierarchy callers default it to
+   * {@code 0,0}.
+   */
+  public Optional<Position> parsePosition(final Path sourceFile, final Element element) {
+    return parser.parseFile(
+        sourceFile, (trees, cu) -> parseDeclarationPosition(trees, cu, element));
   }
 
   private static Position parseDeclarationPosition(
