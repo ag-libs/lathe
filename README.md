@@ -140,6 +140,11 @@ describing the reactor. The language server reads these files, so diagnostics, c
 navigation reflect the same inputs your build compiled with. Every build refreshes them, so the model
 tracks your project as it changes.
 
+> **Note:** Files you have open are analysed live as you edit and save them. Changes to files you
+> *don't* have open — most often after switching branches or a `git pull` — aren't picked up until the
+> next `mvn process-test-classes`; until then, cross-file features (workspace symbol search,
+> missing-import suggestions, and navigation into those files) can still reflect the previous state.
+
 ### Dependency & JDK sources
 
 `lathe:sync` resolves your dependencies' `-sources` JARs through Maven and extracts them, along with the

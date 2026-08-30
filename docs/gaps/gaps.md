@@ -527,10 +527,16 @@ None yet — to be defined when the fix is scheduled.
 
 ## WS-2 — No re-sync prompt after a source-only branch switch
 
-**Status: accepted — Target: M2**
+**Status: deferred — Target: backlog**
 
-The minimal, public-beta slice of WS-1: make staleness *honest* without the full freshness model. WS-1
-remains the backlog umbrella for actual invalidation/reconciliation.
+Deferred from M2. The proposed fix was a Sync/Later prompt, but a prompt is both intrusive and
+non-binding: the user can dismiss it and keep working against stale state, so it adds friction without a
+reliable payoff — and a developer who deliberately switches branches already knows Lathe needs a manual
+re-sync. The behaviour is documented instead (README → "How it works → Build capture"): files you have
+open are analysed live, and changes to files you don't have open are picked up at the next
+`mvn process-test-classes`. Revisit only if beta users report silent-staleness confusion (e.g. after a
+`git pull` or merge they did not initiate), and then with a non-intrusive signal rather than a prompt.
+WS-1 remains the backlog umbrella for actual invalidation/reconciliation.
 
 ### Observed behaviour
 

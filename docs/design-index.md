@@ -26,7 +26,7 @@ discovery via [gap-workflow.md](gaps/gap-workflow.md) and resolved entries in [g
 Reliability, the triaged gaps, and rename — see the [roadmap](roadmap.md) for scope.
 
 - [Gaps](gaps/gaps.md) — active gap registry; the M2 slice is every `Status: accepted — Target: M2`
-  entry (CA-5, CQ-0053, WS-2). EG-003 is deferred until after M2.
+  entry (CA-5, CQ-0053). EG-003 is deferred until after M2.
 - [Completion Expectations](planned/lathe-completion-expectations.md) — completion behavioral contract (reference).
 - [Gap Workflow](gaps/gap-workflow.md) — reproducible gap discovery and triage (all areas).
 - [Rename](planned/lathe-rename.md) — `textDocument/rename` + `prepareRename` on the Find References
@@ -34,8 +34,6 @@ Reliability, the triaged gaps, and rename — see the [roadmap](roadmap.md) for 
   correctness-gated (freshness refusal + minimal conflict checks), with explicit non-goals.
 - [Javac Crash Capture](planned/lathe-javac-crash-capture.md) — local repro bundles for unhandled javac
   exceptions without source text in normal logs; backs the crash-surfacing reliability work.
-- [Lightweight Watcher](planned/lathe-lightweight-watcher.md) — partially stale design to re-evaluate for the
-  WS-2 source-staleness re-sync prompt.
 - **Maven Central beta publishing** — release automation, signing, staging, and released coordinates so
   users install without building from source; needs a dedicated design.
 
@@ -59,6 +57,8 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 **Reliability and further work:**
 
 - [Sibling Recompilation](planned/lathe-sibling-recompilation.md) — closed-file diagnostics after API changes.
+- [Lightweight Watcher](planned/lathe-lightweight-watcher.md) — partially stale design; would back a
+  non-intrusive source-staleness signal (the deferred WS-2, folded under WS-1) if beta feedback warrants it.
 - [Differential Testing Against jdtls](planned/lathe-jdtls-differential-testing.md) — semantic LSP-response
   comparison against Eclipse JDT LS to surface behavioral gaps.
 

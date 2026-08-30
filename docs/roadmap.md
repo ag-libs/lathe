@@ -38,8 +38,9 @@ Dropwizard, and the sample workspace.
 The implemented baseline is in [status.md](status.md); the designs behind it in
 [design-index.md](design-index.md#completed-designs); the resolved EG/CA/FR/CQ gaps in
 [gaps-archive.md](gaps/gaps-archive.md). Per this document's scope, M1's completed details are not
-re-listed here. The one residual thread is the closed-file staleness case folded into WS-1 (advisory
-prompt WS-2 in M2; full freshness in the Backlog).
+re-listed here. The one residual thread is the closed-file staleness case, folded into WS-1 (full
+freshness) in the Backlog; the once-planned M2 re-sync prompt (WS-2) is deferred there too, with the
+behaviour documented in the README instead.
 
 ### Exit criteria
 
@@ -62,8 +63,6 @@ ships (see "Deferred to backlog" below).
 
 ### Reliability and trust
 
-- Raise an advisory re-sync prompt when sources change or a git branch switches, so the workspace never
-  goes silently stale ([WS-2](gaps/gaps.md)); the full no-Maven freshness model (WS-1) remains deferred.
 - Surface an unexpected server exit to the user (a Neovim notification pointing at the LSP log), and add
   `:LatheStart` to bring the server up for a directory with no Java file open — shipped. One-command
   diagnostics collection (e.g. `:checkhealth lathe`) is deferred and added on demand, not planned scope.
