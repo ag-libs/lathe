@@ -64,7 +64,6 @@ ships (see "Deferred to backlog" below).
 
 - Raise an advisory re-sync prompt when sources change or a git branch switches, so the workspace never
   goes silently stale ([WS-2](gaps/gaps.md)); the full no-Maven freshness model (WS-1) remains deferred.
-- Give JDK/dependency sources a read-only affordance instead of live diagnostics and code actions ([EG-041](gaps/gaps.md)).
 - Surface an unexpected server exit to the user (a Neovim notification pointing at the LSP log), and add
   `:LatheStart` to bring the server up for a directory with no Java file open — shipped. One-command
   diagnostics collection (e.g. `:checkhealth lathe`) is deferred and added on demand, not planned scope.

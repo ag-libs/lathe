@@ -7,6 +7,36 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-041 — JDK/library source files get live diagnostics and code actions with no "read-only source" affordance
+
+**Status: done — Target: M2.**
+
+Opening a JDK or dependency source (typically reached via go-to-definition into the cached sources
+under `~/.cache/lathe/`) was treated like a workspace file: the `CompilerRoute.External` route
+compiled it with real javac and the server published real diagnostics and offered code actions on a
+file the user cannot edit. Live repro: opening the workspace JDK's `String.java` published 9
+unused-private-method hints.
+
+Fixed per the triaged option 1 (suppress diagnostics and code actions for `External`), server-only:
+- `DiagnosticPublisher` gains `publishEmptyIfCurrent`, which publishes an empty diagnostics list with
+  the same staleness gate and semantic-token refresh as `publishIfCurrent` (a shared private
+  `publish(...)` backs both).
+- `WorkspaceSession.publishDiagnostics(route, ...)` routes `External` to `publishEmptyIfCurrent` and
+  everything else to `publishIfCurrent`; `compileAndPublish` and the save-path `publishThen` helpers
+  use it, so open/change/save all suppress External diagnostics.
+- `codeActionFuture` early-returns no actions for an `External` route.
+
+External files are still compiled, so hover, definition, folding, and semantic tokens on library
+sources are unchanged; only diagnostics and code actions are suppressed. Verified end-to-end: the JDK
+`String.java` went from 9 published hints to none, with hover still resolving.
+
+Regression targets:
+`DiagnosticPublisherTest.publishEmptyIfCurrent_currentSnapshotWithDiagnostics_publishesEmptyAndRefreshesTokens`
+and `publishEmptyIfCurrent_staleSnapshot_doesNotPublish`. The route-level wiring is verified by the
+live probe (a full External-route session harness would be disproportionate at the unit level).
+
+---
+
 ## EG-039 — Unused-hint mislabels exception and lambda parameters as "local variable"
 
 **Status: done — Target: M2.**

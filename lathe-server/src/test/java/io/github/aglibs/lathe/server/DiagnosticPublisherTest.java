@@ -11,8 +11,11 @@ import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.module.CompileResponse;
 import java.util.List;
 import java.util.Set;
+import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
+import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
+import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -53,6 +56,40 @@ class DiagnosticPublisherTest {
 
     final boolean published = publisher.publishIfCurrent(old, result);
     publisher.refreshTokensIfCurrent(old, result);
+
+    assertThat(published).isFalse();
+    verify(client, never()).publishDiagnostics(any());
+    verify(client, never()).refreshSemanticTokens();
+  }
+
+  @Test
+  void publishEmptyIfCurrent_currentSnapshotWithDiagnostics_publishesEmptyAndRefreshesTokens() {
+    // A read-only external source is compiled, but its real diagnostics must be suppressed: the
+    // published list is empty even though the compile produced one (EG-041).
+    final var snapshot = registry.put("file:///A.java", "class A {}", 1);
+    final var realDiag =
+        new Diagnostic(
+            new Range(new Position(0, 0), new Position(0, 1)),
+            "boom",
+            DiagnosticSeverity.Error,
+            "lathe");
+    final var result =
+        new CompileResponse("file:///A.java", snapshot.generation(), List.of(realDiag), Set.of());
+
+    final boolean published = publisher.publishEmptyIfCurrent(snapshot, result);
+
+    assertThat(published).isTrue();
+    verify(client).publishDiagnostics(new PublishDiagnosticsParams("file:///A.java", List.of()));
+    verify(client).refreshSemanticTokens();
+  }
+
+  @Test
+  void publishEmptyIfCurrent_staleSnapshot_doesNotPublish() {
+    final var old = registry.put("file:///A.java", "v1", 1);
+    registry.put("file:///A.java", "v2", 2);
+    final var result = new CompileResponse("file:///A.java", old.generation(), List.of(), Set.of());
+
+    final boolean published = publisher.publishEmptyIfCurrent(old, result);
 
     assertThat(published).isFalse();
     verify(client, never()).publishDiagnostics(any());

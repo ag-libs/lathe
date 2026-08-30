@@ -774,10 +774,9 @@ final class WorkspaceSession {
     final AfterCompile afterCompile =
         switch (route) {
           case CompilerRoute.Module module ->
-              publishIfCurrentThen(
-                  result -> afterModuleSave(result, module.config(), LatheUri.toPath(uri)));
-          case CompilerRoute.External ignored ->
-              publishIfCurrentThen(() -> scheduleAstRefresh(uri));
+              publishThen(
+                  route, result -> afterModuleSave(result, module.config(), LatheUri.toPath(uri)));
+          case CompilerRoute.External ignored -> publishThen(route, () -> scheduleAstRefresh(uri));
           case CompilerRoute.Missing ignored -> publisher::publishIfCurrent;
         };
     submitCompile(route, snapshot, CompileMode.FULL, afterCompile);
@@ -1687,6 +1686,10 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(List.of());
     }
 
+    if (routeCompiler(uri) instanceof CompilerRoute.External) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
     final List<CodeActionRequest> requests =
         context.getDiagnostics().stream()
             .map(diag -> toCodeActionRequest(uri, diag))
@@ -1785,12 +1788,12 @@ final class WorkspaceSession {
             ex -> logAndReturn(ex, "[foldingRange] failed for %s".formatted(uri), List.of()));
   }
 
-  List<? extends TextEdit> format(final String tag, final String uri) {
+  List<? extends TextEdit> format(final String uri) {
     final var t = Stopwatch.start();
     final OpenDocument openFile = docs.get(uri);
     final List<TextEdit> result =
         JavaFormatter.format(openFile != null ? openFile.content() : null);
-    LOG.info(() -> "[%s] %s %dms edits=%d".formatted(tag, uri, t.elapsedMs(), result.size()));
+    LOG.info(() -> "[%s] %s %dms edits=%d".formatted("format", uri, t.elapsedMs(), result.size()));
     return result;
   }
 
@@ -2017,12 +2020,25 @@ final class WorkspaceSession {
   }
 
   private void compileAndPublish(final OpenDocument snapshot, final CompileMode mode) {
-    submitCompile(snapshot, mode, publisher::publishIfCurrent);
+    final var route = routeCompiler(snapshot.uri());
+    submitCompile(route, snapshot, mode, (snap, result) -> publishDiagnostics(route, snap, result));
   }
 
-  private void submitCompile(
-      final OpenDocument snapshot, final CompileMode mode, final AfterCompile afterCompile) {
-    submitCompile(routeCompiler(snapshot.uri()), snapshot, mode, afterCompile);
+  /**
+   * Publishes real diagnostics for a workspace ({@code Module}) source, but an empty list for a
+   * read-only external (JDK/dependency) source, so the user is not shown compiler diagnostics on a
+   * file they cannot edit (EG-041). Returns whether the snapshot was still current, so callers gate
+   * their follow-up identically for both routes.
+   */
+  private boolean publishDiagnostics(
+      final CompilerRoute route, final OpenDocument snapshot, final CompileResponse result) {
+    return route instanceof CompilerRoute.External
+        ? publisher.publishEmptyIfCurrent(snapshot, result)
+        : publisher.publishIfCurrent(snapshot, result);
+  }
+
+  private void submitCompile(final OpenDocument snapshot, final AfterCompile afterCompile) {
+    submitCompile(routeCompiler(snapshot.uri()), snapshot, CompileMode.FAST, afterCompile);
   }
 
   private void submitCompile(
@@ -2135,18 +2151,19 @@ final class WorkspaceSession {
     refreshReactorShard(config);
   }
 
-  private AfterCompile publishIfCurrentThen(final Consumer<CompileResponse> followUp) {
+  private AfterCompile publishThen(
+      final CompilerRoute route, final Consumer<CompileResponse> followUp) {
     return (snapshot, result) -> {
-      if (publisher.publishIfCurrent(snapshot, result)) {
+      if (publishDiagnostics(route, snapshot, result)) {
         LOG.info(() -> "[save] compiled %s".formatted(snapshot.uri()));
         followUp.accept(result);
       }
     };
   }
 
-  private AfterCompile publishIfCurrentThen(final Runnable followUp) {
+  private AfterCompile publishThen(final CompilerRoute route, final Runnable followUp) {
     return (snapshot, result) -> {
-      if (publisher.publishIfCurrent(snapshot, result)) {
+      if (publishDiagnostics(route, snapshot, result)) {
         LOG.info(() -> "[save] compiled %s".formatted(snapshot.uri()));
         followUp.run();
       }
@@ -2194,7 +2211,7 @@ final class WorkspaceSession {
         () -> {
           final OpenDocument openFile = docs.get(uri);
           if (openFile != null) {
-            submitCompile(openFile, CompileMode.FAST, publisher::refreshTokensIfCurrent);
+            submitCompile(openFile, publisher::refreshTokensIfCurrent);
           }
         });
   }

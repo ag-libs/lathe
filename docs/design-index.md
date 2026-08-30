@@ -26,7 +26,7 @@ discovery via [gap-workflow.md](gaps/gap-workflow.md) and resolved entries in [g
 Reliability, the triaged gaps, and rename — see the [roadmap](roadmap.md) for scope.
 
 - [Gaps](gaps/gaps.md) — active gap registry; the M2 slice is every `Status: accepted — Target: M2`
-  entry (EG-041, CA-5, CQ-0053, WS-2). EG-003 is deferred until after M2.
+  entry (CA-5, CQ-0053, WS-2). EG-003 is deferred until after M2.
 - [Completion Expectations](planned/lathe-completion-expectations.md) — completion behavioral contract (reference).
 - [Gap Workflow](gaps/gap-workflow.md) — reproducible gap discovery and triage (all areas).
 - [Rename](planned/lathe-rename.md) — `textDocument/rename` + `prepareRename` on the Find References

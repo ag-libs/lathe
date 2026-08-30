@@ -26,12 +26,28 @@ final class DiagnosticPublisher {
   }
 
   boolean publishIfCurrent(final OpenDocument snapshot, final CompileResponse result) {
+    return publish(snapshot, result, result.diagnostics());
+  }
+
+  /**
+   * Publishes an empty diagnostics list for a read-only external (JDK/dependency) source, so the
+   * user sees no compiler diagnostics on a file they cannot edit, while keeping the same staleness
+   * gate and semantic-token refresh as {@link #publishIfCurrent} (EG-041).
+   */
+  boolean publishEmptyIfCurrent(final OpenDocument snapshot, final CompileResponse result) {
+    return publish(snapshot, result, List.of());
+  }
+
+  private boolean publish(
+      final OpenDocument snapshot,
+      final CompileResponse result,
+      final List<Diagnostic> diagnostics) {
     if (registry.isStale(snapshot, result.generation())) {
       return false;
     }
 
-    DiagnosticPayloadCodec.serializeDiagnosticData(result.diagnostics());
-    client.publishDiagnostics(new PublishDiagnosticsParams(result.uri(), result.diagnostics()));
+    DiagnosticPayloadCodec.serializeDiagnosticData(diagnostics);
+    client.publishDiagnostics(new PublishDiagnosticsParams(result.uri(), diagnostics));
     client.refreshSemanticTokens();
     return true;
   }
