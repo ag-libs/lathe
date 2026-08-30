@@ -70,7 +70,6 @@ ships (see "Deferred to backlog" below).
 ### Correctness gaps (triaged)
 
 - Add a "replace `var` with the inferred type" code action ([CA-5](gaps/gaps.md)).
-- Member completion on an array-typed receiver ([CQ-0053](gaps/gaps.md)).
 
 ### Refactoring
 

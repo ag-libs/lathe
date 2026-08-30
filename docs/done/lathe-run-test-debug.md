@@ -1224,13 +1224,14 @@ parameters, `this`, fields, static members/imports, and members after `.` comple
 editor. Uses only javac/engine output (a cache-free `completeTransient` with the real file attributed
 as the baseline analysis); the client (`nvim-dap` omnifunc, or a completion-plugin source) surfaces it.
 
-**Remaining eval gaps** (deferred, not blockers) — tracked as DB-1/DB-2 and CQ-0053:
+**Remaining eval gaps** (deferred, not blockers) — tracked as DB-1/DB-2:
 
 - **Assignment / `setVariable`** (DB-1) — write support; mutates debuggee state, its own later design.
 - **Array creation** (DB-2) — `new int[]{…}` / `new T[n]` (`NEW_ARRAY`) is unsupported; reads of
   existing arrays work.
-- **Array-typed-receiver completion** (CQ-0053) — `args.` on a `String[]` offers nothing; a
-  pre-existing completion-engine gap shared by the editor path.
+
+Array-typed-receiver completion (`args.` on a `String[]`) was a shared completion-engine gap and is
+now resolved (CQ-0053).
 
 **Commit prefixes:** `feat(debug): …` (attach orchestration, evaluation slices, force-load,
 completion).

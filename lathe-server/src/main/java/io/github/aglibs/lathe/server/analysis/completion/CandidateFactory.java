@@ -13,6 +13,7 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.ExecutableType;
 import javax.lang.model.type.TypeMirror;
@@ -90,6 +91,25 @@ final class CandidateFactory {
         valueType,
         qualifiedName,
         importEdit);
+  }
+
+  // An array's clone() has no backing element (it is public with covariant return T[], unlike the
+  // protected Object.clone()), so synthesize the method candidate directly (CQ-0053).
+  CompletionCandidate arrayCloneCandidate(final ArrayType arrayType) {
+    final String arrayDisplay = typeDisplayFormatter.format(arrayType);
+    return new CompletionCandidate(
+        "clone",
+        "clone",
+        CandidateKind.METHOD,
+        "%s.clone() : %s".formatted(arrayDisplay, arrayDisplay),
+        "clone()",
+        false,
+        null,
+        "()",
+        arrayDisplay,
+        arrayType,
+        arrayDisplay,
+        null);
   }
 
   CompletionCandidate variableCandidate(final String name, final TypeMirror type) {

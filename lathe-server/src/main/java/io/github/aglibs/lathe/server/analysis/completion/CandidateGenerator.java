@@ -7,6 +7,7 @@ import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
@@ -21,7 +22,9 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Types;
 
@@ -49,6 +52,10 @@ final class CandidateGenerator {
       final String prefix,
       final boolean isStaticAccess,
       final Scope scope) {
+    if (receiverType instanceof final ArrayType arrayType) {
+      return isStaticAccess ? List.of() : proposeArrayMemberCandidates(arrayType, prefix, scope);
+    }
+
     if (!(receiverType instanceof final DeclaredType declaredType)) {
       return List.of();
     }
@@ -58,6 +65,15 @@ final class CandidateGenerator {
       return List.of();
     }
 
+    return membersOf(typeEl, declaredType, prefix, isStaticAccess, scope);
+  }
+
+  private List<CompletionCandidate> membersOf(
+      final TypeElement typeEl,
+      final DeclaredType receiverType,
+      final String prefix,
+      final boolean isStaticAccess,
+      final Scope scope) {
     return snapshot.elements().getAllMembers(typeEl).stream()
         .filter(
             el ->
@@ -66,14 +82,41 @@ final class CandidateGenerator {
                     || el.getKind() == ElementKind.ENUM_CONSTANT)
         .filter(el -> el.getModifiers().contains(Modifier.STATIC) == isStaticAccess)
         .filter(el -> !isObjectSyncMethod(el))
-        .filter(el -> isAccessible(el, declaredType, scope))
+        .filter(el -> isAccessible(el, receiverType, scope))
         .filter(el -> el.getSimpleName().toString().startsWith(prefix))
         .map(
             el -> {
-              final var candidate = itemFactory.memberCandidate(el, declaredType);
+              final var candidate = itemFactory.memberCandidate(el, receiverType);
               return candidate.withSortText(sortKey(el));
             })
         .toList();
+  }
+
+  // An array has no TypeElement, and length/clone are not modeled as elements, so synthesize them;
+  // the rest are exactly java.lang.Object's instance methods (CQ-0053).
+  private List<CompletionCandidate> proposeArrayMemberCandidates(
+      final ArrayType arrayType, final String prefix, final Scope scope) {
+    final var candidates = new ArrayList<CompletionCandidate>();
+    if ("length".startsWith(prefix)) {
+      candidates.add(itemFactory.variableCandidate("length", types.getPrimitiveType(TypeKind.INT)));
+    }
+
+    if ("clone".startsWith(prefix)) {
+      candidates.add(itemFactory.arrayCloneCandidate(arrayType));
+    }
+
+    candidates.addAll(proposeObjectInstanceMembers(prefix, scope));
+    return List.copyOf(candidates);
+  }
+
+  private List<CompletionCandidate> proposeObjectInstanceMembers(
+      final String prefix, final Scope scope) {
+    final var objectEl = snapshot.elements().getTypeElement("java.lang.Object");
+    if (objectEl == null) {
+      return List.of();
+    }
+
+    return membersOf(objectEl, (DeclaredType) objectEl.asType(), prefix, false, scope);
   }
 
   List<CompletionCandidate> proposeNestedTypes(final TypeElement outer, final String prefix) {

@@ -205,6 +205,28 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
   // ── core member access ────────────────────────────────────────────────────────
 
   @Test
+  void memberAccess_arrayReceiver_offersLengthCloneAndObjectMembers() {
+    // An array-typed receiver offers its JLS members: the synthetic `length` field and `clone()`,
+    // plus the inherited Object methods (CQ-0053). The element receiver `arr[0].` is covered by the
+    // arrayElementReceiver case above.
+    final List<String> labels =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    void m(String[] args) {
+                        args.§
+                    }
+                }"""));
+
+    assertThat(labels).anyMatch(l -> l.startsWith("length"));
+    assertThat(labels).anyMatch(l -> l.startsWith("clone"));
+    assertThat(labels).anyMatch(l -> l.startsWith("toString"));
+    assertThat(labels).anyMatch(l -> l.startsWith("equals"));
+    assertThat(labels).anyMatch(l -> l.startsWith("getClass"));
+  }
+
+  @Test
   void memberAccess_instanceMethod_prefixFiltered() {
     final var items =
         fixture.complete(

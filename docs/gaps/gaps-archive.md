@@ -1133,6 +1133,29 @@ printf 'refs "bucket,"\n' | python3 dev/explore.py /path/to/workspace/.../Config
 
 # Completion (CQ) — resolved
 
+## CQ-0053 — Member completion on an array-typed receiver returns nothing
+
+Status: done — Target: M2.
+
+Member completion after `.` on an array-typed receiver (`args.` where `args` is `String[]`) returned
+no candidates, though `args[0].` (the element type) and object/`String`/`this` receivers all worked.
+Root cause: `CandidateGenerator.proposeMemberAccessCandidates` bailed for any non-`DeclaredType`
+receiver, and an array has no `TypeElement` (`Types.asElement` → null) while its `length`/`clone`
+members are not modeled as `Element`s.
+
+Fixed with an `ArrayType` branch (public `javax.lang.model` API only): the inherited members are
+exactly `java.lang.Object`'s instance methods, enumerated through the existing member filter chain
+(now extracted into a shared `membersOf`); `length` is synthesized via `variableCandidate("length",
+int)`; and `clone()` — `public` with covariant return `T[]`, so neither the protected `Object.clone`
+element nor any other element fits — is synthesized by a new `CandidateFactory.arrayCloneCandidate`.
+Verified live: `args.` now offers `length`, `clone() : String[]`, `equals`, `getClass`, `hashCode`,
+`toString` (no `wait`/`notify*`, no statics), while `args[0].` is unchanged.
+
+Regression coverage:
+
+- `CompletionMemberAccessTest.memberAccess_arrayReceiver_offersLengthCloneAndObjectMembers`
+- `CompletionMemberAccessTest` `arrayElementReceiver` case (element receiver `args[0].` unchanged)
+
 ## CQ-0043 — Argument-position type filtering excludes boolean returns but lets other mismatched types through
 
 Status: done — Target: M2.

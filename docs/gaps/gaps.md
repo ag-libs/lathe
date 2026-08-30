@@ -341,40 +341,6 @@ Active completion-quality gaps. Discovered and triaged via the completion append
 [gap workflow](gap-workflow.md); checked against the completion [expectations](../planned/lathe-completion-expectations.md)
 contract. Resolved CQ entries are in [gaps-archive.md](gaps-archive.md).
 
-## CQ-0053 — Member completion on an array-typed receiver returns nothing
-
-**Status: accepted — Target: M2**
-
-### Observed behaviour
-
-Member completion after `.` on a value whose static type is an **array** returns no candidates: for
-a local `String[] args`, `args.` offers nothing, where `.length`, `.clone()`, and the `Object`
-members are expected. Object, `String`, and `this` receivers complete normally, and `args[0].` (an
-element, type `String`) offers the full `String` API — so the gap is specific to the array type,
-not to locals or member access in general.
-
-### Root cause (suspected)
-
-The member-access completer does not special-case the synthetic members of an array type
-(`length`, `clone()`) or resolve `Object`'s members against an `ArrayType` receiver. Not yet
-isolated to a component.
-
-### Probe commands
-
-Surfaced through debug-console completion (DB-4) but shared by the editor path (same
-`CompletionEngine`):
-
-```bash
-python3 dev/debug_probe.py --workspace <ws> <MainFile.java> --line <N> --main <Class> \
-  --complete "args."          # String[] local -> today: 0 items
-python3 dev/debug_probe.py --workspace <ws> <MainFile.java> --line <N> --main <Class> \
-  --complete "args[0]."       # element (String) -> full String API, works
-```
-
-### Regression targets
-
-None yet — to be defined when the fix is scheduled.
-
 ## CQ-0002 — Method-reference completion returns no candidates
 
 ID: CQ-0002
@@ -752,10 +718,10 @@ Verified: locals (`arg`→`args`), static imports (`asser`→`assertEquals`), st
 (`System.`), members on `this`/objects/`String`, and types all complete. A frame with no debuggee
 interaction — pure read-only source analysis, no JDI, no invocation lock.
 
-**Known limitation (separate gap, not DB-4):** member completion on an **array-typed** receiver
-(`args.` where `args` is `String[]`) returns nothing — `args[0].` (element) and object/`String`
-receivers work. This is a pre-existing completion-engine gap (the editor path shares it), tracked as
-[CQ-0053](#cq-0053--member-completion-on-an-array-typed-receiver-returns-nothing).
+**Resolved (separate gap, not DB-4):** member completion on an **array-typed** receiver (`args.` where
+`args` is `String[]`) now offers `length`, `clone()`, and the inherited `Object` members — a shared
+completion-engine fix (the editor path shares it), tracked as
+[CQ-0053](gaps-archive.md) (resolved).
 
 ### Probe commands
 
