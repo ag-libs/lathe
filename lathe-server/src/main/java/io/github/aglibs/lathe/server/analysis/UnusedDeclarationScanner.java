@@ -1,8 +1,10 @@
 package io.github.aglibs.lathe.server.analysis;
 
 import com.sun.source.tree.AssignmentTree;
+import com.sun.source.tree.CatchTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.IdentifierTree;
+import com.sun.source.tree.LambdaExpressionTree;
 import com.sun.source.tree.MemberReferenceTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodTree;
@@ -40,6 +42,8 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
 
   private enum Kind {
     LOCAL_VARIABLE("local variable"),
+    EXCEPTION_PARAMETER("exception parameter"),
+    PARAMETER("parameter"),
     PRIVATE_FIELD("private field"),
     PRIVATE_METHOD("private method");
 
@@ -134,11 +138,30 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
           }
         } else if (!(parent instanceof MethodTree)) {
           localVars.put(
-              element, candidateFor(node, node.getName().toString(), Kind.LOCAL_VARIABLE));
+              element, candidateFor(node, node.getName().toString(), localVariableKind(parent)));
         }
       }
     }
     return super.visitVariable(node, v);
+  }
+
+  /**
+   * Distinguishes the non-field, non-method-parameter variable kinds that share the {@link
+   * #localVars} bucket, so the hint labels each by its JLS §4.12.3 kind: a {@code CatchTree} child
+   * is an exception parameter, a {@code LambdaExpressionTree} child is a (lambda) parameter, and
+   * everything else — a block local, enhanced-for variable, or pattern binding — is a local
+   * variable (EG-039).
+   */
+  private static Kind localVariableKind(final Tree parent) {
+    if (parent instanceof CatchTree) {
+      return Kind.EXCEPTION_PARAMETER;
+    }
+
+    if (parent instanceof LambdaExpressionTree) {
+      return Kind.PARAMETER;
+    }
+
+    return Kind.LOCAL_VARIABLE;
   }
 
   @Override

@@ -379,6 +379,72 @@ class UnusedDeclarationScannerTest {
   }
 
   @Test
+  void unused_exceptionParameter_messageUsesExceptionParameterKind() {
+    // An unused catch parameter is an exception parameter (JLS §4.12.3), not a local variable
+    // (EG-039).
+    final List<Diagnostic> hints =
+        unusedHintsFor(
+            """
+            class Test {
+              public void method() {
+                try {
+                  risky();
+                } catch (final IllegalStateException e) {
+                  recover();
+                }
+              }
+
+              private void risky() {}
+
+              private void recover() {}
+            }
+            """);
+
+    assertThat(hints).hasSize(1);
+    assertThat(hints.getFirst().getMessage().getLeft()).isEqualTo("Unused exception parameter 'e'");
+  }
+
+  @Test
+  void unused_lambdaParameter_messageUsesParameterKind() {
+    // An unused lambda parameter is a lambda parameter (JLS §4.12.3), not a local variable
+    // (EG-039).
+    final List<Diagnostic> hints =
+        unusedHintsFor(
+            """
+            import java.util.Map;
+
+            class Test {
+              public void method(Map<String, String> map) {
+                map.forEach((k, v) -> System.out.println(k));
+              }
+            }
+            """);
+
+    assertThat(hints).hasSize(1);
+    assertThat(hints.getFirst().getMessage().getLeft()).isEqualTo("Unused parameter 'v'");
+  }
+
+  @Test
+  void unused_enhancedForVariable_remainsLocalVariable() {
+    // An enhanced-for variable is a local variable (JLS §14.14.2); its label is correct and the
+    // EG-039 fix must not reclassify it.
+    final List<Diagnostic> hints =
+        unusedHintsFor(
+            """
+            import java.util.List;
+
+            class Test {
+              public void method(List<String> xs) {
+                for (final String s : xs) {}
+              }
+            }
+            """);
+
+    assertThat(hints).hasSize(1);
+    assertThat(hints.getFirst().getMessage().getLeft()).isEqualTo("Unused local variable 's'");
+  }
+
+  @Test
   void unused_diagnostic_setsStableCode() {
     final List<Diagnostic> hints =
         unusedHintsFor(

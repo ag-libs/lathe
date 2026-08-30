@@ -7,6 +7,30 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-039 — Unused-hint mislabels exception and lambda parameters as "local variable"
+
+**Status: done — Target: M2.**
+
+The unused-declaration hint labelled every non-field, non-method variable it flagged as a *local
+variable*, including kinds that are not — an unused catch parameter and an unused lambda parameter.
+Detection was correct (both are genuinely unused); the defect was the JLS §4.12.3 kind label. Root
+cause: `UnusedDeclarationScanner.visitVariable` assigned `LOCAL_VARIABLE` to any `VariableTree` whose
+parent was neither a `ClassTree` nor a `MethodTree`, so a catch parameter (parent `CatchTree`) and a
+lambda parameter (parent `LambdaExpressionTree`) fell into that catch-all.
+
+Fixed by adding two `Kind` labels (`exception parameter`, `parameter`) and a `localVariableKind(Tree
+parent)` classifier that maps a `CatchTree` parent to the exception-parameter kind, a
+`LambdaExpressionTree` parent to the parameter kind, and everything else (block local, enhanced-for
+variable, pattern binding) to the local-variable kind. Message wording and which declarations are
+flagged are otherwise unchanged; method/constructor parameters remain excluded.
+
+Regression targets:
+`UnusedDeclarationScannerTest.unused_exceptionParameter_messageUsesExceptionParameterKind`,
+`unused_lambdaParameter_messageUsesParameterKind`, and the boundary
+`unused_enhancedForVariable_remainsLocalVariable` (an enhanced-for variable stays "local variable").
+
+---
+
 ## EG-047 — Go-to-definition on a record accessor lands on the file, not the component
 
 **Status: done — Target: M2.**
