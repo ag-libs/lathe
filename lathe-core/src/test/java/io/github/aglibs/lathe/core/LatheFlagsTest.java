@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 class LatheFlagsTest {
 
@@ -15,6 +16,12 @@ class LatheFlagsTest {
   }
 
   @Test
+  @DisabledIfEnvironmentVariable(
+      named = "CI",
+      matches = ".+",
+      disabledReason =
+          "isDisabled() treats a set CI env var as a skip signal, so the default is only"
+              + " 'not disabled' off CI")
   void isDisabled_notDisabledByDefault() {
     assertThat(LatheFlags.isDisabled()).isFalse();
   }

@@ -152,6 +152,13 @@
           </extraArtifacts>
           <settingsFile>src/it/settings.xml</settingsFile>
           <mavenOpts>-Dlathe.cache=${project.build.directory}/it-home/.cache/lathe -DlatheLocalRepo=${settings.localRepository}</mavenOpts>
+          <properties>
+            <!-- Passed as a -D user property so the invoked build AND its Surefire
+                 forks (the capture listener) run with Lathe enabled under CI, where
+                 the ambient CI env var would otherwise disable it. A module that
+                 tests per-module skip overrides this via its own surefire config. -->
+            <lathe.skip>false</lathe.skip>
+          </properties>
         </configuration>
         <executions>
           <execution>
