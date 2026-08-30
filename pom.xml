@@ -232,14 +232,6 @@
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-surefire-plugin</artifactId>
           <version>${surefire.version}</version>
-          <configuration>
-            <!-- Run tests with Lathe enabled regardless of the ambient CI env var
-                 (isDisabled() treats CI as a skip signal); modules that must run
-                 disabled, e.g. lathe-junit, override this to true. -->
-            <systemPropertyVariables>
-              <lathe.skip>false</lathe.skip>
-            </systemPropertyVariables>
-          </configuration>
         </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>

@@ -17,10 +17,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '21'
           distribution: 'temurin'
@@ -39,7 +39,12 @@ jobs:
         # `install` (not just `verify`) so the maven-invoker integration tests in
         # lathe-maven-plugin resolve the freshly built lathe artifacts from the
         # local repository.
-        run: mvn -B --no-transfer-progress clean install
+        #
+        # `env -u CI` removes the CI env var for the whole build tree (Surefire
+        # forks, invoker builds, and their forks all inherit it), so Lathe runs
+        # ENABLED during tests. Otherwise LatheFlags.isDisabled() treats CI=true
+        # as a skip signal and every enabled-path test fails.
+        run: env -u CI mvn -B --no-transfer-progress clean install
 
       - name: Verify javadoc and sources generate
         # Catch javadoc/source-jar breakage here rather than mid-release, since
@@ -48,7 +53,7 @@ jobs:
 
       - name: Upload test reports
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: surefire-reports
           path: '**/target/surefire-reports/'
