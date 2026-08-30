@@ -7,10 +7,10 @@ import org.apache.maven.AbstractMavenLifecycleParticipant;
 import org.apache.maven.execution.MavenSession;
 
 /**
- * Injects all Lathe build wiring into the effective reactor model in memory, so a project needs only
- * to register the extension and no per-piece POM edits. Registered either as a Maven core extension
- * ({@code .mvn/extensions.xml}) or as a build extension ({@code <build><extensions>} in the
- * reactor-root POM); both reach the single {@code afterProjectsRead} hook, which runs after the
+ * Injects all Lathe build wiring into the effective reactor model in memory, so a project needs
+ * only to register the extension and no per-piece POM edits. Registered either as a Maven core
+ * extension ({@code .mvn/extensions.xml}) or as a build extension ({@code <build><extensions>} in
+ * the reactor-root POM); both reach the single {@code afterProjectsRead} hook, which runs after the
  * reactor model is read and delegates all model changes to {@link LatheModelInjector}.
  */
 @Named("lathe")

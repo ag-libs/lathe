@@ -24,6 +24,7 @@ Maven Central publication is planned for M2 (beta artifacts); a stable GA releas
 | Workspace manifest | Implemented | Server version, source roots, type indexes, and POM fingerprints are recorded. |
 | Server launcher installation | Implemented | Maven installs versioned launchers and updates the `current` symlink. |
 | POM staleness detection | Implemented | Neovim receives a sync prompt after Maven project changes. |
+| Server-exit surfacing & manual start | Implemented | Neovim notifies on an unexpected server exit (pointing at the LSP log); `:LatheStart` starts the server for a directory with no Java file open. |
 | Inheritance index | Implemented | Dependency, JDK, and reactor entries include direct supertypes in immutable snapshots. |
 | Maven Central distribution | M2 planned | Current setup requires a source build. |
 

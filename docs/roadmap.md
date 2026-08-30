@@ -65,7 +65,9 @@ ships (see "Deferred to backlog" below).
 - Raise an advisory re-sync prompt when sources change or a git branch switches, so the workspace never
   goes silently stale ([WS-2](gaps/gaps.md)); the full no-Maven freshness model (WS-1) remains deferred.
 - Give JDK/dependency sources a read-only affordance instead of live diagnostics and code actions ([EG-041](gaps/gaps.md)).
-- Surface server-crash / module-failure clearly and provide one-command diagnostics collection.
+- Surface an unexpected server exit to the user (a Neovim notification pointing at the LSP log), and add
+  `:LatheStart` to bring the server up for a directory with no Java file open — shipped. One-command
+  diagnostics collection (e.g. `:checkhealth lathe`) is deferred and added on demand, not planned scope.
 - Establish a measured cold-index budget and a documented "known limits" page for large, arbitrary reactors.
 
 ### Correctness gaps (triaged)
@@ -95,8 +97,7 @@ ships (see "Deferred to backlog" below).
 
 ### Onboarding and docs
 
-- Getting-started, troubleshooting, diagnostics collection, and the known-limits page, using the released
-  Maven coordinates.
+- Getting-started, troubleshooting, and the known-limits page, using the released Maven coordinates.
 
 ### Not in M2
 
@@ -112,7 +113,7 @@ references are **not** M2 scope — they are in the [Backlog](#backlog).
   are prompted to re-sync rather than shown stale results.
 - Beta artifacts are published to Maven Central and pass its validation (signatures, POM metadata).
 - Every advertised LSP capability has end-to-end coverage and documented limitations.
-- Setup, compatibility, troubleshooting, diagnostics-collection, and known-limits documentation is complete.
+- Setup, compatibility, troubleshooting, and known-limits documentation is complete.
 - VS Code support and general availability (a stable `0.1.0`) are in the [Backlog](#backlog)
   (unscheduled); run/test and the debugger have shipped as part of the beta.
 
