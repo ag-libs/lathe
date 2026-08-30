@@ -67,8 +67,6 @@ ships (see "Deferred to backlog" below).
 - Surface an unexpected server exit to the user (a Neovim notification pointing at the LSP log), and add
   `:LatheStart` to bring the server up for a directory with no Java file open — shipped. One-command
   diagnostics collection (e.g. `:checkhealth lathe`) is deferred and added on demand, not planned scope.
-- Establish a measured cold-index budget for large, arbitrary reactors; record it with the other known
-  limitations in [status.md](status.md).
 
 ### Correctness gaps (triaged)
 
@@ -96,7 +94,9 @@ ships (see "Deferred to backlog" below).
 
 ### Onboarding and docs
 
-- Getting-started and troubleshooting, using the released Maven coordinates.
+- Update installation and getting-started from build-from-source to the released Maven coordinates once
+  artifacts publish. Getting-started, troubleshooting, and per-feature limitations are otherwise already
+  covered by the README and the guides it links to.
 
 ### Not in M2
 
@@ -112,8 +112,8 @@ references are **not** M2 scope — they are in the [Backlog](#backlog).
   are prompted to re-sync rather than shown stale results.
 - Beta artifacts are published to Maven Central and pass its validation (signatures, POM metadata).
 - Every advertised LSP capability has end-to-end coverage and documented limitations.
-- Setup, compatibility, and troubleshooting documentation is complete; known limitations are recorded in
-  [status.md](status.md).
+- Setup, compatibility, and troubleshooting documentation is complete — the README and the guides it
+  links to, with install instructions for the released Maven coordinates.
 - VS Code support and general availability (a stable `0.1.0`) are in the [Backlog](#backlog)
   (unscheduled); run/test and the debugger have shipped as part of the beta.
 
