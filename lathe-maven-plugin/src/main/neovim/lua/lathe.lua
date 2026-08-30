@@ -75,6 +75,55 @@ end
 -- can resolve the same cache location instead of hard-coding it separately.
 M.cache_root = cache_root
 
+--- Notify the user when the language server process exits unexpectedly. A clean
+--- shutdown (exit code 0) or Neovim itself quitting stays silent; any other exit
+--- surfaces an error pointing at `:LspLog`, since a dead server cannot report for
+--- itself. Wired as the `lathe` client's on_exit, so it covers both the
+--- filetype auto-start and `:LatheStart`.
+---@param code integer process exit code
+function M.on_server_exit(code)
+  if code == 0 or vim.v.exiting ~= vim.NIL then
+    return
+  end
+
+  vim.notify(
+    ('Lathe: language server exited unexpectedly (code %d); see :LspLog.'):format(code),
+    vim.log.levels.ERROR,
+    { title = 'Lathe' }
+  )
+end
+
+--- Start (or reuse) the Lathe client for the current directory and attach it to
+--- `bufnr`, so workspace navigation (e.g. `workspace/symbol`) works without a
+--- Java file open. Resolves the root from the buffer first, then the working
+--- directory. Backs the `:LatheStart` command.
+---@param bufnr integer? defaults to the current buffer
+function M.start(bufnr)
+  bufnr = bufnr or vim.api.nvim_get_current_buf()
+  local launcher = cache_root() .. '/current/lathe-launcher.sh'
+  if vim.fn.executable(launcher) ~= 1 then
+    vim.notify(
+      'Lathe: launcher not found at ' .. launcher .. '; run mvn process-test-classes.',
+      vim.log.levels.ERROR,
+      { title = 'Lathe' }
+    )
+    return
+  end
+
+  local root = M.get_root(bufnr) or vim.fs.root(vim.fn.getcwd(), M.ROOT_MARKER)
+  if not root then
+    vim.notify(
+      'Lathe: no ' .. M.ROOT_MARKER .. ' workspace found from the current directory.',
+      vim.log.levels.WARN,
+      { title = 'Lathe' }
+    )
+    return
+  end
+
+  local config = vim.tbl_extend('force', vim.lsp.config['lathe'] or {}, { root_dir = root })
+  vim.lsp.start(config, { bufnr = bufnr })
+end
+
 function M.setup(opts)
   opts = opts or {}
   local root = cache_root()
@@ -91,6 +140,9 @@ function M.setup(opts)
     cmd = { launcher },
     filetypes = { 'java' },
     single_file_support = false,
+    on_exit = function(code)
+      M.on_server_exit(code)
+    end,
     root_dir = function(bufnr, on_dir)
       if vim.fn.executable(launcher) ~= 1 then
         return
@@ -106,6 +158,13 @@ function M.setup(opts)
     init_options = { lathe = { formatter = opts.formatter } },
   })
   vim.lsp.enable('lathe')
+
+  -- Start the server for the current directory without a Java buffer open, so
+  -- workspace navigation works from any buffer (e.g. a dashboard). The filetype
+  -- auto-start above still covers the normal case of opening a .java file.
+  vim.api.nvim_create_user_command('LatheStart', function()
+    M.start(vim.api.nvim_get_current_buf())
+  end, { desc = 'Lathe: start the language server for the current directory' })
 
   -- Format-on-save is only meaningful with the Google formatter enabled; without it the server does
   -- not advertise formatting, so wiring the autocmd would be a no-op.

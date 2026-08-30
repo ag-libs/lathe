@@ -69,6 +69,11 @@ freely.
 Diagnostics (`javac` errors/warnings, plus unused-private-member hints) publish automatically.
 Formatting is opt-in — see [Formatting & indentation](#formatting--indentation).
 
+The server auto-starts when you open a `.java` file. To use workspace navigation (e.g. workspace
+symbols) *before* opening one — from a dashboard or an empty buffer — run **`:LatheStart`**, which
+starts the server for the current directory's `.lathe` workspace and attaches it to the current
+buffer.
+
 ## Formatting & indentation
 
 Live-editing **indentation** is always on; full-document **formatting** is opt-in. They are separate,
@@ -229,6 +234,8 @@ tail -f ~/.local/state/nvim/lsp.log
 
 ## Troubleshooting (Neovim)
 
-If the server does not attach or crashes, check the LSP log above and set `LATHE_DEBUG=1` for verbose
-compiler logging. For workspace-level issues (`.lathe/` not found, missing params file), see the
-**Troubleshooting** section of the [README](../../../README.md#troubleshooting).
+If the server exits unexpectedly, Lathe notifies you (`language server exited unexpectedly`); check the
+LSP log above and set `LATHE_DEBUG=1` for verbose compiler logging. If it does not attach at all,
+confirm the launcher exists (`:LatheStart` reports when it is missing) and run `mvn process-test-classes`.
+For workspace-level issues (`.lathe/` not found, missing params file), see the **Troubleshooting**
+section of the [README](../../../README.md#troubleshooting).
