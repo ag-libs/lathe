@@ -45,10 +45,12 @@ final class MainLaunchWriter {
     }
 
     final String moduleRel = ReactorProjects.moduleRel(workspaceRoot, project);
-    persist(workspaceRoot, moduleRel, deriveLaunch(project));
+    // The main run's working directory is the module basedir (relative to the workspace root),
+    // matching where Maven/exec would run it — moduleRel is exactly that.
+    persist(workspaceRoot, moduleRel, deriveLaunch(project, moduleRel));
   }
 
-  private MainLaunchData deriveLaunch(final MavenProject project) {
+  private MainLaunchData deriveLaunch(final MavenProject project, final String workingDir) {
     final List<String> runtimeElements = runtimeClasspath(project);
     final String javaHome = System.getProperty("java.home");
     final Path moduleInfo = moduleInfoSource(project);
@@ -64,7 +66,8 @@ final class MainLaunchWriter {
           List.of(),
           List.of(),
           List.of(),
-          List.of());
+          List.of(),
+          workingDir);
     }
 
     // plexus-java partitions dependencies only; the launched module's own output is never in that
@@ -87,7 +90,8 @@ final class MainLaunchWriter {
         List.of(),
         List.of(),
         List.of(),
-        List.of());
+        List.of(),
+        workingDir);
   }
 
   private static boolean samePath(final String entry, final String other) {

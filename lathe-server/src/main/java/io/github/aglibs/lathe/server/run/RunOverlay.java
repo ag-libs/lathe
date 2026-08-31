@@ -28,7 +28,8 @@ public final class RunOverlay {
     final List<String> argv =
         LaunchPlan.forMain(
             template, workspaceRoot, mainClass, launchOverlay(item, workspaceRoot), jdwp);
-    return new ResolvedLaunch(argv, item.env(), resolveCwd(item, workspaceRoot));
+    return new ResolvedLaunch(
+        argv, item.env(), resolveCwd(item, workspaceRoot, template.workingDir()));
   }
 
   public static ResolvedLaunch applyToTestMain(
@@ -40,7 +41,8 @@ public final class RunOverlay {
     final List<String> argv =
         LaunchPlan.forTestMain(
             template, workspaceRoot, mainClass, launchOverlay(item, workspaceRoot), jdwp);
-    return new ResolvedLaunch(argv, item.env(), resolveCwd(item, workspaceRoot));
+    return new ResolvedLaunch(
+        argv, item.env(), resolveCwd(item, workspaceRoot, template.workingDir()));
   }
 
   public static ResolvedLaunch applyToTest(
@@ -60,7 +62,8 @@ public final class RunOverlay {
             resultsSink,
             launchOverlay(item, workspaceRoot),
             jdwp);
-    return new ResolvedLaunch(argv, item.env(), resolveCwd(item, workspaceRoot));
+    return new ResolvedLaunch(
+        argv, item.env(), resolveCwd(item, workspaceRoot, template.workingDir()));
   }
 
   private static LaunchOverlay launchOverlay(final RunItem item, final Path workspaceRoot) {
@@ -75,11 +78,16 @@ public final class RunOverlay {
     return entries.stream().map(entry -> workspaceRoot.resolve(entry).toString()).toList();
   }
 
-  private static Path resolveCwd(final RunItem item, final Path workspaceRoot) {
-    if (item.cwd() == null) {
-      return null;
+  private static Path resolveCwd(
+      final RunItem item, final Path workspaceRoot, final String templateWorkingDir) {
+    // An explicit overlay cwd wins; otherwise default to the module's working directory captured
+    // in the launch template (the module basedir, matching Maven's Surefire/exec fork), so
+    // relative-path resolution in tests/main matches `mvn`. An empty template working directory
+    // means the reactor-root module, resolving to the workspace root.
+    if (item.cwd() != null) {
+      return workspaceRoot.resolve(item.cwd());
     }
 
-    return workspaceRoot.resolve(item.cwd());
+    return workspaceRoot.resolve(templateWorkingDir);
   }
 }

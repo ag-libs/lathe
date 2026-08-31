@@ -27,7 +27,8 @@ final class RunOverlayTest {
         List.of(),
         List.of(),
         List.of(),
-        List.of());
+        List.of(),
+        "app");
   }
 
   @Test
@@ -68,7 +69,7 @@ final class RunOverlayTest {
   }
 
   @Test
-  void applyToMain_noCwd_resolvesToNull() {
+  void applyToMain_noCwd_defaultsToModuleBasedir() {
     final ResolvedLaunch resolved =
         RunOverlay.applyToMain(
             classpathTemplate(),
@@ -77,7 +78,8 @@ final class RunOverlayTest {
             RunItem.empty("app", RunKind.MAIN),
             JdwpOptions.NONE);
 
-    assertThat(resolved.cwd()).isNull();
+    // No overlay cwd → default to the module basedir from the template's workingDir.
+    assertThat(resolved.cwd()).isEqualTo(Path.of("/workspace/app"));
     assertThat(resolved.env()).isEmpty();
   }
 }

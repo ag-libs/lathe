@@ -35,7 +35,8 @@ final class LaunchPlanTest {
             List.of("com.example.app=ALL-UNNAMED"),
             List.of(),
             List.of("ALL-MODULE-PATH"),
-            List.of("-Dfoo=bar"));
+            List.of("-Dfoo=bar"),
+            "");
 
     final List<String> args =
         LaunchPlan.forTest(
@@ -91,7 +92,8 @@ final class LaunchPlanTest {
             List.of(),
             List.of(),
             List.of(),
-            List.of());
+            List.of(),
+            "");
 
     final List<String> args =
         LaunchPlan.forTest(
@@ -128,7 +130,8 @@ final class LaunchPlanTest {
             List.of(),
             List.of(),
             List.of("ALL-MODULE-PATH"),
-            List.of("-Xmx512m"));
+            List.of("-Xmx512m"),
+            "");
 
     final List<String> args =
         LaunchPlan.forMain(
@@ -168,7 +171,8 @@ final class LaunchPlanTest {
             List.of(),
             List.of(),
             List.of(),
-            List.of());
+            List.of(),
+            "");
 
     final List<String> args =
         LaunchPlan.forMain(
@@ -196,7 +200,8 @@ final class LaunchPlanTest {
             List.of(),
             List.of(),
             List.of(),
-            List.of("-Xmx256m"));
+            List.of("-Xmx256m"),
+            "");
     final var overlay =
         new LaunchOverlay(
             List.of("-Dprofile=prod"), List.of("--flag"), List.of("/abs/config"), List.of());
@@ -233,7 +238,8 @@ final class LaunchPlanTest {
             List.of(),
             List.of(),
             List.of(),
-            List.of("-Dfoo=bar"));
+            List.of("-Dfoo=bar"),
+            "");
     final var overlay =
         new LaunchOverlay(
             List.of("-Dfoo=baz"), List.of("extra-arg"), List.of("/abs/cp"), List.of("/abs/mp"));
@@ -286,7 +292,8 @@ final class LaunchPlanTest {
             List.of(),
             List.of(),
             List.of(),
-            List.of());
+            List.of(),
+            "");
 
     final List<String> args =
         LaunchPlan.forTest(
@@ -322,7 +329,8 @@ final class LaunchPlanTest {
             List.of(),
             List.of(),
             List.of(),
-            List.of());
+            List.of(),
+            "");
 
     final List<String> args =
         LaunchPlan.forTest(
@@ -351,7 +359,8 @@ final class LaunchPlanTest {
             List.of(),
             List.of(),
             List.of(),
-            List.of());
+            List.of(),
+            "");
 
     final List<String> args =
         LaunchPlan.forMain(
@@ -379,7 +388,8 @@ final class LaunchPlanTest {
             List.of("com.example.app=ALL-UNNAMED"),
             List.of(),
             List.of("ALL-MODULE-PATH"),
-            List.of("-Dfoo=bar"));
+            List.of("-Dfoo=bar"),
+            "");
 
     final List<String> args =
         LaunchPlan.forTestMain(
@@ -423,7 +433,8 @@ final class LaunchPlanTest {
             List.of(),
             List.of(),
             List.of(),
-            List.of());
+            List.of(),
+            "");
 
     final List<String> args =
         LaunchPlan.forTestMain(
@@ -453,7 +464,8 @@ final class LaunchPlanTest {
             List.of(),
             List.of(),
             List.of(),
-            List.of());
+            List.of(),
+            "");
 
     final List<String> args =
         LaunchPlan.forTestMain(
@@ -479,7 +491,8 @@ final class LaunchPlanTest {
             List.of(),
             List.of(),
             List.of(),
-            List.of());
+            List.of(),
+            "");
 
     final List<String> args =
         LaunchPlan.forMain(

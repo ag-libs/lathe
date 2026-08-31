@@ -43,7 +43,8 @@ final class LaunchTemplateReaderTest {
             List.of(),
             List.of(),
             List.of(),
-            List.of());
+            List.of(),
+            "");
     Json.write(data, moduleDir.resolve(LatheLayout.TEST_LAUNCH_FILE));
 
     final var reader = new LaunchTemplateReader(workspaceRoot);

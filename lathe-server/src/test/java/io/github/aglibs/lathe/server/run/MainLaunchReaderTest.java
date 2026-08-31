@@ -40,7 +40,8 @@ final class MainLaunchReaderTest {
             List.of(),
             List.of(),
             List.of(),
-            List.of());
+            List.of(),
+            "");
     Json.write(data, moduleDir.resolve(LatheLayout.MAIN_LAUNCH_FILE));
 
     final var reader = new MainLaunchReader(workspaceRoot);

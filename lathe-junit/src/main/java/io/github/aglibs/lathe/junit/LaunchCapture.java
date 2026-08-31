@@ -21,7 +21,8 @@ final class LaunchCapture {
       final String javaHome,
       final String classPath,
       final List<String> inputArguments,
-      final Path ownJarLocation) {
+      final Path ownJarLocation,
+      final String workingDir) {
     final var modulePath = new ArrayList<String>();
     final var patchModules = new LinkedHashMap<String, String>();
     final var addOpens = new ArrayList<String>();
@@ -99,7 +100,8 @@ final class LaunchCapture {
         addReads,
         addExports,
         addModules,
-        jvmArgs);
+        jvmArgs,
+        workingDir);
   }
 
   private static OptionValue optionValue(

@@ -40,7 +40,8 @@ public final class CaptureLauncherSessionListener implements LauncherSessionList
             System.getProperty("java.home"),
             System.getProperty("java.class.path", ""),
             ManagementFactory.getRuntimeMXBean().getInputArguments(),
-            ownJarLocation().orElse(null));
+            ownJarLocation().orElse(null),
+            moduleRel.toString());
     Files.createDirectories(moduleDir);
     final Path target = moduleDir.resolve(LatheLayout.TEST_LAUNCH_FILE);
     FileUtil.writeAtomically(moduleDir, target, Json.toJson(data), false);

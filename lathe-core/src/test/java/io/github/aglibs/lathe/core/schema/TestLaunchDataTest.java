@@ -48,7 +48,8 @@ final class TestLaunchDataTest {
                     null,
                     null,
                     null,
-                    null))
+                    null,
+                    ""))
         .hasMessageContaining("kind");
   }
 
@@ -79,6 +80,7 @@ final class TestLaunchDataTest {
         List.of(),
         List.of(),
         List.of(),
-        List.of());
+        List.of(),
+        "");
   }
 }

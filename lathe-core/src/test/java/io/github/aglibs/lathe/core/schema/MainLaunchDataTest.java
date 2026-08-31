@@ -35,7 +35,18 @@ final class MainLaunchDataTest {
     assertThatThrownBy(
             () ->
                 new MainLaunchData(
-                    "1", LaunchMode.CLASSPATH, "", "", null, null, null, null, null, null, null))
+                    "1",
+                    LaunchMode.CLASSPATH,
+                    "",
+                    "",
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    ""))
         .hasMessageContaining("javaHome");
   }
 
@@ -64,6 +75,7 @@ final class MainLaunchDataTest {
         List.of(),
         List.of(),
         List.of(),
-        List.of());
+        List.of(),
+        "");
   }
 }

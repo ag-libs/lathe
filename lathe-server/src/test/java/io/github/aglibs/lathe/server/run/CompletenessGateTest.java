@@ -101,7 +101,8 @@ final class CompletenessGateTest {
         List.of(),
         List.of(),
         List.of(),
-        List.of());
+        List.of(),
+        "");
   }
 
   private TestLaunchData testLaunch() {
@@ -118,6 +119,7 @@ final class CompletenessGateTest {
         List.of(),
         List.of(),
         List.of(),
-        List.of());
+        List.of(),
+        "");
   }
 }

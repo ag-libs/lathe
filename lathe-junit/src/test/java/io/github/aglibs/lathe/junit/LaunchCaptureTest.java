@@ -16,7 +16,8 @@ final class LaunchCaptureTest {
     final String classPath =
         String.join(File.pathSeparator, "/repo/lathe-junit.jar", "/repo/junit.jar");
 
-    final var data = LaunchCapture.toLaunchData("/jdk", classPath, List.of("-Dfoo=bar"), ownJar);
+    final var data =
+        LaunchCapture.toLaunchData("/jdk", classPath, List.of("-Dfoo=bar"), ownJar, "");
 
     assertThat(data.mode()).isEqualTo(LaunchMode.CLASSPATH);
     assertThat(data.classPath()).containsExactly("/repo/junit.jar");
@@ -32,7 +33,8 @@ final class LaunchCaptureTest {
             List.of(
                 "--module-path=/mods/a.jar%s/mods/b.jar".formatted(File.pathSeparator),
                 "--patch-module=com.example.app=/workspace/app/target/test-classes"),
-            null);
+            null,
+            "");
 
     assertThat(data.mode()).isEqualTo(LaunchMode.MODULE);
     assertThat(data.mainModule()).isEqualTo("com.example.app");
@@ -56,7 +58,8 @@ final class LaunchCaptureTest {
                 "com.example.app/com.example.internal=ALL-UNNAMED",
                 "--add-modules",
                 "ALL-MODULE-PATH,com.example.app"),
-            null);
+            null,
+            "");
 
     assertThat(data.addOpens()).containsExactly("com.example.app/com.example.app=ALL-UNNAMED");
     assertThat(data.addReads()).containsExactly("com.example.app=ALL-UNNAMED");
@@ -69,7 +72,7 @@ final class LaunchCaptureTest {
   void toLaunchData_unrecognizedArgs_preservesInJvmArgs() {
     final var data =
         LaunchCapture.toLaunchData(
-            "/jdk", "", List.of("-Xmx512m", "-javaagent:/agent.jar", "--enable-preview"), null);
+            "/jdk", "", List.of("-Xmx512m", "-javaagent:/agent.jar", "--enable-preview"), null, "");
 
     assertThat(data.jvmArgs())
         .containsExactly("-Xmx512m", "-javaagent:/agent.jar", "--enable-preview");

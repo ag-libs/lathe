@@ -19,7 +19,8 @@ public record TestLaunchData(
     List<String> addReads,
     List<String> addExports,
     List<String> addModules,
-    List<String> jvmArgs) {
+    List<String> jvmArgs,
+    String workingDir) {
 
   public TestLaunchData {
     ValidCheck.check()
@@ -27,6 +28,7 @@ public record TestLaunchData(
         .notBlank(kind, "kind")
         .notNull(mode, "mode")
         .notBlank(javaHome, "javaHome")
+        .notNull(workingDir, "workingDir")
         .when(mode == LaunchMode.MODULE, v -> v.notBlank(mainModule, "mainModule"))
         .when(
             mode == LaunchMode.CLASSPATH,
