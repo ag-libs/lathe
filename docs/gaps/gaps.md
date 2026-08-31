@@ -863,37 +863,4 @@ Gaps in the shipped Neovim client plugin (`lua/lathe/…`) and its recommended c
 distinct from the server's LSP/DAP surface. Resolved NV entries move to
 [gaps-archive.md](gaps-archive.md).
 
-## NV-1 — `:LatheStart` is unavailable in the exact case it exists for (no Java file open)
-
-**Status: accepted — Target: M2**
-
-### Observed behaviour
-
-Opening Neovim in a `.lathe` workspace directory **without** opening any `.java` file, the
-`:LatheStart` command does not exist, so the server cannot be started for workspace-level
-navigation (e.g. `workspace/symbol`) from a dashboard or empty buffer — the exact scenario
-`:LatheStart` was added for.
-
-### Root cause
-
-The recommended install (`docs/guide/editors/neovim.md`) loads the plugin with `lazy.nvim` and
-`ft = "java"`. Its `config` — which calls `require('lathe').setup()` and registers `:LatheStart`
-(`lathe.lua:165`) — therefore runs only when the first Java file is opened. With no Java buffer,
-`setup()` never runs and the command is never created.
-
-### Proposed direction
-
-Make `:LatheStart` reachable before a Java file is open, without eagerly starting the server on
-every Neovim launch:
-
-- add `cmd = { "LatheStart" }` to the recommended lazy spec so the plugin also loads on the
-  command, and document it; and/or
-- register `:LatheStart` from a lightweight `plugin/` script sourced at startup that defers
-  `require('lathe').setup()` until first use.
-
-The eager JVM start stays user-invoked (`:LatheStart`), never automatic.
-
-### Regression targets
-
-None yet — to be defined when scheduled (a Neovim spec that loads the plugin without a Java
-buffer and asserts `:LatheStart` exists).
+No active NV gaps remain; resolved entries are in [gaps-archive.md](gaps-archive.md).

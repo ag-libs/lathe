@@ -21,6 +21,7 @@ by `lathe:sync`:
 {
   dir = vim.fn.expand("~/.cache/lathe/current/neovim"),
   ft = "java",
+  cmd = "LatheStart",
   config = function()
     require("lathe").setup()
   end,
@@ -29,6 +30,11 @@ by `lathe:sync`:
 
 > **The `config` function is required.** Without it, lazy.nvim only sources the `ftplugin`
 > (indentation); the LSP server is never registered.
+
+> **`cmd = "LatheStart"` loads the plugin on the command too**, not only on a `.java` file — so
+> `:LatheStart` is available to bring the server up for workspace navigation before you open any Java
+> file (from a dashboard or an empty buffer). Without it, the command exists only after a Java buffer
+> has loaded the plugin.
 
 `setup()` options:
 

@@ -7045,3 +7045,22 @@ if it returns.
 
 The original suspicion was a module-path-vs-classpath placement / `--add-opens` fidelity gap in the
 captured replay launch versus Surefire's fork.
+
+---
+
+# Neovim client (resolved)
+
+## NV-1 — `:LatheStart` unavailable before a Java file is open — done
+
+**Status: done — Target: M2.**
+
+Opening Neovim in a `.lathe` workspace without opening a `.java` file, `:LatheStart` did not exist,
+so the server could not be brought up for workspace navigation (e.g. `workspace/symbol`) from a
+dashboard or empty buffer — the very case the command was added for. The recommended lazy.nvim
+install loaded the plugin only on `ft = "java"`, so `config` → `require('lathe').setup()` (which
+registers the command) never ran without a Java buffer.
+
+Fixed in the install guide (`docs/guide/editors/neovim.md`): the recommended lazy spec now also
+lists `cmd = "LatheStart"`, so lazy.nvim loads the plugin (running `setup()`, which registers the
+real command) when `:LatheStart` is first invoked. No plugin code change — `M.start` is already
+covered by `lathestart_spec`; the lazy-loading trigger is user config, not plugin behaviour.
