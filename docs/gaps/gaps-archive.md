@@ -7026,3 +7026,22 @@ no Java, schema, or server read-path change was needed.
 None — packaging-only change, verified manually via shaded-jar inspection (every class under
 `io.github.aglibs.lathe.junit`, no un-relocated foreign packages, dependency-reduced POM leaves
 consumers zero inherited compile dependencies). No automated regression test was added.
+
+---
+
+# Test execution (resolved)
+
+## TE-5 — JPMS test module reflective access under replay — could not reproduce
+
+**Status: closed (could not reproduce) — Target: M2.**
+
+Reported: a JPMS module's tests failed under neotest replay with
+`java.lang.reflect.InaccessibleObjectException` — JUnit, loaded in the unnamed module, could not
+reflectively open the named test module's packages (`@RegisterExtension` fields, test
+constructors) — while the same tests passed under `mvn`. On re-check the failure no longer
+reproduces (possibly resolved by a re-sync regenerating the test-launch template — the TE-4 schema
+change forces one — or environment-specific). Closed pending recurrence; reopen with a fresh repro
+if it returns.
+
+The original suspicion was a module-path-vs-classpath placement / `--add-opens` fidelity gap in the
+captured replay launch versus Surefire's fork.

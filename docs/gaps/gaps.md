@@ -579,49 +579,6 @@ path passes; assert the launch's working directory equals the module basedir).
 
 ---
 
-## TE-5 — JPMS test module runs as a named module in replay, breaking reflective test access
-
-**Status: accepted — Target: M2**
-
-### Observed behaviour
-
-Running a package's tests through the neotest panel, a JPMS module's tests fail with reflective
-access errors that do **not** occur under `mvn`:
-
-```
-org.junit.platform.commons.PreconditionViolationException: Failed to read @RegisterExtension field …
-Caused by: java.lang.reflect.InaccessibleObjectException: Unable to make field … accessible:
-  module com.example.app does not "opens com.example.app.internal" to unnamed module
-```
-
-The same tests pass in Maven. (Genericised; the real module/package names are from a private
-workspace.)
-
-### Root cause (suspected)
-
-The replay places the test module as a **named module on the module path**, so JUnit — loaded in
-the **unnamed** module — cannot reflectively open the test packages (`@RegisterExtension` fields,
-test constructors) without an `opens`/`--add-opens` directive. Maven Surefire avoids this, either
-by running the tests on the **classpath** (everything in the unnamed module, no `opens` needed) or
-by injecting the required `--add-opens`. The captured replay launch does not reproduce that, so
-reflection-heavy JUnit setup fails. Needs confirmation of exactly how Surefire places/loads the
-module vs. what the capture records.
-
-### Proposed direction
-
-Reproduce Surefire's effective module placement and `--add-opens` for the test fork in the replay
-— i.e. capture (or derive) the classpath-vs-module-path decision and the `--add-opens` Surefire
-applied, so reflective test frameworks behave identically. Ties into the existing capture of
-`--add-opens`/`--add-reads`/`--add-exports` and module directives; see
-[test-capture.md](../guide/test-capture.md).
-
-### Regression targets
-
-None yet — to be defined when scheduled (a modular test project with `@RegisterExtension` /
-reflective setup runs green under replay, matching `mvn test`).
-
----
-
 # Debug & Evaluation Gaps (DB)
 
 Gaps in the in-process DAP adapter and the two-stage expression evaluator (see
