@@ -176,12 +176,19 @@ end
 -- is_test_file mirrors Surefire's own default include patterns
 -- (Test*.java, *Test.java, *Tests.java, *TestCase.java).
 do
-  spec.check("Test*.java matches", adapter.is_test_file("/a/TestFoo.java"), true)
-  spec.check("*Test.java matches", adapter.is_test_file("/a/FooTest.java"), true)
-  spec.check("*Tests.java matches", adapter.is_test_file("/a/FooTests.java"), true)
-  spec.check("*TestCase.java matches", adapter.is_test_file("/a/FooTestCase.java"), true)
-  spec.check("plain class does not match", adapter.is_test_file("/a/Foo.java"), false)
-  spec.check("non-.java file does not match", adapter.is_test_file("/a/FooTest.txt"), false)
+  local test_root = "/p/src/test/java/demo/"
+  spec.check("Test*.java matches", adapter.is_test_file(test_root .. "TestFoo.java"), true)
+  spec.check("*Test.java matches", adapter.is_test_file(test_root .. "FooTest.java"), true)
+  spec.check("*Tests.java matches", adapter.is_test_file(test_root .. "FooTests.java"), true)
+  spec.check("*TestCase.java matches", adapter.is_test_file(test_root .. "FooTestCase.java"), true)
+  spec.check("plain class does not match", adapter.is_test_file(test_root .. "Foo.java"), false)
+  spec.check("non-.java file does not match", adapter.is_test_file(test_root .. "FooTest.txt"), false)
+  -- A `Test*`-named class in src/main is a fixture/builder, not a Surefire test: must not match.
+  spec.check(
+    "Test*-named class in src/main is not a test",
+    adapter.is_test_file("/p/src/main/java/demo/TestDataBuilder.java"),
+    false
+  )
 end
 
 local function read_file(path)

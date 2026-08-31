@@ -250,6 +250,12 @@ function M.is_test_file(file_path)
   if not file_path:match("%.java$") then
     return false
   end
+  -- Surefire's include patterns apply only within the test source root, but neotest walks the whole
+  -- project -- so gate on src/test/ first, otherwise a `Test*`-named class in src/main (a builder,
+  -- fixture, or config, not a test) is wrongly discovered and swept into package runs.
+  if not file_path:match("/src/test/") then
+    return false
+  end
   local name = vim.fn.fnamemodify(file_path, ":t:r")
   return name:match("^Test") ~= nil
     or name:match("Test$") ~= nil
@@ -329,6 +335,12 @@ end
 
 local function build_tree(file_path, targets)
   local root_list = M._build_position_forest(file_path, targets)
+  -- root_list is { file_root, ...positions }; length 1 means the file had only excluded targets
+  -- (a main/main-class, no test or namespace). Return nil so it is not shown as an empty test node
+  -- (and not stamped by a package run's fan-out) rather than a childless file tree.
+  if #root_list <= 1 then
+    return nil
+  end
   return Tree().from_list(root_list, function(pos)
     return pos.id
   end)
@@ -459,7 +471,12 @@ function M.build_spec(args)
     if not module_rel then
       return nil
     end
-    return run_spec(package_name, module_rel, {
+    -- The run position is the directory node's own id (its path), NOT the package name: the package
+    -- name is only the PACKAGE selector value and matches no node, so keying the run on it orphans
+    -- the aggregate result and skips results()' subtree fan-out -- leaving the directory glyph stale
+    -- (e.g. a red left over from a prior run never clears). pos.id lands the aggregate on the real
+    -- directory node and lets the fan-out clear/update every descendant; per-test statuses still win.
+    return run_spec(pos.id, module_rel, {
       { selectorKind = "PACKAGE", selectorValue = package_name },
     }, client, package_name)
   end
