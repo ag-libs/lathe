@@ -13,6 +13,8 @@ import javax.tools.StandardLocation;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.Diagnostic;
+import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.junit.jupiter.api.AfterEach;
@@ -122,8 +124,7 @@ class CodeActionTest {
 
     final List<Diagnostic> diags =
         session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
-    final var actions =
-        session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), typeIndex);
+    final var actions = diagnosticActions(source, diags);
 
     assertThat(actions).hasSize(1);
     final var action = actions.getFirst().getRight();
@@ -155,14 +156,19 @@ class CodeActionTest {
         """;
     final var actions =
         session.codeAction(
-            TempSourceCompiler.TEST_URI, sourceWithImport, 2, toRequests(diags), typeIndex);
+            TempSourceCompiler.TEST_URI,
+            sourceWithImport,
+            2,
+            rangeAt(0, 0),
+            toRequests(diags),
+            typeIndex);
     assertThat(actions).isEmpty();
   }
 
   @Test
   void codeAction_noDiagnostics_returnsEmpty() {
     final var actions =
-        session.codeAction(TempSourceCompiler.TEST_URI, "", 1, List.of(), typeIndex);
+        session.codeAction(TempSourceCompiler.TEST_URI, "", 1, rangeAt(0, 0), List.of(), typeIndex);
     assertThat(actions).isEmpty();
   }
 
@@ -217,7 +223,12 @@ class CodeActionTest {
         session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
     final var actions =
         session.codeAction(
-            TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), customTypeIndex);
+            TempSourceCompiler.TEST_URI,
+            source,
+            1,
+            rangeAt(0, 0),
+            toRequests(diags),
+            customTypeIndex);
 
     assertThat(actions).hasSize(1);
     assertThat(actions.getFirst().getRight().getTitle())
@@ -249,7 +260,8 @@ class CodeActionTest {
     final List<Diagnostic> diags =
         session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
     final var actions =
-        session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), reactorIndex);
+        session.codeAction(
+            TempSourceCompiler.TEST_URI, source, 1, rangeAt(0, 0), toRequests(diags), reactorIndex);
 
     assertThat(actions).hasSize(1);
     assertThat(actions.getFirst().getRight().getTitle())
@@ -271,8 +283,7 @@ class CodeActionTest {
 
     final List<Diagnostic> diags =
         session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
-    final var actions =
-        session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), typeIndex);
+    final var actions = diagnosticActions(source, diags);
 
     assertThat(actions).hasSize(2);
     final var throwsAction = findThrowsAction(actions);
@@ -312,7 +323,8 @@ class CodeActionTest {
             .filter(r -> r.payload().name().equals("java.sql.SQLException"))
             .toList();
     final var actions =
-        session.codeAction(TempSourceCompiler.TEST_URI, source, 1, sqlOnly, typeIndex);
+        session.codeAction(
+            TempSourceCompiler.TEST_URI, source, 1, rangeAt(0, 0), sqlOnly, typeIndex);
 
     assertThat(actions).hasSize(2);
     final var throwsAction = findThrowsAction(actions);
@@ -336,8 +348,7 @@ class CodeActionTest {
 
     final List<Diagnostic> diags =
         session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
-    final var actions =
-        session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), typeIndex);
+    final var actions = diagnosticActions(source, diags);
 
     assertThat(actions).hasSize(2);
     final var throwsAction = findThrowsAction(actions);
@@ -361,8 +372,7 @@ class CodeActionTest {
 
     final List<Diagnostic> diags =
         session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
-    final var actions =
-        session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), typeIndex);
+    final var actions = diagnosticActions(source, diags);
 
     assertThat(actions).hasSize(1);
     final var action = actions.getFirst().getRight();
@@ -386,8 +396,7 @@ class CodeActionTest {
 
     final List<Diagnostic> diags =
         session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
-    final var actions =
-        session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), typeIndex);
+    final var actions = diagnosticActions(source, diags);
 
     assertThat(actions).hasSize(1);
     final List<TextEdit> edits =
@@ -410,8 +419,7 @@ class CodeActionTest {
 
     final List<Diagnostic> diags =
         session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
-    final var actions =
-        session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), typeIndex);
+    final var actions = diagnosticActions(source, diags);
 
     assertThat(actions).isEmpty();
   }
@@ -430,8 +438,7 @@ class CodeActionTest {
 
     final List<Diagnostic> diags =
         session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
-    final var actions =
-        session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), typeIndex);
+    final var actions = diagnosticActions(source, diags);
 
     assertThat(actions).isEmpty();
   }
@@ -452,8 +459,7 @@ class CodeActionTest {
 
     final List<Diagnostic> diags =
         session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
-    final var actions =
-        session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), typeIndex);
+    final var actions = diagnosticActions(source, diags);
 
     assertThat(actions).hasSize(1);
     final var action = actions.getFirst().getRight();
@@ -483,8 +489,7 @@ class CodeActionTest {
 
     final List<Diagnostic> diags =
         session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
-    final var actions =
-        session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), typeIndex);
+    final var actions = diagnosticActions(source, diags);
 
     assertThat(actions).hasSize(1);
     final var action = actions.getFirst().getRight();
@@ -513,8 +518,7 @@ class CodeActionTest {
 
     final List<Diagnostic> diags =
         session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
-    final var actions =
-        session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), typeIndex);
+    final var actions = diagnosticActions(source, diags);
 
     assertThat(actions).hasSize(1);
     final var action = actions.getFirst().getRight();
@@ -560,8 +564,7 @@ class CodeActionTest {
 
     final List<Diagnostic> diags =
         session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
-    final var actions =
-        session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), typeIndex);
+    final var actions = diagnosticActions(source, diags);
 
     assertThat(actions).hasSize(2);
     assertThat(actions.stream().map(a -> a.getRight().getTitle()))
@@ -582,8 +585,7 @@ class CodeActionTest {
 
     final List<Diagnostic> diags =
         session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
-    final var actions =
-        session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), typeIndex);
+    final var actions = diagnosticActions(source, diags);
 
     assertThat(actions).hasSize(1);
     assertThat(actions.getFirst().getRight().getTitle()).isEqualTo("Wrap in try/catch");
@@ -601,8 +603,7 @@ class CodeActionTest {
 
     final List<Diagnostic> diags =
         session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
-    final var actions =
-        session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), typeIndex);
+    final var actions = diagnosticActions(source, diags);
 
     assertThat(actions).hasSize(1);
     final var action = actions.getFirst().getRight();
@@ -628,8 +629,7 @@ class CodeActionTest {
 
     final List<Diagnostic> diags =
         session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
-    final var actions =
-        session.codeAction(TempSourceCompiler.TEST_URI, source, 1, toRequests(diags), typeIndex);
+    final var actions = diagnosticActions(source, diags);
 
     assertThat(actions).hasSize(1);
     final List<TextEdit> edits =
@@ -638,7 +638,136 @@ class CodeActionTest {
     assertThat(stubText).contains("public boolean hasNext()").contains("public String next()");
   }
 
+  // --- Replace-var provider (request-driven, CA-5) ---
+
+  @Test
+  void codeAction_varLocal_offersReplaceWithInferredType() {
+    final var source =
+        """
+        package com.example;
+        class Test {
+          void m() {
+            var s = "hello";
+          }
+        }
+        """;
+    // cursor on the `var` local declaration; no diagnostic drives this
+    final var actions = replaceVarActionsAt(source, 3, 8);
+
+    assertThat(rightTitles(actions)).contains("Replace 'var' with 'String'");
+  }
+
+  @Test
+  void codeAction_varGenericType_replacesWithGenericsAndAddsImport() {
+    final var source =
+        """
+        package com.example;
+        class Test {
+          void m() {
+            var list = new java.util.ArrayList<String>();
+          }
+        }
+        """;
+    final var actions = replaceVarActionsAt(source, 3, 8);
+
+    assertThat(rightTitles(actions)).contains("Replace 'var' with 'ArrayList<String>'");
+    final List<TextEdit> edits =
+        actions.getFirst().getRight().getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
+    assertThat(edits).anyMatch(e -> e.getNewText().contains("import java.util.ArrayList"));
+  }
+
+  @Test
+  void codeAction_varPrimitive_replacesWithPrimitiveType() {
+    final var source =
+        """
+        package com.example;
+        class Test {
+          void m() {
+            var n = 42;
+          }
+        }
+        """;
+    final var actions = replaceVarActionsAt(source, 3, 8);
+
+    assertThat(rightTitles(actions)).contains("Replace 'var' with 'int'");
+  }
+
+  @Test
+  void codeAction_varAnonymousClass_offersNoReplace() {
+    // The inferred type is an anonymous class, which cannot be written explicitly, so keep `var`.
+    final var source =
+        """
+        package com.example;
+        class Test {
+          void m() {
+            var r = new Runnable() { public void run() {} };
+          }
+        }
+        """;
+    final var actions = replaceVarActionsAt(source, 3, 8);
+
+    assertThat(rightTitles(actions)).noneMatch(t -> t.startsWith("Replace 'var'"));
+  }
+
+  @Test
+  void codeAction_varUpwardProjectedType_replacesWithProjectedType() {
+    // `list.getFirst()` on a `? extends Number` list yields a captured type that `var`
+    // upward-projects
+    // (JLS 14.4.1) to the denotable `Number`, so the refactor is offered with the projected type.
+    final var source =
+        """
+        package com.example;
+        class Test {
+          void m(java.util.List<? extends Number> list) {
+            var x = list.getFirst();
+          }
+        }
+        """;
+    final var actions = replaceVarActionsAt(source, 3, 8);
+
+    assertThat(rightTitles(actions)).contains("Replace 'var' with 'Number'");
+  }
+
+  @Test
+  void codeAction_explicitTypedLocal_offersNoReplace() {
+    // A normal explicitly-typed local is not a `var`, so no refactor is offered.
+    final var source =
+        """
+        package com.example;
+        class Test {
+          void m() {
+            String s = "hello";
+          }
+        }
+        """;
+    final var actions = replaceVarActionsAt(source, 3, 11);
+
+    assertThat(rightTitles(actions)).noneMatch(t -> t.startsWith("Replace 'var'"));
+  }
+
   // --- Helpers ---
+
+  private List<Either<Command, CodeAction>> replaceVarActionsAt(
+      final String source, final int line, final int character) {
+    session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    return session.codeAction(
+        TempSourceCompiler.TEST_URI, source, 1, rangeAt(line, character), List.of(), typeIndex);
+  }
+
+  private List<Either<Command, CodeAction>> diagnosticActions(
+      final String source, final List<Diagnostic> diags) {
+    return session.codeAction(
+        TempSourceCompiler.TEST_URI, source, 1, rangeAt(0, 0), toRequests(diags), typeIndex);
+  }
+
+  private static Range rangeAt(final int line, final int character) {
+    final var pos = new Position(line, character);
+    return new Range(pos, pos);
+  }
+
+  private static List<String> rightTitles(final List<Either<Command, CodeAction>> actions) {
+    return actions.stream().filter(Either::isRight).map(a -> a.getRight().getTitle()).toList();
+  }
 
   private static CodeAction findThrowsAction(final List<Either<Command, CodeAction>> actions) {
     return actions.stream()

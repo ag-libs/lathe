@@ -835,6 +835,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
       final String uri,
       final String content,
       final int version,
+      final Range range,
       final List<CodeActionRequest> requests,
       final WorkspaceTypeIndex typeIndex) {
     final var t = Stopwatch.start();
@@ -869,15 +870,24 @@ public final class SourceAnalysisSession implements AutoCloseable {
             case MISSING_METHOD_IMPL -> missingImplProvider.provide(request, analysis, typeIndex);
           };
 
-      for (final var action : provided) {
-        if (action.isRight() && seen.add(action.getRight().getTitle())) {
-          actions.add(action);
-        }
-      }
+      addUnique(actions, seen, provided);
     }
+
+    addUnique(actions, seen, new ReplaceVarProvider().provide(uri, range, analysis));
 
     LOG.info(() -> "[codeAction] %s %dms actions=%d".formatted(uri, t.elapsedMs(), actions.size()));
     return actions;
+  }
+
+  private static void addUnique(
+      final List<Either<Command, CodeAction>> actions,
+      final HashSet<String> seen,
+      final List<Either<Command, CodeAction>> provided) {
+    for (final var action : provided) {
+      if (action.isRight() && seen.add(action.getRight().getTitle())) {
+        actions.add(action);
+      }
+    }
   }
 
   private AttributedFileAnalysis ensureAttributedAnalysis(

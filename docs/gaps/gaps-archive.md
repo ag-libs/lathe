@@ -5755,6 +5755,35 @@ Maven sync — is folded into the broader source/branch-switch staleness gap WS-
 
 ---
 
+## CA-5 — No code action to replace `var` with the inferred type
+
+**Status: done — Target: M2.**
+
+A `var` local declaration had no code action to replace `var` with its inferred explicit type. It was
+the first **request-driven** (non-diagnostic) code action: `codeAction` dispatched only by
+`DiagnosticPayload.Kind`, and a valid `var` raises no diagnostic, so no provider was ever invoked.
+
+Fixed by threading the code-action `Range` through the request (service → `WorkspaceSession` →
+`CompilationWorker` → `SourceAnalysisSession`, dropping the empty-diagnostics early return) and adding
+a range-driven `ReplaceVarProvider` that runs once per request alongside the diagnostic dispatch. It
+locates the enclosing `var` local (attribution erases the `var` type tree to the inferred type with no
+source position, so the keyword is found in source via `SourceLocator.findIdentifierFrom`), infers the
+type from the element, renders it with `TypeDisplayFormatter` (simple names + generics), and adds an
+import via the shared `CodeActionSupport.importEditFor`. The refactor is offered only for **denotable**
+kinds — declared (non-anonymous), array, and primitive — skipping anonymous classes, intersection
+types, and captured type variables where `var` is the only legal spelling; captures never reach it
+because `var` upward-projects them to a denotable type (JLS 14.4.1). `Refactor` kind, no diagnostics.
+
+Regression targets in `CodeActionTest`:
+`codeAction_varLocal_offersReplaceWithInferredType` (`String`),
+`codeAction_varGenericType_replacesWithGenericsAndAddsImport` (`ArrayList<String>` + import),
+`codeAction_varPrimitive_replacesWithPrimitiveType` (`int`),
+`codeAction_varUpwardProjectedType_replacesWithProjectedType` (`Number`),
+`codeAction_varAnonymousClass_offersNoReplace`, and
+`codeAction_explicitTypedLocal_offersNoReplace`.
+
+---
+
 ## CQ-0041 — `module-info.java` directive slots return no completion candidates
 
 ID: CQ-0041

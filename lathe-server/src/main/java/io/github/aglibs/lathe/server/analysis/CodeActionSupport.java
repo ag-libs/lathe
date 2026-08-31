@@ -10,6 +10,7 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
+import org.eclipse.lsp4j.TextEdit;
 
 final class CodeActionSupport {
 
@@ -36,6 +37,12 @@ final class CodeActionSupport {
       return ((TypeElement) dt.asElement()).getQualifiedName().toString();
     }
     return null;
+  }
+
+  // An import edit for the fully-qualified name, or null when none is needed (already imported,
+  // java.lang, same package) or the name is null. Shared by the code-action providers.
+  static TextEdit importEditFor(final AttributedFileAnalysis analysis, final String fqn) {
+    return fqn == null ? null : new ImportAnalyzer(analysis).importEdit(fqn);
   }
 
   static TreePath pathAt(

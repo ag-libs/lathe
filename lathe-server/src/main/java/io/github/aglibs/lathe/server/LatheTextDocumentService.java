@@ -152,7 +152,9 @@ final class LatheTextDocumentService implements TextDocumentService {
       final CodeActionParams params) {
     final var uri = params.getTextDocument().getUri();
     final var context = params.getContext();
-    return worker.submit(() -> session.codeActionFuture(uri, context)).thenCompose(f -> f);
+    return worker
+        .submit(() -> session.codeActionFuture(uri, params.getRange(), context))
+        .thenCompose(f -> f);
   }
 
   @Override

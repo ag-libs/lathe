@@ -301,38 +301,7 @@ No active FR gaps remain; resolved entries are in [gaps-archive.md](gaps-archive
 Active `textDocument/codeAction` provider gaps. Resolved CA entries are in
 [gaps-archive.md](gaps-archive.md).
 
-## CA-5 — No code action to replace `var` with the inferred type
-
-**Status: accepted — Target: M2**
-
-### Observed behaviour
-
-On a `var` local declaration, no code action offers to replace `var` with the inferred explicit type.
-Expected: a `Refactor` action *"Replace 'var' with '<Type>'"* that rewrites the declaration and adds
-any needed import. (Code actions are not exposed by `dev/explore.py`; verified in-editor and via the
-code-action test harness.)
-
-### Root cause
-
-`SourceAnalysisSession.codeAction` dispatches only by `DiagnosticPayload.Kind` (`TYPE_REF`,
-`UNREPORTED_EXCEPTION`, `VARIABLE_REF`, `MISSING_METHOD_IMPL`). A `var` declaration is valid Java and
-raises no diagnostic, so no provider is invoked.
-
-### Proposed direction
-
-Add a request-driven (non-diagnostic) code-action path: when a `codeAction` range sits on a `var`
-`VariableTree`, offer the refactor via a new `ReplaceVarProvider` invoked from a context scan rather
-than the error-driven `Kind` switch. Detect the `var` declaration with `CodeActionSupport.pathAt`,
-infer the type via `Trees.getTypeMirror` (as `DeclareVariableProvider` already does), render it with
-`TypeDisplayFormatter`, and add an import via `ImportAnalyzer.importEdit`. Skip when the type is
-undenotable (error/null, intersection, capture/wildcard, anonymous), where keeping `var` is correct.
-Kind `Refactor`, no attached diagnostics.
-
-### Regression targets
-
-None yet — to be defined when scheduled (positive: `var s = "x"` → `String`, `var l = new
-ArrayList<String>()`; negative: undenotable capture from a chained stream; `var` in a field
-initialiser).
+No active CA gaps remain; resolved entries are in [gaps-archive.md](gaps-archive.md).
 
 ---
 

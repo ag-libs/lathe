@@ -69,7 +69,7 @@ ships (see "Deferred to backlog" below).
 
 ### Correctness gaps (triaged)
 
-- Add a "replace `var` with the inferred type" code action ([CA-5](gaps/gaps.md)).
+All triaged correctness gaps are resolved — see [gaps-archive.md](gaps/gaps-archive.md).
 
 ### Refactoring
 

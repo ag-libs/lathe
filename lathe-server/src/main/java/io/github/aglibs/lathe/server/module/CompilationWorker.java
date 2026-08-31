@@ -40,6 +40,7 @@ import org.eclipse.lsp4j.FoldingRange;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.SignatureHelp;
 import org.eclipse.lsp4j.TypeHierarchyItem;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
@@ -331,9 +332,10 @@ public final class CompilationWorker {
       final String uri,
       final String content,
       final int version,
+      final Range range,
       final List<CodeActionRequest> requests,
       final WorkspaceTypeIndex typeIndex) {
-    return submit(ctx -> ctx.codeAction(uri, content, version, requests, typeIndex));
+    return submit(ctx -> ctx.codeAction(uri, content, version, range, requests, typeIndex));
   }
 
   public CompletableFuture<List<SemanticToken>> semanticTokens(

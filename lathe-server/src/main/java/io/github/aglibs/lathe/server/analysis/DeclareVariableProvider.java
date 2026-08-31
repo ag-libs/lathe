@@ -82,11 +82,9 @@ final class DeclareVariableProvider implements CodeActionProvider {
     final var edits = new ArrayList<TextEdit>();
     edits.add(new TextEdit(new Range(startPos, endPos), "%s %s".formatted(typePart, varName)));
 
-    if (fqn != null) {
-      final var importEdit = new ImportAnalyzer(analysis).importEdit(fqn);
-      if (importEdit != null) {
-        edits.add(importEdit);
-      }
+    final var importEdit = CodeActionSupport.importEditFor(analysis, fqn);
+    if (importEdit != null) {
+      edits.add(importEdit);
     }
 
     final Diagnostic diag = request.diag();

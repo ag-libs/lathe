@@ -96,6 +96,7 @@ import org.eclipse.lsp4j.MessageActionItem;
 import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.SemanticTokens;
 import org.eclipse.lsp4j.ShowMessageRequestParams;
 import org.eclipse.lsp4j.SignatureHelp;
@@ -1680,7 +1681,7 @@ final class WorkspaceSession {
   }
 
   CompletableFuture<List<Either<Command, CodeAction>>> codeActionFuture(
-      final String uri, final CodeActionContext context) {
+      final String uri, final Range range, final CodeActionContext context) {
     final OpenDocument openFile = docs.get(uri);
     if (openFile == null) {
       return CompletableFuture.completedFuture(List.of());
@@ -1695,9 +1696,6 @@ final class WorkspaceSession {
             .map(diag -> toCodeActionRequest(uri, diag))
             .filter(Objects::nonNull)
             .toList();
-    if (requests.isEmpty()) {
-      return CompletableFuture.completedFuture(List.of());
-    }
 
     final Set<String> neededTypeNames =
         requests.stream()
@@ -1714,7 +1712,7 @@ final class WorkspaceSession {
                     openEntries -> {
                       final var enriched = buildEnrichedIndex(baseIndex, openEntries);
                       return moduleWorker.codeAction(
-                          uri, openFile.content(), openFile.version(), requests, enriched);
+                          uri, openFile.content(), openFile.version(), range, requests, enriched);
                     })
                 .exceptionally(
                     ex -> logAndReturn(ex, "[codeAction] failed for %s".formatted(uri), List.of())),
