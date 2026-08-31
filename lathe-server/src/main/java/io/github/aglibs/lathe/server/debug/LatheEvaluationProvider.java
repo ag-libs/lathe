@@ -1,7 +1,9 @@
 package io.github.aglibs.lathe.server.debug;
 
 import com.microsoft.java.debug.core.IEvaluatableBreakpoint;
+import com.microsoft.java.debug.core.adapter.IDebugAdapterContext;
 import com.microsoft.java.debug.core.adapter.IEvaluationProvider;
+import com.microsoft.java.debug.core.adapter.IStackFrameManager;
 import com.sun.jdi.ClassType;
 import com.sun.jdi.InterfaceType;
 import com.sun.jdi.Location;
@@ -53,8 +55,19 @@ final class LatheEvaluationProvider implements IEvaluationProvider {
   // isLocked()) from the event-hub thread to suppress nested events.
   private final Map<Long, ReentrantLock> perThread = new ConcurrentHashMap<>();
 
+  // java-debug's stack-frame cache for the current session, captured in initialize(). An invocation
+  // resumes the thread and invalidates the StackFrame objects java-debug cached for the Variables
+  // view, so it is refreshed after each invocation (see reloadFrames / DB-6).
+  private volatile IStackFrameManager stackFrames;
+
   LatheEvaluationProvider(final WorkspaceModuleRegistry workspace, final List<Path> sourceRoots) {
     this.frames = new FrameSources(workspace, sourceRoots);
+  }
+
+  @Override
+  public void initialize(
+      final IDebugAdapterContext debugContext, final Map<String, Object> options) {
+    this.stackFrames = debugContext.getStackFrameManager();
   }
 
   @Override
@@ -222,8 +235,33 @@ final class LatheEvaluationProvider implements IEvaluationProvider {
             return body.run();
           } catch (final Exception e) {
             throw new EvaluationException("invocation failed: " + e.getMessage(), e);
+          } finally {
+            reloadFrames(thread);
           }
         });
+  }
+
+  /**
+   * Refresh java-debug's cached stack frames after an invocation. The invocation momentarily
+   * resumed and re-suspended {@code thread}, permanently invalidating every prior {@link
+   * StackFrame} — including the ones java-debug cached for the Variables view. Reloading them here
+   * (the moment Lathe resumed the thread, which java-debug never sees because {@link
+   * #isInEvaluation} suppresses the resume/suspend events) keeps a later {@code variables}/{@code
+   * scopes} request from reading a stale frame and throwing {@code InvalidStackFrameException}
+   * (DB-6). Best-effort: a thread that is no longer suspended yields an empty cache, never an error
+   * out of here.
+   */
+  private void reloadFrames(final ThreadReference thread) {
+    final IStackFrameManager cache = stackFrames;
+    if (cache == null) {
+      return;
+    }
+
+    try {
+      cache.reloadStackFrames(thread);
+    } catch (final RuntimeException e) {
+      LOG.fine(() -> "[eval] stack-frame reload after invocation skipped: " + e.getMessage());
+    }
   }
 
   @Override
