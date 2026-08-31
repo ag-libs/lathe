@@ -18,6 +18,7 @@ Each gap keeps its area prefix; the area is the discovery family, not a strict f
 | `WS-N` | workspace lifecycle | Workspace freshness and lifecycle: reactor mirror / type-index staleness, source watching, sync prompting, and reload |
 | `TE-N` | test execution | Maven test-fork capture, replay launch fidelity, and test-classpath isolation |
 | `DB-N` | debug & evaluation | In-process DAP adapter and expression-evaluator scope, fidelity, and coverage |
+| `NV-N` | neovim client | The shipped Neovim plugin (`lua/lathe/…`) and its recommended configuration |
 
 ## Finding the work for a release
 
@@ -570,6 +571,88 @@ None yet — to be defined when the fix is scheduled.
 
 ---
 
+## TE-4 — Replay working directory does not match Maven's (module basedir)
+
+**Status: accepted — Target: M2**
+
+### Observed behaviour
+
+Tests and `main` runs that pass under `mvn` fail under Lathe's replay because they resolve
+relative paths against a different current directory. Example, a test reading a fixture by a
+project-relative source path:
+
+```
+java.lang.AssertionError: src/test/resources/fixtures/logo.png
+    at com.example.app.AppResourceTest.getPutDelete(AppResourceTest.java:455)
+```
+(Genericised; the real class and path are from a private workspace.)
+
+### Root cause
+
+Maven runs the Surefire fork (and `exec`/`main`) with the JVM working directory set to the
+module's `${project.basedir}`, so relative paths like `src/test/resources/…`,
+`new File("target/…")`, or `Paths.get("config/…")` resolve against the module. Lathe replays a
+fresh JVM whose current directory is not set the same way (it inherits the server/launcher cwd,
+e.g. the reactor root), so those relative paths point elsewhere and the run fails.
+
+### Proposed direction
+
+Set the replay JVM's working directory to the module basedir (the same directory Surefire uses),
+for both test and `main` replay, so relative-path resolution matches Maven. A run-configuration
+overlay may later override it (see [run-configuration.md](../guide/run-configuration.md)), but the
+default must match Maven. Confirm the basedir is captured (or derivable from the manifest) per
+module.
+
+### Regression targets
+
+None yet — to be defined when scheduled (a replay whose test reads a module-relative resource
+path passes; assert the launch's working directory equals the module basedir).
+
+---
+
+## TE-5 — JPMS test module runs as a named module in replay, breaking reflective test access
+
+**Status: accepted — Target: M2**
+
+### Observed behaviour
+
+Running a package's tests through the neotest panel, a JPMS module's tests fail with reflective
+access errors that do **not** occur under `mvn`:
+
+```
+org.junit.platform.commons.PreconditionViolationException: Failed to read @RegisterExtension field …
+Caused by: java.lang.reflect.InaccessibleObjectException: Unable to make field … accessible:
+  module com.example.app does not "opens com.example.app.internal" to unnamed module
+```
+
+The same tests pass in Maven. (Genericised; the real module/package names are from a private
+workspace.)
+
+### Root cause (suspected)
+
+The replay places the test module as a **named module on the module path**, so JUnit — loaded in
+the **unnamed** module — cannot reflectively open the test packages (`@RegisterExtension` fields,
+test constructors) without an `opens`/`--add-opens` directive. Maven Surefire avoids this, either
+by running the tests on the **classpath** (everything in the unnamed module, no `opens` needed) or
+by injecting the required `--add-opens`. The captured replay launch does not reproduce that, so
+reflection-heavy JUnit setup fails. Needs confirmation of exactly how Surefire places/loads the
+module vs. what the capture records.
+
+### Proposed direction
+
+Reproduce Surefire's effective module placement and `--add-opens` for the test fork in the replay
+— i.e. capture (or derive) the classpath-vs-module-path decision and the `--add-opens` Surefire
+applied, so reflective test frameworks behave identically. Ties into the existing capture of
+`--add-opens`/`--add-reads`/`--add-exports` and module directives; see
+[test-capture.md](../guide/test-capture.md).
+
+### Regression targets
+
+None yet — to be defined when scheduled (a modular test project with `@RegisterExtension` /
+reflective setup runs green under replay, matching `mvn test`).
+
+---
+
 # Debug & Evaluation Gaps (DB)
 
 Gaps in the in-process DAP adapter and the two-stage expression evaluator (see
@@ -736,3 +819,155 @@ python3 dev/debug_probe.py --workspace <ws> <TestFile.java> --line <N> --method 
 
 - `LatheCompletionsMappingTest` (LSP→DAP item mapping, replace-range and kind).
 - `dev/debug-e2e.sh` debug-console completion cases (local, static member, static import, `this.`).
+
+---
+
+## DB-5 — Local inspection fails opaquely when the frame has no local-variable table
+
+**Status: accepted — Target: M2**
+
+### Observed behaviour
+
+At a breakpoint, evaluating a local fails with a raw internal exception:
+
+```
+dap> total
+Cannot evaluate because of io.github.aglibs.lathe.server.debug.EvaluationException:
+no local-variable table for this frame.
+```
+
+The name is a genuine local in the suspended method, but the JDI frame exposes no
+`LocalVariableTable`, so `JdiInterpreter` (`JdiInterpreter.java:224`) cannot resolve it.
+
+### Root cause
+
+Lathe debugs by replaying the reactor's mirrored `.lathe/` bytecode, and the compiler shim
+compiles with the project's own `CompilerConfiguration` (`LatheCompiler.performCompile` →
+`javacCompiler.performCompile(config)`, then mirrors the output). It neither adds nor strips
+debug flags, so a `LocalVariableTable` is present exactly when the project's build emits it.
+
+`maven-compiler-plugin` defaults to `<debug>true>` → `-g` → full debug info **including** the
+LVT, so a **default project debugs locals fine**. The table is absent only when:
+
+- the project reduces debug info — `<debug>false>` (`-g:none`) or `<debugLevel>lines,source>`
+  (lines+source, no vars);
+- a shade/optimize/obfuscate step strips it; or
+- the frame is **synthetic** — a lambda body or bridge/accessor method carries no LVT even
+  under `-g` (a javac property, independent of the project).
+
+Lathe cannot cleanly force `-g:vars`, because the shim's output *is* the project's
+`target/classes` (then mirrored) — forcing full debug would override the project's own choice
+for its real artifacts.
+
+### Proposed direction
+
+Scoped as debug UX/reliability, not a capability change:
+
+- replace the raw `EvaluationException` with a clear, actionable diagnostic — e.g. "compiled
+  without local-variable debug info (`-g:vars`), or a synthetic/lambda frame — locals are
+  unavailable here", so users see a build-info cause rather than a Lathe failure.
+- optionally, investigate whether a debug launch could recompile the replayed module with
+  `-g:vars` into `.lathe/` (decoupled from the project's release output) so locals are robust;
+  scope against the mirror-vs-recompile model as a follow-up.
+
+### Probe commands
+
+Reproduce by debugging a method whose class was compiled without `-g:vars` (or a lambda frame)
+and evaluating a local (`dap> <name>`).
+
+### Regression targets
+
+None yet — to be defined when scheduled.
+
+---
+
+## DB-6 — Variable inspection throws `InvalidStackFrameException` after an invocation-resume
+
+**Status: accepted — Target: M2**
+
+### Observed behaviour
+
+During a suspended debug session, requesting the Variables/scopes view fails:
+
+```
+Failed to get variables. Reason: com.sun.jdi.InvalidStackFrameException: Thread has been resumed
+```
+
+Evaluation of individual locals may still work, but expanding the scope (the Variables pane /
+`variables` request) errors intermittently.
+
+### Root cause
+
+A JDI `StackFrame` is valid only while its thread stays suspended. Lathe's **evaluate** path is
+built around this: `JdiInterpreter.frame()` (`JdiInterpreter.java:106`) never caches the frame,
+re-fetching it after any invocation, because "a method/constructor call, or a cold-class
+force-load … resumes the thread and permanently invalidates every prior `StackFrame`" (see also
+`LatheEvaluationProvider.java:49`).
+
+But the **variables/scopes** request is handled by Microsoft java-debug, which caches frames by
+id in its own frame manager. When a Lathe evaluation invokes a method (or force-loads a cold
+class), it momentarily resumes the thread and invalidates *all* frames — including the ones
+java-debug cached for the Variables view. The next `variables` request then reads a stale frame
+and throws `InvalidStackFrameException`. So Lathe's own guard does not extend to the DAP
+variables path it hosts.
+
+### Proposed direction
+
+Ensure the hosted java-debug frame cache is refreshed (or invalidated) whenever a Lathe
+evaluation resumes the thread — e.g. drop/rebuild java-debug's cached frames after an
+invocation, or surface a retry — so an evaluate that invokes a method does not break the
+subsequent Variables view. Confirm the exact trigger (invocation-based evaluate vs. any
+step/resume) when scheduled.
+
+### Probe commands
+
+Not reproducible through `debug_probe.py` today (frame-scoped evaluate only). Reproduced in an
+interactive DAP session: at a breakpoint, run an evaluation that invokes a method, then expand
+the Variables view.
+
+### Regression targets
+
+None yet — to be defined when scheduled.
+
+---
+
+# Neovim Client Gaps (NV)
+
+Gaps in the shipped Neovim client plugin (`lua/lathe/…`) and its recommended configuration, as
+distinct from the server's LSP/DAP surface. Resolved NV entries move to
+[gaps-archive.md](gaps-archive.md).
+
+## NV-1 — `:LatheStart` is unavailable in the exact case it exists for (no Java file open)
+
+**Status: accepted — Target: M2**
+
+### Observed behaviour
+
+Opening Neovim in a `.lathe` workspace directory **without** opening any `.java` file, the
+`:LatheStart` command does not exist, so the server cannot be started for workspace-level
+navigation (e.g. `workspace/symbol`) from a dashboard or empty buffer — the exact scenario
+`:LatheStart` was added for.
+
+### Root cause
+
+The recommended install (`docs/guide/editors/neovim.md`) loads the plugin with `lazy.nvim` and
+`ft = "java"`. Its `config` — which calls `require('lathe').setup()` and registers `:LatheStart`
+(`lathe.lua:165`) — therefore runs only when the first Java file is opened. With no Java buffer,
+`setup()` never runs and the command is never created.
+
+### Proposed direction
+
+Make `:LatheStart` reachable before a Java file is open, without eagerly starting the server on
+every Neovim launch:
+
+- add `cmd = { "LatheStart" }` to the recommended lazy spec so the plugin also loads on the
+  command, and document it; and/or
+- register `:LatheStart` from a lightweight `plugin/` script sourced at startup that defers
+  `require('lathe').setup()` until first use.
+
+The eager JVM start stays user-invoked (`:LatheStart`), never automatic.
+
+### Regression targets
+
+None yet — to be defined when scheduled (a Neovim spec that loads the plugin without a Java
+buffer and asserts `:LatheStart` exists).
