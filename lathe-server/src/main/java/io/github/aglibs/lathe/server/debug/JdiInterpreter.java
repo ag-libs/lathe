@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server.debug;
 
+import com.sun.jdi.AbsentInformationException;
 import com.sun.jdi.ArrayReference;
 import com.sun.jdi.BooleanValue;
 import com.sun.jdi.ByteValue;
@@ -220,8 +221,12 @@ final class JdiInterpreter {
       }
 
       return current.getValue(variable);
-    } catch (final com.sun.jdi.AbsentInformationException e) {
-      throw new EvaluationException("no local-variable table for this frame", e);
+    } catch (final AbsentInformationException e) {
+      // Lathe's on-save compile forces -g, so a replayed frame normally has a local-variable table.
+      // A miss here is a class Lathe did not compile (a precompiled dependency, or a synthetic
+      // lambda/bridge frame) — locals simply cannot be read from it.
+      throw new EvaluationException(
+          "local '%s' is unavailable: this frame has no local-variable table".formatted(name), e);
     }
   }
 

@@ -748,58 +748,52 @@ python3 dev/debug_probe.py --workspace <ws> <TestFile.java> --line <N> --method 
 
 ---
 
-## DB-5 — Local inspection fails opaquely when the frame has no local-variable table
+## DB-5 — Local inspection fails because on-save compiles strip the local-variable table
 
-**Status: accepted — Target: M2**
+**Status: resolved**
 
 ### Observed behaviour
 
-At a breakpoint, evaluating a local fails with a raw internal exception:
-
-```
-dap> total
-Cannot evaluate because of io.github.aglibs.lathe.server.debug.EvaluationException:
-no local-variable table for this frame.
-```
-
-The name is a genuine local in the suspended method, but the JDI frame exposes no
-`LocalVariableTable`, so `JdiInterpreter` (`JdiInterpreter.java:224`) cannot resolve it.
+At a breakpoint, both the Variables/scopes pane and local evaluation come up empty for a
+genuine local in the suspended method — the pane silently shows no locals, and `dap> <name>`
+fails with `EvaluationException: no local-variable table for this frame`. Breakpoints still
+bind (the line stops), so only locals are affected. Reproduced on an ordinary `@Test` method
+that a healthy `-g` build would debug fine.
 
 ### Root cause
 
-Lathe debugs by replaying the reactor's mirrored `.lathe/` bytecode, and the compiler shim
-compiles with the project's own `CompilerConfiguration` (`LatheCompiler.performCompile` →
-`javacCompiler.performCompile(config)`, then mirrors the output). It neither adds nor strips
-debug flags, so a `LocalVariableTable` is present exactly when the project's build emits it.
+Not the project's build flags — Lathe's own on-save compile.
 
-`maven-compiler-plugin` defaults to `<debug>true>` → `-g` → full debug info **including** the
-LVT, so a **default project debugs locals fine**. The table is absent only when:
+- On every save, `didSave` → `WorkspaceSession.onSave` runs a **FULL** compile
+  (`WorkspaceSession.java`, `submitCompile(..., CompileMode.FULL, ...)`).
+- A FULL compile calls `task.generate()` (`JavacRunner.compileFull`), **writing `.class` files**
+  to `config.latheClassesDir()` = `.lathe/<module>/classes` (or `test-classes`) — the **same**
+  directory the Maven compiler shim mirrors into.
+- `ModuleSourceCompiler.buildOptions` added `--release`, `-encoding`, `-parameters`,
+  `--enable-preview`, and the project's captured `compilerArgs`, but **never `-g`**. javac's
+  default without `-g` is `-g:source,lines` → `LineNumberTable` (breakpoints bind) but **no
+  `LocalVariableTable`**.
 
-- the project reduces debug info — `<debug>false>` (`-g:none`) or `<debugLevel>lines,source>`
-  (lines+source, no vars);
-- a shade/optimize/obfuscate step strips it; or
-- the frame is **synthetic** — a lambda body or bridge/accessor method carries no LVT even
-  under `-g` (a javac property, independent of the project).
+So on save, the server overwrote the Maven-mirrored bytecode (which had the LVT, from
+`maven-compiler-plugin`'s `<debug>true>` default) with its own `-g`-less version, and the debug
+session — replaying `.lathe/` — loaded the class with no locals. Files not yet re-saved kept the
+Maven mirror and debugged fine, which is why the failure looked build-specific.
 
-Lathe cannot cleanly force `-g:vars`, because the shim's output *is* the project's
-`target/classes` (then mirrored) — forcing full debug would override the project's own choice
-for its real artifacts.
+### Resolution
 
-### Proposed direction
+`ModuleSourceCompiler.buildOptions` now adds `-g` for `CompileMode.FULL`, so the classes the
+server writes into `.lathe/` carry a `LocalVariableTable` and the replayed bytecode always
+exposes locals. FAST/OPEN only `analyze()` (no bytecode written), so they are unchanged.
 
-Scoped as debug UX/reliability, not a capability change:
-
-- replace the raw `EvaluationException` with a clear, actionable diagnostic — e.g. "compiled
-  without local-variable debug info (`-g:vars`), or a synthetic/lambda frame — locals are
-  unavailable here", so users see a build-info cause rather than a Lathe failure.
-- optionally, investigate whether a debug launch could recompile the replayed module with
-  `-g:vars` into `.lathe/` (decoupled from the project's release output) so locals are robust;
-  scope against the mirror-vs-recompile model as a follow-up.
+The `no local-variable table` case is now rare — a class Lathe did not compile (a precompiled
+dependency) or a synthetic lambda/bridge frame — so `JdiInterpreter.readLocal` surfaces a single
+concise message (`local '<name>' is unavailable: this frame has no local-variable table`)
+instead of the earlier build-advice wording, which the fix made misleading.
 
 ### Probe commands
 
-Reproduce by debugging a method whose class was compiled without `-g:vars` (or a lambda frame)
-and evaluating a local (`dap> <name>`).
+Reproduce the *old* behaviour by compiling with `-g:lines,source` (line numbers, no vars) and
+debugging a local; with the fix, a normal on-save workflow exposes locals in every module.
 
 ### Regression targets
 

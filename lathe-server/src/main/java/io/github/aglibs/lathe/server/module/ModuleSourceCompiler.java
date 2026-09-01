@@ -212,6 +212,17 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
     if (config.enablePreview()) {
       opts.add("--enable-preview");
     }
+
+    // A FULL compile writes .class files into .lathe/, overwriting the Maven-mirrored bytecode that
+    // the debugger replays. javac's default without -g omits the LocalVariableTable, so those
+    // classes would keep line numbers (breakpoints bind) but lose locals -- the Variables view and
+    // local evaluation then fail even when the project's own build emits full debug info. Force -g
+    // so the replayed bytecode always carries locals (DB-5). FAST/OPEN only analyze, never
+    // generate.
+    if (mode == CompileMode.FULL) {
+      opts.add("-g");
+    }
+
     opts.addAll(modeCompilerArgs(compilerArgs, mode));
     if (mode == CompileMode.FAST || mode == CompileMode.OPEN) {
       opts.add("-proc:none");
