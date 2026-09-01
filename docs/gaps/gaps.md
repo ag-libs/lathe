@@ -542,7 +542,7 @@ None yet — to be defined when the fix is scheduled.
 
 ## TE-4 — Replay working directory does not match Maven's (module basedir)
 
-**Status: accepted — Target: M2**
+**Status: resolved**
 
 ### Observed behaviour
 
@@ -572,10 +572,20 @@ overlay may later override it (see [run-configuration.md](../guide/run-configura
 default must match Maven. Confirm the basedir is captured (or derivable from the manifest) per
 module.
 
+### Resolution
+
+Fixed in `fix(run): set the replay working directory to the module basedir (TE-4)`. A required
+`workingDir` (module-relative to the workspace root) was added to `TestLaunchData` and
+`MainLaunchData`; the capture side sets it to `moduleRel` (`LaunchCapture` /
+`MainLaunchWriter.deriveLaunch`), and `RunOverlay.resolveCwd` resolves the replay cwd from it —
+`workspaceRoot.resolve(workingDir)` — unless a run-configuration overlay supplies an explicit
+`cwd`. An empty `workingDir` (the reactor-root module) resolves to the workspace root, matching
+Maven's Surefire/exec fork.
+
 ### Regression targets
 
-None yet — to be defined when scheduled (a replay whose test reads a module-relative resource
-path passes; assert the launch's working directory equals the module basedir).
+`RunOverlayTest` — asserts the resolved cwd equals the module basedir for the default case and
+that an explicit overlay `cwd` wins.
 
 ---
 
@@ -803,7 +813,7 @@ None yet — to be defined when scheduled.
 
 ## DB-6 — Variable inspection throws `InvalidStackFrameException` after an invocation-resume
 
-**Status: accepted — Target: M2**
+**Status: resolved**
 
 ### Observed behaviour
 
@@ -839,15 +849,28 @@ invocation, or surface a retry — so an evaluate that invokes a method does not
 subsequent Variables view. Confirm the exact trigger (invocation-based evaluate vs. any
 step/resume) when scheduled.
 
+### Resolution
+
+Fixed in `fix(debug): reload java-debug's frame cache after an in-eval invocation (DB-6)`.
+`LatheEvaluationProvider.initialize` captures the session's shared `IStackFrameManager` (the
+same cache every java-debug handler mutates), and `invokeGuarded` refreshes it in a `finally`
+via `reloadStackFrames(thread)` — the same primitive `StackTraceRequestHandler` uses — right
+after each invocation. That is the one moment core cannot cover on its own: Lathe's
+resume/suspend is hidden from java-debug because `isInEvaluation` suppresses those events, so no
+`stackTrace` gets re-driven to rebuild the cache. The reload runs inside the existing per-thread
+lock and is best-effort (a resumed thread yields an empty cache rather than an error), so no new
+lock or shared state is introduced.
+
 ### Probe commands
 
-Not reproducible through `debug_probe.py` today (frame-scoped evaluate only). Reproduced in an
+Not reproducible through `debug_probe.py` (frame-scoped evaluate only). Reproduced in an
 interactive DAP session: at a breakpoint, run an evaluation that invokes a method, then expand
 the Variables view.
 
 ### Regression targets
 
-None yet — to be defined when scheduled.
+`LatheEvaluationProviderTest` — asserts an invocation triggers `reloadStackFrames`, that a
+missing frame manager is a no-op, and that a reload failure is swallowed rather than surfaced.
 
 ---
 
