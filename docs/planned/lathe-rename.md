@@ -2,7 +2,8 @@
 
 ## Status
 
-Planned — M2. Approved design; no code yet.
+Planned — M2. Approved design; no code yet. The freshness gate was revised after a code audit of the
+reference pipeline — see Correctness gate and Resolved decision 2.
 
 This is the focused design the roadmap's M2 "Refactoring" item calls for
 ("prepare-rename and exact reactor rename edits, correctness-gated with explicit non-goals").
@@ -108,25 +109,58 @@ M2 does a minimal, cheap set and documents the rest as non-goals:
 Broader semantic conflicts (shadowing/hiding across scopes, overload collisions that change dispatch,
 visibility changes) are **not** detected in M2 and are listed as non-goals.
 
-### Correctness gate — freshness (WS-1 / WS-2)
+### Correctness gate — freshness (WS-1)
 
 The one corruption risk is a **missed occurrence**.
-Occurrence *content* is safe: disk candidates are read fresh at search time, so open and closed files
-reflect current bytes.
-The residual risk is a **stale type index**: override-family and subtype expansion for method and type
-renames read `WorkspaceTypeIndex`, which can lag after an out-of-editor edit or git branch switch
-(gap WS-1).
-A rename that expands over a stale hierarchy could miss or mis-target sites.
+An audit of the actual reference pipeline (below) narrows this risk considerably, and relocates it
+from the hierarchy index the original design worried about to the candidate token index.
 
-Gate, aligned with the M2 reliability work:
+How candidate discovery actually works:
+
+- **Discovery is a maintained grep, not a hierarchy query.** `ReferenceCandidateIndex`
+  (`lathe-server/.../server/ReferenceCandidateIndex.java`) is a `token → Set<URI>` map — every Java
+  identifier token to the set of files (open *and* closed, reactor-wide) that spell it.
+  `candidateUris(name)` returns every file mentioning the name; each is then attributed fresh by javac
+  and matched by semantic identity in `ReferenceLocator`. Occurrence *content* is therefore safe —
+  candidates are read fresh at search time.
+- **The persisted hierarchy index is consulted in exactly one branch.**
+  `ReferenceCandidatePlanner.planCandidates` reads `WorkspaceTypeIndex.transitiveSubtypes` **only** for
+  **fields** (via `narrowToFamily` → `overrideFamily`), to shrink the name-hit set to files that also
+  spell a family type. **Methods** use the broad name set (`return simpleCandidates`) — narrowing was
+  deliberately abandoned for them because it missed call sites (FR-011). **Types** discover via
+  import-spelling and same-package tokens (`planTypeCandidates`), not subtypes. Locals, parameters,
+  constructors, and enum constants use the token index only.
+- **The upward override family is computed live, not from the index.**
+  `ReferenceTarget.overriddenDeclarers` walks `types.directSupertypes(...)` over the freshly attributed
+  model, so a method's inherited-declarer set is always current.
+
+Consequences:
+
+- Methods and types ride grep + fresh compile + live match, with **no dependence on the persisted
+  hierarchy index**. The original premise — "method and type renames rely on the type index, so
+  freshness-gate them" — does not match the code.
+- The **only** correctness dependence on the stale-able `WorkspaceTypeIndex` is **field**
+  subtype-narrowing.
+- The dominant staleness axis is the **candidate token index for closed files** edited out-of-band
+  (branch switch, external tool) — a file that gained an occurrence out-of-editor may not be offered as
+  a candidate (WS-1). This affects every reference kind, and it affects Find References *identically*.
+
+So rename introduces **no new staleness** over Find References; both ride the same token index. The only
+thing that distinguishes rename is the *write*-vs-*read* blast radius — a missed read is a short list you
+re-run, a missed write is a silent half-rename.
+
+Gate for M2:
 
 - Renames whose scope is `DECLARING_FILE` — locals, parameters, exception/lambda parameters, type
-  parameters, and private members — are single-file, use cached analysis, and depend on no index; they
-  are **unconditionally safe**.
-- Method and type renames (which rely on the type index) are **refused when the workspace is
-  potentially stale**, surfacing the WS-2 advisory re-sync prompt, and proceed once the workspace is
-  fresh. Refuse-over-warn is the deliberate correctness choice: a wrong cross-module rename is silent
-  and severe.
+  parameters, and private members — are single-file, index-independent, and **unconditionally safe**.
+- **Field** rename uses the **broad name set (drop subtype-narrowing) for the rename path**, matching
+  what methods already do (FR-011). This removes `WorkspaceTypeIndex` from the rename correctness path
+  entirely, so *every* rename kind becomes index-independent and the hierarchy-staleness question
+  disappears.
+- The residual WS-1 exposure (closed files edited outside the editor) is then **identical to Find
+  References**. M2 accepts it with a documented limitation — rename is exactly as complete as
+  find-references — rather than building the WS-2 re-sync machinery the earlier design assumed. A
+  coarse freshness prompt can be layered on later if the write blast-radius warrants more than parity.
 
 ## Scope for M2 (the ~80%)
 
@@ -134,10 +168,13 @@ In — covered and tested:
 
 - **Locals, parameters, exception/lambda parameters, type parameters** — `DECLARING_FILE`, always safe,
   and the bulk of everyday renames.
-- **Fields** — private (file), package-private (module), public/protected (reactor).
-- **Methods** — non-overriding fully; overriding via the existing override-family expansion (freshness-gated).
+- **Fields** — private (file), package-private (module), public/protected (reactor). The rename path
+  uses the broad name set (no subtype-narrowing) so it stays index-independent (see Correctness gate).
+- **Methods** — non-overriding fully; overriding via the existing override-family expansion. Candidate
+  discovery is grep-based and the upward override family is computed live, so no freshness gate applies
+  (see Correctness gate).
 - **Types** (class / interface / enum / record) — reference updates plus the matching file rename for a
-  public top-level type (capability-guarded; freshness-gated).
+  public top-level type (capability-guarded). Discovery is import/package-token based, index-independent.
 - **Record components** — accessor, backing field, and canonical-constructor parameter updated together
   (Lathe already unifies these under the accessor identity).
 
@@ -158,7 +195,10 @@ In — covered and tested:
 Existing, reused as-is:
 
 - `ReferenceTarget` — identity, `scopeFor`, override-family, record-component normalization.
-- `ReferenceCandidatePlanner` / `ReferenceCandidateIndex` — candidate discovery (open + disk).
+- `ReferenceCandidatePlanner` / `ReferenceCandidateIndex` — candidate discovery (open + disk). Reused
+  as-is except that field rename requests the broad name set rather than the subtype-narrowed one, to
+  keep the rename path index-independent (see Correctness gate); this is a small planner option, not a
+  new discovery mechanism.
 - `WorkspaceSession` reference search — scope planning, open + closed-file fan-out, progress,
   cancellation, `CompilationAdmission` cap.
 - `ReferenceLocator` — per-occurrence name-token ranges, roles, range de-dup.
@@ -182,7 +222,7 @@ New:
   override family), type (with file rename), record component.
 - Cross-file: a rename whose edits land in multiple reactor modules.
 - Negatives: external/JDK symbol refused; illegal / reserved new name refused; same-scope duplicate
-  refused; stale-workspace method/type rename refused (WS-2 path).
+  refused. (No stale-workspace refusal — the rename path is index-independent; see Correctness gate.)
 - Resource-op fallback: with `resourceOperations` unadvertised, a public-type rename returns text edits
   and reports the file was not renamed.
 - Invoker (`LspSmokeTest`): drive `prepareRename` + `rename` against the multi-module fixture and assert
@@ -194,7 +234,11 @@ New:
 
 1. **Type file rename** — include the `RenameFile` resource operation, guarded on the client
    `resourceOperations` capability, with a text-edits-only fallback.
-2. **Freshness** — refuse method/type renames when the workspace is potentially stale (surfacing WS-2);
-   file-scoped renames are always allowed.
+2. **Freshness** — revised after a code audit (see Correctness gate). The persisted hierarchy index is
+   in the correctness path only for field subtype-narrowing; methods and types ride a grep + live match.
+   Rename therefore drops subtype-narrowing on the field path to become fully index-independent, and
+   accepts the residual closed-file WS-1 exposure as identical to Find References (documented
+   limitation) rather than refusing renames or building WS-2 re-sync machinery for M2. This supersedes
+   the original "refuse method/type renames when stale" gate.
 3. **Conflict depth** — minimal for M2 (legal identifier + same-scope duplicate); broader conflicts are
    documented non-goals.
