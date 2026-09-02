@@ -880,4 +880,158 @@ Gaps in the shipped Neovim client plugin (`lua/lathe/…`) and its recommended c
 distinct from the server's LSP/DAP surface. Resolved NV entries move to
 [gaps-archive.md](gaps-archive.md).
 
-No active NV gaps remain; resolved entries are in [gaps-archive.md](gaps-archive.md).
+(NV-1 is resolved in [gaps-archive.md](gaps-archive.md); active entries continue at NV-2.)
+
+## NV-2 — A neotest test run gives no completion notification, only a "Running" start toast
+
+**Status: accepted — Target: M2**
+
+### Observed behaviour
+
+Starting a neotest run shows a single `vim.notify` toast — `Running <label>`
+(`lua/lathe/neotest.lua`, `run_spec`) — and then nothing when the run finishes.
+The user gets no at-a-glance summary of how the run went; they must open the summary panel or the
+docked output to learn the outcome.
+
+A `main` run, by contrast, notifies on **both** ends: `Running <class>` at launch and
+`<class> exited <code>` on completion (`lua/lathe/run.lua`, `on_finished`), the latter at `WARN`
+level on a non-zero exit. The server also logs a one-line INFO result per run
+(mode, target, elapsed ms, counts) that never surfaces in the editor.
+
+### Root cause
+
+The neotest path emits only the start toast in `run_spec`; `results()` reconciles per-test statuses
+into the summary tree and gutters but does not raise a run-level completion notification, and neither
+does the `lathe/testEvent` stream handler. There is no completion-summary surface equivalent to
+`run.lua`'s `on_finished`.
+
+### Proposed direction — what to present
+
+A single concise completion toast per run, mirroring the server's `[operation] target detail Xms
+outcome` log convention and the summary already computed in `results()`:
+
+- **Scope** — the run label (method / class / package) already passed to `run_spec`.
+- **Counts** — passed / failed / skipped, plus the total, derived from the same
+  `outcome.testResults` and fan-out `results()` already builds.
+- **Duration** — elapsed wall-clock ms for the replay (the server can return it on the run outcome;
+  the client otherwise times from the start toast).
+- **Level** — `INFO` when nothing failed, `WARN` when any test failed or the run was blocked/errored,
+  so a failure is visible without reading the text.
+
+Example: `tests io.example.portal — 12 passed, 1 failed, 2 skipped (1.8s)` at `WARN`.
+Keep it to one line (no per-test spam — the summary panel already itemises), fire it once from
+`results()` (or the run-future completion), and suppress it for a still-streaming partial pass.
+Reuse `run.lua`'s `notify` helper shape (`{ title = "Lathe" }`) for consistency.
+
+### Regression targets
+
+None yet — to be defined when scheduled (all-pass run → one INFO toast with counts; a run with a
+failure → one WARN toast; counts match `results()`).
+
+---
+
+## NV-3 — Debugging a test does not update neotest gutters or the summary panel
+
+**Status: accepted — Target: M2**
+
+### Observed behaviour
+
+Running a test via neotest paints the gutter signs and summary tree with pass/fail status.
+Debugging the same test via `:LatheDebug` leaves both **unchanged** — the debug session runs, but
+neotest never learns the result, so gutters and the summary panel stay at their previous state (or
+blank).
+
+### Root cause
+
+`:LatheDebug` (`lua/lathe/dap.lua`, `M.debug`) resolves the runnable under the cursor and calls
+`dap.run(M._test_config_for(test))` directly, launching the `lathe` nvim-dap adapter
+(`lathe.debug.test`). This path is entirely parallel to neotest: it never goes through the adapter's
+`build_spec`/`results()`, and neotest is not told a run started or finished, so it has no result to
+apply to the gutter/summary consumers.
+
+### Proposed direction
+
+Route test-debugging through neotest so the same `results()` reconciliation updates the UI, rather
+than bypassing it. Two candidate shapes to weigh when scheduled:
+
+1. A neotest **`dap` strategy** for the adapter: `neotest.run.run({ strategy = "dap" })` builds the
+   spec, launches the Lathe debug adapter (reusing `lathe.debug.test`'s DAP-port handshake), and
+   reports the captured per-test results back to neotest on session end — the neotest-idiomatic path.
+2. Failing that, have the debug session's terminal outcome feed the captured `testResults` into
+   neotest's result state for the debugged position(s), so gutters/summary update even though the run
+   was DAP-driven.
+
+Ties into NV-4 (both stem from the debug path not sharing the run/neotest output+results surface).
+
+### Regression targets
+
+None yet — to be defined when scheduled (debugging a passing test marks it passed in the summary; a
+failing one marks it failed).
+
+---
+
+## NV-4 — Debugging a test flashes the output window and never shows pass/fail
+
+**Status: accepted — Target: M2**
+
+### Observed behaviour
+
+When running a test, the docked output console opens and **stays** open, streaming the replay
+transcript, and the run resolves to a visible pass/fail. When **debugging** a test, the output window
+"opens and closes quickly," and there is no indication whether the test passed or failed — the user
+wants the debug path to behave like the run path here.
+
+### Root cause
+
+The run and neotest paths call `output.reset()` / `output.ensure_open()` and keep the shared docked
+console (`lua/lathe/output.lua`) for the life of the run, then surface an outcome
+(`run.lua on_finished`, or neotest's `results()`). The debug path (`lua/lathe/dap.lua`) does neither:
+it hands off to nvim-dap (its own REPL/console) and only calls `stackdecorate.decorate_live_output()
+` on `event_terminated`/`event_exited`. Any transient appearance of the Lathe console during launch
+is not kept open, and there is no results()/exit-code surface, so pass/fail is never shown.
+
+### Proposed direction
+
+Give the debug path the same output+outcome surface as a run: open and keep the shared docked
+console for the debug session, stream the debuggee's transcript into it, and on session end surface
+the outcome (pass/fail from the captured test results or exit code) the same way `on_finished` /
+`results()` do. Best delivered with NV-3 (a neotest `dap` strategy naturally reuses the run path's
+output and results surfaces).
+
+### Regression targets
+
+None yet — to be defined when scheduled (a debug session keeps the docked console open and reports a
+terminal pass/fail).
+
+---
+
+## NV-5 — No way to re-run only the failed tests from the last neotest run
+
+**Status: accepted — Target: M2**
+
+### Observed behaviour
+
+After a neotest run leaves some tests red, there is no command or keymap to re-run **just** those
+failed tests. The user must re-run the whole class/package (paying for the passing tests again) or
+navigate to each failure and run it individually.
+
+### Root cause
+
+The shipped neotest keymaps (`plugins/lathe.lua`: `<leader>tt` nearest, `<leader>tf` file,
+`<leader>ts` summary, `<leader>tS` stop) expose run-nearest/file/stop but no "run failed" surface,
+and neotest core has no built-in status-filtered run — the failed set has to be gathered from
+neotest's result state and re-run explicitly.
+
+### Proposed direction
+
+Add a client helper + keymap (e.g. `<leader>tl` / a `:LatheTestFailed`-style command) that collects
+the failed leaf positions from the last run — from `neotest` result state, or from a small
+last-run failed-set the adapter already has the data to track (`results()` sees every status) — and
+re-runs exactly those positions (one spec per class, reusing `build_spec`, so it stays a single
+replay per class rather than one JVM per method). Decide when scheduled whether to source the failed
+set from neotest state or track it in the adapter.
+
+### Regression targets
+
+None yet — to be defined when scheduled (after a run with N failures, the re-run targets exactly
+those N positions and no passing ones).
