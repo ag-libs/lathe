@@ -16,11 +16,11 @@ When status wording in a feature design conflicts with this roadmap, this roadma
 | Milestone | Name | Version | Audience | Distribution |
 |---|---|---|---|---|
 | M1 | Internal Preview | `0.1.0-SNAPSHOT` | Internal daily use | Build from source |
-| M2 | Neovim Public Beta | `0.1.0-beta.N` | Public Neovim users | Maven Central (beta) |
+| M2 | Neovim Public Beta | `0.x.y` (beta) | Public Neovim users | Maven Central (beta) |
 
 M1 (internal) is complete and M2 (public beta) is the active milestone. M2 publishes beta artifacts to
 Maven Central, so public users install from released coordinates rather than building from source.
-Everything beyond M2 — general availability (a stable `0.1.0`), VS Code, and further features — is
+Everything beyond M2 — general availability (a stable `1.0.0`), VS Code, and further features — is
 unscheduled and lives in the [Backlog](#backlog); the next release is planned only after public-beta
 feedback. Run/test execution and the debugger have shipped and are part of the M2 beta.
 
