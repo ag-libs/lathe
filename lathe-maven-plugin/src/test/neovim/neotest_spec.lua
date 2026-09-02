@@ -594,4 +594,42 @@ do
   spec.check("synthesized outcome defaults a missing code to -1", adapter._synthesized_outcome(nil).exitCode, -1)
 end
 
+-- NV-2: the one-line run-completion toast (_run_summary) over the run context + per-test map. Counts
+-- come from the method-level `real` map; a failure/blocked/errored/skip run is WARN, a clean one INFO;
+-- elapsed ms renders as one-decimal seconds and is omitted when untimed.
+do
+  local real_pass = { ["C#a()"] = { status = "passed" }, ["C#b()"] = { status = "passed" } }
+  local pass = adapter._run_summary({ label = "C", outcome = { launched = true, exitCode = 0 } }, real_pass, 1800)
+  spec.check("all-pass summary text", pass.text, "C — 2 passed, 0 failed, 0 skipped (1.8s)")
+  spec.check("all-pass summary is INFO", pass.warn, false)
+
+  local real_mixed = {
+    ["C#a()"] = { status = "passed" },
+    ["C#b()"] = { status = "failed" },
+    ["C#c()"] = { status = "skipped" },
+  }
+  local mixed = adapter._run_summary({ label = "C", outcome = { launched = true, exitCode = 1 } }, real_mixed, 2300)
+  spec.check("mixed summary text", mixed.text, "C — 1 passed, 1 failed, 1 skipped (2.3s)")
+  spec.check("mixed summary is WARN", mixed.warn, true)
+
+  local blocked = adapter._run_summary(
+    { label = "C", outcome = { launched = false, blockedReasons = { "no launch template" } } },
+    {},
+    nil
+  )
+  spec.check("blocked summary text", blocked.text, "C — blocked: no launch template")
+  spec.check("blocked summary is WARN", blocked.warn, true)
+
+  local errored = adapter._run_summary({ label = "C", err = "boom" }, {}, 500)
+  spec.check("errored summary text", errored.text, "C — errored (0.5s)")
+  spec.check("errored summary is WARN", errored.warn, true)
+
+  local skipped = adapter._run_summary({ label = "Foo.java", skip_reason = "no tests found in this file" }, {}, nil)
+  spec.check("skip summary text", skipped.text, "Foo.java — no tests found in this file")
+  spec.check("skip summary is WARN", skipped.warn, true)
+
+  local untimed = adapter._run_summary({ label = "C", outcome = { launched = true, exitCode = 0 } }, real_pass, nil)
+  spec.check("untimed summary omits the seconds suffix", untimed.text, "C — 2 passed, 0 failed, 0 skipped")
+end
+
 spec.finish()

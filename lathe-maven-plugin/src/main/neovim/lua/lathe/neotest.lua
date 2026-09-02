@@ -447,7 +447,13 @@ local function run_spec(position_id, module_rel, selections, client, label, stra
 
   local spec = {
     command = { "true" },
-    context = { position_id = position_id, token = token, result_future = result_future },
+    context = {
+      position_id = position_id,
+      token = token,
+      result_future = result_future,
+      label = label,
+      started = vim.uv.hrtime(),
+    },
     stream = stream_fn(queue),
   }
 
@@ -568,7 +574,10 @@ function M.build_spec(args)
     -- message explaining why nothing ran.
     local reason = vim.fn.bufloaded(pos.path) == 1 and "no tests found in this file"
       or ("open " .. vim.fn.fnamemodify(pos.path, ":t") .. " to discover its tests before running")
-    return { command = { "true" }, context = { position_id = pos.id, skip_reason = reason } }
+    return {
+      command = { "true" },
+      context = { position_id = pos.id, skip_reason = reason, label = pos.name },
+    }
   end
   return run_spec(pos.id, module_rel, selections, client, pos.name, strategy)
 end
@@ -695,6 +704,56 @@ local function synthesized_outcome(result)
 end
 M._synthesized_outcome = synthesized_outcome
 
+--- Counts distinct per-test outcomes by status. The `real` map is already method-level (parameterized
+--- invocations rolled up worst-status-wins), so these counts match the summary panel rather than the
+--- raw invocation count.
+local function count_by_status(real)
+  local passed, failed, skipped = 0, 0, 0
+  for _, r in pairs(real) do
+    if r.status == "failed" then
+      failed = failed + 1
+    elseif r.status == "skipped" then
+      skipped = skipped + 1
+    else
+      passed = passed + 1
+    end
+  end
+  return passed, failed, skipped
+end
+
+--- The one-line run-completion toast (NV-2): scope label, passed/failed/skipped counts, and elapsed
+--- seconds, at WARN when anything failed/blocked/errored (so a failure is visible without reading the
+--- text) or INFO when clean. Pure over the run context and the per-test `real` map -- results() passes
+--- the elapsed ms (nil when untimed, e.g. a no-tests skip spec) -- so it is unit-testable and fires for
+--- both run and debug (both flow through results()).
+function M._run_summary(ctx, real, elapsed_ms)
+  local label = ctx.label or "tests"
+  local suffix = elapsed_ms and (" (%.1fs)"):format(elapsed_ms / 1000) or ""
+
+  if ctx.err then
+    return { warn = true, text = ("%s — errored%s"):format(label, suffix) }
+  end
+
+  if ctx.skip_reason then
+    return { warn = true, text = ("%s — %s"):format(label, ctx.skip_reason) }
+  end
+
+  local outcome = ctx.outcome
+  if outcome and not outcome.launched then
+    return {
+      warn = true,
+      text = ("%s — blocked: %s"):format(label, table.concat(outcome.blockedReasons or {}, "; ")),
+    }
+  end
+
+  local passed, failed, skipped = count_by_status(real)
+  local warn = failed > 0 or (outcome ~= nil and outcome.exitCode ~= 0)
+  return {
+    warn = warn,
+    text = ("%s — %d passed, %d failed, %d skipped%s"):format(label, passed, failed, skipped, suffix),
+  }
+end
+
 --- neotest.Client:run_tree marks every id in the run's whole subtree as
 --- "running" up front (client/init.lua's update_running, built from
 --- tree:iter()) but only clears whichever ids results() returns -- a class
@@ -801,6 +860,12 @@ function M.results(spec, result, tree)
       end
     end
   end
+
+  -- One completion toast per run (NV-2), fired here so it covers both run and debug (both reach
+  -- results()). ctx.started is unset on the no-tests skip spec, so the duration is simply omitted.
+  local elapsed_ms = ctx.started and (vim.uv.hrtime() - ctx.started) / 1e6 or nil
+  local summary = M._run_summary(ctx, real, elapsed_ms)
+  vim.notify(summary.text, summary.warn and vim.log.levels.WARN or vim.log.levels.INFO, { title = "Lathe" })
 
   require("lathe.stackdecorate").decorate_live_output()
   return results

@@ -153,6 +153,10 @@ server-side, so Lathe cancels it by asking the server to kill the replay JVM (SI
 SIGKILL for a hung test).
 Pass/fail also shows as gutter signs and in the summary tree, and a failing test places a diagnostic on
 its failing assertion line (jump with `]d` / `[d`).
+When a run finishes, a one-line notification summarises it —
+`AppServerTest — 12 passed, 1 failed, 2 skipped (1.8s)` — at normal level when everything passed and at
+warning level when any test failed (or the run was blocked or errored), so you see the outcome without
+opening the summary. A debug run reports the same way.
 Discovery is automatic — opening a test file shows its runnables, and add/rename/remove of a `@Test`
 updates on save.
 

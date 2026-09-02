@@ -884,7 +884,7 @@ distinct from the server's LSP/DAP surface. Resolved NV entries move to
 
 ## NV-2 — A neotest test run gives no completion notification, only a "Running" start toast
 
-**Status: accepted — Target: M2**
+**Status: resolved**
 
 ### Observed behaviour
 
@@ -923,10 +923,22 @@ Keep it to one line (no per-test spam — the summary panel already itemises), f
 `results()` (or the run-future completion), and suppress it for a still-streaming partial pass.
 Reuse `run.lua`'s `notify` helper shape (`{ title = "Lathe" }`) for consistency.
 
+### Resolution
+
+Implemented client-side in `lua/lathe/neotest.lua`. `results()` fires one completion toast per run via
+the pure `M._run_summary(ctx, real, elapsed_ms)`: the run label, passed/failed/skipped counts from the
+method-level `real` map, and client-timed elapsed seconds (`run_spec` stamps a `started` timestamp on
+the run context), at `INFO` when the run launched cleanly with no failures and `WARN` otherwise (a
+failure, a blocked launch, an error, or a no-tests skip). Format:
+`AppServerTest — 12 passed, 1 failed, 2 skipped (1.8s)`. Because it fires from `results()`, it covers a
+debug run too (which now flows through `results()` — see
+[lathe-debug-neotest-unification.md](../planned/lathe-debug-neotest-unification.md)). No server change;
+the duration is client-timed.
+
 ### Regression targets
 
-None yet — to be defined when scheduled (all-pass run → one INFO toast with counts; a run with a
-failure → one WARN toast; counts match `results()`).
+`neotest_spec.lua` — `_run_summary`: an all-pass run → INFO with counts + `(T.Ts)`; a mixed run → WARN
+with counts; blocked / errored / no-tests-skip → WARN; an untimed run omits the seconds suffix.
 
 ---
 
