@@ -103,8 +103,29 @@ public interface JavaSourceCompiler extends AutoCloseable {
       if (fatal != null) {
         throw fatal;
       }
-      LOG.log(Level.SEVERE, e, () -> "javac bug: analyze() crashed on sentinel-injected source");
+
+      // A javac bug during analyze() (often on Lathe's sentinel/recovery-modified source): log a
+      // source-free, actionable line -- phase and the JDK identity that a crash report needs, plus
+      // the stack trace -- then continue with partial analysis. The exact triggering source is NOT
+      // logged (logging policy); reproduce to capture it.
+      LOG.log(
+          Level.SEVERE,
+          e,
+          () ->
+              "[javacCrash] phase=analyze jdk=%s javac threw during analyze; returning partial analysis"
+                  .formatted(javaVersion()));
     }
+  }
+
+  /**
+   * JDK identity for a javac-crash log line. javac bugs are version-specific, so a crash report is
+   * only actionable with the exact runtime; unlike the inputs that triggered the crash, this is
+   * source-free and safe to log.
+   */
+  private static String javaVersion() {
+    final String version = System.getProperty("java.version", "unknown");
+    final String vendor = System.getProperty("java.vendor.version", "");
+    return vendor.isBlank() ? version : "%s (%s)".formatted(version, vendor);
   }
 
   static Error fatalErrorCause(final Throwable failure) {

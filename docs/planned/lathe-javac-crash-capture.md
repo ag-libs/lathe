@@ -2,12 +2,24 @@
 
 ## Status
 
-Planned.
-This design records how Lathe should capture reproducible artifacts when javac throws an unhandled exception or
-compiler-origin assertion.
+**Resolved (log-only).** Shipped as a minimal, source-free crash **log line** instead of the repro
+bundle described below.
 
-The first implementation slice should capture the repro bundle only.
-It should not change fatal-vs-recoverable process policy unless a later design explicitly does so.
+`JavaSourceCompiler.analyzeSafely` now logs a javac analyze-phase crash at `SEVERE` as
+`[javacCrash] phase=analyze jdk=<version> …` with the stack trace, then continues with partial
+analysis (a fatal `Error` cause is still rethrown, unchanged). That gives a beta user one actionable
+`:LspLog` line — phase, JDK identity, and the javac stack trace, which is what identifies the compiler
+bug — while honouring the no-raw-source logging policy.
+
+The full crash-**bundle** design below (repro artifacts under `.lathe/javac-crashes/`) is **retained as
+a potential backlog follow-up, not built.** The one thing it would add over the log line is the exact
+triggering source — which is precisely what the logging policy forbids emitting — so it is only worth
+building if field reports show the stack trace + JDK is insufficient to triage. The deferred resilience
+question (should a javac `AssertionError` become recoverable) is unchanged; see Follow-up Decisions.
+
+---
+
+_Everything below is the original (unbuilt) crash-bundle design, kept for reference._
 
 ## Problem
 
