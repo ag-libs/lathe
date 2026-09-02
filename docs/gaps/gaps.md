@@ -1058,6 +1058,10 @@ for a live debug session is verified manually (headless windowing is not asserte
 
 **Status: accepted — Target: M2**
 
+**Design:** [Re-run Failed Tests](../planned/lathe-rerun-failed-tests.md). M2 scope is Option 1 —
+re-run the *first* failing test, a single-position run with no `results()` change. Re-running *all*
+failures in one JVM (Option 2) is a follow-up on the now-landed unified `results()`.
+
 ### Observed behaviour
 
 After a neotest run leaves some tests red, there is no command or keymap to re-run **just** those
@@ -1073,12 +1077,12 @@ neotest's result state and re-run explicitly.
 
 ### Proposed direction
 
-Add a client helper + keymap (e.g. `<leader>tl` / a `:LatheTestFailed`-style command) that collects
-the failed leaf positions from the last run — from `neotest` result state, or from a small
-last-run failed-set the adapter already has the data to track (`results()` sees every status) — and
-re-runs exactly those positions (one spec per class, reusing `build_spec`, so it stays a single
-replay per class rather than one JVM per method). Decide when scheduled whether to source the failed
-set from neotest state or track it in the adapter.
+Add a client helper (`require("lathe.neotest").run_first_failed()`, suggested `<leader>tF` — `tl` is
+reserved for neotest's native `run_last`) that re-runs a failing test from the last run. The design
+([Re-run Failed Tests](../planned/lathe-rerun-failed-tests.md)) splits this: M2 re-runs the *first*
+failing test as a single-position run (no `results()` change); re-running *all* failures in one JVM is
+a follow-up that reuses the previous run's launch with the selection narrowed to the failures, plus a
+`run_set`/shadow retain on the unified `results()`.
 
 ### Regression targets
 

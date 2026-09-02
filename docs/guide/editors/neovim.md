@@ -144,6 +144,8 @@ It is **optional** — configured separately from `require('lathe').setup()`, li
 |---|---|---|
 | Run nearest test | `require("neotest").run.run()` | `<leader>tt` |
 | Run file | `require("neotest").run.run(vim.fn.expand("%"))` | `<leader>tf` |
+| Re-run the last run | `require("neotest").run.run_last()` | `<leader>tl` |
+| Re-run the first failing test | `require("lathe.neotest").run_first_failed()` | `<leader>tF` |
 | Toggle summary tree | `require("neotest").summary.toggle()` | `<leader>ts` |
 | Open output (docked, navigable) | `require("lathe.neotest").open_output()` | `<leader>to` |
 | Stop / cancel run | `require("lathe.neotest").stop()` | `<leader>tS` |
@@ -153,6 +155,10 @@ server-side, so Lathe cancels it by asking the server to kill the replay JVM (SI
 SIGKILL for a hung test).
 Pass/fail also shows as gutter signs and in the summary tree, and a failing test places a diagnostic on
 its failing assertion line (jump with `]d` / `[d`).
+`run_first_failed()` re-runs the first still-failing test from recent runs; the failing set is
+self-shrinking, so calling it repeatedly walks the failures one at a time as each goes green. It targets
+tests discovered as positions (open the file for a failure from a package run whose file you never
+opened).
 When a run finishes, a one-line notification summarises it —
 `AppServerTest — 12 passed, 1 failed, 2 skipped (1.8s)` — at normal level when everything passed and at
 warning level when any test failed (or the run was blocked or errored), so you see the outcome without

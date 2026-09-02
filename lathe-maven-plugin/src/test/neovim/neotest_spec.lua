@@ -492,6 +492,92 @@ do
   spec.check("file in a nested package matched by name -> passed", results[sub_file].status, "passed")
 end
 
+-- NV-5: results() records individually-runnable failures into an ordered, self-shrinking list, and
+-- run_first_failed() re-runs its head. A re-run that passes drops that test, so repeated calls walk the
+-- failures one at a time; only discovered positions (tree:get_key finds them) are listed.
+do
+  -- Clear any failures accumulated by earlier results() calls in this spec.
+  while #adapter._failing > 0 do
+    table.remove(adapter._failing)
+  end
+
+  local nodes = {
+    ["demo.FooTest"] = {
+      id = "demo.FooTest",
+      type = "namespace",
+      children = { "demo.FooTest#a()", "demo.FooTest#b()", "demo.FooTest#c()" },
+    },
+    ["demo.FooTest#a()"] = { id = "demo.FooTest#a()", type = "test", children = {} },
+    ["demo.FooTest#b()"] = { id = "demo.FooTest#b()", type = "test", children = {} },
+    ["demo.FooTest#c()"] = { id = "demo.FooTest#c()", type = "test", children = {} },
+  }
+  local tree = fake_tree(nodes)
+
+  local function run(position_id, test_results)
+    adapter.results({
+      context = {
+        position_id = position_id,
+        outcome = { launched = true, exitCode = 1, output = transcript("t"), testResults = test_results },
+      },
+    }, nil, tree)
+  end
+
+  run("demo.FooTest", {
+    { positionId = "demo.FooTest#a()", status = "passed", failureMessage = "", failureLine = -1 },
+    { positionId = "demo.FooTest#b()", status = "failed", failureMessage = "boom", failureLine = 3 },
+    { positionId = "demo.FooTest#c()", status = "failed", failureMessage = "bang", failureLine = 5 },
+  })
+  spec.check(
+    "failures captured in execution order, passes excluded",
+    table.concat(adapter._failing, ","),
+    "demo.FooTest#b(),demo.FooTest#c()"
+  )
+
+  local ran
+  adapter._run_position = function(id)
+    ran = id
+  end
+  adapter.run_first_failed()
+  spec.check("run_first_failed runs the head of the list", ran, "demo.FooTest#b()")
+
+  -- b passes on its re-run -> drops out; c is untouched (not in this run) and becomes the head.
+  run("demo.FooTest#b()", {
+    { positionId = "demo.FooTest#b()", status = "passed", failureMessage = "", failureLine = -1 },
+  })
+  spec.check("a passing re-run drops its test", table.concat(adapter._failing, ","), "demo.FooTest#c()")
+
+  ran = nil
+  adapter.run_first_failed()
+  spec.check("run_first_failed advances to the next failure", ran, "demo.FooTest#c()")
+
+  -- An undiscovered failure (no tree node) is not listed -- it can't be targeted individually, so the
+  -- list is unchanged.
+  local orphan_tree = fake_tree({ ["demo.FooTest"] = { id = "demo.FooTest", type = "namespace", children = {} } })
+  adapter.results({
+    context = {
+      position_id = "demo.FooTest",
+      outcome = {
+        launched = true,
+        exitCode = 1,
+        output = transcript("t"),
+        testResults = {
+          { positionId = "demo.Never#opened()", status = "failed", failureMessage = "x", failureLine = 1 },
+        },
+      },
+    },
+  }, nil, orphan_tree)
+  spec.check("undiscovered failure is not listed", table.concat(adapter._failing, ","), "demo.FooTest#c()")
+
+  -- c passes -> list empty -> run_first_failed runs nothing and warns.
+  run("demo.FooTest#c()", {
+    { positionId = "demo.FooTest#c()", status = "passed", failureMessage = "", failureLine = -1 },
+  })
+  spec.check("list empty once every failure passes", #adapter._failing, 0)
+  ran = nil
+  adapter.run_first_failed()
+  spec.check("run_first_failed runs nothing with no failures", ran, nil)
+end
+
 -- root() resolves the nearest .lathe marker walking up from a nested path,
 -- the same fixture-building approach as root_spec.lua's own coverage of
 -- lathe.get_root -- this is neotest's own project-root hook, a separate

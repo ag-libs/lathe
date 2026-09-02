@@ -119,7 +119,8 @@ rolled up worst-status-wins.
 The IntelliJ staple: repeat the last run, and repeat only the failures.
 *Re-run:* satisfied by neotest's native `run_last` — it stores the last position and replays
 `neotest.run.run(position)`, which re-invokes our `build_spec` on the same code path as the first run
-(bound in the README as `<leader>tl`). No adapter work needed.
+(suggested in the [Neovim cheatsheet](../guide/editors/neovim.md) as `<leader>tl`). No adapter work
+needed.
 *Re-run-failed — deferred.* Low value here: fast replay removes most of the time saving, and it is
 structurally awkward. neotest has no native "run failed" and can only run a single position (which
 fans out to *all* descendants, not a filtered subset), so updating the tree/diagnostics requires one

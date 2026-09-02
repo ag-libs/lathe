@@ -38,6 +38,11 @@ Reliability, the triaged gaps, and rename — see the [roadmap](roadmap.md) for 
 - [Debug/neotest Unification](planned/lathe-debug-neotest-unification.md) — route test-debug through
   neotest's `dap` strategy so gutters/summary/console/pass-fail match a run; resolves NV-3/NV-4 and
   makes NV-2 an implement-once change via a new `lathe/testFinished` outcome notification.
+- [Re-run Failed Tests](planned/lathe-rerun-failed-tests.md) — resolves NV-5. **M2:** re-run the
+  *first* failing test (`run_first_failed()`, `<leader>tF`), a single-position run with no `results()`
+  change. **Follow-up:**
+  re-run *all* failures in one replay JVM (repeat the previous run, narrowed to the failed selections)
+  via a `run_set`/shadow retain on the unified `results()`.
 - **Maven Central beta publishing** — release automation, signing, staging, and released coordinates so
   users install without building from source; needs a dedicated design.
 

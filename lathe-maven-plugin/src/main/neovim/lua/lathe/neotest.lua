@@ -754,6 +754,45 @@ function M._run_summary(ctx, real, elapsed_ms)
   }
 end
 
+-- Ordered, self-shrinking set of individually-runnable failing tests (NV-5). Every run's reconciled
+-- statuses update it: a test that failed AND is a discovered neotest position (so run.run can target
+-- it) joins the list; one that now passes, is skipped, or isn't discovered leaves it. run_first_failed
+-- re-runs the head, so calling it repeatedly walks the failures, each dropping out as it goes green.
+local failing = {}
+M._failing = failing
+
+local function failing_index(id)
+  for i, existing in ipairs(failing) do
+    if existing == id then
+      return i
+    end
+  end
+  return nil
+end
+
+--- Updates `failing` from one run's reconciled results. Iterates testResults in execution order so a
+--- newly-seen failure appends in a stable position, but reads the deduped `real` status (worst-wins) so
+--- a parameterized test with any failing invocation counts as failed regardless of invocation order.
+--- Only a failure that is a discovered position (tree:get_key finds it) is kept -- failures in
+--- never-opened files can't be targeted individually and are covered by re-running their file.
+local function update_failing(test_results, real, tree)
+  local seen = {}
+  for _, tr in ipairs(test_results or {}) do
+    local id = tr.positionId
+    if not seen[id] then
+      seen[id] = true
+      local status = real[id] and real[id].status
+      local runnable = status == "failed" and tree ~= nil and tree:get_key(id) ~= nil
+      local at = failing_index(id)
+      if runnable and not at then
+        failing[#failing + 1] = id
+      elseif not runnable and at then
+        table.remove(failing, at)
+      end
+    end
+  end
+end
+
 --- neotest.Client:run_tree marks every id in the run's whole subtree as
 --- "running" up front (client/init.lua's update_running, built from
 --- tree:iter()) but only clears whichever ids results() returns -- a class
@@ -861,6 +900,12 @@ function M.results(spec, result, tree)
     end
   end
 
+  -- Track which tests are failing so run_first_failed can re-run them one at a time (NV-5); covers both
+  -- run and debug (both reach results() with a reconciled outcome).
+  if ctx.outcome and ctx.outcome.testResults then
+    update_failing(ctx.outcome.testResults, real, tree)
+  end
+
   -- One completion toast per run (NV-2), fired here so it covers both run and debug (both reach
   -- results()). ctx.started is unset on the no-tests skip spec, so the duration is simply omitted.
   local elapsed_ms = ctx.started and (vim.uv.hrtime() - ctx.started) / 1e6 or nil
@@ -869,6 +914,26 @@ function M.results(spec, result, tree)
 
   require("lathe.stackdecorate").decorate_live_output()
   return results
+end
+
+--- Indirection over neotest's runner so run_first_failed's selection logic is unit-testable without
+--- neotest installed (the spec env has neither neotest nor nio).
+function M._run_position(id)
+  require("neotest").run.run(id)
+end
+
+--- Re-runs the first individually-runnable failing test from recent runs (NV-5). The failing list is
+--- self-shrinking -- a re-run that passes drops its test -- so invoking this repeatedly walks the
+--- failures one at a time (the red-green loop). Only tests discovered as neotest positions can be
+--- targeted individually; failures in never-opened files (e.g. a package run) are not listed and are
+--- covered by re-running that file. Bind e.g. <leader>tF.
+function M.run_first_failed()
+  if #failing == 0 then
+    vim.notify("No failing tests to re-run", vim.log.levels.WARN, { title = "Lathe" })
+    return
+  end
+
+  M._run_position(failing[1])
 end
 
 return M
