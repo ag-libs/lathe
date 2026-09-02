@@ -43,8 +43,10 @@ Reliability, the triaged gaps, and rename — see the [roadmap](roadmap.md) for 
   change. **Follow-up:**
   re-run *all* failures in one replay JVM (repeat the previous run, narrowed to the failed selections)
   via a `run_set`/shadow retain on the unified `results()`.
-- **Maven Central beta publishing** — release automation, signing, staging, and released coordinates so
-  users install without building from source; needs a dedicated design.
+- [Maven Central beta publishing](../RELEASING.md) — release automation is implemented and documented:
+  tag-driven CI (`release.yml`) with GPG signing and the `central-publishing-maven-plugin`, version
+  stamping via `versions:set`, and the `release.sh` cut-a-release script. ✓ (The first beta tag is cut
+  manually.)
 
 ## Backlog — unscheduled, re-triaged after the beta
 

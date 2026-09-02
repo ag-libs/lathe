@@ -9,7 +9,7 @@ Status last reviewed: 2026-08-29.
 
 Lathe is at the M1 Internal Preview stage.
 It must be built from source and is supported for the Neovim workflow only.
-Maven Central publication is planned for M2 (beta artifacts); a stable GA release follows after beta feedback.
+The M2 Maven Central release pipeline is implemented and documented (tag-driven CI signing + publish; see [RELEASING.md](../RELEASING.md)); beta artifacts go live once the first release tag (`v0.1.1`) is cut. A stable GA release follows after beta feedback.
 
 ## Build and Workspace Lifecycle
 
@@ -26,7 +26,7 @@ Maven Central publication is planned for M2 (beta artifacts); a stable GA releas
 | POM staleness detection | Implemented | Neovim receives a sync prompt after Maven project changes. |
 | Server-exit surfacing & manual start | Implemented | Neovim notifies on an unexpected server exit (pointing at the LSP log); `:LatheStart` starts the server for a directory with no Java file open. |
 | Inheritance index | Implemented | Dependency, JDK, and reactor entries include direct supertypes in immutable snapshots. |
-| Maven Central distribution | M2 planned | Current setup requires a source build. |
+| Maven Central distribution | Automation done | Tag-driven CI (GPG signing + `central-publishing-maven-plugin`), `versions:set` stamping, `release.sh`, and `RELEASING.md` are in place. Artifacts go live when the first release tag is cut (manual); until then, build from source. |
 
 ## LSP Capability Matrix
 
