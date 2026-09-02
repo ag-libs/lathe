@@ -104,7 +104,7 @@ from):
   <extension>
     <groupId>io.github.ag-libs</groupId>
     <artifactId>lathe-maven-extension</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.1</version>
   </extension>
 </extensions>
 ```

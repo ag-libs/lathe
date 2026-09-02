@@ -44,7 +44,7 @@ from) — the earliest, most reliable hook, with no `pom.xml` changes anywhere:
     <extension>
         <groupId>io.github.ag-libs</groupId>
         <artifactId>lathe-maven-extension</artifactId>
-        <version>0.1.0-SNAPSHOT</version>
+        <version>0.1.1</version>
     </extension>
 </extensions>
 ```
@@ -58,7 +58,7 @@ must live in the reactor-root (or parent) POM to cover every module:
         <extension>
             <groupId>io.github.ag-libs</groupId>
             <artifactId>lathe-maven-extension</artifactId>
-            <version>0.1.0-SNAPSHOT</version>
+            <version>0.1.1</version>
         </extension>
     </extensions>
 </build>
@@ -75,7 +75,7 @@ Declare the same three pieces in your **parent `pom.xml`**. Pin one version with
 
 ```xml
 <properties>
-    <lathe.version>0.1.0-SNAPSHOT</lathe.version>
+    <lathe.version>0.1.1</lathe.version>
 </properties>
 ```
 
