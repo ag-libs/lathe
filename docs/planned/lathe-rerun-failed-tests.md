@@ -2,7 +2,7 @@
 
 ## Status
 
-Planned. Resolves gap [NV-5](../gaps/gaps.md).
+Option 1 shipped — [NV-5](../gaps/gaps.md) resolved. Option 2 deferred (revive on demand).
 
 - **M2 — Option 1: re-run the *first* failing test. Implemented.**
   `require("lathe.neotest").run_first_failed()`, bound `<leader>tF`. A self-shrinking ordered set of

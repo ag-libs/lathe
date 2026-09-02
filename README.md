@@ -55,7 +55,7 @@ See [Editors](#editors) for the client that drives them and its key bindings.
 | Feature             | What it does                                                                                 | LSP method                        |
 |---------------------|----------------------------------------------------------------------------------------------|-----------------------------------|
 | Diagnostics         | `javac` errors and warnings exactly as configured in Maven, plus unused-private-member hints | `textDocument/publishDiagnostics` |
-| Code actions        | import missing type · add `throws` clause · wrap with `try/catch` · declare local variable   | `textDocument/codeAction`         |
+| Code actions        | import missing type · add `throws` clause · wrap with `try/catch` · declare local variable · replace `var` with the inferred type · stub a missing method | `textDocument/codeAction`         |
 | Formatting (opt-in) | whole-document google-java-format with import cleanup — **off by default**                   | `textDocument/formatting`         |
 
 Full-document formatting is **opt-in**: the server advertises `textDocument/formatting` only when a

@@ -1056,11 +1056,11 @@ for a live debug session is verified manually (headless windowing is not asserte
 
 ## NV-5 — No way to re-run only the failed tests from the last neotest run
 
-**Status: accepted — Target: M2**
+**Status: resolved**
 
 **Design:** [Re-run Failed Tests](../planned/lathe-rerun-failed-tests.md). M2 scope is Option 1 —
 re-run the *first* failing test, a single-position run with no `results()` change. Re-running *all*
-failures in one JVM (Option 2) is a follow-up on the now-landed unified `results()`.
+failures in one JVM (Option 2) is a deferred follow-up on the unified `results()`.
 
 ### Observed behaviour
 
@@ -1084,7 +1084,25 @@ failing test as a single-position run (no `results()` change); re-running *all* 
 a follow-up that reuses the previous run's launch with the selection narrowed to the failures, plus a
 `run_set`/shadow retain on the unified `results()`.
 
+### Resolution
+
+Shipped as `require("lathe.neotest").run_first_failed()` (suggested `<leader>tF`), client-side in
+`lua/lathe/neotest.lua`. `results()` records an ordered, self-shrinking set of individually-runnable
+failures — a discovered position (`tree:get_key` finds it) that failed joins the list; one that now
+passes, is skipped, or is undiscovered leaves it — keyed on the deduped worst-wins per-test status,
+with execution order giving a stable "first". The helper re-runs the head via `neotest.run.run`, so
+invoking it repeatedly walks the failures as each goes green (the red-green loop). The cheatsheet also
+gained the previously-undocumented `run_last` / `<leader>tl` row.
+
+**Future note (if more requests):** only the *first-failing* re-run shipped. A batch "re-run *all*
+failures in one JVM" was deliberately deferred — it needs re-firing the previous run's broad position
+with the selection narrowed to the failures, plus a `run_set`/shadow retain in `results()` to avoid
+repainting the not-rerun tests (the tradeoff table and Option 2 are in the design doc). Class-level
+`@BeforeAll`/container failures also can't be targeted individually until the runner captures container
+results. Revive Option 2 if users ask for a whole-red-set re-run.
+
 ### Regression targets
 
-None yet — to be defined when scheduled (after a run with N failures, the re-run targets exactly
-those N positions and no passing ones).
+`neotest_spec.lua` — failures captured in execution order (passes excluded); `run_first_failed` runs
+the head, advances to the next after a passing re-run, ignores an undiscovered failure, and runs
+nothing (WARN) when the list is empty.
