@@ -7,6 +7,14 @@ reference pipeline — see Correctness gate and Resolved decision 2. A second au
 freshness argument against `ReferenceCandidatePlanner` and resolved the constructor, conflict-depth,
 and enum-constant edges — see Resolved decisions 4–6.
 
+**Scope narrowed for the first delivery.** After a complexity review the feature is split into two
+slices: **Slice 1** — local-scope renames (locals, parameters, exception/lambda parameters, type
+parameters), single-file and unconditionally safe; **Slice 2** — member and in-place type renames
+(fields, methods, record components, constructor redirect, and nested / non-public top-level types).
+Together they cover ~85% of everyday renames. The one deferred piece is the **public top-level type
+file rename**, which needs resource-operation plumbing and is carved out as a focused follow-up (see
+Deferred).
+
 This is the focused design the roadmap's M2 "Refactoring" item calls for
 ("prepare-rename and exact reactor rename edits, correctness-gated with explicit non-goals").
 It builds on the Find References machinery documented in
@@ -17,14 +25,15 @@ It builds on the Find References machinery documented in
 
 Rename a Java symbol and every reference to it across the reactor from Neovim, as one atomic edit,
 correctly enough to trust on real projects.
-The design is deliberately scoped to the common ~80% of renames and is **correctness-gated**: a rename
+The design is deliberately scoped to the common ~85% of renames and is **correctness-gated**: a rename
 either covers a case safely and with tests, or that case is an explicit non-goal — a rename that
 silently misses occurrences corrupts code, which is worse than not offering it.
 
 ## Prior art
 
 Both mainstream implementations share one shape — *validate + range → find all references → one atomic
-`WorkspaceEdit`, conflict-checked first* — and Lathe follows it.
+`WorkspaceEdit`, conflict-checked first* — and Lathe follows it, except it deliberately skips the
+up-front conflict check in favour of a permissive substitution (see Conflict detection).
 
 - **IntelliJ** (`RenameProcessor` / `RenamePsiElementProcessor`): `prepareRenaming` collects the linked
   element set (e.g. a super method pulls in its overrides) and runs `findExistingNameConflicts`, then
@@ -66,6 +75,8 @@ Validate the position and return the identifier range, or fail with a clear mess
      JDK/dependency sources are read-only.
    - the element does not resolve, or is a non-renameable / synthetic-only kind.
    - the element is an unsupported kind for M2 (see Non-goals — e.g. a package, an enum constant).
+   - the element is a **public top-level type** whose file would have to move — deferred (see
+     Deferred). Nested and non-public top-level types are fine.
 4. Return the name-token `Range` at the cursor (the range the client will pre-fill and highlight).
 
 Advertised via `RenameOptions(prepareProvider = true)`.
@@ -82,61 +93,57 @@ Reuse the references pipeline end to end.
    cancellation, and the process-wide compilation admission cap.
 3. Map every occurrence `Range` — the declaration included — to a `TextEdit(range, newName)`.
 4. Assemble a `WorkspaceEdit` (see below).
-5. Run the conflict checks (see below) first; on a hard conflict, fail the request rather than return a
-   corrupting edit.
+5. Validate the new name (legal identifier / not reserved) first; otherwise apply the edits without a
+   collision scan (see Conflict detection).
 
-### `WorkspaceEdit` shape and the type-file rename
+### `WorkspaceEdit` shape
 
-For renames that touch only occurrences, return `WorkspaceEdit.changes` — the existing map-of-
-`uri → List<TextEdit>` pattern already used by the quick-fix providers (`DeclareVariableProvider`,
-`MissingMethodImplProvider`).
+Every rename in this scope touches only occurrences inside existing files, so the result is always a
+`WorkspaceEdit.changes` map — the `uri → List<TextEdit>` pattern already used by the quick-fix
+providers (`DeclareVariableProvider`, `MissingMethodImplProvider`).
+No resource operations, no file moves, no document versioning.
 
-Renaming a **public top-level type** additionally requires renaming its file (`Foo.java` → `Bar.java`)
-so the file name keeps matching the type.
-This needs `WorkspaceEdit.documentChanges` with a `RenameFile` resource operation, which the server
-does not use today.
-Decision: **include the `RenameFile` op, guarded on the client capability**
-(`workspace.workspaceEdit.resourceOperations` includes `rename`; Neovim 0.11+ supports it).
-When the type is a public top-level type whose file must move, emit `documentChanges` with the
-`TextDocumentEdit`s plus the `RenameFile`; when the client does not advertise resource operations, fall
-back to the text edits and report that the file was not renamed.
-Non-public or nested types need no file rename and use the plain `changes` map.
+Renaming a **public top-level type** would additionally require moving its file (`Foo.java` →
+`Bar.java`) so the file name keeps matching the type, which needs `documentChanges` with a `RenameFile`
+resource operation the server does not use today.
+That whole path — capability capture, `documentChanges` ordering, versioning, and the resource-op
+fallback — is **deferred** (see Deferred).
+`prepareRename` refuses a public top-level type with a clear message rather than emit a knowingly-broken
+edit: a public type whose file name no longer matches will not compile.
+Nested types and non-public top-level types need no file move and rename normally through the `changes`
+map.
 
-Two mechanics this path pins down (they differ from the existing `changes`-map providers, which never
-move files):
+### Conflict detection (deliberately minimal)
 
-- **Capability capture.** The server currently reads only `window.workDoneProgress` from the client
-  capabilities at `initialize` and discards the rest. `RenameProvider` needs
-  `params.capabilities.workspace.workspaceEdit.resourceOperations`, so `initialize` must **capture and
-  persist** that flag for later consultation. This is new plumbing, not covered by
-  `createCapabilities`.
-- **Ordering and versioning.** `documentChanges` is applied in array order. The `TextDocumentEdit`s
-  target the type file at its **old** URI and therefore **must precede** the `RenameFile` op; the file
-  move comes last. Edits to open documents use `OptionalVersionedTextDocumentIdentifier` (version from
-  the open-document store); closed files use a null version.
+The chosen behaviour is **close to a semantically-resolved find-and-replace**: the server substitutes
+the new name at every resolved occurrence and does **not** try to pre-empt name collisions. The
+rationale is that every collision such a scan could catch surfaces to the user as an immediate
+compile-error diagnostic — never silent corruption, since each edit is a semantically-resolved
+name-token range — which the user can then undo or fix. An up-front conflict scan therefore buys little
+and costs real complexity (element enumeration, `TypeElement` re-resolution, overload-vs-duplicate
+disambiguation).
 
-### Conflict detection (bounded)
-
-LSP has no "Refactor Anyway" affordance, so the server must be conservative: on a detected hard
-conflict, **fail with a message** instead of producing an edit.
-M2 does a minimal, cheap set — both are element-name scans, no AST scope walk — and documents the rest
-as non-goals:
+The one check kept is input validity:
 
 - the new name is a legal Java identifier and not a reserved word (`SourceVersion.isName` /
   `isKeyword`) — reject in `prepareRename` where possible, otherwise in `rename`.
-- a **member duplicate**: a member with the new name already declared on the target's declaring
-  `TypeElement` (enumerate its enclosed elements).
 
-The local/parameter same-scope duplicate is **not** checked in M2 — detecting "already declared in the
-same method/block" needs a block-scope AST walk rather than an element scan, so it is a documented
-non-goal (see Non-goals). Broader semantic conflicts (shadowing/hiding across scopes, overload
-collisions that change dispatch, visibility changes) are likewise **not** detected in M2.
+Explicitly **not** checked — each becomes a visible compile error or a user-noticeable change if it
+occurs:
 
-Why this is safe enough: because every edit is a substitution of a **semantically-resolved** name-token
-range, the worst case of an *undetected* conflict — a shadowing or import collision the checks above do
-not catch — is a **compile error the user sees immediately as a diagnostic**, not silent corruption.
-The only path to silent corruption is a *missed occurrence*, which the correctness gate below bounds to
-find-references parity.
+- **member duplicate** — a member with the new name already on the declaring type. For methods a
+  name-only scan cannot distinguish a real signature clash from a legal new overload, so the check is
+  dropped rather than guessed.
+- local/parameter same-scope duplicate (would need a block-scope AST walk).
+- shadowing/hiding across scopes, dispatch-changing overload collisions, visibility changes.
+- **override-relationship break** — renaming a method that overrides a read-only (JDK/dependency)
+  method renames the reactor members but not the read-only declaration, so the override silently stops
+  applying. Accepted: the reference set is already bounded to the declaring type and its subtypes (not
+  every `equals` / `toString` call reactor-wide), and the read-only declaration is never a reactor file,
+  so the only effect is a behaviour change that is the user's to notice.
+
+The only genuinely silent failure mode is a *missed occurrence*, which the correctness gate below bounds
+to find-references parity (and which the field path widens to the broad name set to minimise).
 
 ### Correctness gate — freshness (WS-1)
 
@@ -184,6 +191,9 @@ Gate for M2:
 
 - Renames whose scope is `DECLARING_FILE` — locals, parameters, exception/lambda parameters, type
   parameters, and private members — are single-file, index-independent, and **unconditionally safe**.
+  (This is a *safety* tier, not a slice boundary: Slice 1 ships the locals / parameters / type
+  parameters; private fields and methods, though equally single-file-safe, ship with the other members
+  in Slice 2.)
 - **Field** rename uses the **broad name set (drop subtype-narrowing) for the rename path**, matching
   what methods already do (FR-011). This removes `WorkspaceTypeIndex` from the rename correctness path
   entirely, so *every* rename kind becomes index-independent and the hierarchy-staleness question
@@ -193,7 +203,11 @@ Gate for M2:
   find-references — rather than building the WS-2 re-sync machinery the earlier design assumed. A
   coarse freshness prompt can be layered on later if the write blast-radius warrants more than parity.
 
-## Scope for M2 (the ~80%)
+## Scope for M2 (the ~85%)
+
+Delivered in two slices — **Slice 1** is local-scope only (unconditionally safe, no shared-API change,
+nothing to approve); **Slice 2** adds the members and in-place types (cross-module search and the field
+broad-name-set option — the one remaining shared-API change).
 
 In — covered and tested:
 
@@ -204,9 +218,11 @@ In — covered and tested:
 - **Methods** — non-overriding fully; overriding via the existing override-family expansion. Candidate
   discovery is grep-based and the upward override family is computed live, so no freshness gate applies
   (see Correctness gate).
-- **Types** (class / interface / enum / record) — reference updates plus the matching file rename for a
-  public top-level type (capability-guarded). Discovery is import/package-token based, index-independent.
-  A rename invoked on a **constructor** redirects here (see `prepareRename`).
+- **Types** (class / interface / enum / record) — reference updates only, via the `changes` map.
+  Discovery is import/package-token based, index-independent. Nested and non-public top-level types
+  rename in place; a **public top-level type**, whose file would have to move, is refused for now (see
+  Deferred). A rename invoked on a **constructor** redirects here (see `prepareRename`), so a
+  constructor of a public top-level type is likewise refused until the file-rename follow-up lands.
 - **Record components** — accessor, backing field, and canonical-constructor parameter updated together
   (Lathe already unifies these under the accessor identity). Because the component and its accessor
   share one identity, the accessor's call sites (`r.foo()`) are renamed with it — the one intended
@@ -218,12 +234,14 @@ they are deferred to keep the tested surface focused — see Non-goals).
 ## Non-goals (explicit, documented)
 
 - Renaming external / JDK / dependency symbols — read-only.
+- **Public top-level type file rename** — moving `Foo.java` → `Bar.java` needs `documentChanges` +
+  `RenameFile` resource operations, client capability capture, and document versioning; deferred to a
+  focused follow-up (see Deferred). Type *reference* renames that need no file move are in scope.
 - **Enum-constant rename** — supported by the pipeline and index-independent, but deferred from M2 to
   keep the tested-kind surface focused; a small, safe follow-up.
 - **Package rename** — JDT itself treats this as partial; deferred.
 - **Local/parameter same-scope duplicate detection** — needs a block-scope AST walk rather than an
-  element scan; deferred (see Conflict detection). The illegal-identifier and member-duplicate checks
-  still apply.
+  element scan; not done (see Conflict detection). Only the illegal-identifier check applies.
 - **Non-code usages** — comments, string literals, Javadoc `{@link}` / `@see` reference text; opt-in later.
 - Related-symbol propagation — renaming a field does not rename its getter/setter; renaming an interface
   does not rename an implementation's differently-named member.
@@ -231,6 +249,27 @@ they are deferred to keep the tested surface focused — see Non-goals).
 - Broad semantic conflict detection (shadowing/hiding, dispatch-changing overload collisions,
   visibility changes) — see Conflict detection.
 - Reflection / string-referenced names.
+
+## Deferred to a follow-up — public top-level type file rename
+
+Renaming a public top-level type requires moving its `.java` file so the file name keeps matching the
+type. That is the one piece of this feature that needs machinery the initial delivery does not build,
+and it is carved out as a focused follow-up:
+
+- `WorkspaceEdit.documentChanges` with a `RenameFile` resource operation (the `changes` map cannot move
+  files).
+- **Capability capture** — `initialize` must persist the client's
+  `workspace.workspaceEdit.resourceOperations` flag (today the server keeps only
+  `window.workDoneProgress`); `RenameProvider` reads it to decide whether to emit the `RenameFile` op,
+  with a text-edits-only fallback when it is absent (`workspace.workspaceEdit.resourceOperations`
+  includes `rename`; Neovim 0.11+ supports it).
+- **Ordering and versioning** — the type file's `TextDocumentEdit`s target the old URI and **must
+  precede** the `RenameFile` op; open documents use `OptionalVersionedTextDocumentIdentifier` (version
+  from the open-document store), closed files a null version.
+
+Until this lands, `prepareRename` refuses a public top-level type (and a constructor that redirects to
+one) with a clear "not supported yet" message. Every other rename — including nested and non-public
+top-level types — is unaffected.
 
 ## Reuse map
 
@@ -251,52 +290,72 @@ Existing, reused as-is:
 
 New:
 
-- `RenameProvider` — turns the resolved occurrence `Location`s into per-URI `TextEdit`s, applies conflict
-  checks (legal identifier, member duplicate), and builds the `WorkspaceEdit` (with the optional
-  `RenameFile` op, ordered before which the type-file's `TextDocumentEdit`s must sit). A single concrete
-  class; no interface (one implementation).
+- `RenameProvider` — turns the resolved occurrence `Location`s into per-URI `TextEdit`s, validates the
+  new name (legal identifier / reserved word — the only check; see Conflict detection), and builds the
+  `WorkspaceEdit.changes` map. A single concrete class; no interface (one implementation).
 - `WorkspaceSession.prepareRenameFuture(uri, position)` and
   `renameFuture(uri, position, newName)` — worker-confined entry points.
 - `LatheTextDocumentService.prepareRename(...)` / `rename(...)` — handlers mirroring `definition` /
   `references` (`worker.submit(...) .thenCompose(...)`), logged under a `[rename]` tag.
 - `LatheLanguageServer.createCapabilities` — `setRenameProvider(new RenameOptions(true))`.
-- `LatheLanguageServer.initialize` — **capture and persist** the client's
-  `workspace.workspaceEdit.resourceOperations` capability (today the server keeps only
-  `window.workDoneProgress`); `RenameProvider` reads it to decide whether to emit the `RenameFile` op.
+
+The client capability capture and `RenameFile` op that a public-type file rename would need are part of
+the deferred follow-up (see Deferred), not this delivery.
 
 ## Testing (the correctness gate)
 
 - Unit, per kind: local, parameter, field × (private / package / public), method (non-override and
-  override family), type (with file rename), record component (accessor + backing field + canonical
-  parameter, plus accessor call sites).
+  override family), type (nested / non-public top-level, `changes` map only), record component (accessor
+  + backing field + canonical parameter, plus accessor call sites).
 - Constructor redirect: `prepareRename` on a constructor resolves to the enclosing type; `rename`
-  produces the type rename (with file rename for a public top-level type).
+  produces the type rename. A constructor of a public top-level type redirects to a refused type rename
+  (file move deferred).
 - Cross-file: a rename whose edits land in multiple reactor modules.
-- Negatives: external/JDK symbol refused; illegal / reserved new name refused; member-duplicate on the
-  declaring type refused; enum constant refused (deferred kind). (No stale-workspace refusal — the
-  rename path is index-independent; see Correctness gate. No local same-scope-duplicate case — deferred
-  non-goal.)
-- Resource-op fallback: with `resourceOperations` unadvertised, a public-type rename returns text edits
-  and reports the file was not renamed.
+- Negatives: external/JDK symbol refused; illegal / reserved new name refused; enum constant refused
+  (deferred kind); public top-level type refused (deferred file-move kind). (No member-duplicate or other
+  collision refusal — permissive by design, see Conflict detection. No stale-workspace refusal — the
+  rename path is index-independent; see Correctness gate.)
+- Permissive collision: renaming to a name already used on the declaring type produces the edits (and a
+  resulting compile error), not a refusal.
 - Invoker (`LspSmokeTest`): drive `prepareRename` + `rename` against the multi-module fixture and assert
   the `WorkspaceEdit` touches the expected files.
 - Differential-vs-jdtls comparison is post-M3 quality tooling
   ([lathe-jdtls-differential-testing.md](lathe-jdtls-differential-testing.md)), not an M2 gate.
 
+## Open items before implementation
+
+Not design decisions — verification and integration to close before or while coding:
+
+- **Find References per-kind coverage audit.** Rename edits exactly what `referencesFuture` returns, so
+  it is only as correct as Find References is for each in-scope kind. Confirm the pipeline has passing
+  coverage for every kind before trusting a *write* — especially **type parameters** (`planCandidates`
+  routes them through the broad default, not the locals branch), and exception/lambda parameters and
+  record components.
+- **Neovim client wiring.** Advertising `renameProvider` is not enough; the Lua client needs a keymap to
+  `vim.lsp.buf.rename()` (which drives `prepareRename` automatically). Pick a keybinding and add the
+  `README.md` / `docs/guide/editors/neovim.md` entry, including the per-buffer (non-atomic) undo caveat.
+- **Broad-name-set parameter shape.** The field "skip subtype-narrowing" signal threaded through
+  `referencesFuture` → `planCandidates` is the one shared-API change; settle its shape (boolean flag vs.
+  a small options record) before Slice 2.
+- **Work tracking.** Rename has no `gaps.md` ID; add entries per slice plus one for the deferred
+  public-type file rename.
+
 ## Resolved decisions
 
-1. **Type file rename** — include the `RenameFile` resource operation, guarded on the client
-   `resourceOperations` capability, with a text-edits-only fallback.
+1. **Type file rename — deferred.** Public top-level type rename needs a `RenameFile` resource
+   operation (plus capability capture and versioning) and is split into a focused follow-up (see
+   Deferred). The initial delivery refuses a public top-level type in `prepareRename`; all other type
+   renames proceed through the `changes` map.
 2. **Freshness** — revised after a code audit (see Correctness gate). The persisted hierarchy index is
    in the correctness path only for field subtype-narrowing; methods and types ride a grep + live match.
    Rename therefore drops subtype-narrowing on the field path to become fully index-independent, and
    accepts the residual closed-file WS-1 exposure as identical to Find References (documented
    limitation) rather than refusing renames or building WS-2 re-sync machinery for M2. This supersedes
    the original "refuse method/type renames when stale" gate.
-3. **Conflict depth** — minimal for M2: legal identifier + **member duplicate on the declaring type**
-   (both element-name scans). The local/parameter same-scope duplicate needs a block-scope AST walk and
-   is deferred; broader conflicts are documented non-goals. Rationale: an undetected conflict surfaces as
-   a compile-error diagnostic, not silent corruption (see Conflict detection).
+3. **Conflict depth — permissive (find-and-replace).** Only the new name's validity (legal identifier /
+   reserved word) is checked; no member-duplicate or other collision scan. Every collision such a scan
+   could catch surfaces as a compile-error diagnostic, not silent corruption, so the up-front scan (and
+   its `TypeElement` re-resolution) is dropped in favour of simplicity. See Conflict detection.
 4. **Constructor rename → redirect to type** — a constructor's name is fixed to the class name, so
    `prepareRename` on a constructor resolves to the enclosing type and the rename proceeds as a type
    rename (matching IntelliJ/JDT), rather than rejecting or attempting an independent constructor rename.
