@@ -34,6 +34,9 @@ Reliability, the triaged gaps, and rename — see the [roadmap](roadmap.md) for 
   correctness-gated (freshness refusal + minimal conflict checks), with explicit non-goals.
 - [Javac Crash Capture](planned/lathe-javac-crash-capture.md) — local repro bundles for unhandled javac
   exceptions without source text in normal logs; backs the crash-surfacing reliability work.
+- [Debug/neotest Unification](planned/lathe-debug-neotest-unification.md) — route test-debug through
+  neotest's `dap` strategy so gutters/summary/console/pass-fail match a run; resolves NV-3/NV-4 and
+  makes NV-2 an implement-once change via a new `lathe/testFinished` outcome notification.
 - **Maven Central beta publishing** — release automation, signing, staging, and released coordinates so
   users install without building from source; needs a dedicated design.
 

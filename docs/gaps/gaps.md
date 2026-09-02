@@ -932,7 +932,8 @@ failure → one WARN toast; counts match `results()`).
 
 ## NV-3 — Debugging a test does not update neotest gutters or the summary panel
 
-**Status: accepted — Target: M2**
+**Status: accepted — Target: M2** — design:
+[lathe-debug-neotest-unification.md](../planned/lathe-debug-neotest-unification.md) (Shape 1).
 
 ### Observed behaviour
 
@@ -972,7 +973,9 @@ failing one marks it failed).
 
 ## NV-4 — Debugging a test flashes the output window and never shows pass/fail
 
-**Status: accepted — Target: M2**
+**Status: accepted — Target: M2** — design:
+[lathe-debug-neotest-unification.md](../planned/lathe-debug-neotest-unification.md) (Shape 1, NV-4
+solved for free by going through build_spec/results()).
 
 ### Observed behaviour
 
@@ -983,12 +986,14 @@ wants the debug path to behave like the run path here.
 
 ### Root cause
 
-The run and neotest paths call `output.reset()` / `output.ensure_open()` and keep the shared docked
-console (`lua/lathe/output.lua`) for the life of the run, then surface an outcome
-(`run.lua on_finished`, or neotest's `results()`). The debug path (`lua/lathe/dap.lua`) does neither:
-it hands off to nvim-dap (its own REPL/console) and only calls `stackdecorate.decorate_live_output()
-` on `event_terminated`/`event_exited`. Any transient appearance of the Lathe console during launch
-is not kept open, and there is no results()/exit-code surface, so pass/fail is never shown.
+The run and neotest paths stream into the shared docked console (`lua/lathe/output.lua`) and surface an
+outcome (`run.lua on_finished`, or neotest's `results()`). Note: only the `main` path (`run.lua`) calls
+`output.ensure_open()`; the neotest path calls `output.reset()` only, so a test run's console appears
+"kept open" merely because the docked buffer/window persists once the user has opened it (`<leader>to`).
+The debug path (`lua/lathe/dap.lua`) does neither: it hands off to nvim-dap (its own REPL/console) and
+only calls `stackdecorate.decorate_live_output()` on `event_terminated`/`event_exited`. It never streams
+into or keeps the shared console, and there is no results()/exit-code surface, so pass/fail is never
+shown.
 
 ### Proposed direction
 
