@@ -184,6 +184,11 @@ end
 -- (a queue cannot carry nil).
 local event_queues = {}
 local STREAM_DONE = {}
+-- Debug runs resolve their result_future from the lathe/testFinished notification (the debug launch
+-- returns its DAP ports immediately, so the aggregate outcome only arrives out-of-band at session
+-- end) rather than from a lathe.run.test response. Keyed by token; set in run_spec's dap branch,
+-- cleared in results().
+local debug_futures = {}
 
 vim.lsp.handlers["lathe/testEvent"] = function(_err, result)
   if not (result and result.result and result.token) then
@@ -193,6 +198,25 @@ vim.lsp.handlers["lathe/testEvent"] = function(_err, result)
   local queue = event_queues[result.token]
   if queue then
     queue.put_nowait({ position_id = result.result.positionId, result = test_result(result.result, nil) })
+  end
+end
+
+-- A debug run's final outcome arrives here at session end. Put the stream's close sentinel so the
+-- live iterator terminates, then resolve the run's future so results() can reconcile. The final
+-- outcome.testResults are authoritative, so any straggling live testEvent cut off by the early
+-- STREAM_DONE is still covered by the reconciliation pass in results().
+vim.lsp.handlers["lathe/testFinished"] = function(_err, result)
+  if not (result and result.token and result.outcome) then
+    return
+  end
+
+  local queue = event_queues[result.token]
+  if queue then
+    queue.put_nowait(STREAM_DONE)
+  end
+  local future = debug_futures[result.token]
+  if future then
+    future.set({ err = nil, outcome = result.outcome })
   end
 end
 
@@ -401,13 +425,45 @@ end
 --- cannot happen inline here. `command = {"true"}` is a no-op process neotest still needs; the real
 --- work rides the stream and the run token. `position_id` is the run position's own id, so its
 --- aggregate result and output attach to it.
-local function run_spec(position_id, module_rel, selections, client, label)
-  vim.notify("Running " .. label, vim.log.levels.INFO, { title = "Lathe" })
+--- The live-stream iterator factory shared by run and debug specs: drains the run's event queue,
+--- handing neotest each per-test result as it arrives, until the STREAM_DONE sentinel ends it.
+local function stream_fn(queue)
+  return function()
+    return function()
+      local item = queue.get()
+      if item == STREAM_DONE then
+        return nil
+      end
+      return { [item.position_id] = item.result }
+    end
+  end
+end
+
+local function run_spec(position_id, module_rel, selections, client, label, strategy)
   local token = next_token()
   local queue = nio().control.queue()
   event_queues[token] = queue
   local result_future = nio().control.future()
 
+  local spec = {
+    command = { "true" },
+    context = { position_id = position_id, token = token, result_future = result_future },
+    stream = stream_fn(queue),
+  }
+
+  if strategy == "dap" then
+    -- Debug path: neotest's dap strategy launches spec.strategy (the lathe adapter ->
+    -- lathe.debug.test), so we must NOT also fire lathe.run.test -- that would spawn a second,
+    -- un-debugged JVM alongside the debug session. The aggregate outcome arrives via
+    -- lathe/testFinished, which resolves this future (see debug_futures).
+    vim.notify("Debugging " .. label, vim.log.levels.INFO, { title = "Lathe" })
+    debug_futures[token] = result_future
+    spec.context.debug = true
+    spec.strategy = require("lathe.dap")._attach_config(module_rel, selections, label, token)
+    return spec
+  end
+
+  vim.notify("Running " .. label, vim.log.levels.INFO, { title = "Lathe" })
   nio().run(function()
     local err, outcome = client.request.workspace_executeCommand({
       command = "lathe.run.test",
@@ -423,19 +479,7 @@ local function run_spec(position_id, module_rel, selections, client, label)
     result_future.set({ err = err, outcome = outcome })
   end)
 
-  return {
-    command = { "true" },
-    context = { position_id = position_id, token = token, result_future = result_future },
-    stream = function()
-      return function()
-        local item = queue.get()
-        if item == STREAM_DONE then
-          return nil
-        end
-        return { [item.position_id] = item.result }
-      end
-    end,
-  }
+  return spec
 end
 
 function M.build_spec(args)
@@ -445,14 +489,24 @@ function M.build_spec(args)
     return nil
   end
 
+  -- neotest passes strategy == "dap" for its summary `d`/`D` debug mappings and any
+  -- run.run({ strategy = "dap" }); run_spec turns that into a debug spec instead of a replay run.
+  local strategy = args.strategy
+
   -- Reset the shared console buffer once per user run action; each class_spec below mints its own
   -- run token, so a file's classes (run concurrently by neotest) stay routed to distinct streams.
   output.reset()
+  -- A debug run reuses the run path's console surface (NV-4): open and keep the docked console so the
+  -- streamed transcript is visible. The neotest run path deliberately does not auto-open (only
+  -- lathe.run's main path does), so this is debug-only.
+  if strategy == "dap" then
+    output.ensure_open()
+  end
 
   if pos.type == "test" or pos.type == "namespace" then
     return run_spec(pos.id, pos.lathe_module_rel, {
       { selectorKind = pos.lathe_selector_kind, selectorValue = pos.id },
-    }, client, pos.name)
+    }, client, pos.name, strategy)
   end
 
   if pos.type == "dir" then
@@ -478,7 +532,7 @@ function M.build_spec(args)
     -- directory node and lets the fan-out clear/update every descendant; per-test statuses still win.
     return run_spec(pos.id, module_rel, {
       { selectorKind = "PACKAGE", selectorValue = package_name },
-    }, client, package_name)
+    }, client, package_name, strategy)
   end
 
   if pos.type ~= "file" then
@@ -500,6 +554,13 @@ function M.build_spec(args)
     end
   end
   if #selections == 0 then
+    -- Nothing to debug: there is no selector to launch a suspended JVM for. Notify and bail rather
+    -- than hand neotest's dap strategy an empty spec.strategy.
+    if strategy == "dap" then
+      vim.notify("Nothing here to debug", vim.log.levels.WARN, { title = "Lathe" })
+      return nil
+    end
+
     -- Returning nil here routes into neotest's own fallback (_run_broken_down_tree), which finds
     -- zero runnable leaf nodes and returns without ever calling results_callback -- the "running"
     -- status set at the start of run_tree for this position never gets cleared, so its glyph spins
@@ -509,7 +570,7 @@ function M.build_spec(args)
       or ("open " .. vim.fn.fnamemodify(pos.path, ":t") .. " to discover its tests before running")
     return { command = { "true" }, context = { position_id = pos.id, skip_reason = reason } }
   end
-  return run_spec(pos.id, module_rel, selections, client, pos.name)
+  return run_spec(pos.id, module_rel, selections, client, pos.name, strategy)
 end
 
 --- neotest.Result.output must be a path to a file containing the output, not raw text --
@@ -600,6 +661,40 @@ local function container_status(node, real)
   return best
 end
 
+-- A debug run's lathe/testFinished should land at session end, right when neotest calls results();
+-- this bounds how long results() waits for it before falling back, so a lost notification degrades
+-- to an exit-code-only outcome instead of a position stuck "running".
+local DEBUG_FINISH_TIMEOUT_MS = 10000
+
+--- Waits for `future` up to `timeout_ms`, returning its value or nil on timeout. Races the wait
+--- against a sleep with nio.first (event-driven, no polling), mirroring await_ready.
+local function wait_bounded(future, timeout_ms)
+  local value
+  nio().first({
+    function()
+      value = future.wait()
+    end,
+    function()
+      nio().sleep(timeout_ms)
+    end,
+  })
+  return value
+end
+
+--- A minimal outcome-shaped fallback when a debug run's lathe/testFinished never arrives: launched,
+--- with neotest's dap-strategy exit code and no per-test results, so results() reports pass/fail from
+--- the exit code rather than hanging on the future forever.
+local function synthesized_outcome(result)
+  return {
+    launched = true,
+    blockedReasons = {},
+    exitCode = (result and result.code) or -1,
+    output = {},
+    testResults = {},
+  }
+end
+M._synthesized_outcome = synthesized_outcome
+
 --- neotest.Client:run_tree marks every id in the run's whole subtree as
 --- "running" up front (client/init.lua's update_running, built from
 --- tree:iter()) but only clears whichever ids results() returns -- a class
@@ -618,7 +713,7 @@ end
 --- file tree to every class's results() call, so resolving "everything in
 --- tree" would incorrectly stamp sibling classes' methods with the wrong
 --- class's result.
-function M.results(spec, _result, tree)
+function M.results(spec, result, tree)
   local ctx = spec.context
 
   -- neotest calls results() as soon as the no-op "true" process exits, which is well before the
@@ -627,7 +722,18 @@ function M.results(spec, _result, tree)
   -- reconciliation, the run-position aggregate, and the output file. Runs in neotest's async
   -- context, so the wait yields. Pure-function specs set ctx.outcome directly (no result_future).
   if ctx.result_future then
-    local finished = ctx.result_future.wait()
+    local finished
+    if ctx.debug then
+      -- A debug run's outcome arrives out-of-band via lathe/testFinished, not from an in-process
+      -- run.test call, so the wait must be bounded: a lost notification would otherwise hang the
+      -- position in "running" forever. On timeout, synthesize from neotest's dap-strategy result
+      -- (its session exit code) so results() always completes.
+      finished = wait_bounded(ctx.result_future, DEBUG_FINISH_TIMEOUT_MS)
+        or { err = nil, outcome = synthesized_outcome(result) }
+      debug_futures[ctx.token] = nil
+    else
+      finished = ctx.result_future.wait()
+    end
     ctx.err = finished.err
     ctx.outcome = finished.outcome
     event_queues[ctx.token] = nil

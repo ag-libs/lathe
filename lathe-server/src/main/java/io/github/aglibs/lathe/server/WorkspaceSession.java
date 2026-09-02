@@ -54,6 +54,7 @@ import io.github.aglibs.lathe.server.run.RunItem;
 import io.github.aglibs.lathe.server.run.RunOverlay;
 import io.github.aglibs.lathe.server.run.RunTarget;
 import io.github.aglibs.lathe.server.run.TestEventParams;
+import io.github.aglibs.lathe.server.run.TestFinishedParams;
 import io.github.aglibs.lathe.server.run.TestOutputParams;
 import io.github.aglibs.lathe.server.run.TestResult;
 import io.github.aglibs.lathe.server.run.TranscriptLine;
@@ -406,7 +407,15 @@ final class WorkspaceSession {
       final String label)
       throws IOException {
     activeRuns.put(token, session);
-    session.onExit().whenComplete((outcome, error) -> worker.execute(() -> endDebugSession(token)));
+    session
+        .onExit()
+        .whenComplete(
+            (outcome, error) ->
+                worker.execute(
+                    () -> {
+                      publishTestFinished(token, outcome, error);
+                      endDebugSession(token);
+                    }));
 
     // Launcher spawns the JVM and returns before its -agentlib:jdwp socket is listening. Gate on
     // the
@@ -447,6 +456,42 @@ final class WorkspaceSession {
     if (!gate.complete()) {
       throw new IllegalStateException("debug launch incomplete: " + gate.reasons());
     }
+  }
+
+  /**
+   * Publishes the debug session's final {@link LaunchOutcome} to the client over its run token —
+   * the debug twin of the {@code lathe.run.test} command response. The debug launch returns its DAP
+   * ports immediately, long before the debuggee exits, so this session-end notification is the only
+   * way the client learns the run's aggregate result and can complete its results reconciliation
+   * (gutters, summary, pass/fail). A blank token (no live surface listening) is a no-op; a null
+   * outcome (the JVM died before producing one) is reported as blocked so the client never waits
+   * forever. Fires for both {@code debugTest} and {@code debugMain}; a main debug carries no {@code
+   * testResults}, which the client ignores for a token it never registered.
+   */
+  private void publishTestFinished(
+      final String token, final LaunchOutcome outcome, final Throwable error) {
+    if (token.isBlank()) {
+      return;
+    }
+
+    final LaunchOutcome finished = finishedOutcome(outcome, error);
+    LOG.fine(() -> "[debug] %s finished exit=%d".formatted(token, finished.exitCode()));
+    ((LatheLanguageClient) client).testFinished(new TestFinishedParams(token, finished));
+  }
+
+  /**
+   * The outcome to publish at debug session end: the real {@link LaunchOutcome} when {@code
+   * session.onExit()} produced one, or a blocked outcome naming the failure when the JVM died
+   * before one was read. Never null, so the client's results wait always completes. Package-private
+   * for direct unit coverage without launching a suspended JVM.
+   */
+  static LaunchOutcome finishedOutcome(final LaunchOutcome outcome, final Throwable error) {
+    if (outcome != null) {
+      return outcome;
+    }
+
+    return LaunchOutcome.blocked(
+        List.of("debug session ended without an outcome: %s".formatted(error)));
   }
 
   private void endDebugSession(final String token) {

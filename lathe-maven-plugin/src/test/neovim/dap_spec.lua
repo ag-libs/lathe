@@ -133,4 +133,15 @@ do
   spec.check("session without config -> no decorate", decorate_calls, 0)
 end
 
+-- Case 11: :LatheDebug's route choice. A test routes through neotest's dap strategy when neotest is
+-- available (gutters/console/outcome), else falls back to a direct dap.run; a main always uses a
+-- direct dap.run (no neotest surface); nothing resolved is "none".
+do
+  spec.check("test + neotest -> neotest dap strategy", dap._debug_route(true, false, true), "neotest")
+  spec.check("test, neotest absent -> direct dap.run fallback", dap._debug_route(true, false, false), "dap_test")
+  spec.check("main -> direct dap.run", dap._debug_route(false, true, true), "dap_main")
+  spec.check("main is unaffected by neotest", dap._debug_route(false, true, false), "dap_main")
+  spec.check("nothing under cursor -> none", dap._debug_route(false, false, false), "none")
+end
+
 spec.finish("dap_spec")

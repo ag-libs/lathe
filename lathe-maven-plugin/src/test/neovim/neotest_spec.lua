@@ -520,4 +520,78 @@ do
   spec.check("filter_dir keeps src", adapter.filter_dir("src", "app/src", "/root"), true)
 end
 
+-- build_spec with strategy == "dap" (neotest's summary `d`/`D` and run.run({strategy="dap"})) must
+-- return a DEBUG spec: a spec.strategy the dap strategy launches through the lathe adapter, carrying
+-- the run token and selection -- and must NOT fire a lathe.run.test replay (that would spawn a second,
+-- un-debugged JVM). A minimal synchronous nio stub lets build_spec run headlessly; the fake client
+-- records every executeCommand so we can assert none was issued.
+do
+  local executed = {}
+  package.loaded["nio"] = {
+    control = {
+      queue = function()
+        return { put_nowait = function() end, get = function() end }
+      end,
+      future = function()
+        return { set = function() end, wait = function() end }
+      end,
+    },
+    run = function() end,
+    lsp = {
+      get_clients = function()
+        return {
+          { request = { workspace_executeCommand = function(arg)
+            executed[#executed + 1] = arg
+          end } },
+        }
+      end,
+    },
+  }
+
+  local pos = {
+    id = "com.example.FooTest#bar()",
+    type = "test",
+    name = "bar",
+    lathe_module_rel = "app",
+    lathe_selector_kind = "METHOD",
+  }
+  local tree = {
+    data = function()
+      return pos
+    end,
+    iter_nodes = function()
+      return function()
+        return nil
+      end
+    end,
+  }
+
+  local built = adapter.build_spec({ tree = tree, strategy = "dap" })
+
+  spec.check("dap build_spec carries a lathe strategy config", built.strategy and built.strategy.type, "lathe")
+  spec.check("dap strategy carries a run token", type(built.strategy.lathe_token), "string")
+  spec.check(
+    "dap strategy carries the selection",
+    built.strategy.lathe_selections[1].selectorValue,
+    pos.id
+  )
+  spec.check("dap context is flagged debug", built.context.debug, true)
+  spec.check("dap build_spec fires no lathe.run.test replay", #executed, 0)
+
+  package.loaded["nio"] = nil
+end
+
+-- The debug-run fallback: when lathe/testFinished never arrives, results() must still complete from
+-- neotest's dap-strategy exit code rather than hang, so _synthesized_outcome maps that code into a
+-- launched, result-less outcome.
+do
+  local zero = adapter._synthesized_outcome({ code = 0 })
+  spec.check("synthesized outcome is launched", zero.launched, true)
+  spec.check("synthesized outcome takes exit code 0", zero.exitCode, 0)
+  spec.check("synthesized outcome has no per-test results", #zero.testResults, 0)
+
+  spec.check("synthesized outcome takes a non-zero exit code", adapter._synthesized_outcome({ code = 1 }).exitCode, 1)
+  spec.check("synthesized outcome defaults a missing code to -1", adapter._synthesized_outcome(nil).exitCode, -1)
+end
+
 spec.finish()

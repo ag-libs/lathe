@@ -191,6 +191,14 @@ package) that contains it, otherwise a `main` — via [nvim-dap](https://github.
 The server launches the replay JVM under a suspended JDWP agent and hosts Microsoft's `java-debug`
 adapter in-process — so there is no separate debug adapter to install or configure.
 
+When neotest is configured, debugging a **test** runs through neotest's `dap` strategy: the gutter
+signs and summary tree update live and reconcile to pass/fail exactly like a normal run, and the
+shared docked output console opens and stays. Because it is neotest's own strategy, the summary
+panel's built-in `d` (debug) and `D` (debug-marked) mappings drive Lathe too. `:LatheDebug` uses the
+same path for a test; with neotest absent it falls back to a plain debug session (breakpoints and
+stepping still work, but no gutter/summary update). A `main` always launches a plain debug session —
+it has no neotest surface.
+
 > **Prerequisites:** the same [Test Capture](../test-capture.md) setup as the test runner, plus `nvim-dap`
 > installed and loaded **before** `require('lathe').setup()` — Lathe registers the `lathe` adapter
 > during setup, so declare `nvim-dap` as a dependency of your Lathe spec. You do **not** call any
@@ -218,9 +226,9 @@ line. With no breakpoint, the debuggee runs to completion.
 At a stopped frame you can **evaluate expressions** (including method calls) in the DAP REPL.
 
 **Where the output goes — important.** The debuggee's stdout/stderr does **not** appear in nvim-dap's
-REPL/console. Lathe streams it server-side into the **same docked split as tests** (see below), so open
-that split (`<leader>to`) to read program output and errors. The DAP panel is for debugger control
-only (variables, call stack, stepping).
+REPL/console. Lathe streams it server-side into the **same docked split as tests** (see below); a debug
+session opens that split automatically (toggle it with `<leader>to`) to read program output and errors.
+The DAP panel is for debugger control only (variables, call stack, stepping).
 
 For an IntelliJ-style panel (variables, call stack, breakpoints, threads, REPL), add a UI plugin. The
 actively-maintained choice is [nvim-dap-view](https://github.com/igorlfs/nvim-dap-view):

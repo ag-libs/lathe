@@ -2,9 +2,10 @@
 
 ## Status
 
-Planned — M2. Design approved; the three decisions are **resolved** (see Resolved decisions). Sliced for
-implementation (see Work slices); no code yet.
-Resolves gaps [NV-3](../gaps/gaps.md) and [NV-4](../gaps/gaps.md), and creates the shared surface that
+Implemented — M2. All four work slices are complete and verified (server `WorkspaceSessionTest`, Lua
+`dap_spec`/`neotest_spec`, and an interactive editor check); the three decisions are **resolved** (see
+Resolved decisions).
+Resolved gaps [NV-3](../gaps/gaps.md) and [NV-4](../gaps/gaps.md), and created the shared surface that
 makes [NV-2](../gaps/gaps.md) an implement-once change.
 
 Builds directly on the already-implemented streaming and debug machinery:

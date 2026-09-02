@@ -37,6 +37,14 @@ local function notify(msg, level)
   vim.notify(msg, level, { title = "Lathe" })
 end
 
+--- True when neotest is installed and set up (its run API is present), so :LatheDebug can route a test
+--- through neotest's dap strategy -- gutters/summary, the shared console, and a pass/fail outcome.
+--- False means fall back to a direct dap.run (a debug session with none of those).
+local function neotest_available()
+  local ok, neotest = pcall(require, "neotest")
+  return ok and neotest.run ~= nil
+end
+
 local function in_range(range, line)
   return range ~= nil and line >= range.start.line and line <= range["end"].line
 end
@@ -56,22 +64,27 @@ function M._test_target_for(targets, cursor_line)
   return nil
 end
 
---- The nvim-dap `attach` config for a resolved TEST target. Carries the module and selection the
---- adapter forwards to lathe.debug.test (lathe_* keys), plus a run token so the launched JVM can be
---- correlated with the session. The DAP hostName/port are injected later by enrich_config, once the
---- server has allocated the JDWP port.
-function M._test_config_for(target)
+--- The nvim-dap `attach` config for a module + test selections. Carries the module and selections the
+--- adapter forwards to lathe.debug.test (lathe_* keys), plus the run token so the launched JVM can be
+--- correlated with the session. Shared by :LatheDebug's cursor path (M._test_config_for) and
+--- lathe.neotest's dap-strategy specs, so the config shape lives in one place. The DAP hostName/port
+--- are injected later by enrich_config, once the server has allocated the JDWP port.
+function M._attach_config(module_rel, selections, label, token)
   return {
     type = "lathe",
     request = "attach",
-    name = "Lathe: debug " .. target.label,
-    lathe_module_rel = target.moduleRel,
-    lathe_selections = { {
-      selectorKind = SELECTOR_KIND[target.kind],
-      selectorValue = target.id,
-    } },
-    lathe_token = output.next_token(),
+    name = "Lathe: debug " .. label,
+    lathe_module_rel = module_rel,
+    lathe_selections = selections,
+    lathe_token = token,
   }
+end
+
+--- The attach config for a resolved TEST target under the cursor, minting its own run token.
+function M._test_config_for(target)
+  return M._attach_config(target.moduleRel, {
+    { selectorKind = SELECTOR_KIND[target.kind], selectorValue = target.id },
+  }, target.label, output.next_token())
 end
 
 --- The nvim-dap `attach` config for a resolved MAIN target (from lathe.run's discovery). Carries
@@ -144,9 +157,26 @@ local function start_adapter(callback, config)
   end)
 end
 
+--- The debug route for a resolved cursor target. Pure so the branch choice is unit-testable without a
+--- live client, nvim-dap, or neotest: a test routes through neotest's dap strategy when neotest is
+--- available (gutters/console/outcome), else falls back to a direct dap.run; a main always uses a
+--- direct dap.run; nothing resolved is "none".
+function M._debug_route(has_test, has_main, neotest)
+  if has_test then
+    return neotest and "neotest" or "dap_test"
+  end
+
+  if has_main then
+    return "dap_main"
+  end
+
+  return "none"
+end
+
 --- Debugs the test or main class under the cursor in `bufnr`. Resolves the target from the server's
---- runnable discovery -- the innermost test under the cursor, else a main -- then hands nvim-dap the
---- attach config; the adapter does the launch-and-attach.
+--- runnable discovery -- the innermost test under the cursor, else a main -- then either routes a test
+--- through neotest's dap strategy (so gutters/summary/console/pass-fail match a run) or hands nvim-dap
+--- the attach config directly (a main, or the neotest-absent fallback).
 function M.debug(bufnr)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
   local ok, dap = pcall(require, "dap")
@@ -170,9 +200,12 @@ function M.debug(bufnr)
     local test = M._test_target_for(targets, cursor_line)
     local main = not test and require("lathe.run")._main_target_for(targets, cursor_line) or nil
     vim.schedule(function()
-      if test then
+      local route = M._debug_route(test ~= nil, main ~= nil, neotest_available())
+      if route == "neotest" then
+        require("neotest").run.run({ strategy = "dap" })
+      elseif route == "dap_test" then
         dap.run(M._test_config_for(test))
-      elseif main then
+      elseif route == "dap_main" then
         dap.run(M._main_config_for(main))
       else
         notify("no test or main here to debug", vim.log.levels.WARN)

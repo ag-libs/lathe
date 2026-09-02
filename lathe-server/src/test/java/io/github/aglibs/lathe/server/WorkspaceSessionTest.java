@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.launch.JdwpOptions;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
+import io.github.aglibs.lathe.server.run.LaunchOutcome;
+import io.github.aglibs.lathe.server.run.TestResult;
 import io.github.aglibs.lathe.server.run.TranscriptLine;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -188,6 +190,31 @@ class WorkspaceSessionTest {
 
     assertThat(ready).isNotCompleted();
     assertThat(seen.get()).isEqualTo(line);
+  }
+
+  // The debug session-end outcome: attachDebugHost publishes what session.onExit() produced, or a
+  // blocked outcome when the JVM died before one was read -- so the client's results wait always
+  // completes. Covered here at the derivation, so no suspended JVM or DAP host is needed.
+  @Test
+  void finishedOutcome_completedOutcome_returnedAsIs() {
+    final var completed =
+        LaunchOutcome.completed(
+            0,
+            List.of(new TranscriptLine(TranscriptLine.Stream.STDOUT, "ok")),
+            List.of(new TestResult("com.example.Foo", "bar", "", "passed", "", -1, null)));
+
+    assertThat(WorkspaceSession.finishedOutcome(completed, null)).isSameAs(completed);
+  }
+
+  @Test
+  void finishedOutcome_nullOutcome_returnsBlockedNamingTheFailure() {
+    final var error = new IllegalStateException("jvm crashed");
+
+    final LaunchOutcome finished = WorkspaceSession.finishedOutcome(null, error);
+
+    assertThat(finished.launched()).isFalse();
+    assertThat(finished.blockedReasons()).hasSize(1);
+    assertThat(finished.blockedReasons().getFirst()).contains("jvm crashed");
   }
 
   private ModuleSourceConfig config(final Path sourceRoot) {

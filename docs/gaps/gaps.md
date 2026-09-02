@@ -932,7 +932,7 @@ failure → one WARN toast; counts match `results()`).
 
 ## NV-3 — Debugging a test does not update neotest gutters or the summary panel
 
-**Status: accepted — Target: M2** — design:
+**Status: resolved** — design:
 [lathe-debug-neotest-unification.md](../planned/lathe-debug-neotest-unification.md) (Shape 1).
 
 ### Observed behaviour
@@ -964,16 +964,38 @@ than bypassing it. Two candidate shapes to weigh when scheduled:
 
 Ties into NV-4 (both stem from the debug path not sharing the run/neotest output+results surface).
 
+### Resolution
+
+Shape 1 (candidate 1 above). Test-debug now runs through neotest's `dap` strategy:
+
+- `lua/lathe/dap.lua` `M.debug` routes a test under the cursor to
+  `neotest.run.run({ strategy = "dap" })` (the neotest summary `d`/`D` mappings already issue that
+  call), falling back to a direct `dap.run` only when neotest is absent; a `main` still uses
+  `dap.run` directly. The route choice is the pure `M._debug_route`.
+- `lua/lathe/neotest.lua` `run_spec` branches on `strategy == "dap"`: it returns a `spec.strategy`
+  the dap strategy launches through the `lathe` adapter (`lathe.debug.test`) instead of firing
+  `lathe.run.test`, so the streamed `lathe/testEvent`s paint the gutters live and `results()`
+  reconciles the summary at session end.
+- The server publishes the final `LaunchOutcome` at debug session end via a new `lathe/testFinished`
+  notification (`WorkspaceSession.attachDebugHost` / `LatheLanguageClient.testFinished`), which
+  resolves the run's future so `results()` completes; the client wait is bounded with an exit-code
+  fallback so a lost notification can never leave a position stuck "running".
+
 ### Regression targets
 
-None yet — to be defined when scheduled (debugging a passing test marks it passed in the summary; a
-failing one marks it failed).
+`dap_spec.lua` — `_debug_route` routes a test to the neotest dap strategy and falls back to
+`dap.run` when neotest is absent, and a `main` uses `dap.run`.
+`neotest_spec.lua` — `build_spec` with `strategy == "dap"` returns a `spec.strategy` carrying the run
+token and fires no `lathe.run.test` replay.
+`WorkspaceSessionTest.finishedOutcome_completedOutcome_returnedAsIs` /
+`finishedOutcome_nullOutcome_returnsBlockedNamingTheFailure` — the session-end outcome is published
+(the real outcome, or a blocked one when none was produced).
 
 ---
 
 ## NV-4 — Debugging a test flashes the output window and never shows pass/fail
 
-**Status: accepted — Target: M2** — design:
+**Status: resolved** — design:
 [lathe-debug-neotest-unification.md](../planned/lathe-debug-neotest-unification.md) (Shape 1, NV-4
 solved for free by going through build_spec/results()).
 
@@ -1003,10 +1025,20 @@ the outcome (pass/fail from the captured test results or exit code) the same way
 `results()` do. Best delivered with NV-3 (a neotest `dap` strategy naturally reuses the run path's
 output and results surfaces).
 
+### Resolution
+
+Resolved with NV-3 by routing debug through `build_spec`/`results()`. The `strategy == "dap"` path in
+`lua/lathe/neotest.lua` `build_spec` calls `output.ensure_open()` (debug-only, since the neotest run
+path deliberately does not auto-open) so the shared docked console opens and stays; because the debug
+launch already streams `lathe/testOutput` under the run token, the transcript fills it live, and
+`results()` surfaces the pass/fail outcome the same way a run does.
+
 ### Regression targets
 
-None yet — to be defined when scheduled (a debug session keeps the docked console open and reports a
-terminal pass/fail).
+`neotest_spec.lua` — `build_spec` with `strategy == "dap"` resets/opens the console and returns the
+debug spec; `_synthesized_outcome` maps a dap-strategy exit code into a launched outcome so
+`results()` reports pass/fail even if `lathe/testFinished` is lost. The docked console staying open
+for a live debug session is verified manually (headless windowing is not asserted).
 
 ---
 

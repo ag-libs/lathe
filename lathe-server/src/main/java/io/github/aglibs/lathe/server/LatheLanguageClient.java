@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.server.run.TestEventParams;
+import io.github.aglibs.lathe.server.run.TestFinishedParams;
 import io.github.aglibs.lathe.server.run.TestOutputParams;
 import org.eclipse.lsp4j.jsonrpc.services.JsonNotification;
 import org.eclipse.lsp4j.services.LanguageClient;
@@ -17,4 +18,7 @@ public interface LatheLanguageClient extends LanguageClient {
 
   @JsonNotification("lathe/testEvent")
   void testEvent(TestEventParams params);
+
+  @JsonNotification("lathe/testFinished")
+  void testFinished(TestFinishedParams params);
 }
