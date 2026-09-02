@@ -156,8 +156,33 @@ its failing assertion line (jump with `]d` / `[d`).
 Discovery is automatic — opening a test file shows its runnables, and add/rename/remove of a `@Test`
 updates on save.
 
-Recognizes Surefire's default include patterns (`Test*.java`, `*Test.java`, `*Tests.java`,
-`*TestCase.java`); a project that overrides Surefire `<includes>` is not picked up yet.
+### Which tests appear in the summary
+
+The neotest summary tree is populated in two stages.
+The adapter first decides which files to hand to neotest: a file is a **test candidate** when it lives
+under a `src/test/` source root and its name matches Surefire's default include patterns —
+`Test*.java`, `*Test.java`, `*Tests.java`, or `*TestCase.java`.
+For each candidate, the server's attributed analysis then reports the actual runnables — methods
+annotated with `@Test`, `@ParameterizedTest`, `@RepeatedTest`, or `@TestFactory`, and the class that
+groups them.
+So what shows up in the summary is the **intersection** of the name pattern and the annotations: a
+name-matching file with no such method contributes nothing, and an annotated method in a non-matching
+file (or under `src/main/`) is not surfaced by neotest.
+
+This name filter is a neotest-adapter concern — it shapes the summary tree only, not what the server
+can run.
+Two limits follow from it:
+
+- **Project-overridden Surefire `<includes>` / `<excludes>` are not honored yet.**
+  The adapter assumes Surefire's defaults, so a build that customizes them lists a different set in the
+  summary than `mvn test` runs. Reading each module's real patterns at `lathe:sync` is a known future
+  improvement.
+- **Integration tests (Failsafe) do not appear.**
+  IT classes (`IT*.java`, `*IT.java`, `*ITCase.java`) fall outside the Surefire name patterns, so the
+  summary never lists them. They are also not runnable from the editor: Lathe captures only the
+  Surefire `test` fork, never the Failsafe fork (`integration-test` / `verify`), so there is no launch
+  template to replay them from — run integration tests through Maven. See
+  [Test Capture](../test-capture.md).
 
 ## Debug (nvim-dap)
 
