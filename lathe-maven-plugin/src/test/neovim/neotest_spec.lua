@@ -198,6 +198,41 @@ local function read_file(path)
   return content
 end
 
+-- Minimal stand-in for neotest.types.Tree (get_key/iter_nodes only), so the results() reconciliation
+-- tests run without the real neotest plugin installed -- like the rest of this spec. `nodes_by_id` maps
+-- each id to `{ id, type, children }`; iter_nodes yields a node then its whole subtree, depth-first.
+local function fake_tree(nodes_by_id)
+  local function node_for(id)
+    return {
+      data = function()
+        return nodes_by_id[id]
+      end,
+      iter_nodes = function()
+        local ids = {}
+        local function collect(i)
+          table.insert(ids, i)
+          for _, child_id in ipairs(nodes_by_id[i].children or {}) do
+            collect(child_id)
+          end
+        end
+        collect(id)
+        local idx = 0
+        return function()
+          idx = idx + 1
+          if ids[idx] then
+            return idx, node_for(ids[idx])
+          end
+        end
+      end,
+    }
+  end
+  return {
+    get_key = function(_, id)
+      return nodes_by_id[id] and node_for(id) or nil
+    end,
+  }
+end
+
 -- results() must always write neotest.Result.output as a path to a file
 -- containing the real content, never raw text in the field itself.
 do
@@ -247,38 +282,6 @@ end
 -- call, so naively resolving "everything in tree" would incorrectly stamp
 -- sibling classes' methods with the wrong class's result.
 do
-  local function fake_tree(nodes_by_id)
-    local function node_for(id)
-      return {
-        data = function()
-          return nodes_by_id[id]
-        end,
-        iter_nodes = function()
-          local ids = {}
-          local function collect(i)
-            table.insert(ids, i)
-            for _, child_id in ipairs(nodes_by_id[i].children or {}) do
-              collect(child_id)
-            end
-          end
-          collect(id)
-          local idx = 0
-          return function()
-            idx = idx + 1
-            if ids[idx] then
-              return idx, node_for(ids[idx])
-            end
-          end
-        end,
-      }
-    end
-    return {
-      get_key = function(_, id)
-        return nodes_by_id[id] and node_for(id) or nil
-      end,
-    }
-  end
-
   local nodes = {
     ["demo.FooTest"] = { id = "demo.FooTest", children = { "demo.FooTest#a()", "demo.FooTest#b()" } },
     ["demo.FooTest#a()"] = { id = "demo.FooTest#a()", children = {} },
@@ -311,38 +314,6 @@ end
 -- positionId (RunnableScanner.methodTarget's "<class>#<method>(<erasedParams>)"
 -- format); results() keys off it directly, no client-side reconstruction.
 do
-  local function fake_tree(nodes_by_id)
-    local function node_for(id)
-      return {
-        data = function()
-          return nodes_by_id[id]
-        end,
-        iter_nodes = function()
-          local ids = {}
-          local function collect(i)
-            table.insert(ids, i)
-            for _, child_id in ipairs(nodes_by_id[i].children or {}) do
-              collect(child_id)
-            end
-          end
-          collect(id)
-          local idx = 0
-          return function()
-            idx = idx + 1
-            if ids[idx] then
-              return idx, node_for(ids[idx])
-            end
-          end
-        end,
-      }
-    end
-    return {
-      get_key = function(_, id)
-        return nodes_by_id[id] and node_for(id) or nil
-      end,
-    }
-  end
-
   local nodes = {
     ["demo.FooTest"] = {
       id = "demo.FooTest",
@@ -427,6 +398,98 @@ do
   spec.check("passed invocation does not mask a later failure", pass_then_fail.status, "failed")
   spec.check("a later passing invocation does not clear an earlier failure", fail_then_pass.status, "failed")
   spec.check("rolled-up failure keeps a failure message", fail_then_pass.short, "first blew up")
+end
+
+-- A package (dir) run whose subtree spans several classes must roll each
+-- container node up from its OWN leaf results, not paint every descendant with
+-- the run-wide aggregate. Reproduces the reported bug: one failing test in the
+-- package reddened every passing .java file/class too, because file and class
+-- nodes never receive a per-test result and so inherited the aggregate failure.
+-- The run position itself (the dir) still shows the aggregate; only its
+-- descendants roll up.
+do
+  local dir = "/workspace/demo/src/test/java/demo"
+  local pass_file = dir .. "/AlphaTest.java"
+  local fail_file = dir .. "/BetaTest.java"
+  local nodes = {
+    [dir] = { id = dir, type = "dir", children = { pass_file, fail_file } },
+    [pass_file] = { id = pass_file, type = "file", children = { "demo.AlphaTest" } },
+    ["demo.AlphaTest"] = { id = "demo.AlphaTest", type = "namespace", children = { "demo.AlphaTest#ok()" } },
+    ["demo.AlphaTest#ok()"] = { id = "demo.AlphaTest#ok()", type = "test", children = {} },
+    [fail_file] = { id = fail_file, type = "file", children = { "demo.BetaTest" } },
+    ["demo.BetaTest"] = { id = "demo.BetaTest", type = "namespace", children = { "demo.BetaTest#bad()" } },
+    ["demo.BetaTest#bad()"] = { id = "demo.BetaTest#bad()", type = "test", children = {} },
+  }
+  local tree = fake_tree(nodes)
+
+  local results = adapter.results({
+    context = {
+      position_id = dir,
+      outcome = {
+        launched = true,
+        exitCode = 1,
+        output = transcript("transcript"),
+        testResults = {
+          { positionId = "demo.AlphaTest#ok()", status = "passed", failureMessage = "", failureLine = -1 },
+          { positionId = "demo.BetaTest#bad()", status = "failed", failureMessage = "boom", failureLine = 7 },
+        },
+      },
+    },
+  }, nil, tree)
+
+  spec.check("dir run position shows the aggregate failure", results[dir].status, "failed")
+  spec.check("passing file rolls up to passed, not the aggregate", results[pass_file].status, "passed")
+  spec.check("passing class rolls up to passed", results["demo.AlphaTest"].status, "passed")
+  spec.check("passing method stays passed", results["demo.AlphaTest#ok()"].status, "passed")
+  spec.check("failing file rolls up to failed", results[fail_file].status, "failed")
+  spec.check("failing class rolls up to failed", results["demo.BetaTest"].status, "failed")
+  spec.check("failing method stays failed", results["demo.BetaTest#bad()"].status, "failed")
+end
+
+-- The reported package-run bug: neotest discovers positions only for OPEN files, so a package run's
+-- tree has childless file/dir nodes for every file the user never opened -- yet the run produced a real
+-- result for each of those tests. results() must match those results to the childless container by NAME
+-- (file path -> FQCN, dir path -> package) so a passing but never-opened file shows passed, not the
+-- run-wide aggregate failure. Reproduces the exact shape seen in the diagnostic log.
+do
+  local base = "/w/m/src/test/java/com/x"
+  local pass_file = base .. "/AlphaTest.java"
+  local fail_file = base .. "/BetaTest.java"
+  local sub = base .. "/sub"
+  local sub_file = sub .. "/GammaTest.java"
+  -- Every file/dir node is CHILDLESS -- none of these files was opened, so discovery never populated
+  -- their namespace/method positions. Only container nodes exist under the run position.
+  local nodes = {
+    [base] = { id = base, type = "dir", children = { pass_file, fail_file, sub } },
+    [pass_file] = { id = pass_file, type = "file", children = {} },
+    [fail_file] = { id = fail_file, type = "file", children = {} },
+    [sub] = { id = sub, type = "dir", children = { sub_file } },
+    [sub_file] = { id = sub_file, type = "file", children = {} },
+  }
+  local tree = fake_tree(nodes)
+
+  local results = adapter.results({
+    context = {
+      position_id = base,
+      outcome = {
+        launched = true,
+        exitCode = 1,
+        output = transcript("transcript"),
+        testResults = {
+          { positionId = "com.x.AlphaTest#ok()", status = "passed", failureMessage = "", failureLine = -1 },
+          { positionId = "com.x.AlphaTest#ok2()", status = "passed", failureMessage = "", failureLine = -1 },
+          { positionId = "com.x.BetaTest#bad()", status = "failed", failureMessage = "boom", failureLine = 3 },
+          { positionId = "com.x.sub.GammaTest#g()", status = "passed", failureMessage = "", failureLine = -1 },
+        },
+      },
+    },
+  }, nil, tree)
+
+  spec.check("dir run position shows the aggregate failure", results[base].status, "failed")
+  spec.check("never-opened passing file matched by name -> passed", results[pass_file].status, "passed")
+  spec.check("never-opened failing file matched by name -> failed", results[fail_file].status, "failed")
+  spec.check("nested package dir matched by prefix -> passed", results[sub].status, "passed")
+  spec.check("file in a nested package matched by name -> passed", results[sub_file].status, "passed")
 end
 
 -- root() resolves the nearest .lathe marker walking up from a nested path,

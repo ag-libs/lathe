@@ -535,16 +535,84 @@ local function transcript_text(lines)
   return table.concat(parts, "\n")
 end
 
+-- Ranks per-test statuses so a container takes the most significant one among the tests it encloses:
+-- any failure dominates, then a pass (a class with passed+skipped tests is passed), then skipped.
+local STATUS_RANK = { skipped = 1, passed = 2, failed = 3 }
+
+--- FQCN for a `*Test.java` file, or the dotted package for a test source directory, derived from its
+--- absolute path (mirrors _package_for_dir's `/src/<scope>/java/` anchor). nil for a path outside a test
+--- source root, so a non-standard-layout node falls back to the aggregate rather than mis-matching.
+local function path_to_qualified(path)
+  local rel = path:match("^.-/src/[^/]+/java/(.*)$")
+  if not rel then
+    return nil
+  end
+
+  return (rel:gsub("%.java$", ""):gsub("/", "."))
+end
+
+--- True when `class` (a JUnit binary class name) belongs to `qualifier`: the same class or a nested class
+--- of it when `qualifier` is an FQCN, or any class in the package (or a subpackage) when it is a package.
+--- The trailing "." / "$" boundary stops `com.x.ser` from matching `com.x.service.Foo`.
+local function class_encloses(qualifier, class, is_package)
+  if is_package then
+    return class:sub(1, #qualifier + 1) == qualifier .. "."
+  end
+
+  return class == qualifier or class:sub(1, #qualifier + 1) == qualifier .. "$"
+end
+
+--- Status a container node inherits from the per-test results whose class it encloses, matched by NAME
+--- rather than by discovered child nodes. neotest discovers positions only for open files, so a package
+--- run's tree is childless for every file the user never opened -- yet the run still produced a real
+--- result for each of those tests. Matching results to the file/package by name lets a passing but
+--- never-opened file show passed instead of inheriting the run-wide aggregate failure. nil when nothing
+--- matches (or the node isn't a container), so the caller falls back to the aggregate and never leaves
+--- it stuck running.
+local function container_status(node, real)
+  local data = node:data()
+  local qualifier, is_package
+  if data.type == "namespace" then
+    qualifier = data.id
+  elseif data.type == "file" then
+    qualifier = path_to_qualified(data.id)
+  elseif data.type == "dir" then
+    qualifier, is_package = path_to_qualified(data.id), true
+  end
+
+  if not qualifier then
+    return nil
+  end
+
+  local best
+  for position_id, res in pairs(real) do
+    -- class name of the per-test id ("com.x.FooTest#bar(int)" -> "com.x.FooTest"); nil for a
+    -- container id, which carries no '#'.
+    local class = position_id:match("^(.-)#")
+    if
+      class
+      and class_encloses(qualifier, class, is_package)
+      and (not best or STATUS_RANK[res.status] > STATUS_RANK[best])
+    then
+      best = res.status
+    end
+  end
+  return best
+end
+
 --- neotest.Client:run_tree marks every id in the run's whole subtree as
 --- "running" up front (client/init.lua's update_running, built from
 --- tree:iter()) but only clears whichever ids results() returns -- a class
 --- or package result naming just its own id leaves every descendant
 --- method/class stuck showing "running" forever. Real per-test statuses from
 --- outcome.testResults are mapped first, so exactly the methods that failed
---- are marked failed; any descendant not covered by a structured result (an
---- id-mapping miss, the class namespace node itself, or an older outcome with
---- no testResults) still inherits the aggregate status via the fan-out, so
---- nothing is left stuck running. Scoped to just the run position's own
+--- are marked failed; every container node (file/class/dir) then takes the
+--- status of the results whose class it encloses -- matched by name, since a
+--- package run's tree is childless for files the user never opened -- so a
+--- passing file shows passed even when a sibling in the same package fails.
+--- A node that matches no result (an unmatched method, or an older outcome
+--- with no testResults) falls back to the aggregate, so nothing is left stuck
+--- running. Scoped to just the run position's own
 --- subtree via tree:get_key(ctx.position_id), not the whole tree parameter --
 --- build_spec's file-run fan-out (one spec per class) passes the same outer
 --- file tree to every class's results() call, so resolving "everything in
@@ -604,12 +672,27 @@ function M.results(spec, _result, tree)
     end
   end
 
+  -- Snapshot the true per-test outcomes (keyed by positionId) before adding container/aggregate entries
+  -- below, so name matching sees only real per-test results -- never a container entry we just set.
+  local real = {}
+  for id, r in pairs(results) do
+    real[id] = r
+  end
+
   results[ctx.position_id] = results[ctx.position_id] or result
 
+  -- run_tree marks the whole subtree "running" up front and clears only the ids we return, so every
+  -- descendant needs an entry: a container takes the status of the results whose class it encloses (by
+  -- name -- unopened files were never discovered into the tree), and anything unmatched falls back to
+  -- the aggregate.
   local subtree = tree and tree:get_key(ctx.position_id)
   if subtree then
     for _, node in subtree:iter_nodes() do
-      results[node:data().id] = results[node:data().id] or result
+      local id = node:data().id
+      if not results[id] then
+        local status = container_status(node, real)
+        results[id] = status and { status = status, output = result.output } or result
+      end
     end
   end
 
