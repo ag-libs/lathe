@@ -1,7 +1,9 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -16,25 +18,41 @@ final class WorkspaceWatcher {
   enum PollResult {
     NO_CHANGE,
     WORKSPACE_CHANGED,
+    REACTOR_REFRESH,
     POM_CHANGED
+  }
+
+  // A manifest mtime bump with changed content (STRUCTURAL) vs unchanged content (REACTOR_ONLY).
+  private enum ManifestChange {
+    NONE,
+    STRUCTURAL,
+    REACTOR_ONLY
   }
 
   private record PomFingerprint(long mtime, long size) {}
 
   private final Path manifestPath;
   private long lastManifestMtime;
+  private String lastManifestContent;
   private Map<Path, PomFingerprint> pomBaseline = Map.of();
 
   WorkspaceWatcher(final Path workspaceRoot) {
     this.manifestPath =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
     this.lastManifestMtime = mtime(manifestPath);
+    this.lastManifestContent = readManifest();
   }
 
   PollResult poll() {
-    if (detectManifestChange()) {
+    final ManifestChange manifestChange = detectManifestChange();
+    if (manifestChange == ManifestChange.STRUCTURAL) {
       LOG.info(() -> "[watcher] workspace.json changed");
       return PollResult.WORKSPACE_CHANGED;
+    }
+
+    if (manifestChange == ManifestChange.REACTOR_ONLY) {
+      LOG.info(() -> "[watcher] reactor changed — re-scan needed");
+      return PollResult.REACTOR_REFRESH;
     }
 
     if (detectPomChange()) {
@@ -51,14 +69,30 @@ final class WorkspaceWatcher {
             .collect(Collectors.toUnmodifiableMap(p -> p, WorkspaceWatcher::fingerprint));
   }
 
-  private boolean detectManifestChange() {
+  private ManifestChange detectManifestChange() {
     final long current = mtime(manifestPath);
     if (current == lastManifestMtime) {
-      return false;
+      return ManifestChange.NONE;
     }
 
     lastManifestMtime = current;
-    return true;
+    final String content = readManifest();
+    if (content.equals(lastManifestContent)) {
+      return ManifestChange.REACTOR_ONLY;
+    }
+
+    lastManifestContent = content;
+    return ManifestChange.STRUCTURAL;
+  }
+
+  private String readManifest() {
+    // Missing manifest (not configured yet) is a legitimate empty state; a read failure on an
+    // existing one is a real error, not empty content.
+    if (!Files.exists(manifestPath)) {
+      return "";
+    }
+
+    return IOUtil.unchecked(() -> Files.readString(manifestPath, StandardCharsets.UTF_8));
   }
 
   private boolean detectPomChange() {

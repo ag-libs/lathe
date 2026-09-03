@@ -112,4 +112,35 @@ class WorkspaceWatcherTest {
     assertThat(watcher.poll()).isEqualTo(PollResult.WORKSPACE_CHANGED);
     assertThat(watcher.poll()).isEqualTo(PollResult.NO_CHANGE);
   }
+
+  @Test
+  void poll_manifestTouchedSameContent_returnsMirrorRefreshOnceThenNoChange() throws IOException {
+    final var watcher = new WorkspaceWatcher(workspaceRoot);
+
+    // A mtime bump with unchanged content yields one REACTOR_REFRESH, then quiet.
+    touchManifest();
+
+    assertThat(watcher.poll()).isEqualTo(PollResult.REACTOR_REFRESH);
+    assertThat(watcher.poll()).isEqualTo(PollResult.NO_CHANGE);
+  }
+
+  @Test
+  void poll_contentChangeAfterMirrorTouch_returnsWorkspaceChanged() throws IOException {
+    final var watcher = new WorkspaceWatcher(workspaceRoot);
+
+    // A reactor-only touch is REACTOR_REFRESH; a later real content change is still a full reload.
+    touchManifest();
+    assertThat(watcher.poll()).isEqualTo(PollResult.REACTOR_REFRESH);
+
+    Files.writeString(manifest(), "{updated}");
+    assertThat(watcher.poll()).isEqualTo(PollResult.WORKSPACE_CHANGED);
+  }
+
+  private Path manifest() {
+    return latheDir.resolve(LatheLayout.WORKSPACE_JSON);
+  }
+
+  private void touchManifest() throws IOException {
+    Files.setLastModifiedTime(manifest(), FileTime.fromMillis(PAST.toMillis() + 10_000L));
+  }
 }

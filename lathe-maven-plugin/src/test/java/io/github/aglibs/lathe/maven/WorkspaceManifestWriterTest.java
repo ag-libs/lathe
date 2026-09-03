@@ -84,18 +84,22 @@ class WorkspaceManifestWriterTest {
   }
 
   @Test
-  void write_sameContent_skipsWrite() throws Exception {
+  void write_sameContent_touchesMtimeButKeepsContent() throws Exception {
     final var jdk = JdkSource.missing("Vendor", "21", "vendor-21", Path.of("/jdk"));
     writer().write(workspaceRoot, List.of(), jdk, null, List.of(), List.of("pom.xml"), List.of());
 
     final var manifest =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
+    final var content = Files.readString(manifest);
     final var sentinel = FileTime.fromMillis(1_000_000L);
     Files.setLastModifiedTime(manifest, sentinel);
 
     writer().write(workspaceRoot, List.of(), jdk, null, List.of(), List.of("pom.xml"), List.of());
 
-    assertThat(Files.getLastModifiedTime(manifest)).isEqualTo(sentinel);
+    // Same content: the rewrite is skipped but the mtime is bumped; the content stays
+    // byte-identical.
+    assertThat(Files.getLastModifiedTime(manifest).toMillis()).isGreaterThan(sentinel.toMillis());
+    assertThat(Files.readString(manifest)).isEqualTo(content);
   }
 
   @Test

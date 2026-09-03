@@ -2004,6 +2004,7 @@ final class WorkspaceSession {
 
     switch (watcher.poll()) {
       case WORKSPACE_CHANGED -> reload();
+      case REACTOR_REFRESH -> refreshReactorTypeIndex();
       case POM_CHANGED -> {
         if (!pomNotificationPending) {
           pomNotificationPending = true;
@@ -2046,13 +2047,21 @@ final class WorkspaceSession {
     manifest = newManifest;
     moduleGraph = WorkspaceModuleGraph.build(workspace.allConfigs());
     candidateIndex = ReferenceCandidateIndex.build(workspace.allConfigs());
-    reactorShards.clear();
-    scanReactorShards();
-    typeIndex = WorkspaceTypeIndex.build(newManifest.typeIndexShardPaths(), reactorShards.values());
+    refreshReactorTypeIndex();
     refreshOpenDocuments();
     old.close();
     scheduleAllOpenFiles();
     client.showMessage(new MessageParams(MessageType.Info, "Lathe: workspace reloaded."));
+  }
+
+  // Re-scans the reactor mirror and rebuilds the type index without the full-reload work (no
+  // candidate-index rebuild, no open-document refresh, no reload message).
+  private void refreshReactorTypeIndex() {
+    final var t = Stopwatch.start();
+    reactorShards.clear();
+    scanReactorShards();
+    typeIndex = WorkspaceTypeIndex.build(manifest.typeIndexShardPaths(), reactorShards.values());
+    LOG.info(() -> "[refresh] reactor type index %dms".formatted(t.elapsedMs()));
   }
 
   private void refreshOpenDocuments() {

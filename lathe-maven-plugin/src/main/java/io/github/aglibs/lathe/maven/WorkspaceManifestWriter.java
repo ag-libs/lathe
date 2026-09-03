@@ -11,6 +11,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
+import java.time.Instant;
 import java.util.List;
 import org.apache.maven.plugin.logging.Log;
 
@@ -47,7 +49,11 @@ final class WorkspaceManifestWriter {
       Files.createDirectories(latheDir);
       if (Files.exists(manifestPath)
           && newContent.equals(Files.readString(manifestPath, StandardCharsets.UTF_8))) {
-        log.info("[sync] workspace unchanged — skipping write");
+        // Content is unchanged, but reactor classes may have been recompiled. Touch the mtime so
+        // the
+        // server's watcher re-scans the mirror even though the manifest itself did not change.
+        Files.setLastModifiedTime(manifestPath, FileTime.from(Instant.now()));
+        log.info("[sync] workspace unchanged — touched manifest for mirror refresh");
         return;
       }
 

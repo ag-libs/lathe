@@ -36,9 +36,12 @@ import org.eclipse.lsp4j.MessageActionItem;
 import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.ShowMessageRequestParams;
+import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.TypeHierarchyItem;
 import org.eclipse.lsp4j.TypeHierarchyPrepareParams;
 import org.eclipse.lsp4j.TypeHierarchySubtypesParams;
+import org.eclipse.lsp4j.WorkspaceSymbol;
+import org.eclipse.lsp4j.WorkspaceSymbolParams;
 import org.eclipse.lsp4j.jsonrpc.Launcher;
 import org.eclipse.lsp4j.launch.LSPLauncher;
 import org.eclipse.lsp4j.services.LanguageClient;
@@ -51,6 +54,7 @@ import org.junit.jupiter.api.Test;
 class LspSmokeTest {
 
   private static final Path ROOT = Path.of(System.getProperty("user.dir")).getParent();
+  private static final Path MANIFEST = ROOT.resolve(".lathe/workspace.json");
   private static final Path LAUNCHER =
       Path.of(System.getProperty("lathe.cache"))
           .resolve("servers")
@@ -62,10 +66,12 @@ class LspSmokeTest {
   private static CapturingClient client;
   private static InitializeResult initResult;
   private static FileTime originalPomMtime;
+  private static String originalManifest;
 
   @BeforeAll
   static void startServer() throws Exception {
     originalPomMtime = Files.getLastModifiedTime(ROOT.resolve("pom.xml"));
+    originalManifest = Files.readString(MANIFEST);
     client = new CapturingClient();
     final var pb = new ProcessBuilder(LAUNCHER.toString());
     pb.environment().put("LATHE_DEBUG", "1");
@@ -114,8 +120,15 @@ class LspSmokeTest {
   }
 
   @AfterEach
-  void resetState() throws IOException {
+  void resetState() throws Exception {
     Files.setLastModifiedTime(ROOT.resolve("pom.xml"), originalPomMtime);
+    if (!Files.readString(MANIFEST).equals(originalManifest)) {
+      // Restoring the manifest content is itself a structural change → a reload notification. Drain
+      // it here so it does not leak into the next test's message assertions.
+      Files.writeString(MANIFEST, originalManifest);
+      client.messages.poll(10, SECONDS);
+    }
+
     client.messages.clear();
     client.syncPrompts.clear();
   }
@@ -136,13 +149,21 @@ class LspSmokeTest {
   }
 
   @Test
-  void workspaceReload_notifiesUser() throws Exception {
-    Files.setLastModifiedTime(
-        ROOT.resolve(".lathe/workspace.json"), FileTime.from(Instant.now().plusSeconds(2)));
+  void workspaceReload_manifestContentChanged_notifiesUser() throws Exception {
+    // A manifest content change is structural → full reload + notification (a mtime-only touch is
+    // the silent refresh). Appending a newline keeps the JSON valid but changes the compared bytes.
+    Files.writeString(MANIFEST, originalManifest + "\n");
 
     final var msg = client.messages.poll(10, SECONDS);
     assertThat(msg).isNotNull();
     assertThat(msg.getMessage()).isEqualTo("Lathe: workspace reloaded.");
+  }
+
+  @Test
+  void workspaceSymbol_reactorType_resolvesAcrossModules() throws Exception {
+    // Reactor types from different modules must resolve via workspace/symbol.
+    assertThat(symbolNames("Greeter")).contains("Greeter");
+    assertThat(symbolNames("MongoDbClient")).contains("MongoDbClient");
   }
 
   @Test
@@ -348,6 +369,16 @@ class LspSmokeTest {
     assertThat(prompt.getActions())
         .extracting(MessageActionItem::getTitle)
         .containsExactlyInAnyOrder("Sync", "Later");
+  }
+
+  private static List<String> symbolNames(final String query) throws Exception {
+    // Over JSON-RPC the Either<SymbolInformation[], WorkspaceSymbol[]> may deserialize to either arm.
+    final var result =
+        server.getWorkspaceService().symbol(new WorkspaceSymbolParams(query)).get(30, SECONDS);
+    if (result.isLeft()) {
+      return result.getLeft().stream().map(SymbolInformation::getName).toList();
+    }
+    return result.getRight().stream().map(WorkspaceSymbol::getName).toList();
   }
 
   private static void openDoc(final String uri, final String content) {

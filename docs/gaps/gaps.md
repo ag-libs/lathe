@@ -977,23 +977,29 @@ printf 'sym NewType\ndiag\nsym NewType\n' | python3 dev/explore.py <ws>/.../NewT
 
 ### Regression targets
 
-WS-4 fix (external refresh — currently failing):
+Implemented via the **manifest mtime-touch** signal: `lathe:sync` bumps `workspace.json`'s mtime on
+every run (even when content is unchanged), and the watcher compares content to distinguish a
+reactor-only refresh (`REACTOR_REFRESH`, silent reactor re-scan) from a structural change
+(`WORKSPACE_CHANGED`, full reload).
 
-- `WorkspaceWatcherTest.poll_typeIndexShardChangedWithoutManifestChange_signalsRefresh`
-  (positive — a shard mtime/size change with an unchanged `workspace.json` signals a refresh)
-- `WorkspaceWatcherTest.poll_shardsAndManifestUnchanged_returnsNoChange` (negative — no false refresh)
-- `WorkspaceSessionTest.workspaceSymbol_afterShardRefreshedWithoutManifestChange_findsNewType`
-  (positive — new reactor type appears in `workspace/symbol` after an external shard refresh)
+- `WorkspaceManifestWriterTest.write_sameContent_touchesMtimeButKeepsContent`
+  (positive — a skipped rewrite still bumps the mtime; content stays byte-identical)
+- `WorkspaceWatcherTest.poll_manifestTouchedSameContent_returnsMirrorRefreshOnceThenNoChange`
+  (positive — mtime bump, same content → one `REACTOR_REFRESH`, then quiet)
+- `WorkspaceWatcherTest.poll_contentChangeAfterMirrorTouch_returnsWorkspaceChanged`
+  (negative/boundary — a real content change is still `WORKSPACE_CHANGED`)
 
-End-to-end coverage this gap exposed (guarding paths that work today but are untested):
+End-to-end coverage this gap exposed (invoker `LspSmokeTest`, previously never exercised
+`workspace/symbol`):
 
-- `WorkspaceSessionTest.workspaceSymbol_afterSaveOfNewType_findsType`
-  (positive — create + save a new type → `refreshReactorShard` → `workspace/symbol` finds it; the
-  behaviour verified live above)
-- `WorkspaceSessionTest.workspaceSymbol_afterReload_findsNewReactorType`
-  (positive — `reloadWorkspace()` rebuilds the index with a newly added reactor type)
-- `WorkspaceSessionTest.workspaceSymbol_afterStaleTypeRemoved_dropsIt`
-  (negative — a type removed from the mirror disappears from `workspace/symbol`)
+- `LspSmokeTest.workspaceSymbol_reactorType_resolvesAcrossModules`
+  (positive — reactor types from different modules resolve via `workspace/symbol`)
+- `LspSmokeTest.workspaceReload_manifestContentChanged_notifiesUser`
+  (positive — a manifest **content** change is structural → full reload + notification, distinct from
+  the silent mtime touch)
+
+Still open (deferred to the WS-5 / broader freshness work): a `workspaceSymbol_afterStaleTypeRemoved`
+negative and a fabricated-`.class` "new external type appears" positive at the integration level.
 
 ---
 
