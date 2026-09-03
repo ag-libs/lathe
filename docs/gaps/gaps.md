@@ -362,7 +362,71 @@ for a release is every gap with `Status: accepted` and the matching `Target` (se
 Active `textDocument/references` gaps discovered by live probing against a large `@Builder`-heavy
 reactor workspace. Resolved FR entries are in [gaps-archive.md](gaps-archive.md).
 
-No active FR gaps remain; resolved entries are in [gaps-archive.md](gaps-archive.md).
+## FR-015 — Find References at a `new XXX(...)` site targets the type, not the constructor, so it returns type uses instead of constructor call sites
+
+**Status: accepted — Target: M2**
+
+### Observed behaviour
+
+With the cursor on the type name of an object-creation expression (`new XXX(…)`), Find References
+returns **every use of the type** (imports, field/variable types, `extends`/`implements`, other
+`new` sites, casts, …) rather than the constructor's invocation sites. There is no way, from a
+`new XXX(…)` occurrence, to ask "show me the call sites of *this* constructor."
+
+```java
+var a = new XXX();          // ← Find References here: reports all uses of type XXX,
+XXX b = registry.lookup();  //   including this declaration that never calls the constructor
+```
+
+The complementary navigation defect is the same resolution: go-to-definition on `new XXX(…)` lands
+on the class declaration, not the constructor (noted while answering a related usage question).
+
+### Root cause
+
+`SourceLocator.elementAt` (`SourceLocator.java:130`) walks the `TreePath` and returns the first
+non-package element `trees.getElement` yields. For the cursor on the type-name identifier inside a
+`NewClassTree`, that identifier resolves to the **type element**, so `elementAt` returns the type
+before it ever reaches the enclosing `NewClassTree` (whose `getElement` would return the invoked
+**constructor**). `ReferenceTarget.from` then builds a `CLASS/RECORD/…` type target that matches all
+type uses.
+
+The constructor path already works once the target *is* a constructor: archived FR-011/FR-013 key
+constructor candidate lookup on the declaring type's simple name so `new XXX(…)` sites (including a
+generated builder's) are found, and `CallHierarchyIncomingLocator.visitNewClass`
+(`CallHierarchyIncomingLocator.java:109`) already counts `new` sites. The gap is purely the
+cursor → element resolution at the creation site preferring the type over the constructor.
+
+### Proposed fix
+
+When the references/definition cursor sits on the type-name identifier of a `NewClassTree` (as opposed
+to a bare type usage), prefer the invoked constructor: resolve via the enclosing `NewClassTree` path
+(`trees.getElement(newClassPath)` → the `CONSTRUCTOR` `ExecutableElement`) and build a constructor
+`ReferenceTarget`. An implicit/default constructor still has an element and still keys on the declaring
+type's simple name (FR-013), so `new XXX()` sites are found even with no explicit constructor;
+overloaded constructors resolve per-overload via the existing descriptor match. Scope the special-case
+narrowly to the `NewClassTree` identifier so ordinary type references (declarations, casts, `extends`)
+are unaffected. Bounded change in `SourceLocator.elementAt` (and the shared `resolveTarget` path);
+reuses the existing constructor reference machinery, no new abstraction.
+
+Open question for triage: whether go-to-**definition** on `new XXX(…)` should move to the constructor
+too (IntelliJ/jdtls do, falling back to the type for an implicit default constructor) or stay on the
+type — decide the two surfaces together since they share the resolution.
+
+### Probe commands
+
+```bash
+# cursor on XXX in `new XXX(` — expected: the constructor's call sites; today: all uses of type XXX
+printf 'refs "new XXX("\n' | python3 dev/explore.py <ws>/.../SomeCaller.java
+```
+
+### Regression targets
+
+- `ReferenceLocatorTest.references_atNewClassSite_returnsConstructorCallSitesNotTypeUses`
+  (positive — a `new XXX()` cursor finds `new XXX(...)` sites, excludes a bare `XXX b` declaration)
+- `ReferenceLocatorTest.references_atNewClassSite_implicitDefaultConstructor_findsCallSites`
+  (positive — record/class with no explicit constructor)
+- `ReferenceLocatorTest.references_atBareTypeUsage_stillReturnsTypeReferences`
+  (negative — cursor on a non-`new` type usage is unchanged)
 
 ---
 
@@ -721,6 +785,142 @@ options 2–3) stays backlog.
 
 None yet — to be defined when scheduled (source newer than last sync → advisory prompt; no prompt when
 in sync).
+
+---
+
+## WS-3 — The POM-changed sync prompt re-appears every 2s, and "Sync" neither runs Maven nor is distinguished from "Later"
+
+**Status: accepted — Target: M2**
+
+### Observed behaviour
+
+After a `git checkout` where the branches differ in POM files, the advisory prompt fires:
+
+```
+Maven project changed. Run 'mvn process-test-classes' to refresh Lathe.
+1: Sync
+2: Later
+```
+
+- Choosing **Later** (`2`) dismisses it, but it **re-appears ~2 seconds later**, and keeps re-appearing
+  on every poll — an inescapable loop until the user actually runs `mvn process-test-classes`.
+- Choosing **Sync** (`1`) behaves identically: it does **not** run Maven, does **not** reload, and the
+  prompt returns 2 seconds later. The "Sync" label implies the server will sync; it does not.
+- Cancelling (`q` / empty) has the same effect — the loop continues.
+
+### Root cause
+
+Two defects in `WorkspaceSession.checkForChanges` / the watcher baseline
+(`WorkspaceSession.java:2005-2023`, `WorkspaceWatcher.java`):
+
+1. **"Later" is not honoured across polls.** The poll runs every 2s
+   (`worker.scheduleAtFixedRate(2_000L, this::checkForChanges)`, `:185`). `POM_CHANGED` is derived by
+   `WorkspaceWatcher.detectPomChange()`, which compares live POM fingerprints against `pomBaseline`.
+   The baseline is refreshed **only** in `reloadWorkspace()` (via `updatePomPaths`), which runs on a
+   `workspace.json` change — never on a prompt response. So after the user answers, the live POMs still
+   differ from the baseline and the very next poll returns `POM_CHANGED` again. The
+   `pomNotificationPending` flag only de-dupes a *concurrent* prompt; it is reset as soon as the user
+   responds (`thenAccept(action -> … pomNotificationPending = false)`, `:2018`), so it does nothing to
+   suppress the *next* poll's prompt.
+
+2. **The chosen action is discarded.** The `showMessageRequest` callback ignores its `action`
+   argument entirely and just clears `pomNotificationPending` for both "Sync" and "Later" (and for a
+   null/cancelled response). Nothing dispatches on `"Sync"`, so selecting it runs no Maven and triggers
+   no reload — consistent with Lathe's rule that the LSP server never invokes Maven, but then the
+   button is mislabeled and misleading.
+
+### Proposed direction
+
+Not yet decided; capture the two fixes separately.
+
+- **Honour a dismissal.** On "Later"/cancel, snapshot the *current* POM fingerprints as an
+  "acknowledged" baseline so `detectPomChange()` stays quiet until the POMs change **again** (a further
+  edit or another branch switch) — without treating the project as synced (the mirror/index are still
+  stale; only the nagging stops). This is distinct from `updatePomPaths`, which asserts freshness.
+- **Fix the action semantics.** Since the server must not run Maven, either (a) rename "Sync" to make
+  the manual step explicit (e.g. "Show command" / copy `mvn process-test-classes` to the client), or
+  (b) have "Sync" reload from disk (`reload()`) for the case where the user already ran Maven —
+  clarify which, and dispatch on the returned `MessageActionItem` instead of discarding it.
+
+Relates to WS-1 (the general staleness/invalidation umbrella) and WS-2 (the deferred *source-only*
+branch-switch prompt); WS-3 is specifically the **existing POM-changed prompt looping** and its inert
+"Sync" action, which is a shipped-behaviour reliability defect rather than a new prompt.
+
+### Probe commands
+
+Not probeable through `explore.py`. Reproduced by checking out a branch whose POMs differ, then
+answering the prompt (either option) and observing it return after ~2s.
+
+### Regression targets
+
+- `WorkspaceWatcherTest.detectPomChange_afterAcknowledgedBaseline_staysQuietUntilPomChangesAgain`
+  (positive — dismissal suppresses the repeat; a subsequent POM edit re-triggers)
+- `WorkspaceSessionTest.pomPrompt_laterSelected_doesNotRePromptOnNextPoll`
+- `WorkspaceSessionTest.pomPrompt_syncSelected_dispatchesOnActionInsteadOfDiscarding`
+
+---
+
+## WS-4 — `workspace/symbol` misses newly added reactor types after an incremental `mvn process-test-classes` (no clean)
+
+**Status: accepted — Target: M2**
+
+### Observed behaviour
+
+After switching to a branch that adds new classes and running `mvn process-test-classes` **without
+`clean`**, the new types do not appear in the `workspace/symbol` picker (`\ws` in the reporter's
+Neovim config). The sync ran, the classes compiled, yet they stay invisible to symbol search until
+the server is restarted (or a manifest-changing sync happens).
+
+### Root cause
+
+The reactor type index is an in-memory cache that is only rebuilt on a `workspace.json` mtime change,
+and the incremental sync does not change `workspace.json`:
+
+1. `WorkspaceSession.typeIndex` (`:135`) is built once at init from the per-module shard files
+   (`WorkspaceTypeIndex.build(manifest.typeIndexShardPaths(), reactorShards.values())`, `:182`) and
+   rebuilt **only** in `reloadWorkspace()` (`:2049-2051`, which does `reactorShards.clear()` →
+   `scanReactorShards()` → rebuild `typeIndex`). `workspace/symbol` queries this cached snapshot.
+2. `reloadWorkspace()` runs only via `reload()`, triggered by `WorkspaceWatcher` returning
+   `WORKSPACE_CHANGED`, which is derived purely from the `workspace.json` **mtime**
+   (`WorkspaceWatcher.detectManifestChange`).
+3. `WorkspaceManifestWriter.write` **skips the write when the content is unchanged**
+   (`WorkspaceManifestWriter.java:48-50` — `"[sync] workspace unchanged — skipping write"`). Adding a
+   class to an **existing** module leaves the manifest identical (same modules, source roots, and
+   classpath; shards are per-module, so no new shard **path**), so the file is not rewritten and its
+   mtime does not move.
+
+Net: `lathe:sync` refreshes the module's type-index **shard content** on disk, but the server never
+re-reads it because its only reload trigger (manifest mtime) never fires. The reporter's "not using
+`clean`" detail fits: an incremental sync is exactly the case where the manifest content is unchanged.
+The existing lighter refresh (`typeIndex.withReactorEntries(...)`, `:1870`) only runs for open-file
+recompiles, so it does not cover types added by an external sync.
+
+### Proposed direction
+
+Not yet decided; options, cheapest first:
+
+1. **Fingerprint the shard files** in `WorkspaceWatcher` (mtime + size of `manifest.typeIndexShardPaths()`),
+   not just `workspace.json`, and refresh the type index when any shard changes — ideally a
+   type-index-only refresh rather than a full `reloadWorkspace()` (which also rebuilds the candidate
+   index and refreshes open documents).
+2. Have `lathe:sync` bump `workspace.json`'s mtime whenever it rewrites any shard, even when the
+   manifest content is unchanged, so the existing `WORKSPACE_CHANGED` path fires (simpler, but reuses
+   the heavy reload).
+
+Distinct from WS-1/WS-2, which cover staleness when **no** sync is run; WS-4 is the case where the
+user **did** run the sync and the refreshed shards are still ignored. WS-1 remains the umbrella for a
+fuller freshness model.
+
+### Probe commands
+
+Not probeable through `explore.py` (single-file REPL; no reactor re-sync / `workspace/symbol` flow).
+Reproduced by adding a class to an existing module, running `mvn process-test-classes` (no `clean`),
+and issuing `workspace/symbol` for the new name without restarting the server.
+
+### Regression targets
+
+- `WorkspaceWatcherTest.poll_typeIndexShardChangedWithoutManifestChange_signalsRefresh`
+- `WorkspaceSessionTest.workspaceSymbol_afterShardRefreshedWithoutManifestChange_findsNewType`
 
 ---
 
