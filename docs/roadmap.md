@@ -38,9 +38,11 @@ Dropwizard, and the sample workspace.
 The implemented baseline is in [status.md](status.md); the designs behind it in
 [design-index.md](design-index.md#completed-designs); the resolved EG/CA/FR/CQ gaps in
 [gaps-archive.md](gaps/gaps-archive.md). Per this document's scope, M1's completed details are not
-re-listed here. The one residual thread is the closed-file staleness case, folded into WS-1 (full
-freshness) in the Backlog; the once-planned M2 re-sync prompt (WS-2) is deferred there too, with the
-behaviour documented in the README instead.
+re-listed here. The residual staleness thread is now split: an **M2 freshness slice** — the actionable
+Maven sync prompt (WS-3), post-sync `workspace/symbol` pickup (WS-4), and external-change
+auto-recompile (WS-5, see [design](planned/lathe-external-change-recompilation.md)) — while the fuller
+no-Maven reconciliation (WS-1) and WS-2's rejected source-only *prompt* remain in the Backlog (WS-2 is
+superseded for the source case by WS-5's auto-recompile).
 
 ### Exit criteria
 
@@ -66,6 +68,11 @@ ships (see "Deferred to backlog" below).
 - Surface an unexpected server exit to the user (a Neovim notification pointing at the LSP log), and add
   `:LatheStart` to bring the server up for a directory with no Java file open — shipped. One-command
   diagnostics collection (e.g. `:checkhealth lathe`) is deferred and added on demand, not planned scope.
+- Workspace freshness slice — keep Lathe honest when the tree changes outside the editor. Fix the
+  looping/inert Maven sync prompt and make it actionable (WS-3), pick up an external `mvn` without a
+  restart (WS-4), and auto-recompile/copy externally changed sources and resources — agent edits,
+  small pulls — without Maven (WS-5, [design](planned/lathe-external-change-recompilation.md)). Bulk or
+  structural changes route to the sync prompt; the fuller no-Maven reconciliation (WS-1) stays backlog.
 
 ### Correctness gaps (triaged)
 

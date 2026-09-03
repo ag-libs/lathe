@@ -32,6 +32,11 @@ Reliability, the triaged gaps, and rename — see the [roadmap](roadmap.md) for 
 - [Rename](planned/lathe-rename.md) — `textDocument/rename` + `prepareRename` on the Find References
   pipeline (occurrence ranges → `WorkspaceEdit`, no `ASTRewrite`); scoped to the common cases,
   correctness-gated (freshness refusal + minimal conflict checks), with explicit non-goals.
+- [External-Change Recompilation](planned/lathe-external-change-recompilation.md) — detect on-disk
+  edits to Java sources and resources (branch switch, `git pull`, agent edits) via
+  `workspace/didChangeWatchedFiles` and recompile/copy just those files into `.lathe/` without Maven,
+  reusing the save pipeline (D1 + R1 + resources). Owns WS-5; the cheapest concrete slice of the WS-1
+  freshness umbrella.
 - [Javac Crash Capture](planned/lathe-javac-crash-capture.md) — resolved for M2 as a minimal,
   source-free `[javacCrash]` log line (phase + JDK + stack trace); the full repro-bundle design is a
   deferred backlog follow-up. ✓

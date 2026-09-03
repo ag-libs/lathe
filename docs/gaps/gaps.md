@@ -734,6 +734,11 @@ Not yet decided; options to weigh when scheduled, cheapest first:
    without a Maven round trip; overlaps with [Sibling Recompilation](../planned/lathe-sibling-recompilation.md)
    and the [Reactor Type Index](../planned/lathe-reactor-type-index.md) freshness follow-ups.
 
+Option 2 is now specified and scheduled for M2 as **WS-5**, per
+[lathe-external-change-recompilation.md](../planned/lathe-external-change-recompilation.md) (extend
+`didChangeWatchedFiles` to `Created`/`Changed` and recompile/copy the changed file via the save
+pipeline). WS-1 remains the umbrella for the wider reconciliation (option 3) and cross-module cases.
+
 This subsumes CA-4's remaining closed-file case (new/renamed types in files the user has not opened),
 which is only discoverable today after a manual sync.
 
@@ -751,7 +756,15 @@ None yet — to be defined when the fix is scheduled.
 
 ## WS-2 — No re-sync prompt after a source-only branch switch
 
-**Status: deferred — Target: backlog**
+**Status: deferred — Target: backlog (superseded by WS-5)**
+
+**Superseded by [WS-5](#ws-5--external-on-disk-edits-to-sourcesresources-are-not-picked-up-without-a-maven-build)
+for the source case.** WS-2's proposal was a Sync/Later *prompt* for source-only changes; that is not
+pursued — a prompt is intrusive and non-binding (the user can dismiss it and keep working against stale
+state). Instead WS-5 (accepted, M2) makes small source-only changes a non-issue by *auto-recompiling*
+the changed files (the non-intrusive resolution this gap called for), and WS-3 owns the pom/structural
+prompt. This entry stays recorded as the rejected prompt-for-source approach; WS-1 remains the umbrella
+for the wider reconciliation. Original analysis retained below.
 
 Deferred from M2. The proposed fix was a Sync/Later prompt, but a prompt is both intrusive and
 non-binding: the user can dismiss it and keep working against stale state, so it adds friction without a
@@ -831,20 +844,38 @@ Two defects in `WorkspaceSession.checkForChanges` / the watcher baseline
 
 ### Proposed direction
 
-Not yet decided; capture the two fixes separately.
+Decided — this is now the actionable heavy-path prompt (the companion to the WS-5 light-regime
+auto-recompile). Three parts:
 
-- **Honour a dismissal.** On "Later"/cancel, snapshot the *current* POM fingerprints as an
+- **Honour a dismissal (loop fix).** On "Later"/cancel, snapshot the *current* POM fingerprints as an
   "acknowledged" baseline so `detectPomChange()` stays quiet until the POMs change **again** (a further
   edit or another branch switch) — without treating the project as synced (the mirror/index are still
-  stale; only the nagging stops). This is distinct from `updatePomPaths`, which asserts freshness.
-- **Fix the action semantics.** Since the server must not run Maven, either (a) rename "Sync" to make
-  the manual step explicit (e.g. "Show command" / copy `mvn process-test-classes` to the client), or
-  (b) have "Sync" reload from disk (`reload()`) for the case where the user already ran Maven —
-  clarify which, and dispatch on the returned `MessageActionItem` instead of discarding it.
+  stale; only the nagging stops). Distinct from `updatePomPaths`, which asserts freshness. The prompt
+  then shows **once per POM change**, not every 2s.
+- **Keep detection on the server poll.** POM/`workspace.json` detection stays in `WorkspaceWatcher`
+  (small, bounded, server-authoritative) and is **not** folded into `workspace/didChangeWatchedFiles`
+  — that mechanism is for the huge source/resource set (WS-5). Two mechanisms, clean split.
+- **Actionable prompt (Alternative A — client runs Maven, server never does).** Dispatch on the
+  returned `MessageActionItem` instead of discarding it; on a chosen action the server sends a custom
+  `lathe/sync` notification and the **client** runs Maven as a job, after which the server picks up the
+  refreshed `.lathe/` (WS-4). Offer **two** actions:
+  - **"Sync"** → `mvn process-test-classes` — refresh types/mirror/main-launch + manifest (LSP + *main*
+    run/debug).
+  - **"Sync + capture tests"** → `mvn test` (capture flavor) — also (re)captures `test-launch.json`
+    (which is *captured from a test fork*, not derived by `lathe:sync`), needed for neotest / test-run
+    / test-debug on new or changed test modules.
 
-Relates to WS-1 (the general staleness/invalidation umbrella) and WS-2 (the deferred *source-only*
-branch-switch prompt); WS-3 is specifically the **existing POM-changed prompt looping** and its inert
-"Sync" action, which is a shipped-behaviour reliability defect rather than a new prompt.
+  Both actions offered on every POM change for now; **auto-recommending** capture only when a
+  new/uncaptured module is detected is deferred (Slice 2, backlog). Open question: whether a plain
+  dependency change also invalidates the captured `test-launch.json` (making capture the default rather
+  than the secondary action) — depends on the capture model (writer still in progress); confirm before
+  wiring the default.
+
+Relates to WS-1 (staleness/invalidation umbrella), WS-2 (the deferred *source-only* branch-switch
+prompt — superseded for single-file source edits by WS-5's auto-recompile), WS-4 (post-Maven pickup),
+and WS-5 / [lathe-external-change-recompilation.md](../planned/lathe-external-change-recompilation.md)
+(the light-regime companion). WS-3 itself is the shipped-behaviour reliability defect (looping prompt +
+inert "Sync").
 
 ### Probe commands
 
@@ -856,7 +887,10 @@ answering the prompt (either option) and observing it return after ~2s.
 - `WorkspaceWatcherTest.detectPomChange_afterAcknowledgedBaseline_staysQuietUntilPomChangesAgain`
   (positive — dismissal suppresses the repeat; a subsequent POM edit re-triggers)
 - `WorkspaceSessionTest.pomPrompt_laterSelected_doesNotRePromptOnNextPoll`
-- `WorkspaceSessionTest.pomPrompt_syncSelected_dispatchesOnActionInsteadOfDiscarding`
+- `WorkspaceSessionTest.pomPrompt_syncSelected_sendsLatheSyncWithProcessTestClasses`
+  (positive — dispatch on the action; server emits `lathe/sync` for `mvn process-test-classes`)
+- `WorkspaceSessionTest.pomPrompt_syncCaptureSelected_sendsLatheSyncWithTest`
+  (positive — the "Sync + capture tests" action emits `lathe/sync` for `mvn test`)
 
 ---
 
@@ -911,16 +945,115 @@ Distinct from WS-1/WS-2, which cover staleness when **no** sync is run; WS-4 is 
 user **did** run the sync and the refreshed shards are still ignored. WS-1 remains the umbrella for a
 fuller freshness model.
 
+### Scope — the in-editor create-and-save path is NOT affected (verified)
+
+Creating a type in the editor and **saving** it already updates `workspace/symbol` and needs no fix.
+The module save route compiles into the `.lathe/<module>/classes` mirror
+(`ModuleSourceCompiler` sets `CLASS_OUTPUT` to `config.latheClassesDir()`), and `afterModuleSave` →
+`refreshReactorShard(config)` re-scans that dir and rebuilds `typeIndex`. Verified live against the
+`multi-module` invoker workspace: a new `WsProbeWidget` type returned *no symbol* right after
+`didOpen`, then — after a save — `workspace/symbol` returned exactly one hit pointing at its source,
+and `.lathe/app/classes/.../WsProbeWidget.class` appeared. WS-4 is therefore scoped strictly to the
+**external** refresh path (branch switch + `mvn process-test-classes`, no editor save), where nothing
+triggers `refreshReactorShard`/`reload`.
+
+Note the coverage context: the individual pieces are unit-tested only with hand-built indices
+(`WorkspaceTypeIndexTest`, `WorkspaceSymbolTest`, `ClassFileTypeScannerTest`), and **no** end-to-end
+test drives "workspace change → index reflects it" — `LspSmokeTest` never issues `workspace/symbol` at
+all. The regression targets below therefore both fix WS-4 and close that end-to-end gap (the
+save-path target locks in behaviour that works today but is otherwise untested).
+
 ### Probe commands
 
-Not probeable through `explore.py` (single-file REPL; no reactor re-sync / `workspace/symbol` flow).
-Reproduced by adding a class to an existing module, running `mvn process-test-classes` (no `clean`),
-and issuing `workspace/symbol` for the new name without restarting the server.
+WS-4 itself (external re-sync) is not probeable through `explore.py`. Reproduce by adding a class to an
+existing module, running `mvn process-test-classes` (no `clean`), and issuing `workspace/symbol` for
+the new name without restarting the server. The sibling save-path *is* probeable and was used to
+confirm the scope above:
+
+```bash
+# against a synced workspace, in one session: query before save, save, query after
+printf 'sym NewType\ndiag\nsym NewType\n' | python3 dev/explore.py <ws>/.../NewType.java
+```
 
 ### Regression targets
 
+WS-4 fix (external refresh — currently failing):
+
 - `WorkspaceWatcherTest.poll_typeIndexShardChangedWithoutManifestChange_signalsRefresh`
+  (positive — a shard mtime/size change with an unchanged `workspace.json` signals a refresh)
+- `WorkspaceWatcherTest.poll_shardsAndManifestUnchanged_returnsNoChange` (negative — no false refresh)
 - `WorkspaceSessionTest.workspaceSymbol_afterShardRefreshedWithoutManifestChange_findsNewType`
+  (positive — new reactor type appears in `workspace/symbol` after an external shard refresh)
+
+End-to-end coverage this gap exposed (guarding paths that work today but are untested):
+
+- `WorkspaceSessionTest.workspaceSymbol_afterSaveOfNewType_findsType`
+  (positive — create + save a new type → `refreshReactorShard` → `workspace/symbol` finds it; the
+  behaviour verified live above)
+- `WorkspaceSessionTest.workspaceSymbol_afterReload_findsNewReactorType`
+  (positive — `reloadWorkspace()` rebuilds the index with a newly added reactor type)
+- `WorkspaceSessionTest.workspaceSymbol_afterStaleTypeRemoved_dropsIt`
+  (negative — a type removed from the mirror disappears from `workspace/symbol`)
+
+---
+
+## WS-5 — External on-disk edits to sources/resources are not picked up without a Maven build
+
+**Status: accepted — Target: M2**
+
+Design: [lathe-external-change-recompilation.md](../planned/lathe-external-change-recompilation.md)
+(D1 + R1 + resources). This is the cheapest concrete slice of the WS-1 freshness umbrella.
+
+### Observed behaviour
+
+A Java source or resource changed **on disk from outside the editor** — a branch switch, a `git pull`,
+or an AI agent editing files directly — is invisible to Lathe until the next `mvn process-test-classes`.
+Navigation, completion, `workspace/symbol`, replay resources, and dependents' diagnostics all reflect
+the previous state, even though the change is fully on disk.
+
+### Root cause
+
+The server watches nothing at the source level. `LatheWorkspaceService.didChangeWatchedFiles` acts
+**only** on `FileChangeType.Deleted`; `Created`/`Changed` events are dropped
+(`LatheWorkspaceService.java:47-49`). Resource edits reach `.lathe/` only through the editor
+`BufWritePost` → `lathe.resource.refresh` autocmd, so an external resource change is never copied. No
+server-side compile is triggered for a non-open source file, and the reactor mirror/type index are not
+invalidated by filesystem source changes (also see WS-1 root cause).
+
+### Proposed fix
+
+Per the design doc: extend `workspace/didChangeWatchedFiles` to `Created`/`Changed`, register
+`**/*.java` and resource-root watchers, and react by reusing existing machinery —
+
+- `.java` (not open) → `WorkspaceSession.onExternalChange(uri)`: a `FULL` compile from disk (runs
+  annotation processors, writes `.lathe/<module>/classes`) then `refreshReactorShard`, i.e. the
+  `onSave` path;
+- resource under a tracked root → the existing `refreshResource(uri)` copy;
+- `pom.xml`/structural → unchanged (heavy path → the Maven sync prompt, WS-3);
+
+with per-module debounce and open-file precedence. A **bulk cutoff** guards the storm case: above a
+threshold of changed files in a window — or when the batch also carries a `pom.xml` change — the light
+regime defers to the heavy-path prompt (WS-3) rather than per-file recompiling, so WS-5 owns *small*
+source/resource change sets while a bulk `git pull`/branch switch goes to the prompt (picked up by
+WS-4). Cross-module dependents stay Maven-bounded (see
+[Sibling Recompilation](../planned/lathe-sibling-recompilation.md)).
+
+### Probe commands
+
+Reproduced (and verified for the fix) against the `multi-module` invoker workspace: edit a **closed**
+`.java` on disk, deliver a `didChangeWatchedFiles`, then query `sym`/`refs`; repeat for a resource.
+The same `sym`/`diag`/`sym` harness used for the save path applies.
+
+### Regression targets
+
+- `LatheWorkspaceServiceTest.didChangeWatchedFiles_javaCreatedOrChanged_routesToExternalChange`
+- `LatheWorkspaceServiceTest.didChangeWatchedFiles_resourceChanged_routesToRefreshResource`
+- `WorkspaceSessionTest.onExternalChange_closedFile_updatesMirrorAndSymbolIndex`
+  (positive — incl. an `@Builder` generated type appearing via the FULL compile)
+- `WorkspaceSessionTest.onExternalChange_openFile_isIgnored` (negative — editor buffer wins)
+- `WorkspaceSessionTest.onExternalChange_burst_debouncesPerModule`
+- `WorkspaceSessionTest.onExternalChange_bulkChangeSet_defersToHeavyPathPrompt`
+  (negative — above the threshold, defer to WS-3 instead of per-file recompiling)
 
 ---
 
