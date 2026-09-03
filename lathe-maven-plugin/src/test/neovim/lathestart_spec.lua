@@ -33,6 +33,30 @@ vim.env.LATHE_CACHE = cache
 local lathe = require("lathe")
 lathe.setup({})
 
+-- Default: the launcher resolves under the cache's `current` server dir.
+spec.check(
+  "launcher: default resolves under the cache current dir",
+  vim.lsp.config["lathe"].cmd[1],
+  vim.fs.normalize(cache .. "/current") .. "/lathe-launcher.sh"
+)
+
+-- LATHE_SERVER_DIR overrides the launcher location for local server development,
+-- without repointing the shared `current` symlink.
+local override = work .. "/override"
+vim.fn.mkdir(override, "p")
+local override_launcher = override .. "/lathe-launcher.sh"
+write_file(override_launcher, "#!/bin/sh\n")
+vim.fn.setfperm(override_launcher, "rwxr-xr-x")
+vim.env.LATHE_SERVER_DIR = override
+lathe.setup({})
+spec.check(
+  "launcher: LATHE_SERVER_DIR overrides the cache current dir",
+  vim.lsp.config["lathe"].cmd[1],
+  vim.fs.normalize(override) .. "/lathe-launcher.sh"
+)
+vim.env.LATHE_SERVER_DIR = nil
+lathe.setup({})
+
 -- Stub the two side-effects: vim.lsp.start would spawn a JVM, vim.notify a UI.
 local started, notes = {}, {}
 vim.lsp.start = function(config)

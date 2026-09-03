@@ -7,6 +7,11 @@
 -- written by `mvn process-test-classes` when the Lathe Maven plugin is present.
 -- Override the cache location by setting LATHE_CACHE in your environment.
 --
+-- For local server development, set LATHE_SERVER_DIR to a built server version
+-- directory (e.g. ~/.cache/lathe/servers/0.1.0-SNAPSHOT) to run that launcher
+-- instead of the installed `current` server, without repointing the shared
+-- `current` symlink. Mirrors LATHE_NVIM_DIR for the Lua client.
+--
 -- Options (all optional):
 --   capabilities        LSP capabilities table; defaults to vim.lsp.protocol.make_client_capabilities()
 --   indent_style        "editor_config" | "google"; Java indentation profile (default: "editor_config").
@@ -28,6 +33,16 @@ M.ROOT_MARKER = '.lathe'
 
 local function cache_root()
   return vim.fs.normalize(vim.env.LATHE_CACHE or (vim.fn.expand('~') .. '/.cache/lathe'))
+end
+
+--- Absolute path to the server launcher script the client execs. Honors the
+--- LATHE_SERVER_DIR dev override (a built server version directory, e.g. a
+--- SNAPSHOT under the cache) so a working-tree server can be run without
+--- repointing the shared `current` symlink; falls back to the installed
+--- `current` server otherwise. Mirrors LATHE_NVIM_DIR for the Lua client.
+local function launcher_path()
+  local dir = vim.env.LATHE_SERVER_DIR or (cache_root() .. '/current')
+  return vim.fs.normalize(dir) .. '/lathe-launcher.sh'
 end
 
 --- Resolve the workspace root for a buffer, for any code (this plugin's own
@@ -100,7 +115,7 @@ end
 ---@param bufnr integer? defaults to the current buffer
 function M.start(bufnr)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
-  local launcher = cache_root() .. '/current/lathe-launcher.sh'
+  local launcher = launcher_path()
   if vim.fn.executable(launcher) ~= 1 then
     vim.notify(
       'Lathe: launcher not found at ' .. launcher .. '; run mvn process-test-classes.',
@@ -127,7 +142,7 @@ end
 function M.setup(opts)
   opts = opts or {}
   local root = cache_root()
-  local launcher = root .. '/current/lathe-launcher.sh'
+  local launcher = launcher_path()
 
   require('lathe.indent').setup({
     indent_style = opts.indent_style,
