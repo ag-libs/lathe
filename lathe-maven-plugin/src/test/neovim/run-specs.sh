@@ -4,7 +4,7 @@
 # `qa!`/`cq!` so this script can detect pass/fail per spec. Hard-fails when
 # nvim is missing under CI (CI=true) so a misconfigured runner turns the build
 # red; degrades gracefully (exit 0) on local machines without nvim. Bound to
-# the `test` phase via exec-maven-plugin; runnable by hand too.
+# the `integration-test` phase via exec-maven-plugin; runnable by hand too.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

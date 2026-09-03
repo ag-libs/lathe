@@ -113,8 +113,11 @@
         <version>${maven-plugin.version}</version>
       </plugin>
       <!-- Runs every Neovim `*_spec.lua` fixture (indentation, workspace/cache-root
-           resolution, ...) during `test`. The wrapper script hard-fails under CI
-           when nvim is absent and degrades gracefully on local machines without it. -->
+           resolution, ...) during `integration-test`, alongside the invoker ITs below and
+           away from surefire's `test` phase. These specs shell out to `nvim`, so they are
+           integration-style, and this keeps a plain `mvn test` (and capture-only refreshes)
+           fast. The wrapper script hard-fails under CI when nvim is absent and degrades
+           gracefully on local machines without it. -->
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>exec-maven-plugin</artifactId>
@@ -125,7 +128,7 @@
             <goals>
               <goal>exec</goal>
             </goals>
-            <phase>test</phase>
+            <phase>integration-test</phase>
             <configuration>
               <skip>${skipTests}</skip>
               <executable>bash</executable>
