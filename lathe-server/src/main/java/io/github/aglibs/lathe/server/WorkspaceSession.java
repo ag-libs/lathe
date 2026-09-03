@@ -117,6 +117,8 @@ final class WorkspaceSession {
   // while a small batch bounds peak memory, cancellation latency, and analyze()-crash blast radius.
   private static final int REFERENCE_BATCH_SIZE = 8;
   private static final long JDWP_READY_TIMEOUT_MS = 15_000;
+  // How long a runnables request waits for a racing didOpen before falling back to empty.
+  private static final long RUNNABLES_OPEN_WAIT_MS = 1_000;
 
   // Title of the $/progress task reported while the workspace loads/reloads. The neotest adapter
   // matches on it to gate discovery on readiness, so it is a cross-process contract: keep it in
@@ -743,11 +745,43 @@ final class WorkspaceSession {
 
   CompletableFuture<List<RunTarget>> runnablesFuture(final String uri) {
     final OpenDocument doc = docs.get(uri);
-    if (doc == null) {
-      LOG.fine(() -> "[runnables] %s no open doc → empty".formatted(uri));
-      return CompletableFuture.completedFuture(List.of());
+    if (doc != null) {
+      return computeRunnables(uri, doc);
     }
 
+    // didOpen and this request race on the RPC pool, so the doc may not be registered yet. Defer
+    // once and re-check rather than answer empty; a never-opened file still falls back to empty.
+    final var t = Stopwatch.start();
+    LOG.fine(
+        () -> "[runnables] %s no open doc → deferring %dms".formatted(uri, RUNNABLES_OPEN_WAIT_MS));
+    final var deferred = new CompletableFuture<List<RunTarget>>();
+    worker.scheduleOnce(RUNNABLES_OPEN_WAIT_MS, () -> resolveDeferredRunnables(uri, t, deferred));
+    return deferred;
+  }
+
+  private void resolveDeferredRunnables(
+      final String uri, final Stopwatch t, final CompletableFuture<List<RunTarget>> deferred) {
+    final OpenDocument doc = docs.get(uri);
+    if (doc == null) {
+      LOG.fine(
+          () -> "[runnables] %s no open doc after %dms wait → empty".formatted(uri, t.elapsedMs()));
+      deferred.complete(List.of());
+      return;
+    }
+
+    computeRunnables(uri, doc)
+        .thenAccept(
+            targets -> {
+              LOG.fine(
+                  () ->
+                      "[runnables] %s open after %dms wait targets=%d"
+                          .formatted(uri, t.elapsedMs(), targets.size()));
+              deferred.complete(targets);
+            });
+  }
+
+  private CompletableFuture<List<RunTarget>> computeRunnables(
+      final String uri, final OpenDocument doc) {
     final var t = Stopwatch.start();
     return switch (routeCompiler(uri)) {
       case CompilerRoute.Module module -> {

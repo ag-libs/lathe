@@ -110,4 +110,23 @@ class ServerEventLoopTest {
     assertThat(latch.await(DELAY_MS * 3, TimeUnit.MILLISECONDS)).isTrue();
     assertThat(count.get()).isEqualTo(1);
   }
+
+  @Test
+  void scheduleOnce_repeatedCallsWithKeyedCancel_allRunIndependently() throws InterruptedException {
+    // Unlike schedule(): calls don't collapse, and a keyed cancel() can't touch them.
+    final var count = new AtomicInteger();
+    final var latch = new CountDownLatch(3);
+    for (int i = 0; i < 3; i++) {
+      worker.scheduleOnce(
+          DELAY_MS,
+          () -> {
+            count.incrementAndGet();
+            latch.countDown();
+          });
+    }
+    worker.cancel(URI);
+
+    assertThat(latch.await(DELAY_MS * 3, TimeUnit.MILLISECONDS)).isTrue();
+    assertThat(count.get()).isEqualTo(3);
+  }
 }
