@@ -384,6 +384,160 @@ This matches the existing deferred method-reference gap in the historical comple
 
 ---
 
+## CQ-0054 — Accepted keyword completion inserts the bare keyword with no trailing space
+
+ID: CQ-0054
+Status: accepted
+Target: M2
+Tier: presentation
+Failure mode: insertion-shape
+Owner component: KeywordProvider.keywordCandidate (insertText) / CompletionItemPresenter
+
+Project/file:
+Not workspace-specific — reproducible in any Java source, e.g. a scratch file.
+
+Probe command:
+```bash
+# illustrative — capture as a completion-presentation assertion, not a live-defect probe
+printf 'complete after "cla" expect class min 1\nlog 30\n' \
+  | python3 dev/explore.py <ws>/.../Any.java
+```
+
+Cursor context:
+```java
+class C extends AbstractL§ {}
+new§ ArrayList<>()
+retur§ value;
+```
+
+IntelliJ or JDT behavior:
+Accepting a keyword that is **always followed by a further construct** inserts the keyword *plus a
+trailing space* and leaves the caret after it — `class `, `interface `, `enum `, `extends `,
+`implements `, `new `, `instanceof `, `throws `, `import `, `return ` (in a value context) — so the
+developer keeps typing the mandatory next token without pressing space first. Keywords that can
+legally stand alone or precede punctuation get **no** trailing space: `this`, `super`, `true`,
+`false`, `null`, `break`, `continue` — an editor never wants `null ;`.
+
+Lathe behavior:
+`KeywordProvider.keywordCandidate` sets `insertText` to the bare lexeme (`new CompletionCandidate(keyword,
+keyword, KEYWORD, …)`) for every keyword, regardless of whether it requires a following construct, so
+the developer must press space manually after each accepted keyword.
+
+Expected Lathe behavior:
+Keyword `insertText` carries a single trailing space **only** for keywords that must be followed by
+another token; standalone/value keywords stay bare. This is a presentation change
+(accepted-completion edit), not a filtering change — which keywords are legal at the site is
+unchanged.
+
+Accepted edit, if relevant:
+Accepting `class` at a top-level declaration produces `class ` (caret after the space).
+Accepting `null` in a value slot produces `null` (no trailing space).
+
+Future design:
+Partition the keyword vocabulary in `KeywordProvider` into a "requires-a-following-construct"
+(space-suffixed) set and a "standalone/value" (bare) set, and set `insertText` accordingly in
+`keywordCandidate`; the existing `selectKeywords` lists (`VALUE_EXPRESSIONS`, class-body keywords,
+etc.) supply the membership. Plain trailing space only — no snippet/tab-stop. Guard against a doubled
+space when the next character on the line is already whitespace (trim in `CompletionEditApplier` or
+skip the suffix when the replacement is immediately followed by whitespace).
+
+Regression target:
+`CompletionKeywordTest.keyword_requiresFollowingConstruct_insertsTrailingSpace` (positive) and
+`CompletionKeywordTest.keyword_standaloneValue_insertsNoTrailingSpace` (negative).
+
+Notes:
+Presentation parity with IntelliJ/JDT LS; realises the accepted-completion-edit rule in the completion
+[expectations](../planned/lathe-completion-expectations.md) (§ Presentation — "the source text produced
+when the user accepts a completion item").
+
+---
+
+## CQ-0055 — New-file templates for top-level type declarations (class / interface / record / enum)
+
+ID: CQ-0055
+Status: documented
+Target: M2 (proposed — approach undecided)
+Tier: assistive
+Failure mode: missing-candidate
+Owner component: undecided (see Options)
+
+**Open discussion — not yet triaged.** This entry captures a set of customer feature requests around
+"give me a skeleton when I start a new file" (record, class, interface, enum). The desired outcome is
+clear; the *mechanism and scope* are not settled yet, so this is recorded as a discussion item rather
+than an accepted gap with a fixed design. Triage should pick a direction (and then split into concrete
+accepted slices) before any implementation.
+
+Project/file:
+Not workspace-specific — reproducible in a newly created, empty (or package-only) `.java` file.
+
+Probe command:
+```bash
+# illustrative — capture against a fresh empty source file under a synced module
+printf 'complete after "class " expect class-skeleton min 1\nlog 30\n' \
+  | python3 dev/explore.py <ws>/.../NewType.java
+```
+
+Cursor context:
+```java
+package com.example.app;
+
+class§                       // empty file body, caret after a top-level `class`/`interface`/…
+```
+
+IntelliJ or JDT behavior (reference):
+Creating a new Java file offers a file template that fills in the package line and a matching
+top-level declaration skeleton named after the file — `public final class NewType { }`,
+`public interface NewType { }`, `public record NewType() { }`, `public enum NewType { }` — with the
+caret placed in the body. Editor-agnostically, the same skeletons can surface as completion snippets
+at the top level of an empty file after typing `class` / `interface` / `record` / `enum`.
+
+Lathe behavior:
+No top-level template candidates are produced. Keyword completion offers the bare `class` / `interface`
+/ `record` / `enum` lexemes (see CQ-0054) but nothing expands them into a named declaration skeleton,
+and an empty file body yields no completion at all.
+
+Customer requests (as received, still fuzzy):
+- "When I create a new file, generate the class/record/interface/enum for me."
+- The four kinds are named explicitly: record, class, interface, enum.
+- The type name should presumably match the file name.
+Exact expectations (visibility/modifiers, record components, body stubs, whether it fires on file
+creation vs. on typing) were **not** specified and need to be pinned down with the customer.
+
+Open questions (to resolve in triage):
+- **Mechanism.** Server completion snippet at an empty top-level site? A `textDocument/codeAction`
+  ("Create class/record/… from file")? Or a client-side "new file" affordance in the Neovim plugin
+  (an NV-area gap) that scaffolds without the server? These have different UX and different homes.
+- **Trigger.** On typing `class`/`record`/… in an empty file, on opening an empty `.java`, or an
+  explicit command/menu?
+- **Template set & richness.** Just the four bare skeletons, or visibility/`final`/`abstract`,
+  record components, `sealed permits`, a body stub? How configurable?
+- **Naming source.** File name via `LatheLayout`/`FileUtil`, or a free tab-stop the user fills?
+- **Contract fit.** General "Live templates" are a completion Non-Goal
+  (see [expectations](../planned/lathe-completion-expectations.md) § Non-Goals); a narrow empty-file
+  skeleton may be acceptable as `assistive`, but this needs an explicit decision, not an assumption.
+
+Options under consideration (not yet chosen):
+1. **Completion snippet (server).** Offer four `InsertTextFormat.Snippet` candidates only when the
+   compilation unit has no type declaration yet, keyed off the parsed/sentinel top-level site (no
+   ad-hoc parsing — javac/sentinel only, per AGENTS.md), name derived from the file name, emitted
+   through the existing `CompletionItemPresenter` snippet path.
+2. **Code action (server).** A `CA-` gap: "Create `<Name>` declaration" offered on an empty/
+   package-only file, inserting the same skeletons as a workspace edit.
+3. **Client scaffold (Neovim).** An `NV-` gap: the plugin fills a template on new-buffer creation
+   with no server round-trip; simplest, but editor-specific and outside the LSP contract.
+
+Regression target:
+None yet — to be defined once the mechanism and scope are chosen (and likely re-homed to the CQ, CA,
+or NV area to match).
+
+Notes:
+Sits at the boundary of the completion contract, which is why it is parked as an open discussion.
+Pairs with CQ-0054 (the bare `class`/`record`/… keyword insertion this would build on). Once a
+direction is agreed, replace this entry with one or more concrete `accepted` slices carrying real
+regression targets.
+
+---
+
 # Workspace Lifecycle Gaps (WS)
 
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
