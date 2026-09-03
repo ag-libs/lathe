@@ -181,6 +181,13 @@
   </dependencyManagement>
 
   <build>
+    <extensions>
+      <extension>
+        <groupId>io.github.ag-libs</groupId>
+        <artifactId>lathe-maven-extension</artifactId>
+        <version>0.1.1</version>
+      </extension>
+    </extensions>
     <pluginManagement>
       <plugins>
         <plugin>
