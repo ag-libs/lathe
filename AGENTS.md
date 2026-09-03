@@ -88,6 +88,21 @@ synchronization.
 `spotless:check` runs on `verify` — run `spotless:apply` to fix formatting before committing.
 After a large Java change, agents may run `mvn spotless:apply` before tests to normalize formatting.
 
+### Development overrides (dogfooding lathe on lathe)
+
+The lathe repo enables its own `lathe-maven-extension` in the root `pom.xml`, so Neovim selects the
+**published** server/client pinned by that extension version — not your working tree. A `lathe-server`
+or Lua-client edit is invisible in the editor until you override:
+
+- `LATHE_SERVER_DIR` — point the Neovim launcher at a working-tree server build (default is
+  `~/.cache/lathe/current`, the published version).
+- `LATHE_NVIM_DIR` — point at the working-tree Lua client (the client is otherwise unpacked from the
+  jar by `lathe:sync`, so `mvn install` alone will not refresh it).
+- `LATHE_DEBUG=1` — `FINE`-level server logging.
+
+To verify server changes **without** the editor (launcher-independent), run `dev/explore.py` or Maven
+against the `multi-module` invoker workspace — both use the checkout build directly.
+
 ---
 
 ## Coding style
