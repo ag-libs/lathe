@@ -1997,6 +1997,10 @@ final class WorkspaceSession {
         .replace(classFile.getFileSystem().getSeparator(), ".");
   }
 
+  private static final String SYNC_ACTION = "Sync";
+  private static final String SYNC_CAPTURE_ACTION = "Sync + capture tests";
+  private static final String LATER_ACTION = "Later";
+
   private void checkForChanges() {
     if (watcher == null) {
       return;
@@ -2005,22 +2009,48 @@ final class WorkspaceSession {
     switch (watcher.poll()) {
       case WORKSPACE_CHANGED -> reload();
       case REACTOR_REFRESH -> refreshReactorTypeIndex();
-      case POM_CHANGED -> {
-        if (!pomNotificationPending) {
-          pomNotificationPending = true;
-          final var request =
-              new ShowMessageRequestParams(
-                  List.of(new MessageActionItem("Sync"), new MessageActionItem("Later")));
-          request.setMessage(
-              "Maven project changed. Run 'mvn process-test-classes' to refresh Lathe.");
-          request.setType(MessageType.Warning);
-          client
-              .showMessageRequest(request)
-              .thenAccept(action -> worker.execute(() -> pomNotificationPending = false));
-        }
-      }
+      case POM_CHANGED -> promptForSync();
       case NO_CHANGE -> {}
     }
+  }
+
+  private void promptForSync() {
+    if (pomNotificationPending) {
+      return;
+    }
+
+    pomNotificationPending = true;
+    final var request =
+        new ShowMessageRequestParams(
+            List.of(
+                new MessageActionItem(SYNC_ACTION),
+                new MessageActionItem(SYNC_CAPTURE_ACTION),
+                new MessageActionItem(LATER_ACTION)));
+    request.setMessage("Maven project changed. Run 'mvn process-test-classes' to refresh Lathe.");
+    request.setType(MessageType.Warning);
+    client
+        .showMessageRequest(request)
+        .thenAccept(action -> worker.execute(() -> onSyncPromptResponse(action)));
+  }
+
+  // Any response ends the loop: the acknowledged POM baseline stays quiet until the POMs change
+  // again, even while the client's Maven job runs. Sync / Sync + capture ask the client to run
+  // Maven
+  // (the server never does); Later just acknowledges.
+  private void onSyncPromptResponse(final MessageActionItem action) {
+    pomNotificationPending = false;
+    watcher.acknowledgePoms();
+    final String title = action == null ? null : action.getTitle();
+    switch (title) {
+      case SYNC_ACTION -> requestSync(false);
+      case SYNC_CAPTURE_ACTION -> requestSync(true);
+      case null, default -> {}
+    }
+  }
+
+  private void requestSync(final boolean captureTests) {
+    ((LatheLanguageClient) client)
+        .sync(new LatheSyncParams(workspaceRoot.toString(), captureTests));
   }
 
   private void reload() {

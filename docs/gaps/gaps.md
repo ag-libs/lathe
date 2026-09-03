@@ -884,13 +884,22 @@ answering the prompt (either option) and observing it return after ~2s.
 
 ### Regression targets
 
-- `WorkspaceWatcherTest.detectPomChange_afterAcknowledgedBaseline_staysQuietUntilPomChangesAgain`
-  (positive — dismissal suppresses the repeat; a subsequent POM edit re-triggers)
-- `WorkspaceSessionTest.pomPrompt_laterSelected_doesNotRePromptOnNextPoll`
-- `WorkspaceSessionTest.pomPrompt_syncSelected_sendsLatheSyncWithProcessTestClasses`
-  (positive — dispatch on the action; server emits `lathe/sync` for `mvn process-test-classes`)
-- `WorkspaceSessionTest.pomPrompt_syncCaptureSelected_sendsLatheSyncWithTest`
-  (positive — the "Sync + capture tests" action emits `lathe/sync` for `mvn test`)
+Loop fix (server):
+- `WorkspaceWatcherTest.acknowledgePoms_afterPomChange_stopsReprompting`
+  (positive — a changed POM reports on every poll until `acknowledgePoms()`, then goes quiet)
+
+Actionable prompt (end-to-end):
+- `LspSmokeTest.pomChange_triggersResyncPrompt`
+  (a POM change prompts with the three actions `Sync` / `Sync + capture tests` / `Later`)
+
+Client dispatch (Neovim):
+- `sync_spec.lua` — the `lathe/sync` handler and `:LatheSync` run `mvn process-test-classes` (or
+  `mvn test` with `captureTests`) at the workspace root; a concurrent sync for the same root is a
+  no-op.
+
+The server-side action→`lathe/sync` dispatch (`WorkspaceSession.onSyncPromptResponse`) is a small
+switch exercised through the client handler above; a dedicated e2e assertion was skipped as too racy
+against the shared-server prompt state.
 
 ---
 

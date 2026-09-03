@@ -232,6 +232,11 @@ function M.setup(opts)
     run.stop()
   end, { desc = 'Lathe: stop the active main run' })
 
+  -- Sync surface: the server's lathe/sync notification and :LatheSync run Maven
+  -- (process-test-classes, or `mvn test` with !) to refresh the .lathe/ mirror after POM/structural
+  -- changes. The server never runs Maven itself.
+  require('lathe.sync').setup()
+
   -- Debug surface: :LatheDebug attaches nvim-dap to the test or main class under the cursor,
   -- replayed under a suspended JDWP agent (server-side lathe.debug.test / lathe.debug.main).
   -- Optional -- the command is only wired when nvim-dap is present, so a runtime without it loads

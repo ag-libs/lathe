@@ -136,6 +136,24 @@ class WorkspaceWatcherTest {
     assertThat(watcher.poll()).isEqualTo(PollResult.WORKSPACE_CHANGED);
   }
 
+  @Test
+  void acknowledgePoms_afterPomChange_stopsReprompting() throws IOException {
+    final var pom = workspaceRoot.resolve("pom.xml");
+    Files.writeString(pom, "<project/>");
+    Files.setLastModifiedTime(pom, PAST);
+
+    final var watcher = new WorkspaceWatcher(workspaceRoot);
+    watcher.updatePomPaths(List.of(pom));
+    Files.writeString(pom, "<project>updated</project>");
+
+    // Without acknowledgement the change is reported on every poll — the re-prompt loop.
+    assertThat(watcher.poll()).isEqualTo(PollResult.POM_CHANGED);
+    assertThat(watcher.poll()).isEqualTo(PollResult.POM_CHANGED);
+
+    watcher.acknowledgePoms();
+    assertThat(watcher.poll()).isEqualTo(PollResult.NO_CHANGE);
+  }
+
   private Path manifest() {
     return latheDir.resolve(LatheLayout.WORKSPACE_JSON);
   }

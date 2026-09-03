@@ -368,7 +368,7 @@ class LspSmokeTest {
     assertThat(prompt.getMessage()).contains("process-test-classes");
     assertThat(prompt.getActions())
         .extracting(MessageActionItem::getTitle)
-        .containsExactlyInAnyOrder("Sync", "Later");
+        .containsExactlyInAnyOrder("Sync", "Sync + capture tests", "Later");
   }
 
   private static List<String> symbolNames(final String query) throws Exception {

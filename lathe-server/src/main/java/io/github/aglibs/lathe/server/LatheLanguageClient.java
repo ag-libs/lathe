@@ -7,11 +7,14 @@ import org.eclipse.lsp4j.jsonrpc.services.JsonNotification;
 import org.eclipse.lsp4j.services.LanguageClient;
 
 /**
- * Lathe's extension of the standard LSP client, adding the live test-output and per-test result
- * streams. The server builds the client proxy against this interface (see {@code LatheServer}), so
- * the proxy handed to {@code connect} always implements it.
+ * Lathe's extension of the standard LSP client, adding the workspace-sync request and the live
+ * test-output and per-test result streams. The server builds the client proxy against this
+ * interface (see {@code LatheServer}), so the proxy handed to {@code connect} always implements it.
  */
 public interface LatheLanguageClient extends LanguageClient {
+
+  @JsonNotification("lathe/sync")
+  void sync(LatheSyncParams params);
 
   @JsonNotification("lathe/testOutput")
   void testOutput(TestOutputParams params);

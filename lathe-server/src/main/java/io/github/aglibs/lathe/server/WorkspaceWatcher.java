@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
@@ -64,9 +65,18 @@ final class WorkspaceWatcher {
   }
 
   void updatePomPaths(final List<Path> absPomPaths) {
-    pomBaseline =
-        absPomPaths.stream()
-            .collect(Collectors.toUnmodifiableMap(p -> p, WorkspaceWatcher::fingerprint));
+    pomBaseline = fingerprintAll(absPomPaths);
+  }
+
+  // Re-snapshot the current fingerprints of the already-tracked POMs so a dismissed sync prompt
+  // stays quiet until the POMs change again — without asserting the workspace is synced.
+  void acknowledgePoms() {
+    pomBaseline = fingerprintAll(pomBaseline.keySet());
+  }
+
+  private static Map<Path, PomFingerprint> fingerprintAll(final Collection<Path> paths) {
+    return paths.stream()
+        .collect(Collectors.toUnmodifiableMap(p -> p, WorkspaceWatcher::fingerprint));
   }
 
   private ManifestChange detectManifestChange() {
