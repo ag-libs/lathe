@@ -8,9 +8,11 @@ import com.google.gson.JsonObject;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.RunTarget;
 import io.github.aglibs.lathe.server.run.RunnableKind;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
 import org.eclipse.lsp4j.ExecuteCommandParams;
@@ -86,6 +88,47 @@ class LatheWorkspaceServiceTest {
 
   @Test
   void executeCommand_listRunnables_returnsDiscoveredTargets() throws Exception {
+    final Path source = prepareFooTestWorkspace();
+    final String uri = source.toUri().toString();
+    openDocument(uri, Files.readString(source));
+
+    final Object result = listRunnables(uri).get(5, TimeUnit.SECONDS);
+
+    assertThat(result).isInstanceOf(List.class);
+    @SuppressWarnings("unchecked")
+    final List<RunTarget> targets = (List<RunTarget>) result;
+    assertThat(targets)
+        .extracting(RunTarget::kind)
+        .contains(RunnableKind.TEST_METHOD, RunnableKind.TEST_CLASS);
+    assertThat(targets)
+        .filteredOn(t -> t.kind() == RunnableKind.TEST_METHOD)
+        .extracting(RunTarget::moduleRel)
+        .containsExactly("module");
+  }
+
+  @Test
+  void executeCommand_listRunnables_documentNotOpen_defersThenResolvesOnOpenElseEmpty()
+      throws Exception {
+    final Path source = prepareFooTestWorkspace();
+    final String uri = source.toUri().toString();
+
+    // Never opened: falls back to empty after the wait.
+    @SuppressWarnings("unchecked")
+    final List<RunTarget> neverOpened =
+        (List<RunTarget>) listRunnables(uri).get(5, TimeUnit.SECONDS);
+    assertThat(neverOpened).isEmpty();
+
+    // Racing didOpen: defers, then resolves with real targets once the open lands.
+    final var racing = listRunnables(uri);
+    openDocument(uri, Files.readString(source));
+    @SuppressWarnings("unchecked")
+    final List<RunTarget> opened = (List<RunTarget>) racing.get(5, TimeUnit.SECONDS);
+    assertThat(opened)
+        .extracting(RunTarget::kind)
+        .contains(RunnableKind.TEST_METHOD, RunnableKind.TEST_CLASS);
+  }
+
+  private Path prepareFooTestWorkspace() throws IOException {
     final Path sourceRoot = tmp.resolve("module/src/test/java");
     final Path source = sourceRoot.resolve("com/example/FooTest.java");
     Files.createDirectories(source.getParent());
@@ -104,25 +147,18 @@ class LatheWorkspaceServiceTest {
         """);
     TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
     textDocumentService.initialize(tmp);
-    final String uri = source.toUri().toString();
+    return source;
+  }
+
+  private void openDocument(final String uri, final String content) {
     textDocumentService.didOpen(
-        new DidOpenTextDocumentParams(
-            new TextDocumentItem(uri, "java", 1, Files.readString(source))));
+        new DidOpenTextDocumentParams(new TextDocumentItem(uri, "java", 1, content)));
+  }
+
+  private CompletableFuture<Object> listRunnables(final String uri) {
     final var argument = new JsonObject();
     argument.addProperty("uri", uri);
-    final var params = new ExecuteCommandParams("lathe.runnables.list", List.of(argument));
-
-    final var result = service.executeCommand(params).get(5, TimeUnit.SECONDS);
-
-    assertThat(result).isInstanceOf(List.class);
-    @SuppressWarnings("unchecked")
-    final List<RunTarget> targets = (List<RunTarget>) result;
-    assertThat(targets)
-        .extracting(RunTarget::kind)
-        .contains(RunnableKind.TEST_METHOD, RunnableKind.TEST_CLASS);
-    assertThat(targets)
-        .filteredOn(t -> t.kind() == RunnableKind.TEST_METHOD)
-        .extracting(RunTarget::moduleRel)
-        .containsExactly("module");
+    return service.executeCommand(
+        new ExecuteCommandParams("lathe.runnables.list", List.of(argument)));
   }
 }
