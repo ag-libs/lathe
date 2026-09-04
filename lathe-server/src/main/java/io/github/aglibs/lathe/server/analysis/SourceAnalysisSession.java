@@ -839,7 +839,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
       final List<CodeActionRequest> requests,
       final WorkspaceTypeIndex typeIndex) {
     final var t = Stopwatch.start();
-    LOG.info(() -> "[codeAction] %s diags=%d".formatted(uri, requests.size()));
+    LOG.fine(() -> "[codeAction] %s diags=%d".formatted(uri, requests.size()));
 
     final var analysis = ensureAttributedAnalysis(uri, content, version);
     if (analysis == null) {
@@ -875,7 +875,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
 
     addUnique(actions, seen, new ReplaceVarProvider().provide(uri, range, analysis));
 
-    LOG.info(() -> "[codeAction] %s %dms actions=%d".formatted(uri, t.elapsedMs(), actions.size()));
+    LOG.fine(() -> "[codeAction] %s %dms actions=%d".formatted(uri, t.elapsedMs(), actions.size()));
     return actions;
   }
 
