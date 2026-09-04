@@ -4,7 +4,9 @@ import static io.github.aglibs.lathe.server.analysis.SourceLocator.offsetToPosit
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.after;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
@@ -116,6 +118,21 @@ class LatheTextDocumentServiceTest {
     final var captor = ArgumentCaptor.forClass(PublishDiagnosticsParams.class);
     verify(client, timeout(DEBOUNCE_MS * 3)).publishDiagnostics(captor.capture());
     assertThat(captor.getValue().getUri()).isEqualTo(URI);
+  }
+
+  @Test
+  void didOpen_nonFileUri_ignoredWithoutCrashOrPublish() {
+    // Neovim sends file:// for an unnamed [No Name] buffer (e.g. :LatheStart before a file is
+    // open);
+    // it has no source to analyze, so the event is ignored rather than crashing in LatheUri.toPath.
+    assertThatCode(
+            () ->
+                service.didOpen(
+                    new DidOpenTextDocumentParams(
+                        new TextDocumentItem("file://", "java", 1, "class Foo {}"))))
+        .doesNotThrowAnyException();
+
+    verify(client, after(DEBOUNCE_MS * 4).never()).publishDiagnostics(any());
   }
 
   @Test

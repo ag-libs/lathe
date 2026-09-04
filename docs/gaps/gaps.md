@@ -281,7 +281,23 @@ None yet — re-triaged from backlog when scheduled.
 
 ## EG-050 — Requests on a non-`file` document URI crash the request with an `InternalError`
 
-**Status: accepted — Target: M2**
+**Status: accepted (notification path fixed; request-handler guards remain) — Target: M2**
+
+### Progress (Sep 2026) — notification path fixed
+
+The document-lifecycle crash is fixed. `LatheUri.isFileUri(String)` returns true only for a `file:`
+URI with a non-empty path (false, never throwing, for `file://`, `diffview://`, `untitled:`, …), and
+`LatheTextDocumentService` early-returns from `didOpen`/`didChange`/`didClose`/`didSave` for a
+non-file URI (one `FINE` `[<op>] ignored non-file uri` line) so nothing reaches `LatheUri.toPath`.
+This resolves the reproduced `didOpen` crash — including `file://`, the unnamed `[No Name]` buffer
+Neovim attaches to on `:LatheStart`, which was crashing `routeCompiler → toPath`.
+Unit-tested: `LatheUriTest` (true/false/`null`), `LatheTextDocumentServiceTest`
+(`didOpen(file://)` is a no-op, no exception, no publish).
+
+**Still open:** the request-handler defense-in-depth. A virtual-scheme buffer whose `didOpen` we now
+drop can still receive requests (`foldingRange`, hover, …) that route through `routeCompiler →
+toPath` and throw. Those ~handlers need the same short-circuit (empty result of the handler's type)
+before this can move to the archive.
 
 ### Observed behaviour
 

@@ -85,6 +85,10 @@ final class LatheTextDocumentService implements TextDocumentService {
   public void didOpen(final DidOpenTextDocumentParams params) {
     final var doc = params.getTextDocument();
     final var uri = doc.getUri();
+    if (ignoreNonFile(uri, "open")) {
+      return;
+    }
+
     final var content = doc.getText();
     final var version = doc.getVersion();
     worker.execute(() -> session.onOpen(uri, content, version));
@@ -94,6 +98,10 @@ final class LatheTextDocumentService implements TextDocumentService {
   public void didChange(final DidChangeTextDocumentParams params) {
     final var doc = params.getTextDocument();
     final var uri = doc.getUri();
+    if (ignoreNonFile(uri, "change")) {
+      return;
+    }
+
     final var content = params.getContentChanges().getFirst().getText();
     final var version = doc.getVersion();
     worker.execute(() -> session.onChange(uri, content, version));
@@ -102,14 +110,33 @@ final class LatheTextDocumentService implements TextDocumentService {
   @Override
   public void didClose(final DidCloseTextDocumentParams params) {
     final var uri = params.getTextDocument().getUri();
+    if (ignoreNonFile(uri, "close")) {
+      return;
+    }
+
     worker.execute(() -> session.onClose(uri));
   }
 
   @Override
   public void didSave(final DidSaveTextDocumentParams params) {
     final var uri = params.getTextDocument().getUri();
+    if (ignoreNonFile(uri, "save")) {
+      return;
+    }
+
     final var content = params.getText();
     worker.execute(() -> session.onSave(uri, content));
+  }
+
+  // A non-file document -- an unnamed editor buffer (file://) or a non-file scheme -- has no source
+  // Lathe can analyze; ignore its lifecycle events so nothing reaches LatheUri.toPath and throws.
+  private boolean ignoreNonFile(final String uri, final String op) {
+    if (LatheUri.isFileUri(uri)) {
+      return false;
+    }
+
+    LOG.fine(() -> "[%s] ignored non-file uri %s".formatted(op, uri));
+    return true;
   }
 
   @Override

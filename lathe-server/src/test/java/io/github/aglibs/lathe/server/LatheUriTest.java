@@ -18,4 +18,19 @@ class LatheUriTest {
     final Path result = LatheUri.toPath("file:///home/user/my%20project/Foo.java");
     assertThat(result).isEqualTo(Path.of("/home/user/my project/Foo.java"));
   }
+
+  @Test
+  void isFileUri_localFileUri_true() {
+    assertThat(LatheUri.isFileUri("file:///home/user/project/Foo.java")).isTrue();
+  }
+
+  @Test
+  void isFileUri_pathlessOrNonFileOrNull_false() {
+    // file:// is what Neovim sends for an unnamed [No Name] buffer -- no path, and URI.create
+    // throws.
+    assertThat(LatheUri.isFileUri("file://")).isFalse();
+    assertThat(LatheUri.isFileUri("untitled:Untitled-1")).isFalse();
+    assertThat(LatheUri.isFileUri("")).isFalse();
+    assertThat(LatheUri.isFileUri(null)).isFalse();
+  }
 }
