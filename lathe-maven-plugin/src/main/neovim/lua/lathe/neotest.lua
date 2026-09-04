@@ -49,21 +49,20 @@ end
 -- title alone identifies the workspace-load completion.
 local WORKSPACE_PROGRESS_TITLE = "Lathe: indexing workspace"
 local READY_TIMEOUT_MS = 30000
+local READY_POLL_MS = 100
 local READY_AUGROUP = vim.api.nvim_create_augroup("LatheNeotestReady", { clear = true })
 local workspace_ready = false
-local ready_event
 
 --- Marks the workspace ready on the first ready signal. Returns true only on that first transition
 --- (false on every later reload's progress), so callers can run first-ready-only work exactly once.
+--- The flag is await_ready's fast path; when the progress event is missed (the :LatheStart flow, see
+--- await_ready) it stays false and await_ready falls back to waiting for the client to attach.
 local function signal_ready()
   if workspace_ready then
     return false
   end
 
   workspace_ready = true
-  if ready_event then
-    ready_event.set()
-  end
   return true
 end
 
@@ -107,21 +106,108 @@ vim.api.nvim_create_autocmd("LspProgress", {
   end,
 })
 
---- Suspends until the workspace has loaded (the $/progress end above), bounded by a timeout after
---- which discovery is attempted anyway -- so a missed progress edge degrades to a slower first
---- discovery, never a broken one. Event-driven (no polling); called from neotest's async discovery.
+--- Suspends (event-loop friendly via nio.sleep) until `is_ready` returns true or `timeout_ms`
+--- elapses. Bounded, so a signal that never arrives degrades to a timeout rather than a hang.
+local function wait_until(is_ready, timeout_ms, poll_ms)
+  local waited = 0
+  while not is_ready() and waited < timeout_ms do
+    nio().sleep(poll_ms)
+    waited = waited + poll_ms
+  end
+end
+
+--- Suspends until Lathe is ready to answer discovery, bounded by a timeout after which discovery is
+--- attempted anyway -- so a degraded signal means a slower first discovery, never a broken one.
+--- Called from neotest's async discovery.
+---
+--- Fast path: the workspace-load $/progress end was seen (filetype auto-start, where the adapter is
+--- already loaded when the server loads). Otherwise we wait for a Lathe client to ATTACH rather than
+--- for that progress event -- because in the :LatheStart flow the adapter lazy-loads only when the
+--- first Java file opens, AFTER the progress has already fired, so the progress gate would never trip
+--- and would block every discovery for the full timeout. Client presence means the server is up;
+--- per-file readiness (the doc is open and compiled) is then enforced by await_open_confirmed, and a
+--- discovery that still races is re-run by the DiagnosticChanged nudge.
 local function await_ready()
   if workspace_ready then
     return
   end
 
-  ready_event = ready_event or nio().control.event()
-  nio().first({
-    ready_event.wait,
+  wait_until(
     function()
-      nio().sleep(READY_TIMEOUT_MS)
+      return #nio().lsp.get_clients({ name = "lathe" }) > 0
     end,
-  })
+    READY_TIMEOUT_MS,
+    READY_POLL_MS
+  )
+end
+
+-- Per-buffer "the Lathe server has this file open" gate + one-shot re-discovery nudge. Two problems
+-- converge here, both because the server answers lathe.runnables.list only for an OPEN document:
+--   1. didOpen (Neovim's LSP attach) races neotest's discovery with no server-side ordering, so a
+--      discovery that wins the race sees no open doc.
+--   2. When the server starts AFTER nvim (e.g. :LatheStart, not filetype auto-start), neotest's
+--      initial project discovery runs against a not-yet-ready server, caches "no tests", and then
+--      never calls discover_positions again when the file is opened -- so tests never appear.
+-- The server publishes diagnostics only after its open-mode compile, so the first DiagnosticChanged
+-- for a Lathe-attached buffer is a reliable "doc is open on the server" signal. On it we (a) mark the
+-- buffer confirmed so a racing discover_positions pulls warm (problem 1), and (b) nudge neotest to
+-- (re)discover the file now that the server can answer (problem 2). Cleared on detach/delete.
+local OPEN_CONFIRM_TIMEOUT_MS = 8000
+local OPEN_CONFIRM_POLL_MS = 50
+local open_confirmed = {}
+
+--- Nudges neotest to (re)discover `buf`'s file. neotest re-discovers a file on BufAdd, but does not
+--- fire that discovery on the real open when its initial scan happened before the server was ready;
+--- re-emitting BufAdd for the buffer runs neotest's own _update_positions -> discover_positions with
+--- the server now able to answer. BufAdd (not BufWritePost) so there are no write/format semantics,
+--- and it is scoped to the single buffer.
+local function nudge_discovery(buf)
+  if not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+
+  vim.api.nvim_exec_autocmds("BufAdd", { buffer = buf })
+end
+
+vim.api.nvim_create_autocmd("DiagnosticChanged", {
+  group = READY_AUGROUP,
+  callback = function(ev)
+    if open_confirmed[ev.buf] then
+      return
+    end
+
+    if #vim.lsp.get_clients({ name = "lathe", bufnr = ev.buf }) == 0 then
+      return
+    end
+
+    open_confirmed[ev.buf] = true
+    local name = vim.api.nvim_buf_get_name(ev.buf)
+    if name ~= "" and M.is_test_file(name) then
+      debug_log("[discover] " .. name .. " open on server -> nudging neotest re-discovery")
+      -- Defer out of the DiagnosticChanged callback before firing another autocmd.
+      vim.schedule(function()
+        nudge_discovery(ev.buf)
+      end)
+    end
+  end,
+})
+
+vim.api.nvim_create_autocmd({ "LspDetach", "BufDelete" }, {
+  group = READY_AUGROUP,
+  callback = function(ev)
+    open_confirmed[ev.buf] = nil
+  end,
+})
+
+--- Suspends until the Lathe server confirms `bufnr` is open (its first diagnostics publish), so a
+--- runnables pull is warm rather than racing didOpen. Bounded: after the timeout discovery proceeds
+--- anyway, so a missed signal degrades to a possibly-empty discovery, never a hang. Called only for
+--- a file that is actually open in the editor -- an unopened file (neotest's project sweep) has no
+--- server-side open to wait for and skips this entirely.
+local function await_open_confirmed(bufnr)
+  wait_until(function()
+    return open_confirmed[bufnr]
+  end, OPEN_CONFIRM_TIMEOUT_MS, OPEN_CONFIRM_POLL_MS)
 end
 
 -- RunnableKind ordinal -> neotest position type / TestSelectionKind. lsp4j's Gson layer
@@ -383,6 +469,17 @@ function M.discover_positions(file_path)
 
   local bufnr = vim.fn.bufadd(file_path)
   local uri = vim.uri_from_fname(file_path)
+
+  -- The file the user actually opened is a loaded buffer whose didOpen may still be in flight; the
+  -- server answers runnables only for an open doc, so wait for its server-confirmed open before
+  -- pulling -- otherwise this single discovery races didOpen and neotest caches "no tests" until an
+  -- edit. An unopened file (neotest's project sweep) is not loaded here, so it skips the wait and is
+  -- discovered against the server as-is (empty until it too is opened).
+  if vim.api.nvim_buf_is_loaded(bufnr) then
+    await_open_confirmed(bufnr)
+    debug_log("[discover] " .. file_path .. " open-confirmed=" .. tostring(open_confirmed[bufnr] == true))
+  end
+
   local err, targets = client.request.workspace_executeCommand({
     command = "lathe.runnables.list",
     arguments = { { uri = uri } },

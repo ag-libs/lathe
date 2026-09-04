@@ -107,25 +107,16 @@ class LatheWorkspaceServiceTest {
   }
 
   @Test
-  void executeCommand_listRunnables_documentNotOpen_defersThenResolvesOnOpenElseEmpty()
-      throws Exception {
+  void executeCommand_listRunnables_documentNotOpen_returnsEmpty() throws Exception {
     final Path source = prepareFooTestWorkspace();
     final String uri = source.toUri().toString();
 
-    // Never opened: falls back to empty after the wait.
-    @SuppressWarnings("unchecked")
-    final List<RunTarget> neverOpened =
-        (List<RunTarget>) listRunnables(uri).get(5, TimeUnit.SECONDS);
-    assertThat(neverOpened).isEmpty();
+    // Not opened: only an open document has editor content to analyze. The neotest client discovers
+    // against the server-confirmed open, so a miss answers empty rather than compiling from disk.
+    final Object result = listRunnables(uri).get(5, TimeUnit.SECONDS);
 
-    // Racing didOpen: defers, then resolves with real targets once the open lands.
-    final var racing = listRunnables(uri);
-    openDocument(uri, Files.readString(source));
-    @SuppressWarnings("unchecked")
-    final List<RunTarget> opened = (List<RunTarget>) racing.get(5, TimeUnit.SECONDS);
-    assertThat(opened)
-        .extracting(RunTarget::kind)
-        .contains(RunnableKind.TEST_METHOD, RunnableKind.TEST_CLASS);
+    assertThat(result).isInstanceOf(List.class);
+    assertThat((List<?>) result).isEmpty();
   }
 
   private Path prepareFooTestWorkspace() throws IOException {

@@ -141,3 +141,42 @@ Honest bounds on the claim:
 This implements that doc's **workspace init/reload** scope (the `$/progress` begin→end lifecycle) and
 consumes it as the readiness signal. Remaining lsp-progress ideas (per-module percentages, reload
 granularity) stay in [lathe-lsp-progress.md](lathe-lsp-progress.md) as follow-ups.
+
+## 10. Update — the `:LatheStart` lazy-load gap (fixed)
+
+The §3.2 "missed-edge safety" turned out to be the *normal* case, not a rare degradation, for one
+common flow: starting the server with **`:LatheStart`** (or any path where the first buffer isn't a
+Java file) and *then* opening a test.
+The neotest adapter is lazy-loaded on `ft=java`, so in that flow its `LspProgress` autocmd registers
+**only when the first Java file opens — after** the workspace-load progress has already ended.
+`ready` therefore never flips, and `await_ready`'s fallback blocked **every** discovery for the full
+~30s timeout: tests didn't appear "slightly slower", they didn't appear at all for any file in the
+session. The `--clean` harness hid this because it required the adapter *before* the server loaded,
+catching the progress; only running the **real lazy lazy.nvim config** headlessly reproduced it.
+
+Three changes close it (all client-side, in `lua/lathe/neotest.lua`):
+
+1. **`await_ready` keys on client presence, not the missed progress edge.** The `ready` flag stays
+   the fast path (auto-start still catches the progress), but the fallback now polls
+   `nio.lsp.get_clients{ name = "lathe" }` until a client is attached (the server is up), bounded by
+   the same timeout. It no longer waits on a `$/progress end` that already fired.
+2. **Per-file open gate (`await_open_confirmed`).** Client presence ≠ this document is compiled. The
+   server publishes diagnostics only after its open-mode compile, so the first `DiagnosticChanged`
+   for a Lathe-attached buffer is a reliable "doc is open on the server" signal; `discover_positions`
+   waits for it (bounded) before pulling, so the runnables request is warm rather than racing
+   `didOpen`. Only files actually loaded in the editor wait — a project-sweep file skips it.
+3. **Re-discovery nudge.** `neotest.run.get_tree_from_args` (what the ready-edge re-discovery used)
+   only *reads* neotest's position cache — it does not re-run discovery. When the server confirms a
+   test file open, the adapter re-fires **`BufAdd`** for that buffer (the event neotest itself
+   re-discovers on, via `_update_positions`), so a discovery that cached "no tests" against a
+   not-yet-ready server is replaced. `BufAdd` (not `BufWritePost`) so there are no write/format
+   side effects.
+
+This also let the server-side stopgap be removed: `runnablesFuture` previously **deferred** a racing
+request ~1s hoping `didOpen` would land (the "runnables-open-race" workaround, `scheduleOnce` /
+`RUNNABLES_OPEN_WAIT_MS`). With the client gating discovery on the server-confirmed open, that guess
+is unnecessary — `runnablesFuture` is back to answering empty immediately on a miss.
+
+**Verification (must use the real config):** driving the actual lazy.nvim config headlessly,
+`:LatheStart` → open a test file now yields a populated tree (was empty); auto-open is unchanged.
+A `--clean` harness cannot reproduce the gap, so the regression guard runs the real config.

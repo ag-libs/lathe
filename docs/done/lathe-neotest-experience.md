@@ -53,16 +53,21 @@ can assert it mechanically; where the two disagree, the harness wins and this ta
 ### 3.1 Discovery
 
 **D1 — Cold-open discovery.** ✅
-Opening a test file as the *first* buffer in a session still discovers its runnable tests.
+Opening a test file as the *first* buffer in a session still discovers its runnable tests — including
+the `:LatheStart`-then-open flow.
 *As built:* the server publishes a `$/progress` work-done report (title "Lathe: indexing workspace")
-around initial workspace load and reload; the adapter suspends `discover_positions` on that
-readiness signal (racing a ~30s timeout that then tries anyway) and re-triggers discovery for open
-buffers when the signal ends. Discovery invoked before the client has attached now resolves to the
-real tree once the server is ready instead of caching "no tests".
-*Criteria:* with a cold server, opening a test file and waiting for attach yields the full position
-tree with no manual re-trigger; discovery invoked before the server is ready resolves once it is,
-rather than caching "no tests". *Validated:* e2e driver's eager-discover-before-attach check and a
-real-project cold open (5 positions resolved).
+around workspace load/reload, which the adapter uses as the fast readiness path. Because the adapter
+is lazy-loaded on `ft=java` it can register *after* that progress has fired (the `:LatheStart` flow),
+so `await_ready` falls back to polling for a Lathe client to attach rather than the missed edge;
+`discover_positions` then gates the pull on the file's server-confirmed open (its first
+`DiagnosticChanged`), and the server-confirmed open re-fires `BufAdd` to nudge neotest into
+re-discovering (its `get_tree_from_args` only reads cache). See
+[lathe-workspace-readiness.md §10](lathe-workspace-readiness.md).
+*Criteria:* with a cold server, opening a test file (auto-start **or** `:LatheStart` then open)
+yields the full position tree with no manual re-trigger; discovery invoked before the server is ready
+resolves once it is, rather than caching "no tests". *Validated:* e2e driver's
+eager-discover-before-attach check, plus a headless run of the **real lazy.nvim config** exercising
+`:LatheStart` → open (the `--clean` harness cannot reproduce the lazy-load gap).
 
 **D2 — Discovery stays current.** ✅
 Adding, renaming, or removing a test updates the runnable set.

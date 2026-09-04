@@ -69,18 +69,6 @@ final class ServerEventLoop {
         () -> runLogged(task), intervalMs, intervalMs, TimeUnit.MILLISECONDS);
   }
 
-  /**
-   * Runs {@code task} on the worker thread once after {@code delayMs}. Unlike {@link
-   * #schedule(String, long, Runnable)} it shares no keyspace, so calls never cancel each other.
-   */
-  void scheduleOnce(final long delayMs, final Runnable task) {
-    try {
-      executor.schedule(() -> runLogged(task), delayMs, TimeUnit.MILLISECONDS);
-    } catch (final RejectedExecutionException ignored) {
-      LOG.fine(() -> "[worker] scheduleOnce rejected — executor shut down");
-    }
-  }
-
   void cancel(final String key) {
     if (isWorkerThread()) {
       doCancel(key, false);
