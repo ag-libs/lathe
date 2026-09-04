@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.maven;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +23,26 @@ class ReactorProjectsTest {
     final MavenProject root = project("com.example", "root", "1", tmp);
 
     assertThat(ReactorProjects.moduleRel(tmp, root)).isEqualTo(".");
+  }
+
+  @Test
+  void isSameDirectory_sameDirAcrossRepresentationsAndSymlink_true() throws Exception {
+    // A single-module build must not false-skip: the top-level basedir and the .mvn-anchored root
+    // can differ by a trailing "."/relativity or a symlink yet be the same directory.
+    final Path dir = Files.createDirectories(tmp.resolve("module"));
+    final Path symlink = Files.createSymbolicLink(tmp.resolve("link"), dir);
+
+    assertThat(ReactorProjects.isSameDirectory(dir, tmp.resolve("module/."))).isTrue();
+    assertThat(ReactorProjects.isSameDirectory(dir, symlink)).isTrue();
+  }
+
+  @Test
+  void isSameDirectory_differentDirs_false() throws Exception {
+    // A -pl submodule build: top-level basedir (the submodule) != the reactor root.
+    final Path root = Files.createDirectories(tmp.resolve("root"));
+    final Path submodule = Files.createDirectories(tmp.resolve("root/submodule"));
+
+    assertThat(ReactorProjects.isSameDirectory(submodule, root)).isFalse();
   }
 
   @Test

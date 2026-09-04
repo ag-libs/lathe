@@ -25,6 +25,11 @@ public final class InitMojo extends AbstractMojo {
       return;
     }
 
+    if (!ReactorProjects.isMultiModuleRootBuild(session)) {
+      getLog().debug("[init] not a build from the multi-module root — skipping");
+      return;
+    }
+
     final var workspaceRoot = session.getTopLevelProject().getBasedir().toPath();
     final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
     try {

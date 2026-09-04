@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.maven;
 
+import io.github.aglibs.lathe.core.IOUtil;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
@@ -20,6 +21,30 @@ public final class ReactorProjects {
     return session.getProjects().stream()
         .sorted(Comparator.comparing(project -> moduleRel(workspaceRoot, project)))
         .toList();
+  }
+
+  /**
+   * True when this build is rooted at the real multi-module root, so {@code .lathe} belongs at (and
+   * describes) the whole workspace. The reactor's top-level project shifts to the selected module
+   * on a {@code -pl <module>} build (the aggregator is excluded from the reactor), which would
+   * otherwise drop a stray {@code .lathe} into a submodule; the request's multi-module project
+   * directory is the stable {@code .mvn}-anchored root, unaffected by {@code -pl}/{@code -am}. A
+   * genuine single-module build invoked from its root passes too (its top-level basedir is that
+   * root). Compared on real (symlink/relativity-normalized) paths so a representation difference
+   * can't false-skip.
+   */
+  public static boolean isMultiModuleRootBuild(final MavenSession session) {
+    return isSameDirectory(
+        session.getTopLevelProject().getBasedir().toPath(),
+        session.getRequest().getMultiModuleProjectDirectory().toPath());
+  }
+
+  // Package-private seam so the real-path comparison -- the part that must not false-skip a
+  // single-module build over a symlink or trailing-slash/relativity difference -- is unit-testable
+  // without constructing a MavenSession. toRealPath resolves symlinks and normalizes; both dirs
+  // always exist during a build, so a failure means the build is already broken (fail loud).
+  static boolean isSameDirectory(final Path a, final Path b) {
+    return IOUtil.unchecked(() -> a.toRealPath().equals(b.toRealPath()));
   }
 
   /**

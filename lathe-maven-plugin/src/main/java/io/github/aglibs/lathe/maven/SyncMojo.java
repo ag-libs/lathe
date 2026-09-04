@@ -38,6 +38,11 @@ public final class SyncMojo extends AbstractMojo {
       return;
     }
 
+    if (!ReactorProjects.isMultiModuleRootBuild(session)) {
+      getLog().info("[sync] not a build from the multi-module root (e.g. -pl) — skipping");
+      return;
+    }
+
     if (!session.getCurrentProject().equals(session.getTopLevelProject())) {
       getLog().info("[sync] skipping non top-level project");
       return;

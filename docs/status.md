@@ -16,7 +16,7 @@ The M2 Maven Central release pipeline is implemented and documented (tag-driven 
 | Capability | Status | Notes |
 |---|---|---|
 | Compiler parameter capture | Implemented | Plexus compiler shim delegates to javac and writes JSON params. |
-| Maven lifecycle integration | Implemented | `lathe:init` and `lathe:sync` have default lifecycle phases. |
+| Maven lifecycle integration | Implemented | `lathe:init` and `lathe:sync` have default lifecycle phases. Both run only when the build is rooted at the true multi-module root (`getTopLevelProject().getBasedir()` == the request's multi-module project directory), so a `mvn -pl <module>` build — whose reactor top-level shifts to the selected module — no longer drops a stray `.lathe` into a submodule (which would mis-root the editor). Single-module builds from their root still run. |
 | Automatic build wiring | Implemented | A Maven core extension (`.mvn/extensions.xml`) injects the compiler shim, `init`/`sync` goals, and the capture dependency into the effective model in memory — no `pom.xml` edits. Manual POM setup is also supported. |
 | Reactor output mirroring | Implemented | Classes, test classes, and generated sources are mirrored under `.lathe/`. |
 | Dependency/JDK source sync | Implemented | Sources are extracted under `~/.cache/lathe/`. |
