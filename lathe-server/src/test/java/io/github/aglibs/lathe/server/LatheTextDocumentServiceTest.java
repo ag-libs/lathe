@@ -10,6 +10,7 @@ import static org.mockito.Mockito.after;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
@@ -18,8 +19,10 @@ import io.github.aglibs.lathe.server.analysis.TypeHierarchyItemDataCodec;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.List;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams;
@@ -445,6 +448,42 @@ class LatheTextDocumentServiceTest {
             .get(5, TimeUnit.SECONDS);
 
     assertThat(subtypes).extracting(TypeHierarchyItem::getName).contains("Impl");
+  }
+
+  @Test
+  void initialize_closedSourceNewerThanItsClass_promptsToSync() throws Exception {
+    writeStaleModule(5_000L, 1_000L); // source edited after its last compile → stale
+    when(client.showMessageRequest(any())).thenReturn(new CompletableFuture<>());
+
+    service.initialize(tmp);
+
+    verify(client, timeout(5_000))
+        .showMessageRequest(argThat(p -> p.getMessage().contains("Maven project changed")));
+  }
+
+  @Test
+  void initialize_sourceUpToDateWithItsClass_doesNotPrompt() throws Exception {
+    writeStaleModule(1_000L, 5_000L); // class compiled after the source's last edit → fresh
+
+    service.initialize(tmp);
+
+    verify(client, after(500).never()).showMessageRequest(any());
+  }
+
+  // A configured single-module workspace whose one source and its .class are stamped at the given
+  // mtimes, so the startup source-staleness scan sees the source as stale (source > class) or
+  // fresh.
+  private void writeStaleModule(final long sourceMtime, final long classMtime) throws Exception {
+    final Path sourceRoot = tmp.resolve("module/src/main/java");
+    final Path source = sourceRoot.resolve("com/example/Foo.java");
+    Files.createDirectories(source.getParent());
+    Files.writeString(source, "package com.example; class Foo {}");
+    Files.setLastModifiedTime(source, FileTime.fromMillis(sourceMtime));
+    final Path classFile = tmp.resolve(".lathe/module/classes/com/example/Foo.class");
+    Files.createDirectories(classFile.getParent());
+    Files.writeString(classFile, "");
+    Files.setLastModifiedTime(classFile, FileTime.fromMillis(classMtime));
+    TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
   }
 
   private Path writeWorkspaceSource() throws Exception {
