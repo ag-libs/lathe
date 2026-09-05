@@ -387,13 +387,14 @@ This matches the existing deferred method-reference gap in the historical comple
 ## CQ-0055 — `:LatheNew` — scaffold a new class / interface / record / enum in the right package
 
 ID: CQ-0055
-Status: v1 implemented (Neovim `:LatheNew`); server fast-follow (Option B) accepted, not yet built
+Status: v1 implemented (Neovim `:LatheNew`); v2 (dotted-name, client-side) planned; editor-agnostic
+server (Option B) deferred to a second-client (VS Code) milestone
 Target: M2
 Tier: assistive
 Failure mode: missing-affordance
-Owner component: Neovim client plugin (`lua/lathe/new.lua`, `:LatheNew`) for v1; `lathe-server`
-(`LatheWorkspaceService` + `WorkspaceSession`) for the server fast-follow. NV-area feature; the CQ-0055
-id is kept as a pointer.
+Owner component: Neovim client plugin (`lua/lathe/new.lua`, `:LatheNew`) for v1 and v2. An
+editor-agnostic `lathe-server` command is deferred (see below). NV-area feature; the CQ-0055 id is kept
+as a pointer.
 
 **Decision (supersedes the earlier completion-snippet framing).** The feature is a **client-side
 scaffold**, not a completion: a Neovim command `:LatheNew` that *creates* a new `.java` file — in the
@@ -460,50 +461,48 @@ The file starts with `package <pkg>;` (omitted for the default package). The **c
 buffer using a different on-save formatter gets the fallback skeleton and is normalised by its own hook
 on first save.
 
-### Server fast-follow — editor-agnostic create via `lathe.createType` (Option B, accepted)
+### v2 — dotted-name creation (client-side, the chosen fast-follow)
 
-The dotted-name / editor-agnostic story is owned by the **server**, so placement and style are
-authoritative and any client (Neovim now, VS Code later) drives the same logic. Chosen over the
-client-heuristic alternative (Option A: the client walks up to `src/main|test/java`) because a second
-client gets the feature for free and the style is correct even for clients with no formatter.
+Accept a **dotted name** in the same name prompt: `com.example.sub.Foo` creates `Foo` in package
+`com.example.sub`, making the package directories as needed; a bare `Foo` stays same-package (v1). Done
+**entirely in the client**, reusing the existing helpers — no server round-trip, no new LSP command, no
+cross-language duplication of the create path:
 
-**Surface.** A new `workspace/executeCommand` — `lathe.createType` — with arguments
-`{ uri, kind, name, package? }` (`uri` = the current file or a directory; `package` optional, e.g. a
-dotted `com.example.sub`; absent → same package as `uri`). Register it in `LatheWorkspaceService`
-alongside the existing command constants and advertise it in `createCapabilities`'
-`ExecuteCommandOptions`.
+- Split the input on the last dot → `{ package = 'com.example.sub', name = 'Foo' }`; no dot → the bare
+  same-package v1 path.
+- Resolve the module **source root** from the current context directory by taking the path up to and
+  including the `/src/main/java` or `/src/test/java` marker — the same marker `_package_from_dir`
+  already keys on (reused, not duplicated). main vs test follows the current buffer.
+- Target directory = `sourceRoot/<package-as-path>`, then hand off to the **existing**
+  `_write_and_open(dir, package, kind, name)`, which already does `mkdir -p`, write, open, format, and
+  caret. So v2 only computes `(dir, package, name)` differently; the file-creation path is unchanged.
+- If the current context is not under a `src/main|test/java` root, a package-qualified name cannot be
+  placed — warn and bail (a bare name still works same-directory).
 
-**Server behaviour.**
-1. Resolve the module + source root for `uri` via `WorkspaceModuleRegistry.moduleSourceFor` /
-   `allSourceRoots` (main vs test inferred from which root `uri` sits under; generated-sources roots
-   excluded), and compute the target path — same directory for same-package, else
-   `sourceRoot/<package-as-path>/<Name>.java`.
-2. Build the skeleton and **format it server-side** with the existing `JavaFormatter` (GJF), so the
-   returned text is already correctly styled regardless of the client's formatter.
-3. Return a `WorkspaceEdit` with a **`CreateFile`** resource operation (which creates parent
-   directories) plus a `TextDocumentEdit` inserting the formatted skeleton.
+### Deferred — editor-agnostic server (Option B), for a second client
 
-**Client role.** The client calls the command, applies the result via `workspace/applyEdit`, opens the
-new file, and positions the caret. `:LatheNew` becomes a thin front-end (kind picker + name/package
-input) over the command when a Lathe server is attached; the v1 pure-client path stays as the fallback
-when no server is available.
-
-**Placement resolver** — a pure, unit-testable unit separate from the LSP plumbing:
-`(uri, kind, name, package) → { targetPath, packageDecl, sourceRootKind }`, mirroring how the
-`SourceLocator` / resolver classes are structured. Refusals (an existing target file, or a `uri` that
-maps to no module/source root) return a failure the client surfaces as a message — no partial edit.
+Revisit when a non-Neovim client (VS Code) lands, so placement / skeleton / formatting live once in the
+server rather than being re-implemented per client. A `lathe.createType` `workspace/executeCommand`
+would resolve the module/source root (`WorkspaceModuleRegistry`), format the skeleton server-side
+(`JavaFormatter`), and return the resolved **`{ path, content }`** — the slim shape, *not* a
+`WorkspaceEdit`/`CreateFile`, whose resource-operation plumbing and client capability add cost the
+Neovim client does not need; the client reuses its existing write/open/caret path with the returned
+content. Not built now: for a Java/Maven project the `src/main|test/java` convention makes the client
+resolution reliable, and the Neovim client already owns the marker split, file IO, and formatting, so
+the server buys almost nothing until a second client must share the logic (KISS/DRY).
 
 ### Scope
 
-- **v1 (implemented):** same-package (or current directory-buffer) creation, pure-client, no round-trip;
-  kind picker + name input; main/test inferred from the current buffer; clean error when no
-  file/directory context; refuse to overwrite an existing file. Shipped in `lua/lathe/new.lua`.
-- **Server fast-follow (accepted — Option B, see above):** dotted-name creation (making the package
-  directories) and editor-agnostic parity, via the `lathe.createType` server command returning a
-  `CreateFile` `WorkspaceEdit` with a server-formatted skeleton.
+- **v1 (implemented):** same-package (or current directory-buffer) creation, pure-client; kind picker +
+  name input; main/test inferred from the current buffer; clean error with no context; no overwrite.
+  Shipped in `lua/lathe/new.lua`.
+- **v2 (planned — client-side, chosen):** dotted-name creation making the package directories, reusing
+  the existing marker split and `_write_and_open` (see above).
+- **Deferred (Option B):** editor-agnostic server `lathe.createType`, revisited when a second client
+  (VS Code) exists.
 - **Later / optional:** file-tree **node** targeting for nvim-tree / neo-tree (their
-  `get_node_under_cursor` APIs differ per plugin, so kept out of scope); configurable
-  modifiers/`sealed permits`/record components.
+  `get_node_under_cursor` APIs differ per plugin); configurable modifiers/`sealed permits`/record
+  components.
 
 ### Regression targets
 
@@ -520,18 +519,18 @@ Neovim client (busted spec, e.g. `new_spec.lua`), stubbing `vim.ui.select` / `vi
 - `latheNew_noJavaContext_errorsCleanly` (negative — not in a file/dir under a source package)
 - `latheNew_existingFile_refusesToOverwrite` (negative)
 
-Server fast-follow (Option B, when built):
-- `NewTypeResolverTest` (pure) — same-package, dotted-name under the right source root, main-vs-test
-  inference, generated-sources excluded, and a `uri` with no module → error.
-- `LspSmokeTest.createType_dottedName_returnsCreateFileEditWithFormattedSkeleton` — `lathe.createType`
-  returns a `WorkspaceEdit` with a `CreateFile` at the expected path and a GJF-formatted skeleton.
-- `new_spec.lua` — `latheNew_dottedName_dispatchesServerCommand` — with a Lathe server attached the
-  client dispatches `lathe.createType` and applies the returned edit (stub the request/applyEdit).
+v2 (when built), same spec:
+- `_split_qualified` / `_source_root` pure-helper units — bare vs dotted split; marker → source root;
+  no-marker → nil.
+- `latheNew_dottedName_createsUnderSourceRootMakingDirs` (positive — `a.b.C` from a main file creates
+  `<root>/src/main/java/a/b/C.java` with `package a.b;`, directories made).
+- `latheNew_dottedName_fromTestFile_usesTestRoot` (positive — test-root inference).
+- `latheNew_dottedName_noSourceRoot_warnsAndBails` (negative).
 
 Notes:
 Pairs with CQ-0054 (keyword insertion) but is independent of it. Editor-agnostic parity (a VS Code
-"New Lathe type" command backed by the same server command) is delivered by the Option B server
-fast-follow above.
+"New Lathe type") is the deferred Option B server command above, to be built when a second client
+exists.
 
 ---
 
@@ -879,17 +878,28 @@ negative and a fabricated-`.class` "new external type appears" positive at the i
 
 ## WS-5 — External on-disk edits to sources/resources are not picked up without a Maven build
 
-**Status: accepted — Target: M2 (direction changed: detect → prompt, not in-process recompile)**
+**Status: done — Target: M2 (detect → prompt, not in-process recompile)**
 
-**Decision.** The in-process recompile originally proposed for this gap is **not pursued** — it is
-correct only for a single-module change set, and a multi-module external change (common on a large
-reactor with agent edits) would require re-implementing Maven's ordered reactor build. The gap is now
-resolved by **detecting** the staleness and reusing the shipped **sync prompt** (WS-3) + silent refresh
-(WS-4): see [External-Change Detection → Sync Prompt](../planned/lathe-external-change-detection.md)
-(this is WS-1 option 1). Resources still auto-copy via `refreshResource`. The parked compile design is
-[In-Process External-Change Recompilation](../potential/lathe-external-change-recompilation.md), kept
-for a possible single-module fast path later. The Observed behaviour / Root cause below still stand;
-the *Proposed fix* is superseded by the detection doc.
+**Resolved.** Implemented as **server-side detection → the shipped sync prompt**: a source-root scan
+compares each *closed* source to its compiled `.class` in `.lathe/` (stale when the `.class` is missing
+or older; open files and the annotation-processor root are skipped) and, if any is stale, raises the
+WS-3 Maven sync prompt. External **resource** changes auto-copy into `.lathe/` via `refreshResource`
+(a copy is not compilation). Both run at startup and on the `WorkspaceWatcher` tick, suppressed while a
+module is mid-build (`LatheLock.isBuilding`); Lathe never runs Maven automatically. Verified end-to-end
+via the dev probe against the SNAPSHOT server — a stale source fires the prompt, a new resource is
+copied into `.lathe/`.
+
+Commits: `feat(freshness): detect externally-changed sources and prompt to sync (WS-5)` and
+`feat(freshness): auto-copy externally changed resources into .lathe/ (WS-5)`; e2e coverage in
+`LatheTextDocumentServiceTest`. Design:
+[External-Change Detection → Sync Prompt](../planned/lathe-external-change-detection.md) (WS-1
+option 1). The in-process recompile originally proposed was **not pursued** — correct only for a
+single-module change set, else it re-implements Maven's ordered reactor build — and is parked in
+[In-Process External-Change Recompilation](../potential/lathe-external-change-recompilation.md).
+
+**Deferred follow-ups (not blocking):** deletion detection (an orphan `.class` for a source removed
+while Lathe was down needs a source-*set* baseline, not just newest-mtime) and the "Sync + capture"
+heuristic for a new test module / test source.
 
 ### Observed behaviour
 
