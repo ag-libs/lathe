@@ -110,6 +110,27 @@ require("lathe").setup({
 })
 ```
 
+## Create a new type (`:LatheNew`)
+
+`:LatheNew` scaffolds a new `class` / `interface` / `record` / `enum` next to the file you have open —
+in the **same package** — and opens it. It prompts for the kind (`vim.ui.select`) and the name
+(`vim.ui.input`), then writes `<Name>.java` with the package line and a skeleton, and drops the cursor
+in the body (or the record component list).
+
+The style of the generated code follows your **on-save formatter**: when the Google formatter is
+enabled (`formatter = "google"` and `format_on_save = true`) the scaffold is normalised through the
+same formatting pass a save uses, so it matches your project exactly; otherwise a minimal skeleton is
+left as written. It refuses to overwrite an existing file, and warns if the current buffer is not a
+Java file (or a directory) inside a source package.
+
+| Action | Command | Suggested |
+|--------|---------|-----------|
+| Create a type in the current package | `:LatheNew` | `<leader>nc` |
+
+> Placement is derived from the current buffer: a Java file targets its own directory (same package); a
+> directory buffer (oil / netrw) targets that directory. Creating in a *different* package via a dotted
+> name — making the package directories as needed — is planned.
+
 ## Run a `main`
 
 `:LatheRun` replays the `main` under the cursor — the one whose method or class the cursor is in, or

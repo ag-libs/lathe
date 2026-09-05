@@ -63,6 +63,16 @@ client enables the `google` formatter, so Lathe never rewrites a project whose s
 Google Java Format. Live-editing indentation is a separate, always-on client concern — see the editor
 guide to configure both.
 
+### Scaffolding
+
+| Feature  | What it does                                                                                                                                            | Command            |
+|----------|--------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------|
+| New type | creates a `class` / `interface` / `record` / `enum` in the current file's package — package line and skeleton, then opens it — prompting for kind and name | Neovim `:LatheNew` |
+
+`:LatheNew` is a client-side convenience (no server round-trip). The generated code's style follows
+your on-save formatter, so it matches the project when the `google` formatter is enabled. See the
+[Neovim cheatsheet](docs/guide/editors/neovim.md#create-a-new-type-lathenew).
+
 ### Run, test & debug
 
 | Feature                                              | What it does                                                                                                                                                | LSP method                                                            |

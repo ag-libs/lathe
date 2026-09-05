@@ -232,6 +232,11 @@ function M.setup(opts)
     run.stop()
   end, { desc = 'Lathe: stop the active main run' })
 
+  -- New-type surface: :LatheNew scaffolds a class/interface/record/enum next to the current file
+  -- (same package) and opens it. Style follows the on-save formatter when it is enabled (same gate),
+  -- so the scaffold matches a save.
+  require('lathe.new').setup({ format_on_save = format_on_save })
+
   -- Sync surface: the server's lathe/sync notification and :LatheSync run Maven
   -- (process-test-classes, or `mvn test` with !) to refresh the .lathe/ mirror after POM/structural
   -- changes. The server never runs Maven itself.
