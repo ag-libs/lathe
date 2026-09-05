@@ -37,9 +37,19 @@ from typing import Any, Callable
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-LATHE_LAUNCHER = os.environ.get(
-    "LATHE_LAUNCHER", str(Path.home() / ".cache/lathe/current/lathe-launcher.sh")
-)
+def _default_launcher() -> str:
+    """Prefer the working-tree SNAPSHOT server so the probe exercises the checkout, not the
+    published release pinned by ~/.cache/lathe/current. A SNAPSHOT launcher exists once the
+    checkout has been installed (mvn install -pl lathe-server -am); it runs the ~/.m2 SNAPSHOT
+    jars, so rebuild before probing. Falls back to `current` when no SNAPSHOT is installed."""
+    servers = Path.home() / ".cache/lathe/servers"
+    snapshots = sorted(servers.glob("*-SNAPSHOT/lathe-launcher.sh"))
+    if snapshots:
+        return str(snapshots[-1])
+    return str(Path.home() / ".cache/lathe/current/lathe-launcher.sh")
+
+
+LATHE_LAUNCHER = os.environ.get("LATHE_LAUNCHER", _default_launcher())
 DEFAULT_TIMEOUT = int(os.environ.get("LATHE_TIMEOUT", "15"))
 
 

@@ -129,6 +129,20 @@ folds [assertions]     (alias: folding)
 diagnostics   (alias: diag)
     List errors and warnings the compiler reports for this file.
 
+open <path>
+    Open another file on disk into the same session (didOpen) and make it the
+    current file, so one session can drive several files (e.g. create + save a
+    new main and a new test, then query workspace symbols).
+
+save
+    Send didSave for the current file.  The server recompiles it into the
+    module's .lathe mirror and refreshes the reactor type index — the path that
+    makes a newly created class show up in 'sym' without running Maven.
+
+sleep <seconds>
+    Pause (default 1s) to let an async server refresh settle before the next
+    command — e.g. between 'save' and 'sym'.
+
 runnables
     List discovered run targets (main methods, test methods, test classes,
     test packages) in the open file, numbered for use with 'run'.  Reflects
@@ -581,6 +595,9 @@ class ExploreShell:
             "folding":     self._cmd_folds,
             "diagnostics": self._cmd_diagnostics,
             "diag":        self._cmd_diagnostics,
+            "open":        self._cmd_open,
+            "save":        self._cmd_save,
+            "sleep":       self._cmd_sleep,
             "runnables":   self._cmd_runnables,
             "run":         self._cmd_run,
             "refresh":     self._cmd_refresh,
@@ -1500,6 +1517,48 @@ class ExploreShell:
             tags  = d.get("tags", [])
             tag_str = " [unused]" if 1 in tags else ""
             print(f"  [{sev}] {start['line'] + 1}:{start['character'] + 1}  {msg}{tag_str}")
+
+    def _cmd_open(self, args: list[str]) -> None:
+        if not args:
+            print("usage: open <path>")
+            return
+
+        path = Path(args[0]).expanduser().resolve()
+        if not path.exists():
+            print(f"  file not found: {path}")
+            return
+
+        try:
+            diags = self._client.open(path)
+        except TimeoutError:
+            print("  TIMEOUT")
+            return
+
+        self._file = path
+        self._original = path.read_text()
+        self._current = self._original
+        self._version = 1
+        self._injected = False
+        self._last_runnables = None
+        errs = sum(1 for d in diags if d.get("severity") == 1)
+        print(f"  opened {path.name}  ({len(diags)} diagnostic(s), {errs} error(s))")
+
+    def _cmd_save(self, args: list[str]) -> None:
+        # didSave the current file; the server recompiles it into the module's .lathe mirror and
+        # refreshes the reactor type index, which is what workspace/symbol reads.
+        try:
+            diags = self._client.save(self._file)
+        except TimeoutError:
+            print("  TIMEOUT")
+            return
+
+        errs = sum(1 for d in diags if d.get("severity") == 1)
+        print(f"  saved {self._file.name}  ({errs} error(s))")
+
+    def _cmd_sleep(self, args: list[str]) -> None:
+        seconds = float(args[0]) if args else 1.0
+        time.sleep(seconds)
+        print(f"  slept {seconds}s")
 
     def _cmd_runnables(self, args: list[str]) -> None:
         try:
