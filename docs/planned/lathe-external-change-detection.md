@@ -126,9 +126,9 @@ Lathe was down have a stale-or-missing `.class`.
 ### 2. Steady state (each worker tick, after the manifest/POM checks)
 
 ```
-newestStale = scan()
-if newestStale > acknowledgedMtime and not promptPending:
-    promptForSync()
+newestStale = scan()                    # skips modules whose .lathe/<module>/lathe.lock isHeld
+if newestStale > acknowledgedMtime and not promptPending and not anyModuleLockHeld():
+    promptForSync()                     # not anyModuleLockHeld → suppress while an mvn build runs
 
 on prompt response (Sync / Sync+capture / Later):
     acknowledgedMtime = newestStale     # report once; quiet until something newer appears
@@ -179,6 +179,40 @@ WorkspaceSession.onDeletedFile` chain has been **removed** as dead code (`didCha
 an empty stub the interface requires; `didDeleteWatchedFile` and `onDeletedFile` are deleted). On-disk
 **deletions** are covered instead by the scan's presence check (item #2 → prompt), not by an in-process
 eviction.
+
+## Concurrency — `mvn` run while Lathe is open
+
+A user may run `mvn` from a terminal while Lathe is up (instead of using the sync prompt). Three cases:
+
+**Happy path — `mvn` reached `lathe:sync`** (`process-test-classes` / `test` / `verify` / `install`).
+`.lathe/` is regenerated (every `.class` rewritten, mtime ≈ now) and `workspace.json`'s mtime is bumped
+(WS-4). On the next tick the watcher sees the manifest-mtime change → `REACTOR_REFRESH` (silent
+reactor-index refresh, WS-4) or `reload()` if structural; the source scan finds nothing stale (all
+`.class` are now newer than their sources); and the resync path resets `acknowledgedMtime = 0`. Net:
+the manual `mvn` is absorbed transparently, no prompt. Already handled by shipped machinery + the
+dedupe reset.
+
+**No-op — `mvn` did not reach `lathe:sync`** (e.g. `mvn compile`). `lathe:sync` binds to
+`process-test-classes`, so `.lathe/` and `workspace.json` are untouched and Lathe reads only `.lathe/`,
+so it sees nothing — correct.
+
+**The mid-build race.** `lathe:sync` rewrites `.lathe/<module>/classes` module by module and only bumps
+`workspace.json` near the end, so a tick landing *mid-build* can see a not-yet-recompiled module whose
+sources are newer than its stale `.class` → a **spurious "sync needed" prompt while `mvn` is still
+running**. It self-heals when the build finishes (bump → `REACTOR_REFRESH` + reset), but must be
+suppressed.
+
+**Suppression via the existing lock.** The compiler already writes a per-module lock
+`.lathe/<module>/lathe.lock`, held for a module's whole compile + `.lathe` copy (released in a
+`finally`, auto-stale after 2 min); the server already honours the reader side via
+`LatheLock.awaitAndRead` for launch templates. The scan reuses it **non-blocking**: if any tracked
+module's lock `isHeld`, a build is in progress → **skip the source prompt for that tick** (and skip that
+module's files in the walk). A reactor build keeps at least one module locked almost continuously, so
+this covers the window; the tiny tail before the `workspace.json` bump self-heals. A persist-across-two-
+ticks debounce is an optional extra guard but the lock check covers the real case.
+
+*Implementation note:* `LatheLock.isHeld(moduleDir)` is currently `private` — expose it (non-blocking;
+we skip, we do not `awaitAndRead`-block the worker for minutes).
 
 ## Reaction — reuse shipped machinery, add nothing
 
