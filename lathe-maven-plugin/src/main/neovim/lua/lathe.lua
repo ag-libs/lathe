@@ -185,19 +185,33 @@ function M.setup(opts)
   -- not advertise formatting, so wiring the autocmd would be a no-op.
   local format_on_save = opts.formatter == 'google' and opts.format_on_save == true
   if format_on_save then
+    local fold = require('lathe.fold')
     vim.api.nvim_create_autocmd('LspAttach', {
       group = augroup,
       callback = function(args)
         local client = vim.lsp.get_client_by_id(args.data.client_id)
-        if client and client.name == 'lathe' then
-          vim.api.nvim_create_autocmd('BufWritePre', {
-            group = augroup,
-            buffer = args.buf,
-            callback = function()
-              vim.lsp.buf.format({ bufnr = args.buf, id = args.data.client_id, async = false })
-            end,
-          })
+        if not (client and client.name == 'lathe') then
+          return
         end
+
+        -- Format-on-save rewrites the buffer, which reopens ufo's imports fold on every save
+        -- (NV-3). Snapshot the fold's state before the format, then restore it after ufo settles.
+        local imports_were_closed = false
+        vim.api.nvim_create_autocmd('BufWritePre', {
+          group = augroup,
+          buffer = args.buf,
+          callback = function()
+            imports_were_closed = fold.imports_closed(args.buf)
+            vim.lsp.buf.format({ bufnr = args.buf, id = args.data.client_id, async = false })
+          end,
+        })
+        vim.api.nvim_create_autocmd('BufWritePost', {
+          group = augroup,
+          buffer = args.buf,
+          callback = function()
+            fold.reclose_imports(args.buf, imports_were_closed)
+          end,
+        })
       end,
     })
   end
