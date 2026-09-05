@@ -63,6 +63,10 @@ abstract class CompletionTestSupport {
     return items.stream().filter(i -> label.equals(i.getLabel())).findFirst();
   }
 
+  protected static String insertTextOf(final List<CompletionItem> items, final String label) {
+    return itemLabeled(items, label).orElseThrow().getInsertText();
+  }
+
   protected static Optional<CompletionItem> itemWithFilterText(
       final List<CompletionItem> items, final String text) {
     return items.stream().filter(i -> text.equals(i.getFilterText())).findFirst();

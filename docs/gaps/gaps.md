@@ -448,74 +448,6 @@ This matches the existing deferred method-reference gap in the historical comple
 
 ---
 
-## CQ-0054 — Accepted keyword completion inserts the bare keyword with no trailing space
-
-ID: CQ-0054
-Status: accepted
-Target: M2
-Tier: presentation
-Failure mode: insertion-shape
-Owner component: KeywordProvider.keywordCandidate (insertText) / CompletionItemPresenter
-
-Project/file:
-Not workspace-specific — reproducible in any Java source, e.g. a scratch file.
-
-Probe command:
-```bash
-# illustrative — capture as a completion-presentation assertion, not a live-defect probe
-printf 'complete after "cla" expect class min 1\nlog 30\n' \
-  | python3 dev/explore.py <ws>/.../Any.java
-```
-
-Cursor context:
-```java
-class C extends AbstractL§ {}
-new§ ArrayList<>()
-retur§ value;
-```
-
-IntelliJ or JDT behavior:
-Accepting a keyword that is **always followed by a further construct** inserts the keyword *plus a
-trailing space* and leaves the caret after it — `class `, `interface `, `enum `, `extends `,
-`implements `, `new `, `instanceof `, `throws `, `import `, `return ` (in a value context) — so the
-developer keeps typing the mandatory next token without pressing space first. Keywords that can
-legally stand alone or precede punctuation get **no** trailing space: `this`, `super`, `true`,
-`false`, `null`, `break`, `continue` — an editor never wants `null ;`.
-
-Lathe behavior:
-`KeywordProvider.keywordCandidate` sets `insertText` to the bare lexeme (`new CompletionCandidate(keyword,
-keyword, KEYWORD, …)`) for every keyword, regardless of whether it requires a following construct, so
-the developer must press space manually after each accepted keyword.
-
-Expected Lathe behavior:
-Keyword `insertText` carries a single trailing space **only** for keywords that must be followed by
-another token; standalone/value keywords stay bare. This is a presentation change
-(accepted-completion edit), not a filtering change — which keywords are legal at the site is
-unchanged.
-
-Accepted edit, if relevant:
-Accepting `class` at a top-level declaration produces `class ` (caret after the space).
-Accepting `null` in a value slot produces `null` (no trailing space).
-
-Future design:
-Partition the keyword vocabulary in `KeywordProvider` into a "requires-a-following-construct"
-(space-suffixed) set and a "standalone/value" (bare) set, and set `insertText` accordingly in
-`keywordCandidate`; the existing `selectKeywords` lists (`VALUE_EXPRESSIONS`, class-body keywords,
-etc.) supply the membership. Plain trailing space only — no snippet/tab-stop. Guard against a doubled
-space when the next character on the line is already whitespace (trim in `CompletionEditApplier` or
-skip the suffix when the replacement is immediately followed by whitespace).
-
-Regression target:
-`CompletionKeywordTest.keyword_requiresFollowingConstruct_insertsTrailingSpace` (positive) and
-`CompletionKeywordTest.keyword_standaloneValue_insertsNoTrailingSpace` (negative).
-
-Notes:
-Presentation parity with IntelliJ/JDT LS; realises the accepted-completion-edit rule in the completion
-[expectations](../planned/lathe-completion-expectations.md) (§ Presentation — "the source text produced
-when the user accepts a completion item").
-
----
-
 ## CQ-0055 — New-file templates for top-level type declarations (class / interface / record / enum)
 
 ID: CQ-0055
@@ -664,10 +596,12 @@ Not yet decided; options to weigh when scheduled, cheapest first:
    without a Maven round trip; overlaps with [Sibling Recompilation](../planned/lathe-sibling-recompilation.md)
    and the [Reactor Type Index](../planned/lathe-reactor-type-index.md) freshness follow-ups.
 
-Option 2 is now specified and scheduled for M2 as **WS-5**, per
-[lathe-external-change-recompilation.md](../planned/lathe-external-change-recompilation.md) (extend
-`didChangeWatchedFiles` to `Created`/`Changed` and recompile/copy the changed file via the save
-pipeline). WS-1 remains the umbrella for the wider reconciliation (option 3) and cross-module cases.
+Scheduled for M2 as **WS-5**. The original plan was option 2 (in-process recompile), but that is
+**parked** — correct only for single-module change sets — in favour of **option 1**: detect source
+staleness and reuse the shipped sync prompt, per
+[lathe-external-change-detection.md](../planned/lathe-external-change-detection.md). The parked compile
+design is [lathe-external-change-recompilation.md](../potential/lathe-external-change-recompilation.md).
+WS-1 remains the umbrella for the wider reconciliation (option 3) and cross-module cases.
 
 This subsumes CA-4's remaining closed-file case (new/renamed types in files the user has not opened),
 which is only discoverable today after a manual sync.
@@ -802,10 +736,10 @@ auto-recompile). Three parts:
   wiring the default.
 
 Relates to WS-1 (staleness/invalidation umbrella), WS-2 (the deferred *source-only* branch-switch
-prompt — superseded for single-file source edits by WS-5's auto-recompile), WS-4 (post-Maven pickup),
-and WS-5 / [lathe-external-change-recompilation.md](../planned/lathe-external-change-recompilation.md)
-(the light-regime companion). WS-3 itself is the shipped-behaviour reliability defect (looping prompt +
-inert "Sync").
+prompt — now revived as the chosen approach), WS-4 (post-Maven pickup), and WS-5 /
+[lathe-external-change-detection.md](../planned/lathe-external-change-detection.md) (source staleness
+also routes to this same prompt). WS-3 itself is the shipped-behaviour reliability defect (looping
+prompt + inert "Sync").
 
 ### Probe commands
 
@@ -944,10 +878,17 @@ negative and a fabricated-`.class` "new external type appears" positive at the i
 
 ## WS-5 — External on-disk edits to sources/resources are not picked up without a Maven build
 
-**Status: accepted — Target: M2**
+**Status: accepted — Target: M2 (direction changed: detect → prompt, not in-process recompile)**
 
-Design: [lathe-external-change-recompilation.md](../planned/lathe-external-change-recompilation.md)
-(D1 + R1 + resources). This is the cheapest concrete slice of the WS-1 freshness umbrella.
+**Decision.** The in-process recompile originally proposed for this gap is **not pursued** — it is
+correct only for a single-module change set, and a multi-module external change (common on a large
+reactor with agent edits) would require re-implementing Maven's ordered reactor build. The gap is now
+resolved by **detecting** the staleness and reusing the shipped **sync prompt** (WS-3) + silent refresh
+(WS-4): see [External-Change Detection → Sync Prompt](../planned/lathe-external-change-detection.md)
+(this is WS-1 option 1). Resources still auto-copy via `refreshResource`. The parked compile design is
+[In-Process External-Change Recompilation](../potential/lathe-external-change-recompilation.md), kept
+for a possible single-module fast path later. The Observed behaviour / Root cause below still stand;
+the *Proposed fix* is superseded by the detection doc.
 
 ### Observed behaviour
 
@@ -999,6 +940,76 @@ The same `sym`/`diag`/`sym` harness used for the save path applies.
 - `WorkspaceSessionTest.onExternalChange_burst_debouncesPerModule`
 - `WorkspaceSessionTest.onExternalChange_bulkChangeSet_defersToHeavyPathPrompt`
   (negative — above the threshold, defer to WS-3 instead of per-file recompiling)
+
+---
+
+## WS-6 — Open files in dependent modules keep stale diagnostics after an upstream open file is saved
+
+**Status: accepted — Target: backlog**
+
+Discovered while scoping WS-5. This is the *in-session, open-file* facet of cross-module freshness —
+distinct from WS-5 (external/closed-file edits) and cheaper, because it only concerns files the user
+already has open.
+
+### Observed behaviour
+
+With a file open in module B that depends on module A, editing and saving an open file in A does not
+refresh B's open buffer: B's diagnostics, semantic tokens, and quick-fixes continue to reflect A's
+previous state until B is itself edited or reopened. Adding or changing a public API in A — a new
+method, a changed signature, a removed type — is therefore invisible to an already-open dependent file
+even though A's new bytecode was written to `.lathe/A/classes` by the save.
+
+What *does* work today: same-module open files refresh, and A's type-index shard is rebuilt, so
+cross-module `workspace/symbol` / navigation / completion for A's new types resolve. Only the
+**dependent module's live per-file analysis** (diagnostics/tokens) is left stale.
+
+### Root cause
+
+On save, [`WorkspaceSession.afterModuleSave`](../../lathe-server/src/main/java/io/github/aglibs/lathe/server/WorkspaceSession.java)
+runs `scheduleOpenFilesInModule(savedUri, savedModule)`, which reschedules open documents filtered to
+the **same** `moduleDir`:
+
+```java
+.filter(uri -> workspace.moduleSourceFor(...).map(m -> m.moduleDir().equals(savedModule.moduleDir())).orElse(false))
+```
+
+Open files in *downstream* modules are never rescheduled (the method's "…for dependents…" log line
+overstates what the filter does). A full reschedule of every open file happens only on a whole
+workspace `reload()` (`scheduleAllOpenFiles`), i.e. after a Maven sync — not on an ordinary in-editor
+save.
+
+### Proposed direction
+
+The graph primitive already exists: `WorkspaceModuleGraph.referenceSearchScope(config)` returns the
+declaring module plus its transitive downstream dependents (`downstreamOf`). The fix is to reschedule
+open files in any module within that scope (recompiled in `OPEN` mode against the now-fresh
+`.lathe/A/classes`), instead of filtering to the same module. It stays bounded — only files the user
+has open, no closed-file compile, no reactor rebuild — which is what separates it from WS-5 and from
+[Sibling Recompilation](../planned/lathe-sibling-recompilation.md) (its closed-file, whole-module
+counterpart).
+
+**Caveat to resolve first:** module B's `CompilationWorker` holds a `StandardJavaFileManager` that may
+cache A's *old* `.class`. Rescheduling B's open file is only correct if B's compiler first invalidates
+its cached view of A (there is a `dropFromCache(uri)` on the worker; the right invalidation granularity
+for a cross-module class change needs confirming). This caching concern is the likely reason the
+current code restricts refresh to the same module.
+
+### Probe commands
+
+Not probeable through `explore.py`; reproduce in one session against the `multi-module` invoker
+workspace: open a file in a downstream module, add a public method to an open upstream file, save the
+upstream file, then request diagnostics/completion in the downstream file without editing it —
+today the new method is absent.
+
+### Regression targets
+
+None yet — to be defined when scheduled (upstream open-file save → downstream open file re-analysed
+against the new API; no spurious reschedule of open files in unrelated modules).
+
+Relates to WS-1 (the staleness umbrella), WS-5 (the closed-file/external counterpart; its in-process
+recompile is being reconsidered in favour of the WS-3 sync prompt — a docs reconciliation still
+pending), and [Sibling Recompilation](../planned/lathe-sibling-recompilation.md) (the closed-file,
+whole-module dependent recompilation).
 
 ---
 

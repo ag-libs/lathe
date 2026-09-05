@@ -1,10 +1,17 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 
 /** Provides keyword completion items for a given sentinel context. */
 final class KeywordProvider {
+
+  // Keywords that can legally stand alone or precede punctuation (`.`, `(`, `;`); their insertText
+  // stays bare. Every other offered keyword must be followed by a further construct, so its
+  // insertText carries a single trailing space (IntelliJ/JDT parity -- CQ-0054).
+  private static final Set<String> STANDALONE_KEYWORDS =
+      Set.of("this", "super", "true", "false", "null", "break", "continue");
 
   // Value expressions valid anywhere an expression is expected
   private static final List<String> VALUE_EXPRESSIONS =
@@ -69,12 +76,13 @@ final class KeywordProvider {
   }
 
   static CompletionCandidate keywordCandidate(final String keyword) {
+    final String insertText = STANDALONE_KEYWORDS.contains(keyword) ? keyword : keyword + " ";
     return new CompletionCandidate(
         keyword,
         keyword,
         CandidateKind.KEYWORD,
         null,
-        keyword,
+        insertText,
         false,
         "8_%s".formatted(keyword),
         null,

@@ -25,6 +25,32 @@ class CompletionKeywordAndNoSlotTest extends CompletionTestSupport {
   }
 
   @Test
+  void keyword_requiresFollowingConstruct_insertsTrailingSpace() {
+    // CQ-0054: a keyword that must be followed by a further construct inserts a trailing space, so
+    // the developer keeps typing the mandatory next token without pressing space first.
+    final List<CompletionItem> classBody = fixture.complete("class Test { § }");
+    assertThat(insertTextOf(classBody, "class")).isEqualTo("class ");
+    assertThat(insertTextOf(classBody, "static")).isEqualTo("static ");
+    assertThat(insertTextOf(classBody, "void")).isEqualTo("void ");
+
+    final List<CompletionItem> methodBody = fixture.complete("class Test { void m() { § } }");
+    assertThat(insertTextOf(methodBody, "return")).isEqualTo("return ");
+    assertThat(insertTextOf(methodBody, "new")).isEqualTo("new ");
+  }
+
+  @Test
+  void keyword_standaloneValue_insertsNoTrailingSpace() {
+    // CQ-0054: value/standalone keywords can precede punctuation (`.`/`(`/`;`) and stay bare -- an
+    // editor never wants `null ;`.
+    final List<CompletionItem> items = fixture.complete("class Test { void m() { throw § } }");
+    assertThat(insertTextOf(items, "null")).isEqualTo("null");
+    assertThat(insertTextOf(items, "true")).isEqualTo("true");
+    assertThat(insertTextOf(items, "false")).isEqualTo("false");
+    assertThat(insertTextOf(items, "this")).isEqualTo("this");
+    assertThat(insertTextOf(items, "super")).isEqualTo("super");
+  }
+
+  @Test
   void classBody_modifierPrefix_suggestsMatchingModifier() {
     final var items = labels(fixture.complete("class Test { pri§ }"));
     assertThat(items).contains("private");

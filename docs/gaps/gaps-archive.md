@@ -1172,6 +1172,37 @@ printf 'refs "bucket,"\n' | python3 dev/explore.py /path/to/workspace/.../Config
 
 # Completion (CQ) — resolved
 
+## CQ-0054 — Accepted keyword completion inserts the bare keyword with no trailing space
+
+Status: done — Target: M2.
+
+Accepting a keyword that must be followed by a further construct now inserts the keyword plus a
+single trailing space (caret after it), matching IntelliJ/JDT — `class `, `interface `, `enum `,
+`record `, `void `, `new `, `instanceof `, `return `, modifiers, primitives, etc. Standalone/value
+keywords stay bare: `this`, `super`, `true`, `false`, `null`, `break`, `continue` (an editor never
+wants `null ;`).
+
+`KeywordProvider.keywordCandidate` sets `insertText` to `keyword + " "` unless the keyword is in a
+small `STANDALONE_KEYWORDS` set (bare). This is presentation-only — `name`/`label`/`filterText` stay
+the bare lexeme, so filtering and which keywords are legal at a site are unchanged.
+
+A doubled-space guard, `CompletionEditApplier.absorbFollowingSpaceAfterKeyword` (called from
+`CompletionEngine` right after `applyReplacementRange`, mirroring `preserveExistingMethodCall`),
+handles the case where a space already follows the completed token (`new§ ArrayList`). When exactly
+one literal space follows, it grows the keyword item's edit range by one column to overwrite that
+space, so the result keeps a single space with the caret after it. Absorbing (rather than stripping
+the suffix) stays correct at an empty slot (`cla§ }`, where the name is still to be typed), and only a
+literal space is absorbed so a trailing newline is left untouched.
+
+Regression coverage:
+
+- `CompletionKeywordAndNoSlotTest.keyword_requiresFollowingConstruct_insertsTrailingSpace` (positive)
+- `CompletionKeywordAndNoSlotTest.keyword_standaloneValue_insertsNoTrailingSpace` (negative)
+- `CompletionEditApplierTest.absorbFollowingSpaceAfterKeyword_*` (space absorbed; newline and bare
+  standalone keyword left unchanged)
+
+---
+
 ## CQ-0053 — Member completion on an array-typed receiver returns nothing
 
 Status: done — Target: M2.

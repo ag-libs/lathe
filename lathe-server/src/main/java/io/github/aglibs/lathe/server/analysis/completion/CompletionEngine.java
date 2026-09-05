@@ -119,6 +119,8 @@ public final class CompletionEngine {
     CompletionItemPresenter.applyReplacementRange(withOverrides.items(), site.replacementRange());
     CompletionEditApplier.preserveExistingMethodCall(
         withOverrides.items(), req, injected.tokenEnd());
+    CompletionEditApplier.absorbFollowingSpaceAfterKeyword(
+        withOverrides.items(), req, injected.tokenEnd());
     final var analysis =
         withOverrides.freshAnalysis() != null
             ? withOverrides.freshAnalysis()
