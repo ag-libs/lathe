@@ -116,7 +116,7 @@ class LatheTextDocumentServiceTest {
                             .getFirst()
                             .getMessage()
                             .getLeft()
-                            .contains("mvn process-test-classes")));
+                            .contains("not under any Lathe module source root")));
   }
 
   @Test
