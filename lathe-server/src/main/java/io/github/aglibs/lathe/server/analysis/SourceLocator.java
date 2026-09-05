@@ -148,6 +148,31 @@ public final class SourceLocator {
     return null;
   }
 
+  /**
+   * The invoked constructor when {@code path} sits on the type-name of a {@code new XXX(...)}
+   * expression, else null. {@link #elementAt} resolves that identifier to the type element (all its
+   * uses), so references/definition callers consult this first to prefer the constructor's call
+   * sites. Returns null when the cursor is on the arguments or class body of the {@code new}, or
+   * when the enclosing element is not a constructor.
+   */
+  static Element constructorAtNewClassType(final Trees trees, final TreePath path) {
+    TreePath child = null;
+    for (TreePath p = path; p != null; p = p.getParentPath()) {
+      if (p.getLeaf() instanceof final NewClassTree nc) {
+        if (child == null || child.getLeaf() != nc.getIdentifier()) {
+          return null;
+        }
+
+        final var element = trees.getElement(p);
+        return element != null && element.getKind() == ElementKind.CONSTRUCTOR ? element : null;
+      }
+
+      child = p;
+    }
+
+    return null;
+  }
+
   public static TreePath declarationPath(final CompilationUnitTree cu, final Element target) {
     if (target == null) {
       return null;

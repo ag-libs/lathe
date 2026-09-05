@@ -384,7 +384,10 @@ public final class SourceAnalysisSession implements AutoCloseable {
       return null;
     }
 
-    final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
+    final var trees = cur.analysis().trees();
+    final var constructor = SourceLocator.constructorAtNewClassType(trees, cur.path());
+    final var element =
+        constructor != null ? constructor : SourceLocator.elementAt(trees, cur.path());
     if (element == null) {
       return null;
     }

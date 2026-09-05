@@ -840,6 +840,93 @@ class ReferenceLocatorTest {
     }
   }
 
+  // --- constructors at new-class sites (FR-015) ---
+
+  private static final String NEW_CLASS_SOURCE =
+      """
+      class Test {
+          static class Widget {
+              Widget(int n) {}
+          }
+          Widget field;
+          void make() {
+              Widget a = new Widget(1);
+              Widget b = new Widget(2);
+              Widget c = field;
+          }
+      }
+      """;
+
+  @Test
+  void references_atNewClassSite_returnsConstructorCallSitesNotTypeUses() throws IOException {
+    final var analysis = compile(NEW_CLASS_SOURCE);
+    final var target = newClassTargetAt(analysis, "new Widget(1)", "Widget");
+
+    final List<ReferenceMatch> result = refs(analysis, target, false);
+
+    assertThat(result)
+        .extracting(match -> match.range().getStart())
+        .containsExactlyInAnyOrder(
+            posOf(NEW_CLASS_SOURCE, "new Widget(1)", "Widget"),
+            posOf(NEW_CLASS_SOURCE, "new Widget(2)", "Widget"));
+    // the bare `Widget c` declaration is a type use, not a constructor call, so it is excluded
+    assertThat(result)
+        .extracting(match -> match.range().getStart())
+        .doesNotContain(posOf(NEW_CLASS_SOURCE, "Widget c", "Widget"));
+  }
+
+  @Test
+  void references_atNewClassSite_implicitDefaultConstructor_findsCallSites() throws IOException {
+    final var source =
+        """
+        class Test {
+            static class Gadget {}
+            void make() {
+                Gadget a = new Gadget();
+                Gadget b = new Gadget();
+            }
+        }
+        """;
+    final var analysis = compile(source);
+    final var target = newClassTargetAt(analysis, "new Gadget()", "Gadget");
+
+    final List<ReferenceMatch> result = refs(analysis, target, false);
+
+    assertThat(result)
+        .extracting(match -> match.range().getStart())
+        .containsExactlyInAnyOrder(
+            posOf(source, "a = new Gadget()", "Gadget"),
+            posOf(source, "b = new Gadget()", "Gadget"));
+  }
+
+  @Test
+  void references_atBareTypeUsage_stillReturnsTypeReferences() throws IOException {
+    final var analysis = compile(NEW_CLASS_SOURCE);
+    final var bareTypePath =
+        SampleFixture.pathAt(analysis.trees(), analysis.tree(), "Widget c", "Widget");
+    // a non-`new` type usage stays a type target: no constructor is preferred here
+    assertThat(SourceLocator.constructorAtNewClassType(analysis.trees(), bareTypePath)).isNull();
+
+    final var target = targetAt(analysis, "Widget field", "Widget");
+    final List<ReferenceMatch> result = refs(analysis, target, false);
+
+    // the type target reports type uses, including the bare `Widget c` declaration a constructor
+    // target would exclude
+    assertThat(result)
+        .extracting(match -> match.range().getStart())
+        .contains(posOf(NEW_CLASS_SOURCE, "Widget c", "Widget"));
+  }
+
+  private ReferenceTarget newClassTargetAt(
+      final AttributedFileAnalysis analysis, final String context, final String token) {
+    final var path = SampleFixture.pathAt(analysis.trees(), analysis.tree(), context, token);
+    final var constructor =
+        Objects.requireNonNull(
+            SourceLocator.constructorAtNewClassType(analysis.trees(), path),
+            "expected a constructor at the new-class site");
+    return ReferenceTarget.from(constructor, analysis.types(), analysis.elements());
+  }
+
   // --- edge cases ---
 
   @Test

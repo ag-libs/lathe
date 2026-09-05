@@ -534,6 +534,38 @@ infix matching is wanted later — it is a distinct feature, not an extension of
 
 ---
 
+## FR-015 — Find References at a `new XXX(...)` site targets the type, not the constructor
+
+Status: done — Target: M2.
+
+With the cursor on the type-name of an object-creation expression (`new XXX(…)`), Find References
+returned every use of the type (imports, field/variable types, other `new` sites, casts) instead of
+the constructor's invocation sites. `SourceLocator.elementAt` walks the `TreePath` outward and returns
+the first non-package element, so the type-name identifier resolved to the type element before the
+walk reached the enclosing `NewClassTree` (whose element is the constructor).
+
+Fixed (references only — go-to-definition still lands on the type, deliberately deferred):
+- `SourceLocator.constructorAtNewClassType(trees, path)` (package-private) walks up from the cursor
+  path and, when it reaches a `NewClassTree` whose `getIdentifier()` subtree the cursor sits in
+  (simple, qualified `new a.b.X()`, or parameterized `new X<T>()`), returns the invoked `CONSTRUCTOR`
+  element — else null (cursor on arguments/body, or a non-constructor). `elementAt` is intentionally
+  left unchanged because ~12 callers (hover, semantic tokens, type/call hierarchy, unused-declaration)
+  depend on it resolving the type at a `new` site.
+- `SourceAnalysisSession.resolveTarget` consults it first, falling back to `elementAt`. The existing
+  constructor machinery does the rest: `ReferenceTarget.from` builds a `CONSTRUCTOR` target and
+  `ReferenceLocator.visitNewClass` matches `new XXX(...)` sites (incl. an implicit default constructor
+  via FR-013 keying, and generated builders); overloads resolve per-overload via the descriptor match.
+
+Regression coverage:
+
+- `ReferenceLocatorTest.references_atNewClassSite_returnsConstructorCallSitesNotTypeUses` (positive —
+  finds the `new Widget(...)` sites, excludes a bare `Widget c` declaration)
+- `ReferenceLocatorTest.references_atNewClassSite_implicitDefaultConstructor_findsCallSites` (positive)
+- `ReferenceLocatorTest.references_atBareTypeUsage_stillReturnsTypeReferences` (negative — a non-`new`
+  type usage stays a type target; `constructorAtNewClassType` returns null there)
+
+---
+
 ## FR-001 — References from external source have no workspace search root
 
 Status: done — Target: M1.
