@@ -10,6 +10,7 @@ import io.github.aglibs.lathe.server.run.TranscriptLine;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -24,13 +25,14 @@ class WorkspaceSessionTest {
 
   @TempDir private Path tmp;
 
+  private Path sourceRoot;
   private Path sourceFile;
   private ModuleSourceConfig config;
   private Path outputDir;
 
   @BeforeEach
   void setUp() throws IOException {
-    final var sourceRoot = tmp.resolve("module/src/main/java");
+    sourceRoot = tmp.resolve("module/src/main/java");
     sourceFile = sourceRoot.resolve("com/example/Foo.java");
     config = config(sourceRoot);
     outputDir = config.latheClassesDir().resolve("com/example");
@@ -133,6 +135,36 @@ class WorkspaceSessionTest {
   }
 
   @Test
+  void newestStaleMtime_returnsNewestSourceWhoseClassIsStaleOrMissing() throws Exception {
+    writeClass("Edited", 1_000L); // compiled, then edited after → stale
+    writeJava("Edited", 5_000L);
+    writeJava("Added", 9_000L); // never compiled (a newly added file) → stale, and the newest
+    writeClass("Fresh", 8_000L); // compiled after its last edit → up to date, ignored
+    writeJava("Fresh", 2_000L);
+
+    assertThat(WorkspaceSession.newestStaleMtime(List.of(config), Set.of())).isEqualTo(9_000L);
+  }
+
+  @Test
+  void newestStaleMtime_ignoresOpenFilesAndGeneratedSourceRoots() throws Exception {
+    final var open = writeJava("Open", 9_000L); // stale (no class) but open → the editor owns it
+    writeJava("Real", 5_000L); // stale, and the only source that should count
+
+    // A second module whose sole source root IS its annotation-processor output: wholly excluded.
+    final var genRoot = tmp.resolve("gen-module/target/generated-sources/annotations");
+    writeAt(genRoot.resolve("com/example/Gen.java"), 8_000L);
+    final var genConfig =
+        TestCompiler.moduleConfig(
+            tmp.resolve(".lathe/gen-module"),
+            tmp.resolve("gen-module/target/classes"),
+            genRoot,
+            genRoot);
+
+    assertThat(WorkspaceSession.newestStaleMtime(List.of(config, genConfig), Set.of(open)))
+        .isEqualTo(5_000L);
+  }
+
+  @Test
   void isInPackageScope_generatedSourcesCandidate_reactorScope_inScope() {
     // FR-012/FR-013: a reactor-scoped search uses a null packageRel; the generated builder lives
     // under the generated-sources root, never under a regular source root, yet must stay in scope.
@@ -215,6 +247,21 @@ class WorkspaceSessionTest {
     assertThat(finished.launched()).isFalse();
     assertThat(finished.blockedReasons()).hasSize(1);
     assertThat(finished.blockedReasons().getFirst()).contains("jvm crashed");
+  }
+
+  private Path writeJava(final String typeName, final long mtimeMillis) throws IOException {
+    return writeAt(sourceRoot.resolve("com/example/" + typeName + ".java"), mtimeMillis);
+  }
+
+  private void writeClass(final String typeName, final long mtimeMillis) throws IOException {
+    writeAt(outputDir.resolve(typeName + ".class"), mtimeMillis);
+  }
+
+  private static Path writeAt(final Path path, final long mtimeMillis) throws IOException {
+    Files.createDirectories(path.getParent());
+    Files.writeString(path, "");
+    Files.setLastModifiedTime(path, FileTime.fromMillis(mtimeMillis));
+    return path;
   }
 
   private ModuleSourceConfig config(final Path sourceRoot) {

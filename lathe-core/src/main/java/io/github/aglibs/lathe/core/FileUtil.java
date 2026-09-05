@@ -16,6 +16,10 @@ public final class FileUtil {
 
   private FileUtil() {}
 
+  public static boolean isJavaFile(final Path path) {
+    return path.getFileName().toString().endsWith(".java");
+  }
+
   public static Path writeTempSourceFile(
       final Path tempDir, final Path sourceRoot, final Path filePath, final String content)
       throws IOException {

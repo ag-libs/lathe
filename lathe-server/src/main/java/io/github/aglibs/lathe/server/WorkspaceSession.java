@@ -5,6 +5,7 @@ import static java.util.logging.Level.SEVERE;
 import io.github.aglibs.lathe.core.CollectionUtil;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.PortUtil;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.launch.JdwpOptions;
@@ -136,6 +137,11 @@ final class WorkspaceSession {
   private final Map<ModuleSourceConfig, List<TypeIndexEntry>> reactorShards = new LinkedHashMap<>();
   private WorkspaceWatcher watcher;
   private boolean pomNotificationPending;
+  // Newest mtime among stale sources already acknowledged, so a dismissed "sync needed" stays quiet
+  // until an even-newer external change appears (mirrors the POM acknowledge baseline). Reset to 0
+  // on
+  // any resync (a workspace.json bump), where the mirror is fresh again.
+  private long acknowledgedSourceMtime;
   private final DocumentRegistry docs = new DocumentRegistry();
   private final AnalysisLru analysisLru = new AnalysisLru();
   private final DiagnosticPublisher publisher;
@@ -191,6 +197,10 @@ final class WorkspaceSession {
               MessageType.Warning,
               "Lathe: not configured — run `mvn process-test-classes` to set up this project."));
     }
+
+    // Startup scan for the cold-start delta: sources edited or added while Lathe was down have a
+    // stale-or-missing .class. Runs now rather than waiting for the first 2s tick.
+    checkSourceStaleness();
   }
 
   void close() {
@@ -1866,7 +1876,7 @@ final class WorkspaceSession {
   }
 
   static int deleteClassOutputs(final ModuleSourceConfig config, final Path deletedSource) {
-    if (!deletedSource.getFileName().toString().endsWith(".java")) {
+    if (!FileUtil.isJavaFile(deletedSource)) {
       return 0;
     }
 
@@ -1904,7 +1914,7 @@ final class WorkspaceSession {
       final ModuleSourceConfig config,
       final Path savedSource,
       final Set<String> writtenBinaryNames) {
-    if (!savedSource.getFileName().toString().endsWith(".java")) {
+    if (!FileUtil.isJavaFile(savedSource)) {
       return 0;
     }
 
@@ -1955,6 +1965,95 @@ final class WorkspaceSession {
     }
   }
 
+  private void checkSourceStaleness() {
+    if (pomNotificationPending || anyModuleLockHeld()) {
+      return;
+    }
+
+    final long newest = newestStaleMtime(workspace.allConfigs(), openSourcePaths());
+    if (newest > acknowledgedSourceMtime) {
+      LOG.info(() -> "[watcher] source changed — sync needed");
+      promptForSync();
+    }
+  }
+
+  // A build/sync writing .lathe/<module>/ holds that module's lock; suppress the prompt while any
+  // is
+  // held so a mid-build snapshot (some modules recompiled, others not) does not fire spuriously.
+  private boolean anyModuleLockHeld() {
+    return workspace.allConfigs().stream()
+        .map(ModuleSourceConfig::moduleDir)
+        .distinct()
+        .anyMatch(LatheLock::isBuilding);
+  }
+
+  private Set<Path> openSourcePaths() {
+    return docs.uris().stream()
+        .filter(LatheUri::isFileUri)
+        .map(LatheUri::toPath)
+        .collect(Collectors.toUnmodifiableSet());
+  }
+
+  // Newest mtime among stale closed sources (0 if none). A source is stale when its primary .class
+  // is
+  // missing (never compiled -- a new file) or older than the source (edited outside the save path,
+  // which rewrites the .class). Open files are the editor's responsibility and skipped; the
+  // annotation-processor output (originalGenSourcesDir) is not a hand-written root and excluded.
+  static long newestStaleMtime(
+      final Collection<ModuleSourceConfig> configs, final Set<Path> openPaths) {
+    return configs.stream()
+        .mapToLong(config -> newestStaleInModule(config, openPaths))
+        .max()
+        .orElse(0L);
+  }
+
+  private static long newestStaleInModule(
+      final ModuleSourceConfig config, final Set<Path> openPaths) {
+    return config.sourceRoots().stream()
+        .filter(root -> !root.equals(config.originalGenSourcesDir()))
+        .mapToLong(root -> newestStaleUnder(config, root, openPaths))
+        .max()
+        .orElse(0L);
+  }
+
+  private static long newestStaleUnder(
+      final ModuleSourceConfig config, final Path root, final Set<Path> openPaths) {
+    if (!Files.isDirectory(root)) {
+      return 0L;
+    }
+
+    try (final var walk = Files.walk(root)) {
+      return walk.filter(FileUtil::isJavaFile)
+          .filter(source -> !openPaths.contains(source))
+          .filter(source -> isStaleSource(config, root, source))
+          .mapToLong(WorkspaceSession::mtimeMillis)
+          .max()
+          .orElse(0L);
+    } catch (final IOException e) {
+      LOG.log(Level.WARNING, e, () -> "[watcher] source scan failed under %s".formatted(root));
+      return 0L;
+    }
+  }
+
+  private static boolean isStaleSource(
+      final ModuleSourceConfig config, final Path root, final Path source) {
+    final var packageRel = root.relativize(source).getParent();
+    final var classDir =
+        packageRel != null
+            ? config.latheClassesDir().resolve(packageRel)
+            : config.latheClassesDir();
+    final var classFile = classDir.resolve(typeNameFrom(source) + ".class");
+    return !Files.exists(classFile) || mtimeMillis(source) > mtimeMillis(classFile);
+  }
+
+  private static long mtimeMillis(final Path path) {
+    try {
+      return Files.getLastModifiedTime(path).toMillis();
+    } catch (final IOException e) {
+      return 0L;
+    }
+  }
+
   private static Path sourceRootFor(final ModuleSourceConfig config, final Path file) {
     return config.sourceRoots().stream()
         .filter(file::startsWith)
@@ -1990,10 +2089,16 @@ final class WorkspaceSession {
     }
 
     switch (watcher.poll()) {
-      case WORKSPACE_CHANGED -> reload();
-      case REACTOR_REFRESH -> refreshReactorTypeIndex();
+      case WORKSPACE_CHANGED -> {
+        reload();
+        acknowledgedSourceMtime = 0L;
+      }
+      case REACTOR_REFRESH -> {
+        refreshReactorTypeIndex();
+        acknowledgedSourceMtime = 0L;
+      }
       case POM_CHANGED -> promptForSync();
-      case NO_CHANGE -> {}
+      case NO_CHANGE -> checkSourceStaleness();
     }
   }
 
@@ -2023,6 +2128,10 @@ final class WorkspaceSession {
   private void onSyncPromptResponse(final MessageActionItem action) {
     pomNotificationPending = false;
     watcher.acknowledgePoms();
+    // Acknowledge whatever is currently stale (the prompt may have been POM- or source-triggered),
+    // so
+    // a dismissed prompt stays quiet until a still-newer external change appears.
+    acknowledgedSourceMtime = newestStaleMtime(workspace.allConfigs(), openSourcePaths());
     final String title = action == null ? null : action.getTitle();
     switch (title) {
       case SYNC_ACTION -> requestSync(false);

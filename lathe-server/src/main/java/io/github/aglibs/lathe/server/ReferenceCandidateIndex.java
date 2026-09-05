@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.io.IOException;
@@ -88,7 +89,7 @@ final class ReferenceCandidateIndex {
 
   private void indexRoot(final Path root) {
     try (final var stream = Files.walk(root)) {
-      for (final var path : stream.filter(p -> p.toString().endsWith(".java")).toList()) {
+      for (final var path : stream.filter(FileUtil::isJavaFile).toList()) {
         try {
           update(path.toUri().toString(), Files.readString(path));
         } catch (final IOException e) {

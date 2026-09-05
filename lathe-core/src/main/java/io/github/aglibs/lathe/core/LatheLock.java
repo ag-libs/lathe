@@ -27,6 +27,20 @@ public final class LatheLock {
     return reader.get();
   }
 
+  /**
+   * Non-blocking check of whether a module is currently being built/synced — its lock is present
+   * and not stale. Unlike {@link #awaitAndRead}, this never waits; a poll loop uses it to skip a
+   * module whose {@code .lathe/<module>/} is mid-write. An unreadable lock is treated as not
+   * building.
+   */
+  public static boolean isBuilding(final Path moduleDir) {
+    try {
+      return isHeld(moduleDir.resolve(LatheLayout.LOCK_FILE));
+    } catch (final IOException e) {
+      return false;
+    }
+  }
+
   private static void awaitClear(final Path lockFile) throws IOException {
     while (isHeld(lockFile)) {
       sleep();

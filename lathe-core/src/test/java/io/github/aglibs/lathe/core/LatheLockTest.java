@@ -80,4 +80,25 @@ final class LatheLockTest {
 
     assertThat(result).isEqualTo("value");
   }
+
+  @Test
+  void isBuilding_noLockFile_false() {
+    assertThat(LatheLock.isBuilding(moduleDir)).isFalse();
+  }
+
+  @Test
+  void isBuilding_freshLockFile_true() throws IOException {
+    LatheLock.acquire(moduleDir);
+
+    assertThat(LatheLock.isBuilding(moduleDir)).isTrue();
+  }
+
+  @Test
+  void isBuilding_staleLockFile_false() throws IOException {
+    final Path lockFile = moduleDir.resolve(LatheLayout.LOCK_FILE);
+    Files.writeString(lockFile, "");
+    Files.setLastModifiedTime(lockFile, FileTime.from(Instant.now().minusSeconds(180)));
+
+    assertThat(LatheLock.isBuilding(moduleDir)).isFalse();
+  }
 }
