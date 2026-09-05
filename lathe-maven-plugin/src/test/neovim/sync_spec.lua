@@ -26,13 +26,14 @@ local sync = require("lathe.sync")
 
 sync.run_maven("/ws/a", false)
 spec.check("invokes mvn", calls[1].cmd[1], "mvn")
-spec.check("default goal is process-test-classes", calls[1].cmd[2], "process-test-classes")
+spec.check("passes --no-transfer-progress", calls[1].cmd[2], "--no-transfer-progress")
+spec.check("default goal is process-test-classes", calls[1].cmd[3], "process-test-classes")
 spec.check("runs at the workspace root", calls[1].opts.cwd, "/ws/a")
 
 pending_cb({ code = 0 }) -- finish the first job so the guard for /ws/a clears
 
 sync.run_maven("/ws/a", true)
-spec.check("capture selects the test goal", calls[2].cmd[2], "test")
+spec.check("capture selects the test goal", calls[2].cmd[3], "test")
 
 pending_cb({ code = 0 })
 
