@@ -251,6 +251,10 @@ function M.setup(opts)
   -- so the scaffold matches a save.
   require('lathe.new').setup({ format_on_save = format_on_save })
 
+  -- Instantiations surface: :LatheInstances lists where the type under the cursor is `new`-ed up
+  -- (via the server's lathe.instantiations command) in the quickfix. Suggested mapping: grN.
+  require('lathe.instances').setup()
+
   -- Sync surface: the server's lathe/sync notification and :LatheSync run Maven
   -- (process-test-classes, or `mvn test` with !) to refresh the .lathe/ mirror after POM/structural
   -- changes. The server never runs Maven itself.

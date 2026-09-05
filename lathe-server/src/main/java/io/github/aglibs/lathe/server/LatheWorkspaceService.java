@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server;
 
+import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.github.aglibs.lathe.core.launch.TestSelection;
@@ -10,6 +11,7 @@ import org.eclipse.lsp4j.DidChangeConfigurationParams;
 import org.eclipse.lsp4j.DidChangeWatchedFilesParams;
 import org.eclipse.lsp4j.ExecuteCommandParams;
 import org.eclipse.lsp4j.SymbolInformation;
+import org.eclipse.lsp4j.TextDocumentPositionParams;
 import org.eclipse.lsp4j.WorkspaceSymbol;
 import org.eclipse.lsp4j.WorkspaceSymbolParams;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
@@ -24,6 +26,9 @@ final class LatheWorkspaceService implements WorkspaceService {
   static final String RESOURCE_REFRESH_COMMAND = "lathe.resource.refresh";
   static final String DEBUG_TEST_COMMAND = "lathe.debug.test";
   static final String DEBUG_MAIN_COMMAND = "lathe.debug.main";
+  static final String INSTANTIATIONS_COMMAND = "lathe.instantiations";
+
+  private static final Gson GSON = new Gson();
 
   private final LatheTextDocumentService textDocumentService;
 
@@ -57,6 +62,7 @@ final class LatheWorkspaceService implements WorkspaceService {
       case RESOURCE_REFRESH_COMMAND -> refreshResource(params);
       case DEBUG_TEST_COMMAND -> debugTest(params);
       case DEBUG_MAIN_COMMAND -> debugMain(params);
+      case INSTANTIATIONS_COMMAND -> instantiations(params);
       default -> CompletableFuture.completedFuture(null);
     };
   }
@@ -102,6 +108,17 @@ final class LatheWorkspaceService implements WorkspaceService {
   private CompletableFuture<Object> refreshResource(final ExecuteCommandParams params) {
     final String uri = parseListRunnablesArgument(params.getArguments().getFirst());
     return textDocumentService.refreshResourceFuture(uri).thenApply(dest -> dest);
+  }
+
+  private CompletableFuture<Object> instantiations(final ExecuteCommandParams params) {
+    // The argument is the client's make_position_params() -- a standard TextDocumentPositionParams,
+    // so deserialize into that type rather than hand-parsing fields.
+    final var at =
+        GSON.fromJson(
+            (JsonElement) params.getArguments().getFirst(), TextDocumentPositionParams.class);
+    return textDocumentService
+        .instantiationsFuture(at.getTextDocument().getUri(), at.getPosition())
+        .thenApply(locations -> locations);
   }
 
   private static String parseCancelArgument(final Object argument) {

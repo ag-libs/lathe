@@ -905,7 +905,8 @@ final class WorkspaceSession {
                             searchTarget,
                             includeDeclaration,
                             cancelChecker,
-                            progress);
+                            progress,
+                            "Finding references to %s".formatted(searchTarget.simpleName()));
                       });
             })
         .thenApply(
@@ -941,6 +942,77 @@ final class WorkspaceSession {
             });
   }
 
+  CompletableFuture<List<Location>> instantiationsFuture(
+      final String uri, final Position pos, final CancelChecker cancelChecker) {
+    cancelChecker.checkCanceled();
+    final OpenDocument openFile = docs.get(uri);
+    if (openFile == null) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
+    final var request =
+        new SourceFeatureRequest(
+            openFile.uri(),
+            openFile.content(),
+            openFile.version(),
+            pos,
+            workspace.allSourceRoots(),
+            manifest);
+
+    final var cursorWorker =
+        switch (routeCompiler(uri)) {
+          case CompilerRoute.Module m -> m.worker();
+          case CompilerRoute.External e -> e.worker();
+          case CompilerRoute.Missing ignored -> null;
+        };
+    if (cursorWorker == null) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
+    touchAnalysisCache(openFile.uri());
+    final var cursorConfig = workspace.moduleSourceFor(LatheUri.toPath(uri));
+    final var t = Stopwatch.start();
+
+    return cursorWorker
+        .instantiationTargets(request, cancelChecker)
+        .thenCompose(
+            targets -> {
+              cancelChecker.checkCanceled();
+              if (targets.isEmpty()) {
+                return CompletableFuture.completedFuture(List.<Location>of());
+              }
+
+              // One reference search per constructor (overload), unioned. Candidate discovery keys
+              // on
+              // the type's simple name and ReferenceLocator.visitNewClass emits the match at the
+              // `new XXX` identifier, so this yields exactly the instantiation sites.
+              final List<CompletableFuture<List<Location>>> searches =
+                  targets.stream()
+                      .map(
+                          target ->
+                              searchReferencesForTarget(
+                                  openFile,
+                                  cursorWorker,
+                                  cursorConfig.orElse(null),
+                                  target,
+                                  false,
+                                  cancelChecker,
+                                  progressReporter.open(null, new CompletableFuture<>()),
+                                  "Finding instantiation sites"))
+                      .toList();
+              return joinCandidateResults(searches, cancelChecker);
+            })
+        .thenApply(
+            locations -> {
+              cancelChecker.checkCanceled();
+              LOG.info(
+                  () ->
+                      "[instantiations] %s %dms hits=%d"
+                          .formatted(uri, t.elapsedMs(), locations.size()));
+              return locations;
+            });
+  }
+
   private CompletableFuture<ReferenceTarget> referenceSearchTarget(
       final CompilationWorker cursorWorker,
       final SourceFeatureRequest request,
@@ -962,8 +1034,8 @@ final class WorkspaceSession {
       final ReferenceTarget target,
       final boolean includeDeclaration,
       final CancelChecker cancelChecker,
-      final ProgressReporter.Task progress) {
-    final var progressTitle = "Finding references to %s".formatted(target.simpleName());
+      final ProgressReporter.Task progress,
+      final String progressTitle) {
     if (target.scope() == ReferenceTarget.SearchScope.DECLARING_FILE) {
       progress.begin(progressTitle, 1);
       return cursorWorker

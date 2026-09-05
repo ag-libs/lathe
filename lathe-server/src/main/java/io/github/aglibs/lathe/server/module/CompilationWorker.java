@@ -150,6 +150,11 @@ public final class CompilationWorker {
     return submit(ctx -> ctx.resolveTarget(request));
   }
 
+  public CompletableFuture<List<ReferenceTarget>> instantiationTargets(
+      final SourceFeatureRequest request, final CancelChecker cancelChecker) {
+    return submit(ctx -> ctx.instantiationTargets(request), cancelChecker);
+  }
+
   public CompletableFuture<ReferenceTarget> resolveContractTarget(
       final SourceFeatureRequest request, final CancelChecker cancelChecker) {
     return submit(ctx -> ctx.resolveContractTarget(request), cancelChecker);

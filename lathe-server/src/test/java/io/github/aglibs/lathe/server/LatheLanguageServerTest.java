@@ -68,7 +68,8 @@ class LatheLanguageServerTest {
             LatheWorkspaceService.RUN_MAIN_COMMAND,
             LatheWorkspaceService.CANCEL_TEST_COMMAND,
             LatheWorkspaceService.LIST_RUNNABLES_COMMAND,
-            LatheWorkspaceService.RESOURCE_REFRESH_COMMAND);
+            LatheWorkspaceService.RESOURCE_REFRESH_COMMAND,
+            LatheWorkspaceService.INSTANTIATIONS_COMMAND);
   }
 
   @Test

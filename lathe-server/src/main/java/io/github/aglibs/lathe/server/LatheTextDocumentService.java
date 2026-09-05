@@ -469,4 +469,11 @@ final class LatheTextDocumentService implements TextDocumentService {
   CompletableFuture<String> refreshResourceFuture(final String uri) {
     return worker.submit(() -> session.refreshResource(uri).map(Path::toString).orElse(null));
   }
+
+  CompletableFuture<List<Location>> instantiationsFuture(final String uri, final Position pos) {
+    final CancelChecker noCancel = () -> {};
+    return worker
+        .submit(() -> session.instantiationsFuture(uri, pos, noCancel))
+        .thenCompose(f -> f);
+  }
 }

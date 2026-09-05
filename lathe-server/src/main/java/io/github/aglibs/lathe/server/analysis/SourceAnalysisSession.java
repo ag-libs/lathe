@@ -30,6 +30,7 @@ import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.util.ElementFilter;
 import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.CallHierarchyItem;
 import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
@@ -393,6 +394,42 @@ public final class SourceAnalysisSession implements AutoCloseable {
     }
 
     return ReferenceTarget.from(element, cur.analysis().types(), cur.analysis().elements());
+  }
+
+  /**
+   * The instantiation-search targets for the type at the cursor: one {@link ReferenceTarget} per
+   * constructor (including the synthesized default), so a reference search yields the type's {@code
+   * new XXX(...)} sites. Empty when the cursor is not on a type (or a constructor of one).
+   */
+  public List<ReferenceTarget> instantiationTargets(final SourceFeatureRequest request) {
+    final var cur = resolve(request);
+    if (cur == null) {
+      return List.of();
+    }
+
+    final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
+    final var type = instantiableTypeOf(element);
+    if (type == null) {
+      return List.of();
+    }
+
+    final var types = cur.analysis().types();
+    final var elements = cur.analysis().elements();
+    return ElementFilter.constructorsIn(type.getEnclosedElements()).stream()
+        .map(constructor -> ReferenceTarget.from(constructor, types, elements))
+        .toList();
+  }
+
+  private static TypeElement instantiableTypeOf(final Element element) {
+    if (element instanceof final TypeElement type) {
+      return type;
+    }
+
+    if (element != null && element.getKind() == ElementKind.CONSTRUCTOR) {
+      return (TypeElement) element.getEnclosingElement();
+    }
+
+    return null;
   }
 
   public ReferenceTarget resolveContractTarget(final SourceFeatureRequest request) {

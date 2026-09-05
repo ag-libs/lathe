@@ -41,6 +41,7 @@ See [Editors](#editors) for the client that drives them and its key bindings.
 | Go to declaration            | navigates to the overridden interface or abstract-method contract                                 | `textDocument/declaration`                        |
 | Implementation / subtypes    | concrete implementations of a method, or all subtypes of a type across the workspace              | `textDocument/implementation`                     |
 | Find references              | usages across the workspace                                                                       | `textDocument/references`                         |
+| Instantiation sites          | where a type is instantiated (`new XXX(...)`), from the type under the cursor — construction sites only, into the quickfix (Neovim `:LatheInstances`, suggested `grN`) | `workspace/executeCommand` · `lathe.instantiations` |
 | Hover                        | AST-resolved Javadoc, rendered as Markdown                                                        | `textDocument/hover`                              |
 | Signature help               | parameter lists for methods and constructors                                                      | `textDocument/signatureHelp`                      |
 | Completion                   | types, methods, and variables, with automatic import insertion                                    | `textDocument/completion`                         |

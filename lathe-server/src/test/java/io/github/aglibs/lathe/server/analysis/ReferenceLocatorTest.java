@@ -927,6 +927,65 @@ class ReferenceLocatorTest {
     return ReferenceTarget.from(constructor, analysis.types(), analysis.elements());
   }
 
+  // --- instantiation sites of a type (FR-016) ---
+
+  /**
+   * The `new XXX(...)` sites found for the type at {@code context}/{@code token} in {@code source}.
+   */
+  private static List<Position> instantiationSites(
+      final String source, final String context, final String token) {
+    try (final var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+      final var request =
+          new SourceFeatureRequest(
+              TempSourceCompiler.TEST_URI,
+              source,
+              0,
+              posOf(source, context, token),
+              List.of(),
+              WorkspaceManifest.empty());
+      return session.instantiationTargets(request).stream()
+          .flatMap(
+              target ->
+                  session
+                      .searchReferences(TempSourceCompiler.TEST_URI, source, 1, target, false)
+                      .stream())
+          .map(match -> match.range().getStart())
+          .toList();
+    }
+  }
+
+  @Test
+  void instantiationSites_type_returnsOnlyNewSites() {
+    assertThat(instantiationSites(NEW_CLASS_SOURCE, "static class Widget", "Widget"))
+        .containsExactlyInAnyOrder(
+            posOf(NEW_CLASS_SOURCE, "new Widget(1)", "Widget"),
+            posOf(NEW_CLASS_SOURCE, "new Widget(2)", "Widget"));
+  }
+
+  @Test
+  void instantiationSites_implicitDefaultConstructor_returnsNewSites() {
+    final var source =
+        """
+        class Test {
+            static class Gadget {}
+            void make() {
+                Gadget a = new Gadget();
+                Gadget b = new Gadget();
+            }
+        }
+        """;
+    assertThat(instantiationSites(source, "static class Gadget", "Gadget"))
+        .containsExactlyInAnyOrder(
+            posOf(source, "a = new Gadget()", "Gadget"),
+            posOf(source, "b = new Gadget()", "Gadget"));
+  }
+
+  @Test
+  void instantiationSites_cursorNotOnType_returnsEmpty() {
+    assertThat(instantiationSites(NEW_CLASS_SOURCE, "Widget field", "field")).isEmpty();
+  }
+
   // --- edge cases ---
 
   @Test

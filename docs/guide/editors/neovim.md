@@ -59,6 +59,7 @@ freely.
 | Go to declaration (overridden contract) | `vim.lsp.buf.declaration()` | — | `gD` |
 | Go to implementation / subtypes | `vim.lsp.buf.implementation()` | `gri` | `gri` |
 | Find references | `vim.lsp.buf.references()` | `grr` | `grr` |
+| Instantiation sites of a type (`new XXX(...)`) | `:LatheInstances` | — | `grN` |
 | Hover (AST-resolved Javadoc) | `vim.lsp.buf.hover()` | `K` | `K` |
 | Signature help | `vim.lsp.buf.signature_help()` | `<C-s>` (insert) | `<C-k>` |
 | Completion (with auto-import) | `vim.lsp.completion` / omnifunc | `<C-x><C-o>` | auto |
@@ -74,6 +75,14 @@ freely.
 
 Diagnostics (`javac` errors/warnings, plus unused-private-member hints) publish automatically.
 Formatting is opt-in — see [Formatting & indentation](#formatting--indentation).
+
+`:LatheInstances` lists **where the type under the cursor is instantiated** (`new XXX(...)` sites) in
+the quickfix — only construction sites, not every use of the type. Lathe binds no key for it; the
+suggested mapping sits in the references family (capital `N` for i**N**stantiation):
+
+```lua
+vim.keymap.set('n', 'grN', '<cmd>LatheInstances<cr>', { desc = 'Lathe: instantiation sites of the type' })
+```
 
 The server auto-starts when you open a `.java` file. To use workspace navigation (e.g. workspace
 symbols) *before* opening one — from a dashboard or an empty buffer — run **`:LatheStart`**, which
