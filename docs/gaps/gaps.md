@@ -387,12 +387,13 @@ This matches the existing deferred method-reference gap in the historical comple
 ## CQ-0055 — `:LatheNew` — scaffold a new class / interface / record / enum in the right package
 
 ID: CQ-0055
-Status: accepted (approach decided; implement later)
+Status: v1 implemented (Neovim `:LatheNew`); server fast-follow (Option B) accepted, not yet built
 Target: M2
 Tier: assistive
 Failure mode: missing-affordance
-Owner component: Neovim client plugin (`lua/lathe/…`, a new `:LatheNew` command) — this is an NV-area
-feature; the CQ-0055 id is kept as a pointer.
+Owner component: Neovim client plugin (`lua/lathe/new.lua`, `:LatheNew`) for v1; `lathe-server`
+(`LatheWorkspaceService` + `WorkspaceSession`) for the server fast-follow. NV-area feature; the CQ-0055
+id is kept as a pointer.
 
 **Decision (supersedes the earlier completion-snippet framing).** The feature is a **client-side
 scaffold**, not a completion: a Neovim command `:LatheNew` that *creates* a new `.java` file — in the
@@ -459,19 +460,49 @@ The file starts with `package <pkg>;` (omitted for the default package). The **c
 buffer using a different on-save formatter gets the fallback skeleton and is normalised by its own hook
 on first save.
 
+### Server fast-follow — editor-agnostic create via `lathe.createType` (Option B, accepted)
+
+The dotted-name / editor-agnostic story is owned by the **server**, so placement and style are
+authoritative and any client (Neovim now, VS Code later) drives the same logic. Chosen over the
+client-heuristic alternative (Option A: the client walks up to `src/main|test/java`) because a second
+client gets the feature for free and the style is correct even for clients with no formatter.
+
+**Surface.** A new `workspace/executeCommand` — `lathe.createType` — with arguments
+`{ uri, kind, name, package? }` (`uri` = the current file or a directory; `package` optional, e.g. a
+dotted `com.example.sub`; absent → same package as `uri`). Register it in `LatheWorkspaceService`
+alongside the existing command constants and advertise it in `createCapabilities`'
+`ExecuteCommandOptions`.
+
+**Server behaviour.**
+1. Resolve the module + source root for `uri` via `WorkspaceModuleRegistry.moduleSourceFor` /
+   `allSourceRoots` (main vs test inferred from which root `uri` sits under; generated-sources roots
+   excluded), and compute the target path — same directory for same-package, else
+   `sourceRoot/<package-as-path>/<Name>.java`.
+2. Build the skeleton and **format it server-side** with the existing `JavaFormatter` (GJF), so the
+   returned text is already correctly styled regardless of the client's formatter.
+3. Return a `WorkspaceEdit` with a **`CreateFile`** resource operation (which creates parent
+   directories) plus a `TextDocumentEdit` inserting the formatted skeleton.
+
+**Client role.** The client calls the command, applies the result via `workspace/applyEdit`, opens the
+new file, and positions the caret. `:LatheNew` becomes a thin front-end (kind picker + name/package
+input) over the command when a Lathe server is attached; the v1 pure-client path stays as the fallback
+when no server is available.
+
+**Placement resolver** — a pure, unit-testable unit separate from the LSP plumbing:
+`(uri, kind, name, package) → { targetPath, packageDecl, sourceRootKind }`, mirroring how the
+`SourceLocator` / resolver classes are structured. Refusals (an existing target file, or a `uri` that
+maps to no module/source root) return a failure the client surfaces as a message — no partial edit.
+
 ### Scope
 
-- **v1 (accepted):** same-package (or current directory-buffer) creation, pure-client, no round-trip;
+- **v1 (implemented):** same-package (or current directory-buffer) creation, pure-client, no round-trip;
   kind picker + name input; main/test inferred from the current buffer; clean error when no
-  file/directory context; refuse to overwrite an existing file.
-- **Fast-follow:** accept a **dotted name** (`com.example.sub.Foo`) and create the missing package
-  directories under the source root. Placement for that case uses the **client heuristic** (walk the
-  path up to the nearest `src/main/java` / `src/test/java` ancestor). A **server-authoritative**
-  source-root lookup (Lathe already owns the module source roots via `WorkspaceModuleRegistry` /
-  `lathe:sync`) is the robust, editor-agnostic alternative to adopt if/when a second client (VS Code)
-  needs this — recorded, not built for v1.
+  file/directory context; refuse to overwrite an existing file. Shipped in `lua/lathe/new.lua`.
+- **Server fast-follow (accepted — Option B, see above):** dotted-name creation (making the package
+  directories) and editor-agnostic parity, via the `lathe.createType` server command returning a
+  `CreateFile` `WorkspaceEdit` with a server-formatted skeleton.
 - **Later / optional:** file-tree **node** targeting for nvim-tree / neo-tree (their
-  `get_node_under_cursor` APIs differ per plugin, so kept out of v1); configurable
+  `get_node_under_cursor` APIs differ per plugin, so kept out of scope); configurable
   modifiers/`sealed permits`/record components.
 
 ### Regression targets
@@ -489,11 +520,18 @@ Neovim client (busted spec, e.g. `new_spec.lua`), stubbing `vim.ui.select` / `vi
 - `latheNew_noJavaContext_errorsCleanly` (negative — not in a file/dir under a source package)
 - `latheNew_existingFile_refusesToOverwrite` (negative)
 
-Fast-follow (when built): `latheNew_dottedName_createsPackageDirsUnderSourceRoot`.
+Server fast-follow (Option B, when built):
+- `NewTypeResolverTest` (pure) — same-package, dotted-name under the right source root, main-vs-test
+  inference, generated-sources excluded, and a `uri` with no module → error.
+- `LspSmokeTest.createType_dottedName_returnsCreateFileEditWithFormattedSkeleton` — `lathe.createType`
+  returns a `WorkspaceEdit` with a `CreateFile` at the expected path and a GJF-formatted skeleton.
+- `new_spec.lua` — `latheNew_dottedName_dispatchesServerCommand` — with a Lathe server attached the
+  client dispatches `lathe.createType` and applies the returned edit (stub the request/applyEdit).
 
 Notes:
 Pairs with CQ-0054 (keyword insertion) but is independent of it. Editor-agnostic parity (a VS Code
-"New Lathe type" command, or a server command backing both) is deferred to the fast-follow above.
+"New Lathe type" command backed by the same server command) is delivered by the Option B server
+fast-follow above.
 
 ---
 
