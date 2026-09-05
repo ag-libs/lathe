@@ -2085,6 +2085,13 @@ final class WorkspaceSession {
 
   private static boolean isStaleSource(
       final ModuleSourceConfig config, final Path root, final Path source) {
+    // package-info.java has a class only when it carries package annotations; a javadoc-only one
+    // produces none, so the source-vs-class check would flag it stale forever and re-prompt after
+    // every sync. It declares no type, so exclude it from the scan.
+    if (source.getFileName().toString().equals("package-info.java")) {
+      return false;
+    }
+
     final var packageRel = root.relativize(source).getParent();
     final var classDir =
         packageRel != null
@@ -2308,7 +2315,8 @@ final class WorkspaceSession {
               }
 
               return new CompilerRoute.Missing(
-                  uri, "Run `mvn process-test-classes` to initialize Lathe for this module");
+                  uri,
+                  "This file is not under any Lathe module source root, so Lathe cannot analyze it.");
             });
   }
 

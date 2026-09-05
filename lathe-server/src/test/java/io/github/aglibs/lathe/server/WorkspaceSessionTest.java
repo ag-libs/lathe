@@ -145,8 +145,9 @@ class WorkspaceSessionTest {
   }
 
   @Test
-  void newestStaleMtime_ignoresOpenFilesAndGeneratedSourceRoots() throws Exception {
+  void newestStaleMtime_ignoresOpenFilesGeneratedRootsAndPackageInfo() throws Exception {
     final var open = writeJava("Open", 9_000L); // stale (no class) but open → the editor owns it
+    writeJava("package-info", 9_500L); // no <name>.class ever → excluded, though it is the newest
     writeJava("Real", 5_000L); // stale, and the only source that should count
 
     // A second module whose sole source root IS its annotation-processor output: wholly excluded.

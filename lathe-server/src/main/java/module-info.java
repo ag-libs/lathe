@@ -33,6 +33,8 @@ module io.github.aglibs.lathe.server {
   // DebugStartResult crosses the JSON-RPC boundary the same way (the debug.test/debug.main result).
   opens io.github.aglibs.lathe.server.debug to
       com.google.gson;
+  opens io.github.aglibs.lathe.server to
+      com.google.gson;
 
   // LatheLanguageClient is our custom JSON-RPC remote interface; lsp4j.jsonrpc reflects on its
   // methods to build the client proxy, so its package must be accessible to that module. Only the
