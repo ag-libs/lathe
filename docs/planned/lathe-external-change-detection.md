@@ -45,15 +45,25 @@ structural changes are caught; ordinary source and resource edits made outside t
 Lathe was down) are invisible until the user happens to run Maven. This is the [WS-1](../gaps/gaps.md)
 root cause.
 
-## The "last sync" marker (free, already maintained)
+## The per-file marker — the compiled `.class`
 
-WS-4 made `WorkspaceManifestWriter` **bump `workspace.json`'s mtime on every sync**, even when the
-content is unchanged. So `workspace.json`'s mtime is a reliable *"time of last sync"* marker, and the
-detection key is simply:
+Source staleness is judged **per file against its own compiled class** in `.lathe/`, not against a
+single global timestamp. For a source `S` in module `M` the marker is
+`M.latheClassesDir / <package> / <Basename>.class`:
 
-> a tracked file whose mtime is **newer than `workspace.json`** has changed since the last sync.
+> `S` is stale iff its `.class` is **missing** (never compiled — a new file) or **older** than `S`
+> (edited after the last compile).
 
-No new bookkeeping, no per-file state to persist — reuse the marker WS-4 already guarantees.
+This is what makes the check **bypass anything the editor already handled**: the save path FULL-
+compiles a saved file and rewrites its `.class`, and so does `mvn`. So an editor-edited file — open, or
+saved and later closed — always has a `.class` at least as new as the source and never flags. Only a
+source changed *outside* the save path (an agent, a `git pull`, a branch switch) has a stale-or-missing
+`.class`. (Comparing against `workspace.json`'s mtime instead would false-positive on every editor
+save, since a save doesn't bump `workspace.json` — only `mvn` does.)
+
+`workspace.json`'s mtime (which WS-4 bumps on every sync) is still used, but only as the **sync-
+completed signal** — the watcher's existing manifest-mtime check — to reset the prompt's dedupe state
+after a resync, not as the per-file staleness key.
 
 ## What to detect, beyond POM — and the reaction for each
 
@@ -62,7 +72,7 @@ count); **resources → auto-copy** (a copy is not compilation, it is cheap and 
 
 | # | Signal | Detection | Reaction |
 |---|---|---|---|
-| 1 | A tracked `.java` **modified/created** since last sync (under a source root, excluding `originalGenSourcesDir()`) | mtime > `workspace.json` mtime | **Sync prompt** (WS-3) |
+| 1 | A tracked **closed** `.java` **modified/created** externally (under a source root, excluding `originalGenSourcesDir()`) | `.class` missing, or `mtime(S) > mtime(.class)`; **open files skipped** | **Sync prompt** (WS-3) |
 | 2 | A tracked `.java` **deleted** since last sync (orphan `.class` with no source) | presence check (mtime can't see a deletion) | **Sync prompt** — lower priority; deferable |
 | 3 | A **new module** (a `pom.xml` / module dir not in the manifest) | manifest membership check | **Sync + capture** (new modules usually add tests) |
 | 4 | A **test source** changed / a **new test module** | as #1/#3, but under a test source root | **Sync + capture** — `test-launch.json` is captured from a real `mvn test`, not derived by `lathe:sync` |
@@ -78,30 +88,82 @@ user change.
 
 ## Detection mechanism — a single internal scan
 
-One server-side mechanism covers **both** startup and in-session detection: a source-root **mtime
-scan**, run once after `loadWorkspace` and then on the existing `WorkspaceWatcher` worker tick. There
-is **no client-side file watching** — this is entirely internal to the server.
+One server-side mechanism covers **both** startup and in-session detection: a source-root scan, run
+once after `loadWorkspace` and then on the existing worker tick. There is **no client-side file
+watching** — this is entirely internal to the server.
 
-Each pass walks the tracked source roots (excluding `originalGenSourcesDir()`), stats each `.java`, and
-raises the sync prompt if any file's mtime is newer than `workspace.json` (the "last sync" marker
-above). Resources use the same walk over resource roots, reacting with a `refreshResource` copy rather
-than a prompt.
+### The staleness primitive (per closed source)
 
-**Newly added files are covered — by re-enumeration, not a baseline.** Because each pass re-lists the
-source roots rather than diffing against a remembered file list, a **created** `.java` in an existing
-root is caught automatically: it simply appears with a mtime newer than the marker (table item #1). No
-per-file state is kept. Two cases fall outside this scan by construction and are handled by their own
-signals: a **deletion** leaves nothing to stat (item #2's presence check), and a file in a **new source
-root or new module** is not under any root the scan knows from the last sync (item #3's manifest-
-membership check → Sync + capture, since a new root normally coincides with a POM/build change).
+For a `.java` file `S` under a tracked source root of module `M` (roots exclude
+`originalGenSourcesDir()`):
 
-**It is cheap enough to run periodically — measured, not assumed.** A throwaway spike on a mid-size
-private reactor (~21 modules, 44 source roots, ~2,500 `.java`) timed a full file-level scan at
-**~10 ms** per pass (warm inode cache; a directory-mtime-only variant was ~5 ms). At ~10 ms even the
-current 2 s tick is a ~0.5% worker duty cycle; a longer sub-interval (5–10 s) leaves more headroom and
-is still responsive for "you changed files outside the editor." Cost is `O(source files)`, so a much
-larger reactor scales to tens of ms — still fine on a throttled tick, with the directory-mtime pass as
-a cheap coarse pre-filter if it ever matters.
+```
+staleClosed(S):
+    if S is open in the editor (docs registry):   return false   # editor owns it — bypass
+    classFile = M.latheClassesDir / packageRel(root, S) / basename(S) + ".class"
+    return not exists(classFile)          # never compiled → a new file
+        or mtime(S) > mtime(classFile)    # edited after the last compile
+```
+
+The `.class` comparison is the **editor bypass** (see *The per-file marker*); a scan re-walks the roots
+and returns the **newest mtime among stale closed sources** (`0` if none) — `newestStale`. Because it
+re-enumerates, a newly *created* file appears automatically (its `.class` is missing) with no
+remembered file list. Resources are scanned the same way but against their `.lathe/` destination
+(item #5) and react with a `refreshResource` copy, not a prompt.
+
+### 1. Startup check (once, after `loadWorkspace`)
+
+```
+newestStale = scan()
+if newestStale > 0:
+    promptForSync()                 # WS-3
+    acknowledgedMtime = newestStale
+```
+
+At startup almost nothing is open, so this is the **cold-start delta**: files edited or added while
+Lathe was down have a stale-or-missing `.class`.
+
+### 2. Steady state (each worker tick, after the manifest/POM checks)
+
+```
+newestStale = scan()
+if newestStale > acknowledgedMtime and not promptPending:
+    promptForSync()
+
+on prompt response (Sync / Sync+capture / Later):
+    acknowledgedMtime = newestStale     # report once; quiet until something newer appears
+on resync (workspace.json mtime bumped → REACTOR_REFRESH / reload):
+    acknowledgedMtime = 0               # mirror is fresh; start clean
+```
+
+`acknowledgedMtime` is the dedupe key (mirrors the POM `acknowledge` pattern): after a *Later*, the
+prompt stays quiet until a stale source appears that is **newer** than what was acknowledged — a fresh
+external edit or a newly added file. `promptPending` (the existing `pomNotificationPending`) guards
+against a second prompt while one is open.
+
+### What lands, and what does not
+
+| Event | Detected | Why |
+|---|---|---|
+| Existing **closed** file edited externally | ✅ | `mtime(S) > mtime(.class)` |
+| **New** file added externally | ✅ | no `.class` (the re-walk finds it) |
+| File edited in the editor and saved | ✅ *bypassed* | the save rewrote the `.class` |
+| **New** file created in the editor | ✅ *bypassed* | open → skipped; the save writes the `.class` |
+| Existing file **deleted** externally | ❌ deferred | the walk no longer sees it; a stale orphan `.class` needs a source-*set* baseline (item #2) |
+
+### Placement
+
+The scan needs the open-document set **and** each module's `latheClassesDir`, both of which live on
+`WorkspaceSession` — so it runs in the session (alongside `watcher.poll()`), **not** inside
+`WorkspaceWatcher`, which stays manifest/POM-only.
+
+### Cost
+
+A throwaway spike on a mid-size private reactor (~21 modules, 44 source roots, ~2,500 `.java`) timed
+the source-only walk at **~10 ms** per pass (warm inode cache); adding the per-file `.class` stat
+roughly doubles it to **~20 ms** — still ~1% of the worker at the 2 s tick. Cost is `O(source files)`;
+a much larger reactor scales to tens of ms, and the interval is tunable (5–10 s) if it ever competes
+with editing latency. Open files are skipped before the `.class` stat, so the common case is cheaper.
 
 This is deliberately **not** the whole-`.lathe/`-tree walk the
 [Lightweight Watcher](lathe-lightweight-watcher.md) rejects: it stats only source files under the
@@ -144,9 +206,9 @@ real multi-module edits), but it must still be respected:
 - **Resource auto-copy vs prompt** — recommend auto-copy (cheap, correct, no Maven); confirm there is
   no case where a resource change needs a full rebuild.
 - **Deleted-source detection (#2)** — worth a presence check, or defer until users hit phantom types?
-- **Scan interval.** Reuse the existing 2 s `WorkspaceWatcher` tick for the source scan (~10 ms/pass,
-  measured), or throttle it to a longer sub-interval (5–10 s) to cut the duty cycle further? Startup
-  always scans once regardless.
+- **Scan interval.** Reuse the existing 2 s `WorkspaceWatcher` tick for the source scan (~20 ms/pass
+  incl. the `.class` stat), or throttle it to a longer sub-interval (5–10 s) to cut the duty cycle
+  further? Startup always scans once regardless.
 - **Capture heuristic (#3/#4)** — auto-recommend "Sync + capture" when a new test module or changed
   test source is detected, vs always offering both (WS-3 currently always offers both).
 
