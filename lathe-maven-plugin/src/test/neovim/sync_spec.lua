@@ -27,13 +27,14 @@ local sync = require("lathe.sync")
 sync.run_maven("/ws/a", false)
 spec.check("invokes mvn", calls[1].cmd[1], "mvn")
 spec.check("passes --no-transfer-progress", calls[1].cmd[2], "--no-transfer-progress")
-spec.check("default goal is process-test-classes", calls[1].cmd[3], "process-test-classes")
+spec.check("disables the build cache", calls[1].cmd[3], "-Dmaven.build.cache.enabled=false")
+spec.check("default goal is process-test-classes", calls[1].cmd[4], "process-test-classes")
 spec.check("runs at the workspace root", calls[1].opts.cwd, "/ws/a")
 
 pending_cb({ code = 0 }) -- finish the first job so the guard for /ws/a clears
 
 sync.run_maven("/ws/a", true)
-spec.check("capture selects the test goal", calls[2].cmd[3], "test")
+spec.check("capture selects the test goal", calls[2].cmd[4], "test")
 
 pending_cb({ code = 0 })
 
@@ -53,5 +54,8 @@ spec.check("nil/empty root does nothing", #calls, n)
 sync.setup()
 vim.lsp.handlers["lathe/sync"](nil, { workspaceRoot = "/ws/c", captureTests = false })
 spec.check("lathe/sync handler runs Maven at the given root", calls[#calls].opts.cwd, "/ws/c")
+spec.check("registers :LatheSync", vim.fn.exists(":LatheSync"), 2)
+spec.check("registers :LatheSyncCaptureTest", vim.fn.exists(":LatheSyncCaptureTest"), 2)
+spec.check("registers :LatheSyncOutput", vim.fn.exists(":LatheSyncOutput"), 2)
 
 spec.finish("lathe.sync")
