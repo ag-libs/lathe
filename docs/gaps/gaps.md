@@ -384,89 +384,116 @@ This matches the existing deferred method-reference gap in the historical comple
 
 ---
 
-## CQ-0055 — New-file templates for top-level type declarations (class / interface / record / enum)
+## CQ-0055 — `:LatheNew` — scaffold a new class / interface / record / enum in the right package
 
 ID: CQ-0055
-Status: documented
-Target: M2 (proposed — approach undecided)
+Status: accepted (approach decided; implement later)
+Target: M2
 Tier: assistive
-Failure mode: missing-candidate
-Owner component: undecided (see Options)
+Failure mode: missing-affordance
+Owner component: Neovim client plugin (`lua/lathe/…`, a new `:LatheNew` command) — this is an NV-area
+feature; the CQ-0055 id is kept as a pointer.
 
-**Open discussion — not yet triaged.** This entry captures a set of customer feature requests around
-"give me a skeleton when I start a new file" (record, class, interface, enum). The desired outcome is
-clear; the *mechanism and scope* are not settled yet, so this is recorded as a discussion item rather
-than an accepted gap with a fixed design. Triage should pick a direction (and then split into concrete
-accepted slices) before any implementation.
+**Decision (supersedes the earlier completion-snippet framing).** The feature is a **client-side
+scaffold**, not a completion: a Neovim command `:LatheNew` that *creates* a new `.java` file — in the
+right package/directory, with the `package` line and a named type skeleton — and opens it. Because it
+is a file-creation command and not a completion item, it sidesteps the completion "live templates"
+Non-Goal ([expectations](../planned/lathe-completion-expectations.md) § Non-Goals) entirely. The
+customer ask was "give me a skeleton for a new class/record/interface/enum"; the sharper need is
+"create the file for me in the right place, optionally creating the package directories." The
+previously-listed completion-snippet and server code-action options are **not** pursued.
 
-Project/file:
-Not workspace-specific — reproducible in a newly created, empty (or package-only) `.java` file.
+### UX flow (`:LatheNew`)
 
-Probe command:
-```bash
-# illustrative — capture against a fresh empty source file under a synced module
-printf 'complete after "class " expect class-skeleton min 1\nlog 30\n' \
-  | python3 dev/explore.py <ws>/.../NewType.java
-```
+1. **Resolve the target directory** from the current buffer (see Placement below).
+2. **Pick the kind** — `vim.ui.select({ 'class', 'interface', 'record', 'enum' })`.
+3. **Enter the name** — `vim.ui.input('Name: ')`. The entered name is both the file name
+   (`<Name>.java`) and the type name (no file pre-exists — the command creates it).
+4. **Create + open + format** — write `<dir>/<Name>.java` with the package line and skeleton, open the
+   buffer, normalise its style via the on-save formatter (see *Skeletons and style*), then drop the
+   cursor in the body (or record component list). Refuse (no-op with a message) if the file exists.
 
-Cursor context:
+### Placement — how the target directory and package are figured out
+
+Resolution order, from the current buffer (no server round-trip in v1):
+
+1. If the current buffer is a **directory buffer** (oil.nvim `oil://…`, or netrw `b:netrw_curdir`) →
+   use that directory. (Covers "create a class where I'm browsing.")
+2. Else if it is a **`.java` file** → use its directory — i.e. the **same package** as the open file.
+3. Else → error cleanly ("open a file or directory inside a source package first").
+
+The **package** for that directory is taken from the open file's `package …;` line when present
+(`^%s*package%s+([%w.]+)`), falling back to path-derivation: split the directory on the source-root
+marker (`/src/main/java/` or `/src/test/java/`) and dot-join the trailing segments. **main vs test**
+follows whichever root the current buffer sits under — no separate prompt.
+
+### Skeletons and style
+
+The scaffold writes a **minimal, valid** skeleton and **defers style to the on-save formatter** rather
+than hardcoding indentation or brace placement (one source of style truth; avoids guessing — e.g. GJF
+uses 2-space indentation, so a hardcoded 4-space body would be wrong for exactly the users who format):
+
+- If Lathe's Google formatter is enabled — the same gate that wires the BufWritePre hook
+  (`formatter == 'google'` and `format_on_save`, `lathe.lua`) — `:LatheNew` runs the identical
+  `vim.lsp.buf.format({ bufnr = …, name = 'lathe', async = false })` on the freshly-opened buffer, so
+  the scaffold is byte-identical to what a save would produce.
+- Otherwise it emits a built-in fallback honouring the buffer's `expandtab` / `shiftwidth`.
+
+Name = the entered `<Name>`; minimal visibility (`public`, no `final`/`sealed`). Rough shape before
+formatting (the formatter fixes indentation/spacing):
+
 ```java
-package com.example.app;
-
-class§                       // empty file body, caret after a top-level `class`/`interface`/…
+public class <Name> {
+}
+public interface <Name> {
+}
+public enum <Name> {
+}
+public record <Name>() {
+}
 ```
 
-IntelliJ or JDT behavior (reference):
-Creating a new Java file offers a file template that fills in the package line and a matching
-top-level declaration skeleton named after the file — `public final class NewType { }`,
-`public interface NewType { }`, `public record NewType() { }`, `public enum NewType { }` — with the
-caret placed in the body. Editor-agnostically, the same skeletons can surface as completion snippets
-at the top level of an empty file after typing `class` / `interface` / `record` / `enum`.
+The file starts with `package <pkg>;` (omitted for the default package). The **caret** is placed
+*after* formatting (which can shift lines): the empty body line for class/interface/enum, or inside the
+`()` component list for record. Only Lathe's own formatter is invoked (gated on the existing config); a
+buffer using a different on-save formatter gets the fallback skeleton and is normalised by its own hook
+on first save.
 
-Lathe behavior:
-No top-level template candidates are produced. Keyword completion offers the bare `class` / `interface`
-/ `record` / `enum` lexemes (see CQ-0054) but nothing expands them into a named declaration skeleton,
-and an empty file body yields no completion at all.
+### Scope
 
-Customer requests (as received, still fuzzy):
-- "When I create a new file, generate the class/record/interface/enum for me."
-- The four kinds are named explicitly: record, class, interface, enum.
-- The type name should presumably match the file name.
-Exact expectations (visibility/modifiers, record components, body stubs, whether it fires on file
-creation vs. on typing) were **not** specified and need to be pinned down with the customer.
+- **v1 (accepted):** same-package (or current directory-buffer) creation, pure-client, no round-trip;
+  kind picker + name input; main/test inferred from the current buffer; clean error when no
+  file/directory context; refuse to overwrite an existing file.
+- **Fast-follow:** accept a **dotted name** (`com.example.sub.Foo`) and create the missing package
+  directories under the source root. Placement for that case uses the **client heuristic** (walk the
+  path up to the nearest `src/main/java` / `src/test/java` ancestor). A **server-authoritative**
+  source-root lookup (Lathe already owns the module source roots via `WorkspaceModuleRegistry` /
+  `lathe:sync`) is the robust, editor-agnostic alternative to adopt if/when a second client (VS Code)
+  needs this — recorded, not built for v1.
+- **Later / optional:** file-tree **node** targeting for nvim-tree / neo-tree (their
+  `get_node_under_cursor` APIs differ per plugin, so kept out of v1); configurable
+  modifiers/`sealed permits`/record components.
 
-Open questions (to resolve in triage):
-- **Mechanism.** Server completion snippet at an empty top-level site? A `textDocument/codeAction`
-  ("Create class/record/… from file")? Or a client-side "new file" affordance in the Neovim plugin
-  (an NV-area gap) that scaffolds without the server? These have different UX and different homes.
-- **Trigger.** On typing `class`/`record`/… in an empty file, on opening an empty `.java`, or an
-  explicit command/menu?
-- **Template set & richness.** Just the four bare skeletons, or visibility/`final`/`abstract`,
-  record components, `sealed permits`, a body stub? How configurable?
-- **Naming source.** File name via `LatheLayout`/`FileUtil`, or a free tab-stop the user fills?
-- **Contract fit.** General "Live templates" are a completion Non-Goal
-  (see [expectations](../planned/lathe-completion-expectations.md) § Non-Goals); a narrow empty-file
-  skeleton may be acceptable as `assistive`, but this needs an explicit decision, not an assumption.
+### Regression targets
 
-Options under consideration (not yet chosen):
-1. **Completion snippet (server).** Offer four `InsertTextFormat.Snippet` candidates only when the
-   compilation unit has no type declaration yet, keyed off the parsed/sentinel top-level site (no
-   ad-hoc parsing — javac/sentinel only, per AGENTS.md), name derived from the file name, emitted
-   through the existing `CompletionItemPresenter` snippet path.
-2. **Code action (server).** A `CA-` gap: "Create `<Name>` declaration" offered on an empty/
-   package-only file, inserting the same skeletons as a workspace edit.
-3. **Client scaffold (Neovim).** An `NV-` gap: the plugin fills a template on new-buffer creation
-   with no server round-trip; simplest, but editor-specific and outside the LSP contract.
+Neovim client (busted spec, e.g. `new_spec.lua`), stubbing `vim.ui.select` / `vim.ui.input`:
 
-Regression target:
-None yet — to be defined once the mechanism and scope are chosen (and likely re-homed to the CQ, CA,
-or NV area to match).
+- `latheNew_fromJavaFile_createsSiblingInSamePackage` (positive — new file next to the current one,
+  correct `package` line and `public <kind> <Name>` skeleton, buffer opened)
+- `latheNew_recordKind_placesCaretInComponentList` (positive — record skeleton shape)
+- `latheNew_googleFormatterEnabled_normalisesViaOnSaveFormatter` (positive — with the Google formatter
+  configured, the opened buffer is formatted through the same `vim.lsp.buf.format` path; stub it and
+  assert it is invoked, and that the caret is placed after formatting)
+- `latheNew_noFormatter_usesFallbackStyle` (positive — no formatter configured → built-in skeleton,
+  formatter not invoked)
+- `latheNew_noJavaContext_errorsCleanly` (negative — not in a file/dir under a source package)
+- `latheNew_existingFile_refusesToOverwrite` (negative)
+
+Fast-follow (when built): `latheNew_dottedName_createsPackageDirsUnderSourceRoot`.
 
 Notes:
-Sits at the boundary of the completion contract, which is why it is parked as an open discussion.
-Pairs with CQ-0054 (the bare `class`/`record`/… keyword insertion this would build on). Once a
-direction is agreed, replace this entry with one or more concrete `accepted` slices carrying real
-regression targets.
+Pairs with CQ-0054 (keyword insertion) but is independent of it. Editor-agnostic parity (a VS Code
+"New Lathe type" command, or a server command backing both) is deferred to the fast-follow above.
 
 ---
 
