@@ -1122,7 +1122,17 @@ whole-module dependent recompilation).
 
 ## WS-7 — A submodule build without a root `.mvn/` can create a stray `.lathe/` inside the module
 
-**Status: accepted — Target: backlog**
+**Status: done — Target: M2**
+
+**Resolved.** `ReactorProjects.isReactorRootBuild` now decides purely from on-disk `<modules>`
+aggregation: `isReactorRoot(basedir)` walks up ancestor directories and, at each `pom.xml` (read via
+Maven's own `MavenXpp3Reader`), returns false when a `<module>` resolves **exactly** to the candidate.
+No `.mvn/` dependence, correct at any nesting depth (incl. pom-less intermediate dirs), and — unlike a
+bare "any ancestor pom/`.lathe`" existence check — it does not false-skip a project merely nested
+*under* an unrelated pom or a declared module (e.g. an IT fixture under `lathe-maven-plugin/target`).
+Only `InitMojo`/`SyncMojo` consult it; the compiler's class-refresh into an existing root `.lathe/`
+(`-pl`, in-submodule) is untouched. Covered by `ReactorProjectsTest` (root / deep-submodule / nested-
+under-a-module / symlink) and the `multi-module` invoker.
 
 Discovered while verifying `ac1c4f0` (don't create a submodule `.lathe` on a `-pl` build) for the
 WS-8 targeted-sync work.
