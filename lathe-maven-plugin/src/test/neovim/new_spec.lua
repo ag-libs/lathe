@@ -123,6 +123,10 @@ end
 do -- latheNew_googleFormatterEnabled_normalisesViaOnSaveFormatter
   local _, seed = tmp_workspace()
   vim.cmd.edit(vim.fn.fnameescape(seed))
+  -- pretend a Lathe client is attached so the attach-wait guard passes
+  vim.lsp.get_clients = function(_)
+    return { { name = "lathe" } }
+  end
   local formatted = false
   vim.lsp.buf.format = function(_)
     formatted = true
@@ -199,6 +203,106 @@ do -- latheNew_existingFile_refusesToOverwrite
     table.concat(vim.fn.readfile(dup), "\n"),
     "package com.example;\npublic class Dup {}"
   )
+end
+
+-- ── v2 dotted-name pure helpers ──────────────────────────────────────────────
+
+do
+  local p, n = new._split_qualified("com.example.Foo")
+  spec.check("split qualified package", p, "com.example")
+  spec.check("split qualified name", n, "Foo")
+  local bare_p, bare_n = new._split_qualified("Foo")
+  spec.check("split bare package (nil)", bare_p, nil)
+  spec.check("split bare name", bare_n, "Foo")
+end
+
+do
+  spec.check("source root (main)", new._source_root("/ws/mod/src/main/java/com/example"), "/ws/mod/src/main/java")
+  spec.check("source root (test)", new._source_root("/ws/mod/src/test/java/com/example"), "/ws/mod/src/test/java")
+  spec.check("source root (at root)", new._source_root("/ws/mod/src/main/java"), "/ws/mod/src/main/java")
+  spec.check("source root (none)", new._source_root("/ws/mod/loose/dir"), nil)
+end
+
+do
+  local d, p, n = new._target("/ws/mod/src/main/java/com/example", "com.example", "Foo")
+  spec.check("target bare keeps context dir", d, "/ws/mod/src/main/java/com/example")
+  spec.check("target bare keeps context package", p, "com.example")
+  spec.check("target bare name", n, "Foo")
+
+  local dd, dp, dn = new._target("/ws/mod/src/main/java/com/example", "com.example", "a.b.C")
+  spec.check("target dotted dir under source root", dd, "/ws/mod/src/main/java/a/b")
+  spec.check("target dotted package", dp, "a.b")
+  spec.check("target dotted simple name", dn, "C")
+
+  spec.check("target dotted with no source root -> nil", new._target("/ws/mod/loose", "", "a.b.C"), nil)
+end
+
+-- ── v2 dotted-name create() end to end ───────────────────────────────────────
+
+do -- latheNew_dottedName_createsUnderSourceRootMakingDirs
+  local dir, seed = tmp_workspace()
+  local root = dir:gsub("/com/example$", "")
+  vim.cmd.edit(vim.fn.fnameescape(seed))
+  new._format_on_save = false
+  vim.ui.select = function(_, _, cb)
+    cb("class")
+  end
+  vim.ui.input = function(_, cb)
+    cb("a.b.C")
+  end
+
+  new.create()
+
+  local created = root .. "/a/b/C.java"
+  spec.check("dotted-name file created under source root", vim.fn.filereadable(created), 1)
+  spec.check(
+    "dotted-name package + skeleton",
+    table.concat(vim.fn.readfile(created), "\n"),
+    "package a.b;\n\npublic class C {\n\n}"
+  )
+end
+
+do -- latheNew_dottedName_fromTestFile_usesTestRoot
+  local tdir = vim.fn.tempname() .. "/mod/src/test/java/com/example"
+  vim.fn.mkdir(tdir, "p")
+  local seed = tdir .. "/SeedTest.java"
+  vim.fn.writefile({ "package com.example;", "", "public class SeedTest {", "}" }, seed)
+  local root = tdir:gsub("/com/example$", "")
+  vim.cmd.edit(vim.fn.fnameescape(seed))
+  new._format_on_save = false
+  vim.ui.select = function(_, _, cb)
+    cb("class")
+  end
+  vim.ui.input = function(_, cb)
+    cb("x.y.Z")
+  end
+
+  new.create()
+
+  spec.check("dotted-name from a test file uses the test root", vim.fn.filereadable(root .. "/x/y/Z.java"), 1)
+end
+
+do -- latheNew_dottedName_noSourceRoot_warnsAndBails
+  local ldir = vim.fn.tempname() .. "/loose"
+  vim.fn.mkdir(ldir, "p")
+  local loose = ldir .. "/Loose.java"
+  vim.fn.writefile({ "public class Loose {}" }, loose)
+  vim.cmd.edit(vim.fn.fnameescape(loose))
+  local warned = false
+  vim.notify = function(_, _)
+    warned = true
+  end
+  vim.ui.select = function(_, _, cb)
+    cb("class")
+  end
+  vim.ui.input = function(_, cb)
+    cb("a.b.C")
+  end
+
+  new.create()
+
+  spec.check("dotted name with no source root warns", warned, true)
+  spec.check("dotted name with no source root creates nothing", vim.fn.filereadable(ldir .. "/a/b/C.java"), 0)
 end
 
 do -- setup registers :LatheNew and records the formatter flag

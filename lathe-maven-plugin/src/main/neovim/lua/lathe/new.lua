@@ -42,6 +42,40 @@ function M._package_from_dir(dir)
   return nil
 end
 
+--- Split a possibly package-qualified name: `com.example.Foo` -> `com.example`, `Foo`; a bare `Foo`
+--- -> nil, `Foo`.
+function M._split_qualified(input)
+  local package, name = input:match("^(.+)%.([%w_]+)$")
+  if package then
+    return package, name
+  end
+  return nil, input
+end
+
+--- The module source root containing `dir` -- the path up to and including the `/src/main/java` or
+--- `/src/test/java` marker (the same marker `_package_from_dir` keys on), else nil.
+function M._source_root(dir)
+  return dir:match("^(.-/src/main/java)") or dir:match("^(.-/src/test/java)")
+end
+
+--- Resolve the final `(dir, package, name)` for the entered `name` given the current context. A bare
+--- name stays in the context package (v1); a dotted name is placed under the module source root at its
+--- package path (v2, directories made by the writer). Returns nil when a qualified name cannot be
+--- placed -- the current context is not under a `src/main|test/java` root.
+function M._target(context_dir, context_package, name)
+  local package, simple = M._split_qualified(name)
+  if not package then
+    return context_dir, context_package, name
+  end
+
+  local root = M._source_root(context_dir)
+  if not root then
+    return nil
+  end
+
+  return root .. "/" .. package:gsub("%.", "/"), package, simple
+end
+
 --- The scaffold as a list of lines. Minimal visibility (`public`, no `final`/`sealed`); the on-save
 --- formatter fixes indentation/spacing. class/interface/enum get a blank body line (caret target);
 --- record gets an empty `()` component list (caret target). The `package` line is omitted for the
@@ -145,12 +179,26 @@ function M._write_and_open(dir, package, kind, name)
   vim.cmd.edit(vim.fn.fnameescape(path))
 
   local buf = vim.api.nvim_get_current_buf()
-  if M._format_on_save then
-    pcall(vim.lsp.buf.format, { bufnr = buf, name = "lathe", async = false })
-  end
+  M._format(buf)
 
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   pcall(vim.api.nvim_win_set_cursor, 0, M._caret(kind, name, lines))
+end
+
+--- Normalise the freshly-opened scaffold through Lathe's formatter, matching a save. The Lathe client
+--- attaches to the new buffer asynchronously, so wait briefly for it before formatting -- otherwise
+--- `vim.lsp.buf.format` runs before attach and no-ops ("no matching language servers"). Only waits
+--- when a Lathe client is actually running, so no-server setups fall through to the built-in skeleton
+--- without a delay.
+function M._format(buf)
+  if not M._format_on_save or #vim.lsp.get_clients({ name = "lathe" }) == 0 then
+    return
+  end
+
+  vim.wait(2000, function()
+    return #vim.lsp.get_clients({ name = "lathe", bufnr = buf }) > 0
+  end, 25)
+  pcall(vim.lsp.buf.format, { bufnr = buf, name = "lathe", async = false })
 end
 
 function M.create()
@@ -169,7 +217,12 @@ function M.create()
       if not name or name == "" then
         return
       end
-      M._write_and_open(dir, package, kind, name)
+      local target_dir, target_package, target_name = M._target(dir, package, name)
+      if not target_dir then
+        warn("cannot place a package-qualified name here — no src/main|test/java root")
+        return
+      end
+      M._write_and_open(target_dir, target_package, kind, target_name)
     end)
   end)
 end
