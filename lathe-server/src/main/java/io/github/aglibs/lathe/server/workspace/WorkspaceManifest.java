@@ -173,6 +173,10 @@ public final class WorkspaceManifest {
     return resourceRoots.destinationFor(file);
   }
 
+  public List<Path> resourceSourceDirs() {
+    return resourceRoots.sourceDirs();
+  }
+
   public List<Path> typeIndexShardPaths() {
     return typeIndexShardPaths;
   }

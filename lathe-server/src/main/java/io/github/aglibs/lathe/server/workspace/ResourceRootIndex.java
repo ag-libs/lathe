@@ -23,6 +23,10 @@ public final class ResourceRootIndex {
     return new ResourceRootIndex(List.of());
   }
 
+  public List<Path> sourceDirs() {
+    return mappings.stream().map(Mapping::sourceDir).toList();
+  }
+
   public static ResourceRootIndex build(
       final Path workspaceRoot, final List<ResourceRootData> resourceRoots) {
     return new ResourceRootIndex(

@@ -13,6 +13,7 @@ import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.Arrays;
 import java.util.List;
 import java.util.jar.JarEntry;
@@ -83,6 +84,14 @@ public final class TestCompiler {
         false,
         null,
         List.of());
+  }
+
+  public static Path writeAt(final Path path, final String content, final long mtimeMillis)
+      throws IOException {
+    Files.createDirectories(path.getParent());
+    Files.writeString(path, content);
+    Files.setLastModifiedTime(path, FileTime.fromMillis(mtimeMillis));
+    return path;
   }
 
   public static void writeModuleParams(

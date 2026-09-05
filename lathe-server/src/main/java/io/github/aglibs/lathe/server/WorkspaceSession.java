@@ -198,9 +198,11 @@ final class WorkspaceSession {
               "Lathe: not configured — run `mvn process-test-classes` to set up this project."));
     }
 
-    // Startup scan for the cold-start delta: sources edited or added while Lathe was down have a
-    // stale-or-missing .class. Runs now rather than waiting for the first 2s tick.
-    checkSourceStaleness();
+    // Startup reconciliation for the cold-start delta: sources/resources changed while Lathe was
+    // down
+    // (stale-or-missing .class, or a resource newer than its .lathe/ copy). Runs now rather than
+    // waiting for the first 2s tick.
+    reconcileIfIdle();
   }
 
   void close() {
@@ -541,12 +543,16 @@ final class WorkspaceSession {
       return Optional.empty();
     }
 
+    return copyResource(file, dest.get());
+  }
+
+  private Optional<Path> copyResource(final Path file, final Path dest) {
     try {
-      FileUtil.copyFileAtomically(file, dest.get());
-      LOG.info(() -> "[resource] %s → %s".formatted(uri, dest.get()));
-      return dest;
+      FileUtil.copyFileAtomically(file, dest);
+      LOG.info(() -> "[resource] %s → %s".formatted(file, dest));
+      return Optional.of(dest);
     } catch (final IOException e) {
-      LOG.log(Level.WARNING, e, () -> "[resource] copy failed for %s".formatted(uri));
+      LOG.log(Level.WARNING, e, () -> "[resource] copy failed for %s".formatted(file));
       return Optional.empty();
     }
   }
@@ -1965,8 +1971,20 @@ final class WorkspaceSession {
     }
   }
 
+  // Idle-tick and startup reconciliation: detect stale sources (→ sync prompt) and copy stale
+  // resources into .lathe/. Suppressed while any module is mid-build, so a partially written
+  // .lathe/ is never read.
+  private void reconcileIfIdle() {
+    if (anyModuleLockHeld()) {
+      return;
+    }
+
+    checkSourceStaleness();
+    reconcileResources();
+  }
+
   private void checkSourceStaleness() {
-    if (pomNotificationPending || anyModuleLockHeld()) {
+    if (pomNotificationPending) {
       return;
     }
 
@@ -1977,9 +1995,39 @@ final class WorkspaceSession {
     }
   }
 
-  // A build/sync writing .lathe/<module>/ holds that module's lock; suppress the prompt while any
-  // is
-  // held so a mid-build snapshot (some modules recompiled, others not) does not fire spuriously.
+  // Copy any resource whose .lathe/ destination is missing or older than the source, so an external
+  // resource edit is picked up without Maven. The copy bumps the destination mtime, so the next
+  // pass
+  // sees it as fresh — no dedupe state needed.
+  private void reconcileResources() {
+    manifest.resourceSourceDirs().stream()
+        .filter(Files::isDirectory)
+        .forEach(this::copyStaleResourcesUnder);
+  }
+
+  private void copyStaleResourcesUnder(final Path sourceDir) {
+    try (final var walk = Files.walk(sourceDir)) {
+      walk.filter(Files::isRegularFile).forEach(this::copyIfStale);
+    } catch (final IOException e) {
+      LOG.log(Level.WARNING, e, () -> "[resource] scan failed under %s".formatted(sourceDir));
+    }
+  }
+
+  private void copyIfStale(final Path file) {
+    final Optional<Path> dest = manifest.resourceDestination(file);
+    if (dest.isEmpty()) {
+      return;
+    }
+
+    if (!Files.exists(dest.get()) || mtimeMillis(file) > mtimeMillis(dest.get())) {
+      copyResource(file, dest.get());
+    }
+  }
+
+  // A build/sync writing .lathe/<module>/ holds that module's lock; reconciliation is suppressed
+  // while any is held, so a mid-build snapshot (some modules recompiled, others not) neither
+  // prompts
+  // spuriously nor copies against a half-written mirror.
   private boolean anyModuleLockHeld() {
     return workspace.allConfigs().stream()
         .map(ModuleSourceConfig::moduleDir)
@@ -2098,7 +2146,7 @@ final class WorkspaceSession {
         acknowledgedSourceMtime = 0L;
       }
       case POM_CHANGED -> promptForSync();
-      case NO_CHANGE -> checkSourceStaleness();
+      case NO_CHANGE -> reconcileIfIdle();
     }
   }
 

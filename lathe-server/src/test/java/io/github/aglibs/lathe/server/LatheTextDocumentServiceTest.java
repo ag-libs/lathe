@@ -12,14 +12,17 @@ import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.github.aglibs.lathe.core.Json;
+import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
+import io.github.aglibs.lathe.core.schema.ResourceRootData;
+import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyItemData;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyItemDataCodec;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.FileTime;
 import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
@@ -470,19 +473,65 @@ class LatheTextDocumentServiceTest {
     verify(client, after(500).never()).showMessageRequest(any());
   }
 
+  @Test
+  void initialize_copiesOnlyStaleResourcesIntoLathe() throws Exception {
+    final Path resDir = tmp.resolve("app/src/main/resources");
+    TestCompiler.writeAt(resDir.resolve("stale.conf"), "new", 9_000L); // newer than dest → copied
+    TestCompiler.writeAt(
+        resDir.resolve("fresh.conf"), "src", 1_000L); // older than dest → untouched
+    final Path staleDest = writeResourceDest("stale.conf", "old", 1_000L);
+    final Path freshDest = writeResourceDest("fresh.conf", "keep", 5_000L);
+    writeResourceWorkspace("app/src/main/resources", "app/target/classes");
+
+    service.initialize(tmp);
+    awaitWorkerIdle();
+
+    assertThat(Files.readString(staleDest)).isEqualTo("new"); // stale → copied
+    assertThat(Files.readString(freshDest)).isEqualTo("keep"); // up to date → untouched
+  }
+
+  private Path writeResourceDest(final String name, final String content, final long mtime)
+      throws Exception {
+    return TestCompiler.writeAt(tmp.resolve(".lathe/app/classes").resolve(name), content, mtime);
+  }
+
+  private void writeResourceWorkspace(final String resourceDir, final String outputDir)
+      throws Exception {
+    final Path latheDir = tmp.resolve(LatheLayout.LATHE_DIR);
+    Files.createDirectories(latheDir);
+    Json.write(
+        new WorkspaceManifestData(
+            LatheLayout.SCHEMA_VERSION,
+            tmp.toString(),
+            null,
+            List.of(),
+            null,
+            List.of(),
+            List.of(),
+            List.of(new ResourceRootData(resourceDir, outputDir, "", false))),
+        latheDir.resolve(LatheLayout.WORKSPACE_JSON));
+  }
+
+  // Force a round-trip through the single worker thread: a request submitted after initialize's
+  // load
+  // task completes only once that task (and its startup reconciliation) has run.
+  private void awaitWorkerIdle() throws Exception {
+    final var params = new FoldingRangeRequestParams();
+    params.setTextDocument(new TextDocumentIdentifier("file:///nonexistent.java"));
+    service.foldingRange(params).get(5, TimeUnit.SECONDS);
+  }
+
   // A configured single-module workspace whose one source and its .class are stamped at the given
   // mtimes, so the startup source-staleness scan sees the source as stale (source > class) or
   // fresh.
   private void writeStaleModule(final long sourceMtime, final long classMtime) throws Exception {
     final Path sourceRoot = tmp.resolve("module/src/main/java");
-    final Path source = sourceRoot.resolve("com/example/Foo.java");
-    Files.createDirectories(source.getParent());
-    Files.writeString(source, "package com.example; class Foo {}");
-    Files.setLastModifiedTime(source, FileTime.fromMillis(sourceMtime));
-    final Path classFile = tmp.resolve(".lathe/module/classes/com/example/Foo.class");
-    Files.createDirectories(classFile.getParent());
-    Files.writeString(classFile, "");
-    Files.setLastModifiedTime(classFile, FileTime.fromMillis(classMtime));
+    TestCompiler.writeAt(
+        sourceRoot.resolve("com/example/Foo.java"),
+        "package com.example; class Foo {}",
+        sourceMtime);
+    TestCompiler.writeAt(
+        tmp.resolve(".lathe/module/classes/com/example/Foo.class"), "", classMtime);
     TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
   }
 

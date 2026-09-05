@@ -78,4 +78,11 @@ class ResourceRootIndexTest {
     assertThat(ResourceRootIndex.empty().destinationFor(Path.of("/ws/app/src/main/resources/x")))
         .isEmpty();
   }
+
+  @Test
+  void sourceDirs_returnsEachRootResolvedAbsolute() {
+    assertThat(index(standardRoots()).sourceDirs())
+        .containsExactly(
+            Path.of("/ws/app/src/main/resources"), Path.of("/ws/app/src/test/resources"));
+  }
 }

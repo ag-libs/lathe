@@ -10,7 +10,6 @@ import io.github.aglibs.lathe.server.run.TranscriptLine;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.FileTime;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -152,7 +151,7 @@ class WorkspaceSessionTest {
 
     // A second module whose sole source root IS its annotation-processor output: wholly excluded.
     final var genRoot = tmp.resolve("gen-module/target/generated-sources/annotations");
-    writeAt(genRoot.resolve("com/example/Gen.java"), 8_000L);
+    TestCompiler.writeAt(genRoot.resolve("com/example/Gen.java"), "", 8_000L);
     final var genConfig =
         TestCompiler.moduleConfig(
             tmp.resolve(".lathe/gen-module"),
@@ -249,19 +248,12 @@ class WorkspaceSessionTest {
     assertThat(finished.blockedReasons().getFirst()).contains("jvm crashed");
   }
 
-  private Path writeJava(final String typeName, final long mtimeMillis) throws IOException {
-    return writeAt(sourceRoot.resolve("com/example/" + typeName + ".java"), mtimeMillis);
+  private Path writeJava(final String typeName, final long mtime) throws IOException {
+    return TestCompiler.writeAt(sourceRoot.resolve("com/example/" + typeName + ".java"), "", mtime);
   }
 
-  private void writeClass(final String typeName, final long mtimeMillis) throws IOException {
-    writeAt(outputDir.resolve(typeName + ".class"), mtimeMillis);
-  }
-
-  private static Path writeAt(final Path path, final long mtimeMillis) throws IOException {
-    Files.createDirectories(path.getParent());
-    Files.writeString(path, "");
-    Files.setLastModifiedTime(path, FileTime.fromMillis(mtimeMillis));
-    return path;
+  private void writeClass(final String typeName, final long mtime) throws IOException {
+    TestCompiler.writeAt(outputDir.resolve(typeName + ".class"), "", mtime);
   }
 
   private ModuleSourceConfig config(final Path sourceRoot) {
