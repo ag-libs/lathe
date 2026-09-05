@@ -294,7 +294,7 @@ reactor workspace. Resolved FR entries are in [gaps-archive.md](gaps-archive.md)
 
 ## FR-016 — Find the instantiation sites of a type ("where is a new instance created")
 
-**Status: accepted — Target: M2**
+**Status: in progress — Target: M2**
 
 ### Motivation
 
@@ -330,7 +330,9 @@ normal references path returns. Exposed as a `lathe.instantiations` `workspace/e
 
 Client surface: a `:LatheInstances` command (and/or a code action "Find where `<Type>` is instantiated")
 that drops the locations into the quickfix (`vim.lsp.util.locations_to_items` → `setqflist` → `copen`) —
-picker-agnostic, no custom rendering.
+picker-agnostic, no custom rendering. Suggested mapping (Lathe binds nothing itself, only documents it):
+`grN` — the capital slot next to the `grr` references family (mnemonic: `grr` but **N** for
+i**N**stantiation); `<leader>gi` ("goto instances") is the leader-style alternative.
 
 ### Scope / semantics
 
@@ -756,7 +758,7 @@ in sync).
 
 ## WS-3 — The POM-changed sync prompt re-appears every 2s, and "Sync" neither runs Maven nor is distinguished from "Later"
 
-**Status: accepted — Target: M2**
+**Status: done — Target: M2**
 
 ### Observed behaviour
 
@@ -858,7 +860,7 @@ against the shared-server prompt state.
 
 ## WS-4 — `workspace/symbol` misses newly added reactor types after an incremental `mvn process-test-classes` (no clean)
 
-**Status: accepted — Target: M2**
+**Status: rejected — not an issue**
 
 ### Observed behaviour
 
@@ -1115,6 +1117,120 @@ Relates to WS-1 (the staleness umbrella), WS-5 (the closed-file/external counter
 recompile is being reconsidered in favour of the WS-3 sync prompt — a docs reconciliation still
 pending), and [Sibling Recompilation](../planned/lathe-sibling-recompilation.md) (the closed-file,
 whole-module dependent recompilation).
+
+---
+
+## WS-7 — A submodule build without a root `.mvn/` can create a stray `.lathe/` inside the module
+
+**Status: accepted — Target: backlog**
+
+Discovered while verifying `ac1c4f0` (don't create a submodule `.lathe` on a `-pl` build) for the
+WS-8 targeted-sync work.
+
+### Observed behaviour
+
+Running Maven directly under a module directory (`cd <module> && mvn compile`) in a multi-module
+project that has **no `.mvn/` at the reactor root** creates a stray `.lathe/` inside that submodule.
+The editor's `.lathe` root marker then resolves to the submodule (a module maps to a blank
+`moduleRel`) — the same failure `ac1c4f0` fixed for `-pl`: runnables discovery crashes on `RunTarget`
+validation.
+
+`-pl <module> -am` **from the reactor root** is already correct: the compiler copies classes into the
+existing root `.lathe/`, and `InitMojo`/`SyncMojo` skip (no manifest rewrite). This gap is only the
+*direct in-submodule invocation without a root `.mvn/`*.
+
+### Root cause
+
+`ReactorProjects.isMultiModuleRootBuild(session)` gates `.lathe` creation on
+`topLevelProject.basedir == request.multiModuleProjectDirectory`. Maven derives
+`multiModuleProjectDirectory` by searching up for a `.mvn/` directory; with none present it defaults to
+the invocation directory. So `cd <module> && mvn` sets `multiModuleProjectDirectory` to the module
+dir, which equals `topLevelProject.basedir` → the guard passes → `InitMojo` runs
+`Files.createDirectories(topLevel/.lathe)` inside the submodule. The `multi-module` invoker fixture
+that "verified" `ac1c4f0` has a root `.mvn/`, so it cannot catch this case.
+
+The class-transfer path is unaffected: `LatheCompiler`/`LatheWorkspace.findRoot` only ever *walk up to
+an existing* `.lathe/` and never create one.
+
+### Proposed fix
+
+Strengthen the gate with an on-disk aggregator check in `ReactorProjects`:
+
+- `hasAggregatorAncestorOnDisk(moduleBasedir)`: walk up ancestor directories; for each `pom.xml`, read
+  its `<modules>` and resolve each entry against that directory. If any resolves onto the path down to
+  `moduleBasedir`, the project is a submodule → not a root.
+- `isMultiModuleRootBuild` becomes
+  `isSameDirectory(topLevel, multiModuleDir) && !hasAggregatorAncestorOnDisk(topLevel.basedir)`.
+- Read `<modules>` via Maven's `ModelReader` component (or `MavenXpp3Reader`) — entries are literal
+  directory names, so a raw model read is enough. External framework parents resolved from `~/.m2` are
+  not on the ancestor path, so a genuine single-module root still gets its `.lathe/`.
+
+`InitMojo`/`SyncMojo` need no change — both already call the gate. Known limitation to document:
+profile-activated `<modules>` in an ancestor are invisible to a raw read.
+
+### Regression targets
+
+- `ReactorProjectsTest.isMultiModuleRootBuild_submoduleListedByAncestorPom_returnsFalse`
+- `ReactorProjectsTest.isMultiModuleRootBuild_genuineSingleModuleRoot_returnsTrue`
+- A new invoker fixture **without** a root `.mvn/`: build a submodule from its own directory and assert
+  no `.lathe/` is created in the submodule (the `-pl`-from-root and root-build cases stay covered by
+  `multi-module`).
+
+---
+
+## WS-8 — Targeted `mvn -pl <changed> -am` sync instead of a full-reactor build
+
+**Status: accepted — Target: backlog**
+
+Optimization on top of WS-5. On a large reactor a full `mvn process-test-classes` to refresh one edited
+module is slow; the server already knows which modules are stale and could ask for a scoped build.
+
+### Observed behaviour
+
+When WS-5 detection fires (a closed source is stale), the sync prompt runs a **full-reactor**
+`mvn process-test-classes`, even if a single module changed. On a 300-module reactor this is far more
+work than needed to refresh the affected module's `.lathe/` mirror.
+
+### Root cause
+
+By design, the WS-3 prompt / `LatheSyncParams` carry only `workspaceRoot` + `captureTests`; the client
+always runs a whole-reactor build. The staleness scan iterates per `ModuleSourceConfig` but discards
+which modules were stale (`newestStaleMtime` returns only a max mtime).
+
+### Proposed direction
+
+Route a **source-only** change to a scoped build; keep full builds for structural changes.
+
+- **Server:** have the staleness scan also collect the set of stale modules (their reactor-relative
+  `moduleRel`, which is exactly what `-pl` accepts, since `workspaceRoot == reactorRoot`). Add
+  `List<String> modules` to `LatheSyncParams` (empty ⇒ full). In `checkSourceStaleness`/`requestSync`:
+  a POM/structure change (POM fingerprint / `pomNotificationPending`) ⇒ empty ⇒ full build (only a full
+  build regenerates `workspace.json`, which `-pl` deliberately skips); source-only ⇒ the stale
+  `moduleRel` set; all/most modules stale ⇒ drop `-pl`.
+- **Client (`sync.lua`):** `run_maven` gains the module list; with modules present, build
+  `mvn … -pl m1,m2 -am <goal>`; the `lathe/sync` handler forwards `result.modules`. Manual `:LatheSync`
+  stays full-reactor.
+
+### Correctness caveats (to bake in and document)
+
+- `-am` builds **upstream** deps only, not dependents (`-amd`). The edited module compiles against fresh
+  upstreams; a downstream module's `.lathe` mirror is not refreshed by this build. Acceptable for a
+  source-edit refresh (downstream sources aren't stale) and avoids `-amd` ballooning into a near-full
+  build. The open-file dependent case is WS-6.
+- `-pl` does **not** rewrite `workspace.json` (verified in the `ac1c4f0`/WS-7 trace) — correct here
+  precisely because the module structure did not change.
+- Use `moduleRel` path form for `-pl`; fall back to `:artifactId` (stored in the manifest) if
+  nested-path forms prove fragile.
+
+Depends on WS-7 (the `-pl`/submodule `.lathe` behaviour must be sound first).
+
+### Regression targets
+
+- `WorkspaceSessionTest` — source-only stale ⇒ sync params carry the stale `moduleRel`s; POM change ⇒
+  empty (full).
+- `sync_spec` — `-pl m1,m2 -am` present with modules, absent without.
+- Optional invoker/e2e — `-pl <module> -am` refreshes that module's `.lathe/classes` and leaves
+  `workspace.json` untouched.
 
 ---
 
