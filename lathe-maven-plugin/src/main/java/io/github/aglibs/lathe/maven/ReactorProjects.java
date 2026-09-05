@@ -1,6 +1,9 @@
 package io.github.aglibs.lathe.maven;
 
 import io.github.aglibs.lathe.core.IOUtil;
+import io.github.aglibs.lathe.core.LatheLayout;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
@@ -10,7 +13,9 @@ import java.util.TreeMap;
 import java.util.stream.Collectors;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.execution.MavenSession;
+import org.apache.maven.model.io.xpp3.MavenXpp3Reader;
 import org.apache.maven.project.MavenProject;
+import org.codehaus.plexus.util.xml.pull.XmlPullParserException;
 import org.eclipse.aether.repository.RemoteRepository;
 
 public final class ReactorProjects {
@@ -24,27 +29,73 @@ public final class ReactorProjects {
   }
 
   /**
-   * True when this build is rooted at the real multi-module root, so {@code .lathe} belongs at (and
-   * describes) the whole workspace. The reactor's top-level project shifts to the selected module
-   * on a {@code -pl <module>} build (the aggregator is excluded from the reactor), which would
-   * otherwise drop a stray {@code .lathe} into a submodule; the request's multi-module project
-   * directory is the stable {@code .mvn}-anchored root, unaffected by {@code -pl}/{@code -am}. A
-   * genuine single-module build invoked from its root passes too (its top-level basedir is that
-   * root). Compared on real (symlink/relativity-normalized) paths so a representation difference
-   * can't false-skip.
+   * True when this build's top-level project is the real reactor root, so {@code .lathe} belongs at
+   * (and describes) the whole workspace. Only such a build may create {@code .lathe}; a {@code -pl}
+   * or in-submodule build must never drop a stray one into a submodule (its editor root marker
+   * would then resolve to the submodule and runnables discovery would crash). The class-refresh
+   * path is unaffected -- the compiler still copies into an existing root {@code .lathe}
+   * regardless.
    */
-  public static boolean isMultiModuleRootBuild(final MavenSession session) {
-    return isSameDirectory(
-        session.getTopLevelProject().getBasedir().toPath(),
-        session.getRequest().getMultiModuleProjectDirectory().toPath());
+  public static boolean isReactorRootBuild(final MavenSession session) {
+    return isReactorRoot(session.getTopLevelProject().getBasedir().toPath());
   }
 
-  // Package-private seam so the real-path comparison -- the part that must not false-skip a
-  // single-module build over a symlink or trailing-slash/relativity difference -- is unit-testable
-  // without constructing a MavenSession. toRealPath resolves symlinks and normalizes; both dirs
-  // always exist during a build, so a failure means the build is already broken (fail loud).
-  static boolean isSameDirectory(final Path a, final Path b) {
-    return IOUtil.unchecked(() -> a.toRealPath().equals(b.toRealPath()));
+  // A directory is the reactor root when no Maven project on disk aggregates it: no ancestor pom
+  // declares a <module> that resolves onto it. This asks the poms directly rather than trusting the
+  // .mvn-anchored multiModuleProjectDirectory (which a submodule build with no root .mvn/ spoofs to
+  // its own directory) and, unlike a bare "any ancestor pom" check, does not false-skip a project
+  // merely nested under an unrelated pom. Package-private and path-only so it is unit-testable
+  // without a MavenSession; toRealPath resolves symlinks (basedir always exists during a build, so
+  // a
+  // failure means the build is already broken -- fail loud).
+  static boolean isReactorRoot(final Path basedir) {
+    return IOUtil.unchecked(
+        () -> {
+          final var candidate = basedir.toRealPath();
+          var ancestor = candidate.getParent();
+          while (ancestor != null) {
+            if (aggregates(ancestor, candidate)) {
+              return false;
+            }
+
+            ancestor = ancestor.getParent();
+          }
+
+          return true;
+        });
+  }
+
+  // True when the pom in dir (if any) declares a <module> that resolves exactly to candidate --
+  // i.e.
+  // dir aggregates candidate, so candidate is a submodule and must not own a .lathe. Exact match,
+  // not
+  // startsWith: a <module> points at a child project's basedir, so a directory merely nested
+  // *under*
+  // a module (e.g. an IT fixture under lathe-maven-plugin/target) is not itself that module.
+  private static boolean aggregates(final Path dir, final Path candidate) {
+    final var pom = dir.resolve(LatheLayout.POM_XML);
+    if (!Files.isRegularFile(pom)) {
+      return false;
+    }
+
+    for (final String module : readModules(pom)) {
+      if (candidate.equals(dir.resolve(module).normalize())) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  // Reads a pom's <modules> via Maven's own model reader. A missing or malformed pom cannot confirm
+  // aggregation, so it is treated as non-aggregating (permissive -- better to create .lathe at a
+  // genuine root than to wrongly suppress it over an unreadable ancestor pom).
+  private static List<String> readModules(final Path pom) {
+    try (final var in = Files.newInputStream(pom)) {
+      return new MavenXpp3Reader().read(in).getModules();
+    } catch (final IOException | XmlPullParserException e) {
+      return List.of();
+    }
   }
 
   /**

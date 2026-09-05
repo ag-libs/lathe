@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.maven;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -26,23 +27,29 @@ class ReactorProjectsTest {
   }
 
   @Test
-  void isSameDirectory_sameDirAcrossRepresentationsAndSymlink_true() throws Exception {
-    // A single-module build must not false-skip: the top-level basedir and the .mvn-anchored root
-    // can differ by a trailing "."/relativity or a symlink yet be the same directory.
-    final Path dir = Files.createDirectories(tmp.resolve("module"));
-    final Path symlink = Files.createSymbolicLink(tmp.resolve("link"), dir);
+  void isReactorRoot_noAncestorAggregatesItExactly_true() throws Exception {
+    // A genuine root, even with poms above: (a) an ancestor lists an unrelated sibling, and (b) an
+    // ancestor lists a module we sit physically *under* but are not -- the invoker case, a fixture
+    // deep under lathe-maven-plugin, which the repo root aggregates. Only a <module> pointing
+    // exactly at us makes us a submodule. Also verified through a symlink (basedir is
+    // toRealPath'd).
+    final Path outer = writePom(tmp.resolve("outer"), "sibling", "plugin");
+    writePom(outer.resolve("plugin")); // a real module; we live under it, but are not it
+    final Path root = writePom(outer.resolve("plugin/target/it/fixture"));
+    final Path symlinked = Files.createSymbolicLink(tmp.resolve("link"), root);
 
-    assertThat(ReactorProjects.isSameDirectory(dir, tmp.resolve("module/."))).isTrue();
-    assertThat(ReactorProjects.isSameDirectory(dir, symlink)).isTrue();
+    assertThat(ReactorProjects.isReactorRoot(root)).isTrue();
+    assertThat(ReactorProjects.isReactorRoot(symlinked)).isTrue();
   }
 
   @Test
-  void isSameDirectory_differentDirs_false() throws Exception {
-    // A -pl submodule build: top-level basedir (the submodule) != the reactor root.
-    final Path root = Files.createDirectories(tmp.resolve("root"));
-    final Path submodule = Files.createDirectories(tmp.resolve("root/submodule"));
+  void isReactorRoot_ancestorAggregatesViaModules_false() throws Exception {
+    // A submodule: an aggregator pom above declares it in <modules>, even nested several dirs deep
+    // through pom-less intermediate directories (a `<module>a/b/c</module>` layout).
+    final Path root = writePom(tmp.resolve("root"), "group/nested/module");
+    final Path deepModule = Files.createDirectories(root.resolve("group/nested/module"));
 
-    assertThat(ReactorProjects.isSameDirectory(submodule, root)).isFalse();
+    assertThat(ReactorProjects.isReactorRoot(deepModule)).isFalse();
   }
 
   @Test
@@ -101,6 +108,21 @@ class ReactorProjectsTest {
     ((TestProject) second).remoteProjectRepositories = List.of(central);
 
     assertThat(ReactorProjects.remoteRepositories(List.of(first, second))).containsExactly(central);
+  }
+
+  private static Path writePom(final Path dir, final String... modules) throws IOException {
+    Files.createDirectories(dir);
+    final var mods = new StringBuilder();
+    for (final String module : modules) {
+      mods.append("<module>").append(module).append("</module>");
+    }
+
+    Files.writeString(
+        dir.resolve("pom.xml"),
+        ("<project><modelVersion>4.0.0</modelVersion><groupId>g</groupId><artifactId>a</artifactId>"
+                + "<version>1</version><modules>%s</modules></project>")
+            .formatted(mods));
+    return dir;
   }
 
   private static MavenProject project(

@@ -20,6 +20,7 @@ public final class LatheLayout {
   public static final String WORKSPACE_JSON = "workspace.json";
   public static final String LOCK_FILE = "lathe.lock";
   public static final String MODULE_INFO_JAVA = "module-info.java";
+  public static final String POM_XML = "pom.xml";
   public static final String GENERATED_SOURCES = "generated-sources";
   public static final String TARGET_DIR = "target";
   public static final String CLASSES_DIR = "classes";

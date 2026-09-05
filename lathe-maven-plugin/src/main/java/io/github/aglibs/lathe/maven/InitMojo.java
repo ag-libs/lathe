@@ -25,8 +25,8 @@ public final class InitMojo extends AbstractMojo {
       return;
     }
 
-    if (!ReactorProjects.isMultiModuleRootBuild(session)) {
-      getLog().debug("[init] not a build from the multi-module root — skipping");
+    if (!ReactorProjects.isReactorRootBuild(session)) {
+      getLog().debug("[init] not the reactor root (a pom or .lathe sits above) — skipping");
       return;
     }
 
