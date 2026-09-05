@@ -292,7 +292,81 @@ for a release is every gap with `Status: accepted` and the matching `Target` (se
 Active `textDocument/references` gaps discovered by live probing against a large `@Builder`-heavy
 reactor workspace. Resolved FR entries are in [gaps-archive.md](gaps-archive.md).
 
-No active FR gaps remain; resolved entries are in [gaps-archive.md](gaps-archive.md).
+## FR-016 — Find the instantiation sites of a type ("where is a new instance created")
+
+**Status: accepted — Target: M2**
+
+### Motivation
+
+Given a type, developers often want just the places it is **instantiated** — the `new XXX(...)` sites —
+not every use of the type. Plain Find References on a type name returns *all* type uses (imports,
+field/variable types, `extends`/`implements`, casts, and the `new` sites mixed in), so the instantiation
+sites are buried. FR-015 covers the complementary direction (cursor **on** a `new XXX(` returns that
+constructor's call sites); FR-016 is the type-selection direction: from a type, list **all** its
+instantiation sites across the workspace.
+
+### Chosen design (investigated alternative — a focused search, not a glyph)
+
+A dedicated "instantiation sites" query, returning **only** `new XXX(...)` locations as plain
+`Location[]` shown in the quickfix. Because the result set is intrinsically only constructor call sites,
+it needs **no** enriched wire format, per-reference role, or custom glyph rendering — it reuses the
+existing references search almost entirely:
+
+1. Resolve the **type element** at the cursor (`SourceLocator.elementAt` — works on the type name in a
+   declaration, import, field type, or a `new` site).
+2. Enumerate the type's **constructors** (`ElementFilter.constructorsIn(type.getEnclosedElements())`),
+   including the synthesized default constructor when none is declared (javac provides it — the FR-015
+   implicit-constructor case).
+3. For each constructor, build `ReferenceTarget.from(ctor)` and run the **existing**
+   `searchReferencesForTarget`, then union (dedup by uri+range). Constructor candidate discovery already
+   keys on the declaring type's simple name (archived FR-011/FR-013), and `ReferenceLocator.visitNewClass`
+   already emits the match at the `new XXX` identifier, so all `new XXX(...)` sites (incl. a generated
+   builder's) are found workspace-wide.
+
+Server surface: a worker method returning the type's constructor `ReferenceTarget`s, and a
+`WorkspaceSession` method that searches each and unions to `Location[]` — the same result shape the
+normal references path returns. Exposed as a `lathe.instantiations` `workspace/executeCommand`
+(`{ uri, position } → Location[]`).
+
+Client surface: a `:LatheInstances` command (and/or a code action "Find where `<Type>` is instantiated")
+that drops the locations into the quickfix (`vim.lsp.util.locations_to_items` → `setqflist` → `copen`) —
+picker-agnostic, no custom rendering.
+
+### Scope / semantics
+
+- Returns **only** `new XXX(...)` sites — **all** overloads of the selected type. Anonymous-subclass
+  `new XXX(){ … }` sites are included (they are `new XXX(...)`).
+- Deliberately **excludes** factory methods (`XXX.of(...)`, builders returning `XXX`) and bare type uses —
+  this is specifically "where a *new* instance is created."
+- Cross-module discovery is bounded exactly like normal references (candidate planner + declaring-type
+  simple name).
+
+### Rejected alternative — role glyph in the references list
+
+Tagging constructor-call references with a glyph *inside* the normal type-references list was investigated
+and rejected as heavier: LSP `Location[]` carries no per-reference kind, so it would need the role tagged
+server-side (small), a **custom enriched references channel** (the standard response can't carry the
+role), and a **custom quickfix/picker renderer** with a configurable Nerd-Font glyph + ASCII fallback —
+plus owning/overriding the `grr` references UX. FR-016's focused search avoids all of that.
+
+### Probe commands
+
+```bash
+# cursor on the type name — expected: only the `new XXX(...)` sites, not imports/field-type/extends uses
+printf 'refs "class XXX"\n' | python3 dev/explore.py <ws>/.../XXX.java   # (dedicated command TBD in explore.py)
+```
+
+### Regression targets
+
+- `ReferenceLocatorTest.instantiationSites_type_returnsOnlyNewSitesAcrossOverloads`
+  (positive — a type with two constructors → both `new XXX(a)` and `new XXX(a,b)` sites; excludes a bare
+  `XXX field` and an import)
+- `ReferenceLocatorTest.instantiationSites_implicitDefaultConstructor_findsNewSites`
+  (positive — record/class with no explicit constructor)
+- `ReferenceLocatorTest.instantiationSites_excludesFactoryAndBuilderReturns`
+  (negative — `XXX.of(...)` / a builder `build()` returning `XXX` are not instantiation sites)
+- `LspSmokeTest.instantiations_command_returnsNewSitesAcrossModules` (end-to-end via the command)
+- Neovim `*_spec.lua` — `:LatheInstances` populates the quickfix from the returned locations
 
 ---
 
@@ -384,36 +458,43 @@ This matches the existing deferred method-reference gap in the historical comple
 
 ---
 
-## CQ-0055 — `:LatheNew` — scaffold a new class / interface / record / enum in the right package
+## CQ-0055 — `:LatheNewClass`/`Interface`/`Record`/`Enum` — scaffold a new type in the right package
 
 ID: CQ-0055
-Status: v1 implemented (Neovim `:LatheNew`); v2 (dotted-name, client-side) planned; editor-agnostic
-server (Option B) deferred to a second-client (VS Code) milestone
+Status: implemented (Neovim `:LatheNewClass`/`Interface`/`Record`/`Enum`, incl. v2 dotted-name);
+editor-agnostic server (Option B) deferred to a second-client (VS Code) milestone
 Target: M2
 Tier: assistive
 Failure mode: missing-affordance
-Owner component: Neovim client plugin (`lua/lathe/new.lua`, `:LatheNew`) for v1 and v2. An
+Owner component: Neovim client plugin (`lua/lathe/new.lua`, the four `:LatheNew*` kind commands). An
 editor-agnostic `lathe-server` command is deferred (see below). NV-area feature; the CQ-0055 id is kept
 as a pointer.
 
 **Decision (supersedes the earlier completion-snippet framing).** The feature is a **client-side
-scaffold**, not a completion: a Neovim command `:LatheNew` that *creates* a new `.java` file — in the
-right package/directory, with the `package` line and a named type skeleton — and opens it. Because it
-is a file-creation command and not a completion item, it sidesteps the completion "live templates"
-Non-Goal ([expectations](../planned/lathe-completion-expectations.md) § Non-Goals) entirely. The
-customer ask was "give me a skeleton for a new class/record/interface/enum"; the sharper need is
-"create the file for me in the right place, optionally creating the package directories." The
-previously-listed completion-snippet and server code-action options are **not** pursued.
+scaffold**, not a completion: four Neovim commands (`:LatheNewClass` / `:LatheNewInterface` /
+`:LatheNewRecord` / `:LatheNewEnum`) that *create* a new `.java` file — in the right package/directory,
+with the `package` line and a named type skeleton — and open it. Because it is file creation, not a
+completion item, it sidesteps the completion "live templates" Non-Goal
+([expectations](../planned/lathe-completion-expectations.md) § Non-Goals) entirely. The customer ask was
+"give me a skeleton for a new class/record/interface/enum"; the sharper need is "create the file for me
+in the right place, optionally creating the package directories." The previously-listed
+completion-snippet and server code-action options are **not** pursued.
 
-### UX flow (`:LatheNew`)
+### UX flow
 
-1. **Resolve the target directory** from the current buffer (see Placement below).
-2. **Pick the kind** — `vim.ui.select({ 'class', 'interface', 'record', 'enum' })`.
-3. **Enter the name** — `vim.ui.input('Name: ')`. The entered name is both the file name
-   (`<Name>.java`) and the type name (no file pre-exists — the command creates it).
+The kind is the **command**, so it is never picked — the only prompt is the name:
+
+1. **Choose the kind by command** — `:LatheNewClass` / `:LatheNewInterface` / `:LatheNewRecord` /
+   `:LatheNewEnum`.
+2. **Name** — pass it as an argument for zero prompts (`:LatheNewClass Foo`, or a dotted
+   `:LatheNewClass com.example.sub.Foo`); with no argument the command asks once via
+   `vim.ui.input('<kind> name in <dir>: ')`, where `<dir>` is the target directory relative to the
+   workspace (`.lathe`) root (so it shows the module / source-root / package path). The name is both
+   the file name (`<Name>.java`) and the type name.
+3. **Resolve the target directory** from the current buffer (see Placement).
 4. **Create + open + format** — write `<dir>/<Name>.java` with the package line and skeleton, open the
    buffer, normalise its style via the on-save formatter (see *Skeletons and style*), then drop the
-   cursor in the body (or record component list). Refuse (no-op with a message) if the file exists.
+   cursor in the body (or record component list). Refuse (message, no-op) if the file exists.
 
 ### Placement — how the target directory and package are figured out
 
@@ -436,9 +517,12 @@ than hardcoding indentation or brace placement (one source of style truth; avoid
 uses 2-space indentation, so a hardcoded 4-space body would be wrong for exactly the users who format):
 
 - If Lathe's Google formatter is enabled — the same gate that wires the BufWritePre hook
-  (`formatter == 'google'` and `format_on_save`, `lathe.lua`) — `:LatheNew` runs the identical
+  (`formatter == 'google'` and `format_on_save`, `lathe.lua`) — the command runs the identical
   `vim.lsp.buf.format({ bufnr = …, name = 'lathe', async = false })` on the freshly-opened buffer, so
-  the scaffold is byte-identical to what a save would produce.
+  the scaffold is byte-identical to what a save would produce. The Lathe client attaches to the new
+  buffer *asynchronously*, so the command waits briefly for the attach before formatting (only when a
+  Lathe client is running) — otherwise the format runs before attach and no-ops ("no matching language
+  servers"), which an early implementation hit and a live-editor test caught.
 - Otherwise it emits a built-in fallback honouring the buffer's `expandtab` / `shiftwidth`.
 
 Name = the entered `<Name>`; minimal visibility (`public`, no `final`/`sealed`). Rough shape before
@@ -461,12 +545,12 @@ The file starts with `package <pkg>;` (omitted for the default package). The **c
 buffer using a different on-save formatter gets the fallback skeleton and is normalised by its own hook
 on first save.
 
-### v2 — dotted-name creation (client-side, the chosen fast-follow)
+### v2 — dotted-name creation (client-side, implemented)
 
-Accept a **dotted name** in the same name prompt: `com.example.sub.Foo` creates `Foo` in package
-`com.example.sub`, making the package directories as needed; a bare `Foo` stays same-package (v1). Done
-**entirely in the client**, reusing the existing helpers — no server round-trip, no new LSP command, no
-cross-language duplication of the create path:
+Accept a **dotted name** (as the command argument or the name prompt): `com.example.sub.Foo` creates
+`Foo` in package `com.example.sub`, making the package directories as needed; a bare `Foo` stays
+same-package (v1). Done **entirely in the client**, reusing the existing helpers — no server
+round-trip, no new LSP command, no cross-language duplication of the create path:
 
 - Split the input on the last dot → `{ package = 'com.example.sub', name = 'Foo' }`; no dot → the bare
   same-package v1 path.
@@ -493,11 +577,11 @@ the server buys almost nothing until a second client must share the logic (KISS/
 
 ### Scope
 
-- **v1 (implemented):** same-package (or current directory-buffer) creation, pure-client; kind picker +
-  name input; main/test inferred from the current buffer; clean error with no context; no overwrite.
-  Shipped in `lua/lathe/new.lua`.
-- **v2 (planned — client-side, chosen):** dotted-name creation making the package directories, reusing
-  the existing marker split and `_write_and_open` (see above).
+- **v1 + v2 (implemented):** create a `class`/`interface`/`record`/`enum` next to the current file
+  (same package) via the four `:LatheNew*` kind commands — name as an argument or a single prompt; a
+  dotted name creates under the module source root, making the package directories; directory-buffer
+  (oil/netrw) targeting; main/test inferred from the current buffer; clean error with no context; no
+  overwrite; style deferred to the on-save formatter. Shipped in `lua/lathe/new.lua`.
 - **Deferred (Option B):** editor-agnostic server `lathe.createType`, revisited when a second client
   (VS Code) exists.
 - **Later / optional:** file-tree **node** targeting for nvim-tree / neo-tree (their
@@ -506,26 +590,31 @@ the server buys almost nothing until a second client must share the logic (KISS/
 
 ### Regression targets
 
-Neovim client (busted spec, e.g. `new_spec.lua`), stubbing `vim.ui.select` / `vim.ui.input`:
+Neovim client (busted spec `new_spec.lua`), driving `create_kind(kind, name?)` and stubbing
+`vim.ui.input` / `vim.lsp.buf.format` / `vim.lsp.get_clients`:
 
-- `latheNew_fromJavaFile_createsSiblingInSamePackage` (positive — new file next to the current one,
-  correct `package` line and `public <kind> <Name>` skeleton, buffer opened)
-- `latheNew_recordKind_placesCaretInComponentList` (positive — record skeleton shape)
-- `latheNew_googleFormatterEnabled_normalisesViaOnSaveFormatter` (positive — with the Google formatter
-  configured, the opened buffer is formatted through the same `vim.lsp.buf.format` path; stub it and
-  assert it is invoked, and that the caret is placed after formatting)
-- `latheNew_noFormatter_usesFallbackStyle` (positive — no formatter configured → built-in skeleton,
-  formatter not invoked)
-- `latheNew_noJavaContext_errorsCleanly` (negative — not in a file/dir under a source package)
-- `latheNew_existingFile_refusesToOverwrite` (negative)
+Pure helpers — `_package_from_lines` / `_package_from_dir` / `_split_qualified` / `_source_root` /
+`_target` (bare vs dotted split; marker → source root; no-marker → nil; main/test roots), plus
+`_skeleton` and `_caret`.
 
-v2 (when built), same spec:
-- `_split_qualified` / `_source_root` pure-helper units — bare vs dotted split; marker → source root;
-  no-marker → nil.
-- `latheNew_dottedName_createsUnderSourceRootMakingDirs` (positive — `a.b.C` from a main file creates
-  `<root>/src/main/java/a/b/C.java` with `package a.b;`, directories made).
-- `latheNew_dottedName_fromTestFile_usesTestRoot` (positive — test-root inference).
-- `latheNew_dottedName_noSourceRoot_warnsAndBails` (negative).
+- `latheNew_fromJavaFile_createsSiblingInSamePackage` (positive — name-as-argument path; new file next
+  to the current one with the correct `package` line and `public <kind> <Name>` skeleton, buffer opened)
+- `latheNew_noArgument_promptsForName` (positive — the single `vim.ui.input` prompt path)
+- `latheNew_recordKind_writesRecordSkeleton` (positive — record skeleton shape)
+- `latheNew_googleFormatterEnabled_normalisesViaOnSaveFormatter` (positive — with a Lathe client
+  running, the opened buffer is formatted through the same `vim.lsp.buf.format` path — stub it and the
+  client list, assert it is invoked)
+- `latheNew_noFormatter_usesFallbackStyle` (negative — formatter disabled → not invoked)
+- `latheNew_dottedName_createsUnderSourceRootMakingDirs` (positive — `a.b.C` from a main file →
+  `<root>/src/main/java/a/b/C.java`, `package a.b;`, directories made)
+- `latheNew_dottedName_fromTestFile_usesTestRoot` (positive — test-root inference)
+- `latheNew_dottedName_noSourceRoot_warnsAndBails` (negative)
+- `latheNew_noJavaContext_errorsCleanly`, `latheNew_existingFile_refusesToOverwrite` (negative)
+- setup registers the four `:LatheNew*` commands and records the formatter flag
+
+Also verified end-to-end in a live Neovim against the invoker workspace (a `:LatheNewClass
+com.example…` with the Google formatter attached creates the file under a new package dir and formats
+it via the running server).
 
 Notes:
 Pairs with CQ-0054 (keyword insertion) but is independent of it. Editor-agnostic parity (a VS Code
