@@ -7,6 +7,45 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-050 — Requests on a non-`file` document URI crash the request with an `InternalError`
+
+**Status: done — Target: M2.**
+
+Opening a Java file through a virtual buffer whose URI scheme is not `file` — reproduced with the
+Neovim **diffview** git-diff view (`diffview:///…/SpendLimitChecker.java`) — made the server throw
+on both the initial `didOpen` and on follow-up requests. `LatheUri.toPath` is `Path.of(URI.create(…))`,
+which only resolves for the `file` scheme; any other scheme has no NIO `FileSystemProvider`, so
+`Path.of` threw `FileSystemNotFoundException`, surfacing as an `InternalError` RPC (and an
+`UnhandledPromiseRejection` in Neovim).
+
+Fixed at the LSP boundary in two stages:
+
+- **Notification path** (earlier commit): `LatheUri.isFileUri(String)` returns true only for a `file:`
+  URI with a non-empty path (false, never throwing, for `file://`, `diffview://`, `untitled:`, …), and
+  `LatheTextDocumentService` early-returns from `didOpen`/`didChange`/`didClose`/`didSave` for a
+  non-file URI (one `FINE` `[<op>] ignored non-file uri` line) so nothing reaches `LatheUri.toPath`.
+- **Request path** (this change): every document-URI request handler (`completion`, `codeAction`,
+  `semanticTokens`, `documentSymbol`, `foldingRange`, `references`, `signatureHelp`, `hover`,
+  `definition`, `declaration`, `implementation`, `prepareCallHierarchy`, `prepareTypeHierarchy`,
+  `formatting`) short-circuits to a completed future of its own empty type (empty list / empty
+  `SemanticTokens` / `Either.forLeft(List.of())`, or `null` for `Hover`/`SignatureHelp`) via the same
+  `ignoreNonFile` guard before routing into `WorkspaceSession.routeCompiler → LatheUri.toPath`. A small
+  shared `emptyLocationResult()` helper backs the three identical location-returning handlers. Because
+  `didOpen` is dropped, the request guards are defense-in-depth; a per-method one-line guard was chosen
+  over a generic higher-order wrapper.
+
+Regression coverage:
+
+- `LatheUriTest.isFileUri_*` (true/false/`null`)
+- `LatheTextDocumentServiceTest.didOpen_nonFileUri_ignoredWithoutCrashOrPublish`
+- `LatheTextDocumentServiceTest.foldingRange_nonFileUri_returnsEmptyWithoutThrowing`
+- `LatheTextDocumentServiceTest.hover_nonFileUri_returnsNullWithoutThrowing`
+
+Client-side hardening (avoid attaching the Lathe client to non-`file` buffers, sparing the wasted
+round-trip) remains an optional NV follow-up; the server fix stands on its own.
+
+---
+
 ## EG-041 — JDK/library source files get live diagnostics and code actions with no "read-only source" affordance
 
 **Status: done — Target: M2.**

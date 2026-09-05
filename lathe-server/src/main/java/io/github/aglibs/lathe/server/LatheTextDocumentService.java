@@ -139,6 +139,11 @@ final class LatheTextDocumentService implements TextDocumentService {
     return true;
   }
 
+  private static CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
+      emptyLocationResult() {
+    return CompletableFuture.completedFuture(Either.forLeft(List.of()));
+  }
+
   @Override
   public CompletableFuture<Either<List<CompletionItem>, CompletionList>> completion(
       final CompletionParams params) {
@@ -146,6 +151,9 @@ final class LatheTextDocumentService implements TextDocumentService {
     final var pos = params.getPosition();
     final var ctx = params.getContext();
     final var context = ctx != null ? ctx : new CompletionContext(CompletionTriggerKind.Invoked);
+    if (ignoreNonFile(uri, "completion")) {
+      return CompletableFuture.completedFuture(Either.forLeft(List.of()));
+    }
 
     return worker
         .submit(() -> session.completionFuture(uri, pos, context))
@@ -179,6 +187,10 @@ final class LatheTextDocumentService implements TextDocumentService {
       final CodeActionParams params) {
     final var uri = params.getTextDocument().getUri();
     final var context = params.getContext();
+    if (ignoreNonFile(uri, "codeAction")) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
     return worker
         .submit(() -> session.codeActionFuture(uri, params.getRange(), context))
         .thenCompose(f -> f);
@@ -187,6 +199,10 @@ final class LatheTextDocumentService implements TextDocumentService {
   @Override
   public CompletableFuture<SemanticTokens> semanticTokensFull(final SemanticTokensParams params) {
     final var uri = params.getTextDocument().getUri();
+    if (ignoreNonFile(uri, "semanticTokens")) {
+      return CompletableFuture.completedFuture(new SemanticTokens(List.of()));
+    }
+
     return worker.submit(() -> session.semanticTokensFuture(uri)).thenCompose(f -> f);
   }
 
@@ -194,6 +210,10 @@ final class LatheTextDocumentService implements TextDocumentService {
   public CompletableFuture<List<Either<SymbolInformation, DocumentSymbol>>> documentSymbol(
       final DocumentSymbolParams params) {
     final var uri = params.getTextDocument().getUri();
+    if (ignoreNonFile(uri, "documentSymbol")) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
     return worker
         .submit(() -> session.documentSymbolFuture(uri))
         .thenCompose(f -> f)
@@ -209,6 +229,10 @@ final class LatheTextDocumentService implements TextDocumentService {
   public CompletableFuture<List<FoldingRange>> foldingRange(
       final FoldingRangeRequestParams params) {
     final var uri = params.getTextDocument().getUri();
+    if (ignoreNonFile(uri, "foldingRange")) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
     return worker.submit(() -> session.foldingRangeFuture(uri)).thenCompose(f -> f);
   }
 
@@ -217,6 +241,10 @@ final class LatheTextDocumentService implements TextDocumentService {
     final var uri = params.getTextDocument().getUri();
     final var pos = params.getPosition();
     final var incl = params.getContext().isIncludeDeclaration();
+    if (ignoreNonFile(uri, "references")) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
     final var response = new CompletableFuture<List<? extends Location>>();
     final CancelChecker cancelChecker = new CompletableFutures.FutureCancelChecker(response);
     final var progress = progressReporter.open(params.getWorkDoneToken(), response);
@@ -240,6 +268,10 @@ final class LatheTextDocumentService implements TextDocumentService {
   public CompletableFuture<SignatureHelp> signatureHelp(final SignatureHelpParams params) {
     final var uri = params.getTextDocument().getUri();
     final var pos = params.getPosition();
+    if (ignoreNonFile(uri, "signatureHelp")) {
+      return CompletableFuture.completedFuture(null);
+    }
+
     return worker.submit(() -> session.signatureHelpFuture(uri, pos)).thenCompose(f -> f);
   }
 
@@ -247,6 +279,10 @@ final class LatheTextDocumentService implements TextDocumentService {
   public CompletableFuture<Hover> hover(final HoverParams params) {
     final var uri = params.getTextDocument().getUri();
     final var pos = params.getPosition();
+    if (ignoreNonFile(uri, "hover")) {
+      return CompletableFuture.completedFuture(null);
+    }
+
     return worker.submit(() -> session.hoverFuture(uri, pos)).thenCompose(f -> f);
   }
 
@@ -255,6 +291,10 @@ final class LatheTextDocumentService implements TextDocumentService {
       definition(final DefinitionParams params) {
     final var uri = params.getTextDocument().getUri();
     final var pos = params.getPosition();
+    if (ignoreNonFile(uri, "definition")) {
+      return emptyLocationResult();
+    }
+
     return worker.submit(() -> session.definitionFuture(uri, pos)).thenCompose(f -> f);
   }
 
@@ -263,6 +303,10 @@ final class LatheTextDocumentService implements TextDocumentService {
       declaration(final DeclarationParams params) {
     final var uri = params.getTextDocument().getUri();
     final var pos = params.getPosition();
+    if (ignoreNonFile(uri, "declaration")) {
+      return emptyLocationResult();
+    }
+
     return worker.submit(() -> session.declarationFuture(uri, pos)).thenCompose(f -> f);
   }
 
@@ -271,6 +315,10 @@ final class LatheTextDocumentService implements TextDocumentService {
       implementation(final ImplementationParams params) {
     final var uri = params.getTextDocument().getUri();
     final var pos = params.getPosition();
+    if (ignoreNonFile(uri, "implementation")) {
+      return emptyLocationResult();
+    }
+
     return worker.submit(() -> session.implementationFuture(uri, pos)).thenCompose(f -> f);
   }
 
@@ -279,6 +327,10 @@ final class LatheTextDocumentService implements TextDocumentService {
       final CallHierarchyPrepareParams params) {
     final var uri = params.getTextDocument().getUri();
     final var pos = params.getPosition();
+    if (ignoreNonFile(uri, "prepareCallHierarchy")) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
     return worker.submit(() -> session.prepareCallHierarchyFuture(uri, pos)).thenCompose(f -> f);
   }
 
@@ -315,6 +367,10 @@ final class LatheTextDocumentService implements TextDocumentService {
       final TypeHierarchyPrepareParams params) {
     final var uri = params.getTextDocument().getUri();
     final var pos = params.getPosition();
+    if (ignoreNonFile(uri, "prepareTypeHierarchy")) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
     return worker.submit(() -> session.prepareTypeHierarchyFuture(uri, pos)).thenCompose(f -> f);
   }
 
@@ -342,6 +398,10 @@ final class LatheTextDocumentService implements TextDocumentService {
     }
 
     final var uri = params.getTextDocument().getUri();
+    if (ignoreNonFile(uri, "formatting")) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
     return worker.submit(() -> session.format(uri));
   }
 

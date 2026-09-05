@@ -34,7 +34,10 @@ import org.eclipse.lsp4j.DidOpenTextDocumentParams;
 import org.eclipse.lsp4j.DocumentFormattingParams;
 import org.eclipse.lsp4j.DocumentRangeFormattingParams;
 import org.eclipse.lsp4j.DocumentSymbol;
+import org.eclipse.lsp4j.FoldingRange;
+import org.eclipse.lsp4j.FoldingRangeRequestParams;
 import org.eclipse.lsp4j.FormattingOptions;
+import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.HoverParams;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
@@ -133,6 +136,35 @@ class LatheTextDocumentServiceTest {
         .doesNotThrowAnyException();
 
     verify(client, after(DEBOUNCE_MS * 4).never()).publishDiagnostics(any());
+  }
+
+  @Test
+  void foldingRange_nonFileUri_returnsEmptyWithoutThrowing() throws Exception {
+    // A virtual-scheme buffer (e.g. Neovim diffview) whose didOpen we drop can still receive
+    // requests; the request handler must short-circuit before routing into LatheUri.toPath, which
+    // throws FileSystemNotFoundException for a non-file scheme (EG-050).
+    service.initialize(tmp);
+    final var params = new FoldingRangeRequestParams();
+    params.setTextDocument(new TextDocumentIdentifier("diffview:///workspace/.git/:0:/Foo.java"));
+
+    final List<FoldingRange> ranges = service.foldingRange(params).get(5, TimeUnit.SECONDS);
+
+    assertThat(ranges).isEmpty();
+  }
+
+  @Test
+  void hover_nonFileUri_returnsNullWithoutThrowing() throws Exception {
+    service.initialize(tmp);
+
+    final Hover hover =
+        service
+            .hover(
+                new HoverParams(
+                    new TextDocumentIdentifier("diffview:///workspace/.git/:0:/Foo.java"),
+                    new Position(0, 0)))
+            .get(5, TimeUnit.SECONDS);
+
+    assertThat(hover).isNull();
   }
 
   @Test
