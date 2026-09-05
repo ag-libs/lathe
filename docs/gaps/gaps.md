@@ -487,44 +487,75 @@ round-trip, no new LSP command, no cross-language duplication of the create path
 - If the current context is not under a `src/main|test/java` root, a package-qualified name cannot be
   placed — warn and bail (a bare name still works same-directory).
 
-### v3 — package-argument completion + relative sub-package (planned, supersedes tree-node targeting)
+### v3 — selection from a cached workspace model (planned redesign, supersedes typed completion + tree-node targeting)
 
-The IDE flow for "new class in a new sub-package" is *navigate the tree to the folder, then New Class*.
-The vim-native equivalent is **not** file-tree node targeting (nvim-tree / neo-tree) — that would need
-two steps for a *new* package (make the directory in the tree, then run the command) and carries
-per-plugin `get_node_under_cursor` API drift. The one-command dotted-name path (v2) already creates the
-sub-package directories; the only ergonomic gap is that the package must be typed in full with no
-completion. v3 closes that gap with command-line completion, and optionally a relative form — both
-purely in the client, no server round-trip.
+**The insight that reframes the feature.** The gap that v2 leaves is placing a type when you are *not*
+already anchored in the target package — a new sub-package, or a cold start with no open file. The
+obvious fix was command-line `<Tab>` completion of the package argument, but Neovim command-completion
+functions are **synchronous**: they must return candidates immediately and cannot await an LSP request.
+So the client must already *hold* the option set. And once the client holds it, **selection beats
+typing-with-completion**: a `vim.ui.select` picker (telescope/fzf) is synchronous, discoverable, and
+needs no dotted-name grammar. v3 therefore drops both the abandoned client-side dir-scan completion and
+the file-tree node targeting, and rebuilds the entry path around picking from a **pre-cached workspace
+model** the server owns.
 
-**A. Package-argument completion (primary).** Give the four `:LatheNew*` commands a `complete=`
-function so `<Tab>` completes existing package segments and the user types only the new leaf:
+Server-side dir globbing in Lua was *guessing at* a model the server already holds: the server compiles
+the workspace, so it authoritatively knows modules, their source roots, and the real packages (a Lua
+`globpath` heuristic cannot tell a package from a stray directory or know module boundaries). "What
+packages and source roots exist" is exactly what the LSP should answer.
 
-- Register with `complete = M._complete` on each `nvim_create_user_command` (currently `nargs = "?"`
-  with no completion).
-- `M._complete(arglead, cmdline, cursorpos)`: resolve the current buffer's module source root
-  (reuse `_source_root` on the resolved context dir), then offer the set of existing package names
-  under it. Package names come from scanning the source-root subtree for directories (the same
-  `src/main|test/java` root the create path already keys on) and dot-joining each directory's
-  relative segments — no Java parsing, directories *are* packages.
-- Filter the candidate list by `arglead` (prefix match on the dotted string) and return dotted
-  candidates, so `com.exa<Tab>` → `com.example`, `com.example.` → its sub-packages. The user appends
-  `.NewThing`. main vs test follows the current buffer, exactly like the create path.
-- Keep the scan cheap: a single `vim.fs.find`/`vim.fn.globpath` for directories under the source root,
-  computed per completion request (small, and Neovim only calls it on `<Tab>`); no caching in v3.
+**Enabling infra — a read-only workspace-model query (small server surface).** Add a
+`lathe.workspaceModel` `workspace/executeCommand` returning the authoritative
+`{ sourceRoots: [{ module, kind: main|test, root, packages: [...] }] }` from the model the server
+already builds for diagnostics/runnables — no new analysis, just exposing what it knows. The **client
+caches** this on attach / workspace reload and refreshes on `workspace/didChangeWatchedFiles`; the
+pickers read the cache, so they stay synchronous. This is *not* the earlier Option B (server-side file
+*creation*): creation logic stays entirely client-side and reuses `_write_and_open`; only the workspace
+*facts* move to the component that owns them.
 
-**B. Relative sub-package form (optional convenience).** Today a dotted name is absolute from the
-source root. Let a **leading dot** mean "relative to the current file's package": from `com.example`,
-`:LatheNewClass .sub.NewThing` → `com.example.sub.NewThing`. Isolated to name parsing:
+**Command surface — layered by how much the user already knows (decided):**
 
-- Extend `_split_qualified` (or a thin wrapper) to detect a leading `.`; when present, strip it and
-  prepend the current context package before the existing absolute resolution in `_target`.
-- A bare `Foo` (no dot) stays same-package v1; a plain dotted `a.b.C` stays absolute v2; only the
-  leading-dot form is relative — no ambiguity between the three.
+| Invocation | Prompts | For |
+| --- | --- | --- |
+| `:LatheNew` | kind select → destination select → name input | full guide (cold start, "just make me a class") |
+| `:LatheNewClass` (no arg) | destination select → name input | kind known, place it |
+| `:LatheNewClass a.b.C` | none (the v2 typed path, retained) | expert, zero prompts, works with **no** server |
 
-Both stay client-only and reuse `_write_and_open`; the completion function and the leading-dot parse
-are pure enough to unit-test in `new_spec.lua` alongside the existing helpers (stub `vim.fn.globpath`
-/ seed a temp source-root tree for the completion candidates).
+The four kind commands keep their zero-prompt typed path (bare same-package; dotted absolute) but gain
+the destination picker when invoked bare — which is exactly the cold-start case that is painful today.
+`:LatheNew` adds the kind select on top. All paths converge on `_write_and_open`.
+
+**Destination picker — one pick fixes source root + main/test + package.** A flat, synchronous
+`vim.ui.select` built from the cached model, each entry encoding module · kind · package, with a
+`＋ New package…` entry first:
+
+```
+＋ New package…
+moduleA · main · com.acme
+moduleA · main · com.acme.orders
+moduleA · test · com.acme
+moduleB · main · com.foo
+```
+
+- When a file is open, its package is **preselected** (accept with enter) — the common case stays one
+  keypress + the name.
+- `＋ New package…` (decided) → a `vim.ui.input` **seeded** with the highlighted/current package plus a
+  trailing dot (`com.acme.▮`), so a new sub-package is a short extension; directories are auto-created
+  by the existing writer. With multiple source roots and no anchor, a one-step root select precedes the
+  input.
+- **main vs test is never a separate question** — it is an attribute of the chosen entry, resolved by
+  the pick the user is already making.
+
+**No-server degradation.** The scaffold itself needs no server: with none attached the typed fast path
+(`:LatheNewClass a.b.C`, bare names) still works; only the pickers have nothing to offer (optionally a
+dir-scan floor). File IO is the client's; workspace truth is the server's.
+
+**Reused vs new.** Reused: `_skeleton`, `_caret`, `_write_and_open`, `_source_root`,
+`_package_from_dir`, main/test marker handling. New: the `lathe.workspaceModel` server command + its
+model projection; a client cache with attach/reload/watched-files refresh; the kind and destination
+`vim.ui.select` pickers and the seeded new-package input. The model-projection (roots → entries) and
+new-package-name composition are pure and unit-testable; the picker plumbing follows the existing
+`vim.ui.*`-stubbed spec pattern in `new_spec.lua`.
 
 ### Scope
 
@@ -533,9 +564,11 @@ are pure enough to unit-test in `new_spec.lua` alongside the existing helpers (s
   dotted name creates under the module source root, making the package directories; directory-buffer
   (oil/netrw) targeting; main/test inferred from the current buffer; clean error with no context; no
   overwrite; style deferred to the on-save formatter. Shipped in `lua/lathe/new.lua`.
-- **Planned (v3):** package-argument `<Tab>` completion of existing packages under the module source
-  root, plus an optional leading-dot relative sub-package form (`.sub.Foo`). Supersedes file-tree node
-  targeting — one-step, keyboard-native, no per-plugin `get_node_under_cursor` fragility.
+- **Planned (v3 redesign):** an umbrella `:LatheNew` plus bare-invocation of the four kind commands
+  drive a **destination picker** (module · main/test · package, with `＋ New package…` → seeded input)
+  fed by a client-cached, server-provided `lathe.workspaceModel`; the v2 typed `a.b.C` path is retained
+  as the no-server expert fast path. Supersedes both client-side `<Tab>` package completion and
+  file-tree node targeting (synchronous picker, authoritative model, no per-plugin fragility).
 
 ### Regression targets
 
@@ -560,6 +593,20 @@ Pure helpers — `_package_from_lines` / `_package_from_dir` / `_split_qualified
 - `latheNew_dottedName_noSourceRoot_warnsAndBails` (negative)
 - `latheNew_noJavaContext_errorsCleanly`, `latheNew_existingFile_refusesToOverwrite` (negative)
 - setup registers the four `:LatheNew*` commands and records the formatter flag
+
+Added for the **v3 redesign** (picker + cached workspace model):
+
+- `workspaceModel_projectsRootsToDestinationEntries` (positive — server roots → the flat
+  `module · main/test · package` entry list, sorted/deduped; empty model → only `＋ New package…`)
+- `newPackageInput_seedsWithAnchorPackage` (positive — the seeded `vim.ui.input` default is the
+  current/highlighted package + trailing dot; no anchor + multiple roots → root select precedes it)
+- `latheNew_barePickerPath_placesUnderSelectedDestination` (positive — bare `:LatheNewClass` with
+  `vim.ui.select` stubbed selects a destination entry and creates under its root/package; main/test
+  taken from the entry)
+- `latheNew_typedDottedPath_bypassesPickerWithNoServer` (positive/negative — `a.b.C` still creates with
+  no cached model / no server attached; picker not invoked)
+- `workspaceModelCache_refreshesOnWatchedFilesChange` (positive — cache re-fetch on reload /
+  `didChangeWatchedFiles`; stale entries not offered)
 
 Also verified end-to-end in a live Neovim against the invoker workspace (a `:LatheNewClass
 com.example…` with the Google formatter attached creates the file under a new package dir and formats
