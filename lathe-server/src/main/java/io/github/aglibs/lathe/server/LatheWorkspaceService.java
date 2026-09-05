@@ -9,8 +9,6 @@ import java.util.concurrent.CompletableFuture;
 import org.eclipse.lsp4j.DidChangeConfigurationParams;
 import org.eclipse.lsp4j.DidChangeWatchedFilesParams;
 import org.eclipse.lsp4j.ExecuteCommandParams;
-import org.eclipse.lsp4j.FileChangeType;
-import org.eclipse.lsp4j.FileEvent;
 import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.WorkspaceSymbol;
 import org.eclipse.lsp4j.WorkspaceSymbolParams;
@@ -43,13 +41,11 @@ final class LatheWorkspaceService implements WorkspaceService {
   @Override
   public void didChangeConfiguration(final DidChangeConfigurationParams params) {}
 
+  // No-op: detection is a server-side scan (WorkspaceWatcher), not a client watch. Lathe registers
+  // no file watchers, so this never fires; implemented only because WorkspaceService requires it.
+  // See docs/planned/lathe-external-change-detection.md.
   @Override
-  public void didChangeWatchedFiles(final DidChangeWatchedFilesParams params) {
-    params.getChanges().stream()
-        .filter(event -> event.getType() == FileChangeType.Deleted)
-        .map(FileEvent::getUri)
-        .forEach(textDocumentService::didDeleteWatchedFile);
-  }
+  public void didChangeWatchedFiles(final DidChangeWatchedFilesParams params) {}
 
   @Override
   public CompletableFuture<Object> executeCommand(final ExecuteCommandParams params) {

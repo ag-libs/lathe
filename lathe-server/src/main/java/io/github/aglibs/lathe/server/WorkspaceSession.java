@@ -831,26 +831,6 @@ final class WorkspaceSession {
     submitCompile(route, snapshot, CompileMode.FULL, afterCompile);
   }
 
-  void onDeletedFile(final String uri) {
-    LOG.info(() -> "[delete] %s".formatted(uri));
-    worker.cancel(uri);
-    docs.remove(uri);
-    analysisLru.remove(uri);
-    workspace.dropFromAllCaches(uri);
-    candidateIndex.remove(uri);
-    publisher.publishEmpty(uri);
-
-    final var deletedFile = LatheUri.toPath(uri);
-    workspace
-        .moduleSourceFor(deletedFile)
-        .ifPresent(
-            config -> {
-              deleteClassOutputs(config, deletedFile);
-              refreshReactorShard(config);
-              scheduleOpenFilesInModule(uri, config);
-            });
-  }
-
   CompletableFuture<List<Location>> referencesFuture(
       final String uri,
       final Position pos,

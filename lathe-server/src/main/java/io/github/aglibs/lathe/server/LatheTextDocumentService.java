@@ -59,10 +59,6 @@ final class LatheTextDocumentService implements TextDocumentService {
     worker.execute(() -> session.initialize(workspaceRoot));
   }
 
-  void didDeleteWatchedFile(final String uri) {
-    worker.execute(() -> session.onDeletedFile(uri));
-  }
-
   void close() {
     if (!closed.compareAndSet(false, true)) {
       return;
