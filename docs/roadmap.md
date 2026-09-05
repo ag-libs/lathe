@@ -40,9 +40,9 @@ The implemented baseline is in [status.md](status.md); the designs behind it in
 [gaps-archive.md](gaps/gaps-archive.md). Per this document's scope, M1's completed details are not
 re-listed here. The residual staleness thread is now split: an **M2 freshness slice** — the actionable
 Maven sync prompt (WS-3), post-sync `workspace/symbol` pickup (WS-4), and external-change
-auto-recompile (WS-5, see [design](planned/lathe-external-change-recompilation.md)) — while the fuller
-no-Maven reconciliation (WS-1) and WS-2's rejected source-only *prompt* remain in the Backlog (WS-2 is
-superseded for the source case by WS-5's auto-recompile).
+detection → sync prompt (WS-5, see [design](planned/lathe-external-change-detection.md)) — while the
+fuller no-Maven reconciliation (WS-1) remains in the Backlog. WS-2's source-only *prompt* is revived as
+that chosen approach; in-process recompile is [parked](potential/lathe-external-change-recompilation.md).
 
 ### Exit criteria
 
@@ -70,9 +70,11 @@ ships (see "Deferred to backlog" below).
   diagnostics collection (e.g. `:checkhealth lathe`) is deferred and added on demand, not planned scope.
 - Workspace freshness slice — keep Lathe honest when the tree changes outside the editor. Fix the
   looping/inert Maven sync prompt and make it actionable (WS-3), pick up an external `mvn` without a
-  restart (WS-4), and auto-recompile/copy externally changed sources and resources — agent edits,
-  small pulls — without Maven (WS-5, [design](planned/lathe-external-change-recompilation.md)). Bulk or
-  structural changes route to the sync prompt; the fuller no-Maven reconciliation (WS-1) stays backlog.
+  restart (WS-4), and **detect** externally changed sources — agent edits, branch switches, pulls —
+  and route them to that sync prompt (WS-5, [design](planned/lathe-external-change-detection.md));
+  resources auto-copy. In-process recompile is
+  [parked](potential/lathe-external-change-recompilation.md) (single-module only). The fuller no-Maven
+  reconciliation (WS-1) stays backlog.
 
 ### Correctness gaps (triaged)
 

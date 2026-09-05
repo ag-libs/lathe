@@ -32,11 +32,11 @@ Reliability, the triaged gaps, and rename — see the [roadmap](roadmap.md) for 
 - [Rename](planned/lathe-rename.md) — `textDocument/rename` + `prepareRename` on the Find References
   pipeline (occurrence ranges → `WorkspaceEdit`, no `ASTRewrite`); scoped to the common cases,
   correctness-gated (freshness refusal + minimal conflict checks), with explicit non-goals.
-- [External-Change Recompilation](planned/lathe-external-change-recompilation.md) — detect on-disk
-  edits to Java sources and resources (branch switch, `git pull`, agent edits) via
-  `workspace/didChangeWatchedFiles` and recompile/copy just those files into `.lathe/` without Maven,
-  reusing the save pipeline (D1 + R1 + resources). Owns WS-5; the cheapest concrete slice of the WS-1
-  freshness umbrella.
+- [External-Change Detection → Sync Prompt](planned/lathe-external-change-detection.md) — detect
+  on-disk edits to Java sources/resources (branch switch, `git pull`, agent edits) beyond POMs and
+  **nudge the user to run Maven**, reusing the shipped sync prompt (WS-3) + silent refresh (WS-4);
+  resources auto-copy. WS-1 option 1; supersedes WS-5's in-process recompile. The in-process compile
+  is parked (see Potential Designs).
 - [Javac Crash Capture](planned/lathe-javac-crash-capture.md) — resolved for M2 as a minimal,
   source-free `[javacCrash]` log line (phase + JDK + stack trace); the full repro-bundle design is a
   deferred backlog follow-up. ✓
@@ -174,6 +174,11 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 ## Potential Designs
 
 - [Potential Design Policy](potential/README.md)
+- [In-Process External-Change Recompilation](potential/lathe-external-change-recompilation.md) —
+  parked design for recompiling externally changed sources in-process (batch FULL compile, startup
+  reconciliation, live-watch/gitignore/Neovim analysis). Correct only for single-module change sets;
+  multi-module needs Maven's reactor. Superseded for now by detection→prompt; a single-module fast
+  path may revive it later.
 - [Shared Workspace Server](potential/lathe-shared-workspace-server.md) — no active milestone commitment.
 - [Analysis Cache Bounding](potential/lathe-analysis-cache-bounding.md) — deferred hard-cap design for
   per-open-file analysis retention (event-loop LRU, eviction delegated to module workers); the issue
