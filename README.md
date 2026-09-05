@@ -65,13 +65,14 @@ guide to configure both.
 
 ### Scaffolding
 
-| Feature  | What it does                                                                                                                                                                     | Command            |
-|----------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------|
-| New type | creates a `class` / `interface` / `record` / `enum` — package line and skeleton, then opens it — in the current package (bare name) or another package (dotted name, dirs made) | Neovim `:LatheNew` |
+| Feature  | What it does                                                                                                                                                                     | Command                                          |
+|----------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------|
+| New type | creates a `class` / `interface` / `record` / `enum` — package line and skeleton, then opens it — in the current package (bare name) or another package (dotted name, dirs made) | Neovim `:LatheNewClass` / `Interface` / `Record` / `Enum` |
 
-`:LatheNew` is a client-side convenience (no server round-trip). The generated code's style follows
+The four `:LatheNew*` commands are a client-side convenience (no server round-trip); the kind is the
+command, so the only prompt is the name (or pass it as an argument). The generated code's style follows
 your on-save formatter, so it matches the project when the `google` formatter is enabled. See the
-[Neovim cheatsheet](docs/guide/editors/neovim.md#create-a-new-type-lathenew).
+[Neovim cheatsheet](docs/guide/editors/neovim.md#create-a-new-type).
 
 ### Run, test & debug
 

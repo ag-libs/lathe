@@ -1,6 +1,6 @@
--- Verifies lathe.new (:LatheNew): the pure placement/skeleton/caret helpers, and create() end to
--- end against a real temp workspace with vim.ui.select / vim.ui.input / vim.lsp.buf.format stubbed.
--- lathe.new uses only core Neovim APIs, so this loads headlessly like the other specs.
+-- Verifies lathe.new (:LatheNewClass/Interface/Record/Enum): the pure placement/skeleton/caret
+-- helpers, and create_kind() end to end against a real temp workspace with vim.ui.input /
+-- vim.lsp.buf.format stubbed. lathe.new uses only core Neovim APIs, so this loads headlessly.
 --
 -- Run headless from the repo root (or via run-specs.sh):
 --   nvim --headless --clean -u NONE \
@@ -14,7 +14,9 @@ local new = require("lathe.new")
 --- A fresh temp module with a seeded `com.example.Seed` main class; returns its package dir and the
 --- seed file path. Each call is a unique tempname, so blocks do not collide.
 local function tmp_workspace()
-  local dir = vim.fn.tempname() .. "/mod/src/main/java/com/example"
+  local root = vim.fn.tempname()
+  vim.fn.mkdir(root .. "/.lathe", "p") -- workspace root marker, above the module
+  local dir = root .. "/mod/src/main/java/com/example"
   vim.fn.mkdir(dir, "p")
   local seed = dir .. "/Seed.java"
   vim.fn.writefile({ "package com.example;", "", "public class Seed {", "}" }, seed)
@@ -75,20 +77,14 @@ do
   spec.check("record caret col (after '(')", rc[2], 18)
 end
 
--- ── create() end to end ──────────────────────────────────────────────────────
+-- ── create_kind() end to end ─────────────────────────────────────────────────
 
-do -- latheNew_fromJavaFile_createsSiblingInSamePackage
+do -- latheNew_fromJavaFile_createsSiblingInSamePackage (name as argument, zero prompts)
   local dir, seed = tmp_workspace()
   vim.cmd.edit(vim.fn.fnameescape(seed))
   new._format_on_save = false
-  vim.ui.select = function(_, _, cb)
-    cb("class")
-  end
-  vim.ui.input = function(_, cb)
-    cb("Bar")
-  end
 
-  new.create()
+  new.create_kind("class", "Bar")
 
   local created = dir .. "/Bar.java"
   spec.check("sibling created", vim.fn.filereadable(created), 1)
@@ -100,18 +96,28 @@ do -- latheNew_fromJavaFile_createsSiblingInSamePackage
   spec.check("created buffer is opened", vim.api.nvim_buf_get_name(0):match("Bar%.java$") ~= nil, true)
 end
 
+do -- latheNew_noArgument_promptsForName (the single prompt, showing the package)
+  local dir, seed = tmp_workspace()
+  vim.cmd.edit(vim.fn.fnameescape(seed))
+  new._format_on_save = false
+  local prompt
+  vim.ui.input = function(opts, cb)
+    prompt = opts.prompt
+    cb("Prompted")
+  end
+
+  new.create_kind("class")
+
+  spec.check("prompt shows the workspace-relative dir", prompt, "class name in mod/src/main/java/com/example: ")
+  spec.check("prompted name creates the file", vim.fn.filereadable(dir .. "/Prompted.java"), 1)
+end
+
 do -- latheNew_recordKind_writesRecordSkeleton
   local dir, seed = tmp_workspace()
   vim.cmd.edit(vim.fn.fnameescape(seed))
   new._format_on_save = false
-  vim.ui.select = function(_, _, cb)
-    cb("record")
-  end
-  vim.ui.input = function(_, cb)
-    cb("Point")
-  end
 
-  new.create()
+  new.create_kind("record", "Point")
 
   spec.check(
     "record sibling skeleton",
@@ -132,14 +138,8 @@ do -- latheNew_googleFormatterEnabled_normalisesViaOnSaveFormatter
     formatted = true
   end
   new._format_on_save = true
-  vim.ui.select = function(_, _, cb)
-    cb("class")
-  end
-  vim.ui.input = function(_, cb)
-    cb("Fmt")
-  end
 
-  new.create()
+  new.create_kind("class", "Fmt")
 
   spec.check("formatter invoked when enabled", formatted, true)
 end
@@ -152,14 +152,8 @@ do -- latheNew_noFormatter_usesFallbackStyle
     formatted = true
   end
   new._format_on_save = false
-  vim.ui.select = function(_, _, cb)
-    cb("class")
-  end
-  vim.ui.input = function(_, cb)
-    cb("NoFmt")
-  end
 
-  new.create()
+  new.create_kind("class", "NoFmt")
 
   spec.check("formatter not invoked when disabled", formatted, false)
 end
@@ -170,13 +164,10 @@ do -- latheNew_noJavaContext_errorsCleanly
   vim.notify = function(_, _)
     warned = true
   end
-  vim.ui.select = function(_, _, _)
-    error("must not prompt without a java context")
-  end
 
-  new.create()
+  new.create_kind("class", "Anything")
 
-  spec.check("no java context warns and does not prompt", warned, true)
+  spec.check("no java context warns", warned, true)
 end
 
 do -- latheNew_existingFile_refusesToOverwrite
@@ -188,14 +179,8 @@ do -- latheNew_existingFile_refusesToOverwrite
   vim.notify = function(_, _)
     warned = true
   end
-  vim.ui.select = function(_, _, cb)
-    cb("class")
-  end
-  vim.ui.input = function(_, cb)
-    cb("Dup")
-  end
 
-  new.create()
+  new.create_kind("class", "Dup")
 
   spec.check("existing file refused", warned, true)
   spec.check(
@@ -237,6 +222,15 @@ do
   spec.check("target dotted with no source root -> nil", new._target("/ws/mod/loose", "", "a.b.C"), nil)
 end
 
+do
+  spec.check(
+    "relativize under root",
+    new._relativize("/ws/mod/src/main/java/com/x", "/ws"),
+    "mod/src/main/java/com/x"
+  )
+  spec.check("relativize with no root -> absolute", new._relativize("/ws/mod/x", nil), "/ws/mod/x")
+end
+
 -- ── v2 dotted-name create() end to end ───────────────────────────────────────
 
 do -- latheNew_dottedName_createsUnderSourceRootMakingDirs
@@ -244,14 +238,8 @@ do -- latheNew_dottedName_createsUnderSourceRootMakingDirs
   local root = dir:gsub("/com/example$", "")
   vim.cmd.edit(vim.fn.fnameescape(seed))
   new._format_on_save = false
-  vim.ui.select = function(_, _, cb)
-    cb("class")
-  end
-  vim.ui.input = function(_, cb)
-    cb("a.b.C")
-  end
 
-  new.create()
+  new.create_kind("class", "a.b.C")
 
   local created = root .. "/a/b/C.java"
   spec.check("dotted-name file created under source root", vim.fn.filereadable(created), 1)
@@ -270,14 +258,8 @@ do -- latheNew_dottedName_fromTestFile_usesTestRoot
   local root = tdir:gsub("/com/example$", "")
   vim.cmd.edit(vim.fn.fnameescape(seed))
   new._format_on_save = false
-  vim.ui.select = function(_, _, cb)
-    cb("class")
-  end
-  vim.ui.input = function(_, cb)
-    cb("x.y.Z")
-  end
 
-  new.create()
+  new.create_kind("class", "x.y.Z")
 
   spec.check("dotted-name from a test file uses the test root", vim.fn.filereadable(root .. "/x/y/Z.java"), 1)
 end
@@ -292,23 +274,31 @@ do -- latheNew_dottedName_noSourceRoot_warnsAndBails
   vim.notify = function(_, _)
     warned = true
   end
-  vim.ui.select = function(_, _, cb)
-    cb("class")
-  end
-  vim.ui.input = function(_, cb)
-    cb("a.b.C")
-  end
 
-  new.create()
+  new.create_kind("class", "a.b.C")
 
   spec.check("dotted name with no source root warns", warned, true)
   spec.check("dotted name with no source root creates nothing", vim.fn.filereadable(ldir .. "/a/b/C.java"), 0)
 end
 
-do -- setup registers :LatheNew and records the formatter flag
+do -- resolveContext_relativeBufferName_returnsAbsoluteDir (never create in the cwd)
+  local base = vim.fn.tempname()
+  vim.fn.mkdir(base, "p")
+  local saved = vim.fn.getcwd()
+  vim.cmd("cd " .. vim.fn.fnameescape(base))
+  local cwd = vim.fn.getcwd()
+  local dir = select(1, new._resolve_context(vim.api.nvim_get_current_buf(), "sub/pkg/Foo.java"))
+  vim.cmd("cd " .. vim.fn.fnameescape(saved))
+  spec.check("relative buffer name resolves to an absolute dir", dir, cwd .. "/sub/pkg")
+end
+
+do -- setup registers the four kind commands and records the formatter flag
   new.setup({ format_on_save = true })
   spec.check("setup records the formatter flag", new._format_on_save, true)
-  spec.check("LatheNew command registered", vim.fn.exists(":LatheNew"), 2)
+  spec.check("LatheNewClass registered", vim.fn.exists(":LatheNewClass"), 2)
+  spec.check("LatheNewInterface registered", vim.fn.exists(":LatheNewInterface"), 2)
+  spec.check("LatheNewRecord registered", vim.fn.exists(":LatheNewRecord"), 2)
+  spec.check("LatheNewEnum registered", vim.fn.exists(":LatheNewEnum"), 2)
 end
 
 spec.finish("new_spec")

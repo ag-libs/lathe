@@ -110,14 +110,15 @@ require("lathe").setup({
 })
 ```
 
-## Create a new type (`:LatheNew`)
+## Create a new type
 
-`:LatheNew` scaffolds a new `class` / `interface` / `record` / `enum` and opens it. It prompts for the
-kind (`vim.ui.select`) and the name (`vim.ui.input`), then writes `<Name>.java` with the package line
-and a skeleton, and drops the cursor in the body (or the record component list). Enter a **bare name**
-(`Foo`) to create it in the current file's package, or a **dotted name** (`com.example.sub.Foo`) to
-create it in — and, if needed, make the directories for — a different package under the module's source
-root.
+Four commands — `:LatheNewClass`, `:LatheNewInterface`, `:LatheNewRecord`, `:LatheNewEnum` — scaffold a
+new type and open it. The kind is the command, so the only prompt is the **name** (`vim.ui.input`); pass
+the name as an argument for no prompt at all (`:LatheNewClass Foo`). Enter a **bare name** (`Foo`) to
+create it in the current file's package, or a **dotted name** (`com.example.sub.Foo`) to create it in —
+and, if needed, make the directories for — a different package under the module's source root. The
+command writes `<Name>.java` with the package line and a skeleton and drops the cursor in the body (or
+the record component list).
 
 The style of the generated code follows your **on-save formatter**: when the Google formatter is
 enabled (`formatter = "google"` and `format_on_save = true`) the scaffold is normalised through the
@@ -127,7 +128,10 @@ Java file (or a directory) inside a source package.
 
 | Action | Command | Suggested |
 |--------|---------|-----------|
-| Create a class / interface / record / enum | `:LatheNew` | `<leader>nc` |
+| New class | `:LatheNewClass [name]` | `<leader>nc` |
+| New interface | `:LatheNewInterface [name]` | `<leader>ni` |
+| New record | `:LatheNewRecord [name]` | `<leader>nr` |
+| New enum | `:LatheNewEnum [name]` | `<leader>ne` |
 
 > Placement is derived from the current buffer: a Java file targets its own directory (same package); a
 > directory buffer (oil / netrw) targets that directory; a dotted name is placed under the module's

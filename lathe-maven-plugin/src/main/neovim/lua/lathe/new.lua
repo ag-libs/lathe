@@ -1,16 +1,24 @@
--- :LatheNew -- scaffold a new class / interface / record / enum next to the current file (same
--- package) and open it, so a new type lands in the right place without hand-editing the package line
--- or creating directories. Style is deferred to the on-save formatter: when Lathe's Google formatter
--- is enabled the scaffold is normalised through the same `vim.lsp.buf.format` path a save uses (so it
--- is byte-identical to a save, and we never hardcode indentation), otherwise a minimal built-in
--- skeleton is left as written.
+-- :LatheNewClass / :LatheNewInterface / :LatheNewRecord / :LatheNewEnum -- scaffold a new type next to
+-- the current file (same package) and open it, so it lands in the right place without hand-editing the
+-- package line or creating directories. The kind is the command; the only prompt is the name (or pass
+-- it as an argument: `:LatheNewClass Foo`, `:LatheNewClass com.example.sub.Foo`). Style is deferred to
+-- the on-save formatter: when Lathe's Google formatter is enabled the scaffold is normalised through
+-- the same `vim.lsp.buf.format` path a save uses (byte-identical to a save, no hardcoded indentation),
+-- otherwise a minimal built-in skeleton is left as written.
 --
--- The placement/skeleton/caret logic is pure (`_package_*`, `_skeleton`, `_caret`) and unit-tested;
--- `create()` is the thin buffer/file-IO orchestrator that also drives the kind/name prompts.
+-- The placement/skeleton/caret logic is pure (`_package_*`, `_split_qualified`, `_source_root`,
+-- `_target`, `_skeleton`, `_caret`) and unit-tested; `create_kind()` is the thin buffer/file-IO
+-- orchestrator that drives the name prompt.
 
 local M = {}
 
-local KINDS = { "class", "interface", "record", "enum" }
+-- Command name -> type kind. One user command per kind so the kind never has to be picked.
+local KIND_COMMANDS = {
+  LatheNewClass = "class",
+  LatheNewInterface = "interface",
+  LatheNewRecord = "record",
+  LatheNewEnum = "enum",
+}
 
 -- Set from setup(); mirrors the same `formatter == 'google' and format_on_save` gate lathe.lua uses
 -- to wire the BufWritePre formatter, so the scaffold matches what a save would produce.
@@ -27,17 +35,22 @@ function M._package_from_lines(lines)
   return nil
 end
 
---- The package for a directory, derived by splitting the path on the Maven source-root marker
---- (`/src/main/java/` or `/src/test/java/`) and dot-joining the trailing segments. Returns "" for a
---- directory that is exactly the source root (default package), or nil when the path is not under a
---- recognised source root.
+-- Maven source-root markers, in check order -- the two roots a scaffold can land in; the current
+-- buffer's root decides which (a dotted name follows it). Keyed on by both path helpers below.
+local SOURCE_MARKERS = { "/src/main/java", "/src/test/java" }
+
+--- The package for a directory, derived by splitting the path on a source-root marker and dot-joining
+--- the trailing segments. Returns "" for a directory that is exactly the source root (default
+--- package), or nil when the path is not under a recognised source root.
 function M._package_from_dir(dir)
-  local rel = dir:match("/src/main/java/(.+)$") or dir:match("/src/test/java/(.+)$")
-  if rel then
-    return (rel:gsub("/+$", ""):gsub("/", "."))
-  end
-  if dir:match("/src/main/java/?$") or dir:match("/src/test/java/?$") then
-    return ""
+  for _, marker in ipairs(SOURCE_MARKERS) do
+    local rel = dir:match(marker .. "/(.+)$")
+    if rel then
+      return (rel:gsub("/+$", ""):gsub("/", "."))
+    end
+    if dir:match(marker .. "/?$") then
+      return ""
+    end
   end
   return nil
 end
@@ -52,10 +65,16 @@ function M._split_qualified(input)
   return nil, input
 end
 
---- The module source root containing `dir` -- the path up to and including the `/src/main/java` or
---- `/src/test/java` marker (the same marker `_package_from_dir` keys on), else nil.
+--- The module source root containing `dir` -- the path up to and including a source-root marker, else
+--- nil.
 function M._source_root(dir)
-  return dir:match("^(.-/src/main/java)") or dir:match("^(.-/src/test/java)")
+  for _, marker in ipairs(SOURCE_MARKERS) do
+    local root = dir:match("^(.-" .. marker .. ")")
+    if root then
+      return root
+    end
+  end
+  return nil
 end
 
 --- Resolve the final `(dir, package, name)` for the entered `name` given the current context. A bare
@@ -128,7 +147,7 @@ end
 --- The directory of an oil/netrw directory buffer, else nil.
 local function directory_buffer_path(buf, bufname)
   if bufname ~= "" and vim.fn.isdirectory(bufname) == 1 then
-    return bufname
+    return vim.fn.fnamemodify(bufname, ":p:h")
   end
 
   local ok_oil, oil = pcall(require, "oil")
@@ -154,7 +173,9 @@ function M._resolve_context(buf, bufname)
   end
 
   if bufname:match("%.java$") then
-    local file_dir = vim.fs.dirname(bufname)
+    -- Normalise to an absolute path so the sibling lands next to the file, never in the cwd, even if
+    -- the buffer name is relative/non-normalised (some pickers/plugins set it that way).
+    local file_dir = vim.fs.dirname(vim.fn.fnamemodify(bufname, ":p"))
     local lines = vim.api.nvim_buf_get_lines(buf, 0, 40, false)
     local package = M._package_from_lines(lines) or M._package_from_dir(file_dir) or ""
     return file_dir, package
@@ -163,8 +184,17 @@ function M._resolve_context(buf, bufname)
   return nil
 end
 
+--- `dir` relative to the workspace root (the directory holding the `.lathe` marker), so the prompt
+--- shows the module/source-root/package path; falls back to the absolute `dir` when no root is found.
+function M._relativize(dir, root)
+  if root and root ~= "" and vim.startswith(dir, root .. "/") then
+    return dir:sub(#root + 2)
+  end
+  return dir
+end
+
 local function warn(message)
-  vim.notify("[lathe] :LatheNew — " .. message, vim.log.levels.WARN)
+  vim.notify("Lathe: " .. message, vim.log.levels.WARN, { title = "Lathe" })
 end
 
 function M._write_and_open(dir, package, kind, name)
@@ -201,7 +231,21 @@ function M._format(buf)
   pcall(vim.lsp.buf.format, { bufnr = buf, name = "lathe", async = false })
 end
 
-function M.create()
+--- Resolve the entered `name` (bare or dotted) against the context and create the file, or warn when
+--- a package-qualified name cannot be placed. Shared by the argument and prompt paths.
+function M._place(context_dir, context_package, kind, name)
+  local target_dir, target_package, target_name = M._target(context_dir, context_package, name)
+  if not target_dir then
+    warn("cannot place a package-qualified name here — no src/main|test/java root")
+    return
+  end
+
+  M._write_and_open(target_dir, target_package, kind, target_name)
+end
+
+--- Create a new type of `kind` from the current buffer's context. `name` (from the command argument)
+--- creates it immediately; when empty, the only prompt is the name.
+function M.create_kind(kind, name)
   local buf = vim.api.nvim_get_current_buf()
   local dir, package = M._resolve_context(buf, vim.api.nvim_buf_get_name(buf))
   if not dir then
@@ -209,30 +253,27 @@ function M.create()
     return
   end
 
-  vim.ui.select(KINDS, { prompt = "New Java type" }, function(kind)
-    if not kind then
-      return
+  if name and name ~= "" then
+    M._place(dir, package, kind, name)
+    return
+  end
+
+  local where = M._relativize(dir, vim.fs.root(dir, ".lathe"))
+  vim.ui.input({ prompt = kind .. " name in " .. where .. ": " }, function(input)
+    if input and input ~= "" then
+      M._place(dir, package, kind, input)
     end
-    vim.ui.input({ prompt = kind .. " name: " }, function(name)
-      if not name or name == "" then
-        return
-      end
-      local target_dir, target_package, target_name = M._target(dir, package, name)
-      if not target_dir then
-        warn("cannot place a package-qualified name here — no src/main|test/java root")
-        return
-      end
-      M._write_and_open(target_dir, target_package, kind, target_name)
-    end)
   end)
 end
 
 function M.setup(opts)
   opts = opts or {}
   M._format_on_save = opts.format_on_save == true
-  vim.api.nvim_create_user_command("LatheNew", function()
-    M.create()
-  end, { desc = "Lathe: create a new class/interface/record/enum in the current package" })
+  for command, kind in pairs(KIND_COMMANDS) do
+    vim.api.nvim_create_user_command(command, function(args)
+      M.create_kind(kind, args.args)
+    end, { nargs = "?", desc = "Lathe: create a new " .. kind .. " in the current package" })
+  end
 end
 
 return M
