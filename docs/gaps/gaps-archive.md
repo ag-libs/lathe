@@ -534,6 +534,40 @@ infix matching is wanted later — it is a distinct feature, not an extension of
 
 ---
 
+## FR-016 — Find the instantiation sites of a type ("where is a new instance created")
+
+Status: done — Target: M2.
+
+A focused search that, from the type under the cursor, returns **only** its `new XXX(...)` sites (all
+overloads) — not every use of the type. Complements FR-015 (cursor on a `new XXX(` → that
+constructor's call sites). Because the result set is intrinsically only construction sites, it is plain
+`Location[]` into the quickfix — no per-reference kind, no glyph, no custom renderer (the role-glyph
+alternative was investigated and rejected as heavier).
+
+Implementation reuses the references pipeline:
+- `SourceAnalysisSession.instantiationTargets` resolves the `TypeElement` at the cursor and maps its
+  constructors (incl. the synthesized default) to `ReferenceTarget`s; `CompilationWorker` adds the
+  submit wrapper.
+- `WorkspaceSession.instantiationsFuture` searches each via the existing `searchReferencesForTarget`
+  (progress title parameterised so references and instantiations share the one method) and unions with
+  `joinCandidateResults`.
+- Exposed as the `lathe.instantiations` `workspace/executeCommand` (`LatheWorkspaceService`, arg
+  deserialised into the standard `TextDocumentPositionParams` via Gson; advertised in
+  `createCapabilities`). Client: `lua/lathe/instances.lua` (`:LatheInstances` → quickfix), suggested
+  mapping `grN`.
+
+Verified end to end via the probe and a live Neovim against a real workspace (a `new ProbeType()` site
+found, the bare `ProbeType` return-type use excluded).
+
+Regression coverage:
+- `ReferenceLocatorTest.instantiationSites_type_returnsOnlyNewSites`,
+  `..._implicitDefaultConstructor_returnsNewSites`, `..._cursorNotOnType_returnsEmpty`
+- `LatheLanguageServerTest.createCapabilities_includesExecuteCommandProvider` (advertises the command)
+- `instances_spec.lua` — dispatch + quickfix population, no-client warn, empty-result notify, command
+  registration
+
+---
+
 ## FR-015 — Find References at a `new XXX(...)` site targets the type, not the constructor
 
 Status: done — Target: M2.

@@ -292,83 +292,7 @@ for a release is every gap with `Status: accepted` and the matching `Target` (se
 Active `textDocument/references` gaps discovered by live probing against a large `@Builder`-heavy
 reactor workspace. Resolved FR entries are in [gaps-archive.md](gaps-archive.md).
 
-## FR-016 — Find the instantiation sites of a type ("where is a new instance created")
-
-**Status: in progress — Target: M2**
-
-### Motivation
-
-Given a type, developers often want just the places it is **instantiated** — the `new XXX(...)` sites —
-not every use of the type. Plain Find References on a type name returns *all* type uses (imports,
-field/variable types, `extends`/`implements`, casts, and the `new` sites mixed in), so the instantiation
-sites are buried. FR-015 covers the complementary direction (cursor **on** a `new XXX(` returns that
-constructor's call sites); FR-016 is the type-selection direction: from a type, list **all** its
-instantiation sites across the workspace.
-
-### Chosen design (investigated alternative — a focused search, not a glyph)
-
-A dedicated "instantiation sites" query, returning **only** `new XXX(...)` locations as plain
-`Location[]` shown in the quickfix. Because the result set is intrinsically only constructor call sites,
-it needs **no** enriched wire format, per-reference role, or custom glyph rendering — it reuses the
-existing references search almost entirely:
-
-1. Resolve the **type element** at the cursor (`SourceLocator.elementAt` — works on the type name in a
-   declaration, import, field type, or a `new` site).
-2. Enumerate the type's **constructors** (`ElementFilter.constructorsIn(type.getEnclosedElements())`),
-   including the synthesized default constructor when none is declared (javac provides it — the FR-015
-   implicit-constructor case).
-3. For each constructor, build `ReferenceTarget.from(ctor)` and run the **existing**
-   `searchReferencesForTarget`, then union (dedup by uri+range). Constructor candidate discovery already
-   keys on the declaring type's simple name (archived FR-011/FR-013), and `ReferenceLocator.visitNewClass`
-   already emits the match at the `new XXX` identifier, so all `new XXX(...)` sites (incl. a generated
-   builder's) are found workspace-wide.
-
-Server surface: a worker method returning the type's constructor `ReferenceTarget`s, and a
-`WorkspaceSession` method that searches each and unions to `Location[]` — the same result shape the
-normal references path returns. Exposed as a `lathe.instantiations` `workspace/executeCommand`
-(`{ uri, position } → Location[]`).
-
-Client surface: a `:LatheInstances` command (and/or a code action "Find where `<Type>` is instantiated")
-that drops the locations into the quickfix (`vim.lsp.util.locations_to_items` → `setqflist` → `copen`) —
-picker-agnostic, no custom rendering. Suggested mapping (Lathe binds nothing itself, only documents it):
-`grN` — the capital slot next to the `grr` references family (mnemonic: `grr` but **N** for
-i**N**stantiation); `<leader>gi` ("goto instances") is the leader-style alternative.
-
-### Scope / semantics
-
-- Returns **only** `new XXX(...)` sites — **all** overloads of the selected type. Anonymous-subclass
-  `new XXX(){ … }` sites are included (they are `new XXX(...)`).
-- Deliberately **excludes** factory methods (`XXX.of(...)`, builders returning `XXX`) and bare type uses —
-  this is specifically "where a *new* instance is created."
-- Cross-module discovery is bounded exactly like normal references (candidate planner + declaring-type
-  simple name).
-
-### Rejected alternative — role glyph in the references list
-
-Tagging constructor-call references with a glyph *inside* the normal type-references list was investigated
-and rejected as heavier: LSP `Location[]` carries no per-reference kind, so it would need the role tagged
-server-side (small), a **custom enriched references channel** (the standard response can't carry the
-role), and a **custom quickfix/picker renderer** with a configurable Nerd-Font glyph + ASCII fallback —
-plus owning/overriding the `grr` references UX. FR-016's focused search avoids all of that.
-
-### Probe commands
-
-```bash
-# cursor on the type name — expected: only the `new XXX(...)` sites, not imports/field-type/extends uses
-printf 'refs "class XXX"\n' | python3 dev/explore.py <ws>/.../XXX.java   # (dedicated command TBD in explore.py)
-```
-
-### Regression targets
-
-- `ReferenceLocatorTest.instantiationSites_type_returnsOnlyNewSitesAcrossOverloads`
-  (positive — a type with two constructors → both `new XXX(a)` and `new XXX(a,b)` sites; excludes a bare
-  `XXX field` and an import)
-- `ReferenceLocatorTest.instantiationSites_implicitDefaultConstructor_findsNewSites`
-  (positive — record/class with no explicit constructor)
-- `ReferenceLocatorTest.instantiationSites_excludesFactoryAndBuilderReturns`
-  (negative — `XXX.of(...)` / a builder `build()` returning `XXX` are not instantiation sites)
-- `LspSmokeTest.instantiations_command_returnsNewSitesAcrossModules` (end-to-end via the command)
-- Neovim `*_spec.lua` — `:LatheInstances` populates the quickfix from the returned locations
+No active FR gaps remain; resolved entries are in [gaps-archive.md](gaps-archive.md).
 
 ---
 
@@ -463,14 +387,12 @@ This matches the existing deferred method-reference gap in the historical comple
 ## CQ-0055 — `:LatheNewClass`/`Interface`/`Record`/`Enum` — scaffold a new type in the right package
 
 ID: CQ-0055
-Status: implemented (Neovim `:LatheNewClass`/`Interface`/`Record`/`Enum`, incl. v2 dotted-name);
-editor-agnostic server (Option B) deferred to a second-client (VS Code) milestone
+Status: implemented (Neovim `:LatheNewClass`/`Interface`/`Record`/`Enum`, incl. v2 dotted-name)
 Target: M2
 Tier: assistive
 Failure mode: missing-affordance
-Owner component: Neovim client plugin (`lua/lathe/new.lua`, the four `:LatheNew*` kind commands). An
-editor-agnostic `lathe-server` command is deferred (see below). NV-area feature; the CQ-0055 id is kept
-as a pointer.
+Owner component: Neovim client plugin (`lua/lathe/new.lua`, the four `:LatheNew*` kind commands).
+NV-area feature; the CQ-0055 id is kept as a pointer.
 
 **Decision (supersedes the earlier completion-snippet framing).** The feature is a **client-side
 scaffold**, not a completion: four Neovim commands (`:LatheNewClass` / `:LatheNewInterface` /
@@ -565,17 +487,44 @@ round-trip, no new LSP command, no cross-language duplication of the create path
 - If the current context is not under a `src/main|test/java` root, a package-qualified name cannot be
   placed — warn and bail (a bare name still works same-directory).
 
-### Deferred — editor-agnostic server (Option B), for a second client
+### v3 — package-argument completion + relative sub-package (planned, supersedes tree-node targeting)
 
-Revisit when a non-Neovim client (VS Code) lands, so placement / skeleton / formatting live once in the
-server rather than being re-implemented per client. A `lathe.createType` `workspace/executeCommand`
-would resolve the module/source root (`WorkspaceModuleRegistry`), format the skeleton server-side
-(`JavaFormatter`), and return the resolved **`{ path, content }`** — the slim shape, *not* a
-`WorkspaceEdit`/`CreateFile`, whose resource-operation plumbing and client capability add cost the
-Neovim client does not need; the client reuses its existing write/open/caret path with the returned
-content. Not built now: for a Java/Maven project the `src/main|test/java` convention makes the client
-resolution reliable, and the Neovim client already owns the marker split, file IO, and formatting, so
-the server buys almost nothing until a second client must share the logic (KISS/DRY).
+The IDE flow for "new class in a new sub-package" is *navigate the tree to the folder, then New Class*.
+The vim-native equivalent is **not** file-tree node targeting (nvim-tree / neo-tree) — that would need
+two steps for a *new* package (make the directory in the tree, then run the command) and carries
+per-plugin `get_node_under_cursor` API drift. The one-command dotted-name path (v2) already creates the
+sub-package directories; the only ergonomic gap is that the package must be typed in full with no
+completion. v3 closes that gap with command-line completion, and optionally a relative form — both
+purely in the client, no server round-trip.
+
+**A. Package-argument completion (primary).** Give the four `:LatheNew*` commands a `complete=`
+function so `<Tab>` completes existing package segments and the user types only the new leaf:
+
+- Register with `complete = M._complete` on each `nvim_create_user_command` (currently `nargs = "?"`
+  with no completion).
+- `M._complete(arglead, cmdline, cursorpos)`: resolve the current buffer's module source root
+  (reuse `_source_root` on the resolved context dir), then offer the set of existing package names
+  under it. Package names come from scanning the source-root subtree for directories (the same
+  `src/main|test/java` root the create path already keys on) and dot-joining each directory's
+  relative segments — no Java parsing, directories *are* packages.
+- Filter the candidate list by `arglead` (prefix match on the dotted string) and return dotted
+  candidates, so `com.exa<Tab>` → `com.example`, `com.example.` → its sub-packages. The user appends
+  `.NewThing`. main vs test follows the current buffer, exactly like the create path.
+- Keep the scan cheap: a single `vim.fs.find`/`vim.fn.globpath` for directories under the source root,
+  computed per completion request (small, and Neovim only calls it on `<Tab>`); no caching in v3.
+
+**B. Relative sub-package form (optional convenience).** Today a dotted name is absolute from the
+source root. Let a **leading dot** mean "relative to the current file's package": from `com.example`,
+`:LatheNewClass .sub.NewThing` → `com.example.sub.NewThing`. Isolated to name parsing:
+
+- Extend `_split_qualified` (or a thin wrapper) to detect a leading `.`; when present, strip it and
+  prepend the current context package before the existing absolute resolution in `_target`.
+- A bare `Foo` (no dot) stays same-package v1; a plain dotted `a.b.C` stays absolute v2; only the
+  leading-dot form is relative — no ambiguity between the three.
+
+Both stay client-only and reuse `_write_and_open`; the completion function and the leading-dot parse
+are pure enough to unit-test in `new_spec.lua` alongside the existing helpers (stub `vim.fn.globpath`
+/ seed a temp source-root tree for the completion candidates).
 
 ### Scope
 
@@ -584,11 +533,9 @@ the server buys almost nothing until a second client must share the logic (KISS/
   dotted name creates under the module source root, making the package directories; directory-buffer
   (oil/netrw) targeting; main/test inferred from the current buffer; clean error with no context; no
   overwrite; style deferred to the on-save formatter. Shipped in `lua/lathe/new.lua`.
-- **Deferred (Option B):** editor-agnostic server `lathe.createType`, revisited when a second client
-  (VS Code) exists.
-- **Later / optional:** file-tree **node** targeting for nvim-tree / neo-tree (their
-  `get_node_under_cursor` APIs differ per plugin); configurable modifiers/`sealed permits`/record
-  components.
+- **Planned (v3):** package-argument `<Tab>` completion of existing packages under the module source
+  root, plus an optional leading-dot relative sub-package form (`.sub.Foo`). Supersedes file-tree node
+  targeting — one-step, keyboard-native, no per-plugin `get_node_under_cursor` fragility.
 
 ### Regression targets
 
@@ -619,9 +566,7 @@ com.example…` with the Google formatter attached creates the file under a new 
 it via the running server).
 
 Notes:
-Pairs with CQ-0054 (keyword insertion) but is independent of it. Editor-agnostic parity (a VS Code
-"New Lathe type") is the deferred Option B server command above, to be built when a second client
-exists.
+Pairs with CQ-0054 (keyword insertion) but is independent of it.
 
 ---
 
