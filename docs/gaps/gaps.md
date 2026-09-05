@@ -1133,4 +1133,58 @@ Gaps in the shipped Neovim client plugin (`lua/lathe/…`) and its recommended c
 distinct from the server's LSP/DAP surface. Resolved NV entries move to
 [gaps-archive.md](gaps-archive.md).
 
-NV-1 is resolved in [gaps-archive.md](gaps-archive.md); no active NV gaps remain.
+NV-1 and NV-2 are resolved in [gaps-archive.md](gaps-archive.md).
+
+## NV-3 — Collapsed import fold pops back open on every save
+
+**Status: accepted — Target: backlog.**
+
+### Observed behaviour
+
+Open a `.java` file with the recommended folding config: the import block auto-collapses.
+Edit anywhere in the file and `:w` (save), and the previously-collapsed imports fold springs back
+open. It re-collapses only on the next full buffer display (reopen / `BufReadPost`), so every save
+during an editing session leaves the imports expanded and the user re-folds them by hand.
+
+### Root cause
+
+The reopen is **not** a server-side change — the fold geometry is byte-stable across a save. Probed
+against the working-tree server (`dev/explore.py`, `folds` before and after `save` on a real file):
+the `imports` range is identical both times (`3:1-14:27` → `3:1-14:27`).
+
+The trigger is the recommended `nvim-ufo` config that Lathe ships in
+[`docs/done/lathe-folding-ranges.md`](../done/lathe-folding-ranges.md):
+
+```lua
+close_fold_kinds_for_ft = { java = { "imports" } }
+```
+
+Per ufo's own docs this option closes the matching-kind folds **only "after the buffer is displayed
+(opened for the first time)"** — it is a first-display action, not re-applied on later fold updates.
+ufo re-requests `textDocument/foldingRange` and recomputes folds whenever the buffer text changes,
+converting `foldmethod` to `manual`; the recomputed folds default to *open*, and because the
+auto-close is first-display-only the imports never re-close. The save-time churn is amplified by the
+server firing **two** `workspace/semanticTokens/refresh` requests per save (one from the FULL-compile
+`DiagnosticPublisher.publish`, one from the scheduled AST-refresh `refreshTokensIfCurrent`) versus one
+on open — confirmed by instrumenting the probe client.
+
+Lathe ships no fold logic of its own (`lua/lathe.lua`'s save autocmds only refresh run-signs and
+resources), so the fold behaviour is entirely the server's stable `foldingRange` plus the
+Lathe-recommended ufo config — which is why this is an NV (recommended-configuration) gap.
+
+### Proposed direction — what to present
+
+Re-apply the imports auto-close after a post-save fold recompute settles, in the recommended config
+(and optionally the shipped plugin), so the fold state a user last chose survives a save. Candidate
+mechanisms, to be finalised against a live nvim + ufo repro:
+
+- A `BufWritePost` autocmd (java buffers with a Lathe client attached, mirroring the existing
+  run-signs autocmd in `lua/lathe.lua`) that defers briefly for ufo's fold update, then re-closes the
+  imports fold — either via a ufo close-by-kind call if one is public, or by locating the `imports`
+  range from the server's `foldingRange` (already stable and correct) and closing that fold.
+- Alternatively, only re-close when the imports region itself was untouched, so a user who manually
+  opened the imports is not overridden.
+
+No server change is required — the fold geometry is already correct and stable. Reducing the
+save-time refresh from two to one is a separate, minor server cleanup that does not fix the refold on
+its own (ufo recomputes on any text change regardless).
