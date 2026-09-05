@@ -31,11 +31,12 @@ POM changes, for a good experience.**
   - `workspace.json` — mtime, then content: changed content → full `reload()` (`WORKSPACE_CHANGED`);
     unchanged content but bumped mtime → silent `REACTOR_REFRESH` (WS-4).
   - **POM fingerprints** (mtime + size) → the Maven **sync prompt** (WS-3), shown once per change.
-- **`LatheWorkspaceService.didChangeWatchedFiles`** is a **client-driven** handler that acts on
-  `Deleted` only — but it is **currently inert**: nothing registers file watchers
-  (`client/registerCapability`), and the Neovim client only emits `didChangeWatchedFiles` for globs a
-  server registers, so the handler never fires. It is dead leftover, **not** part of this design (which
-  is server-only — see *Detection mechanism*). Its removal is tracked below.
+- **`LatheWorkspaceService.didChangeWatchedFiles`** is now an empty **no-op**: client-driven watching
+  is not used, Lathe registers no file watchers (`client/registerCapability`), and Neovim only emits
+  the notification for globs a server registers — so it never fires. The former `Deleted`-only handler
+  and its `didDeleteWatchedFile → onDeletedFile` chain have been **removed** as dead code (the method
+  survives only as the empty stub `WorkspaceService` requires). Detection is server-only (see
+  *Detection mechanism*).
 - **Resources** are copied into `.lathe/` only when the **editor saves** them (a `BufWritePost` autocmd
   → `lathe.resource.refresh` → `refreshResource`). An external resource change is missed.
 
@@ -111,10 +112,11 @@ reverted. The archived watch analysis remains in the parked
 [recompilation doc](../potential/lathe-external-change-recompilation.md) §1 should an event-driven path
 ever be revisited.
 
-**Cleanup.** The existing `LatheWorkspaceService.didChangeWatchedFiles → didDeleteWatchedFile →
-WorkspaceSession.onDeletedFile` chain is client-watch-only and, since no watchers are registered,
-never fires. It is dead code under this design and should be removed; on-disk **deletions** are covered
-instead by the scan's presence check (item #2 → prompt), not by an in-process eviction.
+**Cleanup — done.** The client-watch-only `didChangeWatchedFiles → didDeleteWatchedFile →
+WorkspaceSession.onDeletedFile` chain has been **removed** as dead code (`didChangeWatchedFiles` is now
+an empty stub the interface requires; `didDeleteWatchedFile` and `onDeletedFile` are deleted). On-disk
+**deletions** are covered instead by the scan's presence check (item #2 → prompt), not by an in-process
+eviction.
 
 ## Reaction — reuse shipped machinery, add nothing
 

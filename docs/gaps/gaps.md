@@ -868,6 +868,11 @@ The same `sym`/`diag`/`sym` harness used for the save path applies.
 
 ### Regression targets
 
+**Superseded** — the targets below (and the probe above) were written for the parked in-process
+recompile (`didChangeWatchedFiles`/`onExternalChange`), which no longer exists. New targets for the
+server-side detection scan → sync prompt will be defined when it is implemented, per
+[external-change detection](../planned/lathe-external-change-detection.md). Retained for history:
+
 - `LatheWorkspaceServiceTest.didChangeWatchedFiles_javaCreatedOrChanged_routesToExternalChange`
 - `LatheWorkspaceServiceTest.didChangeWatchedFiles_resourceChanged_routesToRefreshResource`
 - `WorkspaceSessionTest.onExternalChange_closedFile_updatesMirrorAndSymbolIndex`

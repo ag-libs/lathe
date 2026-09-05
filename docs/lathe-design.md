@@ -61,7 +61,9 @@ Reads params files written by the shim and the workspace manifest written by the
 It reads dependency/JDK sources from `~/.cache/lathe/`.
 `WorkspaceWatcher` watches `workspace.json` and reactor POM fingerprints,
 prompting the user to re-sync when Maven project files change.
-`LatheWorkspaceService.didChangeWatchedFiles` handles deleted Java source files.
+External on-disk source/resource changes are detected server-side and routed to the same re-sync
+prompt (planned — see [external-change detection](planned/lathe-external-change-detection.md));
+`LatheWorkspaceService.didChangeWatchedFiles` is an unused no-op.
 Type indexes back dependency, JDK, and reactor type-name completion.
 
 ```
@@ -616,11 +618,14 @@ source (for example, a removed nested class), the stale class files from the pre
 `.lathe/<rel>/classes/` so cached bytecode matches the current source.
 The same applies to `.lathe/<rel>/generated-sources/` for annotation-processor outputs.
 
-**Source file deletion** (via `didChangeWatchedFiles`):
-walk `.lathe/<rel>/classes/<package>/` for class files matching the deleted source's basename (including `$Inner`
-variants) and delete them.
-Refresh the affected reactor type-index shard after class cleanup.
-Generated-source cleanup is deferred until a concrete annotation-processor stale-file case appears.
+**Source file deletion** — *in-process handling removed.*
+The former `didChangeWatchedFiles → onDeletedFile` path (walk `.lathe/<rel>/classes/<package>/` for class
+files matching the deleted source's basename, including `$Inner` variants, delete them, then refresh the
+shard) was dead client-watch code and has been removed.
+On-disk deletions are now surfaced by the server-side detection scan → Maven re-sync prompt (planned —
+see [external-change detection](planned/lathe-external-change-detection.md)); the next `mvn` cleans the
+stale outputs.
+The `deleteClassOutputs` helper is retained for reuse.
 
 **Maven recompiles the module** (lock file deleted):
 the shim has already copied fresh bytecode to `.lathe/<rel>/classes/` and generated sources to
@@ -718,15 +723,14 @@ Drop and close its result cache entry.
 Publish empty diagnostics array to clear client display.
 Remove the file from the analysis LRU.
 
-### File deletion
+### File deletion — *removed*
 
-`workspace/didChangeWatchedFiles` with a deleted event:
-
-1. Remove the deleted URI from open documents
-2. Drop result cache entries
-3. Delete corresponding `.class` files from `.lathe/<rel>/classes/` or `.lathe/<rel>/test-classes/`
-4. Refresh the affected reactor type-index shard
-5. Schedule other open files in the module to compile against current state
+The in-process reaction to a `workspace/didChangeWatchedFiles` deleted event (evict the URI, drop
+caches, delete the `.class` files, refresh the shard, reschedule the module's open files) has been
+removed together with the dead client-watch handler.
+On-disk deletions are covered by the planned server-side detection scan → Maven re-sync prompt (see
+[external-change detection](planned/lathe-external-change-detection.md)), where the next `mvn` cleans
+the stale outputs.
 
 ### Threading
 
