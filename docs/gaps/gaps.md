@@ -599,9 +599,7 @@ thin wizard over them. Two lessons transfer directly: **lazy children, not flat 
 per-node queries above. Conversely, `nvim-jdtls` ships *no* new-class wizard, so the nvim community uses
 `java-helpers.nvim`, which does placement **client-side in Lua** (marker-based package guessing + Lua
 templates) — exactly the School-B approach our current `new.lua` falls into and this redesign leaves
-behind. (The same `lathe.modules` query also backs WS-8's `:LatheSync` module picker — a no-arg
-`vim.ui.select`, fetch-on-open like everything else, so no `<Tab>` completion and no cache. Build the
-query once here.)
+behind.
 
 ### Scope
 
@@ -650,9 +648,7 @@ Verify end-to-end in a live Neovim against the invoker workspace: `:LatheNew` fr
 a class under a chosen (or new) package and formats it via the running server.
 
 Notes:
-Pairs with CQ-0054 (keyword insertion) but is independent of it. The `lathe.modules` query is shared
-with WS-8, whose `:LatheSync` uses a no-arg module picker (fetch-on-open, no cache) — build the query
-once here.
+Pairs with CQ-0054 (keyword insertion) but is independent of it.
 
 ---
 
@@ -1264,10 +1260,10 @@ Route a **source-only** change to a scoped build; keep full builds for structura
   build regenerates `workspace.json`, which `-pl` deliberately skips); source-only ⇒ the stale
   `moduleRel` set; all/most modules stale ⇒ drop `-pl`.
 - **Client (`sync.lua`):** `run_maven` gains the module list; with modules present, build
-  `mvn … -pl m1,m2 -am <goal>`; the `lathe/sync` handler forwards `result.modules`. Manual `:LatheSync`
-  stays full-reactor; a manual *targeted* sync (if wanted) is a **no-arg `:LatheSync` module picker**
-  (`vim.ui.select` fed by CQ-0055's `lathe.modules`, fetch-on-open) — not `<Tab>` completion, so no
-  client cache (KISS, consistent with CQ-0055).
+  `mvn … -pl m1,m2 -am <goal>`; the `lathe/sync` handler forwards `result.modules`. The scoped build is
+  driven entirely by the server's stale-module detection; manual `:LatheSync` stays a full-reactor
+  build. No per-module manual selection — a user syncing by hand wants the whole reactor, so a
+  module-picker / `<Tab>`-completion affordance is deliberately not built (KISS).
 
 ### Correctness caveats (to bake in and document)
 
