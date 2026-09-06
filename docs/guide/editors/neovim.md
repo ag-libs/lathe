@@ -121,30 +121,19 @@ require("lathe").setup({
 
 ## Create a new type
 
-Four commands — `:LatheNewClass`, `:LatheNewInterface`, `:LatheNewRecord`, `:LatheNewEnum` — scaffold a
-new type and open it. The kind is the command, so the only prompt is the **name** (`vim.ui.input`); pass
-the name as an argument for no prompt at all (`:LatheNewClass Foo`). Enter a **bare name** (`Foo`) to
-create it in the current file's package, or a **dotted name** (`com.example.sub.Foo`) to create it in —
-and, if needed, make the directories for — a different package under the module's source root. The
-command writes `<Name>.java` with the package line and a skeleton and drops the cursor in the body (or
-the record component list).
+`:LatheNew` scaffolds a class, interface, record, or enum through the server and opens it. It walks you
+through a short sequence of pickers — **kind** → **module** (skipped when there is only one) →
+**package** (an existing one, main or test, or **＋ New package…**) → **name** — then the server writes
+`<Name>.java` with the package line and a skeleton and drops the cursor in the body (or the record
+component list). The Lathe server must be attached, since creation is a Java operation.
 
-The style of the generated code follows your **on-save formatter**: when the Google formatter is
-enabled (`formatter = "google"` and `format_on_save = true`) the scaffold is normalised through the
-same formatting pass a save uses, so it matches your project exactly; otherwise a minimal skeleton is
-left as written. It refuses to overwrite an existing file, and warns if the current buffer is not a
-Java file (or a directory) inside a source package.
+The server owns every placement decision — which module and source root, the package, the skeleton, and
+the caret — using the current buffer only as a preselect: a Java file preselects its own module and
+package, and with no file open the pickers stand in. It refuses to overwrite an existing file.
 
-| Action | Command | Suggested |
-|--------|---------|-----------|
-| New class | `:LatheNewClass [name]` | `<leader>nc` |
-| New interface | `:LatheNewInterface [name]` | `<leader>ni` |
-| New record | `:LatheNewRecord [name]` | `<leader>nr` |
-| New enum | `:LatheNewEnum [name]` | `<leader>ne` |
-
-> Placement is derived from the current buffer: a Java file targets its own directory (same package); a
-> directory buffer (oil / netrw) targets that directory; a dotted name is placed under the module's
-> `src/main/java` or `src/test/java` root (following whichever the current buffer sits under).
+| Action   | Command     | Suggested    |
+|----------|-------------|--------------|
+| New type | `:LatheNew` | `<leader>nn` |
 
 ## Run a `main`
 

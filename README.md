@@ -3,21 +3,22 @@
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.ag-libs/lathe-maven-extension?label=Maven%20Central)](https://central.sonatype.com/artifact/io.github.ag-libs/lathe-maven-extension)
 [![CI](https://github.com/ag-libs/lathe/actions/workflows/ci.yml/badge.svg)](https://github.com/ag-libs/lathe/actions/workflows/ci.yml)
 
-Lathe is a Java language server for Maven projects. It provides code intelligence, diagnostics, and
-run/test/debug.
+Lathe is a Java language server for Maven projects — code intelligence, diagnostics, and run, test, and
+debug.
 
-Lathe takes its project model from your Maven build rather than reconstructing one. Each time you
-build, Lathe records the exact `javac` parameters and classpath Maven used and refreshes its workspace
-state, so diagnostics and completion always match your latest build. Analysis runs on javac's own front
-end — the JDK Compiler Tree API from the `jdk.compiler` module — so Lathe reports what `javac` reports.
-Runs and debug sessions replay from captured bytecode without recompiling, reproducing the launch Maven
-would use.
+Lathe's project model comes from your actual Maven build. It captures the exact configuration Maven
+compiles, tests, and runs with, and works from it directly — so the setups that are hardest to get right
+in an editor tend to just work. This shows most on **JPMS** projects: reactor type discovery,
+exported-package visibility, and module-aware completion follow your module graph as the build defines
+it. Annotation processors and plugins that add source roots or change how a module compiles are handled
+the same way.
 
-Setup is a single extension registration; no per-piece `pom.xml` edits are needed. The extension
-injects its compiler integration, the `init`/`sync` goals, and the test-capture dependency into the
-build in memory.
+Because the editor uses the build's own configuration, it stays in step with it — diagnostics are what
+the compiler reports, and runs and tests replay the real launch without recompiling.
 
-Lathe currently ships a Neovim client; a VS Code client is in progress.
+Setup is one extension registration and a first build.
+
+Lathe currently ships a fully supported Neovim client; a VS Code client is planned.
 
 ## Demo
 
@@ -30,8 +31,9 @@ _Demo video coming soon — a short run-and-debug session._
 
 ## Features
 
-Lathe is a language server; every capability below is available to any LSP client.
-See [Editors](#editors) for the client that drives them and its key bindings.
+Lathe implements the standard LSP feature surface, plus run, test, and debug. Every capability is
+available to any LSP client; see [Editors](#editors) for the client that drives them and its key
+bindings.
 
 ### Code intelligence
 
@@ -41,7 +43,7 @@ See [Editors](#editors) for the client that drives them and its key bindings.
 | Go to declaration            | navigates to the overridden interface or abstract-method contract                                 | `textDocument/declaration`                        |
 | Implementation / subtypes    | concrete implementations of a method, or all subtypes of a type across the workspace              | `textDocument/implementation`                     |
 | Find references              | usages across the workspace                                                                       | `textDocument/references`                         |
-| Instantiation sites          | where a type is instantiated (`new XXX(...)`), from the type under the cursor — construction sites only, into the quickfix (Neovim `:LatheInstances`, suggested `grN`) | `workspace/executeCommand` · `lathe.instantiations` |
+| Instantiation sites          | where a type is instantiated (`new AppServer(...)`), from the type under the cursor               | `workspace/executeCommand` · `lathe.instantiations` |
 | Hover                        | AST-resolved Javadoc, rendered as Markdown                                                        | `textDocument/hover`                              |
 | Signature help               | parameter lists for methods and constructors                                                      | `textDocument/signatureHelp`                      |
 | Completion                   | types, methods, and variables, with automatic import insertion                                    | `textDocument/completion`                         |
@@ -55,7 +57,7 @@ See [Editors](#editors) for the client that drives them and its key bindings.
 
 | Feature             | What it does                                                                                 | LSP method                        |
 |---------------------|----------------------------------------------------------------------------------------------|-----------------------------------|
-| Diagnostics         | `javac` errors and warnings exactly as configured in Maven, plus unused-private-member hints | `textDocument/publishDiagnostics` |
+| Diagnostics         | `javac` errors and warnings exactly as configured in Maven, plus unused private members and locals | `textDocument/publishDiagnostics` |
 | Code actions        | import missing type · add `throws` clause · wrap with `try/catch` · declare local variable · replace `var` with the inferred type · stub a missing method | `textDocument/codeAction`         |
 | Formatting (opt-in) | whole-document google-java-format with import cleanup — **off by default**                   | `textDocument/formatting`         |
 
@@ -64,37 +66,44 @@ client enables the `google` formatter, so Lathe never rewrites a project whose s
 Google Java Format. Live-editing indentation is a separate, always-on client concern — see the editor
 guide to configure both.
 
-### Scaffolding
-
-| Feature  | What it does                                                                                                                                                                     | Command                                          |
-|----------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------|
-| New type | creates a `class` / `interface` / `record` / `enum` — package line and skeleton, then opens it — in the current package (bare name) or another package (dotted name, dirs made) | Neovim `:LatheNewClass` / `Interface` / `Record` / `Enum` |
-
-The four `:LatheNew*` commands are a client-side convenience (no server round-trip); the kind is the
-command, so the only prompt is the name (or pass it as an argument). The generated code's style follows
-your on-save formatter, so it matches the project when the `google` formatter is enabled. See the
-[Neovim cheatsheet](docs/guide/editors/neovim.md#create-a-new-type).
-
 ### Run, test & debug
 
 | Feature                                              | What it does                                                                                                                                                | LSP method                                                            |
 |------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------|
-| Run a `main`                                         | replays a `main` from captured `.lathe/` bytecode with no recompilation; output streams back live                                                           | `workspace/executeCommand` · `lathe.run.main`                         |
-| Tests                                                | discovers and runs tests (method, class, or package) from `.lathe/` bytecode, with live output, pass/fail status, and a diagnostic on the failing assertion | `workspace/executeCommand` · `lathe.runnables.list`, `lathe.run.test` |
-| Debug                                                | breakpoints, stepping, variable inspection, and REPL expression evaluation over DAP                                                                         | `workspace/executeCommand` · `lathe.debug.*`, then DAP                |
+| Run a `main`                                         | replays a `main` from captured `.lathe/` bytecode — no recompilation, live output                                                           | `workspace/executeCommand` · `lathe.run.main`                         |
+| Tests                                                | discovers and runs tests (method, class, or package) from `.lathe/` bytecode, with live output and a diagnostic on the failing assertion | `workspace/executeCommand` · `lathe.runnables.list`, `lathe.run.test` |
+| Debug                                                | conditional breakpoints, stepping, variable inspection, and REPL expression evaluation over DAP                                                                         | `workspace/executeCommand` · `lathe.debug.*`, then DAP                |
 | [Run configuration](docs/guide/run-configuration.md) | overlay JVM args, program args, environment, working directory, and class-/module-path per module                                                           | — (`lathe-run.json` overlays)                                         |
 
 Run, test, and debug are Lathe extensions exposed through `workspace/executeCommand` (and the Debug
 Adapter Protocol for debugging), not standard LSP methods.
 
+### Scaffolding
+
+| Feature  | What it does                                                                                                      | Command                                                   |
+|----------|------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------|
+| New type | scaffolds a `class` / `interface` / `record` / `enum` — pick the kind, module, and package, then name it; the server resolves placement, writes the file, and opens it | Neovim `:LatheNew` |
+
+`:LatheNew` walks through kind → module (skipped when there's only one) → package (existing, or a new
+one) → name. The server owns every Java/Maven decision — module, source root, package, skeleton, and
+caret — so the result fits your project's layout. See the
+[Neovim cheatsheet](docs/guide/editors/neovim.md#create-a-new-type).
+
+### Workspace freshness
+
+Lathe keeps its model in step with your build. Open files are analysed live as you edit and save; when
+sources or resources change **outside** the editor — a branch switch, a `git pull`, or an AI agent
+editing files — Lathe detects it and offers to refresh. Changed resources are copied in without a
+build.
+
 ## Editors
 
-Lathe ships a client for Neovim; VS Code is coming.
+Lathe ships a client for Neovim; a VS Code client is planned.
 
-| Editor  | Status      | Reference                                                               |
-|---------|-------------|-------------------------------------------------------------------------|
-| Neovim  | Supported   | [Neovim cheatsheet](docs/guide/editors/neovim.md) — install and keymaps |
-| VS Code | Coming soon | —                                                                       |
+| Editor  | Status    | Reference                                                               |
+|---------|-----------|-------------------------------------------------------------------------|
+| Neovim  | Supported | [Neovim cheatsheet](docs/guide/editors/neovim.md) — install and keymaps |
+| VS Code | Planned   | —                                                                       |
 
 ## Requirements
 
@@ -106,22 +115,23 @@ versions); see [test-capture.md](docs/guide/test-capture.md).
 
 ## Setup
 
-> Publishing to a Maven repository is pending — for now, [build from source](docs/guide/installation.md) first.
+Set Lathe up once, in two steps.
 
-Register the extension once, in `.mvn/extensions.xml` at the reactor root (the directory you run `mvn`
-from):
+**1. Register the Lathe extension** at your reactor root, as a Maven build extension — in
+`.mvn/extensions.xml`, or in your root `pom.xml` under `<build><extensions>` (alongside any extensions
+you already declare):
 
 ```xml
-<extensions>
-  <extension>
-    <groupId>io.github.ag-libs</groupId>
-    <artifactId>lathe-maven-extension</artifactId>
-    <version>0.1.2</version>
-  </extension>
-</extensions>
+<extension>
+  <groupId>io.github.ag-libs</groupId>
+  <artifactId>lathe-maven-extension</artifactId>
+  <version>0.1.2</version>
+</extension>
 ```
 
-Then generate the Lathe metadata and add `.lathe/` to `.gitignore`:
+See [installation.md](docs/guide/installation.md) for details.
+
+**2. Generate the metadata once**, and add `.lathe/` to `.gitignore`:
 
 ```bash
 mvn clean test -Dlathe.capture.only=true
@@ -135,65 +145,36 @@ Lathe.
 > **Tip:** the [Maven Daemon (`mvnd`)](https://github.com/apache/maven-mvnd) noticeably speeds up these
 > builds — run it in place of `mvn` where you can.
 
-You rarely run this again. Every normal test build (`mvn test`, `verify`, `install`) refreshes the
-templates automatically. For a lighter refresh of just LSP intelligence and `main`-class runs (no test
-capture), use `mvn process-test-classes`.
+> **Note:** if your build uses the Maven build cache extension, disable it for Lathe builds
+> (`-Dmaven.build.cache.enabled=false`) — a cache hit skips compilation, so Lathe would not see the real
+> build and its captured configuration would go stale.
 
-For **manual POM configuration** (and when to prefer it over the extension), plus what the build
-writes, see [installation.md](docs/guide/installation.md).
+After that, it keeps up on its own: every Maven build (`mvn test`, `verify`, `install`) refreshes
+Lathe's configuration, and the editor watches for changes made outside it. The added build cost is
+marginal — Lathe runs your real `javac` and just records its parameters — apart from resolving and
+caching the dependency and JDK sources that power go-to-definition into library and JDK code. See
+[what the build writes](docs/guide/installation.md#what-and-where-lathe-writes) for the details.
 
 ## How it works
 
-### Build capture
+Lathe has a few moving parts, each documented in depth. In brief — full mechanics in
+[How Lathe works](docs/guide/how-it-works.md):
 
-During a Maven compile, Lathe's compiler integration records the exact `javac` parameters and classpath
-for each module into `.lathe/`, and the `sync` goal writes the workspace manifest (`workspace.json`)
-describing the reactor. The language server reads these files, so diagnostics, completion, and
-navigation reflect the same inputs your build compiled with. Every build refreshes them, so the model
-tracks your project as it changes.
-
-> **Note:** Files you have open are analysed live as you edit and save them. Changes to files you
-> *don't* have open — most often after switching branches or a `git pull` — aren't picked up until the
-> next `mvn process-test-classes`; until then, cross-file features (workspace symbol search,
-> missing-import suggestions, and navigation into those files) can still reflect the previous state.
-
-### Dependency & JDK sources
-
-`lathe:sync` resolves your dependencies' `-sources` JARs through Maven and extracts them, along with the
-JDK's own sources, under `~/.cache/lathe/`. That is what lets go-to-definition step into library and JDK
-code. A dependency with no published `-sources` JAR is skipped — navigation to it is unavailable, with
-no error.
-
-### Test capture
-
-Lathe captures the exact JVM launch of your Surefire test fork — from inside the fork, by live
-introspection — then replays a fresh JVM from that template against `.lathe/`, with no recompilation.
-Details, requirements, and limits: [test-capture.md](docs/guide/test-capture.md).
-
-### Running and debugging
-
-Runs and debug sessions replay from the captured `.lathe/` bytecode — no per-run recompilation —
-launching a fresh JVM (for debugging, suspended under a JDWP agent with Microsoft's `java-debug`
-hosted in-process) that reproduces the exact launch Maven captured. The same model serves any LSP
-client.
-
-### Run configuration
-
-Runs use generated defaults. Customize JVM flags, program args, environment, working directory, or
-extra class-/module-path entries with an optional **overlay** (`lathe-run.json` /
-`.lathe/run.json`) — applied by the server, and unable to change launch-correctness fields.
-Schema and selection rules: [run-configuration.md](docs/guide/run-configuration.md).
+- **Build capture** — every build records the exact compiler configuration and mirrors your compiled
+  classes into `.lathe/`, which the language server reads.
+- **Dependency & JDK sources** — resolved and unpacked into `~/.cache/lathe/`, so go-to-definition steps
+  into library and JDK code.
+- **Test capture** — the test JVM is captured from inside your Surefire fork by live introspection and
+  replayed against `.lathe/` with no recompilation. [Details →](docs/guide/test-capture.md)
+- **Run & debug** — runs and debug sessions replay the captured launch in a fresh JVM; customize it with
+  an overlay. [Details →](docs/guide/run-configuration.md)
 
 ## Files and caches
 
-Lathe writes two kinds of data:
-
-- **`.lathe/`** in your project — per-build metadata (compiler params, the workspace manifest,
-  run/test launch templates). Add it to `.gitignore`. Details:
-  [installation.md](docs/guide/installation.md#what-and-where-lathe-writes).
-- **`~/.cache/lathe/`** on your machine — the unpacked language server and editor client, the
-  dependency and JDK **source** trees `lathe:sync` extracts, and the symbol index. Regenerable and
-  safe to delete; relocate with `-Dlathe.cache=<dir>`.
+Lathe writes per-project metadata to **`.lathe/`** (add it to `.gitignore`) and machine-wide,
+regenerable data — the server, dependency/JDK sources, and indexes — to **`~/.cache/lathe/`** (relocate
+with `-Dlathe.cache=<dir>`, safe to delete). What each holds:
+[what and where Lathe writes](docs/guide/installation.md#what-and-where-lathe-writes).
 
 ## Opt-out and CI
 
@@ -201,21 +182,14 @@ Lathe is active by default and skips automatically in CI:
 
 | Condition                        | Effect                                |
 |----------------------------------|---------------------------------------|
-| `CI` environment variable is set | both `init` and `sync` are skipped    |
+| `CI` environment variable is set | Lathe does not run                    |
 | `-Dlathe.skip=true`              | disabled regardless of other settings |
 | `-Dlathe.skip=false`             | enabled, overrides `CI`               |
 
-## Partial builds
-
-When Maven is invoked with `-pl`, `lathe:sync` skips writing `workspace.json` to avoid overwriting the
-full workspace manifest with a partial view. Module params files are still written by Lathe's compiler
-integration for compiled modules. To force a workspace manifest write from a partial build, pass
-`-Dlathe.sync.force=true`.
-
 ## Documentation
 
-- Guides (editor-agnostic): [installation](docs/guide/installation.md) ·
-  [run configuration](docs/guide/run-configuration.md) ·
+- Guides (editor-agnostic): [how Lathe works](docs/guide/how-it-works.md) ·
+  [installation](docs/guide/installation.md) · [run configuration](docs/guide/run-configuration.md) ·
   [test capture](docs/guide/test-capture.md)
 - Editor references: [Neovim](docs/guide/editors/neovim.md)
 - Project: [status](docs/status.md) · [roadmap](docs/roadmap.md) ·
@@ -223,24 +197,13 @@ integration for compiled modules. To force a workspace manifest write from a par
 
 ## Troubleshooting
 
-### `.lathe` directory not found
-
-`lathe:init` has not run, or Lathe is not registered in the build.
-Run `mvn process-test-classes` at the reactor root.
-If `.lathe/` is still missing, verify Lathe is registered — a core extension in `.mvn/extensions.xml`,
-a build extension in the reactor-root `pom.xml`, or the manual wiring (see
-[installation.md](docs/guide/installation.md)). With the `.mvn/extensions.xml` route, also confirm you
-are running `mvn` from the directory that contains `.mvn/`.
-
-### Missing params for a module (`Run mvn process-test-classes to activate module`)
-
-The server cannot find Lathe's compiler parameters for the module you are editing.
-Re-run `mvn process-test-classes` to regenerate them.
-
-### Server not attaching or crashing
-
-Set `LATHE_DEBUG=1` before launching your editor for verbose server logging, then consult your editor's
-LSP log (for Neovim, see the [cheatsheet](docs/guide/editors/neovim.md#verbose-logging)).
+- **No Lathe features, or a "launcher not found" notice** — Lathe isn't active in the build yet. Run a
+  Maven build at the reactor root — `mvn process-test-classes` is the quickest (it generates Lathe's
+  metadata without running tests). If it still isn't working, confirm the Lathe extension is registered
+  (see [installation.md](docs/guide/installation.md)).
+- **The server won't attach, or crashes** — set `LATHE_DEBUG=1` before launching your editor and check
+  its LSP log (Neovim: [cheatsheet](docs/guide/editors/neovim.md#verbose-logging)). An unexpected exit
+  is also surfaced as an editor notification pointing at the log.
 
 ## Feedback & contributions
 
