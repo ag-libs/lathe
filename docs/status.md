@@ -54,6 +54,7 @@ The M2 Maven Central release pipeline is implemented and documented (tag-driven 
 | Inlay hints | Deferred (backlog) | Not implemented. |
 | Run/test | Implemented (Neovim) | neotest adapter: discovery, run at every level, live-streamed output, inline failure diagnostics, cancel/stop, re-run the first failing test (`run_first_failed`, self-shrinking, `<leader>tF`), a one-line completion toast (counts + elapsed, INFO/WARN), and the replay command shown as the first output line. Replays from captured `.lathe/` bytecode, no Maven. Runs a `main()` at any scope, including one located in test sources of a modular module (routed through the module's captured test launch). |
 | Debug | Implemented (Neovim) | In-process DAP adapter (Microsoft java-debug, attach-only) over JDWP to a suspended replay; `lathe.debug.test`/`lathe.debug.main` (test, main, and test-scope main) and an `nvim-dap` client (`:LatheDebug`). Breakpoints, stepping, inspection, conditional breakpoints, expression evaluation for watches/hover/console (reads, method/constructor invocation, `String` concat, force-loading cold classes, and object-scoped evaluation for collection/map logical views), and debug-console code completion. Debugging a test routes through the neotest `dap` strategy, so the gutter/summary update live and the shared docked console + terminal pass/fail behave like a run (the neotest summary `d`/`D` drive it too). Gaps: assignment (`setVariable`) and array creation. |
+| New-type scaffold | Implemented (Neovim) | `:LatheNew` creates a class/interface/record/enum through the server: pick the kind, then narrow module → package (or `＋ New package…`), name it; the server resolves placement, renders the skeleton, and returns the caret while the thin client only writes/opens the file. Works from any Java file (current package preselected) or with nothing open (cold start walks module → package); main/test comes from the chosen package, asked only when a new package's module has both roots. Server commands: `lathe.createType`, `lathe.modules`, `lathe.packages`, `lathe.resolveContext`. |
 
 ## Editor Support
 
@@ -87,6 +88,8 @@ See [lathe-server-data-flow-recipe.md](done/lathe-server-data-flow-recipe.md) fo
 - Missing-import, add-throws, try/catch wrapping, variable declaration, and missing-method quick fixes.
 - Rich AST-backed Markdown Javadoc for hover, completion, and signature help.
 - Workspace/document symbols, folding ranges, formatting, import optimization, and unused-code diagnostics.
+- Server-driven new-type scaffold (`:LatheNew`): the server owns module/source-root/package resolution, skeleton
+  rendering, and caret placement; the Neovim client is a thin picker shell that writes the returned file.
 - Maven-managed server distribution, unified JDK cache keys, POM staleness prompts, and packaged Neovim setup.
 - Consolidated compiler and filesystem test fixtures plus the Maven invoker verification module.
 

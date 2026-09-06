@@ -384,13 +384,16 @@ This matches the existing deferred method-reference gap in the historical comple
 
 ---
 
-## CQ-0055 — `:LatheNewClass`/`Interface`/`Record`/`Enum` — scaffold a new type in the right package
+## CQ-0055 — `:LatheNew` — scaffold a new type through the server
 
 ID: CQ-0055
-Status: v1/v2 implemented client-side (Neovim `:LatheNewClass`/`Interface`/`Record`/`Enum`, incl. dotted
-name); **v3 redesign planned and superseding** — a single `:LatheNew`, all Java/Maven semantics moved to
-the LSP server, the client reduced to a thin picker shell
-Target: M2
+Status: **done** — v3 shipped. A single `:LatheNew` with all Java/Maven semantics in the LSP server
+(`lathe.createType` + the `lathe.modules` / `lathe.packages` / `lathe.resolveContext` discovery queries);
+the Neovim client is a thin picker shell (Kind → module → package/`＋ New package…` → name) that writes
+the server-rendered file. Works anchored (current package preselected) and cold-start (module → package);
+main/test comes from the chosen package. The v1/v2 client-side `:LatheNewClass`/`Interface`/`Record`/`Enum`
+commands and their in-client Java logic are removed.
+Target: M2 (done)
 Tier: assistive
 Failure mode: missing-affordance
 Owner component: split — `lathe-server` (new `workspace/executeCommand` queries + a `lathe.createType`
@@ -497,7 +500,7 @@ round-trip, no new LSP command, no cross-language duplication of the create path
 - If the current context is not under a `src/main|test/java` root, a package-qualified name cannot be
   placed — warn and bail (a bare name still works same-directory).
 
-### v3 — server-owned semantics, thin `:LatheNew` picker client (planned redesign, authoritative)
+### v3 — server-owned semantics, thin `:LatheNew` picker client (shipped)
 
 **Principle.** Every Java/Maven decision — which module, which source root, main vs test, the package,
 the skeleton syntax, the formatting, the caret, name validity — is decided by the **LSP server**, never
@@ -603,15 +606,13 @@ behind.
 
 ### Scope
 
-- **v1 + v2 (implemented, to be replaced):** the four `:LatheNew*` kind commands with **client-side**
-  resolution and skeleton generation (bare same-package name; dotted absolute; directory-buffer
-  targeting; on-save formatter). Shipped in `lua/lathe/new.lua`; superseded by v3.
-- **Planned (v3 redesign, authoritative):** a single `:LatheNew`; all Java/Maven semantics in
-  `lathe-server` via lazy `getChildren`-style queries (`lathe.modules`, `lathe.packages`,
-  `lathe.resolveContext`) plus `lathe.createType` (path + skeleton + format + caret); a
-  Kind → module → package → name picker with skip-when-one, context preselect, seeded new-package input,
-  and inferred main/test; fetch-on-open freshness; creation requires the server. The client holds no
-  Java knowledge.
+- **v1 + v2 (superseded):** the four `:LatheNew*` kind commands with **client-side** resolution and
+  skeleton generation. Removed by v3.
+- **v3 (shipped):** a single `:LatheNew`; all Java/Maven semantics in `lathe-server` via lazy
+  `getChildren`-style queries (`lathe.modules`, `lathe.packages`, `lathe.resolveContext`) plus
+  `lathe.createType` (path + skeleton + caret); a Kind → module → package → name picker with
+  skip-when-one, context preselect, seeded new-package input, and inferred main/test; fetch-on-open
+  freshness; creation requires the server. The client holds no Java knowledge.
 
 ### Regression targets
 
