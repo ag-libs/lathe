@@ -38,6 +38,16 @@ spec.check("capture selects the test goal", calls[2].cmd[4], "test")
 
 pending_cb({ code = 0 })
 
+-- Targeted sync: a module list narrows the build to `-pl <modules> -am` before the goal.
+sync.run_maven("/ws/e", false, { "app", "core" })
+local targeted = calls[#calls].cmd
+spec.check("targeted sync inserts -pl", targeted[4], "-pl")
+spec.check("targeted sync joins modules with comma", targeted[5], "app,core")
+spec.check("targeted sync adds -am", targeted[6], "-am")
+spec.check("targeted goal follows -pl -am", targeted[7], "process-test-classes")
+
+pending_cb({ code = 0 })
+
 -- Running-guard: a second sync for the same root while one is in flight is a no-op.
 sync.run_maven("/ws/b", false)
 local before = #calls

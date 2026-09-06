@@ -62,7 +62,7 @@ local function ensure_output_buf()
   pcall(vim.api.nvim_buf_set_name, out_buf, 'Lathe Sync Output')
   vim.keymap.set('n', 'r', function()
     if last_sync then
-      M.run_maven(last_sync.root, last_sync.capture_tests)
+      M.run_maven(last_sync.root, last_sync.capture_tests, last_sync.modules)
     end
   end, { buffer = out_buf, desc = 'Lathe: re-run the last sync' })
   vim.keymap.set(
@@ -128,8 +128,9 @@ local function show_failure(cmd_str, root, code, output)
   open_output_window()
 end
 
---- Runs `mvn <goal>` at `root` as a background job, notifying on start and completion.
-function M.run_maven(root, capture_tests)
+--- Runs `mvn <goal>` at `root` as a background job, notifying on start and completion. `modules` (a
+--- list of reactor-relative paths) narrows it to `-pl <modules> -am`; empty/nil is a full reactor.
+function M.run_maven(root, capture_tests, modules)
   if not root or root == '' then
     return
   end
@@ -141,10 +142,14 @@ function M.run_maven(root, capture_tests)
   local goal = capture_tests and 'test' or 'process-test-classes'
   -- --no-transfer-progress drops the download chatter; the build cache is disabled so the sync always
   -- reproduces the outputs Lathe mirrors from `.lathe/`.
-  local cmd = { 'mvn', '--no-transfer-progress', '-Dmaven.build.cache.enabled=false', goal }
+  local cmd = { 'mvn', '--no-transfer-progress', '-Dmaven.build.cache.enabled=false' }
+  if modules and #modules > 0 then
+    vim.list_extend(cmd, { '-pl', table.concat(modules, ','), '-am' })
+  end
+  table.insert(cmd, goal)
   local cmd_str = table.concat(cmd, ' ')
   running[root] = true
-  last_sync = { root = root, capture_tests = capture_tests }
+  last_sync = { root = root, capture_tests = capture_tests, modules = modules }
 
   show_running(cmd_str, root) -- clear the console so an open split never shows the previous run
   local state = { started = vim.loop.hrtime(), cmd_str = cmd_str }
@@ -195,7 +200,7 @@ end
 function M.setup()
   vim.lsp.handlers['lathe/sync'] = function(_err, result)
     if result then
-      M.run_maven(result.workspaceRoot, result.captureTests)
+      M.run_maven(result.workspaceRoot, result.captureTests, result.modules)
     end
   end
 
