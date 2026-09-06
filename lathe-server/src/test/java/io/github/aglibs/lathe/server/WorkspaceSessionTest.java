@@ -148,20 +148,28 @@ class WorkspaceSessionTest {
   }
 
   @Test
-  void syncPromptMessage_namesModulesOrGenericForStructural() {
-    assertThat(WorkspaceSession.syncPromptMessage(List.of()))
-        .isEqualTo("Maven project changed. Run Maven to refresh Lathe.");
-    assertThat(WorkspaceSession.syncPromptMessage(List.of("app", "core")))
-        .isEqualTo("Sources changed in app, core. Run Maven to refresh Lathe.");
-    assertThat(WorkspaceSession.syncPromptMessage(List.of("a", "b", "c", "d", "e")))
-        .isEqualTo("Sources changed in a, b, c (+2 more). Run Maven to refresh Lathe.");
+  void syncPromptMessage_partialNamesOrCounts_fullOrStructuralGeneric() {
+    // structural / POM (no modules) → generic
+    assertThat(WorkspaceSession.syncPromptMessage(List.of(), List.of()))
+        .isEqualTo("Maven project changed. Lathe will run a full refresh.");
+    // partial, few → names in brackets (scope == changed)
+    assertThat(WorkspaceSession.syncPromptMessage(List.of("app", "core"), List.of("app", "core")))
+        .isEqualTo("Sources changed in [app, core]. Lathe will run a partial refresh.");
+    // partial, many → count
+    final List<String> many = List.of("a", "b", "c", "d");
+    assertThat(WorkspaceSession.syncPromptMessage(many, many))
+        .isEqualTo("Sources changed in 4 modules. Lathe will run a partial refresh.");
+    // full fallback (empty scope but modules changed) → count
+    assertThat(WorkspaceSession.syncPromptMessage(many, List.of()))
+        .isEqualTo("Sources changed in 4 modules. Lathe will run a full refresh.");
   }
 
   @Test
-  void syncScope_capsTargetedModulesElseFull() {
-    assertThat(WorkspaceSession.syncScope(List.of("app"))).containsExactly("app");
-    assertThat(WorkspaceSession.syncScope(List.of("app", "core"))).containsExactly("app", "core");
-    assertThat(WorkspaceSession.syncScope(List.of("app", "core", "web"))).isEmpty(); // > CAP → full
+  void syncScope_targetedBelowThreshold_fullAtOrAbove() {
+    assertThat(WorkspaceSession.syncScope(List.of("a"), 10)).containsExactly("a"); // 10% → targeted
+    assertThat(WorkspaceSession.syncScope(List.of("a", "b"), 4))
+        .containsExactly("a", "b"); // 50% → targeted
+    assertThat(WorkspaceSession.syncScope(List.of("a", "b", "c"), 4)).isEmpty(); // 75% → full
   }
 
   @Test

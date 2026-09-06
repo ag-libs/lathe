@@ -2070,15 +2070,20 @@ final class WorkspaceSession {
     final StaleScan scan = scanStaleModules();
     if (scan.newestMtime() > acknowledgedSourceMtime) {
       final List<String> moduleRels = moduleRels(scan.modules());
+      final List<String> scope = syncScope(moduleRels, totalModuleCount());
       LOG.info(() -> "[watcher] source changed in %s — sync needed".formatted(moduleRels));
-      promptForSync(moduleRels);
+      promptForSync(syncPromptMessage(moduleRels, scope), scope);
     }
+  }
+
+  private int totalModuleCount() {
+    return (int)
+        workspace.allConfigs().stream().map(ModuleSourceConfig::moduleDir).distinct().count();
   }
 
   // The reactor-relative module paths of the stale modules, for the client's -pl selector. Derived
   // from the .lathe mirror (moduleDir = latheDir/moduleRel); the classes/test-classes configs of
-  // one
-  // module share a moduleDir, so distinct dedupes them.
+  // one module share a moduleDir, so distinct dedupes them.
   private List<String> moduleRels(final Set<ModuleSourceConfig> modules) {
     final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
     return modules.stream()
@@ -2088,27 +2093,34 @@ final class WorkspaceSession {
         .toList();
   }
 
-  // Targeted when a small number of modules changed; a broader change goes full-reactor (empty),
-  // which a -pl build could not do anyway since it does not regenerate workspace.json.
-  static List<String> syncScope(final List<String> moduleRels) {
-    return moduleRels.size() <= TARGETED_MODULE_CAP ? moduleRels : List.of();
+  // Full reactor (empty) when at least FULL_SYNC_PERCENT of the reactor's modules changed: targeted
+  // -pl saves little then (its -am upstream union approaches a full build), a broad change is
+  // likelier
+  // structural, and a full build also regenerates workspace.json, which -pl cannot. Otherwise the
+  // changed modules themselves.
+  static List<String> syncScope(final List<String> moduleRels, final int totalModules) {
+    return moduleRels.size() * 100 >= totalModules * FULL_SYNC_PERCENT ? List.of() : moduleRels;
   }
 
-  // Names the changed modules in the prompt; empty means a structural/POM change (full reactor), so
-  // no module is named. A long list is truncated to keep the prompt readable.
-  static String syncPromptMessage(final List<String> modules) {
-    if (modules.isEmpty()) {
-      return "Maven project changed. Run Maven to refresh Lathe.";
+  // Reflects the actual action: a targeted (-pl) refresh names its modules in brackets, or shows
+  // the
+  // count when there are many; a full refresh shows the count; a structural/POM change (no modules)
+  // is generic.
+  static String syncPromptMessage(final List<String> changed, final List<String> scope) {
+    if (changed.isEmpty()) {
+      return "Maven project changed. Lathe will run a full refresh.";
     }
 
-    final String named =
-        modules.size() <= MODULE_DISPLAY_LIMIT
-            ? String.join(", ", modules)
-            : "%s (+%d more)"
-                .formatted(
-                    String.join(", ", modules.subList(0, MODULE_DISPLAY_LIMIT)),
-                    modules.size() - MODULE_DISPLAY_LIMIT);
-    return "Sources changed in %s. Run Maven to refresh Lathe.".formatted(named);
+    if (scope.isEmpty()) {
+      return "Sources changed in %d modules. Lathe will run a full refresh."
+          .formatted(changed.size());
+    }
+
+    return scope.size() <= MODULE_NAME_LIMIT
+        ? "Sources changed in [%s]. Lathe will run a partial refresh."
+            .formatted(String.join(", ", scope))
+        : "Sources changed in %d modules. Lathe will run a partial refresh."
+            .formatted(scope.size());
   }
 
   // Copy any resource whose .lathe/ destination is missing or older than the source, so an external
@@ -2265,11 +2277,11 @@ final class WorkspaceSession {
         .replace(classFile.getFileSystem().getSeparator(), ".");
   }
 
-  // Above this many changed modules a targeted -pl sync loses its edge (its -am upstream union
-  // approaches a full build) and a broad change is likelier structural, so fall back to full.
-  private static final int TARGETED_MODULE_CAP = 2;
-  // How many changed modules to name in the sync prompt before summarising the tail as "(+N more)".
-  private static final int MODULE_DISPLAY_LIMIT = 3;
+  // Fall back to a full reactor build once at least this percentage of the reactor's modules
+  // changed.
+  private static final int FULL_SYNC_PERCENT = 75;
+  // Name up to this many changed modules in the prompt; beyond it, show just the count.
+  private static final int MODULE_NAME_LIMIT = 3;
   private static final String SYNC_ACTION = "Sync";
   private static final String SYNC_CAPTURE_ACTION = "Sync + capture tests";
   private static final String LATER_ACTION = "Later";
@@ -2288,17 +2300,17 @@ final class WorkspaceSession {
         refreshReactorTypeIndex();
         acknowledgedSourceMtime = 0L;
       }
-      case POM_CHANGED -> promptForSync(List.of());
+      case POM_CHANGED -> promptForSync(syncPromptMessage(List.of(), List.of()), List.of());
       case NO_CHANGE -> reconcileIfIdle();
     }
   }
 
-  private void promptForSync(final List<String> modules) {
+  private void promptForSync(final String message, final List<String> scope) {
     if (pomNotificationPending) {
       return;
     }
 
-    pendingSyncModules = modules;
+    pendingSyncModules = scope;
     pomNotificationPending = true;
     final var request =
         new ShowMessageRequestParams(
@@ -2306,7 +2318,7 @@ final class WorkspaceSession {
                 new MessageActionItem(SYNC_ACTION),
                 new MessageActionItem(SYNC_CAPTURE_ACTION),
                 new MessageActionItem(LATER_ACTION)));
-    request.setMessage(syncPromptMessage(modules));
+    request.setMessage(message);
     request.setType(MessageType.Warning);
     client
         .showMessageRequest(request)
@@ -2334,9 +2346,7 @@ final class WorkspaceSession {
 
   private void requestSync(final boolean captureTests) {
     ((LatheLanguageClient) client)
-        .sync(
-            new LatheSyncParams(
-                workspaceRoot.toString(), captureTests, syncScope(pendingSyncModules)));
+        .sync(new LatheSyncParams(workspaceRoot.toString(), captureTests, pendingSyncModules));
   }
 
   private void reload() {
