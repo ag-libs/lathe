@@ -713,7 +713,7 @@ Regression coverage:
 
 **Status: done — Target: M2.**
 Discovered against an `@Builder`-heavy reactor; confirmed on `sample-workspace`
-(`DobServerConfig`).
+(`AppServerConfig`).
 
 ### Observed behaviour (historical)
 
@@ -754,11 +754,11 @@ kinds.
 
 | Search | Before | After |
 |---|---|---|
-| `DobServerConfig.name()` record accessor (overrides dependency `BaseConfig.name`) | 112 candidates, ~16.6 s, 1 hit | 8 candidates, ~4.8 s, 1 hit |
+| `AppServerConfig.name()` record accessor (overrides dependency `BaseConfig.name`) | 112 candidates, ~16.6 s, 1 hit | 8 candidates, ~4.8 s, 1 hit |
 | `ValidCheck.check()` static (overrides nothing) | 45 candidates, 74 hits | unchanged |
 
-The `name()` accessor is the interesting case: it overrides `BaseConfig.name()` in the `tdbase`
-dependency, so the fix narrows by the declarer simple names (`DobServerConfig`, `JerseyServiceConfig`,
+The `name()` accessor is the interesting case: it overrides `BaseConfig.name()` in the `app-base`
+dependency, so the fix narrows by the declarer simple names (`AppServerConfig`, `HttpServiceConfig`,
 `ServiceConfig`, `BaseConfig`) rather than falling back to broad.
 
 ### Probe commands
@@ -995,7 +995,7 @@ public record FeatureConfig(boolean enabled, List<String> whitelist, ...) { ... 
 final var config = getConfig().feature();          // config's type FeatureConfig is inferred
 return config != null
     && config.enabled()
-    && (msisdn == null || !config.whitelist().contains(msisdn));   // <-- missed reference
+    && (userId == null || !config.whitelist().contains(userId));   // <-- missed reference
 ```
 
 Clicking `whitelist` in the record returns only the declaration; `config.whitelist()` above is not
@@ -4133,7 +4133,7 @@ accessor already used by `workspaceSymbol` and the type-hierarchy features. `Def
 then resolves callees under `~/.cache/lathe/deps/` and `~/.cache/lathe/jdks/`, and the callee items
 carry the cache path as their `uri`, matching `definition`.
 
-Validated before/after with `dev/explore.py callees` on `DobServerConfig.java`'s compact
+Validated before/after with `dev/explore.py callees` on `AppServerConfig.java`'s compact
 constructor: reactor-only roots returned **0** callees (all its callees are JDK/dep), the fix returns
 **15**, including `check`/`notNull`/`validate` under the extracted `validcheck` dependency and the JDK
 `Objects`/`Duration`/etc. sources.
@@ -4167,7 +4167,7 @@ refs "requestId,"  on Entity (app-alpha, builder present)
   → 1 reference (the accessor call inside Entity itself)
   → EntityBuilder.builder(existing) calls existing.requestId() but is never found
 
-refs "customerReference,"  on CreateEntity (app-core)
+refs "ownerRef,"  on CreateEntity (app-core)
   → progress: 0 / 1 candidates
   → 0 references
 ```
@@ -4400,7 +4400,7 @@ python3 dev/explore.py \
 The unused-declaration hint carries the correct `Unnecessary` tag but a non-descriptive message and
 a null code.
 
-Probed against `RegionAdapter.java`, where local variable `billingStatus` is unused:
+Probed against `RegionAdapter.java`, where local variable `resolvedStatus` is unused:
 
 ```json
 {"severity": 4, "code": null, "source": "lathe", "message": "Unused", "tags": [1],
@@ -4420,7 +4420,7 @@ include the declaration name.
 ### Proposed fix
 
 Produce a descriptive message that names the declaration and its kind, for example
-`Unused local variable 'billingStatus'`, `Unused private method 'foo'`, and set a stable
+`Unused local variable 'resolvedStatus'`, `Unused private method 'foo'`, and set a stable
 diagnostic `code` (for example `lathe.unused`) so clients can filter the hint and map it to a
 future remove-declaration quick fix.
 Keep the `Unnecessary` tag.
@@ -6126,7 +6126,7 @@ Tier: Basic
 Discovery: 2025-07-25, AppServerConfig.java compact constructor (sample-workspace)
 
 Resolved (2026-07-04): validated as no longer reproducing. Re-probing the compact constructor's
-overwritten closing brace on the sample workspace now shows `parsed valid=true class=DobServerConfig
+overwritten closing brace on the sample workspace now shows `parsed valid=true class=AppServerConfig
 method=<init>` with context-aware completions (record component accessors for `n`, the full
 `ValidCheck.check()` receiver type for member access) — where the gap recorded `valid=false
 class=null method=null` and 0 items. Fixed incidentally by intervening sentinel/parse-recovery
@@ -6138,7 +6138,7 @@ Regression targets:
   reduced compact-constructor fixture whose closing brace is typed over; asserts the enclosing scope
   is recovered and the component is offered. Lightweight guard only: per the note below the hard
   failure needed a complex brace-count context that does not reduce to a minimal fixture, so the
-  documented `DobServerConfig.java` explorer probe remains the faithful reproduction.
+  documented `AppServerConfig.java` explorer probe remains the faithful reproduction.
 
 ### Description
 
