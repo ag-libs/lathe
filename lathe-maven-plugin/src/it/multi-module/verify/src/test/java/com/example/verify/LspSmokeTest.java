@@ -365,7 +365,7 @@ class LspSmokeTest {
 
     final var prompt = client.syncPrompts.poll(10, SECONDS);
     assertThat(prompt).isNotNull();
-    assertThat(prompt.getMessage()).contains("process-test-classes");
+    assertThat(prompt.getMessage()).contains("Maven project changed");
     assertThat(prompt.getActions())
         .extracting(MessageActionItem::getTitle)
         .containsExactlyInAnyOrder("Sync", "Sync + capture tests", "Later");
