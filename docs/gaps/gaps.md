@@ -387,22 +387,32 @@ This matches the existing deferred method-reference gap in the historical comple
 ## CQ-0055 — `:LatheNewClass`/`Interface`/`Record`/`Enum` — scaffold a new type in the right package
 
 ID: CQ-0055
-Status: implemented (Neovim `:LatheNewClass`/`Interface`/`Record`/`Enum`, incl. v2 dotted-name)
+Status: v1/v2 implemented client-side (Neovim `:LatheNewClass`/`Interface`/`Record`/`Enum`, incl. dotted
+name); **v3 redesign planned and superseding** — a single `:LatheNew`, all Java/Maven semantics moved to
+the LSP server, the client reduced to a thin picker shell
 Target: M2
 Tier: assistive
 Failure mode: missing-affordance
-Owner component: Neovim client plugin (`lua/lathe/new.lua`, the four `:LatheNew*` kind commands).
-NV-area feature; the CQ-0055 id is kept as a pointer.
+Owner component: split — `lathe-server` (new `workspace/executeCommand` queries + a `lathe.createType`
+command that owns placement, skeleton, formatting, caret) and the Neovim client plugin
+(`lua/lathe/new.lua`, reduced to the `:LatheNew` command + pickers + file IO).
 
-**Decision (supersedes the earlier completion-snippet framing).** The feature is a **client-side
-scaffold**, not a completion: four Neovim commands (`:LatheNewClass` / `:LatheNewInterface` /
-`:LatheNewRecord` / `:LatheNewEnum`) that *create* a new `.java` file — in the right package/directory,
-with the `package` line and a named type skeleton — and open it. Because it is file creation, not a
-completion item, it sidesteps the completion "live templates" Non-Goal
-([expectations](../planned/lathe-completion-expectations.md) § Non-Goals) entirely. The customer ask was
-"give me a skeleton for a new class/record/interface/enum"; the sharper need is "create the file for me
-in the right place, optionally creating the package directories." The previously-listed
-completion-snippet and server code-action options are **not** pursued.
+**Decision (v3 — server owns the Java semantics; supersedes the earlier client-scaffold framing).** The
+feature *creates* a new `.java` file — in the right package/directory, with the `package` line and a
+named type skeleton — and opens it. Because it is file creation, not a completion item, it sidesteps the
+completion "live templates" Non-Goal
+([expectations](../planned/lathe-completion-expectations.md) § Non-Goals) entirely. The v1/v2
+implementation put every Java/Maven decision in the Lua client (regex-parse the `package` line, split on
+`/src/main|test/java` markers, split dotted names, emit skeleton syntax); v3 **moves all of that into the
+LSP**, per the project's own "no ad-hoc Java in the client" rule and the jdtls / vscode-java reference
+architecture (see *Reference* below). The previously-listed completion-snippet and tree-node-targeting
+options are **not** pursued; the earlier "editor-agnostic server (Option B) deferred until a second
+client" framing is **reversed** — the server owns the Java facts now, because that is where Java
+knowledge belongs, not because a second client arrived.
+
+> The `UX flow` / `Placement` / `Skeletons and style` / `v2` sections below document the **implemented
+> v1/v2 client-side** behaviour and are retained as history; the **v3 redesign** section is the
+> authoritative plan and supersedes them.
 
 ### UX flow
 
@@ -487,133 +497,141 @@ round-trip, no new LSP command, no cross-language duplication of the create path
 - If the current context is not under a `src/main|test/java` root, a package-qualified name cannot be
   placed — warn and bail (a bare name still works same-directory).
 
-### v3 — selection from a cached workspace model (planned redesign, supersedes typed completion + tree-node targeting)
+### v3 — server-owned semantics, thin `:LatheNew` picker client (planned redesign, authoritative)
 
-**The insight that reframes the feature.** The gap that v2 leaves is placing a type when you are *not*
-already anchored in the target package — a new sub-package, or a cold start with no open file. The
-obvious fix was command-line `<Tab>` completion of the package argument, but Neovim command-completion
-functions are **synchronous**: they must return candidates immediately and cannot await an LSP request.
-So the client must already *hold* the option set. And once the client holds it, **selection beats
-typing-with-completion**: a `vim.ui.select` picker (telescope/fzf) is synchronous, discoverable, and
-needs no dotted-name grammar. v3 therefore drops both the abandoned client-side dir-scan completion and
-the file-tree node targeting, and rebuilds the entry path around picking from a **pre-cached workspace
-model** the server owns.
+**Principle.** Every Java/Maven decision — which module, which source root, main vs test, the package,
+the skeleton syntax, the formatting, the caret, name validity — is decided by the **LSP server**, never
+ad-hoc in the Lua client. The v1/v2 client violated this (it regex-parsed `package` lines, split on
+`/src/main|test/java` markers, split dotted names, and emitted Java skeleton strings). v3 moves those
+decisions to `lathe-server` and reduces the client to a **thin shell**: one command, pickers, and file
+IO. This reverses the earlier "client resolution is reliable enough / Option B deferred" call — a
+weaker argument than "Java knowledge has exactly one home, the LSP."
 
-Server-side dir globbing in Lua was *guessing at* a model the server already holds: the server compiles
-the workspace, so it authoritatively knows modules, their source roots, and the real packages (a Lua
-`globpath` heuristic cannot tell a package from a stray directory or know module boundaries). "What
-packages and source roots exist" is exactly what the LSP should answer.
+**Why the cache detour was wrong.** An intermediate design cached a whole `lathe.workspaceModel`
+client-side because command-line `<Tab>` completion must return candidates synchronously. But we chose
+**`vim.ui.select` pickers**, which are launched by a discrete command and can therefore *fetch, then
+show* — async is fine. That removes the synchronous constraint **and** the stale-cache problem at once:
+the picker fetches fresh on open, so it always reflects the current workspace. No client cache is
+required (an optional warm-start is a pure latency tweak).
 
-**Enabling infra — a read-only workspace-model query (small server surface).** Add a
-`lathe.workspaceModel` `workspace/executeCommand` returning the authoritative
-`{ sourceRoots: [{ module, kind: main|test, root, packages: [...] }] }` from the model the server
-already builds for diagnostics/runnables — no new analysis, just exposing what it knows. The **client
-caches** this on attach / workspace reload and refreshes on `workspace/didChangeWatchedFiles`; the
-pickers read the cache, so they stay synchronous. This is *not* the earlier Option B (server-side file
-*creation*): creation logic stays entirely client-side and reuses `_write_and_open`; only the workspace
-*facts* move to the component that owns them.
+**Server surface — lazy, `getChildren`-style queries + a create command.** Modelled on jdtls
+(`java.project.getChildren` / `java.getPackageData` / `java.resolvePath`), returning one level at a time
+rather than a flat cartesian `module × main/test × package` list — which keeps payloads small and
+avoids the documented jdtls memory/latency cliff when a big module's whole package set is materialised
+at once:
 
-**Command surface — layered by how much the user already knows (decided):**
+- `lathe.modules` → the reactor's modules (reactor-relative names).
+- `lathe.packages(module)` → the packages in that module, tagged main/test, read from **current disk**
+  so a package created since the last build shows up without a rebuild.
+- `lathe.resolveContext(uri)` → the `{ module, kind: main|test, package }` a URI belongs to, for the
+  picker's preselect (the `resolvePath` analogue).
+- `lathe.createType({ module, kind: main|test, package, type: class|interface|record|enum, name })` →
+  the slim `{ path, content, caret }`: the server resolves the target path, generates the correct Java
+  skeleton, formats it with `JavaFormatter` (the same engine as on-save, so byte-identical), and
+  computes the caret offset. **This is Option B, revived on the principle** — not a `WorkspaceEdit`
+  (whose resource-operation plumbing the client does not need); the client writes `content` to `path`,
+  opens it, and places the caret.
 
-| Invocation | Prompts | For |
-| --- | --- | --- |
-| `:LatheNew` | kind select → destination select → name input | full guide (cold start, "just make me a class") |
-| `:LatheNewClass` (no arg) | destination select → name input | kind known, place it |
-| `:LatheNewClass a.b.C` | none (the v2 typed path, retained) | expert, zero prompts, works with **no** server |
+**Client — a thin shell (`:LatheNew` only).** The four `:LatheNewClass`/`Interface`/`Record`/`Enum`
+commands are **removed**; a single `:LatheNew` drives the flow. The client keeps *no* Java knowledge —
+`_package_from_lines` / `_package_from_dir` / `_source_root` / `_split_qualified` / `_target` /
+`_skeleton` / `_caret` are all deleted. It owns only: the command, the `vim.ui.select` / `vim.ui.input`
+pickers, writing the returned content, opening the buffer, applying the caret, and error notifications.
 
-The four kind commands keep their zero-prompt typed path (bare same-package; dotted absolute) but gain
-the destination picker when invoked bare — which is exactly the cold-start case that is painful today.
-`:LatheNew` adds the kind select on top. All paths converge on `_write_and_open`.
+**UX flow — Kind → Destination → Name (decided), progressive narrowing, small lists.**
 
-**Destination picker — one pick fixes source root + main/test + package.** A flat, synchronous
-`vim.ui.select` built from the cached model, each entry encoding module · kind · package, with a
-`＋ New package…` entry first:
+1. **Kind** — a fixed four-item `vim.ui.select` (Class / Interface / Record / Enum). Cannot be inferred,
+   so it is always the first pick; it is instant.
+2. **Destination** — never a global package list; narrow coarse→fine, each list short:
+   - **Module** (`lathe.modules`) — *skipped* when there is exactly one; otherwise the current module
+     (from `lathe.resolveContext`) is preselected.
+   - **Package** within that module (`lathe.packages(module)`) — existing packages plus a `＋ New
+     package…` entry (→ `vim.ui.input` **seeded** with the current/highlighted package + trailing dot,
+     e.g. `com.acme.▮`, so a new sub-package is a short extension) and a `⇄ Other module…` escape. The
+     current package is preselected when anchored.
+   - **main vs test** — inferred, never a standing question: default `main`, infer `test` when anchored
+     in a test file, and surface a two-item main/test pick *only* when the chosen module has both roots
+     and there is no anchor.
+3. **Name** — typed last (`vim.ui.input`); the final Enter is what triggers `lathe.createType` and
+   creates the file.
 
-```
-＋ New package…
-moduleA · main · com.acme
-moduleA · main · com.acme.orders
-moduleA · test · com.acme
-moduleB · main · com.foo
-```
+Skip-when-one + preselect-from-context make the common anchored case fast: `:LatheNew` → pick Kind →
+Enter (module skipped/preselected) → Enter (current package) → type Name — two real decisions.
 
-- When a file is open, its package is **preselected** (accept with enter) — the common case stays one
-  keypress + the name.
-- `＋ New package…` (decided) → a `vim.ui.input` **seeded** with the highlighted/current package plus a
-  trailing dot (`com.acme.▮`), so a new sub-package is a short extension; directories are auto-created
-  by the existing writer. With multiple source roots and no anchor, a one-step root select precedes the
-  input.
-- **main vs test is never a separate question** — it is an attribute of the chosen entry, resolved by
-  the pick the user is already making.
+**Freshness (fetch-on-open).** Each `:LatheNew` fetches the modules/packages fresh, so **packages** you
+(or a `git pull`, or another editor) just created appear immediately — the server reads current disk,
+no rebuild needed. **Modules** appear only after their build/sync reload (a new module needs a POM edit;
+`WorkspaceWatcher` polls `workspace.json` + POM fingerprints — the existing sync-prompt path), which is
+correct since the module does not exist until built. There is no background push: Lathe registers no
+file watchers (`didChangeWatchedFiles` is a deliberate no-op), and the picker's fetch-on-open is the
+refresh point.
 
-**No-server degradation.** The scaffold itself needs no server: with none attached the typed fast path
-(`:LatheNewClass a.b.C`, bare names) still works; only the pickers have nothing to offer (optionally a
-dir-scan floor). File IO is the client's; workspace truth is the server's.
+**Consequence — creation now requires the server attached.** With all Java logic server-side there is no
+offline fallback (that would reintroduce ad-hoc client Java); `:LatheNew` with no Lathe client attached
+errors cleanly (`server not attached — creation needs the language server`). This is a behaviour change
+from the client-only v1/v2, and is the intended trade: it is a Java operation, so it uses the LSP.
 
-**Reused vs new.** Reused: `_skeleton`, `_caret`, `_write_and_open`, `_source_root`,
-`_package_from_dir`, main/test marker handling. New: the `lathe.workspaceModel` server command + its
-model projection; a client cache with attach/reload/watched-files refresh; the kind and destination
-`vim.ui.select` pickers and the seeded new-package input. The model-projection (roots → entries) and
-new-package-name composition are pure and unit-testable; the picker plumbing follows the existing
-`vim.ui.*`-stubbed spec pattern in `new_spec.lua`.
+**Reference — this mirrors jdtls / vscode-java, and avoids the nvim-jdtls client-convention trap.**
+Eclipse jdtls keeps all Java knowledge server-side behind custom `java.*` `executeCommand` extensions
+(`java.project.list`, `java.project.getChildren` / `java.getPackageData` for lazy project→root→package
+→type children, `java.resolvePath`, plus server-side templates); vscode-java's "New Java Class" is a
+thin wizard over them. Two lessons transfer directly: **lazy children, not flat lists**, and a
+**documented perf cliff** when a large module's package set is fetched whole — both argue for the
+per-node queries above. Conversely, `nvim-jdtls` ships *no* new-class wizard, so the nvim community uses
+`java-helpers.nvim`, which does placement **client-side in Lua** (marker-based package guessing + Lua
+templates) — exactly the School-B approach our current `new.lua` falls into and this redesign leaves
+behind. (The same `lathe.modules` / `lathe.packages` queries also back WS-8's `:LatheSync <module>`
+completion — build them once here.)
 
 ### Scope
 
-- **v1 + v2 (implemented):** create a `class`/`interface`/`record`/`enum` next to the current file
-  (same package) via the four `:LatheNew*` kind commands — name as an argument or a single prompt; a
-  dotted name creates under the module source root, making the package directories; directory-buffer
-  (oil/netrw) targeting; main/test inferred from the current buffer; clean error with no context; no
-  overwrite; style deferred to the on-save formatter. Shipped in `lua/lathe/new.lua`.
-- **Planned (v3 redesign):** an umbrella `:LatheNew` plus bare-invocation of the four kind commands
-  drive a **destination picker** (module · main/test · package, with `＋ New package…` → seeded input)
-  fed by a client-cached, server-provided `lathe.workspaceModel`; the v2 typed `a.b.C` path is retained
-  as the no-server expert fast path. Supersedes both client-side `<Tab>` package completion and
-  file-tree node targeting (synchronous picker, authoritative model, no per-plugin fragility).
+- **v1 + v2 (implemented, to be replaced):** the four `:LatheNew*` kind commands with **client-side**
+  resolution and skeleton generation (bare same-package name; dotted absolute; directory-buffer
+  targeting; on-save formatter). Shipped in `lua/lathe/new.lua`; superseded by v3.
+- **Planned (v3 redesign, authoritative):** a single `:LatheNew`; all Java/Maven semantics in
+  `lathe-server` via lazy `getChildren`-style queries (`lathe.modules`, `lathe.packages`,
+  `lathe.resolveContext`) plus `lathe.createType` (path + skeleton + format + caret); a
+  Kind → module → package → name picker with skip-when-one, context preselect, seeded new-package input,
+  and inferred main/test; fetch-on-open freshness; creation requires the server. The client holds no
+  Java knowledge.
 
 ### Regression targets
 
-Neovim client (busted spec `new_spec.lua`), driving `create_kind(kind, name?)` and stubbing
-`vim.ui.input` / `vim.lsp.buf.format` / `vim.lsp.get_clients`:
+**Server** (`lathe-server`; JUnit, real workspace fixtures — the executeCommand handlers and the
+`WorkspaceSession` methods behind them, mirroring the `lathe.instantiations` path):
 
-Pure helpers — `_package_from_lines` / `_package_from_dir` / `_split_qualified` / `_source_root` /
-`_target` (bare vs dotted split; marker → source root; no-marker → nil; main/test roots), plus
-`_skeleton` and `_caret`.
+- `modules_listsReactorModules` (positive) / `modules_singleModule_returnsOne` (edge)
+- `packages_listsModulePackagesTaggedMainTest` (positive) /
+  `packages_reflectNewlyCreatedDirWithoutRebuild` (positive — server reads current disk) /
+  `packages_moduleWithoutTestRoot_returnsMainOnly` (edge)
+- `resolveContext_uriUnderMain_returnsModulePackageMain` /
+  `resolveContext_uriUnderTest_returnsTest` (positive) /
+  `resolveContext_uriOutsideAnyRoot_returnsNull` (negative)
+- `createType_generatesFormattedSkeletonWithPathAndCaret` (positive, per kind — path resolved under the
+  right root, package dirs implied, content formatted by `JavaFormatter`, caret in body / record
+  component list) / `createType_invalidJavaName_rejected` (negative) /
+  `createType_existingFile_refuses` (negative)
 
-- `latheNew_fromJavaFile_createsSiblingInSamePackage` (positive — name-as-argument path; new file next
-  to the current one with the correct `package` line and `public <kind> <Name>` skeleton, buffer opened)
-- `latheNew_noArgument_promptsForName` (positive — the single `vim.ui.input` prompt path)
-- `latheNew_recordKind_writesRecordSkeleton` (positive — record skeleton shape)
-- `latheNew_googleFormatterEnabled_normalisesViaOnSaveFormatter` (positive — with a Lathe client
-  running, the opened buffer is formatted through the same `vim.lsp.buf.format` path — stub it and the
-  client list, assert it is invoked)
-- `latheNew_noFormatter_usesFallbackStyle` (negative — formatter disabled → not invoked)
-- `latheNew_dottedName_createsUnderSourceRootMakingDirs` (positive — `a.b.C` from a main file →
-  `<root>/src/main/java/a/b/C.java`, `package a.b;`, directories made)
-- `latheNew_dottedName_fromTestFile_usesTestRoot` (positive — test-root inference)
-- `latheNew_dottedName_noSourceRoot_warnsAndBails` (negative)
-- `latheNew_noJavaContext_errorsCleanly`, `latheNew_existingFile_refusesToOverwrite` (negative)
-- setup registers the four `:LatheNew*` commands and records the formatter flag
+**Client** (Neovim busted spec `new_spec.lua`; `vim.ui.select` / `vim.ui.input` and the
+`workspace/executeCommand` requests stubbed — the client carries no Java logic to unit-test, so the
+tests assert flow + IO, not placement):
 
-Added for the **v3 redesign** (picker + cached workspace model):
+- `latheNew_kindThenDestinationThenName_createsViaServer` (positive — the three steps issue
+  `lathe.createType` and the returned `{path, content, caret}` is written / opened / caret-placed)
+- `latheNew_anchored_preselectsCurrentModuleAndPackage` (positive — `resolveContext` result preselects)
+- `latheNew_singleModule_skipsModuleStep` (positive — skip-when-one)
+- `latheNew_newPackage_seedsInputFromContext` (positive — `＋ New package…` input seeded with the
+  current package + dot)
+- `latheNew_bothRoots_noAnchor_promptsMainTest` (positive) /
+  `latheNew_anchoredTest_infersTest` (positive — no main/test prompt)
+- `latheNew_serverNotAttached_errorsCleanly` (negative — creation needs the server)
 
-- `workspaceModel_projectsRootsToDestinationEntries` (positive — server roots → the flat
-  `module · main/test · package` entry list, sorted/deduped; empty model → only `＋ New package…`)
-- `newPackageInput_seedsWithAnchorPackage` (positive — the seeded `vim.ui.input` default is the
-  current/highlighted package + trailing dot; no anchor + multiple roots → root select precedes it)
-- `latheNew_barePickerPath_placesUnderSelectedDestination` (positive — bare `:LatheNewClass` with
-  `vim.ui.select` stubbed selects a destination entry and creates under its root/package; main/test
-  taken from the entry)
-- `latheNew_typedDottedPath_bypassesPickerWithNoServer` (positive/negative — `a.b.C` still creates with
-  no cached model / no server attached; picker not invoked)
-- `workspaceModelCache_refreshesOnWatchedFilesChange` (positive — cache re-fetch on reload /
-  `didChangeWatchedFiles`; stale entries not offered)
-
-Also verified end-to-end in a live Neovim against the invoker workspace (a `:LatheNewClass
-com.example…` with the Google formatter attached creates the file under a new package dir and formats
-it via the running server).
+Verify end-to-end in a live Neovim against the invoker workspace: `:LatheNew` from a cold start creates
+a class under a chosen (or new) package and formats it via the running server.
 
 Notes:
-Pairs with CQ-0054 (keyword insertion) but is independent of it.
+Pairs with CQ-0054 (keyword insertion) but is independent of it. The `lathe.modules` / `lathe.packages`
+queries are shared with WS-8 (`:LatheSync <module>` completion) — build them once here.
 
 ---
 
