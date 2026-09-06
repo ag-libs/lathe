@@ -142,6 +142,9 @@ final class WorkspaceSession {
   // on
   // any resync (a workspace.json bump), where the mirror is fresh again.
   private long acknowledgedSourceMtime;
+  // The -pl module selectors carried from the pending sync prompt to the sync request (empty = full
+  // reactor). Set at prompt time because the request fires later, on the user's response.
+  private List<String> pendingSyncModules = List.of();
   private final DocumentRegistry docs = new DocumentRegistry();
   private final AnalysisLru analysisLru = new AnalysisLru();
   private final DiagnosticPublisher publisher;
@@ -2055,16 +2058,57 @@ final class WorkspaceSession {
     reconcileResources();
   }
 
+  private StaleScan scanStaleModules() {
+    return staleModules(workspace.allConfigs(), openSourcePaths());
+  }
+
   private void checkSourceStaleness() {
     if (pomNotificationPending) {
       return;
     }
 
-    final long newest = newestStaleMtime(workspace.allConfigs(), openSourcePaths());
-    if (newest > acknowledgedSourceMtime) {
-      LOG.info(() -> "[watcher] source changed — sync needed");
-      promptForSync();
+    final StaleScan scan = scanStaleModules();
+    if (scan.newestMtime() > acknowledgedSourceMtime) {
+      final List<String> moduleRels = moduleRels(scan.modules());
+      LOG.info(() -> "[watcher] source changed in %s — sync needed".formatted(moduleRels));
+      promptForSync(moduleRels);
     }
+  }
+
+  // The reactor-relative module paths of the stale modules, for the client's -pl selector. Derived
+  // from the .lathe mirror (moduleDir = latheDir/moduleRel); the classes/test-classes configs of
+  // one
+  // module share a moduleDir, so distinct dedupes them.
+  private List<String> moduleRels(final Set<ModuleSourceConfig> modules) {
+    final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
+    return modules.stream()
+        .map(config -> latheDir.relativize(config.moduleDir()).toString())
+        .distinct()
+        .sorted()
+        .toList();
+  }
+
+  // Targeted when a small number of modules changed; a broader change goes full-reactor (empty),
+  // which a -pl build could not do anyway since it does not regenerate workspace.json.
+  static List<String> syncScope(final List<String> moduleRels) {
+    return moduleRels.size() <= TARGETED_MODULE_CAP ? moduleRels : List.of();
+  }
+
+  // Names the changed modules in the prompt; empty means a structural/POM change (full reactor), so
+  // no module is named. A long list is truncated to keep the prompt readable.
+  static String syncPromptMessage(final List<String> modules) {
+    if (modules.isEmpty()) {
+      return "Maven project changed. Run Maven to refresh Lathe.";
+    }
+
+    final String named =
+        modules.size() <= MODULE_DISPLAY_LIMIT
+            ? String.join(", ", modules)
+            : "%s (+%d more)"
+                .formatted(
+                    String.join(", ", modules.subList(0, MODULE_DISPLAY_LIMIT)),
+                    modules.size() - MODULE_DISPLAY_LIMIT);
+    return "Sources changed in %s. Run Maven to refresh Lathe.".formatted(named);
   }
 
   // Copy any resource whose .lathe/ destination is missing or older than the source, so an external
@@ -2114,18 +2158,33 @@ final class WorkspaceSession {
         .collect(Collectors.toUnmodifiableSet());
   }
 
-  // Newest mtime among stale closed sources (0 if none). A source is stale when its primary .class
+  // The stale modules and the newest stale-source mtime across them (0 / empty if none). A source
   // is
-  // missing (never compiled -- a new file) or older than the source (edited outside the save path,
-  // which rewrites the .class). Open files are the editor's responsibility and skipped; the
-  // annotation-processor output (originalGenSourcesDir) is not a hand-written root and excluded.
-  static long newestStaleMtime(
-      final Collection<ModuleSourceConfig> configs, final Set<Path> openPaths) {
-    return configs.stream()
-        .mapToLong(config -> newestStaleInModule(config, openPaths))
-        .max()
-        .orElse(0L);
+  // stale when its primary .class is missing (never compiled -- a new file) or older than the
+  // source
+  // (edited outside the save path, which rewrites the .class). Open files are the editor's
+  // responsibility and skipped; the annotation-processor output (originalGenSourcesDir) is not a
+  // hand-written root and excluded. newestMtime drives the report-once dedupe; modules drives the
+  // targeted -pl sync.
+  record StaleScan(long newestMtime, Set<ModuleSourceConfig> modules) {
+    StaleScan {
+      modules = Set.copyOf(modules);
+    }
   }
+
+  static StaleScan staleModules(
+      final Collection<ModuleSourceConfig> configs, final Set<Path> openPaths) {
+    final List<ModuleStale> stale =
+        configs.stream()
+            .map(config -> new ModuleStale(config, newestStaleInModule(config, openPaths)))
+            .filter(module -> module.mtime() > 0L)
+            .toList();
+    return new StaleScan(
+        stale.stream().mapToLong(ModuleStale::mtime).max().orElse(0L),
+        stale.stream().map(ModuleStale::config).collect(Collectors.toUnmodifiableSet()));
+  }
+
+  private record ModuleStale(ModuleSourceConfig config, long mtime) {}
 
   private static long newestStaleInModule(
       final ModuleSourceConfig config, final Set<Path> openPaths) {
@@ -2206,6 +2265,11 @@ final class WorkspaceSession {
         .replace(classFile.getFileSystem().getSeparator(), ".");
   }
 
+  // Above this many changed modules a targeted -pl sync loses its edge (its -am upstream union
+  // approaches a full build) and a broad change is likelier structural, so fall back to full.
+  private static final int TARGETED_MODULE_CAP = 2;
+  // How many changed modules to name in the sync prompt before summarising the tail as "(+N more)".
+  private static final int MODULE_DISPLAY_LIMIT = 3;
   private static final String SYNC_ACTION = "Sync";
   private static final String SYNC_CAPTURE_ACTION = "Sync + capture tests";
   private static final String LATER_ACTION = "Later";
@@ -2224,16 +2288,17 @@ final class WorkspaceSession {
         refreshReactorTypeIndex();
         acknowledgedSourceMtime = 0L;
       }
-      case POM_CHANGED -> promptForSync();
+      case POM_CHANGED -> promptForSync(List.of());
       case NO_CHANGE -> reconcileIfIdle();
     }
   }
 
-  private void promptForSync() {
+  private void promptForSync(final List<String> modules) {
     if (pomNotificationPending) {
       return;
     }
 
+    pendingSyncModules = modules;
     pomNotificationPending = true;
     final var request =
         new ShowMessageRequestParams(
@@ -2241,7 +2306,7 @@ final class WorkspaceSession {
                 new MessageActionItem(SYNC_ACTION),
                 new MessageActionItem(SYNC_CAPTURE_ACTION),
                 new MessageActionItem(LATER_ACTION)));
-    request.setMessage("Maven project changed. Run 'mvn process-test-classes' to refresh Lathe.");
+    request.setMessage(syncPromptMessage(modules));
     request.setType(MessageType.Warning);
     client
         .showMessageRequest(request)
@@ -2258,7 +2323,7 @@ final class WorkspaceSession {
     // Acknowledge whatever is currently stale (the prompt may have been POM- or source-triggered),
     // so
     // a dismissed prompt stays quiet until a still-newer external change appears.
-    acknowledgedSourceMtime = newestStaleMtime(workspace.allConfigs(), openSourcePaths());
+    acknowledgedSourceMtime = scanStaleModules().newestMtime();
     final String title = action == null ? null : action.getTitle();
     switch (title) {
       case SYNC_ACTION -> requestSync(false);
@@ -2269,7 +2334,9 @@ final class WorkspaceSession {
 
   private void requestSync(final boolean captureTests) {
     ((LatheLanguageClient) client)
-        .sync(new LatheSyncParams(workspaceRoot.toString(), captureTests));
+        .sync(
+            new LatheSyncParams(
+                workspaceRoot.toString(), captureTests, syncScope(pendingSyncModules)));
   }
 
   private void reload() {

@@ -134,18 +134,38 @@ class WorkspaceSessionTest {
   }
 
   @Test
-  void newestStaleMtime_returnsNewestSourceWhoseClassIsStaleOrMissing() throws Exception {
+  void staleModules_returnsNewestMtimeAndTheStaleModule() throws Exception {
     writeClass("Edited", 1_000L); // compiled, then edited after → stale
     writeJava("Edited", 5_000L);
     writeJava("Added", 9_000L); // never compiled (a newly added file) → stale, and the newest
     writeClass("Fresh", 8_000L); // compiled after its last edit → up to date, ignored
     writeJava("Fresh", 2_000L);
 
-    assertThat(WorkspaceSession.newestStaleMtime(List.of(config), Set.of())).isEqualTo(9_000L);
+    final var scan = WorkspaceSession.staleModules(List.of(config), Set.of());
+
+    assertThat(scan.newestMtime()).isEqualTo(9_000L);
+    assertThat(scan.modules()).containsExactly(config);
   }
 
   @Test
-  void newestStaleMtime_ignoresOpenFilesGeneratedRootsAndPackageInfo() throws Exception {
+  void syncPromptMessage_namesModulesOrGenericForStructural() {
+    assertThat(WorkspaceSession.syncPromptMessage(List.of()))
+        .isEqualTo("Maven project changed. Run Maven to refresh Lathe.");
+    assertThat(WorkspaceSession.syncPromptMessage(List.of("app", "core")))
+        .isEqualTo("Sources changed in app, core. Run Maven to refresh Lathe.");
+    assertThat(WorkspaceSession.syncPromptMessage(List.of("a", "b", "c", "d", "e")))
+        .isEqualTo("Sources changed in a, b, c (+2 more). Run Maven to refresh Lathe.");
+  }
+
+  @Test
+  void syncScope_capsTargetedModulesElseFull() {
+    assertThat(WorkspaceSession.syncScope(List.of("app"))).containsExactly("app");
+    assertThat(WorkspaceSession.syncScope(List.of("app", "core"))).containsExactly("app", "core");
+    assertThat(WorkspaceSession.syncScope(List.of("app", "core", "web"))).isEmpty(); // > CAP → full
+  }
+
+  @Test
+  void staleModules_ignoresOpenFilesGeneratedRootsAndPackageInfo() throws Exception {
     final var open = writeJava("Open", 9_000L); // stale (no class) but open → the editor owns it
     writeJava("package-info", 9_500L); // no <name>.class ever → excluded, though it is the newest
     writeJava("Real", 5_000L); // stale, and the only source that should count
@@ -160,8 +180,10 @@ class WorkspaceSessionTest {
             genRoot,
             genRoot);
 
-    assertThat(WorkspaceSession.newestStaleMtime(List.of(config, genConfig), Set.of(open)))
-        .isEqualTo(5_000L);
+    final var scan = WorkspaceSession.staleModules(List.of(config, genConfig), Set.of(open));
+
+    assertThat(scan.newestMtime()).isEqualTo(5_000L);
+    assertThat(scan.modules()).containsExactly(config);
   }
 
   @Test

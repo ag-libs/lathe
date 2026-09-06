@@ -461,7 +461,7 @@ class LatheTextDocumentServiceTest {
     service.initialize(tmp);
 
     verify(client, timeout(5_000))
-        .showMessageRequest(argThat(p -> p.getMessage().contains("Maven project changed")));
+        .showMessageRequest(argThat(p -> p.getMessage().contains("Sources changed in")));
   }
 
   @Test
