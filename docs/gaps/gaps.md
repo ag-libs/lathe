@@ -1224,16 +1224,19 @@ profile-activated `<modules>` in an ancestor are invisible to a raw read.
 **Status: done — Target: M2**
 
 **Resolved.** The source-staleness scan now returns the stale modules (`StaleScan{newestMtime, modules}`);
-`checkSourceStaleness` derives their reactor-relative `moduleRel`s, names them in the prompt (*"Sources
-changed in app, core."*, truncated for bulk), and carries them to `requestSync`. `syncScope` caps the
-`-pl` list at `TARGETED_MODULE_CAP = 2` — beyond that, or on a POM/structural change, it falls back to a
-full reactor build (which a `-pl` build could not do anyway, since it does not regenerate
-`workspace.json`). `LatheSyncParams.modules` carries the selectors; the client builds
-`mvn … -pl <m1,m2> -am <goal>` (`-am` is required because a partial `process-test-classes` cannot
-resolve reactor-sibling deps from `~/.m2`; `-amd` is intentionally omitted — dependents are WS-6).
-Verified end-to-end against `payment-dob-lathe` (a `dob-kafka` `module-info.java` touch → prompt names
-`dob-kafka` → `mvn … -pl dob-kafka -am process-test-classes`). Manual `:LatheSync <module>` targeting +
-completion is deferred to the CQ-0055 LSP module/package sharing.
+`checkSourceStaleness` derives their reactor-relative `moduleRel`s and carries them to `requestSync`.
+`syncScope` falls back to a **full** reactor build once **≥ `FULL_SYNC_PERCENT` (75%)** of the reactor's
+modules changed (or on a POM/structural change) — otherwise it targets the changed modules; a full build
+is also the only one that regenerates `workspace.json`, which `-pl` cannot. The prompt reflects the real
+action: a partial refresh names ≤ `MODULE_NAME_LIMIT` (3) modules in brackets (else a count), a full
+refresh shows a count, and a structural change is generic (*"Maven project changed. Lathe will run a full
+refresh."*). `LatheSyncParams.modules` carries the selectors; the client builds `mvn … -pl <modules> -am
+<goal>` (`-am` is required because a partial `process-test-classes` cannot resolve reactor-sibling deps
+from `~/.m2`; `-amd` is intentionally omitted — dependents are WS-6). New modules are structural (they
+edit a tracked parent POM → `POM_CHANGED` → full), so they are handled by the POM path, not the targeted
+scan. Verified end-to-end in a multi-module workspace (a `module-info.java` touch in one module → prompt
+names that module → `mvn … -pl <module> -am process-test-classes`). Manual `:LatheSync <module>` targeting
++ completion is deferred to the CQ-0055 LSP module/package sharing.
 
 Optimization on top of WS-5. On a large reactor a full `mvn process-test-classes` to refresh one edited
 module is slow; the server already knows which modules are stale and could ask for a scoped build.
