@@ -1,7 +1,10 @@
 package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -17,6 +20,9 @@ import java.util.concurrent.TimeUnit;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
 import org.eclipse.lsp4j.ExecuteCommandParams;
 import org.eclipse.lsp4j.TextDocumentItem;
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException;
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseError;
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -51,6 +57,50 @@ class LatheWorkspaceServiceTest {
     final var result = service.executeCommand(params).get(5, TimeUnit.SECONDS);
 
     assertThat(result).isNull();
+  }
+
+  @Test
+  void executeCommand_createTypeInvalidArgs_returnInvalidParamsWithReason() {
+    // Async: a name rejected inside the server surfaces its reason, not lsp4j's "Internal error".
+    final var tds = mock(LatheTextDocumentService.class);
+    when(tds.createTypeFuture(any()))
+        .thenReturn(
+            CompletableFuture.failedFuture(
+                new IllegalArgumentException("'9Bad' is not a valid Java type name")));
+    assertInvalidParams(
+        responseError(new LatheWorkspaceService(tds), "main", "class", "9Bad"),
+        "not a valid Java type name");
+
+    // Sync: an unknown scope rejected while parsing the command arguments.
+    assertInvalidParams(responseError(service, "bogus", "class", "Foo"), "unknown source scope");
+  }
+
+  private static void assertInvalidParams(final ResponseError error, final String reason) {
+    assertThat(error.getCode()).isEqualTo(ResponseErrorCode.InvalidParams.getValue());
+    assertThat(error.getMessage()).contains(reason);
+  }
+
+  private static ResponseError responseError(
+      final LatheWorkspaceService svc, final String kind, final String type, final String name) {
+    final var params =
+        new ExecuteCommandParams("lathe.createType", List.of(createTypeArgument(kind, type, name)));
+    Throwable cause = catchThrowable(() -> svc.executeCommand(params).get(5, TimeUnit.SECONDS));
+    while (cause != null && !(cause instanceof ResponseErrorException)) {
+      cause = cause.getCause();
+    }
+    assertThat(cause).isInstanceOf(ResponseErrorException.class);
+    return ((ResponseErrorException) cause).getResponseError();
+  }
+
+  private static JsonObject createTypeArgument(
+      final String kind, final String type, final String name) {
+    final var json = new JsonObject();
+    json.addProperty("moduleRel", "core");
+    json.addProperty("kind", kind);
+    json.addProperty("pkg", "com.example");
+    json.addProperty("type", type);
+    json.addProperty("name", name);
+    return json;
   }
 
   @Test

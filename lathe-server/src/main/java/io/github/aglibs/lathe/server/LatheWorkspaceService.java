@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import org.eclipse.lsp4j.DidChangeConfigurationParams;
 import org.eclipse.lsp4j.DidChangeWatchedFilesParams;
 import org.eclipse.lsp4j.ExecuteCommandParams;
@@ -14,7 +15,10 @@ import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.TextDocumentPositionParams;
 import org.eclipse.lsp4j.WorkspaceSymbol;
 import org.eclipse.lsp4j.WorkspaceSymbolParams;
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseError;
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode;
 import org.eclipse.lsp4j.services.WorkspaceService;
 
 final class LatheWorkspaceService implements WorkspaceService {
@@ -130,15 +134,44 @@ final class LatheWorkspaceService implements WorkspaceService {
   }
 
   private CompletableFuture<Object> createType(final ExecuteCommandParams params) {
+    final CreateTypeArgs args;
+    try {
+      args = createTypeArgs(params);
+    } catch (final IllegalArgumentException e) {
+      return CompletableFuture.failedFuture(invalidParams(e));
+    }
+
+    return textDocumentService
+        .createTypeFuture(args)
+        .thenApply(result -> (Object) result)
+        .exceptionally(LatheWorkspaceService::rethrowInvalidParams);
+  }
+
+  private static CreateTypeArgs createTypeArgs(final ExecuteCommandParams params) {
     final var json = (JsonObject) params.getArguments().getFirst();
-    final var args =
-        new CreateTypeArgs(
-            json.get("moduleRel").getAsString(),
-            SourceScope.fromWire(json.get("kind").getAsString()),
-            json.get("pkg").getAsString(),
-            TypeKind.fromWire(json.get("type").getAsString()),
-            json.get("name").getAsString());
-    return textDocumentService.createTypeFuture(args).thenApply(result -> result);
+    return new CreateTypeArgs(
+        json.get("moduleRel").getAsString(),
+        SourceScope.fromWire(json.get("kind").getAsString()),
+        json.get("pkg").getAsString(),
+        TypeKind.fromWire(json.get("type").getAsString()),
+        json.get("name").getAsString());
+  }
+
+  // Map a rejected name/scope/flavour (an IllegalArgumentException, sync from arg parsing or async
+  // from the server) to an InvalidParams response so the editor shows the reason, not the generic
+  // lsp4j "Internal error." wrapping.
+  private static Object rethrowInvalidParams(final Throwable e) {
+    final Throwable cause = (e instanceof CompletionException) ? e.getCause() : e;
+    if (cause instanceof IllegalArgumentException iae) {
+      throw invalidParams(iae);
+    }
+
+    throw (e instanceof RuntimeException re) ? re : new CompletionException(e);
+  }
+
+  private static ResponseErrorException invalidParams(final IllegalArgumentException e) {
+    return new ResponseErrorException(
+        new ResponseError(ResponseErrorCode.InvalidParams, e.getMessage(), null));
   }
 
   private CompletableFuture<Object> modules() {
