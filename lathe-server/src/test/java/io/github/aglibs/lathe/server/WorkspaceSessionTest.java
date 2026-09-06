@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.JdwpOptions;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
@@ -330,13 +331,66 @@ class WorkspaceSessionTest {
   }
 
   @Test
-  void enums_fromWire_mapKnownTokensAndRejectUnknown() {
+  void enums_fromWireAndSourceTree_mapKnownTokensAndRejectUnknown() {
     assertThat(TypeKind.fromWire("record")).isEqualTo(TypeKind.RECORD);
     assertThat(SourceScope.fromWire("test")).isEqualTo(SourceScope.TEST);
+    assertThat(SourceScope.ofSourceTree(LatheLayout.TEST_CLASSES_DIR)).isEqualTo(SourceScope.TEST);
+    assertThat(SourceScope.ofSourceTree(LatheLayout.CLASSES_DIR)).isEqualTo(SourceScope.MAIN);
     assertThatThrownBy(() -> TypeKind.fromWire("annotation"))
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(() -> SourceScope.fromWire("prod"))
         .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> SourceScope.ofSourceTree("bogus"))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void modules_distinctSortedModuleRels() {
+    final var testCfg = testConfig("module", "src/test/java");
+    final var otherCfg =
+        TestCompiler.moduleConfig(
+            tmp.resolve(".lathe/other"),
+            tmp.resolve("other/target/classes"),
+            tmp.resolve("other/src/main/java"));
+
+    assertThat(WorkspaceSession.modules(List.of(config, testCfg, otherCfg), tmp))
+        .containsExactly("module", "other"); // "module" appears twice (main+test) → distinct
+  }
+
+  @Test
+  void packages_walkDiskTaggedByScopeReflectingNewDirs() throws Exception {
+    Files.createDirectories(sourceRoot.resolve("com/example/sub")); // main
+    final var testCfg = testConfig("module", "src/test/java");
+    Files.createDirectories(tmp.resolve("module/src/test/java/com/verify"));
+
+    final List<PackageEntry> pkgs =
+        WorkspaceSession.packages(List.of(config, testCfg), tmp, "module");
+
+    assertThat(pkgs)
+        .contains(
+            new PackageEntry("", "main"),
+            new PackageEntry("com", "main"),
+            new PackageEntry("com.example", "main"),
+            new PackageEntry("com.example.sub", "main"),
+            new PackageEntry("com.verify", "test"));
+
+    // main-only module has no test-scope entries
+    assertThat(WorkspaceSession.packages(List.of(config), tmp, "module"))
+        .allMatch(entry -> entry.scope().equals("main"));
+  }
+
+  @Test
+  void resolveContext_underMainTestAndOutsideRoot() {
+    assertThat(WorkspaceSession.resolveContext(List.of(config), tmp, sourceFile))
+        .isEqualTo(new ContextInfo("module", "main", "com.example"));
+
+    final var testCfg = testConfig("module", "src/test/java");
+    final var testFile = tmp.resolve("module/src/test/java/com/verify/FooTest.java");
+    assertThat(WorkspaceSession.resolveContext(List.of(testCfg), tmp, testFile))
+        .isEqualTo(new ContextInfo("module", "test", "com.verify"));
+
+    assertThat(WorkspaceSession.resolveContext(List.of(config), tmp, tmp.resolve("loose/Bar.java")))
+        .isNull();
   }
 
   private CreateTypeResult render(final TypeKind type, final String name, final String pkg) {
@@ -346,6 +400,15 @@ class WorkspaceSessionTest {
   private ModuleSourceConfig config(final Path sourceRoot) {
     return TestCompiler.moduleConfig(
         tmp.resolve(".lathe/module"), tmp.resolve("module/target/classes"), sourceRoot);
+  }
+
+  private ModuleSourceConfig testConfig(final String module, final String relRoot) {
+    return TestCompiler.moduleConfig(
+        tmp.resolve(".lathe/%s".formatted(module)),
+        tmp.resolve("%s/target/test-classes".formatted(module)),
+        tmp.resolve("%s/%s".formatted(module, relRoot)),
+        null,
+        LatheLayout.TEST_CLASSES_DIR);
   }
 
   private ModuleSourceConfig configWithGen(final Path genRoot) {

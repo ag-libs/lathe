@@ -20,6 +20,17 @@ public final class FileUtil {
     return path.getFileName().toString().endsWith(".java");
   }
 
+  // Every directory below root (excluding root itself), sorted; empty when root is not a directory.
+  public static List<Path> subdirectories(final Path root) throws IOException {
+    if (!Files.isDirectory(root)) {
+      return List.of();
+    }
+
+    try (final var walk = Files.walk(root)) {
+      return walk.filter(Files::isDirectory).filter(path -> !path.equals(root)).sorted().toList();
+    }
+  }
+
   public static Path writeTempSourceFile(
       final Path tempDir, final Path sourceRoot, final Path filePath, final String content)
       throws IOException {

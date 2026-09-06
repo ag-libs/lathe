@@ -480,4 +480,16 @@ final class LatheTextDocumentService implements TextDocumentService {
   CompletableFuture<CreateTypeResult> createTypeFuture(final CreateTypeArgs args) {
     return worker.submit(() -> session.createType(args));
   }
+
+  CompletableFuture<List<String>> modulesFuture() {
+    return worker.submit(() -> session.modules());
+  }
+
+  CompletableFuture<List<PackageEntry>> packagesFuture(final String moduleRel) {
+    return worker.submit(() -> session.packages(moduleRel));
+  }
+
+  CompletableFuture<ContextInfo> resolveContextFuture(final String uri) {
+    return worker.submit(() -> session.resolveContext(uri));
+  }
 }

@@ -28,6 +28,9 @@ final class LatheWorkspaceService implements WorkspaceService {
   static final String DEBUG_MAIN_COMMAND = "lathe.debug.main";
   static final String INSTANTIATIONS_COMMAND = "lathe.instantiations";
   static final String CREATE_TYPE_COMMAND = "lathe.createType";
+  static final String MODULES_COMMAND = "lathe.modules";
+  static final String PACKAGES_COMMAND = "lathe.packages";
+  static final String RESOLVE_CONTEXT_COMMAND = "lathe.resolveContext";
 
   private static final Gson GSON = new Gson();
 
@@ -65,6 +68,9 @@ final class LatheWorkspaceService implements WorkspaceService {
       case DEBUG_MAIN_COMMAND -> debugMain(params);
       case INSTANTIATIONS_COMMAND -> instantiations(params);
       case CREATE_TYPE_COMMAND -> createType(params);
+      case MODULES_COMMAND -> modules();
+      case PACKAGES_COMMAND -> packages(params);
+      case RESOLVE_CONTEXT_COMMAND -> resolveContext(params);
       default -> CompletableFuture.completedFuture(null);
     };
   }
@@ -133,6 +139,24 @@ final class LatheWorkspaceService implements WorkspaceService {
             TypeKind.fromWire(json.get("type").getAsString()),
             json.get("name").getAsString());
     return textDocumentService.createTypeFuture(args).thenApply(result -> result);
+  }
+
+  private CompletableFuture<Object> modules() {
+    return textDocumentService.modulesFuture().thenApply(modules -> modules);
+  }
+
+  private CompletableFuture<Object> packages(final ExecuteCommandParams params) {
+    final var json = (JsonObject) params.getArguments().getFirst();
+    return textDocumentService
+        .packagesFuture(json.get("moduleRel").getAsString())
+        .thenApply(packages -> packages);
+  }
+
+  private CompletableFuture<Object> resolveContext(final ExecuteCommandParams params) {
+    final var json = (JsonObject) params.getArguments().getFirst();
+    return textDocumentService
+        .resolveContextFuture(json.get("uri").getAsString())
+        .thenApply(context -> context);
   }
 
   private static String parseCancelArgument(final Object argument) {

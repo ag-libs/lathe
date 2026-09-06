@@ -564,6 +564,89 @@ final class WorkspaceSession {
         .findFirst();
   }
 
+  List<String> modules() {
+    return modules(workspace.allConfigs(), workspaceRoot);
+  }
+
+  List<PackageEntry> packages(final String moduleRel) {
+    return packages(workspace.allConfigs(), workspaceRoot, moduleRel);
+  }
+
+  ContextInfo resolveContext(final String uri) {
+    return resolveContext(workspace.allConfigs(), workspaceRoot, LatheUri.toPath(uri));
+  }
+
+  // Static cores below take (configs, workspaceRoot) so they are covered without a loaded
+  // workspace.
+
+  static List<String> modules(final List<ModuleSourceConfig> configs, final Path workspaceRoot) {
+    return configs.stream()
+        .map(config -> moduleRel(workspaceRoot, config))
+        .distinct()
+        .sorted()
+        .toList();
+  }
+
+  static List<PackageEntry> packages(
+      final List<ModuleSourceConfig> configs, final Path workspaceRoot, final String moduleRel) {
+    return configs.stream()
+        .filter(config -> moduleRel(workspaceRoot, config).equals(moduleRel))
+        .flatMap(WorkspaceSession::packageEntries)
+        .distinct()
+        .sorted(Comparator.comparing(PackageEntry::pkg).thenComparing(PackageEntry::scope))
+        .toList();
+  }
+
+  static ContextInfo resolveContext(
+      final List<ModuleSourceConfig> configs, final Path workspaceRoot, final Path path) {
+    return configs.stream()
+        .flatMap(config -> contextIn(workspaceRoot, config, path).stream())
+        .findFirst()
+        .orElse(null);
+  }
+
+  private static Stream<PackageEntry> packageEntries(final ModuleSourceConfig config) {
+    final String scope = scopeWire(config);
+    return primarySourceRoot(config).stream()
+        .flatMap(root -> packagesUnder(root).stream().map(pkg -> new PackageEntry(pkg, scope)));
+  }
+
+  private static String scopeWire(final ModuleSourceConfig config) {
+    return SourceScope.ofSourceTree(config.sourceTree()).wire;
+  }
+
+  private static List<String> packagesUnder(final Path root) {
+    if (!Files.isDirectory(root)) {
+      return List.of();
+    }
+
+    try {
+      return Stream.concat(
+              Stream.of(""),
+              FileUtil.subdirectories(root).stream().map(dir -> packageOf(root, dir)))
+          .toList();
+    } catch (final IOException e) {
+      LOG.log(Level.WARNING, e, () -> "[packages] scan failed under %s".formatted(root));
+      return List.of();
+    }
+  }
+
+  private static Optional<ContextInfo> contextIn(
+      final Path workspaceRoot, final ModuleSourceConfig config, final Path path) {
+    return primarySourceRoot(config)
+        .filter(path::startsWith)
+        .map(
+            root ->
+                new ContextInfo(
+                    moduleRel(workspaceRoot, config),
+                    scopeWire(config),
+                    packageOf(root, path.getParent())));
+  }
+
+  private static String packageOf(final Path root, final Path dir) {
+    return root.relativize(dir).toString().replace(root.getFileSystem().getSeparator(), ".");
+  }
+
   // Pure/static so it is covered without a loaded workspace. The skeleton is left unformatted: an
   // empty type has nothing to format, and running the formatter would only collapse the body and
   // remove the caret line — the user's on-save formatter canonicalises it on first save.
@@ -856,6 +939,10 @@ final class WorkspaceSession {
   }
 
   private String moduleRel(final ModuleSourceConfig config) {
+    return moduleRel(workspaceRoot, config);
+  }
+
+  private static String moduleRel(final Path workspaceRoot, final ModuleSourceConfig config) {
     return workspaceRoot.resolve(LatheLayout.LATHE_DIR).relativize(config.moduleDir()).toString();
   }
 

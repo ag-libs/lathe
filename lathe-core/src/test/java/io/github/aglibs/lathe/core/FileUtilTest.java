@@ -46,6 +46,23 @@ final class FileUtilTest {
   }
 
   @Test
+  void subdirectories_nestedTree_returnsDescendantsSortedExcludingRoot() throws IOException {
+    Files.createDirectories(tempDir.resolve("com/example/sub"));
+    Files.writeString(tempDir.resolve("com/example/Foo.java"), "");
+
+    assertThat(FileUtil.subdirectories(tempDir))
+        .containsExactly(
+            tempDir.resolve("com"),
+            tempDir.resolve("com/example"),
+            tempDir.resolve("com/example/sub"));
+  }
+
+  @Test
+  void subdirectories_missingRoot_returnsEmpty() throws IOException {
+    assertThat(FileUtil.subdirectories(tempDir.resolve("nope"))).isEmpty();
+  }
+
+  @Test
   void moveReplacing_existingDest_replacesFile() throws IOException {
     final Path src = tempDir.resolve("src.txt");
     final Path dest = tempDir.resolve("dest.txt");

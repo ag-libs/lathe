@@ -69,9 +69,19 @@ public final class TestCompiler {
       final Path outputDir,
       final Path sourceRoot,
       final Path generatedSourcesDir) {
+    return moduleConfig(
+        moduleDir, outputDir, sourceRoot, generatedSourcesDir, LatheLayout.CLASSES_DIR);
+  }
+
+  public static ModuleSourceConfig moduleConfig(
+      final Path moduleDir,
+      final Path outputDir,
+      final Path sourceRoot,
+      final Path generatedSourcesDir,
+      final String sourceTree) {
     return new ModuleSourceConfig(
         moduleDir,
-        "classes",
+        sourceTree,
         outputDir,
         generatedSourcesDir,
         List.of(sourceRoot),
