@@ -507,12 +507,17 @@ decisions to `lathe-server` and reduces the client to a **thin shell**: one comm
 IO. This reverses the earlier "client resolution is reliable enough / Option B deferred" call — a
 weaker argument than "Java knowledge has exactly one home, the LSP."
 
-**Why the cache detour was wrong.** An intermediate design cached a whole `lathe.workspaceModel`
-client-side because command-line `<Tab>` completion must return candidates synchronously. But we chose
-**`vim.ui.select` pickers**, which are launched by a discrete command and can therefore *fetch, then
-show* — async is fine. That removes the synchronous constraint **and** the stale-cache problem at once:
-the picker fetches fresh on open, so it always reflects the current workspace. No client cache is
-required (an optional warm-start is a pure latency tweak).
+**No client cache — pickers fetch on open (KISS).** An intermediate design cached the workspace model
+client-side to feed command-line `<Tab>` completion, which must return candidates *synchronously*. The
+objection to querying the LSP there was never the server's speed (a `lathe.modules` read is single-digit
+ms); it is that a cmdline `complete=` function can only consume an async reply by **blocking the main
+thread** (`request_sync` / `vim.wait`) on a keypress — and because the server is a single worker thread
+(`ServerEventLoop`), during active editing that query queues behind compile work, so the *tail* latency
+that would freeze the UI is not ms. The fix is to **not block**: every surface is a `vim.ui.select`
+picker, which is command-invoked and therefore *fetches then shows* — it calls `lathe.modules` /
+`lathe.packages` directly and populates the picker in the callback. This removes the synchronous
+constraint **and** the stale-cache problem at once: the picker always reflects the current workspace,
+and **no client cache exists anywhere** (no `<Tab>`-completion special case to feed).
 
 **Server surface — lazy, `getChildren`-style queries + a create command.** Modelled on jdtls
 (`java.project.getChildren` / `java.getPackageData` / `java.resolvePath`), returning one level at a time
@@ -558,13 +563,27 @@ pickers, writing the returned content, opening the buffer, applying the caret, a
 Skip-when-one + preselect-from-context make the common anchored case fast: `:LatheNew` → pick Kind →
 Enter (module skipped/preselected) → Enter (current package) → type Name — two real decisions.
 
-**Freshness (fetch-on-open).** Each `:LatheNew` fetches the modules/packages fresh, so **packages** you
-(or a `git pull`, or another editor) just created appear immediately — the server reads current disk,
-no rebuild needed. **Modules** appear only after their build/sync reload (a new module needs a POM edit;
-`WorkspaceWatcher` polls `workspace.json` + POM fingerprints — the existing sync-prompt path), which is
-correct since the module does not exist until built. There is no background push: Lathe registers no
-file watchers (`didChangeWatchedFiles` is a deliberate no-op), and the picker's fetch-on-open is the
-refresh point.
+**Freshness (fetch-on-open) — behaviour after a workspace update.** Because there is no cache, nothing
+has to be invalidated when the workspace changes: the next `:LatheNew` fetches `lathe.modules` /
+`lathe.packages` fresh and sees the current state. Refreshing *is* reopening the picker. The two data
+kinds update on different clocks, both correct-by-construction:
+
+- **Packages — live immediately.** `lathe.packages(module)` reads **current disk**, so a package you
+  (or a `git pull`, or another editor) just created shows up on the next open, *before* any build or
+  reload.
+- **Modules — after the server reloads.** `lathe.modules` reads the server's loaded registry
+  (`workspace.allConfigs()`), which reflects a new module only once the server reloads `workspace.json`.
+  That reload is driven by `WorkspaceWatcher` polling `workspace.json` mtime + POM fingerprints after a
+  build regenerates the manifest (the existing WS-3/WS-5 sync path) — correct, since a module does not
+  exist until built.
+
+Two properties keep this clean rather than racy: **single-worker serialization** — the query runs on the
+same `ServerEventLoop` worker as `reload()`, so a fetch issued during/after a reload runs *after* it and
+never observes a half-reloaded model; and **self-healing** — the only stale window is between "build
+done" and "server reloaded", and since it is fetch-on-open, reopening the picker a moment later (or after
+the sync completes) is current. There is no background push: Lathe registers no file watchers
+(`didChangeWatchedFiles` is a deliberate no-op), and the picker's fetch-on-open is the sole refresh
+point.
 
 **Consequence — creation now requires the server attached.** With all Java logic server-side there is no
 offline fallback (that would reintroduce ad-hoc client Java); `:LatheNew` with no Lathe client attached
@@ -580,8 +599,9 @@ thin wizard over them. Two lessons transfer directly: **lazy children, not flat 
 per-node queries above. Conversely, `nvim-jdtls` ships *no* new-class wizard, so the nvim community uses
 `java-helpers.nvim`, which does placement **client-side in Lua** (marker-based package guessing + Lua
 templates) — exactly the School-B approach our current `new.lua` falls into and this redesign leaves
-behind. (The same `lathe.modules` / `lathe.packages` queries also back WS-8's `:LatheSync <module>`
-completion — build them once here.)
+behind. (The same `lathe.modules` query also backs WS-8's `:LatheSync` module picker — a no-arg
+`vim.ui.select`, fetch-on-open like everything else, so no `<Tab>` completion and no cache. Build the
+query once here.)
 
 ### Scope
 
@@ -630,8 +650,9 @@ Verify end-to-end in a live Neovim against the invoker workspace: `:LatheNew` fr
 a class under a chosen (or new) package and formats it via the running server.
 
 Notes:
-Pairs with CQ-0054 (keyword insertion) but is independent of it. The `lathe.modules` / `lathe.packages`
-queries are shared with WS-8 (`:LatheSync <module>` completion) — build them once here.
+Pairs with CQ-0054 (keyword insertion) but is independent of it. The `lathe.modules` query is shared
+with WS-8, whose `:LatheSync` uses a no-arg module picker (fetch-on-open, no cache) — build the query
+once here.
 
 ---
 
@@ -1229,7 +1250,9 @@ Route a **source-only** change to a scoped build; keep full builds for structura
   `moduleRel` set; all/most modules stale ⇒ drop `-pl`.
 - **Client (`sync.lua`):** `run_maven` gains the module list; with modules present, build
   `mvn … -pl m1,m2 -am <goal>`; the `lathe/sync` handler forwards `result.modules`. Manual `:LatheSync`
-  stays full-reactor.
+  stays full-reactor; a manual *targeted* sync (if wanted) is a **no-arg `:LatheSync` module picker**
+  (`vim.ui.select` fed by CQ-0055's `lathe.modules`, fetch-on-open) — not `<Tab>` completion, so no
+  client cache (KISS, consistent with CQ-0055).
 
 ### Correctness caveats (to bake in and document)
 
