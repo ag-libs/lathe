@@ -157,6 +157,15 @@ public final class ReactorProjects {
     return rel.isEmpty() ? "." : rel;
   }
 
+  // A module whose directory lies outside the reactor root (e.g. <module>../shared</module>): its
+  // workspace-relative path starts with ".." (or is absolute), so .lathe/<rel> would collapse out
+  // of
+  // .lathe/ and scatter files. Such a module cannot be mirrored and must be skipped by the sync.
+  public static boolean escapesReactorRoot(final Path workspaceRoot, final MavenProject project) {
+    final Path rel = workspaceRoot.relativize(project.getBasedir().toPath());
+    return rel.isAbsolute() || rel.startsWith("..");
+  }
+
   public static String gav(final MavenProject project) {
     return gav(project.getGroupId(), project.getArtifactId(), project.getVersion());
   }

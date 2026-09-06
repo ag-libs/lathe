@@ -53,6 +53,20 @@ class ReactorProjectsTest {
   }
 
   @Test
+  void escapesReactorRoot_moduleOutsideRoot_true() {
+    final Path root = tmp.resolve("root");
+
+    assertThat(ReactorProjects.escapesReactorRoot(root, project("g", "root", "1", root))).isFalse();
+    assertThat(
+            ReactorProjects.escapesReactorRoot(root, project("g", "app", "1", root.resolve("app"))))
+        .isFalse();
+    assertThat(
+            ReactorProjects.escapesReactorRoot(
+                root, project("g", "shared", "1", tmp.resolve("shared"))))
+        .isTrue();
+  }
+
+  @Test
   void externalArtifacts_filtersReactorProjectsAndDeduplicates() {
     final MavenProject core = project("com.example", "core", "1", tmp.resolve("core"));
     final MavenProject app = project("com.example", "app", "1", tmp.resolve("app"));

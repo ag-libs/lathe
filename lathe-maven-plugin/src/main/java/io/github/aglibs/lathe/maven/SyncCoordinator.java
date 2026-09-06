@@ -36,7 +36,8 @@ final class SyncCoordinator {
 
   void run() throws SyncException {
     final var workspaceRoot = session.getTopLevelProject().getBasedir().toPath();
-    final List<MavenProject> projects = ReactorProjects.sorted(session, workspaceRoot);
+    final List<MavenProject> projects =
+        withinReactorRoot(workspaceRoot, ReactorProjects.sorted(session, workspaceRoot));
     logModules(workspaceRoot, projects);
     final List<RemoteRepository> remoteRepos = ReactorProjects.remoteRepositories(projects);
     final Map<String, Artifact> externalArtifacts = ReactorProjects.externalArtifacts(projects);
@@ -90,6 +91,27 @@ final class SyncCoordinator {
       final DependencySource s, final Map<Path, Path> jarToTypeIndex) {
     final Path idx = s.jar() != null ? jarToTypeIndex.get(s.jar()) : null;
     return idx != null ? s.withTypeIndex(idx) : s;
+  }
+
+  // Keep only modules whose directory is inside the reactor root; .lathe/ mirrors those and skips
+  // the
+  // rest, so a stray file can never be written above or beside .lathe/ (graceful degradation -- a
+  // skipped module's files fall back to "not under a Lathe module").
+  private List<MavenProject> withinReactorRoot(
+      final Path workspaceRoot, final List<MavenProject> projects) {
+    final Map<Boolean, List<MavenProject>> partitioned =
+        projects.stream()
+            .collect(
+                Collectors.partitioningBy(
+                    project -> ReactorProjects.escapesReactorRoot(workspaceRoot, project)));
+    partitioned.get(true).forEach(this::warnOutsideRoot);
+    return partitioned.get(false);
+  }
+
+  private void warnOutsideRoot(final MavenProject project) {
+    log.warn(
+        "[sync] %s at %s is outside the reactor root — Lathe cannot mirror it, skipping"
+            .formatted(ReactorProjects.gav(project), project.getBasedir()));
   }
 
   private boolean isPartialReactor() {
