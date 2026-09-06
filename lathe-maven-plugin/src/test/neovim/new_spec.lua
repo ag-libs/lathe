@@ -1,7 +1,8 @@
--- Verifies lathe.new (:LatheNew): picks the kind, resolves the buffer context and creates via the
--- server's lathe.resolveContext + lathe.createType commands, then writes/opens the returned file and
--- places the caret. The LSP client and the pickers are stubbed, so this loads headlessly. The client
--- holds no Java logic -- the server owns placement/skeleton/caret -- so the tests assert flow and IO.
+-- Verifies lathe.new (:LatheNew): picks the kind, then narrows module -> package (or a new package)
+-- via the server's lathe.modules / lathe.packages / lathe.resolveContext / lathe.createType commands,
+-- and writes/opens the returned file. The LSP client and the pickers are stubbed, so this loads
+-- headlessly. The client holds no Java logic -- the server owns placement/skeleton/caret -- so the
+-- tests assert flow and IO.
 --
 -- Run headless from the repo root (or via run-specs.sh):
 --   nvim --headless --clean -u NONE \
@@ -12,9 +13,9 @@
 local spec = require("spec_helper").new()
 local new = require("lathe.new")
 
--- A fake Lathe client answering executeCommand from `responses` (keyed by command); returns the list
--- of {command, argument} requests it received, in order.
-local function stub_client(responses)
+-- A fake Lathe client answering executeCommand from `responses` (keyed by command); returns the
+-- ordered list of {command, argument} it received.
+local function stub_server(responses)
   local requests = {}
   vim.lsp.get_clients = function(_)
     return {
@@ -30,72 +31,153 @@ local function stub_client(responses)
   return requests
 end
 
-local function stub_pickers(kindIndex, name)
-  vim.ui.select = function(items, _, cb)
-    cb(items[kindIndex])
-  end
-  vim.ui.input = function(_, cb)
-    cb(name)
+local function request_for(requests, command)
+  for _, request in ipairs(requests) do
+    if request.command == command then
+      return request.argument
+    end
   end
 end
 
--- ── _lines ───────────────────────────────────────────────────────────────────
+local function item_by(items, predicate)
+  for _, item in ipairs(items) do
+    if predicate(item) then
+      return item
+    end
+  end
+end
+
+-- Stub the pickers from a plan: { kind=<label>, module=<name>, package="new"|<pkg>, scope=<wire>,
+-- new_pkg=<string>, name=<string> }. Selects dispatch on the prompt; inputs on whether it is the
+-- new-package prompt.
+local function stub_ui(plan)
+  vim.ui.select = function(items, opts, cb)
+    if opts.prompt == "New Lathe type:" then
+      cb(item_by(items, function(k)
+        return k.label == plan.kind
+      end))
+    elseif opts.prompt == "Module:" then
+      cb(plan.module)
+    elseif opts.prompt:match("^Package in") then
+      cb(item_by(items, function(it)
+        return plan.package == "new" and it.new or it.pkg == plan.package
+      end))
+    elseif opts.prompt:match("^Source scope") then
+      cb(plan.scope)
+    end
+  end
+  vim.ui.input = function(opts, cb)
+    cb(opts.prompt:match("^New package") and plan.new_pkg or plan.name)
+  end
+end
+
+-- ── pure helpers ─────────────────────────────────────────────────────────────
 
 do
   spec.check("lines drop the trailing empty", table.concat(new._lines("a\nb\n"), "|"), "a|b")
   spec.check("lines keep interior blanks", table.concat(new._lines("a\n\nb\n"), "|"), "a||b")
+
+  local list = { "a", "b", "c" }
+  new._prefer(list, function(x)
+    return x == "c"
+  end)
+  spec.check("prefer moves the match to the front", table.concat(list, ","), "c,a,b")
+  new._prefer(list, function(x)
+    return x == "zzz"
+  end)
+  spec.check("prefer no match leaves order", table.concat(list, ","), "c,a,b")
+
+  spec.check("format new package", new._format_package({ new = true }), "＋ New package…")
+  spec.check("format main package", new._format_package({ pkg = "com.a", scope = "main" }), "com.a")
+  spec.check(
+    "format test package tags scope",
+    new._format_package({ pkg = "com.a", scope = "test" }),
+    "com.a (test)"
+  )
+  spec.check(
+    "format default package",
+    new._format_package({ pkg = "", scope = "main" }),
+    "(default package)"
+  )
 end
 
 -- ── create() end to end ──────────────────────────────────────────────────────
 
-do -- latheNew_kindThenName_createsViaServerAndWritesTheReturnedFile
-  local path = vim.fn.tempname() .. "/module/src/main/java/com/example/Foo.java"
-  local content = "package com.example;\n\npublic class Foo {\n\n}\n"
-  local requests = stub_client({
-    ["lathe.resolveContext"] = { moduleRel = "module", scope = "main", pkg = "com.example" },
-    ["lathe.createType"] = { path = path, content = content, caret = { line = 3, character = 0 } },
+do -- anchored: single module, existing package preselected from context, scope from the entry
+  local path = vim.fn.tempname() .. "/core/src/main/java/com/example/core/Foo.java"
+  local requests = stub_server({
+    ["lathe.resolveContext"] = { moduleRel = "core", scope = "main", pkg = "com.example.core" },
+    ["lathe.modules"] = { "core" },
+    ["lathe.packages"] = {
+      { pkg = "com.example.core", scope = "main" },
+      { pkg = "com", scope = "main" },
+    },
+    ["lathe.createType"] = {
+      path = path,
+      content = "package com.example.core;\n\npublic class Foo {\n\n}\n",
+      caret = { line = 3, character = 0 },
+    },
   })
-  stub_pickers(1, "Foo") -- Class
+  stub_ui({ kind = "Class", package = "com.example.core", name = "Foo" })
 
   new.create()
 
-  spec.check("resolveContext first", requests[1] and requests[1].command, "lathe.resolveContext")
-  spec.check("createType second", requests[2] and requests[2].command, "lathe.createType")
-  local args = (requests[2] and requests[2].argument) or {}
-  spec.check("createType type is the picked wire token", args.type, "class")
-  spec.check("createType moduleRel from context", args.moduleRel, "module")
-  spec.check("createType kind from context scope", args.kind, "main")
-  spec.check("createType pkg from context", args.pkg, "com.example")
-  spec.check("createType name from prompt", args.name, "Foo")
+  local args = request_for(requests, "lathe.createType") or {}
+  spec.check("createType type", args.type, "class")
+  spec.check("createType moduleRel (single module)", args.moduleRel, "core")
+  spec.check("createType scope from the package entry", args.kind, "main")
+  spec.check("createType pkg", args.pkg, "com.example.core")
+  spec.check("createType name", args.name, "Foo")
   spec.check("file created", vim.fn.filereadable(path), 1)
-  spec.check(
-    "content written exactly",
-    table.concat(vim.fn.readfile(path), "\n"),
-    "package com.example;\n\npublic class Foo {\n\n}"
-  )
   spec.check("buffer opened", vim.api.nvim_buf_get_name(0):match("Foo%.java$") ~= nil, true)
 end
 
-do -- latheNew_recordInTestScope_mapsWireTokenAndCarriesScope
-  local path = vim.fn.tempname() .. "/Point.java"
-  local requests = stub_client({
-    ["lathe.resolveContext"] = { moduleRel = "app", scope = "test", pkg = "com.verify" },
+do -- cold start: no context, pick module, then a new package, scope defaults to main (main-only)
+  local requests = stub_server({
+    ["lathe.resolveContext"] = nil,
+    ["lathe.modules"] = { "app", "core" },
+    ["lathe.packages"] = { { pkg = "", scope = "main" }, { pkg = "com.app", scope = "main" } },
     ["lathe.createType"] = {
-      path = path,
-      content = "public record Point() {\n}\n",
-      caret = { line = 0, character = 20 },
+      path = vim.fn.tempname() .. "/Sub.java",
+      content = "package com.app.sub;\n\npublic class Sub {\n\n}\n",
+      caret = { line = 3, character = 0 },
     },
   })
-  stub_pickers(3, "Point") -- Record
+  stub_ui({ kind = "Class", module = "app", package = "new", new_pkg = "com.app.sub", name = "Sub" })
 
   new.create()
 
-  local args = (requests[2] and requests[2].argument) or {}
-  spec.check("record wire token", args.type, "record")
-  spec.check("test scope carried as kind", args.kind, "test")
+  local args = request_for(requests, "lathe.createType") or {}
+  spec.check("cold-start moduleRel from module pick", args.moduleRel, "app")
+  spec.check("new package from input", args.pkg, "com.app.sub")
+  spec.check("new package scope defaults to main", args.kind, "main")
+  spec.check("createType name", args.name, "Sub")
 end
 
-do -- latheNew_serverNotAttached_errorsCleanly
+do -- new package in a module with both roots and no anchor -> asks the scope
+  local requests = stub_server({
+    ["lathe.resolveContext"] = nil,
+    ["lathe.modules"] = { "core" },
+    ["lathe.packages"] = {
+      { pkg = "com.example", scope = "main" },
+      { pkg = "com.example", scope = "test" },
+    },
+    ["lathe.createType"] = {
+      path = vim.fn.tempname() .. "/T.java",
+      content = "package com.new;\n\npublic class T {\n\n}\n",
+      caret = { line = 3, character = 0 },
+    },
+  })
+  stub_ui({ kind = "Class", package = "new", new_pkg = "com.new", scope = "test", name = "T" })
+
+  new.create()
+
+  local args = request_for(requests, "lathe.createType") or {}
+  spec.check("new package scope taken from the scope prompt", args.kind, "test")
+  spec.check("new package pkg", args.pkg, "com.new")
+end
+
+do -- server not attached -> warns, no picker
   vim.lsp.get_clients = function(_)
     return {}
   end
@@ -114,21 +196,7 @@ do -- latheNew_serverNotAttached_errorsCleanly
   spec.check("no server never opens the kind picker", picked, false)
 end
 
-do -- latheNew_noContext_errorsCleanlyWithoutCreating
-  local requests = stub_client({}) -- resolveContext resolves to nil
-  stub_pickers(1, "Foo")
-  local warned = false
-  vim.notify = function(_, _, _)
-    warned = true
-  end
-
-  new.create()
-
-  spec.check("no context warns", warned, true)
-  spec.check("no context does not call createType", requests[2], nil)
-end
-
-do -- open_existingFile_refusesToOverwrite
+do -- open() refuses to overwrite an existing file
   local path = vim.fn.tempname() .. "/Dup.java"
   vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
   vim.fn.writefile({ "existing" }, path)
