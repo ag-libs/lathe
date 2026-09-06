@@ -1,6 +1,7 @@
--- Verifies lathe.new (:LatheNewClass/Interface/Record/Enum): the pure placement/skeleton/caret
--- helpers, and create_kind() end to end against a real temp workspace with vim.ui.input /
--- vim.lsp.buf.format stubbed. lathe.new uses only core Neovim APIs, so this loads headlessly.
+-- Verifies lathe.new (:LatheNew): picks the kind, resolves the buffer context and creates via the
+-- server's lathe.resolveContext + lathe.createType commands, then writes/opens the returned file and
+-- places the caret. The LSP client and the pickers are stubbed, so this loads headlessly. The client
+-- holds no Java logic -- the server owns placement/skeleton/caret -- so the tests assert flow and IO.
 --
 -- Run headless from the repo root (or via run-specs.sh):
 --   nvim --headless --clean -u NONE \
@@ -11,294 +12,140 @@
 local spec = require("spec_helper").new()
 local new = require("lathe.new")
 
---- A fresh temp module with a seeded `com.example.Seed` main class; returns its package dir and the
---- seed file path. Each call is a unique tempname, so blocks do not collide.
-local function tmp_workspace()
-  local root = vim.fn.tempname()
-  vim.fn.mkdir(root .. "/.lathe", "p") -- workspace root marker, above the module
-  local dir = root .. "/mod/src/main/java/com/example"
-  vim.fn.mkdir(dir, "p")
-  local seed = dir .. "/Seed.java"
-  vim.fn.writefile({ "package com.example;", "", "public class Seed {", "}" }, seed)
-  return dir, seed
+-- A fake Lathe client answering executeCommand from `responses` (keyed by command); returns the list
+-- of {command, argument} requests it received, in order.
+local function stub_client(responses)
+  local requests = {}
+  vim.lsp.get_clients = function(_)
+    return {
+      {
+        name = "lathe",
+        request = function(_, _, params, callback, _)
+          table.insert(requests, { command = params.command, argument = params.arguments[1] })
+          callback(nil, responses[params.command])
+        end,
+      },
+    }
+  end
+  return requests
 end
 
--- ── pure helpers ────────────────────────────────────────────────────────────
-
-do
-  spec.check(
-    "package from lines",
-    new._package_from_lines({ "// header", "package com.example.app;", "class X {}" }),
-    "com.example.app"
-  )
-  spec.check("package from lines (none)", new._package_from_lines({ "class X {}" }), nil)
+local function stub_pickers(kindIndex, name)
+  vim.ui.select = function(items, _, cb)
+    cb(items[kindIndex])
+  end
+  vim.ui.input = function(_, cb)
+    cb(name)
+  end
 end
 
-do
-  spec.check(
-    "package from dir (main)",
-    new._package_from_dir("/ws/mod/src/main/java/com/example/app"),
-    "com.example.app"
-  )
-  spec.check(
-    "package from dir (test)",
-    new._package_from_dir("/ws/mod/src/test/java/com/example/verify"),
-    "com.example.verify"
-  )
-  spec.check("package from dir (at source root)", new._package_from_dir("/ws/mod/src/main/java"), "")
-  spec.check("package from dir (not under a root)", new._package_from_dir("/ws/mod/misc/dir"), nil)
-end
+-- ── _lines ───────────────────────────────────────────────────────────────────
 
 do
+  spec.check("lines drop the trailing empty", table.concat(new._lines("a\nb\n"), "|"), "a|b")
+  spec.check("lines keep interior blanks", table.concat(new._lines("a\n\nb\n"), "|"), "a||b")
+end
+
+-- ── create() end to end ──────────────────────────────────────────────────────
+
+do -- latheNew_kindThenName_createsViaServerAndWritesTheReturnedFile
+  local path = vim.fn.tempname() .. "/module/src/main/java/com/example/Foo.java"
+  local content = "package com.example;\n\npublic class Foo {\n\n}\n"
+  local requests = stub_client({
+    ["lathe.resolveContext"] = { moduleRel = "module", scope = "main", pkg = "com.example" },
+    ["lathe.createType"] = { path = path, content = content, caret = { line = 3, character = 0 } },
+  })
+  stub_pickers(1, "Foo") -- Class
+
+  new.create()
+
+  spec.check("resolveContext first", requests[1] and requests[1].command, "lathe.resolveContext")
+  spec.check("createType second", requests[2] and requests[2].command, "lathe.createType")
+  local args = (requests[2] and requests[2].argument) or {}
+  spec.check("createType type is the picked wire token", args.type, "class")
+  spec.check("createType moduleRel from context", args.moduleRel, "module")
+  spec.check("createType kind from context scope", args.kind, "main")
+  spec.check("createType pkg from context", args.pkg, "com.example")
+  spec.check("createType name from prompt", args.name, "Foo")
+  spec.check("file created", vim.fn.filereadable(path), 1)
   spec.check(
-    "class skeleton",
-    table.concat(new._skeleton("class", "Foo", "com.example"), "\n"),
+    "content written exactly",
+    table.concat(vim.fn.readfile(path), "\n"),
     "package com.example;\n\npublic class Foo {\n\n}"
   )
-  spec.check(
-    "record skeleton",
-    table.concat(new._skeleton("record", "Foo", "com.example"), "\n"),
-    "package com.example;\n\npublic record Foo() {\n}"
-  )
-  spec.check(
-    "default-package skeleton omits the package line",
-    table.concat(new._skeleton("interface", "Foo", ""), "\n"),
-    "public interface Foo {\n\n}"
-  )
+  spec.check("buffer opened", vim.api.nvim_buf_get_name(0):match("Foo%.java$") ~= nil, true)
 end
 
-do
-  local caret = new._caret("class", "Foo", { "package p;", "", "public class Foo {", "", "}" })
-  spec.check("class caret row (blank body line)", caret[1], 4)
-  spec.check("class caret col (blank body line)", caret[2], 0)
+do -- latheNew_recordInTestScope_mapsWireTokenAndCarriesScope
+  local path = vim.fn.tempname() .. "/Point.java"
+  local requests = stub_client({
+    ["lathe.resolveContext"] = { moduleRel = "app", scope = "test", pkg = "com.verify" },
+    ["lathe.createType"] = {
+      path = path,
+      content = "public record Point() {\n}\n",
+      caret = { line = 0, character = 20 },
+    },
+  })
+  stub_pickers(3, "Point") -- Record
 
-  local rc = new._caret("record", "Foo", { "public record Foo() {", "}" })
-  spec.check("record caret row (component list)", rc[1], 1)
-  spec.check("record caret col (after '(')", rc[2], 18)
+  new.create()
+
+  local args = (requests[2] and requests[2].argument) or {}
+  spec.check("record wire token", args.type, "record")
+  spec.check("test scope carried as kind", args.kind, "test")
 end
 
--- ── create_kind() end to end ─────────────────────────────────────────────────
-
-do -- latheNew_fromJavaFile_createsSiblingInSamePackage (name as argument, zero prompts)
-  local dir, seed = tmp_workspace()
-  vim.cmd.edit(vim.fn.fnameescape(seed))
-  new._format_on_save = false
-
-  new.create_kind("class", "Bar")
-
-  local created = dir .. "/Bar.java"
-  spec.check("sibling created", vim.fn.filereadable(created), 1)
-  spec.check(
-    "sibling has same package + skeleton",
-    table.concat(vim.fn.readfile(created), "\n"),
-    "package com.example;\n\npublic class Bar {\n\n}"
-  )
-  spec.check("created buffer is opened", vim.api.nvim_buf_get_name(0):match("Bar%.java$") ~= nil, true)
-end
-
-do -- latheNew_noArgument_promptsForName (the single prompt, showing the package)
-  local dir, seed = tmp_workspace()
-  vim.cmd.edit(vim.fn.fnameescape(seed))
-  new._format_on_save = false
-  local prompt
-  vim.ui.input = function(opts, cb)
-    prompt = opts.prompt
-    cb("Prompted")
-  end
-
-  new.create_kind("class")
-
-  spec.check("prompt shows the workspace-relative dir", prompt, "class name in mod/src/main/java/com/example: ")
-  spec.check("prompted name creates the file", vim.fn.filereadable(dir .. "/Prompted.java"), 1)
-end
-
-do -- latheNew_recordKind_writesRecordSkeleton
-  local dir, seed = tmp_workspace()
-  vim.cmd.edit(vim.fn.fnameescape(seed))
-  new._format_on_save = false
-
-  new.create_kind("record", "Point")
-
-  spec.check(
-    "record sibling skeleton",
-    table.concat(vim.fn.readfile(dir .. "/Point.java"), "\n"),
-    "package com.example;\n\npublic record Point() {\n}"
-  )
-end
-
-do -- latheNew_googleFormatterEnabled_normalisesViaOnSaveFormatter
-  local _, seed = tmp_workspace()
-  vim.cmd.edit(vim.fn.fnameescape(seed))
-  -- pretend a Lathe client is attached so the attach-wait guard passes
+do -- latheNew_serverNotAttached_errorsCleanly
   vim.lsp.get_clients = function(_)
-    return { { name = "lathe" } }
+    return {}
   end
-  local formatted = false
-  vim.lsp.buf.format = function(_)
-    formatted = true
+  local picked = false
+  vim.ui.select = function(_, _, _)
+    picked = true
   end
-  new._format_on_save = true
-
-  new.create_kind("class", "Fmt")
-
-  spec.check("formatter invoked when enabled", formatted, true)
-end
-
-do -- latheNew_noFormatter_usesFallbackStyle
-  local _, seed = tmp_workspace()
-  vim.cmd.edit(vim.fn.fnameescape(seed))
-  local formatted = false
-  vim.lsp.buf.format = function(_)
-    formatted = true
-  end
-  new._format_on_save = false
-
-  new.create_kind("class", "NoFmt")
-
-  spec.check("formatter not invoked when disabled", formatted, false)
-end
-
-do -- latheNew_noJavaContext_errorsCleanly
-  vim.cmd("enew")
   local warned = false
-  vim.notify = function(_, _)
+  vim.notify = function(_, _, _)
     warned = true
   end
 
-  new.create_kind("class", "Anything")
+  new.create()
 
-  spec.check("no java context warns", warned, true)
+  spec.check("no server warns", warned, true)
+  spec.check("no server never opens the kind picker", picked, false)
 end
 
-do -- latheNew_existingFile_refusesToOverwrite
-  local dir, seed = tmp_workspace()
-  vim.cmd.edit(vim.fn.fnameescape(seed))
-  local dup = dir .. "/Dup.java"
-  vim.fn.writefile({ "package com.example;", "public class Dup {}" }, dup)
+do -- latheNew_noContext_errorsCleanlyWithoutCreating
+  local requests = stub_client({}) -- resolveContext resolves to nil
+  stub_pickers(1, "Foo")
   local warned = false
-  vim.notify = function(_, _)
+  vim.notify = function(_, _, _)
     warned = true
   end
 
-  new.create_kind("class", "Dup")
+  new.create()
 
-  spec.check("existing file refused", warned, true)
-  spec.check(
-    "existing file not overwritten",
-    table.concat(vim.fn.readfile(dup), "\n"),
-    "package com.example;\npublic class Dup {}"
-  )
+  spec.check("no context warns", warned, true)
+  spec.check("no context does not call createType", requests[2], nil)
 end
 
--- ── v2 dotted-name pure helpers ──────────────────────────────────────────────
-
-do
-  local p, n = new._split_qualified("com.example.Foo")
-  spec.check("split qualified package", p, "com.example")
-  spec.check("split qualified name", n, "Foo")
-  local bare_p, bare_n = new._split_qualified("Foo")
-  spec.check("split bare package (nil)", bare_p, nil)
-  spec.check("split bare name", bare_n, "Foo")
-end
-
-do
-  spec.check("source root (main)", new._source_root("/ws/mod/src/main/java/com/example"), "/ws/mod/src/main/java")
-  spec.check("source root (test)", new._source_root("/ws/mod/src/test/java/com/example"), "/ws/mod/src/test/java")
-  spec.check("source root (at root)", new._source_root("/ws/mod/src/main/java"), "/ws/mod/src/main/java")
-  spec.check("source root (none)", new._source_root("/ws/mod/loose/dir"), nil)
-end
-
-do
-  local d, p, n = new._target("/ws/mod/src/main/java/com/example", "com.example", "Foo")
-  spec.check("target bare keeps context dir", d, "/ws/mod/src/main/java/com/example")
-  spec.check("target bare keeps context package", p, "com.example")
-  spec.check("target bare name", n, "Foo")
-
-  local dd, dp, dn = new._target("/ws/mod/src/main/java/com/example", "com.example", "a.b.C")
-  spec.check("target dotted dir under source root", dd, "/ws/mod/src/main/java/a/b")
-  spec.check("target dotted package", dp, "a.b")
-  spec.check("target dotted simple name", dn, "C")
-
-  spec.check("target dotted with no source root -> nil", new._target("/ws/mod/loose", "", "a.b.C"), nil)
-end
-
-do
-  spec.check(
-    "relativize under root",
-    new._relativize("/ws/mod/src/main/java/com/x", "/ws"),
-    "mod/src/main/java/com/x"
-  )
-  spec.check("relativize with no root -> absolute", new._relativize("/ws/mod/x", nil), "/ws/mod/x")
-end
-
--- ── v2 dotted-name create() end to end ───────────────────────────────────────
-
-do -- latheNew_dottedName_createsUnderSourceRootMakingDirs
-  local dir, seed = tmp_workspace()
-  local root = dir:gsub("/com/example$", "")
-  vim.cmd.edit(vim.fn.fnameescape(seed))
-  new._format_on_save = false
-
-  new.create_kind("class", "a.b.C")
-
-  local created = root .. "/a/b/C.java"
-  spec.check("dotted-name file created under source root", vim.fn.filereadable(created), 1)
-  spec.check(
-    "dotted-name package + skeleton",
-    table.concat(vim.fn.readfile(created), "\n"),
-    "package a.b;\n\npublic class C {\n\n}"
-  )
-end
-
-do -- latheNew_dottedName_fromTestFile_usesTestRoot
-  local tdir = vim.fn.tempname() .. "/mod/src/test/java/com/example"
-  vim.fn.mkdir(tdir, "p")
-  local seed = tdir .. "/SeedTest.java"
-  vim.fn.writefile({ "package com.example;", "", "public class SeedTest {", "}" }, seed)
-  local root = tdir:gsub("/com/example$", "")
-  vim.cmd.edit(vim.fn.fnameescape(seed))
-  new._format_on_save = false
-
-  new.create_kind("class", "x.y.Z")
-
-  spec.check("dotted-name from a test file uses the test root", vim.fn.filereadable(root .. "/x/y/Z.java"), 1)
-end
-
-do -- latheNew_dottedName_noSourceRoot_warnsAndBails
-  local ldir = vim.fn.tempname() .. "/loose"
-  vim.fn.mkdir(ldir, "p")
-  local loose = ldir .. "/Loose.java"
-  vim.fn.writefile({ "public class Loose {}" }, loose)
-  vim.cmd.edit(vim.fn.fnameescape(loose))
+do -- open_existingFile_refusesToOverwrite
+  local path = vim.fn.tempname() .. "/Dup.java"
+  vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
+  vim.fn.writefile({ "existing" }, path)
   local warned = false
-  vim.notify = function(_, _)
+  vim.notify = function(_, _, _)
     warned = true
   end
 
-  new.create_kind("class", "a.b.C")
+  new._open({ path = path, content = "new\n", caret = { line = 0, character = 0 } })
 
-  spec.check("dotted name with no source root warns", warned, true)
-  spec.check("dotted name with no source root creates nothing", vim.fn.filereadable(ldir .. "/a/b/C.java"), 0)
+  spec.check("existing file warns", warned, true)
+  spec.check("existing file not overwritten", table.concat(vim.fn.readfile(path), "\n"), "existing")
 end
 
-do -- resolveContext_relativeBufferName_returnsAbsoluteDir (never create in the cwd)
-  local base = vim.fn.tempname()
-  vim.fn.mkdir(base, "p")
-  local saved = vim.fn.getcwd()
-  vim.cmd("cd " .. vim.fn.fnameescape(base))
-  local cwd = vim.fn.getcwd()
-  local dir = select(1, new._resolve_context(vim.api.nvim_get_current_buf(), "sub/pkg/Foo.java"))
-  vim.cmd("cd " .. vim.fn.fnameescape(saved))
-  spec.check("relative buffer name resolves to an absolute dir", dir, cwd .. "/sub/pkg")
-end
-
-do -- setup registers the four kind commands and records the formatter flag
-  new.setup({ format_on_save = true })
-  spec.check("setup records the formatter flag", new._format_on_save, true)
-  spec.check("LatheNewClass registered", vim.fn.exists(":LatheNewClass"), 2)
-  spec.check("LatheNewInterface registered", vim.fn.exists(":LatheNewInterface"), 2)
-  spec.check("LatheNewRecord registered", vim.fn.exists(":LatheNewRecord"), 2)
-  spec.check("LatheNewEnum registered", vim.fn.exists(":LatheNewEnum"), 2)
+do -- setup registers :LatheNew
+  new.setup()
+  spec.check("LatheNew registered", vim.fn.exists(":LatheNew"), 2)
 end
 
 spec.finish("new_spec")

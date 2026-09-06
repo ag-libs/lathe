@@ -246,10 +246,9 @@ function M.setup(opts)
     run.stop()
   end, { desc = 'Lathe: stop the active main run' })
 
-  -- New-type surface: :LatheNew scaffolds a class/interface/record/enum next to the current file
-  -- (same package) and opens it. Style follows the on-save formatter when it is enabled (same gate),
-  -- so the scaffold matches a save.
-  require('lathe.new').setup({ format_on_save = format_on_save })
+  -- New-type surface: :LatheNew scaffolds a class/interface/record/enum through the server (which
+  -- owns placement, skeleton, and caret) and opens the returned file.
+  require('lathe.new').setup()
 
   -- Instantiations surface: :LatheInstances lists where the type under the cursor is `new`-ed up
   -- (via the server's lathe.instantiations command) in the quickfix. Suggested mapping: grN.
