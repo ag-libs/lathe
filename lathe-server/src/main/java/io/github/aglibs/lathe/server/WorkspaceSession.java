@@ -80,6 +80,7 @@ import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
+import javax.lang.model.SourceVersion;
 import javax.lang.model.element.ElementKind;
 import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.CallHierarchyItem;
@@ -533,6 +534,69 @@ final class WorkspaceSession {
     }
 
     return configs;
+  }
+
+  CreateTypeResult createType(final CreateTypeArgs args) {
+    final var sourceRoot = sourceRootFor(args.moduleRel(), args.kind());
+    LOG.info(
+        () ->
+            "[createType] %s %s.%s kind=%s type=%s"
+                .formatted(args.moduleRel(), args.pkg(), args.name(), args.kind(), args.type()));
+    return renderNewType(sourceRoot, args.pkg(), args.type(), args.name());
+  }
+
+  private Path sourceRootFor(final String moduleRel, final SourceScope scope) {
+    return configsFor(moduleRel).stream()
+        .filter(config -> scope.sourceTree.equals(config.sourceTree()))
+        .flatMap(config -> primarySourceRoot(config).stream())
+        .findFirst()
+        .orElseThrow(
+            () ->
+                new IllegalStateException(
+                    "no %s source root for module '%s'".formatted(scope, moduleRel)));
+  }
+
+  // The real (non-generated) source directory a new file lands in — the same primary-root selection
+  // the staleness scan uses (skip originalGenSourcesDir).
+  private static Optional<Path> primarySourceRoot(final ModuleSourceConfig config) {
+    return config.sourceRoots().stream()
+        .filter(root -> !root.equals(config.originalGenSourcesDir()))
+        .findFirst();
+  }
+
+  // Pure/static so it is covered without a loaded workspace. The skeleton is left unformatted: an
+  // empty type has nothing to format, and running the formatter would only collapse the body and
+  // remove the caret line — the user's on-save formatter canonicalises it on first save.
+  static CreateTypeResult renderNewType(
+      final Path sourceRoot, final String pkg, final TypeKind type, final String name) {
+    if (!SourceVersion.isIdentifier(name) || SourceVersion.isKeyword(name)) {
+      throw new IllegalArgumentException("'%s' is not a valid Java type name".formatted(name));
+    }
+
+    final var path = sourceRoot.resolve(pkg.replace('.', '/')).resolve(name + ".java");
+    return new CreateTypeResult(
+        path.toString(), newTypeSource(type, name, pkg), caretFor(type, name, pkg));
+  }
+
+  private static String newTypeSource(final TypeKind type, final String name, final String pkg) {
+    final var header = pkg.isEmpty() ? "" : "package %s;\n\n".formatted(pkg);
+    return switch (type) {
+      case RECORD -> "%spublic record %s() {\n}\n".formatted(header, name);
+      case CLASS, INTERFACE, ENUM ->
+          "%spublic %s %s {\n\n}\n".formatted(header, type.keyword, name);
+    };
+  }
+
+  // Computed from the template's known shape, not by scanning it: a package header adds two leading
+  // lines; a record's caret is inside the () on the declaration line, the others' on the empty body
+  // line. Mirrors the newTypeSource layout above.
+  private static Position caretFor(final TypeKind type, final String name, final String pkg) {
+    final int declLine = pkg.isEmpty() ? 0 : 2;
+    if (type == TypeKind.RECORD) {
+      return new Position(declLine, "public record %s(".formatted(name).length());
+    }
+
+    return new Position(declLine + 1, 0);
   }
 
   // Copies a changed resource into .lathe/ so a resource-only edit is picked up without a rebuild.

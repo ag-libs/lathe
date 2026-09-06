@@ -91,7 +91,8 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
                 LatheWorkspaceService.CANCEL_TEST_COMMAND,
                 LatheWorkspaceService.LIST_RUNNABLES_COMMAND,
                 LatheWorkspaceService.RESOURCE_REFRESH_COMMAND,
-                LatheWorkspaceService.INSTANTIATIONS_COMMAND)));
+                LatheWorkspaceService.INSTANTIATIONS_COMMAND,
+                LatheWorkspaceService.CREATE_TYPE_COMMAND)));
     return capabilities;
   }
 

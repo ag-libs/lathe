@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.aglibs.lathe.core.launch.JdwpOptions;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
@@ -285,6 +286,61 @@ class WorkspaceSessionTest {
 
   private void writeClass(final String typeName, final long mtime) throws IOException {
     TestCompiler.writeAt(outputDir.resolve(typeName + ".class"), "", mtime);
+  }
+
+  @Test
+  void renderNewType_class_skeletonPathAndBodyCaret() {
+    final var result = render(TypeKind.CLASS, "Foo", "com.example");
+
+    assertThat(result.path()).isEqualTo(sourceRoot.resolve("com/example/Foo.java").toString());
+    assertThat(result.content()).isEqualTo("package com.example;\n\npublic class Foo {\n\n}\n");
+    assertThat(result.caret().getLine()).isEqualTo(3); // the empty body line
+    assertThat(result.caret().getCharacter()).isZero();
+  }
+
+  @Test
+  void renderNewType_record_caretInComponentList() {
+    final var result = render(TypeKind.RECORD, "Point", "com.example");
+
+    assertThat(result.content()).isEqualTo("package com.example;\n\npublic record Point() {\n}\n");
+    assertThat(result.caret().getLine()).isEqualTo(2);
+    assertThat(result.caret().getCharacter()).isEqualTo("public record Point(".length());
+  }
+
+  @Test
+  void renderNewType_interfaceEnumAndDefaultPackage_useKeywordAndOmitPackageLine() {
+    assertThat(render(TypeKind.INTERFACE, "Bar", "com.example").content())
+        .isEqualTo("package com.example;\n\npublic interface Bar {\n\n}\n");
+    assertThat(render(TypeKind.ENUM, "Color", "com.example").content())
+        .isEqualTo("package com.example;\n\npublic enum Color {\n\n}\n");
+
+    final var defaultPkg = render(TypeKind.CLASS, "Foo", "");
+    assertThat(defaultPkg.content()).isEqualTo("public class Foo {\n\n}\n");
+    assertThat(defaultPkg.path()).isEqualTo(sourceRoot.resolve("Foo.java").toString());
+    assertThat(defaultPkg.caret().getLine())
+        .isEqualTo(1); // no package header → body line shifts up
+  }
+
+  @Test
+  void renderNewType_illegalName_rejected() {
+    assertThatThrownBy(() -> render(TypeKind.CLASS, "9Foo", "com.example"))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> render(TypeKind.CLASS, "class", "com.example"))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void enums_fromWire_mapKnownTokensAndRejectUnknown() {
+    assertThat(TypeKind.fromWire("record")).isEqualTo(TypeKind.RECORD);
+    assertThat(SourceScope.fromWire("test")).isEqualTo(SourceScope.TEST);
+    assertThatThrownBy(() -> TypeKind.fromWire("annotation"))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> SourceScope.fromWire("prod"))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  private CreateTypeResult render(final TypeKind type, final String name, final String pkg) {
+    return WorkspaceSession.renderNewType(sourceRoot, pkg, type, name);
   }
 
   private ModuleSourceConfig config(final Path sourceRoot) {

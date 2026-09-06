@@ -27,6 +27,7 @@ final class LatheWorkspaceService implements WorkspaceService {
   static final String DEBUG_TEST_COMMAND = "lathe.debug.test";
   static final String DEBUG_MAIN_COMMAND = "lathe.debug.main";
   static final String INSTANTIATIONS_COMMAND = "lathe.instantiations";
+  static final String CREATE_TYPE_COMMAND = "lathe.createType";
 
   private static final Gson GSON = new Gson();
 
@@ -63,6 +64,7 @@ final class LatheWorkspaceService implements WorkspaceService {
       case DEBUG_TEST_COMMAND -> debugTest(params);
       case DEBUG_MAIN_COMMAND -> debugMain(params);
       case INSTANTIATIONS_COMMAND -> instantiations(params);
+      case CREATE_TYPE_COMMAND -> createType(params);
       default -> CompletableFuture.completedFuture(null);
     };
   }
@@ -119,6 +121,18 @@ final class LatheWorkspaceService implements WorkspaceService {
     return textDocumentService
         .instantiationsFuture(at.getTextDocument().getUri(), at.getPosition())
         .thenApply(locations -> locations);
+  }
+
+  private CompletableFuture<Object> createType(final ExecuteCommandParams params) {
+    final var json = (JsonObject) params.getArguments().getFirst();
+    final var args =
+        new CreateTypeArgs(
+            json.get("moduleRel").getAsString(),
+            SourceScope.fromWire(json.get("kind").getAsString()),
+            json.get("pkg").getAsString(),
+            TypeKind.fromWire(json.get("type").getAsString()),
+            json.get("name").getAsString());
+    return textDocumentService.createTypeFuture(args).thenApply(result -> result);
   }
 
   private static String parseCancelArgument(final Object argument) {
