@@ -191,6 +191,27 @@ function M.run_maven(root, capture_tests, modules)
   end)
 end
 
+-- The server's sync prompt carries a "Sync" action; other window/showMessageRequests do not.
+local function is_sync_prompt(result)
+  for _, action in ipairs(result and result.actions or {}) do
+    if action.title == 'Sync' then
+      return true
+    end
+  end
+  return false
+end
+
+-- window/showMessageRequest override for the Lathe client: while a sync is already running (the
+-- `running` table is non-empty), dismiss a sync prompt (respond with no action) rather than
+-- re-prompting the user mid-build; every other message falls through to Neovim's default handler.
+function M.on_show_message_request(err, result, ctx, config)
+  if next(running) ~= nil and is_sync_prompt(result) then
+    return vim.NIL
+  end
+
+  return vim.lsp.handlers['window/showMessageRequest'](err, result, ctx, config)
+end
+
 local function sync_current(capture_tests)
   local root = require('lathe').get_root(vim.api.nvim_get_current_buf())
   M.run_maven(root, capture_tests)
