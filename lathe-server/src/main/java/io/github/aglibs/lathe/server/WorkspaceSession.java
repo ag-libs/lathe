@@ -2202,6 +2202,7 @@ final class WorkspaceSession {
   // .lathe/ is never read.
   private void reconcileIfIdle() {
     if (anyModuleLockHeld()) {
+      LOG.fine(() -> "[reconcile] skipped — module lock held");
       return;
     }
 
@@ -2215,12 +2216,21 @@ final class WorkspaceSession {
 
   private void checkSourceStaleness() {
     if (pomNotificationPending) {
+      LOG.fine(() -> "[stale] skipped — sync prompt pending");
       return;
     }
 
     final StaleScan scan = scanStaleModules();
+    if (scan.modules().isEmpty()) {
+      return;
+    }
+
+    final List<String> moduleRels = moduleRels(scan.modules());
+    LOG.fine(
+        () ->
+            "[stale] %s newest=%d ack=%d"
+                .formatted(moduleRels, scan.newestMtime(), acknowledgedSourceMtime));
     if (scan.newestMtime() > acknowledgedSourceMtime) {
-      final List<String> moduleRels = moduleRels(scan.modules());
       final List<String> scope = syncScope(moduleRels, totalModuleCount());
       LOG.info(() -> "[watcher] source changed in %s — sync needed".formatted(moduleRels));
       promptForSync(syncPromptMessage(moduleRels, scope), scope);
@@ -2446,6 +2456,7 @@ final class WorkspaceSession {
       case WORKSPACE_CHANGED -> {
         reload();
         acknowledgedSourceMtime = 0L;
+        LOG.fine(() -> "[reload] ack-mtime reset");
       }
       case REACTOR_REFRESH -> {
         refreshReactorTypeIndex();
@@ -2458,6 +2469,7 @@ final class WorkspaceSession {
 
   private void promptForSync(final String message, final List<String> scope) {
     if (pomNotificationPending) {
+      LOG.fine(() -> "[sync] prompt suppressed — already pending");
       return;
     }
 
@@ -2488,6 +2500,7 @@ final class WorkspaceSession {
     // a dismissed prompt stays quiet until a still-newer external change appears.
     acknowledgedSourceMtime = scanStaleModules().newestMtime();
     final String title = action == null ? null : action.getTitle();
+    LOG.info(() -> "[sync] answered action=%s ack=%d".formatted(title, acknowledgedSourceMtime));
     switch (title) {
       case SYNC_ACTION -> requestSync(false);
       case SYNC_CAPTURE_ACTION -> requestSync(true);
@@ -2496,6 +2509,8 @@ final class WorkspaceSession {
   }
 
   private void requestSync(final boolean captureTests) {
+    final Object scope = pendingSyncModules.isEmpty() ? "full" : pendingSyncModules;
+    LOG.info(() -> "[sync] requested scope=%s capture=%b".formatted(scope, captureTests));
     ((LatheLanguageClient) client)
         .sync(new LatheSyncParams(workspaceRoot.toString(), captureTests, pendingSyncModules));
   }
