@@ -22,11 +22,17 @@ end
 vim.notify = function() end
 vim.schedule = function(fn) fn() end
 
--- Capture the reactor-lock pre-touch instead of writing a real file, so the path can be asserted.
+-- Capture the reactor-lock pre-touch and release instead of touching a real file, so the path and
+-- lifecycle can be asserted.
 local writes = {}
 vim.fn.writefile = function(_lines, path)
   table.insert(writes, path)
   return 0
+end
+local unlinks = {}
+vim.loop.fs_unlink = function(path)
+  table.insert(unlinks, path)
+  return true
 end
 
 local sync = require("lathe.sync")
@@ -40,6 +46,7 @@ spec.check("default goal is process-test-classes", calls[1].cmd[4], "process-tes
 spec.check("runs at the workspace root", calls[1].opts.cwd, "/ws/a")
 
 pending_cb({ code = 0 }) -- finish the first job so the guard for /ws/a clears
+spec.check("releases the reactor lock when the build ends", unlinks[1], "/ws/a/.lathe/lathe.lock")
 
 sync.run_maven("/ws/a", true)
 spec.check("capture selects the test goal", calls[2].cmd[4], "test")

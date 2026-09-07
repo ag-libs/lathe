@@ -128,13 +128,25 @@ local function show_failure(cmd_str, root, code, output)
   open_output_window()
 end
 
+local function lock_path(root)
+  return vim.fs.joinpath(root, '.lathe', 'lathe.lock')
+end
+
 -- Write the reactor build lock the instant a sync starts, before Maven has booted far enough to
--- take it itself, so the server suppresses its sync prompt with no startup-window race. The
--- extension then heartbeats and releases it; a stale lock (Maven never started) self-heals via its
--- TTL. Best-effort: on a first-ever build `.lathe/` may not exist yet, and there is nothing to
--- protect then.
+-- take it itself, so the server suppresses its sync prompt with no startup-window race. During the
+-- build the extension heartbeats the same lock. Best-effort: on a first-ever build `.lathe/` may
+-- not exist yet, and there is nothing to protect then.
 local function pretouch_lock(root)
-  pcall(vim.fn.writefile, {}, vim.fs.joinpath(root, '.lathe', 'lathe.lock'))
+  pcall(vim.fn.writefile, {}, lock_path(root))
+end
+
+-- Remove the pre-touched lock when the build ends: the client owns the lock it wrote, so it is never
+-- left behind if the build's Maven extension is too old (or absent) to release it — the version skew
+-- hit while dogfooding against a published extension. With a current extension `afterSessionEnd` has
+-- already removed it, so this is a no-op. vim.loop (not vim.fn) because on_exit is a fast event
+-- context.
+local function release_lock(root)
+  pcall(vim.loop.fs_unlink, lock_path(root))
 end
 
 --- Runs `mvn <goal>` at `root` as a background job, notifying on start and completion. `modules` (a
@@ -172,6 +184,7 @@ function M.run_maven(root, capture_tests, modules)
 
   pretouch_lock(root)
   vim.system(cmd, { cwd = root, text = true }, function(res)
+    release_lock(root)
     running[root] = nil
     state.done = true
     timer:stop()
