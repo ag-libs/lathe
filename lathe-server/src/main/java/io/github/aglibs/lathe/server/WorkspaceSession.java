@@ -2212,8 +2212,8 @@ final class WorkspaceSession {
   // resources into .lathe/. Suppressed while any module is mid-build, so a partially written
   // .lathe/ is never read.
   private void reconcileIfIdle() {
-    if (anyModuleLockHeld()) {
-      LOG.fine(() -> "[reconcile] skipped — module lock held");
+    if (reactorBuildInProgress()) {
+      LOG.fine(() -> "[reconcile] skipped — reactor build in progress");
       return;
     }
 
@@ -2324,15 +2324,12 @@ final class WorkspaceSession {
     }
   }
 
-  // A build/sync writing .lathe/<module>/ holds that module's lock; reconciliation is suppressed
-  // while any is held, so a mid-build snapshot (some modules recompiled, others not) neither
-  // prompts
-  // spuriously nor copies against a half-written mirror.
-  private boolean anyModuleLockHeld() {
-    return workspace.allConfigs().stream()
-        .map(ModuleSourceConfig::moduleDir)
-        .distinct()
-        .anyMatch(LatheLock::isBuilding);
+  // The Maven extension holds a heartbeated .lathe/lathe.lock for the whole reactor build; while it
+  // is held, all reconciliation is suppressed, so a mid-build snapshot (some modules recompiled,
+  // others not, workspace.json being rewritten) neither prompts spuriously nor copies against a
+  // half-written mirror. A crashed build is reclaimed by the lock's staleness TTL.
+  private boolean reactorBuildInProgress() {
+    return LatheLock.isBuilding(workspaceRoot.resolve(LatheLayout.LATHE_DIR));
   }
 
   private Set<Path> openSourcePaths() {
@@ -2460,6 +2457,14 @@ final class WorkspaceSession {
 
   private void checkForChanges() {
     if (watcher == null) {
+      return;
+    }
+
+    // Defer every reactive branch (staleness prompt, POM/workspace reload) while a build runs, so a
+    // mid-build workspace.json rewrite cannot re-arm the prompt. The first poll after the lock
+    // clears picks up the settled state in one reload.
+    if (reactorBuildInProgress()) {
+      LOG.fine(() -> "[watcher] skipped — reactor build in progress");
       return;
     }
 

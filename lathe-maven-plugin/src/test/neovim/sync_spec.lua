@@ -22,10 +22,18 @@ end
 vim.notify = function() end
 vim.schedule = function(fn) fn() end
 
+-- Capture the reactor-lock pre-touch instead of writing a real file, so the path can be asserted.
+local writes = {}
+vim.fn.writefile = function(_lines, path)
+  table.insert(writes, path)
+  return 0
+end
+
 local sync = require("lathe.sync")
 
 sync.run_maven("/ws/a", false)
 spec.check("invokes mvn", calls[1].cmd[1], "mvn")
+spec.check("pre-touches the reactor lock before spawning", writes[1], "/ws/a/.lathe/lathe.lock")
 spec.check("passes --no-transfer-progress", calls[1].cmd[2], "--no-transfer-progress")
 spec.check("disables the build cache", calls[1].cmd[3], "-Dmaven.build.cache.enabled=false")
 spec.check("default goal is process-test-classes", calls[1].cmd[4], "process-test-classes")

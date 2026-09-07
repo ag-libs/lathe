@@ -128,6 +128,15 @@ local function show_failure(cmd_str, root, code, output)
   open_output_window()
 end
 
+-- Write the reactor build lock the instant a sync starts, before Maven has booted far enough to
+-- take it itself, so the server suppresses its sync prompt with no startup-window race. The
+-- extension then heartbeats and releases it; a stale lock (Maven never started) self-heals via its
+-- TTL. Best-effort: on a first-ever build `.lathe/` may not exist yet, and there is nothing to
+-- protect then.
+local function pretouch_lock(root)
+  pcall(vim.fn.writefile, {}, vim.fs.joinpath(root, '.lathe', 'lathe.lock'))
+end
+
 --- Runs `mvn <goal>` at `root` as a background job, notifying on start and completion. `modules` (a
 --- list of reactor-relative paths) narrows it to `-pl <modules> -am`; empty/nil is a full reactor.
 function M.run_maven(root, capture_tests, modules)
@@ -161,6 +170,7 @@ function M.run_maven(root, capture_tests, modules)
     end)
   end)
 
+  pretouch_lock(root)
   vim.system(cmd, { cwd = root, text = true }, function(res)
     running[root] = nil
     state.done = true
