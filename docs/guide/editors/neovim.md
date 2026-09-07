@@ -121,19 +121,35 @@ require("lathe").setup({
 
 ## Create a new type
 
-`:LatheNew` scaffolds a class, interface, record, or enum through the server and opens it. It walks you
-through a short sequence of pickers — **kind** → **module** (skipped when there is only one) →
-**package** (an existing one, main or test, or **＋ New package…**) → **name** — then the server writes
-`<Name>.java` with the package line and a skeleton and drops the cursor in the body (or the record
-component list). The Lathe server must be attached, since creation is a Java operation.
+`:LatheNew` scaffolds a class, interface, record, enum, or **test** through the server and opens it. It
+asks at most two questions — **kind** → **name** — then the server writes `<Name>.java` with the package
+line and a skeleton and drops the cursor in the body (or the record component list, or the test method).
+The Lathe server must be attached, since creation is a Java operation.
 
-The server owns every placement decision — which module and source root, the package, the skeleton, and
-the caret — using the current buffer only as a preselect: a Java file preselects its own module and
-package, and with no file open the pickers stand in. It refuses to overwrite an existing file.
+The name field takes an optional location prefix — `[module:]package.Name` — seeded from the current
+buffer and backed by completion over the existing packages, so a Java file usually means you just type
+the name. Type a different `package.Name` (or `module:package.Name` in a multi-module workspace) to
+place it elsewhere; a brand-new package is created on the fly. The **scope** (`main`/`test`) is inferred
+from the target package rather than asked. The server owns every placement decision — module and source
+root, package, skeleton, and caret — and never overwrites: if the target already exists it just opens
+that file.
 
-| Action   | Command     | Suggested    |
-|----------|-------------|--------------|
-| New type | `:LatheNew` | `<leader>nn` |
+Arguments skip the prompts, with `<Tab>` completion at each position:
+
+- `:LatheNew class` — skips the kind pick, then prompts for the name.
+- `:LatheNew class core:com.example.Foo` — fully non-interactive.
+- `:LatheNew <Tab>` completes the kind; `:LatheNew class <Tab>` completes the `module:package` targets.
+
+`:LatheNew test` matches the current buffer: it derives `<Name>Test` from the open file and drops a
+package-private JUnit 5 test class (`import org.junit.jupiter.api.Test;`, one empty `@Test` method) into
+the **test** root of the same module and package, with the cursor in the method body. Run from a test
+file (no class under test) it seeds the same test package and lets you name the new sibling test; with
+no Java file open it falls back to the interactive name prompt in test scope.
+
+| Action   | Command          | Suggested    |
+|----------|------------------|--------------|
+| New type | `:LatheNew`      | `<leader>nn` |
+| New test | `:LatheNew test` | `<leader>nt` |
 
 ## Run a `main`
 

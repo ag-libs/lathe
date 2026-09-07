@@ -323,6 +323,22 @@ class WorkspaceSessionTest {
   }
 
   @Test
+  void renderNewType_test_junitSkeletonWithMethodBodyCaret() {
+    final var result = render(TypeKind.TEST, "FooTest", "com.example");
+
+    assertThat(result.path()).isEqualTo(sourceRoot.resolve("com/example/FooTest.java").toString());
+    assertThat(result.content())
+        .isEqualTo(
+            "package com.example;\n\nimport org.junit.jupiter.api.Test;\n\nclass FooTest {\n\n"
+                + "  @Test\n  void name() {\n\n  }\n}\n");
+    assertThat(result.caret().getLine()).isEqualTo(8); // the empty @Test method body line
+    assertThat(result.caret().getCharacter()).isZero();
+
+    // No package header shifts every line — and the caret — up by the two header lines.
+    assertThat(render(TypeKind.TEST, "FooTest", "").caret().getLine()).isEqualTo(6);
+  }
+
+  @Test
   void renderNewType_illegalName_rejected() {
     assertThatThrownBy(() -> render(TypeKind.CLASS, "9Foo", "com.example"))
         .isInstanceOf(IllegalArgumentException.class);
@@ -333,6 +349,7 @@ class WorkspaceSessionTest {
   @Test
   void enums_fromWireAndSourceTree_mapKnownTokensAndRejectUnknown() {
     assertThat(TypeKind.fromWire("record")).isEqualTo(TypeKind.RECORD);
+    assertThat(TypeKind.fromWire("test")).isEqualTo(TypeKind.TEST);
     assertThat(SourceScope.fromWire("test")).isEqualTo(SourceScope.TEST);
     assertThat(SourceScope.ofSourceTree(LatheLayout.TEST_CLASSES_DIR)).isEqualTo(SourceScope.TEST);
     assertThat(SourceScope.ofSourceTree(LatheLayout.CLASSES_DIR)).isEqualTo(SourceScope.MAIN);

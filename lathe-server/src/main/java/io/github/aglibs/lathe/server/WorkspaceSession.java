@@ -667,6 +667,11 @@ final class WorkspaceSession {
       case RECORD -> "%spublic record %s() {\n}\n".formatted(header, name);
       case CLASS, INTERFACE, ENUM ->
           "%spublic %s %s {\n\n}\n".formatted(header, type.keyword, name);
+      // A JUnit 5 test class: package-private (the Jupiter idiom, matching the codebase), with one
+      // empty @Test method for the caret to land in. The import follows the package header.
+      case TEST ->
+          "%simport org.junit.jupiter.api.Test;\n\nclass %s {\n\n  @Test\n  void name() {\n\n  }\n}\n"
+              .formatted(header, name);
     };
   }
 
@@ -677,6 +682,12 @@ final class WorkspaceSession {
     final int declLine = pkg.isEmpty() ? 0 : 2;
     if (type == TypeKind.RECORD) {
       return new Position(declLine, "public record %s(".formatted(name).length());
+    }
+
+    // The test skeleton's caret sits on the empty @Test method body line: six lines below the
+    // import (import, blank, class, blank, @Test, void), which itself is at declLine.
+    if (type == TypeKind.TEST) {
+      return new Position(declLine + 6, 0);
     }
 
     return new Position(declLine + 1, 0);

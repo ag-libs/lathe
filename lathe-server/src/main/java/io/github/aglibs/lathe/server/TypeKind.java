@@ -6,9 +6,13 @@ enum TypeKind {
   CLASS("class"),
   INTERFACE("interface"),
   RECORD("record"),
-  ENUM("enum");
+  ENUM("enum"),
+  // A JUnit 5 test class matching the buffer's type — rendered as a package-private class, so its
+  // wire token is not a Java keyword and newTypeSource branches on it rather than emitting it.
+  TEST("test");
 
-  // The wire token the editor sends, which is also the Java keyword emitted in the skeleton.
+  // The wire token the editor sends; for the plain kinds it is also the Java keyword emitted in the
+  // skeleton (TEST excepted — see above).
   final String keyword;
 
   TypeKind(final String keyword) {
