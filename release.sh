@@ -11,7 +11,8 @@
 # version lives only in the tag; CI stamps it from the tag with versions:set.
 #
 # Validates the version and preconditions (on main, clean tree, tag unused),
-# bumps ONLY Lathe's version in the install docs, shows the diff to confirm,
+# bumps ONLY Lathe's version in the install docs and the dogfood extension pin in
+# the root pom.xml, shows the diff to confirm,
 # then commits and tags v<version>. It does NOT push. Pushing the tag triggers
 # .github/workflows/release.yml, which builds, signs, and publishes to Maven
 # Central — no Maven Central or GPG credentials are needed locally.
@@ -70,23 +71,33 @@ if git ls-remote --exit-code --tags origin "${tag}" >/dev/null 2>&1; then
   die "tag ${tag} already exists on origin"
 fi
 
-# (#4) Bump ONLY Lathe's version:
+# (#4) Bump ONLY Lathe's version in the install docs:
 #   - the <version> on the line immediately after a lathe-* <artifactId>, and
 #   - the <lathe.version> property.
 # The [0-9] anchor leaves ${lathe.version} references alone; the artifactId
 # address leaves unrelated dependencies' <version> tags untouched.
-files=(README.md docs/guide/installation.md)
-for f in "${files[@]}"; do
+docs=(README.md docs/guide/installation.md)
+for f in "${docs[@]}"; do
   sed -i \
     -e "\#<artifactId>lathe-[a-z-]*</artifactId>#{n;s#<version>[0-9][^<]*</version>#<version>${version}</version>#;}" \
     -e "s#<lathe.version>[0-9][^<]*</lathe.version>#<lathe.version>${version}</lathe.version>#" \
     "$f"
 done
 
-# A no-op means the install docs drifted out from under the patterns above — fail
-# loudly rather than commit an empty bump and tag a version the docs never show.
+# Bump the dogfood pin: the lathe repo enables its own lathe-maven-extension in the
+# root pom.xml, pinned to a published version so the editor tooling runs the shipped
+# build. Address the extension artifactId specifically — the generic lathe-* pattern
+# above would also rewrite the parent's <version>, which must stay 0.1.0-SNAPSHOT.
+sed -i \
+  -e "\#<artifactId>lathe-maven-extension</artifactId>#{n;s#<version>[0-9][^<]*</version>#<version>${version}</version>#;}" \
+  pom.xml
+
+files=("${docs[@]}" pom.xml)
+
+# A no-op means the docs or the pom pin drifted out from under the patterns above —
+# fail loudly rather than commit an empty bump and tag a version they never show.
 git diff --quiet -- "${files[@]}" \
-  && die "no version snippets matched in ${files[*]} — did the install docs change shape?"
+  && die "no version snippets matched in ${files[*]} — did the install docs or pom pin change shape?"
 
 echo "Version bump for ${tag}:"
 echo
