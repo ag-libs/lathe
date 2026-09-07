@@ -47,6 +47,12 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
     final var moduleSources = new ArrayList<ModuleSourceConfig>();
     try (final Stream<Path> stream = Files.walk(latheDir)) {
       for (final var paramsFile : stream.filter(LatheLayout::isParamsFile).toList()) {
+        final Path moduleRel = latheDir.relativize(paramsFile.getParent());
+        if (isNestedWorkspace(workspaceRoot, moduleRel)) {
+          LOG.fine(() -> "[workspace] %s ignored — nested workspace".formatted(moduleRel));
+          continue;
+        }
+
         try {
           moduleSources.add(ModuleSourceConfig.load(paramsFile, paramsFile.getParent()));
         } catch (final IOException e) {
@@ -62,6 +68,23 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
             "[workspace] loaded %d module source config(s) from %s"
                 .formatted(moduleSources.size(), workspaceRoot));
     return new WorkspaceModuleRegistry(List.copyOf(moduleSources), manifest);
+  }
+
+  // A module whose source dir sits under a directory that has its own .lathe/ belongs to a nested
+  // workspace (a git worktree or checkout under the repo) — its params leak into this .lathe/ when
+  // a
+  // build runs inside it. Only an ancestor .lathe/ marks a nested workspace; a .lathe/ at the
+  // module's own dir is a stray and does not disqualify a real module.
+  private static boolean isNestedWorkspace(final Path workspaceRoot, final Path moduleRel) {
+    Path dir = workspaceRoot.resolve(moduleRel).getParent();
+    while (dir != null && dir.startsWith(workspaceRoot) && !dir.equals(workspaceRoot)) {
+      if (Files.isDirectory(dir.resolve(LatheLayout.LATHE_DIR))) {
+        return true;
+      }
+
+      dir = dir.getParent();
+    }
+    return false;
   }
 
   public List<ModuleSourceConfig> allConfigs() {
