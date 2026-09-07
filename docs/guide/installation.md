@@ -1,6 +1,6 @@
 # Installing Lathe into a Maven build
 
-Lathe is activated per Maven build in one of two ways:
+You activate Lathe per Maven build in one of two ways:
 
 1. **The Maven extension** (recommended) — register `lathe-maven-extension` once, either as a core
    extension in `.mvn/extensions.xml` or as a build extension in the reactor-root `pom.xml`. No other
@@ -9,15 +9,6 @@ Lathe is activated per Maven build in one of two ways:
    versioned in the POM.
 
 Both produce the identical effective build.
-
-> **Build from source.** Lathe is not yet published to a Maven repository, so build and install it
-> first:
->
-> ```bash
-> git clone https://github.com/ag-libs/lathe.git
-> cd lathe
-> mvn install -DskipTests
-> ```
 
 ## What Lathe needs in the build
 
@@ -133,8 +124,8 @@ running once per module. The goals carry their own default phases (`init` → `i
 ```
 
 Each block is easy to get subtly wrong — a wrong phase, a missing `inherited`, a `compilerId` typo, or
-a module that overrides `maven-compiler-plugin` and drops the `compilerId` — which is exactly what the
-extension removes. If a module declares its own compiler configuration, preserve `<compilerId>lathe</compilerId>`
+a module that overrides `maven-compiler-plugin` and drops the `compilerId` — which is exactly the
+class of mistake the extension removes. If a module declares its own compiler configuration, preserve `<compilerId>lathe</compilerId>`
 there too.
 
 ## Initialize
@@ -154,7 +145,7 @@ mvn clean test -Dlathe.capture.only=true
 ```
 
 `-Dlathe.capture.only=true` registers a filter that excludes every test from execution while the fork
-still writes its launch snapshot; `clean` is required on the first run so Maven compiles through the
+still writes its launch template; `clean` is required on the first run so Maven compiles through the
 Lathe shim rather than skipping up-to-date output. If your build sets
 `<failIfNoTests>true</failIfNoTests>`, add `-DfailIfNoTests=false` so the test-free run stays green.
 

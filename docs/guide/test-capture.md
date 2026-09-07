@@ -1,4 +1,4 @@
-# Test Capture
+# Test capture
 
 Lathe runs and debugs tests by **replaying** them from the captured `.lathe/` bytecode with no
 recompilation.
@@ -61,6 +61,6 @@ run a normal build (`mvn process-test-classes`), which re-filters them through M
 - **JUnit Platform (JUnit 5/6, or the JUnit 4 vintage engine).**
   The listener rides the JUnit Platform launcher; pure TestNG forks are not captured.
 - **`<systemPropertyVariables>` are not captured yet** — Surefire sets them via a booter properties
-  file that is invisible to JVM introspection. Known gap.
+  file that is invisible to JVM introspection. Capturing them is a known future improvement.
 - A module whose tests are skipped or absent produces no `test-launch.json`, so its tests are not
   runnable from the editor until a build actually forks them.

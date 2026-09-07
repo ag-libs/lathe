@@ -1,4 +1,4 @@
-# Run Configuration
+# Run configuration
 
 Lathe launches your test runs and `main`-class runs from the captured or derived launch templates,
 with generated defaults.
@@ -42,8 +42,8 @@ kind:
 ]
 ```
 
-`kind` is the only required field; **every field below is optional**, an omitted field keeps the
-generated default, and an entry that sets nothing is a no-op.
+**Every field below is optional** — an omitted field keeps the generated default, and an entry that
+sets nothing is a no-op.
 
 | Field | Effect |
 |---|---|

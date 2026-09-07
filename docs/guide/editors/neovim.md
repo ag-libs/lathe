@@ -1,4 +1,4 @@
-# Lathe in Neovim — cheatsheet
+# Lathe in Neovim
 
 The Neovim client: how to install it and a suggested keymap for every action, so you can wire your own
 config. For *what* each feature does (editor-agnostic), see the

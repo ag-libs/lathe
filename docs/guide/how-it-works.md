@@ -1,9 +1,21 @@
 # How Lathe works
 
 Lathe derives everything from your Maven build rather than reconstructing a project model of its own.
-This document covers the mechanism; for installing the extension see
-[installation.md](installation.md), and for exactly what each build writes see
+This document covers the mechanism.
+For installation see [installation.md](installation.md);
+for exactly what each build writes, see
 [what and where Lathe writes](installation.md#what-and-where-lathe-writes).
+
+## Built on the JDK compiler
+
+The language server is the JDK's own Java compiler.
+It runs `javac` in-process and reads the compiler's abstract syntax trees through the Compiler Tree
+API (the `com.sun.source` packages exported by the JDK's `jdk.compiler` module), so every feature —
+diagnostics, go-to-definition, hover, completion, the type and call hierarchies — is computed from the
+compiler's own attributed syntax tree rather than a re-implementation of Java's rules.
+There is no second Java front-end to drift out of step: what Lathe reports is what `javac` sees,
+resolved against the exact classpath and options your build captured — which is what the rest of this
+document describes.
 
 ## Build capture
 
