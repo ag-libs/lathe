@@ -4,7 +4,7 @@
 [![CI](https://github.com/ag-libs/lathe/actions/workflows/ci.yml/badge.svg)](https://github.com/ag-libs/lathe/actions/workflows/ci.yml)
 
 Lathe is a Java language server for Maven projects — code intelligence, diagnostics, and run, test, and
-debug.
+debug. It is built on the JDK's own Java compiler, so its analysis matches what `javac` sees.
 
 Lathe's project model comes from your actual Maven build. It captures the exact configuration Maven
 compiles, tests, and runs with, and works from it directly — so the setups that are hardest to get right

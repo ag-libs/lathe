@@ -76,7 +76,7 @@ freely.
 Diagnostics (`javac` errors/warnings, plus unused-private-member hints) publish automatically.
 Formatting is opt-in — see [Formatting & indentation](#formatting--indentation).
 
-`:LatheInstances` lists **where the type under the cursor is instantiated** (`new XXX(...)` sites) in
+`:LatheInstances` lists **where the type under the cursor is instantiated** (`new AppServer(...)` sites) in
 the quickfix — only construction sites, not every use of the type. Lathe binds no key for it; the
 suggested mapping sits in the references family (capital `N` for i**N**stantiation):
 
