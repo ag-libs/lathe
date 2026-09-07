@@ -171,10 +171,6 @@ function M.setup(opts)
     end,
     capabilities = opts.capabilities or vim.lsp.protocol.make_client_capabilities(),
     init_options = { lathe = { formatter = opts.formatter } },
-    -- Suppress a sync prompt that arrives while a sync is already running (see lathe.sync).
-    handlers = {
-      ['window/showMessageRequest'] = require('lathe.sync').on_show_message_request,
-    },
   })
   vim.lsp.enable('lathe')
 

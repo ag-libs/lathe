@@ -48,27 +48,6 @@ spec.check("targeted goal follows -pl -am", targeted[7], "process-test-classes")
 
 pending_cb({ code = 0 })
 
--- Sync-prompt suppression: while a sync runs, a Lathe sync prompt (one carrying a "Sync" action) is
--- dismissed (vim.NIL); other messages, and the same prompt when idle, fall through to the default.
-vim.lsp.handlers["window/showMessageRequest"] = function()
-  return "DEFAULT"
-end
-local sync_prompt = { actions = { { title = "Sync" }, { title = "Later" } } }
-local function request(result)
-  return sync.on_show_message_request(nil, result, {}, {})
-end
-
-spec.check("shows a sync prompt when idle", request(sync_prompt), "DEFAULT")
-sync.run_maven("/ws/sp", false)
-spec.check("dismisses a sync prompt while syncing", request(sync_prompt), vim.NIL)
-spec.check(
-  "passes a non-sync message through while syncing",
-  request({ actions = { { title = "OK" } } }),
-  "DEFAULT"
-)
-pending_cb({ code = 0 })
-spec.check("shows a sync prompt after syncing finishes", request(sync_prompt), "DEFAULT")
-
 -- Running-guard: a second sync for the same root while one is in flight is a no-op.
 sync.run_maven("/ws/b", false)
 local before = #calls
