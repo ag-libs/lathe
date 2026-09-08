@@ -90,6 +90,7 @@ import org.eclipse.lsp4j.CodeActionContext;
 import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.CompletionContext;
 import org.eclipse.lsp4j.Diagnostic;
+import org.eclipse.lsp4j.DocumentHighlight;
 import org.eclipse.lsp4j.DocumentSymbol;
 import org.eclipse.lsp4j.FoldingRange;
 import org.eclipse.lsp4j.Hover;
@@ -1383,6 +1384,57 @@ final class WorkspaceSession {
 
   private static List<Location> toLocations(final List<ReferenceMatch> matches) {
     return matches.stream().map(ReferenceMatch::toLocation).toList();
+  }
+
+  // Document highlight is references narrowed to the current buffer: resolve the symbol under the
+  // cursor, then reuse the single-file reference search. No workspace/candidate index is touched,
+  // so it stays cheap even for fields and methods.
+  CompletableFuture<List<DocumentHighlight>> documentHighlightFuture(
+      final String uri, final Position pos) {
+    return openDocFeature(
+        uri,
+        List.of(),
+        (worker, doc) -> {
+          final var request =
+              new SourceFeatureRequest(
+                  doc.uri(),
+                  doc.content(),
+                  doc.version(),
+                  pos,
+                  workspace.allSourceRoots(),
+                  manifest);
+          final var t = Stopwatch.start();
+          return worker
+              .resolveTarget(request)
+              .thenCompose(target -> documentHighlightsForTarget(worker, doc, target))
+              .thenApply(
+                  highlights -> {
+                    LOG.fine(
+                        () ->
+                            "[documentHighlight] %s %dms hits=%d"
+                                .formatted(uri, t.elapsedMs(), highlights.size()));
+                    return highlights;
+                  })
+              .exceptionally(
+                  ex ->
+                      logAndReturn(
+                          ex, "[documentHighlight] failed for %s".formatted(uri), List.of()));
+        });
+  }
+
+  private CompletableFuture<List<DocumentHighlight>> documentHighlightsForTarget(
+      final CompilationWorker worker, final OpenDocument doc, final ReferenceTarget target) {
+    if (target == null) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
+    return worker
+        .searchReferences(doc.uri(), doc.content(), doc.version(), target, true, () -> {})
+        .thenApply(WorkspaceSession::toHighlights);
+  }
+
+  private static List<DocumentHighlight> toHighlights(final List<ReferenceMatch> matches) {
+    return matches.stream().map(ReferenceMatch::toHighlight).toList();
   }
 
   private static Path declaringPackageRel(final Path cursorPath, final ModuleSourceConfig config) {

@@ -1,6 +1,8 @@
 package io.github.aglibs.lathe.server.analysis;
 
 import io.github.aglibs.validcheck.ValidCheck;
+import org.eclipse.lsp4j.DocumentHighlight;
+import org.eclipse.lsp4j.DocumentHighlightKind;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Range;
 
@@ -29,5 +31,17 @@ public record ReferenceMatch(String uri, Range range, ReferenceRole role) {
 
   public Location toLocation() {
     return new Location(uri, range);
+  }
+
+  public DocumentHighlight toHighlight() {
+    return new DocumentHighlight(range, kindFor(role));
+  }
+
+  private static DocumentHighlightKind kindFor(final ReferenceRole role) {
+    return switch (role) {
+      case READ -> DocumentHighlightKind.Read;
+      case WRITE -> DocumentHighlightKind.Write;
+      case DECLARATION, IMPORT, INVOCATION, TYPE_USE -> DocumentHighlightKind.Text;
+    };
   }
 }

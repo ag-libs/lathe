@@ -261,6 +261,20 @@ final class LatheTextDocumentService implements TextDocumentService {
   }
 
   @Override
+  public CompletableFuture<List<? extends DocumentHighlight>> documentHighlight(
+      final DocumentHighlightParams params) {
+    final var uri = params.getTextDocument().getUri();
+    final var pos = params.getPosition();
+    if (ignoreNonFile(uri, "documentHighlight")) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
+    final CompletableFuture<List<DocumentHighlight>> work =
+        worker.submit(() -> session.documentHighlightFuture(uri, pos)).thenCompose(f -> f);
+    return work.thenApply(highlights -> highlights);
+  }
+
+  @Override
   public CompletableFuture<SignatureHelp> signatureHelp(final SignatureHelpParams params) {
     final var uri = params.getTextDocument().getUri();
     final var pos = params.getPosition();

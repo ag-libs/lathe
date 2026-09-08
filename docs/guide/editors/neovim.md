@@ -59,6 +59,7 @@ freely.
 | Go to declaration (overridden contract) | `vim.lsp.buf.declaration()` | — | `gD` |
 | Go to implementation / subtypes | `vim.lsp.buf.implementation()` | `gri` | `gri` |
 | Find references | `vim.lsp.buf.references()` | `grr` | `grr` |
+| Highlight uses of the symbol in the buffer | `vim.lsp.buf.document_highlight()` / `clear_references()` | — | `<leader>lh` |
 | Instantiation sites of a type (`new XXX(...)`) | `:LatheInstances` | — | `grN` |
 | Hover (AST-resolved Javadoc) | `vim.lsp.buf.hover()` | `K` | `K` |
 | Signature help | `vim.lsp.buf.signature_help()` | `<C-s>` (insert) | `<C-k>` |
@@ -82,6 +83,26 @@ suggested mapping sits in the references family (capital `N` for i**N**stantiati
 
 ```lua
 vim.keymap.set('n', 'grN', '<cmd>LatheInstances<cr>', { desc = 'Lathe: instantiation sites of the type' })
+```
+
+`vim.lsp.buf.document_highlight()` lights up **every read and write of the symbol under the cursor**
+in the current buffer — a local, parameter, field, method, or type. It is the standard LSP endpoint
+(references narrowed to the open file), so it stays cheap even for fields and methods. Reads and
+writes use the standard `LspReferenceRead` / `LspReferenceWrite` / `LspReferenceText` groups, so a
+colorscheme that styles those tells them apart. Bind it, and clear the highlights on the next cursor
+move:
+
+```lua
+vim.keymap.set('n', '<leader>lh', vim.lsp.buf.document_highlight, { desc = 'Lathe: highlight uses of the symbol' })
+vim.api.nvim_create_autocmd({ 'CursorMoved', 'CursorMovedI' }, { callback = vim.lsp.buf.clear_references })
+```
+
+To highlight automatically whenever the cursor rests, drive it from `CursorHold` instead (lower
+`updatetime` for a snappier feel):
+
+```lua
+vim.api.nvim_create_autocmd({ 'CursorHold', 'CursorHoldI' }, { callback = vim.lsp.buf.document_highlight })
+vim.api.nvim_create_autocmd({ 'CursorMoved', 'CursorMovedI' }, { callback = vim.lsp.buf.clear_references })
 ```
 
 The server auto-starts when you open a `.java` file. To use workspace navigation (e.g. workspace
