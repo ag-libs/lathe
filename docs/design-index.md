@@ -69,6 +69,9 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
   `module-info` / `package-info` as special kinds; supersedes CQ-0055 v3's flow.
 - [New Type Creation](planned/lathe-new-type-creation.md) — deferred, editor-agnostic alternative: scaffold a blank
   file's class/interface/enum/record via snippet completion, with no custom client-side UI (not the shipped path).
+- [Extract Variable](planned/lathe-extract-variable.md) — selection-driven `refactor.extract` code action
+  (edit-only, no command) that introduces a local for the selected expression; mirrors `ReplaceVarProvider`
+  and lays the shared scaffolding a later Extract Method slice reuses.
 - [Google Indentation](planned/lathe-google-indent.md) — conservative on-type formatting.
 - [Type Definition Navigation](planned/lathe-type-definition.md) — `textDocument/typeDefinition` for Neovim's `grt`.
 - [Semantic Tokens](planned/lathe-semantic-tokens.md) — full identifier-level coverage (local-var-vs-field, class,
