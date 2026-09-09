@@ -63,6 +63,30 @@ final class FileUtilTest {
   }
 
   @Test
+  void packagesWithClasses_nestedPackagesWithClasses_returnsDottedPackages() throws IOException {
+    writeEmpty(tempDir.resolve("com/example/app/Foo.class"));
+    writeEmpty(tempDir.resolve("com/example/app/Bar.class"));
+    writeEmpty(tempDir.resolve("com/example/util/Util.class"));
+
+    assertThat(FileUtil.packagesWithClasses(tempDir))
+        .containsExactly("com.example.app", "com.example.util");
+  }
+
+  @Test
+  void packagesWithClasses_nonClassFilesAndDefaultPackage_areExcluded() throws IOException {
+    writeEmpty(tempDir.resolve("Root.class"));
+    writeEmpty(tempDir.resolve("com/example/resources/data.txt"));
+    writeEmpty(tempDir.resolve("com/example/app/Foo.class"));
+
+    assertThat(FileUtil.packagesWithClasses(tempDir)).containsExactly("com.example.app");
+  }
+
+  @Test
+  void packagesWithClasses_missingRoot_returnsEmpty() throws IOException {
+    assertThat(FileUtil.packagesWithClasses(tempDir.resolve("nope"))).isEmpty();
+  }
+
+  @Test
   void moveReplacing_existingDest_replacesFile() throws IOException {
     final Path src = tempDir.resolve("src.txt");
     final Path dest = tempDir.resolve("dest.txt");
@@ -73,5 +97,10 @@ final class FileUtilTest {
 
     assertThat(src).doesNotExist();
     assertThat(dest).hasContent("new");
+  }
+
+  private static void writeEmpty(final Path file) throws IOException {
+    Files.createDirectories(file.getParent());
+    Files.writeString(file, "");
   }
 }
