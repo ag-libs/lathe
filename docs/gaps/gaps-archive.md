@@ -7117,6 +7117,30 @@ Regression:
 
 ---
 
+## CQ-0056 — Completion crashed on a qualified call in a class-level field initializer
+
+Status: done — Target: backlog.
+Tier: core. Failure mode: request-crash.
+
+Completing inside the argument slot of a receiver-qualified call in a class-level field initializer
+(e.g. `static Logger LOGGER = Slf4j.getLog(§)`) threw a `NullPointerException`, so the editor showed no
+candidates at any prefix. A field initializer has no enclosing method, so `site.enclosingMethod()` was
+null; expected-type resolution fell through to `resolveArgumentValueByPosition`, which called
+`findMethodPath(…, enclosingMethod=null, …)`, and `findMethodPath` dereferenced the null method name
+(`methodName.equals(…)`). Only qualified calls reached this path — unqualified calls resolve through
+`findClassElement` and were unaffected.
+
+Fixed in `TypeResolver`: `resolveArgumentValueByPosition` now returns `Unknown` when there is no
+enclosing method (mirroring the guard the other `findMethodPath` callers already use), and
+`findMethodPath` defensively returns null for a null method name. Completion falls back to the
+type-index popup, exactly as method-body and unqualified-call slots already do. Resolving the actual
+parameter type inside field initializers (for assignable ranking) remains a follow-up.
+
+Regression:
+`CompletionArgumentTest#argumentPosition_receiverQualifiedCall_inFieldInitializer_offersTypeIndexCandidates`.
+
+---
+
 # Test Execution (TE) — resolved
 
 ## TE-1 — Capture-only dependencies leak into the recorded replay classpath

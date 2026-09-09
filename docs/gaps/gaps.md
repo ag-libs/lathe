@@ -653,43 +653,6 @@ Pairs with CQ-0054 (keyword insertion) but is independent of it.
 
 ---
 
-## CQ-0056 — Completion crashes on a qualified call in a class-level field initializer
-
-ID: CQ-0056
-Status: accepted
-Target: backlog
-Tier: core
-Failure mode: request-crash
-Owner component: TypeResolver
-
-Cursor context:
-```java
-static Logger LOGGER = Slf4j.getLog(MethodHandles.lookup());   // completion inside the arg slot
-```
-
-Lathe behavior:
-The whole `textDocument/completion` request throws, so the editor shows nothing at any prefix.
-A receiver-qualified call in a field initializer has no enclosing method, so `site.enclosingMethod()`
-is null; `resolveExpectedValue` falls through to `resolveArgumentValueByPosition`, which calls
-`findMethodPath(…, enclosingMethod=null, …)`, and `findMethodPath` dereferences the null method name
-(`methodName.equals(…)`) → NPE. Only qualified calls hit it — an unqualified call resolves through a
-different branch and works.
-
-Expected Lathe behavior:
-Never crash; fall back to the type-index popup (as method-body and unqualified-call slots already do).
-Resolving the actual parameter type inside field initializers (assignable ranking) is a follow-up.
-
-Fix sketch:
-Null-guard `findMethodPath` (a null method name matches nothing → return null; all callers already
-handle null), optionally mirroring the existing `enclosingMethod != null` guard at the
-`resolveArgumentValueByPosition` call site.
-
-Regression target:
-`CompletionArgumentTest#argumentPosition_receiverQualifiedCall_inFieldInitializer_offersTypeIndexCandidates`
-(currently `@Disabled` pending the fix).
-
----
-
 # Workspace Lifecycle Gaps (WS)
 
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync

@@ -498,6 +498,10 @@ final class TypeResolver {
 
   private static ExpectedValue resolveArgumentValueByPosition(
       final CompletionSite site, final AttributedFileAnalysis snapshot) {
+    if (site.enclosingMethod() == null) {
+      return new ExpectedValue.Unknown();
+    }
+
     final var methodPath =
         findMethodPath(
             site.enclosingClass(), site.enclosingMethod(), site.cursorOffset(), snapshot);
@@ -892,6 +896,10 @@ final class TypeResolver {
       final String methodName,
       final int cursorOffset,
       final AttributedFileAnalysis snapshot) {
+    if (methodName == null) {
+      return null;
+    }
+
     final var result = new AtomicReference<TreePath>();
     new TreePathScanner<Void, Void>() {
       @Override

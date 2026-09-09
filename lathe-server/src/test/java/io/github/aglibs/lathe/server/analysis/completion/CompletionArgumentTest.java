@@ -7,7 +7,6 @@ import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import java.io.IOException;
 import java.util.List;
 import org.eclipse.lsp4j.CompletionItem;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 class CompletionArgumentTest extends CompletionTestSupport {
@@ -143,7 +142,6 @@ class CompletionArgumentTest extends CompletionTestSupport {
   }
 
   @Test
-  @Disabled("NPE on a qualified call in a class-level field initializer; fix pending")
   void argumentPosition_receiverQualifiedCall_inFieldInitializer_offersTypeIndexCandidates() {
     // A qualified call in a class-level field initializer has no enclosing method; expected-type
     // resolution must not crash there. Regression: it threw an NPE, failing the whole request.
