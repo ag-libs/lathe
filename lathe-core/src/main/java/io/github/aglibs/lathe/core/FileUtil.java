@@ -31,6 +31,30 @@ public final class FileUtil {
     }
   }
 
+  // Dotted names of every package that contains at least one .class file below root, sorted and
+  // deduped; empty when root is not a directory. The default (root) package is excluded — a named
+  // module never has default-package classes.
+  public static List<String> packagesWithClasses(final Path root) throws IOException {
+    if (!Files.isDirectory(root)) {
+      return List.of();
+    }
+
+    try (final var walk = Files.walk(root)) {
+      return walk.filter(Files::isRegularFile)
+          .filter(path -> path.getFileName().toString().endsWith(".class"))
+          .map(path -> toPackageName(root, path))
+          .filter(name -> !name.isEmpty())
+          .distinct()
+          .sorted()
+          .toList();
+    }
+  }
+
+  private static String toPackageName(final Path root, final Path classFile) {
+    final Path packageDir = root.relativize(classFile.getParent());
+    return packageDir.toString().replace(packageDir.getFileSystem().getSeparator(), ".");
+  }
+
   public static Path writeTempSourceFile(
       final Path tempDir, final Path sourceRoot, final Path filePath, final String content)
       throws IOException {
