@@ -39,115 +39,116 @@ Three properties of that field combine badly at scale:
    but the package is never a picker — so the one field most in need of filtering at scale
    is the one the UI never assists with.
 
-### Divergence from the v3 design
+### What actually failed — not "typed vs pickers"
 
-CQ-0055 v3 specified *progressive `vim.ui.select` pickers*
-(Kind → Module → Package → Name), each a short, filterable list.
-The implementation collapsed that into a single completable text field.
-That collapse is the regression this rethink reverses.
+CQ-0055 v3 specified progressive `vim.ui.select` pickers; the implementation shipped a single
+completable text field instead.
+The field is not wrong *because* it is typed — it fails for three fixable reasons:
+
+- its completion runs through `vim.ui.input`, which silently no-ops in most backends
+  (dressing / snacks / noice), so at scale the user types blind;
+- an **omitted package silently becomes the default package**, so the file lands at the source root;
+- the **name is folded into the location** (`package.Name`), so a partial entry is ambiguous.
+
+So the fix is not "go back to pickers." It keeps the fast typed command and repairs those three, and
+adds a guided pick only for the one case typing genuinely cannot serve — no buffer context.
 
 ## Design invariants
 
-Any redesign must hold these, independent of the chosen flow:
+1. **The package never defaults by omission.**
+   It must resolve from an explicitly typed package or the buffer context; if neither yields one, the
+   flow guides the user to a location — it never creates at the source root.
+   The default package is reachable only by explicitly asking for it.
+   This is the rule that kills the original bug at the parse layer.
 
-1. **Never silently accept an under-specified location.**
-   An empty package must be a deliberate, explicit choice (a rare "default package" option),
-   never a fallthrough.
+2. **Completion must be reliable.**
+   The typed path uses **native command-line completion** (which works regardless of the user's
+   `vim.ui.input` backend — the shipped field's fatal flaw); the guided path uses `vim.ui.select`
+   (inheriting telescope / fzf-lua / snacks). Neither relies on `vim.ui.input` completion.
 
-2. **Filter, don't recall.**
-   At scale the user fuzzy-filters, never retypes identifiers.
-   That means `vim.ui.select` (which inherits the user's telescope / fzf-lua / snacks picker),
-   not `vim.ui.input` completion.
+3. **Show the destination before writing.**
+   The name prompt's label shows the resolved `module / scope / package`, so a wrong target is caught
+   before the file is created.
 
-3. **Show the destination before creating.**
-   The resolved `module / root / package` is visible so a wrong target is caught up front,
-   not discovered afterward.
+## Mechanism
 
-## Approaches considered
+`:LatheNew` stays a **typed command with native command-line completion**, not a picker chain.
+There are two entry points, split by the 80/20 of real use, plus one rule that removes every
+ambiguity: **the type name is always its own final prompt — never part of the argument.**
 
-Three interaction models satisfy the invariants.
-They differ in how the destination is selected.
+### 80% — anchored (context) path
 
-### Approach A — Progressive fuzzy pickers (recommended)
-
-Kind → Module → Package → Name, each a fuzzy `vim.ui.select` list, module and package
-preselected from the current buffer, module step skipped when there is only one.
-No free-text location.
-
-```
-:LatheNew
-▸ Kind:     [Class] Interface Record Enum Test
-▸ Module:   fuzzy> ba⏎          (skipped when only 1; anchor preselected)
-              core
-            > batch             (← buffer anchor)
-▸ Package:  fuzzy> util⏎
-            > com.example.app.batch.util
-              ＋ New package…
-              ⇄ test root
-▸ Name:     FakeClock▮
-```
-
-Anchored common case: Enter, Enter, type name.
-This is the model that realizes the v3 design and makes package a picked, filterable step,
-so the big-reactor failure cannot recur.
-
-### Approach B — One flat fuzzy destination picker
-
-Kind → a single fuzzy picker over every `module / root / package` destination
-(scope shown per row) → Name.
-One search across the whole reactor instead of drilling down.
+You are in a file, adding a sibling. No location argument:
 
 ```
-:LatheNew → Kind: Class
-▸ Destination (fuzzy over all):
-   fuzzy> batch.util⏎
-   batch › test › com.example.app.batch.util
-   batch › main › com.example.app.batch.util
-   core  › main › com.example.app.util
-   ＋ New package…
-▸ Name: FakeClock▮
+:LatheNew class          → name: class in batch / main / com.example.app.batch: ▮
 ```
 
-Fewest steps; scope is visible in the row.
-The trade-off is a large flat list (fuzzy matching absorbs it) and a "new package" sub-flow.
-CQ-0055 v3 warned about materializing a big module's whole package set at once;
-for a one-shot picker that is acceptable, but it argues against making B the default over A's
-lazy per-module fetch.
+The current buffer's **module, scope, and package** fill the location; the only prompt is the
+**name**, and its label shows the resolved destination (the "show before you write" check).
+If the buffer has no resolvable context, this falls into the guided path below.
 
-### Approach C — Anchor-first confirm
+### Typed path — explicit location
 
-Kind → the destination resolved from the current buffer, shown for one-key accept,
-or "change" to drop into the A/B picker → Name.
-Fastest when already near the target.
+You know exactly where it goes, or it is elsewhere:
 
 ```
-:LatheNew → Kind: Class
-Destination: batch / main / com.example.app.batch
-   ⏎ accept    c change    t → test root
-Name: FakeClock▮
+:LatheNew class core:test:com.example.core.util     → name: … : ▮
 ```
 
-C is best understood as a fast path layered on A: A's anchor-preselect already gives most of C's
-benefit, so the recommendation is **A with anchor-preselect**, treating C's explicit
-confirm-or-change as an optional refinement rather than a separate model.
+The argument is **location only** — `[<module>:][<scope>:]<package>`, `scope ∈ {main,test}`:
 
-### Recommendation
+- `<module>` and `<package>` identify the target; `<scope>` defaults to `main`, `test:` opts in.
+- `main`/`test` are recognised as the scope only in a leading colon-segment; a package literally named
+  `test` sits in the package slot (`main:test`), and a module named `main`/`test` is disambiguated
+  against the known module list.
+- `<Tab>` completion is **position-aware**: modules at the first segment, `main`/`test` after a module
+  colon, packages after the scope — so the typed path is discoverable, not "great if you memorised the
+  tree."
 
-**Approach A (progressive fuzzy pickers) with buffer anchor-preselect.**
-It is the only model that makes package a picked, filterable step (invariant 2),
-keeps the anchored case at two Enters, and cleanly absorbs the special kinds below as
-"same pickers, fewer steps."
+A typed location must resolve **on its own**; context does not partial-fill it (see the rule below).
+Then the name prompt.
 
-## Scope selection (main vs test)
+### 20% — guided path ("somewhere new")
 
-Scope is inferred by default (from the anchor or an existing package) but must be
-selectable — the missing capability behind "I couldn't create a class in the test root."
+You are starting something new and would rather select than type. Bare `:LatheNew` (no kind):
 
-- **Interactive:** offer a `⇄ test root` / `⇄ main root` toggle in the package step, and
-  surface a two-item main/test pick when a module has both roots and scope is not fixed by
-  an anchor (the pick CQ-0055 v3 specified but never shipped).
-- **Dual-root packages:** when a package exists under both roots, the choice is explicit via
-  the toggle/pick — never the current non-deterministic "first entry wins."
+```
+:LatheNew                → kind → module → package or ＋New package… → scope? → name
+```
+
+Each step is a `vim.ui.select` (skip-when-one, context-preselected), with `＋ New package…` for a
+brand-new package (a `vim.ui.input` seeded from the module's base package).
+This is the **only** place a picker is used, and it is also where a no-context anchored/typed
+invocation lands for its missing pieces.
+
+### The resolution rule (kills the original bug at the parse layer)
+
+- The **name** is always prompted — the argument is location-only, so there is no `package.Name`
+  split and no "is `Foo` a package or a name?" ambiguity.
+- **Context fills the location only when no location is typed.** Any typed token means the location
+  stands on its own; context never partial-fills a typed target.
+- The **package must resolve** from a typed package *or* context. If neither yields one, the flow
+  **guides** — it never creates at the source root. The **default package** is reachable only by
+  explicitly asking for it, never by omission.
+
+| You run (context = `batch` / main / `com.example.app.batch`) | Location | Then |
+|---|---|---|
+| `:LatheNew class` | context → `batch` / main / `com.example.app.batch` | name prompt |
+| `:LatheNew class batch:test:com.example.app.batch` | typed → `batch` / **test** / same pkg | name prompt |
+| `:LatheNew class core:com.example.core.util` | typed → `core` / main / `…util` | name prompt |
+| `:LatheNew class` *(no file open)* | unresolvable | → guided path |
+| `:LatheNew` | — | fully guided |
+
+## Scope (main vs test)
+
+Selectable, never a silent default that lands you in the wrong root:
+
+- **Typed:** the `test:` / `main:` keyword in the location (default `main`).
+- **Guided:** a scope step, surfaced only when the chosen module has both roots and no context settles
+  it — the pick CQ-0055 v3 specified but never shipped.
+- **Dual-root packages** are resolved explicitly by the keyword or the step — never the current
+  non-deterministic "first entry wins."
 
 ## Special kinds — `module-info` and `package-info`
 
@@ -159,20 +160,21 @@ decisions than a class.
 
 ### `package-info`
 
-- Flow: Kind → module → package (the same destination picker) → **create; no name step**
-  (the file name is fixed).
+- Flow: resolve the destination the same three ways (context / typed `[module:][scope:]package` /
+  guided) → **create; no name prompt** (the file name is fixed).
 - Skeleton: `package <pkg>;` with a javadoc placeholder; caret in the javadoc.
 - Scope selectable (test packages get a `package-info` too).
 - Refuse if it already exists.
-- It is "the class flow minus the name prompt."
+- It is "the anchored flow minus the name prompt."
 
 ### `module-info`
 
-- Flow: Kind → **module only** (skip-when-one; offer only modules that lack a
-  `module-info.java`, only the main root) → **one confirmable name** → create at the source root.
+- Flow: resolve the **module** only (context, typed `module:`, or guided — skip-when-one, offering
+  only modules that lack a `module-info.java`, main root) → **one confirmable module name** (seeded) →
+  create at the source root.
 - No package step: it lands at the source root by definition.
 - Skeleton: `module <name> {\n\n}\n`; caret in the body.
-- It is "the class flow with package + name replaced by a single module-name confirmation."
+- It is "the anchored flow with package + type name replaced by a single module-name confirmation."
 
 ### Deriving the module name
 
@@ -185,29 +187,13 @@ Derive the default, cheapest-first:
 2. fall back to a normalized **artifactId** when the module has no sources yet.
 
 Show it prefilled; the user hits Enter or edits.
-Fast, but never a silent guess (invariant 1).
+Fast, but never a silent guess.
 
 ### Relationship to module-mirror corruption
 
 A proper `:LatheNew module-info` is the affordance that stops a modular project from ending up
 with a stray default-package class corrupting the module — the concrete tie-in with the WS gap
 on module-mirror corruption.
-
-## Typed accelerator
-
-Keep the free-text target only as a hardened, optional power-user / scriptable path,
-never the default:
-
-```
-:LatheNew class test:batch:com.example.app.batch.util.FakeClock
-```
-
-- Grammar extends to `[scope:][module:]package.Name`; `<Tab>` completes `main:` / `test:`,
-  then that root's packages.
-- It **rejects an empty package** — `:LatheNew class Foo` no longer falls through to the source
-  root; it errors or drops into the picker.
-- Whether to retain it at all is an open decision (see below); the pickers are the primary path
-  regardless.
 
 ## Server surface impact
 
@@ -225,16 +211,25 @@ Changes:
 - Module-name derivation (base package → artifactId) is server-side, exposed through
   `lathe.createType` (or a small companion query) so the client only seeds the prompt.
 
-The client (`new.lua`) shrinks: the single completable target field and its cache give way to
-progressive `vim.ui.select` pickers driven by the existing queries, plus the hardened typed
-accelerator if retained.
+The client (`new.lua`) keeps a **location parser** (`[module:][scope:]package`, name excluded), a
+**name prompt** that shows the resolved destination, **position-aware command-line completion**, and a
+**guided `vim.ui.select` fallback** for the no-context / bare-invocation path — all driven by the
+existing `lathe.modules` / `lathe.packages` / `lathe.resolveContext` queries.
+The always-default-package-by-omission behaviour is removed.
 
-## Open decisions
+## Decisions (settled)
 
-1. **Flow model** — A (recommended), B, or C.
-2. **Typed accelerator** — keep hardened, or drop for a single picker-only path.
-3. **`module-info` name prompt** — always confirm, or auto-accept the derived name when
-   unambiguous.
+1. **Model** — a typed command (anchored/context path + explicit-location path) as the primary, with a
+   guided `vim.ui.select` fallback for the 20% no-context / "somewhere new" case. Not a picker-first
+   flow.
+2. **Name** — always a final prompt; the location argument never carries the type name.
+3. **Context** — fills the location only when no location is typed; it never partial-fills a typed
+   target.
+4. **Package** — never defaults by omission; unresolved → guided; the default package only on explicit
+   request.
+5. **Scope** — `main`/`test` keyword in the typed location (default `main`), or the guided scope step
+   when a module has both roots and no context settles it.
+6. **`module-info` name** — a seeded, editable prompt (base package → artifactId).
 
 ## Relationship to other work
 

@@ -63,8 +63,10 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 - [Declaration Name Completion](planned/lathe-declaration-name-completion.md) — names in variable/field/parameter/
   type-parameter declaration slots.
 - [`:LatheNew` Ergonomics Rethink (v4)](planned/lathe-new-type-ergonomics.md) — rework the shipped `:LatheNew`
-  interaction model after large-reactor friction: progressive fuzzy pickers (package picked, not typed),
-  selectable main/test scope, and `module-info` / `package-info` as special kinds; supersedes CQ-0055 v3's flow.
+  after large-reactor friction: a typed command (context-defaulted anchored path + explicit
+  `[module:][scope:]package` location) with the type name always prompted and the package never defaulting by
+  omission, a guided `vim.ui.select` fallback for the no-context 20%, selectable main/test scope, and
+  `module-info` / `package-info` as special kinds; supersedes CQ-0055 v3's flow.
 - [New Type Creation](planned/lathe-new-type-creation.md) — deferred, editor-agnostic alternative: scaffold a blank
   file's class/interface/enum/record via snippet completion, with no custom client-side UI (not the shipped path).
 - [Google Indentation](planned/lathe-google-indent.md) — conservative on-type formatting.
