@@ -12,6 +12,7 @@ import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.TestSelection;
@@ -24,6 +25,7 @@ import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -466,7 +468,7 @@ class LatheTextDocumentServiceTest {
 
   @Test
   void initialize_sourceUpToDateWithItsClass_doesNotPrompt() throws Exception {
-    writeStaleModule(1_000L, 5_000L); // class compiled after the source's last edit → fresh
+    writeStaleModule(1_000L, 5_000L); // compiled after the source's last edit → fresh
 
     service.initialize(tmp);
 
@@ -524,14 +526,14 @@ class LatheTextDocumentServiceTest {
   // A configured single-module workspace whose one source and its .class are stamped at the given
   // mtimes, so the startup source-staleness scan sees the source as stale (source > class) or
   // fresh.
-  private void writeStaleModule(final long sourceMtime, final long classMtime) throws Exception {
+  private void writeStaleModule(final long sourceMtime, final long stampMtime) throws Exception {
     final Path sourceRoot = tmp.resolve("module/src/main/java");
     TestCompiler.writeAt(
         sourceRoot.resolve("com/example/Foo.java"),
         "package com.example; class Foo {}",
         sourceMtime);
-    TestCompiler.writeAt(
-        tmp.resolve(".lathe/module/classes/com/example/Foo.class"), "", classMtime);
+    CompiledStamps.writeAll(
+        tmp.resolve(".lathe/module"), "classes", Map.of("com/example/Foo.java", stampMtime));
     TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
   }
 

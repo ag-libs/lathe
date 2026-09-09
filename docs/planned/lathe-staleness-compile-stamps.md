@@ -76,10 +76,11 @@ otherwise                      → fresh
 A small JSON file **per source tree** (one for `main`, one for `test`) under `.lathe/<module>/`,
 mirroring the existing `lsp-params-<tree>.json` convention — decided over a single per-module file so
 it aligns with the per-tree `ModuleSourceConfig` the scan already iterates.
-It holds a flat `source-root-relative path → mtime` map, nothing more:
+It holds a flat `source-root-relative path → mtime` map under a `stamps` key (a thin wrapper record so
+it deserialises through the existing `Json.read(Class)` helper):
 
 ```json
-{ "com/example/app/Foo.java": 1725000000000 }
+{ "stamps": { "com/example/app/Foo.java": 1725000000000 } }
 ```
 
 A single shared helper in `lathe-core` (used by both writers and the reader — DRY) owns the format:

@@ -26,6 +26,7 @@ public final class LatheLayout {
   public static final String CLASSES_DIR = "classes";
   public static final String TEST_CLASSES_DIR = "test-classes";
   public static final String PARAMS_FILE_PREFIX = "lsp-params-";
+  public static final String STAMPS_FILE_PREFIX = "lsp-stamps-";
   public static final String DEPENDENCY_SOURCE_FILENAME = ".lathe-source.json";
   public static final String TYPE_INDEX_FILENAME = "index.json";
   public static final String TEST_LAUNCH_FILE = "test-launch.json";
@@ -77,6 +78,10 @@ public final class LatheLayout {
 
   public static String paramsFileName(final String sourceTree) {
     return PARAMS_FILE_PREFIX + sourceTree + ".json";
+  }
+
+  public static String compiledStampsFileName(final String sourceTree) {
+    return STAMPS_FILE_PREFIX + sourceTree + ".json";
   }
 
   public static boolean isParamsFile(final Path path) {

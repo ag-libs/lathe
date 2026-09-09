@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.compiler;
 
+import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheBuildInfo;
 import io.github.aglibs.lathe.core.LatheLayout;
@@ -9,7 +10,10 @@ import io.github.aglibs.lathe.core.Stopwatch;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import org.codehaus.plexus.compiler.Compiler;
 import org.codehaus.plexus.compiler.CompilerConfiguration;
 import org.codehaus.plexus.compiler.CompilerException;
@@ -119,6 +123,8 @@ public final class LatheCompiler implements Compiler {
         FileUtil.replaceDir(genSources.toPath(), moduleDir.resolve(LatheLayout.GENERATED_SOURCES));
       }
 
+      writeCompiledStamps(config, moduleDir, outputDir.getFileName().toString());
+
       LOG.info(
           "[lathe] {} {} capture complete {}ms",
           moduleRel,
@@ -126,6 +132,41 @@ public final class LatheCompiler implements Compiler {
           sw.elapsedMs());
     } catch (final IOException e) {
       LOG.warn("[lathe] {} post-compile step failed", moduleRel, e);
+    }
+  }
+
+  // A compile stamp per source (root-relative path -> mtime), excluding the annotation-processor
+  // output (the scan skips it too, and its files could collide with real sources on their key).
+  static void writeCompiledStamps(
+      final CompilerConfiguration config, final Path moduleDir, final String sourceTree)
+      throws IOException {
+    final var genSources = config.getGeneratedSourcesDirectory();
+    final Path genRoot = genSources != null ? genSources.toPath().normalize() : null;
+    final var stamps = new HashMap<String, Long>();
+    final List<String> locations = config.getSourceLocations();
+    for (final var location : locations != null ? locations : List.<String>of()) {
+      final var root = Path.of(location);
+      if (root.normalize().equals(genRoot) || !Files.isDirectory(root)) {
+        continue;
+      }
+
+      try (final var walk = Files.walk(root)) {
+        stamps.putAll(
+            walk.filter(FileUtil::isJavaFile)
+                .collect(
+                    Collectors.toMap(
+                        source -> root.relativize(source).toString(), LatheCompiler::mtime)));
+      }
+    }
+
+    CompiledStamps.writeAll(moduleDir, sourceTree, stamps);
+  }
+
+  private static long mtime(final Path path) {
+    try {
+      return Files.getLastModifiedTime(path).toMillis();
+    } catch (final IOException e) {
+      return 0L;
     }
   }
 

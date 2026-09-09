@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.JdwpOptions;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
@@ -13,6 +14,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
@@ -137,16 +139,36 @@ class WorkspaceSessionTest {
 
   @Test
   void staleModules_returnsNewestMtimeAndTheStaleModule() throws Exception {
-    writeClass("Edited", 1_000L); // compiled, then edited after → stale
-    writeJava("Edited", 5_000L);
-    writeJava("Added", 9_000L); // never compiled (a newly added file) → stale, and the newest
-    writeClass("Fresh", 8_000L); // compiled after its last edit → up to date, ignored
-    writeJava("Fresh", 2_000L);
+    writeJava("Edited", 5_000L); // stamped at 1000, edited after → stale
+    writeJava("Added", 9_000L); // no stamp (a newly added file) → stale, and the newest
+    writeJava("Fresh", 2_000L); // stamp matches its mtime → up to date, ignored
+    writeStamps(Map.of("com/example/Edited.java", 1_000L, "com/example/Fresh.java", 2_000L));
 
     final var scan = WorkspaceSession.staleModules(List.of(config), Set.of());
 
     assertThat(scan.newestMtime()).isEqualTo(9_000L);
     assertThat(scan.modules()).containsExactly(config);
+  }
+
+  @Test
+  void staleModules_missingClassButStampPresent_notStale() throws Exception {
+    // A mismatched source whose class never lands at the derived path — a matching stamp is fresh.
+    writeJava("Mismatch", 3_000L);
+    writeStamps(Map.of("com/example/Mismatch.java", 3_000L));
+
+    final var scan = WorkspaceSession.staleModules(List.of(config), Set.of());
+
+    assertThat(scan.modules()).isEmpty();
+  }
+
+  @Test
+  void staleModules_orphanStampForDeletedSource_ignored() throws Exception {
+    writeJava("Live", 2_000L);
+    writeStamps(Map.of("com/example/Live.java", 2_000L, "com/example/Ghost.java", 1_000L));
+
+    final var scan = WorkspaceSession.staleModules(List.of(config), Set.of());
+
+    assertThat(scan.modules()).isEmpty();
   }
 
   @Test
@@ -175,9 +197,8 @@ class WorkspaceSessionTest {
   }
 
   @Test
-  void staleModules_ignoresOpenFilesGeneratedRootsAndPackageInfo() throws Exception {
-    final var open = writeJava("Open", 9_000L); // stale (no class) but open → the editor owns it
-    writeJava("package-info", 9_500L); // no <name>.class ever → excluded, though it is the newest
+  void staleModules_ignoresOpenFilesAndGeneratedRoots() throws Exception {
+    final var open = writeJava("Open", 9_000L); // stale (no stamp) but open → the editor owns it
     writeJava("Real", 5_000L); // stale, and the only source that should count
 
     // A second module whose sole source root IS its annotation-processor output: wholly excluded.
@@ -285,8 +306,8 @@ class WorkspaceSessionTest {
     return TestCompiler.writeAt(sourceRoot.resolve("com/example/" + typeName + ".java"), "", mtime);
   }
 
-  private void writeClass(final String typeName, final long mtime) throws IOException {
-    TestCompiler.writeAt(outputDir.resolve(typeName + ".class"), "", mtime);
+  private void writeStamps(final Map<String, Long> stamps) throws IOException {
+    CompiledStamps.writeAll(config.moduleDir(), config.sourceTree(), stamps);
   }
 
   @Test

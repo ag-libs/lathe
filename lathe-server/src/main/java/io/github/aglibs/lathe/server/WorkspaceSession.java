@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server;
 import static java.util.logging.Level.SEVERE;
 
 import io.github.aglibs.lathe.core.CollectionUtil;
+import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheLock;
@@ -2310,7 +2311,14 @@ final class WorkspaceSession {
   }
 
   private StaleScan scanStaleModules() {
-    return staleModules(workspace.allConfigs(), openSourcePaths());
+    final var sw = Stopwatch.start();
+    final List<ModuleSourceConfig> configs = workspace.allConfigs();
+    final StaleScan scan = staleModules(configs, openSourcePaths());
+    LOG.fine(
+        () ->
+            "[stale] scanned %d source trees %dms stale=%d"
+                .formatted(configs.size(), sw.elapsedMs(), scan.modules().size()));
+    return scan;
   }
 
   private void checkSourceStaleness() {
@@ -2427,14 +2435,8 @@ final class WorkspaceSession {
         .collect(Collectors.toUnmodifiableSet());
   }
 
-  // The stale modules and the newest stale-source mtime across them (0 / empty if none). A source
-  // is
-  // stale when its primary .class is missing (never compiled -- a new file) or older than the
-  // source
-  // (edited outside the save path, which rewrites the .class). Open files are the editor's
-  // responsibility and skipped; the annotation-processor output (originalGenSourcesDir) is not a
-  // hand-written root and excluded. newestMtime drives the report-once dedupe; modules drives the
-  // targeted -pl sync.
+  // The stale modules and the newest stale-source mtime (0 / empty if none). Open files and the
+  // annotation-processor root are excluded. newestMtime drives the dedupe; modules the -pl sync.
   record StaleScan(long newestMtime, Set<ModuleSourceConfig> modules) {
     StaleScan {
       modules = Set.copyOf(modules);
@@ -2457,15 +2459,16 @@ final class WorkspaceSession {
 
   private static long newestStaleInModule(
       final ModuleSourceConfig config, final Set<Path> openPaths) {
+    final Map<String, Long> stamps = CompiledStamps.load(config.moduleDir(), config.sourceTree());
     return config.sourceRoots().stream()
         .filter(root -> !root.equals(config.originalGenSourcesDir()))
-        .mapToLong(root -> newestStaleUnder(config, root, openPaths))
+        .mapToLong(root -> newestStaleUnder(root, openPaths, stamps))
         .max()
         .orElse(0L);
   }
 
   private static long newestStaleUnder(
-      final ModuleSourceConfig config, final Path root, final Set<Path> openPaths) {
+      final Path root, final Set<Path> openPaths, final Map<String, Long> stamps) {
     if (!Files.isDirectory(root)) {
       return 0L;
     }
@@ -2473,7 +2476,7 @@ final class WorkspaceSession {
     try (final var walk = Files.walk(root)) {
       return walk.filter(FileUtil::isJavaFile)
           .filter(source -> !openPaths.contains(source))
-          .filter(source -> isStaleSource(config, root, source))
+          .filter(source -> isStale(root, source, stamps))
           .mapToLong(WorkspaceSession::mtimeMillis)
           .max()
           .orElse(0L);
@@ -2483,22 +2486,11 @@ final class WorkspaceSession {
     }
   }
 
-  private static boolean isStaleSource(
-      final ModuleSourceConfig config, final Path root, final Path source) {
-    // package-info.java has a class only when it carries package annotations; a javadoc-only one
-    // produces none, so the source-vs-class check would flag it stale forever and re-prompt after
-    // every sync. It declares no type, so exclude it from the scan.
-    if (source.getFileName().toString().equals("package-info.java")) {
-      return false;
-    }
-
-    final var packageRel = root.relativize(source).getParent();
-    final var classDir =
-        packageRel != null
-            ? config.latheClassesDir().resolve(packageRel)
-            : config.latheClassesDir();
-    final var classFile = classDir.resolve(typeNameFrom(source) + ".class");
-    return !Files.exists(classFile) || mtimeMillis(source) > mtimeMillis(classFile);
+  // No stamp (never built) or modified since the recorded compile; the class file is not consulted.
+  private static boolean isStale(
+      final Path root, final Path source, final Map<String, Long> stamps) {
+    final Long stamp = stamps.get(root.relativize(source).toString());
+    return stamp == null || mtimeMillis(source) > stamp;
   }
 
   private static long mtimeMillis(final Path path) {
@@ -2795,9 +2787,26 @@ final class WorkspaceSession {
   private void afterModuleSave(
       final CompileResponse result, final ModuleSourceConfig config, final Path savedSource) {
     deleteStaleClassOutputs(config, savedSource, result.writtenBinaryNames());
+    recordCompileStamp(config, savedSource);
     scheduleAstRefresh(result.uri());
     scheduleOpenFilesInModule(result.uri(), config);
     refreshReactorShard(config);
+  }
+
+  private static void recordCompileStamp(final ModuleSourceConfig config, final Path savedSource) {
+    final var root = sourceRootFor(config, savedSource);
+    if (root == null || root.equals(config.originalGenSourcesDir())) {
+      return;
+    }
+
+    final var sw = Stopwatch.start();
+    final var rel = root.relativize(savedSource).toString();
+    try {
+      CompiledStamps.record(config.moduleDir(), config.sourceTree(), rel, mtimeMillis(savedSource));
+      LOG.fine(() -> "[stamp] recorded %s %dms".formatted(rel, sw.elapsedMs()));
+    } catch (final IOException e) {
+      LOG.log(Level.WARNING, e, () -> "[stamp] record failed for %s".formatted(rel));
+    }
   }
 
   private AfterCompile publishThen(
