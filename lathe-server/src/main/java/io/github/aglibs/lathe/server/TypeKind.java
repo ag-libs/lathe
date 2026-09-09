@@ -9,10 +9,14 @@ enum TypeKind {
   ENUM("enum"),
   // A JUnit 5 test class matching the buffer's type — rendered as a package-private class, so its
   // wire token is not a Java keyword and newTypeSource branches on it rather than emitting it.
-  TEST("test");
+  TEST("test"),
+  // Special compilation units, not types — renderNewType routes them to dedicated renderers that
+  // bypass the type-name identifier check.
+  PACKAGE_INFO("package-info"),
+  MODULE_INFO("module-info");
 
   // The wire token the editor sends; for the plain kinds it is also the Java keyword emitted in the
-  // skeleton (TEST excepted — see above).
+  // skeleton (TEST and the special units excepted — see above).
   final String keyword;
 
   TypeKind(final String keyword) {

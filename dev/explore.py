@@ -601,6 +601,7 @@ class ExploreShell:
             "runnables":   self._cmd_runnables,
             "run":         self._cmd_run,
             "refresh":     self._cmd_refresh,
+            "create":      self._cmd_create,
             "inject":      self._cmd_inject,
             "reset":       self._cmd_reset,
             "log":         self._cmd_log,
@@ -1690,6 +1691,41 @@ class ExploreShell:
                 self.any_failure = True
         finally:
             resource.write_bytes(original)
+
+    def _cmd_create(self, args: list[str]) -> None:
+        """Probe lathe.createType end to end: create <type> <module>:<scope>:<pkg> [name].
+        <type> is class/interface/record/enum/test/package-info/module-info. Prints the server's
+        returned {path, content, caret} without writing anything (the client writes; this only checks
+        the server round-trip)."""
+        if len(args) < 2:
+            print("  usage: create <type> <module>:<scope>:<pkg> [name]")
+            return
+        typ = args[0]
+        loc = args[1].split(":")
+        if len(loc) == 3:
+            module, scope, pkg = loc
+        elif len(loc) == 2:
+            module, scope, pkg = loc[0], "main", loc[1]
+        else:
+            module, scope, pkg = loc[0], "main", ""
+        default = module if typ == "module-info" else ("package-info" if typ == "package-info" else "Probe")
+        name = args[2] if len(args) > 2 else default
+        try:
+            result = self._client.execute_command("lathe.createType", [{
+                "moduleRel": module, "kind": scope, "pkg": pkg, "type": typ, "name": name,
+            }])
+        except Exception as exc:
+            print(f"  \u2717 {exc}")
+            self.any_failure = True
+            return
+        if not result:
+            print("  \u2717 no result")
+            self.any_failure = True
+            return
+        print(f"  \u2713 path  = {result['path']}")
+        print(f"    caret = {result['caret']}")
+        for ln in result["content"].split("\n"):
+            print(f"    | {ln}")
 
     def _cmd_inject(self, args: list[str]) -> None:
         if not args:

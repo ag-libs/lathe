@@ -538,7 +538,9 @@ final class WorkspaceSession {
   }
 
   CreateTypeResult createType(final CreateTypeArgs args) {
-    final var sourceRoot = sourceRootFor(args.moduleRel(), args.kind());
+    // module-info.java always belongs to the main source root, whatever scope the client sent.
+    final var scope = args.type() == TypeKind.MODULE_INFO ? SourceScope.MAIN : args.kind();
+    final var sourceRoot = sourceRootFor(args.moduleRel(), scope);
     LOG.info(
         () ->
             "[createType] %s %s.%s kind=%s type=%s"
@@ -653,6 +655,15 @@ final class WorkspaceSession {
   // remove the caret line — the user's on-save formatter canonicalises it on first save.
   static CreateTypeResult renderNewType(
       final Path sourceRoot, final String pkg, final TypeKind type, final String name) {
+    return switch (type) {
+      case CLASS, INTERFACE, ENUM, RECORD, TEST -> renderType(sourceRoot, pkg, type, name);
+      case PACKAGE_INFO -> renderPackageInfo(sourceRoot, pkg);
+      case MODULE_INFO -> renderModuleInfo(sourceRoot, name);
+    };
+  }
+
+  private static CreateTypeResult renderType(
+      final Path sourceRoot, final String pkg, final TypeKind type, final String name) {
     if (!SourceVersion.isIdentifier(name) || SourceVersion.isKeyword(name)) {
       throw new IllegalArgumentException("'%s' is not a valid Java type name".formatted(name));
     }
@@ -660,6 +671,29 @@ final class WorkspaceSession {
     final var path = sourceRoot.resolve(pkg.replace('.', '/')).resolve(name + ".java");
     return new CreateTypeResult(
         path.toString(), newTypeSource(type, name, pkg), caretFor(type, name, pkg));
+  }
+
+  // The default package cannot carry a package-info, so an empty package is rejected.
+  private static CreateTypeResult renderPackageInfo(final Path sourceRoot, final String pkg) {
+    if (pkg.isEmpty()) {
+      throw new IllegalArgumentException("package-info requires a package");
+    }
+
+    final var path = sourceRoot.resolve(pkg.replace('.', '/')).resolve("package-info.java");
+    final var content = "/**\n * \n */\npackage %s;\n".formatted(pkg);
+    return new CreateTypeResult(path.toString(), content, new Position(1, 3));
+  }
+
+  // The module name is a qualified name, not a simple type identifier, so it is validated with
+  // isName.
+  private static CreateTypeResult renderModuleInfo(final Path sourceRoot, final String name) {
+    if (!SourceVersion.isName(name)) {
+      throw new IllegalArgumentException("'%s' is not a valid module name".formatted(name));
+    }
+
+    final var path = sourceRoot.resolve("module-info.java");
+    return new CreateTypeResult(
+        path.toString(), "module %s {\n\n}\n".formatted(name), new Position(1, 0));
   }
 
   private static String newTypeSource(final TypeKind type, final String name, final String pkg) {
@@ -673,6 +707,8 @@ final class WorkspaceSession {
       case TEST ->
           "%simport org.junit.jupiter.api.Test;\n\nclass %s {\n\n  @Test\n  void name() {\n\n  }\n}\n"
               .formatted(header, name);
+      case PACKAGE_INFO, MODULE_INFO ->
+          throw new IllegalStateException("special unit handled by renderNewType: " + type);
     };
   }
 

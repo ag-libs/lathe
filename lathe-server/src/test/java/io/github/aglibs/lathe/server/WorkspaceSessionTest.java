@@ -339,17 +339,49 @@ class WorkspaceSessionTest {
   }
 
   @Test
-  void renderNewType_illegalName_rejected() {
+  void renderNewType_invalidNamesAndPlacement_rejected() {
     assertThatThrownBy(() -> render(TypeKind.CLASS, "9Foo", "com.example"))
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(() -> render(TypeKind.CLASS, "class", "com.example"))
         .isInstanceOf(IllegalArgumentException.class);
+    // module-info: a qualified module name — malformed or a keyword segment is rejected.
+    assertThatThrownBy(() -> render(TypeKind.MODULE_INFO, "com.9bad", ""))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> render(TypeKind.MODULE_INFO, "com.class", ""))
+        .isInstanceOf(IllegalArgumentException.class);
+    // package-info: the default package cannot carry one.
+    assertThatThrownBy(() -> render(TypeKind.PACKAGE_INFO, "ignored", ""))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void renderNewType_packageInfo_javadocStubInPackageDir() {
+    final var result = render(TypeKind.PACKAGE_INFO, "ignored", "com.example");
+
+    assertThat(result.path())
+        .isEqualTo(sourceRoot.resolve("com/example/package-info.java").toString());
+    assertThat(result.content()).isEqualTo("/**\n * \n */\npackage com.example;\n");
+    assertThat(result.caret().getLine()).isEqualTo(1); // the javadoc body line
+    assertThat(result.caret().getCharacter()).isEqualTo(3);
+  }
+
+  @Test
+  void renderNewType_moduleInfo_qualifiedNameAtSourceRootIgnoringPackage() {
+    final var result = render(TypeKind.MODULE_INFO, "com.example.app", "any.pkg");
+
+    // module-info.java lands at the source root, never a package dir, whatever the package.
+    assertThat(result.path()).isEqualTo(sourceRoot.resolve("module-info.java").toString());
+    assertThat(result.content()).isEqualTo("module com.example.app {\n\n}\n");
+    assertThat(result.caret().getLine()).isEqualTo(1); // the empty body line
+    assertThat(result.caret().getCharacter()).isZero();
   }
 
   @Test
   void enums_fromWireAndSourceTree_mapKnownTokensAndRejectUnknown() {
     assertThat(TypeKind.fromWire("record")).isEqualTo(TypeKind.RECORD);
     assertThat(TypeKind.fromWire("test")).isEqualTo(TypeKind.TEST);
+    assertThat(TypeKind.fromWire("package-info")).isEqualTo(TypeKind.PACKAGE_INFO);
+    assertThat(TypeKind.fromWire("module-info")).isEqualTo(TypeKind.MODULE_INFO);
     assertThat(SourceScope.fromWire("test")).isEqualTo(SourceScope.TEST);
     assertThat(SourceScope.ofSourceTree(LatheLayout.TEST_CLASSES_DIR)).isEqualTo(SourceScope.TEST);
     assertThat(SourceScope.ofSourceTree(LatheLayout.CLASSES_DIR)).isEqualTo(SourceScope.MAIN);

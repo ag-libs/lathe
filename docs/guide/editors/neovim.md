@@ -142,35 +142,41 @@ require("lathe").setup({
 
 ## Create a new type
 
-`:LatheNew` scaffolds a class, interface, record, enum, or **test** through the server and opens it. It
-asks at most two questions — **kind** → **name** — then the server writes `<Name>.java` with the package
-line and a skeleton and drops the cursor in the body (or the record component list, or the test method).
+`:LatheNew` scaffolds a **class / interface / record / enum / test**, plus **`package-info`** and
+**`module-info`**, through the server and opens it. The server writes the file with the package line and
+a skeleton and drops the cursor in the body; it never overwrites — if the target exists it just opens it.
 The Lathe server must be attached, since creation is a Java operation.
 
-The name field takes an optional location prefix — `[module:]package.Name` — seeded from the current
-buffer and backed by completion over the existing packages, so a Java file usually means you just type
-the name. Type a different `package.Name` (or `module:package.Name` in a multi-module workspace) to
-place it elsewhere; a brand-new package is created on the fly. The **scope** (`main`/`test`) is inferred
-from the target package rather than asked. The server owns every placement decision — module and source
-root, package, skeleton, and caret — and never overwrites: if the target already exists it just opens
-that file.
+There are two ways in, split by whether you are adding to the current file's package or somewhere new:
 
-Arguments skip the prompts, with `<Tab>` completion at each position:
+- **In context (the common case):** `:LatheNew <kind>` takes the module, scope (`main`/`test`), and
+  package from the current buffer, then prompts for the **name** (the prompt shows the destination). You
+  just type the name.
+- **Explicit location:** `:LatheNew <kind> [module:][scope:]package` places it elsewhere. A typed
+  location resolves on its own — context never partial-fills it — and `main`/`test` pick the source root
+  (`:LatheNew class core:test:com.example.util`).
+- **Guided:** `:LatheNew` with no arguments runs a picker: kind → module (skipped when there's only one)
+  → an existing package or a new one → name.
 
-- `:LatheNew class` — skips the kind pick, then prompts for the name.
-- `:LatheNew class core:com.example.Foo` — fully non-interactive.
-- `:LatheNew <Tab>` completes the kind; `:LatheNew class <Tab>` completes the `module:package` targets.
+Two rules keep it safe: the **type name is always the final prompt** (never part of the argument, so
+there is no `package.Name` ambiguity), and the **package never defaults to the source root** — if it
+cannot be resolved, `:LatheNew` drops into the guided pick instead of creating a package-less file.
 
-`:LatheNew test` matches the current buffer: it derives `<Name>Test` from the open file and drops a
+`<Tab>` completes at each position — the kind after `:LatheNew `, then `module:` / `main:` / `test:` and
+that module's packages after the kind.
+
+`:LatheNew test` matches the current buffer: it seeds `<Name>Test` from the open file and drops a
 package-private JUnit 5 test class (`import org.junit.jupiter.api.Test;`, one empty `@Test` method) into
-the **test** root of the same module and package, with the cursor in the method body. Run from a test
-file (no class under test) it seeds the same test package and lets you name the new sibling test; with
-no Java file open it falls back to the interactive name prompt in test scope.
+the **test** root of the same package. `:LatheNew package-info` creates a `package-info.java` (javadoc
+stub) in the chosen package; `:LatheNew module-info` creates a `module-info.java` at the module's source
+root, with the module name seeded from the module's base package.
 
-| Action   | Command          | Suggested    |
-|----------|------------------|--------------|
-| New type | `:LatheNew`      | `<leader>nn` |
-| New test | `:LatheNew test` | `<leader>nt` |
+| Action        | Command                 | Suggested    |
+|---------------|-------------------------|--------------|
+| New type      | `:LatheNew`             | `<leader>nn` |
+| New test      | `:LatheNew test`        | `<leader>nt` |
+| package-info  | `:LatheNew package-info`|              |
+| module-info   | `:LatheNew module-info` |              |
 
 ## Run a `main`
 

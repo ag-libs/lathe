@@ -1,8 +1,10 @@
--- Verifies lathe.new (:LatheNew): picks the kind, then takes one "[module:]package.Name" reply
--- (seeded from the buffer's context, scope inferred) and creates via the server's lathe.modules /
--- lathe.packages / lathe.resolveContext / lathe.createType commands, writing/opening the returned
--- file. The LSP client and the pickers are stubbed, so this loads headlessly. The client holds no
--- Java logic -- the server owns placement/skeleton/caret -- so the tests assert flow, parsing and IO.
+-- Verifies lathe.new (:LatheNew) v4: a typed command whose type NAME is always a final prompt, with
+-- the buffer context filling the location only when nothing is typed, an explicit
+-- `[module:][scope:]package` location otherwise, and a guided vim.ui.select fallback when the location
+-- (specifically the package) cannot resolve. Covers the two special kinds (package-info: no name;
+-- module-info: seeded module name at the source root). The LSP client and pickers are stubbed, so the
+-- client carries no Java logic -- the server owns placement/skeleton/caret -- and the tests assert
+-- flow, parsing and IO.
 --
 -- Run headless from the repo root (or via run-specs.sh):
 --   nvim --headless --clean -u NONE \
@@ -47,10 +49,15 @@ local function item_by(items, predicate)
   end
 end
 
--- Stub the two prompts from a plan: { kind=<label>, target=<string>, module=<name> }. The kind
--- select dispatches on label; the name input returns plan.target, or the seeded default when the
--- plan omits it (so a `test` plan exercises the derived <Name>Test default). The module select is
--- the ambiguous-module fallback.
+-- A minimal lathe.createType stub result. Content/caret are irrelevant to these tests -- they assert
+-- the request arguments and IO -- so this only has to be something _open can write and open.
+local function result(path)
+  return { path = path, content = "x\n", caret = { line = 0, character = 0 } }
+end
+
+-- Stub every prompt from a plan: kind (What's new:), module (Module:), package (Package: -- by pkg,
+-- or "new" for the ＋ entry), and the vim.ui.input prompts (new package, module name, or the type
+-- name). Absent plan fields fall through to the prompt's seeded default.
 local function stub_ui(plan)
   vim.ui.select = function(items, opts, cb)
     if opts.prompt == "What's new:" then
@@ -59,10 +66,20 @@ local function stub_ui(plan)
       end))
     elseif opts.prompt == "Module:" then
       cb(plan.module)
+    elseif opts.prompt == "Package:" then
+      cb(item_by(items, function(item)
+        return plan.package == "new" and item.new or item.pkg == plan.package
+      end))
     end
   end
   vim.ui.input = function(opts, cb)
-    cb(plan.target ~= nil and plan.target or opts.default)
+    if opts.prompt == "New package: " then
+      cb(plan.new_package ~= nil and plan.new_package or opts.default)
+    elseif opts.prompt == "Module name: " then
+      cb(plan.module_name ~= nil and plan.module_name or opts.default)
+    else
+      cb(plan.name ~= nil and plan.name or opts.default)
+    end
   end
 end
 
@@ -72,177 +89,198 @@ do
   spec.check("lines drop the trailing empty", table.concat(new._lines("a\nb\n"), "|"), "a|b")
   spec.check("lines keep interior blanks", table.concat(new._lines("a\n\nb\n"), "|"), "a||b")
 
-  spec.check("test name appends suffix", new._test_name("Foo"), "FooTest")
-  spec.check("test name keeps existing suffix", new._test_name("FooTest"), "FooTest")
+  local full = new._parse_location("core:test:com.x")
+  spec.check("parse module", full.module, "core")
+  spec.check("parse scope", full.scope, "test")
+  spec.check("parse package", full.pkg, "com.x")
 
-  local qualified = new._parse_target("core:com.x.Foo", nil, { "core", "app" })
-  spec.check("parse module prefix", qualified.module, "core")
-  spec.check("parse package", qualified.pkg, "com.x")
-  spec.check("parse name", qualified.name, "Foo")
+  local bare = new._parse_location("com.y")
+  spec.check("parse bare package leaves module unset", bare.module == nil, true)
+  spec.check("parse bare package leaves scope unset", bare.scope == nil, true)
+  spec.check("parse bare package keeps the package", bare.pkg, "com.y")
 
-  local anchored = new._parse_target("Bar", { moduleRel = "core", pkg = "com.x" }, { "core" })
-  spec.check("parse bare name uses context module", anchored.module, "core")
-  spec.check("parse bare name default package", anchored.pkg, "")
-  spec.check("parse bare name", anchored.name, "Bar")
+  local scoped = new._parse_location("test:com.z")
+  spec.check("parse scope-only prefix sets scope", scoped.scope, "test")
+  spec.check("parse scope-only prefix leaves module unset", scoped.module == nil, true)
 
-  local single = new._parse_target("com.y.Baz", nil, { "only" })
-  spec.check("parse falls back to sole module", single.module, "only")
-  spec.check("parse package from qualified", single.pkg, "com.y")
+  local moduleOnly = new._parse_location("core:")
+  spec.check("parse module-only keeps the module", moduleOnly.module, "core")
+  spec.check("parse module-only yields an empty package", moduleOnly.pkg, "")
 
-  local ambiguous = new._parse_target("Qux", nil, { "a", "b" })
-  spec.check("parse leaves module unresolved when ambiguous", ambiguous.module == nil, true)
-
-  local entries = {
-    { module = "core", pkg = "com.x", scope = "test" },
-    { module = "core", pkg = "com.y", scope = "main" },
+  local pkgs = {
+    { pkg = "com.example.a", scope = "main" },
+    { pkg = "com.example.b", scope = "main" },
+    { pkg = "com.other", scope = "test" },
   }
-  spec.check("infer forces test for the test kind", new._infer_scope("test", "core", "com.x", entries, nil), "test")
-  spec.check("infer keeps a main package's scope", new._infer_scope("class", "core", "com.y", entries, nil), "main")
-  spec.check("infer keeps a test package's scope", new._infer_scope("class", "core", "com.x", entries, nil), "test")
+  spec.check("base package is the common main prefix", new._base_package(pkgs), "com.example")
+  spec.check("base package empty with no main packages", new._base_package({ { pkg = "com.t", scope = "test" } }), "")
+
+  vim.cmd.edit(vim.fn.tempname() .. "/Foo.java")
+  spec.check("test seed appends Test", new._test_seed(0), "FooTest")
+  vim.cmd.edit(vim.fn.tempname() .. "/BarTest.java")
+  spec.check("test seed keeps an existing suffix", new._test_seed(0), "BarTest")
+
+  spec.check("cmd completes kinds by prefix", table.concat(new._cmd_complete("pa", "LatheNew pa", 11), ","), "package-info")
+  spec.check("cmd completes every kind on a fresh arg", #new._cmd_complete("", "LatheNew ", 9), 7)
+
+  -- Prime the completion cache, then assert position-aware location completion.
+  stub_server({
+    ["lathe.modules"] = { "core", "app" },
+    ["lathe.packages"] = { { pkg = "com.core", scope = "main" } },
+  })
+  new._refresh_async()
+  spec.check("complete head offers modules", vim.tbl_contains(new._complete_location("co"), "core:"), true)
+  spec.check("complete head offers scope keywords", vim.tbl_contains(new._complete_location("te"), "test:"), true)
   spec.check(
-    "infer takes the buffer scope for a new package",
-    new._infer_scope("class", "core", "com.z", {}, { moduleRel = "core", pkg = "com.z", scope = "test" }),
-    "test"
+    "complete after a module offers its packages",
+    table.concat(new._complete_location("core:com"), ","),
+    "core:com.core"
   )
-  spec.check("infer defaults a brand-new package to main", new._infer_scope("class", "core", "com.new", {}, nil), "main")
-
-  local main_ctx = { moduleRel = "core", pkg = "com.example", scope = "main" }
-  local test_ctx = { moduleRel = "core", pkg = "com.example", scope = "test" }
-  spec.check("seed: test on a main class derives <Name>Test", new._default_target("test", main_ctx, false, "Foo"), "com.example.Foo" .. "Test")
-  spec.check("seed: test in a test buffer is location-only", new._default_target("test", test_ctx, false, "FooTest"), "com.example.")
-  spec.check("seed: a plain kind is location-only", new._default_target("class", main_ctx, false, "Foo"), "com.example.")
-  spec.check("seed: multi-module carries the module prefix", new._default_target("test", { moduleRel = "core", pkg = "com.x", scope = "main" }, true, "Foo"), "core:com.x.FooTest")
-  spec.check("seed: no context yields the bare derived test name", new._default_target("test", nil, false, "Foo"), "FooTest")
-
-  spec.check("cmd completes kinds by prefix", table.concat(new._cmd_complete("te", "LatheNew te", 11), ","), "test")
-  spec.check("cmd completes every kind on a fresh arg", #new._cmd_complete("", "LatheNew ", 9), 5)
 end
 
 -- ── create() end to end ──────────────────────────────────────────────────────
 
-do -- anchored: single module, existing package, scope inferred from the package entry
+do -- anchored: no location typed, the buffer context fills module/scope/package; name is prompted
   local path = vim.fn.tempname() .. "/core/src/main/java/com/example/core/Foo.java"
   local requests = stub_server({
     ["lathe.resolveContext"] = { moduleRel = "core", scope = "main", pkg = "com.example.core" },
-    ["lathe.modules"] = { "core" },
-    ["lathe.packages"] = {
-      { pkg = "com.example.core", scope = "main" },
-      { pkg = "com", scope = "main" },
-    },
-    ["lathe.createType"] = {
-      path = path,
-      content = "package com.example.core;\n\npublic class Foo {\n\n}\n",
-      caret = { line = 3, character = 0 },
-    },
+    ["lathe.createType"] = result(path),
   })
-  stub_ui({ kind = "Class", target = "com.example.core.Foo" })
+  stub_ui({ name = "Foo" })
+
+  new.create("class")
+
+  local args = request_for(requests, "lathe.createType") or {}
+  spec.check("context: type", args.type, "class")
+  spec.check("context: moduleRel", args.moduleRel, "core")
+  spec.check("context: scope", args.kind, "main")
+  spec.check("context: pkg", args.pkg, "com.example.core")
+  spec.check("context: name from the prompt", args.name, "Foo")
+  spec.check("context: file created", vim.fn.filereadable(path), 1)
+end
+
+do -- typed: an explicit module:scope:package location resolves on its own; name is still prompted
+  local requests = stub_server({
+    ["lathe.modules"] = { "core", "app" },
+    ["lathe.createType"] = result(vim.fn.tempname() .. "/Bar.java"),
+  })
+  stub_ui({ name = "Bar" })
+
+  new.create("class", "core:test:com.example.foo")
+
+  local args = request_for(requests, "lathe.createType") or {}
+  spec.check("typed: moduleRel from the prefix", args.moduleRel, "core")
+  spec.check("typed: scope from the keyword", args.kind, "test")
+  spec.check("typed: package", args.pkg, "com.example.foo")
+  spec.check("typed: name from the prompt", args.name, "Bar")
+end
+
+do -- typed, sole module, package only: module resolves to the only one, scope defaults to main
+  local requests = stub_server({
+    ["lathe.modules"] = { "only" },
+    ["lathe.createType"] = result(vim.fn.tempname() .. "/Baz.java"),
+  })
+  stub_ui({ name = "Baz" })
+
+  new.create("class", "com.example.baz")
+
+  local args = request_for(requests, "lathe.createType") or {}
+  spec.check("typed sole-module: moduleRel", args.moduleRel, "only")
+  spec.check("typed sole-module: package", args.pkg, "com.example.baz")
+  spec.check("typed sole-module: scope defaults to main", args.kind, "main")
+end
+
+do -- guided: bare :LatheNew picks kind, module, then an existing package (scope from its entry)
+  local requests = stub_server({
+    ["lathe.modules"] = { "core", "app" },
+    ["lathe.packages"] = { { pkg = "com.app", scope = "main" }, { pkg = "com.app.util", scope = "test" } },
+    ["lathe.createType"] = result(vim.fn.tempname() .. "/G.java"),
+  })
+  stub_ui({ kind = "Class", module = "app", package = "com.app", name = "G" })
 
   new.create()
 
   local args = request_for(requests, "lathe.createType") or {}
-  spec.check("createType type", args.type, "class")
-  spec.check("createType moduleRel (single module)", args.moduleRel, "core")
-  spec.check("createType scope inferred from the package entry", args.kind, "main")
-  spec.check("createType pkg", args.pkg, "com.example.core")
-  spec.check("createType name", args.name, "Foo")
-  spec.check("file created", vim.fn.filereadable(path), 1)
-  spec.check("buffer opened", vim.api.nvim_buf_get_name(0):match("Foo%.java$") ~= nil, true)
-
-  -- The run above primed the completion cache; command-line completion serves targets from it.
-  spec.check(
-    "cmd completes targets from the primed cache",
-    table.concat(new._cmd_complete("com.e", "LatheNew class com.e", 20), ","),
-    "com.example.core"
-  )
+  spec.check("guided: moduleRel from the pick", args.moduleRel, "app")
+  spec.check("guided: package from the pick", args.pkg, "com.app")
+  spec.check("guided: scope from the picked package entry", args.kind, "main")
+  spec.check("guided: name from the prompt", args.name, "G")
 end
 
-do -- cold start, multi-module: explicit module prefix, brand-new package -> scope defaults to main
+do -- no context + no location: routes to the guided picker rather than a source-root default package
   local requests = stub_server({
     ["lathe.resolveContext"] = nil,
-    ["lathe.modules"] = { "app", "core" },
-    ["lathe.packages"] = { { pkg = "", scope = "main" }, { pkg = "com.app", scope = "main" } },
-    ["lathe.createType"] = {
-      path = vim.fn.tempname() .. "/Sub.java",
-      content = "package com.app.sub;\n\npublic class Sub {\n\n}\n",
-      caret = { line = 3, character = 0 },
-    },
+    ["lathe.modules"] = { "only" },
+    ["lathe.packages"] = { { pkg = "com.only", scope = "main" } },
+    ["lathe.createType"] = result(vim.fn.tempname() .. "/H.java"),
   })
-  stub_ui({ kind = "Class", target = "app:com.app.sub.Sub" })
+  stub_ui({ package = "com.only", name = "H" })
 
-  new.create()
+  new.create("class")
 
   local args = request_for(requests, "lathe.createType") or {}
-  spec.check("cold-start moduleRel from the module prefix", args.moduleRel, "app")
-  spec.check("new package from the reply", args.pkg, "com.app.sub")
-  spec.check("new package scope defaults to main", args.kind, "main")
-  spec.check("createType name", args.name, "Sub")
+  spec.check("no-context: routed to the guided package pick", args.pkg, "com.only")
+  spec.check("no-context: package never empty by omission", args.pkg ~= "", true)
+  spec.check("no-context: name", args.name, "H")
 end
 
-do -- ambiguous module (no prefix, no context, several modules) -> falls back to the module pick
-  local requests = stub_server({
-    ["lathe.resolveContext"] = nil,
-    ["lathe.modules"] = { "app", "core" },
-    ["lathe.packages"] = { { pkg = "com.app", scope = "main" } },
-    ["lathe.createType"] = {
-      path = vim.fn.tempname() .. "/T.java",
-      content = "package com.new;\n\npublic class T {\n\n}\n",
-      caret = { line = 3, character = 0 },
-    },
-  })
-  stub_ui({ kind = "Class", target = "com.new.T", module = "core" })
-
-  new.create()
-
-  local args = request_for(requests, "lathe.createType") or {}
-  spec.check("ambiguous module taken from the pick", args.moduleRel, "core")
-  spec.check("ambiguous module keeps the typed package", args.pkg, "com.new")
-end
-
-do -- test kind: derives <Name>Test from the buffer, keeps the package, forces test scope
-  local dir = vim.fn.tempname()
-  local subject = dir .. "/core/src/main/java/com/example/core/Foo.java"
-  vim.fn.mkdir(vim.fn.fnamemodify(subject, ":h"), "p")
-  vim.fn.writefile({ "package com.example.core;", "public class Foo {}" }, subject)
-  vim.cmd.edit(vim.fn.fnameescape(subject))
-
+do -- package-info: no name prompt, the fixed stem is sent, package from context
   local requests = stub_server({
     ["lathe.resolveContext"] = { moduleRel = "core", scope = "main", pkg = "com.example.core" },
-    ["lathe.modules"] = { "core" },
-    ["lathe.packages"] = { { pkg = "com.example.core", scope = "main" } },
-    ["lathe.createType"] = {
-      path = dir .. "/core/src/test/java/com/example/core/FooTest.java",
-      content = "package com.example.core;\n\nimport org.junit.jupiter.api.Test;\n\nclass FooTest {\n\n  @Test\n  void name() {\n\n  }\n}\n",
-      caret = { line = 8, character = 0 },
-    },
+    ["lathe.createType"] = result(vim.fn.tempname() .. "/package-info.java"),
   })
-  stub_ui({ kind = "Test" }) -- no target -> accept the seeded <Name>Test default
+  local name_prompted = false
+  vim.ui.select = function(_, _, _) end
+  vim.ui.input = function(opts, cb)
+    name_prompted = true
+    cb(opts.default)
+  end
 
-  new.create()
+  new.create("package-info")
 
   local args = request_for(requests, "lathe.createType") or {}
-  spec.check("test createType type", args.type, "test")
-  spec.check("test scope forced", args.kind, "test")
-  spec.check("test name derived from the buffer", args.name, "FooTest")
-  spec.check("test package from the context", args.pkg, "com.example.core")
+  spec.check("package-info: type", args.type, "package-info")
+  spec.check("package-info: package from context", args.pkg, "com.example.core")
+  spec.check("package-info: name is the fixed stem", args.name, "package-info")
+  spec.check("package-info: no name prompt", name_prompted, false)
+end
+
+do -- module-info: prompts a name seeded with the module's base package, forces the main root
+  local requests = stub_server({
+    ["lathe.resolveContext"] = { moduleRel = "core", scope = "main", pkg = "com.example.core" },
+    ["lathe.packages"] = {
+      { pkg = "com.example.core", scope = "main" },
+      { pkg = "com.example.util", scope = "main" },
+    },
+    ["lathe.createType"] = result(vim.fn.tempname() .. "/module-info.java"),
+  })
+  local seed
+  vim.ui.select = function(_, _, _) end
+  vim.ui.input = function(opts, cb)
+    seed = opts.default
+    cb(opts.default)
+  end
+
+  new.create("module-info")
+
+  local args = request_for(requests, "lathe.createType") or {}
+  spec.check("module-info: type", args.type, "module-info")
+  spec.check("module-info: scope forced to main", args.kind, "main")
+  spec.check("module-info: name seeded from the base package", args.name, "com.example")
+  spec.check("module-info: the seed shown was the base package", seed, "com.example")
 end
 
 do -- kind passed as an argument skips the kind picker
   local requests = stub_server({
     ["lathe.resolveContext"] = { moduleRel = "core", scope = "main", pkg = "com.example" },
-    ["lathe.modules"] = { "core" },
-    ["lathe.packages"] = { { pkg = "com.example", scope = "main" } },
-    ["lathe.createType"] = {
-      path = vim.fn.tempname() .. "/Rec.java",
-      content = "package com.example;\n\npublic record Rec() {\n}\n",
-      caret = { line = 2, character = 0 },
-    },
+    ["lathe.createType"] = result(vim.fn.tempname() .. "/Rec.java"),
   })
   local picked = false
   vim.ui.select = function(_, _, _)
     picked = true
   end
   vim.ui.input = function(_, cb)
-    cb("com.example.Rec")
+    cb("Rec")
   end
 
   new.create("record")
@@ -271,7 +309,7 @@ do -- server not attached -> warns, no picker
   spec.check("no server never opens the kind picker", picked, false)
 end
 
-do -- open() opens an existing file rather than overwriting it
+do -- _open opens an existing file rather than overwriting it
   local path = vim.fn.tempname() .. "/Dup.java"
   vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
   vim.fn.writefile({ "existing" }, path)
