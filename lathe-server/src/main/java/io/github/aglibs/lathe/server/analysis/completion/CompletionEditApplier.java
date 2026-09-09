@@ -151,6 +151,15 @@ final class CompletionEditApplier {
             site.replacementRange().getEnd().getCharacter());
 
     final boolean appendDirectly = replacementEnd >= exprEnd;
+    if (!appendDirectly
+        && cu.getLineMap().getLineNumber(exprEnd)
+            != cu.getLineMap().getLineNumber(replacementEnd)) {
+      // A broken parse (e.g. an unclosed paren) makes javac stretch the initializer's end position
+      // onto a later line — the enclosing `}` — where a separate `;` edit would land wrong
+      // (`\n;}`).
+      return;
+    }
+
     items.stream()
         .filter(item -> item.getKind() == CompletionItemKind.Method)
         .forEach(item -> applySemicolonToMethod(item, cu, exprEnd, appendDirectly));

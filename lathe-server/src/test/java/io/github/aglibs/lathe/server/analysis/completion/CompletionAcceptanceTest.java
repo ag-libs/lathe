@@ -277,6 +277,42 @@ class CompletionAcceptanceTest extends CompletionTestSupport {
             """);
   }
 
+  @Test
+  void accept_noArgMethod_fieldInitializer_unclosedParen_doesNotMisplaceSemicolon() {
+    // An unclosed paren makes javac stretch the initializer's end onto the `}` line; a separate `;`
+    // edit would land there as `\n;}`. The auto-semicolon must be suppressed for such a broken
+    // parse.
+    final CompletionItem item =
+        itemWithLabelDetail(
+                fixture.complete(
+                    """
+                    class Holder { static Object make() { return null; } }
+                    class Test {
+                        Object x = (Holder.mak§
+                    }
+                    """),
+                "make",
+                "()")
+            .orElseThrow();
+
+    assertThat(
+            accept(
+                """
+                class Holder { static Object make() { return null; } }
+                class Test {
+                    Object x = (Holder.mak§
+                }
+                """,
+                item))
+        .isEqualTo(
+            """
+            class Holder { static Object make() { return null; } }
+            class Test {
+                Object x = (Holder.make()§
+            }
+            """);
+  }
+
   private static String overloadedPingSource(final String callLine) {
     return """
         class Test {
