@@ -39,6 +39,11 @@ local function warn(message)
   notify(message, vim.log.levels.WARN)
 end
 
+-- The Lathe LSP client attached to a buffer, or nil.
+local function lathe_client(bufnr)
+  return vim.lsp.get_clients({ name = "lathe", bufnr = bufnr })[1]
+end
+
 -- Dispatch a workspace/executeCommand to the Lathe client; cb receives the decoded result.
 local function execute(client, bufnr, command, argument, cb)
   client:request("workspace/executeCommand", {
@@ -79,6 +84,41 @@ function M._open(result)
   vim.fn.writefile(M._lines(result.content), result.path)
   vim.cmd.edit(vim.fn.fnameescape(result.path))
   pcall(vim.api.nvim_win_set_cursor, 0, { result.caret.line + 1, result.caret.character })
+  M._compile_on_attach(vim.api.nvim_get_current_buf())
+end
+
+-- Opening a file only analyzes it; the .class is produced by a FULL compile on save. So save the
+-- freshly-created buffer once the Lathe server attaches -- otherwise the new type has no bytecode in
+-- .lathe/ and reads as an unbuilt "stale" source, triggering a spurious sync prompt.
+function M._compile_on_attach(bufnr)
+  local function save()
+    if not vim.api.nvim_buf_is_valid(bufnr) then
+      return
+    end
+
+    pcall(function()
+      vim.api.nvim_buf_call(bufnr, function()
+        vim.cmd("silent keepalt write")
+      end)
+    end)
+  end
+
+  -- Defer onto the main loop: the save fires format_on_save (a blocking format request) and didSave,
+  -- neither of which is safe to run nested inside the LspAttach callback we may be in.
+  if lathe_client(bufnr) then
+    return vim.schedule(save)
+  end
+
+  vim.api.nvim_create_autocmd("LspAttach", {
+    buffer = bufnr,
+    callback = function(args)
+      local client = vim.lsp.get_client_by_id(args.data.client_id)
+      if client and client.name == "lathe" then
+        vim.schedule(save)
+        return true
+      end
+    end,
+  })
 end
 
 -- ── grammar helpers ──────────────────────────────────────────────────────────
@@ -153,9 +193,23 @@ local function name_label(kind, dest, scope)
   return ("%s in %s"):format(noun, where)
 end
 
+-- vim.ui.input that fires cb only with a trimmed, non-empty reply; an empty or cancelled reply is a
+-- no-op. Centralises the "prompt → validate → trim" the create prompts all repeat.
+local function input_nonempty(opts, cb)
+  vim.ui.input(opts, function(value)
+    if value and vim.trim(value) ~= "" then
+      cb(vim.trim(value))
+    end
+  end)
+end
+
+local function label_of(item)
+  return item.label
+end
+
 -- ── flow: fill the missing pieces of a destination, then create ──────────────
 
-local proceed, pick_module, pick_package, finish, prompt_module_name
+local proceed, pick_module, pick_package, finish, create_module_info
 
 -- package-info sends the fixed stem as name (ignored by the server); module-info sends the JPMS module
 -- name and always the main root.
@@ -163,7 +217,7 @@ local function submit(client, bufnr, kind, dest, scope, name)
   execute(client, bufnr, "lathe.createType", {
     moduleRel = dest.module,
     kind = scope,
-    pkg = dest.pkg or "",
+    pkg = kind == "module-info" and "" or (dest.pkg or ""),
     type = kind,
     name = name,
   }, M._open)
@@ -221,20 +275,18 @@ pick_package = function(client, bufnr, kind, dest)
     end
     items[#items + 1] = { label = "＋ New package…", new = true }
 
-    vim.ui.select(items, {
-      prompt = "Package:",
-      format_item = function(item)
-        return item.label
-      end,
-    }, function(choice)
+    vim.ui.select(items, { prompt = "Package:", format_item = label_of }, function(choice)
       if not choice then
         return
       end
 
       if choice.new then
         local base = M._base_package(packages)
+        -- A deliberate New-package entry may be any package, including empty — that is an explicit
+        -- choice of the default package (the invariant only forbids defaulting by omission). Only a
+        -- cancel (nil) aborts.
         vim.ui.input({ prompt = "New package: ", default = base ~= "" and base .. "." or "" }, function(pkg)
-          if pkg and vim.trim(pkg) ~= "" then
+          if pkg then
             dest.pkg = vim.trim(pkg)
             finish(client, bufnr, kind, dest)
           end
@@ -260,26 +312,31 @@ finish = function(client, bufnr, kind, dest)
   end
 
   if kind == "module-info" then
-    prompt_module_name(client, bufnr, dest)
+    create_module_info(client, bufnr, dest)
     return
   end
 
-  vim.ui.input({
+  input_nonempty({
     prompt = name_label(kind, dest, scope) .. ": ",
     default = kind == "test" and M._test_seed(bufnr) or "",
   }, function(name)
-    if name and vim.trim(name) ~= "" then
-      submit(client, bufnr, kind, dest, scope, vim.trim(name))
-    end
+    submit(client, bufnr, kind, dest, scope, name)
   end)
 end
 
-prompt_module_name = function(client, bufnr, dest)
+-- module-info takes no package, scope, or type name — only the module. Its JPMS name is derived from
+-- the module's base package and it always lands at the main source root, so there is no prompt. The
+-- rare case where nothing can be derived (a module with no packages yet) falls back to asking.
+create_module_info = function(client, bufnr, dest)
   execute(client, bufnr, "lathe.packages", { moduleRel = dest.module }, function(packages)
-    vim.ui.input({ prompt = "Module name: ", default = M._base_package(packages) }, function(name)
-      if name and vim.trim(name) ~= "" then
-        submit(client, bufnr, "module-info", dest, "main", vim.trim(name))
-      end
+    local name = M._base_package(packages)
+    if name ~= "" then
+      submit(client, bufnr, "module-info", dest, "main", name)
+      return
+    end
+
+    input_nonempty({ prompt = "Module name: " }, function(entered)
+      submit(client, bufnr, "module-info", dest, "main", entered)
     end)
   end)
 end
@@ -308,12 +365,7 @@ local function guided(client, bufnr, kind)
     return proceed(client, bufnr, kind, {})
   end
 
-  vim.ui.select(KINDS, {
-    prompt = "What's new:",
-    format_item = function(item)
-      return item.label
-    end,
-  }, function(item)
+  vim.ui.select(KINDS, { prompt = "What's new:", format_item = label_of }, function(item)
     if item then
       proceed(client, bufnr, item.type, {})
     end
@@ -323,7 +375,7 @@ end
 -- kind_arg / location_arg come from the command line and skip the corresponding step when present.
 function M.create(kind_arg, location_arg)
   local bufnr = vim.api.nvim_get_current_buf()
-  local client = vim.lsp.get_clients({ name = "lathe", bufnr = bufnr })[1]
+  local client = lathe_client(bufnr)
   if not client then
     warn("server not attached — creation needs the language server")
     return
@@ -370,7 +422,7 @@ end
 -- on an LSP round-trip). Silent when the server is not attached.
 function M._refresh_async()
   local bufnr = vim.api.nvim_get_current_buf()
-  local client = vim.lsp.get_clients({ name = "lathe", bufnr = bufnr })[1]
+  local client = lathe_client(bufnr)
   if not client then
     return
   end

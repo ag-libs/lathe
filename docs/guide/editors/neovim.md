@@ -160,7 +160,8 @@ There are two ways in, split by whether you are adding to the current file's pac
 
 Two rules keep it safe: the **type name is always the final prompt** (never part of the argument, so
 there is no `package.Name` ambiguity), and the **package never defaults to the source root** — if it
-cannot be resolved, `:LatheNew` drops into the guided pick instead of creating a package-less file.
+cannot be resolved, `:LatheNew` drops into the guided pick instead of creating a package-less file. You
+can still deliberately choose the default package by clearing the guided **New package** input.
 
 `<Tab>` completes at each position — the kind after `:LatheNew `, then `module:` / `main:` / `test:` and
 that module's packages after the kind.
@@ -168,8 +169,9 @@ that module's packages after the kind.
 `:LatheNew test` matches the current buffer: it seeds `<Name>Test` from the open file and drops a
 package-private JUnit 5 test class (`import org.junit.jupiter.api.Test;`, one empty `@Test` method) into
 the **test** root of the same package. `:LatheNew package-info` creates a `package-info.java` (javadoc
-stub) in the chosen package; `:LatheNew module-info` creates a `module-info.java` at the module's source
-root, with the module name seeded from the module's base package.
+stub) in the chosen package; `:LatheNew module-info` creates a `module-info.java` at the module's **main**
+source root — you only choose the module, and the JPMS module name is derived from its base package (no
+further prompt; it asks for a name only when nothing can be derived).
 
 | Action        | Command                 | Suggested    |
 |---------------|-------------------------|--------------|

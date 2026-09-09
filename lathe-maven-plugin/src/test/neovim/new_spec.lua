@@ -245,7 +245,7 @@ do -- package-info: no name prompt, the fixed stem is sent, package from context
   spec.check("package-info: no name prompt", name_prompted, false)
 end
 
-do -- module-info: prompts a name seeded with the module's base package, forces the main root
+do -- module-info: only the module — name auto-derived from the base package, main root, no prompt
   local requests = stub_server({
     ["lathe.resolveContext"] = { moduleRel = "core", scope = "main", pkg = "com.example.core" },
     ["lathe.packages"] = {
@@ -254,11 +254,11 @@ do -- module-info: prompts a name seeded with the module's base package, forces 
     },
     ["lathe.createType"] = result(vim.fn.tempname() .. "/module-info.java"),
   })
-  local seed
+  local prompted = false
   vim.ui.select = function(_, _, _) end
-  vim.ui.input = function(opts, cb)
-    seed = opts.default
-    cb(opts.default)
+  vim.ui.input = function(_, cb)
+    prompted = true
+    cb("")
   end
 
   new.create("module-info")
@@ -266,8 +266,26 @@ do -- module-info: prompts a name seeded with the module's base package, forces 
   local args = request_for(requests, "lathe.createType") or {}
   spec.check("module-info: type", args.type, "module-info")
   spec.check("module-info: scope forced to main", args.kind, "main")
-  spec.check("module-info: name seeded from the base package", args.name, "com.example")
-  spec.check("module-info: the seed shown was the base package", seed, "com.example")
+  spec.check("module-info: no package/scope in the request", args.pkg .. "/" .. args.kind, "/main")
+  spec.check("module-info: name auto-derived from the base package", args.name, "com.example")
+  spec.check("module-info: no prompt when a base package exists", prompted, false)
+end
+
+do -- module-info: falls back to a name prompt only when nothing can be derived
+  local requests = stub_server({
+    ["lathe.resolveContext"] = { moduleRel = "core", scope = "main", pkg = "" },
+    ["lathe.packages"] = { { pkg = "", scope = "main" } },
+    ["lathe.createType"] = result(vim.fn.tempname() .. "/module-info.java"),
+  })
+  vim.ui.select = function(_, _, _) end
+  vim.ui.input = function(_, cb)
+    cb("com.manual")
+  end
+
+  new.create("module-info")
+
+  local args = request_for(requests, "lathe.createType") or {}
+  spec.check("module-info fallback: prompted name is used", args.name, "com.manual")
 end
 
 do -- kind passed as an argument skips the kind picker
@@ -323,6 +341,58 @@ do -- _open opens an existing file rather than overwriting it
   spec.check("existing file notifies", notified, true)
   spec.check("existing file not overwritten", table.concat(vim.fn.readfile(path), "\n"), "existing")
   spec.check("existing file opened", vim.api.nvim_buf_get_name(0):match("Dup%.java$") ~= nil, true)
+end
+
+do -- guided New-package accepts an empty entry as a deliberate default-package choice
+  local requests = stub_server({
+    ["lathe.modules"] = { "only" },
+    ["lathe.packages"] = { { pkg = "com.only", scope = "main" } },
+    ["lathe.createType"] = result(vim.fn.tempname() .. "/D.java"),
+  })
+  vim.ui.select = function(items, opts, cb)
+    if opts.prompt == "What's new:" then
+      cb(item_by(items, function(kind)
+        return kind.label == "Class"
+      end))
+    elseif opts.prompt == "Package:" then
+      cb(item_by(items, function(item)
+        return item.new
+      end))
+    end
+  end
+  vim.ui.input = function(opts, cb)
+    cb(opts.prompt == "New package: " and "" or "D")
+  end
+
+  new.create()
+
+  local args = request_for(requests, "lathe.createType") or {}
+  spec.check("New-package empty is the deliberate default package", args.pkg, "")
+  spec.check("New-package empty still creates the type", args.name, "D")
+end
+
+do -- compile-on-attach saves the new buffer (→ FULL compile → .class) when the Lathe client is attached
+  vim.lsp.get_clients = function(_)
+    return { { name = "lathe" } }
+  end
+  local wrote = false
+  local real_cmd = vim.cmd
+  vim.cmd = setmetatable({}, {
+    __call = function(_, command)
+      if type(command) == "string" and command:match("write") then
+        wrote = true
+      end
+    end,
+  })
+  local buf = vim.api.nvim_create_buf(false, true)
+
+  new._compile_on_attach(buf)
+  vim.wait(200, function()
+    return wrote
+  end)
+
+  vim.cmd = real_cmd
+  spec.check("compile-on-attach saves when the Lathe client is attached", wrote, true)
 end
 
 do -- setup registers :LatheNew

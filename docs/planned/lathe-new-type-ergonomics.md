@@ -169,25 +169,19 @@ decisions than a class.
 
 ### `module-info`
 
-- Flow: resolve the **module** only (context, typed `module:`, or guided — skip-when-one, offering
-  only modules that lack a `module-info.java`, main root) → **one confirmable module name** (seeded) →
-  create at the source root.
-- No package step: it lands at the source root by definition.
+- Flow: resolve the **module** only (context, typed `module:`, or guided — skip-when-one) → create at
+  the **main** source root. **No package, no scope, and no name prompt** — the only interaction is the
+  module.
 - Skeleton: `module <name> {\n\n}\n`; caret in the body.
-- It is "the anchored flow with package + type name replaced by a single module-name confirmation."
+- It is "the anchored flow with package, scope, and type name all removed."
 
 ### Deriving the module name
 
-`module <name>` is a real JPMS name, not derivable from the hyphenated filename, so
-`module-info` is the one special kind that keeps a seeded, editable name prompt.
-Derive the default, cheapest-first:
-
-1. the module's **base package** — the longest common package prefix of its existing sources
-   (the JPMS convention: module name = root package, e.g. `com.example.app.batch`);
-2. fall back to a normalized **artifactId** when the module has no sources yet.
-
-Show it prefilled; the user hits Enter or edits.
-Fast, but never a silent guess.
+`module <name>` is a real JPMS name, not derivable from the hyphenated filename, so it is **derived**
+from the module's **base package** — the longest common package prefix of its main sources (the JPMS
+convention: module name = root package, e.g. `com.example.app.batch`). This is automatic: no prompt.
+The only fallback is a module with no derivable base package (e.g. no sources yet), which asks for the
+name; an artifactId-based default is a possible later refinement.
 
 ### Relationship to module-mirror corruption
 
@@ -229,7 +223,8 @@ The always-default-package-by-omission behaviour is removed.
    request.
 5. **Scope** — `main`/`test` keyword in the typed location (default `main`), or the guided scope step
    when a module has both roots and no context settles it.
-6. **`module-info` name** — a seeded, editable prompt (base package → artifactId).
+6. **`module-info`** — only the module is chosen: no package, no scope, no name prompt. Always the main
+   root; the JPMS name is auto-derived from the base package (fallback prompt only when none derivable).
 
 ## Relationship to other work
 
