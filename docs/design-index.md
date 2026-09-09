@@ -62,8 +62,11 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 
 - [Declaration Name Completion](planned/lathe-declaration-name-completion.md) — names in variable/field/parameter/
   type-parameter declaration slots.
-- [New Type Creation](planned/lathe-new-type-creation.md) — scaffold a blank file's class/interface/enum/record via
-  snippet completion, with no custom client-side UI.
+- [`:LatheNew` Ergonomics Rethink (v4)](planned/lathe-new-type-ergonomics.md) — rework the shipped `:LatheNew`
+  interaction model after large-reactor friction: progressive fuzzy pickers (package picked, not typed),
+  selectable main/test scope, and `module-info` / `package-info` as special kinds; supersedes CQ-0055 v3's flow.
+- [New Type Creation](planned/lathe-new-type-creation.md) — deferred, editor-agnostic alternative: scaffold a blank
+  file's class/interface/enum/record via snippet completion, with no custom client-side UI (not the shipped path).
 - [Google Indentation](planned/lathe-google-indent.md) — conservative on-type formatting.
 - [Type Definition Navigation](planned/lathe-type-definition.md) — `textDocument/typeDefinition` for Neovim's `grt`.
 - [Semantic Tokens](planned/lathe-semantic-tokens.md) — full identifier-level coverage (local-var-vs-field, class,
@@ -72,6 +75,9 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 
 **Reliability and further work:**
 
+- [Staleness via Compile Stamps](planned/lathe-staleness-compile-stamps.md) — replace the source-staleness
+  scan's class-file-path derivation (WS-5) with a per-source compile stamp recorded at build/save time, so a
+  missing/wrong `package` or name mismatch can no longer produce an un-clearable sync prompt (WS-9 detection half).
 - [Sibling Recompilation](planned/lathe-sibling-recompilation.md) — closed-file diagnostics after API changes.
 - [Lightweight Watcher](planned/lathe-lightweight-watcher.md) — partially stale design; would back a
   non-intrusive source-staleness signal (the deferred WS-2, folded under WS-1) if beta feedback warrants it.
