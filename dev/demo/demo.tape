@@ -1,24 +1,35 @@
-# STATUS: FIRST DRAFT — not final. The scenario needs a substantial rework: the current beats do not
-# showcase Lathe's features well (e.g. `/name` lands on the parameter, not the return; the completion
-# popup doesn't reliably land). Timings are untuned. Treat this as a starting point, not the demo.
-#
-# Lathe demo — short hero (~18s). Run from the repo root after ./dev/demo/prepare.sh:
+# Lathe demo — ~30s hero. Run from the repo root after ./dev/demo/prepare.sh:
 #   vhs dev/demo/demo.tape        ->   docs/demo.gif
 #
-# Uses an isolated COPY of your Neovim config (dev/demo/.nvim), with Lathe pointed
-# at this checkout (LATHE_NVIM_DIR) and the server at the invoker cache (LATHE_CACHE).
-# Beats: completion -> cross-module go-to-definition -> run the test file.
-# Sleep values are first-pass guesses — watch the GIF and tune them.
+# Uses an isolated COPY of your Neovim config (dev/demo/.nvim), with the Lathe
+# client from this checkout (LATHE_NVIM_DIR) and the server from the invoker
+# cache (LATHE_CACHE). The fixture is the multi-module invoker workspace, already
+# built with a .lathe/ capture.
+#
+# Story — one thread: Lathe works from your real Maven build.
+#   Beat 1  cross-module go-to-definition (app -> core)
+#   Beat 2  hover on an annotation-processor-generated type (Lathe resolves generated sources)
+#   Beat 3  run a whole test file, replayed from .lathe/ bytecode (no Maven, no recompile)
+#
+# NOTE: leader is '\' in this config (init.lua: mapleader = "\\"), so the test
+# keymaps are \tf and \to. Sleeps are tuned against the recorded GIF — re-tune if
+# the fixture or server timing changes.
 
 Output docs/demo.gif
 Require nvim
 
 Set Shell "bash"
-Set FontSize 16
-Set Width 1200
-Set Height 720
-Set Padding 20
-Set TypingSpeed 55ms
+# Monaco for the code, with a Nerd-Font fallback so gutter/statusline icons render
+# instead of tofu boxes (Monaco ships no Nerd glyphs). Both are installed on the box.
+# Render at 1.5x scale (font + dims together): same rows/columns, but ~2x the pixels
+# per glyph so Monaco — a bitmap-derived face that anti-aliases soft at small sizes —
+# stays crisp after GIF palette quantization.
+Set FontFamily "Monaco, Cascadia Mono NF"
+Set FontSize 24
+Set Width 1800
+Set Height 1080
+Set Padding 30
+Set TypingSpeed 60ms
 
 # --- hidden setup: isolated config copy + Lathe from checkout + invoker server cache ---
 Hide
@@ -29,35 +40,34 @@ Type 'cd lathe-maven-plugin/target/it/multi-module' Enter
 Type 'clear' Enter
 Show
 
-# launch your config (via the copy) on a cross-module class
-Type 'nvim app/src/main/java/com/example/app/FormalGreeter.java' Enter
-Sleep 5s          # [TUNE] server start + workspace index + first paint
+# Open a class in the app module; Lathe indexes the whole reactor and reports ready.
+# -n disables swap files: VHS kills nvim at tape end with no clean :q, so without this
+# every rerun hits an E325 swap-recovery prompt that eats the first beat's keystrokes.
+Type 'nvim -n app/src/main/java/com/example/app/Main.java' Enter
+Sleep 6s          # server start + workspace index + first paint ("workspace ready")
 
-# --- Beat 1: completion (nvim-cmp popup on a String member) ---
-Type '/name' Enter          # jump to the `name` use in the return expression
-Type 'ea'                   # append after the word, enter insert
-Type '.'                    # cmp completion on String pops up
-Sleep 2500ms      # [TUNE]
-Escape
-Type 'u'                    # undo the stray '.', leave the file clean
+# --- Beat 1: cross-module go-to-definition (app -> core) ---
+Type 'gg'
+Type '/upper' Enter         # unique in this file: the cross-module call StringUtils.upper(...)
+Sleep 800ms
+Type 'gd'                   # telescope lsp_definitions; a single result auto-jumps into core/StringUtils.java
+Sleep 1800ms                # dwell on the core module source
+Ctrl+O                      # jump back to Main.java
 Sleep 800ms
 
-# --- Beat 2: cross-module go-to-definition (app -> core) ---
-Type '/Greeter' Enter       # the `implements Greeter`
-Type 'gd'                   # your gd = telescope lsp_definitions
-Sleep 1500ms
-# If a 1-item Telescope picker appears instead of an auto-jump, uncomment:
-# Enter
-Sleep 1500ms      # [TUNE] show core/.../Greeter.java
-Ctrl+O                      # jump back
-Sleep 600ms
+# --- Beat 2: hover a generated type (User is a @Builder record; UserBuilder is generated) ---
+Type '/UserBuilder' Enter   # the annotation-processor-generated builder, used on the main() line
+Sleep 800ms
+Type 'K'                    # hover: AST-resolved info for a type Lathe reads from generated-sources
+Sleep 2200ms                # dwell on the hover popup
+Escape                      # dismiss the hover float
 
-# --- Beat 3: run the test file (replay from .lathe/ bytecode, no Maven) ---
+# --- Beat 3: run the whole test file, replayed from .lathe/ (no Maven, no recompile) ---
 Type ':e jpms/src/test/java/com/example/jpms/HelloTest.java' Enter
-Sleep 2s          # [TUNE] neotest discovery / gutter glyphs
-Type ' tf'                  # <leader>tf = Run File Tests
-Sleep 3500ms      # [TUNE] replay + streamed events; gutters flip green, toast fires
-Type ' to'                  # <leader>to = Test Output (docked, navigable)
-Sleep 3s          # [TUNE] show streamed stdout/stderr + the run command line
+Sleep 3s                    # neotest discovery: runnable glyphs appear in the gutter
+Type '\tf'                  # <leader>tf = Run File Tests (leader = '\')
+Sleep 4500ms                # replay + streamed events; gutters flip green, toast fires
+Type '\to'                  # <leader>to = Lathe's docked, navigable output split
+Sleep 3500ms                # streamed stdout/stderr + the real java launch command
 
-Sleep 1500ms
+Sleep 500ms
