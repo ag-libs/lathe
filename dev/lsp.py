@@ -553,11 +553,17 @@ class LatheClient:
 
     def run_test(self, module_rel: str, selector_kind: str, selector_value: str) -> dict:
         """Trigger lathe.run.test. Returns a ReplayOutcome dict
-        ({launched, blockedReasons, exitCode})."""
+        ({launched, blockedReasons, exitCode}).
+
+        The server expects a `selections` array of {selectorKind, selectorValue}; sending the
+        legacy flat {selectorKind, selectorValue} shape makes parseRunTestArgument NPE."""
         return self.execute_command("lathe.run.test", [{
             "moduleRel": module_rel,
-            "selectorKind": selector_kind,
-            "selectorValue": selector_value,
+            "selections": [{
+                "selectorKind": selector_kind,
+                "selectorValue": selector_value,
+            }],
+            "token": "probe",
         }])
 
     def debug_test(self, module_rel: str, selections: list[dict],
