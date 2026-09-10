@@ -115,6 +115,17 @@ do
   spec.check("base package is the common main prefix", new._base_package(pkgs), "com.example")
   spec.check("base package empty with no main packages", new._base_package({ { pkg = "com.t", scope = "test" } }), "")
 
+  local entries = { { pkg = "com.a", scope = "main" }, { pkg = "com.b", scope = "main" } }
+  local taken = new._take_context(entries, "com.b")
+  spec.check("take_context returns the matching entry", taken and taken.pkg, "com.b")
+  spec.check("take_context removes it from the list", #entries, 1)
+  spec.check("take_context nil when no context package", new._take_context({ { pkg = "com.a" } }, "") == nil, true)
+  spec.check("take_context nil when not among the packages", new._take_context({ { pkg = "com.a" } }, "com.z") == nil, true)
+
+  spec.check("float_module leads with the context module", table.concat(new._float_module({ "a", "b", "c" }, "c"), ","), "c,a,b")
+  spec.check("float_module keeps order when context absent", table.concat(new._float_module({ "a", "b" }, "z"), ","), "a,b")
+  spec.check("float_module keeps order when no context", table.concat(new._float_module({ "a", "b" }, nil), ","), "a,b")
+
   vim.cmd.edit(vim.fn.tempname() .. "/Foo.java")
   spec.check("test seed appends Test", new._test_seed(0), "FooTest")
   vim.cmd.edit(vim.fn.tempname() .. "/BarTest.java")
@@ -205,6 +216,43 @@ do -- guided: bare :LatheNew picks kind, module, then an existing package (scope
   spec.check("guided: package from the pick", args.pkg, "com.app")
   spec.check("guided: scope from the picked package entry", args.kind, "main")
   spec.check("guided: name from the prompt", args.name, "G")
+end
+
+do -- guided: the buffer's own module and package float to the top; ＋ New package… right behind it
+  local requests = stub_server({
+    ["lathe.resolveContext"] = { moduleRel = "app", scope = "main", pkg = "com.app.batch" },
+    ["lathe.modules"] = { "core", "app" },
+    ["lathe.packages"] = {
+      { pkg = "com.app", scope = "main" },
+      { pkg = "com.app.batch", scope = "main" },
+      { pkg = "com.app.util", scope = "test" },
+    },
+    ["lathe.createType"] = result(vim.fn.tempname() .. "/T.java"),
+  })
+  stub_ui({ kind = "Class", module = "app", package = "com.app.batch", name = "T" })
+
+  -- Reuse the shared driver, then decorate its selector to record each picker's items in the order
+  -- shown -- the one thing this test asserts that stub_ui does not expose.
+  local order = {}
+  local select = vim.ui.select
+  vim.ui.select = function(items, opts, cb)
+    if opts.prompt == "Module:" or opts.prompt == "Package:" then
+      order[opts.prompt] = vim.tbl_map(function(item)
+        return type(item) == "string" and item or item.label
+      end, items)
+    end
+
+    select(items, opts, cb)
+  end
+
+  new.create()
+
+  spec.check("guided context: the buffer module leads the list", order["Module:"][1], "app")
+  spec.check("guided context: the buffer package is item 1", order["Package:"][1], "com.app.batch (main)")
+  spec.check("guided context: ＋ New package… is item 2", order["Package:"][2], "＋ New package…")
+  local args = request_for(requests, "lathe.createType") or {}
+  spec.check("guided context: package from the floated entry", args.pkg, "com.app.batch")
+  spec.check("guided context: scope from the entry", args.kind, "main")
 end
 
 do -- no context + no location: routes to the guided picker rather than a source-root default package
@@ -349,20 +397,7 @@ do -- guided New-package accepts an empty entry as a deliberate default-package 
     ["lathe.packages"] = { { pkg = "com.only", scope = "main" } },
     ["lathe.createType"] = result(vim.fn.tempname() .. "/D.java"),
   })
-  vim.ui.select = function(items, opts, cb)
-    if opts.prompt == "What's new:" then
-      cb(item_by(items, function(kind)
-        return kind.label == "Class"
-      end))
-    elseif opts.prompt == "Package:" then
-      cb(item_by(items, function(item)
-        return item.new
-      end))
-    end
-  end
-  vim.ui.input = function(opts, cb)
-    cb(opts.prompt == "New package: " and "" or "D")
-  end
+  stub_ui({ kind = "Class", package = "new", new_package = "", name = "D" })
 
   new.create()
 

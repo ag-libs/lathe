@@ -207,6 +207,39 @@ local function label_of(item)
   return item.label
 end
 
+-- Remove and return the entry whose package matches the buffer context, so pick_package can float it
+-- to the top of the list; nil when there is no context package or it is not among this module's
+-- packages (e.g. a different module was chosen in the guided flow).
+function M._take_context(entries, contextPkg)
+  if not contextPkg or contextPkg == "" then
+    return nil
+  end
+
+  for i, entry in ipairs(entries) do
+    if entry.pkg == contextPkg then
+      return table.remove(entries, i)
+    end
+  end
+
+  return nil
+end
+
+-- Reorder `modules` so the buffer's own module leads the picker; returned unchanged when there is no
+-- context module or it is not among them.
+function M._float_module(modules, contextModule)
+  if not contextModule or not vim.tbl_contains(modules, contextModule) then
+    return modules
+  end
+
+  local ordered = { contextModule }
+  for _, module in ipairs(modules) do
+    if module ~= contextModule then
+      ordered[#ordered + 1] = module
+    end
+  end
+  return ordered
+end
+
 -- ── flow: fill the missing pieces of a destination, then create ──────────────
 
 local proceed, pick_module, pick_package, finish, create_module_info
@@ -255,7 +288,7 @@ pick_module = function(client, bufnr, kind, dest)
       return proceed(client, bufnr, kind, dest)
     end
 
-    vim.ui.select(modules, { prompt = "Module:" }, function(module)
+    vim.ui.select(M._float_module(modules, dest.contextModule), { prompt = "Module:" }, function(module)
       if module then
         dest.module = module
         proceed(client, bufnr, kind, dest)
@@ -267,13 +300,27 @@ end
 pick_package = function(client, bufnr, kind, dest)
   execute(client, bufnr, "lathe.packages", { moduleRel = dest.module }, function(packages)
     packages = packages or {}
-    local items = {}
+    local entries = {}
     for _, entry in ipairs(packages) do
       if entry.pkg ~= "" then
-        items[#items + 1] = { label = ("%s (%s)"):format(entry.pkg, entry.scope), pkg = entry.pkg, scope = entry.scope }
+        entries[#entries + 1] =
+          { label = ("%s (%s)"):format(entry.pkg, entry.scope), pkg = entry.pkg, scope = entry.scope }
       end
     end
+
+    -- The buffer's own package on top, ＋ New package… right behind it, then the long tail: the common
+    -- "add a sibling from the guided flow" pick is item 1, and creating a package stays within reach
+    -- instead of buried at the bottom of a large module's list.
+    local items = {}
+    local context = M._take_context(entries, dest.contextPkg)
+    if context then
+      items[#items + 1] = context
+    end
+
     items[#items + 1] = { label = "＋ New package…", new = true }
+    for _, entry in ipairs(entries) do
+      items[#items + 1] = entry
+    end
 
     vim.ui.select(items, { prompt = "Package:", format_item = label_of }, function(choice)
       if not choice then
@@ -359,15 +406,18 @@ local function from_location(client, bufnr, kind, location, modules)
   proceed(client, bufnr, kind, { module = parsed.module, scope = parsed.scope, pkg = parsed.pkg })
 end
 
--- Bare :LatheNew (or a no-context fast invocation): the guided picker, kind first when not given.
-local function guided(client, bufnr, kind)
+-- Bare :LatheNew (or a no-context fast invocation): the guided picker, kind first when not given. A
+-- resolved context (may be nil) never skips a step here -- guided means "let me pick" -- but its
+-- module and package seed the pickers to float the buffer's own module and package to the top.
+local function guided(client, bufnr, kind, ctx)
+  local dest = { contextModule = ctx and ctx.moduleRel, contextPkg = ctx and ctx.pkg }
   if kind then
-    return proceed(client, bufnr, kind, {})
+    return proceed(client, bufnr, kind, dest)
   end
 
   vim.ui.select(KINDS, { prompt = "What's new:", format_item = label_of }, function(item)
     if item then
-      proceed(client, bufnr, item.type, {})
+      proceed(client, bufnr, item.type, dest)
     end
   end)
 end
@@ -382,7 +432,10 @@ function M.create(kind_arg, location_arg)
   end
 
   if not kind_arg or kind_arg == "" then
-    return guided(client, bufnr, nil)
+    execute(client, bufnr, "lathe.resolveContext", { uri = vim.uri_from_bufnr(bufnr) }, function(ctx)
+      guided(client, bufnr, nil, ctx)
+    end)
+    return
   end
 
   if not vim.tbl_contains(KIND_TOKENS, kind_arg) then
