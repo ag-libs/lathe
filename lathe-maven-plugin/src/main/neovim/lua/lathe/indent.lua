@@ -270,6 +270,13 @@ local function heuristic_indent(lnum, current, prev_lnum, prev)
   end
   local prev_indent = vim.fn.indent(prev_lnum)
   if starts_with_closer(current) then
+    -- An empty block: the previous non-blank line is the opener itself, so the closer aligns with it
+    -- rather than dedenting a level (which would assume a body line sat between them). This is the
+    -- heuristic fallback for when tree-sitter cannot model the block -- invalid or mid-edit code.
+    if ends_with_block_opener(prev) then
+      return prev_indent
+    end
+
     return math.max(prev_indent - block_width(), 0)
   end
   if starts_with_selector(current) then

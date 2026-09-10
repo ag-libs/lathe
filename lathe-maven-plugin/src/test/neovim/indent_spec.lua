@@ -64,6 +64,12 @@ local FIXTURES = {
     0,
   },
   {
+    "empty block closer aligns with its opener, not one level shallower",
+    { "class Foo {", "  static {", "}" },
+    3,
+    2,
+  },
+  {
     "completed multi-line statement dedents to the statement base",
     { "x =", "    foo(", "        a);", "next();" },
     4,
