@@ -1,15 +1,12 @@
 package io.github.aglibs.lathe.junit;
 
-import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.LaunchMode;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import java.io.File;
-import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
@@ -99,7 +96,7 @@ final class LaunchCapture {
         modulePath,
         capturedClassPath(classPath, ownJarLocation),
         patchModules,
-        completeAddOpens(addOpens, patchModules),
+        addOpens,
         addReads,
         addExports,
         addModules,
@@ -119,47 +116,6 @@ final class LaunchCapture {
     }
 
     return OptionValue.absent();
-  }
-
-  // Surefire opens only the packages of the tests a fork runs, so a scoped or split run captures a
-  // partial --add-opens set for the patched test module(s). Recompute those from the compiled
-  // test-classes directory (which holds every test package regardless of selection), and keep opens
-  // targeting any other module (JDK/dependency modules the scan cannot see) verbatim.
-  private static List<String> completeAddOpens(
-      final List<String> parsedOpens, final Map<String, String> patchModules) {
-    if (patchModules.isEmpty()) {
-      return parsedOpens;
-    }
-
-    try {
-      final var derived = new ArrayList<String>();
-      for (final var entry : patchModules.entrySet()) {
-        for (final var pkg : FileUtil.packagesWithClasses(Path.of(entry.getValue()))) {
-          derived.add("%s/%s=ALL-UNNAMED".formatted(entry.getKey(), pkg));
-        }
-      }
-
-      if (derived.isEmpty()) {
-        return parsedOpens;
-      }
-
-      final var merged = new LinkedHashSet<>(derived);
-      for (final var open : parsedOpens) {
-        if (!targetsPatchedModule(open, patchModules)) {
-          merged.add(open);
-        }
-      }
-
-      return merged.stream().sorted().toList();
-    } catch (final IOException | RuntimeException e) {
-      return parsedOpens;
-    }
-  }
-
-  private static boolean targetsPatchedModule(
-      final String open, final Map<String, String> patchModules) {
-    final int slash = open.indexOf('/');
-    return slash > 0 && patchModules.containsKey(open.substring(0, slash));
   }
 
   private static void capturePatchModule(

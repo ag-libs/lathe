@@ -1,13 +1,16 @@
 package io.github.aglibs.lathe.core.launch;
 
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.LaunchMode;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
@@ -43,7 +46,7 @@ public final class LaunchPlan {
         append(modulePath, overlay.modulePathAppend()),
         append(rewrittenClassPath, overlay.classpathAppend()),
         patchModules,
-        data.addOpens(),
+        completeAddOpens(patchModules, data.addOpens()),
         data.addReads(),
         data.addExports(),
         data.addModules());
@@ -109,7 +112,7 @@ public final class LaunchPlan {
         append(modulePath, overlay.modulePathAppend()),
         append(classPath, overlay.classpathAppend()),
         patchModules,
-        data.addOpens(),
+        completeAddOpens(patchModules, data.addOpens()),
         data.addReads(),
         data.addExports(),
         data.addModules());
@@ -190,5 +193,46 @@ public final class LaunchPlan {
       args.add(option);
       args.add(value);
     }
+  }
+
+  // Captured --add-opens covers only the packages the capturing Surefire fork ran; a package added
+  // after capture is missing entirely. Derive the complete set at replay from each patched module's
+  // compiled test-classes (kept fresh on save), keeping captured opens that target other modules
+  // (JDK/dependency opens the scan cannot see) verbatim.
+  private static List<String> completeAddOpens(
+      final Map<String, String> patchModules, final List<String> capturedOpens) {
+    if (patchModules.isEmpty()) {
+      return capturedOpens;
+    }
+
+    try {
+      final var derived = new ArrayList<String>();
+      for (final var entry : patchModules.entrySet()) {
+        for (final var pkg : FileUtil.packagesWithClasses(Path.of(entry.getValue()))) {
+          derived.add("%s/%s=ALL-UNNAMED".formatted(entry.getKey(), pkg));
+        }
+      }
+
+      if (derived.isEmpty()) {
+        return capturedOpens;
+      }
+
+      final var merged = new LinkedHashSet<>(derived);
+      for (final String open : capturedOpens) {
+        if (!targetsPatchedModule(open, patchModules)) {
+          merged.add(open);
+        }
+      }
+
+      return merged.stream().sorted().toList();
+    } catch (final IOException | RuntimeException e) {
+      return capturedOpens;
+    }
+  }
+
+  private static boolean targetsPatchedModule(
+      final String open, final Map<String, String> patchModules) {
+    final int slash = open.indexOf('/');
+    return slash > 0 && patchModules.containsKey(open.substring(0, slash));
   }
 }

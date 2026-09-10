@@ -8,14 +8,19 @@ import io.github.aglibs.lathe.core.schema.LaunchMode;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 final class LaunchPlanTest {
 
   private static final Path WORKSPACE = Path.of("/workspace");
+
+  @TempDir private Path workspace;
 
   @Test
   void forTest_capturedTemplate_buildsRunnerCommand() {
@@ -499,5 +504,92 @@ final class LaunchPlanTest {
             data, WORKSPACE, "com.example.app.Main", LaunchOverlay.NONE, JdwpOptions.NONE);
 
     assertThat(args).noneMatch(arg -> arg.startsWith("-agentlib:jdwp"));
+  }
+
+  @Test
+  void forTest_partialCaptureAndNewPackage_derivesCompleteAddOpensAtReplay() throws IOException {
+    writeClass("app", "com/example/app/AppTest.class");
+    writeClass("app", "com/example/app/extra/ExtraTest.class");
+
+    final var runner = Path.of("/cache/lathe-test-runner.jar");
+    final var resultsSink = Path.of("/tmp/lathe-results.ndjson");
+    final var testClasses = workspace.resolve("app/target/test-classes").toString();
+    final var data =
+        new TestLaunchData(
+            "1",
+            "surefire",
+            LaunchMode.MODULE,
+            "/jdk",
+            "com.example.app",
+            List.of(workspace.resolve("app/target/classes").toString()),
+            List.of(testClasses),
+            Map.of("com.example.app", testClasses),
+            List.of(
+                "com.example.app/com.example.app=ALL-UNNAMED", "java.base/java.lang=ALL-UNNAMED"),
+            List.of("com.example.app=ALL-UNNAMED"),
+            List.of(),
+            List.of("ALL-MODULE-PATH"),
+            List.of(),
+            "");
+
+    final List<String> args =
+        LaunchPlan.forTest(
+            data,
+            workspace,
+            List.of(runner),
+            List.of(new TestSelection(TestSelectionKind.CLASS, "com.example.app.AppTest")),
+            resultsSink,
+            LaunchOverlay.NONE,
+            JdwpOptions.NONE);
+
+    assertThat(args)
+        .contains(
+            "com.example.app/com.example.app=ALL-UNNAMED",
+            "com.example.app/com.example.app.extra=ALL-UNNAMED",
+            "java.base/java.lang=ALL-UNNAMED");
+  }
+
+  @Test
+  void forTestMain_newPackageInTestClasses_derivesAddOpensAtReplay() throws IOException {
+    writeClass("app", "com/example/app/AppTest.class");
+    writeClass("app", "com/example/app/extra/ExtraTest.class");
+
+    final var testClasses = workspace.resolve("app/target/test-classes").toString();
+    final var data =
+        new TestLaunchData(
+            "1",
+            "surefire",
+            LaunchMode.MODULE,
+            "/jdk",
+            "com.example.app",
+            List.of(workspace.resolve("app/target/classes").toString()),
+            List.of("/m2/junit.jar"),
+            Map.of("com.example.app", testClasses),
+            List.of(),
+            List.of("com.example.app=ALL-UNNAMED"),
+            List.of(),
+            List.of("ALL-MODULE-PATH"),
+            List.of(),
+            "");
+
+    final List<String> args =
+        LaunchPlan.forTestMain(
+            data, workspace, "com.example.app.tool.Tester", LaunchOverlay.NONE, JdwpOptions.NONE);
+
+    assertThat(args)
+        .contains(
+            "com.example.app/com.example.app=ALL-UNNAMED",
+            "com.example.app/com.example.app.extra=ALL-UNNAMED");
+  }
+
+  private void writeClass(final String moduleDir, final String relClassPath) throws IOException {
+    final Path file =
+        workspace
+            .resolve(".lathe")
+            .resolve(moduleDir)
+            .resolve("test-classes")
+            .resolve(relClassPath);
+    Files.createDirectories(file.getParent());
+    Files.writeString(file, "");
   }
 }

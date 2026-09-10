@@ -4,16 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.schema.LaunchMode;
 import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 final class LaunchCaptureTest {
-
-  @TempDir private Path tempDir;
 
   @Test
   void toLaunchData_classpathFork_excludesOwnJar() {
@@ -81,65 +76,5 @@ final class LaunchCaptureTest {
 
     assertThat(data.jvmArgs())
         .containsExactly("-Xmx512m", "-javaagent:/agent.jar", "--enable-preview");
-  }
-
-  @Test
-  void toLaunchData_partialSurefireOpensButFullTestClasses_returnsAllPackages() throws IOException {
-    writeClass("com/example/app/AppTest.class");
-    writeClass("com/example/app/sub/SubTest.class");
-    writeClass("com/example/util/UtilTest.class");
-
-    final var data =
-        LaunchCapture.toLaunchData(
-            "/jdk",
-            "",
-            List.of(
-                "--patch-module=com.example.app=%s".formatted(tempDir),
-                "--add-opens",
-                "com.example.app/com.example.app=ALL-UNNAMED"),
-            null,
-            "");
-
-    assertThat(data.addOpens())
-        .containsExactlyInAnyOrder(
-            "com.example.app/com.example.app=ALL-UNNAMED",
-            "com.example.app/com.example.app.sub=ALL-UNNAMED",
-            "com.example.app/com.example.util=ALL-UNNAMED");
-  }
-
-  @Test
-  void toLaunchData_crossModuleOpen_isPreserved() throws IOException {
-    writeClass("com/example/app/AppTest.class");
-
-    final var data =
-        LaunchCapture.toLaunchData(
-            "/jdk",
-            "",
-            List.of(
-                "--patch-module=com.example.app=%s".formatted(tempDir),
-                "--add-opens",
-                "java.base/java.lang=ALL-UNNAMED"),
-            null,
-            "");
-
-    assertThat(data.addOpens())
-        .containsExactlyInAnyOrder(
-            "com.example.app/com.example.app=ALL-UNNAMED", "java.base/java.lang=ALL-UNNAMED");
-  }
-
-  @Test
-  void toLaunchData_noPatchModules_returnsParsedOpensUnchanged() {
-    final var data =
-        LaunchCapture.toLaunchData(
-            "/jdk", "", List.of("--add-opens", "java.base/java.lang=ALL-UNNAMED"), null, "");
-
-    assertThat(data.mode()).isEqualTo(LaunchMode.CLASSPATH);
-    assertThat(data.addOpens()).containsExactly("java.base/java.lang=ALL-UNNAMED");
-  }
-
-  private void writeClass(final String relative) throws IOException {
-    final Path file = tempDir.resolve(relative);
-    Files.createDirectories(file.getParent());
-    Files.writeString(file, "");
   }
 }
