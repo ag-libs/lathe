@@ -301,21 +301,25 @@ No active FR gaps remain; resolved entries are in [gaps-archive.md](gaps-archive
 Active `textDocument/codeAction` provider gaps. Resolved CA entries are in
 [gaps-archive.md](gaps-archive.md).
 
-## CA-6 — Extract variable: replace-all-occurrences and `var` variant follow-ups
+## CA-6 — Extract variable: `var` variant follow-up
 
 **Status: accepted — Target: backlog.**
 
-The base single-occurrence extract-variable refactor is implemented (`ExtractVariableProvider`, a
-request-driven `RefactorExtract` action alongside `ReplaceVarProvider`): it lifts the selected
-covering expression, inserts `<Type> <name> = <expr>;` before the enclosing block statement, and
-replaces the occurrence, deriving a good default name (accessor-prefix stripping, type-based
-fallback, method-scope collision suffixing). See [extract-variable](../planned/lathe-extract-variable.md).
+Extract Variable is implemented (`ExtractVariableProvider`, a request-driven `RefactorExtract`
+action alongside `ReplaceVarProvider`), covering both delivered slices:
 
-Two designed follow-ups remain:
-
+- **Base single-occurrence** — lifts the selected covering expression, inserts
+  `<Type> <name> = <expr>;` before the enclosing block statement, and replaces the occurrence,
+  deriving a good default name (accessor-prefix stripping, type-based fallback, method-scope
+  collision suffixing).
 - **Replace all occurrences** — a second, count-labelled action replacing every semantically-equal,
-  value-stable occurrence in scope (occurrence scan + read-set stability gate). Design in the doc's
-  "Follow-up slice".
+  value-stable occurrence in the enclosing method (structural + element-identity equivalence scan,
+  common-block anchor, read-set value-stability gate). Offered alongside the base action.
+
+See [extract-variable](../planned/lathe-extract-variable.md).
+
+One designed follow-up remains:
+
 - **`var` variant** — a second action offering `var <name> = <expr>;` instead of the explicit type.
 
 ---

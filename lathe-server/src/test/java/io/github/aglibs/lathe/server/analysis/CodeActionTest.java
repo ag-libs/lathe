@@ -933,6 +933,106 @@ class CodeActionTest {
       int endChar,
       String expectedTitle) {}
 
+  // --- Extract-variable: replace all occurrences ---
+
+  @Test
+  void codeAction_repeatedExpression_offersReplaceAllOccurrences() {
+    final var source =
+        """
+        package com.example;
+        class Test {
+          void m(Config config) {
+            use(config.name());
+            use(config.name());
+            use(config.name());
+          }
+          void use(String s) {}
+        }
+        class Config { String name() { return ""; } }
+        """;
+    // select the first `config.name()`
+    final var actions = extractActionsSpanning(source, 3, 8, 3, 21);
+
+    assertThat(rightTitles(actions))
+        .contains("Extract variable 'name'", "Extract variable 'name' (replace all 3 occurrences)");
+    final List<TextEdit> edits = replaceAllEdits(actions);
+    assertThat(edits).hasSize(4); // one declaration + three replacements
+    assertThat(edits).filteredOn(e -> e.getNewText().equals("name")).hasSize(3);
+    assertThat(newTextAtLineStart(edits)).isEqualTo("String name = config.name();\n    ");
+  }
+
+  @Test
+  void codeAction_differentReceivers_doesNotMergeOccurrences() {
+    // a.name() and b.name() spell the same but resolve to different receiver elements, so semantic
+    // equality refuses to merge them — only the base single-occurrence action is offered.
+    final var source =
+        """
+        package com.example;
+        class Test {
+          void m(Config a, Config b) {
+            use(a.name());
+            use(b.name());
+          }
+          void use(String s) {}
+        }
+        class Config { String name() { return ""; } }
+        """;
+    final var actions = extractActionsSpanning(source, 3, 8, 3, 16);
+
+    assertThat(rightTitles(actions)).contains("Extract variable 'name'");
+    assertThat(rightTitles(actions)).noneMatch(t -> t.contains("replace all"));
+  }
+
+  @Test
+  void codeAction_readReassignedBetweenOccurrences_refusesReplaceAll() {
+    // `x + 1` occurs twice, but `x` is reassigned between them, so collapsing would capture a stale
+    // value — replace-all is refused; the base extraction of the first occurrence still stands.
+    final var source =
+        """
+        package com.example;
+        class Test {
+          int m(int x) {
+            int a = x + 1;
+            x = 5;
+            int b = x + 1;
+            return a + b;
+          }
+        }
+        """;
+    final var actions = extractActionsSpanning(source, 3, 12, 3, 17);
+
+    assertThat(rightTitles(actions)).contains("Extract variable 'value'");
+    assertThat(rightTitles(actions)).noneMatch(t -> t.contains("replace all"));
+  }
+
+  @Test
+  void codeAction_replaceAll_insertsBeforeEarliestOccurrenceStatement() {
+    // The anchor is the earliest statement that contains an occurrence, not the first statement of
+    // the method — the unrelated leading statement must not move the declaration up.
+    final var source =
+        """
+        package com.example;
+        class Test {
+          void m(Config config) {
+            int unrelated = 0;
+            use(config.name());
+            use(config.name());
+          }
+          void use(String s) {}
+        }
+        class Config { String name() { return ""; } }
+        """;
+    final var actions = extractActionsSpanning(source, 4, 8, 4, 21);
+
+    final List<TextEdit> edits = replaceAllEdits(actions);
+    final TextEdit insert =
+        edits.stream()
+            .filter(e -> e.getNewText().startsWith("String name"))
+            .findFirst()
+            .orElseThrow();
+    assertThat(insert.getRange().getStart().getLine()).isEqualTo(4);
+  }
+
   // --- Helpers ---
 
   private List<Either<Command, CodeAction>> replaceVarActionsAt(
@@ -958,6 +1058,18 @@ class CodeActionTest {
         .filter(Either::isRight)
         .map(Either::getRight)
         .filter(a -> a.getTitle().startsWith("Extract variable"))
+        .findFirst()
+        .orElseThrow()
+        .getEdit()
+        .getChanges()
+        .get(TempSourceCompiler.TEST_URI);
+  }
+
+  private static List<TextEdit> replaceAllEdits(final List<Either<Command, CodeAction>> actions) {
+    return actions.stream()
+        .filter(Either::isRight)
+        .map(Either::getRight)
+        .filter(a -> a.getTitle().contains("replace all"))
         .findFirst()
         .orElseThrow()
         .getEdit()

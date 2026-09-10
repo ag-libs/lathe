@@ -2,10 +2,12 @@
 
 ## Status
 
-Base slice implemented (single occurrence); replace-all and `var` variant follow-ups remain (see
-Follow-up slice and gap CA-6). Implemented as `ExtractVariableProvider`, dispatched from
+Base slice and the replace-all-occurrences follow-up are implemented; only the `var` variant remains
+(see Follow-up slice and gap CA-6). Implemented as `ExtractVariableProvider`, dispatched from
 `SourceAnalysisSession.codeAction` alongside `ReplaceVarProvider`; shared helpers (`lineIndent`,
-`nearestEnclosingStatement`, `isDenotable`) live in `CodeActionSupport`.
+`nearestEnclosingStatement`, `isDenotable`) live in `CodeActionSupport`. Replace-all discovers
+occurrences by structural + element-identity equivalence over the enclosing method, anchors the
+declaration at the innermost common block, and is gated by a read-set value-stability scan.
 
 A selection-driven `textDocument/codeAction` that introduces a local variable for the selected
 expression and replaces the expression with a reference to it.
