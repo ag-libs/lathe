@@ -6,6 +6,7 @@ import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.StatementTree;
 import com.sun.source.util.TreePath;
+import javax.lang.model.element.NestingKind;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.DeclaredType;
@@ -93,6 +94,61 @@ final class CodeActionSupport {
       current = current.getParentPath();
     }
     return null;
+  }
+
+  // The innermost enclosing StatementTree, bounded at a method / lambda / anonymous-class boundary
+  // (an expression that reaches such a boundary before any statement cannot receive a preceding
+  // declaration, e.g. an expression-bodied lambda). Null when no statement encloses the path.
+  static TreePath nearestEnclosingStatement(final TreePath path) {
+    TreePath current = path;
+    while (current != null) {
+      if (current.getLeaf() instanceof StatementTree) {
+        return current;
+      }
+
+      if (current.getLeaf() instanceof LambdaExpressionTree
+          || isAnonymousClass(current)
+          || current.getLeaf() instanceof MethodTree) {
+        return null;
+      }
+
+      current = current.getParentPath();
+    }
+    return null;
+  }
+
+  // The leading whitespace of the line containing `offset` — the indentation an inserted line must
+  // reproduce. Shared by the code-action providers that splice new lines.
+  static String lineIndent(final String source, final int offset) {
+    int lineStart = offset;
+    while (lineStart > 0 && source.charAt(lineStart - 1) != '\n') {
+      lineStart--;
+    }
+
+    int indentEnd = lineStart;
+    while (indentEnd < source.length() && Character.isWhitespace(source.charAt(indentEnd))) {
+      if (source.charAt(indentEnd) == '\n') {
+        break;
+      }
+
+      indentEnd++;
+    }
+    return source.substring(lineStart, indentEnd);
+  }
+
+  // Only kinds that can be written explicitly qualify: `var`/inferred types can be anonymous,
+  // intersection, or captured type variables that have no source spelling.
+  static boolean isDenotable(final TypeMirror type) {
+    return switch (type.getKind()) {
+      case DECLARED -> !isAnonymous((DeclaredType) type);
+      case ARRAY, BOOLEAN, BYTE, SHORT, INT, LONG, CHAR, FLOAT, DOUBLE -> true;
+      default -> false;
+    };
+  }
+
+  private static boolean isAnonymous(final DeclaredType type) {
+    return type.asElement() instanceof final TypeElement te
+        && te.getNestingKind() == NestingKind.ANONYMOUS;
   }
 
   private static boolean isAnonymousClass(final TreePath path) {

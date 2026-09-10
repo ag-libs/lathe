@@ -81,7 +81,10 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     capabilities.setDocumentHighlightProvider(true);
     capabilities.setDocumentSymbolProvider(true);
     capabilities.setFoldingRangeProvider(true);
-    final var codeActionOptions = new CodeActionOptions(List.of(CodeActionKind.QuickFix));
+    final var codeActionOptions =
+        new CodeActionOptions(
+            List.of(
+                CodeActionKind.QuickFix, CodeActionKind.Refactor, CodeActionKind.RefactorExtract));
     capabilities.setCodeActionProvider(codeActionOptions);
     capabilities.setWorkspaceSymbolProvider(true);
     capabilities.setExecuteCommandProvider(

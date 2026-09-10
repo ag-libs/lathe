@@ -745,6 +745,194 @@ class CodeActionTest {
     assertThat(rightTitles(actions)).noneMatch(t -> t.startsWith("Replace 'var'"));
   }
 
+  // --- Extract-variable provider (request-driven) ---
+
+  @Test
+  void codeAction_subExpression_extractsLocalAndReplacesOccurrence() {
+    final var source =
+        """
+        package com.example;
+        class Test {
+          void m() {
+            System.out.println(compute(2) + 1);
+          }
+          int compute(int n) { return n; }
+        }
+        """;
+    // select `compute(2)` inside the println argument
+    final var actions = extractActionsSpanning(source, 3, 23, 3, 33);
+
+    assertThat(rightTitles(actions)).contains("Extract variable 'compute'");
+    final List<TextEdit> edits = extractEdits(actions);
+    assertThat(edits).hasSize(2);
+    assertThat(newTextAtLineStart(edits)).isEqualTo("int compute = compute(2);\n    ");
+    assertThat(replacementText(edits)).isEqualTo("compute");
+  }
+
+  @Test
+  void codeAction_genericTypedExpression_addsImport() {
+    final var source =
+        """
+        package com.example;
+        class Test {
+          void m() {
+            use(make());
+          }
+          java.util.List<String> make() { return null; }
+          void use(java.util.List<String> l) {}
+        }
+        """;
+    final var actions = extractActionsSpanning(source, 3, 8, 3, 14);
+
+    assertThat(rightTitles(actions)).contains("Extract variable 'make'");
+    final List<TextEdit> edits = extractEdits(actions);
+    assertThat(edits).hasSize(3);
+    assertThat(newTextAtLineStart(edits)).isEqualTo("List<String> make = make();\n    ");
+    assertThat(edits).anyMatch(e -> e.getNewText().contains("import java.util.List"));
+  }
+
+  @Test
+  void codeAction_emptyRangeInsideExpression_extractsEnclosingExpression() {
+    final var source =
+        """
+        package com.example;
+        class Test {
+          void m() {
+            use(compute(2) + 1);
+          }
+          int compute(int n) { return n; }
+          void use(int n) {}
+        }
+        """;
+    // caret sitting inside `compute(2)` with no selection resolves to the enclosing call
+    final var actions = replaceVarActionsAt(source, 3, 12);
+
+    assertThat(rightTitles(actions)).contains("Extract variable 'compute'");
+  }
+
+  @Test
+  void codeAction_extractVariable_derivesNameFromSelectedExpression() {
+    final var newClass =
+        """
+        package com.example;
+        class Test {
+          void m() {
+            use(new StringBuilder());
+          }
+          void use(StringBuilder b) {}
+        }
+        """;
+    final var getter =
+        """
+        package com.example;
+        class Test {
+          void m() {
+            use(getName().length());
+          }
+          String getName() { return ""; }
+          void use(int n) {}
+        }
+        """;
+    final var collision =
+        """
+        package com.example;
+        class Test {
+          void m() {
+            int compute = 0;
+            use(compute(2));
+          }
+          int compute(int n) { return n; }
+          void use(int n) {}
+        }
+        """;
+    final List<ExtractCase> cases =
+        List.of(
+            new ExtractCase(
+                "new-class names after its type",
+                newClass,
+                3,
+                8,
+                3,
+                27,
+                "Extract variable 'stringBuilder'"),
+            new ExtractCase(
+                "getter strips get/is prefix", getter, 3, 8, 3, 17, "Extract variable 'name'"),
+            new ExtractCase(
+                "collision with a local gets a numeric suffix",
+                collision,
+                4,
+                8,
+                4,
+                18,
+                "Extract variable 'compute1'"));
+
+    for (final ExtractCase c : cases) {
+      final var actions =
+          extractActionsSpanning(
+              c.source(), c.startLine(), c.startChar(), c.endLine(), c.endChar());
+      assertThat(rightTitles(actions)).as(c.label()).contains(c.expectedTitle());
+    }
+  }
+
+  @Test
+  void codeAction_extractVariable_unsafeSelection_offersNothing() {
+    final var voidCall =
+        """
+        package com.example;
+        class Test {
+          void m() {
+            run();
+          }
+          void run() {}
+        }
+        """;
+    final var wholeStatement =
+        """
+        package com.example;
+        class Test {
+          void m() {
+            compute(2);
+          }
+          int compute(int n) { return n; }
+        }
+        """;
+    final var bracelessIf =
+        """
+        package com.example;
+        class Test {
+          void m(boolean b) {
+            if (b) use(compute(2));
+          }
+          int compute(int n) { return n; }
+          void use(int n) {}
+        }
+        """;
+    final List<ExtractCase> cases =
+        List.of(
+            new ExtractCase("void has nothing to declare", voidCall, 3, 4, 3, 9, null),
+            new ExtractCase(
+                "whole ExpressionStatement expression", wholeStatement, 3, 4, 3, 14, null),
+            new ExtractCase("braceless if body is not a block", bracelessIf, 3, 15, 3, 25, null));
+
+    for (final ExtractCase c : cases) {
+      final var actions =
+          extractActionsSpanning(
+              c.source(), c.startLine(), c.startChar(), c.endLine(), c.endChar());
+      assertThat(rightTitles(actions))
+          .as(c.label())
+          .noneMatch(t -> t.startsWith("Extract variable"));
+    }
+  }
+
+  private record ExtractCase(
+      String label,
+      String source,
+      int startLine,
+      int startChar,
+      int endLine,
+      int endChar,
+      String expectedTitle) {}
+
   // --- Helpers ---
 
   private List<Either<Command, CodeAction>> replaceVarActionsAt(
@@ -752,6 +940,46 @@ class CodeActionTest {
     session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
     return session.codeAction(
         TempSourceCompiler.TEST_URI, source, 1, rangeAt(line, character), List.of(), typeIndex);
+  }
+
+  private List<Either<Command, CodeAction>> extractActionsSpanning(
+      final String source,
+      final int startLine,
+      final int startChar,
+      final int endLine,
+      final int endChar) {
+    session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    final var range = new Range(new Position(startLine, startChar), new Position(endLine, endChar));
+    return session.codeAction(TempSourceCompiler.TEST_URI, source, 1, range, List.of(), typeIndex);
+  }
+
+  private static List<TextEdit> extractEdits(final List<Either<Command, CodeAction>> actions) {
+    return actions.stream()
+        .filter(Either::isRight)
+        .map(Either::getRight)
+        .filter(a -> a.getTitle().startsWith("Extract variable"))
+        .findFirst()
+        .orElseThrow()
+        .getEdit()
+        .getChanges()
+        .get(TempSourceCompiler.TEST_URI);
+  }
+
+  private static String newTextAtLineStart(final List<TextEdit> edits) {
+    return edits.stream()
+        .filter(e -> e.getRange().getStart().equals(e.getRange().getEnd()))
+        .filter(e -> !e.getNewText().startsWith("import "))
+        .map(TextEdit::getNewText)
+        .findFirst()
+        .orElseThrow();
+  }
+
+  private static String replacementText(final List<TextEdit> edits) {
+    return edits.stream()
+        .filter(e -> !e.getRange().getStart().equals(e.getRange().getEnd()))
+        .map(TextEdit::getNewText)
+        .findFirst()
+        .orElseThrow();
   }
 
   private List<Either<Command, CodeAction>> diagnosticActions(

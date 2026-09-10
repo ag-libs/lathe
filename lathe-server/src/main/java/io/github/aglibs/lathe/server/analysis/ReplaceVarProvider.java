@@ -11,9 +11,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
-import javax.lang.model.element.NestingKind;
-import javax.lang.model.element.TypeElement;
-import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionKind;
@@ -58,7 +55,7 @@ final class ReplaceVarProvider {
     }
 
     final TypeMirror type = element.asType();
-    if (!isDenotable(type)) {
+    if (!CodeActionSupport.isDenotable(type)) {
       return List.of();
     }
 
@@ -133,21 +130,5 @@ final class ReplaceVarProvider {
       current = current.getParentPath();
     }
     return null;
-  }
-
-  // `var` can infer types that are not denotable (anonymous, intersection, captured type
-  // variables);
-  // only offer the refactor for kinds that can be written explicitly (CA-5).
-  private static boolean isDenotable(final TypeMirror type) {
-    return switch (type.getKind()) {
-      case DECLARED -> !isAnonymous((DeclaredType) type);
-      case ARRAY, BOOLEAN, BYTE, SHORT, INT, LONG, CHAR, FLOAT, DOUBLE -> true;
-      default -> false;
-    };
-  }
-
-  private static boolean isAnonymous(final DeclaredType type) {
-    return type.asElement() instanceof final TypeElement te
-        && te.getNestingKind() == NestingKind.ANONYMOUS;
   }
 }

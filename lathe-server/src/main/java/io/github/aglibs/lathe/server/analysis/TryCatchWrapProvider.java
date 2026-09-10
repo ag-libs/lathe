@@ -57,7 +57,7 @@ final class TryCatchWrapProvider implements CodeActionProvider {
     }
 
     final String original = source.substring((int) statementStart, (int) statementEnd).strip();
-    final String indent = lineIndent(source, (int) statementStart);
+    final String indent = CodeActionSupport.lineIndent(source, (int) statementStart);
     final String wrapped =
         """
         try {
@@ -79,22 +79,5 @@ final class TryCatchWrapProvider implements CodeActionProvider {
 
     LOG.fine(() -> "[codeAction:tryCatch] %s".formatted(request.payload().name()));
     return List.of(Either.forRight(action));
-  }
-
-  private static String lineIndent(final String source, final int offset) {
-    int lineStart = offset;
-    while (lineStart > 0 && source.charAt(lineStart - 1) != '\n') {
-      lineStart--;
-    }
-
-    int indentEnd = lineStart;
-    while (indentEnd < source.length() && Character.isWhitespace(source.charAt(indentEnd))) {
-      if (source.charAt(indentEnd) == '\n') {
-        break;
-      }
-
-      indentEnd++;
-    }
-    return source.substring(lineStart, indentEnd);
   }
 }

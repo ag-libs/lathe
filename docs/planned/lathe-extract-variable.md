@@ -2,7 +2,10 @@
 
 ## Status
 
-Planned. Approved design shape; no code yet.
+Base slice implemented (single occurrence); replace-all and `var` variant follow-ups remain (see
+Follow-up slice and gap CA-6). Implemented as `ExtractVariableProvider`, dispatched from
+`SourceAnalysisSession.codeAction` alongside `ReplaceVarProvider`; shared helpers (`lineIndent`,
+`nearestEnclosingStatement`, `isDenotable`) live in `CodeActionSupport`.
 
 A selection-driven `textDocument/codeAction` that introduces a local variable for the selected
 expression and replaces the expression with a reference to it.

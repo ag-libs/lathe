@@ -301,7 +301,22 @@ No active FR gaps remain; resolved entries are in [gaps-archive.md](gaps-archive
 Active `textDocument/codeAction` provider gaps. Resolved CA entries are in
 [gaps-archive.md](gaps-archive.md).
 
-No active CA gaps remain; resolved entries are in [gaps-archive.md](gaps-archive.md).
+## CA-6 — Extract variable: replace-all-occurrences and `var` variant follow-ups
+
+**Status: accepted — Target: backlog.**
+
+The base single-occurrence extract-variable refactor is implemented (`ExtractVariableProvider`, a
+request-driven `RefactorExtract` action alongside `ReplaceVarProvider`): it lifts the selected
+covering expression, inserts `<Type> <name> = <expr>;` before the enclosing block statement, and
+replaces the occurrence, deriving a good default name (accessor-prefix stripping, type-based
+fallback, method-scope collision suffixing). See [extract-variable](../planned/lathe-extract-variable.md).
+
+Two designed follow-ups remain:
+
+- **Replace all occurrences** — a second, count-labelled action replacing every semantically-equal,
+  value-stable occurrence in scope (occurrence scan + read-set stability gate). Design in the doc's
+  "Follow-up slice".
+- **`var` variant** — a second action offering `var <name> = <expr>;` instead of the explicit type.
 
 ---
 
