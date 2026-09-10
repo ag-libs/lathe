@@ -228,9 +228,12 @@ In — covered and tested:
 
 ## Non-goals (explicit)
 
-- **Replace all occurrences** — the base slice extracts only the selected occurrence; replacing every
-  equivalent occurrence is a defined follow-up with its own correctness gates (see Follow-up slice).
 - **A `var` variant** — explicit type only for now; a second action offering `var` is a fast follow-up.
+- **Lambda / poly expressions** — a standalone lambda (`() -> …`) has no denotable independent type
+  (only a context-supplied target type), so the denotability gate refuses it rather than emit broken
+  code; extracting one would require inferring the target type from context (a possible enhancement).
+  A method reference that javac has target-typed (e.g. `String::length` as a `map` argument) resolves
+  to a `Function<…>` type and does extract.
 - **Braceless single-statement bodies** — guarded out (no action), rather than synthesising a block.
 - **Multi-statement or partial-expression selections** — only a single covering `ExpressionTree` is
   handled.

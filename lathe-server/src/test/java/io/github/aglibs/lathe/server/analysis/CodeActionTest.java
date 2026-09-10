@@ -845,6 +845,17 @@ class CodeActionTest {
           void use(int n) {}
         }
         """;
+    final var fieldAccess =
+        """
+        package com.example;
+        class Test {
+          String label = "x";
+          void m() {
+            use(this.label);
+          }
+          void use(String s) {}
+        }
+        """;
     final List<ExtractCase> cases =
         List.of(
             new ExtractCase(
@@ -864,7 +875,15 @@ class CodeActionTest {
                 8,
                 4,
                 18,
-                "Extract variable 'compute1'"));
+                "Extract variable 'compute1'"),
+            new ExtractCase(
+                "field read names after the field",
+                fieldAccess,
+                4,
+                8,
+                4,
+                18,
+                "Extract variable 'label'"));
 
     for (final ExtractCase c : cases) {
       final var actions =

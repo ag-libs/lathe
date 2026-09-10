@@ -584,6 +584,16 @@ final class ExtractVariableProvider {
       }
     }
 
+    // A field read (`this.label`, `obj.config`) reads best as the field name — but only when it
+    // already looks like a variable; constants and enum members (`Color.RED`) fall back to the
+    // type.
+    if (expr instanceof final MemberSelectTree ms) {
+      final String member = ms.getIdentifier().toString();
+      if (!member.isEmpty() && Character.isLowerCase(member.charAt(0))) {
+        return member;
+      }
+    }
+
     final String simpleName = CodeActionSupport.typeSimpleName(type);
     return simpleName != null ? decapitalize(simpleName) : DEFAULT_NAME;
   }

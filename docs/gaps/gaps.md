@@ -318,9 +318,12 @@ action alongside `ReplaceVarProvider`), covering both delivered slices:
 
 See [extract-variable](../planned/lathe-extract-variable.md).
 
-One designed follow-up remains:
+Follow-ups / possible enhancements:
 
 - **`var` variant** — a second action offering `var <name> = <expr>;` instead of the explicit type.
+- **Lambda extraction** — standalone lambdas are refused (no denotable independent type); extracting
+  one would require inferring the target functional-interface type from context. Method references
+  that javac has target-typed already extract.
 
 ---
 
