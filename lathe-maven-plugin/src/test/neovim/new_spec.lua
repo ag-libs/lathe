@@ -430,6 +430,20 @@ do -- compile-on-attach saves the new buffer (→ FULL compile → .class) when 
   spec.check("compile-on-attach saves when the Lathe client is attached", wrote, true)
 end
 
+do -- a Ctrl-C at a picker cancels cleanly instead of surfacing the LSP-callback interrupt
+  stub_server({ ["lathe.resolveContext"] = nil })
+  vim.ui.select = function(_, _, _)
+    error("Keyboard interrupt")
+  end
+
+  spec.check("picker interrupt is swallowed", pcall(new.create), true)
+
+  vim.ui.select = function(_, _, _)
+    error("boom")
+  end
+  spec.check("a real picker error still propagates", pcall(new.create), false)
+end
+
 do -- setup registers :LatheNew
   new.setup()
   spec.check("LatheNew registered", vim.fn.exists(":LatheNew"), 2)

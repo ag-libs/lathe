@@ -55,7 +55,14 @@ local function execute(client, bufnr, command, argument, cb)
       return
     end
 
-    cb(result)
+    -- The create pickers run inside this LSP response callback (a vim.schedule task), so a Ctrl-C at a
+    -- vim.ui prompt raises inputlist's keyboard interrupt here instead of cancelling a command --
+    -- otherwise an unhandled "vim.schedule callback: Keyboard interrupt". Swallow only that interrupt;
+    -- a genuine error in the flow still surfaces.
+    local ok, failure = pcall(cb, result)
+    if not ok and not tostring(failure):match("[Ii]nterrupt") then
+      error(failure)
+    end
   end, bufnr)
 end
 
