@@ -1,6 +1,6 @@
 # Lathe — Staleness Detection via Compile Stamps
 
-Status: proposed.
+Status: implemented.
 Replaces the class-file-derivation heuristic in the source-staleness scan (shipped as WS-5) with a
 recorded, per-source compile stamp.
 Tracked by the staleness-robustness WS gap; sibling to the package/path-mismatch gap (WS-9).

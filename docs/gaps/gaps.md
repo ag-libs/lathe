@@ -316,7 +316,7 @@ action alongside `ReplaceVarProvider`), covering both delivered slices:
   value-stable occurrence in the enclosing method (structural + element-identity equivalence scan,
   common-block anchor, read-set value-stability gate). Offered alongside the base action.
 
-See [extract-variable](../planned/lathe-extract-variable.md).
+See [extract-variable](../done/lathe-extract-variable.md).
 
 Follow-ups / possible enhancements:
 
@@ -740,7 +740,7 @@ Not yet decided; options to weigh when scheduled, cheapest first:
 Scheduled for M2 as **WS-5**. The original plan was option 2 (in-process recompile), but that is
 **parked** — correct only for single-module change sets — in favour of **option 1**: detect source
 staleness and reuse the shipped sync prompt, per
-[lathe-external-change-detection.md](../planned/lathe-external-change-detection.md). The parked compile
+[lathe-external-change-detection.md](../done/lathe-external-change-detection.md). The parked compile
 design is [lathe-external-change-recompilation.md](../potential/lathe-external-change-recompilation.md).
 WS-1 remains the umbrella for the wider reconciliation (option 3) and cross-module cases.
 
@@ -878,7 +878,7 @@ auto-recompile). Three parts:
 
 Relates to WS-1 (staleness/invalidation umbrella), WS-2 (the deferred *source-only* branch-switch
 prompt — now revived as the chosen approach), WS-4 (post-Maven pickup), and WS-5 /
-[lathe-external-change-detection.md](../planned/lathe-external-change-detection.md) (source staleness
+[lathe-external-change-detection.md](../done/lathe-external-change-detection.md) (source staleness
 also routes to this same prompt). WS-3 itself is the shipped-behaviour reliability defect (looping
 prompt + inert "Sync").
 
@@ -1033,7 +1033,7 @@ copied into `.lathe/`.
 Commits: `feat(freshness): detect externally-changed sources and prompt to sync (WS-5)` and
 `feat(freshness): auto-copy externally changed resources into .lathe/ (WS-5)`; e2e coverage in
 `LatheTextDocumentServiceTest`. Design:
-[External-Change Detection → Sync Prompt](../planned/lathe-external-change-detection.md) (WS-1
+[External-Change Detection → Sync Prompt](../done/lathe-external-change-detection.md) (WS-1
 option 1). The in-process recompile originally proposed was **not pursued** — correct only for a
 single-module change set, else it re-implements Maven's ordered reactor build — and is parked in
 [In-Process External-Change Recompilation](../potential/lathe-external-change-recompilation.md).
@@ -1087,7 +1087,7 @@ The same `sym`/`diag`/`sym` harness used for the save path applies.
 **Superseded** — the targets below (and the probe above) were written for the parked in-process
 recompile (`didChangeWatchedFiles`/`onExternalChange`), which no longer exists. New targets for the
 server-side detection scan → sync prompt will be defined when it is implemented, per
-[external-change detection](../planned/lathe-external-change-detection.md). Retained for history:
+[external-change detection](../done/lathe-external-change-detection.md). Retained for history:
 
 - `LatheWorkspaceServiceTest.didChangeWatchedFiles_javaCreatedOrChanged_routesToExternalChange`
 - `LatheWorkspaceServiceTest.didChangeWatchedFiles_resourceChanged_routesToRefreshResource`

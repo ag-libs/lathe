@@ -40,7 +40,7 @@ The implemented baseline is in [status.md](status.md); the designs behind it in
 [gaps-archive.md](gaps/gaps-archive.md). Per this document's scope, M1's completed details are not
 re-listed here. The residual staleness thread is now split: an **M2 freshness slice** — the actionable
 Maven sync prompt (WS-3), post-sync `workspace/symbol` pickup (WS-4), and external-change
-detection → sync prompt (WS-5, see [design](planned/lathe-external-change-detection.md)) — while the
+detection → sync prompt (WS-5, see [design](done/lathe-external-change-detection.md)) — while the
 fuller no-Maven reconciliation (WS-1) remains in the Backlog. WS-2's source-only *prompt* is revived as
 that chosen approach; in-process recompile is [parked](potential/lathe-external-change-recompilation.md).
 
@@ -71,7 +71,7 @@ ships (see "Deferred to backlog" below).
 - Workspace freshness slice — keep Lathe honest when the tree changes outside the editor. Fix the
   looping/inert Maven sync prompt and make it actionable (WS-3), pick up an external `mvn` without a
   restart (WS-4), and **detect** externally changed sources — agent edits, branch switches, pulls —
-  and route them to that sync prompt (WS-5, [design](planned/lathe-external-change-detection.md));
+  and route them to that sync prompt (WS-5, [design](done/lathe-external-change-detection.md));
   resources auto-copy. In-process recompile is
   [parked](potential/lathe-external-change-recompilation.md) (single-module only). The fuller no-Maven
   reconciliation (WS-1) stays backlog.

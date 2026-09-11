@@ -32,11 +32,6 @@ Reliability, the triaged gaps, and rename — see the [roadmap](roadmap.md) for 
 - [Rename](planned/lathe-rename.md) — `textDocument/rename` + `prepareRename` on the Find References
   pipeline (occurrence ranges → `WorkspaceEdit`, no `ASTRewrite`); scoped to the common cases,
   correctness-gated (freshness refusal + minimal conflict checks), with explicit non-goals.
-- [External-Change Detection → Sync Prompt](planned/lathe-external-change-detection.md) — detect
-  on-disk edits to Java sources/resources (branch switch, `git pull`, agent edits) beyond POMs and
-  **nudge the user to run Maven**, reusing the shipped sync prompt (WS-3) + silent refresh (WS-4);
-  resources auto-copy. WS-1 option 1; supersedes WS-5's in-process recompile. The in-process compile
-  is parked (see Potential Designs).
 - [Javac Crash Capture](planned/lathe-javac-crash-capture.md) — resolved for M2 as a minimal,
   source-free `[javacCrash]` log line (phase + JDK + stack trace); the full repro-bundle design is a
   deferred backlog follow-up. ✓
@@ -69,9 +64,6 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
   `module-info` / `package-info` as special kinds; supersedes CQ-0055 v3's flow.
 - [New Type Creation](planned/lathe-new-type-creation.md) — deferred, editor-agnostic alternative: scaffold a blank
   file's class/interface/enum/record via snippet completion, with no custom client-side UI (not the shipped path).
-- [Extract Variable](planned/lathe-extract-variable.md) — selection-driven `refactor.extract` code action
-  (edit-only, no command) that introduces a local for the selected expression; mirrors `ReplaceVarProvider`
-  and lays the shared scaffolding a later Extract Method slice reuses.
 - [Google Indentation](planned/lathe-google-indent.md) — conservative on-type formatting.
 - [Type Definition Navigation](planned/lathe-type-definition.md) — `textDocument/typeDefinition` for Neovim's `grt`.
 - [Semantic Tokens](planned/lathe-semantic-tokens.md) — full identifier-level coverage (local-var-vs-field, class,
@@ -80,9 +72,6 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 
 **Reliability and further work:**
 
-- [Staleness via Compile Stamps](planned/lathe-staleness-compile-stamps.md) — replace the source-staleness
-  scan's class-file-path derivation (WS-5) with a per-source compile stamp recorded at build/save time, so a
-  missing/wrong `package` or name mismatch can no longer produce an un-clearable sync prompt (WS-9 detection half).
 - [Sibling Recompilation](planned/lathe-sibling-recompilation.md) — closed-file diagnostics after API changes.
 - [Lightweight Watcher](planned/lathe-lightweight-watcher.md) — partially stale design; would back a
   non-intrusive source-staleness signal (the deferred WS-2, folded under WS-1) if beta feedback warrants it.
@@ -174,6 +163,17 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 - [Server Data-Flow Recipe](done/lathe-server-data-flow-recipe.md)
 - [Signature Help](done/lathe-signature-help.md)
 - [Superseded Source URI Scheme](done/lathe-source-uri-scheme.md)
+- [External-Change Detection → Sync Prompt](done/lathe-external-change-detection.md) — detects on-disk
+  edits to Java sources/resources beyond POMs (branch switch, `git pull`, agent edits) server-side and
+  nudges the user to run Maven, reusing the sync prompt (WS-3) + silent refresh (WS-4); resources
+  auto-copy without a build (WS-5). The in-process recompile is parked (see Potential Designs).
+- [Staleness via Compile Stamps](done/lathe-staleness-compile-stamps.md) — replaces the source-staleness
+  scan's class-file-path derivation (WS-5) with a per-source compile stamp recorded at build/save time,
+  so a missing/wrong `package` or name mismatch can no longer produce an un-clearable sync prompt (WS-9).
+- [Extract Variable](done/lathe-extract-variable.md) — selection-driven `refactor.extract` code action
+  (edit-only, no command) that introduces a local for the selected expression, with a replace-all-
+  occurrences variant and inferred-name heuristics; mirrors `ReplaceVarProvider` and lays the shared
+  scaffolding a later Extract Method slice reuses. `var`-typed variant tracked as CA-6.
 - [Stale-POM Detection](done/lathe-stale-pom-detection.md)
 - [Structural Navigation](done/lathe-structural-navigation.md)
 - [Structured Per-Test Results](done/lathe-structured-test-results.md) — real per-method pass/fail/skip from a

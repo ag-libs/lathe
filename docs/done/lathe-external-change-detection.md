@@ -21,7 +21,7 @@ server and shown by the client; the reaction (Maven) runs on the client.
 This document evaluates what Lathe detects today and specifies **what else it must detect, beyond
 POM changes, for a good experience.**
 
-**Status: planned — Target: M2 (WS-1 option 1; supersedes WS-5's in-process recompile).**
+**Status: implemented (WS-5, WS-1 option 1; supersedes WS-5's in-process recompile, which is parked).**
 
 ---
 

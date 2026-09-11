@@ -3,13 +3,11 @@
 This document records the implemented baseline and known user-visible gaps.
 The [roadmap](roadmap.md) defines milestone scope; the [design index](design-index.md) links detailed designs.
 
-Status last reviewed: 2026-08-29.
-
 ## Release State
 
-Lathe is at the M1 Internal Preview stage.
-It must be built from source and is supported for the Neovim workflow only.
-The M2 Maven Central release pipeline is implemented and documented (tag-driven CI signing + publish; see [RELEASING.md](../RELEASING.md)); beta artifacts go live once the first release tag (`v0.1.1`) is cut. A stable GA release follows after beta feedback.
+Lathe is in the M2 Neovim Public Beta stage, published to Maven Central.
+It installs via the `lathe-maven-extension` build extension and is supported for the Neovim workflow only.
+The tag-driven release pipeline (CI GPG signing + publish; see [RELEASING.md](../RELEASING.md)) is in use. A stable GA release follows after beta feedback.
 
 ## Build and Workspace Lifecycle
 
@@ -26,7 +24,7 @@ The M2 Maven Central release pipeline is implemented and documented (tag-driven 
 | POM staleness detection | Implemented | Neovim receives a sync prompt after Maven project changes. |
 | Server-exit surfacing & manual start | Implemented | Neovim notifies on an unexpected server exit (pointing at the LSP log); `:LatheStart` starts the server for a directory with no Java file open. |
 | Inheritance index | Implemented | Dependency, JDK, and reactor entries include direct supertypes in immutable snapshots. |
-| Maven Central distribution | Automation done | Tag-driven CI (GPG signing + `central-publishing-maven-plugin`), `versions:set` stamping, `release.sh`, and `RELEASING.md` are in place. Artifacts go live when the first release tag is cut (manual); until then, build from source. |
+| Maven Central distribution | Published | Tag-driven CI (GPG signing + `central-publishing-maven-plugin`), `versions:set` stamping, `release.sh`, and `RELEASING.md` are in place. Releases are live on Maven Central. |
 
 ## LSP Capability Matrix
 
