@@ -5,6 +5,7 @@ import com.sun.source.tree.Scope;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
+import io.github.aglibs.lathe.server.analysis.Strings;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -470,7 +471,7 @@ public final class CompletionEngine {
 
   private static CompletionCandidate sealedCaseCandidate(final TypeElement subtype) {
     final var name = subtype.getSimpleName().toString();
-    final var binding = decapitalize(name);
+    final var binding = Strings.decapitalize(name);
     final CandidateKind kind =
         switch (subtype.getKind()) {
           case INTERFACE -> CandidateKind.TYPE_INTERFACE;
@@ -490,10 +491,6 @@ public final class CompletionEngine {
         null,
         subtype.getQualifiedName().toString(),
         null);
-  }
-
-  private static String decapitalize(final String name) {
-    return name.isEmpty() ? name : Character.toLowerCase(name.charAt(0)) + name.substring(1);
   }
 
   private static TypeElement expectedEnumType(final SemanticCompletionContext semanticContext) {

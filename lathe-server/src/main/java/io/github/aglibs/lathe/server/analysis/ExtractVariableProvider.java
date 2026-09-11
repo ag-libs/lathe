@@ -35,8 +35,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.IntStream;
-import java.util.stream.Stream;
-import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
 import javax.lang.model.type.TypeMirror;
 import org.eclipse.lsp4j.CodeAction;
@@ -54,8 +52,6 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
 final class ExtractVariableProvider {
 
   private static final Logger LOG = Logger.getLogger(ExtractVariableProvider.class.getName());
-
-  private static final String DEFAULT_NAME = "value";
 
   List<Either<Command, CodeAction>> provide(
       final String uri, final Range range, final AttributedFileAnalysis analysis) {
@@ -116,7 +112,10 @@ final class ExtractVariableProvider {
 
     final String exprSource = source.substring((int) exprStart, (int) exprEnd);
     final String typeText = new TypeDisplayFormatter(analysis.types()).format(type);
-    final String name = variableName(expr, type, exprPath);
+    final String name =
+        VariableNameSuggester.suggest(
+                CodeActionSupport.typeSimpleName(type), expr, takenNames(exprPath))
+            .getFirst();
     final TextEdit importEdit =
         CodeActionSupport.importEditFor(analysis, CodeActionSupport.typeFqn(type));
 
@@ -571,87 +570,9 @@ final class ExtractVariableProvider {
 
   // ── name derivation ────────────────────────────────────────────────────────────────────────
 
-  private static String variableName(
-      final ExpressionTree expr, final TypeMirror type, final TreePath exprPath) {
-    return uniquify(legalize(baseName(expr, type)), exprPath);
-  }
-
-  private static String baseName(final ExpressionTree expr, final TypeMirror type) {
-    if (expr instanceof final MethodInvocationTree inv) {
-      final String method = invocationName(inv);
-      if (method != null) {
-        return stripAccessorPrefix(method);
-      }
-    }
-
-    // A field read (`this.label`, `obj.config`) reads best as the field name — but only when it
-    // already looks like a variable; constants and enum members (`Color.RED`) fall back to the
-    // type.
-    if (expr instanceof final MemberSelectTree ms) {
-      final String member = ms.getIdentifier().toString();
-      if (!member.isEmpty() && Character.isLowerCase(member.charAt(0))) {
-        return member;
-      }
-    }
-
-    final String simpleName = CodeActionSupport.typeSimpleName(type);
-    return simpleName != null ? decapitalize(simpleName) : DEFAULT_NAME;
-  }
-
-  private static String invocationName(final MethodInvocationTree inv) {
-    final ExpressionTree select = inv.getMethodSelect();
-    if (select instanceof final IdentifierTree id) {
-      return id.getName().toString();
-    }
-
-    if (select instanceof final MemberSelectTree ms) {
-      return ms.getIdentifier().toString();
-    }
-    return null;
-  }
-
-  // getFoo() -> foo, isReady() -> ready; only when a capitalized remainder follows the prefix.
-  private static String stripAccessorPrefix(final String method) {
-    return Stream.of("get", "is")
-        .filter(prefix -> hasAccessorPrefix(method, prefix))
-        .findFirst()
-        .map(prefix -> decapitalize(method.substring(prefix.length())))
-        .orElse(method);
-  }
-
-  private static boolean hasAccessorPrefix(final String method, final String prefix) {
-    return method.length() > prefix.length()
-        && method.startsWith(prefix)
-        && Character.isUpperCase(method.charAt(prefix.length()));
-  }
-
-  private static String decapitalize(final String name) {
-    if (name.isEmpty()) {
-      return name;
-    }
-    return Character.toLowerCase(name.charAt(0)) + name.substring(1);
-  }
-
-  private static String legalize(final String base) {
-    if (base.isEmpty() || !SourceVersion.isIdentifier(base) || SourceVersion.isKeyword(base)) {
-      return DEFAULT_NAME;
-    }
-    return base;
-  }
-
-  private static String uniquify(final String base, final TreePath exprPath) {
+  private static Set<String> takenNames(final TreePath exprPath) {
     final TreePath methodPath = CodeActionSupport.enclosingMethod(exprPath);
-    final Set<String> taken = methodPath != null ? localAndParamNames(methodPath) : Set.of();
-    if (!taken.contains(base)) {
-      return base;
-    }
-
-    // At most taken.size() candidates can collide, so 1..size+1 always yields a free name.
-    return IntStream.rangeClosed(1, taken.size() + 1)
-        .mapToObj(suffix -> base + suffix)
-        .filter(candidate -> !taken.contains(candidate))
-        .findFirst()
-        .orElseThrow();
+    return methodPath != null ? localAndParamNames(methodPath) : Set.of();
   }
 
   private static Set<String> localAndParamNames(final TreePath methodPath) {
