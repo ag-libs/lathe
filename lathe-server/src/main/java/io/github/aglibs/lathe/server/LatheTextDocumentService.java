@@ -14,6 +14,7 @@ import org.eclipse.lsp4j.*;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.eclipse.lsp4j.jsonrpc.CompletableFutures;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
+import org.eclipse.lsp4j.jsonrpc.messages.Either3;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.TextDocumentService;
 
@@ -258,6 +259,30 @@ final class LatheTextDocumentService implements TextDocumentService {
           }
         });
     return response;
+  }
+
+  @Override
+  public CompletableFuture<Either3<Range, PrepareRenameResult, PrepareRenameDefaultBehavior>>
+      prepareRename(final PrepareRenameParams params) {
+    final var uri = params.getTextDocument().getUri();
+    final var pos = params.getPosition();
+    if (ignoreNonFile(uri, "prepareRename")) {
+      return CompletableFuture.completedFuture(null);
+    }
+
+    return worker.submit(() -> session.prepareRenameFuture(uri, pos)).thenCompose(f -> f);
+  }
+
+  @Override
+  public CompletableFuture<WorkspaceEdit> rename(final RenameParams params) {
+    final var uri = params.getTextDocument().getUri();
+    final var pos = params.getPosition();
+    final var newName = params.getNewName();
+    if (ignoreNonFile(uri, "rename")) {
+      return CompletableFuture.completedFuture(null);
+    }
+
+    return worker.submit(() -> session.renameFuture(uri, pos, newName)).thenCompose(f -> f);
   }
 
   @Override

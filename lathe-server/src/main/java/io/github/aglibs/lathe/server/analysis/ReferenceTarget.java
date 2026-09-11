@@ -53,6 +53,10 @@ public record ReferenceTarget(
     return declarationOffset >= 0;
   }
 
+  public boolean isLocalScope() {
+    return isLocalScopeKind(kind);
+  }
+
   static boolean isLocalScopeKind(final ElementKind kind) {
     return kind == ElementKind.LOCAL_VARIABLE
         || kind == ElementKind.PARAMETER

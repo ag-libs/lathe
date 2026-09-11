@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server.analysis;
 
+import static io.github.aglibs.lathe.server.analysis.SampleFixture.posOf;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
@@ -66,12 +67,6 @@ class ReferenceLocatorTest {
       final boolean includeDecl)
       throws IOException {
     return ReferenceLocator.references(analysis, target, TempSourceCompiler.TEST_URI, includeDecl);
-  }
-
-  private static Position posOf(final String source, final String context, final String token) {
-    final int from = source.indexOf(context);
-    final int offset = source.indexOf(token, from);
-    return SourceLocator.offsetToPosition(source, offset);
   }
 
   private static SourceFeatureRequest requestAt() {

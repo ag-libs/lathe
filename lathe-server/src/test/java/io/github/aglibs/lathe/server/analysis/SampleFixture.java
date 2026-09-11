@@ -12,6 +12,7 @@ import java.util.Objects;
 import java.util.Optional;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.VariableElement;
+import org.eclipse.lsp4j.Position;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.io.TempDir;
@@ -88,5 +89,12 @@ public abstract class SampleFixture {
     } catch (final IOException e) {
       throw new AssertionError(e);
     }
+  }
+
+  // The position of {@code token} at or after {@code context} in the raw source.
+  public static Position posOf(final String source, final String context, final String token) {
+    final int from = source.indexOf(context);
+    final int offset = source.indexOf(token, from);
+    return SourceLocator.offsetToPosition(source, offset);
   }
 }
