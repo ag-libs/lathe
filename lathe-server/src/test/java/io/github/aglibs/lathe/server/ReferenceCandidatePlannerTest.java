@@ -75,7 +75,8 @@ class ReferenceCandidatePlannerTest {
         descriptor,
         ReferenceTarget.SearchScope.REACTOR_MODULES,
         overriddenDeclarers,
-        kind == ElementKind.METHOD);
+        kind == ElementKind.METHOD,
+        -1);
   }
 
   private static ReferenceTarget type(final String qualifiedName, final String simpleName) {

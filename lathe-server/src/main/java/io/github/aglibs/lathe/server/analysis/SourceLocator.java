@@ -54,6 +54,13 @@ public final class SourceLocator {
     return new Range(offsetToPosition(cu, start), offsetToPosition(cu, end));
   }
 
+  public static long declarationStartOffset(final Trees trees, final Element element) {
+    final TreePath path = trees.getPath(element);
+    return path == null
+        ? -1
+        : trees.getSourcePositions().getStartPosition(path.getCompilationUnit(), path.getLeaf());
+  }
+
   public static TreePath pathAt(
       final Trees trees, final CompilationUnitTree cu, final long offset) {
     final var positions = trees.getSourcePositions();

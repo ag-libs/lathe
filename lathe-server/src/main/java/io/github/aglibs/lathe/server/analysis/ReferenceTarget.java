@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server.analysis;
 
+import com.sun.source.util.Trees;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.util.ArrayDeque;
 import java.util.HashSet;
@@ -26,7 +27,8 @@ public record ReferenceTarget(
     String erasedDescriptor,
     SearchScope scope,
     List<String> overriddenDeclarers,
-    boolean overrideFamilyBounded) {
+    boolean overrideFamilyBounded,
+    long declarationOffset) {
 
   public enum SearchScope {
     DECLARING_FILE,
@@ -45,21 +47,44 @@ public record ReferenceTarget(
     overriddenDeclarers = List.copyOf(overriddenDeclarers);
   }
 
+  // Two same-named local-scope symbols in a class have identical structural descriptors, so a
+  // local-scope target is pinned to its declaration's source offset; -1 for member/type targets.
+  boolean hasDeclarationIdentity() {
+    return declarationOffset >= 0;
+  }
+
+  static boolean isLocalScopeKind(final ElementKind kind) {
+    return kind == ElementKind.LOCAL_VARIABLE
+        || kind == ElementKind.PARAMETER
+        || kind == ElementKind.EXCEPTION_PARAMETER
+        || kind == ElementKind.RESOURCE_VARIABLE
+        || kind == ElementKind.TYPE_PARAMETER;
+  }
+
   static ReferenceTarget from(final Element element, final Types types, final Elements elements) {
+    return from(element, null, types, elements);
+  }
+
+  static ReferenceTarget from(
+      final Element element, final Trees trees, final Types types, final Elements elements) {
     final var accessor = recordAccessorFor(element, types);
     if (accessor != null) {
-      return from(accessor, types, elements);
+      return from(accessor, trees, types, elements);
     }
 
     final var kind = element.getKind();
     final var simpleName = element.getSimpleName().toString();
     final var scope = scopeFor(element);
+    final long declarationOffset =
+        isLocalScopeKind(kind) && trees != null
+            ? SourceLocator.declarationStartOffset(trees, element)
+            : -1;
 
     return switch (kind) {
       case CLASS, INTERFACE, ENUM, RECORD, ANNOTATION_TYPE -> {
         final var te = (TypeElement) element;
         yield new ReferenceTarget(
-            kind, te.getQualifiedName().toString(), simpleName, null, scope, List.of(), false);
+            kind, te.getQualifiedName().toString(), simpleName, null, scope, List.of(), false, -1);
       }
       case METHOD, CONSTRUCTOR -> {
         final var ee = (ExecutableElement) element;
@@ -74,7 +99,8 @@ public record ReferenceTarget(
             buildDescriptor(ee, types),
             scope,
             declarers,
-            method);
+            method,
+            -1);
       }
       case FIELD, ENUM_CONSTANT -> {
         final var owner = (TypeElement) element.getEnclosingElement();
@@ -85,7 +111,8 @@ public record ReferenceTarget(
             null,
             scope,
             List.of(),
-            false);
+            false,
+            -1);
       }
       default ->
           new ReferenceTarget(
@@ -95,7 +122,8 @@ public record ReferenceTarget(
               null,
               scope,
               List.of(),
-              false);
+              false,
+              declarationOffset);
     };
   }
 
@@ -148,10 +176,7 @@ public record ReferenceTarget(
 
   private static SearchScope scopeFor(final Element element) {
     final var kind = element.getKind();
-    if (kind == ElementKind.LOCAL_VARIABLE
-        || kind == ElementKind.PARAMETER
-        || kind == ElementKind.EXCEPTION_PARAMETER
-        || kind == ElementKind.RESOURCE_VARIABLE) {
+    if (isLocalScopeKind(kind)) {
       return SearchScope.DECLARING_FILE;
     }
 

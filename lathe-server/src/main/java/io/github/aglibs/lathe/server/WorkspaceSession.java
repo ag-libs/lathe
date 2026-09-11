@@ -1809,7 +1809,8 @@ final class WorkspaceSession {
             data.erasedDescriptor(),
             data.scope(),
             List.of(),
-            false);
+            false,
+            -1);
     final var progressTitle = "Finding callers of %s".formatted(target.simpleName());
 
     final var declaringPath = LatheUri.toPath(data.routingUri());
