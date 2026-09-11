@@ -27,6 +27,14 @@ class CompletionDeclarationNameTest extends CompletionTestSupport {
   }
 
   @Test
+  void declarationName_genericAndQualifiedTypes_useTheSimpleName() {
+    assertThat(labels(fixture.complete("class Test { void m() { List<String> §; } }")))
+        .containsExactly("list");
+    assertThat(labels(fixture.complete("class Test { void m() { java.util.List §; } }")))
+        .containsExactly("list");
+  }
+
+  @Test
   void declarationName_typedPrefix_filtersToMatchingNames() {
     assertThat(labels(fixture.complete("class Test { void m() { ConnectionString c§; } }")))
         .containsExactly("connectionString");

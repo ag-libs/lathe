@@ -22,7 +22,7 @@ final class DeclarationNameCompletionProvider {
 
   static List<CompletionCandidate> propose(
       final ParsedSentinel parsed, final AttributedFileAnalysis analysis, final int cursorOffset) {
-    final String typeSimpleName = simpleTypeName(parsed.declaredTypeText());
+    final String typeSimpleName = usableName(parsed.declaredTypeText());
     if (typeSimpleName == null) {
       return List.of();
     }
@@ -38,9 +38,9 @@ final class DeclarationNameCompletionProvider {
         .toList();
   }
 
-  // Qualified and generic types (java.util.List, List<String>) need the type mirror and are a later
-  // slice; slicing the type text apart to get a simple name would be Java parsing, which is banned.
-  private static String simpleTypeName(final String declaredTypeText) {
+  // declaredTypeText is the type's AST simple name. Use it only when it is a plain identifier, so
+  // primitives (int) and arrays (String[]) are dropped for a later slice.
+  private static String usableName(final String declaredTypeText) {
     return declaredTypeText != null && SourceVersion.isIdentifier(declaredTypeText)
         ? declaredTypeText
         : null;

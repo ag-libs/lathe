@@ -416,10 +416,22 @@ final class SentinelParser {
         null,
         null,
         -1,
-        realType ? type.toString() : null,
+        realType ? simpleTypeName(type) : null,
         null,
         TypeReferenceRole.ORDINARY,
         false);
+  }
+
+  // The declared type's simple name, taken from the AST so no type text is parsed: the base of a
+  // generic type (List<String> -> List) and the last segment of a qualified one (java.util.List ->
+  // List). Other shapes (primitives, arrays) keep their source form and are filtered downstream.
+  private static String simpleTypeName(final Tree type) {
+    return switch (type) {
+      case IdentifierTree id -> id.getName().toString();
+      case ParameterizedTypeTree parameterized -> simpleTypeName(parameterized.getType());
+      case MemberSelectTree member -> member.getIdentifier().toString();
+      default -> type.toString();
+    };
   }
 
   private static Classification classifyMethodInvocation(
