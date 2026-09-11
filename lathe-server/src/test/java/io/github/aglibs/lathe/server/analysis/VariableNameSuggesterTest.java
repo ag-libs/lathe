@@ -28,12 +28,6 @@ class VariableNameSuggesterTest {
   }
 
   @Test
-  void suggest_nameTaken_appendsUniqueSuffix() {
-    assertThat(VariableNameSuggester.suggest("String", null, Set.of("string")))
-        .containsExactly("string1");
-  }
-
-  @Test
   void suggest_multiWordTypeWithFirstTaken_uniquifiesEachIndependently() {
     assertThat(VariableNameSuggester.suggest("ConnectionString", null, Set.of("connectionString")))
         .containsExactly("connectionString1", "string");

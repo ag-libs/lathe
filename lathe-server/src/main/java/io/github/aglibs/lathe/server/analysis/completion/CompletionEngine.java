@@ -104,7 +104,7 @@ public final class CompletionEngine {
           case ANNOTATION_ARGUMENT_VALUE -> completeAnnotationArgumentValue(parsed, injected, req);
           case VARIABLE_DECLARATION ->
               isRealNameSlot(parsed)
-                  ? CompletionOutcome.of(List.of())
+                  ? completeDeclarationName(parsed, req)
                   : (parsed.enclosingMethod() == null
                       ? typeReferenceCompleter.completeTypeReference(parsed, injected, req)
                       : CompletionOutcome.of(List.of()));
@@ -567,6 +567,13 @@ public final class CompletionEngine {
     final List<CompletionItem> merged =
         Stream.concat(items.stream(), typeOutcome.items().stream()).toList();
     return new CompletionOutcome(merged, req.cached() == null ? analysis : null);
+  }
+
+  private CompletionOutcome completeDeclarationName(
+      final ParsedSentinel parsed, final CompletionRequest req) {
+    final List<CompletionCandidate> candidates =
+        DeclarationNameCompletionProvider.propose(parsed, resolveAnalysis(req), req.cursorOffset());
+    return CompletionOutcome.of(candidates.stream().map(CompletionItemPresenter::present).toList());
   }
 
   private AttributedFileAnalysis resolveAnalysis(final CompletionRequest req) {
