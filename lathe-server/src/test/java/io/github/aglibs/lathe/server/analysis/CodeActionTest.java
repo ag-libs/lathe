@@ -745,6 +745,83 @@ class CodeActionTest {
     assertThat(rightTitles(actions)).noneMatch(t -> t.startsWith("Replace 'var'"));
   }
 
+  // --- Convert-to-var provider (request-driven) ---
+
+  @Test
+  void codeAction_diamondInitializer_convertsToVarAndFillsTypeArguments() {
+    // The declared type is dropped, so the diamond must be filled from the inferred arguments —
+    // otherwise `var` would infer `Object`. Covers one and two type arguments.
+    final var source =
+        """
+        package com.example;
+        import java.util.ArrayList;
+        import java.util.HashMap;
+        import java.util.List;
+        import java.util.Map;
+        class Test {
+          void m() {
+            List<String> ls = new ArrayList<>();
+            Map<String, Integer> mm = new HashMap<>();
+          }
+        }
+        """;
+
+    assertThat(convertVarEdits(replaceVarActionsAt(source, 7, 4)))
+        .extracting(TextEdit::getNewText)
+        .containsExactlyInAnyOrder("var", "<String>");
+    assertThat(convertVarEdits(replaceVarActionsAt(source, 8, 4)))
+        .extracting(TextEdit::getNewText)
+        .containsExactlyInAnyOrder("var", "<String, Integer>");
+  }
+
+  @Test
+  void codeAction_losslessAndWideningLocals_convertToVar() {
+    // A same-type primitive local and a reference-widening local both convert to a single `var`
+    // edit; neither has a diamond to fill.
+    final var source =
+        """
+        package com.example;
+        class Test {
+          void m() {
+            int a = 1;
+            Object o = "x";
+          }
+        }
+        """;
+
+    assertThat(convertVarEdits(replaceVarActionsAt(source, 3, 8)))
+        .extracting(TextEdit::getNewText)
+        .containsExactly("var");
+    assertThat(convertVarEdits(replaceVarActionsAt(source, 4, 11)))
+        .extracting(TextEdit::getNewText)
+        .containsExactly("var");
+  }
+
+  @Test
+  void codeAction_ineligibleDeclarations_offerNoConvertToVar() {
+    // Field (`var` illegal), primitive mismatch (`long` <- `int`), multi-declarator, lambda (no
+    // standalone type), and an already-`var` local must all decline the conversion.
+    final var source =
+        """
+        package com.example;
+        class Test {
+          String f = "x";
+          void m() {
+            long big = 1;
+            int a = 1, b = 2;
+            Runnable r = () -> {};
+            var already = 3;
+          }
+        }
+        """;
+
+    for (final int[] at : new int[][] {{2, 9}, {4, 9}, {5, 8}, {6, 13}, {7, 8}}) {
+      assertThat(rightTitles(replaceVarActionsAt(source, at[0], at[1])))
+          .as("line %d col %d", at[0], at[1])
+          .noneMatch(title -> title.equals("Convert to 'var'"));
+    }
+  }
+
   // --- Extract-variable provider (request-driven) ---
 
   @Test
@@ -1458,6 +1535,10 @@ class CodeActionTest {
 
   private static List<TextEdit> fieldEdits(final List<Either<Command, CodeAction>> actions) {
     return editsOfActionStartingWith(actions, "Extract field");
+  }
+
+  private static List<TextEdit> convertVarEdits(final List<Either<Command, CodeAction>> actions) {
+    return editsOfActionStartingWith(actions, "Convert to 'var'");
   }
 
   // The inserted declaration text, stripped of the leading/trailing whitespace that positions it on

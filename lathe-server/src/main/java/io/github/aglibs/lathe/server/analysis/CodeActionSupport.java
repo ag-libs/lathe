@@ -6,6 +6,7 @@ import com.sun.source.tree.LambdaExpressionTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.StatementTree;
+import com.sun.source.tree.VariableTree;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import javax.lang.model.element.NestingKind;
@@ -72,6 +73,24 @@ final class CodeActionSupport {
     while (current != null) {
       if (current.getLeaf() instanceof ClassTree) {
         return current;
+      }
+
+      current = current.getParentPath();
+    }
+    return null;
+  }
+
+  // The variable declaration enclosing the cursor, bounded at the method/class boundary so a caret
+  // in a method body never climbs to a field. Null when no declaration encloses the path.
+  static TreePath enclosingVariable(final TreePath path) {
+    TreePath current = path;
+    while (current != null) {
+      if (current.getLeaf() instanceof VariableTree) {
+        return current;
+      }
+
+      if (current.getLeaf() instanceof MethodTree || current.getLeaf() instanceof ClassTree) {
+        return null;
       }
 
       current = current.getParentPath();

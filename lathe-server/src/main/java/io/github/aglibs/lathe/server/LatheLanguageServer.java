@@ -89,6 +89,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     codeActionKinds.add(CodeActionKind.QuickFix);
     codeActionKinds.add(CodeActionKind.Refactor);
     codeActionKinds.add(CodeActionKind.RefactorExtract);
+    codeActionKinds.add(CodeActionKind.RefactorRewrite);
     codeActionKinds.addAll(ExtractionSupport.KINDS);
     capabilities.setCodeActionProvider(new CodeActionOptions(codeActionKinds));
     capabilities.setWorkspaceSymbolProvider(true);

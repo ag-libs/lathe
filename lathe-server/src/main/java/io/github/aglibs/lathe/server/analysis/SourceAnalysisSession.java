@@ -970,6 +970,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
     }
 
     addUnique(actions, seen, new ReplaceVarProvider().provide(uri, range, analysis));
+    addUnique(actions, seen, new ConvertToVarProvider().provide(uri, range, analysis));
     addUnique(actions, seen, new ExtractVariableProvider().provide(uri, range, analysis));
     addUnique(actions, seen, new ExtractConstantProvider().provide(uri, range, analysis));
     addUnique(actions, seen, new ExtractFieldProvider().provide(uri, range, analysis));

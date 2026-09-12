@@ -1,8 +1,6 @@
 package io.github.aglibs.lathe.server.analysis;
 
-import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
-import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import java.io.IOException;
@@ -38,7 +36,8 @@ final class ReplaceVarProvider {
     final var trees = analysis.trees();
     final long offset =
         SourceLocator.toOffset(cu, range.getStart().getLine(), range.getStart().getCharacter());
-    final TreePath varPath = enclosingVariable(SourceLocator.pathAt(trees, cu, offset));
+    final TreePath varPath =
+        CodeActionSupport.enclosingVariable(SourceLocator.pathAt(trees, cu, offset));
     if (varPath == null) {
       return List.of();
     }
@@ -73,7 +72,7 @@ final class ReplaceVarProvider {
 
     final var action = new CodeAction();
     action.setTitle("Replace 'var' with '%s'".formatted(typeText));
-    action.setKind(CodeActionKind.Refactor);
+    action.setKind(CodeActionKind.RefactorRewrite);
     final var workspaceEdit = new WorkspaceEdit();
     workspaceEdit.setChanges(Map.of(uri, edits));
     action.setEdit(workspaceEdit);
@@ -116,19 +115,5 @@ final class ReplaceVarProvider {
     }
 
     return varStart;
-  }
-
-  private static TreePath enclosingVariable(final TreePath path) {
-    TreePath current = path;
-    while (current != null) {
-      if (current.getLeaf() instanceof VariableTree) {
-        return current;
-      }
-      if (current.getLeaf() instanceof MethodTree || current.getLeaf() instanceof ClassTree) {
-        return null;
-      }
-      current = current.getParentPath();
-    }
-    return null;
   }
 }
