@@ -989,6 +989,89 @@ class CodeActionTest {
         .isEqualTo("String create = Factory.create();\n    ");
   }
 
+  // --- Extract-constant provider ---
+
+  @Test
+  void codeAction_stringLiteral_extractsConstantNamedFromContent() {
+    final var source =
+        """
+        package com.example;
+        class Test {
+          void m() {
+            use("hello world");
+          }
+          void use(String s) {}
+        }
+        """;
+    final var actions = extractActionsSpanning(source, 3, 8, 3, 21);
+
+    assertThat(rightTitles(actions)).contains("Extract constant 'HELLO_WORLD'");
+    final List<TextEdit> edits = constantEdits(actions);
+    assertThat(newTextAtLineStart(edits))
+        .startsWith("private static final String HELLO_WORLD = \"hello world\";");
+    assertThat(replacementText(edits)).isEqualTo("HELLO_WORLD");
+  }
+
+  @Test
+  void codeAction_numericLiteral_extractsConstantWithDefaultName() {
+    final var source =
+        """
+        package com.example;
+        class Test {
+          int m() {
+            return 42;
+          }
+        }
+        """;
+    final var actions = extractActionsSpanning(source, 3, 11, 3, 13);
+
+    assertThat(rightTitles(actions)).contains("Extract constant 'CONSTANT'");
+    assertThat(newTextAtLineStart(constantEdits(actions)))
+        .startsWith("private static final int CONSTANT = 42;");
+  }
+
+  @Test
+  void codeAction_nonConstantExpression_offersNoConstant() {
+    // a method call is not a compile-time constant — extract variable is still offered, constant
+    // not
+    final var source =
+        """
+        package com.example;
+        class Test {
+          int m() {
+            return compute();
+          }
+          int compute() { return 1; }
+        }
+        """;
+    final var actions = extractActionsSpanning(source, 3, 11, 3, 20);
+
+    assertThat(rightTitles(actions)).anyMatch(t -> t.startsWith("Extract variable"));
+    assertThat(rightTitles(actions)).noneMatch(t -> t.startsWith("Extract constant"));
+  }
+
+  @Test
+  void codeAction_repeatedLiteral_offersReplaceAllConstant() {
+    final var source =
+        """
+        package com.example;
+        class Test {
+          int a() {
+            return 7;
+          }
+          int b() {
+            return 7 + 7;
+          }
+        }
+        """;
+    final var actions = extractActionsSpanning(source, 3, 11, 3, 12);
+
+    assertThat(rightTitles(actions))
+        .contains(
+            "Extract constant 'CONSTANT'",
+            "Extract constant 'CONSTANT' (replace all 3 occurrences)");
+  }
+
   // --- Extract-variable: replace all occurrences ---
 
   @Test
@@ -1110,10 +1193,19 @@ class CodeActionTest {
   }
 
   private static List<TextEdit> extractEdits(final List<Either<Command, CodeAction>> actions) {
+    return editsOfActionStartingWith(actions, "Extract variable");
+  }
+
+  private static List<TextEdit> constantEdits(final List<Either<Command, CodeAction>> actions) {
+    return editsOfActionStartingWith(actions, "Extract constant");
+  }
+
+  private static List<TextEdit> editsOfActionStartingWith(
+      final List<Either<Command, CodeAction>> actions, final String titlePrefix) {
     return actions.stream()
         .filter(Either::isRight)
         .map(Either::getRight)
-        .filter(a -> a.getTitle().startsWith("Extract variable"))
+        .filter(a -> a.getTitle().startsWith(titlePrefix))
         .findFirst()
         .orElseThrow()
         .getEdit()
