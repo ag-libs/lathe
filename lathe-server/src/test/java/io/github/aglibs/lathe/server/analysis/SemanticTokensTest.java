@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.IOException;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 // Sample.java (0-based lines):
@@ -114,73 +113,85 @@ class SemanticTokensTest extends SampleFixture {
   }
 
   @Test
-  void regular_method_decl_has_no_token() {
-    // "getName" — instance method, no interesting modifiers
-    assertNoToken(37, 16);
+  void regular_method_decl_is_method_with_declaration() {
+    // "getName" — instance method declaration (no interesting modifiers)
+    assertToken(37, 16, "method", "declaration");
   }
 
   @Test
-  void instance_field_usage_has_no_token() {
+  void instance_field_usage_is_property() {
     // "name" in "return name;"
-    assertNoToken(38, 11);
+    assertToken(38, 11, "property");
   }
 
   @Test
-  void parameter_has_no_token() {
+  void parameter_decl_is_parameter_with_declaration() {
     // "value" in "public String run(final String value)"
-    assertNoToken(49, 33);
+    assertToken(49, 33, "parameter", "declaration");
   }
 
   @Test
-  void local_variable_has_no_token() {
+  void local_variable_decl_is_variable_with_declaration() {
     // "trimmed" in "var trimmed = input.strip();"
-    assertNoToken(89, 8);
+    assertToken(89, 8, "variable", "declaration");
   }
 
   @Test
-  void type_reference_has_no_token() {
-    // "String" return type of getName
-    assertNoToken(37, 9);
-  }
-
-  @Test
-  @Disabled("Class and import semantic highlighting is planned but not yet implemented")
   void class_declaration_has_class_token_with_declaration_modifier() {
-    // public class Sample { ... }
-    // Line 15 (0-based line 14), "Sample" at column 13 (length 6)
+    // "Sample" in "public class Sample {"
     assertToken(14, 13, "class", "declaration");
   }
 
   @Test
-  @Disabled("Class and import semantic highlighting is planned but not yet implemented")
   void enum_declaration_has_enum_token_with_declaration_modifier() {
-    // enum Status { ... }
-    // Line 23 (0-based line 22), "Status" at column 7 (length 6)
+    // "Status" in "enum Status {"
     assertToken(22, 7, "enum", "declaration");
   }
 
   @Test
-  @Disabled("Class and import semantic highlighting is planned but not yet implemented")
-  void type_references_in_code_body_receive_correct_semantic_tokens() {
-    // String return type of getName()
-    // Line 38 (0-based line 37), "String" at column 9 (length 6)
+  void type_reference_in_code_body_is_class() {
+    // "String" return type of getName()
     assertToken(37, 9, "class");
   }
 
   @Test
-  @Disabled("Class and import semantic highlighting is planned but not yet implemented")
   void class_import_has_class_token_on_simple_type_name() {
-    // import java.util.Objects;
-    // Line 8 (0-based line 7), "Objects" at column 16 (length 7)
-    assertToken(7, 16, "class");
+    // "Objects" in "import java.util.Objects;"
+    assertToken(7, 17, "class");
   }
 
   @Test
-  @Disabled("Class and import semantic highlighting is planned but not yet implemented")
   void interface_import_has_interface_token_on_simple_type_name() {
-    // import java.util.List;
-    // Line 5 (0-based line 4), "List" at column 16 (length 4)
-    assertToken(4, 16, "interface");
+    // "List" in "import java.util.List;"
+    assertToken(4, 17, "interface");
+  }
+
+  @Test
+  void variables_parameters_and_record_components_are_tokenized() throws IOException {
+    final var source =
+        """
+        class T {
+          int run(int p) {
+            int x = p;
+            return x + run(p);
+          }
+        }
+        record R(int a) {}
+        """;
+    final List<SemanticToken> toks = TokenScannerTestHelper.scanFile(tmp, "T.java", source);
+
+    assertThat(TokenScannerTestHelper.tokenAt(toks, 1, 6).type()).isEqualTo("method"); // run decl
+    assertThat(TokenScannerTestHelper.tokenAt(toks, 1, 14).type()).isEqualTo("parameter"); // p decl
+    assertThat(TokenScannerTestHelper.tokenAt(toks, 2, 8).type()).isEqualTo("variable"); // x decl
+    assertThat(TokenScannerTestHelper.tokenAt(toks, 2, 12).type()).isEqualTo("parameter"); // p use
+    assertThat(TokenScannerTestHelper.tokenAt(toks, 3, 11).type()).isEqualTo("variable"); // x use
+    assertThat(TokenScannerTestHelper.tokenAt(toks, 3, 15).type()).isEqualTo("method"); // run use
+    assertThat(TokenScannerTestHelper.tokenAt(toks, 6, 7).type()).isEqualTo("class"); // record R
+
+    // A record component's synthetic parameter+field share the header offset; only one token emits.
+    assertThat(toks.stream().filter(t -> t.line() == 6 && t.character() == 13).toList())
+        .singleElement()
+        .satisfies(t -> assertThat(t.type()).isEqualTo("property"));
   }
 
   @Test
@@ -214,10 +225,6 @@ class SemanticTokensTest extends SampleFixture {
     } else {
       assertThat(tok.modifiers()).isEmpty();
     }
-  }
-
-  private void assertNoToken(final int line, final int character) {
-    assertThat(tokenAt(line, character)).as("no token at %d:%d", line, character).isNull();
   }
 
   private SemanticToken tokenAt(final int line, final int character) {

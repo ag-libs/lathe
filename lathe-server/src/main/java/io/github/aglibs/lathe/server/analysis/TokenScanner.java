@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server.analysis;
 
 import com.sun.source.tree.AnnotationTree;
+import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.ExportsTree;
 import com.sun.source.tree.ExpressionTree;
@@ -21,6 +22,8 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
@@ -28,7 +31,18 @@ import javax.lang.model.element.Modifier;
 public final class TokenScanner extends TreePathScanner<Void, Void> {
 
   public static final List<String> TOKEN_TYPES =
-      List.of("enumMember", "method", "property", "typeParameter", "annotation", "namespace");
+      List.of(
+          "enumMember",
+          "method",
+          "property",
+          "typeParameter",
+          "annotation",
+          "namespace",
+          "class",
+          "interface",
+          "enum",
+          "parameter",
+          "variable");
 
   public static final List<String> TOKEN_MODIFIERS = List.of("declaration", "static", "deprecated");
 
@@ -144,50 +158,70 @@ public final class TokenScanner extends TreePathScanner<Void, Void> {
   }
 
   @Override
+  public Void visitClass(final ClassTree node, final Void ignored) {
+    final var element = trees.getElement(getCurrentPath());
+    final var name = node.getSimpleName().toString();
+    final String type = element == null ? null : typeTokenType(element.getKind());
+    if (type != null && !name.isEmpty()) {
+      emitDeclaration(positions.getStartPosition(cu, node), name, type, Set.of());
+    }
+    return super.visitClass(node, ignored);
+  }
+
+  @Override
   public Void visitMethod(final MethodTree node, final Void ignored) {
     if (node.getName().contentEquals("<init>")) {
       return super.visitMethod(node, ignored);
     }
     final var element = trees.getElement(getCurrentPath());
-    if (element == null) {
-      return super.visitMethod(node, ignored);
-    }
-    final var mods = interestingModifiers(element);
-    if (!mods.isEmpty()) {
-      final var name = node.getName().toString();
-      final long namePos =
-          SourceLocator.findIdentifierFrom(content, positions.getStartPosition(cu, node), name);
-      if (namePos >= 0) {
-        mods.add("declaration");
-        addToken(namePos, name.length(), "method", mods);
-      }
+    if (element != null) {
+      emitDeclaration(
+          positions.getStartPosition(cu, node),
+          node.getName().toString(),
+          "method",
+          interestingModifiers(element));
     }
     return super.visitMethod(node, ignored);
   }
 
   @Override
   public Void visitVariable(final VariableTree node, final Void ignored) {
+    // Synthetic declarations (a record component's implicit parameter and field share the header
+    // offset; the parameter carries no end position) — skip without descending to avoid emitting
+    // duplicate tokens for the component name and its type.
+    if (positions.getEndPosition(cu, node) < 0) {
+      return null;
+    }
+
     final var element = trees.getElement(getCurrentPath());
     if (element == null) {
       return super.visitVariable(node, ignored);
     }
+
     final var kind = element.getKind();
-    if (kind != ElementKind.ENUM_CONSTANT && kind != ElementKind.FIELD) {
-      return super.visitVariable(node, ignored);
-    }
-    final var mods =
-        kind == ElementKind.ENUM_CONSTANT ? new HashSet<String>() : interestingModifiers(element);
-    if (kind == ElementKind.ENUM_CONSTANT || !mods.isEmpty()) {
-      final var name = node.getName().toString();
-      final long namePos =
-          SourceLocator.findIdentifierFrom(content, positions.getStartPosition(cu, node), name);
-      if (namePos >= 0) {
-        final String type = kind == ElementKind.ENUM_CONSTANT ? "enumMember" : "property";
-        mods.add("declaration");
-        addToken(namePos, name.length(), type, mods);
-      }
+    final String type = declarationTokenType(kind);
+    if (type != null) {
+      final Set<String> baseModifiers =
+          kind == ElementKind.ENUM_CONSTANT ? Set.of() : interestingModifiers(element);
+      emitDeclaration(
+          positions.getStartPosition(cu, node), node.getName().toString(), type, baseModifiers);
     }
     return super.visitVariable(node, ignored);
+  }
+
+  // Emits a declaration-site token: locates the name from the declaration start, then tags it with
+  // `declaration` on top of any element modifiers. Shared by class, method, and variable decls.
+  private void emitDeclaration(
+      final long declStart, final String name, final String type, final Set<String> baseModifiers) {
+    final long namePos = SourceLocator.findIdentifierFrom(content, declStart, name);
+    if (namePos < 0) {
+      return;
+    }
+
+    final Set<String> modifiers =
+        Stream.concat(baseModifiers.stream(), Stream.of("declaration"))
+            .collect(Collectors.toUnmodifiableSet());
+    addToken(namePos, name.length(), type, modifiers);
   }
 
   @Override
@@ -198,7 +232,7 @@ public final class TokenScanner extends TreePathScanner<Void, Void> {
     }
     final var element = trees.getElement(getCurrentPath());
     if (element != null) {
-      emitIfInteresting(element, positions.getStartPosition(cu, node), name.length());
+      emitReference(element, positions.getStartPosition(cu, node), name);
     }
     return null;
   }
@@ -206,33 +240,70 @@ public final class TokenScanner extends TreePathScanner<Void, Void> {
   @Override
   public Void visitMemberSelect(final MemberSelectTree node, final Void ignored) {
     scan(node.getExpression(), null);
-    final var element = SourceLocator.elementAt(trees, getCurrentPath());
+    // The exact element of this selector — not SourceLocator.elementAt, which climbs a package
+    // qualifier up to the enclosing type and would mislabel `java.util` in `java.util.List` as a
+    // type. A package selector resolves to a PACKAGE here and emits no token.
+    final var element = trees.getElement(getCurrentPath());
     if (element != null) {
-      final long endPos = positions.getEndPosition(cu, node);
       final var name = node.getIdentifier().toString();
-      final long nameStart = endPos - name.length();
-      if (endPos >= 0 && nameStart >= 0) {
-        emitIfInteresting(element, nameStart, name.length());
-      }
+      emitReference(element, positions.getEndPosition(cu, node) - name.length(), name);
     }
     return null;
   }
 
-  private void emitIfInteresting(final Element element, final long pos, final int length) {
-    final var kind = element.getKind();
-    if (kind == ElementKind.TYPE_PARAMETER) {
-      addToken(pos, length, "typeParameter", Set.of());
-    } else if (kind == ElementKind.ENUM_CONSTANT) {
-      addToken(pos, length, "enumMember", Set.of());
-    } else if (kind == ElementKind.FIELD || kind == ElementKind.METHOD) {
-      final var mods = interestingModifiers(element);
-      if (!mods.isEmpty()) {
-        addToken(pos, length, kind == ElementKind.FIELD ? "property" : "method", mods);
-      }
+  // Emits a reference-site token only when the source at the computed range actually spells the
+  // name. This rejects synthetic identifiers whose position points elsewhere — notably an
+  // annotation's implicit `value` element, which resolves to a method but sits on the argument.
+  private void emitReference(final Element element, final long pos, final String name) {
+    if (pos >= 0
+        && pos + name.length() <= content.length()
+        && content.regionMatches((int) pos, name, 0, name.length())) {
+      emitIfInteresting(element, pos, name.length());
     }
   }
 
-  private static HashSet<String> interestingModifiers(final Element element) {
+  private void emitIfInteresting(final Element element, final long pos, final int length) {
+    final var kind = element.getKind();
+    final String typeToken = typeTokenType(kind);
+    if (typeToken != null) {
+      addToken(pos, length, typeToken, Set.of());
+      return;
+    }
+
+    switch (kind) {
+      case TYPE_PARAMETER -> addToken(pos, length, "typeParameter", Set.of());
+      case ENUM_CONSTANT -> addToken(pos, length, "enumMember", Set.of());
+      case PARAMETER -> addToken(pos, length, "parameter", Set.of());
+      case LOCAL_VARIABLE, RESOURCE_VARIABLE, BINDING_VARIABLE, EXCEPTION_PARAMETER ->
+          addToken(pos, length, "variable", Set.of());
+      case FIELD -> addToken(pos, length, "property", interestingModifiers(element));
+      case METHOD -> addToken(pos, length, "method", interestingModifiers(element));
+      default -> {}
+    }
+  }
+
+  // The token type for a type declaration or reference, or null for non-type elements.
+  private static String typeTokenType(final ElementKind kind) {
+    return switch (kind) {
+      case CLASS, RECORD -> "class";
+      case INTERFACE, ANNOTATION_TYPE -> "interface";
+      case ENUM -> "enum";
+      default -> null;
+    };
+  }
+
+  // The token type for a variable declaration (`visitVariable`), or null for other declarations.
+  private static String declarationTokenType(final ElementKind kind) {
+    return switch (kind) {
+      case ENUM_CONSTANT -> "enumMember";
+      case FIELD -> "property";
+      case PARAMETER -> "parameter";
+      case LOCAL_VARIABLE, RESOURCE_VARIABLE, BINDING_VARIABLE, EXCEPTION_PARAMETER -> "variable";
+      default -> null;
+    };
+  }
+
+  private static Set<String> interestingModifiers(final Element element) {
     final var mods = new HashSet<String>();
     if (element.getModifiers().contains(Modifier.STATIC)) {
       mods.add("static");
@@ -240,7 +311,7 @@ public final class TokenScanner extends TreePathScanner<Void, Void> {
     if (isDeprecated(element)) {
       mods.add("deprecated");
     }
-    return mods;
+    return Set.copyOf(mods);
   }
 
   private static boolean isDeprecated(final Element element) {
