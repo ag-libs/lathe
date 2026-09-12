@@ -1072,6 +1072,106 @@ class CodeActionTest {
             "Extract constant 'CONSTANT' (replace all 3 occurrences)");
   }
 
+  // --- Extract-field provider ---
+
+  @Test
+  void codeAction_expressionReadingOnlyFields_extractsInstanceField() {
+    final var source =
+        """
+        package com.example;
+        class Test {
+          private final int base = compute();
+          int m() {
+            return base * 2;
+          }
+          int compute() { return 5; }
+        }
+        """;
+    final var actions = extractActionsSpanning(source, 4, 11, 4, 19);
+
+    assertThat(rightTitles(actions)).anyMatch(t -> t.startsWith("Extract field"));
+    final List<TextEdit> edits = fieldEdits(actions);
+    final String name = replacementText(edits);
+    assertThat(insertedDecl(edits))
+        .startsWith("private final int ")
+        .contains(name)
+        .endsWith("= base * 2;");
+    assertThat(insertLine(edits)).isEqualTo(2);
+  }
+
+  @Test
+  void codeAction_expressionReadingParameter_offersNoField() {
+    final var source =
+        """
+        package com.example;
+        class Test {
+          int m(int x) {
+            return x * 2;
+          }
+        }
+        """;
+    final var actions = extractActionsSpanning(source, 3, 11, 3, 16);
+
+    assertThat(rightTitles(actions)).anyMatch(t -> t.startsWith("Extract variable"));
+    assertThat(rightTitles(actions)).noneMatch(t -> t.startsWith("Extract field"));
+  }
+
+  @Test
+  void codeAction_staticContext_offersNoField() {
+    final var source =
+        """
+        package com.example;
+        class Test {
+          static int m() {
+            return compute() + 1;
+          }
+          static int compute() { return 1; }
+        }
+        """;
+    final var actions = extractActionsSpanning(source, 3, 11, 3, 24);
+
+    assertThat(rightTitles(actions)).anyMatch(t -> t.startsWith("Extract variable"));
+    assertThat(rightTitles(actions)).noneMatch(t -> t.startsWith("Extract field"));
+  }
+
+  @Test
+  void codeAction_repeatedFieldExpression_offersReplaceAllField() {
+    final var source =
+        """
+        package com.example;
+        class Test {
+          private final int base = compute();
+          int a() {
+            return base + 1;
+          }
+          int b() {
+            return base + 1;
+          }
+          int compute() { return 5; }
+        }
+        """;
+    final var actions = extractActionsSpanning(source, 4, 11, 4, 19);
+
+    assertThat(rightTitles(actions))
+        .anyMatch(t -> t.startsWith("Extract field") && t.contains("replace all 2 occurrences"));
+  }
+
+  @Test
+  void codeAction_recordBody_offersNoField() {
+    final var source =
+        """
+        package com.example;
+        record Test(int base) {
+          int m() {
+            return base() * 2;
+          }
+        }
+        """;
+    final var actions = extractActionsSpanning(source, 3, 11, 3, 21);
+
+    assertThat(rightTitles(actions)).noneMatch(t -> t.startsWith("Extract field"));
+  }
+
   // --- Extract-variable: replace all occurrences ---
 
   @Test
@@ -1198,6 +1298,28 @@ class CodeActionTest {
 
   private static List<TextEdit> constantEdits(final List<Either<Command, CodeAction>> actions) {
     return editsOfActionStartingWith(actions, "Extract constant");
+  }
+
+  private static List<TextEdit> fieldEdits(final List<Either<Command, CodeAction>> actions) {
+    return editsOfActionStartingWith(actions, "Extract field");
+  }
+
+  // The inserted declaration text, stripped of the leading/trailing whitespace that positions it on
+  // its own line, so a placement-agnostic assertion can match the declaration itself.
+  private static String insertedDecl(final List<TextEdit> edits) {
+    return insertEdit(edits).getNewText().strip();
+  }
+
+  private static int insertLine(final List<TextEdit> edits) {
+    return insertEdit(edits).getRange().getStart().getLine();
+  }
+
+  private static TextEdit insertEdit(final List<TextEdit> edits) {
+    return edits.stream()
+        .filter(e -> e.getRange().getStart().equals(e.getRange().getEnd()))
+        .filter(e -> !e.getNewText().startsWith("import "))
+        .findFirst()
+        .orElseThrow();
   }
 
   private static List<TextEdit> editsOfActionStartingWith(

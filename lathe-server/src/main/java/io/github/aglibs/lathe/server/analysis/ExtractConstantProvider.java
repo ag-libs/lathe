@@ -75,7 +75,7 @@ final class ExtractConstantProvider {
       return List.of();
     }
 
-    final TreePath classPath = enclosingClass(exprPath);
+    final TreePath classPath = CodeActionSupport.enclosingClass(exprPath);
     if (classPath == null || !holdsStaticFinal(((ClassTree) classPath.getLeaf()))) {
       return List.of();
     }
@@ -112,6 +112,7 @@ final class ExtractConstantProvider {
         ExtractionSupport.action(
             uri,
             "Extract constant '%s'".formatted(name),
+            ExtractionSupport.CONSTANT_KIND,
             ExtractionSupport.editList(
                 insert,
                 List.of(ExtractionSupport.replaceEdit(cu, exprStart, exprEnd, name)),
@@ -134,20 +135,12 @@ final class ExtractConstantProvider {
               uri,
               "Extract constant '%s' (replace all %d occurrences)"
                   .formatted(name, occurrences.size()),
+              ExtractionSupport.CONSTANT_KIND,
               ExtractionSupport.editList(insert, replaces, importEdit)));
     }
 
     LOG.fine(() -> "[codeAction:extractConst] %s actions=%d".formatted(name, actions.size()));
     return actions;
-  }
-
-  private static TreePath enclosingClass(final TreePath path) {
-    for (TreePath p = path; p != null; p = p.getParentPath()) {
-      if (p.getLeaf() instanceof ClassTree) {
-        return p;
-      }
-    }
-    return null;
   }
 
   // Only kinds where a `private static final` field is well-formed. Interface/annotation members

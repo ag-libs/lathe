@@ -1,15 +1,10 @@
 package io.github.aglibs.lathe.server.analysis;
 
-import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.BlockTree;
 import com.sun.source.tree.CompilationUnitTree;
-import com.sun.source.tree.CompoundAssignmentTree;
 import com.sun.source.tree.ExpressionStatementTree;
 import com.sun.source.tree.ExpressionTree;
-import com.sun.source.tree.IdentifierTree;
-import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.Tree;
-import com.sun.source.tree.UnaryTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
@@ -22,7 +17,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.lang.model.element.Element;
@@ -116,6 +110,7 @@ final class ExtractVariableProvider {
         ExtractionSupport.action(
             uri,
             "Extract variable '%s'".formatted(name),
+            ExtractionSupport.VARIABLE_KIND,
             ExtractionSupport.editList(
                 insertDecl(cu, source, stmtStart, typeText, name, exprSource),
                 List.of(ExtractionSupport.replaceEdit(cu, exprStart, exprEnd, name)),
@@ -212,6 +207,7 @@ final class ExtractVariableProvider {
     return ExtractionSupport.action(
         uri,
         "Extract variable '%s' (replace all %d occurrences)".formatted(name, occurrences.size()),
+        ExtractionSupport.VARIABLE_KIND,
         ExtractionSupport.editList(
             insertDecl(cu, source, anchorStart, typeText, name, exprSource), replaces, importEdit));
   }
@@ -280,88 +276,8 @@ final class ExtractVariableProvider {
       final CompilationUnitTree cu,
       final long regionStart,
       final long regionEnd) {
-    final Set<Element> reads = readSet(selectedPath, trees);
-    if (reads.isEmpty()) {
-      return true;
-    }
-
-    final var positions = trees.getSourcePositions();
-    final var violated = new AtomicBoolean(false);
-    new TreePathScanner<Void, Void>() {
-      @Override
-      public Void visitAssignment(final AssignmentTree node, final Void unused) {
-        flagIfRead(node.getVariable());
-        return super.visitAssignment(node, unused);
-      }
-
-      @Override
-      public Void visitCompoundAssignment(final CompoundAssignmentTree node, final Void unused) {
-        flagIfRead(node.getVariable());
-        return super.visitCompoundAssignment(node, unused);
-      }
-
-      @Override
-      public Void visitUnary(final UnaryTree node, final Void unused) {
-        if (isIncDec(node.getKind())) {
-          flagIfRead(node.getExpression());
-        }
-        return super.visitUnary(node, unused);
-      }
-
-      private void flagIfRead(final ExpressionTree target) {
-        final long start = positions.getStartPosition(cu, target);
-        if (start < regionStart || start >= regionEnd) {
-          return;
-        }
-
-        final Element element = trees.getElement(new TreePath(getCurrentPath(), target));
-        if (element != null && reads.contains(element)) {
-          violated.set(true);
-        }
-      }
-    }.scan(methodPath, null);
-    return !violated.get();
-  }
-
-  private static Set<Element> readSet(final TreePath selectedPath, final Trees trees) {
-    final var reads = new HashSet<Element>();
-    addIfVariable(reads, selectedPath, trees);
-    new TreePathScanner<Void, Void>() {
-      @Override
-      public Void scan(final Tree node, final Void unused) {
-        if (node instanceof IdentifierTree || node instanceof MemberSelectTree) {
-          addIfVariable(reads, new TreePath(getCurrentPath(), node), trees);
-        }
-        return super.scan(node, unused);
-      }
-    }.scan(selectedPath, null);
-    return reads;
-  }
-
-  private static void addIfVariable(
-      final Set<Element> reads, final TreePath path, final Trees trees) {
-    final Element element = trees.getElement(path);
-    if (element == null) {
-      return;
-    }
-
-    switch (element.getKind()) {
-      case LOCAL_VARIABLE,
-          PARAMETER,
-          FIELD,
-          EXCEPTION_PARAMETER,
-          RESOURCE_VARIABLE,
-          BINDING_VARIABLE ->
-          reads.add(element);
-      default -> {}
-    }
-  }
-
-  private static boolean isIncDec(final Tree.Kind kind) {
-    return kind == Tree.Kind.PREFIX_INCREMENT
-        || kind == Tree.Kind.POSTFIX_INCREMENT
-        || kind == Tree.Kind.PREFIX_DECREMENT
-        || kind == Tree.Kind.POSTFIX_DECREMENT;
+    final Set<Element> reads = ExtractionSupport.readVariables(selectedPath, trees);
+    return !ExtractionSupport.reassignsAny(methodPath, reads, trees, cu, regionStart, regionEnd);
   }
 
   // ── name derivation ────────────────────────────────────────────────────────────────────────

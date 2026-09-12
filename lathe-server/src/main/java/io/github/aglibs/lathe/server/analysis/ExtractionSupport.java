@@ -1,8 +1,10 @@
 package io.github.aglibs.lathe.server.analysis;
 
 import com.sun.source.tree.ArrayAccessTree;
+import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.BinaryTree;
 import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.CompoundAssignmentTree;
 import com.sun.source.tree.ConditionalExpressionTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
@@ -18,15 +20,17 @@ import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.IntStream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.TypeElement;
 import org.eclipse.lsp4j.CodeAction;
-import org.eclipse.lsp4j.CodeActionKind;
 import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
@@ -37,7 +41,16 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
 // resolving the covering expression from a selection, finding structurally + semantically equal
 // occurrences, and assembling the WorkspaceEdit. Placement, naming, and eligibility are each
 // refactor's own concern.
-final class ExtractionSupport {
+public final class ExtractionSupport {
+
+  // CodeActionKind sub-kinds for the three extract refactors. Distinct sub-kinds let an editor bind
+  // each refactor to its own shortcut (an `only` filter that matches one kind). Advertised by the
+  // server capabilities and set on every action these providers emit — declared here so both sides
+  // share one source of truth.
+  public static final String VARIABLE_KIND = "refactor.extract.variable";
+  public static final String CONSTANT_KIND = "refactor.extract.constant";
+  public static final String FIELD_KIND = "refactor.extract.field";
+  public static final List<String> KINDS = List.of(VARIABLE_KIND, CONSTANT_KIND, FIELD_KIND);
 
   private ExtractionSupport() {}
 
@@ -237,13 +250,109 @@ final class ExtractionSupport {
   }
 
   static Either<Command, CodeAction> action(
-      final String uri, final String title, final List<TextEdit> edits) {
+      final String uri, final String title, final String kind, final List<TextEdit> edits) {
     final var action = new CodeAction();
     action.setTitle(title);
-    action.setKind(CodeActionKind.RefactorExtract);
+    action.setKind(kind);
     final var workspaceEdit = new WorkspaceEdit();
     workspaceEdit.setChanges(Map.of(uri, edits));
     action.setEdit(workspaceEdit);
     return Either.forRight(action);
+  }
+
+  // ── read-set / value-stability (shared by the value + field replace-all safety gates) ────────
+
+  // The local variables, parameters, and fields the selected expression reads.
+  static Set<Element> readVariables(final TreePath selectedPath, final Trees trees) {
+    final var reads = new HashSet<Element>();
+    addIfVariable(reads, selectedPath, trees);
+    new TreePathScanner<Void, Void>() {
+      @Override
+      public Void scan(final Tree node, final Void unused) {
+        if (node instanceof IdentifierTree || node instanceof MemberSelectTree) {
+          addIfVariable(reads, new TreePath(getCurrentPath(), node), trees);
+        }
+        return super.scan(node, unused);
+      }
+    }.scan(selectedPath, null);
+    return reads;
+  }
+
+  private static void addIfVariable(
+      final Set<Element> reads, final TreePath path, final Trees trees) {
+    final Element element = trees.getElement(path);
+    if (element == null) {
+      return;
+    }
+
+    switch (element.getKind()) {
+      case LOCAL_VARIABLE,
+          PARAMETER,
+          FIELD,
+          EXCEPTION_PARAMETER,
+          RESOURCE_VARIABLE,
+          BINDING_VARIABLE ->
+          reads.add(element);
+      default -> {}
+    }
+  }
+
+  // True when any element in `targets` is reassigned, compound-assigned, or ++/--'d within `scope`
+  // in the offset window [regionStart, regionEnd) — the value-capture risk when collapsing repeated
+  // evaluations into one.
+  static boolean reassignsAny(
+      final TreePath scope,
+      final Set<Element> targets,
+      final Trees trees,
+      final CompilationUnitTree cu,
+      final long regionStart,
+      final long regionEnd) {
+    if (targets.isEmpty()) {
+      return false;
+    }
+
+    final var positions = trees.getSourcePositions();
+    final var violated = new AtomicBoolean(false);
+    new TreePathScanner<Void, Void>() {
+      @Override
+      public Void visitAssignment(final AssignmentTree node, final Void unused) {
+        flag(node.getVariable());
+        return super.visitAssignment(node, unused);
+      }
+
+      @Override
+      public Void visitCompoundAssignment(final CompoundAssignmentTree node, final Void unused) {
+        flag(node.getVariable());
+        return super.visitCompoundAssignment(node, unused);
+      }
+
+      @Override
+      public Void visitUnary(final UnaryTree node, final Void unused) {
+        if (isIncDec(node.getKind())) {
+          flag(node.getExpression());
+        }
+        return super.visitUnary(node, unused);
+      }
+
+      private void flag(final ExpressionTree target) {
+        final long start = positions.getStartPosition(cu, target);
+        if (start < regionStart || start >= regionEnd) {
+          return;
+        }
+
+        final Element element = trees.getElement(new TreePath(getCurrentPath(), target));
+        if (element != null && targets.contains(element)) {
+          violated.set(true);
+        }
+      }
+    }.scan(scope, null);
+    return violated.get();
+  }
+
+  private static boolean isIncDec(final Tree.Kind kind) {
+    return kind == Tree.Kind.PREFIX_INCREMENT
+        || kind == Tree.Kind.POSTFIX_INCREMENT
+        || kind == Tree.Kind.PREFIX_DECREMENT
+        || kind == Tree.Kind.POSTFIX_DECREMENT;
   }
 }

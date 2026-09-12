@@ -2,7 +2,9 @@ package io.github.aglibs.lathe.server;
 
 import com.google.gson.JsonObject;
 import io.github.aglibs.lathe.core.LatheFlags;
+import io.github.aglibs.lathe.server.analysis.ExtractionSupport;
 import io.github.aglibs.lathe.server.analysis.TokenScanner;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.logging.Logger;
@@ -83,11 +85,12 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     capabilities.setDocumentHighlightProvider(true);
     capabilities.setDocumentSymbolProvider(true);
     capabilities.setFoldingRangeProvider(true);
-    final var codeActionOptions =
-        new CodeActionOptions(
-            List.of(
-                CodeActionKind.QuickFix, CodeActionKind.Refactor, CodeActionKind.RefactorExtract));
-    capabilities.setCodeActionProvider(codeActionOptions);
+    final var codeActionKinds = new ArrayList<String>();
+    codeActionKinds.add(CodeActionKind.QuickFix);
+    codeActionKinds.add(CodeActionKind.Refactor);
+    codeActionKinds.add(CodeActionKind.RefactorExtract);
+    codeActionKinds.addAll(ExtractionSupport.KINDS);
+    capabilities.setCodeActionProvider(new CodeActionOptions(codeActionKinds));
     capabilities.setWorkspaceSymbolProvider(true);
     capabilities.setExecuteCommandProvider(
         new ExecuteCommandOptions(

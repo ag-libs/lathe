@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server.analysis;
 
+import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.LambdaExpressionTree;
 import com.sun.source.tree.MethodTree;
@@ -57,6 +58,18 @@ final class CodeActionSupport {
     TreePath current = path;
     while (current != null) {
       if (current.getLeaf() instanceof MethodTree) {
+        return current;
+      }
+
+      current = current.getParentPath();
+    }
+    return null;
+  }
+
+  static TreePath enclosingClass(final TreePath path) {
+    TreePath current = path;
+    while (current != null) {
+      if (current.getLeaf() instanceof ClassTree) {
         return current;
       }
 
