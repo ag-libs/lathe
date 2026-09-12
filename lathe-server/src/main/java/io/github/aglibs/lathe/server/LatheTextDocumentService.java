@@ -282,7 +282,23 @@ final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(null);
     }
 
-    return worker.submit(() -> session.renameFuture(uri, pos, newName)).thenCompose(f -> f);
+    final var response = new CompletableFuture<WorkspaceEdit>();
+    final CancelChecker cancelChecker = new CompletableFutures.FutureCancelChecker(response);
+    final var progress = progressReporter.open(null, response);
+    final CompletableFuture<WorkspaceEdit> work =
+        worker
+            .submit(() -> session.renameFuture(uri, pos, newName, cancelChecker, progress))
+            .thenCompose(f -> f);
+    work.whenComplete(
+        (edit, failure) -> {
+          progress.finish(failure);
+          if (failure == null) {
+            response.complete(edit);
+          } else {
+            response.completeExceptionally(failure);
+          }
+        });
+    return response;
   }
 
   @Override

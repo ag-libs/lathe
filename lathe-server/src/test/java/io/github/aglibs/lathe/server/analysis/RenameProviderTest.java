@@ -108,6 +108,114 @@ class RenameProviderTest {
     }
   }
 
+  // --- resolveRenameTarget gate (Slice 2: members + in-place types) ---
+
+  @Test
+  void resolveRenameTarget_fieldAndMethod_areRenameable() {
+    final var source = "class T { int field; void run() {} }";
+    withSession(
+        source,
+        session -> {
+          assertThat(
+                  session.resolveRenameTarget(
+                      requestAt(source, posOf(source, "int field", "field"))))
+              .isNotNull();
+          assertThat(
+                  session.resolveRenameTarget(requestAt(source, posOf(source, "void run", "run"))))
+              .isNotNull();
+        });
+  }
+
+  @Test
+  void resolveRenameTarget_nestedType_isRenameable_publicTopLevel_isRefused() {
+    final var source = "public class Outer { static class Inner {} }";
+    withSession(
+        source,
+        session -> {
+          // public top-level type would need a file move — refused for now
+          assertThat(
+                  session.resolveRenameTarget(
+                      requestAt(source, posOf(source, "class Outer", "Outer"))))
+              .isNull();
+          // nested type renames in place
+          assertThat(
+                  session.resolveRenameTarget(
+                      requestAt(source, posOf(source, "class Inner", "Inner"))))
+              .isNotNull();
+        });
+  }
+
+  @Test
+  void resolveRenameTarget_enumConstant_isRefused() {
+    final var source = "enum Color { RED, GREEN }";
+    withSession(
+        source,
+        session ->
+            assertThat(session.resolveRenameTarget(requestAt(source, posOf(source, "RED", "RED"))))
+                .isNull());
+  }
+
+  @Test
+  void resolveRenameTarget_constructor_redirectsToType() {
+    final var source =
+        """
+        class Holder {
+            static class Widget { Widget() {} }
+            Widget make() { return new Widget(); }
+        }
+        """;
+    withSession(
+        source,
+        session -> {
+          final var target =
+              session.resolveRenameTarget(
+                  requestAt(source, posOf(source, "new Widget()", "Widget")));
+          // the constructor site resolves to the (nested) type rename, not a <init> target
+          assertThat(target).isNotNull();
+          assertThat(target.simpleName()).isEqualTo("Widget");
+          assertThat(target.isLocalScope()).isFalse();
+        });
+  }
+
+  // --- integration: single-file member rename ---
+
+  @Test
+  void rename_privateField_editsDeclarationAndUses() {
+    final var source =
+        """
+        class T {
+            private int count;
+            int read() { return count + count; }
+        }
+        """;
+    withSession(
+        source,
+        session -> {
+          final var target =
+              session.resolveRenameTarget(requestAt(source, posOf(source, "int count", "count")));
+          final List<Location> occurrences =
+              session
+                  .searchReferences(TempSourceCompiler.TEST_URI, source, 1, target, true)
+                  .stream()
+                  .map(match -> new Location(match.uri(), match.range()))
+                  .toList();
+          final var edits =
+              RenameProvider.toWorkspaceEdit(occurrences, "total")
+                  .getChanges()
+                  .get(TempSourceCompiler.TEST_URI);
+
+          assertThat(edits).hasSize(3).allMatch(e -> e.getNewText().equals("total"));
+        });
+  }
+
+  private static void withSession(
+      final String source, final java.util.function.Consumer<SourceAnalysisSession> body) {
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+      body.accept(session);
+    }
+  }
+
   private static Range range(final int sl, final int sc, final int el, final int ec) {
     return new Range(new Position(sl, sc), new Position(el, ec));
   }
