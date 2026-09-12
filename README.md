@@ -44,6 +44,7 @@ bindings.
 | Implementation / subtypes    | concrete implementations of a method, or all subtypes of a type across the workspace              | `textDocument/implementation`                     |
 | Find references              | usages across the workspace                                                                       | `textDocument/references`                         |
 | Highlight uses               | read/write uses of the symbol under the cursor, within the current file                          | `textDocument/documentHighlight`                  |
+| Rename                       | rename a local, parameter, or type parameter and every use of it (single-file; more kinds coming) | `textDocument/rename` · `textDocument/prepareRename` |
 | Instantiation sites          | where a type is instantiated (`new AppServer(...)`), from the type under the cursor               | `workspace/executeCommand` · `lathe.instantiations` |
 | Hover                        | AST-resolved Javadoc, rendered as Markdown                                                        | `textDocument/hover`                              |
 | Signature help               | parameter lists for methods and constructors                                                      | `textDocument/signatureHelp`                      |
@@ -59,7 +60,7 @@ bindings.
 | Feature             | What it does                                                                                 | LSP method                        |
 |---------------------|----------------------------------------------------------------------------------------------|-----------------------------------|
 | Diagnostics         | `javac` errors and warnings exactly as configured in Maven, plus unused private members and locals | `textDocument/publishDiagnostics` |
-| Code actions        | import missing type · add `throws` clause · wrap with `try/catch` · declare local variable · replace `var` with the inferred type · stub a missing method | `textDocument/codeAction`         |
+| Code actions        | import missing type · add `throws` clause · wrap with `try/catch` · declare local variable · replace `var` with the inferred type · extract variable (incl. replace all occurrences) · stub a missing method | `textDocument/codeAction`         |
 | Formatting (opt-in) | whole-document google-java-format with import cleanup — **off by default**                   | `textDocument/formatting`         |
 
 Full-document formatting is **opt-in**: the server advertises `textDocument/formatting` only when a
