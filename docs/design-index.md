@@ -57,6 +57,10 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 
 - [Declaration Name Completion](planned/lathe-declaration-name-completion.md) — names in variable/field/parameter/
   catch declaration slots (shipped; type parameters and constants are documented non-goals).
+- [Snippet (Template) Completion](planned/lathe-snippet-completion.md) — a minimal jdtls-style template set
+  (`psvm`, `sout`, `ctor`) delivered as context-gated snippet completion items (proposed).
+- [Surround with try-with-resources](planned/lathe-try-with-resources.md) — range-driven refactor wrapping an
+  `AutoCloseable` declaration in a try-with-resources; sibling of Extract Variable and try/catch wrap (proposed).
 - [`:LatheNew` Ergonomics Rethink (v4)](planned/lathe-new-type-ergonomics.md) — rework the shipped `:LatheNew`
   after large-reactor friction: a typed command (context-defaulted anchored path + explicit
   `[module:][scope:]package` location) with the type name always prompted and the package never defaulting by
