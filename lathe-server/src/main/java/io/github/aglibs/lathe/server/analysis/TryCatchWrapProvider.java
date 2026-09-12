@@ -58,13 +58,18 @@ final class TryCatchWrapProvider implements CodeActionProvider {
 
     final String original = source.substring((int) statementStart, (int) statementEnd).strip();
     final String indent = CodeActionSupport.lineIndent(source, (int) statementStart);
+    final String step = CodeActionSupport.indentUnit(source, statementPath, cu, positions);
     final String wrapped =
         """
         try {
-        %s%s
+        %s
         %s} catch (%s e) {
         %s}"""
-            .formatted(indent + "  ", original, indent, request.payload().name(), indent);
+            .formatted(
+                CodeActionSupport.reindent(original, indent, step),
+                indent,
+                request.payload().name(),
+                indent);
 
     final var start = SourceLocator.offsetToPosition(cu, statementStart);
     final var end = SourceLocator.offsetToPosition(cu, statementEnd);

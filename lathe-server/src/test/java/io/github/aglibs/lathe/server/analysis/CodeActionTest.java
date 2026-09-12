@@ -1272,7 +1272,163 @@ class CodeActionTest {
     assertThat(insert.getRange().getStart().getLine()).isEqualTo(4);
   }
 
+  // --- Try-with-resources provider (request-driven) ---
+
+  @Test
+  void codeAction_autoCloseableDeclaration_wrapsFollowingStatements() {
+    final var source =
+        """
+        package com.example;
+        import java.io.FileReader;
+        class Test {
+          void m() throws Exception {
+            FileReader r = new FileReader("x");
+            r.read();
+          }
+        }
+        """;
+    final var actions = replaceVarActionsAt(source, 4, 4);
+
+    assertThat(rightTitles(actions)).contains("Surround with try-with-resources");
+    assertThat(tryWithResourcesEdit(actions))
+        .isEqualTo("try (FileReader r = new FileReader(\"x\")) {\n      r.read();\n    }");
+  }
+
+  @Test
+  void codeAction_declarationAsLastStatement_wrapsWithEmptyBody() {
+    final var source =
+        """
+        package com.example;
+        import java.io.FileReader;
+        class Test {
+          void m() throws Exception {
+            FileReader r = new FileReader("x");
+          }
+        }
+        """;
+    final var actions = replaceVarActionsAt(source, 4, 4);
+
+    assertThat(tryWithResourcesEdit(actions))
+        .isEqualTo("try (FileReader r = new FileReader(\"x\")) {\n    }");
+  }
+
+  @Test
+  void codeAction_fourSpaceIndent_bodyUsesInferredIndentStep() {
+    final var source =
+        """
+        package com.example;
+        import java.io.FileReader;
+        class Test {
+            void m() throws Exception {
+                FileReader r = new FileReader("x");
+                r.read();
+            }
+        }
+        """;
+    final var actions = replaceVarActionsAt(source, 4, 8);
+
+    // step inferred as 4 spaces, so the body lands at 12 columns.
+    assertThat(tryWithResourcesEdit(actions)).contains("\n            r.read();\n");
+  }
+
+  @Test
+  void codeAction_nonAutoCloseableDeclaration_notOffered() {
+    final var source =
+        """
+        package com.example;
+        class Test {
+          void m() {
+            String s = "x";
+          }
+        }
+        """;
+    assertThat(rightTitles(replaceVarActionsAt(source, 3, 4)))
+        .doesNotContain("Surround with try-with-resources");
+  }
+
+  @Test
+  void codeAction_declarationWithoutInitializer_notOffered() {
+    final var source =
+        """
+        package com.example;
+        import java.io.FileReader;
+        class Test {
+          void m() {
+            FileReader r;
+          }
+        }
+        """;
+    assertThat(rightTitles(replaceVarActionsAt(source, 4, 4)))
+        .doesNotContain("Surround with try-with-resources");
+  }
+
+  @Test
+  void codeAction_reassignedResource_notOffered() {
+    final var source =
+        """
+        package com.example;
+        import java.io.FileReader;
+        class Test {
+          void m() throws Exception {
+            FileReader r = new FileReader("x");
+            r = new FileReader("y");
+          }
+        }
+        """;
+    assertThat(rightTitles(replaceVarActionsAt(source, 4, 4)))
+        .doesNotContain("Surround with try-with-resources");
+  }
+
+  @Test
+  void codeAction_trailingCloseCall_isDroppedFromBody() {
+    final var source =
+        """
+        package com.example;
+        import java.io.FileReader;
+        class Test {
+          void m() throws Exception {
+            FileReader r = new FileReader("x");
+            r.read();
+            r.close();
+          }
+        }
+        """;
+    final var actions = replaceVarActionsAt(source, 4, 4);
+
+    assertThat(tryWithResourcesEdit(actions))
+        .isEqualTo("try (FileReader r = new FileReader(\"x\")) {\n      r.read();\n    }");
+  }
+
+  @Test
+  void codeAction_closeIsOnlyStatement_wrapsWithEmptyBody() {
+    final var source =
+        """
+        package com.example;
+        import java.io.FileReader;
+        class Test {
+          void m() throws Exception {
+            FileReader r = new FileReader("x");
+            r.close();
+          }
+        }
+        """;
+    final var actions = replaceVarActionsAt(source, 4, 4);
+
+    assertThat(tryWithResourcesEdit(actions))
+        .isEqualTo("try (FileReader r = new FileReader(\"x\")) {\n    }");
+  }
+
   // --- Helpers ---
+
+  private static String tryWithResourcesEdit(final List<Either<Command, CodeAction>> actions) {
+    final CodeAction action =
+        actions.stream()
+            .map(Either::getRight)
+            .filter(a -> "Surround with try-with-resources".equals(a.getTitle()))
+            .findFirst()
+            .orElseThrow();
+    return action.getEdit().getChanges().get(TempSourceCompiler.TEST_URI).getFirst().getNewText();
+  }
 
   private List<Either<Command, CodeAction>> replaceVarActionsAt(
       final String source, final int line, final int character) {

@@ -6,6 +6,7 @@ import com.sun.source.tree.LambdaExpressionTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.StatementTree;
+import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import javax.lang.model.element.NestingKind;
 import javax.lang.model.element.TypeElement;
@@ -147,6 +148,46 @@ final class CodeActionSupport {
       indentEnd++;
     }
     return source.substring(lineStart, indentEnd);
+  }
+
+  // One indent level as written in this file (code-action requests carry no formatting settings):
+  // the statement's indent minus its block owner's indent. Falls back to two spaces.
+  static String indentUnit(
+      final String source,
+      final TreePath statementPath,
+      final CompilationUnitTree cu,
+      final SourcePositions positions) {
+    final long stmtStart = positions.getStartPosition(cu, statementPath.getLeaf());
+    final TreePath ownerPath =
+        statementPath.getParentPath() == null
+            ? null
+            : statementPath.getParentPath().getParentPath();
+    if (stmtStart < 0 || ownerPath == null) {
+      return "  ";
+    }
+
+    final long ownerStart = positions.getStartPosition(cu, ownerPath.getLeaf());
+    if (ownerStart < 0) {
+      return "  ";
+    }
+
+    final String stmtIndent = lineIndent(source, (int) stmtStart);
+    final String ownerIndent = lineIndent(source, (int) ownerStart);
+    return stmtIndent.startsWith(ownerIndent) && stmtIndent.length() > ownerIndent.length()
+        ? stmtIndent.substring(ownerIndent.length())
+        : "  ";
+  }
+
+  // Indent a block whose first line has no leading indent so it sits one level (step) inside
+  // `indent`; later lines keep their own nesting, shifted by one step.
+  static String reindent(final String block, final String indent, final String step) {
+    final String[] lines = block.split("\n", -1);
+    lines[0] = indent + step + lines[0];
+    for (int i = 1; i < lines.length; i++) {
+      lines[i] = lines[i].isBlank() ? "" : step + lines[i];
+    }
+
+    return String.join("\n", lines);
   }
 
   // Only kinds that can be written explicitly qualify: `var`/inferred types can be anonymous,
