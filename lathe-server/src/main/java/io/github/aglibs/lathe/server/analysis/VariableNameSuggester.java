@@ -19,17 +19,67 @@ public final class VariableNameSuggester {
 
   private static final String DEFAULT_NAME = "value";
 
+  // Containers whose element reads best pluralized (List<User> -> users). Concrete types are listed
+  // too because a declaration may spell them out (ArrayList<User> field).
+  private static final Set<String> COLLECTION_TYPES =
+      Set.of(
+          "Collection",
+          "List",
+          "ArrayList",
+          "LinkedList",
+          "Set",
+          "HashSet",
+          "LinkedHashSet",
+          "TreeSet",
+          "SortedSet",
+          "NavigableSet",
+          "Queue",
+          "Deque",
+          "ArrayDeque",
+          "Iterable",
+          "Stream",
+          "Map",
+          "HashMap",
+          "LinkedHashMap",
+          "TreeMap",
+          "SortedMap",
+          "NavigableMap");
+
   private VariableNameSuggester() {}
 
   // Expression-derived names lead type-derived ones; never empty, so callers can take the first.
+  // elementTypeName is the simple name of a generic argument (List<User> -> "User"), or null.
   public static List<String> suggest(
-      final String typeSimpleName, final ExpressionTree expression, final Set<String> taken) {
+      final String typeSimpleName,
+      final String elementTypeName,
+      final ExpressionTree expression,
+      final Set<String> taken) {
     final List<String> candidates =
-        Stream.concat(expressionNames(expression).stream(), typeNames(typeSimpleName).stream())
+        Stream.concat(
+                expressionNames(expression).stream(),
+                typeAndElementNames(typeSimpleName, elementTypeName).stream())
             .map(VariableNameSuggester::legalize)
             .distinct()
             .toList();
     return makeUnique(candidates.isEmpty() ? List.of(DEFAULT_NAME) : candidates, taken);
+  }
+
+  // A collection's element leads: List<User> -> users, userList, list. A non-collection generic
+  // leads with the container, then the singular element: Optional<User> -> optional, user.
+  private static List<String> typeAndElementNames(
+      final String typeSimpleName, final String elementTypeName) {
+    final List<String> typeNames = typeNames(typeSimpleName);
+    if (elementTypeName == null || elementTypeName.isEmpty()) {
+      return typeNames;
+    }
+
+    final String element = Strings.decapitalize(elementTypeName);
+    if (isCollection(typeSimpleName)) {
+      return Stream.concat(Stream.of(plural(element), element + typeSimpleName), typeNames.stream())
+          .toList();
+    }
+
+    return Stream.concat(typeNames.stream(), Stream.of(element)).toList();
   }
 
   // A constant or enum member (Color.RED) is not a variable name; only a lowercase-led member read
@@ -87,6 +137,37 @@ public final class VariableNameSuggester {
     return method.length() > prefix.length()
         && method.startsWith(prefix)
         && Character.isUpperCase(method.charAt(prefix.length()));
+  }
+
+  private static boolean isCollection(final String typeSimpleName) {
+    return COLLECTION_TYPES.contains(typeSimpleName);
+  }
+
+  // Simple English pluralization: user -> users, box -> boxes, entry -> entries. Irregular plurals
+  // are out of scope.
+  private static String plural(final String word) {
+    if (word.isEmpty()) {
+      return word;
+    }
+
+    if (word.endsWith("s")
+        || word.endsWith("x")
+        || word.endsWith("z")
+        || word.endsWith("ch")
+        || word.endsWith("sh")) {
+      return word + "es";
+    }
+
+    final int last = word.length() - 1;
+    if (word.charAt(last) == 'y' && (last == 0 || !isVowel(word.charAt(last - 1)))) {
+      return word.substring(0, last) + "ies";
+    }
+
+    return word + "s";
+  }
+
+  private static boolean isVowel(final char c) {
+    return "aeiou".indexOf(Character.toLowerCase(c)) >= 0;
   }
 
   // HttpClient -> Client, ConnectionString -> String.

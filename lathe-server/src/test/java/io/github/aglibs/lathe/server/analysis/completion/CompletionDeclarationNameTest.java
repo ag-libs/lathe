@@ -28,10 +28,16 @@ class CompletionDeclarationNameTest extends CompletionTestSupport {
 
   @Test
   void declarationName_genericAndQualifiedTypes_useTheSimpleName() {
-    assertThat(labels(fixture.complete("class Test { void m() { List<String> §; } }")))
-        .containsExactly("list");
     assertThat(labels(fixture.complete("class Test { void m() { java.util.List §; } }")))
         .containsExactly("list");
+  }
+
+  @Test
+  void declarationName_genericCollection_leadsWithThePluralElement() {
+    assertThat(labels(fixture.complete("class Test { void m() { List<User> §; } }")))
+        .containsExactly("users", "userList", "list");
+    assertThat(labels(fixture.complete("class Test { void m() { Map<String, User> §; } }")))
+        .containsExactly("users", "userMap", "map");
   }
 
   @Test

@@ -36,6 +36,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.IntStream;
 import javax.lang.model.element.Element;
+import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionKind;
@@ -114,7 +115,10 @@ final class ExtractVariableProvider {
     final String typeText = new TypeDisplayFormatter(analysis.types()).format(type);
     final String name =
         VariableNameSuggester.suggest(
-                CodeActionSupport.typeSimpleName(type), expr, takenNames(exprPath))
+                CodeActionSupport.typeSimpleName(type),
+                elementTypeName(type),
+                expr,
+                takenNames(exprPath))
             .getFirst();
     final TextEdit importEdit =
         CodeActionSupport.importEditFor(analysis, CodeActionSupport.typeFqn(type));
@@ -573,6 +577,17 @@ final class ExtractVariableProvider {
   private static Set<String> takenNames(final TreePath exprPath) {
     final TreePath methodPath = CodeActionSupport.enclosingMethod(exprPath);
     return methodPath != null ? localAndParamNames(methodPath) : Set.of();
+  }
+
+  // The simple name of the last type argument (Map<String, User> -> User), or null when the type is
+  // not generic — the element/value name the suggester pluralizes for collections.
+  private static String elementTypeName(final TypeMirror type) {
+    if (type instanceof final DeclaredType declared && !declared.getTypeArguments().isEmpty()) {
+      final List<? extends TypeMirror> args = declared.getTypeArguments();
+      return CodeActionSupport.typeSimpleName(args.get(args.size() - 1));
+    }
+
+    return null;
   }
 
   private static Set<String> localAndParamNames(final TreePath methodPath) {

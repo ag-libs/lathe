@@ -157,6 +157,7 @@ final class SentinelParser {
             cls.enclosingMethodName(),
             cls.lambdaParamIndex(),
             cls.declaredTypeText(),
+            cls.declaredElementTypeName(),
             cls.annotationTypeText(),
             cls.typeReferenceRole(),
             enclosedByLoop,
@@ -247,18 +248,19 @@ final class SentinelParser {
       String enclosingMethodName,
       int lambdaParamIndex,
       String declaredTypeText,
+      String declaredElementTypeName,
       String annotationTypeText,
       TypeReferenceRole typeReferenceRole,
       boolean inExpression) {
 
     static Classification of(final SentinelContext ctx) {
       return new Classification(
-          ctx, -1, null, null, -1, null, null, TypeReferenceRole.ORDINARY, false);
+          ctx, -1, null, null, -1, null, null, null, TypeReferenceRole.ORDINARY, false);
     }
 
     static Classification typeReference(final TypeReferenceRole role) {
       return new Classification(
-          SentinelContext.TYPE_REFERENCE, -1, null, null, -1, null, null, role, false);
+          SentinelContext.TYPE_REFERENCE, -1, null, null, -1, null, null, null, role, false);
     }
 
     static Classification annotation() {
@@ -268,6 +270,7 @@ final class SentinelParser {
           null,
           null,
           -1,
+          null,
           null,
           null,
           TypeReferenceRole.ANNOTATION,
@@ -281,6 +284,7 @@ final class SentinelParser {
           null,
           null,
           -1,
+          null,
           null,
           annotationTypeText,
           TypeReferenceRole.ORDINARY,
@@ -296,6 +300,7 @@ final class SentinelParser {
           elementName, // enclosingMethodName repurposed: stores the element name
           -1,
           null,
+          null,
           annotationTypeName,
           TypeReferenceRole.ORDINARY,
           false);
@@ -308,6 +313,7 @@ final class SentinelParser {
           null,
           null,
           -1,
+          null,
           null,
           null,
           TypeReferenceRole.ORDINARY,
@@ -417,6 +423,7 @@ final class SentinelParser {
         null,
         -1,
         realType ? simpleTypeName(type) : null,
+        realType ? elementTypeName(type) : null,
         null,
         TypeReferenceRole.ORDINARY,
         false);
@@ -432,6 +439,19 @@ final class SentinelParser {
       case MemberSelectTree member -> member.getIdentifier().toString();
       default -> type.toString();
     };
+  }
+
+  // The simple name of the last type argument of a generic type (Map<String, User> -> User), or
+  // null
+  // for a non-generic type. The last argument is the element/value in the common containers.
+  private static String elementTypeName(final Tree type) {
+    if (type instanceof ParameterizedTypeTree parameterized
+        && !parameterized.getTypeArguments().isEmpty()) {
+      final var args = parameterized.getTypeArguments();
+      return simpleTypeName(args.get(args.size() - 1));
+    }
+
+    return null;
   }
 
   private static Classification classifyMethodInvocation(
@@ -457,6 +477,7 @@ final class SentinelParser {
         -1,
         null,
         null,
+        null,
         TypeReferenceRole.ORDINARY,
         false);
   }
@@ -470,6 +491,7 @@ final class SentinelParser {
           null,
           null,
           -1,
+          null,
           null,
           null,
           TypeReferenceRole.ORDINARY,
@@ -491,6 +513,7 @@ final class SentinelParser {
         lambdaParamIndex,
         null,
         null,
+        null,
         TypeReferenceRole.ORDINARY,
         false);
   }
@@ -507,6 +530,7 @@ final class SentinelParser {
         null,
         constructorClassName,
         -1,
+        null,
         null,
         null,
         argIndex < 0 ? TypeReferenceRole.CONSTRUCTOR : TypeReferenceRole.ORDINARY,

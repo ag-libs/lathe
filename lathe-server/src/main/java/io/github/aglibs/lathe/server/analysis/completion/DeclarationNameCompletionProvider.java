@@ -30,7 +30,8 @@ final class DeclarationNameCompletionProvider {
     final boolean field = parsed.enclosingMethod() == null;
     final Set<String> taken = visibleNames(analysis, cursorOffset);
     final List<String> names =
-        VariableNameSuggester.suggest(typeSimpleName, null, taken).stream()
+        VariableNameSuggester.suggest(typeSimpleName, parsed.declaredElementTypeName(), null, taken)
+            .stream()
             .filter(name -> matchesPrefix(name, parsed.prefix()))
             .toList();
     return IntStream.range(0, names.size())
