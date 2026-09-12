@@ -36,6 +36,12 @@ class VariableNameSuggesterTest {
   }
 
   @Test
+  void suggest_acronymType_lowerCamelsTheAcronym() {
+    assertThat(names("IOException")).containsExactly("ioException");
+    assertThat(names("URI")).containsExactly("uri");
+  }
+
+  @Test
   void suggest_collectionType_leadsWithThePluralElement() {
     assertThat(names("List", "User")).containsExactly("users", "userList", "list");
     assertThat(names("Set", "Entry")).containsExactly("entries", "entrySet", "set");
