@@ -1,6 +1,12 @@
 # Lathe — Declaration Name Completion
 
-Proposed M2 completion enhancement.
+Status: **partially shipped** — see [Rollout](#rollout).
+Core declaration-name completion is implemented for local, field, and parameter slots across
+identifier, qualified, and generic types (including generic element names), via a shared
+`VariableNameSuggester` that Extract Variable also uses.
+Deferred: catch and enhanced-for idioms, type parameters, initializer-expression-derived names, and
+`static final` SCREAMING_SNAKE (the `NameStyle` seam).
+
 Builds on the completion engine in `lathe-design.md` and the completion contract in
 `planned/lathe-completion-expectations.md`.
 
@@ -408,29 +414,41 @@ not receive declaration-name suggestions.
 
 ## Rollout
 
-Slice 1:
+The delivered slices departed slightly from this plan: a shared `VariableNameSuggester` (also used by
+Extract Variable) was extracted first, and qualified/generic *base* types were added as their own step.
+
+Slice 1 — **shipped**:
 
 - explicit type to local,
   field,
-  parameter,
-  and static-final names;
+  and parameter names;
 - prefix filtering;
 - collision avoidance;
 - no expression-derived names yet.
+- Also shipped beyond the original plan: qualified and generic types resolve to their simple name
+  (`java.util.List`, `List<String>` → `list`), and the naming logic lives in a shared
+  `VariableNameSuggester` reused by Extract Variable.
+- `static final` SCREAMING_SNAKE is **not** shipped — it waits on the `NameStyle` seam (below).
 
-Slice 2:
+Slice 2 — **partially shipped**:
 
-- catch parameters;
-- enhanced-for parameters;
-- generic collection element names.
+- generic collection element names — **shipped** (`List<User>` → `users`, `userList`, `list`;
+  `Map<String, User>` uses the value → `users`, `userMap`, `map`; non-collection generics keep the
+  container first, e.g. `Optional<User>` → `optional`, `user`);
+- catch parameters — deferred;
+- enhanced-for parameters — deferred.
 
-Slice 3:
+Slice 3 — **deferred**:
 
-- initializer and argument expression-derived names.
+- initializer and argument expression-derived names (at the completion name slot; Extract Variable
+  already derives from the expression).
 
-Slice 4:
+Slice 4 — **deferred**:
 
 - type-parameter name suggestions.
+
+Also deferred: `static final` → SCREAMING_SNAKE, which pairs with a future Extract Constant through a
+`NameStyle` (CAMEL | SCREAMING_SNAKE) parameter on the shared suggester.
 
 This ordering keeps the first implementation small,
 useful,

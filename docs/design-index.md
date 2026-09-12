@@ -61,7 +61,7 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 **Editing features (deferred from M2):**
 
 - [Declaration Name Completion](planned/lathe-declaration-name-completion.md) — names in variable/field/parameter/
-  type-parameter declaration slots.
+  type-parameter declaration slots (core shipped; catch/for, type parameters, and constants deferred).
 - [`:LatheNew` Ergonomics Rethink (v4)](planned/lathe-new-type-ergonomics.md) — rework the shipped `:LatheNew`
   after large-reactor friction: a typed command (context-defaulted anchored path + explicit
   `[module:][scope:]package` location) with the type name always prompted and the package never defaulting by
