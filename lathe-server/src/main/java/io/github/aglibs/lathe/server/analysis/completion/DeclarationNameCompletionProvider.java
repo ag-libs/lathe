@@ -30,13 +30,29 @@ final class DeclarationNameCompletionProvider {
     final boolean field = parsed.enclosingMethod() == null;
     final Set<String> taken = visibleNames(analysis, cursorOffset);
     final List<String> names =
-        VariableNameSuggester.suggest(typeSimpleName, parsed.declaredElementTypeName(), null, taken)
-            .stream()
+        Stream.concat(
+                exceptionIdioms(parsed, taken).stream(),
+                VariableNameSuggester.suggest(
+                    typeSimpleName, parsed.declaredElementTypeName(), null, taken)
+                    .stream())
+            .distinct()
             .filter(name -> matchesPrefix(name, parsed.prefix()))
             .toList();
     return IntStream.range(0, names.size())
         .mapToObj(i -> candidate(names.get(i), i, field))
         .toList();
+  }
+
+  // The Java idioms for a catch parameter lead the type-derived names; skip any already in scope so
+  // a
+  // nested catch does not shadow an outer `e`.
+  private static List<String> exceptionIdioms(
+      final ParsedSentinel parsed, final Set<String> taken) {
+    if (!parsed.catchParameter()) {
+      return List.of();
+    }
+
+    return Stream.of("e", "ex", "exception").filter(name -> !taken.contains(name)).toList();
   }
 
   // declaredTypeText is the type's AST simple name. Use it only when it is a plain identifier, so

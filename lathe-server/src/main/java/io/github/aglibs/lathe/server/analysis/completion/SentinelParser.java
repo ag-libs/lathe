@@ -145,6 +145,13 @@ final class SentinelParser {
       return parsed;
     }
 
+    // A catch parameter's name slot is a VariableTree whose parent is the CatchTree, distinguishing
+    // it from a local declared inside the catch block.
+    final boolean catchParameter =
+        cls.context() == SentinelContext.VARIABLE_DECLARATION
+            && parentPath != null
+            && parentPath.getLeaf() instanceof CatchTree;
+
     final var parsed =
         ParsedSentinel.valid(
             injected,
@@ -165,6 +172,7 @@ final class SentinelParser {
             enclosedBySwitchExpression,
             inEqualityComparison,
             cls.inExpression(),
+            catchParameter,
             null,
             version);
 

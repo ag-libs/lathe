@@ -47,6 +47,20 @@ class CompletionDeclarationNameTest extends CompletionTestSupport {
   }
 
   @Test
+  void declarationName_catchParameter_leadsWithExceptionIdioms() {
+    assertThat(labels(fixture.complete("class T { void m() { try {} catch (IOException §) {} } }")))
+        .containsExactly("e", "ex", "exception", "ioException");
+  }
+
+  @Test
+  void declarationName_catchParameterWithIdiomInScope_skipsTakenIdiom() {
+    assertThat(
+            labels(
+                fixture.complete("class T { void m(int e) { try {} catch (IOException §) {} } }")))
+        .containsExactly("ex", "exception", "ioException");
+  }
+
+  @Test
   void declarationName_nameAlreadyInScope_offersUniqueVariant() {
     assertThat(labels(fixture.complete("class Test { void m(String string) { String §; } }")))
         .containsExactly("string1");

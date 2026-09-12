@@ -23,6 +23,7 @@ record ParsedSentinel(
     boolean enclosedBySwitchExpression,
     boolean inEqualityComparison,
     boolean inExpression,
+    boolean catchParameter,
     ModuleDirectiveKind directiveKeyword,
     int docVersion) {
 
@@ -64,6 +65,7 @@ record ParsedSentinel(
         false,
         false,
         false,
+        false,
         null,
         docVersion);
   }
@@ -93,6 +95,7 @@ record ParsedSentinel(
         false,
         false,
         false,
+        false,
         directiveKeyword,
         docVersion);
   }
@@ -116,6 +119,7 @@ record ParsedSentinel(
       final boolean enclosedBySwitchExpression,
       final boolean inEqualityComparison,
       final boolean inExpression,
+      final boolean catchParameter,
       final ModuleDirectiveKind directiveKeyword,
       final int docVersion) {
     return new ParsedSentinel(
@@ -139,6 +143,7 @@ record ParsedSentinel(
         enclosedBySwitchExpression,
         inEqualityComparison,
         inExpression,
+        catchParameter,
         directiveKeyword,
         docVersion);
   }
