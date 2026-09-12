@@ -1,6 +1,6 @@
 # Lathe — Surround with try-with-resources
 
-Status: proposed.
+Status: shipped.
 A request-driven refactor code action that wraps an `AutoCloseable` resource declaration in a
 try-with-resources statement.
 Sibling of `ExtractVariableProvider` (invocation) and `TryCatchWrapProvider` (edit assembly).
@@ -35,8 +35,8 @@ initializer whose type is `AutoCloseable`**:
   whose parent is a `BlockTree` (the same shape `ExtractVariableProvider` already checks). Because it
   keys off the **declaration statement** — not the initializer expression — the action fires with the
   caret on the type, the name, or the initializer.
-- Type gate: `trees.getTypeMirror(declPath)` is assignable to `java.lang.AutoCloseable`, via a small
-  new `CodeActionSupport.isAutoCloseable(type)` helper (`analysis.types()` +
+- Type gate: the declared element's type is assignable to `java.lang.AutoCloseable`, via a private
+  `isAutoCloseable` check in the provider (`analysis.types().isAssignable(...)` against
   `analysis.elements().getTypeElement("java.lang.AutoCloseable")`).
 
 Verified by probe (current server, `dev/lsp.py` `codeAction`): on a `FooReader r = new FooReader(…);`
@@ -74,9 +74,18 @@ selected statements" variant (approach C) are [non-goals](#non-goals) for this s
 
 Replace from the declaration's start to the end of the enclosing block's statements with a
 try-with-resources whose resource is the declaration (minus its trailing `;`) and whose body is the
-following statements, re-indented one level. Indent and source-substring handling reuse
-`TryCatchWrapProvider`'s approach. When the declaration is the block's last statement, the body is
-empty.
+following statements, re-indented one level. When the declaration is the block's last statement the
+body is empty.
+
+**Adaptive indentation.** Code-action requests carry no formatting settings, so the one added level is
+inferred from the file: `CodeActionSupport.indentUnit` takes the declaration's indent minus its block
+owner's indent (spaces or tabs, any width), falling back to two spaces. Re-indenting the moved body is
+the shared `CodeActionSupport.reindent`, now used by `TryCatchWrapProvider` too — which also fixes its
+previously under-indented multi-line wrapped statements.
+
+**Trailing `close()` removal.** A trailing `resource.close();` is dropped from the moved body (still
+consumed from the source) since the resource is now auto-closed. Within the resource's own block the
+name is unambiguous, so the match is a safe structural check.
 
 ## Correctness gates
 
@@ -95,6 +104,9 @@ empty.
 - Adding a `catch`/`throws` when the wrap surfaces a new checked exception (e.g. from `close()`): the
   wrap leaves any resulting unhandled-exception diagnostic, which **composes** with the existing
   try/catch wrap quick-fix (`TryCatchWrapProvider`) the user can then apply.
+- Removing a `close()` inside a `finally`, or rewriting an existing `try…finally` into
+  try-with-resources — that is the separate "replace try-finally with try-with-resources" refactor.
+  Only a trailing plain `close()` statement is removed.
 - Wrapping more than the single declaration's resource in one action.
 
 ## Testing
@@ -102,10 +114,14 @@ empty.
 `CodeActionTest`:
 
 - resource declaration with following statements → wrapped, statements moved into the body (approach A);
+- trailing `close()` → dropped from the body; `close()` as the only statement → empty body;
+- four-space source → body uses the inferred indent step;
 - non-`AutoCloseable` declaration → not offered;
 - declaration without an initializer → not offered;
 - reassigned resource → not offered;
 - declaration as the block's last statement → empty body.
+
+Verified end to end against a real multi-module workspace via a `codeAction` probe.
 
 ## Relationship to other work
 
