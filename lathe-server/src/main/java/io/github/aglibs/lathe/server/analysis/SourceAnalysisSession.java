@@ -27,6 +27,8 @@ import java.util.stream.Stream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.Modifier;
+import javax.lang.model.element.NestingKind;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;
@@ -394,6 +396,59 @@ public final class SourceAnalysisSession implements AutoCloseable {
     }
 
     return ReferenceTarget.from(element, trees, cur.analysis().types(), cur.analysis().elements());
+  }
+
+  // A constructor rename redirects to its enclosing type; public top-level types (which would need
+  // a
+  // file move) and enum constants are deferred, so both are refused here (null).
+  public ReferenceTarget resolveRenameTarget(final SourceFeatureRequest request) {
+    final var cur = resolve(request);
+    if (cur == null) {
+      return null;
+    }
+
+    final var trees = cur.analysis().trees();
+    final Element constructor = SourceLocator.constructorAtNewClassType(trees, cur.path());
+    Element element =
+        constructor != null ? constructor : SourceLocator.elementAt(trees, cur.path());
+    if (element == null) {
+      return null;
+    }
+
+    if (element.getKind() == ElementKind.CONSTRUCTOR) {
+      element = element.getEnclosingElement();
+    }
+
+    if (!isRenameable(element)) {
+      return null;
+    }
+
+    return ReferenceTarget.from(element, trees, cur.analysis().types(), cur.analysis().elements());
+  }
+
+  private static boolean isRenameable(final Element element) {
+    return switch (element.getKind()) {
+      case LOCAL_VARIABLE,
+          PARAMETER,
+          EXCEPTION_PARAMETER,
+          RESOURCE_VARIABLE,
+          BINDING_VARIABLE,
+          TYPE_PARAMETER,
+          FIELD,
+          METHOD,
+          RECORD_COMPONENT ->
+          true;
+      case CLASS, INTERFACE, ENUM, RECORD, ANNOTATION_TYPE ->
+          !isPublicTopLevel((TypeElement) element);
+      default -> false;
+    };
+  }
+
+  // A public top-level type rename would have to move Foo.java -> Bar.java (resource operation);
+  // deferred, so it is refused here. Nested and non-public top-level types rename in place.
+  private static boolean isPublicTopLevel(final TypeElement type) {
+    return type.getNestingKind() == NestingKind.TOP_LEVEL
+        && type.getModifiers().contains(Modifier.PUBLIC);
   }
 
   /**

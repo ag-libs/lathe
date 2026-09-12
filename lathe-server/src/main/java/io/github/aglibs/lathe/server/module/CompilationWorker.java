@@ -150,6 +150,11 @@ public final class CompilationWorker {
     return submit(ctx -> ctx.resolveTarget(request));
   }
 
+  public CompletableFuture<ReferenceTarget> resolveRenameTarget(
+      final SourceFeatureRequest request) {
+    return submit(ctx -> ctx.resolveRenameTarget(request));
+  }
+
   public CompletableFuture<List<ReferenceTarget>> instantiationTargets(
       final SourceFeatureRequest request, final CancelChecker cancelChecker) {
     return submit(ctx -> ctx.instantiationTargets(request), cancelChecker);

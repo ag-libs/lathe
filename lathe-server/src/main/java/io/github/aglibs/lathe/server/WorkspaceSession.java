@@ -1150,8 +1150,6 @@ final class WorkspaceSession {
             });
   }
 
-  // Slice 1: local-scope renames only (locals, parameters, type parameters) — always DECLARING_FILE
-  // and, since the reference search now matches them by declaration identity, a single-file edit.
   CompletableFuture<Either3<Range, PrepareRenameResult, PrepareRenameDefaultBehavior>>
       prepareRenameFuture(final String uri, final Position pos) {
     final OpenDocument openFile = docs.get(uri);
@@ -1162,10 +1160,10 @@ final class WorkspaceSession {
     final var request = renameRequest(openFile, pos);
     return module
         .worker()
-        .resolveTarget(request, () -> {})
+        .resolveRenameTarget(request)
         .thenApply(
             target -> {
-              if (target == null || !target.isLocalScope()) {
+              if (target == null) {
                 return null;
               }
 
@@ -1175,7 +1173,12 @@ final class WorkspaceSession {
   }
 
   CompletableFuture<WorkspaceEdit> renameFuture(
-      final String uri, final Position pos, final String newName) {
+      final String uri,
+      final Position pos,
+      final String newName,
+      final CancelChecker cancelChecker,
+      final ProgressReporter.Task progress) {
+    cancelChecker.checkCanceled();
     final OpenDocument openFile = docs.get(uri);
     if (openFile == null
         || !RenameProvider.isValidName(newName)
@@ -1185,35 +1188,44 @@ final class WorkspaceSession {
 
     final var cursorWorker = module.worker();
     final var request = renameRequest(openFile, pos);
+    final Optional<ModuleSourceConfig> cursorConfig =
+        workspace.moduleSourceFor(LatheUri.toPath(uri));
     final var t = Stopwatch.start();
     return cursorWorker
-        .resolveTarget(request, () -> {})
+        .resolveRenameTarget(request)
         .thenCompose(
             target -> {
-              if (target == null || !target.isLocalScope()) {
+              cancelChecker.checkCanceled();
+              if (target == null) {
                 return CompletableFuture.completedFuture((WorkspaceEdit) null);
               }
 
-              return cursorWorker
-                  .searchReferences(
-                      openFile.uri(),
-                      openFile.content(),
-                      openFile.version(),
-                      target,
-                      true,
-                      () -> {})
-                  .thenApply(WorkspaceSession::toLocations)
-                  .thenApply(
-                      locations -> {
-                        LOG.info(
-                            () ->
-                                "[rename] %s %dms target=%s edits=%d"
-                                    .formatted(
-                                        uri, t.elapsedMs(), target.simpleName(), locations.size()));
-                        return locations.isEmpty()
-                            ? null
-                            : RenameProvider.toWorkspaceEdit(locations, newName);
-                      });
+              return referenceSearchTarget(cursorWorker, request, target, cancelChecker)
+                  .thenCompose(
+                      searchTarget ->
+                          searchReferencesForTarget(
+                                  openFile,
+                                  cursorWorker,
+                                  cursorConfig.orElse(null),
+                                  searchTarget,
+                                  true,
+                                  cancelChecker,
+                                  progress,
+                                  "Renaming %s".formatted(searchTarget.simpleName()))
+                              .thenApply(
+                                  locations -> {
+                                    LOG.info(
+                                        () ->
+                                            "[rename] %s %dms target=%s edits=%d"
+                                                .formatted(
+                                                    uri,
+                                                    t.elapsedMs(),
+                                                    searchTarget.simpleName(),
+                                                    locations.size()));
+                                    return locations.isEmpty()
+                                        ? null
+                                        : RenameProvider.toWorkspaceEdit(locations, newName);
+                                  }));
             });
   }
 
