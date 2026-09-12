@@ -1,11 +1,10 @@
 # Lathe — Declaration Name Completion
 
-Status: **partially shipped** — see [Rollout](#rollout).
-Core declaration-name completion is implemented for local, field, and parameter slots across
-identifier, qualified, and generic types (including generic element names), via a shared
-`VariableNameSuggester` that Extract Variable also uses.
-Deferred: catch and enhanced-for idioms, type parameters, initializer-expression-derived names, and
-`static final` SCREAMING_SNAKE (the `NameStyle` seam).
+Status: **shipped** — see [Delivered](#delivered) and [Non-goals](#non-goals).
+Declaration-name completion is implemented for local, field, parameter, and catch slots across
+identifier, qualified, and generic types — including generic element names, acronym-aware naming, and
+the `e`/`ex`/`exception` idiom for catch — via a shared `VariableNameSuggester` that Extract Variable
+also uses.
 
 Builds on the completion engine in `lathe-design.md` and the completion contract in
 `planned/lathe-completion-expectations.md`.
@@ -412,44 +411,36 @@ They should become positive tests for the new feature.
 Keep separate negative tests proving that expression slots and ambiguous class-body recovery still do
 not receive declaration-name suggestions.
 
-## Rollout
+## Delivered
 
-The delivered slices departed slightly from this plan: a shared `VariableNameSuggester` (also used by
-Extract Variable) was extracted first, and qualified/generic *base* types were added as their own step.
+The implementation departed slightly from the original slice plan: a shared `VariableNameSuggester`
+(also used by Extract Variable) was extracted first, and qualified/generic *base* types were added as
+their own step.
 
-Slice 1 — **shipped**:
+- Names for local, field, parameter, and catch slots.
+- Type-derived names from identifier, qualified, and generic types, resolved to the type's simple name
+  from the AST (`java.util.List`, `List<String>` → `list`).
+- Generic element names: a collection leads with the pluralized element (`List<User>` → `users`,
+  `userList`, `list`; `Map<String, User>` uses the value → `users`, `userMap`, `map`); a
+  non-collection generic keeps the container first (`Optional<User>` → `optional`, `user`).
+- Acronym-aware naming (`IOException` → `ioException`, `URI` → `uri`) — shared, so Extract Variable
+  benefits too.
+- The `e` / `ex` / `exception` idiom leads at a catch slot, skipping any already in scope.
+- Prefix filtering and collision avoidance against names visible in scope.
+- One shared `VariableNameSuggester` for derivation, reused by Extract Variable.
 
-- explicit type to local,
-  field,
-  and parameter names;
-- prefix filtering;
-- collision avoidance;
-- no expression-derived names yet.
-- Also shipped beyond the original plan: qualified and generic types resolve to their simple name
-  (`java.util.List`, `List<String>` → `list`), and the naming logic lives in a shared
-  `VariableNameSuggester` reused by Extract Variable.
-- `static final` SCREAMING_SNAKE is **not** shipped — it waits on the `NameStyle` seam (below).
+## Non-goals
 
-Slice 2 — **partially shipped**:
+Deliberately out of scope; the delivered slots already produce a reasonable name for each without
+these:
 
-- generic collection element names — **shipped** (`List<User>` → `users`, `userList`, `list`;
-  `Map<String, User>` uses the value → `users`, `userMap`, `map`; non-collection generics keep the
-  container first, e.g. `Optional<User>` → `optional`, `user`);
-- catch parameters — deferred;
-- enhanced-for parameters — deferred.
-
-Slice 3 — **deferred**:
-
-- initializer and argument expression-derived names (at the completion name slot; Extract Variable
-  already derives from the expression).
-
-Slice 4 — **deferred**:
-
-- type-parameter name suggestions.
-
-Also deferred: `static final` → SCREAMING_SNAKE, which pairs with a future Extract Constant through a
-`NameStyle` (CAMEL | SCREAMING_SNAKE) parameter on the shared suggester.
-
-This ordering keeps the first implementation small,
-useful,
-and easy to test against the current completion architecture.
+- **Type parameters** (`class Box<§>` → `T`): a separate slot the developer types reflexively — low
+  value for the added slot detection.
+- **Enhanced-for iterable singularization** (`for (§ : users)` → `user`): the element type already
+  yields a name (`User` → `user`); singularizing the iterable expression is not worth the extra
+  context plumbing.
+- **Initializer-expression-derived names at the completion name slot**: the name is typed before the
+  `=`, so there is rarely an initializer to read (Extract Variable already derives from the
+  expression, where one always exists).
+- **`static final` → SCREAMING_SNAKE**: waits on a `NameStyle` (CAMEL | SCREAMING_SNAKE) parameter on
+  the shared suggester, to land together with a future Extract Constant.
