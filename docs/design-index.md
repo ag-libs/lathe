@@ -70,9 +70,6 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
   file's class/interface/enum/record via snippet completion, with no custom client-side UI (not the shipped path).
 - [Google Indentation](planned/lathe-google-indent.md) — conservative on-type formatting.
 - [Type Definition Navigation](planned/lathe-type-definition.md) — `textDocument/typeDefinition` for Neovim's `grt`.
-- [Semantic Tokens](planned/lathe-semantic-tokens.md) — full identifier-level coverage (local-var-vs-field, class,
-  import) for Neovim and VS Code; the
-  [Class/Import Semantic Highlighting](planned/lathe-class-import-semantic-highlighting.md) slice is part of it.
 
 **Reliability and further work:**
 
@@ -133,6 +130,11 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 - [Workspace Symbol Browsing](done/lathe-workspace-symbol-browse.md) — superseded by the above;
   blank-query browsing was implemented then reverted once CamelCase matching solved the underlying
   problem more directly.
+- [Semantic Tokens](done/lathe-semantic-tokens.md) — dense identifier-level coverage: distinct `class`/
+  `interface`/`enum` types (declarations, references, and imports), `variable` vs `property`
+  (local-vs-field) and `parameter`, and all methods/fields; the
+  [Class/Import Semantic Highlighting](done/lathe-class-import-semantic-highlighting.md) slice is part
+  of it. `readonly`/`abstract`/visibility modifiers and `recordComponent`/`annotationMember` deferred.
 - [Goto Implementation and Type Hierarchy](done/lathe-goto-implementation.md) — inheritance-index-backed type
   navigation and reactor method implementation across reactor, dependency, and JDK types.
 - [Event-Loop Starvation](done/lathe-event-loop-starvation.md) — diagnosis of synchronous index construction;

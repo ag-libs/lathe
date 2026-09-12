@@ -1,5 +1,25 @@
 # Lathe — Semantic Token Coverage
 
+## Status
+
+**Implemented** (commit `955c1a49`). `TokenScanner` now emits a dense, identifier-level
+classification: `class` / `interface` / `enum` types (declarations, all references, and import type
+names), `parameter`, `variable` (locals incl. `var`, for-each, resource, catch, binding), and all
+methods and fields (the static/deprecated-only guard was dropped, modifiers preserved).
+
+Deviations from the plan below, decided during implementation:
+
+- **Distinct `class` / `interface` / `enum`** rather than one `class` type — more precise and what the
+  [Class/Import slice](lathe-class-import-semantic-highlighting.md) required; imports needed no
+  dedicated `visitImport` (the existing member-select traversal already reaches them).
+- **`abstract` / `readonly` modifiers deferred**, along with distinct `recordComponent` /
+  `annotationMember` types — low value, more legend noise.
+- Two correctness guards were added: reference tokens emit only when the source at the range spells
+  the name (rejects the synthetic annotation `value` element), and member selectors resolve via
+  `trees.getElement` (not `SourceLocator.elementAt`, which climbs a package qualifier to its type).
+
+The plan below is retained as the original design record.
+
 ## Motivation
 
 This work is editor-agnostic. It was originally scoped for VS Code, but a Neovim user has also

@@ -1,5 +1,15 @@
 # Lathe — Semantic Token Highlighting for Type References in Imports
 
+## Status
+
+**Implemented** (commit `955c1a49`) as part of the broader
+[Semantic Token Coverage](lathe-semantic-tokens.md) work. Import type names and every type reference
+now emit `class` / `interface` / `enum` tokens, so `UUID` in an import is no longer mis-highlighted
+as a constant. Note: no dedicated `visitImport` override was needed — the existing member-select
+traversal already reaches import type names — and member selectors resolve via `trees.getElement`
+so a package qualifier (`java.util`) is not mislabeled as a type. The `emitTypeToken` sketch below is
+superseded by that traversal-based approach.
+
 ## Problem
 
 When Neovim or VS Code highlights a Java source file, it uses static syntactical parser rules (like Tree-sitter or TextMate regexes) before any language server is active.
