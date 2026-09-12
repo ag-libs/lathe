@@ -114,7 +114,11 @@ These are reference data, not gap items.
 
 ## EG-017 — `textDocument/documentHighlight` not implemented
 
-**Status: accepted — Target: backlog**
+**Status: done — Target: M2.**
+
+Resolution: implemented as a file-scoped specialisation of the same-file reference search
+(Read/Write/Text kinds); in Neovim the standard `vim.lsp.buf.document_highlight()` endpoint.
+Regression: `ReferenceMatchTest.toHighlight_everyRole_mapsReadWriteDistinctlyAndRestToText`.
 
 ### Observed behaviour
 
@@ -682,7 +686,10 @@ prompting, and reload. Resolved WS entries are in [gaps-archive.md](gaps-archive
 
 ## WS-1 — Reactor mirror and type index go silently stale after a source change or branch switch
 
-**Status: accepted — Target: backlog**
+**Status: done — Target: M2.**
+
+Resolution: source staleness is detected via per-source compile stamps and surfaced as a Neovim sync
+prompt (detect → prompt, the same model as WS-5) — it is no longer silent.
 
 Discovered by workflow analysis (not live probing) while reconciling CA-4; recorded here because it
 is the general problem of which CA-4's closed-file residual is one facet.
@@ -1102,7 +1109,10 @@ server-side detection scan → sync prompt will be defined when it is implemente
 
 ## WS-6 — Open files in dependent modules keep stale diagnostics after an upstream open file is saved
 
-**Status: accepted — Target: backlog**
+**Status: done — Target: M2.**
+
+Resolution: an upstream save marks dependent sources stale via compile stamps, surfaced as a Neovim
+sync prompt (detect → prompt); the prompted re-sync refreshes downstream diagnostics.
 
 Discovered while scoping WS-5. This is the *in-session, open-file* facet of cross-module freshness —
 distinct from WS-5 (external/closed-file edits) and cheaper, because it only concerns files the user
@@ -1429,7 +1439,10 @@ NV-1 and NV-2 are resolved in [gaps-archive.md](gaps-archive.md).
 
 ## NV-3 — Collapsed import fold pops back open on every save
 
-**Status: accepted — Target: backlog.**
+**Status: done — Target: M2.**
+
+Resolution: the Neovim client (`lua/lathe/fold.lua`) snapshots the imports fold's closed state before
+a format-on-save write and re-closes it once ufo settles. Regression: `fold_spec.lua`.
 
 ### Observed behaviour
 

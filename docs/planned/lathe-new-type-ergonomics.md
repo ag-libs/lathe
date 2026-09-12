@@ -1,9 +1,11 @@
 # Lathe — `:LatheNew` Ergonomics Rethink (v4)
 
-Status: proposed.
-Revises the shipped `:LatheNew` flow (CQ-0055 v3) after real-world friction in a large
-multi-module reactor.
-Tracked by the `:LatheNew` gap (NV area).
+Status: shipped.
+Revised the shipped `:LatheNew` flow (CQ-0055 v3) after real-world friction in a large
+multi-module reactor, and delivered in the Neovim client (`lua/lathe/new.lua`, verified by
+`new_spec.lua`): a typed command with native command-line completion, a guided `vim.ui.select`
+fallback with the buffer's module/package floated to the top, the type name always a final prompt,
+the package never defaulting by omission, and `module-info` / `package-info` as special kinds.
 
 This document is the authoritative "why/how" for the redesign.
 The shipped v1/v2/v3 history stays in the CQ-0055 gap entry as the record of what exists today;
