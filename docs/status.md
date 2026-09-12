@@ -3,13 +3,11 @@
 This document records the implemented baseline and known user-visible gaps.
 The [roadmap](roadmap.md) defines milestone scope; the [design index](design-index.md) links detailed designs.
 
-Status last reviewed: 2026-08-29.
-
 ## Release State
 
-Lathe is at the M1 Internal Preview stage.
-It must be built from source and is supported for the Neovim workflow only.
-The M2 Maven Central release pipeline is implemented and documented (tag-driven CI signing + publish; see [RELEASING.md](../RELEASING.md)); beta artifacts go live once the first release tag (`v0.1.1`) is cut. A stable GA release follows after beta feedback.
+Lathe is in the M2 Neovim Public Beta stage, published to Maven Central.
+It installs via the `lathe-maven-extension` build extension and is supported for the Neovim workflow only.
+The tag-driven release pipeline (CI GPG signing + publish; see [RELEASING.md](../RELEASING.md)) is in use. A stable GA release follows after beta feedback.
 
 ## Build and Workspace Lifecycle
 
@@ -26,7 +24,7 @@ The M2 Maven Central release pipeline is implemented and documented (tag-driven 
 | POM staleness detection | Implemented | Neovim receives a sync prompt after Maven project changes. |
 | Server-exit surfacing & manual start | Implemented | Neovim notifies on an unexpected server exit (pointing at the LSP log); `:LatheStart` starts the server for a directory with no Java file open. |
 | Inheritance index | Implemented | Dependency, JDK, and reactor entries include direct supertypes in immutable snapshots. |
-| Maven Central distribution | Automation done | Tag-driven CI (GPG signing + `central-publishing-maven-plugin`), `versions:set` stamping, `release.sh`, and `RELEASING.md` are in place. Artifacts go live when the first release tag is cut (manual); until then, build from source. |
+| Maven Central distribution | Published | Tag-driven CI (GPG signing + `central-publishing-maven-plugin`), `versions:set` stamping, `release.sh`, and `RELEASING.md` are in place. Releases are live on Maven Central. |
 
 ## LSP Capability Matrix
 
@@ -51,7 +49,7 @@ The M2 Maven Central release pipeline is implemented and documented (tag-driven 
 | Full-document formatting | Implemented (opt-in) | Advertised only when the client sets `formatter = "google"`; off by default so non-GJF projects are not rewritten. google-java-format also reorders and removes imports. Indentation is a separate client-side profile (`indent_style`). See `lathe-formatting-profiles.md`. |
 | On-type formatting | Deferred | Stub; capability not advertised. Deferred feature work in `lathe-formatting-profiles.md`, depending on range-aware formatting — low priority and mainly relevant to a later VS Code integration, not the Neovim focus. |
 | Code actions | Implemented | Missing imports, add-throws, try/catch wrapping, variable declaration, missing-method stubs, a request-driven "replace `var` with the inferred type" refactor (CA-5, resolved), and a request-driven "extract variable" refactor (single-occurrence plus a replace-all-occurrences action; `var` variant tracked in CA-6) all work. Missing-import actions now offer reactor types from a prior sync or from an open, already-compiled file (CA-4). Types created or renamed in a closed file await a sync — see the source/branch-switch staleness gap WS-1. |
-| Rename | M2 planned | Existing reference identity and roles provide part of the foundation. |
+| Rename | Implemented (Slice 1) | `textDocument/prepareRename` + `rename` for local-scope symbols (locals, parameters, exception/lambda parameters, type parameters) — single-file, matched by declaration identity, atomic `WorkspaceEdit`. Only the new-name validity is checked (permissive; collisions surface as diagnostics). Members, types, and constructors are refused for now (Slice 2). Neovim drives it via the built-in `grn` (0.11+). See `lathe-rename.md`. |
 | Inlay hints | Deferred (backlog) | Not implemented. |
 | Run/test | Implemented (Neovim) | neotest adapter: discovery, run at every level, live-streamed output, inline failure diagnostics, cancel/stop, re-run the first failing test (`run_first_failed`, self-shrinking, `<leader>tF`), a one-line completion toast (counts + elapsed, INFO/WARN), and the replay command shown as the first output line. Replays from captured `.lathe/` bytecode, no Maven. Runs a `main()` at any scope, including one located in test sources of a modular module (routed through the module's captured test launch). |
 | Debug | Implemented (Neovim) | In-process DAP adapter (Microsoft java-debug, attach-only) over JDWP to a suspended replay; `lathe.debug.test`/`lathe.debug.main` (test, main, and test-scope main) and an `nvim-dap` client (`:LatheDebug`). Breakpoints, stepping, inspection, conditional breakpoints, expression evaluation for watches/hover/console (reads, method/constructor invocation, `String` concat, force-loading cold classes, and object-scoped evaluation for collection/map logical views), and debug-console code completion. Debugging a test routes through the neotest `dap` strategy, so the gutter/summary update live and the shared docked console + terminal pass/fail behave like a run (the neotest summary `d`/`D` drive it too). Gaps: assignment (`setVariable`) and array creation. |

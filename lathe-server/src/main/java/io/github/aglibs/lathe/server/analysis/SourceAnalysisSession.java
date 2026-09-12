@@ -393,7 +393,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
       return null;
     }
 
-    return ReferenceTarget.from(element, cur.analysis().types(), cur.analysis().elements());
+    return ReferenceTarget.from(element, trees, cur.analysis().types(), cur.analysis().elements());
   }
 
   /**
@@ -812,7 +812,8 @@ public final class SourceAnalysisSession implements AutoCloseable {
             data.erasedDescriptor(),
             data.scope(),
             List.of(),
-            false);
+            false,
+            -1);
     try {
       return CallHierarchyOutgoingLocator.scan(analysis, target, sourceRoots, definitionLocator);
     } catch (final IOException e) {

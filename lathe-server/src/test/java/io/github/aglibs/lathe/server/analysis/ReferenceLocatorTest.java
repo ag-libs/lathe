@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server.analysis;
 
+import static io.github.aglibs.lathe.server.analysis.SampleFixture.posOf;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
@@ -57,7 +58,7 @@ class ReferenceLocatorTest {
       final AttributedFileAnalysis analysis, final String context, final String token) {
     final var path = SampleFixture.pathAt(analysis.trees(), analysis.tree(), context, token);
     final var element = Objects.requireNonNull(SourceLocator.elementAt(analysis.trees(), path));
-    return ReferenceTarget.from(element, analysis.types(), analysis.elements());
+    return ReferenceTarget.from(element, analysis.trees(), analysis.types(), analysis.elements());
   }
 
   private List<ReferenceMatch> refs(
@@ -66,12 +67,6 @@ class ReferenceLocatorTest {
       final boolean includeDecl)
       throws IOException {
     return ReferenceLocator.references(analysis, target, TempSourceCompiler.TEST_URI, includeDecl);
-  }
-
-  private static Position posOf(final String source, final String context, final String token) {
-    final int from = source.indexOf(context);
-    final int offset = source.indexOf(token, from);
-    return SourceLocator.offsetToPosition(source, offset);
   }
 
   private static SourceFeatureRequest requestAt() {
@@ -619,6 +614,104 @@ class ReferenceLocatorTest {
     final List<ReferenceMatch> result = refs(analysis, target, false);
 
     assertThat(result).hasSize(2);
+  }
+
+  // --- local-scope identity: same-named symbols in other scopes must not merge ---
+
+  @Test
+  void localScope_sameNameInAnotherMethod_notMerged() throws IOException {
+    final var source =
+        """
+        class Scopes {
+            int first(int value) {
+                int total = value;
+                return total + total;
+            }
+            int second(int value) {
+                int total = 10;
+                return total - value;
+            }
+        }
+        """;
+    final var analysis = compile(source);
+
+    final var totalInFirst = targetAt(analysis, "int total = value", "total");
+    assertThat(refs(analysis, totalInFirst, true))
+        .hasSize(3) // decl + two uses in first()
+        .anyMatch(m -> m.range().getStart().equals(posOf(source, "int total = value", "total")))
+        .noneMatch(m -> m.range().getStart().equals(posOf(source, "int total = 10", "total")))
+        .noneMatch(m -> m.range().getStart().equals(posOf(source, "total - value", "total")));
+
+    final var valueInFirst = targetAt(analysis, "int first(int value)", "value");
+    assertThat(refs(analysis, valueInFirst, true))
+        .hasSize(2) // decl + the `int total = value` use
+        .noneMatch(
+            m -> m.range().getStart().equals(posOf(source, "int second(int value)", "value")))
+        .noneMatch(m -> m.range().getStart().equals(posOf(source, "total - value", "value")));
+  }
+
+  @Test
+  void localScope_blockScopeShadowing_distinctDeclarationsNotMerged() throws IOException {
+    final var source =
+        """
+        class Blocks {
+            void run(int[] xs) {
+                int sum = 0;
+                for (int x : xs) { sum += x; }
+                for (int x : xs) { sum -= x; }
+            }
+        }
+        """;
+    final var analysis = compile(source);
+    final var firstLoopX = targetAt(analysis, "for (int x : xs) { sum += x", "x");
+
+    assertThat(refs(analysis, firstLoopX, true))
+        .hasSize(2) // the first loop's decl + its single use
+        .noneMatch(m -> m.range().getStart().equals(posOf(source, "sum -= x", "x")));
+  }
+
+  @Test
+  void typeParameter_declarationAndUses_scopedToDeclaringMethod() throws IOException {
+    final var source =
+        """
+        class Generics {
+            <T> T pick(T a, T b) {
+                T chosen = a;
+                return chosen;
+            }
+            <T> T echo(T a) {
+                return a;
+            }
+        }
+        """;
+    final var analysis = compile(source);
+    final var pickT = targetAt(analysis, "<T> T pick", "T");
+
+    assertThat(refs(analysis, pickT, true))
+        .hasSize(5) // <T> decl + return T + T a + T b + T chosen, all in pick()
+        .anyMatch(m -> m.range().getStart().equals(posOf(source, "<T> T pick", "T")))
+        .noneMatch(m -> m.range().getStart().equals(posOf(source, "<T> T echo", "T")));
+  }
+
+  @Test
+  void parameter_shadowingField_doesNotMergeWithField() throws IOException {
+    final var source =
+        """
+        class Shadow {
+            int count = 0;
+            int compute(int count) {
+                count = count + 1;
+                return count + this.count;
+            }
+        }
+        """;
+    final var analysis = compile(source);
+    final var param = targetAt(analysis, "int compute(int count)", "count");
+
+    assertThat(refs(analysis, param, true))
+        .hasSize(4) // param decl + write + read + `return count`; not the field
+        .noneMatch(m -> m.range().getStart().equals(posOf(source, "this.count", "count")))
+        .noneMatch(m -> m.range().getStart().equals(posOf(source, "int count = 0", "count")));
   }
 
   // --- roles ---

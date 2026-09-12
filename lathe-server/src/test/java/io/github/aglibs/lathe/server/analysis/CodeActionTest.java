@@ -952,6 +952,43 @@ class CodeActionTest {
       int endChar,
       String expectedTitle) {}
 
+  @Test
+  void codeAction_staticCallReceiver_extractsCallNotTypeReference() {
+    // A caret on the type name of a static call must not extract the type reference, which produced
+    // uncompilable `Factory factory = Factory;`. It climbs to the enclosing value expression: a
+    // whole-statement call offers nothing, a call used as a sub-expression extracts the call
+    // itself.
+    final var wholeStatement =
+        """
+        package com.example;
+        class Test {
+          void m() {
+            Factory.create();
+          }
+          static class Factory { static String create() { return ""; } }
+        }
+        """;
+    // caret on the `F` of `Factory`
+    assertThat(rightTitles(replaceVarActionsAt(wholeStatement, 3, 4)))
+        .noneMatch(t -> t.startsWith("Extract variable"));
+
+    final var subExpression =
+        """
+        package com.example;
+        class Test {
+          void m() {
+            use(Factory.create());
+          }
+          void use(String s) {}
+          static class Factory { static String create() { return ""; } }
+        }
+        """;
+    final var actions = replaceVarActionsAt(subExpression, 3, 8);
+    assertThat(rightTitles(actions)).contains("Extract variable 'create'");
+    assertThat(newTextAtLineStart(extractEdits(actions)))
+        .isEqualTo("String create = Factory.create();\n    ");
+  }
+
   // --- Extract-variable: replace all occurrences ---
 
   @Test

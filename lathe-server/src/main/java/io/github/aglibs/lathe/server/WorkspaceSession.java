@@ -23,6 +23,7 @@ import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.analysis.DiagnosticPayload;
 import io.github.aglibs.lathe.server.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
+import io.github.aglibs.lathe.server.analysis.RenameProvider;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
 import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.server.analysis.TokenScanner;
@@ -101,6 +102,8 @@ import org.eclipse.lsp4j.MessageActionItem;
 import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.PrepareRenameDefaultBehavior;
+import org.eclipse.lsp4j.PrepareRenameResult;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.SemanticTokens;
 import org.eclipse.lsp4j.ShowMessageRequestParams;
@@ -108,8 +111,10 @@ import org.eclipse.lsp4j.SignatureHelp;
 import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.TypeHierarchyItem;
+import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
+import org.eclipse.lsp4j.jsonrpc.messages.Either3;
 import org.eclipse.lsp4j.services.LanguageClient;
 
 /** Not thread-safe. All methods must be called from the {@link ServerEventLoop} thread. */
@@ -1145,6 +1150,83 @@ final class WorkspaceSession {
             });
   }
 
+  // Slice 1: local-scope renames only (locals, parameters, type parameters) — always DECLARING_FILE
+  // and, since the reference search now matches them by declaration identity, a single-file edit.
+  CompletableFuture<Either3<Range, PrepareRenameResult, PrepareRenameDefaultBehavior>>
+      prepareRenameFuture(final String uri, final Position pos) {
+    final OpenDocument openFile = docs.get(uri);
+    if (openFile == null || !(routeCompiler(uri) instanceof final CompilerRoute.Module module)) {
+      return CompletableFuture.completedFuture(null);
+    }
+
+    final var request = renameRequest(openFile, pos);
+    return module
+        .worker()
+        .resolveTarget(request, () -> {})
+        .thenApply(
+            target -> {
+              if (target == null || !target.isLocalScope()) {
+                return null;
+              }
+
+              final Range range = RenameProvider.identifierRange(openFile.content(), pos);
+              return range == null ? null : Either3.forFirst(range);
+            });
+  }
+
+  CompletableFuture<WorkspaceEdit> renameFuture(
+      final String uri, final Position pos, final String newName) {
+    final OpenDocument openFile = docs.get(uri);
+    if (openFile == null
+        || !RenameProvider.isValidName(newName)
+        || !(routeCompiler(uri) instanceof final CompilerRoute.Module module)) {
+      return CompletableFuture.completedFuture(null);
+    }
+
+    final var cursorWorker = module.worker();
+    final var request = renameRequest(openFile, pos);
+    final var t = Stopwatch.start();
+    return cursorWorker
+        .resolveTarget(request, () -> {})
+        .thenCompose(
+            target -> {
+              if (target == null || !target.isLocalScope()) {
+                return CompletableFuture.completedFuture((WorkspaceEdit) null);
+              }
+
+              return cursorWorker
+                  .searchReferences(
+                      openFile.uri(),
+                      openFile.content(),
+                      openFile.version(),
+                      target,
+                      true,
+                      () -> {})
+                  .thenApply(WorkspaceSession::toLocations)
+                  .thenApply(
+                      locations -> {
+                        LOG.info(
+                            () ->
+                                "[rename] %s %dms target=%s edits=%d"
+                                    .formatted(
+                                        uri, t.elapsedMs(), target.simpleName(), locations.size()));
+                        return locations.isEmpty()
+                            ? null
+                            : RenameProvider.toWorkspaceEdit(locations, newName);
+                      });
+            });
+  }
+
+  private SourceFeatureRequest renameRequest(final OpenDocument openFile, final Position pos) {
+    return new SourceFeatureRequest(
+        openFile.uri(),
+        openFile.content(),
+        openFile.version(),
+        pos,
+        workspace.allSourceRoots(),
+        manifest);
+  }
+
   CompletableFuture<List<Location>> instantiationsFuture(
       final String uri, final Position pos, final CancelChecker cancelChecker) {
     cancelChecker.checkCanceled();
@@ -1809,7 +1891,8 @@ final class WorkspaceSession {
             data.erasedDescriptor(),
             data.scope(),
             List.of(),
-            false);
+            false,
+            -1);
     final var progressTitle = "Finding callers of %s".formatted(target.simpleName());
 
     final var declaringPath = LatheUri.toPath(data.routingUri());

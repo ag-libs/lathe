@@ -168,7 +168,8 @@ class CallHierarchyIncomingLocatorTest {
         data.erasedDescriptor(),
         data.scope(),
         List.of(),
-        false);
+        false,
+        -1);
   }
 
   private SourceFeatureRequest request(final String content, final Position position) {

@@ -13,6 +13,7 @@ import org.eclipse.lsp4j.ExecuteCommandOptions;
 import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.InitializeResult;
 import org.eclipse.lsp4j.InitializedParams;
+import org.eclipse.lsp4j.RenameOptions;
 import org.eclipse.lsp4j.SemanticTokensLegend;
 import org.eclipse.lsp4j.SemanticTokensWithRegistrationOptions;
 import org.eclipse.lsp4j.ServerCapabilities;
@@ -78,6 +79,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     capabilities.setTypeHierarchyProvider(true);
     capabilities.setCallHierarchyProvider(true);
     capabilities.setReferencesProvider(true);
+    capabilities.setRenameProvider(new RenameOptions(true));
     capabilities.setDocumentHighlightProvider(true);
     capabilities.setDocumentSymbolProvider(true);
     capabilities.setFoldingRangeProvider(true);

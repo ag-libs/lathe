@@ -338,7 +338,8 @@ class SourceAnalysisSessionTest {
               null,
               ReferenceTarget.SearchScope.DECLARING_FILE,
               List.of(),
-              false);
+              false,
+              -1);
 
       // Delete the source file to simulate a source-read failure
       final Path sourceFile = Path.of(analysis.tree().getSourceFile().toUri());

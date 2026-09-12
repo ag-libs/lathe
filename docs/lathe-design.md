@@ -61,10 +61,16 @@ Reads params files written by the shim and the workspace manifest written by the
 It reads dependency/JDK sources from `~/.cache/lathe/`.
 `WorkspaceWatcher` watches `workspace.json` and reactor POM fingerprints,
 prompting the user to re-sync when Maven project files change.
-External on-disk source/resource changes are detected server-side and routed to the same re-sync
-prompt (planned — see [external-change detection](planned/lathe-external-change-detection.md));
+External on-disk source/resource changes are detected server-side by comparing per-source compile
+stamps against the mirrored bytecode and routed to the same re-sync prompt
+(see [external-change detection](done/lathe-external-change-detection.md) and
+[compile-stamp staleness](done/lathe-staleness-compile-stamps.md)); changed resources are copied into
+`.lathe/` without a build. When only some modules changed, the server computes the affected module set
+and asks the client to run a targeted `mvn -pl <modules> -am` sync rather than a full reactor build.
 `LatheWorkspaceService.didChangeWatchedFiles` is an unused no-op.
 Type indexes back dependency, JDK, and reactor type-name completion.
+Beyond the standard LSP methods, the server exposes an `executeCommand` surface for run/test/debug,
+new-type scaffolding, and workspace queries — see §7.
 
 ```
 lathe-core
@@ -98,14 +104,15 @@ lathe-server
 
 ### One-time setup: the Maven extension
 
-Setup is a single `.mvn/extensions.xml` registration at the reactor root — no `pom.xml` edits:
+Setup is a single build-extension registration at the reactor root — either in `.mvn/extensions.xml`
+or under `<build><extensions>` in the root `pom.xml`; no other `pom.xml` edits are needed:
 
 ```xml
 <extensions>
   <extension>
     <groupId>io.github.ag-libs</groupId>
     <artifactId>lathe-maven-extension</artifactId>
-    <version>0.1.0</version>
+    <version>VERSION</version>  <!-- use the latest release from Maven Central -->
   </extension>
 </extensions>
 ```
@@ -147,6 +154,17 @@ Missing or incorrect setup is surfaced later by the compiler shim, sync goal, or
 Lathe actually needs.
 
 ### Ongoing workflow
+
+For the first metadata generation, a capture-only build snapshots every launch template without
+running the test suite:
+
+```bash
+mvn clean test -Dlathe.capture.only=true    # capture params + run/test launch templates, skip test bodies
+```
+
+`-Dlathe.capture.only=true` forks each module to record its run/test launch template but skips
+executing the tests; `clean` forces a first compile through the shim. Thereafter any build refreshes
+Lathe incidentally:
 
 ```bash
 mvnd process-test-classes    # refresh Lathe — init creates .lathe/, shim writes params, sync refreshes metadata
@@ -622,8 +640,8 @@ The same applies to `.lathe/<rel>/generated-sources/` for annotation-processor o
 The former `didChangeWatchedFiles → onDeletedFile` path (walk `.lathe/<rel>/classes/<package>/` for class
 files matching the deleted source's basename, including `$Inner` variants, delete them, then refresh the
 shard) was dead client-watch code and has been removed.
-On-disk deletions are now surfaced by the server-side detection scan → Maven re-sync prompt (planned —
-see [external-change detection](planned/lathe-external-change-detection.md)); the next `mvn` cleans the
+On-disk deletions are now surfaced by the server-side detection scan → Maven re-sync prompt
+(see [external-change detection](done/lathe-external-change-detection.md)); the next `mvn` cleans the
 stale outputs.
 The `deleteClassOutputs` helper is retained for reuse.
 
@@ -728,8 +746,8 @@ Remove the file from the analysis LRU.
 The in-process reaction to a `workspace/didChangeWatchedFiles` deleted event (evict the URI, drop
 caches, delete the `.class` files, refresh the shard, reschedule the module's open files) has been
 removed together with the dead client-watch handler.
-On-disk deletions are covered by the planned server-side detection scan → Maven re-sync prompt (see
-[external-change detection](planned/lathe-external-change-detection.md)), where the next `mvn` cleans
+On-disk deletions are covered by the server-side detection scan → Maven re-sync prompt (see
+[external-change detection](done/lathe-external-change-detection.md)), where the next `mvn` cleans
 the stale outputs.
 
 ### Threading
@@ -847,6 +865,19 @@ Modules with no `.lathe/<rel>/classes/` are silently skipped.
   References in the remaining closed files of a partially-open module are not found.
   Closing all files in the module (or opening all of them) eliminates the gap.
 
+### Document highlight
+
+`textDocument/documentHighlight` reuses the single-file reference search over the cursor's symbol,
+restricted to the open buffer — no workspace scope or candidate index is touched.
+Each occurrence's role maps to an LSP highlight kind (read / write / text).
+It inherits the same-name-local over-match limitation of the single-file reference scan.
+
+### Instantiation sites
+
+`lathe.instantiations` (an `executeCommand` query) reports where the type under the cursor is
+constructed. It matches `NewClassTree` sites across the reactor — including synthetic default and
+record constructors — rather than filtering `references` by a constructor symbol.
+
 ### Opening dependency source files
 
 `ExternalCompiler` handles source files outside any reactor module when their path is under a manifest
@@ -918,7 +949,27 @@ and the workspace type index when type lookup is needed.
 The dispatcher lives in `SourceAnalysisSession`,
 keeping provider logic close to the javac-backed analysis state while the LSP service remains a thin transport layer.
 
+Providers also cover selection-driven refactorings that need no diagnostic. Extract Variable is a
+`refactor.extract` action that introduces a local for the selected expression (with a
+replace-all-occurrences variant and an inferred-name heuristic) as a pure `WorkspaceEdit`, no command —
+it lays the shared scaffolding a later Extract Method slice reuses. See
+[extract variable](done/lathe-extract-variable.md).
+
 Feature-specific provider coverage is tracked in the roadmap and code-action design docs.
+
+### New-type scaffolding and workspace queries
+
+The server owns every Java/Maven decision behind `:LatheNew` through a small `executeCommand` surface,
+so editor clients stay thin pickers:
+
+- `lathe.createType` — resolve placement (module, source root, package, main/test scope), render the
+  `class`/`interface`/`record`/`enum`/`test`/`package-info`/`module-info` skeleton, write the file, and
+  return the caret.
+- `lathe.modules`, `lathe.packages`, `lathe.resolveContext` — workspace queries that back the guided
+  module → package pick and the current-file context default.
+
+These read the same module registry and source-root model as the compiler-backed features; no client
+parses Java or Maven layout. See [new-type ergonomics](planned/lathe-new-type-ergonomics.md).
 
 ### Document symbols
 

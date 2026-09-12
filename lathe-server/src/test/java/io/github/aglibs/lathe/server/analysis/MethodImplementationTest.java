@@ -127,7 +127,8 @@ class MethodImplementationTest {
             null,
             ReferenceTarget.SearchScope.REACTOR_MODULES,
             List.of(),
-            false);
+            false,
+            -1);
 
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       assertThat(
@@ -149,7 +150,8 @@ class MethodImplementationTest {
             "()V",
             ReferenceTarget.SearchScope.REACTOR_MODULES,
             List.of(),
-            false);
+            false,
+            -1);
     final var compiler = new CountingJavaSourceCompiler();
 
     try (var session = new SourceAnalysisSession(compiler)) {

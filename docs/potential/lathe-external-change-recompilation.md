@@ -11,7 +11,7 @@ edits), correctness needs ordered, cross-module reactor compilation, which is Ma
 this would effectively reimplement (see the multi-module note in *Correctness and boundaries*). The
 decided direction instead **detects** the staleness and **nudges the user to run Maven**, reusing the
 shipped sync prompt — see
-[External-Change Detection → Sync Prompt](../planned/lathe-external-change-detection.md).
+[External-Change Detection → Sync Prompt](../done/lathe-external-change-detection.md).
 
 Kept because the ideas remain useful: an in-process *single-module fast path* could be revived later
 as a latency optimization once detection→prompt is in place. Read this as an archive of the reaction
@@ -56,7 +56,7 @@ cold-start delta at startup:
   tracked source/resource against its `.lathe/` artifact and feeds the stale ones into R1.
 
 The reaction has two triggers: **D2 (this doc)** for the cold-start delta, and the
-[live watch](../planned/lathe-external-change-detection.md) for in-session edits. Both group changes by module and hand
+[live watch](../done/lathe-external-change-detection.md) for in-session edits. Both group changes by module and hand
 them to the same R1 entry point.
 
 The light regime (per-file source/resource changes) is handled without Maven; the heavy regime (POM,
@@ -153,7 +153,7 @@ detect (no source to compare); the next real `mvn` cleans it. Not handled here.
 Both triggers converge on **per-module batches**, and both honour a shared cutoff:
 
 - **Coalescing.** D2 already delivers the full stale set at once; the live watch delivers a burst over
-  a debounce window (that window lives in the [watch doc](../planned/lathe-external-change-detection.md)). Either way,
+  a debounce window (that window lives in the [watch doc](../done/lathe-external-change-detection.md)). Either way,
   changes for one module collapse into a single `recompileModule` batch — no per-file storm.
 - **Bulk cutoff → defer to the heavy path.** A `git pull` or branch switch can change hundreds of
   files at once; recompiling in-process would storm the compiler and thrash the mirror. So above a
@@ -217,7 +217,7 @@ Full detail lives on WS-3 in the [gap registry](../gaps/gaps.md).
 - **Poll source mtimes continuously** (detection): simple but `O(N)` walks that do not scale to large
   reactors when run every tick. Rejected as a live mechanism; used only as the *one-shot* startup scan
   (D2), where a single bounded pass is acceptable. Live in-session detection is the
-  [watch](../planned/lathe-external-change-detection.md)'s job.
+  [watch](../done/lathe-external-change-detection.md)'s job.
 - **Content hashing / git-diff for reconciliation** (D2 detection): more precise than mtime but far
   heavier — hashing reads every file; git-diff needs a recorded last-sync commit and misses uncommitted
   agent edits. mtime is the pragmatic match to the existing POM fingerprint, and git-checkout/agent
@@ -267,7 +267,7 @@ new method is package-private within the module core).
 
 ## Related gaps and designs
 
-- [External-Change Detection → Sync Prompt](../planned/lathe-external-change-detection.md) — the
+- [External-Change Detection → Sync Prompt](../done/lathe-external-change-detection.md) — the
   **active** direction that supersedes this doc's reaction: detect staleness, prompt for Maven.
 - [WS-1](../gaps/gaps.md) — the freshness/invalidation umbrella.
 - WS-5 — the gap this parked design was written for (its in-process recompile is superseded by

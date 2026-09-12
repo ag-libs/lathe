@@ -12,6 +12,7 @@ import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.Tree;
+import com.sun.source.tree.TypeParameterTree;
 import com.sun.source.tree.UnaryTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
@@ -83,12 +84,24 @@ final class ReferenceLocator extends SourceTreeLocator {
     final var name = node.getName().toString();
     if (!name.equals("this") && !name.equals("super")) {
       final var element = trees.getElement(getCurrentPath());
-      if (target.matchesWithOverrides(element, types, elements, targetMethod)) {
+      if (matchesTarget(element)) {
         addMatch(positions.getStartPosition(cu, node), name.length(), roleForElement(element));
       }
     }
 
     return super.visitIdentifier(node, ignored);
+  }
+
+  @Override
+  public Void visitTypeParameter(final TypeParameterTree node, final Void ignored) {
+    if (includeDeclaration) {
+      final var element = trees.getElement(getCurrentPath());
+      if (matchesTarget(element)) {
+        addDeclarationMatch(node, node.getName().toString());
+      }
+    }
+
+    return super.visitTypeParameter(node, ignored);
   }
 
   @Override
@@ -176,7 +189,16 @@ final class ReferenceLocator extends SourceTreeLocator {
 
   private Element matchedElement() {
     final var element = trees.getElement(getCurrentPath());
-    return target.matchesWithOverrides(element, types, elements, targetMethod) ? element : null;
+    return matchesTarget(element) ? element : null;
+  }
+
+  private boolean matchesTarget(final Element element) {
+    if (!target.matchesWithOverrides(element, types, elements, targetMethod)) {
+      return false;
+    }
+
+    return !target.hasDeclarationIdentity()
+        || SourceLocator.declarationStartOffset(trees, element) == target.declarationOffset();
   }
 
   private ReferenceRole roleForElement(final Element element) {

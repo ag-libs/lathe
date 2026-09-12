@@ -36,6 +36,8 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.IntStream;
 import javax.lang.model.element.Element;
+import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
 import org.eclipse.lsp4j.CodeAction;
@@ -153,7 +155,9 @@ final class ExtractVariableProvider {
       final long end) {
     final var positions = trees.getSourcePositions();
     for (TreePath p = from; p != null; p = p.getParentPath()) {
-      if (!(p.getLeaf() instanceof ExpressionTree) || isMethodSelect(p)) {
+      if (!(p.getLeaf() instanceof ExpressionTree)
+          || isMethodSelect(p)
+          || isTypeReference(p, trees)) {
         continue;
       }
 
@@ -172,6 +176,14 @@ final class ExtractVariableProvider {
     return path.getParentPath() != null
         && path.getParentPath().getLeaf() instanceof final MethodInvocationTree inv
         && inv.getMethodSelect() == path.getLeaf();
+  }
+
+  // A type/package qualifier is not a value; skipping it lets a caret climb to the real expression
+  // instead of extracting the type reference (which would produce `Factory f = Factory;`).
+  private static boolean isTypeReference(final TreePath path, final Trees trees) {
+    final Element element = trees.getElement(path);
+    return element instanceof TypeElement
+        || (element != null && element.getKind() == ElementKind.PACKAGE);
   }
 
   // ── edit + action assembly (shared by the base and replace-all paths) ──────────────────────
