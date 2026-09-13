@@ -307,27 +307,21 @@ Active `textDocument/codeAction` provider gaps. Resolved CA entries are in
 
 ## CA-6 — Extract variable: `var` variant follow-up
 
-**Status: accepted — Target: backlog.**
+**Status: resolved (superseded) — Target: n/a.**
 
-Extract Variable is implemented (`ExtractVariableProvider`, a request-driven `RefactorExtract`
-action alongside `ReplaceVarProvider`), covering both delivered slices:
+The `var` variant is retired rather than built: Extract Variable emits the explicit type, and a
+standalone `type → var` conversion (`ConvertToVarProvider`) now flips a local declaration to `var` in
+one action — the inverse of `ReplaceVarProvider`, sharing the `refactor.rewrite` kind so a single
+editor shortcut toggles either direction. Extract-then-convert is strictly better than a second
+extract action, since the conversion also handles declarations the user wrote by hand.
 
-- **Base single-occurrence** — lifts the selected covering expression, inserts
-  `<Type> <name> = <expr>;` before the enclosing block statement, and replaces the occurrence,
-  deriving a good default name (accessor-prefix stripping, type-based fallback, method-scope
-  collision suffixing).
-- **Replace all occurrences** — a second, count-labelled action replacing every semantically-equal,
-  value-stable occurrence in the enclosing method (structural + element-identity equivalence scan,
-  common-block anchor, read-set value-stability gate). Offered alongside the base action.
+Residual enhancement, deferred (not part of this resolution):
 
-See [extract-variable](../done/lathe-extract-variable.md).
-
-Follow-ups / possible enhancements:
-
-- **`var` variant** — a second action offering `var <name> = <expr>;` instead of the explicit type.
 - **Lambda extraction** — standalone lambdas are refused (no denotable independent type); extracting
   one would require inferring the target functional-interface type from context. Method references
   that javac has target-typed already extract.
+
+See [extract-variable](../done/lathe-extract-variable.md).
 
 ---
 
