@@ -89,6 +89,24 @@ class CompletionTypeIndexTest extends CompletionTestSupport {
   }
 
   @Test
+  void typeIndex_nestedType_completesBySimpleNameAndImportsCanonicalName() throws IOException {
+    localFixture =
+        new CompletionFixture(
+            CompletionFixture.typeIndex(
+                tmp.resolve("index.json"),
+                CompletionFixture.typeEntry(
+                    "Version", "java.net.http.HttpClient$Version", TypeKind.ENUM)));
+
+    final var items = localFixture.complete("class Test { Vers§ field; }");
+
+    assertThat(labels(items)).contains("Version");
+    final var item = itemLabeled(items, "Version").orElseThrow();
+    assertThat(item.getDetail()).isEqualTo("java.net.http.HttpClient.Version");
+    assertThat(item.getAdditionalTextEdits().getFirst().getNewText())
+        .isEqualTo("import java.net.http.HttpClient.Version;\n");
+  }
+
+  @Test
   void typeIndex_classLiteral_suggestsIndexedType() {
     assertThat(
             labels(

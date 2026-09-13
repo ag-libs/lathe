@@ -407,7 +407,11 @@ This matches the existing deferred method-reference gap in the historical comple
 ## CQ-0057 — Nested types are missing from type completion and auto-import
 
 ID: CQ-0057
-Status: accepted
+Status: **done** — the class-file scanner now marks nested public types as name candidates
+(`ClassFileTypeScanner.toEntry`), guarding out only synthetic anonymous/local classes (simple name
+starting with a digit). They flow through every shard, so `Map.Entry` / `HttpClient.Version` complete
+by simple name and auto-import via their canonical dotted name. Shard `SCHEMA_VERSION` bumped to force
+a re-scan.
 Target: backlog
 Tier: assistive
 Failure mode: missing-candidate

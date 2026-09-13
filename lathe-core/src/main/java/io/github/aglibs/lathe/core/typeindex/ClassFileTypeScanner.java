@@ -141,7 +141,13 @@ public final class ClassFileTypeScanner {
     final int nestedNameStart = binaryName.lastIndexOf('$') + 1;
     final int simpleNameStart = Math.max(packageEnd + 1, nestedNameStart);
     final String simpleName = binaryName.substring(simpleNameStart);
-    final boolean typeNameCandidate = !binaryName.contains("$") && metadata.access().isPublicType();
+    // Nested types are candidates too (`Map.Entry`, `HttpClient.Version`), so they complete and
+    // auto-import by simple name; a name starting with a digit is a synthetic anonymous/local
+    // class.
+    final boolean typeNameCandidate =
+        metadata.access().isPublicType()
+            && !simpleName.isEmpty()
+            && Character.isJavaIdentifierStart(simpleName.charAt(0));
     final TypeKind kind = metadata.access().kind();
     final List<String> directSupertypes =
         kind == TypeKind.INTERFACE || kind == TypeKind.ANNOTATION

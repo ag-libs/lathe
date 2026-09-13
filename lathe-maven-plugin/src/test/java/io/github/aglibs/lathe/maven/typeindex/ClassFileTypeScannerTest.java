@@ -57,6 +57,7 @@ class ClassFileTypeScannerTest {
         .containsKeys(
             "com.example.PublicType",
             "com.example.PublicType$Nested",
+            "com.example.PublicType$1",
             "com.example.PackagePrivate",
             "com.example.PublicInterface",
             "com.example.PublicEnum",
@@ -70,7 +71,8 @@ class ClassFileTypeScannerTest {
         .isEqualTo(TypeKind.ANNOTATION);
     assertThat(byBinaryName.get("com.example.PublicType").typeNameCandidate()).isTrue();
     assertThat(byBinaryName.get("com.example.PackagePrivate").typeNameCandidate()).isFalse();
-    assertThat(byBinaryName.get("com.example.PublicType$Nested").typeNameCandidate()).isFalse();
+    assertThat(byBinaryName.get("com.example.PublicType$Nested").typeNameCandidate()).isTrue();
+    assertThat(byBinaryName.get("com.example.PublicType$1").typeNameCandidate()).isFalse();
     assertThat(byBinaryName.get("com.example.PublicType").directSupertypes())
         .containsExactly("com.example.PackagePrivate");
     assertThat(byBinaryName.get("com.example.PackagePrivate").directSupertypes())
@@ -107,7 +109,7 @@ class ClassFileTypeScannerTest {
     final Map<String, String> sources =
         Map.of(
             "PublicType.java",
-            "package com.example; public class PublicType extends PackagePrivate { public static class Nested {} }",
+            "package com.example; public class PublicType extends PackagePrivate { public static class Nested {} public static final Object ANON = new Object() {}; }",
             "PackagePrivate.java",
             "package com.example; class PackagePrivate implements PublicInterface {}",
             "PublicInterface.java",
