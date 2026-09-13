@@ -1,239 +1,150 @@
-# Lathe — `:LatheNew` Ergonomics Rethink (v4)
+# Lathe — `:LatheNew` Ergonomics (v5)
 
-Status: shipped.
-Revised the shipped `:LatheNew` flow (CQ-0055 v3) after real-world friction in a large
-multi-module reactor, and delivered in the Neovim client (`lua/lathe/new.lua`, verified by
-`new_spec.lua`): a typed command with native command-line completion, a guided `vim.ui.select`
-fallback with the buffer's module/package floated to the top, the type name always a final prompt,
-the package never defaulting by omission, and `module-info` / `package-info` as special kinds.
+Status: shipped (v5).
+The Neovim client (`lua/lathe/new.lua` + `lua/lathe/pick.lua`, verified by `new_spec.lua`) resolves
+the destination with a **single built-in fuzzy picker** instead of a colon-grammar location string:
+kind → fuzzy `module · scope · package` pick → a validated type-name prompt. The type name is always
+a final prompt, the package never defaults by omission, and `module-info` / `package-info` are special
+kinds. This document is the authoritative "why/how"; it supersedes the v4 interaction model below.
 
-This document is the authoritative "why/how" for the redesign.
-The shipped v1/v2/v3 history stays in the CQ-0055 gap entry as the record of what exists today;
-the sections below supersede its interaction model.
+## Motivation — why rethink v4
 
-## Motivation — why rethink a shipped command
+v4 replaced the original free-text target with a typed `[module:][scope:]package` location plus
+native command-line completion. It fixed the source-root-corruption bug, but two frictions remained:
 
-`:LatheNew` works well for the anchored common case (a class in the current package),
-but it breaks down in a large workspace with many modules and many packages.
-The observed failure: creating a file that landed at a module's source root **with no `package`
-declaration, in the wrong directory** — which, in a JPMS module, then corrupts the whole module
-mirror (see the WS gap on module-mirror corruption).
+1. **The colon grammar is a serialized tree.** `core:test:com.example.util` asks the user to encode
+   module + scope + package into one token with separators and precedence rules (`main`/`test` only
+   as a leading colon-segment, a module named `main` disambiguated against the list, …). It is
+   powerful but not memorable, and discoverable only once you start typing.
 
-### Root cause of the scale failure
+2. **`vim.ui.select` is not fuzzy without a plugin.** The guided fallback used `vim.ui.select`, which
+   is only a fuzzy picker if the user has a `ui-select` adapter (`telescope-ui-select`, fzf-lua's
+   `register_ui_select`, snacks). **Telescope alone does not override `vim.ui.select`.** Without an
+   adapter it falls back to the builtin numbered `inputlist` — and on a real reactor that is *548
+   packages, pick a number*. Unusable, and dependent on the user's config.
 
-The shipped flow is: pick Kind, then type a single free-text target `[module:]package.Name` with
-`vim.ui.input` completion.
-Three properties of that field combine badly at scale:
+The core realization: the requirement is **fuzzy filtering with the option list always visible**, and
+that must hold **regardless of installed plugins**. Neither the colon grammar (fuzzy but no visible
+list until Tab) nor `vim.ui.select` (visible list, fuzzy only with an adapter) delivers it alone.
 
-1. **Package is typed, never picked.**
-   With many packages the user cannot recall exact names, and the field relies on
-   `vim.ui.input` completion — which silently does nothing in most non-native input backends
-   (dressing / snacks / noice).
-   So the user is left retyping long `module:package` strings from memory.
+## Design — a built-in fuzzy picker
 
-2. **An empty package silently means "default package."**
-   When the target parses to an empty package (`_parse_target` finds no `:` and no anchor),
-   `createType(pkg="")` renders the file at the module's source root with no `package` line
-   rather than refusing an under-specified location.
+`:LatheNew` drops the location grammar. The destination is chosen in **`lathe.pick`**, a small
+self-contained fuzzy picker: a floating prompt over a results list, filtered live with Neovim's
+builtin `vim.fn.matchfuzzypos` as you type, matched characters highlighted, `<C-n>`/`<C-p>` (or
+arrows) to move, `<CR>` to select, `<Esc>` to cancel. It does **not** go through `vim.ui.select`, so
+the fuzzy experience is identical for every user — Telescope, fzf-lua, snacks, or a bare Neovim.
+`matchfuzzypos` is a core function (Vim 8.2 / Neovim 0.6+); there is no dependency.
 
-3. **Only the module is ever offered as a picker.**
-   `resolve_and_submit` pops a module `vim.ui.select` when the module is unresolved,
-   but the package is never a picker — so the one field most in need of filtering at scale
-   is the one the UI never assists with.
-
-### What actually failed — not "typed vs pickers"
-
-CQ-0055 v3 specified progressive `vim.ui.select` pickers; the implementation shipped a single
-completable text field instead.
-The field is not wrong *because* it is typed — it fails for three fixable reasons:
-
-- its completion runs through `vim.ui.input`, which silently no-ops in most backends
-  (dressing / snacks / noice), so at scale the user types blind;
-- an **omitted package silently becomes the default package**, so the file lands at the source root;
-- the **name is folded into the location** (`package.Name`), so a partial entry is ambiguous.
-
-So the fix is not "go back to pickers." It keeps the fast typed command and repairs those three, and
-adds a guided pick only for the one case typing genuinely cannot serve — no buffer context.
-
-## Design invariants
-
-1. **The package never defaults by omission.**
-   It must resolve from an explicitly typed package or the buffer context; if neither yields one, the
-   flow guides the user to a location — it never creates at the source root.
-   The default package is reachable only by explicitly asking for it.
-   This is the rule that kills the original bug at the parse layer.
-
-2. **Completion must be reliable.**
-   The typed path uses **native command-line completion** (which works regardless of the user's
-   `vim.ui.input` backend — the shipped field's fatal flaw); the guided path uses `vim.ui.select`
-   (inheriting telescope / fzf-lua / snacks). Neither relies on `vim.ui.input` completion.
-
-3. **Show the destination before writing.**
-   The name prompt's label shows the resolved `module / scope / package`, so a wrong target is caught
-   before the file is created.
-
-## Mechanism
-
-`:LatheNew` stays a **typed command with native command-line completion**, not a picker chain.
-There are two entry points, split by the 80/20 of real use, plus one rule that removes every
-ambiguity: **the type name is always its own final prompt — never part of the argument.**
-
-### 80% — anchored (context) path
-
-You are in a file, adding a sibling. No location argument:
+### The flow
 
 ```
-:LatheNew class          → name: class in batch / main / com.example.app.batch: ▮
+:LatheNew
+  1. KIND       fuzzy pick: Class · Interface · Record · Enum · Annotation · Test ·
+                package-info · module-info   (skipped when passed: `:LatheNew class`)
+
+  2. WHERE      fuzzy pick over every `module · scope · package` row (context floated to the top,
+                ＋ New package… right behind it). Type one word to narrow 548 → a few; a `· test`
+                row puts the new type in the test root.
+
+  3. NAME       validated identifier prompt, label shows the resolved `module / scope / package`.
+                (Test seeds `<Stem>Test`; package-info: no name; module-info: none.)
 ```
 
-The current buffer's **module, scope, and package** fill the location; the only prompt is the
-**name**, and its label shows the resolved destination (the "show before you write" check).
-If the buffer has no resolvable context, this falls into the guided path below.
+### Entry points
 
-### Typed path — explicit location
+- **Guided** — bare `:LatheNew`: kind pick → destination pick → name. The picker always opens (with
+  the buffer's module/package floated to the top), so "somewhere else" is one fuzzy word.
+- **Anchored** — `:LatheNew <kind>` in a Java file: the buffer's module/scope/package fill the
+  destination and the flow goes **straight to the name** (no picker). Falls back to the destination
+  pick when the buffer has no resolvable context.
+- **Typed** — `:LatheNew <kind> <pkg>`: a package word, fuzzy-completed on the command line with
+  builtin `matchfuzzy` (a real subsequence match regardless of the user's picker or `wildmode`), then
+  the name. Scope follows the kind; the module follows the package (buffer's module preferred on a
+  cross-module name clash). A package the reactor doesn't know routes to the destination picker rather
+  than a source-root default.
 
-You know exactly where it goes, or it is elsewhere:
+### Invariants (carried over from v4)
 
-```
-:LatheNew class core:test:com.example.core.util     → name: … : ▮
-```
+- **The name is always its own final, validated prompt** — the argument never carries the type name,
+  so there is no `package.Name` split and no "is `Foo` a package or a name?" ambiguity. An invalid
+  identifier is re-asked in the client instead of surfacing as a raw server error.
+- **The package never defaults by omission** — it resolves from the picked/typed package or the buffer
+  context; the default package is reachable only by explicitly typing it into `＋ New package…`. A file
+  is never created at the source root.
+- **Scope rides on the destination**, not the kind — a package is listed once per scope it exists in,
+  so picking the `· test` row places a plain class (fixture, base class, helper) in the test root. The
+  kind only biases the ordering (a Test floats test packages up) and forces test scope for a JUnit
+  test.
 
-The argument is **location only** — `[<module>:][<scope>:]<package>`, `scope ∈ {main,test}`:
+### `＋ New package…`
 
-- `<module>` and `<package>` identify the target; `<scope>` defaults to `main`, `test:` opts in.
-- `main`/`test` are recognised as the scope only in a leading colon-segment; a package literally named
-  `test` sits in the package slot (`main:test`), and a module named `main`/`test` is disambiguated
-  against the known module list.
-- `<Tab>` completion is **position-aware**: modules at the first segment, `main`/`test` after a module
-  colon, packages after the scope — so the typed path is discoverable, not "great if you memorised the
-  tree."
-
-A typed location must resolve **on its own**; context does not partial-fill it (see the rule below).
-Then the name prompt.
-
-### 20% — guided path ("somewhere new")
-
-You are starting something new and would rather select than type. Bare `:LatheNew` (no kind):
-
-```
-:LatheNew                → kind → module → package or ＋New package… → scope? → name
-```
-
-Each step is a `vim.ui.select` (skip-when-one, context-preselected), with `＋ New package…` for a
-brand-new package (a `vim.ui.input` seeded from the module's base package).
-This is the **only** place a picker is used, and it is also where a no-context anchored/typed
-invocation lands for its missing pieces.
-
-### The resolution rule (kills the original bug at the parse layer)
-
-- The **name** is always prompted — the argument is location-only, so there is no `package.Name`
-  split and no "is `Foo` a package or a name?" ambiguity.
-- **Context fills the location only when no location is typed.** Any typed token means the location
-  stands on its own; context never partial-fills a typed target.
-- The **package must resolve** from a typed package *or* context. If neither yields one, the flow
-  **guides** — it never creates at the source root. The **default package** is reachable only by
-  explicitly asking for it, never by omission.
-
-| You run (context = `batch` / main / `com.example.app.batch`) | Location | Then |
-|---|---|---|
-| `:LatheNew class` | context → `batch` / main / `com.example.app.batch` | name prompt |
-| `:LatheNew class batch:test:com.example.app.batch` | typed → `batch` / **test** / same pkg | name prompt |
-| `:LatheNew class core:com.example.core.util` | typed → `core` / main / `…util` | name prompt |
-| `:LatheNew class` *(no file open)* | unresolvable | → guided path |
-| `:LatheNew` | — | fully guided |
-
-## Scope (main vs test)
-
-Selectable, never a silent default that lands you in the wrong root:
-
-- **Typed:** the `test:` / `main:` keyword in the location (default `main`).
-- **Guided:** a scope step, surfaced only when the chosen module has both roots and no context settles
-  it — the pick CQ-0055 v3 specified but never shipped.
-- **Dual-root packages** are resolved explicitly by the keyword or the step — never the current
-  non-deterministic "first entry wins."
+A pinned row in the destination picker: choose the module (context floated, skip-when-one), type the
+package (seeded from the module's base package), and choose the scope **only when the module has both
+roots** — so a brand-new *test* package is reachable (the v4 gap where a guided new package always
+landed in main). An empty entry is the deliberate default-package choice; only a cancel aborts.
 
 ## Special kinds — `module-info` and `package-info`
 
-Both are special compilation units, not types, so they cannot go through the generic type path:
-the current `SourceVersion.isIdentifier` name check rejects the hyphen, and a
-`public class …{}` skeleton is wrong for them.
-They reuse the destination picker but **drop the steps that do not apply**, so each is fewer
-decisions than a class.
+Both are special compilation units, not types (the `SourceVersion.isIdentifier` name check rejects the
+hyphen and a `public class …{}` skeleton is wrong), so they reuse the destination resolution but drop
+the steps that do not apply.
 
 ### `package-info`
 
-- Flow: resolve the destination the same three ways (context / typed `[module:][scope:]package` /
-  guided) → **create; no name prompt** (the file name is fixed).
-- Skeleton: `package <pkg>;` with a javadoc placeholder; caret in the javadoc.
-- Scope selectable (test packages get a `package-info` too).
-- Refuse if it already exists.
-- It is "the anchored flow minus the name prompt."
+Resolve the destination the same three ways (context / typed / picker) → **create; no name prompt**
+(the file name is fixed). Skeleton `package <pkg>;` with a javadoc placeholder; caret in the javadoc.
+Scope selectable (test packages get one too). Refuse if it already exists. It is "the anchored flow
+minus the name prompt."
 
 ### `module-info`
 
-- Flow: resolve the **module** only (context, typed `module:`, or guided — skip-when-one) → create at
-  the **main** source root. **No package, no scope, and no name prompt** — the only interaction is the
-  module.
-- Skeleton: `module <name> {\n\n}\n`; caret in the body.
-- It is "the anchored flow with package, scope, and type name all removed."
+Resolve the **module** only (context, or a fuzzy module pick — skip-when-one) → create at the **main**
+source root. No package, no scope, no name prompt. Skeleton `module <name> {\n\n}\n`; caret in the
+body. The JPMS `module <name>` is **derived** from the module's base package (the longest common
+package prefix of its main sources — JPMS convention: module name = root package), so there is no
+prompt; the only fallback is a module with no derivable base package, which asks for the name.
 
-### Deriving the module name
+## Client structure
 
-`module <name>` is a real JPMS name, not derivable from the hyphenated filename, so it is **derived**
-from the module's **base package** — the longest common package prefix of its main sources (the JPMS
-convention: module name = root package, e.g. `com.example.app.batch`). This is automatic: no prompt.
-The only fallback is a module with no derivable base package (e.g. no sources yet), which asks for the
-name; an artifactId-based default is a possible later refinement.
-
-### Relationship to module-mirror corruption
-
-A proper `:LatheNew module-info` is the affordance that stops a modular project from ending up
-with a stray default-package class corrupting the module — the concrete tie-in with the WS gap
-on module-mirror corruption.
-
-## Server surface impact
-
-The existing executeCommand surface (`lathe.modules`, `lathe.packages`, `lathe.resolveContext`,
-`lathe.createType`) already models lazy per-node discovery and is largely sufficient.
-Changes:
-
-- **`lathe.createType`** gains the two special file kinds and must route them around the
-  identifier check (fixed file names, dedicated skeletons, tailored placement:
-  `package-info.java` in the package dir, `module-info.java` at the source root).
-- **Empty-package handling** becomes an explicit, validated case rather than a silent
-  source-root placement.
-- **`TypeKind`** (or a parallel file-kind) extends with `PACKAGE_INFO` and `MODULE_INFO`;
-  the client `KINDS` list mirrors it.
-- Module-name derivation (base package → artifactId) is server-side, exposed through
-  `lathe.createType` (or a small companion query) so the client only seeds the prompt.
-
-The client (`new.lua`) keeps a **location parser** (`[module:][scope:]package`, name excluded), a
-**name prompt** that shows the resolved destination, **position-aware command-line completion**, and a
-**guided `vim.ui.select` fallback** for the no-context / bare-invocation path — all driven by the
-existing `lathe.modules` / `lathe.packages` / `lathe.resolveContext` queries.
-The always-default-package-by-omission behaviour is removed.
+- **`lathe.pick`** — the reusable built-in fuzzy picker (`items`, `format`, `title`, `on_choice`);
+  `matchfuzzypos` filtering, floating prompt + results, no `vim.ui.select`.
+- **`lathe.new`** — the flow: kind (arg or pick) → destination (context anchored / typed / picker) →
+  name. Keeps the flat destination collector (`collect_destinations`, shared by the picker and the
+  cmdline completion cache), destination ordering/typed-resolution, and the special-kind branches.
+  Command-line completion offers the kind at the first argument and a `matchfuzzy` package at the
+  second. The server surface (`lathe.modules` / `lathe.packages` / `lathe.resolveContext` /
+  `lathe.createType`) is unchanged.
 
 ## Decisions (settled)
 
-1. **Model** — a typed command (anchored/context path + explicit-location path) as the primary, with a
-   guided `vim.ui.select` fallback for the 20% no-context / "somewhere new" case. Not a picker-first
-   flow.
-2. **Name** — always a final prompt; the location argument never carries the type name.
-3. **Context** — fills the location only when no location is typed; it never partial-fills a typed
-   target.
-4. **Package** — never defaults by omission; unresolved → guided; the default package only on explicit
+1. **Picker** — a Lathe-owned built-in fuzzy picker (`lathe.pick`, `matchfuzzypos`), **not**
+   `vim.ui.select`. The requirement is fuzzy + visible list for every user regardless of plugins;
+   `vim.ui.select` cannot guarantee it (builtin = numbered list).
+2. **No location grammar** — the colon `[module:][scope:]package` argument is removed. The command
+   takes at most a kind; the destination is the fuzzy picker (or a fuzzy-completed package word on the
+   typed path).
+3. **Name** — always a final, validated prompt; the argument never carries the type name.
+4. **Package** — never defaults by omission; unresolved → picker; the default package only on explicit
    request.
-5. **Scope** — `main`/`test` keyword in the typed location (default `main`), or the guided scope step
-   when a module has both roots and no context settles it.
-6. **`module-info`** — only the module is chosen: no package, no scope, no name prompt. Always the main
-   root; the JPMS name is auto-derived from the base package (fallback prompt only when none derivable).
+5. **Scope** — carried by the picked destination row (a class can land in the test root); the kind
+   biases ordering and forces test scope for a JUnit test; a new package asks scope only when the
+   module has both roots.
+6. **`module-info`** — only the module is chosen; the JPMS name is auto-derived from the base package.
+
+## History
+
+- **v1–v3** (CQ-0055): progressive pickers spec'd, a single completable free-text target shipped;
+  omitted packages silently became the default package (the source-root-corruption bug).
+- **v4**: typed `[module:][scope:]package` location + native command-line completion + a
+  `vim.ui.select` guided fallback; fixed the corruption bug but kept the colon grammar and depended on
+  a fuzzy `vim.ui.select` backend.
+- **v5** (this document): the location grammar is dropped for a built-in fuzzy picker; fuzzy + visible
+  list for every user, no plugin dependency.
 
 ## Relationship to other work
 
-- **Supersedes** the interaction model in CQ-0055 v3 (shipped `:LatheNew`); the server surface
-  from v3 mostly stands.
-- **Distinct from** [New Type Creation via Snippet Completion](lathe-new-type-creation.md), a
-  deferred, editor-agnostic snippet approach with no client UI — a different mechanism for the
-  same goal, kept as an alternative.
+- **Distinct from** [New Type Creation via Snippet Completion](lathe-new-type-creation.md), a deferred
+  editor-agnostic snippet approach with no client UI — a different mechanism for the same goal.
 - **Pairs with** the WS gap on module-mirror corruption (a `module-info` affordance for modular
   projects).
