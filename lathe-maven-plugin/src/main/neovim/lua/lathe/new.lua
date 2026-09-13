@@ -12,9 +12,11 @@
 -- The destination pick is Lathe's own built-in fuzzy picker (lathe.pick) over every
 -- `module · scope · package` in the reactor -- self-contained `matchfuzzy`, so it does NOT depend on
 -- `vim.ui.select` / Telescope and is identically fuzzy for every user. Each row carries its scope, so
--- picking a `· test` row puts a plain class in the test root. `＋ New package…` creates a package
--- (scope asked only when the module has both roots). The type NAME is always a final, validated
--- prompt; the package never defaults by omission.
+-- picking a `· test` row puts a plain class in the test root. The final prompt is the fully-qualified
+-- class name, pre-seeded with the picked package (`com.app.client.▮`): type the class, extend the
+-- package with more segments (`jobs.Scheduler` -> a new `jobs` sub-package), or edit the prefix to
+-- retarget. Seeding from an existing package keeps you in that module's namespace by default, so a new
+-- package rarely leaves it or splits a package.
 
 local M = {}
 
@@ -209,20 +211,16 @@ local function pref_scope(kind)
 	return kind == "test" and "test" or "main"
 end
 
--- The destination-row label: `pkg (module · scope)`, all three fuzzy-matchable in one line. The
--- create-package row is the pinned sentinel.
+-- The destination-row label: `pkg (module · scope)`, all three fuzzy-matchable in one line.
 local function dest_label(item)
-	if item.new then
-		return "＋ New package…"
-	end
-
 	return ("%s (%s · %s)"):format(item.pkg, item.module, item.scope)
 end
 
+-- The prompt label shows the module and scope (fixed by the picked row); the package + class name are
+-- edited in the input itself.
 local function name_label(kind, dest, scope)
-	local where = ("%s / %s / %s"):format(dest.module or "?", scope, dest.pkg ~= "" and dest.pkg or "<default>")
 	local noun = kind == "test" and "Test class" or (kind:sub(1, 1):upper() .. kind:sub(2))
-	return ("%s in %s"):format(noun, where)
+	return ("%s in %s · %s"):format(noun, dest.module or "?", scope)
 end
 
 -- ── prompts ──────────────────────────────────────────────────────────────────
@@ -236,21 +234,35 @@ local function input_nonempty(opts, cb)
 	end)
 end
 
--- The type-name prompt: a valid Java identifier, re-asked on an invalid entry so the mistake is
--- caught here instead of as a raw server error after the round-trip.
-local function input_name(label, default, cb)
+local function is_identifier(segment)
+	return segment:match("^[%a_$][%w_$]*$") ~= nil
+end
+
+-- The class-name prompt, pre-seeded with the destination package (`com.app.client.▮`). The whole
+-- value is a fully-qualified name: the last dotted segment is the class name, everything before is the
+-- package — so you type the class, extend with more segments, or edit the prefix to retarget. Every
+-- segment must be a valid Java identifier; an invalid entry is re-asked so the mistake is caught here
+-- instead of as a raw server error. Fires cb(package, name).
+local function input_fqn(label, default, cb)
 	vim.ui.input({ prompt = label .. ": ", default = default }, function(value)
 		if not value or vim.trim(value) == "" then
 			return
 		end
 
 		value = vim.trim(value)
-		if not value:match("^[%a_$][%w_$]*$") then
-			warn("'" .. value .. "' is not a valid Java identifier")
-			return input_name(label, value, cb)
+		local segments = vim.split(value, ".", { plain = true })
+		local name = table.remove(segments)
+		local valid = is_identifier(name)
+		for _, segment in ipairs(segments) do
+			valid = valid and is_identifier(segment)
 		end
 
-		cb(value)
+		if not valid then
+			warn(("'%s' is not a valid fully-qualified class name"):format(value))
+			return input_fqn(label, value, cb)
+		end
+
+		cb(table.concat(segments, "."), name)
 	end)
 end
 
@@ -356,7 +368,7 @@ local function choose_module(modules, ctx, cb)
 	})
 end
 
-local submit, name_step, open_where, new_package, create_module_info, module_info_flow
+local submit, name_step, open_where, create_module_info, module_info_flow
 
 -- package-info sends the fixed stem as name (ignored by the server); module-info sends the JPMS module
 -- name and always the main root.
@@ -371,7 +383,9 @@ submit = function(client, bufnr, kind, dest, scope, name)
 end
 
 -- test forces the test scope; a plain kind takes the scope of the picked destination (so a class can
--- land in the test root). package-info skips the name prompt; the type name is otherwise validated.
+-- land in the test root). package-info skips the name prompt; a dotted class name nests the type in a
+-- new sub-package under the destination (`jobs.Scheduler` -> `<pkg>.jobs.Scheduler`), so extending a
+-- package never leaves the destination's namespace and cannot split a package.
 name_step = function(client, bufnr, kind, dest)
 	local scope = kind == "test" and "test" or (dest.scope or "main")
 
@@ -380,82 +394,29 @@ name_step = function(client, bufnr, kind, dest)
 		return
 	end
 
-	input_name(name_label(kind, dest, scope), kind == "test" and M._test_seed(bufnr) or "", function(name)
-		submit(client, bufnr, kind, dest, scope, name)
+	local seed = dest.pkg ~= "" and (dest.pkg .. ".") or ""
+	if kind == "test" then
+		seed = seed .. M._test_seed(bufnr)
+	end
+
+	input_fqn(name_label(kind, dest, scope), seed, function(pkg, name)
+		submit(client, bufnr, kind, { module = dest.module, pkg = pkg }, scope, name)
 	end)
 end
 
-open_where = function(client, bufnr, kind, ctx, dests, modules)
+open_where = function(client, bufnr, kind, ctx, dests)
 	M._order_destinations(dests, ctx, kind)
-
-	local items = {}
-	for _, d in ipairs(dests) do
-		items[#items + 1] = d
-	end
-
-	-- ＋ New package… sits right behind the context row (item 1) so both the "add a sibling" and the
-	-- "somewhere new" picks are within immediate reach.
-	local contextFirst = ctx and ctx.pkg and items[1] and items[1].pkg == ctx.pkg and items[1].module == ctx.moduleRel
-	table.insert(items, contextFirst and 2 or 1, { new = true })
 
 	pick.pick({
 		title = "Where:",
-		items = items,
+		items = dests,
 		format = dest_label,
 		on_choice = function(choice)
-			if not choice then
-				return
+			if choice then
+				name_step(client, bufnr, kind, { module = choice.module, scope = choice.scope, pkg = choice.pkg })
 			end
-
-			if choice.new then
-				return new_package(client, bufnr, kind, ctx, modules)
-			end
-
-			name_step(client, bufnr, kind, { module = choice.module, scope = choice.scope, pkg = choice.pkg })
 		end,
 	})
-end
-
--- A brand-new package: choose its module (context floated, skip-when-one), type the package (seeded
--- from the module's base package), and choose the scope only when the module has both roots.
-new_package = function(client, bufnr, kind, ctx, modules)
-	local function with_module(module)
-		execute(client, bufnr, "lathe.packages", { moduleRel = module }, function(packages)
-			local roots = {}
-			for _, entry in ipairs(packages or {}) do
-				roots[entry.scope] = true
-			end
-
-			local base = M._base_package(packages)
-			-- A deliberate New-package entry may be empty — an explicit choice of the default package (the
-			-- invariant only forbids defaulting by omission). Only a cancel (nil) aborts.
-			vim.ui.input({ prompt = "New package: ", default = base ~= "" and base .. "." or "" }, function(pkg)
-				if not pkg then
-					return
-				end
-
-				local function go(scope)
-					name_step(client, bufnr, kind, { module = module, scope = scope, pkg = vim.trim(pkg) })
-				end
-
-				if roots.main and roots.test then
-					pick.pick({
-						title = "Scope:",
-						items = { "main", "test" },
-						on_choice = function(scope)
-							if scope then
-								go(scope)
-							end
-						end,
-					})
-				else
-					go(roots.test and not roots.main and "test" or pref_scope(kind))
-				end
-			end)
-		end)
-	end
-
-	choose_module(modules, ctx, with_module)
 end
 
 -- module-info takes no package, scope, or type name — only the module. Its JPMS name is derived from
@@ -519,7 +480,7 @@ local function dispatch(client, bufnr, kind, ctx, pkg_arg, guided)
 			end
 		end
 
-		open_where(client, bufnr, kind, ctx, dests, modules)
+		open_where(client, bufnr, kind, ctx, dests)
 	end)
 end
 

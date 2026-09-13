@@ -57,9 +57,9 @@ local function result(path)
 	return { path = path, content = "x\n", caret = { line = 0, character = 0 } }
 end
 
--- Stub every pick from a plan: kind (New:), the destination (Where: -- by pkg + optional scope, or
--- "new" for the ＋ entry), module (Module:), scope (Scope:), and the vim.ui.input prompts (new
--- package, module name, or the type name). Absent plan fields fall through to the seeded default.
+-- Stub every pick from a plan: kind (New:), the destination (Where: -- an existing row by `package`
+-- [+ optional `pick_scope`]), module (Module:), and the vim.ui.input prompts (module-info name, or
+-- the type name -- which may be dotted, `sub.pkg.Name`). Absent plan fields fall to the seeded default.
 local function stub_ui(plan)
 	pick.pick = function(opts)
 		local items = opts.items
@@ -69,26 +69,19 @@ local function stub_ui(plan)
 			end))
 		elseif opts.title == "Module:" then
 			opts.on_choice(plan.module)
-		elseif opts.title == "Scope:" then
-			opts.on_choice(plan.scope)
 		elseif opts.title == "Where:" then
 			opts.on_choice(item_by(items, function(item)
-				if plan.package == "new" then
-					return item.new == true
-				end
-				return not item.new
-					and item.pkg == plan.package
-					and (not plan.pick_scope or item.scope == plan.pick_scope)
+				return item.pkg == plan.package and (not plan.pick_scope or item.scope == plan.pick_scope)
 			end))
 		end
 	end
 	vim.ui.input = function(opts, cb)
-		if opts.prompt == "New package: " then
-			cb(plan.new_package ~= nil and plan.new_package or opts.default)
-		elseif opts.prompt == "Module name: " then
+		if opts.prompt == "Module name: " then
 			cb(plan.module_name ~= nil and plan.module_name or opts.default)
 		else
-			cb(plan.name ~= nil and plan.name or opts.default)
+			-- the class-name prompt is seeded with the package; the user appends plan.name (a class name
+			-- or sub.pkg.Class), or accepts the seed as-is when plan.name is absent.
+			cb(plan.name ~= nil and ((opts.default or "") .. plan.name) or opts.default)
 		end
 	end
 end
@@ -243,8 +236,8 @@ do -- typed: a fuzzy-completed package resolves to a destination (context module
 			where_opened = true
 		end
 	end
-	vim.ui.input = function(_, cb)
-		cb("Bar")
+	vim.ui.input = function(opts, cb)
+		cb((opts.default or "") .. "Bar")
 	end
 
 	new.create("class", "com.example.foo")
@@ -291,7 +284,7 @@ do -- guided: bare :LatheNew -> kind -> destination picker (context floated) -> 
 	pick.pick = function(opts)
 		if opts.title == "Where:" then
 			order = vim.tbl_map(function(item)
-				return item.new and "＋ New package…" or ("%s (%s · %s)"):format(item.pkg, item.module, item.scope)
+				return ("%s (%s · %s)"):format(item.pkg, item.module, item.scope)
 			end, opts.items)
 		end
 		base(opts)
@@ -300,7 +293,6 @@ do -- guided: bare :LatheNew -> kind -> destination picker (context floated) -> 
 	new.create()
 
 	spec.check("guided: context package is item 1", order[1], "com.app.batch (app · main)")
-	spec.check("guided: ＋ New package… is item 2", order[2], "＋ New package…")
 	local args = request_for(requests, "lathe.createType") or {}
 	spec.check("guided: package from the pick", args.pkg, "com.app.batch")
 	spec.check("guided: scope from the picked row", args.kind, "main")
@@ -326,37 +318,65 @@ do -- class in the test root: pick a `· test` destination row -> the class land
 	spec.check("class-in-test: package", args.pkg, "com.app.support")
 end
 
-do -- new package (single root): no scope prompt, lands in main
+do -- new package via a qualified name: `jobs.Scheduler` nests the class under the picked package
 	local requests = stub_server({
-		["lathe.modules"] = { "only" },
-		["lathe.packages"] = { { pkg = "com.only", scope = "main" } },
-		["lathe.createType"] = result(vim.fn.tempname() .. "/D.java"),
+		["lathe.resolveContext"] = { moduleRel = "app", scope = "main", pkg = "com.app" },
+		["lathe.modules"] = { "app" },
+		["lathe.packages"] = { { pkg = "com.app", scope = "main" } },
+		["lathe.createType"] = result(vim.fn.tempname() .. "/Scheduler.java"),
 	})
-	stub_ui({ kind = "Class", package = "new", new_package = "com.only.jobs", name = "D" })
+	stub_ui({ kind = "Class", package = "com.app", name = "jobs.batch.Scheduler" })
 
 	new.create()
 
 	local args = request_for(requests, "lathe.createType") or {}
-	spec.check("new package: package", args.pkg, "com.only.jobs")
-	spec.check("new package: main scope with a single root", args.kind, "main")
+	spec.check("qualified name: sub-package appended to the destination", args.pkg, "com.app.jobs.batch")
+	spec.check("qualified name: class name is the last segment", args.name, "Scheduler")
 end
 
-do -- new package (both roots): the scope is asked, and test is reachable -- fixes the v4 gap
+do -- a qualified name in a test-scope destination keeps the test scope for the new sub-package
 	local requests = stub_server({
-		["lathe.modules"] = { "only" },
-		["lathe.packages"] = {
-			{ pkg = "com.only", scope = "main" },
-			{ pkg = "com.only.it", scope = "test" },
-		},
-		["lathe.createType"] = result(vim.fn.tempname() .. "/E.java"),
+		["lathe.resolveContext"] = { moduleRel = "app", scope = "main", pkg = "com.app" },
+		["lathe.modules"] = { "app" },
+		["lathe.packages"] = { { pkg = "com.app.support", scope = "test" } },
+		["lathe.createType"] = result(vim.fn.tempname() .. "/Fixture.java"),
 	})
-	stub_ui({ kind = "Class", package = "new", new_package = "com.only.newpkg", scope = "test", name = "E" })
+	stub_ui({ kind = "Class", package = "com.app.support", pick_scope = "test", name = "fakes.Fixture" })
 
 	new.create()
 
 	local args = request_for(requests, "lathe.createType") or {}
-	spec.check("new test package: scope from the prompt", args.kind, "test")
-	spec.check("new test package: package", args.pkg, "com.only.newpkg")
+	spec.check("qualified name in test: sub-package under the test package", args.pkg, "com.app.support.fakes")
+	spec.check("qualified name in test: keeps the test scope", args.kind, "test")
+end
+
+do -- an FQN with an invalid package segment is re-asked, then accepted
+	local requests = stub_server({
+		["lathe.resolveContext"] = { moduleRel = "app", scope = "main", pkg = "com.app" },
+		["lathe.createType"] = result(vim.fn.tempname() .. "/Ok.java"),
+	})
+	local warned, calls = false, 0
+	local real_notify = vim.notify
+	vim.notify = function(message, _, _)
+		if type(message) == "string" and message:match("valid fully%-qualified class name") then
+			warned = true
+		end
+	end
+	-- the seed is `com.app.`; the user types an FQN with an invalid segment, then a valid one (the
+	-- re-prompt seeds with the previous value, so these are absolute)
+	vim.ui.input = function(_, cb)
+		calls = calls + 1
+		cb(calls == 1 and "com.app.1bad.Ok" or "com.app.good.Ok")
+	end
+
+	new.create("class")
+
+	vim.notify = real_notify
+	local args = request_for(requests, "lathe.createType") or {}
+	spec.check("fqn: invalid segment warns", warned, true)
+	spec.check("fqn: re-prompts", calls, 2)
+	spec.check("fqn: accepted package", args.pkg, "com.app.good")
+	spec.check("fqn: accepted class name", args.name, "Ok")
 end
 
 do -- package-info: no name prompt, the fixed stem is sent, package from context
@@ -443,33 +463,6 @@ do -- kind passed as an argument skips the kind picker
 	local args = request_for(requests, "lathe.createType") or {}
 	spec.check("argument sets the kind", args.type, "record")
 	spec.check("argument skips the kind picker", kind_picked, false)
-end
-
-do -- the name prompt re-asks on an invalid identifier, then accepts a valid one
-	local requests = stub_server({
-		["lathe.resolveContext"] = { moduleRel = "core", scope = "main", pkg = "com.example.core" },
-		["lathe.createType"] = result(vim.fn.tempname() .. "/Valid.java"),
-	})
-	pick.pick = function(_) end
-	local warned, calls = false, 0
-	local real_notify = vim.notify
-	vim.notify = function(message, _, _)
-		if type(message) == "string" and message:match("identifier") then
-			warned = true
-		end
-	end
-	vim.ui.input = function(_, cb)
-		calls = calls + 1
-		cb(calls == 1 and "1Bad" or "Valid")
-	end
-
-	new.create("class")
-
-	vim.notify = real_notify
-	local args = request_for(requests, "lathe.createType") or {}
-	spec.check("invalid name warns", warned, true)
-	spec.check("invalid name re-prompts", calls, 2)
-	spec.check("valid name is used", args.name, "Valid")
 end
 
 do -- server not attached -> warns, no picker

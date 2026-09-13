@@ -84,14 +84,16 @@ Adapter Protocol for debugging), not standard LSP methods.
 
 | Feature  | What it does                                                                                                      | Command                                                   |
 |----------|------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------|
-| New type | scaffolds a `class` / `interface` / `record` / `enum` / `test`, plus `package-info` and `module-info` — type the kind (name defaults to the current file's package) or run it bare for a guided pick; the server resolves placement, writes the file, and opens it | Neovim `:LatheNew` |
+| New type | scaffolds a `class` / `interface` / `record` / `enum` / `annotation` / `test`, plus `package-info` and `module-info` — pick the kind, fuzzy-pick the destination package, and name it; the server resolves placement, writes the file, and opens it | Neovim `:LatheNew` |
 
-`:LatheNew <kind>` adds a type in the **current file's** module and package — you just type the name.
-Pass an explicit `[module:][scope:]package` location to put it elsewhere
-(`:LatheNew class core:test:com.example.util`), or run **`:LatheNew`** with no arguments for a guided
-kind → module → package pick. The type name is always prompted, and the package never defaults to the
-source root. The server owns every Java/Maven decision — module, source root, package, skeleton, and
-caret — so the result fits your project's layout. See the
+`:LatheNew <kind>` from a Java file adds a type in the **current file's** package — you just name it.
+Run **`:LatheNew`** with no arguments for the guided flow: pick the kind, then fuzzy-pick the
+destination `module · scope · package` (Lathe's own built-in fuzzy picker — no Telescope required).
+The final prompt is the fully-qualified class name, **pre-seeded with the chosen package**
+(`com.example.util.▮`): type the class, extend the package to nest a new sub-package
+(`jobs.Scheduler`), or edit the prefix to retarget. You can also pass a package to jump straight there
+(`:LatheNew class com.example.util`, with fuzzy `<Tab>` completion). The server owns every Java/Maven
+decision — module, source root, package, skeleton, and caret. See the
 [Neovim cheatsheet](docs/guide/editors/neovim.md#create-a-new-type).
 
 ### Workspace freshness

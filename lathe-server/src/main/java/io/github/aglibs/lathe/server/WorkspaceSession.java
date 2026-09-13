@@ -624,15 +624,19 @@ final class WorkspaceSession {
     return SourceScope.ofSourceTree(config.sourceTree()).wire;
   }
 
+  // A package is a directory that holds Java sources (the parent of each `.java`).
+  // Intermediate dirs like `com` are not packages and must not be offered.
   private static List<String> packagesUnder(final Path root) {
     if (!Files.isDirectory(root)) {
       return List.of();
     }
 
-    try {
-      return Stream.concat(
-              Stream.of(""),
-              FileUtil.subdirectories(root).stream().map(dir -> packageOf(root, dir)))
+    try (final var walk = Files.walk(root)) {
+      return walk.filter(Files::isRegularFile)
+          .filter(FileUtil::isJavaFile)
+          .map(source -> packageOf(root, source.getParent()))
+          .distinct()
+          .sorted()
           .toList();
     } catch (final IOException e) {
       LOG.log(Level.WARNING, e, () -> "[packages] scan failed under %s".formatted(root));

@@ -428,21 +428,29 @@ class WorkspaceSessionTest {
   }
 
   @Test
-  void packages_walkDiskTaggedByScopeReflectingNewDirs() throws Exception {
-    Files.createDirectories(sourceRoot.resolve("com/example/sub")); // main
+  void packages_onlyDirectoriesHoldingSourcesTaggedByScope() throws Exception {
+    // real packages are the parent directories of `.java` files; intermediate dirs are not packages
+    Files.createDirectories(sourceRoot.resolve("com/example/sub"));
+    Files.writeString(
+        sourceRoot.resolve("com/example/Foo.java"), "package com.example; class Foo {}");
+    Files.writeString(
+        sourceRoot.resolve("com/example/sub/Deep.java"), "package com.example.sub; class Deep {}");
     final var testCfg = testConfig("module", "src/test/java");
     Files.createDirectories(tmp.resolve("module/src/test/java/com/verify"));
+    Files.writeString(
+        tmp.resolve("module/src/test/java/com/verify/VerifyTest.java"),
+        "package com.verify; class VerifyTest {}");
 
     final List<PackageEntry> pkgs =
         WorkspaceSession.packages(List.of(config, testCfg), tmp, "module");
 
     assertThat(pkgs)
         .contains(
-            new PackageEntry("", "main"),
-            new PackageEntry("com", "main"),
             new PackageEntry("com.example", "main"),
             new PackageEntry("com.example.sub", "main"),
             new PackageEntry("com.verify", "test"));
+    // intermediate directories and the (empty) default package are not offered
+    assertThat(pkgs).extracting(PackageEntry::pkg).doesNotContain("com", "");
 
     // main-only module has no test-scope entries
     assertThat(WorkspaceSession.packages(List.of(config), tmp, "module"))
