@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.analysis;
 
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.ExpressionStatementTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
@@ -60,6 +61,17 @@ final class ExtractFieldProvider {
     }
 
     final var expr = (ExpressionTree) exprPath.getLeaf();
+
+    // When the selection is the whole expression of an expression-statement, replacing that
+    // expression with a reference would leave the illegal statement `name;`. Decline, mirroring
+    // ExtractVariableProvider.
+    final TreePath stmtPath = CodeActionSupport.nearestEnclosingStatement(exprPath);
+    if (stmtPath != null
+        && stmtPath.getLeaf() instanceof final ExpressionStatementTree exprStmt
+        && exprStmt.getExpression() == expr) {
+      return List.of();
+    }
+
     final TypeMirror type = trees.getTypeMirror(exprPath);
     if (type == null || !CodeActionSupport.isDenotable(type)) {
       return List.of();

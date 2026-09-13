@@ -1177,6 +1177,27 @@ class CodeActionTest {
   }
 
   @Test
+  void codeAction_wholeStatementExpression_offersNoField() {
+    // Extracting the whole expression of an expression-statement into a field would replace the
+    // statement's only expression with a bare reference, leaving the illegal statement `name;`.
+    // Mirror the extract-variable guard and decline. Regression: it emitted the orphaned `name;`.
+    final var source =
+        """
+        package com.example;
+        class Test {
+          private final String existing = "";
+          void m() {
+            Factory.create();
+          }
+          static class Factory { static String create() { return ""; } }
+        }
+        """;
+    final var actions = extractActionsSpanning(source, 4, 4, 4, 20);
+
+    assertThat(rightTitles(actions)).noneMatch(t -> t.startsWith("Extract field"));
+  }
+
+  @Test
   void codeAction_expressionReadingParameter_offersNoField() {
     final var source =
         """
