@@ -108,6 +108,31 @@ ran = 0
 fold.reclose_imports(0, true)
 spec.check("reclose_imports closes the imports fold when it was closed", closed_at[1], 3)
 
+-- M.format: snapshot the fold, format with async forced false, then reclose. Stub buf.format to
+-- record the opts it was handed. foldclosed is stateful: the pre-format snapshot sees the imports
+-- fold closed, then the "rewrite" leaves it open so reclose issues a fresh foldclose.
+local orig_bufformat = vim.lsp.buf.format
+local format_opts
+vim.lsp.buf.format = function(o)
+  format_opts = o
+end
+local ff_calls = 0
+vim.fn.foldclosed = function(lnum)
+  ff_calls = ff_calls + 1
+  return (ff_calls == 1 and lnum == 3) and 3 or -1
+end
+
+closed_at = {}
+ran = 0
+stub_folds({ IMPORTS, REGION })
+fold.format(0, { id = 7 })
+spec.check("format forces async false", format_opts.async, false)
+spec.check("format targets the buffer", format_opts.bufnr, 0)
+spec.check("format forwards caller opts", format_opts.id, 7)
+spec.check("format recloses the imports fold it found closed", closed_at[1], 3)
+
+vim.lsp.buf.format = orig_bufformat
+
 -- Restore stubbed globals before finish() (which calls vim.cmd) so the harness can exit cleanly.
 vim.lsp.buf_request_sync = orig.buf_request_sync
 vim.lsp.util.make_text_document_params = orig.make_params

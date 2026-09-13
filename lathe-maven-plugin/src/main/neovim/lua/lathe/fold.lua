@@ -120,4 +120,16 @@ function M.reclose_imports(bufnr, was_closed)
   vim.defer_fn(attempt, RETRY_MS)
 end
 
+--- Format `bufnr` via the LSP formatter while preserving a closed imports fold across the buffer
+--- rewrite -- the same snapshot/reclose the save path applies, for on-demand (non-save) formatting.
+--- `async` is forced false so the reclose runs after the edit has landed. `opts` is merged into the
+--- vim.lsp.buf.format call for callers that need a range or a specific client.
+---@param bufnr integer
+---@param opts table?
+function M.format(bufnr, opts)
+  local was_closed = M.imports_closed(bufnr)
+  vim.lsp.buf.format(vim.tbl_extend('force', opts or {}, { bufnr = bufnr, async = false }))
+  M.reclose_imports(bufnr, was_closed)
+end
+
 return M

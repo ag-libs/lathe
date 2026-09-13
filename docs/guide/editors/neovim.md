@@ -65,7 +65,7 @@ freely.
 | Signature help | `vim.lsp.buf.signature_help()` | `<C-s>` (insert) | `<C-k>` |
 | Completion (with auto-import) | `vim.lsp.completion` / omnifunc | `<C-x><C-o>` | auto |
 | Code action (import type · add `throws` · wrap `try/catch` · declare local · replace `var` · stub missing method) | `vim.lsp.buf.code_action()` | `gra` | `<leader>ca` |
-| Format document (opt-in — needs `formatter = "google"`) | `vim.lsp.buf.format()` | — | `<leader>f` |
+| Format document (opt-in — needs `formatter = "google"`) | `require('lathe').format()` / `:LatheFormat` | — | `<leader>f` |
 | Document symbols (outline) | `vim.lsp.buf.document_symbol()` | `gO` | `gO` |
 | Workspace symbols (CamelCase-hump aware) | `vim.lsp.buf.workspace_symbol()` | — | `<leader>ws` |
 | Type hierarchy (super / sub) | `vim.lsp.buf.typehierarchy("supertypes"/"subtypes")` | — | `<leader>hs` / `<leader>hi` |
@@ -125,10 +125,20 @@ Google Java Format.
 - `google` — 2-space block, 4-space continuation.
 
 **Formatting** — set `formatter = "google"` to enable google-java-format (whole document, with import
-cleanup). It is off by default. When enabled it runs on demand via `vim.lsp.buf.format()`; add
-`format_on_save = true` to also format on write (that autocmd is wired only when `formatter =
-"google"`). Range and on-type formatting are intentionally disabled, so a stray client request can't
-trigger a whole-document rewrite.
+cleanup). It is off by default. When enabled it runs on demand via `require('lathe').format()` (or
+`:LatheFormat`); add `format_on_save = true` to also format on write (that autocmd is wired only when
+`formatter = "google"`). Range and on-type formatting are intentionally disabled, so a stray client
+request can't trigger a whole-document rewrite.
+
+Prefer `require('lathe').format()` over a bare `vim.lsp.buf.format()`: the whole-document rewrite
+makes nvim-ufo reopen a closed imports fold, and `lathe.format` snapshots and restores that fold (the
+same preservation format-on-save applies). To bind it:
+
+```lua
+vim.keymap.set({ "n", "x" }, "<leader>f", function()
+  require("lathe").format()
+end, { desc = "Lathe: format buffer" })
+```
 
 To keep the previous "Google format on save" behaviour:
 

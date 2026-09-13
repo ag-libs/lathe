@@ -139,6 +139,12 @@ function M.start(bufnr)
   vim.lsp.start(config, { bufnr = bufnr })
 end
 
+-- On-demand formatting that keeps a closed imports fold from springing open (NV-3). Map a format
+-- key to this instead of raw vim.lsp.buf.format, which reopens the fold on the buffer rewrite.
+function M.format(bufnr, opts)
+  require('lathe.fold').format(bufnr or vim.api.nvim_get_current_buf(), opts)
+end
+
 function M.setup(opts)
   opts = opts or {}
   local root = cache_root()
@@ -214,6 +220,14 @@ function M.setup(opts)
         })
       end,
     })
+  end
+
+  -- Manual formatting is available whenever the server advertises it (formatter enabled), whether or
+  -- not format-on-save is wired. :LatheFormat routes through M.format so the imports fold survives.
+  if opts.formatter == 'google' then
+    vim.api.nvim_create_user_command('LatheFormat', function()
+      M.format(vim.api.nvim_get_current_buf())
+    end, { desc = 'Lathe: format the current buffer (preserving the imports fold)' })
   end
 
   -- Run surface: gutter signs for `main` methods plus :LatheRun to replay the buffer's main
