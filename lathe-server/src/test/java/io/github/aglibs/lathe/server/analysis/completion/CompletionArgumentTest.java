@@ -577,4 +577,52 @@ class CompletionArgumentTest extends CompletionTestSupport {
     final CompletionItem intItem = itemWithFilterText(items, "getInt").orElseThrow();
     assertThat(strItem.getSortText()).isLessThan(intItem.getSortText());
   }
+
+  // ── enum argument slot: propose the expected enum's constants (CQ-0058) ────────
+
+  @Test
+  void argumentPosition_enumParam_offersQualifiedConstantsByNameOrValue() {
+    final var enumSource =
+        """
+        class Test {
+            enum Dialect { OAUTH, BASIC }
+            void dialect(Dialect d) {}
+            void m() {
+                dialect(%s);
+            }
+        }""";
+    // Empty prefix offers every constant, qualified with the (in-scope) enum name.
+    assertThat(labels(fixture.complete(enumSource.formatted("§"))))
+        .contains("Dialect.OAUTH", "Dialect.BASIC");
+    // Typing the value (`OA`) still surfaces `Dialect.OAUTH`: matching keys on the bare constant,
+    // not
+    // only the qualified label. The inserted text remains the qualified reference.
+    final var prefixed = fixture.complete(enumSource.formatted("OA§"));
+    assertThat(labels(prefixed)).contains("Dialect.OAUTH").doesNotContain("Dialect.BASIC");
+    assertThat(itemLabeled(prefixed, "Dialect.OAUTH").orElseThrow().getInsertText())
+        .isEqualTo("Dialect.OAUTH");
+  }
+
+  @Test
+  void argumentPosition_externalEnumParam_offersConstantsWithImport() throws IOException {
+    localFixture =
+        new CompletionFixture(
+            CompletionFixture.typeIndex(
+                tmp.resolve("index.json"),
+                CompletionFixture.typeEntry(
+                    "Version", "java.net.http.HttpClient$Version", TypeKind.ENUM)));
+    final var items =
+        localFixture.complete(
+            """
+            class Test {
+                void httpVersion(java.net.http.HttpClient.Version v) {}
+                void m() {
+                    httpVersion(§);
+                }
+            }""");
+    assertThat(labels(items)).contains("Version.HTTP_2");
+    final var http2 = itemLabeled(items, "Version.HTTP_2").orElseThrow();
+    assertThat(http2.getAdditionalTextEdits().getFirst().getNewText())
+        .isEqualTo("import java.net.http.HttpClient.Version;\n");
+  }
 }

@@ -213,7 +213,7 @@ public final class CompletionEngine {
 
     final var javacCandidates = completeJavacSimpleName(parsed, injected, req, semanticContext);
     final var enumCandidates =
-        enumEqualityCandidates(parsed, injected.prefix(), semanticContext, req);
+        enumValueSlotCandidates(parsed, injected.prefix(), semanticContext, req);
     final var enumCaseCandidates =
         enumCaseLabelCandidates(parsed, injected.prefix(), semanticContext);
     final var sealedCaseCandidates =
@@ -337,12 +337,14 @@ public final class CompletionEngine {
             semanticContext);
   }
 
-  private static List<CompletionCandidate> enumEqualityCandidates(
+  // Any value slot whose expected type is an enum (argument, assignment, return, equality) offers
+  // that enum's constants. Case labels have their own unqualified path.
+  private static List<CompletionCandidate> enumValueSlotCandidates(
       final ParsedSentinel parsed,
       final String prefix,
       final SemanticCompletionContext semanticContext,
       final CompletionRequest req) {
-    if (!parsed.inEqualityComparison()) {
+    if (parsed.sentinelContext() == SentinelContext.CASE_LABEL) {
       return List.of();
     }
 
@@ -516,9 +518,15 @@ public final class CompletionEngine {
       return candidates.stream().map(CompletionItemPresenter::present).toList();
     }
 
-    return CompletionCandidateRanker.rank(candidates, semanticContext).stream()
-        .map(CompletionItemPresenter::present)
-        .toList();
+    final List<RankedCompletionCandidate> ranked =
+        CompletionCandidateRanker.rank(candidates, semanticContext);
+    final List<CompletionItem> items =
+        ranked.stream().map(CompletionItemPresenter::present).toList();
+    CompletionItemPresenter.applyImportEdits(
+        ranked.stream().map(RankedCompletionCandidate::candidate).toList(),
+        items,
+        semanticContext.analysis());
+    return items;
   }
 
   private static SemanticCompletionContext semanticContext(

@@ -5,6 +5,7 @@ import com.sun.source.tree.ImportTree;
 import com.sun.source.tree.Scope;
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.server.analysis.DefinitionLocator;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -135,22 +136,40 @@ final class CandidateGenerator {
 
   List<CompletionCandidate> proposeEnumConstantCandidates(
       final TypeElement enumType, final String prefix, final int cursorOffset) {
-    return proposeEnumConstantCandidates(
-        enumType, prefix, classQualifiedName(enumType, cursorOffset));
+    final var cursorPath = SourceLocator.pathAt(snapshot.trees(), snapshot.tree(), cursorOffset);
+    // A class-qualified reference resolves only if its top-level type is reachable by simple name;
+    // otherwise refer to the enum by its own name and import its canonical (dotted) name.
+    final TypeElement topLevel = DefinitionLocator.topLevelClass(enumType);
+    final boolean reachable = topLevel != null && isInScope(topLevel, cursorPath);
+    final String qualifier =
+        reachable
+            ? classQualifiedName(enumType, cursorOffset)
+            : enumType.getSimpleName().toString();
+    final ImportEdit importEdit =
+        reachable ? null : new ImportEdit(enumType.getQualifiedName().toString(), false);
+    return proposeEnumConstantCandidates(enumType, prefix, qualifier, importEdit);
   }
 
   List<CompletionCandidate> proposeUnqualifiedEnumConstantCandidates(
       final TypeElement enumType, final String prefix) {
-    return proposeEnumConstantCandidates(enumType, prefix, "");
+    return proposeEnumConstantCandidates(enumType, prefix, "", null);
   }
 
   private List<CompletionCandidate> proposeEnumConstantCandidates(
-      final TypeElement enumType, final String prefix, final String qualifier) {
+      final TypeElement enumType,
+      final String prefix,
+      final String qualifier,
+      final ImportEdit importEdit) {
     final String typeName = qualifier.isEmpty() ? "" : qualifier + ".";
+    // Match the qualified label (typing the enum name) or the bare constant (typing the value), so
+    // both ways of reaching the constant surface it.
     return enumType.getEnclosedElements().stream()
         .filter(el -> el.getKind() == ElementKind.ENUM_CONSTANT)
-        .filter(el -> (typeName + el.getSimpleName()).startsWith(prefix))
-        .map(el -> enumConstantCandidate(enumType, typeName + el.getSimpleName()))
+        .filter(
+            el ->
+                (typeName + el.getSimpleName()).startsWith(prefix)
+                    || el.getSimpleName().toString().startsWith(prefix))
+        .map(el -> enumConstantCandidate(enumType, typeName + el.getSimpleName(), importEdit))
         .toList();
   }
 
@@ -256,7 +275,7 @@ final class CandidateGenerator {
   }
 
   private static CompletionCandidate enumConstantCandidate(
-      final TypeElement enumType, final String label) {
+      final TypeElement enumType, final String label, final ImportEdit importEdit) {
     return new CompletionCandidate(
         label,
         label,
@@ -267,7 +286,7 @@ final class CandidateGenerator {
         null,
         enumType.asType(),
         enumType.getQualifiedName().toString(),
-        null);
+        importEdit);
   }
 
   List<CompletionCandidate> proposeSimpleNameCandidates(
