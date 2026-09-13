@@ -404,6 +404,91 @@ This matches the existing deferred method-reference gap in the historical comple
 
 ---
 
+## CQ-0057 — Nested types are missing from type completion and auto-import
+
+ID: CQ-0057
+Status: accepted
+Target: backlog
+Tier: assistive
+Failure mode: missing-candidate
+Owner component: WorkspaceTypeIndex / type-index shard builder
+
+Observed behaviour:
+Completing a type by its simple name never offers a nested (inner) type — only top-level types.
+Typing `Version` offers `com.fasterxml.jackson.core.Version` and other top-level `Version*` types but
+**not** `java.net.http.HttpClient.Version` (a nested enum), so the user is pushed to the wrong type.
+The gap is general: completing `Entry` returns zero candidates — `java.util.Map.Entry` is never
+offered. It also means no missing-import quick fix is offered for a nested type referenced by simple
+name.
+
+Probe command:
+```bash
+# in a workspace with a loaded type index, complete a bare nested-type simple name
+python3 - <<'PY'
+import sys; sys.path.insert(0, "dev")
+from lsp import LatheClient, find_workspace_root
+# open any Java file, insert `Entry ee = null;` in a method body, complete after `Entry`
+# → expect java.util.Map.Entry; actual: no nested types offered
+PY
+```
+
+Cursor context:
+```java
+Version httpVersion = ...   // expect java.net.http.HttpClient.Version, offered only jackson Version
+Map.Entry<K, V> e = ...     // typing `Entry` offers nothing
+```
+
+IntelliJ or JDT behavior:
+Simple-name completion and auto-import include nested types (`Map.Entry`, `HttpClient.Version`,
+`Thread.State`, nested builders/enums), usually shown as `Entry (java.util.Map)`.
+
+Lathe behavior:
+The type index holds only top-level types; nested types are not indexed, so they are absent from
+type-name completion and from the missing-import quick fix.
+
+Expected Lathe behavior:
+Nested types are indexed (as `Outer.Inner`, displayed with the enclosing type) across the dependency,
+JDK, and reactor shards, so they complete by simple name and auto-import correctly.
+
+---
+
+## CQ-0058 — Argument completion does not offer the expected type's constants
+
+ID: CQ-0058
+Status: accepted
+Target: backlog
+Tier: assistive
+Failure mode: missing-candidate
+Owner component: CompletionEngine (argument / typed-slot completion)
+
+Observed behaviour:
+At an argument slot whose parameter is an enum (or a type with well-known constants/static factories),
+completion offers only in-scope locals and keywords — not the expected type's constants, and not even
+filtered to the expected type. At a `Version` parameter it offered `args` (`String[]`) and a local of
+an unrelated type; it did not offer `Version.HTTP_2` (or the `Version` type). Same at an enum
+parameter: no `<Enum>.<CONSTANT>` proposals.
+
+Cursor context:
+```java
+builder.httpVersion(▮)   // expect Version.HTTP_1_1 / Version.HTTP_2; none offered
+builder.dialect(▮)       // expect the enum's constants; none offered
+```
+
+IntelliJ or JDT behavior:
+At such a slot the enum's constants are proposed first (e.g. `Version.HTTP_2`), and locals are filtered
+to the expected type.
+
+Lathe behavior:
+Argument completion lists in-scope names and keywords without expected-type awareness, so the value
+you want is not proposed at the call site (member completion after `Version.` / `Enum.` works fine —
+only the proactive proposal at the slot is missing).
+
+Expected Lathe behavior:
+When the expected parameter type is an enum (or has public constants/static factories), propose those
+constants at the slot, and rank type-matching locals first.
+
+---
+
 ## CQ-0055 — `:LatheNew` — scaffold a new type through the server
 
 ID: CQ-0055
