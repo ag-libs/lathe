@@ -459,7 +459,10 @@ JDK, and reactor shards, so they complete by simple name and auto-import correct
 ## CQ-0058 — Argument completion does not offer the expected type's constants
 
 ID: CQ-0058
-Status: accepted
+Status: **done** — any value slot whose expected type is an enum (argument, assignment, return,
+equality) now proposes that enum's constants (`enumValueSlotCandidates` in CompletionEngine, was
+equality-only). Matching keys on the enum name or the bare constant, and an unreachable enum is
+auto-imported by its canonical dotted name.
 Target: backlog
 Tier: assistive
 Failure mode: missing-candidate
