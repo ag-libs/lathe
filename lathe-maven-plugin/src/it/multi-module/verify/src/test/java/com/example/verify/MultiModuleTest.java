@@ -256,6 +256,9 @@ class MultiModuleTest {
     assertThat(content).contains("\"modulePath\": []");
     assertThat(content).contains("app/target/classes");
     assertThat(content).contains("slf4j-api");
+    // The reactor sibling core is placed by its fresh output, not dropped for lack of an installed
+    // jar -- otherwise a cross-module main run fails with NoClassDefFoundError.
+    assertThat(content).contains("core/target/classes");
     // A classpath launch has no main module; the field is omitted, not blank.
     assertThat(content).doesNotContain("mainModule");
   }

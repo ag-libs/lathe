@@ -62,7 +62,9 @@ final class SyncCoordinator {
     final var serverInstaller =
         new ServerInstaller(repositorySystem, session.getRepositorySession(), remoteRepos, log);
     serverInstaller.install();
-    final var mainLaunchWriter = new MainLaunchWriter(new LocationManager(), log);
+    final var mainLaunchWriter =
+        new MainLaunchWriter(
+            new LocationManager(), ReactorProjects.reactorOutputDirs(projects), log);
     projects.forEach(project -> mainLaunchWriter.write(workspaceRoot, project));
     if (isPartialReactor() && !LatheFlags.isForcedSync()) {
       log.debug("[sync] partial reactor (-pl) — skipping workspace.json write");

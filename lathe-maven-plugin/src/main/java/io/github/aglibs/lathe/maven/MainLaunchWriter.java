@@ -10,8 +10,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Stream;
-import org.apache.maven.artifact.DependencyResolutionRequiredException;
+import org.apache.maven.artifact.Artifact;
 import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.languages.java.jpms.LocationManager;
@@ -22,20 +25,27 @@ import org.codehaus.plexus.languages.java.jpms.ResolvePathsResult;
  * Derives the runtime launch shape for a {@code main} run and writes it to {@code
  * .lathe/<moduleRel>/main-launch.json}. Unlike {@code test-launch.json}, no {@code main} launch
  * happens during a build to ride, so the template is derived Maven-side: runtime-scope membership
- * from {@link MavenProject#getRuntimeClasspathElements()}, and module-path/class-path placement
- * from {@code plexus-java} — the same library Surefire uses, so the derived placement matches the
- * captured test placement by construction. The template is main-class-agnostic; the concrete class
- * is appended by the server at launch time.
+ * from the project's resolved artifacts, and module-path/class-path placement from {@code
+ * plexus-java} — the same library Surefire uses, so the derived placement matches the captured test
+ * placement by construction. A dependency on a reactor sibling is placed by that sibling's compiled
+ * output rather than a repository jar, so the run uses fresh classes and works even when the
+ * sibling is neither installed nor packaged. The template is main-class-agnostic; the concrete
+ * class is appended by the server at launch time.
  */
 final class MainLaunchWriter {
 
   private static final String POM_PACKAGING = "pom";
 
   private final LocationManager locationManager;
+  private final Map<String, String> reactorOutputByGa;
   private final Log log;
 
-  MainLaunchWriter(final LocationManager locationManager, final Log log) {
+  MainLaunchWriter(
+      final LocationManager locationManager,
+      final Map<String, String> reactorOutputByGa,
+      final Log log) {
     this.locationManager = locationManager;
+    this.reactorOutputByGa = Map.copyOf(reactorOutputByGa);
     this.log = log;
   }
 
@@ -110,15 +120,33 @@ final class MainLaunchWriter {
     }
   }
 
-  private static List<String> runtimeClasspath(final MavenProject project) {
-    try {
-      return List.copyOf(project.getRuntimeClasspathElements());
-    } catch (final DependencyResolutionRequiredException e) {
-      throw new SyncException(
-          "lathe:sync failed to resolve runtime classpath for %s"
-              .formatted(project.getArtifactId()),
-          e);
+  private List<String> runtimeClasspath(final MavenProject project) {
+    final Stream<String> output =
+        Optional.ofNullable(project.getBuild().getOutputDirectory()).stream();
+    final Stream<String> dependencies =
+        project.getArtifacts().stream()
+            .filter(MainLaunchWriter::isRuntimeClasspathArtifact)
+            .map(this::runtimeElement)
+            .filter(Objects::nonNull);
+    return Stream.concat(output, dependencies).distinct().toList();
+  }
+
+  private static boolean isRuntimeClasspathArtifact(final Artifact artifact) {
+    return artifact.getArtifactHandler().isAddedToClasspath()
+        && (Artifact.SCOPE_COMPILE.equals(artifact.getScope())
+            || Artifact.SCOPE_RUNTIME.equals(artifact.getScope()));
+  }
+
+  // A reactor sibling resolves to its fresh compiled output; the project's resolved artifacts drop
+  // it whenever it is not installed or packaged (no artifact file), which is the norm for a plain
+  // `mvn test` inner loop. External deps keep their resolved artifact file.
+  private String runtimeElement(final Artifact artifact) {
+    final String reactorOutput = reactorOutputByGa.get(ReactorProjects.ga(artifact));
+    if (reactorOutput != null) {
+      return reactorOutput;
     }
+
+    return artifact.getFile() != null ? artifact.getFile().getPath() : null;
   }
 
   private static Path moduleInfoSource(final MavenProject project) {

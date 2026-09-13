@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.maven;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.entry;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -10,6 +11,7 @@ import java.util.Map;
 import java.util.Set;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
+import org.apache.maven.model.Build;
 import org.apache.maven.project.MavenProject;
 import org.eclipse.aether.repository.RemoteRepository;
 import org.junit.jupiter.api.Test;
@@ -113,6 +115,17 @@ class ReactorProjectsTest {
   }
 
   @Test
+  void reactorOutputDirs_mapsEachModuleToItsOutputDirectory() {
+    final MavenProject core = projectWithOutput("com.example", "core", "1", tmp.resolve("core"));
+    final MavenProject app = projectWithOutput("com.example", "app", "1", tmp.resolve("app"));
+
+    assertThat(ReactorProjects.reactorOutputDirs(List.of(core, app)))
+        .containsOnly(
+            entry("com.example:core", tmp.resolve("core/target/classes").toString()),
+            entry("com.example:app", tmp.resolve("app/target/classes").toString()));
+  }
+
+  @Test
   void remoteRepositories_deduplicatesByIdAndUrl() {
     final MavenProject first = project("com.example", "first", "1", tmp.resolve("first"));
     final MavenProject second = project("com.example", "second", "1", tmp.resolve("second"));
@@ -146,6 +159,15 @@ class ReactorProjectsTest {
     project.setArtifactId(artifactId);
     project.setVersion(version);
     project.setFile(basedir.resolve("pom.xml").toFile());
+    return project;
+  }
+
+  private static MavenProject projectWithOutput(
+      final String groupId, final String artifactId, final String version, final Path basedir) {
+    final MavenProject project = project(groupId, artifactId, version, basedir);
+    final var build = new Build();
+    build.setOutputDirectory(basedir.resolve("target/classes").toString());
+    project.setBuild(build);
     return project;
   }
 

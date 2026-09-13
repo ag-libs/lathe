@@ -139,6 +139,16 @@ public final class ReactorProjects {
                 TreeMap::new));
   }
 
+  // Maps each reactor module's groupId:artifactId to its output dir, so a dependency on a reactor
+  // sibling can be placed by its fresh output even when the sibling is not installed or packaged --
+  // the case getRuntimeClasspathElements() silently drops (its artifact has no resolved file).
+  public static Map<String, String> reactorOutputDirs(final List<MavenProject> projects) {
+    return projects.stream()
+        .collect(
+            Collectors.toUnmodifiableMap(
+                ReactorProjects::ga, project -> project.getBuild().getOutputDirectory()));
+  }
+
   public static List<RemoteRepository> remoteRepositories(final List<MavenProject> projects) {
     final Map<String, RemoteRepository> repositories =
         projects.stream()
@@ -183,12 +193,14 @@ public final class ReactorProjects {
   }
 
   private static Set<String> reactorProjects(final List<MavenProject> projects) {
-    return projects.stream()
-        .map(project -> "%s:%s".formatted(project.getGroupId(), project.getArtifactId()))
-        .collect(Collectors.toSet());
+    return projects.stream().map(ReactorProjects::ga).collect(Collectors.toSet());
   }
 
-  private static String ga(final Artifact artifact) {
+  private static String ga(final MavenProject project) {
+    return "%s:%s".formatted(project.getGroupId(), project.getArtifactId());
+  }
+
+  public static String ga(final Artifact artifact) {
     return "%s:%s".formatted(artifact.getGroupId(), artifact.getArtifactId());
   }
 
