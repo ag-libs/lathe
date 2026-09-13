@@ -65,4 +65,24 @@ class CompletionDeclarationNameTest extends CompletionTestSupport {
     assertThat(labels(fixture.complete("class Test { void m(String string) { String §; } }")))
         .containsExactly("string1");
   }
+
+  @Test
+  void declarationName_staticFinalFieldSlot_offersConstantCaseNamesAsFields() {
+    final var items = fixture.complete("class Test { static final Logger §; }");
+    assertThat(labels(items)).containsExactly("LOGGER");
+    assertThat(itemLabeled(items, "LOGGER").orElseThrow().getKind())
+        .isEqualTo(CompletionItemKind.Field);
+  }
+
+  @Test
+  void declarationName_staticFinalMultiWordType_screamingSnakesEachName() {
+    assertThat(labels(fixture.complete("class Test { static final ConnectionString §; }")))
+        .containsExactly("CONNECTION_STRING", "STRING");
+  }
+
+  @Test
+  void declarationName_plainStaticField_keepsCamelCase() {
+    assertThat(labels(fixture.complete("class Test { static ConnectionString §; }")))
+        .containsExactly("connectionString", "string");
+  }
 }

@@ -2,10 +2,12 @@ package io.github.aglibs.lathe.server.analysis.completion;
 
 import com.sun.source.tree.Scope;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.server.analysis.Strings;
 import io.github.aglibs.lathe.server.analysis.VariableNameSuggester;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -28,18 +30,26 @@ final class DeclarationNameCompletionProvider {
     }
 
     final boolean field = parsed.enclosingMethod() == null;
+    final boolean constant = parsed.constantField();
     final Set<String> taken = visibleNames(analysis, cursorOffset);
+    final UnaryOperator<String> casing =
+        constant ? Strings::constantName : UnaryOperator.identity();
     final List<String> names =
         Stream.concat(
                 exceptionIdioms(parsed, taken).stream(),
                 VariableNameSuggester.suggest(
                     typeSimpleName, parsed.declaredElementTypeName(), null, taken)
                     .stream())
+            .map(casing)
             .distinct()
             .filter(name -> matchesPrefix(name, parsed.prefix()))
             .toList();
+    final String detail =
+        constant
+            ? "suggested constant name"
+            : field ? "suggested field name" : "suggested local name";
     return IntStream.range(0, names.size())
-        .mapToObj(i -> candidate(names.get(i), i, field))
+        .mapToObj(i -> candidate(names.get(i), i, field, detail))
         .toList();
   }
 
@@ -68,12 +78,12 @@ final class DeclarationNameCompletionProvider {
   }
 
   private static CompletionCandidate candidate(
-      final String name, final int rank, final boolean field) {
+      final String name, final int rank, final boolean field, final String detail) {
     return new CompletionCandidate(
         name,
         name,
         field ? CandidateKind.FIELD : CandidateKind.LOCAL_VARIABLE,
-        field ? "suggested field name" : "suggested local name",
+        detail,
         name,
         false,
         "0_%02d_%s".formatted(rank, name),

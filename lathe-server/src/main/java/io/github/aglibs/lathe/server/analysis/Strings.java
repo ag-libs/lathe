@@ -20,6 +20,12 @@ public final class Strings {
         .collect(Collectors.joining("_"));
   }
 
+  // SCREAMING_SNAKE from a camelCase identifier: split at hump boundaries first so multi-word names
+  // survive (connectionString -> CONNECTION_STRING), then reuse screamingSnake for casing and join.
+  public static String constantName(final String identifier) {
+    return screamingSnake(identifier.replaceAll("(?<=[a-z0-9])(?=[A-Z])", "_"));
+  }
+
   // Lower-camel a type's simple name, handling a leading acronym run: URI -> uri (whole word), and
   // IOException -> ioException (keep the last capital as the next word's start). A single leading
   // capital is the ordinary case: String -> string.

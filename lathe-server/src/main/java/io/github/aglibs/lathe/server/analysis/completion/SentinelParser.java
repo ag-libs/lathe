@@ -8,6 +8,7 @@ import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
 import java.util.logging.Logger;
 import java.util.stream.IntStream;
+import javax.lang.model.element.Modifier;
 
 final class SentinelParser {
 
@@ -152,6 +153,14 @@ final class SentinelParser {
             && parentPath != null
             && parentPath.getLeaf() instanceof CatchTree;
 
+    // Only an explicit `static final` field is a constant; its name slot earns SCREAMING_SNAKE
+    // suggestions. Implicit interface constants carry no keyword flags here, so they fall through.
+    final boolean constantField =
+        cls.context() == SentinelContext.VARIABLE_DECLARATION
+            && sentinelPath.getLeaf() instanceof VariableTree v
+            && v.getModifiers().getFlags().contains(Modifier.STATIC)
+            && v.getModifiers().getFlags().contains(Modifier.FINAL);
+
     final var parsed =
         ParsedSentinel.valid(
             injected,
@@ -173,6 +182,7 @@ final class SentinelParser {
             inEqualityComparison,
             cls.inExpression(),
             catchParameter,
+            constantField,
             null,
             version);
 
