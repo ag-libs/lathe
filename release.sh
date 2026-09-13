@@ -11,8 +11,7 @@
 # version lives only in the tag; CI stamps it from the tag with versions:set.
 #
 # Validates the version and preconditions (on main, clean tree, tag unused),
-# bumps ONLY Lathe's version in the install docs and the dogfood extension pin in
-# the root pom.xml, shows the diff to confirm,
+# bumps ONLY Lathe's version in the install docs, shows the diff to confirm,
 # then commits and tags v<version>. It does NOT push. Pushing the tag triggers
 # .github/workflows/release.yml, which builds, signs, and publishes to Maven
 # Central — no Maven Central or GPG credentials are needed locally.
@@ -84,20 +83,17 @@ for f in "${docs[@]}"; do
     "$f"
 done
 
-# Bump the dogfood pin: the lathe repo enables its own lathe-maven-extension in the
-# root pom.xml, pinned to a published version so the editor tooling runs the shipped
-# build. Address the extension artifactId specifically — the generic lathe-* pattern
-# above would also rewrite the parent's <version>, which must stay 0.1.0-SNAPSHOT.
-sed -i \
-  -e "\#<artifactId>lathe-maven-extension</artifactId>#{n;s#<version>[0-9][^<]*</version>#<version>${version}</version>#;}" \
-  pom.xml
+# The dogfood pin in the root pom.xml (the lathe-maven-extension version) is intentionally NOT
+# bumped here: pointing it at the version being released makes the tagged commit unbuildable, since
+# CI loads that extension before the build and the version is not published yet. The pin stays on
+# the last published version — the editor tooling runs the prior shipped build, which is fine — and
+# is bumped by hand after the release is on Maven Central, if desired.
+files=("${docs[@]}")
 
-files=("${docs[@]}" pom.xml)
-
-# A no-op means the docs or the pom pin drifted out from under the patterns above —
-# fail loudly rather than commit an empty bump and tag a version they never show.
+# A no-op means the docs drifted out from under the patterns above — fail loudly rather than commit
+# an empty bump and tag a version they never show.
 git diff --quiet -- "${files[@]}" \
-  && die "no version snippets matched in ${files[*]} — did the install docs or pom pin change shape?"
+  && die "no version snippets matched in ${files[*]} — did the install docs change shape?"
 
 echo "Version bump for ${tag}:"
 echo
