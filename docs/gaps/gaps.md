@@ -284,6 +284,57 @@ None yet — re-triaged from backlog when scheduled.
 
 ---
 
+## EG-051 — Unnamed variable `_` (JEP 456) is reported as an unused declaration with an empty name
+
+**Status: documented — Target: backlog.**
+
+Signal: user feedback — using `_` (an unnamed variable; standard on any JDK ≥ 22) as a parameter/variable
+name draws an "unused" hint whose name renders as empty (`''`).
+
+### Observed behaviour
+
+Writing an unnamed variable or parameter `_` — the JLS unnamed-variable marker (JEP 456, standard since
+Java 22) — draws a Lathe "unused" hint, struck through as unnecessary, whose declaration name renders as
+an empty string (`Unused parameter ''`). An unnamed `_` explicitly means "intentionally unused", so no
+such hint should appear at all.
+
+```java
+try { ... } catch (Exception _) { ... }     // → Unused exception parameter ''
+map.forEach((_, v) -> use(v));               // → Unused parameter ''
+for (var _ : items) { count++; }             // → Unused local variable ''
+var _ = sideEffectingCall();                 // → Unused local variable ''
+```
+
+### Root cause
+
+`UnusedDeclarationScanner.visitVariable` records every local / parameter / exception-parameter as an
+unused candidate and has **no exclusion for unnamed variables**. An unnamed `_` can never be referenced
+(it has no name to reference), so it always survives to `buildDiagnostics` as "unused". Its javac tree
+name is empty for an unnamed variable, so `candidateFor(node, node.getName().toString(), …)` stores an
+empty candidate name and `unusedDiag` formats `Unused <kind> ''`. Two defects in one: a false-positive
+hint on an intentionally-unnamed declaration, and an empty-name presentation.
+
+### Proposed fix
+
+Exclude unnamed variables from the scan: in `visitVariable`, skip the candidate when the declaration is
+an unnamed variable — detected by the empty simple name (or `node.getName().contentEquals("_")`), per
+the JLS unnamed-variable rule — so no hint is emitted for `_`. The existing `EXCLUDED_FIELD_NAMES`
+name-based skip is the precedent; this is the unnamed-variable analogue in the local/parameter buckets.
+
+### Probe commands
+
+Probeable via `dev/explore.py` diagnostics on a file using `_`, built with a JDK that supports unnamed
+variables (≥ 22). Reproduce: open a file with `catch (Exception _)` or `(_, v) ->` and read the
+`lathe.unused` hints.
+
+### Regression targets
+
+- `UnusedDeclarationScannerTest.scan_unnamedVariableUnderscore_notReported` (positive — `_` in a catch
+  clause / lambda / enhanced-for / `var _` yields no hint)
+- an existing genuinely-unused named local still reported (negative — the exclusion is scoped to `_`).
+
+---
+
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work
@@ -1701,3 +1752,101 @@ mechanisms, to be finalised against a live nvim + ufo repro:
 No server change is required — the fold geometry is already correct and stable. Reducing the
 save-time refresh from two to one is a separate, minor server cleanup that does not fix the refold on
 its own (ufo recomputes on any text change regardless).
+
+---
+
+## NV-6 — Type hierarchy shows only one level (direct sub/supertypes); no full-tree view
+
+**Status: documented — Target: backlog.**
+
+Signal: user feedback — invoking type hierarchy on a base type shows only its *direct* subtypes and the
+user expected the full transitive subtype tree, as JDT LS / IntelliJ present it.
+
+### Observed behaviour
+
+In Neovim, running type hierarchy on a base type (`vim.lsp.buf.typehierarchy('subtypes')`) lists only
+its **direct** subtypes; the grandchildren are not shown. IDEs backed by JDT LS or IntelliJ present an
+**expandable full-depth tree** (or a flattened transitive list), so the user perceives Lathe as showing
+an incomplete hierarchy.
+
+### Root cause — client presentation, not the server (verified by probe)
+
+The server is correct and already supports full lazy expansion to arbitrary depth: `typeHierarchy/
+subtypes` returns one level per request, and **every returned item carries its own re-resolution data**,
+so calling `subtypes` on any child returns *that child's* subtypes. Verified against a private
+multi-module workspace with a 3-level chain (`BaseAdapter` → `DefaultAdapter` → `SpecificAdapter`):
+
+```
+prepare BaseAdapter            → 1 item
+subtypes(BaseAdapter)          → 3 direct subtypes  (incl. DefaultAdapter)
+subtypes(DefaultAdapter)       → 3 subtypes          (grandchildren of BaseAdapter)
+subtypes(SpecificAdapter)      → 0                    (leaf)
+```
+
+The depth works server-side. The single-level view is **Neovim's built-in `vim.lsp.buf.typehierarchy`**,
+which renders one level in the location list and does not recurse or draw an expandable tree; the shipped
+Lathe Neovim client (`lua/lathe/…`) adds no type-hierarchy UI of its own, so users get exactly the stock
+one-level list. This mirrors the EG-017 lesson: advertising a correct server capability is not enough —
+the shipped-client UX has to surface it.
+
+### Protocol constraint — a nested tree cannot be returned in one response
+
+`typeHierarchy/subtypes` returns a **flat `TypeHierarchyItem[]`**, and `TypeHierarchyItem` has **no
+`children` field** (name, kind, tags, detail, uri, range, selectionRange, data). So the standard protocol
+has no legal way to return a nested/transitive tree in a single response — one level per request, client
+re-asks per node, is the LSP contract (every LSP server behaves this way; it is not a Lathe choice).
+
+The transitive **data**, however, already exists server-side: `WorkspaceTypeIndex.transitiveSubtypes`
+computes the full descendant set and is used today by find-references and completion. The type-hierarchy
+resolver simply calls `directSubtypes` instead, to honor the lazy protocol. So "return all subtypes" is
+producible; the only question is *how to expose it* without breaking a tree-rendering client.
+
+### Proposed direction — under discussion (not yet decided)
+
+Two families; a decision is deferred to a design discussion (this entry only records the analysis).
+
+**Client-side (server unchanged, protocol-clean):**
+
+1. **Document the manual drill-down.** The full tree *is* reachable today: jump to a subtype in the
+   location list, place the cursor on it, and re-invoke `typehierarchy('subtypes')`. Add this to the
+   Neovim cheatsheet, plus the recommended `<leader>`-keymaps for `'subtypes'` / `'supertypes'`.
+2. **Recommend a tree-UI plugin** in the Lathe config guidance (analogous to the nvim-ufo folding and
+   vim-illuminate highlight recommendations) — a plugin that renders `typeHierarchy` as an expandable
+   tree gets full-depth expansion "for free" against Lathe's already-correct per-level responses.
+3. **Ship a minimal recursive type-hierarchy tree** in the Lathe client (a small floating tree that
+   expands a node by issuing `typeHierarchy/subtypes` on demand). Largest client option.
+
+**Server-side (expose the transitive set):**
+
+4. **Flatten transitive subtypes into the `subtypes` response** — have the resolver return
+   `transitiveSubtypes` as one flat list instead of `directSubtypes` (small; the method exists).
+   *Upside:* in Neovim's flat-loclist UI this is exactly "show all subtypes" with a ~5-line change, and
+   the flat client cannot tell the difference. *Downside:* it is a **protocol lie** — a tree-rendering
+   client (VS Code, planned but unscheduled) would draw grandchildren as direct children and
+   **double-list** them when a node is later expanded, and the parent→child structure is lost. Viable
+   only as a Neovim-first interim, with a known rework when a tree client lands.
+5. **Custom `lathe.typeHierarchy` executeCommand returning a nested tree** (same pattern as
+   `lathe.modules` / `lathe.createType`), consumed by a custom client renderer. Correct everywhere and
+   keeps structure, but is the largest option and needs a client UI to consume it.
+
+Trade-off to settle in discussion: **option 4 now** (tiny, nvim-correct, VS-Code-incorrect) **vs.
+option 5 later** (correct everywhere, real work), noting there is no VS Code client today so 4's downside
+is currently latent. Options 1–2 are cheap and orthogonal — worth doing regardless of the 4-vs-5 call.
+
+### Probe commands
+
+Not exposed as an `explore.py` subcommand (its `hierarchy` command prints only one level); reproduced
+with a short script driving `dev/lsp.py` — `prepare_type_hierarchy`, then successive
+`type_hierarchy_subtypes` on a child and grandchild — which returned levels 1/2/3 as shown above.
+
+### Regression targets
+
+Server multi-level expansion is already covered (`WorkspaceTypeIndexTest.graph_transitiveSubtypes_*`
+and the per-item `TypeHierarchyItemData` round-trip). New coverage depends on the chosen option: a
+client-side option (1–3) adds a Neovim spec asserting the drill-down / tree expansion issues a fresh
+`typeHierarchy/subtypes` per node and renders the deeper levels; a server-side option (4–5) adds a
+resolver test that `subtypes` returns the transitive set (option 4) or that `lathe.typeHierarchy`
+returns the nested tree (option 5).
+
+Relates to EG-043 (type-hierarchy relations required the declaration file to be open — resolved) and
+EG-017 (a correct server capability still needs client wiring to be visible).
