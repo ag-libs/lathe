@@ -35,10 +35,8 @@ final class TypeReferenceCompleter {
   private static final Set<String> OTHER_MODIFIER_KEYWORDS =
       Set.of("static", "final", "abstract", "synchronized", "transient", "volatile");
 
-  // Ubiquitous JDK packages kept above reactor types in type ranking: without usage statistics
-  // (which
-  // IDEs use to keep java.util.List etc. on top) a blanket reactor boost would bury these common
-  // types under obscure project types. Reactor origin is a tiebreaker below this tier.
+  // Cold-start tier for equal-usage ties (typically both zero): these ubiquitous JDK packages lead
+  // so common java.* types surface before any reactor usage accrues.
   private static final Set<String> COMMON_PLATFORM_PACKAGES =
       Set.of("java.lang", "java.util", "java.io", "java.time", "java.nio", "java.math");
 
@@ -562,15 +560,21 @@ final class TypeReferenceCompleter {
   private static Comparator<TypeIndexEntry> typeCandidateComparator(
       final String prefix, final WorkspaceTypeIndex typeIndex) {
     return Comparator.comparing((TypeIndexEntry e) -> !e.simpleName().startsWith(prefix))
+        .thenComparingInt(e -> -usageCount(e, typeIndex))
         .thenComparingInt(e -> originRank(e, typeIndex))
         .thenComparingInt(e -> e.qualifiedName().length())
         .thenComparing(TypeIndexEntry::qualifiedName);
   }
 
-  // Lower ranks sort first: core java.lang, then other ubiquitous platform packages, then
-  // reactor-local types, then everything else (dependency / other JDK). Reactor origin is a
-  // tiebreaker beneath match quality and the common-platform tier — without the usage statistics
-  // IDEs rely on, keeping java.* ubiquity on top avoids burying it under obscure project types.
+  // Document frequency of the type across the reactor: the primary ranking signal, so the type the
+  // project actually uses wins. Negated by the comparator so higher counts sort first.
+  private static int usageCount(final TypeIndexEntry entry, final WorkspaceTypeIndex typeIndex) {
+    return typeIndex != null ? typeIndex.usageCount(entry.binaryName()) : 0;
+  }
+
+  // Tiebreaker beneath match quality and usage: core java.lang, then other ubiquitous platform
+  // packages, then reactor-local types, then everything else. It only decides equal-usage entries —
+  // notably a cold-start workspace with no counts yet — so common java.* types still lead there.
   private static int originRank(final TypeIndexEntry entry, final WorkspaceTypeIndex typeIndex) {
     final String packageName = entry.packageName();
     if ("java.lang".equals(packageName)) {

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class CompletionTypeRankingTest extends CompletionTestSupport {
@@ -57,6 +58,30 @@ class CompletionTypeRankingTest extends CompletionTestSupport {
 
     assertThat(labels).contains("Formatter", "Format");
     assertThat(labels.indexOf("Formatter")).isLessThan(labels.indexOf("Format"));
+  }
+
+  @Test
+  void completion_typePrefix_usageOutranksColdStartTier() throws IOException {
+    // Usage frequency is the primary signal: a reactor-referenced subpackage type
+    // (java.util.stream.Stream) outranks a same-prefix java.io type no reactor class uses, even
+    // though java.io is the higher cold-start tier. StreamTokenizer is still offered, just lower.
+    final var index =
+        CompletionFixture.typeIndex(
+                tmp.resolve("index.json"),
+                List.of(
+                    CompletionFixture.typeEntry(
+                        "Stream", "java.util.stream.Stream", TypeKind.INTERFACE),
+                    CompletionFixture.typeEntry(
+                        "StreamTokenizer", "java.io.StreamTokenizer", TypeKind.CLASS)),
+                List.of())
+            .withUsageCounts(Map.of("java.util.stream.Stream", 50));
+    localFixture = new CompletionFixture(index, tmp);
+
+    final List<String> labels =
+        labels(localFixture.complete("class Test { void m() { Stream§ } }"));
+
+    assertThat(labels).contains("Stream", "StreamTokenizer");
+    assertThat(labels.indexOf("Stream")).isLessThan(labels.indexOf("StreamTokenizer"));
   }
 
   @Test

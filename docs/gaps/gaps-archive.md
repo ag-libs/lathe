@@ -1261,6 +1261,55 @@ printf 'refs "bucket,"\n' | python3 dev/explore.py /path/to/workspace/.../Config
 
 # Completion (CQ) — resolved
 
+## CQ-0059 — Common JDK types were not ranked first in type-name completion — done
+
+**Status: done — Target: next.**
+Tier: assistive. Failure mode: bad-ranking.
+
+Type-name completion ranked by a coarse per-**package** tier (`java.lang`=0, a fixed common-platform
+set=1, reactor=2, else=3), but "commonness" is a per-**type**, per-**project** property. Live probing on
+a large real workspace showed three systematic failures: the blanket `java.lang`/`java.io` boost floated
+*rare* types to the top (`Logger`→`java.lang.System.Logger`, `Function`→`java.lang.FunctionalInterface`,
+`Stream`→`java.io.StreamTokenizer`); JDK **subpackage** types got the bottom tier
+(`java.util.function/stream`, `java.nio.file` lost to reactor + short-FQN deps, e.g. `Path`→reactor
+`…Config.Paths`); and test source roots (no JPMS filtering) amplified the noise. No package list can
+distinguish `java.lang.String` (ubiquitous) from `java.lang.System.Logger` (rare), or know a project uses
+slf4j rather than `java.util.logging`.
+
+**Resolution — usage-frequency ranking.** The primary ranking signal is now the **document frequency of
+each type's references across the reactor** (how many reactor classes reference it), computed from the
+`CONSTANT_Class` constant-pool entries the class scanner already reads. It subsumes `java.lang` with no
+special-casing (`String` is referenced everywhere → ranks first; `System.Logger` ~never → drops) and is
+project-specific (slf4j beats JUL). The comparator is
+`exact-prefix → usageCount(desc) → originRank tier → shorter-FQN → lexical`; the package tiers survive as
+the **cold-start tie-break** for equal (typically zero) counts, so the existing EG-021 tests — whose
+synthetic indices carry no usage data — stay green.
+
+Design: constant-pool document frequency from reactor classes; **server-side, in-memory**, aggregated
+when the reactor is scanned (startup / reload) and attached via `WorkspaceTypeIndex.withUsageCounts`.
+No persisted shard-format change, no `module-info` change, no Maven change, and **no re-sync**: the
+references live in the compiled `.lathe/<module>/classes` bytecode the server already scans, so counts
+are derived from data that is already on disk. Incremental saves keep the existing counts (refreshed on
+a full scan only), so there is zero per-save cost. Performance is negligible: the constant pool is
+already parsed (~+10ms on the reactor scan), the count map is <1 MB (~3–5k distinct types), and ranking
+adds one O(1) lookup per candidate.
+
+Verified live on the probed workspace — `Logger`→`org.slf4j.Logger`, `Stream`→`java.util.stream.Stream`,
+`Function`→`java.util.function.Function`, `Path`→`java.nio.file.Path` all now rank first, with the
+previous noise offered but demoted.
+
+Regression targets:
+- `ClassFileTypeScannerTest.scanReactorDirectory_aggregatesReferenceCounts_excludingSelfAndArrays`
+  (lathe-maven-plugin) — document frequency per type; self and array descriptors excluded.
+- `WorkspaceTypeIndexTest.usageCount_reflectsAttachedCounts_andDefaultsToZero`.
+- `CompletionTypeRankingTest.completion_typePrefix_usageOutranksColdStartTier` — a reactor-referenced
+  subpackage type outranks a zero-usage same-prefix higher-tier type, which is still offered lower; the
+  existing EG-021 tier cases (zero usage) stay green.
+
+Shipped across three slices (per-class references + reactor scan in `lathe-core`; aggregation +
+`usageCount` in `lathe-server`; the comparator key). Deferred follow-up: a curated ubiquitous-JDK prior
+for cold-start subpackage types, only if beta feedback shows it is needed.
+
 ## CQ-0054 — Accepted keyword completion inserts the bare keyword with no trailing space
 
 Status: done — Target: M2.
