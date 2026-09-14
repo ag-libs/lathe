@@ -23,11 +23,12 @@ Each gap keeps its area prefix; the area is the discovery family, not a strict f
 ## Finding the work for a release
 
 The slice for a release is derived, not hand-maintained: every gap with `Status: accepted` and the
-matching `Target` (see [gap-process.md](gap-process.md)).
+matching `Target` (see [gap-process.md](gap-process.md)). Post-beta, releases are demand-driven — work
+accrues under `Target: next` and is version-named when cut, so `next` is the live slice.
 
 ```bash
 grep -nE '^(Status|Target):|^\*\*Status' docs/gaps/gaps.md     # scan active entries
-grep -n 'Target: M1' docs/gaps/gaps.md                         # the M1 slice
+grep -n 'Target: next' docs/gaps/gaps.md                       # what the next cut is trending toward
 ```
 
 Entries follow, grouped by area: exploration (EG) below, then Find References (FR), Code Actions
@@ -322,6 +323,71 @@ Residual enhancement, deferred (not part of this resolution):
   that javac has target-typed already extract.
 
 See [extract-variable](../done/lathe-extract-variable.md).
+
+---
+
+## CA-7 — Pasting code with unresolved types requires per-symbol quick fixes and a save round-trip; no "add all missing imports" source action
+
+**Status: accepted — Target: next.**
+
+Signal: user feedback — pasting a snippet with several unimported types is recurring friction (save →
+per-symbol quick fix → save); promoted to `next` ahead of a first post-beta polish cut.
+Source: user feedback (not live-probed yet — needs a probe + expected behaviour before triage).
+
+### Observed behaviour
+
+After pasting a snippet that references several not-yet-imported types, resolving the imports is a
+manual, per-symbol, multi-step chore:
+
+1. Save the file so diagnostics/quick-fixes surface for the pasted region.
+2. Move the cursor onto each unresolved type name in turn and invoke the missing-import code action.
+3. Save again.
+
+There is no single action that adds every missing import for the buffer at once, so a paste with N
+unresolved types is N separate cursor-moves + quick-fix invocations, bracketed by saves.
+
+### Root cause
+
+`ImportQuickFixProvider` is a **single-name, diagnostic-anchored** quick fix: it is offered for one
+unresolved simple name at the requested range, searches the type index for that name, and emits one
+import `TextEdit` per candidate. There is no `source`-kind action that scans the whole file for
+unresolved simple names and resolves them together, and no client wiring to run such an action on paste
+or on save. So the only path today is one quick fix per symbol. The "save first" friction is the
+secondary half: the quick fix keys off a diagnostic range, so the user reaches for a save to force the
+unresolved-symbol diagnostics to appear before any import action is offered (worth confirming during
+triage whether live on-change compilation already surfaces them without the save).
+
+### Proposed direction
+
+Not yet decided; options to weigh when scheduled, cheapest first:
+
+1. **An "add all missing imports" source action** (`CodeActionKind.SourceOrganizeImports` or a
+   `source.addMissingImports` variant): collect every unresolved simple name in the file, resolve each
+   against the type index (reusing `ImportQuickFixProvider`'s candidate search + `ImportAnalyzer`
+   insertion logic), and return one `WorkspaceEdit` that adds all unambiguous imports in a single
+   invocation. Ambiguous names (multiple candidates) are left to the existing per-name picker. This is
+   the natural jdtls/IntelliJ "Organize Imports" parity affordance and removes the per-symbol loop.
+2. **Client wiring to run that source action automatically** — on paste (editor-specific) and/or as an
+   on-save step alongside format-on-save — so the common case needs no manual invocation at all. This
+   is a Neovim-client (NV) concern layered on top of option 1's server action; keep it opt-in like
+   `format_on_save`.
+
+Option 1 is the server-side foundation and is independently useful (a bound `:LatheOrganizeImports` /
+`source.organizeImports` keybinding); option 2 is the "better approach" the feedback asks for but
+should not be built before the bulk server action exists. Ambiguity handling and unused-import removal
+(a fuller "organize imports") are later slices — the first slice is add-missing-only.
+
+### Probe commands
+
+Not probeable through `explore.py` today (no organize-imports command). Reproduce by pasting a snippet
+with several unimported JDK/reactor types into an open buffer and observing that only per-name import
+quick fixes are offered, one at a time.
+
+### Regression targets
+
+None yet — to be defined when scheduled (positive: a buffer with several unresolved unambiguous types
+yields one action whose edit adds all imports; negative: an ambiguous name is left to the per-name
+picker, and an already-imported name gets no duplicate edit).
 
 ---
 
@@ -762,6 +828,62 @@ a class under a chosen (or new) package and formats it via the running server.
 
 Notes:
 Pairs with CQ-0054 (keyword insertion) but is independent of it.
+
+---
+
+## CQ-0059 — Common JDK types (`java.util.*`, `java.lang.*`) are not ranked first in type-name completion
+
+ID: CQ-0059
+Status: accepted
+Target: next
+Tier: assistive
+Failure mode: bad-ranking
+Owner component: CompletionEngine (candidate ranking / sortText) / WorkspaceTypeIndex search order
+
+Signal: user feedback — common JDK types not surfacing first is everyday completion friction; promoted
+to `next` ahead of a first post-beta polish cut.
+Source: user feedback (not live-probed yet — needs a probe + expected top-items list before triage).
+
+Observed behaviour:
+When typing a bare type simple name, the most-used JDK types are not surfaced near the top of the
+list. Typing `List` / `Map` / `Set` does not put `java.util.List` / `java.util.Map` / `java.util.Set`
+first; the everyday collection and `java.lang` types compete on equal footing with obscure
+same-named types from dependency and reactor shards, so the user scrolls past unrelated matches to
+reach the one they almost always mean.
+
+Cursor context:
+```java
+List<String> names = ...   // expect java.util.List ranked first; today it is not prioritised
+Map<K, V> m = ...           // expect java.util.Map first
+```
+
+IntelliJ or JDT behavior:
+JDT LS and IntelliJ bias type-name completion toward frequently-used / JDK-core packages (and toward
+the user's own imports/usage history), so `java.util.List` and friends appear at or near the top for a
+matching prefix.
+
+Lathe behavior:
+Type-name candidates from the type index are ordered without a popularity/JDK-core bias, so common
+`java.util.*` / `java.lang.*` types are not preferentially ranked over equally-named candidates from
+other shards.
+
+Expected Lathe behavior:
+Type-name completion applies a ranking bias that lifts well-known JDK-core packages (at minimum
+`java.util`, `java.lang`, `java.io`, `java.nio`, `java.time`, `java.util.function`) toward the top for
+a matching prefix, so the type a Java developer overwhelmingly means is offered first — without
+suppressing the other legal candidates (ranking hint only, per the expectations' "casing is a ranking
+hint, not a filter" principle). This is a ranking/presentation concern, not candidate discovery: the
+candidates already appear (CQ-0057 indexes them); only their order is wrong.
+
+Regression target:
+Future `CompletionEngineTest` / type-index ranking test —
+`complete_bareCollectionName_ranksJavaUtilTypeFirst` (positive) and a negative asserting a niche
+same-named type is still offered, just lower.
+
+Notes:
+Captured from user feedback about completion "feel". Pairs with CQ-0057 (nested-type indexing) and the
+expectations' expected-type ranking principle; a later slice could extend the bias with per-workspace
+usage/import frequency, which is the stronger IDE behaviour.
 
 ---
 

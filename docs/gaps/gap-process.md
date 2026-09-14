@@ -42,7 +42,7 @@ Every gap carries `Status` and `Target`.
 | Status | Meaning |
 |---|---|
 | `documented` | Captured with a probe and expected behavior; not yet triaged. |
-| `accepted` | Real and in scope; **must** also carry a `Target`. |
+| `accepted` | Real and in scope; **must** carry a `Target` of `next` or a named version. |
 | `deferred` | Valid behavior, but not in a current release slice (`Target: backlog`). |
 | `non-goal` | Deliberately outside Lathe's contract; will not be implemented. |
 | `in-progress` | Being implemented now. |
@@ -52,11 +52,19 @@ Every gap carries `Status` and `Target`.
 
 | Target | Meaning |
 |---|---|
-| `M1` / `M2` | Scheduled for that release. |
-| `backlog` | Deferred; re-triaged in a future round. Everything beyond M2 is `backlog` until public-beta feedback sets the next release. |
+| `M1` / `M2` | The two pre-planned milestones; both shipped. Historical — no new gaps target them. |
+| a named version (`0.1.x`, `0.2.0`, …) | Committed to a specific release once that release is being cut. |
+| `next` | Accepted; goes in the next release cut, which is not yet named or dated. The staging bucket that a version cut is swept from. |
+| `backlog` | Real but uncommitted; re-triaged by feedback signal in a future round. |
 
-`Target` is the single source of truth for milestone assignment.
-The roadmap references gaps by id and target rather than re-describing them, so a gap's milestone is
+Post-beta, releases are **demand-driven**: no new `Mn` milestone is pre-declared (the `M3` tag on a few
+already-shipped archive entries is retired history, superseded by version numbering). Work accumulates
+in `next`; when a `next` batch is worth shipping it is cut and given a version number (`0.2.0`, …), and
+those entries are retargeted from `next` to that version. A named release is therefore the *result* of
+a cut, never a promise made ahead of one.
+
+`Target` is the single source of truth for release assignment.
+The roadmap references gaps by id and target rather than re-describing them, so a gap's release is
 never stated in two places that can drift.
 
 ---
@@ -64,7 +72,7 @@ never stated in two places that can drift.
 ## Lifecycle
 
 ```
- documented ──triage──► accepted (Target: M1|M2) ──► in-progress ──► done (+ regression test)
+ documented ──triage──► accepted (Target: next | version) ──► in-progress ──► done (+ regression test)
      │                      ▲                                                      │
      ├──► deferred (Target: backlog) ───────────────── next round ◄───────────────┘
      └──► non-goal (rejected)
@@ -75,20 +83,23 @@ never stated in two places that can drift.
 1. **Document** — record the gap with a probe command, the expected behavior, and the evidence
    (one line is enough; full prose is only required once a gap is `accepted` for the current
    release). New gaps start `documented`.
-2. **Target** — triage sets `Status` and `Target`: `accepted` + a release, `deferred` +
-   `backlog`, or `non-goal`.
+2. **Target** — triage sets `Status` and `Target`: `accepted` + `next` (or a named version once a cut
+   is underway), `deferred` + `backlog`, or `non-goal`. A common-sense feedback signal (see the
+   optional `Signal:` field) is what graduates a gap from `backlog` to `next`.
 3. **Implement** — work the current slice, move entries `in-progress` → `done`, and attach a
    regression target. A gap is not `done` without a test.
-4. **Repeat** — the next round re-triages `documented` and `deferred` gaps and bumps targets.
+4. **Repeat** — the next round re-triages `documented` and `deferred` gaps and bumps targets. When the
+   `next` batch is worth shipping, cut a version and retarget those entries from `next` to it.
 
 ### The current slice is derived, not hand-maintained
 
-The work for a release is whatever matches `Status: accepted` and `Target: <release>`.
+The work for the next release is whatever matches `Status: accepted` and `Target: next` (or the
+version currently being cut).
 Do not keep a separate ordered "implementation order" list; it duplicates `Target` and drifts.
 To see the slice:
 
 ```bash
-grep -n 'Target: M1' docs/gaps/gaps.md
+grep -n 'Target: next' docs/gaps/gaps.md
 ```
 
 ---
@@ -111,4 +122,9 @@ Families may carry extra fields without changing the lifecycle.
 Completion entries keep `Tier` (`basic` / `typed` / `assistive` / `presentation`), `Failure mode`,
 and `Owner component` as defined by the completion [expectations](../planned/lathe-completion-expectations.md)
 and the [gap workflow](gap-workflow.md).
-`Tier` is a feature category, not a priority or a release — milestone targeting is always `Target`.
+`Tier` is a feature category, not a priority or a release — release targeting is always `Target`.
+
+Any gap may carry an optional one-line `Signal:` field recording the feedback evidence that argues for
+doing it — who hit it, how often, in what workflow (e.g. `Signal: 3 beta users hit this after a branch
+switch`). This is the common-sense demand signal that graduates a gap from `backlog` to `next`; it is
+evidence, not a priority number, and absence of a `Signal:` line just means none has been recorded yet.

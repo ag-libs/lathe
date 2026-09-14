@@ -199,7 +199,7 @@ Use one heading per entry:
 
 ID: CQ-0001
 Status: documented
-Target: M2
+Target: backlog
 Tier: basic
 Failure mode: missing-candidate
 Owner component: TypeResolver
@@ -219,7 +219,8 @@ Notes:
 
 Use sequential `CQ-` IDs for completion-quality gaps.
 `Status` and `Target` follow the shared [gap lifecycle](gap-process.md); a new entry starts
-`documented`, and completion gaps default to `Target: M2` unless triaged otherwise.
+`documented` with `Target: backlog` (M2 is shipped; post-beta work graduates to `Target: next` by
+feedback signal, not by default).
 Keep entries short enough that scanning the registry remains useful.
 
 When an entry reaches `done`,
