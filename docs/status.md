@@ -95,7 +95,7 @@ See [lathe-server-data-flow-recipe.md](done/lathe-server-data-flow-recipe.md) fo
 Detailed implementation designs and historical decisions are indexed under
 [Completed Designs](design-index.md#completed-designs).
 
-## Known M1 Blockers
+## Known Blockers
 
 - None outstanding. CA-4 (missing-import actions for not-yet-synced reactor types) is resolved for
   the common cases — types from a prior sync and types declared in an open, already-compiled file.
