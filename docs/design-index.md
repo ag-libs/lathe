@@ -70,6 +70,8 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
   file's class/interface/enum/record via snippet completion, with no custom client-side UI (not the shipped path).
 - [Google Indentation](planned/lathe-google-indent.md) — conservative on-type formatting.
 - [Type Definition Navigation](planned/lathe-type-definition.md) — `textDocument/typeDefinition` for Neovim's `grt`.
+- [Type Hierarchy Explorer](planned/lathe-type-hierarchy.md) — a Ctrl-H-style `:LatheTypeHierarchy` custom
+  command showing the full both-directions transitive hierarchy in one Telescope picker; resolves NV-6.
 
 **Reliability and further work:**
 

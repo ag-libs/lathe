@@ -1706,7 +1706,11 @@ its own (ufo recomputes on any text change regardless).
 
 ## NV-6 — Type hierarchy shows only one level (direct sub/supertypes); no full-tree view
 
-**Status: documented — Target: backlog.**
+**Status: accepted — Target: next.**
+
+Design: [Type Hierarchy Explorer](../planned/lathe-type-hierarchy.md) — a Ctrl-H-style
+`:LatheTypeHierarchy` custom command rendering the full both-directions transitive hierarchy in one
+Telescope picker (chosen over client-side recursion for the eager, both-directions, full-depth case).
 
 Signal: user feedback — invoking type hierarchy on a base type shows only its *direct* subtypes and the
 user expected the full transitive subtype tree, as JDT LS / IntelliJ present it.
