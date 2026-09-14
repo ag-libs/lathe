@@ -35,6 +35,6 @@ Sleep 3s          # reactor SUCCESS, Tests run: 0, BUILD SUCCESS
 
 # --- open a class; Lathe reads the reactor it just captured ---
 Type 'nvim -n app/src/main/java/com/example/app/Main.java'
-Sleep 1200ms
+Sleep 1s
 Enter
 Sleep 3s          # Lathe workspace-ready

@@ -11,5 +11,6 @@ Style: Cap,DejaVu Sans,40,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-Dialogue: 0,0:00:00.50,0:00:05.00,Cap,,0,0,0,,{\fad(400,500)}Capture your Maven build
-Dialogue: 0,0:00:05.40,0:00:10.40,Cap,,0,0,0,,{\fad(400,500)}Open a file — Lathe attaches, no setup
+Dialogue: 0,0:00:00.50,0:00:04.40,Cap,,0,0,0,,{\fad(400,500)}Go to definition — the User record
+Dialogue: 0,0:00:04.70,0:00:12.40,Cap,,0,0,0,,{\fad(400,500)}Add a field, save — your build's annotation processor regenerates the builder
+Dialogue: 0,0:00:12.70,0:00:22.40,Cap,,0,0,0,,{\fad(400,500)}The regenerated createdAt setter completes in your code
