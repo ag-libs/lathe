@@ -284,57 +284,6 @@ None yet — re-triaged from backlog when scheduled.
 
 ---
 
-## EG-051 — Unnamed variable `_` (JEP 456) is reported as an unused declaration with an empty name
-
-**Status: documented — Target: backlog.**
-
-Signal: user feedback — using `_` (an unnamed variable; standard on any JDK ≥ 22) as a parameter/variable
-name draws an "unused" hint whose name renders as empty (`''`).
-
-### Observed behaviour
-
-Writing an unnamed variable or parameter `_` — the JLS unnamed-variable marker (JEP 456, standard since
-Java 22) — draws a Lathe "unused" hint, struck through as unnecessary, whose declaration name renders as
-an empty string (`Unused parameter ''`). An unnamed `_` explicitly means "intentionally unused", so no
-such hint should appear at all.
-
-```java
-try { ... } catch (Exception _) { ... }     // → Unused exception parameter ''
-map.forEach((_, v) -> use(v));               // → Unused parameter ''
-for (var _ : items) { count++; }             // → Unused local variable ''
-var _ = sideEffectingCall();                 // → Unused local variable ''
-```
-
-### Root cause
-
-`UnusedDeclarationScanner.visitVariable` records every local / parameter / exception-parameter as an
-unused candidate and has **no exclusion for unnamed variables**. An unnamed `_` can never be referenced
-(it has no name to reference), so it always survives to `buildDiagnostics` as "unused". Its javac tree
-name is empty for an unnamed variable, so `candidateFor(node, node.getName().toString(), …)` stores an
-empty candidate name and `unusedDiag` formats `Unused <kind> ''`. Two defects in one: a false-positive
-hint on an intentionally-unnamed declaration, and an empty-name presentation.
-
-### Proposed fix
-
-Exclude unnamed variables from the scan: in `visitVariable`, skip the candidate when the declaration is
-an unnamed variable — detected by the empty simple name (or `node.getName().contentEquals("_")`), per
-the JLS unnamed-variable rule — so no hint is emitted for `_`. The existing `EXCLUDED_FIELD_NAMES`
-name-based skip is the precedent; this is the unnamed-variable analogue in the local/parameter buckets.
-
-### Probe commands
-
-Probeable via `dev/explore.py` diagnostics on a file using `_`, built with a JDK that supports unnamed
-variables (≥ 22). Reproduce: open a file with `catch (Exception _)` or `(_, v) ->` and read the
-`lathe.unused` hints.
-
-### Regression targets
-
-- `UnusedDeclarationScannerTest.scan_unnamedVariableUnderscore_notReported` (positive — `_` in a catch
-  clause / lambda / enhanced-for / `var _` yields no hint)
-- an existing genuinely-unused named local still reported (negative — the exclusion is scoped to `_`).
-
----
-
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work

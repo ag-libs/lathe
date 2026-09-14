@@ -122,7 +122,7 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
 
   @Override
   public Void visitVariable(final VariableTree node, final Void v) {
-    if (declarationPhase) {
+    if (declarationPhase && !isUnnamedVariable(node)) {
       final var element = trees.getElement(getCurrentPath());
       if (element != null) {
         final var parent = getCurrentPath().getParentPath().getLeaf();
@@ -162,6 +162,13 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
     }
 
     return Kind.LOCAL_VARIABLE;
+  }
+
+  // An unnamed variable `_` (JEP 456) is intentionally unused and cannot be referenced, so it must
+  // never be reported. javac gives it an empty tree name; `_` is accepted defensively too.
+  private static boolean isUnnamedVariable(final VariableTree node) {
+    final var name = node.getName();
+    return name.isEmpty() || name.contentEquals("_");
   }
 
   @Override

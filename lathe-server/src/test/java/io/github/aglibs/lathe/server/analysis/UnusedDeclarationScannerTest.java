@@ -308,6 +308,50 @@ class UnusedDeclarationScannerTest {
         .isEmpty();
   }
 
+  // --- Unnamed variables (JEP 456) ---
+
+  @Test
+  void compile_unnamedVariableUnderscore_notReportedButNamedStillIs() {
+    // `_` is an unnamed variable (intentionally unused, cannot be referenced), so no position — a
+    // catch clause, a lambda parameter, an enhanced-for variable, or a `var _` binding — may be
+    // reported (before the fix each drew an "Unused ... ''" hint with an empty name). The single
+    // genuinely-unused named local proves the exclusion is scoped to `_`: exactly it is reported.
+    final List<Diagnostic> hints =
+        unusedHintsFor(
+            """
+            import java.util.List;
+            import java.util.Map;
+
+            class Test {
+              public void method(Map<String, String> map, List<String> xs) {
+                try {
+                  risky();
+                } catch (final IllegalStateException _) {
+                  recover();
+                }
+                map.forEach((_, v) -> System.out.println(v));
+                for (final String _ : xs) {
+                  recover();
+                }
+                var _ = compute();
+                int forgotten = 42;
+              }
+
+              private void risky() {}
+
+              private void recover() {}
+
+              private int compute() {
+                return 1;
+              }
+            }
+            """);
+
+    assertThat(hints).hasSize(1);
+    assertThat(hints.getFirst().getMessage().getLeft())
+        .isEqualTo("Unused local variable 'forgotten'");
+  }
+
   // --- Inner classes ---
 
   @Test

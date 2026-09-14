@@ -7,6 +7,29 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-051 — Unnamed variable `_` (JEP 456) was reported as an unused declaration with an empty name
+
+**Status: done — Target: next.**
+
+An unnamed variable `_` (the JLS unnamed-variable marker, JEP 456, standard since Java 22) drew a Lathe
+"unused" hint whose declaration name rendered as an empty string (`Unused parameter ''`) — a
+false-positive on an intentionally-unnamed declaration plus an empty-name presentation. `_` cannot be
+referenced, so `UnusedDeclarationScanner` always kept it as an unused candidate, and its empty javac
+tree name produced the `''`.
+
+Fixed by excluding unnamed variables in `UnusedDeclarationScanner.visitVariable`: an
+`isUnnamedVariable(node)` guard (empty simple name, or `_` defensively) skips candidate registration, so
+no hint is emitted for `_` in any position (catch clause, lambda parameter, enhanced-for variable, or a
+`var _` binding). The exclusion is scoped to `_` — a genuinely unused named local declared alongside is
+still reported. Mirrors the existing `EXCLUDED_FIELD_NAMES` name-based skip.
+
+Regression: `UnusedDeclarationScannerTest.compile_unnamedVariableUnderscore_notReportedButNamedStillIs`
+(`_` in a catch clause / lambda / enhanced-for / `var _` yields no hint, while a sibling unused named
+local is still reported). The test compiler passes no `--release`, so it defaults to the build JVM
+(≥ 22) where `_` is a standard feature.
+
+---
+
 ## EG-050 — Requests on a non-`file` document URI crash the request with an `InternalError`
 
 **Status: done — Target: M2.**
