@@ -292,6 +292,33 @@ class WorkspaceTypeIndexTest {
   }
 
   @Test
+  void graph_transitiveSupertypes_walksDagAndDedupes() {
+    // Diamond: Leaf -> {Left, Right} -> Base. Base is reached via both branches but listed once.
+    final var base = graphEntry("com.example.Base", true);
+    final var left = graphEntry("com.example.Left", true, "com.example.Base");
+    final var right = graphEntry("com.example.Right", true, "com.example.Base");
+    final var leaf = graphEntry("com.example.Leaf", true, "com.example.Left", "com.example.Right");
+    final var index =
+        WorkspaceTypeIndex.build(List.of(), List.of(List.of(base, left, right, leaf)));
+
+    assertThat(index.transitiveSupertypes("com.example.Leaf"))
+        .extracting(TypeIndexEntry::binaryName)
+        .containsExactlyInAnyOrder("com.example.Left", "com.example.Right", "com.example.Base");
+  }
+
+  @Test
+  void graph_transitiveSupertypes_cycle_excludesTargetAndTerminates() {
+    final var a = graphEntry("com.example.A", true, "com.example.C");
+    final var b = graphEntry("com.example.B", true, "com.example.A");
+    final var c = graphEntry("com.example.C", true, "com.example.B");
+    final var index = WorkspaceTypeIndex.build(List.of(), List.of(List.of(a, b, c)));
+
+    assertThat(index.transitiveSupertypes("com.example.A"))
+        .extracting(TypeIndexEntry::binaryName)
+        .containsExactlyInAnyOrder("com.example.B", "com.example.C");
+  }
+
+  @Test
   void graph_duplicateBinaryName_withinShard_keepsFirst() {
     final var first = graphEntry("com.example.Duplicate", true, "com.example.ParentA");
     final var second = graphEntry("com.example.Duplicate", true, "com.example.ParentB");

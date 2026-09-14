@@ -268,6 +268,11 @@ function M.setup(opts)
   -- (via the server's lathe.instantiations command) in the quickfix. Suggested mapping: grN.
   require('lathe.instances').setup()
 
+  -- Type-hierarchy surface: :LatheTypeHierarchy shows the full both-directions transitive hierarchy
+  -- of the type under the cursor (via the server's lathe.typeHierarchy command) in Telescope, or the
+  -- built-in fuzzy picker when Telescope is absent. Suggested mapping: grh.
+  require('lathe.typehierarchy').setup()
+
   -- Sync surface: the server's lathe/sync notification and :LatheSync run Maven
   -- (process-test-classes, or `mvn test` with !) to refresh the .lathe/ mirror after POM/structural
   -- changes. The server never runs Maven itself.

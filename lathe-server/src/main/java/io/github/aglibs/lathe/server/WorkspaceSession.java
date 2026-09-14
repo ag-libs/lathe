@@ -28,6 +28,7 @@ import io.github.aglibs.lathe.server.analysis.SemanticToken;
 import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.server.analysis.TokenScanner;
 import io.github.aglibs.lathe.server.analysis.TransientSource;
+import io.github.aglibs.lathe.server.analysis.TypeHierarchyExplorerResult;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyItemDataCodec;
 import io.github.aglibs.lathe.server.analysis.TypeSourceLocator;
 import io.github.aglibs.lathe.server.analysis.WorkspaceSymbolResolver;
@@ -125,6 +126,11 @@ final class WorkspaceSession {
   // Small: attributing disk candidates in one javac task amortizes its fixed per-invocation cost,
   // while a small batch bounds peak memory, cancellation latency, and analyze()-crash blast radius.
   private static final int REFERENCE_BATCH_SIZE = 8;
+
+  // Upper bound on transitive subtypes returned by the type-hierarchy explorer, so a near-Object or
+  // huge marker-interface anchor cannot flood the picker or the source-locating pass. Beyond it the
+  // result is flagged truncated.
+  private static final int TYPE_HIERARCHY_NODE_CAP = 2000;
   private static final long JDWP_READY_TIMEOUT_MS = 15_000;
 
   // Title of the $/progress task reported while the workspace loads/reloads. The neotest adapter
@@ -2121,6 +2127,42 @@ final class WorkspaceSession {
                       "[typeHierarchy:subtypes] %s %dms items=%d"
                           .formatted(data.binaryName(), t.elapsedMs(), items.size()));
               return items;
+            });
+  }
+
+  CompletableFuture<TypeHierarchyExplorerResult> typeHierarchyExplorerFuture(
+      final String uri, final Position pos) {
+    final var t = Stopwatch.start();
+    return prepareTypeHierarchyFuture(uri, pos)
+        .thenCompose(
+            items -> {
+              if (items.isEmpty()) {
+                return CompletableFuture.completedFuture(TypeHierarchyExplorerResult.empty());
+              }
+
+              final var self = items.getFirst();
+              final var data = TypeHierarchyItemDataCodec.decode(self.getData());
+              final var indexSnapshot = typeIndex;
+              final List<Path> sourceDirs = typeSourceDirs();
+              return routeFeature(
+                  data.routingUri(),
+                  worker ->
+                      worker.typeHierarchyExplore(
+                          self, indexSnapshot, sourceDirs, TYPE_HIERARCHY_NODE_CAP),
+                  TypeHierarchyExplorerResult.empty());
+            })
+        .thenApply(
+            result -> {
+              LOG.info(
+                  () ->
+                      "[typeHierarchy:explore] %s %dms supertypes=%d subtypes=%d%s"
+                          .formatted(
+                              uri,
+                              t.elapsedMs(),
+                              result.supertypes().size(),
+                              result.subtypes().size(),
+                              result.truncated() ? " truncated" : ""));
+              return result;
             });
   }
 

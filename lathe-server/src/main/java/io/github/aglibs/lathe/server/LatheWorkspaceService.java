@@ -31,6 +31,7 @@ final class LatheWorkspaceService implements WorkspaceService {
   static final String DEBUG_TEST_COMMAND = "lathe.debug.test";
   static final String DEBUG_MAIN_COMMAND = "lathe.debug.main";
   static final String INSTANTIATIONS_COMMAND = "lathe.instantiations";
+  static final String TYPE_HIERARCHY_COMMAND = "lathe.typeHierarchy";
   static final String CREATE_TYPE_COMMAND = "lathe.createType";
   static final String MODULES_COMMAND = "lathe.modules";
   static final String PACKAGES_COMMAND = "lathe.packages";
@@ -71,6 +72,7 @@ final class LatheWorkspaceService implements WorkspaceService {
       case DEBUG_TEST_COMMAND -> debugTest(params);
       case DEBUG_MAIN_COMMAND -> debugMain(params);
       case INSTANTIATIONS_COMMAND -> instantiations(params);
+      case TYPE_HIERARCHY_COMMAND -> typeHierarchy(params);
       case CREATE_TYPE_COMMAND -> createType(params);
       case MODULES_COMMAND -> modules();
       case PACKAGES_COMMAND -> packages(params);
@@ -131,6 +133,15 @@ final class LatheWorkspaceService implements WorkspaceService {
     return textDocumentService
         .instantiationsFuture(at.getTextDocument().getUri(), at.getPosition())
         .thenApply(locations -> locations);
+  }
+
+  private CompletableFuture<Object> typeHierarchy(final ExecuteCommandParams params) {
+    final var at =
+        GSON.fromJson(
+            (JsonElement) params.getArguments().getFirst(), TextDocumentPositionParams.class);
+    return textDocumentService
+        .typeHierarchyExplorerFuture(at.getTextDocument().getUri(), at.getPosition())
+        .thenApply(result -> result);
   }
 
   private CompletableFuture<Object> createType(final ExecuteCommandParams params) {

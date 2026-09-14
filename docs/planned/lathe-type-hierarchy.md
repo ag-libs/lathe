@@ -2,9 +2,19 @@
 
 ## Status
 
-Planned. Resolves [NV-6](../gaps/gaps.md) (type hierarchy shows only one level in Neovim).
-No standard LSP endpoint changes: the lazy `prepareTypeHierarchy` / `typeHierarchy/{supertypes,subtypes}`
-handlers stay for the built-in one-level use; this adds a Lathe-specific "show me everything" surface.
+Done. Resolves [NV-6](../gaps/gaps-archive.md) (type hierarchy shows only one level in Neovim);
+verified live against a large workspace. No standard LSP endpoint changes: the lazy
+`prepareTypeHierarchy` / `typeHierarchy/{supertypes,subtypes}` handlers stay for the built-in one-level
+use; this adds a Lathe-specific "show me everything" surface.
+
+Two KISS simplifications were taken against §5 during implementation:
+
+- **No bespoke entry record.** The command returns
+  `TypeHierarchyExplorerResult(supertypes, self, subtypes, truncated)` where each list holds plain LSP
+  `TypeHierarchyItem`s (reusing the resolver's existing entry→item mapping). The client tags each row by
+  *which group it came from*, so a per-entry `relation`/`depth` field was unnecessary.
+- **Fallback is the in-house `lathe.pick`** (the zero-dependency fuzzy picker `:LatheNew` already uses),
+  not `vim.ui.select` — a consistent fuzzy feel with or without Telescope, and DRY.
 
 ---
 

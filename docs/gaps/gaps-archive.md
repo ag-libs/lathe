@@ -7501,6 +7501,31 @@ missing frame manager is a no-op, and that a reload failure is swallowed rather 
 
 # Neovim client (resolved)
 
+## NV-6 — Type hierarchy showed only one level; no full-tree view — done
+
+**Status: done — Target: next.**
+
+Neovim's built-in `vim.lsp.buf.typehierarchy` renders one level in the location list and does not
+recurse, and Lathe shipped no type-hierarchy UI of its own, so users only ever saw direct
+sub/supertypes — unlike the IntelliJ Ctrl-H / JDT LS full-hierarchy view.
+
+Resolved with a "show me everything" surface: a custom `lathe.typeHierarchy` `executeCommand` that
+returns the type-under-cursor's full transitive supertypes (up to `Object`) and subtypes in one call
+(from the in-memory subtype graph — `WorkspaceTypeIndex.transitiveSubtypes` plus a new
+`transitiveSupertypes` walk), and a thin Neovim client (`:LatheTypeHierarchy`, mapped `grh`) that shows
+them in one flat, fuzzy-searchable picker tagged `▲` supertype / `●` self / `▼` subtype — Telescope when
+installed, the built-in `lathe.pick` fuzzy picker otherwise. The standard lazy
+`prepareTypeHierarchy` / `subtypes` / `supertypes` endpoints are unchanged (built-in one-level use).
+The result record lives in `server.analysis`, opened to Gson in `module-info` (each DTO-producing layer
+opens its package).
+
+Design: [Type Hierarchy Explorer](../planned/lathe-type-hierarchy.md). Regression:
+`WorkspaceTypeIndexTest.graph_transitiveSupertypes_*`, `TypeHierarchyTest.explore_*`,
+`LatheLanguageServerTest.createCapabilities_includesExecuteCommandProvider` (advertises
+`lathe.typeHierarchy`), and the Neovim `typehierarchy_spec.lua`.
+
+---
+
 ## NV-1 — `:LatheStart` unavailable before a Java file is open — done
 
 **Status: done — Target: M2.**

@@ -12,6 +12,7 @@ import io.github.aglibs.lathe.server.analysis.SemanticToken;
 import io.github.aglibs.lathe.server.analysis.SourceAnalysisSession;
 import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.server.analysis.TransientSource;
+import io.github.aglibs.lathe.server.analysis.TypeHierarchyExplorerResult;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.run.RunTarget;
@@ -275,6 +276,14 @@ public final class CompilationWorker {
       final WorkspaceTypeIndex typeIndex,
       final List<Path> sourceRoots) {
     return submit(ctx -> ctx.typeHierarchySubtypes(item, typeIndex, sourceRoots));
+  }
+
+  public CompletableFuture<TypeHierarchyExplorerResult> typeHierarchyExplore(
+      final TypeHierarchyItem item,
+      final WorkspaceTypeIndex typeIndex,
+      final List<Path> sourceRoots,
+      final int nodeCap) {
+    return submit(ctx -> ctx.typeHierarchyExplore(item, typeIndex, sourceRoots, nodeCap));
   }
 
   public CompletableFuture<List<TypeIndexEntry>> cachedTypeEntries(

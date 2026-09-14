@@ -57,6 +57,70 @@ class TypeHierarchyTest {
   }
 
   @Test
+  void explore_typeCursor_returnsTransitiveSupertypesSelfAndSubtypes() throws IOException {
+    final String content = "interface Service {}\n";
+    write("Service.java", content);
+    write("Parent.java", "interface Parent {}\n");
+    write("Direct.java", "class Direct implements Service {}\n");
+    write("Grandchild.java", "class Grandchild extends Direct {}\n");
+    write("Internal.java", "class Internal implements Service {}\n");
+    final var index =
+        WorkspaceTypeIndex.build(
+            List.of(),
+            List.of(
+                List.of(
+                    entry("Parent", TypeKind.INTERFACE),
+                    entry("Service", TypeKind.INTERFACE, "Parent"),
+                    entry("Direct", TypeKind.CLASS, "Service"),
+                    entry("Grandchild", TypeKind.CLASS, "Direct"),
+                    entry("Internal", TypeKind.CLASS, "Service"))));
+    final var request = request(content, new Position(0, 12));
+
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(request.uri(), content, 1, CompileMode.OPEN);
+      final var item = session.prepareTypeHierarchy(request, index).getFirst();
+
+      final var result = session.typeHierarchyExplore(item, index, List.of(sourceRoot), 2000);
+
+      assertThat(result.self().getName()).isEqualTo("Service");
+      assertThat(result.supertypes())
+          .extracting(TypeHierarchyItem::getName)
+          .containsExactly("Parent");
+      assertThat(result.subtypes())
+          .extracting(TypeHierarchyItem::getName)
+          .containsExactlyInAnyOrder("Direct", "Grandchild", "Internal");
+      assertThat(result.truncated()).isFalse();
+    }
+  }
+
+  @Test
+  void explore_nodeCap_truncatesSubtypes() throws IOException {
+    final String content = "interface Service {}\n";
+    write("Service.java", content);
+    write("Direct.java", "class Direct implements Service {}\n");
+    write("Grandchild.java", "class Grandchild extends Direct {}\n");
+    final var index =
+        WorkspaceTypeIndex.build(
+            List.of(),
+            List.of(
+                List.of(
+                    entry("Service", TypeKind.INTERFACE),
+                    entry("Direct", TypeKind.CLASS, "Service"),
+                    entry("Grandchild", TypeKind.CLASS, "Direct"))));
+    final var request = request(content, new Position(0, 12));
+
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(request.uri(), content, 1, CompileMode.OPEN);
+      final var item = session.prepareTypeHierarchy(request, index).getFirst();
+
+      final var result = session.typeHierarchyExplore(item, index, List.of(sourceRoot), 1);
+
+      assertThat(result.subtypes()).hasSize(1);
+      assertThat(result.truncated()).isTrue();
+    }
+  }
+
+  @Test
   void prepareTypeHierarchy_methodCursor_returnsEmpty() {
     final String content = "class Service { void execute() {} }\n";
     final var request = request(content, new Position(0, 22));

@@ -21,6 +21,7 @@ import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -293,15 +294,24 @@ public final class WorkspaceTypeIndex {
   }
 
   public List<TypeIndexEntry> transitiveSubtypes(final String binaryName) {
+    return transitiveClosure(binaryName, this::directSubtypes);
+  }
+
+  public List<TypeIndexEntry> transitiveSupertypes(final String binaryName) {
+    return transitiveClosure(binaryName, this::directSupertypes);
+  }
+
+  private List<TypeIndexEntry> transitiveClosure(
+      final String binaryName, final Function<String, List<TypeIndexEntry>> expand) {
     final var visited = new HashSet<String>();
     visited.add(binaryName);
-    final var pending = new ArrayDeque<>(directSubtypes(binaryName));
+    final var pending = new ArrayDeque<>(expand.apply(binaryName));
     final var results = new ArrayList<TypeIndexEntry>();
     while (!pending.isEmpty()) {
-      final var subtype = pending.removeFirst();
-      if (visited.add(subtype.binaryName())) {
-        results.add(subtype);
-        pending.addAll(directSubtypes(subtype.binaryName()));
+      final var next = pending.removeFirst();
+      if (visited.add(next.binaryName())) {
+        results.add(next);
+        pending.addAll(expand.apply(next.binaryName()));
       }
     }
     return List.copyOf(results);

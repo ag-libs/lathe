@@ -68,7 +68,8 @@ freely.
 | Format document (opt-in — needs `formatter = "google"`) | `require('lathe').format()` / `:LatheFormat` | — | `<leader>f` |
 | Document symbols (outline) | `vim.lsp.buf.document_symbol()` | `gO` | `gO` |
 | Workspace symbols (CamelCase-hump aware) | `vim.lsp.buf.workspace_symbol()` | — | `<leader>ws` |
-| Type hierarchy (super / sub) | `vim.lsp.buf.typehierarchy("supertypes"/"subtypes")` | — | `<leader>hs` / `<leader>hi` |
+| Type hierarchy (super / sub, one level) | `vim.lsp.buf.typehierarchy("supertypes"/"subtypes")` | — | `<leader>hs` / `<leader>hi` |
+| Full type hierarchy (all transitive super + sub, one picker) | `:LatheTypeHierarchy` | — | `grh` |
 | Call hierarchy (incoming / outgoing) | `vim.lsp.buf.incoming_calls()` / `outgoing_calls()` | — | `<leader>ci` / `<leader>co` |
 | Next / previous diagnostic | `vim.diagnostic.jump({count=1/-1})` | `]d` / `[d` | `]d` / `[d` |
 | Semantic tokens (static/deprecated members, enum constants, type params, annotations) | automatic | — | — |
@@ -83,6 +84,17 @@ suggested mapping sits in the references family (capital `N` for i**N**stantiati
 
 ```lua
 vim.keymap.set('n', 'grN', '<cmd>LatheInstances<cr>', { desc = 'Lathe: instantiation sites of the type' })
+```
+
+`:LatheTypeHierarchy` shows the **whole inheritance neighbourhood of the type under the cursor** — all
+transitive supertypes (up to `Object`) and all transitive subtypes — merged into **one** fuzzy-searchable
+picker, each row tagged `▲` supertype / `●` self / `▼` subtype (the IntelliJ Ctrl-H analogue). It uses
+[Telescope](https://github.com/nvim-telescope/telescope.nvim) when installed and Lathe's built-in fuzzy
+picker otherwise, so it needs no plugin. The built-in `vim.lsp.buf.typehierarchy()` above stays for a
+lazy, one-level drill-down. Suggested mapping (references family, `h` for **h**ierarchy):
+
+```lua
+vim.keymap.set('n', 'grh', '<cmd>LatheTypeHierarchy<cr>', { desc = 'Lathe: full type hierarchy' })
 ```
 
 `vim.lsp.buf.document_highlight()` lights up **every read and write of the symbol under the cursor**

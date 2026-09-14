@@ -50,7 +50,8 @@ bindings.
 | Signature help               | parameter lists for methods and constructors                                                      | `textDocument/signatureHelp`                      |
 | Completion                   | types, methods, and variables, with automatic import insertion                                    | `textDocument/completion`                         |
 | Document / workspace symbols | file outline; workspace search with CamelCase-hump matching (`ASF` finds `AbstractServerFactory`) | `textDocument/documentSymbol`, `workspace/symbol` |
-| Type hierarchy               | supertypes and subtypes of the symbol under the cursor                                            | `textDocument/prepareTypeHierarchy`               |
+| Type hierarchy               | supertypes and subtypes of the symbol under the cursor, one level at a time                        | `textDocument/prepareTypeHierarchy`               |
+| Full type hierarchy          | all transitive supertypes and subtypes of the type under the cursor at once, tagged by relation    | `workspace/executeCommand` · `lathe.typeHierarchy` |
 | Call hierarchy               | incoming and outgoing calls of a method                                                           | `textDocument/prepareCallHierarchy`               |
 | Semantic tokens              | highlights static/deprecated members, enum constants, type parameters, annotations                | `textDocument/semanticTokens/full`                |
 | Folding                      | classes, methods, blocks, and import groups                                                       | `textDocument/foldingRange`                       |

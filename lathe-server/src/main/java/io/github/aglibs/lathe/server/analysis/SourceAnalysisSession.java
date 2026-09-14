@@ -892,6 +892,14 @@ public final class SourceAnalysisSession implements AutoCloseable {
     return typeHierarchyResolver.subtypes(item, typeIndex, sourceRoots);
   }
 
+  public TypeHierarchyExplorerResult typeHierarchyExplore(
+      final TypeHierarchyItem item,
+      final WorkspaceTypeIndex typeIndex,
+      final List<Path> sourceRoots,
+      final int nodeCap) {
+    return typeHierarchyResolver.explore(item, typeIndex, sourceRoots, nodeCap);
+  }
+
   private static List<Path> typeSourceRoots(final SourceFeatureRequest request) {
     return Stream.of(
             request.sourceRoots().stream(),

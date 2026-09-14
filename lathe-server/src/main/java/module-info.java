@@ -36,6 +36,11 @@ module io.github.aglibs.lathe.server {
   opens io.github.aglibs.lathe.server to
       com.google.gson;
 
+  // TypeHierarchyExplorerResult (the lathe.typeHierarchy command result) crosses the JSON-RPC
+  // boundary as a raw record; Gson reflects on its accessors.
+  opens io.github.aglibs.lathe.server.analysis to
+      com.google.gson;
+
   // LatheLanguageClient is our custom JSON-RPC remote interface; lsp4j.jsonrpc reflects on its
   // methods to build the client proxy, so its package must be accessible to that module. Only the
   // public interface is exposed; the rest of the package stays package-private.

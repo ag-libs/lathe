@@ -47,6 +47,25 @@ final class TypeHierarchyResolver {
     return typeHierarchyItems(typeIndex.directSubtypes(data.binaryName()), sourceRoots);
   }
 
+  TypeHierarchyExplorerResult explore(
+      final TypeHierarchyItem self,
+      final WorkspaceTypeIndex typeIndex,
+      final List<java.nio.file.Path> sourceRoots,
+      final int nodeCap) {
+    final TypeHierarchyItemData data = TypeHierarchyItemDataCodec.decode(self.getData());
+    if (data == null) {
+      return new TypeHierarchyExplorerResult(List.of(), self, List.of(), false);
+    }
+
+    final List<TypeHierarchyItem> supertypes =
+        typeHierarchyItems(typeIndex.transitiveSupertypes(data.binaryName()), sourceRoots);
+    final List<TypeIndexEntry> allSubtypes = typeIndex.transitiveSubtypes(data.binaryName());
+    final boolean truncated = allSubtypes.size() > nodeCap;
+    final List<TypeIndexEntry> capped = truncated ? allSubtypes.subList(0, nodeCap) : allSubtypes;
+    return new TypeHierarchyExplorerResult(
+        supertypes, self, typeHierarchyItems(capped, sourceRoots), truncated);
+  }
+
   Optional<Location> locateSource(
       final TypeIndexEntry entry, final List<java.nio.file.Path> sourceRoots) {
     return TypeSourceLocator.locate(entry, sourceRoots, parser);
