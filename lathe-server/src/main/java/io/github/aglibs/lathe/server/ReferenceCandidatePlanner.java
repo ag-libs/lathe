@@ -98,7 +98,7 @@ final class ReferenceCandidatePlanner {
     }
     final Stream<String> importTokens = tokensBuilder.build();
 
-    final List<Path> packageRoots = packageSearchRoots(config);
+    final List<Path> packageRoots = config.searchRoots();
     return Stream.concat(
             importTokens.flatMap(token -> index.candidateUris(token).stream()),
             simpleCandidates.stream()
@@ -148,21 +148,6 @@ final class ReferenceCandidatePlanner {
   private static String simpleNameOf(final String binaryName) {
     final int cut = Math.max(binaryName.lastIndexOf('.'), binaryName.lastIndexOf('$'));
     return cut < 0 ? binaryName : binaryName.substring(cut + 1);
-  }
-
-  /**
-   * The regular source roots plus the generated-sources root (when present). Generated companions
-   * such as a record's {@code @Builder} live in the annotation-processor output root and reference
-   * the record by simple name only (same package, no import), so the same-package filter must
-   * consider that root too (FR-012).
-   */
-  static List<Path> packageSearchRoots(final ModuleSourceConfig config) {
-    if (config.originalGenSourcesDir() == null) {
-      return config.sourceRoots();
-    }
-
-    return Stream.concat(config.sourceRoots().stream(), Stream.of(config.originalGenSourcesDir()))
-        .toList();
   }
 
   private static boolean isInPackage(

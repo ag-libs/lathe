@@ -1643,7 +1643,7 @@ final class WorkspaceSession {
     // Include the generated-sources root so a module's annotation-processor output (a record's
     // @Builder) is in scope; it references the record by simple name and never lives under a
     // regular source root (FR-012/FR-013).
-    final List<Path> searchRoots = ReferenceCandidatePlanner.packageSearchRoots(config);
+    final List<Path> searchRoots = config.searchRoots();
     final List<OpenDocument> openForConfig =
         docs.all().stream()
             .filter(

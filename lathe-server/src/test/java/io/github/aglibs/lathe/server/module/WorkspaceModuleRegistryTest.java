@@ -25,14 +25,16 @@ class WorkspaceModuleRegistryTest {
   }
 
   @Test
-  void allSourceRoots_includesOriginalGenSourcesDir_whenPresent() throws Exception {
+  void allSourceRoots_withGeneratedSources_includesLatheMirrorNotMavenTarget() throws Exception {
+    // EG-052: the searched generated root is the fresh .lathe mirror, not the stale Maven target/.
     final var src = tmp.resolve("module-a/src/main/java");
-    final var generatedSrc = tmp.resolve("module-a/target/generated-sources/annotations");
-    TestCompiler.writeModuleParams(tmp, "module-a", src, generatedSrc);
+    final var mavenTarget = tmp.resolve("module-a/target/generated-sources/annotations");
+    TestCompiler.writeModuleParams(tmp, "module-a", src, mavenTarget);
 
     final var registry = WorkspaceModuleRegistry.scan(tmp, WorkspaceManifest.empty());
+    final Path latheGenerated = registry.allConfigs().getFirst().generatedSourcesDir();
 
-    assertThat(registry.allSourceRoots()).contains(src, generatedSrc);
+    assertThat(registry.allSourceRoots()).contains(src, latheGenerated).doesNotContain(mavenTarget);
   }
 
   @Test
@@ -46,14 +48,15 @@ class WorkspaceModuleRegistryTest {
   }
 
   @Test
-  void moduleSourceFor_fileInGeneratedSourcesDir_returnsModule() throws Exception {
+  void moduleSourceFor_fileInLatheGeneratedSources_returnsModule() throws Exception {
     final var src = tmp.resolve("module-a/src/main/java");
-    final var generatedSrc = tmp.resolve("module-a/target/generated-sources/annotations");
-    TestCompiler.writeModuleParams(tmp, "module-a", src, generatedSrc);
+    final var mavenTarget = tmp.resolve("module-a/target/generated-sources/annotations");
+    TestCompiler.writeModuleParams(tmp, "module-a", src, mavenTarget);
 
     final var registry = WorkspaceModuleRegistry.scan(tmp, WorkspaceManifest.empty());
+    final Path latheGenerated = registry.allConfigs().getFirst().generatedSourcesDir();
 
-    assertThat(registry.moduleSourceFor(generatedSrc.resolve("com/example/FooBuilder.java")))
+    assertThat(registry.moduleSourceFor(latheGenerated.resolve("com/example/FooBuilder.java")))
         .isPresent();
   }
 

@@ -2,7 +2,6 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -125,28 +124,20 @@ class ReferenceCandidateIndexTest {
   @Test
   void build_includesGeneratedSourcesDir_whenPresent() throws IOException {
     final var src = Files.createDirectories(root.resolve("src"));
-    final var gen = Files.createDirectories(root.resolve("generated"));
     Files.writeString(
         src.resolve("Entity.java"), "class Entity { String requestId() { return null; } }");
+    // EG-052: the generated companion lives under the .lathe mirror (the searched, fresh copy);
+    // originalGenSourcesDir points at Maven's target/ copy only to flag "has generated sources".
+    final var config =
+        TestCompiler.moduleConfig(
+            root.resolve(".lathe/module"),
+            root.resolve("target/classes"),
+            src,
+            root.resolve("target/generated-sources/annotations"));
+    final var gen = Files.createDirectories(config.generatedSourcesDir());
     Files.writeString(
         gen.resolve("EntityBuilder.java"),
         "class EntityBuilder { Entity build() { return null; } }");
-    final var config =
-        new ModuleSourceConfig(
-            root.resolve(".lathe/module"),
-            "classes",
-            root.resolve("target/classes"),
-            gen,
-            List.of(src),
-            List.of(),
-            List.of(),
-            List.of(),
-            "21",
-            "UTF-8",
-            false,
-            false,
-            null,
-            List.of());
 
     final var index = ReferenceCandidateIndex.build(List.of(config));
 

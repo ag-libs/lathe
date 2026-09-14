@@ -121,8 +121,8 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
   }
 
   private Path generatedSourceRoot(final Path filePath, final String uri) {
-    final Path genRoot = config.originalGenSourcesDir();
-    if (genRoot != null && filePath.startsWith(genRoot)) {
+    final Path genRoot = config.generatedSourcesDir();
+    if (filePath.startsWith(genRoot)) {
       return genRoot;
     }
 

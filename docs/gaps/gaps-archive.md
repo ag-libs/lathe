@@ -7,6 +7,45 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-052 — Go-to-definition on a generated type landed on the stale Maven `target/` copy after an in-editor edit — done
+
+**Status: done — Target: next.**
+
+After editing an annotation-processed source (e.g. adding a component to a `@Builder` record) and
+saving, completion reflected the regenerated API immediately, but `textDocument/definition` on the
+generated type still resolved to Maven's `target/generated-sources/annotations/…Builder.java` — the
+stale copy only `mvn` refreshes — so `gd` showed pre-edit code (and a spurious `…Builder is not
+abstract` diagnostic) until a Maven run. The server regenerates into `.lathe/<module>/generated-sources`
+on save (so the fresh copy exists), but definition never searched there: the source roots carried each
+module's `originalGenSourcesDir` (Maven's `target/`), not `generatedSourcesDir()` (the `.lathe` mirror).
+
+Fixed by making the server resolve generated types against the `.lathe` mirror it owns and keeps fresh,
+never Maven's `target/`. New `ModuleSourceConfig.searchRoots()` (regular roots + the `.lathe`
+generated-sources mirror when the module has generated sources) replaced three duplicated
+"roots + generated root" copies — `WorkspaceModuleRegistry.allSourceRoots`,
+`ReferenceCandidatePlanner.packageSearchRoots` (deleted), and `ReferenceCandidateIndex.allSourceRoots`
+(deleted). The two containment checks — `WorkspaceModuleRegistry.moduleSourceFor` and
+`ModuleSourceCompiler.generatedSourceRoot` — switched to `generatedSourcesDir()` so an opened generated
+file is attributed and analyzed. No fallback to `target/`: an empty `.lathe` mirror is a re-sync
+condition (consistent with WS-1/WS-5), not something to mask with a stale copy; non-annotation codegen
+was never on these roots, so nothing there regresses. It also survives `mvn clean` (which wipes
+`target/`). No `lathe-compiler` change was needed.
+
+Verified live on a large real workspace: `def`/`hover` on a `@Builder`-generated type resolve to
+`…/.lathe/<module>/generated-sources/…Builder.java`, not `target/`.
+
+Regression targets:
+- `ModuleSourceConfigTest.searchRoots_withGeneratedSources_usesLatheMirrorNotMavenTarget` /
+  `searchRoots_noGeneratedSources_returnsSourceRootsOnly`.
+- `WorkspaceModuleRegistryTest.allSourceRoots_withGeneratedSources_includesLatheMirrorNotMavenTarget` /
+  `moduleSourceFor_fileInLatheGeneratedSources_returnsModule`.
+- `WorkspaceSessionTest.isInPackageScope_generatedSourcesCandidate_reactorScope_inScope` (the `.lathe`
+  candidate is in scope, the `target/` candidate is not).
+- `ReferenceCandidatePlannerTest.planCandidates_typeUsedInSamePackageGeneratedSource_includesGeneratedFile`,
+  `ReferenceCandidateIndexTest.build_includesGeneratedSourcesDir_whenPresent`,
+  `ModuleSourceCompilerTest.compile_openMode_fileUnderGeneratedSourcesRoot_compilesInsteadOfThrowing`
+  (all now exercise the `.lathe` mirror).
+
 ## EG-051 — Unnamed variable `_` (JEP 456) was reported as an unused declaration with an empty name
 
 **Status: done — Target: next.**

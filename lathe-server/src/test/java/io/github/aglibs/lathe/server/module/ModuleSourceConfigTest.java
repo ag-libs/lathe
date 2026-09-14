@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.module;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.server.TestCompiler;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 
@@ -9,6 +10,34 @@ class ModuleSourceConfigTest {
 
   private static final Path WORKSPACE = Path.of("/workspace");
   private static final Path LATHE_DIR = WORKSPACE.resolve(".lathe");
+
+  @Test
+  void searchRoots_withGeneratedSources_usesLatheMirrorNotMavenTarget() {
+    // EG-052: definition/reference resolution must search the fresh .lathe generated-sources mirror
+    // Lathe keeps in sync, not the stale Maven target/generated-sources copy.
+    final Path src = WORKSPACE.resolve("module/src/main/java");
+    final Path mavenTarget = WORKSPACE.resolve("module/target/generated-sources/annotations");
+    final var config = config(mavenTarget, src);
+
+    assertThat(config.searchRoots())
+        .containsExactly(src, config.generatedSourcesDir())
+        .doesNotContain(mavenTarget);
+  }
+
+  @Test
+  void searchRoots_noGeneratedSources_returnsSourceRootsOnly() {
+    final Path src = WORKSPACE.resolve("module/src/main/java");
+    final var config = config(null, src);
+
+    assertThat(config.searchRoots()).containsExactly(src);
+  }
+
+  private static ModuleSourceConfig config(
+      final Path originalGenSourcesDir, final Path sourceRoot) {
+    final Path moduleDir = LATHE_DIR.resolve("module");
+    return TestCompiler.moduleConfig(
+        moduleDir, moduleDir.resolve("classes"), sourceRoot, originalGenSourcesDir);
+  }
 
   @Test
   void remapPath_externalJar_passesThrough() {

@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
@@ -103,7 +104,10 @@ class ReferenceCandidatePlannerTest {
   }
 
   private Path gen() throws IOException {
-    return Files.createDirectories(root.resolve("gen"));
+    // The .lathe generated-sources mirror of configWithGen's module — the fresh copy searched for
+    // generated companions (EG-052), matching config.generatedSourcesDir().
+    return Files.createDirectories(
+        root.resolve(".lathe/module").resolve(LatheLayout.GENERATED_SOURCES));
   }
 
   private Path writeGen(final Path genRoot, final String name, final String content)

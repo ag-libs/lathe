@@ -6,6 +6,7 @@ import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.stream.Stream;
 
 public record ModuleSourceConfig(
     Path moduleDir,
@@ -37,6 +38,17 @@ public record ModuleSourceConfig(
 
   public Path generatedSourcesDir() {
     return moduleDir.resolve(LatheLayout.GENERATED_SOURCES);
+  }
+
+  // Source roots plus the .lathe generated-sources mirror (when the module has generated sources).
+  // Definition/reference resolution searches these, so a generated type resolves to the fresh copy
+  // Lathe regenerates on save — not the stale Maven target/ copy.
+  public List<Path> searchRoots() {
+    if (originalGenSourcesDir == null) {
+      return sourceRoots;
+    }
+
+    return Stream.concat(sourceRoots.stream(), Stream.of(generatedSourcesDir())).toList();
   }
 
   public List<Path> remappedClasspath() {

@@ -219,14 +219,18 @@ class WorkspaceSessionTest {
 
   @Test
   void isInPackageScope_generatedSourcesCandidate_reactorScope_inScope() {
-    // FR-012/FR-013: a reactor-scoped search uses a null packageRel; the generated builder lives
-    // under the generated-sources root, never under a regular source root, yet must stay in scope.
+    // FR-012/FR-013 + EG-052: a reactor-scoped search uses a null packageRel; the generated builder
+    // lives under the .lathe generated-sources mirror (the fresh copy Lathe keeps in sync), never
+    // under a regular source root, yet must stay in scope. The stale Maven target/ copy is not.
+    final var config = configWithGen(tmp.resolve("module/target/generated-sources/annotations"));
     final var sourceRoot = tmp.resolve("module/src/main/java");
-    final var genRoot = tmp.resolve("module/target/generated-sources/annotations");
-    final var genCandidate = genRoot.resolve("com/example/FooBuilder.java");
-    final List<Path> roots = ReferenceCandidatePlanner.packageSearchRoots(configWithGen(genRoot));
+    final var genCandidate = config.generatedSourcesDir().resolve("com/example/FooBuilder.java");
+    final var staleTargetCandidate =
+        config.originalGenSourcesDir().resolve("com/example/FooBuilder.java");
+    final List<Path> roots = config.searchRoots();
 
     assertThat(WorkspaceSession.isInPackageScope(genCandidate, roots, null)).isTrue();
+    assertThat(WorkspaceSession.isInPackageScope(staleTargetCandidate, roots, null)).isFalse();
     assertThat(
             WorkspaceSession.isInPackageScope(
                 sourceRoot.resolve("com/example/Foo.java"), roots, null))
@@ -235,9 +239,9 @@ class WorkspaceSessionTest {
 
   @Test
   void isInPackageScope_pathOutsideEverySearchRoot_notInScope() {
-    final var genRoot = tmp.resolve("module/target/generated-sources/annotations");
+    final var config = configWithGen(tmp.resolve("module/target/generated-sources/annotations"));
     final var outside = tmp.resolve("other-module/target/classes/com/example/Bar.java");
-    final List<Path> roots = ReferenceCandidatePlanner.packageSearchRoots(configWithGen(genRoot));
+    final List<Path> roots = config.searchRoots();
 
     assertThat(WorkspaceSession.isInPackageScope(outside, roots, null)).isFalse();
   }

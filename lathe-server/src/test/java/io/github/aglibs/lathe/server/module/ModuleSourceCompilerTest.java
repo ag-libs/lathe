@@ -123,26 +123,15 @@ class ModuleSourceCompilerTest {
   @Test
   void compile_openMode_fileUnderGeneratedSourcesRoot_compilesInsteadOfThrowing() throws Exception {
     final Path sourceRoot = td.resolve("src/main/java");
-    final Path genRoot = td.resolve("target/generated-sources/annotations");
-    final Path genFile = genRoot.resolve("gen/GenBuilder.java");
-    Files.createDirectories(genFile.getParent());
-
     final var config =
-        new ModuleSourceConfig(
+        TestCompiler.moduleConfig(
             td.resolve(".lathe/module"),
-            "classes",
             td.resolve("target/classes"),
-            genRoot,
-            List.of(sourceRoot),
-            List.of(),
-            List.of(),
-            List.of(),
-            "21",
-            "UTF-8",
-            false,
-            false,
-            null,
-            List.of());
+            sourceRoot,
+            td.resolve("target/generated-sources/annotations"));
+    // EG-052: an opened generated file lives under the .lathe mirror, not Maven's target/ copy.
+    final Path genFile = config.generatedSourcesDir().resolve("gen/GenBuilder.java");
+    Files.createDirectories(genFile.getParent());
 
     try (var compiler = new ModuleSourceCompiler(config, new CompilationAdmission(1))) {
       final var result =
