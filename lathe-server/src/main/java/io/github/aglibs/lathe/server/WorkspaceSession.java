@@ -149,6 +149,8 @@ final class WorkspaceSession {
   private ReferenceCandidateIndex candidateIndex = ReferenceCandidateIndex.build(List.of());
   private WorkspaceTypeIndex typeIndex = WorkspaceTypeIndex.empty();
   private final Map<ModuleSourceConfig, List<TypeIndexEntry>> reactorShards = new LinkedHashMap<>();
+  // Reactor type-usage document frequency, aggregated on a full scan; feeds completion ranking.
+  private Map<String, Integer> reactorUsageCounts = Map.of();
   private WorkspaceWatcher watcher;
   private boolean pomNotificationPending;
   // Newest mtime among stale sources already acknowledged, so a dismissed "sync needed" stays quiet
@@ -202,7 +204,9 @@ final class WorkspaceSession {
     moduleGraph = WorkspaceModuleGraph.build(workspace.allConfigs());
     candidateIndex = ReferenceCandidateIndex.build(workspace.allConfigs());
     scanReactorShards();
-    typeIndex = WorkspaceTypeIndex.build(manifest.typeIndexShardPaths(), reactorShards.values());
+    typeIndex =
+        WorkspaceTypeIndex.build(manifest.typeIndexShardPaths(), reactorShards.values())
+            .withUsageCounts(reactorUsageCounts);
     watcher = new WorkspaceWatcher(root);
     watcher.updatePomPaths(manifest.pomPaths());
     worker.scheduleAtFixedRate(2_000L, this::checkForChanges);
@@ -2326,25 +2330,31 @@ final class WorkspaceSession {
   }
 
   private void scanReactorShards() {
+    final var counts = new HashMap<String, Integer>();
     for (final var config : workspace.allConfigs()) {
-      reactorShards.put(config, scanReactorDir(config));
+      final ClassFileTypeScanner.ReactorScan scan = scanReactorDir(config);
+      reactorShards.put(config, scan.entries());
+      scan.referenceCounts().forEach((name, count) -> counts.merge(name, count, Integer::sum));
     }
+
+    reactorUsageCounts = Map.copyOf(counts);
   }
 
   private void refreshReactorShard(final ModuleSourceConfig config) {
-    reactorShards.put(config, scanReactorDir(config));
+    // Incremental save: entries only. Usage counts are refreshed on a full scan, not per save.
+    reactorShards.put(config, scanReactorDir(config).entries());
     typeIndex = typeIndex.withReactorEntries(reactorShards.values());
   }
 
-  private static List<TypeIndexEntry> scanReactorDir(final ModuleSourceConfig config) {
+  private static ClassFileTypeScanner.ReactorScan scanReactorDir(final ModuleSourceConfig config) {
     try {
-      return ClassFileTypeScanner.scanDirectory(config.latheClassesDir());
+      return ClassFileTypeScanner.scanReactorDirectory(config.latheClassesDir());
     } catch (final IOException e) {
       LOG.log(
           Level.WARNING,
           e,
           () -> "[type-index] reactor scan failed: %s".formatted(config.latheClassesDir()));
-      return List.of();
+      return new ClassFileTypeScanner.ReactorScan(List.of(), Map.of());
     }
   }
 
@@ -2789,7 +2799,9 @@ final class WorkspaceSession {
     final var t = Stopwatch.start();
     reactorShards.clear();
     scanReactorShards();
-    typeIndex = WorkspaceTypeIndex.build(manifest.typeIndexShardPaths(), reactorShards.values());
+    typeIndex =
+        WorkspaceTypeIndex.build(manifest.typeIndexShardPaths(), reactorShards.values())
+            .withUsageCounts(reactorUsageCounts);
     LOG.info(() -> "[refresh] reactor type index %dms".formatted(t.elapsedMs()));
   }
 

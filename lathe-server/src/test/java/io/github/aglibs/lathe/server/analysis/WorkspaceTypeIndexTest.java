@@ -11,6 +11,7 @@ import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -316,6 +317,15 @@ class WorkspaceTypeIndexTest {
     assertThat(index.transitiveSupertypes("com.example.A"))
         .extracting(TypeIndexEntry::binaryName)
         .containsExactlyInAnyOrder("com.example.B", "com.example.C");
+  }
+
+  @Test
+  void usageCount_reflectsAttachedCounts_andDefaultsToZero() {
+    final var index =
+        WorkspaceTypeIndex.build(List.of()).withUsageCounts(Map.of("com.example.Used", 5));
+
+    assertThat(index.usageCount("com.example.Used")).isEqualTo(5);
+    assertThat(index.usageCount("com.example.Unused")).isZero();
   }
 
   @Test

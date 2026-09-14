@@ -40,6 +40,8 @@ public final class WorkspaceTypeIndex {
   private final NavigableMap<String, List<TypeIndexEntry>> symbolsBySimpleNameLower;
   private final NavigableMap<String, TypeIndexEntry> byBinaryName;
   private final Map<String, List<TypeIndexEntry>> directSubtypesByParent;
+  // How many reactor classes reference each type (document frequency); a completion-ranking signal.
+  private final Map<String, Integer> usageCounts;
 
   private WorkspaceTypeIndex(
       final List<TypeIndexEntry> staticEntries,
@@ -47,13 +49,15 @@ public final class WorkspaceTypeIndex {
       final NavigableMap<String, List<TypeIndexEntry>> bySimpleNameLower,
       final NavigableMap<String, List<TypeIndexEntry>> symbolsBySimpleNameLower,
       final NavigableMap<String, TypeIndexEntry> byBinaryName,
-      final Map<String, List<TypeIndexEntry>> directSubtypesByParent) {
+      final Map<String, List<TypeIndexEntry>> directSubtypesByParent,
+      final Map<String, Integer> usageCounts) {
     this.staticEntries = staticEntries;
     this.reactorBinaryNames = reactorBinaryNames;
     this.bySimpleNameLower = bySimpleNameLower;
     this.symbolsBySimpleNameLower = symbolsBySimpleNameLower;
     this.byBinaryName = byBinaryName;
     this.directSubtypesByParent = directSubtypesByParent;
+    this.usageCounts = usageCounts;
   }
 
   public static WorkspaceTypeIndex empty() {
@@ -63,6 +67,7 @@ public final class WorkspaceTypeIndex {
         Collections.emptyNavigableMap(),
         Collections.emptyNavigableMap(),
         Collections.emptyNavigableMap(),
+        Map.of(),
         Map.of());
   }
 
@@ -80,7 +85,7 @@ public final class WorkspaceTypeIndex {
             .toList();
     final List<TypeIndexEntry> staticEntries =
         files.stream().flatMap(file -> file.types().stream()).toList();
-    final var index = create(staticEntries, reactorEntries);
+    final var index = create(staticEntries, reactorEntries, Map.of());
     LOG.fine(
         () ->
             "[type-index] loaded index: %d simple names from %d/%d shard(s) + %d reactor shard(s) %dms"
@@ -93,10 +98,24 @@ public final class WorkspaceTypeIndex {
     return index;
   }
 
+  // A cheap immutable copy that attaches reactor usage counts (document frequency) to the built
+  // index; applied on the full-build path only, so an incremental save keeps the existing counts.
+  public WorkspaceTypeIndex withUsageCounts(final Map<String, Integer> usageCounts) {
+    return new WorkspaceTypeIndex(
+        staticEntries,
+        reactorBinaryNames,
+        bySimpleNameLower,
+        symbolsBySimpleNameLower,
+        byBinaryName,
+        directSubtypesByParent,
+        Map.copyOf(usageCounts));
+  }
+
   public WorkspaceTypeIndex withReactorEntries(
       final Collection<List<TypeIndexEntry>> reactorEntries) {
     final var t = Stopwatch.start();
-    final var index = create(staticEntries, reactorEntries);
+    // Usage counts carry over: they are refreshed only on a full build, not on an incremental save.
+    final var index = create(staticEntries, reactorEntries, usageCounts);
     LOG.fine(
         () ->
             "[type-index] refreshed reactor index: %d simple names from %d static type(s) + %d reactor shard(s) %dms"
@@ -110,7 +129,8 @@ public final class WorkspaceTypeIndex {
 
   private static WorkspaceTypeIndex create(
       final List<TypeIndexEntry> staticEntries,
-      final Collection<List<TypeIndexEntry>> reactorEntries) {
+      final Collection<List<TypeIndexEntry>> reactorEntries,
+      final Map<String, Integer> usageCounts) {
     final Set<String> reactorBinaryNames =
         reactorEntries.stream()
             .flatMap(List::stream)
@@ -163,7 +183,12 @@ public final class WorkspaceTypeIndex {
         map,
         symbolMap,
         Collections.unmodifiableNavigableMap(byBinaryName),
-        Map.copyOf(directSubtypesByParent));
+        Map.copyOf(directSubtypesByParent),
+        Map.copyOf(usageCounts));
+  }
+
+  public int usageCount(final String binaryName) {
+    return usageCounts.getOrDefault(binaryName, 0);
   }
 
   private static List<TypeIndexEntry> deduplicate(
