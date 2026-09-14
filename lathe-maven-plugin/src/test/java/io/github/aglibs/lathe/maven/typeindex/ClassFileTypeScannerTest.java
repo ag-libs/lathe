@@ -50,6 +50,42 @@ class ClassFileTypeScannerTest {
     assertThat(entries).isEmpty();
   }
 
+  @Test
+  void scanReactorDirectory_aggregatesReferenceCounts_excludingSelfAndArrays() throws Exception {
+    // UsesList and AlsoUsesList reference java.util.List; UsesArray references String[] (an array
+    // descriptor). No fixture references another fixture, so their own names must not be counted.
+    final Path classes =
+        compile(
+            Map.of(
+                "UsesList.java",
+                "package com.example; class UsesList { Object f() { return java.util.List.of(); } }",
+                "AlsoUsesList.java",
+                "package com.example; class AlsoUsesList { Object f() { return java.util.List.of(); } }",
+                "UsesArray.java",
+                "package com.example; class UsesArray { Object f() { return String[].class; } }"));
+
+    final ClassFileTypeScanner.ReactorScan scan =
+        ClassFileTypeScanner.scanReactorDirectory(classes);
+
+    assertThat(scan.entries())
+        .extracting(TypeIndexEntry::binaryName)
+        .contains("com.example.UsesList", "com.example.AlsoUsesList", "com.example.UsesArray");
+    assertThat(scan.referenceCounts()).containsEntry("java.util.List", 2);
+    assertThat(scan.referenceCounts().keySet()).noneMatch(name -> name.contains("["));
+    assertThat(scan.referenceCounts())
+        .doesNotContainKeys(
+            "com.example.UsesList", "com.example.AlsoUsesList", "com.example.UsesArray");
+  }
+
+  @Test
+  void scanReactorDirectory_missingDirectory_returnsEmpty() throws Exception {
+    final ClassFileTypeScanner.ReactorScan scan =
+        ClassFileTypeScanner.scanReactorDirectory(tmp.resolve("missing"));
+
+    assertThat(scan.entries()).isEmpty();
+    assertThat(scan.referenceCounts()).isEmpty();
+  }
+
   private void assertFixtureEntries(final List<TypeIndexEntry> entries) {
     final Map<String, TypeIndexEntry> byBinaryName =
         entries.stream().collect(Collectors.toMap(TypeIndexEntry::binaryName, Function.identity()));
@@ -102,11 +138,7 @@ class ClassFileTypeScannerTest {
   }
 
   private Path compileFixtureClasses() throws IOException {
-    final Path src = tmp.resolve("src");
-    final Path classes = tmp.resolve("classes");
-    Files.createDirectories(src.resolve("com/example"));
-    Files.createDirectories(classes);
-    final Map<String, String> sources =
+    return compile(
         Map.of(
             "PublicType.java",
             "package com.example; public class PublicType extends PackagePrivate { public static class Nested {} public static final Object ANON = new Object() {}; }",
@@ -117,7 +149,14 @@ class ClassFileTypeScannerTest {
             "PublicEnum.java",
             "package com.example; public enum PublicEnum { A }",
             "PublicAnnotation.java",
-            "package com.example; public @interface PublicAnnotation {}");
+            "package com.example; public @interface PublicAnnotation {}"));
+  }
+
+  private Path compile(final Map<String, String> sources) throws IOException {
+    final Path src = tmp.resolve("src");
+    final Path classes = tmp.resolve("classes");
+    Files.createDirectories(src.resolve("com/example"));
+    Files.createDirectories(classes);
     writeSources(src, sources);
 
     final JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();

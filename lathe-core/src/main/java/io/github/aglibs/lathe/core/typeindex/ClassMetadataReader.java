@@ -4,7 +4,9 @@ import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.Optional;
+import java.util.Set;
 
 final class ClassMetadataReader {
 
@@ -73,7 +75,30 @@ final class ClassMetadataReader {
       directSupertypes.add(interfaceName);
     }
 
-    return Optional.of(new ClassMetadata(access, binaryName, directSupertypes));
+    final Set<String> referencedTypes =
+        referencedTypes(binaryName, constantPoolCount, utf8Entries, classNameIndexes);
+    return Optional.of(new ClassMetadata(access, binaryName, directSupertypes, referencedTypes));
+  }
+
+  // Excludes self and array descriptors (whose element type is referenced directly elsewhere).
+  private static Set<String> referencedTypes(
+      final String binaryName,
+      final int constantPoolCount,
+      final String[] utf8Entries,
+      final int[] classNameIndexes) {
+    final var referenced = new LinkedHashSet<String>();
+    for (int i = 1; i < constantPoolCount; i++) {
+      if (classNameIndexes[i] == 0) {
+        continue;
+      }
+
+      final String name = resolveClassName(i, utf8Entries, classNameIndexes);
+      if (name != null && name.indexOf('[') < 0 && !name.equals(binaryName)) {
+        referenced.add(name);
+      }
+    }
+
+    return referenced;
   }
 
   private static String resolveClassName(

@@ -9,6 +9,7 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class ClassMetadataReaderTest {
@@ -83,10 +84,12 @@ class ClassMetadataReaderTest {
 
   @Test
   void metadata_invalidValues_throws() {
-    assertThatThrownBy(() -> new ClassMetadata(new ClassAccess(0), " ", List.of()))
+    assertThatThrownBy(() -> new ClassMetadata(new ClassAccess(0), " ", List.of(), Set.of()))
         .hasMessageContaining("binaryName");
-    assertThatThrownBy(() -> new ClassMetadata(new ClassAccess(0), "example.Type", null))
+    assertThatThrownBy(() -> new ClassMetadata(new ClassAccess(0), "example.Type", null, Set.of()))
         .hasMessageContaining("directSupertypes");
+    assertThatThrownBy(() -> new ClassMetadata(new ClassAccess(0), "example.Type", List.of(), null))
+        .hasMessageContaining("referencedTypes");
   }
 
   private static InputStream classFile(final Class<?> type) {

@@ -1,14 +1,17 @@
 package io.github.aglibs.lathe.core.typeindex;
 
+import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public final class ClassFileTypeScanner {
@@ -18,6 +21,19 @@ public final class ClassFileTypeScanner {
   private static final String META_INF_VERSIONS = "META-INF/versions/";
 
   private ClassFileTypeScanner() {}
+
+  // referenceCounts: how many scanned classes reference each type (document frequency).
+  public record ReactorScan(List<TypeIndexEntry> entries, Map<String, Integer> referenceCounts) {
+
+    public ReactorScan {
+      ValidCheck.check()
+          .notNull(entries, "entries")
+          .notNull(referenceCounts, "referenceCounts")
+          .validate();
+      entries = List.copyOf(entries);
+      referenceCounts = Map.copyOf(referenceCounts);
+    }
+  }
 
   public static List<TypeIndexEntry> scanJar(final Path jar) throws IOException {
     try (final JarFile jarFile =
@@ -31,13 +47,30 @@ public final class ClassFileTypeScanner {
   }
 
   public static List<TypeIndexEntry> scanDirectory(final Path root) throws IOException {
+    return sorted(readDirectory(root).stream().map(ClassFileTypeScanner::toEntry));
+  }
+
+  public static ReactorScan scanReactorDirectory(final Path root) throws IOException {
+    final List<ClassMetadata> classes = readDirectory(root);
+    final List<TypeIndexEntry> entries =
+        sorted(classes.stream().map(ClassFileTypeScanner::toEntry));
+    final Map<String, Integer> referenceCounts =
+        classes.stream()
+            .flatMap(metadata -> metadata.referencedTypes().stream())
+            .collect(Collectors.groupingBy(name -> name, Collectors.summingInt(name -> 1)));
+    return new ReactorScan(entries, referenceCounts);
+  }
+
+  private static List<ClassMetadata> readDirectory(final Path root) throws IOException {
     if (!Files.isDirectory(root)) {
       return List.of();
     }
 
     try (final Stream<Path> files = Files.walk(root)) {
-      return sorted(
-          files.filter(Files::isRegularFile).flatMap(path -> scanClassFile(root, path).stream()));
+      return files
+          .filter(Files::isRegularFile)
+          .flatMap(file -> readClassFile(root, file).stream())
+          .toList();
     }
   }
 
@@ -59,14 +92,14 @@ public final class ClassFileTypeScanner {
     }
   }
 
-  private static Optional<TypeIndexEntry> scanClassFile(final Path root, final Path file) {
+  private static Optional<ClassMetadata> readClassFile(final Path root, final Path file) {
     final Optional<String> className = standardClassEntryName(classEntryName(root, file), false);
     if (className.isEmpty()) {
       return Optional.empty();
     }
 
     try (final InputStream in = Files.newInputStream(file)) {
-      return scanClassEntry(className.get(), in);
+      return readMetadata(className.get(), in);
     } catch (final IOException | IllegalArgumentException e) {
       return Optional.empty();
     }
@@ -74,12 +107,17 @@ public final class ClassFileTypeScanner {
 
   private static Optional<TypeIndexEntry> scanClassEntry(
       final String className, final InputStream in) throws IOException {
+    return readMetadata(className, in).map(ClassFileTypeScanner::toEntry);
+  }
+
+  private static Optional<ClassMetadata> readMetadata(final String className, final InputStream in)
+      throws IOException {
     final Optional<ClassMetadata> metadata = ClassMetadataReader.read(in);
     if (metadata.isEmpty() || !className(metadata.get()).equals(className)) {
       return Optional.empty();
     }
 
-    return Optional.of(toEntry(metadata.get()));
+    return metadata;
   }
 
   private static String classEntryName(final Path root, final Path file) {
