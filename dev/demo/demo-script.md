@@ -130,7 +130,7 @@ the action (no extra time).
 
 | # | Beat | Actions | Caption | ~s |
 |---|------|---------|---------|----|
-| 0 | Capture | `mvn clean test -Dlathe.capture.only=true` -> BUILD SUCCESS -> open `Main.java` -> workspace ready | (1) `Capture your Maven build` (2) `Open a file — Lathe attaches, no setup` | 11 |
+| 0 | Capture | `mvn clean test -Dlathe.capture.only=true` -> BUILD SUCCESS -> open `Main.java` -> workspace ready | (1) `Capture your build` (2) `Open a file — Lathe attaches, no setup` | 11 |
 | 1 | Everyday editing | above the `println` add `final var greeting = StringUtils.` (completion: cross-module `upper(String)`) `upper(user.` (completion: record `name()`); change `var`->`int` -> live "incompatible types"; fix `int`->`var` -> clears; use `greeting` in the `println`, `:w` -> clean | `Complete, catch the mistake, fix — as you type` | 8 |
 | 2 | Annotation processing, live | `gd` on `User` into `User.java` (baseline already declares `final User user`), add `Instant createdAt` (type `Instant` -> completion + auto-import), `:w` (processor regenerates), back in `Main` `.createdAt(` completes on the builder | `Edit a record — the processor regenerates on save` | 13 |
 | 3 | JPMS module graph | in a `jpms` source add a static `Logger` (java.util.logging) + a log line -> module-access error; open `module-info.java`, add `requires java.logging;` (module-name completion), `:w` -> resolves | `Edit module-info — resolution follows` | 9 |
@@ -250,7 +250,7 @@ alpha). We chose outline-only (no box); the mechanism is documented below.
 
 | # | Chapter title | Caption |
 |---|---------------|---------|
-| 0 | Capture | (1) Capture your Maven build (2) Open a file — Lathe attaches, no setup |
+| 0 | Capture | (1) Capture your build (2) Open a file — Lathe attaches, no setup |
 | 1 | Everyday editing | Complete, catch the mistake, fix — as you type |
 | 2 | Live annotation processing | Edit a record — the processor regenerates on save |
 | 3 | Modules just work | Edit module-info — resolution follows |
@@ -268,7 +268,7 @@ one** caption, each on its own bounded window (beat 0 has two: build, then attac
 
 ```
 Style: Cap,DejaVu Sans,40,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,2,2,40,40,110,1
-Dialogue: 0,0:00:00.50,0:00:05.00,Cap,,0,0,0,,{\fad(400,500)}Capture your Maven build
+Dialogue: 0,0:00:00.50,0:00:05.00,Cap,,0,0,0,,{\fad(400,500)}Capture your build
 Dialogue: 0,0:00:05.40,0:00:10.40,Cap,,0,0,0,,{\fad(400,500)}Open a file — Lathe attaches, no setup
 ```
 
