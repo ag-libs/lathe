@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.util.List;
 import org.eclipse.lsp4j.Diagnostic;
@@ -312,6 +313,9 @@ class UnusedDeclarationScannerTest {
 
   @Test
   void compile_unnamedVariableUnderscore_notReportedButNamedStillIs() {
+    // Unnamed variables (`_`) are standard only on JDK 22+ (JEP 456); on 21 they are a preview
+    // feature, so the source below fails to compile and the scan is suppressed. Skip there.
+    assumeTrue(Runtime.version().feature() >= 22, "unnamed variables require JDK 22+");
     // `_` is an unnamed variable (intentionally unused, cannot be referenced), so no position — a
     // catch clause, a lambda parameter, an enhanced-for variable, or a `var _` binding — may be
     // reported (before the fix each drew an "Unused ... ''" hint with an empty name). The single
