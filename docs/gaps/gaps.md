@@ -439,65 +439,73 @@ None yet — to be defined when the fix is scheduled.
 
 ---
 
-## DB-7 — With several breakpoints set, execution suspends at the wrong lines (off by the runtime flow, not the breakpoints)
+## DB-7 — Breakpoints in a class outside the launched module resolve to no source (and only arm when the file is open)
 
-**Status: accepted — Target: backlog (needs triage + probe; candidate for promotion — breakpoint accuracy is core to the debug feature).**
+**Status: accepted — Target: next (root cause confirmed by probe; primary fix is small).**
 
-Signal: user feedback — setting multiple breakpoints across project source files and debugging stops
-at seemingly "random" locations along the execution path rather than at the lines the breakpoints were
-set on. Not yet live-probed; root cause below is a set of hypotheses to confirm before a fix.
+Signal: user feedback — setting breakpoints across several project source files and debugging suspends
+at seemingly "random" places along the execution path rather than at the set breakpoints. Reproduced
+and diagnosed (below); it is **not** a staleness / line-table issue.
 
 ### Observed behaviour
 
-With breakpoints set on several project files, a debug run suspends at points that follow the actual
-runtime flow but do not coincide with the requested breakpoint lines — as if each breakpoint were
-shifted to a nearby (or unrelated) statement. The mis-placement tracks real executed code (it is not a
-random address), which points at a **line-number mapping** problem rather than a missed event.
+With breakpoints spread across more than one class, a debug run appears to stop at locations that
+follow the runtime flow but do not correspond to the breakpoints. In the editor a stop in another
+module's class lands on a wrong/blank location because the adapter returns a stack frame with **no
+source**, so nvim-dap cannot highlight where it actually stopped — it reads as a "random" halt.
 
-### Suspected cause (to verify)
+### Reproduced (multi-module invoker workspace, fresh bytecode)
 
-The debug feature replays the captured `.lathe/` bytecode, while breakpoints are requested by line
-against the **editor's current source**. The likely failure is a mismatch between those two:
+`dev/debug_probe.py` (extended with `--bp path:line`, multi-file) against the `multi-module` invoker
+project, launching `com.example.app.Main` with breakpoints in `Main` (module `app`) and in
+`StringUtils.upper` (module `core`, called at `Main:10`):
 
-1. **Stale replayed line tables (strongest hypothesis).** If a source file was edited after the last
-   `mvn` capture/sync (lines inserted or removed), the class in `.lathe/` still carries the
-   line-number table from capture time. JDI binds a breakpoint by line number, so editor line `N` binds
-   to bytecode line `N` — now a different statement — and execution suspends there. This is the same
-   staleness family as WS-1 and the local-variable-table issue fixed in DB-5.
-2. **Source-path / class resolution in the DAP adapter.** A breakpoint's editor path may resolve to the
-   wrong class (inner classes, same simple name across modules, or the `.lathe` mirror vs the real
-   source), installing the line breakpoint in a class whose line ranges differ.
-3. **Multiple-breakpoint interaction.** The symptom appears specifically with *several* breakpoints, so
-   confirm it is not per-breakpoint line drift (1) surfacing at scale versus a distinct bug in how the
-   adapter registers more than one `SourceBreakpoint`.
+- Breakpoints in `Main` (the launched class's own module) all hit on their exact lines.
+- The `StringUtils` breakpoint, when that file is **not open**, never fires — the debuggee runs past it.
+- When `StringUtils.java` **is** opened, the breakpoint fires, but the stop frame comes back as
+  `<NO-SOURCE>:8 (frame=StringUtils.upper(String))` — it stopped correctly, but with no source path.
 
-### Triage — first checks
+Fresh `mvn process-test-classes` before the run (no edits) — so staleness is ruled out.
 
-- **Sync, then debug.** Re-run `mvn process-test-classes` (a fresh capture) and debug *without* editing
-  afterwards. If breakpoints then land correctly, the cause is stale replayed line tables (hypothesis 1)
-  and the fix is staleness detection for the debug path (mirror the WS-1 compile-stamp model), plus a
-  prompt/refuse-to-attach when the source is newer than the captured class.
-- **Single vs many.** Reproduce with one breakpoint, then several, to separate hypothesis 1 from 3.
-- Capture the DAP `setBreakpoints` request/response (requested line vs the `verified`/actual line the
-  adapter reports) to see where the shift is introduced.
+### Root cause (confirmed)
+
+Two coupled defects in the debug source-lookup path, both from scoping the debug session to the
+launched module:
+
+1. **No cross-module source resolution.** `WorkspaceSession` builds the debug provider context with
+   only the launched module's source roots
+   (`configsFor(moduleRel).flatMap(c -> c.sourceRoots())`, WorkspaceSession.java ~474), where every
+   other feature uses `workspace.allSourceRoots()`. So `LatheSourceLookUpProvider.getSource(fqn)` →
+   `TypeSourceLocator.findSourceFile(fqn, sourceRoots)` returns `null` for any class in another reactor
+   module, and the DAP stack frame has no source. This is the "cross-module reverse lookup is Phase 2"
+   deferral noted in `LatheSourceLookUpProvider`'s javadoc, now biting in practice.
+2. **Arming needs the file open.** `LatheSourceLookUpProvider.classNameAt` → `enclosingBinaryName`
+   reads only the module worker's open-file analysis cache (`cache.get(uri)`), returning empty for a
+   file that is not currently attributed — so a breakpoint in an unopened file gets no class name and is
+   never armed.
+
+### Fix direction
+
+- **Primary (small):** pass `workspace.allSourceRoots()` to `LatheProviderContext` so cross-module
+  frames resolve to their real source files. This alone fixes the visible symptom (stops show the right
+  file:line) for any breakpoint whose file is open.
+- **Follow-up:** arm breakpoints in files that are not open — attribute/compile the breakpoint file on
+  demand in the owning module worker rather than requiring the open-file cache.
 
 ### Probe commands
 
-`dev/debug_probe.py` currently sets a **single** breakpoint (`--line N`); the multi-breakpoint case
-needs either a probe extension (accept repeated `--line`) or the live nvim-dap client. Single-breakpoint
-drift is reproducible today:
-
 ```bash
-# Edit <MainFile.java> to insert a few blank lines above the target statement, do NOT re-sync,
-# then set a breakpoint on the (post-edit) line and observe where it actually suspends:
-python3 dev/debug_probe.py --workspace <ws> <MainFile.java> --line <N> --main <Class>
+# Multi-file breakpoints across modules; every requested file:line must appear in the actual stops:
+python3 dev/debug_probe.py --workspace <ws> <app/Main.java> --main com.example.app.Main \
+  --bp <app/Main.java>:8 --bp <core/StringUtils.java>:8
+# Today: the core stop reports <NO-SOURCE>; with the primary fix it reports StringUtils.java:8.
 ```
 
 ### Regression targets
 
-None yet — to be defined once reproduced (positive: a breakpoint on an executable line suspends on
-exactly that source line against freshly-synced bytecode; negative: a source edited since capture is
-either remapped correctly or the attach is refused with a re-sync prompt, never silently shifted).
+To be added with the fix (positive: a breakpoint in a different reactor module than the launched class
+suspends and its frame resolves to that module's source file:line; negative: a same-simple-name class
+in another module is not confused for the launched one).
 
 ---
 

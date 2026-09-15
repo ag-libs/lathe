@@ -162,9 +162,13 @@ def run_probe(workspace: Path, file: Path, line: int, method: str | None,
               eval_expr: str | None = None, expect: str | None = None,
               condition: str | None = None, expect_stop: bool = True,
               complete: str | None = None, expect_item: str | None = None,
-              expand: str | None = None, expect_child: str | None = None) -> int:
+              expand: str | None = None, expect_child: str | None = None,
+              bps: list[tuple[Path, int]] | None = None) -> int:
     with LatheClient.start(workspace) as lathe:
         lathe.open(file)  # attribute the file in the module worker (source lookup reads that cache)
+        for bp_path in {p for p, _ in (bps or [])}:
+            if bp_path != file:
+                lathe.open(bp_path)  # breakpoint arming reads each file's attributed analysis cache
         if main_class:
             module_rel = resolve_main_module(lathe, file, main_class)
             print(f"[probe] debugging main {main_class} (module {module_rel}), "
@@ -184,7 +188,9 @@ def run_probe(workspace: Path, file: Path, line: int, method: str | None,
 
         dap = DapClient("127.0.0.1", dap_port)
         try:
-            if condition is not None:
+            if bps is not None:
+                rc = _drive_multi(dap, bps, jdwp_port)
+            elif condition is not None:
                 rc = _drive_condition(dap, file, line, jdwp_port, condition, expect_stop)
             elif complete is not None:
                 rc = _drive_complete(dap, file, line, jdwp_port, complete, expect_item)
@@ -257,6 +263,55 @@ def _drive(dap: DapClient, file: Path, line: int, jdwp_port: int) -> int:
         return 1
 
     print("[probe] PASS")
+    return 0
+
+
+def _drive_multi(dap: DapClient, bps: list[tuple[Path, int]], jdwp_port: int) -> int:
+    """Set breakpoints across one or more files (one setBreakpoints per source), run to completion,
+    and record every stop as (file, line) -- used to reproduce DB-7 (breakpoints suspend at the wrong
+    lines when several are set, potentially in different classes on the call path)."""
+    dap.request("initialize", {"adapterID": "lathe", "clientID": "lathe-probe",
+                               "linesStartAt1": True, "columnsStartAt1": True,
+                               "pathFormat": "path"})
+    _attach_with_retry(dap, jdwp_port)
+    dap.wait_event("initialized")
+
+    by_file: dict[Path, list[int]] = {}
+    for path, ln in bps:
+        by_file.setdefault(path, []).append(ln)
+    for path, lns in by_file.items():
+        resp = dap.request("setBreakpoints", {
+            "source": {"path": str(path)},
+            "breakpoints": [{"line": ln} for ln in lns],
+        })
+        registered = [(b.get("line"), b.get("verified")) for b in resp["body"]["breakpoints"]]
+        print(f"[probe] {path.name}: requested {lns}  registered(line,verified)={registered}")
+    dap.request("configurationDone")
+
+    requested = sorted({(p.name, ln) for p, ln in bps})
+    hits: list[tuple[str, int]] = []
+    while True:
+        try:
+            stopped = dap.wait_event("stopped")
+        except RuntimeError:
+            break  # terminated before another stop
+        thread_id = stopped["body"]["threadId"]
+        top = dap.request("stackTrace", {"threadId": thread_id})["body"]["stackFrames"][0]
+        src = top.get("source")
+        name = Path(src["path"]).name if src and src.get("path") else "<NO-SOURCE>"
+        hit = (name, top.get("line"))
+        hits.append(hit)
+        print(f"[probe] stopped at {name}:{hit[1]} (frame={top.get('name')}) "
+              f"reason={stopped['body'].get('reason')}")
+        dap.request("continue", {"threadId": thread_id})
+
+    print(f"[probe] requested = {requested}")
+    print(f"[probe] actual stops (in order) = {hits}")
+    if sorted(set(hits)) != requested:
+        print(f"[probe] MISMATCH: requested {requested}, hit {sorted(set(hits))}")
+        return 1
+
+    print("[probe] PASS -- every breakpoint hit on exactly its requested file:line")
     return 0
 
 
@@ -457,7 +512,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Lathe debug e2e probe")
     parser.add_argument("--workspace", required=True, type=Path, help="Lathe workspace root")
     parser.add_argument("file", type=Path, help="source file to breakpoint")
-    parser.add_argument("--line", required=True, type=int, help="1-based breakpoint line")
+    parser.add_argument("--line", type=int, help="1-based breakpoint line")
+    parser.add_argument("--lines", help="comma-separated 1-based breakpoint lines in the main file")
+    parser.add_argument("--bp", action="append",
+                        help="breakpoint 'path:line' (repeatable; different files/classes allowed)")
     parser.add_argument("--method", help="substring of the test method id to debug")
     parser.add_argument("--main", dest="main_class",
                         help="fully-qualified main class to debug (instead of a test)")
@@ -481,9 +539,19 @@ def main() -> int:
 
     workspace = args.workspace.resolve()
     file = args.file.resolve()
+    bps: list[tuple[Path, int]] | None = None
+    if args.bp:
+        bps = []
+        for spec in args.bp:
+            path_str, _, line_str = spec.rpartition(":")
+            bps.append((Path(path_str).resolve() if path_str else file, int(line_str)))
+    elif args.lines:
+        bps = [(file, int(x)) for x in args.lines.split(",")]
+    if args.line is None and bps is None:
+        parser.error("one of --line, --lines, or --bp is required")
     return run_probe(workspace, file, args.line, args.method, args.main_class, args.detach,
                      args.eval_expr, args.expect, args.condition, not args.expect_nostop,
-                     args.complete, args.expect_item, args.expand, args.expect_child)
+                     args.complete, args.expect_item, args.expand, args.expect_child, bps)
 
 
 if __name__ == "__main__":
