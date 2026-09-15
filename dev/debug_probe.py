@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import socket
 import sys
 import threading
@@ -163,7 +164,7 @@ def run_probe(workspace: Path, file: Path, line: int, method: str | None,
               condition: str | None = None, expect_stop: bool = True,
               complete: str | None = None, expect_item: str | None = None,
               expand: str | None = None, expect_child: str | None = None,
-              bps: list[tuple[Path, int]] | None = None) -> int:
+              bps: list[tuple[Path, int]] | None = None, step_in: bool = False) -> int:
     with LatheClient.start(workspace) as lathe:
         lathe.open(file)  # attribute the file in the module worker (source lookup reads that cache)
         for bp_path in {p for p, _ in (bps or [])}:
@@ -188,7 +189,9 @@ def run_probe(workspace: Path, file: Path, line: int, method: str | None,
 
         dap = DapClient("127.0.0.1", dap_port)
         try:
-            if bps is not None:
+            if step_in:
+                rc = _drive_step_in(dap, file, line, jdwp_port)
+            elif bps is not None:
                 rc = _drive_multi(dap, bps, jdwp_port)
             elif condition is not None:
                 rc = _drive_condition(dap, file, line, jdwp_port, condition, expect_stop)
@@ -215,19 +218,26 @@ def run_probe(workspace: Path, file: Path, line: int, method: str | None,
 def _dump_server_log(lathe: LatheClient):
     """On failure, surface the server-side debug logs (the DAP host + source-lookup path) so the
     cause is visible -- the server's stderr is captured into the client, not the console."""
-    lines = [l for l in lathe.stderr_lines if "[debug]" in l or "SEVERE" in l]
+    lines = [l for l in lathe.stderr_lines
+             if "[debug]" in l or "[breakpoint]" in l or "SEVERE" in l or "WARNING" in l]
     if lines:
         print("[probe] --- server debug log ---")
         for line in lines[-20:]:
             print("[probe]   " + line)
 
 
-def _drive(dap: DapClient, file: Path, line: int, jdwp_port: int) -> int:
+def _init_and_attach(dap: DapClient, jdwp_port: int) -> None:
+    """The DAP session preamble every driver runs: initialize, attach to the JDWP agent, and wait
+    for the `initialized` event that means breakpoints can be set."""
     dap.request("initialize", {"adapterID": "lathe", "clientID": "lathe-probe",
                                "linesStartAt1": True, "columnsStartAt1": True,
                                "pathFormat": "path"})
     _attach_with_retry(dap, jdwp_port)
     dap.wait_event("initialized")
+
+
+def _drive(dap: DapClient, file: Path, line: int, jdwp_port: int) -> int:
+    _init_and_attach(dap, jdwp_port)
 
     bp = dap.request("setBreakpoints", {
         "source": {"path": str(file)},
@@ -270,11 +280,7 @@ def _drive_multi(dap: DapClient, bps: list[tuple[Path, int]], jdwp_port: int) ->
     """Set breakpoints across one or more files (one setBreakpoints per source), run to completion,
     and record every stop as (file, line) -- checks that breakpoints in several files/classes on the
     call path each suspend on their exact requested line."""
-    dap.request("initialize", {"adapterID": "lathe", "clientID": "lathe-probe",
-                               "linesStartAt1": True, "columnsStartAt1": True,
-                               "pathFormat": "path"})
-    _attach_with_retry(dap, jdwp_port)
-    dap.wait_event("initialized")
+    _init_and_attach(dap, jdwp_port)
 
     by_file: dict[Path, list[int]] = {}
     for path, ln in bps:
@@ -315,14 +321,57 @@ def _drive_multi(dap: DapClient, bps: list[tuple[Path, int]], jdwp_port: int) ->
     return 0
 
 
+
+_STEP_COUNT = int(os.environ.get("STEP_COUNT", "1"))
+
+
+def _drive_step_in(dap: DapClient, file: Path, line: int, jdwp_port: int) -> int:
+    """Stop at a breakpoint (a call site), then step into the callee and report whether its frame
+    resolves to a source file -- checks step-into a class whose file is NOT open."""
+    _init_and_attach(dap, jdwp_port)
+    dap.request("setBreakpoints", {
+        "source": {"path": str(file)},
+        "breakpoints": [{"line": line}],
+    })
+    dap.request("configurationDone")
+
+    stopped = dap.wait_event("stopped")
+    tid = stopped["body"]["threadId"]
+    top = dap.request("stackTrace", {"threadId": tid})["body"]["stackFrames"][0]
+    print(f"[probe] breakpoint stop at {Path(top['source']['path']).name}:{top.get('line')} "
+          f"(frame={top.get('name')})")
+
+    name = "<NO-SOURCE>"
+    for i in range(_STEP_COUNT):
+        try:
+            dap.request("stepIn", {"threadId": tid})
+            stepped = dap.wait_event("stopped")
+        except RuntimeError:
+            break
+        tid = stepped["body"]["threadId"]
+        top = dap.request("stackTrace", {"threadId": tid})["body"]["stackFrames"][0]
+        s = top.get("source")
+        name = Path(s["path"]).name if s and s.get("path") else "<NO-SOURCE>"
+        print(f"[probe] step {i + 1}: {top.get('name')}  @ {name}:{top.get('line')}")
+
+    dap.request("continue", {"threadId": tid})
+    try:
+        dap.wait_event("terminated")
+    except RuntimeError:
+        pass
+
+    if name == "<NO-SOURCE>":
+        print("[probe] FAIL: stepped into a frame with no source")
+        return 1
+    print("[probe] PASS: step-into frame resolved to a source file")
+    return 0
+
+
 def _drive_eval(
     dap: DapClient, file: Path, line: int, jdwp_port: int, expr: str, expect: str | None) -> int:
     """Stop at the breakpoint, then send a DAP `evaluate` for `expr` against the top frame (as a
     watch/hover does) and check the rendered result -- the read-only expression-evaluation GO/NO-GO."""
-    dap.request("initialize", {"adapterID": "lathe", "clientID": "lathe-probe",
-                               "linesStartAt1": True, "columnsStartAt1": True, "pathFormat": "path"})
-    _attach_with_retry(dap, jdwp_port)
-    dap.wait_event("initialized")
+    _init_and_attach(dap, jdwp_port)
     dap.request("setBreakpoints", {"source": {"path": str(file)}, "breakpoints": [{"line": line}]})
     dap.request("configurationDone")
 
@@ -349,10 +398,7 @@ def _drive_complete(
     top frame -- the debug-console completion GO/NO-GO (DB-4). Asserts `expect_item` is offered.
     Cursor-at-end sidesteps the 0-vs-1-based column question: the provider clamps to the snippet
     length either way, which is the common REPL case (complete what you just typed)."""
-    dap.request("initialize", {"adapterID": "lathe", "clientID": "lathe-probe",
-                               "linesStartAt1": True, "columnsStartAt1": True, "pathFormat": "path"})
-    _attach_with_retry(dap, jdwp_port)
-    dap.wait_event("initialized")
+    _init_and_attach(dap, jdwp_port)
     dap.request("setBreakpoints", {"source": {"path": str(file)}, "breakpoints": [{"line": line}]})
     dap.request("configurationDone")
 
@@ -382,10 +428,7 @@ def _drive_expand(
     which calls the object-scoped `evaluate` overload (`size()`/`toArray()` with `this` = the object)
     -- the object-scoped-evaluation GO/NO-GO (DB-3). Without it the expansion falls back to raw
     fields (`elementData`, `size`), so a logical element among the children proves the overload ran."""
-    dap.request("initialize", {"adapterID": "lathe", "clientID": "lathe-probe",
-                               "linesStartAt1": True, "columnsStartAt1": True, "pathFormat": "path"})
-    _attach_with_retry(dap, jdwp_port)
-    dap.wait_event("initialized")
+    _init_and_attach(dap, jdwp_port)
     dap.request("setBreakpoints", {"source": {"path": str(file)}, "breakpoints": [{"line": line}]})
     dap.request("configurationDone")
 
@@ -424,10 +467,7 @@ def _drive_condition(
     dap: DapClient, file: Path, line: int, jdwp_port: int, condition: str, expect_stop: bool) -> int:
     """Set a conditional breakpoint and verify it suspends only when the condition holds -- exercises
     evaluateForBreakpoint (the adapter evaluates the condition on each hit and inverts the result)."""
-    dap.request("initialize", {"adapterID": "lathe", "clientID": "lathe-probe",
-                               "linesStartAt1": True, "columnsStartAt1": True, "pathFormat": "path"})
-    _attach_with_retry(dap, jdwp_port)
-    dap.wait_event("initialized")
+    _init_and_attach(dap, jdwp_port)
     dap.request("setBreakpoints",
                 {"source": {"path": str(file)}, "breakpoints": [{"line": line, "condition": condition}]})
     dap.request("configurationDone")
@@ -450,10 +490,7 @@ def _drive_condition(
 def _drive_detach(dap: DapClient, file: Path, line: int, jdwp_port: int) -> int:
     """Stop at the breakpoint, then disconnect (as nvim-dap does when you stop debugging) and verify
     the debuggee is torn down -- its JDWP socket closes -- rather than left as an orphaned JVM."""
-    dap.request("initialize", {"adapterID": "lathe", "clientID": "lathe-probe",
-                               "linesStartAt1": True, "columnsStartAt1": True, "pathFormat": "path"})
-    _attach_with_retry(dap, jdwp_port)
-    dap.wait_event("initialized")
+    _init_and_attach(dap, jdwp_port)
     dap.request("setBreakpoints", {"source": {"path": str(file)}, "breakpoints": [{"line": line}]})
     dap.request("configurationDone")
     dap.wait_event("stopped")
@@ -516,6 +553,8 @@ def main() -> int:
     parser.add_argument("--lines", help="comma-separated 1-based breakpoint lines in the main file")
     parser.add_argument("--bp", action="append",
                         help="breakpoint 'path:line' (repeatable; different files/classes allowed)")
+    parser.add_argument("--step-in", dest="step_in", action="store_true",
+                        help="stop at --line (a call site), step into the callee, report its source")
     parser.add_argument("--method", help="substring of the test method id to debug")
     parser.add_argument("--main", dest="main_class",
                         help="fully-qualified main class to debug (instead of a test)")
@@ -551,7 +590,8 @@ def main() -> int:
         parser.error("one of --line, --lines, or --bp is required")
     return run_probe(workspace, file, args.line, args.method, args.main_class, args.detach,
                      args.eval_expr, args.expect, args.condition, not args.expect_nostop,
-                     args.complete, args.expect_item, args.expand, args.expect_child, bps)
+                     args.complete, args.expect_item, args.expand, args.expect_child, bps,
+                     args.step_in)
 
 
 if __name__ == "__main__":
