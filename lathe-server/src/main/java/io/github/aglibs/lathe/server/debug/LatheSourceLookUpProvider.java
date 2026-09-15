@@ -16,6 +16,7 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.logging.Logger;
 
 /**
  * Maps between the debug adapter and Lathe's source model: a source line to the enclosing class
@@ -27,6 +28,8 @@ import java.util.Optional;
  * module's source roots (cross-module reverse lookup is Phase 2); expression support is deferred.
  */
 public final class LatheSourceLookUpProvider implements ISourceLookUpProvider {
+
+  private static final Logger LOG = Logger.getLogger(LatheSourceLookUpProvider.class.getName());
 
   private final WorkspaceModuleRegistry workspace;
   private final List<Path> sourceRoots;
@@ -92,7 +95,18 @@ public final class LatheSourceLookUpProvider implements ISourceLookUpProvider {
   private JavaBreakpointLocation breakpointLocation(
       final String uri, final Types.SourceBreakpoint breakpoint) {
     final var location = new JavaBreakpointLocation(breakpoint.line, breakpoint.column);
-    classNameAt(uri, breakpoint.line).ifPresent(location::setClassName);
+    final Optional<String> className = classNameAt(uri, breakpoint.line);
+    if (className.isEmpty()) {
+      // No class name means the breakpoint cannot be armed and will silently never suspend. The
+      // usual cause is that the file is not open, so its source is not attributed.
+      LOG.warning(
+          () ->
+              "[breakpoint] %s:%d not armed -- no enclosing class (file not open/attributed, or no executable code on the line)"
+                  .formatted(uri, breakpoint.line));
+      return location;
+    }
+
+    location.setClassName(className.get());
     return location;
   }
 

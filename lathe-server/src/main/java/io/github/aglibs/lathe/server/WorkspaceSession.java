@@ -474,11 +474,21 @@ final class WorkspaceSession {
     // The debuggee is a replay Lathe owns, so a client disconnect terminates it (launch semantics)
     // rather than leaving it running as a plain attach would -- otherwise a long-running debuggee
     // would be orphaned when the user stops debugging.
-    // allSourceRoots, not just the launched module's: a frame in another module must resolve to its
-    // source, else a cross-module breakpoint stops on a source-less frame the editor cannot show.
+    // The whole reactor plus the extracted dependency/JDK sources: a frame in any of those must
+    // resolve to its source, else stepping into (or through) library/framework code stops on a
+    // source-less frame the editor cannot show. JDK sources are laid out per module
+    // (<jdk>/java.base/java/lang/…), so the module dirs -- not the JDK root -- are the roots a
+    // by-name lookup can search.
+    final List<Path> debugSourceRoots =
+        Stream.of(
+                workspace.allSourceRoots(),
+                manifest.depSourceDirs(),
+                manifest.jdkModuleSourceDirs())
+            .flatMap(List::stream)
+            .toList();
     final var host =
         DapHost.start(
-            new LatheProviderContext(workspace, workspace.allSourceRoots(), typeIndex),
+            new LatheProviderContext(workspace, debugSourceRoots, typeIndex),
             () -> worker.execute(() -> cancelRun(token)));
     activeDebugHosts.put(token, host);
     LOG.info(
