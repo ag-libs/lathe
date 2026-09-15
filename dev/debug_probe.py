@@ -268,8 +268,8 @@ def _drive(dap: DapClient, file: Path, line: int, jdwp_port: int) -> int:
 
 def _drive_multi(dap: DapClient, bps: list[tuple[Path, int]], jdwp_port: int) -> int:
     """Set breakpoints across one or more files (one setBreakpoints per source), run to completion,
-    and record every stop as (file, line) -- used to reproduce DB-7 (breakpoints suspend at the wrong
-    lines when several are set, potentially in different classes on the call path)."""
+    and record every stop as (file, line) -- checks that breakpoints in several files/classes on the
+    call path each suspend on their exact requested line."""
     dap.request("initialize", {"adapterID": "lathe", "clientID": "lathe-probe",
                                "linesStartAt1": True, "columnsStartAt1": True,
                                "pathFormat": "path"})

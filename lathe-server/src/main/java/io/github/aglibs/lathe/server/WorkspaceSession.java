@@ -471,14 +471,14 @@ final class WorkspaceSession {
           e);
     }
 
-    final List<Path> sourceRoots =
-        configsFor(moduleRel).stream().flatMap(c -> c.sourceRoots().stream()).distinct().toList();
     // The debuggee is a replay Lathe owns, so a client disconnect terminates it (launch semantics)
     // rather than leaving it running as a plain attach would -- otherwise a long-running debuggee
     // would be orphaned when the user stops debugging.
+    // allSourceRoots, not just the launched module's: a frame in another module must resolve to its
+    // source, else a cross-module breakpoint stops on a source-less frame the editor cannot show.
     final var host =
         DapHost.start(
-            new LatheProviderContext(workspace, sourceRoots, typeIndex),
+            new LatheProviderContext(workspace, workspace.allSourceRoots(), typeIndex),
             () -> worker.execute(() -> cancelRun(token)));
     activeDebugHosts.put(token, host);
     LOG.info(
