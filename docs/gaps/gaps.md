@@ -439,6 +439,68 @@ None yet — to be defined when the fix is scheduled.
 
 ---
 
+## DB-7 — With several breakpoints set, execution suspends at the wrong lines (off by the runtime flow, not the breakpoints)
+
+**Status: accepted — Target: backlog (needs triage + probe; candidate for promotion — breakpoint accuracy is core to the debug feature).**
+
+Signal: user feedback — setting multiple breakpoints across project source files and debugging stops
+at seemingly "random" locations along the execution path rather than at the lines the breakpoints were
+set on. Not yet live-probed; root cause below is a set of hypotheses to confirm before a fix.
+
+### Observed behaviour
+
+With breakpoints set on several project files, a debug run suspends at points that follow the actual
+runtime flow but do not coincide with the requested breakpoint lines — as if each breakpoint were
+shifted to a nearby (or unrelated) statement. The mis-placement tracks real executed code (it is not a
+random address), which points at a **line-number mapping** problem rather than a missed event.
+
+### Suspected cause (to verify)
+
+The debug feature replays the captured `.lathe/` bytecode, while breakpoints are requested by line
+against the **editor's current source**. The likely failure is a mismatch between those two:
+
+1. **Stale replayed line tables (strongest hypothesis).** If a source file was edited after the last
+   `mvn` capture/sync (lines inserted or removed), the class in `.lathe/` still carries the
+   line-number table from capture time. JDI binds a breakpoint by line number, so editor line `N` binds
+   to bytecode line `N` — now a different statement — and execution suspends there. This is the same
+   staleness family as WS-1 and the local-variable-table issue fixed in DB-5.
+2. **Source-path / class resolution in the DAP adapter.** A breakpoint's editor path may resolve to the
+   wrong class (inner classes, same simple name across modules, or the `.lathe` mirror vs the real
+   source), installing the line breakpoint in a class whose line ranges differ.
+3. **Multiple-breakpoint interaction.** The symptom appears specifically with *several* breakpoints, so
+   confirm it is not per-breakpoint line drift (1) surfacing at scale versus a distinct bug in how the
+   adapter registers more than one `SourceBreakpoint`.
+
+### Triage — first checks
+
+- **Sync, then debug.** Re-run `mvn process-test-classes` (a fresh capture) and debug *without* editing
+  afterwards. If breakpoints then land correctly, the cause is stale replayed line tables (hypothesis 1)
+  and the fix is staleness detection for the debug path (mirror the WS-1 compile-stamp model), plus a
+  prompt/refuse-to-attach when the source is newer than the captured class.
+- **Single vs many.** Reproduce with one breakpoint, then several, to separate hypothesis 1 from 3.
+- Capture the DAP `setBreakpoints` request/response (requested line vs the `verified`/actual line the
+  adapter reports) to see where the shift is introduced.
+
+### Probe commands
+
+`dev/debug_probe.py` currently sets a **single** breakpoint (`--line N`); the multi-breakpoint case
+needs either a probe extension (accept repeated `--line`) or the live nvim-dap client. Single-breakpoint
+drift is reproducible today:
+
+```bash
+# Edit <MainFile.java> to insert a few blank lines above the target statement, do NOT re-sync,
+# then set a breakpoint on the (post-edit) line and observe where it actually suspends:
+python3 dev/debug_probe.py --workspace <ws> <MainFile.java> --line <N> --main <Class>
+```
+
+### Regression targets
+
+None yet — to be defined once reproduced (positive: a breakpoint on an executable line suspends on
+exactly that source line against freshly-synced bytecode; negative: a source edited since capture is
+either remapped correctly or the attach is refused with a re-sync prompt, never silently shifted).
+
+---
+
 # Neovim Client Gaps (NV)
 
 Gaps in the shipped Neovim client plugin (`lua/lathe/…`) and its recommended configuration, as
