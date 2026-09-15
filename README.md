@@ -28,8 +28,6 @@ run/debug/test replayed from the capture (no Maven, no recompile).
 
 ![Lathe demo — capture your Maven build, then a full reactor-aware IDE](docs/demo.gif)
 
-Full-quality video (2 min): **[docs/demo.mp4](docs/demo.mp4)**.
-
 <!-- The GIF above renders inline on GitHub. For a crisper HTML5 <video> player, upload docs/demo.mp4
      through the GitHub web UI (drag-drop into an issue/release) and embed the resulting
      https://github.com/user-attachments/assets/<id> URL. Recorded against the public com.example
