@@ -26,10 +26,14 @@ A ~2-minute walkthrough — capture your Maven build once, then get a full react
 completion and live diagnostics, live annotation processing, JPMS module resolution, and
 run/debug/test replayed from the capture (no Maven, no recompile).
 
-▶ **[docs/demo.mp4](docs/demo.mp4)**
+<video src="https://raw.githubusercontent.com/ag-libs/lathe/main/docs/demo.mp4" controls muted width="900"></video>
 
-<!-- For an inline player, upload docs/demo.mp4 to a GitHub release/issue and paste the resulting
-     user-attachments URL here. Recorded against the public com.example multi-module fixture. -->
+If the player doesn't load, watch it here: **[docs/demo.mp4](docs/demo.mp4)**.
+
+<!-- The <video> above embeds the committed clip via raw.githubusercontent. For a guaranteed inline
+     player, upload docs/demo.mp4 through the GitHub web UI (drag-drop into an issue/release) and
+     replace the src with the resulting https://github.com/user-attachments/assets/<id> URL.
+     Recorded against the public com.example multi-module fixture. -->
 
 ## Features
 
