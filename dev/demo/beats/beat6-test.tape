@@ -1,6 +1,6 @@
 # Beat 6 — Test (fail -> fix -> green). Narration captions (burned in post-render), finalized separately:
 #   (1) "Run the test — replayed from your capture"
-#   (2) "Red: the assertion fails, with the stack trace"
+#   (2) "Red — the assertion fails, with the stack trace"
 #   (3) "Fix it, run again — green"
 # Part of the Lathe demo; see dev/demo/demo-script.md. Run from the repo root after ./dev/demo/prepare.sh.
 #   vhs dev/demo/beats/beat6-test.tape
@@ -19,15 +19,13 @@ Set FontSize 24
 Set Width 1800
 Set Height 1080
 Set Padding 30
-Set TypingSpeed 55ms
+Set TypingSpeed 45ms
 
 # --- hidden setup: reset jpms to baseline + drop in the failing test, capture, open it, warm index +
 # neotest discovery (the gutter glyphs appear once the server confirms the file open). ---
 Hide
 Type 'R="$PWD"' Enter
-Type 'export XDG_CONFIG_HOME="$R/dev/demo/.nvim/config" XDG_DATA_HOME="$R/dev/demo/.nvim/data" XDG_STATE_HOME="$R/dev/demo/.nvim/state" XDG_CACHE_HOME="$R/dev/demo/.nvim/cache"' Enter
-Type 'export LATHE_NVIM_DIR="$R/lathe-maven-plugin/src/main/neovim" LATHE_CACHE="$R/lathe-maven-plugin/target/it-home/.cache/lathe"' Enter
-Type 'export MAVEN_ARGS="-Dmaven.build.cache.enabled=false"' Enter
+Type 'source "$R/dev/demo/env.sh"' Enter
 Type 'cd "$R/lathe-maven-plugin/target/it/multi-module" || exit 1' Enter
 Type 'cp "$R/lathe-maven-plugin/src/it/multi-module/jpms/src/main/java/com/example/jpms/HelloMain.java" jpms/src/main/java/com/example/jpms/HelloMain.java' Enter
 Type 'cp "$R/lathe-maven-plugin/src/it/multi-module/jpms/src/main/java/module-info.java" jpms/src/main/java/module-info.java' Enter
@@ -49,6 +47,7 @@ Sleep 4200ms             # dwell on the failure and its stack trace
 Ctrl+W
 Type 't'                  # back to the editor window
 Type '11G'                # the failing assertion (its inline failure shows here too)
+Type '_'                  # re-anchor to first non-blank (the cursor keeps its column after NG)
 Type 'f!'                 # first `!` of the expected string's `!!`
 Type 'x'                  # delete one -> "Hello, World!"
 Type ':w'                 # save -> on-save recompile updates .lathe (the replay reads .lathe)
@@ -59,4 +58,3 @@ Sleep 1600ms
 Type '\tf'
 Sleep 4800ms             # passes -> green gutter; the docked output updates to the passing run
 
-Sleep 800ms

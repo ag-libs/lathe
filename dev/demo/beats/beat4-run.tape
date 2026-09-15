@@ -19,15 +19,13 @@ Set FontSize 24
 Set Width 1800
 Set Height 1080
 Set Padding 30
-Set TypingSpeed 55ms
+Set TypingSpeed 45ms
 
 # --- hidden setup: isolated config + Lathe from checkout + invoker cache; write the beat-3 end state
 # (logger + requires), capture so .lathe has the classes + main-launch.json, open HelloMain, warm. ---
 Hide
 Type 'R="$PWD"' Enter
-Type 'export XDG_CONFIG_HOME="$R/dev/demo/.nvim/config" XDG_DATA_HOME="$R/dev/demo/.nvim/data" XDG_STATE_HOME="$R/dev/demo/.nvim/state" XDG_CACHE_HOME="$R/dev/demo/.nvim/cache"' Enter
-Type 'export LATHE_NVIM_DIR="$R/lathe-maven-plugin/src/main/neovim" LATHE_CACHE="$R/lathe-maven-plugin/target/it-home/.cache/lathe"' Enter
-Type 'export MAVEN_ARGS="-Dmaven.build.cache.enabled=false"' Enter
+Type 'source "$R/dev/demo/env.sh"' Enter
 Type 'cd "$R/lathe-maven-plugin/target/it/multi-module" || exit 1' Enter
 Type 'cp "$R/dev/demo/beats/beat4-fixture/HelloMain.java" jpms/src/main/java/com/example/jpms/HelloMain.java' Enter
 Type 'cp "$R/dev/demo/beats/beat4-fixture/module-info.java" jpms/src/main/java/module-info.java' Enter
@@ -57,4 +55,3 @@ Type ':setlocal wrap'
 Enter
 Sleep 3400ms
 
-Sleep 800ms

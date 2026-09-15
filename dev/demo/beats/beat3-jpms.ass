@@ -11,6 +11,6 @@ Style: Cap,DejaVu Sans,40,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-Dialogue: 0,0:00:00.50,0:00:12.00,Cap,,0,0,0,,{\fad(400,500)}Use a JDK module you haven't required — Lathe flags it
-Dialogue: 0,0:00:12.30,0:00:20.20,Cap,,0,0,0,,{\fad(400,500)}Add requires java.logging — module-aware completion
-Dialogue: 0,0:00:20.50,0:00:28.40,Cap,,0,0,0,,{\fad(400,500)}Save — the module resolves
+Dialogue: 0,0:00:00.50,0:00:11.50,Cap,,0,0,0,,{\fad(400,500)}Use a JDK module you haven't required — Lathe flags it
+Dialogue: 0,0:00:11.80,0:00:17.50,Cap,,0,0,0,,{\fad(400,500)}Add requires java.logging — module-aware completion
+Dialogue: 0,0:00:17.80,0:00:24.20,Cap,,0,0,0,,{\fad(400,500)}Save — the module resolves

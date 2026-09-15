@@ -1,6 +1,6 @@
 # Beat 5 — Debug. Narration captions (burned in post-render), finalized separately:
 #   (1) "Set a breakpoint, debug the replay"
-#   (2) "Inspect the frame — the User record's fields"
+#   (2) "Inspect the frame — the User record"
 #   (3) "Live expression eval — user.name().toLowerCase() -> alice"
 # Part of the Lathe demo; see dev/demo/demo-script.md. Run from the repo root after ./dev/demo/prepare.sh.
 #   vhs dev/demo/beats/beat5-debug.tape
@@ -23,14 +23,12 @@ Set FontSize 24
 Set Width 1800
 Set Height 1080
 Set Padding 30
-Set TypingSpeed 55ms
+Set TypingSpeed 45ms
 
 # --- hidden setup: reset app sources, capture, open Main, warm index + debug attach, then clean up ---
 Hide
 Type 'R="$PWD"' Enter
-Type 'export XDG_CONFIG_HOME="$R/dev/demo/.nvim/config" XDG_DATA_HOME="$R/dev/demo/.nvim/data" XDG_STATE_HOME="$R/dev/demo/.nvim/state" XDG_CACHE_HOME="$R/dev/demo/.nvim/cache"' Enter
-Type 'export LATHE_NVIM_DIR="$R/lathe-maven-plugin/src/main/neovim" LATHE_CACHE="$R/lathe-maven-plugin/target/it-home/.cache/lathe"' Enter
-Type 'export MAVEN_ARGS="-Dmaven.build.cache.enabled=false"' Enter
+Type 'source "$R/dev/demo/env.sh"' Enter
 Type 'cd "$R/lathe-maven-plugin/target/it/multi-module" || exit 1' Enter
 Type 'cp "$R/lathe-maven-plugin/src/it/multi-module/app/src/main/java/com/example/app/Main.java" app/src/main/java/com/example/app/Main.java' Enter
 Type 'cp "$R/lathe-maven-plugin/src/it/multi-module/app/src/main/java/com/example/app/User.java" app/src/main/java/com/example/app/User.java' Enter
@@ -85,4 +83,3 @@ Sleep 3600ms             # -> "alice"
 Type '\dc'
 Sleep 2800ms             # resumes; the docked output prints ALICE and the session ends
 
-Sleep 800ms
