@@ -5,7 +5,10 @@
 # stitches; it does not rebuild Lathe.
 #
 #   ./dev/demo/prepare.sh
-#   ./dev/demo/record.sh          ->  docs/videos/<beat>.mp4 (captioned) + docs/demo.mp4 (stitched)
+#   ./dev/demo/record.sh          ->  docs/demo.gif (the published, committed artifact)
+#
+# GIF-first: the per-beat docs/videos/<beat>.mp4 and the stitched docs/demo.mp4 are regenerable
+# intermediates (gitignored); only docs/demo.gif is committed and embedded in the README.
 #
 # Each tape re-runs `mvn clean test -Dlathe.capture.only=true` (build cache off) in its hidden setup,
 # so .lathe is captured fresh with the currently-installed Lathe on every render.
@@ -38,4 +41,14 @@ for c in "${clips[@]}"; do printf "file '%s'\n" "$repo/$c" >> "$work/list.txt"; 
 # -c copy needs identical stream params across clips; VHS renders them all the same, so this is safe.
 ffmpeg -y -f concat -safe 0 -i "$work/list.txt" -c copy docs/demo.mp4 >/dev/null 2>&1
 
-echo "[demo] done: docs/demo.mp4 + docs/videos/*.mp4"
+# Derive the published GIF from the stitched mp4. 1200px/dither=none keeps terminal text crisp and the
+# flat dark background clean; a two-pass palette (stats_mode=diff) gives good colour on little content.
+echo "[demo] deriving docs/demo.gif (the published artifact)"
+ffmpeg -y -i docs/demo.mp4 \
+  -vf "fps=10,scale=1200:-1:flags=lanczos,palettegen=max_colors=256:stats_mode=diff" \
+  "$work/palette.png" >/dev/null 2>&1
+ffmpeg -y -i docs/demo.mp4 -i "$work/palette.png" \
+  -lavfi "fps=10,scale=1200:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=none:diff_mode=rectangle" \
+  docs/demo.gif >/dev/null 2>&1
+
+echo "[demo] done: docs/demo.gif (published); docs/demo.mp4 + docs/videos/*.mp4 are gitignored intermediates"

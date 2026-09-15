@@ -16,9 +16,11 @@ the beats into a single video.
   subtitle** (`ffmpeg -vf subtitles=<beat>.ass`), shown for the whole beat. The caption doubles as a
   chapter marker at the seam.
 - **Quality:** 1800×1080, FontSize 24 (settled — sharp for terminal text).
-- **Output:** MP4 only — per-beat clips render to `docs/videos/<n>-<name>.mp4`, captioned in place, then
-  concatenated into the stitched `docs/demo.mp4`. (No GIFs; captions are **outlined text, no box** —
-  see the overlay recipe below — so they never cover a rectangle of content.)
+- **Output:** GIF-first. Per-beat clips render to `docs/videos/<n>-<name>.mp4`, captioned in place, then
+  concatenated into `docs/demo.mp4`, from which `docs/demo.gif` is derived. **Only `docs/demo.gif` is
+  committed** (the README embeds it); the mp4s are regenerable intermediates and are gitignored.
+  Captions are **outlined text, no box** — see the overlay recipe below — so they never cover a
+  rectangle of content.
 
 ## Fixture (crafted so every beat is natural)
 
@@ -286,8 +288,10 @@ them against the current Lathe build, so they can be retaken any time. **`dev/de
 end to end:
 
 - for each tape: render the raw clip (VHS) -> burn the caption in place (`ffmpeg -vf
-  subtitles=<beat>.ass`) -> one titled `docs/videos/<beat>.mp4` (committed);
-- then concatenate the captioned clips (`ffmpeg concat`, stream-copy) -> `docs/demo.mp4`.
+  subtitles=<beat>.ass`) -> `docs/videos/<beat>.mp4` (a gitignored intermediate);
+- concatenate the captioned clips (`ffmpeg concat`, stream-copy) -> `docs/demo.mp4` (also gitignored);
+- derive `docs/demo.gif` from the stitched mp4 (`palettegen`/`paletteuse`, 1200px, `dither=none`) —
+  **the only committed, published artifact.**
 
 Seams read as chapter transitions (beats 0/1/2/5 open the same `Main.java`, beat 6 `AppTest.java` in the
 same module, beats 3/4 the `jpms` module), and each caption fades in/out within its own beat.
@@ -296,8 +300,8 @@ same module, beats 3/4 the `jpms` module), and each caption fades in/out within 
 
 ```
 ./dev/demo/prepare.sh    # rebuild+install Lathe, rebuild the invoker fixture, copy the nvim config
-./dev/demo/record.sh     # render + caption + stitch -> docs/videos/*.mp4 + docs/demo.mp4
-git add docs/videos docs/demo.mp4 && git commit
+./dev/demo/record.sh     # render + caption + stitch + derive the gif -> docs/demo.gif
+git add docs/demo.gif && git commit
 ```
 
 Each tape's hidden warm re-runs `mvn clean test -Dlathe.capture.only=true` (build cache off), so
