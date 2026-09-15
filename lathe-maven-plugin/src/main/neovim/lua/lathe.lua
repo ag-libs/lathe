@@ -273,6 +273,12 @@ function M.setup(opts)
   -- built-in fuzzy picker when Telescope is absent. Suggested mapping: grh.
   require('lathe.typehierarchy').setup()
 
+  -- Missing-imports surface: :LatheMissingImports adds an import for every unresolved type in the
+  -- buffer (server's lathe.missingImports command). Unambiguous names are added automatically; a name
+  -- with several candidates is offered one at a time. Also surfaced as the "Add missing imports…"
+  -- code action. Suggested mapping: <leader>li.
+  require('lathe.imports').setup()
+
   -- Sync surface: the server's lathe/sync notification and :LatheSync run Maven
   -- (process-test-classes, or `mvn test` with !) to refresh the .lathe/ mirror after POM/structural
   -- changes. The server never runs Maven itself.

@@ -237,68 +237,39 @@ No active FR gaps remain; resolved entries are in [gaps-archive.md](gaps-archive
 Active `textDocument/codeAction` provider gaps. Resolved CA entries are in
 [gaps-archive.md](gaps-archive.md).
 
-## CA-7 — Pasting code with unresolved types requires per-symbol quick fixes and a save round-trip; no "add all missing imports" source action
+## CA-7 — Pasting code with unresolved types requires per-symbol quick fixes; no whole-file "add missing imports"
 
-**Status: accepted — Target: next.**
+**Status: partially resolved — add-missing slice done (Target: next); client auto-wiring deferred (Target: backlog).**
 
-Signal: user feedback — pasting a snippet with several unimported types is recurring friction (save →
-per-symbol quick fix → save); promoted to `next` ahead of a first post-beta polish cut.
-Source: user feedback (not live-probed yet — needs a probe + expected behaviour before triage).
+Signal: user feedback — pasting a snippet with several unimported types was recurring friction: the
+only path was moving the cursor onto each unresolved name and invoking the single-name import quick fix
+in turn.
 
-### Observed behaviour
+### Delivered — whole-file "add missing imports" (slice 1)
 
-After pasting a snippet that references several not-yet-imported types, resolving the imports is a
-manual, per-symbol, multi-step chore:
+`:LatheMissingImports` (server command `lathe.missingImports`, also surfaced as the "Add missing
+imports…" code action when the cursor is on an unresolved type) resolves every unresolved type in the
+buffer in one pass. It works off the live buffer's debounce compile — no save round-trip needed, since
+a syntactically-valid paste already yields `cant.resolve` diagnostics on change. The server enumerates
+those TYPE_REF names and resolves each against the type index via a shared `ImportCandidates` helper
+(extracted from `ImportQuickFixProvider`), returning each name with its candidate FQNs. The Neovim
+client auto-adds unambiguous names, prompts one at a time (`vim.ui.select`) for ambiguous ones, inserts
+all chosen imports in one edit, and summarises what was added and any name it could not resolve.
 
-1. Save the file so diagnostics/quick-fixes surface for the pasted region.
-2. Move the cursor onto each unresolved type name in turn and invoke the missing-import code action.
-3. Save again.
+No `source.*` capability is claimed: `source.organizeImports` would over-promise (it implies unused
+removal + sorting) and `source.addMissingImports` is non-standard, so the feature is an
+`executeCommand`, consistent with `lathe.typeHierarchy` / `lathe.createType`.
 
-There is no single action that adds every missing import for the buffer at once, so a paste with N
-unresolved types is N separate cursor-moves + quick-fix invocations, bracketed by saves.
+Regression targets: `CodeActionTest.missingImports_mixedNames_partitionsCandidatesByAmbiguity`,
+`CodeActionTest.missingImports_allTypesResolved_returnsNoItems`,
+`CodeActionTest.codeAction_typeRef_offersAddMissingImportsCommand`; client `imports_spec.lua`.
 
-### Root cause
+### Remaining — automatic invocation (deferred, backlog)
 
-`ImportQuickFixProvider` is a **single-name, diagnostic-anchored** quick fix: it is offered for one
-unresolved simple name at the requested range, searches the type index for that name, and emits one
-import `TextEdit` per candidate. There is no `source`-kind action that scans the whole file for
-unresolved simple names and resolves them together, and no client wiring to run such an action on paste
-or on save. So the only path today is one quick fix per symbol. The "save first" friction is the
-secondary half: the quick fix keys off a diagnostic range, so the user reaches for a save to force the
-unresolved-symbol diagnostics to appear before any import action is offered (worth confirming during
-triage whether live on-change compilation already surfaces them without the save).
-
-### Proposed direction
-
-Not yet decided; options to weigh when scheduled, cheapest first:
-
-1. **An "add all missing imports" source action** (`CodeActionKind.SourceOrganizeImports` or a
-   `source.addMissingImports` variant): collect every unresolved simple name in the file, resolve each
-   against the type index (reusing `ImportQuickFixProvider`'s candidate search + `ImportAnalyzer`
-   insertion logic), and return one `WorkspaceEdit` that adds all unambiguous imports in a single
-   invocation. Ambiguous names (multiple candidates) are left to the existing per-name picker. This is
-   the natural jdtls/IntelliJ "Organize Imports" parity affordance and removes the per-symbol loop.
-2. **Client wiring to run that source action automatically** — on paste (editor-specific) and/or as an
-   on-save step alongside format-on-save — so the common case needs no manual invocation at all. This
-   is a Neovim-client (NV) concern layered on top of option 1's server action; keep it opt-in like
-   `format_on_save`.
-
-Option 1 is the server-side foundation and is independently useful (a bound `:LatheOrganizeImports` /
-`source.organizeImports` keybinding); option 2 is the "better approach" the feedback asks for but
-should not be built before the bulk server action exists. Ambiguity handling and unused-import removal
-(a fuller "organize imports") are later slices — the first slice is add-missing-only.
-
-### Probe commands
-
-Not probeable through `explore.py` today (no organize-imports command). Reproduce by pasting a snippet
-with several unimported JDK/reactor types into an open buffer and observing that only per-name import
-quick fixes are offered, one at a time.
-
-### Regression targets
-
-None yet — to be defined when scheduled (positive: a buffer with several unresolved unambiguous types
-yields one action whose edit adds all imports; negative: an ambiguous name is left to the per-name
-picker, and an already-imported name gets no duplicate edit).
+Running the command **automatically** — on paste and/or as an on-save step alongside format-on-save —
+so the common case needs no manual invocation. A Neovim-client concern layered on the shipped command;
+keep it opt-in like `format_on_save`. Unused-import removal and import sorting (a fuller "organize
+imports") are separate later slices.
 
 ---
 

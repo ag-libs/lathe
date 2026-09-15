@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.core.launch.TestSelection;
+import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyExplorerResult;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.debug.DebugStartResult;
@@ -536,6 +537,10 @@ final class LatheTextDocumentService implements TextDocumentService {
   CompletableFuture<TypeHierarchyExplorerResult> typeHierarchyExplorerFuture(
       final String uri, final Position pos) {
     return worker.submit(() -> session.typeHierarchyExplorerFuture(uri, pos)).thenCompose(f -> f);
+  }
+
+  CompletableFuture<MissingImportsResult> missingImportsFuture(final String uri) {
+    return worker.submit(() -> session.missingImportsFuture(uri)).thenCompose(f -> f);
   }
 
   CompletableFuture<CreateTypeResult> createTypeFuture(final CreateTypeArgs args) {

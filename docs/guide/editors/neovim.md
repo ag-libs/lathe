@@ -65,6 +65,7 @@ freely.
 | Signature help | `vim.lsp.buf.signature_help()` | `<C-s>` (insert) | `<C-k>` |
 | Completion (with auto-import) | `vim.lsp.completion` / omnifunc | `<C-x><C-o>` | auto |
 | Code action (import type · add `throws` · wrap `try/catch` · declare local · replace `var` · stub missing method) | `vim.lsp.buf.code_action()` | `gra` | `<leader>ca` |
+| Add missing imports (whole file, one pass) | `:LatheMissingImports` | — | `<leader>li` |
 | Format document (opt-in — needs `formatter = "google"`) | `require('lathe').format()` / `:LatheFormat` | — | `<leader>f` |
 | Document symbols (outline) | `vim.lsp.buf.document_symbol()` | `gO` | `gO` |
 | Workspace symbols (CamelCase-hump aware) | `vim.lsp.buf.workspace_symbol()` | — | `<leader>ws` |
@@ -95,6 +96,18 @@ lazy, one-level drill-down. Suggested mapping (references family, `h` for **h**i
 
 ```lua
 vim.keymap.set('n', 'grh', '<cmd>LatheTypeHierarchy<cr>', { desc = 'Lathe: full type hierarchy' })
+```
+
+`:LatheMissingImports` adds an import for **every unresolved type in the buffer** in one pass — the
+fix for pasting a snippet with several unimported types. It works off the live buffer (no save
+needed): names with a single candidate are added automatically, and a name with several candidates is
+offered one at a time via `vim.ui.select` so you pick (or skip); everything chosen lands in one edit,
+then a summary reports what was added and any name it could not resolve. The same action is offered in
+the code-action menu as **"Add missing imports…"** whenever the cursor is on an unresolved type. Lathe
+binds no key for it:
+
+```lua
+vim.keymap.set('n', '<leader>li', '<cmd>LatheMissingImports<cr>', { desc = 'Lathe: add missing imports' })
 ```
 
 `vim.lsp.buf.document_highlight()` lights up **every read and write of the symbol under the cursor**

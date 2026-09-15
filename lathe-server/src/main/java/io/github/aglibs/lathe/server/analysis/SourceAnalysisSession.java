@@ -16,6 +16,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -23,6 +24,7 @@ import java.util.Set;
 import java.util.function.IntConsumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
@@ -977,6 +979,13 @@ public final class SourceAnalysisSession implements AutoCloseable {
       addUnique(actions, seen, provided);
     }
 
+    if (requests.stream().anyMatch(r -> r.payload().kind() == DiagnosticPayload.Kind.TYPE_REF)) {
+      actions.add(
+          Either.forLeft(
+              new Command(
+                  "Add missing imports…", "lathe.missingImports", List.of(Map.of("uri", uri)))));
+    }
+
     addUnique(actions, seen, new ReplaceVarProvider().provide(uri, range, analysis));
     addUnique(actions, seen, new ConvertToVarProvider().provide(uri, range, analysis));
     addUnique(actions, seen, new ExtractVariableProvider().provide(uri, range, analysis));
@@ -986,6 +995,61 @@ public final class SourceAnalysisSession implements AutoCloseable {
 
     LOG.fine(() -> "[codeAction] %s %dms actions=%d".formatted(uri, t.elapsedMs(), actions.size()));
     return actions;
+  }
+
+  public MissingImportsResult missingImports(
+      final String uri,
+      final String content,
+      final int version,
+      final WorkspaceTypeIndex typeIndex) {
+    final var t = Stopwatch.start();
+    // Compile first: it yields the unresolved-type diagnostics and refreshes the analysis cache, so
+    // the subsequent ensureAttributedAnalysis is a cache hit (no second compile).
+    final List<Diagnostic> diags = compile(uri, content, version, CompileMode.OPEN, () -> {});
+    final var analysis = ensureAttributedAnalysis(uri, content, version);
+    if (analysis == null || analysis.tree() == null) {
+      return MissingImportsResult.empty();
+    }
+
+    final var importAnalyzer = new ImportAnalyzer(analysis);
+    final var insertionRange = importAnalyzer.insertionRange();
+    if (insertionRange == null) {
+      return MissingImportsResult.empty();
+    }
+
+    final Set<String> alreadyImported = importAnalyzer.importedQualifiedNames();
+    final List<MissingImportsResult.MissingImport> items =
+        unresolvedTypeNames(diags).entrySet().stream()
+            .map(
+                unresolved ->
+                    new MissingImportsResult.MissingImport(
+                        unresolved.getKey(),
+                        ImportCandidates.resolve(
+                            unresolved.getKey(),
+                            unresolved.getValue(),
+                            analysis,
+                            typeIndex,
+                            alreadyImported)))
+            .toList();
+
+    LOG.fine(() -> "[missingImports] %s %dms names=%d".formatted(uri, t.elapsedMs(), items.size()));
+    return new MissingImportsResult(insertionRange, items);
+  }
+
+  // Distinct unresolved type names in encounter order, each mapped to the first diagnostic position
+  // that reported it (used to compute the accessibility scope for candidate resolution).
+  private static Map<String, Position> unresolvedTypeNames(final List<Diagnostic> diags) {
+    return diags.stream()
+        .filter(
+            d ->
+                d.getData() instanceof DiagnosticPayload p
+                    && p.kind() == DiagnosticPayload.Kind.TYPE_REF)
+        .collect(
+            Collectors.toMap(
+                d -> ((DiagnosticPayload) d.getData()).name(),
+                d -> d.getRange().getStart(),
+                (first, later) -> first,
+                LinkedHashMap::new));
   }
 
   private static void addUnique(

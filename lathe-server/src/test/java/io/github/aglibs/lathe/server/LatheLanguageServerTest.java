@@ -74,7 +74,8 @@ class LatheLanguageServerTest {
             LatheWorkspaceService.CREATE_TYPE_COMMAND,
             LatheWorkspaceService.MODULES_COMMAND,
             LatheWorkspaceService.PACKAGES_COMMAND,
-            LatheWorkspaceService.RESOLVE_CONTEXT_COMMAND);
+            LatheWorkspaceService.RESOLVE_CONTEXT_COMMAND,
+            LatheWorkspaceService.MISSING_IMPORTS_COMMAND);
   }
 
   @Test

@@ -21,6 +21,7 @@ import io.github.aglibs.lathe.server.analysis.CallHierarchyItemDataCodec;
 import io.github.aglibs.lathe.server.analysis.CodeActionRequest;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.analysis.DiagnosticPayload;
+import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.server.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.server.analysis.RenameProvider;
@@ -2232,6 +2233,27 @@ final class WorkspaceSession {
                 .exceptionally(
                     ex -> logAndReturn(ex, "[codeAction] failed for %s".formatted(uri), List.of())),
         List.of());
+  }
+
+  CompletableFuture<MissingImportsResult> missingImportsFuture(final String uri) {
+    final OpenDocument openFile = docs.get(uri);
+    if (openFile == null || routeCompiler(uri) instanceof CompilerRoute.External) {
+      return CompletableFuture.completedFuture(MissingImportsResult.empty());
+    }
+
+    final var indexSnapshot = typeIndex;
+    return routeFeature(
+        uri,
+        moduleWorker ->
+            moduleWorker
+                .missingImports(uri, openFile.content(), openFile.version(), indexSnapshot)
+                .exceptionally(
+                    ex ->
+                        logAndReturn(
+                            ex,
+                            "[missingImports] failed for %s".formatted(uri),
+                            MissingImportsResult.empty())),
+        MissingImportsResult.empty());
   }
 
   private WorkspaceTypeIndex buildEnrichedIndex(

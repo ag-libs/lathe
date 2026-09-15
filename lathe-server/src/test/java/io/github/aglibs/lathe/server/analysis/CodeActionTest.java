@@ -125,9 +125,10 @@ class CodeActionTest {
     final List<Diagnostic> diags =
         session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
     final var actions = diagnosticActions(source, diags);
+    final List<CodeAction> imports = codeActions(actions);
 
-    assertThat(actions).hasSize(1);
-    final var action = actions.getFirst().getRight();
+    assertThat(imports).hasSize(1);
+    final var action = imports.getFirst();
     assertThat(action.getTitle()).isEqualTo("Import 'java.util.ArrayList'");
     assertThat(action.getKind()).isEqualTo("quickfix");
     assertThat(action.getDiagnostics()).hasSize(1);
@@ -136,6 +137,29 @@ class CodeActionTest {
     assertThat(edits).hasSize(1);
     assertThat(edits.getFirst().getNewText()).isEqualTo("import java.util.ArrayList;\n");
     assertThat(edits.getFirst().getRange().getStart().getLine()).isEqualTo(1);
+  }
+
+  @Test
+  void codeAction_typeRef_offersAddMissingImportsCommand() {
+    final var source =
+        """
+        package com.example;
+        class Test {
+          ArrayList list;
+        }
+        """;
+
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    final List<Command> commands =
+        diagnosticActions(source, diags).stream()
+            .filter(Either::isLeft)
+            .map(Either::getLeft)
+            .toList();
+
+    assertThat(commands).hasSize(1);
+    assertThat(commands.getFirst().getCommand()).isEqualTo("lathe.missingImports");
+    assertThat(commands.getFirst().getTitle()).isEqualTo("Add missing imports…");
   }
 
   @Test
@@ -162,7 +186,7 @@ class CodeActionTest {
             rangeAt(0, 0),
             toRequests(diags),
             typeIndex);
-    assertThat(actions).isEmpty();
+    assertThat(codeActions(actions)).isEmpty();
   }
 
   @Test
@@ -230,8 +254,8 @@ class CodeActionTest {
             toRequests(diags),
             customTypeIndex);
 
-    assertThat(actions).hasSize(1);
-    assertThat(actions.getFirst().getRight().getTitle())
+    assertThat(codeActions(actions)).hasSize(1);
+    assertThat(codeActions(actions).getFirst().getTitle())
         .isEqualTo("Import 'com.other.PublicClass'");
   }
 
@@ -263,9 +287,70 @@ class CodeActionTest {
         session.codeAction(
             TempSourceCompiler.TEST_URI, source, 1, rangeAt(0, 0), toRequests(diags), reactorIndex);
 
-    assertThat(actions).hasSize(1);
-    assertThat(actions.getFirst().getRight().getTitle())
+    assertThat(codeActions(actions)).hasSize(1);
+    assertThat(codeActions(actions).getFirst().getTitle())
         .isEqualTo("Import 'com.example.MyCustomException'");
+  }
+
+  // --- Missing imports command ---
+
+  @Test
+  void missingImports_mixedNames_partitionsCandidatesByAmbiguity() throws IOException {
+    final WorkspaceTypeIndex index =
+        TempSourceCompiler.typeIndex(
+            tmp.resolve("mixed_index.json"),
+            new TypeIndexEntry(
+                "ArrayList", "java.util.ArrayList", "java.util", TypeKind.CLASS, true, List.of()),
+            new TypeIndexEntry(
+                "List", "java.util.List", "java.util", TypeKind.CLASS, true, List.of()),
+            new TypeIndexEntry(
+                "List", "java.awt.List", "java.awt", TypeKind.CLASS, true, List.of()));
+
+    final var source =
+        """
+        package com.example;
+        class Test {
+          ArrayList a;
+          List b;
+          Widget c;
+        }
+        """;
+
+    final var result = session.missingImports(TempSourceCompiler.TEST_URI, source, 1, index);
+
+    // Insertion goes right after the package line (no imports yet).
+    assertThat(result.insertionRange().getStart().getLine()).isEqualTo(1);
+    assertThat(result.items())
+        .extracting(MissingImportsResult.MissingImport::name)
+        .containsExactlyInAnyOrder("ArrayList", "List", "Widget");
+    assertThat(candidatesOf(result, "ArrayList")).containsExactly("java.util.ArrayList");
+    assertThat(candidatesOf(result, "List"))
+        .containsExactlyInAnyOrder("java.util.List", "java.awt.List");
+    assertThat(candidatesOf(result, "Widget")).isEmpty();
+  }
+
+  @Test
+  void missingImports_allTypesResolved_returnsNoItems() {
+    final var source =
+        """
+        package com.example;
+        import java.util.ArrayList;
+        class Test {
+          ArrayList a;
+        }
+        """;
+
+    final var result = session.missingImports(TempSourceCompiler.TEST_URI, source, 1, typeIndex);
+
+    assertThat(result.items()).isEmpty();
+  }
+
+  private static List<String> candidatesOf(final MissingImportsResult result, final String name) {
+    return result.items().stream()
+        .filter(i -> i.name().equals(name))
+        .findFirst()
+        .orElseThrow()
+        .candidates();
   }
 
   // --- AddThrows provider ---
@@ -1626,6 +1711,10 @@ class CodeActionTest {
       final String source, final List<Diagnostic> diags) {
     return session.codeAction(
         TempSourceCompiler.TEST_URI, source, 1, rangeAt(0, 0), toRequests(diags), typeIndex);
+  }
+
+  private static List<CodeAction> codeActions(final List<Either<Command, CodeAction>> actions) {
+    return actions.stream().filter(Either::isRight).map(Either::getRight).toList();
   }
 
   private static Range rangeAt(final int line, final int character) {

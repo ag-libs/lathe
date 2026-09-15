@@ -602,6 +602,8 @@ class ExploreShell:
             "run":         self._cmd_run,
             "refresh":     self._cmd_refresh,
             "create":      self._cmd_create,
+            "imports":         self._cmd_missing_imports,
+            "missing-imports": self._cmd_missing_imports,
             "inject":      self._cmd_inject,
             "reset":       self._cmd_reset,
             "log":         self._cmd_log,
@@ -1726,6 +1728,32 @@ class ExploreShell:
         print(f"    caret = {result['caret']}")
         for ln in result["content"].split("\n"):
             print(f"    | {ln}")
+
+    def _cmd_missing_imports(self, args: list[str]) -> None:
+        """Probe lathe.missingImports on the open file: prints each unresolved type with its
+        importable candidates, tagged auto (1 candidate) / ambiguous (>1) / UNRESOLVED (0), plus the
+        insertion line. Reflects the live buffer, so `inject` edits before this are picked up."""
+        uri = self._file.resolve().as_uri()
+        try:
+            result = self._client.execute_command("lathe.missingImports", [{"uri": uri}])
+        except Exception as exc:
+            print(f"  ✗ {exc}")
+            self.any_failure = True
+            return
+        if not result:
+            print("  ✗ no result")
+            self.any_failure = True
+            return
+        rng = result.get("insertionRange")
+        print(f"  insertion line = {rng['start']['line'] if rng else None}")
+        items = result.get("items", [])
+        if not items:
+            print("  (no missing imports)")
+            return
+        for it in items:
+            cands = it.get("candidates", [])
+            tag = "auto" if len(cands) == 1 else ("ambiguous" if len(cands) > 1 else "UNRESOLVED")
+            print(f"  {it['name']:<18} [{tag}] {', '.join(cands) if cands else '-'}")
 
     def _cmd_inject(self, args: list[str]) -> None:
         if not args:

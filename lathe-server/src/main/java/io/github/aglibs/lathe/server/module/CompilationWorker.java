@@ -6,6 +6,7 @@ import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.analysis.AttributedExpression;
 import io.github.aglibs.lathe.server.analysis.CodeActionRequest;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
+import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.server.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
@@ -355,6 +356,14 @@ public final class CompilationWorker {
       final List<CodeActionRequest> requests,
       final WorkspaceTypeIndex typeIndex) {
     return submit(ctx -> ctx.codeAction(uri, content, version, range, requests, typeIndex));
+  }
+
+  public CompletableFuture<MissingImportsResult> missingImports(
+      final String uri,
+      final String content,
+      final int version,
+      final WorkspaceTypeIndex typeIndex) {
+    return submit(ctx -> ctx.missingImports(uri, content, version, typeIndex));
   }
 
   public CompletableFuture<List<SemanticToken>> semanticTokens(

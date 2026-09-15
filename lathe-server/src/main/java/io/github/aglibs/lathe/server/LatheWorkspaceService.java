@@ -36,6 +36,7 @@ final class LatheWorkspaceService implements WorkspaceService {
   static final String MODULES_COMMAND = "lathe.modules";
   static final String PACKAGES_COMMAND = "lathe.packages";
   static final String RESOLVE_CONTEXT_COMMAND = "lathe.resolveContext";
+  static final String MISSING_IMPORTS_COMMAND = "lathe.missingImports";
 
   private static final Gson GSON = new Gson();
 
@@ -77,6 +78,7 @@ final class LatheWorkspaceService implements WorkspaceService {
       case MODULES_COMMAND -> modules();
       case PACKAGES_COMMAND -> packages(params);
       case RESOLVE_CONTEXT_COMMAND -> resolveContext(params);
+      case MISSING_IMPORTS_COMMAND -> missingImports(params);
       default -> CompletableFuture.completedFuture(null);
     };
   }
@@ -201,6 +203,13 @@ final class LatheWorkspaceService implements WorkspaceService {
     return textDocumentService
         .resolveContextFuture(json.get("uri").getAsString())
         .thenApply(context -> context);
+  }
+
+  private CompletableFuture<Object> missingImports(final ExecuteCommandParams params) {
+    final var json = (JsonObject) params.getArguments().getFirst();
+    return textDocumentService
+        .missingImportsFuture(json.get("uri").getAsString())
+        .thenApply(result -> result);
   }
 
   private static String parseCancelArgument(final Object argument) {
