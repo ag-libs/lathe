@@ -359,6 +359,40 @@ jumps straight to the failing source line.
 Use this docked window rather than neotest's floating output (`:Neotest output`), which shows raw text
 without the source-link navigation.
 
+## Custom server commands
+
+Several `:Lathe*` surfaces are **not** standard LSP endpoints — they are thin clients over Lathe's
+own `workspace/executeCommand` commands.
+The table lists them so you can rebind, script, or drive the same behavior from a non-Neovim client.
+Each command takes a **single object** passed as the sole element of the request's `arguments` array.
+
+| User surface | `executeCommand` | Argument object |
+|---|---|---|
+| `:LatheTypeHierarchy` | `lathe.typeHierarchy` | position params |
+| `:LatheInstances` | `lathe.instantiations` | position params |
+| `:LatheMissingImports` (and the "Add missing imports…" code action) | `lathe.missingImports` | `{ uri }` |
+| `:LatheRun` / neotest / `:LatheDebug` — runnable discovery | `lathe.runnables.list` | `{ uri }` |
+| `:LatheRun` | `lathe.run.main` | `{ moduleRel, mainClass, token }` |
+| neotest run | `lathe.run.test` | `{ moduleRel, selections, token }` |
+| `:LatheRunStop` / neotest stop | `lathe.run.cancel` | `{ token }` |
+| `:LatheDebug` (a `main`) | `lathe.debug.main` | `{ moduleRel, mainClass, token }` |
+| `:LatheDebug` (a test) | `lathe.debug.test` | `{ moduleRel, selections, token }` |
+| non-Java save inside a workspace | `lathe.resource.refresh` | `{ uri }` |
+
+Argument conventions:
+
+- **position params** — the standard LSP `{ textDocument = { uri }, position = { line, character } }`,
+  built with `vim.lsp.util.make_position_params()`; the command resolves the type or symbol under that
+  position.
+- **`moduleRel`** — the target module's reactor-relative path (which captured `.lathe/` bytecode to
+  replay).
+- **`token`** — a client-generated correlation id so an in-flight run/debug can be cancelled with
+  `lathe.run.cancel`.
+- **`selections`** — the test methods or classes to run.
+
+These are the same commands the built-in client uses; nothing here needs extra configuration to work
+in Neovim — the list is for authors rebinding them or building a different client.
+
 ## Verbose logging
 
 Set `LATHE_DEBUG=1` before starting Neovim to enable verbose (`FINE`) server logging:
