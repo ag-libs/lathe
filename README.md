@@ -22,12 +22,14 @@ Lathe currently ships a fully supported Neovim client; a VS Code client is plann
 
 ## Demo
 
-<!-- TODO: replace with an inline demo clip (upload the MP4 to a GitHub issue/release and paste
-     the user-attachments URL here so it renders as an inline player). Keep it ~40s: diagnostics,
-     run a `main`, set a breakpoint, step, inspect a variable. Record against a public or
-     `com.example` project only -- never a private codebase. -->
+A ~2-minute walkthrough — capture your Maven build once, then get a full reactor-aware IDE:
+completion and live diagnostics, live annotation processing, JPMS module resolution, and
+run/debug/test replayed from the capture (no Maven, no recompile).
 
-_Demo video coming soon — a short run-and-debug session._
+▶ **[docs/demo.mp4](docs/demo.mp4)**
+
+<!-- For an inline player, upload docs/demo.mp4 to a GitHub release/issue and paste the resulting
+     user-attachments URL here. Recorded against the public com.example multi-module fixture. -->
 
 ## Features
 
