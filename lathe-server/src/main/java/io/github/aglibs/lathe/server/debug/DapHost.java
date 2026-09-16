@@ -23,6 +23,12 @@ public final class DapHost {
 
   private static final Logger LOG = Logger.getLogger(DapHost.class.getName());
 
+  static {
+    // The java-debug library logs a SEVERE VMDisconnectedException from its telemetry whenever a
+    // session ends; drop that teardown noise once, before any session runs.
+    DebugLogNoise.suppressDisconnectNoise();
+  }
+
   private final ServerSocket serverSocket;
   private final IProviderContext context;
   private final Runnable onSessionEnd;
