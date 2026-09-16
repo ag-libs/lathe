@@ -39,9 +39,9 @@ Show
 
 # --- 1) run the file's tests -> red, then show the docked output (exception + stack trace) ---
 Type '\tf'                # <leader>tf = Run File Tests (neotest + Lathe adapter, replayed from .lathe)
-Sleep 3500ms             # replay; the test fails -> red gutter + "1 failed"
+Sleep 2800ms             # replay; the test fails -> red gutter + "1 failed"
 Type '\to'                # <leader>to = Test Output (docked, navigable): the AssertionFailedError + trace
-Sleep 4200ms             # dwell on the failure and its stack trace
+Sleep 3400ms             # dwell on the failure and its stack trace
 
 # --- 2) focus the editor, fix the assertion (delete the extra `!`), save so Lathe recompiles .lathe ---
 Ctrl+W
@@ -52,9 +52,9 @@ Type 'f!'                 # first `!` of the expected string's `!!`
 Type 'x'                  # delete one -> "Hello, World!"
 Type ':w'                 # save -> on-save recompile updates .lathe (the replay reads .lathe)
 Enter
-Sleep 1600ms
+Sleep 1200ms
 
 # --- 3) run again -> green ---
 Type '\tf'
-Sleep 4800ms             # passes -> green gutter; the docked output updates to the passing run
+Sleep 3600ms             # passes -> green gutter; the docked output updates to the passing run
 

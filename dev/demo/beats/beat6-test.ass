@@ -11,6 +11,6 @@ Style: Cap,DejaVu Sans,40,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-Dialogue: 0,0:00:00.50,0:00:03.60,Cap,,0,0,0,,{\fad(400,500)}Run the test — replayed from your capture
-Dialogue: 0,0:00:03.90,0:00:08.00,Cap,,0,0,0,,{\fad(400,500)}Red — the assertion fails, with the stack trace
-Dialogue: 0,0:00:08.30,0:00:12.60,Cap,,0,0,0,,{\fad(400,500)}Delete the extra ! and rerun — green
+Dialogue: 0,0:00:00.50,0:00:03.00,Cap,,0,0,0,,{\fad(400,500)}Run the test — replayed from your capture
+Dialogue: 0,0:00:03.30,0:00:07.60,Cap,,0,0,0,,{\fad(400,500)}Red — the assertion fails, with the stack trace
+Dialogue: 0,0:00:07.90,0:00:10.30,Cap,,0,0,0,,{\fad(400,500)}Delete the extra ! and rerun — green

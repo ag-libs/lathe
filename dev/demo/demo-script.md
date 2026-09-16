@@ -4,6 +4,22 @@ The source-of-truth plan for the Lathe demo.
 We agree this document first, then build the fixture, then record one beat at a time, then stitch
 the beats into a single video.
 
+## Current published cut (≈64 s)
+
+The published `docs/demo.gif` is a tightened **highlight** — a title card, the five universal beats,
+and an end card:
+
+```
+title-card → 0 capture → 1 everyday editing → 4 run → 5 debug → 6 test → end-card
+```
+
+**Beats 2 (annotation processing) and 3 (JPMS module graph) are retained below and under
+`dev/demo/beats/` but are deliberately dropped from this cut** — they are the longest, most niche
+beats and they trip VHS's non-initial-buffer 2× zoom. `dev/demo/record.sh` builds only the cut above
+(add them back to its `beats=(…)` list to rebuild the full tour). Everything below documents the full
+beat set and the rationale behind each beat; the length/beat-count figures elsewhere in this doc
+describe that original ~72 s full tour, not the shipped highlight.
+
 ## Goal and format
 
 - **One story:** *capture your real Maven build once, then get a full reactor-aware IDE — edit,
@@ -243,10 +259,15 @@ translucent background was impossible. ASS libass renders a crisp outline, suppo
 — if we ever want a background — a *genuinely* semi-transparent box (`BorderStyle=3` + `BackColour`
 alpha). We chose outline-only (no box); the mechanism is documented below.
 
-**Title card** (~2.5 s, black):
+**Title card** (2.8 s, dark `0x16181d`) — see `dev/demo/beats/title-card.ass`:
 
 - **Lathe**
-- *A Java language server that works from your Maven build*
+- A zero-config Java language server
+- *It captures your Maven build's classpath — no LSP setup, no project import*
+
+Wording is deliberate: no "runs from your Maven build" (Lathe does not invoke Maven — it captures the
+build's classpath once) and no "no recompile" (Lathe is a real compiler; it recompiles your edits
+itself). The one thing borrowed from Maven is the build environment, hence *zero-config*.
 
 **Per-beat overlay** — a short chapter title (bold) above the caption line:
 
@@ -260,10 +281,11 @@ alpha). We chose outline-only (no box); the mechanism is documented below.
 | 5 | Debug | Breakpoints, variables, live expression eval |
 | 6 | Test: fail → fix → green | Replayed from the capture |
 
-**Outro card** (~2.5 s, black):
+**End card** (3.0 s, dark `0x16181d`) — see `dev/demo/beats/end-card.ass`:
 
-- **One capture. A full IDE — from your build.**
-- *github.com/ag-libs/lathe · Neovim*
+- **Lathe**
+- github.com/ag-libs/lathe
+- *Java LSP — zero config — runs from your build*
 
 Overlay recipe (beat 0, settled) — an ASS style, `PlayResX/Y = 1800/1080`. A beat may carry **more than
 one** caption, each on its own bounded window (beat 0 has two: build, then attach):
@@ -287,9 +309,12 @@ Sources are committed (`dev/demo/beats/<beat>.tape` + `<beat>.ass`); the clips a
 them against the current Lathe build, so they can be retaken any time. **`dev/demo/record.sh`** does it
 end to end:
 
-- for each tape: render the raw clip (VHS) -> burn the caption in place (`ffmpeg -vf
-  subtitles=<beat>.ass`) -> `docs/videos/<beat>.mp4` (a gitignored intermediate);
-- concatenate the captioned clips (`ffmpeg concat`, stream-copy) -> `docs/demo.mp4` (also gitignored);
+- render the two bookend cards from a dark background + their `.ass` (`title-card`, `end-card`);
+- for each beat tape in the cut: render the raw clip (VHS, retried if VHS drops) -> burn the caption in
+  place (`ffmpeg -vf subtitles=<beat>.ass`) -> `docs/videos/<beat>.mp4` (a gitignored intermediate);
+- concatenate cards + beats in the fixed order (`title-card → 0 → 1 → 4 → 5 → 6 → end-card`) with a
+  **re-encode**, not stream-copy: the cards come from a different encoder than VHS, so their stream
+  params differ and `-c copy` would fail -> `docs/demo.mp4` (also gitignored);
 - derive `docs/demo.gif` from the stitched mp4 (`palettegen`/`paletteuse`, 1200px, `dither=none`) —
   **the only committed, published artifact.**
 

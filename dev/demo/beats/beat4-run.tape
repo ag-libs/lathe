@@ -40,9 +40,9 @@ Show
 Type '11G'                # onto the `public static void main(...)` line
 Sleep 800ms
 Type '\rr'                # <leader>rr = :LatheRun — replay from .lathe, output docks and streams
-Sleep 2500ms             # launch command + "INFO: starting"
-Sleep 2500ms             # ~1s later (Thread.sleep) "INFO: done" appears — visibly live
-Sleep 1500ms             # dwell on the completed run
+Sleep 2200ms             # launch command + "INFO: starting"
+Sleep 2200ms             # ~1s later (Thread.sleep) "INFO: done" appears — visibly live
+Sleep 800ms              # brief dwell on the completed run
 
 # focus the docked output, jump to line 1 (the runner command), wrap it so the whole modular
 # `java --module-path ... -m com.example.jpms/...HelloMain` launch — replayed from .lathe — is visible
@@ -53,5 +53,5 @@ Type 'gg'
 Sleep 500ms
 Type ':setlocal wrap'
 Enter
-Sleep 3400ms
+Sleep 2600ms
 

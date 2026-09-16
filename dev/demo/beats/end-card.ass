@@ -1,0 +1,18 @@
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1800
+PlayResY: 1080
+WrapStyle: 2
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Title,DejaVu Sans,132,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,0,0,5,0,0,0,1
+Style: Url,DejaVu Sans,64,&H00E8E8E8,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,0,0,5,0,0,0,1
+Style: Dim,DejaVu Sans,40,&H00A0A0A0,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,0,0,5,0,0,0,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,0:00:03.00,Title,,0,0,0,,{\fad(300,400)\pos(900,420)}Lathe
+Dialogue: 0,0:00:00.20,0:00:03.00,Url,,0,0,0,,{\fad(300,400)\pos(900,590)}github.com/ag-libs/lathe
+Dialogue: 0,0:00:00.40,0:00:03.00,Dim,,0,0,0,,{\fad(300,400)\pos(900,680)}Java LSP — zero config — runs from your build

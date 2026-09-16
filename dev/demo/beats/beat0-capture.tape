@@ -30,12 +30,12 @@ Show
 
 # --- capture once from the real Maven build (capture-only: no test execution) ---
 Type 'mvn clean test -Dlathe.capture.only=true'
-Sleep 1s
+Sleep 800ms
 Enter
-Sleep 3s          # reactor SUCCESS, Tests run: 0, BUILD SUCCESS
+Sleep 2200ms      # reactor SUCCESS, Tests run: 0, BUILD SUCCESS
 
 # --- open a class; Lathe reads the reactor it just captured ---
 Type 'nvim -n app/src/main/java/com/example/app/Main.java'
-Sleep 1s
+Sleep 600ms
 Enter
-Sleep 3s          # Lathe workspace-ready
+Sleep 2600ms      # Lathe workspace-ready (caption 2 is timed to this editor-visible segment, not the log)

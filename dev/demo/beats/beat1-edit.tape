@@ -1,5 +1,7 @@
-# Beat 1 — Everyday editing. Narration captions (burned in post-render):
-#   (1) "Code completion — from your build"  (2) "Type errors, caught as you type"
+# Beat 1 — Everyday editing. Narration captions (burned in post-render), timed to the on-screen state:
+#   (1) "Code completion — from your build"  (2) "Type mismatch — flagged live"
+#   (3) "Fixed and saved — no diagnostics"  (3 only appears AFTER the save, when the buffer is truly
+#   clean; never over the transient unused-variable hint between the fix and the save).
 # Part of the Lathe demo; see dev/demo/demo-script.md. Run from the repo root after ./dev/demo/prepare.sh.
 #   vhs dev/demo/beats/beat1-edit.tape
 #
@@ -49,7 +51,7 @@ Escape
 Type 'A'                  # append at line end...
 Type ';'                  # ...close the statement
 Escape
-Sleep 2200ms              # valid: greeting inferred String
+Sleep 1200ms              # valid: greeting inferred String
 
 # --- introduce an incompatible type: var -> int (2nd word of the greeting line) ---
 Type '9G'
@@ -61,7 +63,7 @@ Sleep 200ms
 Escape
 Sleep 150ms
 Escape                    # 2nd Escape leaves insert (1st only closed the menu)
-Sleep 3400ms             # live diagnostic: "incompatible types: String cannot be converted to int"
+Sleep 2600ms             # live diagnostic: "incompatible types: String cannot be converted to int"
 
 # --- fix it: int -> var ---
 Type '9G'
@@ -73,7 +75,7 @@ Sleep 200ms
 Escape
 Sleep 150ms
 Escape
-Sleep 2200ms             # diagnostic clears
+Sleep 1400ms             # type-mismatch clears (a transient 'unused greeting' hint remains until it's used)
 
 # --- use `greeting` so it isn't unused, then save clean ---
 Type '10G'               # the println line
@@ -85,8 +87,8 @@ Sleep 200ms
 Escape
 Sleep 150ms
 Escape
-Sleep 800ms
+Sleep 600ms
 Type ':w'
 Enter
-Sleep 3000ms             # full compile on save: no diagnostics
+Sleep 2600ms             # full compile on save: no diagnostics — the clean state caption 3 lands here
 
