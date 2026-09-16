@@ -22,16 +22,18 @@ Lathe currently ships a fully supported Neovim client; a VS Code client is plann
 
 ## Demo
 
-A ~2-minute walkthrough — capture your Maven build once, then get a full reactor-aware IDE:
-completion and live diagnostics, live annotation processing, JPMS module resolution, and
-run/debug/test replayed from the capture (no Maven, no recompile).
+A ~1-minute walkthrough — capture your Maven build's classpath once, then a zero-config Java IDE:
+completion and live diagnostics, running a modular main, debugging with live expression eval, and
+tests — all replayed from your build.
 
-![Lathe demo — capture your Maven build, then a full reactor-aware IDE](docs/demo.gif)
+![Lathe demo — a zero-config Java IDE from your Maven build](docs/demo-038eec79.gif)
 
-<!-- The GIF above renders inline on GitHub. For a crisper HTML5 <video> player, upload docs/demo.mp4
-     through the GitHub web UI (drag-drop into an issue/release) and embed the resulting
-     https://github.com/user-attachments/assets/<id> URL. Recorded against the public com.example
-     multi-module fixture. -->
+<!-- The GIF filename carries a content hash (docs/demo-<hash>.gif) so browsers never serve a stale
+     cached copy: dev/demo/record.sh regenerates it, renames it by content hash, deletes the previous
+     one, and rewrites the link above. Do not hand-edit the hash. The GIF renders inline on GitHub;
+     for a crisper HTML5 <video> player, upload the (gitignored) docs/demo.mp4 through the GitHub web
+     UI and embed the resulting https://github.com/user-attachments/assets/<id> URL. Recorded against
+     the public com.example multi-module fixture. -->
 
 ## Features
 

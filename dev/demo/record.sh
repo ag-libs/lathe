@@ -6,7 +6,7 @@
 # does not rebuild Lathe.
 #
 #   ./dev/demo/prepare.sh
-#   ./dev/demo/record.sh          ->  docs/demo.gif (the published, committed artifact)
+#   ./dev/demo/record.sh          ->  docs/demo-<hash>.gif (the published, committed artifact)
 #
 # The cut (≈64 s): a title card, then the five universal beats, then an end card.
 #
@@ -17,7 +17,8 @@
 # they trip VHS's non-initial-buffer 2x zoom. Add them back to BEATS below to rebuild the full tour.
 #
 # GIF-first: the per-clip docs/videos/*.mp4 and the stitched docs/demo.mp4 are regenerable
-# intermediates (gitignored); only docs/demo.gif is committed and embedded in the README.
+# intermediates (gitignored); only the content-hashed docs/demo-<hash>.gif is committed and embedded
+# in the README. The hash in the filename busts browser/CDN caches — see the publish step below.
 #
 # Each beat tape re-runs `mvn clean test -Dlathe.capture.only=true` (build cache off) in its hidden
 # setup, so .lathe is captured fresh with the currently-installed Lathe on every render.
@@ -88,12 +89,25 @@ ffmpeg -y -f concat -safe 0 -i "$work/list.txt" \
 
 # Derive the published GIF from the stitched mp4. 1200px/dither=none keeps terminal text crisp and the
 # flat dark background clean; a two-pass palette (stats_mode=diff) gives good colour on little content.
-echo "[demo] deriving docs/demo.gif (the published artifact)"
+echo "[demo] deriving the published GIF"
 ffmpeg -y -i docs/demo.mp4 \
   -vf "fps=10,scale=1200:-1:flags=lanczos,palettegen=max_colors=256:stats_mode=diff" \
   "$work/palette.png" >/dev/null 2>&1
 ffmpeg -y -i docs/demo.mp4 -i "$work/palette.png" \
   -lavfi "fps=10,scale=1200:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=none:diff_mode=rectangle" \
-  docs/demo.gif >/dev/null 2>&1
+  "$work/demo.gif" >/dev/null 2>&1
 
-echo "[demo] done: docs/demo.gif (published); docs/demo.mp4 + docs/videos/*.mp4 are gitignored intermediates"
+# Publish under a content-hashed name (docs/demo-<hash>.gif) so browsers never serve a stale cached
+# copy: identical bytes keep the same URL, any change gets a new one. Delete the previous published GIF
+# and rewrite the README image link to match — the committed name is always exactly the current bytes.
+hash="$(sha1sum "$work/demo.gif" | cut -c1-8)"
+gif="docs/demo-$hash.gif"
+for old in docs/demo-*.gif; do
+  [ -e "$old" ] && [ "$old" != "$gif" ] && rm -f "$old"
+done
+mv "$work/demo.gif" "$gif"
+# Repoint the README image at the new filename (matches docs/demo.gif or any docs/demo-<hash>.gif).
+sed -i -E "s#\(docs/demo(-[0-9a-f]+)?\.gif\)#($gif)#" README.md
+
+echo "[demo] done: $gif (published, content-hashed); README link updated"
+echo "[demo] docs/demo.mp4 + docs/videos/*.mp4 are gitignored intermediates"

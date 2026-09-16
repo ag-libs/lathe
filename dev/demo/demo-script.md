@@ -315,8 +315,11 @@ end to end:
 - concatenate cards + beats in the fixed order (`title-card → 0 → 1 → 4 → 5 → 6 → end-card`) with a
   **re-encode**, not stream-copy: the cards come from a different encoder than VHS, so their stream
   params differ and `-c copy` would fail -> `docs/demo.mp4` (also gitignored);
-- derive `docs/demo.gif` from the stitched mp4 (`palettegen`/`paletteuse`, 1200px, `dither=none`) —
-  **the only committed, published artifact.**
+- derive the GIF from the stitched mp4 (`palettegen`/`paletteuse`, 1200px, `dither=none`), publish it
+  under a **content-hashed name** `docs/demo-<hash>.gif`, delete the previous published GIF, and
+  rewrite the README image link to match — **the only committed, published artifact.** The content
+  hash in the filename means browsers/CDNs never serve a stale cached copy: identical bytes keep the
+  same URL, any re-render gets a fresh one.
 
 Seams read as chapter transitions (beats 0/1/2/5 open the same `Main.java`, beat 6 `AppTest.java` in the
 same module, beats 3/4 the `jpms` module), and each caption fades in/out within its own beat.
@@ -325,8 +328,8 @@ same module, beats 3/4 the `jpms` module), and each caption fades in/out within 
 
 ```
 ./dev/demo/prepare.sh    # rebuild+install Lathe, rebuild the invoker fixture, copy the nvim config
-./dev/demo/record.sh     # render + caption + stitch + derive the gif -> docs/demo.gif
-git add docs/demo.gif && git commit
+./dev/demo/record.sh     # render + caption + stitch + derive -> docs/demo-<hash>.gif, README repointed
+git add -A docs README.md && git commit   # picks up the new/removed hashed gif and the README link
 ```
 
 Each tape's hidden warm re-runs `mvn clean test -Dlathe.capture.only=true` (build cache off), so
