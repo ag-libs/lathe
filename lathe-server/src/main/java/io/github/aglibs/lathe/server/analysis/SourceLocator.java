@@ -43,8 +43,14 @@ public final class SourceLocator {
 
   public static Position offsetToPosition(final CompilationUnitTree cu, final long offset) {
     final var lineMap = cu.getLineMap();
-    return new Position(
-        (int) lineMap.getLineNumber(offset) - 1, (int) lineMap.getColumnNumber(offset) - 1);
+    try {
+      return new Position(
+          (int) lineMap.getLineNumber(offset) - 1, (int) lineMap.getColumnNumber(offset) - 1);
+    } catch (final ArrayIndexOutOfBoundsException e) {
+      // A synthesized node reports NOPOS (-1), which the line map rejects. Mirror toOffset's guard
+      // and fall back to the origin so one positionless node can't fail a whole feature.
+      return new Position(0, 0);
+    }
   }
 
   public static Range range(final Trees trees, final CompilationUnitTree cu, final Tree node) {

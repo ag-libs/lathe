@@ -26,6 +26,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.Logger;
 import java.util.stream.IntStream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
@@ -42,6 +44,8 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
 // occurrences, and assembling the WorkspaceEdit. Placement, naming, and eligibility are each
 // refactor's own concern.
 public final class ExtractionSupport {
+
+  private static final Logger LOG = Logger.getLogger(ExtractionSupport.class.getName());
 
   // CodeActionKind sub-kinds for the three extract refactors. Distinct sub-kinds let an editor bind
   // each refactor to its own shortcut (an `only` filter that matches one kind). Advertised by the
@@ -99,19 +103,42 @@ public final class ExtractionSupport {
   // (including the selection itself), so N >= 2 means the same value is computed more than once.
   static List<TreePath> occurrences(
       final TreePath scopePath, final TreePath selectedPath, final Trees trees) {
+    final var positions = trees.getSourcePositions();
+    final CompilationUnitTree cu = scopePath.getCompilationUnit();
     final var result = new ArrayList<TreePath>();
+    final var skipped = new AtomicInteger();
     new TreePathScanner<Void, Void>() {
       @Override
       public Void scan(final Tree node, final Void unused) {
-        if (node instanceof ExpressionTree) {
-          final var candidate = new TreePath(getCurrentPath(), node);
-          if (equivalent(selectedPath, candidate, trees)) {
-            result.add(candidate);
-          }
-        }
+        collect(node);
         return super.scan(node, unused);
       }
+
+      private void collect(final Tree node) {
+        if (!(node instanceof ExpressionTree)) {
+          return;
+        }
+
+        final var candidate = new TreePath(getCurrentPath(), node);
+        if (!equivalent(selectedPath, candidate, trees)) {
+          return;
+        }
+
+        // A synthesized expression (records, enums, generated members) has no source span (NOPOS),
+        // so there is nothing to rewrite; drop it and keep only real source occurrences.
+        if (positions.getStartPosition(cu, node) < 0 || positions.getEndPosition(cu, node) < 0) {
+          skipped.incrementAndGet();
+          return;
+        }
+
+        result.add(candidate);
+      }
     }.scan(scopePath, null);
+    if (skipped.get() > 0) {
+      final int dropped = skipped.get();
+      LOG.fine(() -> "[extract] occurrences skipped=%d synthetic".formatted(dropped));
+    }
+
     return result;
   }
 

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.type.TypeKind;
+import javax.tools.Diagnostic;
 import org.eclipse.lsp4j.Position;
 import org.junit.jupiter.api.Test;
 
@@ -349,6 +350,13 @@ class SourceLocatorTest extends SampleFixture {
   @Test
   void offsetToPosition_beyondEnd_clampsToLength() {
     assertThat(offsetToPosition("hi", 100)).isEqualTo(new Position(0, 2));
+  }
+
+  @Test
+  void offsetToPosition_noPosOffset_returnsOriginInsteadOfThrowing() {
+    // A synthesized node reports NOPOS (-1), on which the compilation-unit line map throws. The
+    // guard must yield a safe position so one positionless node can't crash a whole feature.
+    assertThat(offsetToPosition(compiled.cu(), Diagnostic.NOPOS)).isEqualTo(new Position(0, 0));
   }
 
   // --- range ---

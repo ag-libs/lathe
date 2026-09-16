@@ -273,49 +273,6 @@ imports") are separate later slices.
 
 ---
 
-## CA-8 — Extract Constant/Field/Variable crashes on a synthetic occurrence, killing the whole code-action menu
-
-**Status: accepted — Target: backlog (root cause known; small fix).**
-
-Signal: found in a real project's server log — 14 crashes across two record/generated-heavy files
-(`…Response.java`, a `@Builder` record) while editing.
-
-### Observed behaviour
-
-At certain positions in some files, invoking code actions returns nothing (the request fails). The
-server logs a `SEVERE [codeAction] failed … ArrayIndexOutOfBoundsException: Index -1`.
-
-### Root cause
-
-The replace-all-occurrences path of the extract refactors maps every structurally-equal occurrence to
-a `TextEdit` using `positions.getStartPosition/getEndPosition`. For a **synthetic** occurrence (common
-in records and generated code) javac returns `-1` (`Position.NOPOS`). `SourceLocator.offsetToPosition`
-has no guard for that (unlike its sibling `positionToOffset`, which catches the AIOOBE and returns
-`NOPOS`), so `-1` reaches javac's `LineTabMapImpl.getColumnNumber` and throws. Because
-`ExtractConstantProvider.provide` builds the edit list eagerly, the exception propagates out of
-`SourceAnalysisSession.codeAction` and the whole request fails — so **no** code actions are offered at
-that spot, not just the extract one.
-
-Stack: `SourceLocator.offsetToPosition` ← `ExtractionSupport.replaceEdit` ←
-`ExtractConstantProvider.provide` (the `occurrences()` map). The `occurrences()` helper is shared with
-Extract Field and Extract Variable, so all three are exposed.
-
-### Proposed fix
-
-- Filter occurrences whose start/end is `NOPOS` before building replace edits (best in the shared
-  `ExtractionSupport.occurrences(...)` so all three refactors are fixed at once) — a synthetic
-  occurrence has no source range and cannot be edited anyway.
-- Defensively harden `SourceLocator.offsetToPosition` to tolerate an invalid offset (mirror
-  `positionToOffset`'s existing guard) so one bad node can never crash the entire code-action pipeline.
-
-### Regression targets
-
-To be added with the fix: a record (or generated-source) fixture whose extracted literal has a
-synthetic occurrence yields a valid replace-all action (or omits the bad occurrence) instead of
-throwing; `SourceLocator.offsetToPosition` returns a safe result for `NOPOS`.
-
----
-
 # Completion Gaps (CQ)
 
 Active completion-quality gaps. Discovered and triaged via the completion appendix of the

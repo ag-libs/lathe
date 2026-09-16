@@ -6356,6 +6356,42 @@ the header declaration appears exactly once.
 - `ReferenceLocatorTest.recordComponent_scope_reactorModulesFromPublicAccessor`
 
 
+## CA-8 — Extract Constant/Field/Variable crashed on a synthetic occurrence, killing the whole code-action menu
+
+**Status: done — Target: next.**
+
+At certain positions in record/generated-heavy files, invoking code actions returned nothing: the
+server logged `SEVERE [codeAction] failed … ArrayIndexOutOfBoundsException: Index -1` and the whole
+request failed, so **no** action was offered — not just the extract one.
+
+Root cause: the replace-all path of the extract refactors mapped every structurally-equal occurrence
+to a `TextEdit` via `positions.getStartPosition/getEndPosition`. A record that declares a
+non-canonical constructor makes javac synthesize a separate canonical constructor whose nodes carry
+no source position (`NOPOS` / `-1`); `SourceLocator.offsetToPosition` had no guard, so `-1` reached
+javac's `LineTabMapImpl.getColumnNumber` and threw. Because `ExtractConstantProvider.provide` builds
+the edit list eagerly, the exception propagated out of `SourceAnalysisSession.codeAction` and failed
+the entire request. The shared `ExtractionSupport.occurrences(...)` helper exposed all three extract
+refactors to it.
+
+Fixed on two fronts: the shared `occurrences(...)` now drops any occurrence whose start/end is
+`NOPOS` — a synthesized node has no source text to rewrite, so it never belonged in the replace set —
+and emits one `FINE` log per request when it skips any (`[extract] occurrences skipped=N synthetic`).
+As a defensive backstop, `SourceLocator.offsetToPosition` mirrors `toOffset`'s existing guard and
+returns the origin instead of throwing on an invalid offset, so one positionless node can never crash
+a whole feature again.
+
+Verified before/after against a large real workspace: the buggy build produced 48 `SEVERE` AIOOBE
+failures across several `@Builder` records (including a `…Response.java`); the fixed build produced
+zero, with the `skipped=N synthetic` FINE log firing at exactly those positions and the menu
+populating normally.
+
+### Regression targets
+
+- `ExtractionSupportTest.occurrences_synthesizedCanonicalConstructor_excludesPositionlessNodes`
+- `SourceLocatorTest.offsetToPosition_noPosOffset_returnsOriginInsteadOfThrowing`
+
+---
+
 ## CA-1 — `UNREPORTED_EXCEPTION` inside a lambda body has no action
 
 **Status: done — Target: M1.**
