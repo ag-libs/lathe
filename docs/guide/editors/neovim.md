@@ -11,6 +11,9 @@ few Lua entry points; you bind the ones you want. Each section below is a table 
 the action, the command or API that implements it, its Neovim default (if any), and a suggested
 mapping. The suggested keymaps are a coherent starting set, not defaults.
 
+> For a complete, working example that assembles these pieces — the single-file config used to record
+> the demo — see [`examples/nvim/`](../../../examples/nvim/).
+
 ## Install
 
 Load the plugin as a local directory with `lazy.nvim`, pointing `dir` at the Neovim runtime installed
