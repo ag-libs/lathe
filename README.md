@@ -131,11 +131,13 @@ Set Lathe up once, in three steps.
 you already declare):
 
 ```xml
-<extension>
-  <groupId>io.github.ag-libs</groupId>
-  <artifactId>lathe-maven-extension</artifactId>
-  <version>0.1.6</version>
-</extension>
+<extensions>
+    <extension>
+        <groupId>io.github.ag-libs</groupId>
+        <artifactId>lathe-maven-extension</artifactId>
+        <version>0.1.6</version>
+    </extension>
+</extensions>
 ```
 
 See [installation.md](docs/guide/installation.md) for details.
