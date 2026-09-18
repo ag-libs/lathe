@@ -136,14 +136,18 @@ benefit that drove us off a sidecar: MCP tools invoke the *same* code the LSP ha
 by construction.
 
 To keep the coupling bounded, `lathe-server` gains **one small concrete facade** —
-`LatheEngine` in a new package `io.github.aglibs.lathe.server.api`, **qualified-exported** to the MCP
-module only (`exports io.github.aglibs.lathe.server.api to io.github.aglibs.lathe.mcp`). It wraps:
+`LatheEngine`, a public class in a new package `io.github.aglibs.lathe.server.api`. It wraps:
 workspace open (synthesizes the existing LSP `initialize` against a root, reusing `WorkspaceSession`
 and its missing-`.lathe/` remediation), plus `diagnostics(path)`, `runnables(uri)`, `runTest(...)`,
 `runMain(...)`. Because MCP is stateless, the facade opens files from disk on demand via the existing
 `didOpen` analysis path. Diagnostics and (later) progress are captured through a small
 `LatheLanguageClient` stub the facade installs in place of the editor's remote proxy — the bridge point
 for streaming in a later phase.
+
+Because the MCP process runs on the **classpath** (see the launcher note and the JPMS decision below),
+`lathe-server` there is loaded as an unnamed-module library and the public `api` package is directly
+accessible — **no `module-info` change to `lathe-server`, no qualified export**. Its `module-info`
+stays as-is for the editor (module-path) launcher, which does not use the facade.
 
 ### MCP server wiring
 
@@ -155,7 +159,12 @@ session, matching today's one-server-per-client model.
 
 `ServerInstaller` (in `lathe-maven-plugin`) generates and installs `lathe-mcp-launcher.sh` to
 `~/.cache/lathe/servers/<version>/`, mirroring `lathe-launcher.sh`'s javac `--add-exports/--add-opens`
-set (the in-process engine runs javac) **plus** the SDK classpath and the MCP main class.
+set (the in-process engine runs javac) **plus** the SDK jars and the MCP main class.
+
+It is a **classpath** launcher (`-cp … io.github.aglibs.lathe.mcp.LatheMcpServer`), not a module-path
+(`-m`) launcher — see the JPMS decision below. The javac `--add-exports` targets become `ALL-UNNAMED`
+(classpath code lives in the unnamed module). The editor's `lathe-launcher.sh` is untouched and keeps
+running `lathe-server` on the module path.
 
 ### Alternative considered and rejected
 
@@ -237,8 +246,7 @@ public fixture and a real synced project, with no product code written.
 - Ship `run_test`, `run_main`, `list_runnables`, `get_diagnostics` (structured content results).
 - Missing/empty `.lathe/` returns the structured "run capture" remediation.
 - Registerable in both Claude Code (`claude mcp add`) and Codex (`~/.codex/config.toml`).
-- Recommend a short spike first to confirm the SDK's module graph on the JPMS module path (Reactor et
-  al. as automatic modules) vs running the module on the classpath.
+- Classpath launcher (JPMS spike done — SDK 2.0.1 cannot go on the module path; see the JPMS decision).
 - Exit criterion: from a fresh agent session, edit a file, get diagnostics, and run its covering test —
   all through MCP tools, on Codex and Claude Code.
 
@@ -279,6 +287,47 @@ public fixture and a real synced project, with no product code written.
   option.
 - Marketplace/plugin packaging as the agent ecosystems' conventions settle.
 
+## Testing
+
+Layered, risk-driven, following the repo conventions (JUnit 5 + AssertJ, `@TempDir`,
+`methodName_condition_result`, invoker fixtures on `verify`, reuse the compile pipeline, prefer real
+objects over mocks).
+
+1. **`LatheEngine` facade tests — the core.** Drive the facade directly against a fixture `.lathe/`
+   workspace, reusing `lathe-server`'s existing compile/workspace test harness (mirror a neighbouring
+   test rather than invent setup). Real objects, no mocks. Cases: `openWorkspace` with/without
+   `.lathe/` (populated vs remediation error); `diagnostics` clean vs error file (the capturing
+   `LatheLanguageClient` stub asserts the `publishDiagnostics` payload); `runnables` lists
+   method/class/package. Real `runTest` replay needs captured bytecode, so it lives in the invoker
+   layer, not a bare `@TempDir`.
+
+2. **MCP protocol tests — in-process, no subprocess.** Wire an SDK `McpClient` to our `McpSyncServer`
+   over the SDK in-memory transport (`mcp-test`) and exercise the real handshake: `tools/list` returns
+   the tools with correct input schemas; `tools/call run_test` returns structured content; bad args map
+   to an `isError` result. Validates tool registration, schemas, and result mapping against the real
+   SDK machinery. `McpSyncServer` hides Reactor, so assertions stay synchronous.
+
+3. **End-to-end launcher test — the risk-retirer.** The real `lathe-mcp-launcher.sh` over real stdio,
+   as an invoker fixture beside the existing `LspSmokeTest` / `MultiModuleTest` (run only on
+   `mvn verify` against the `multi-module` workspace). A small stdio driver (`dev/mcp.py`, the analog of
+   `dev/lsp.py`) sends `initialize → tools/list → list_runnables → run_test` on `HelloTest` and asserts
+   **PASSED** — the Phase 0 spike promoted to a committed test. This is the layer that proves the two
+   currently-unverified assumptions: the **classpath launcher** and **in-process javac running as
+   unnamed-module code** (`ALL-UNNAMED` exports). Built first, as the walking-skeleton acceptance test.
+
+4. **Parity smoke (cheap).** Assert MCP `get_diagnostics` for a file equals the LSP diagnostics for the
+   same file (reuse `lathe-server`'s diagnostic fixtures). Near-tautological since both call the same
+   seam, but it documents that the two front-ends cannot drift.
+
+5. **Cross-agent acceptance (manual, per release).** `claude mcp add` + Codex `config.toml` + the MCP
+   Inspector — confirm the tools appear and run. Not CI-automatable; a documented checklist.
+
+**Build/test sequencing.** The walking skeleton is layer 3 with a single tool (`list_runnables`)
+end-to-end through the real launcher — this simultaneously scaffolds the module, the facade, and the
+launcher install, and retires the classpath / in-process-javac risk before any tool is fleshed out.
+Then add `run_test` / `get_diagnostics`, then layers 1–2 as unit coverage, then the full invoker suite
+for `verify`.
+
 ## Non-goals
 
 - **No native `workspace/executeCommand` over the Claude Code LSP plugin** — the client does not consume
@@ -297,11 +346,20 @@ public fixture and a real synced project, with no product code written.
 - **Session lifetime** — one MCP process per agent session (one workspace), matching the editor model.
 - **Diagnostics push vs pull** — pull (`get_diagnostics`) for Phase 1; the `LatheLanguageClient` stub
   is the push bridge reserved for Phase 3 streaming.
+- **JPMS placement — resolved: classpath for now.** The JPMS spike (against SDK 2.0.1) found the SDK
+  cannot go on the module path: `mcp-core` and `mcp-json-jackson3` ship a hyphenated
+  `Automatic-Module-Name` (`io.modelcontextprotocol.sdk.mcp-core` / `…mcp-json-jackson3`) that is an
+  invalid module name, so `jar --describe-module` reports *"Unable to derive module descriptor … not a
+  Java identifier."* (There is **no** split package — the jackson3 binding uses distinct `.jackson3`
+  subpackages; verified empty package intersection.) So `lathe-mcp-server` runs on the **classpath**.
+  Upstream already fixed the names on `main` (commit `183935b`, "Fix Automatic-Module-Name without
+  hyphens", + a real aggregator `module-info.java`), not yet in a release. **Plan:** ship classpath
+  now; revisit a module-path build once a fixed SDK release lands (tracked below).
 
-## Open questions
+## Open questions / tracking
 
-- **JPMS placement of the module:** named module requiring the SDK's automatic modules, or run on the
-  classpath? Decide in the Phase 1 spike against the real SDK module graph.
+- **Upstream JPMS fix release:** SDK `main` commit `183935b` fixes the module names; watch for the
+  release that includes it, then evaluate moving `lathe-mcp-server` to the module path.
 - **MCP protocol version** to advertise, and how to track SDK/spec revisions over time.
 - **Auth/trust:** Codex project-scoped `.codex/config.toml` requires a trust marker; document the
   implications.
