@@ -90,6 +90,14 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 
 **VS Code:** a supported integration; depends on the full semantic-token coverage above.
 
+**AI coding agents:**
+
+- [AI Agent Integration](planned/lathe-ai-agent-integration.md) — a new MCP server (universal, carries
+  Lathe's run/test-capture moat) plus a thin Claude Code LSP plugin (five read ops only), added beside
+  the Neovim/Emacs clients. MCP-first because it is the only substrate reaching Codex and the only path
+  that exposes `executeCommand` verbs to agents; phased Spike → MCP Tier 1 (edit→verify loop) → MCP
+  Tiers 2–3 → LSP plugin → packaging (proposed).
+
 ## Completed Designs
 
 - [Maven Extension for Automatic POM Setup](done/lathe-maven-extension.md) — a Maven core extension
