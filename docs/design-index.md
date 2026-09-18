@@ -93,10 +93,12 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 **AI coding agents:**
 
 - [AI Agent Integration](planned/lathe-ai-agent-integration.md) — a new MCP server (universal, carries
-  Lathe's run/test-capture moat) plus a thin Claude Code LSP plugin (five read ops only), added beside
-  the Neovim/Emacs clients. MCP-first because it is the only substrate reaching Codex and the only path
-  that exposes `executeCommand` verbs to agents; phased Spike → MCP Tier 1 (edit→verify loop) → MCP
-  Tiers 2–3 → LSP plugin → packaging (proposed).
+  Lathe's run/test-capture moat) plus a thin Claude Code LSP plugin, added beside the Neovim/Emacs
+  clients. MCP-first because it is the only substrate reaching Codex and the only path that exposes
+  `executeCommand` verbs to agents. **Approved architecture:** a separate `lathe-mcp-server` module on
+  the official MCP Java SDK, calling the engine in-process via a `LatheEngine` facade, with its own
+  launcher. Phase 0 spike done; phased Tier 1 (edit→verify) → Tiers 2–3 → streaming/cancel → resources
+  → LSP plugin → packaging.
 
 ## Completed Designs
 
