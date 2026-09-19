@@ -5,45 +5,70 @@
 Planned. Phase 0 (spike) done — substrate validated. Architecture approved; no product code yet.
 
 This document proposes a second and third front-end for the existing language server — an **MCP
-server** and a **Claude Code LSP plugin** — so that AI coding agents (Claude Code, OpenAI Codex, and
-the broader Cursor/Windsurf family) can consume Lathe alongside the current Neovim and Emacs clients.
-It captures the agent-landscape findings that motivate the split, the value proposition, the tool
-surface, and a phased plan.
+server** and a **Claude Code LSP plugin** — so that AI coding agents (Claude Code, OpenAI Codex CLI,
+Gemini CLI, and the broader Cursor/Windsurf family) can consume Lathe alongside the current Neovim
+client.
+It captures the agent-landscape findings that motivate the split, the strategic frame, the curated
+tool surface (all methods), the freshness model, a phased plan, and how we will measure the win.
 
 **Approved decision (the MCP server):** a new in-repo Maven module **`lathe-mcp-server`**, built on the
 **official MCP Java SDK** (`io.modelcontextprotocol.sdk`), talking to Lathe's engine **in-process** via
 a thin facade exported from `lathe-server` — one process per agent session, no second JVM and no
-LSP-over-stdio hop. It ships with its **own launcher** (`lathe-mcp-launcher.sh`). Rationale and
-alternatives considered are in [Architecture](#architecture).
+LSP-over-stdio hop. It ships with its **own launcher** (`lathe-mcp-launcher.sh`) and resolves its
+workspace from the process working directory. Rationale and alternatives are in
+[Architecture](#architecture).
+
+## Strategic frame
+
+The design optimizes for a single measurable outcome, and the decisions below flow from it.
+
+- **North-star (success metric).** Make an AI agent measurably faster, cheaper, and more correct on a
+  large multi-module Maven reactor than it is with grep alone: fewer tokens, fewer wrong edits, and
+  fewer follow-up file reads on a real reactor (Dropwizard/Helidon, and privately, a real payment
+  reactor). Success is a number, not a feature list — see [Measurement](#measurement).
+- **Audience: AI agents, not editor users.** Emacs support is dropped as too small a niche; the agent
+  audience is far larger and growing. The Neovim client remains the human path and the reference LSP
+  consumer.
+- **Lead with the uncontested channel.** Codex CLI and Gemini CLI have **no** native LSP and route all
+  code intelligence through MCP — their baseline is grep. Claude Code has native Java LSP but a thin,
+  generic plugin surface. So: lead with Codex/Gemini (where any javac-accurate intelligence beats
+  grep), and beat Claude Code's native path on reactor/dependency/generated/javac accuracy.
+- **Non-negotiable principle — return SOURCE SNIPPETS.** Every result returns the surrounding code
+  (the enclosing declaration, line-numbered, match marked), never a bare `file:line`. Empirically this
+  is the biggest lever in this space (agent pass@1 ≈ 0.67 → 0.83; follow-up reads ≈ 15 → 3 per task).
+  A bridge that returns coordinates loses to one that returns code.
+- **This is a curated wedge, not a port of the LSP spec.** The LSP surface is the menu, not the spec —
+  see [MCP tool surface](#mcp-tool-surface) for what is in and what is deliberately out.
+
+This frame **supersedes** the earlier tiering in this document that led with run/test as "the MCP-only
+value." For the lead (grep-baseline) audience, javac-accurate **navigation, references, and
+diagnostics with snippets are the wedge**; run/test is the loop-closer, not the opener.
 
 ## Motivation
 
-Lathe today targets humans in an editor.
-Its Neovim and Emacs clients speak LSP over stdio to `LatheServer`.
-AI coding agents are a distinct, fast-growing consumer with a different access model, and Lathe already
-holds exactly the ground truth those agents most often fake.
-
-An agent's core loop is **edit → does it compile → run the covering test → read the failure → fix**.
-Agents fake almost every step of that loop today:
-they guess Maven invocations, re-derive classpaths, over-run whole suites, and read diagnostics from
+Lathe already holds exactly the ground truth agents most often fake.
+An agent's core loop is **edit → does it compile → find every site → change it → run the covering
+test → fix**.
+Agents fake almost every step: they guess Maven invocations, re-derive classpaths, grep for
+references (missing sites and colliding on names), over-run whole suites, and read diagnostics from
 build logs after the fact.
-Lathe has already captured the ground truth for all of it — the exact `javac` inputs, the exact
-Surefire launch — and can replay a run without recompiling.
+Lathe has captured the ground truth for all of it — the exact `javac` inputs, the exact Surefire
+launch — and can replay a run without recompiling.
 That is the wedge:
-**Lathe is the build-truth and "run the exact test that covers this change" layer for coding agents**,
-not merely another Java LSP.
+**Lathe is the build-truth, "find every real use," and "run the exact covering test" layer for coding
+agents**, not merely another Java LSP.
 
 ## Landscape (as researched, Sept 2026)
 
 The integration channels differ sharply by agent, and the difference drives the whole design.
 
-| Capability | Claude Code | OpenAI Codex CLI | Cursor / others |
-|---|---|---|---|
-| Native LSP client | Yes — via a plugin's `.lsp.json` / `lspServers` | No (open requests, unimplemented) | No native LSP |
-| LSP operations consumed | definition, references, completion, diagnostics, hover, rename + other standard features | — | — |
-| `workspace/executeCommand` over LSP | No agent-invocable trigger | — | — |
-| MCP servers | Yes | Yes (`~/.codex/config.toml`, `[mcp_servers.*]`) | Yes |
-| Plugins | Yes | Yes (`.codex-plugin/plugin.json`) | Varies |
+| Capability | Claude Code | OpenAI Codex CLI | Gemini CLI | Cursor / others |
+|---|---|---|---|---|
+| Native LSP client | Yes — via a plugin's `.lsp.json` / `lspServers` | No (open requests, unimplemented) | No | No native LSP |
+| LSP operations consumed | definition, references, completion, diagnostics, hover, rename + other standard features | — | — | — |
+| `workspace/executeCommand` over LSP | No agent-invocable trigger | — | — | — |
+| MCP servers | Yes | Yes (`~/.codex/config.toml`, `[mcp_servers.*]`) | Yes | Yes |
+| Plugins | Yes | Yes (`.codex-plugin/plugin.json`) | Yes | Varies |
 
 Two findings dominate:
 
@@ -52,10 +77,10 @@ Two findings dominate:
    The Claude Code native-LSP path reaches only Claude Code, and only the read half of Lathe.
 
 2. **The native-LSP path cannot express Lathe's differentiators.**
-   Claude Code's native LSP client consumes only the five read operations and does **not** invoke
+   Claude Code's native LSP client consumes only the standard read operations and does **not** invoke
    `workspace/executeCommand`.
-   Lathe's run/test capture-and-replay, `lathe.createType`, `lathe.missingImports`, and the rest of the
-   custom-command surface are therefore invisible over native LSP.
+   Lathe's run/test capture-and-replay, cross-module rename, scoped build verification, and the rest of
+   the custom-command surface are therefore invisible over native LSP.
    They only travel over MCP, where they become first-class agent tools.
 
 Schema note (verified in Phase 0 against the live plugins reference at
@@ -64,46 +89,45 @@ the plugin root or under an `lspServers` key in `plugin.json`. Required fields a
 on `$PATH`) and `extensionToLanguage`; optional fields include `args`, `transport`
 (`stdio` default — note Claude Code runs *every* server over stdio even if `socket` is declared),
 `env`, `initializationOptions`, `settings`, `workspaceFolder`, `startupTimeout`, `shutdownTimeout`,
-`restartOnCrash`, `maxRestarts`, and `diagnostics` (push diagnostics into context after edits, default
-true). The reference lists supported operations as go-to-definition, find-references, completion,
-diagnostics, hover, rename, and "other standard LSP features provided by the language server" — i.e.
-more than five, but still **no agent-invocable path for `workspace/executeCommand`**: custom commands
-need a client-side trigger (code action / command) that an agent does not drive, so Lathe's run/test
-verbs still require MCP. The `command` must resolve on `$PATH`, so the plugin points at
-`lathe-launcher.sh` (or a wrapper) rather than a bare binary.
+`restartOnCrash`, `maxRestarts`, and `diagnostics`. There is still **no agent-invocable path for
+`workspace/executeCommand`**, so Lathe's run/verify/rename verbs require MCP. The `command` must
+resolve on `$PATH`, so a plugin points at `lathe-launcher.sh` rather than a bare binary.
 
 ## The tension, and the resolution
 
 The channel that is easiest to ship (a Claude Code LSP plugin) exposes the *least* differentiated
 slice of Lathe — read-only navigation, where Eclipse JDT.LS already ships as the default
 `jdtls-lsp@claude-plugins-official`.
-The differentiated slice — run, verify, and build-derived truth — travels **only over MCP**, which is
-also the only channel that reaches Codex and everything that is not Claude Code.
+The differentiated slice — javac-accurate navigation/references **with snippets**, cross-module
+rename, scoped verification, and run/replay — travels **only over MCP**, which is also the only channel
+that reaches Codex and Gemini.
 
 Resolution: **MCP is the primary, universal, differentiated surface; the LSP plugin is a thin
 Claude-Code-only convenience** so that read features flow through the fast native path there.
 Build MCP first.
 
-## Non-negotiable prerequisite
+## Non-negotiable prerequisites
 
-Both surfaces sit on the same foundation as the editor clients:
-the server refuses to run without a populated `.lathe/` at the reactor root.
-Any agent onboarding **must** begin with a real Maven build having run once, e.g.:
+Two invariants sit under everything below.
 
-```bash
-mvn clean test -Dlathe.capture.only=true
-```
+1. **A populated `.lathe/` at the reactor root.**
+   The server refuses to run without it.
+   Any agent onboarding must begin with a real Maven build having run once, e.g.
+   `mvn clean test -Dlathe.capture.only=true`.
+   This is a genuine setup cost the default `jdtls`-via-plugin path does not carry; it must be surfaced
+   explicitly in onboarding.
+   The MCP server detects a missing/empty `.lathe/` and returns that exact remediation as a structured,
+   actionable error rather than a bare failure.
 
-This is a genuine setup cost that the default `jdtls`-via-plugin path does not carry, and it must be
-surfaced explicitly in onboarding rather than hidden.
-The MCP server should detect a missing/empty `.lathe/` and return that exact remediation as a
-structured, actionable error rather than a bare failure.
+2. **Snippet context on every result.**
+   See the [Strategic frame](#strategic-frame). This is baked into the shared result shape, not
+   optional per tool.
 
 ## Architecture
 
 One engine, three front-ends.
-The MCP server and the LSP plugin are **new clients** beside the existing Lua and Elisp clients — they
-do not fork or duplicate server logic.
+The MCP server and the LSP plugin are **new clients** beside the existing Neovim client — they do not
+fork or duplicate server logic.
 
 - **Existing (unchanged):** `LatheServer` speaks LSP/JSON-RPC over stdio, launched by
   `lathe-launcher.sh`. Its lean `module-info` and the editor path are untouched by this work.
@@ -116,6 +140,20 @@ do not fork or duplicate server logic.
 The MCP server carries almost all the value and almost all the work; the rest of this section is its
 approved shape.
 
+### Standalone process, workspace resolved from `cwd`
+
+For v1 the MCP server is a **standalone** process, not shared with a running editor.
+It resolves its reactor by walking up from the process **working directory** to the nearest `.lathe/`;
+onboarding documents "run the agent from inside the project."
+There are **no agent-facing open/close tools** — lifecycle is process spawn/exit, and workspace reload
+is automatic via the existing staleness path.
+The workspace is opened lazily on the first tool call and cached for the session, so the load cost
+(≈3.4s on a 332-module reactor) is paid once, not per call.
+A shared-with-editor server (one warm JVM serving both the editor over stdio and the agent over a
+socket/HTTP transport) is a deliberate later phase — it adds warm-state reuse and human/agent
+consistency but requires a second transport and concurrency work, and it does **not** change the
+freshness model (see [Freshness model](#freshness-model)).
+
 ### `lathe-mcp-server` — the module
 
 - New Maven module parallel to `lathe-server`. Package root `io.github.aglibs.lathe.mcp`,
@@ -127,27 +165,35 @@ approved shape.
 - Dependencies: `io.modelcontextprotocol.sdk:mcp` (the bundle = core + Jackson-3 binding, versions via
   `mcp-bom`); regular deps on `lathe-server` and `lathe-core`.
 
-### In-process facade (the chosen integration)
+### In-process facade — `LatheEngine`
 
 The MCP module depends on `lathe-server` as a library and calls its services **directly in the same
-JVM** — no child process, no JSON-RPC hop, no LSP `didOpen`/`didChange` mirroring. This preserves the
-benefit that drove us off a sidecar: MCP tools invoke the *same* code the LSP handlers do
-(`LatheTextDocumentService.runTestFuture` / `runnablesFuture` / diagnostics), so behaviour is identical
-by construction.
+JVM** — no child process, no JSON-RPC hop, no LSP `didOpen`/`didChange` mirroring. MCP tools invoke the
+*same* code the LSP handlers do, so behaviour is identical by construction.
 
-To keep the coupling bounded, `lathe-server` gains **one small concrete facade** —
-`LatheEngine`, a public class in a new package `io.github.aglibs.lathe.server.api`. It wraps:
-workspace open (synthesizes the existing LSP `initialize` against a root, reusing `WorkspaceSession`
-and its missing-`.lathe/` remediation), plus `diagnostics(path)`, `runnables(uri)`, `runTest(...)`,
-`runMain(...)`. Because MCP is stateless, the facade opens files from disk on demand via the existing
-`didOpen` analysis path. Diagnostics and (later) progress are captured through a small
-`LatheLanguageClient` stub the facade installs in place of the editor's remote proxy — the bridge point
-for streaming in a later phase.
+To keep the coupling bounded, `lathe-server` gains **one small concrete facade** — `LatheEngine`, a
+public class in a new package `io.github.aglibs.lathe.server.api`. It grows beyond the original
+`get_diagnostics`-only sketch to back every read tool plus rename, each mapping to an existing
+`WorkspaceSession` / text-document-service method:
 
-Because the MCP process runs on the **classpath** (see the launcher note and the JPMS decision below),
+- lifecycle: `openWorkspace(root)` (synthesizes the existing `initialize`, reusing `WorkspaceSession`
+  and its missing-`.lathe/` remediation), plus internal reload;
+- reads: `diagnostics`, `definition`, `hover`, `references`, `implementations`, `searchSymbols`,
+  `documentSymbols`, `callHierarchy`, `typeHierarchy`;
+- writes: `rename`, `addMissingImports`;
+- run: `runnables`, `runTest` (and optionally `runMain`).
+
+Because MCP is stateless, the facade opens files from disk on demand via the existing `didOpen`
+analysis path.
+Diagnostics and (later) progress are captured through a small `LatheLanguageClient` stub the facade
+installs in place of the editor's remote proxy — the bridge point for streaming in a later phase.
+Since `lathe-mcp-server` runs on the **classpath** (see the launcher note and JPMS decision below),
 `lathe-server` there is loaded as an unnamed-module library and the public `api` package is directly
-accessible — **no `module-info` change to `lathe-server`, no qualified export**. Its `module-info`
-stays as-is for the editor (module-path) launcher, which does not use the facade.
+accessible — **no `module-info` change, no qualified export**.
+
+`verify_build` is the one tool that is **not** a pure `LatheEngine` call: it runs a scoped Maven build
+out-of-process (see [the tool surface](#mcp-tool-surface)) and then calls `LatheEngine`'s reload path
+to refresh `.lathe/` and read back diagnostics.
 
 ### MCP server wiring
 
@@ -163,213 +209,367 @@ set (the in-process engine runs javac) **plus** the SDK jars and the MCP main cl
 
 It is a **classpath** launcher (`-cp … io.github.aglibs.lathe.mcp.LatheMcpServer`), not a module-path
 (`-m`) launcher — see the JPMS decision below. The javac `--add-exports` targets become `ALL-UNNAMED`
-(classpath code lives in the unnamed module). The editor's `lathe-launcher.sh` is untouched and keeps
-running `lathe-server` on the module path.
+(classpath code lives in the unnamed module). The editor's `lathe-launcher.sh` is untouched.
 
-### Alternative considered and rejected
+### Editor coexistence
 
-An **out-of-process** MCP server (spawns `lathe-launcher.sh` and speaks LSP to it) needs no
-`lathe-server` change and a leaner launcher, but re-adds the translation hop, child-process lifecycle,
-and `didOpen` mirroring — the very costs that motivated going native. Rejected. A **hand-rolled MCP
-transport** (no SDK, on lsp4j's generic JSON-RPC) was also considered: zero new dependencies, but it
-owns MCP spec-compliance and protocol-version churn by hand and cannot cheaply reach the richer surface
-(progress/streaming, structured output, resources, HTTP) that maps onto Lathe's already-shipped
-streaming/structured/cancel test features. Rejected in favour of the SDK.
+When a developer runs the agent and the Neovim client on the same project, the agent edits files in
+place with its own tools (the MCP server never writes files except through `rename`/`add_missing`).
+A small `autoread` + `:checktime` addition to the Neovim client absorbs those on-disk edits silently
+(no "file changed on disk" prompt) whenever the buffer is unmodified, keeping the editor consistent
+with the agent.
+The only unresolved case is the genuine two-writers race (a human hand-editing, with unsaved changes,
+the same file the agent just wrote) — workflow discipline, not a tooling fix.
+
+### Alternatives considered and rejected
+
+- **Out-of-process MCP server** (spawns `lathe-launcher.sh` and speaks LSP to it): no `lathe-server`
+  change and a leaner launcher, but re-adds the translation hop, child-process lifecycle, and
+  `didOpen` mirroring — the very costs that motivated going native. Rejected.
+- **Hand-rolled MCP transport** (no SDK, on lsp4j's generic JSON-RPC): zero new dependencies, but owns
+  MCP spec-compliance and protocol-version churn by hand and cannot cheaply reach the richer surface
+  (progress/streaming, structured output, resources, HTTP) that maps onto Lathe's already-shipped
+  streaming/structured/cancel features. Rejected in favour of the SDK.
+- **Shared-with-editor server for v1**: warm and consistent, but needs a second transport and
+  concurrency work and does not improve freshness. Deferred to a later phase, not v1.
+
+## Freshness model
+
+The central design fact for the agent-edit workflow, stated plainly so no tool over-promises.
+
+Because MCP is stateless, every tool reads the target file **from disk** at call time and feeds the
+fresh content through the existing open-file compile pipeline — javac compiles the current bytes
+against the captured `.lathe/` classpath. So the compiler does real work on the latest saved content,
+no Maven required for a single file.
+The boundary is what the *rest* of the world resolves against: every other type resolves from the
+captured `.lathe/` bytecode, i.e. the last `mvn process-test-classes`.
+
+| Edit scope | How it becomes fresh | Maven? |
+|---|---|---|
+| The single edited file | in-process javac vs `.lathe/` | No (≈280ms) |
+| Multiple files, same module | in-memory overlay recompile of siblings | No — **planned, unshipped**, bounded to one module |
+| Cross-module (an API used by another module) | `verify_build` — scoped reactor build | **Yes — unavoidable** |
+
+This is a compiler/reactor property, **identical for the human editor and the agent** — the editor's
+"save" is also single-file, and cross-module correctness needs the reactor to recompile upstream
+modules and regenerate sources in order.
+Lathe does not fake it: `get_diagnostics` is messaged as "errors in *this* file after your edit," and
+carries an honest staleness hint when a referenced file changed since the last build; cross-module
+verification is `verify_build`, and `run_test` is gated on recompiling changed files before replay so
+it cannot report a stale pass/fail.
 
 ## MCP tool surface
 
-Prioritize the tools an agent actually loops on; deprioritize interactive-typing features an agent does
-not use (completion, signature help, folding).
+A tight, curated agent surface — under half the LSP spec.
+All read results carry the snippet contract (below).
+Addressing: use-site tools take `file,line,column`; search takes a name; whole-file tools take `file`.
 Names are indicative and map to existing server endpoints/commands.
 
-**Tier 1 — the edit→verify loop (highest leverage, MCP-only value):**
+### Snippet contract (shared result shape)
 
-- `run_test` — run a test by class or method from captured bytecode, no recompile
-  (maps to `lathe.run.test`).
-- `run_main` — run a main from captured bytecode (maps to `lathe.run.main`).
-- `list_runnables` — discover runnable mains and tests (maps to `lathe.runnables.list`).
-- `get_diagnostics` — compiler-accurate errors/warnings for a file, on the captured classpath.
+Every located result carries `{ uri, module, range{start,end}, kind, containerName, snippet }` where
+`snippet` is the **enclosing declaration** (method/field/type), line-numbered, with the matched line
+marked, capped (≈30 lines; if larger, the signature plus a tight window).
+List results (`find_references`, `call_hierarchy`, …) are **ranked** (same-file → same-module → rest),
+**capped** to `maxResults` with a tighter per-item window, and paginated via `truncated` + `total` +
+`cursor`.
 
-**Tier 2 — navigation and search (compiler-accurate ground truth):**
+### Tier 1 — foundational reads (build first; help every workflow)
 
-- `find_references`, `goto_definition`, `workspace_symbol`.
+| Tool | Maps to | In → Out |
+|---|---|---|
+| `get_diagnostics` | diagnostics | `{file}` → `{diagnostics[], stalenessHint?}` — "errors in *this* file after your edit." |
+| `get_definition` | definition | `{file,line,column}` → `{targets[]{…snippet, resolvedInto: reactor\|dependency\|jdk\|generated}}` |
+| `describe_symbol` | hover | `{file,line,column}` → `{kind, signature, type, javadoc, snippet}` |
 
-**Tier 3 — mutation helpers (agent-friendly, one-shot):**
+### Tier 2 — the migration / removal loop (highest daily leverage on a reactor)
 
-- `add_missing_imports` (maps to `lathe.missingImports`),
-  `create_type` (maps to `lathe.createType`).
+| Tool | Maps to | Kind | In → Out |
+|---|---|---|---|
+| `find_references` | references | read | `{file,line,column,maxResults?,cursor?}` → `{total, truncated, references[]}` |
+| `rename_symbol` | rename | **write** | `{file,line,column,newName}` → `{renamed, from, to, editedFiles[], totalEdits}` \| structured refusal. **Gated on [FR-017](../gaps/gaps.md#fr-017).** |
+| `verify_build` | scoped `mvn -pl <changed> -amd` + reload | **action** | `{modules?, includeTests?}` → `{compiled, modulesBuilt[], diagnostics[], elapsedMs}` |
+| `find_implementations` | implementation | read | `{file,line,column,maxResults?}` → `{implementations[]}` |
+| `search_symbols` | workspace/symbol (CamelHumps) | read | `{query, kind?, maxResults?}` → `{symbols[]{…, signatureSnippet}}` |
 
-Deliberately **out of the MCP surface** initially: completion, signature help, folding ranges, semantic
-tokens, document highlight — these serve a human typing in an editor, not an agent.
+These compose into the dominant reactor workflow — cross-module config/API migrations and safe
+removals — and each tool's description hands off to the next:
+`find_references` (find every site) → `rename_symbol` (change them atomically) → `verify_build` (prove
+the multi-module result still compiles).
+
+### Tier 3 — the run loop (loop-closer)
+
+| Tool | Maps to | Kind | In → Out |
+|---|---|---|---|
+| `list_runnables` | `lathe.runnables.list` | read | `{file?}` → `{runnables[]{id, kind, module, displayName}}` |
+| `run_test` | `lathe.run.test` replay | **action** | `{runnableId} \| {file,testClass,method?}` → `{status, passed, failed, skipped, failures[], output}`. **Gated on recompile-before-replay freshness.** |
+
+An optional sibling `run_main` → `lathe.run.main` is deprioritized (not a headline agent verb).
+
+### Tier 4 — medium usability
+
+| Tool | Maps to | Kind | In → Out |
+|---|---|---|---|
+| `document_symbols` | documentSymbol | read | `{file}` → `{symbols[] tree}` — grok a large file without reading it whole. |
+| `call_hierarchy` | call hierarchy | read | `{file,line,column, direction: incoming\|outgoing, maxResults?}` → `{calls[]}` |
+| `type_hierarchy` | typeHierarchy / `lathe.typeHierarchy` | read | `{file,line,column, direction: super\|sub\|both}` → `{types[]{…, relation}}` |
+| `add_missing_imports` | `lathe.missingImports` | **write** | `{file}` → `{added[], ambiguous[]{name, candidates[]}, unresolved[]}` |
+
+### Example — `find_references` result (pins the snippet shape)
+
+```jsonc
+{
+  "content": [{ "type": "text", "text":
+    "12 references to `Config.urlPatterns` across 3 modules. Showing 12 of 12." }],
+  "structuredContent": {
+    "symbol": "Config.urlPatterns",
+    "total": 12, "truncated": false,
+    "references": [
+      {
+        "uri": ".../app/.../UrlResolver.java",
+        "module": "app",
+        "range": { "start": {"line": 88, "col": 20}, "end": {"line": 88, "col": 30} },
+        "kind": "read",
+        "containerName": "UrlResolver.resolve(String)",
+        "snippet": "  86  public String resolve(String key) {\n  87    var cfg = config();\n> 88    return cfg.urlPatterns().get(key);   // <- match\n  89  }"
+      }
+    ]
+  }
+}
+```
+
+### Deliberately out of the MCP surface
+
+Completion, signature help, folding ranges, semantic tokens, document highlight, formatting, on-type
+formatting, the debugger, extract refactors, and the new-type scaffold.
+These serve a human typing/rendering in an editor, or are edits an agent performs directly — not agent
+outcomes on a reactor.
 
 ## Value proposition to lead with
 
-- **Compiler-accurate ground truth** — diagnostics and types are exactly what `javac` saw on the exact
-  captured classpath; no reconstructed project model to drift ("green in build, red in tool").
+- **Compiler-accurate ground truth** — diagnostics, types, and references are exactly what `javac` saw
+  on the exact captured classpath; no reconstructed project model to drift ("green in build, red in
+  tool"), and no grep name-collisions or missed cross-module sites.
+- **Snippets, not coordinates** — every answer arrives as readable code, so the agent acts without a
+  follow-up read per result.
+- **Safe multi-module migration** — `find_references` → `rename_symbol` → `verify_build` is a complete,
+  compiler-verified loop for the reactor's most common change shape.
 - **Run the exact covering test without recompiling** — the capture-and-replay moat, expressible only
   over MCP.
-- **External-edit freshness** — Lathe already detects out-of-editor edits (the design explicitly names
-  AI-agent edits) and reconciles; the MCP server leans on this so an agent's rapid edits stay correct.
-- **Reactor-correct multi-module** resolution out of the box.
+- **Reactor-correct multi-module** resolution and **dependency/JDK/generated-source** navigation out of
+  the box.
 
 ## Phases
 
-Ordered so the highest-leverage, most-differentiated, most-portable capability lands first, and each
-phase is independently useful.
+Ordered so the highest-leverage, most-portable capability lands first, and each phase is independently
+useful.
 
 ### Phase 0 — Spike and validate the substrate — DONE
 
-Driven through the existing Python LSP driver (`dev/lsp.py` / `dev/explore.py`), which already spawns
-the **published** `lathe-launcher.sh` over stdio and issues `initialize`, `didOpen`,
-`textDocument/definition`, diagnostics, `lathe.runnables.list`, and `lathe.run.test` — i.e. a working
-reference for exactly what the MCP server must do. Validated end-to-end against the published 0.1.6
-launcher on two workspaces:
+Driven through the existing Python LSP driver (`dev/lsp.py` / `dev/explore.py`), which spawns the
+published `lathe-launcher.sh` over stdio and issues `initialize`, `didOpen`,
+`textDocument/definition`, diagnostics, `lathe.runnables.list`, and `lathe.run.test` — a working
+reference for what the MCP server must do. Validated end-to-end against the published launcher on the
+in-repo `multi-module` invoker workspace and a large private multi-module workspace: clean
+diagnostics, cross-file `definition`, runnables discovered, and a replay → `[PASSED] exit=0`.
+The `.lsp.json` schema was re-verified against the live plugins reference.
 
-- the in-repo `multi-module` invoker workspace (`HelloTest`): clean diagnostics, cross-file
-  `definition` into main source, six runnables discovered, and `run 0` replayed a fresh JVM →
-  `[PASSED] exit=0`;
-- a large private multi-module workspace (10 captured modules), already synced: clean diagnostics,
-  cross-file `definition` from a test into its main-source method/type, runnables discovered, and a
-  single-method replay → `[PASSED] exit=0`.
+### Phase 1 — Scaffold + Tier 1 (foundational reads)
 
-The `.lsp.json` schema was re-verified against the live plugins reference (see the schema note above).
-
-Exit criterion met: handshake + read ops + a run verb work end-to-end over the launcher on both a
-public fixture and a real synced project, with no product code written.
-
-### Phase 1 — `lathe-mcp-server` scaffold + Tier 1 (the edit→verify loop)
-
-- New `lathe-mcp-server` module wired into the reactor; SDK dependency; `LatheMcpServer.main` with the
-  SDK stdio transport.
-- `LatheEngine` facade added to `lathe-server` (qualified export) + the `LatheLanguageClient` stub.
+- New `lathe-mcp-server` module wired into the reactor; SDK dependency; `LatheMcpServer.main` over the
+  SDK stdio transport; classpath launcher; `cwd`-based workspace resolution; lazy-open + cache.
+- `LatheEngine` facade + `LatheLanguageClient` stub added to `lathe-server`.
 - `ServerInstaller` generates and installs `lathe-mcp-launcher.sh`.
-- Ship `run_test`, `run_main`, `list_runnables`, `get_diagnostics` (structured content results).
-- Missing/empty `.lathe/` returns the structured "run capture" remediation.
-- Registerable in both Claude Code (`claude mcp add`) and Codex (`~/.codex/config.toml`).
-- Classpath launcher (JPMS spike done — SDK 2.0.1 cannot go on the module path; see the JPMS decision).
-- Exit criterion: from a fresh agent session, edit a file, get diagnostics, and run its covering test —
-  all through MCP tools, on Codex and Claude Code.
+- Ship `get_diagnostics`, `get_definition`, `describe_symbol` (structured content + snippets).
+- Missing/empty `.lathe/` returns the structured remediation.
+- **Server-side tool-call logging** (tool, args summary, latency, result size) — a Phase-1 requirement
+  so adoption is measurable from day one (see [Measurement](#measurement)).
+- `dev/mcp.py` stdio driver (analog of `dev/lsp.py`).
+- Registerable in Claude Code (`claude mcp add`), Codex (`~/.codex/config.toml`), and Gemini CLI.
+- Exit: from a fresh agent session, edit a file, get diagnostics, and navigate — through MCP tools, on
+  Codex/Gemini and Claude Code.
 
-### Phase 2 — Tiers 2–3 (navigation, search, mutation)
+### Phase 2 — Tier 2 (the migration / removal loop)
 
-- Add `find_references`, `goto_definition`, `workspace_symbol`.
-- Add `add_missing_imports`, `create_type`.
-- Validate request shapes and return friendly errors (avoid leaking internal stack traces — see the
-  argument-handling robustness note in
-  [New/Changed-Test Replay Inner Loop](lathe-new-test-replay-loop.md)).
+- `find_references`, `find_implementations`, `search_symbols`.
+- `verify_build` (scoped `mvn -pl <changed> -amd` → structured diagnostics + `.lathe/` reload).
+- `rename_symbol` — **gated on [FR-017](../gaps/gaps.md#fr-017)** (end-to-end cross-module rename test)
+  before it ships, since it is a write op over multi-module migrations.
+- Exit: complete a cross-module field migration and a safe removal entirely through MCP tools.
 
-### Phase 3 — Streaming and cancellation
+### Phase 3 — Tier 3 (the run loop)
 
-- Stream `run_test` output/progress to the agent via MCP progress notifications, and wire cancellation
-  onto the existing `lathe.run.cancel`, using the SDK's notification support through the
-  `LatheLanguageClient` stub bridge. Leans on Lathe's already-shipped
+- `list_runnables` + `run_test` — **gated on recompile-before-replay** so a replay cannot report stale
+  results (see the [New/Changed-Test Replay Inner Loop](lathe-new-test-replay-loop.md)).
+
+### Phase 4 — Tier 4 (medium tools)
+
+- `document_symbols`, `call_hierarchy`, `type_hierarchy`, `add_missing_imports`.
+
+### Phase 5 — Measurement harness
+
+- Build `dev/bench/` and run the grep-baseline comparison (see [Measurement](#measurement)); can start
+  alongside Phase 2 once Tier 2 exists.
+
+### Phase 6 — Shared-with-editor server, streaming, HTTP transport
+
+- One warm JVM serving the editor and the agent; stream `run_test` output/progress via MCP progress
+  notifications and wire cancellation onto `lathe.run.cancel` through the `LatheLanguageClient` stub;
+  evaluate the SDK Streamable HTTP transport for shared/remote serving. Leans on Lathe's shipped
   [test-output-streaming](../done/lathe-test-output-streaming.md),
   [structured-test-results](../done/lathe-structured-test-results.md), and
   [test-cancel](../done/lathe-test-cancel.md).
 
-### Phase 4 — Resources and optional HTTP transport
+### Phase 7 — Claude Code LSP plugin, packaging, docs
 
-- Expose `.lathe/` artifacts (workspace manifest, captured launch configs) as MCP resources.
-- Evaluate the SDK's Streamable HTTP transport for shared/remote serving.
+- Publish the `.lsp.json` / `lspServers` entry pointing at `lathe-launcher.sh` for read/nav operations;
+  document the collision with `jdtls-lsp@claude-plugins-official` (first-registered-wins on `.java`).
+- Onboarding docs under `docs/guide/` (an agent cheatsheet beside the per-editor cheatsheets): the
+  `.lathe/` prerequisite, MCP registration for Claude Code / Codex / Gemini, and the LSP-plugin option.
+- Marketplace/plugin packaging as the ecosystems' conventions settle.
 
-### Phase 5 — Claude Code LSP plugin (thin, config-only)
+## Measurement
 
-- Publish the `.lsp.json` / `lspServers` entry pointing `command` at `lathe-launcher.sh` for the
-  standard read/nav/rename operations the client surfaces.
-- Document the collision with `jdtls-lsp@claude-plugins-official` (first-registered-wins on `.java`)
-  and how to disable/displace it.
-- Position as a convenience add-on; the MCP server remains the source of Lathe's differentiated value.
+Two layers: a formal, publishable harness, and lightweight day-to-day tracking for personal/team use.
+Both compare **with MCP** against a **grep baseline** (the agent with only shell/grep/read, MCP off).
 
-### Phase 6 — Packaging, docs, distribution
+### Formal harness (the publishable proof)
 
-- Onboarding docs under `docs/guide/` (an agent cheatsheet beside the per-editor cheatsheets),
-  covering the `.lathe/` prerequisite, MCP registration for Claude Code and Codex, and the LSP-plugin
-  option.
-- Marketplace/plugin packaging as the agent ecosystems' conventions settle.
+`dev/bench/`: two arms — baseline (grep/read only) and treatment (same agent + Lathe MCP).
+Corpus: 20–40 curated tasks on Dropwizard (controllable, 68 modules) plus a handful on Helidon (scale,
+332 modules), each with a golden diff / passing tests, chosen to exercise the moat: cross-module
+caller changes, implement-an-interface, fix-a-compile-error, call-a-dependency-correctly.
+Metrics per task, paired: total tokens, pass@1 (patch applies + compiles via Lathe + tests green),
+number of file-read tool calls, number of wrong/superseded edits, wall time.
+Run N repeats for variance; report paired deltas with confidence intervals — the headline number.
+
+### Day-to-day measurement (personal / team)
+
+Real tasks are not repeatable (doing a task changes the code), so day-to-day uses a mix of an
+experiment that *is* repeatable and lightweight ongoing tracking.
+
+**Level 1 — adoption (leading indicator).** From the Phase-1 server-side tool-call log, tally which
+tools the agent actually calls over a week (`get_diagnostics ×N, find_references ×N, …`). A tool that
+is never called has zero value, and low adoption is a tool-*description* problem to fix before
+anything else.
+
+**Level 2 — per-task metrics from the agent session.** A shared log, one row per task, all capturable
+today (e.g. from Claude Code `/cost` and the session transcript JSONL):
+
+| Metric | Source | Direction with MCP |
+|---|---|---|
+| Tokens / task | `/cost` or transcript | ↓ (most objective) |
+| # grep + file-read calls | transcript tool calls | ↓ |
+| Wall-clock to done | note start/end | ↓ |
+| Compiled clean first try | needed a fix-the-build round? | ↑ (pass@1) |
+| Interventions (1–5) | how often you redirected it | ↓ (predicts adoption) |
+
+**Level 3 — the paired experiment on real history.** Replay past agent-authored commits from a real
+reactor from their parent git state: `git checkout <parent>`, prompt a fresh agent with the same task
+(the PR/commit description), run once with MCP and once without in clean worktrees, and compare against
+the real merged diff (the golden answer): tokens, tool-call count, wall time, did-it-compile
+(`verify_build` / `mvn`), diff fidelity (files-touched overlap), and — crucially for migration/removal
+— how many real sites it *missed*. Repeatable because it is anchored to a git commit.
+
+**Pitfalls / what to trust.** Do not A/B a live task by re-doing it (the code moved) — replay past
+commits (Level 3) or randomize MCP on/off across *different* live tasks and compare distributions over
+20–30 tasks. Beat confounders (task difficulty, prompting, model drift) with volume (a whole team
+logging) and randomization rather than "two weeks on / two weeks off." Trust tokens and completeness
+("found all N sites") over subjective smoothness — the latter matters for adoption, not as evidence.
 
 ## Testing
 
-Layered, risk-driven, following the repo conventions (JUnit 5 + AssertJ, `@TempDir`,
+Layered, risk-driven, following repo conventions (JUnit 5 + AssertJ, `@TempDir`,
 `methodName_condition_result`, invoker fixtures on `verify`, reuse the compile pipeline, prefer real
 objects over mocks).
 
 1. **`LatheEngine` facade tests — the core.** Drive the facade directly against a fixture `.lathe/`
-   workspace, reusing `lathe-server`'s existing compile/workspace test harness (mirror a neighbouring
-   test rather than invent setup). Real objects, no mocks. Cases: `openWorkspace` with/without
-   `.lathe/` (populated vs remediation error); `diagnostics` clean vs error file (the capturing
-   `LatheLanguageClient` stub asserts the `publishDiagnostics` payload); `runnables` lists
-   method/class/package. Real `runTest` replay needs captured bytecode, so it lives in the invoker
-   layer, not a bare `@TempDir`.
-
+   workspace, reusing `lathe-server`'s compile/workspace harness. Real objects, no mocks. Cases:
+   `openWorkspace` with/without `.lathe/` (populated vs remediation error); `diagnostics` clean vs
+   error (the capturing `LatheLanguageClient` stub asserts the payload); each read tool's mapping;
+   `references`/`implementations` returning cross-module results with snippet fields. Real `runTest`
+   replay needs captured bytecode, so it lives in the invoker layer.
 2. **MCP protocol tests — in-process, no subprocess.** Wire an SDK `McpClient` to our `McpSyncServer`
-   over the SDK in-memory transport (`mcp-test`) and exercise the real handshake: `tools/list` returns
-   the tools with correct input schemas; `tools/call run_test` returns structured content; bad args map
-   to an `isError` result. Validates tool registration, schemas, and result mapping against the real
-   SDK machinery. `McpSyncServer` hides Reactor, so assertions stay synchronous.
-
+   over the SDK in-memory transport and exercise the real handshake: `tools/list` returns each tool
+   with the correct input schema; `tools/call` returns structured content; bad args map to an
+   `isError` result. `McpSyncServer` hides Reactor, so assertions stay synchronous.
 3. **End-to-end launcher test — the risk-retirer.** The real `lathe-mcp-launcher.sh` over real stdio,
-   as an invoker fixture beside the existing `LspSmokeTest` / `MultiModuleTest` (run only on
-   `mvn verify` against the `multi-module` workspace). A small stdio driver (`dev/mcp.py`, the analog of
-   `dev/lsp.py`) sends `initialize → tools/list → list_runnables → run_test` on `HelloTest` and asserts
-   **PASSED** — the Phase 0 spike promoted to a committed test. This is the layer that proves the two
-   currently-unverified assumptions: the **classpath launcher** and **in-process javac running as
-   unnamed-module code** (`ALL-UNNAMED` exports). Built first, as the walking-skeleton acceptance test.
-
-4. **Parity smoke (cheap).** Assert MCP `get_diagnostics` for a file equals the LSP diagnostics for the
-   same file (reuse `lathe-server`'s diagnostic fixtures). Near-tautological since both call the same
-   seam, but it documents that the two front-ends cannot drift.
-
-5. **Cross-agent acceptance (manual, per release).** `claude mcp add` + Codex `config.toml` + the MCP
-   Inspector — confirm the tools appear and run. Not CI-automatable; a documented checklist.
-
-**Build/test sequencing.** The walking skeleton is layer 3 with a single tool (`list_runnables`)
-end-to-end through the real launcher — this simultaneously scaffolds the module, the facade, and the
-launcher install, and retires the classpath / in-process-javac risk before any tool is fleshed out.
-Then add `run_test` / `get_diagnostics`, then layers 1–2 as unit coverage, then the full invoker suite
-for `verify`.
+   as an invoker fixture beside `LspSmokeTest` / `MultiModuleTest` (run only on `mvn verify` against
+   the `multi-module` workspace). `dev/mcp.py` sends `initialize → tools/list → get_diagnostics →
+   find_references` and asserts results — the Phase-0 spike promoted to a committed test. Proves the
+   classpath launcher and in-process javac running as unnamed-module code (`ALL-UNNAMED` exports).
+   Built first, as the walking-skeleton acceptance test.
+4. **Parity smoke.** MCP `get_diagnostics` for a file equals the LSP diagnostics for the same file
+   (reuse `lathe-server`'s fixtures) — documents that the two front-ends cannot drift.
+5. **Gate — [FR-017](../gaps/gaps.md#fr-017).** The end-to-end cross-module rename test must exist
+   before `rename_symbol` ships (a write op on multi-module migrations must not rely on inherited
+   coverage).
+6. **Gate — `run_test` freshness.** Recompile-before-replay correctness must be in place before
+   `run_test` ships, so a replay cannot report stale pass/fail.
+7. **Cross-agent acceptance (manual, per release).** `claude mcp add` + Codex `config.toml` + Gemini
+   CLI config + the MCP Inspector — confirm the tools appear and run. A documented checklist.
 
 ## Non-goals
 
 - **No native `workspace/executeCommand` over the Claude Code LSP plugin** — the client does not consume
-  it; run/verify verbs go through MCP by design.
-- **No completion/signature-help/folding in the MCP surface** initially — these serve human typing.
-- **No removal or divergence of the Neovim/Emacs clients** — they remain the human editor path and the
-  reference LSP consumers.
-- **No attempt to make `.lathe/` optional** for agents — the build-derived model is the moat, not a
-  limitation to engineer around here (see [Workspace Readiness](../done/lathe-workspace-readiness.md)).
+  it; run/verify/rename verbs go through MCP by design.
+- **No completion/signature-help/folding/formatting/debug in the MCP surface** — these serve human
+  typing/rendering.
+- **No removal or divergence of the Neovim client** — it remains the human editor path and the
+  reference LSP consumer. (Emacs support is dropped for the agent audience.)
+- **No attempt to make `.lathe/` optional** for agents — the build-derived model is the moat (see
+  [Workspace Readiness](../done/lathe-workspace-readiness.md)).
+- **No faked cross-module freshness** — cross-module correctness is a reactor property; `verify_build`
+  runs the (scoped) reactor rather than pretending an in-process compile can substitute for it.
 
 ## Resolved decisions
 
-- **Module vs sidecar / SDK vs hand-rolled / in-process vs out-of-process** — resolved: a separate
-  in-repo module `lathe-mcp-server`, on the official MCP Java SDK, calling the engine in-process via a
-  facade (see [Architecture](#architecture)).
+- **Module vs sidecar / SDK vs hand-rolled / in-process vs out-of-process** — a separate in-repo module
+  `lathe-mcp-server`, on the official MCP Java SDK, calling the engine in-process via `LatheEngine`.
+- **Standalone process for v1; workspace resolved from `cwd`; no agent-facing open/close tools;
+  shared-with-editor server deferred.**
+- **Snippet context on every result** — non-negotiable, baked into the shared result shape.
+- **Curated surface, not an LSP-spec port** — Tiers 1–4 above; completion/formatting/debug/etc. out.
 - **Session lifetime** — one MCP process per agent session (one workspace), matching the editor model.
-- **Diagnostics push vs pull** — pull (`get_diagnostics`) for Phase 1; the `LatheLanguageClient` stub
-  is the push bridge reserved for Phase 3 streaming.
-- **JPMS placement — resolved: classpath for now.** The JPMS spike (against SDK 2.0.1) found the SDK
-  cannot go on the module path: `mcp-core` and `mcp-json-jackson3` ship a hyphenated
-  `Automatic-Module-Name` (`io.modelcontextprotocol.sdk.mcp-core` / `…mcp-json-jackson3`) that is an
-  invalid module name, so `jar --describe-module` reports *"Unable to derive module descriptor … not a
-  Java identifier."* (There is **no** split package — the jackson3 binding uses distinct `.jackson3`
-  subpackages; verified empty package intersection.) So `lathe-mcp-server` runs on the **classpath**.
-  Upstream already fixed the names on `main` (commit `183935b`, "Fix Automatic-Module-Name without
-  hyphens", + a real aggregator `module-info.java`), not yet in a release. **Plan:** ship classpath
-  now; revisit a module-path build once a fixed SDK release lands (tracked below).
+- **Diagnostics push vs pull** — pull for now; the `LatheLanguageClient` stub is the push bridge for a
+  later streaming phase.
+- **Freshness** — single-file in-process javac (no Maven); cross-module via `verify_build` (scoped
+  Maven); not faked.
+- **JPMS placement — classpath for now.** The JPMS spike (against SDK 2.0.1) found the SDK cannot go on
+  the module path: `mcp-core` and `mcp-json-jackson3` ship a hyphenated `Automatic-Module-Name`
+  (`io.modelcontextprotocol.sdk.mcp-core` / `…mcp-json-jackson3`) that is an invalid module name, so
+  `jar --describe-module` reports *"Unable to derive module descriptor … not a Java identifier."*
+  (No split package — the jackson3 binding uses distinct `.jackson3` subpackages.) So
+  `lathe-mcp-server` runs on the **classpath**. Upstream already fixed the names on `main`
+  (commit `183935b`), not yet in a release. Plan: ship classpath now; revisit a module-path build once
+  a fixed SDK release lands.
 
 ## Open questions / tracking
 
-- **Upstream JPMS fix release:** SDK `main` commit `183935b` fixes the module names; watch for the
-  release that includes it, then evaluate moving `lathe-mcp-server` to the module path.
+- **Client behaviours to verify per agent** (Claude Code / Codex CLI / Gemini CLI): the exact
+  `mcp add` / config format, and whether each sets the server subprocess `cwd` — the `cwd`-resolution
+  policy depends on it.
+- **`run_test` freshness** — recompile-before-replay is a hard prerequisite (Phase 3 gate); tracked via
+  [New/Changed-Test Replay Inner Loop](lathe-new-test-replay-loop.md).
+- **`rename_symbol` coverage gate** — [FR-017](../gaps/gaps.md#fr-017).
+- **Upstream JPMS fix release** — SDK `main` commit `183935b` fixes the module names; watch for the
+  release, then evaluate moving to the module path.
 - **MCP protocol version** to advertise, and how to track SDK/spec revisions over time.
-- **Auth/trust:** Codex project-scoped `.codex/config.toml` requires a trust marker; document the
-  implications.
+- **Auth/trust** — Codex project-scoped `.codex/config.toml` requires a trust marker; document the
+  implications; check Gemini CLI's equivalent.
 
 ## Related work
 
-- [New/Changed-Test Replay Inner Loop](lathe-new-test-replay-loop.md) — the replay-staleness work
-  that directly affects `run_test` correctness for agent-authored tests.
+- [FR-017](../gaps/gaps.md#fr-017) — the cross-module rename test gap that gates `rename_symbol`.
+- [New/Changed-Test Replay Inner Loop](lathe-new-test-replay-loop.md) — the replay-staleness work that
+  gates `run_test`.
+- [Sibling Recompilation](lathe-sibling-recompilation.md) and
+  [In-Process External-Change Recompilation](../potential/lathe-external-change-recompilation.md) — the
+  bounded single-module freshness work behind the middle row of the freshness table.
 - [External-Change Detection](../done/lathe-external-change-detection.md) and
   [Staleness Compile Stamps](../done/lathe-staleness-compile-stamps.md) — the freshness machinery the
-  in-process facade's open-from-disk path relies on.
+  in-process facade's open-from-disk path and staleness hints rely on.
 - [Workspace Readiness](../done/lathe-workspace-readiness.md) — the `.lathe/` prerequisite and its
   onboarding guidance.
+- [Shared Workspace Server](../potential/lathe-shared-workspace-server.md) — the Phase-6
+  shared-with-editor design.
