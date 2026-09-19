@@ -51,7 +51,7 @@ bindings.
 | Implementation / subtypes    | concrete implementations of a method, or all subtypes of a type across the workspace              | `textDocument/implementation`                     |
 | Find references              | usages across the workspace                                                                       | `textDocument/references`                         |
 | Highlight uses               | read/write uses of the symbol under the cursor, within the current file                          | `textDocument/documentHighlight`                  |
-| Rename                       | renames locals, parameters, type parameters, fields, methods (incl. the override family), record components, and constructors, and their references — as one atomic edit | `textDocument/rename` · `textDocument/prepareRename` |
+| Rename                       | renames locals, parameters, type parameters, fields, methods (incl. the override family), record components, and constructors, and every reference **across the whole reactor — all modules** — as one atomic edit | `textDocument/rename` · `textDocument/prepareRename` |
 | Instantiation sites          | where a type is instantiated (`new AppServer(...)`), from the type under the cursor               | `workspace/executeCommand` · `lathe.instantiations` |
 | Hover                        | AST-resolved Javadoc, rendered as Markdown                                                        | `textDocument/hover`                              |
 | Signature help               | parameter lists for methods and constructors                                                      | `textDocument/signatureHelp`                      |

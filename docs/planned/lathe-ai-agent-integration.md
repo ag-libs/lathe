@@ -287,7 +287,7 @@ List results (`find_references`, `call_hierarchy`, …) are **ranked** (same-fil
 | Tool | Maps to | Kind | In → Out |
 |---|---|---|---|
 | `find_references` | references | read | `{file,line,column,maxResults?,cursor?}` → `{total, truncated, references[]}` |
-| `rename_symbol` | rename | **write** | `{file,line,column,newName}` → `{renamed, from, to, editedFiles[], totalEdits}` \| structured refusal. **Gated on [FR-017](../gaps/gaps.md#fr-017).** |
+| `rename_symbol` | rename | **write** | `{file,line,column,newName}` → `{renamed, from, to, editedFiles[], totalEdits}` \| structured refusal. Cross-module confirmed working ([probe](../gaps/gaps-archive.md#fr-017)). |
 | `verify_build` | scoped `mvn -pl <changed> -amd` + reload | **action** | `{modules?, includeTests?}` → `{compiled, modulesBuilt[], diagnostics[], elapsedMs}` |
 | `find_implementations` | implementation | read | `{file,line,column,maxResults?}` → `{implementations[]}` |
 | `search_symbols` | workspace/symbol (CamelHumps) | read | `{query, kind?, maxResults?}` → `{symbols[]{…, signatureSnippet}}` |
@@ -393,8 +393,9 @@ The `.lsp.json` schema was re-verified against the live plugins reference.
 
 - `find_references`, `find_implementations`, `search_symbols`.
 - `verify_build` (scoped `mvn -pl <changed> -amd` → structured diagnostics + `.lathe/` reload).
-- `rename_symbol` — **gated on [FR-017](../gaps/gaps.md#fr-017)** (end-to-end cross-module rename test)
-  before it ships, since it is a write op over multi-module migrations.
+- `rename_symbol` — cross-module rename confirmed working (probe 2026-09-19,
+  [FR-017](../gaps/gaps-archive.md#fr-017)); per-kind coverage (field / override family / type) is an
+  optional follow-up, not a blocker.
 - Exit: complete a cross-module field migration and a safe removal entirely through MCP tools.
 
 ### Phase 3 — Tier 3 (the run loop)
@@ -501,9 +502,9 @@ objects over mocks).
    Built first, as the walking-skeleton acceptance test.
 4. **Parity smoke.** MCP `get_diagnostics` for a file equals the LSP diagnostics for the same file
    (reuse `lathe-server`'s fixtures) — documents that the two front-ends cannot drift.
-5. **Gate — [FR-017](../gaps/gaps.md#fr-017).** The end-to-end cross-module rename test must exist
-   before `rename_symbol` ships (a write op on multi-module migrations must not rely on inherited
-   coverage).
+5. **Cross-module rename — confirmed by probe ([FR-017](../gaps/gaps-archive.md#fr-017)).** Working
+   today; per-kind regression coverage (field / override family / type) is a recommended follow-up
+   before broad reliance, not a ship blocker.
 6. **Gate — `run_test` freshness.** Recompile-before-replay correctness must be in place before
    `run_test` ships, so a replay cannot report stale pass/fail.
 7. **Cross-agent acceptance (manual, per release).** `claude mcp add` + Codex `config.toml` + Gemini
@@ -551,7 +552,9 @@ objects over mocks).
   policy depends on it.
 - **`run_test` freshness** — recompile-before-replay is a hard prerequisite (Phase 3 gate); tracked via
   [New/Changed-Test Replay Inner Loop](lathe-new-test-replay-loop.md).
-- **`rename_symbol` coverage gate** — [FR-017](../gaps/gaps.md#fr-017).
+- **`rename_symbol` per-kind coverage** — cross-module rename confirmed working
+  ([FR-017](../gaps/gaps-archive.md#fr-017), closed); field / override-family / type regression
+  coverage is an optional follow-up.
 - **Upstream JPMS fix release** — SDK `main` commit `183935b` fixes the module names; watch for the
   release, then evaluate moving to the module path.
 - **MCP protocol version** to advertise, and how to track SDK/spec revisions over time.
@@ -560,7 +563,8 @@ objects over mocks).
 
 ## Related work
 
-- [FR-017](../gaps/gaps.md#fr-017) — the cross-module rename test gap that gates `rename_symbol`.
+- [FR-017](../gaps/gaps-archive.md#fr-017) — cross-module rename coverage gap; closed as
+  confirmed-working by probe, per-kind coverage optional.
 - [New/Changed-Test Replay Inner Loop](lathe-new-test-replay-loop.md) — the replay-staleness work that
   gates `run_test`.
 - [Sibling Recompilation](lathe-sibling-recompilation.md) and

@@ -228,64 +228,7 @@ for a release is every gap with `Status: accepted` and the matching `Target` (se
 Active `textDocument/references` gaps discovered by live probing against a large `@Builder`-heavy
 reactor workspace. Resolved FR entries are in [gaps-archive.md](gaps-archive.md).
 
-## FR-017 — Cross-module rename has no end-to-end test; coverage is inherited from references, never verified together
-
-**Status: documented — Target: backlog**
-
-Signal: audit while scoping an MCP `rename_symbol` tool — a *write* operation over multi-module
-migrations must have its cross-module behaviour regression-tested before it is exposed to agents.
-
-### Observed behaviour
-
-Rename is documented as cross-module ("Cross-module for public/protected members … one atomic
-`WorkspaceEdit`", [status.md](../status.md)), but no test exercises a rename whose edits land in a
-*second* reactor module.
-The rename design doc specced exactly these cases, and they were never written:
-
-- [lathe-rename.md](../planned/lathe-rename.md) Testing — "Cross-file: a rename whose edits land in
-  multiple reactor modules."
-- [lathe-rename.md](../planned/lathe-rename.md) Testing — "Invoker (`LspSmokeTest`): drive
-  `prepareRename` + `rename` against the multi-module fixture."
-
-### Root cause
-
-`RenameProvider` does not search; it builds the `WorkspaceEdit` from whatever the reference pipeline
-returns (`searchReferences` → `RenameProvider.toWorkspaceEdit`, grouped by URI).
-Cross-module reach is therefore inherited transitively from the (tested) cross-module reference search.
-But `RenameProviderTest` compiles a single source string in a single `SourceAnalysisSession` — every
-test is single-file — and there is no `WorkspaceSession`-level or invoker rename test.
-So the composition "cross-module reference search + rename edit application" has never been tested
-together: a public member renamed in one module with call sites in another has no regression coverage,
-even though both halves are individually covered.
-
-### Proposed fix
-
-Add end-to-end cross-module rename coverage on the existing `multi-module` invoker fixture (the `app`
-module depending on `core`):
-
-1. `RenameProvider` / `WorkspaceSession` level: rename a public method/field declared in `core` and
-   used from `app`; assert the returned `WorkspaceEdit` carries edits in *both* modules' files as one
-   atomic edit.
-2. Invoker `LspSmokeTest`: drive `prepareRename` + `rename` against the multi-module fixture and assert
-   the cross-module edit set, as the design doc specced.
-3. Per-kind: at least one cross-module case each for public method (including the override family),
-   public field, and public type reference — the kinds whose scope is `REACTOR_MODULES`.
-
-This is a prerequisite gate for exposing rename over MCP: a write op on multi-module migrations must
-not ship on inherited coverage alone.
-
-### Probe commands
-
-```bash
-# Confirm the absence: only the single-file RenameProviderTest exists; no multi-module rename test.
-grep -rniE 'rename' lathe-server/src/test lathe-maven-plugin/src | grep -v VariableNameSuggester
-```
-
-### Regression targets
-
-- `RenameProviderTest.rename_publicMethodUsedInAnotherModule_editsBothModules`
-- `RenameProviderTest.rename_publicFieldUsedInAnotherModule_editsBothModules`
-- `LspSmokeTest.rename_crossModulePublicMember_appliesAtomicWorkspaceEdit`
+No active FR gaps remain; resolved entries are in [gaps-archive.md](gaps-archive.md).
 
 ---
 

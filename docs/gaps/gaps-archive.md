@@ -685,6 +685,28 @@ infix matching is wanted later — it is a distinct feature, not an extension of
 
 ---
 
+## FR-017 — Cross-module rename end-to-end coverage — non-goal (functionality confirmed by probe)
+
+**Status: non-goal — Target: n/a.**
+
+Filed while scoping an MCP `rename_symbol` tool: cross-module rename is implemented (RenameProvider
+builds the `WorkspaceEdit` from the tested cross-module reference search), but the composition
+"cross-module reference search + rename edit application" had no automated regression test —
+`RenameProviderTest` is single-file only, and the multi-module/invoker rename tests the rename design
+doc specced were never written.
+
+Closed as a non-goal after confirming the behaviour directly with a probe rather than adding automated
+coverage. Probe (2026-09-19, published `0.1.0-SNAPSHOT` server, on a large private multi-module
+reactor): renamed a public static method declared in a shared module; `prepareRename` returned the
+exact token range, and `textDocument/rename` returned a `WorkspaceEdit` spanning **4 modules / 6 files
+/ 10 edits**, matching the `references` result exactly (declaration + 9 uses, same modules). The edit
+was inspected, not applied.
+
+Residual risk accepted: the probe covered only the public-method kind (not field / override-family /
+type), and there is no automated guard against a future regression in the reference pipeline silently
+breaking cross-module rename. Re-file if such a regression is observed. Cross-module reach is now
+documented on the rename feature (README).
+
 ## FR-016 — Find the instantiation sites of a type ("where is a new instance created")
 
 Status: done — Target: M2.
