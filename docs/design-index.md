@@ -80,6 +80,9 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
   non-intrusive source-staleness signal (the deferred WS-2, folded under WS-1) if beta feedback warrants it.
 - [Differential Testing Against jdtls](planned/lathe-jdtls-differential-testing.md) — semantic LSP-response
   comparison against Eclipse JDT LS to surface behavioral gaps.
+- [Standalone `lathe.nvim` Plugin](planned/lathe-standalone-nvim-plugin.md) — publish the Neovim Lua client as
+  a plugin-manager-installable repo (unlocks dotfyle/awesome-neovim discovery), additive to the current
+  zero-plugin cache delivery; adds a coarse `LATHE_PROTOCOL` client↔server handshake to cover version drift.
 
 **General availability (promote the beta to `0.1.0`):**
 
