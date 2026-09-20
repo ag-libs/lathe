@@ -6,6 +6,9 @@ deploys whatever the reactor contains, so the set stays correct as modules are a
 Releases are cut from a git tag. CI does the signing and publishing, so **no Maven Central or GPG
 credentials are needed locally**.
 
+The standalone Neovim client (`ag-libs/lathe.nvim`) is published as a separate, local step after the
+tag is out — see [The Neovim client mirror](#the-neovim-client-mirror).
+
 ## One-time setup
 
 - The `io.github.ag-libs` namespace is verified on the [Central Portal](https://central.sonatype.com/).
@@ -13,6 +16,9 @@ credentials are needed locally**.
   `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`.
 - Optional: give the GitHub `release` environment required reviewers, so a tag push waits for your
   approval before publishing.
+- The standalone Neovim client mirror `github.com/ag-libs/lathe.nvim` exists (created empty), and you
+  can push to it. Publishing the client uses **your own git credentials over SSH**, not CI — the
+  built-in `GITHUB_TOKEN` cannot push across repos, so there is no PAT or deploy key to manage.
 
 ## Cutting a release
 
@@ -32,6 +38,17 @@ credentials are needed locally**.
    all modules. If the `release` environment requires approval, approve the run.
 5. Verify the artifacts at
    [central.sonatype.com/namespace/io.github.ag-libs](https://central.sonatype.com/namespace/io.github.ag-libs).
+6. **Publish the Neovim client mirror — only if it changed.** In step 2, `release.sh` prints a reminder
+   when the client sources (`lathe-maven-plugin/src/main/neovim`, `dev/nvim-mirror`, or
+   `publish-nvim.sh`) changed since the previous tag. If it did, once the tag is on origin:
+   ```bash
+   ./publish-nvim.sh 0.1.1          # or just ./publish-nvim.sh for the latest tag
+   ```
+   This snapshots the client **from the release tag**, overlays the standalone-only files
+   (`dev/nvim-mirror` + the repo `LICENSE`), stamps the version into `lua/lathe/version.lua`, shows the
+   diff, and — on your `[y/N]` confirmation — pushes a `release vX.Y.Z` commit + tag to
+   `ag-libs/lathe.nvim`. Preview first with `./publish-nvim.sh --dry-run`. If the client did not change,
+   skip this — the mirror keeps its own version cadence.
 
 ## How it works
 
@@ -42,6 +59,25 @@ credentials are needed locally**.
   the `central-publishing-maven-plugin` (`autoPublish=true`).
 - The **Maven Central badge** in the README tracks the latest published version automatically; only the
   copy-paste `<version>` snippets are bumped, by `release.sh`, in the tagged commit.
+
+## The Neovim client mirror
+
+The Neovim client lives in the monorepo (`lathe-maven-plugin/src/main/neovim`) and ships two ways:
+
+- **Bundled** in the `lathe-maven-plugin` jar and unpacked to `~/.cache/lathe/current/neovim` by
+  `lathe:sync` — the zero-plugin cache path, delivered automatically by the Maven release above.
+- **Standalone**, as `github.com/ag-libs/lathe.nvim`, so it is installable by any plugin manager or
+  Neovim 0.12+'s `vim.pack`, and discoverable on dotfyle / awesome-neovim.
+
+`ag-libs/lathe.nvim` is a **generated, one-way mirror** — never edit it directly; issues and PRs go to
+the monorepo. `publish-nvim.sh` publishes it entirely locally (no CI secret or PAT, mirroring
+`release.sh`): it snapshots the client from the release tag, so the mirror is a pure function of the
+tag, and records the source commit SHA in the mirror commit message.
+
+Its version cadence is **independent of the server**: the mirror is published only when the client
+changed, so its latest tag may lag Maven Central. See
+[docs/planned/lathe-standalone-nvim-plugin.md](docs/planned/lathe-standalone-nvim-plugin.md) for the
+design and the client↔server protocol.
 
 ## Versioning
 
