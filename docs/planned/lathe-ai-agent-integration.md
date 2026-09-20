@@ -433,7 +433,7 @@ results tells it when a re-sync is needed before trusting them).
 | Tool | Maps to | Kind | In → Out |
 |---|---|---|---|
 | `list_runnables` | `lathe.runnables.list` | read | `{file?}` → `{runnables[]{id, kind, module, displayName}}` |
-| `run_test` | `lathe.run.test` replay | **action** | `{runnableId} \| {file,testClass,method?}` → `{status, passed, failed, skipped, failures[], output}`. **Gated on recompile-before-replay freshness.** |
+| `run_test` | `lathe.run.test` replay | **action** | `{runnableId} \| {file,method?} \| {package} \| {module}` → `{status, passed, failed, skipped, failures[], output}`. Runs at **method / class / package / module** scope — the substrate already supports all four (`TestSelectionKind`). **Gated on recompile-before-replay freshness.** |
 
 An optional sibling `run_main` → `lathe.run.main` is deprioritized (not a headline agent verb).
 
@@ -538,8 +538,11 @@ The `.lsp.json` schema was re-verified against the live plugins reference.
 
 - `list_runnables` + `run_test` (individual test replay, no reactor build) — **designed**; the capture
   writer that produces `test-launch.json` is built and present on real reactors, so replay is
-  feasible. **Gated on recompile-before-replay** (and the `Stale:` advisory) so a replay cannot report
-  stale results (see the [New/Changed-Test Replay Inner Loop](lathe-new-test-replay-loop.md)).
+  feasible. **Scope: method / class / package / module** — `TestSelectionKind` already carries all
+  four selectors (`--select-method/-class/-package/-module`), so the tool should expose running a
+  whole package or module, not just one test. **Gated on recompile-before-replay** (and the `Stale:`
+  advisory) so a replay cannot report stale results (see the
+  [New/Changed-Test Replay Inner Loop](lathe-new-test-replay-loop.md)).
 
 ### Phase 4 — Tier 4 (medium tools)
 
