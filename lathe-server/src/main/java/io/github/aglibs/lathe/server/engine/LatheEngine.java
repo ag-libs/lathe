@@ -124,6 +124,8 @@ public final class LatheEngine {
     }
 
     files.sort(Comparator.comparing(LatheFileEdit::uri));
+    // Refresh now so this rename's advisory reflects the edits it just wrote, without the 2s lag.
+    await(service.refreshStaleModulesFuture());
     final int total = files.stream().mapToInt(LatheFileEdit::editCount).sum();
     return new LatheRename(newName, total, files);
   }
@@ -164,6 +166,11 @@ public final class LatheEngine {
 
   private static int offset(final String content, final Position position) {
     return SourceLocator.toOffset(content, position.getLine(), position.getCharacter());
+  }
+
+  /** Reactor-relative paths of modules whose source is newer than their compiled classes. */
+  public List<String> staleModules() {
+    return await(service.staleModulesFuture());
   }
 
   private List<Diagnostic> compileFromDisk(final Path file) {

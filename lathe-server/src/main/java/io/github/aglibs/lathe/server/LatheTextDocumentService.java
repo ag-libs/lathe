@@ -496,6 +496,18 @@ public final class LatheTextDocumentService implements TextDocumentService {
         .thenCompose(f -> f);
   }
 
+  public CompletableFuture<List<String>> staleModulesFuture() {
+    return worker.submit(() -> session.staleModules());
+  }
+
+  public CompletableFuture<Void> refreshStaleModulesFuture() {
+    return worker.submit(
+        () -> {
+          session.refreshStaleScan();
+          return null;
+        });
+  }
+
   CompletableFuture<List<? extends SymbolInformation>> workspaceSymbolFuture(final String query) {
     return worker.submit(() -> session.workspaceSymbol(query));
   }

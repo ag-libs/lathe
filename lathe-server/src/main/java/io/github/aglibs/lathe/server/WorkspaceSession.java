@@ -162,6 +162,9 @@ final class WorkspaceSession {
   // The -pl module selectors carried from the pending sync prompt to the sync request (empty = full
   // reactor). Set at prompt time because the request fires later, on the user's response.
   private List<String> pendingSyncModules = List.of();
+  // MCP has no push into the agent, so a tool result reads this cached scan instead of a prompt.
+  // Volatile: written on the worker, read from request threads.
+  private volatile List<String> cachedStaleModules = List.of();
   private final DocumentRegistry docs = new DocumentRegistry();
   private final AnalysisLru analysisLru = new AnalysisLru();
   private final DiagnosticPublisher publisher;
@@ -2519,11 +2522,20 @@ final class WorkspaceSession {
     final var sw = Stopwatch.start();
     final List<ModuleSourceConfig> configs = workspace.allConfigs();
     final StaleScan scan = staleModules(configs, openSourcePaths());
+    cachedStaleModules = moduleRels(scan.modules());
     LOG.fine(
         () ->
             "[stale] scanned %d source trees %dms stale=%d"
                 .formatted(configs.size(), sw.elapsedMs(), scan.modules().size()));
     return scan;
+  }
+
+  List<String> staleModules() {
+    return cachedStaleModules;
+  }
+
+  void refreshStaleScan() {
+    scanStaleModules();
   }
 
   private void checkSourceStaleness() {

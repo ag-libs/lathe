@@ -118,6 +118,9 @@ class McpSmokeTest {
           .contains("StringUtils.java")
           .contains("Main.java")
           .doesNotContain("\"isError\":true");
+      // The rename bumped the edited modules' source past their compiled classes, and rename
+      // force-refreshes the stale scan, so its own result must carry the freshness advisory.
+      assertThat(response).contains("Stale:");
       assertThat(Files.readString(stringUtils)).contains("String upperCase(");
       assertThat(Files.readString(main)).contains("StringUtils.upperCase(");
     } finally {

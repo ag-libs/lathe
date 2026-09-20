@@ -110,6 +110,23 @@ class LatheEngineTest {
   }
 
   @Test
+  void staleModules_moduleNotYetSynced_reportsModule() throws Exception {
+    // Source with no compile stamp (never built) counts as stale.
+    TestCompiler.writeModuleSource(
+        tmp, "com/example/Sample.java", "package com.example; class Sample {}");
+    engine = new LatheEngine(tmp);
+
+    assertThat(engine.staleModules()).isNotEmpty();
+  }
+
+  @Test
+  void staleModules_noConfiguredModules_returnsEmpty() {
+    engine = new LatheEngine(tmp);
+
+    assertThat(engine.staleModules()).isEmpty();
+  }
+
+  @Test
   void rename_methodUsedInAnotherFile_rewritesBothFilesOnDisk() throws Exception {
     final String calleeContent =
         """

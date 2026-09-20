@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.mcp;
 
+import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.engine.LatheEngine;
 import io.github.aglibs.lathe.server.engine.LatheFileEdit;
@@ -164,7 +165,7 @@ final class LatheMcpTools {
     }
 
     try {
-      return diagnosticsResult(file, engine.diagnostics(file));
+      return diagnosticsResult(file, engine.diagnostics(file), engine.staleModules());
     } catch (final RuntimeException e) {
       LOG.log(Level.SEVERE, e, () -> "[get_diagnostics] failed for %s".formatted(file));
       return error("[get_diagnostics] %s".formatted(e.getMessage()));
@@ -176,7 +177,8 @@ final class LatheMcpTools {
     return atPosition(
         "get_definition",
         request,
-        (file, line, column) -> definitionResult(engine.definition(file, line, column)));
+        (file, line, column) ->
+            definitionResult(engine.definition(file, line, column), engine.staleModules()));
   }
 
   private static CallToolResult handleReferences(
@@ -185,7 +187,8 @@ final class LatheMcpTools {
         "find_references",
         request,
         (file, line, column) ->
-            referencesResult(engine.references(file, line, column, maxResults(request))));
+            referencesResult(
+                engine.references(file, line, column, maxResults(request)), engine.staleModules()));
   }
 
   private static CallToolResult handleRename(
@@ -198,7 +201,8 @@ final class LatheMcpTools {
     return atPosition(
         "rename_symbol",
         request,
-        (file, line, column) -> renameResult(engine.rename(file, line, column, newName)));
+        (file, line, column) ->
+            renameResult(engine.rename(file, line, column, newName), engine.staleModules()));
   }
 
   // Shared body for the position-based tools: parse the 1-based {file,line,column} into a 0-based
@@ -230,7 +234,8 @@ final class LatheMcpTools {
     return max != null ? max : DEFAULT_MAX_RESULTS;
   }
 
-  private static CallToolResult referencesResult(final LatheReferences refs) {
+  private static CallToolResult referencesResult(
+      final LatheReferences refs, final List<String> stale) {
     final List<Map<String, Object>> items =
         refs.references().stream().map(LatheMcpTools::locationMap).toList();
     final String header =
@@ -244,14 +249,16 @@ final class LatheMcpTools {
     return result(
         text,
         Map.<String, Object>of(
-            "total", refs.total(), "truncated", refs.truncated(), "references", items));
+            "total", refs.total(), "truncated", refs.truncated(), "references", items),
+        stale);
   }
 
-  private static CallToolResult renameResult(final LatheRename rename) {
+  private static CallToolResult renameResult(final LatheRename rename, final List<String> stale) {
     if (rename.totalEdits() == 0) {
       return result(
           "No references to rename.",
-          Map.<String, Object>of("newName", rename.newName(), "totalEdits", 0, "files", List.of()));
+          Map.<String, Object>of("newName", rename.newName(), "totalEdits", 0, "files", List.of()),
+          stale);
     }
 
     final List<Map<String, Object>> items =
@@ -268,11 +275,12 @@ final class LatheMcpTools {
     return result(
         text,
         Map.<String, Object>of(
-            "newName", rename.newName(), "totalEdits", rename.totalEdits(), "files", items));
+            "newName", rename.newName(), "totalEdits", rename.totalEdits(), "files", items),
+        stale);
   }
 
   private static CallToolResult diagnosticsResult(
-      final Path file, final List<Diagnostic> diagnostics) {
+      final Path file, final List<Diagnostic> diagnostics, final List<String> stale) {
     final List<Map<String, Object>> items =
         diagnostics.stream().map(LatheMcpTools::diagnosticMap).toList();
     final String text =
@@ -285,14 +293,16 @@ final class LatheMcpTools {
                     diagnostics.stream()
                         .map(LatheMcpTools::diagnosticLine)
                         .collect(Collectors.joining(System.lineSeparator())));
-    return result(text, Map.<String, Object>of("file", file.toString(), "diagnostics", items));
+    return result(
+        text, Map.<String, Object>of("file", file.toString(), "diagnostics", items), stale);
   }
 
-  private static CallToolResult definitionResult(final List<LatheLocation> targets) {
+  private static CallToolResult definitionResult(
+      final List<LatheLocation> targets, final List<String> stale) {
     final List<Map<String, Object>> items =
         targets.stream().map(LatheMcpTools::locationMap).toList();
     final String text = targets.isEmpty() ? "No definition found." : locationLines(targets);
-    return result(text, Map.<String, Object>of("targets", items));
+    return result(text, Map.<String, Object>of("targets", items), stale);
   }
 
   private static String locationLines(final List<LatheLocation> locations) {
@@ -305,8 +315,14 @@ final class LatheMcpTools {
     return "→ %s [%s]%n%s".formatted(location.uri(), location.origin(), location.snippet());
   }
 
-  private static CallToolResult result(final String text, final Map<String, Object> structured) {
-    return CallToolResult.builder().addTextContent(text).structuredContent(structured).build();
+  private static CallToolResult result(
+      final String text, final Map<String, Object> structured, final List<String> stale) {
+    final String body =
+        stale.isEmpty()
+            ? text
+            : "%s%n%n%s"
+                .formatted(text, LatheLayout.STALE_REMEDIATION.formatted(String.join(", ", stale)));
+    return CallToolResult.builder().addTextContent(body).structuredContent(structured).build();
   }
 
   private static Map<String, Object> diagnosticMap(final Diagnostic d) {

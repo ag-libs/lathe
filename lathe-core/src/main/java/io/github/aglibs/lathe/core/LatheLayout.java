@@ -61,6 +61,11 @@ public final class LatheLayout {
       "If this project is not set up for Lathe yet, add the lathe-maven-extension; then run `mvn process-test-classes` to generate %s."
           .formatted(LATHE_DIR);
 
+  // A non-editor client (the MCP agent) gets no interactive sync prompt, so a tool result carries
+  // this instead. %s is the stale-module list.
+  public static final String STALE_REMEDIATION =
+      "Stale: module(s) %s have source newer than their compiled classes, so cross-module results may be out of date. Run `mvn process-test-classes` to refresh Lathe's classes.";
+
   private LatheLayout() {}
 
   public static Path userCacheRoot() {
