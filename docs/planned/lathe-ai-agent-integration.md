@@ -2,7 +2,39 @@
 
 ## Status
 
-Planned. Phase 0 (spike) done — substrate validated. Architecture approved; no product code yet.
+**In progress — MCP server shipped and dogfooding on a real reactor.** Phase 0 (spike) done and
+architecture approved; the `lathe-mcp-server` module now builds, launches, and serves tools over
+stdio, validated live against the private payment reactor.
+
+**Shipped (as of 2026-09-20):**
+
+- `lathe-mcp-server` module on the official MCP Java SDK, with its own launcher
+  (`lathe-mcp-launcher.sh`), workspace resolved from `cwd`, stderr logging (`LATHE_DEBUG`), and an
+  in-process `LatheEngine` facade in `lathe-server` (subpackage `server.engine`; the LSP service is
+  the shared analysis seam driving both front-ends).
+- Tools: **`get_diagnostics`, `get_definition`, `find_references`, `rename_symbol`** — every result
+  carries source snippets and an `origin` (REACTOR / GENERATED / EXTERNAL).
+- `rename_symbol` applies javac-accurate edits to disk across modules and refuses to touch a
+  non-reactor file.
+- **Freshness advisory:** results append a `Stale:` note listing modules whose source is newer than
+  their compiled classes (reusing the existing idle-reconcile scan, cached), so the agent knows to
+  re-sync; `rename_symbol` force-refreshes so its own result is current. MCP has no server→model
+  push, so this rides in the result text (verified with `claude-code-guide`).
+- **Routing instructions** served at `initialize` (task→tool dispatch), mirrored into tool
+  descriptions for clients that drop server instructions (claude.ai web).
+
+**Next:** `run_test` (individual test replay, no reactor build — designed); `call_hierarchy` /
+`type_hierarchy` / `find_implementations` (axis B, polymorphic queries).
+
+**Dropped:** `verify_build` (wrapping `mvn` over the reactor). An agent can run `mvn` itself, so a
+thin wrapper fails the "does Lathe do this better than agent+bash?" test. Lathe's edge is *individual*
+compilation and tests, not reactor orchestration; cross-module build verification stays the agent's
+own `mvn`, and Lathe surfaces staleness instead (see [Freshness model](#freshness-model)).
+
+> **Note.** Some deeper sections below (Architecture, Freshness model, Measurement) still describe
+> `verify_build` as a planned tool. That reflects the earlier design; read those mentions as "the
+> agent's own `mvn`, with Lathe's `Stale:` advisory as the freshness signal." They'll be reworked when
+> those sections are next revised.
 
 This document proposes a second and third front-end for the existing language server — an **MCP
 server** and a **Claude Code LSP plugin** — so that AI coding agents (Claude Code, OpenAI Codex CLI,
@@ -69,9 +101,9 @@ read-only enumeration of distinctive names does not.
 
 | Axis | What it gives | Why grep / `mvn`-by-hand can't |
 |---|---|---|
-| **A — compiler truth** | `get_diagnostics`, `verify_build` | No text substitute for "does this compile on the real classpath"; full `mvn` is minutes on a large reactor, not a sub-second, single-file, classpath-accurate answer |
+| **A — compiler truth** | `get_diagnostics` (single-file, classpath-accurate); reactor build stays the agent's `mvn` | No text substitute for "does this compile on the real classpath"; Lathe gives a sub-second, single-file, classpath-accurate answer (the reactor-wide build is Maven's job, not a tool Lathe wraps) |
 | **B — polymorphic relationships** | implementations, overrides, call / type hierarchy | No text pattern expresses "who implements X" / "what overrides this" / transitive callers — grep is *structurally* wrong, not just slow |
-| **C — correct-by-construction mutation** | `rename` + `verify_build` as a loop | grep+sed risks a missed site or a broken import; the semantic edit is correct by construction and the build oracle proves it cheaply |
+| **C — correct-by-construction mutation** | `rename_symbol` + a build oracle (the agent's `mvn`) | grep+sed risks a missed site or a broken import; the semantic edit is correct by construction and the build oracle proves it cheaply |
 
 **The distrust tax.** The dominant cost was not the tool — it was the agent re-deriving the answer to
 *trust* it. A result that is merely fast, or even name-addressed, does not fix this; an
@@ -82,6 +114,29 @@ guidance in [Measurement](#measurement).
 **Bottom line.** Lead with the **mutate→verify loop (Tier 2)** and **polymorphic queries**, not
 read-only reference enumeration. `find_references` earns its place *inside* the loop (feeding rename)
 and on polymorphic symbols — not as standalone search on distinctive names.
+
+### Second A/B — polymorphic reference sites (2026-09-20)
+
+A follow-up on the same reactor tested the axis the first A/B pointed to: an **overloaded,
+polymorphic** name instead of a distinctive one. Task = list every site to rename an operator
+interface method `refund(...)` — declared once, implemented by ~20 adapters, called across modules —
+excluding unrelated same-named methods. Treatment (`find_references`) vs baseline (grep only), scored
+against the 126-site ground truth from the tool itself.
+
+- **Correctness: tie at 100%** — both reached 126/126 precision *and* recall. But the tie held only
+  because the prompt **named the exclusions** (a static factory `refund`, a second interface's
+  `refund`); in the wild that disambiguation is exactly what `find_references` does for free and the
+  grep-agent must reason out. `find_references` even split two `refund` tokens on a single line
+  (`o.refund(OperatorRequestFactory.refund(c))`), which text search cannot.
+- **Cost: MCP clearly cheaper** — 1 tool call vs 20+ grep/read/bash; **~1.9× fewer turns, ~1.7×
+  lower cost, ~2.5× less wall time**. The grep-agent spent its run reconstructing the class hierarchy
+  (interface → sub-interfaces → ~20 overrides) by hand against 396 noisy `refund` matches.
+
+This is the mirror image of the first A/B: on a *distinctive* name MCP cost **more** for a tie; on a
+*polymorphic* name it cost **less** for the same correctness — and the correctness parity is
+understated, since the prompt handed the baseline the hard exclusions. Confirms **axis B** and the
+mutate→verify lead. Next A/B should withhold the exclusion hints to expose the correctness gap, and
+(when isolated from the real repo safely) measure the true mutating rename end-to-end.
 
 ## Motivation
 
@@ -353,24 +408,25 @@ contract.
 
 | Tool | Maps to | In → Out |
 |---|---|---|
-| `get_diagnostics` | diagnostics | `{file}` → `{diagnostics[], stalenessHint?}` — "errors in *this* file after your edit." |
-| `get_definition` | definition | `{file,line,column}` → `{targets[]{…snippet, resolvedInto: reactor\|dependency\|jdk\|generated}}` |
+| `get_diagnostics` ✅ | diagnostics | `{file}` → `{diagnostics[], stalenessHint?}` — "errors in *this* file after your edit." |
+| `get_definition` ✅ | definition | `{file,line,column}` → `{targets[]{…snippet, resolvedInto: reactor\|dependency\|jdk\|generated}}` |
 | `describe_symbol` | hover | `{file,line,column}` → `{kind, signature, type, javadoc, snippet}` |
 
 ### Tier 2 — the migration / removal loop (highest daily leverage on a reactor)
 
 | Tool | Maps to | Kind | In → Out |
 |---|---|---|---|
-| `find_references` | references | read | `{file,line,column,maxResults?,cursor?}` → `{total, truncated, references[]}` |
-| `rename_symbol` | rename | **write** | `{file,line,column,newName}` → `{renamed, from, to, editedFiles[], totalEdits}` \| structured refusal. Cross-module confirmed working ([probe](../gaps/gaps-archive.md#fr-017)). |
-| `verify_build` | scoped `mvn -pl <changed> -amd` + reload | **action** | `{modules?, includeTests?}` → `{compiled, modulesBuilt[], diagnostics[], elapsedMs}` |
+| `find_references` ✅ | references | read | `{file,line,column,maxResults?,cursor?}` → `{total, truncated, references[]}` |
+| `rename_symbol` ✅ | rename | **write** | `{file,line,column,newName}` → `{renamed, from, to, editedFiles[], totalEdits}` \| structured refusal. Cross-module confirmed working ([probe](../gaps/gaps-archive.md#fr-017)). |
+| ~~`verify_build`~~ **DROPPED** | — | — | Wrapping `mvn` over the reactor is something the agent can do itself; see [Status](#status). Cross-module verification stays the agent's own `mvn`; Lathe surfaces staleness instead. |
 | `find_implementations` | implementation | read | `{file,line,column,maxResults?}` → `{implementations[]}` |
 | `search_symbols` | workspace/symbol (CamelHumps) | read | `{query, kind?, maxResults?}` → `{symbols[]{…, signatureSnippet}}` |
 
-These compose into the dominant reactor workflow — cross-module config/API migrations and safe
-removals — and each tool's description hands off to the next:
-`find_references` (find every site) → `rename_symbol` (change them atomically) → `verify_build` (prove
-the multi-module result still compiles).
+✅ = shipped (`get_diagnostics`, `get_definition`, `find_references`, `rename_symbol`). These compose
+into the dominant reactor workflow — cross-module config/API migrations and safe removals — and each
+tool's description hands off to the next: `find_references` (find every site) → `rename_symbol`
+(change them atomically) → **rebuild** (the agent's own `mvn`; a `Stale:` advisory on subsequent
+results tells it when a re-sync is needed before trusting them).
 
 ### Tier 3 — the run loop (loop-closer)
 
@@ -427,8 +483,9 @@ outcomes on a reactor.
   tool"), and no grep name-collisions or missed cross-module sites.
 - **Snippets, not coordinates** — every answer arrives as readable code, so the agent acts without a
   follow-up read per result.
-- **Safe multi-module migration** — `find_references` → `rename_symbol` → `verify_build` is a complete,
-  compiler-verified loop for the reactor's most common change shape.
+- **Safe multi-module migration** — `find_references` → `rename_symbol` (correct-by-construction
+  cross-module edits) → the agent's own `mvn` to verify, with Lathe's `Stale:` advisory flagging when
+  a re-sync is needed — a complete loop for the reactor's most common change shape.
 - **Run the exact covering test without recompiling** — the capture-and-replay moat, expressible only
   over MCP.
 - **Reactor-correct multi-module** resolution and **dependency/JDK/generated-source** navigation out of
@@ -449,7 +506,7 @@ in-repo `multi-module` invoker workspace and a large private multi-module worksp
 diagnostics, cross-file `definition`, runnables discovered, and a replay → `[PASSED] exit=0`.
 The `.lsp.json` schema was re-verified against the live plugins reference.
 
-### Phase 1 — Scaffold + Tier 1 (foundational reads)
+### Phase 1 — Scaffold + Tier 1 (foundational reads) — DONE (except `describe_symbol`)
 
 - New `lathe-mcp-server` module wired into the reactor; SDK dependency; `LatheMcpServer.main` over the
   SDK stdio transport; classpath launcher; `cwd`-based workspace resolution; lazy-open + cache.
@@ -465,19 +522,24 @@ The `.lsp.json` schema was re-verified against the live plugins reference.
 - Exit: from a fresh agent session, edit a file, get diagnostics, and navigate — through MCP tools, on
   Codex/Gemini and Claude Code.
 
-### Phase 2 — Tier 2 (the migration / removal loop)
+### Phase 2 — Tier 2 (the migration / removal loop) — IN PROGRESS
 
-- `find_references`, `find_implementations`, `search_symbols`.
-- `verify_build` (scoped `mvn -pl <changed> -amd` → structured diagnostics + `.lathe/` reload).
-- `rename_symbol` — cross-module rename confirmed working (probe 2026-09-19,
-  [FR-017](../gaps/gaps-archive.md#fr-017)); per-kind coverage (field / override family / type) is an
-  optional follow-up, not a blocker.
-- Exit: complete a cross-module field migration and a safe removal entirely through MCP tools.
+- `find_references` ✅ and `rename_symbol` ✅ shipped (cross-module, javac-accurate; rename applies
+  edits to disk and refuses non-reactor files). Measured win on a polymorphic name — see
+  [Second A/B](#second-ab--polymorphic-reference-sites-2026-09-20).
+- `find_implementations`, `search_symbols` — not yet.
+- `verify_build` — **dropped** (see [Status](#status)); the loop verifies with the agent's own `mvn`.
+- **Freshness advisory** ✅ and **routing instructions** ✅ shipped as cross-cutting additions this
+  phase (not in the original plan): every result flags stale modules, and the server tells the agent
+  which tool to reach for per task.
+- Exit: complete a cross-module migration and a safe removal through MCP tools + the agent's `mvn`.
 
-### Phase 3 — Tier 3 (the run loop)
+### Phase 3 — Tier 3 (the run loop) — NEXT
 
-- `list_runnables` + `run_test` — **gated on recompile-before-replay** so a replay cannot report stale
-  results (see the [New/Changed-Test Replay Inner Loop](lathe-new-test-replay-loop.md)).
+- `list_runnables` + `run_test` (individual test replay, no reactor build) — **designed**; the capture
+  writer that produces `test-launch.json` is built and present on real reactors, so replay is
+  feasible. **Gated on recompile-before-replay** (and the `Stale:` advisory) so a replay cannot report
+  stale results (see the [New/Changed-Test Replay Inner Loop](lathe-new-test-replay-loop.md)).
 
 ### Phase 4 — Tier 4 (medium tools)
 
