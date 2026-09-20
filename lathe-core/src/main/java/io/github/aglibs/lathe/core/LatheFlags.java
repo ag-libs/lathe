@@ -13,6 +13,17 @@ public final class LatheFlags {
   public static final String FORMATTER_OPTION = "formatter";
   public static final String FORMATTER_GOOGLE = "google";
 
+  // Coarse client<->server contract version. The server advertises it via
+  // capabilities.experimental.latheProtocol; the standalone client compares it against its own
+  // (lua/lathe/version.lua) at on_init and warns on a mismatch, since a git-installed client and a
+  // Maven-pinned server can drift. Bump ONLY on a breaking contract change (executeCommand names,
+  // init_options shape, custom notifications such as lathe/sync) -- not on every release. A
+  // drift-guard test keeps this in lockstep with version.lua's PROTOCOL.
+  public static final int LATHE_PROTOCOL = 1;
+
+  // Key under InitializeResult capabilities.experimental that carries LATHE_PROTOCOL to the client.
+  public static final String PROTOCOL_CAPABILITY = "latheProtocol";
+
   private LatheFlags() {}
 
   public static boolean isDisabled() {

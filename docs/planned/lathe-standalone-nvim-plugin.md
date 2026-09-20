@@ -1,11 +1,11 @@
 # Lathe — Standalone `lathe.nvim` Plugin
 
-> **Status: shipped (foundation).** Delivered: the standalone `ag-libs/lathe.nvim` mirror published by
-> the local, no-PAT `publish-nvim.sh`; the three documented install paths; the first-run readiness
-> nudge (§6); double-load detection (§6); and the `serverInfo` + `version.lua` `{VERSION, PROTOCOL}`
-> schema (§2). **Deferred** (a follow-up slice): the `LATHE_PROTOCOL` handshake *enforcement* — server
+> **Status: shipped.** Delivered: the standalone `ag-libs/lathe.nvim` mirror published by the local,
+> no-PAT `publish-nvim.sh`; the three documented install paths; the first-run readiness nudge (§6);
+> double-load detection (§6); the `serverInfo` + `version.lua` `{VERSION, PROTOCOL}` schema (§2); and
+> the `LATHE_PROTOCOL` handshake enforcement (§2/§3) — `LatheFlags.LATHE_PROTOCOL` advertised via
 > `capabilities.experimental.latheProtocol`, the client `on_init` comparison, and the drift-guard test
-> (§2/§3).
+> keeping the Java constant and `version.lua` in lockstep.
 
 ## Goal
 
@@ -86,29 +86,24 @@ both the zero-plugin bundle and the `LATHE_NVIM_DIR` dogfood loop (they just poi
 at the cost of submodule ceremony. Keep this decision explicitly reversible; do not build tooling
 that assumes the mirror direction is permanent.
 
-### 2. Version signal now; protocol handshake reserved but deferred (DECIDED)
+### 2. Version signal + protocol handshake (DECIDED — shipped)
 
-The standalone client (installed from git) and the server (Maven-pinned) *can* drift, but during the
-0.x beta they don't in practice: both ship from a single monorepo tag (so versions match), there are
-no external standalone users updating independently, and the bundled cache path (§4) is immune by
-construction. So the full handshake would currently guard a scenario that essentially cannot happen.
-
-**Decision — split by timing, not by design:**
-
-*Ship now (cheap and always-correct):*
+The standalone client (installed from git) and the server (Maven-pinned) can drift, so the full
+handshake is now wired (it was originally split by timing; both halves have since shipped):
 
 - The **server** sets `serverInfo{name: "lathe", version}` in `InitializeResult` — good LSP hygiene
   regardless of the standalone work; the version comes from the jar manifest
   (`Implementation-Version`, null outside a built jar, which is acceptable).
-- `lua/lathe/version.lua` ships the **fixed schema** `{ VERSION = <stamped>, PROTOCOL = <int> }`, so
-  the wire shape is nailed down from the first standalone release even though the comparison logic is
-  not wired yet.
+- `lua/lathe/version.lua` ships the **fixed schema** `{ VERSION = <stamped>, PROTOCOL = <int> }`.
+- The **server** advertises `capabilities.experimental.latheProtocol` (keyed by
+  `LatheFlags.PROTOCOL_CAPABILITY`); the **client** reads it in `on_init` and compares to its own
+  `PROTOCOL`, warning per server (re)start on a mismatch:
+    - server older/absent → *"bump the `lathe-maven-extension` version in your build and rebuild"* —
+      the server version is pinned by that extension, so re-syncing alone reinstalls the same one.
+    - server newer → *"update lathe.nvim (`:Lazy update` / `vim.pack.update` / git pull)"*.
 
-*Deferred until the standalone repo has independently-updating users:*
-
-- `capabilities.experimental.latheProtocol` on the server, the client-side `on_init` comparison, and
-  the mismatch `vim.notify` (server older/absent → *"run `mvn process-test-classes`"*; server newer →
-  *"update lathe.nvim (`:Lazy update` / `vim.pack.update` / git pull)"*).
+  A matching protocol — always true on the bundled cache path, where client and server ship together —
+  is silent.
 
 **Why keep `PROTOCOL` a distinct integer rather than derive it from the version.** Two dead ends make
 the separate coarse integer the correct shape:
@@ -125,13 +120,13 @@ the separate coarse integer the correct shape:
 only on a breaking client↔server contract change (executeCommand names, `init_options` shape, custom
 notifications such as `lathe/sync`).
 
-### 3. Single authoritative protocol constant + drift guard (deferred with §2's enforcement)
+### 3. Single authoritative protocol constant + drift guard (shipped)
 
-When the handshake is wired (§2, deferred): `LATHE_PROTOCOL` is defined once in Java (`LatheFlags`),
-`lua/lathe/version.lua` carries a matching checked-in value, and a `lathe-maven-plugin` unit test
-reads the Lua file and asserts equality so the build fails if the two ever drift. Until then the
-`PROTOCOL` field exists in the schema but is not yet consumed, so the drift guard ships together with
-the comparison logic, not before.
+`LATHE_PROTOCOL` is defined once in Java (`LatheFlags`), `lua/lathe/version.lua` carries a matching
+checked-in value, and a `lathe-maven-plugin` unit test (`LatheProtocolDriftTest`) reads the Lua file
+and asserts equality so the build fails if the two ever drift. `PROTOCOL` is the only hand-bumped
+number — bump it (in both places, enforced by the guard) only on a breaking client↔server contract
+change; that commit is the coordinated release that ships both sides.
 
 ### 4. Delivery — three install paths from one artifact
 
@@ -242,10 +237,9 @@ resolved in §6; protocol timing resolved in §2.
 
 - **Source of truth: monorepo** (§1) — `lathe.nvim` is a published one-way mirror; explicitly
   reversible if client contributions ever become a goal.
-- **Version signal now, handshake deferred** (§2/§3) — ship `serverInfo` and the
-  `{VERSION, PROTOCOL}` `version.lua` schema now; defer `experimental.latheProtocol`, the `on_init`
-  comparison, and the drift guard until the standalone repo has independently-updating users. Keep
-  `PROTOCOL` a distinct coarse integer (not derived from semver).
+- **Version signal + protocol handshake, shipped** (§2/§3) — `serverInfo`, the `{VERSION, PROTOCOL}`
+  `version.lua` schema, the server's `experimental.latheProtocol`, the client `on_init` comparison,
+  and the drift guard all landed. `PROTOCOL` is a distinct coarse integer (not derived from semver).
 - **Publishing: local `publish-nvim.sh`, no PAT** (§5) — no CI cross-repo secret; snapshot-per-release
   mirror, not a subtree-split history graft.
 - **Install paths: three from one artifact** (§4) — built-in `vim.pack`, plugin manager, and bundled
@@ -258,18 +252,21 @@ resolved in §6; protocol timing resolved in §2.
 
 - `:checkhealth lathe`, auto-`setup()` (making `config` optional), and a Windows launcher — the other
   install-friction items, deferred to their own slices.
-- The protocol handshake **enforcement** (server `experimental.latheProtocol`, client `on_init`
-  comparison, drift-guard test) — deferred per §2; only the `serverInfo` + `version.lua` schema ship
-  now.
+- A protocol **range** (server advertising `[min..max]` so a newer server keeps serving old clients) —
+  not needed yet; the shipped handshake is a coarse equality check. Add it only when backward
+  compatibility across a protocol bump is actually required.
 - Any change to server delivery. The server stays Maven-resolved and version-pinned.
 
 ## Tests
 
-*This slice:*
-
-- Server test asserting `InitializeResult` exposes `serverInfo{name, version}`.
+- Server test asserting `InitializeResult` exposes `serverInfo{name, version}`, and one asserting
+  `capabilities.experimental.latheProtocol`.
 - Client spec (headless Lua harness under `src/test/neovim/`) asserting `version.lua` has the
   `{VERSION, PROTOCOL}` schema.
+- Drift-guard unit test (`LatheProtocolDriftTest`) asserting `LatheFlags.LATHE_PROTOCOL` equals
+  `version.lua`'s `PROTOCOL`.
+- Client handshake spec (`handshake_spec.lua`): matching → silent; older/absent → the
+  bump-`lathe-maven-extension` message; newer → the update-plugin message.
 - Client specs for the first-run nudge (§6): Maven-but-no-`.lathe` → the one-shot notify fires once;
   non-Maven → silent; launcher missing → the install notify.
 - Client spec for double-load detection: two `version.lua` on `runtimepath` → one notify; single copy
@@ -277,9 +274,3 @@ resolved in §6; protocol timing resolved in §2.
 - Verify the bundled cache path still installs and runs unchanged (existing invoker smoke coverage).
 - `publish-nvim.sh` is a local release step, not CI-tested; keep it dry-run-able (like
   `release.sh --dry-run`) so the split/stamp can be inspected without pushing.
-
-*Deferred with the handshake (§2/§3):*
-
-- Drift-guard unit test asserting `LATHE_PROTOCOL` (Java) equals `version.lua`'s value.
-- Server test for `capabilities.experimental.latheProtocol`; client `on_init` mismatch specs
-  (matching → silent; older/absent → `mvn process-test-classes`; newer → update-plugin).

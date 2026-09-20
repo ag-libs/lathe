@@ -6,6 +6,7 @@ import io.github.aglibs.lathe.server.analysis.ExtractionSupport;
 import io.github.aglibs.lathe.server.analysis.TokenScanner;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.CodeActionKind;
@@ -121,6 +122,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
                 LatheWorkspaceService.PACKAGES_COMMAND,
                 LatheWorkspaceService.RESOLVE_CONTEXT_COMMAND,
                 LatheWorkspaceService.MISSING_IMPORTS_COMMAND)));
+    capabilities.setExperimental(Map.of(LatheFlags.PROTOCOL_CAPABILITY, LatheFlags.LATHE_PROTOCOL));
     return capabilities;
   }
 

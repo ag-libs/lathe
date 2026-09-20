@@ -198,6 +198,30 @@ function M.warn_if_double_loaded()
   )
 end
 
+-- Compare the server's advertised protocol against this client's and warn on a mismatch. The
+-- git-installed standalone client and the Maven-pinned server version independently, so a coarse
+-- integer (server: capabilities.experimental.latheProtocol; client: lua/lathe/version.lua) flags
+-- "these two can't talk" without nagging on every benign version difference. The server version is
+-- pinned by the `lathe-maven-extension` in the build, so an older/absent server means that pin must
+-- be bumped (re-running the sync alone reinstalls the same version); a newer server means the client
+-- must be updated. Called from on_init, so it runs once per server (re)start; the bundled cache path
+-- always matches and stays silent.
+function M.check_protocol(server_protocol)
+  local client_protocol = require('lathe.version').PROTOCOL
+  if server_protocol == client_protocol then
+    return
+  end
+
+  local msg
+  if type(server_protocol) ~= 'number' or server_protocol < client_protocol then
+    msg = 'Lathe: server is older than this client -- bump the `lathe-maven-extension` version in your build and rebuild.'
+  else
+    msg = 'Lathe: client is older than this server -- update lathe.nvim (`:Lazy update` / `vim.pack.update` / git pull).'
+  end
+
+  vim.notify(msg, vim.log.levels.WARN, { title = 'Lathe' })
+end
+
 function M.setup(opts)
   opts = opts or {}
   -- Read by warn_if_not_ready (via ftplugin) to tell "installed but not configured"
@@ -221,6 +245,9 @@ function M.setup(opts)
     single_file_support = false,
     on_exit = function(code)
       M.on_server_exit(code)
+    end,
+    on_init = function(client)
+      M.check_protocol(vim.tbl_get(client, 'server_capabilities', 'experimental', 'latheProtocol'))
     end,
     root_dir = function(bufnr, on_dir)
       local r = M.get_root(bufnr)
