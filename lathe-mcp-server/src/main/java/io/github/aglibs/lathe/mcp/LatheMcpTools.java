@@ -110,7 +110,9 @@ final class LatheMcpTools {
                 Find every real use of the symbol at a position across the whole reactor — \
                 javac-accurate, not text search: resolves overloads and inheritance, spans all \
                 modules, and returns each use with a source snippet. Use before changing or \
-                removing a symbol to find every site that must change.""")
+                removing a symbol, and especially when it is a method with overrides/\
+                implementations or a common/overloaded name where text search is ambiguous; for a \
+                rare, distinctive name a plain grep is fine.""")
             .build();
     return SyncToolSpecification.builder()
         .tool(tool)

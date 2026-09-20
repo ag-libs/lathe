@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.maven;
 
 import io.github.aglibs.lathe.core.LatheFlags;
+import io.github.aglibs.lathe.core.LatheLayout;
 import javax.inject.Inject;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
@@ -29,7 +30,9 @@ public final class SyncMojo extends AbstractMojo {
   public void execute() throws MojoExecutionException {
     if (session.getRequest().getGoals().stream().anyMatch(g -> g.contains("lathe:sync"))) {
       getLog()
-          .warn("[sync] direct invocation is not supported — run mvn process-test-classes instead");
+          .warn(
+              "[sync] direct invocation is not supported — run %s instead"
+                  .formatted(LatheLayout.SYNC_COMMAND));
       return;
     }
 

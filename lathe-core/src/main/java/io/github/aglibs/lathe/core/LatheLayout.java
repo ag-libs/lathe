@@ -54,17 +54,24 @@ public final class LatheLayout {
   public static final String INIT_EXECUTION_ID = "lathe-init";
   public static final String SYNC_EXECUTION_ID = "lathe-sync";
 
+  // The Maven phase that runs lathe:sync (bound via LifecyclePhase.PROCESS_TEST_CLASSES) and the
+  // command we suggest users/agents run to refresh .lathe/. The single source for that wording —
+  // every remediation string below and the MCP instructions compose it rather than repeating it.
+  public static final String SYNC_PHASE = "process-test-classes";
+  public static final String SYNC_COMMAND = "mvn %s".formatted(SYNC_PHASE);
+
   // A missing .lathe/ can mean the project is not set up for Lathe at all, or set up but not yet
   // built — so this remediation covers both rather than assuming a build alone will fix it.
   // Centralized here so the wording lives in one place.
   public static final String SETUP_REMEDIATION =
-      "If this project is not set up for Lathe yet, add the lathe-maven-extension; then run `mvn process-test-classes` to generate %s."
-          .formatted(LATHE_DIR);
+      "If this project is not set up for Lathe yet, add the lathe-maven-extension; then run `%s` to generate %s."
+          .formatted(SYNC_COMMAND, LATHE_DIR);
 
   // A non-editor client (the MCP agent) gets no interactive sync prompt, so a tool result carries
-  // this instead. %s is the stale-module list.
+  // this instead. The remaining %s is the stale-module list, filled at use.
   public static final String STALE_REMEDIATION =
-      "Stale: module(s) %s have source newer than their compiled classes, so cross-module results may be out of date. Run `mvn process-test-classes` to refresh Lathe's classes.";
+      "Stale: module(s) %%s have source newer than their compiled classes, so cross-module results may be out of date. Run `%s` to refresh Lathe's classes."
+          .formatted(SYNC_COMMAND);
 
   private LatheLayout() {}
 

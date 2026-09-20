@@ -24,6 +24,30 @@ public final class LatheMcpServer {
 
   private static final Logger LOG = Logger.getLogger(LatheMcpServer.class.getName());
 
+  // Routing guidance injected into the agent's context (Claude Code reads server instructions).
+  // Dispatch-first and kept well under the ~2KB the client truncates at. The tool descriptions
+  // repeat the key cues so they still steer clients that drop instructions (e.g. claude.ai web).
+  private static final String INSTRUCTIONS =
+      """
+      Lathe provides javac-accurate, cross-module code intelligence for this Java/Maven reactor \
+      — precise where text search is ambiguous. Choose by task:
+
+      - Renaming or removing a symbol: ALWAYS use rename_symbol. It rewrites the true declaration, \
+      every override/implementation, and all call sites across modules, and nothing that merely \
+      shares the name; grep/sed cannot do this safely.
+      - Finding all uses before a change, or when the symbol is a method with overrides/\
+      implementations or a common/overloaded name: use find_references (resolves overloads and \
+      inheritance, excludes same-named unrelated symbols). For a rare, distinctive name a plain \
+      grep is fine and cheaper.
+      - Resolving or jumping to a definition, especially into dependencies, the JDK, or generated \
+      sources: use get_definition (grep cannot follow into non-source).
+      - Checking whether a file still compiles after an edit: use get_diagnostics (one file, no \
+      Maven).
+
+      A "Stale:" note on a result means a module's source is newer than its compiled classes; run \
+      `%s` to refresh, then re-query."""
+          .formatted(LatheLayout.SYNC_COMMAND);
+
   private LatheMcpServer() {}
 
   public static void main(final String[] args) throws InterruptedException {
@@ -51,6 +75,7 @@ public final class LatheMcpServer {
       McpServer.sync(transport)
           .serverInfo("lathe", version())
           .capabilities(ServerCapabilities.builder().tools(true).build())
+          .instructions(INSTRUCTIONS)
           .tools(LatheMcpTools.all(engine, mapper))
           .build();
     } catch (final RuntimeException e) {

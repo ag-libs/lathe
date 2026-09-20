@@ -49,7 +49,10 @@ class McpSmokeTest {
             "initialize",
             "{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},"
                 + "\"clientInfo\":{\"name\":\"smoke\",\"version\":\"0\"}}");
-    assertThat(init).contains("\"name\":\"lathe\"").contains("protocolVersion");
+    assertThat(init)
+        .contains("\"name\":\"lathe\"")
+        .contains("protocolVersion")
+        .contains("ALWAYS use rename_symbol"); // routing guidance served in instructions
     notify("notifications/initialized");
   }
 
