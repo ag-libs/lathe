@@ -16,8 +16,22 @@ mapping. The suggested keymaps are a coherent starting set, not defaults.
 
 ## Install
 
-Load the plugin as a local directory with `lazy.nvim`, pointing `dir` at the Neovim runtime installed
-by `lathe:sync`:
+Installing the client and building the project are **two independent steps**.
+The **server** is resolved and installed by your Maven build — not by the plugin manager — so you also
+need the build wired up and run at least once (see the [installation guide](../installation.md)); until
+then the client nudges you to do so.
+The **client** installs one of three ways below.
+
+Pick **one** — don't combine them (Lathe warns if it finds the client loaded from more than one place):
+
+- **Bundled cache `dir`** — zero separate plugin to manage: a fresh checkout plus one Maven build just
+  works, because `lathe:sync` unpacks the client into `~/.cache/lathe/current/neovim`.
+- **Standalone repo** (`vim.pack` or a plugin manager) — if you prefer plugins to come from a plugin
+  manager and update with `:Lazy update` / `vim.pack.update`.
+
+### Bundled cache directory (no separate plugin)
+
+Point `lazy.nvim`'s `dir` at the Neovim runtime installed by `lathe:sync`:
 
 ```lua
 {
@@ -30,13 +44,33 @@ by `lathe:sync`:
 }
 ```
 
-> **The `config` function is required.** Without it, lazy.nvim only sources the `ftplugin`
-> (indentation); the LSP server is never registered.
+### Standalone repo — built-in package manager (Neovim 0.12+)
+
+```lua
+vim.pack.add({ "https://github.com/ag-libs/lathe.nvim" })
+require("lathe").setup()
+```
+
+### Standalone repo — lazy.nvim
+
+```lua
+{
+  "ag-libs/lathe.nvim",
+  ft = "java",
+  cmd = "LatheStart",
+  config = function()
+    require("lathe").setup()
+  end,
+}
+```
+
+> **The `config` function (`require("lathe").setup()`) is required, on every path.** Without it, only
+> the `ftplugin` (indentation) loads; the LSP server is never registered.
 
 > **`cmd = "LatheStart"` loads the plugin on the command too**, not only on a `.java` file — so
 > `:LatheStart` is available to bring the server up for workspace navigation before you open any Java
 > file (from a dashboard or an empty buffer). Without it, the command exists only after a Java buffer
-> has loaded the plugin.
+> has loaded the plugin. (`vim.pack` has no lazy-loading, so the plugin is always available there.)
 
 `setup()` options:
 

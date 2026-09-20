@@ -10,6 +10,12 @@ You activate Lathe per Maven build in one of two ways:
 
 Both produce the identical effective build.
 
+> **The editor client is a separate, independent step.** This page covers the Maven build — the
+> **server** side, which delivers and installs the language server itself. Installing the **editor
+> client** (e.g. the [Neovim plugin](editors/neovim.md)) is independent and can happen before or after
+> the build. On the standalone plugin path the two are fully decoupled; the client simply nudges you to
+> run the build if it hasn't done so yet.
+
 ## What Lathe needs in the build
 
 Both methods add the same three pieces, for the whole reactor:
