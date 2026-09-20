@@ -172,9 +172,11 @@ JVM** — no child process, no JSON-RPC hop, no LSP `didOpen`/`didChange` mirror
 *same* code the LSP handlers do, so behaviour is identical by construction.
 
 To keep the coupling bounded, `lathe-server` gains **one small concrete facade** — `LatheEngine`, a
-public class in a new package `io.github.aglibs.lathe.server.api`. It grows beyond the original
-`get_diagnostics`-only sketch to back every read tool plus rename, each mapping to an existing
-`WorkspaceSession` / text-document-service method:
+single **`public` class in the existing package `io.github.aglibs.lathe.server`** (not a new `.api`
+package: the facade needs package-private access to `WorkspaceSession` / `LatheTextDocumentService`,
+which a separate package could not reach, and a lone class does not justify its own package). It grows
+beyond the original `get_diagnostics`-only sketch to back every read tool plus rename, each mapping to
+an existing `WorkspaceSession` / text-document-service method:
 
 - lifecycle: `openWorkspace(root)` (synthesizes the existing `initialize`, reusing `WorkspaceSession`
   and its missing-`.lathe/` remediation), plus internal reload;
@@ -183,17 +185,43 @@ public class in a new package `io.github.aglibs.lathe.server.api`. It grows beyo
 - writes: `rename`, `addMissingImports`;
 - run: `runnables`, `runTest` (and optionally `runMain`).
 
-Because MCP is stateless, the facade opens files from disk on demand via the existing `didOpen`
-analysis path.
-Diagnostics and (later) progress are captured through a small `LatheLanguageClient` stub the facade
-installs in place of the editor's remote proxy — the bridge point for streaming in a later phase.
+The protocol is stateless (the agent manages no `didOpen`/`didChange` lifecycle), so the facade opens
+each file from disk on demand and runs the existing analysis path.
+**Every tool — including `get_diagnostics` — is request/response over a per-call `CompletableFuture`.**
+Diagnostics are *not* captured as a pushed `publishDiagnostics` notification: the facade adds a
+worker-confined method that wraps the compile as a future (mirroring the existing
+`definitionFuture` / `referencesFuture`) and completes it with the compiled diagnostics. There is
+therefore **no capturing state and no `uri → future` registry** — the only cross-thread object per call
+is that one future (a lock-free single-shot handoff). The `LanguageClient` the `WorkspaceSession`
+constructor requires is supplied as a **pure no-op stub**; a real streaming/progress bridge over the
+`LatheLanguageClient` interface is deferred to the streaming phase and, even then, needs no
+pending-diagnostics map.
+
 Since `lathe-mcp-server` runs on the **classpath** (see the launcher note and JPMS decision below),
-`lathe-server` there is loaded as an unnamed-module library and the public `api` package is directly
-accessible — **no `module-info` change, no qualified export**.
+`lathe-server` there is loaded as an unnamed-module library: its `module-info` is ignored, so the
+`public LatheEngine` is callable regardless of exports — **no `module-info` change, no qualified
+export**.
 
 `verify_build` is the one tool that is **not** a pure `LatheEngine` call: it runs a scoped Maven build
 out-of-process (see [the tool surface](#mcp-tool-surface)) and then calls `LatheEngine`'s reload path
 to refresh `.lathe/` and read back diagnostics.
+
+### State and synchronization
+
+The MCP server is **protocol-stateless but process-stateful**: it holds a warm workspace across the
+session (opened lazily on the first tool call, cached) so it never pays the reactor-load cost per call.
+
+- **Workspace state** (`WorkspaceSession` and everything it owns — module registry, type index,
+  `DocumentRegistry`, candidate index) stays **confined to the single `lathe-worker` event loop**, as
+  it already is for the editor. Thread-confinement *is* the synchronization: `LatheEngine` never
+  touches session state from a tool thread — it only `worker.execute(...)` onto it and awaits a future.
+- **Per-call futures** are local, single-completion handoffs — safe by construction, not shared state.
+  Concurrent calls (even on the same file) each own their own snapshot and future, so nothing collides.
+- **No MCP-introduced shared mutable state**: no locks, no concurrent maps. The lazy `openWorkspace` is
+  the one write-once value, guarded by a single init future all first callers await.
+- **Reload** (`verify_build`, the staleness watcher) mutates the whole workspace, but runs on the
+  worker like everything else, so it is serialized with reads by FIFO ordering — never a side-channel
+  mutation.
 
 ### MCP server wiring
 
@@ -237,8 +265,8 @@ the same file the agent just wrote) — workflow discipline, not a tooling fix.
 
 The central design fact for the agent-edit workflow, stated plainly so no tool over-promises.
 
-Because MCP is stateless, every tool reads the target file **from disk** at call time and feeds the
-fresh content through the existing open-file compile pipeline — javac compiles the current bytes
+Because the protocol is stateless, every tool reads the target file **from disk** at call time and
+feeds the fresh content through the existing open-file compile pipeline — javac compiles the current bytes
 against the captured `.lathe/` classpath. So the compiler does real work on the latest saved content,
 no Maven required for a single file.
 The boundary is what the *rest* of the world resolves against: every other type resolves from the
@@ -378,7 +406,8 @@ The `.lsp.json` schema was re-verified against the live plugins reference.
 
 - New `lathe-mcp-server` module wired into the reactor; SDK dependency; `LatheMcpServer.main` over the
   SDK stdio transport; classpath launcher; `cwd`-based workspace resolution; lazy-open + cache.
-- `LatheEngine` facade + `LatheLanguageClient` stub added to `lathe-server`.
+- `LatheEngine` facade (public, in `io.github.aglibs.lathe.server`) + a no-op `LanguageClient` stub and
+  the worker-confined diagnostics-as-future method added to `lathe-server`.
 - `ServerInstaller` generates and installs `lathe-mcp-launcher.sh`.
 - Ship `get_diagnostics`, `get_definition`, `describe_symbol` (structured content + snippets).
 - Missing/empty `.lathe/` returns the structured remediation.
@@ -487,9 +516,9 @@ objects over mocks).
 1. **`LatheEngine` facade tests — the core.** Drive the facade directly against a fixture `.lathe/`
    workspace, reusing `lathe-server`'s compile/workspace harness. Real objects, no mocks. Cases:
    `openWorkspace` with/without `.lathe/` (populated vs remediation error); `diagnostics` clean vs
-   error (the capturing `LatheLanguageClient` stub asserts the payload); each read tool's mapping;
-   `references`/`implementations` returning cross-module results with snippet fields. Real `runTest`
-   replay needs captured bytecode, so it lives in the invoker layer.
+   error (the per-call future returns the compiled diagnostics — no capturing stub); each read tool's
+   mapping; `references`/`implementations` returning cross-module results with snippet fields. Real
+   `runTest` replay needs captured bytecode, so it lives in the invoker layer.
 2. **MCP protocol tests — in-process, no subprocess.** Wire an SDK `McpClient` to our `McpSyncServer`
    over the SDK in-memory transport and exercise the real handshake: `tools/list` returns each tool
    with the correct input schema; `tools/call` returns structured content; bad args map to an
@@ -532,8 +561,16 @@ objects over mocks).
 - **Snippet context on every result** — non-negotiable, baked into the shared result shape.
 - **Curated surface, not an LSP-spec port** — Tiers 1–4 above; completion/formatting/debug/etc. out.
 - **Session lifetime** — one MCP process per agent session (one workspace), matching the editor model.
-- **Diagnostics push vs pull** — pull for now; the `LatheLanguageClient` stub is the push bridge for a
-  later streaming phase.
+- **`LatheEngine` placement** — a single `public` class in the existing `io.github.aglibs.lathe.server`
+  package (needs package-private access to the session internals; callable on the classpath because
+  `module-info` is ignored there), not a new `.api` package.
+- **All tools are request/response over a per-call future** — including `get_diagnostics`, which wraps
+  the compile as a future rather than capturing a `publishDiagnostics` push. No capturing state, no
+  `uri → future` registry, no MCP-introduced locks/concurrent maps; the `WorkspaceSession` client is a
+  no-op stub. A streaming/progress bridge over `LatheLanguageClient` is deferred to the streaming
+  phase.
+- **State & synchronization** — protocol-stateless, process-stateful (warm workspace); all workspace
+  state stays confined to the `lathe-worker` event loop, which is the synchronization mechanism.
 - **Freshness** — single-file in-process javac (no Maven); cross-module via `verify_build` (scoped
   Maven); not faked.
 - **JPMS placement — classpath for now.** The JPMS spike (against SDK 2.0.1) found the SDK cannot go on
