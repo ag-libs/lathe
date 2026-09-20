@@ -13,3 +13,11 @@ local buf = vim.api.nvim_get_current_buf()
 vim.schedule(function()
   vim.bo[buf].indentexpr = "v:lua.require'lathe.indent'.indentexpr()"
 end)
+
+-- Scheduled so a same-tick setup() (on the lazy ft=java load path, config runs
+-- before this ftplugin is sourced) has set _configured first. ftplugin is the only
+-- client code that loads even when setup() was never called, so it's the one place
+-- that can surface "installed but not configured".
+vim.schedule(function()
+  require("lathe").warn_if_not_ready(buf)
+end)

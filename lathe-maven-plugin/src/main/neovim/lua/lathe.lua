@@ -145,8 +145,40 @@ function M.format(bufnr, opts)
   require('lathe.fold').format(bufnr or vim.api.nvim_get_current_buf(), opts)
 end
 
+-- Nudge for the standalone install's silent failure modes, which the bundled cache
+-- path cannot hit: a Java buffer is open but Lathe can't serve it because the client
+-- was never configured, or no `.lathe/` workspace exists (the Lathe Maven build isn't
+-- configured, or the project hasn't been synced). Both otherwise fail silently.
+--
+-- Called from ftplugin/java.lua, the one place that runs even when `setup()` was
+-- never called. Fires at most once per session (re-armed by setup()).
+local not_ready_notified = false
+function M.warn_if_not_ready(bufnr)
+  if not_ready_notified then
+    return
+  end
+  if M._configured and M.get_root(bufnr) ~= nil then
+    return
+  end
+
+  not_ready_notified = true
+  local msg
+  if not M._configured then
+    msg = 'Lathe: plugin installed but not configured -- call `require("lathe").setup()`.'
+  else
+    msg = 'Lathe: no `.lathe/` workspace -- the Lathe Maven plugin is not configured, or the project '
+      .. 'is not synced. Run `mvn process-test-classes` (then `:LatheSync` refreshes it).'
+  end
+
+  vim.notify(msg, vim.log.levels.WARN, { title = 'Lathe' })
+end
+
 function M.setup(opts)
   opts = opts or {}
+  -- Read by warn_if_not_ready (via ftplugin) to tell "installed but not configured"
+  -- apart from "no .lathe workspace"; re-arm the one-shot nudge for this fresh config.
+  M._configured = true
+  not_ready_notified = false
   local root = cache_root()
   local launcher = launcher_path()
 
@@ -165,14 +197,9 @@ function M.setup(opts)
       M.on_server_exit(code)
     end,
     root_dir = function(bufnr, on_dir)
-      if vim.fn.executable(launcher) ~= 1 then
-        return
-      end
       local r = M.get_root(bufnr)
-      if r then
+      if r and vim.fn.executable(launcher) == 1 then
         on_dir(r)
-      else
-        vim.lsp.log.info('lathe: no ' .. M.ROOT_MARKER .. ' root found for ' .. vim.api.nvim_buf_get_name(bufnr))
       end
     end,
     capabilities = opts.capabilities or vim.lsp.protocol.make_client_capabilities(),
