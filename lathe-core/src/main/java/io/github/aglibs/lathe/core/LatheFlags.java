@@ -21,6 +21,9 @@ public final class LatheFlags {
   // drift-guard test keeps this in lockstep with version.lua's PROTOCOL.
   public static final int LATHE_PROTOCOL = 1;
 
+  // Key under InitializeResult capabilities.experimental that carries LATHE_PROTOCOL to the client.
+  public static final String PROTOCOL_CAPABILITY = "latheProtocol";
+
   private LatheFlags() {}
 
   public static boolean isDisabled() {

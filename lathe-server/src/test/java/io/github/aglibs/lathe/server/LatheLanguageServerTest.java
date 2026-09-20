@@ -2,9 +2,11 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.InstanceOfAssertFactories.map;
 import static org.mockito.Mockito.mock;
 
 import com.google.gson.JsonParser;
+import io.github.aglibs.lathe.core.LatheFlags;
 import java.util.stream.Stream;
 import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.TextDocumentSyncKind;
@@ -76,6 +78,15 @@ class LatheLanguageServerTest {
             LatheWorkspaceService.PACKAGES_COMMAND,
             LatheWorkspaceService.RESOLVE_CONTEXT_COMMAND,
             LatheWorkspaceService.MISSING_IMPORTS_COMMAND);
+  }
+
+  @Test
+  void createCapabilities_always_advertisesLatheProtocol() {
+    final var capabilities = LatheLanguageServer.createCapabilities(false);
+
+    assertThat(capabilities.getExperimental())
+        .asInstanceOf(map(String.class, Object.class))
+        .containsEntry(LatheFlags.PROTOCOL_CAPABILITY, LatheFlags.LATHE_PROTOCOL);
   }
 
   @Test
