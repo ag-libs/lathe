@@ -214,10 +214,7 @@ final class WorkspaceSession {
     if (configured) {
       client.showMessage(new MessageParams(MessageType.Info, "Lathe: workspace ready."));
     } else {
-      client.showMessage(
-          new MessageParams(
-              MessageType.Warning,
-              "Lathe: not configured — run `mvn process-test-classes` to set up this project."));
+      client.showMessage(new MessageParams(MessageType.Warning, LatheLayout.SETUP_REMEDIATION));
     }
 
     // Startup reconciliation for the cold-start delta: sources/resources changed while Lathe was
@@ -1030,6 +1027,31 @@ final class WorkspaceSession {
     LOG.info(() -> "[open] %s".formatted(uri));
     candidateIndex.update(uri, content);
     compileAndPublish(snapshot, CompileMode.OPEN);
+  }
+
+  /**
+   * Diagnostics for {@code content} at {@code uri}, completed as a future instead of published to
+   * the client — the read path the in-process (MCP) facade uses. Each call reports the diagnostics
+   * for the content it submitted; a read-only external or non-workspace file yields none.
+   */
+  CompletableFuture<List<Diagnostic>> diagnosticsFuture(
+      final String uri, final String content, final int version) {
+    LOG.fine(() -> "[diagnostics] %s".formatted(uri));
+    return switch (routeCompiler(uri)) {
+      case CompilerRoute.Module module -> {
+        final var snapshot = docs.put(uri, content, version);
+        candidateIndex.update(uri, content);
+        final var result = new CompletableFuture<List<Diagnostic>>();
+        submitCompile(
+            module,
+            snapshot,
+            CompileMode.OPEN,
+            (ignored, response) -> result.complete(response.diagnostics()));
+        yield result;
+      }
+      case CompilerRoute.External ignored -> CompletableFuture.completedFuture(List.of());
+      case CompilerRoute.Missing ignored -> CompletableFuture.completedFuture(List.of());
+    };
   }
 
   void onChange(final String uri, final String content, final int version) {

@@ -131,6 +131,21 @@ public final class TestCompiler {
     Json.write(config, paramsFile);
   }
 
+  /**
+   * Writes {@code content} to {@code relativePath} under a single {@code module}'s main source root
+   * and registers the module. Returns the source path.
+   */
+  public static Path writeModuleSource(
+      final Path workspaceRoot, final String relativePath, final String content)
+      throws IOException {
+    final Path sourceRoot = workspaceRoot.resolve("module").resolve("src/main/java");
+    final Path source = sourceRoot.resolve(relativePath);
+    Files.createDirectories(source.getParent());
+    Files.writeString(source, content);
+    writeModuleParams(workspaceRoot, "module", sourceRoot, null);
+    return source;
+  }
+
   public static void compileToDir(final Path classDir, final Path... sources) throws IOException {
     compileToDir(classDir, List.of(), List.of(), sources);
   }

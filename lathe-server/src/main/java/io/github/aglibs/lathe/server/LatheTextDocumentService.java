@@ -483,6 +483,13 @@ final class LatheTextDocumentService implements TextDocumentService {
     return CompletableFuture.completedFuture(List.of());
   }
 
+  CompletableFuture<List<Diagnostic>> diagnosticsFuture(
+      final String uri, final String content, final int version) {
+    return worker
+        .submit(() -> session.diagnosticsFuture(uri, content, version))
+        .thenCompose(f -> f);
+  }
+
   CompletableFuture<List<? extends SymbolInformation>> workspaceSymbolFuture(final String query) {
     return worker.submit(() -> session.workspaceSymbol(query));
   }

@@ -13,6 +13,7 @@ public final class LatheLayout {
   public static final String SERVERS_DIR = "servers";
   public static final String CURRENT_LINK = "current";
   public static final String LAUNCHER_SCRIPT = "lathe-launcher.sh";
+  public static final String MCP_LAUNCHER_SCRIPT = "lathe-mcp-launcher.sh";
   public static final String NVIM_DIR = "neovim";
   public static final String NVIM_BUNDLE = "lathe-neovim.zip";
   public static final String NVIM_MARKER = ".lathe-neovim.properties";
@@ -52,6 +53,13 @@ public final class LatheLayout {
   public static final String SYNC_GOAL = "sync";
   public static final String INIT_EXECUTION_ID = "lathe-init";
   public static final String SYNC_EXECUTION_ID = "lathe-sync";
+
+  // A missing .lathe/ can mean the project is not set up for Lathe at all, or set up but not yet
+  // built — so this remediation covers both rather than assuming a build alone will fix it.
+  // Centralized here so the wording lives in one place.
+  public static final String SETUP_REMEDIATION =
+      "If this project is not set up for Lathe yet, add the lathe-maven-extension; then run `mvn process-test-classes` to generate %s."
+          .formatted(LATHE_DIR);
 
   private LatheLayout() {}
 
