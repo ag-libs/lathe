@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.mcp;
 
+import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.LatheEngine;
 import io.github.aglibs.lathe.server.LatheLocation;
 import io.modelcontextprotocol.json.McpJsonMapper;
@@ -10,6 +11,7 @@ import io.modelcontextprotocol.spec.McpSchema.Tool;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -47,7 +49,9 @@ final class LatheMcpTools {
             .build();
     return SyncToolSpecification.builder()
         .tool(tool)
-        .callHandler((exchange, request) -> handleDiagnostics(engine, request))
+        .callHandler(
+            (exchange, request) ->
+                logged("get_diagnostics", () -> handleDiagnostics(engine, request)))
         .build();
   }
 
@@ -71,8 +75,19 @@ final class LatheMcpTools {
             .build();
     return SyncToolSpecification.builder()
         .tool(tool)
-        .callHandler((exchange, request) -> handleDefinition(engine, request))
+        .callHandler(
+            (exchange, request) ->
+                logged("get_definition", () -> handleDefinition(engine, request)))
         .build();
+  }
+
+  // One INFO line per tool call — the adoption/latency signal (visible without LATHE_DEBUG).
+  private static CallToolResult logged(final String tool, final Supplier<CallToolResult> body) {
+    final var t = Stopwatch.start();
+    final CallToolResult result = body.get();
+    final boolean ok = !Boolean.TRUE.equals(result.isError());
+    LOG.info(() -> "[tool] %s %dms %s".formatted(tool, t.elapsedMs(), ok ? "ok" : "error"));
+    return result;
   }
 
   private static CallToolResult handleDiagnostics(
