@@ -1,10 +1,16 @@
-package io.github.aglibs.lathe.server;
+package io.github.aglibs.lathe.server.engine;
 
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.server.LatheTextDocumentService;
+import io.github.aglibs.lathe.server.LatheUri;
+import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -18,12 +24,15 @@ import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.ReferenceContext;
 import org.eclipse.lsp4j.ReferenceParams;
+import org.eclipse.lsp4j.RenameParams;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
+import org.eclipse.lsp4j.TextEdit;
+import org.eclipse.lsp4j.WorkspaceEdit;
 
 /**
  * In-process facade into the language server for non-editor clients (the MCP server): it drives the
- * same {@link WorkspaceSession} analysis the LSP handlers do, reading each file from disk so it
- * reflects out-of-process edits, and returns results directly instead of over JSON-RPC.
+ * same workspace-session analysis the LSP handlers do, reading each file from disk so it reflects
+ * out-of-process edits, and returns results directly instead of over JSON-RPC.
  */
 public final class LatheEngine {
 
@@ -78,6 +87,83 @@ public final class LatheEngine {
     final List<LatheLocation> capped =
         locations.stream().limit(maxResults).map(this::toLatheLocation).toList();
     return new LatheReferences(locations.size(), locations.size() > maxResults, capped);
+  }
+
+  /**
+   * Rename the symbol at {@code line}/{@code column} (0-based) to {@code newName} across the
+   * reactor, applying the javac-computed edits to disk. Refuses (throws) if the rename would touch
+   * a file outside the reactor, since those cannot be safely rewritten.
+   */
+  public LatheRename rename(
+      final Path file, final int line, final int column, final String newName) {
+    compileFromDisk(file); // register the file and warm its analysis before computing the rename
+    final var params =
+        new RenameParams(
+            new TextDocumentIdentifier(file.toUri().toString()),
+            new Position(line, column),
+            newName);
+    final WorkspaceEdit edit = await(service.rename(params));
+    final Map<String, List<TextEdit>> changes = edit == null ? Map.of() : edit.getChanges();
+    if (changes == null || changes.isEmpty()) {
+      return new LatheRename(newName, 0, List.of());
+    }
+
+    final List<String> nonReactor =
+        changes.keySet().stream()
+            .filter(uri -> origin(LatheUri.toPath(uri)) != LatheLocation.Origin.REACTOR)
+            .sorted()
+            .toList();
+    if (!nonReactor.isEmpty()) {
+      throw new IllegalStateException(
+          "[rename] refusing: would edit non-reactor file(s) %s".formatted(nonReactor));
+    }
+
+    final List<LatheFileEdit> files = new ArrayList<>();
+    for (final Map.Entry<String, List<TextEdit>> entry : changes.entrySet()) {
+      files.add(applyFileEdits(entry.getKey(), entry.getValue()));
+    }
+
+    files.sort(Comparator.comparing(LatheFileEdit::uri));
+    final int total = files.stream().mapToInt(LatheFileEdit::editCount).sum();
+    return new LatheRename(newName, total, files);
+  }
+
+  private LatheFileEdit applyFileEdits(final String uri, final List<TextEdit> edits) {
+    final var path = LatheUri.toPath(uri);
+    final String content = IOUtil.unchecked(() -> Files.readString(path));
+    final String updated = applyEdits(content, edits);
+    IOUtil.unchecked(() -> Files.writeString(path, updated));
+    return new LatheFileEdit(uri, origin(path), edits.size());
+  }
+
+  // Rebuild the document from the original: for each edit (in document order) emit the untouched
+  // gap before it plus its replacement, then the final untouched tail. Edits never overlap, so the
+  // gaps are well-defined and offsets need no adjusting for earlier edits.
+  private static String applyEdits(final String content, final List<TextEdit> edits) {
+    final List<TextEdit> ordered =
+        edits.stream()
+            .sorted(
+                Comparator.comparingInt((TextEdit e) -> offset(content, e.getRange().getStart())))
+            .toList();
+    return IntStream.rangeClosed(0, ordered.size())
+        .mapToObj(i -> segment(content, ordered, i))
+        .collect(Collectors.joining());
+  }
+
+  private static String segment(
+      final String content, final List<TextEdit> ordered, final int index) {
+    final int from = index == 0 ? 0 : offset(content, ordered.get(index - 1).getRange().getEnd());
+    if (index == ordered.size()) {
+      return content.substring(from); // the untouched tail after the last edit
+    }
+
+    final TextEdit edit = ordered.get(index);
+    final int to = offset(content, edit.getRange().getStart());
+    return "%s%s".formatted(content.substring(from, to), edit.getNewText());
+  }
+
+  private static int offset(final String content, final Position position) {
+    return SourceLocator.toOffset(content, position.getLine(), position.getCharacter());
   }
 
   private List<Diagnostic> compileFromDisk(final Path file) {

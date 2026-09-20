@@ -1,9 +1,11 @@
 package io.github.aglibs.lathe.mcp;
 
 import io.github.aglibs.lathe.core.Stopwatch;
-import io.github.aglibs.lathe.server.LatheEngine;
-import io.github.aglibs.lathe.server.LatheLocation;
-import io.github.aglibs.lathe.server.LatheReferences;
+import io.github.aglibs.lathe.server.engine.LatheEngine;
+import io.github.aglibs.lathe.server.engine.LatheFileEdit;
+import io.github.aglibs.lathe.server.engine.LatheLocation;
+import io.github.aglibs.lathe.server.engine.LatheReferences;
+import io.github.aglibs.lathe.server.engine.LatheRename;
 import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
@@ -16,6 +18,7 @@ import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
+import javax.lang.model.SourceVersion;
 import org.eclipse.lsp4j.Diagnostic;
 
 /**
@@ -31,7 +34,10 @@ final class LatheMcpTools {
 
   static List<SyncToolSpecification> all(final LatheEngine engine, final McpJsonMapper mapper) {
     return List.of(
-        diagnostics(engine, mapper), definition(engine, mapper), references(engine, mapper));
+        diagnostics(engine, mapper),
+        definition(engine, mapper),
+        references(engine, mapper),
+        rename(engine, mapper));
   }
 
   private static SyncToolSpecification diagnostics(
@@ -113,6 +119,34 @@ final class LatheMcpTools {
         .build();
   }
 
+  private static SyncToolSpecification rename(
+      final LatheEngine engine, final McpJsonMapper mapper) {
+    final var tool =
+        Tool.builder(
+                "rename_symbol",
+                mapper,
+                """
+                {"type":"object","required":["file","line","column","newName"],
+                 "properties":{
+                   "file":{"type":"string","description":"Absolute path to a .java file."},
+                   "line":{"type":"integer","description":"1-based line of the symbol."},
+                   "column":{"type":"integer","description":"1-based column of the symbol."},
+                   "newName":{"type":"string","description":"The new identifier."}}}""")
+            .description(
+                """
+                Rename the symbol at a position across the whole reactor and apply the edits to \
+                disk — javac-accurate, so it renames only the true declaration and its uses \
+                (respecting overloads and shadowing locals) across every module, never a text \
+                match. Refuses if it would touch a file outside the reactor. Run verify_build \
+                afterward to confirm the reactor still compiles.""")
+            .build();
+    return SyncToolSpecification.builder()
+        .tool(tool)
+        .callHandler(
+            (exchange, request) -> logged("rename_symbol", () -> handleRename(engine, request)))
+        .build();
+  }
+
   // One INFO line per tool call — the adoption/latency signal (visible without LATHE_DEBUG).
   private static CallToolResult logged(final String tool, final Supplier<CallToolResult> body) {
     final var t = Stopwatch.start();
@@ -152,6 +186,19 @@ final class LatheMcpTools {
         request,
         (file, line, column) ->
             referencesResult(engine.references(file, line, column, maxResults(request))));
+  }
+
+  private static CallToolResult handleRename(
+      final LatheEngine engine, final CallToolRequest request) {
+    final String newName = stringArg(request, "newName");
+    if (newName == null || !SourceVersion.isName(newName)) {
+      return error("rename_symbol requires a valid Java identifier 'newName'");
+    }
+
+    return atPosition(
+        "rename_symbol",
+        request,
+        (file, line, column) -> renameResult(engine.rename(file, line, column, newName)));
   }
 
   // Shared body for the position-based tools: parse the 1-based {file,line,column} into a 0-based
@@ -198,6 +245,30 @@ final class LatheMcpTools {
         text,
         Map.<String, Object>of(
             "total", refs.total(), "truncated", refs.truncated(), "references", items));
+  }
+
+  private static CallToolResult renameResult(final LatheRename rename) {
+    if (rename.totalEdits() == 0) {
+      return result(
+          "No references to rename.",
+          Map.<String, Object>of("newName", rename.newName(), "totalEdits", 0, "files", List.of()));
+    }
+
+    final List<Map<String, Object>> items =
+        rename.files().stream().map(LatheMcpTools::fileEditMap).toList();
+    final String text =
+        "Renamed to %s: %d edit(s) across %d file(s):%n%s"
+            .formatted(
+                rename.newName(),
+                rename.totalEdits(),
+                rename.files().size(),
+                rename.files().stream()
+                    .map(LatheMcpTools::fileEditLine)
+                    .collect(Collectors.joining(System.lineSeparator())));
+    return result(
+        text,
+        Map.<String, Object>of(
+            "newName", rename.newName(), "totalEdits", rename.totalEdits(), "files", items));
   }
 
   private static CallToolResult diagnosticsResult(
@@ -250,6 +321,15 @@ final class LatheMcpTools {
         messageText(d));
   }
 
+  private static String fileEditLine(final LatheFileEdit f) {
+    return "  %s [%s] — %d edit(s)".formatted(f.uri(), f.origin(), f.editCount());
+  }
+
+  private static Map<String, Object> fileEditMap(final LatheFileEdit f) {
+    return Map.<String, Object>of(
+        "uri", f.uri(), "origin", f.origin().name(), "editCount", f.editCount());
+  }
+
   private static Map<String, Object> locationMap(final LatheLocation t) {
     return Map.<String, Object>of(
         "uri", t.uri(),
@@ -274,8 +354,13 @@ final class LatheMcpTools {
   }
 
   private static Path filePath(final CallToolRequest request) {
-    final Object file = request.arguments().get("file");
-    return file == null ? null : Path.of(file.toString());
+    final String file = stringArg(request, "file");
+    return file == null ? null : Path.of(file);
+  }
+
+  private static String stringArg(final CallToolRequest request, final String name) {
+    final Object value = request.arguments().get(name);
+    return value == null ? null : value.toString();
   }
 
   private static Integer intArg(final CallToolRequest request, final String name) {

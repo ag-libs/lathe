@@ -1,8 +1,10 @@
-package io.github.aglibs.lathe.server;
+package io.github.aglibs.lathe.server.engine;
 
 import static io.github.aglibs.lathe.server.analysis.SourceLocator.offsetToPosition;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.server.TestCompiler;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import org.eclipse.lsp4j.Diagnostic;
@@ -105,5 +107,36 @@ class LatheEngineTest {
 
     assertThat(references.references())
         .anyMatch(r -> r.uri().endsWith("Caller.java") && r.snippet().contains("greet"));
+  }
+
+  @Test
+  void rename_methodUsedInAnotherFile_rewritesBothFilesOnDisk() throws Exception {
+    final String calleeContent =
+        """
+        package com.example;
+        class Callee {
+          void greet() {}
+        }
+        """;
+    final Path callee =
+        TestCompiler.writeModuleSource(tmp, "com/example/Callee.java", calleeContent);
+    final String callerContent =
+        "package com.example; class Caller { void run(Callee c) { c.greet(); } }";
+    final Path caller =
+        TestCompiler.writeModuleSource(tmp, "com/example/Caller.java", callerContent);
+    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), callee, caller);
+    engine = new LatheEngine(tmp);
+
+    final var pos = offsetToPosition(calleeContent, calleeContent.indexOf("greet"));
+    final LatheRename rename = engine.rename(callee, pos.getLine(), pos.getCharacter(), "welcome");
+
+    assertThat(rename.newName()).isEqualTo("welcome");
+    assertThat(rename.totalEdits()).isGreaterThanOrEqualTo(2);
+    assertThat(rename.files())
+        .extracting(LatheFileEdit::uri)
+        .anySatisfy(uri -> assertThat(uri).endsWith("Callee.java"))
+        .anySatisfy(uri -> assertThat(uri).endsWith("Caller.java"));
+    assertThat(Files.readString(callee)).contains("void welcome()").doesNotContain("greet");
+    assertThat(Files.readString(caller)).contains("c.welcome()").doesNotContain("greet");
   }
 }

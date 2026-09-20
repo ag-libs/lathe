@@ -2,7 +2,7 @@ package io.github.aglibs.lathe.mcp;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.aglibs.lathe.server.LatheEngine;
+import io.github.aglibs.lathe.server.engine.LatheEngine;
 import io.modelcontextprotocol.json.McpJsonDefaults;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
@@ -33,16 +33,37 @@ class LatheMcpToolsTest {
   }
 
   @Test
-  void all_registersBothTools_withDeclaredInputSchemas() {
+  void all_registersEveryTool_withDeclaredInputSchemas() {
     assertThat(specs)
         .map(spec -> spec.tool().name())
-        .containsExactlyInAnyOrder("get_diagnostics", "get_definition", "find_references");
+        .containsExactlyInAnyOrder(
+            "get_diagnostics", "get_definition", "find_references", "rename_symbol");
 
     assertThat(tool("get_diagnostics").tool().inputSchema().toString()).contains("file");
     assertThat(tool("get_definition").tool().inputSchema().toString())
         .contains("file", "line", "column");
     assertThat(tool("find_references").tool().inputSchema().toString())
         .contains("file", "line", "column", "maxResults");
+    assertThat(tool("rename_symbol").tool().inputSchema().toString())
+        .contains("file", "line", "column", "newName");
+  }
+
+  @Test
+  void renameSymbol_invalidIdentifier_returnsErrorNotException() {
+    final CallToolResult result =
+        call(
+            "rename_symbol",
+            Map.of(
+                "file",
+                tmp.resolve("Any.java").toString(),
+                "line",
+                1,
+                "column",
+                1,
+                "newName",
+                "not a name"));
+
+    assertThat(result.isError()).isTrue();
   }
 
   @Test

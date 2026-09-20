@@ -1,5 +1,7 @@
-package io.github.aglibs.lathe.server;
+package io.github.aglibs.lathe.server.engine;
 
+import io.github.aglibs.lathe.server.LatheLanguageClient;
+import io.github.aglibs.lathe.server.LatheSyncParams;
 import io.github.aglibs.lathe.server.run.TestEventParams;
 import io.github.aglibs.lathe.server.run.TestFinishedParams;
 import io.github.aglibs.lathe.server.run.TestOutputParams;

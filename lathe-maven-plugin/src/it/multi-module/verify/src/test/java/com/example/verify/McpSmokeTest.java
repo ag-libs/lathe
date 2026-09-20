@@ -95,6 +95,37 @@ class McpSmokeTest {
     assertThat(response).contains("Main.java").doesNotContain("\"isError\":true");
   }
 
+  @Test
+  void renameSymbol_crossModule_rewritesDeclarationAndUsageOnDisk() throws Exception {
+    // Renames upper() in core; the declaration and the app/Main.java usage must both change.
+    // The rename mutates the shared fixture copy, so restore both files afterward to keep the
+    // other smoke tests (which reference upper()) independent of this one.
+    final Path stringUtils = ROOT.resolve("core/src/main/java/com/example/core/StringUtils.java");
+    final Path main = ROOT.resolve("app/src/main/java/com/example/app/Main.java");
+    final String stringUtilsOriginal = Files.readString(stringUtils);
+    final String mainOriginal = Files.readString(main);
+
+    try {
+      final int[] pos = tokenPosition(stringUtils, "upper");
+      final String response =
+          request(
+              "tools/call",
+              ("{\"name\":\"rename_symbol\",\"arguments\":"
+                      + "{\"file\":\"%s\",\"line\":%d,\"column\":%d,\"newName\":\"upperCase\"}}")
+                  .formatted(stringUtils, pos[0], pos[1]));
+
+      assertThat(response)
+          .contains("StringUtils.java")
+          .contains("Main.java")
+          .doesNotContain("\"isError\":true");
+      assertThat(Files.readString(stringUtils)).contains("String upperCase(");
+      assertThat(Files.readString(main)).contains("StringUtils.upperCase(");
+    } finally {
+      Files.writeString(stringUtils, stringUtilsOriginal);
+      Files.writeString(main, mainOriginal);
+    }
+  }
+
   private static int[] tokenPosition(final Path file, final String token) throws IOException {
     final List<String> lines = Files.readAllLines(file);
     return IntStream.range(0, lines.size())

@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.server;
+package io.github.aglibs.lathe.server.engine;
 
 import io.github.aglibs.validcheck.ValidCheck;
 import java.util.List;

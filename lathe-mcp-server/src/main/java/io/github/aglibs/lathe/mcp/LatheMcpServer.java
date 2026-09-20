@@ -1,8 +1,8 @@
 package io.github.aglibs.lathe.mcp;
 
 import io.github.aglibs.lathe.core.LatheLayout;
-import io.github.aglibs.lathe.server.LatheEngine;
 import io.github.aglibs.lathe.server.LatheLogging;
+import io.github.aglibs.lathe.server.engine.LatheEngine;
 import io.modelcontextprotocol.json.McpJsonDefaults;
 import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.server.McpServer;

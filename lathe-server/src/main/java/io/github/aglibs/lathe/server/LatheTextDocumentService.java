@@ -20,7 +20,13 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either3;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.TextDocumentService;
 
-final class LatheTextDocumentService implements TextDocumentService {
+/**
+ * The LSP document service and the shared analysis seam. Two front-ends drive it: {@link
+ * LatheServer} over JSON-RPC and the in-process {@code LatheEngine} (MCP). The lifecycle methods
+ * and {@link #diagnosticsFuture} are {@code public} so the engine in the {@code engine} subpackage
+ * can consume the same session without exposing the rest of the LSP surface.
+ */
+public final class LatheTextDocumentService implements TextDocumentService {
 
   private static final Logger LOG = Logger.getLogger(LatheTextDocumentService.class.getName());
   private static final long DEFAULT_DEBOUNCE_MS = 500;
@@ -32,7 +38,7 @@ final class LatheTextDocumentService implements TextDocumentService {
   private WorkspaceSession session;
   private volatile boolean formattingEnabled;
 
-  LatheTextDocumentService() {
+  public LatheTextDocumentService() {
     this(DEFAULT_DEBOUNCE_MS);
   }
 
@@ -40,7 +46,7 @@ final class LatheTextDocumentService implements TextDocumentService {
     this.debounceMs = debounceMs;
   }
 
-  void connect(final LanguageClient client) {
+  public void connect(final LanguageClient client) {
     progressReporter = new ProgressReporter(client);
     worker.execute(
         () -> session = new WorkspaceSession(client, progressReporter, worker, debounceMs));
@@ -58,11 +64,11 @@ final class LatheTextDocumentService implements TextDocumentService {
     progressReporter.cancel(params.getToken());
   }
 
-  void initialize(final Path workspaceRoot) {
+  public void initialize(final Path workspaceRoot) {
     worker.execute(() -> session.initialize(workspaceRoot));
   }
 
-  void close() {
+  public void close() {
     if (!closed.compareAndSet(false, true)) {
       return;
     }
@@ -483,7 +489,7 @@ final class LatheTextDocumentService implements TextDocumentService {
     return CompletableFuture.completedFuture(List.of());
   }
 
-  CompletableFuture<List<Diagnostic>> diagnosticsFuture(
+  public CompletableFuture<List<Diagnostic>> diagnosticsFuture(
       final String uri, final String content, final int version) {
     return worker
         .submit(() -> session.diagnosticsFuture(uri, content, version))
