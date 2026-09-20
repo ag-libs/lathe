@@ -30,6 +30,8 @@ fi
 
 # Run from the repo root so doc paths and git reads work regardless of the cwd.
 cd "$(git rev-parse --show-toplevel)" || die "not inside a git repository"
+# shellcheck source=dev/lib/release-version.sh
+. dev/lib/release-version.sh
 
 if [ "$#" -ge 1 ]; then
   version="$1"
@@ -37,21 +39,18 @@ else
   # No version given: derive the next patch from the latest release tag — the
   # typo-proof default for the common "ship the next beta" case.
   git fetch --tags --quiet 2>/dev/null || true
-  latest="$(git tag --list 'v*' --sort=-v:refname)"
-  latest="${latest%%$'\n'*}" # newest tag (version-sorted) = first line
+  latest="$(latest_release_version)"
   [ -n "$latest" ] \
     || die "no existing release tag — pass an explicit version for the first release (e.g. 0.1.0)"
-  latest="${latest#v}"
-  [[ "$latest" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] \
+  version="$(next_patch "$latest")" \
     || die "latest release '$latest' is not plain x.y.z — pass an explicit next version"
-  version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((BASH_REMATCH[3] + 1))"
   echo "release: no version given — next patch after ${latest} is ${version}"
 fi
 
 # (#2) Validate before touching anything: plain semver only. Rejects a leading
 # 'v', a SNAPSHOT, pre-release qualifiers, and junk — so a typo can never become
 # a tag or a published artifact.
-[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+is_semver "$version" \
   || die "invalid version '$version' — expected x.y.z (e.g. 0.1.0 for beta, 1.0.0 for stable; no leading 'v', no SNAPSHOT)"
 
 tag="v${version}"
@@ -123,3 +122,15 @@ git tag "${tag}"
 echo
 echo "Tagged ${tag}. Push to trigger the release workflow:"
 echo "  git push origin HEAD ${tag}"
+
+# Remind to publish the standalone Neovim client mirror when its sources changed
+# since the previous release, so a client change is never silently left
+# unpublished. This is a reminder only — publish-nvim.sh runs separately, after the
+# tag is pushed, and pushes to a different repo with your own credentials.
+prev="$(release_tags | sed -n '2p')" # the tag before the one just cut
+client_paths=(lathe-maven-plugin/src/main/neovim dev/nvim-mirror publish-nvim.sh)
+if [ -z "$prev" ] || ! git diff --quiet "$prev" HEAD -- "${client_paths[@]}"; then
+  echo
+  echo "The Neovim client changed since ${prev:-the last release} — after pushing, publish the mirror:"
+  echo "  ./publish-nvim.sh ${version}"
+fi
