@@ -137,8 +137,8 @@ final class LatheMcpTools {
                 Rename the symbol at a position across the whole reactor and apply the edits to \
                 disk — javac-accurate, so it renames only the true declaration and its uses \
                 (respecting overloads and shadowing locals) across every module, never a text \
-                match. Refuses if it would touch a file outside the reactor. Run verify_build \
-                afterward to confirm the reactor still compiles.""")
+                match. Refuses if it would touch a file outside the reactor. After a cross-module \
+                rename, rebuild the reactor to confirm it still compiles.""")
             .build();
     return SyncToolSpecification.builder()
         .tool(tool)
