@@ -173,12 +173,38 @@ function M.warn_if_not_ready(bufnr)
   vim.notify(msg, vim.log.levels.WARN, { title = 'Lathe' })
 end
 
+-- Warn when the client is loaded from more than one location -- e.g. the standalone
+-- `lathe.nvim` plugin AND the bundled cache `dir`. Both ship the same modules, so
+-- require('lathe') silently binds to whichever is first on runtimepath and shadows
+-- the rest; an update to one copy is then invisibly overridden by the other. Keyed
+-- on the version module (unique to the client). Fires at most once.
+local double_load_notified = false
+function M.warn_if_double_loaded()
+  if double_load_notified then
+    return
+  end
+
+  local found = vim.api.nvim_get_runtime_file('lua/lathe/version.lua', true)
+  if #found < 2 then
+    return
+  end
+
+  double_load_notified = true
+  vim.notify(
+    'Lathe: loaded from multiple locations; keep only one (standalone plugin OR the cache dir):\n'
+      .. table.concat(found, '\n'),
+    vim.log.levels.WARN,
+    { title = 'Lathe' }
+  )
+end
+
 function M.setup(opts)
   opts = opts or {}
   -- Read by warn_if_not_ready (via ftplugin) to tell "installed but not configured"
   -- apart from "no .lathe workspace"; re-arm the one-shot nudge for this fresh config.
   M._configured = true
   not_ready_notified = false
+  M.warn_if_double_loaded()
   local root = cache_root()
   local launcher = launcher_path()
 
