@@ -1,5 +1,12 @@
 # Lathe — Standalone `lathe.nvim` Plugin
 
+> **Status: shipped (foundation).** Delivered: the standalone `ag-libs/lathe.nvim` mirror published by
+> the local, no-PAT `publish-nvim.sh`; the three documented install paths; the first-run readiness
+> nudge (§6); double-load detection (§6); and the `serverInfo` + `version.lua` `{VERSION, PROTOCOL}`
+> schema (§2). **Deferred** (a follow-up slice): the `LATHE_PROTOCOL` handshake *enforcement* — server
+> `capabilities.experimental.latheProtocol`, the client `on_init` comparison, and the drift-guard test
+> (§2/§3).
+
 ## Goal
 
 Publish the Neovim Lua client as a standalone, plugin-manager-installable repository
