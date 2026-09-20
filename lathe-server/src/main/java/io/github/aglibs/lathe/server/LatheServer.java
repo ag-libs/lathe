@@ -8,8 +8,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.logging.Level;
-import java.util.logging.LogManager;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.jsonrpc.Launcher;
 
@@ -18,10 +16,7 @@ public final class LatheServer {
   private static final Logger LOG = Logger.getLogger(LatheServer.class.getName());
 
   public static void main(final String[] ignored) throws Exception {
-    loadLoggingConfig();
-    if (System.getenv("LATHE_DEBUG") != null) {
-      Logger.getLogger("io.github.aglibs.lathe").setLevel(Level.FINE);
-    }
+    LatheLogging.init();
 
     LOG.info(
         () -> "[startup] server %s starting".formatted(LatheBuildInfo.summary(LatheServer.class)));
@@ -60,16 +55,5 @@ public final class LatheServer {
     final var out = System.out;
     System.setOut(System.err);
     return out;
-  }
-
-  private static void loadLoggingConfig() {
-    try (final var is = LatheServer.class.getResourceAsStream("/logging.properties")) {
-      if (is != null) {
-        LogManager.getLogManager().readConfiguration(is);
-      }
-    } catch (final Exception e) {
-      System.err.printf("[lathe] failed to load logging config: %s%n", e.getMessage());
-      e.printStackTrace(System.err);
-    }
   }
 }

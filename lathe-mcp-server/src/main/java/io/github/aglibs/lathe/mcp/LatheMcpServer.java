@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.mcp;
 
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.server.LatheEngine;
+import io.github.aglibs.lathe.server.LatheLogging;
 import io.modelcontextprotocol.json.McpJsonDefaults;
 import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.server.McpServer;
@@ -26,6 +27,8 @@ public final class LatheMcpServer {
   private LatheMcpServer() {}
 
   public static void main(final String[] args) throws InterruptedException {
+    LatheLogging.init();
+
     final Optional<Path> workspaceRoot = findWorkspaceRoot();
     if (workspaceRoot.isEmpty()) {
       LOG.severe(LatheLayout.SETUP_REMEDIATION);
@@ -35,10 +38,16 @@ public final class LatheMcpServer {
 
     final Path root = workspaceRoot.get();
     LOG.info(() -> "[startup] lathe-mcp-server workspace=%s".formatted(root));
+
+    // stdout is the MCP JSON-RPC channel: hand the transport the real stdout and redirect
+    // System.out
+    // to stderr so a stray print in the engine cannot corrupt the protocol.
+    final var protocolOut = System.out;
+    System.setOut(System.err);
     try {
       final var engine = new LatheEngine(root);
       final McpJsonMapper mapper = McpJsonDefaults.getMapper();
-      final var transport = new StdioServerTransportProvider(mapper);
+      final var transport = new StdioServerTransportProvider(mapper, System.in, protocolOut);
       McpServer.sync(transport)
           .serverInfo("lathe", version())
           .capabilities(ServerCapabilities.builder().tools(true).build())
