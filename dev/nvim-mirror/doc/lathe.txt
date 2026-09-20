@@ -1,0 +1,35 @@
+*lathe.txt*   Java language server for Maven projects — Neovim client
+
+                                                        *lathe* *lathe.nvim*
+
+Lathe is a Java language server for Maven projects: code intelligence,
+diagnostics, and run/test/debug, built on the JDK's own compiler. This plugin
+is the Neovim client; the server is resolved and installed by your Maven build.
+
+==============================================================================
+REQUIREMENTS                                            *lathe-requirements*
+
+  - Neovim 0.12+
+  - The Java Treesitter parser: `:TSInstall java`
+  - A Maven project whose build enables the Lathe Maven extension, synced at
+    least once with `mvn process-test-classes` (this installs the server and
+    creates the `.lathe/` workspace).
+
+Installing this plugin alone is not enough — the Maven build must run too.
+
+==============================================================================
+SETUP                                                   *lathe-setup*
+
+Call the setup function once, e.g. in your plugin config: >lua
+    require('lathe').setup()
+<
+Without it, only indentation loads and the language server is not registered.
+
+For `setup()` options, the full feature/endpoint reference, and a suggested
+keymap set, see the guide:
+  https://github.com/ag-libs/lathe/blob/main/docs/guide/editors/neovim.md
+
+Report issues against the monorepo (this repository is a generated mirror):
+  https://github.com/ag-libs/lathe
+
+ vim:tw=78:ts=8:noet:ft=help:norl:
