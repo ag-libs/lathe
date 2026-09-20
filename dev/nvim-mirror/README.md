@@ -2,10 +2,13 @@
 
 **A Java language server that works from your Maven build — no project import, no classpath setup.**
 
+[![Lathe demo — a zero-config Java IDE from your Maven build](https://raw.githubusercontent.com/ag-libs/lathe/main/docs/demo-038eec79.gif)](https://github.com/ag-libs/lathe#demo)
+
 The Neovim client for [Lathe](https://github.com/ag-libs/lathe). This repository is a **generated,
 one-way mirror** of the client that lives in the Lathe monorepo
-(`lathe-maven-plugin/src/main/neovim`). File issues and open pull requests
-[against the monorepo](https://github.com/ag-libs/lathe), not here.
+(`lathe-maven-plugin/src/main/neovim`). Bug reports are welcome here as issues, but **code changes are
+accepted only in the [monorepo](https://github.com/ag-libs/lathe)** — a pull request opened here can't
+be merged back into the source.
 
 Each commit here is a per-release snapshot. For the changelog and full development history, see the
 [Lathe releases](https://github.com/ag-libs/lathe/releases) and the

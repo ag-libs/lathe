@@ -108,6 +108,10 @@ done
 mv "$work/demo.gif" "$gif"
 # Repoint the README image at the new filename (matches docs/demo.gif or any docs/demo-<hash>.gif).
 sed -i -E "s#\(docs/demo(-[0-9a-f]+)?\.gif\)#($gif)#" README.md
+# The standalone lathe.nvim mirror embeds the same GIF by absolute raw URL (it does not ship the
+# binary), so keep its hash in lockstep too — otherwise the mirror link rots on the next re-record.
+sed -i -E "s#(raw\.githubusercontent\.com/ag-libs/lathe/main/)docs/demo(-[0-9a-f]+)?\.gif#\1$gif#" \
+  dev/nvim-mirror/README.md
 
-echo "[demo] done: $gif (published, content-hashed); README link updated"
+echo "[demo] done: $gif (published, content-hashed); README + nvim-mirror links updated"
 echo "[demo] docs/demo.mp4 + docs/videos/*.mp4 are gitignored intermediates"
