@@ -19,6 +19,7 @@ import org.eclipse.lsp4j.RenameOptions;
 import org.eclipse.lsp4j.SemanticTokensLegend;
 import org.eclipse.lsp4j.SemanticTokensWithRegistrationOptions;
 import org.eclipse.lsp4j.ServerCapabilities;
+import org.eclipse.lsp4j.ServerInfo;
 import org.eclipse.lsp4j.SignatureHelpOptions;
 import org.eclipse.lsp4j.TextDocumentSyncKind;
 import org.eclipse.lsp4j.WorkDoneProgressCancelParams;
@@ -31,6 +32,8 @@ import org.eclipse.lsp4j.services.WorkspaceService;
 final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
 
   private static final Logger LOG = Logger.getLogger(LatheLanguageServer.class.getName());
+
+  static final String SERVER_NAME = "lathe";
 
   private final LatheTextDocumentService textDocumentService = new LatheTextDocumentService();
 
@@ -57,7 +60,17 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     }
 
     final var capabilities = createCapabilities(formattingEnabled);
-    return CompletableFuture.completedFuture(new InitializeResult(capabilities));
+    final var result = new InitializeResult(capabilities);
+    result.setServerInfo(serverInfo());
+    return CompletableFuture.completedFuture(result);
+  }
+
+  // Version comes from the jar manifest (Implementation-Version); it is null outside a built jar
+  // (dev runs, tests), which lsp4j serializes as absent — acceptable, since the standalone-client
+  // protocol handshake keys off a separate constant, not this version string.
+  static ServerInfo serverInfo() {
+    final String version = LatheLanguageServer.class.getPackage().getImplementationVersion();
+    return new ServerInfo(SERVER_NAME, version);
   }
 
   static ServerCapabilities createCapabilities(final boolean formattingEnabled) {

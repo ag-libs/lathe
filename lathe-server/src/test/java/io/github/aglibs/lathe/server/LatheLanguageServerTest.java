@@ -116,6 +116,26 @@ class LatheLanguageServerTest {
   }
 
   @Test
+  void initialize_always_advertisesServerInfoName() throws Exception {
+    final var server = new LatheLanguageServer();
+    server.connect(mock(LanguageClient.class));
+
+    final var serverInfo = server.initialize(new InitializeParams()).get().getServerInfo();
+
+    assertThat(serverInfo).isNotNull();
+    assertThat(serverInfo.getName()).isEqualTo(LatheLanguageServer.SERVER_NAME);
+    server.shutdown().join();
+  }
+
+  @Test
+  void serverInfo_outsideBuiltJar_omitsVersion() {
+    final var serverInfo = LatheLanguageServer.serverInfo();
+
+    assertThat(serverInfo.getName()).isEqualTo("lathe");
+    assertThat(serverInfo.getVersion()).isNull();
+  }
+
+  @Test
   void cancelProgress_unknownToken_routesWithoutFailure() {
     final var server = new LatheLanguageServer();
     server.connect(mock(LanguageClient.class));
