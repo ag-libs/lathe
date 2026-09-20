@@ -37,6 +37,14 @@ final class ServerInstaller {
   private static final String MARKER_BUNDLE_SIZE = "bundleSize";
   private static final String MARKER_BUNDLE_MODIFIED = "bundleModified";
 
+  // jdk.compiler internals the in-process javac needs. Shared by both launchers: the editor grants
+  // them to ALL-UNNAMED (Error Prone) and to the google-java-format module; the MCP launcher runs
+  // entirely on the classpath, so it grants them to ALL-UNNAMED only.
+  private static final String[] JAVAC_EXPORT_PACKAGES = {
+    "api", "code", "comp", "file", "main", "model", "parser", "processing", "tree", "util"
+  };
+  private static final String[] JAVAC_OPEN_PACKAGES = {"code", "comp"};
+
   private final RepositorySystem repositorySystem;
   private final RepositorySystemSession repoSession;
   private final List<RemoteRepository> remoteRepositories;
@@ -56,31 +64,42 @@ final class ServerInstaller {
   void install() throws SyncException {
     final String version = PluginProps.version();
     final Path versionDir = LatheLayout.serverVersionDir(version);
-    final var launcherScript = versionDir.resolve(LatheLayout.LAUNCHER_SCRIPT);
 
-    final var jars = resolveServerJars();
-    final String modulePath = jars.stream().map(Path::toString).collect(Collectors.joining(":"));
-    final var script = renderLauncherScript(modulePath);
+    final String modulePath = pathList(resolveServerJars());
+    final String mcpClasspath = pathList(resolveMcpServerJars());
 
     try {
       Files.createDirectories(versionDir);
-      if (Files.exists(launcherScript)
-          && Files.isExecutable(launcherScript)
-          && script.equals(Files.readString(launcherScript, StandardCharsets.UTF_8))) {
-        log.debug("[server] launcher unchanged — skipping write");
-      } else {
-        final boolean isUpdate = Files.exists(launcherScript);
-        FileUtil.writeAtomically(versionDir, launcherScript, script, true);
-        log.info(
-            "[server] %s launcher at %s"
-                .formatted(isUpdate ? "updated" : "installed", launcherScript));
-      }
+      writeLauncher(versionDir, LatheLayout.LAUNCHER_SCRIPT, renderLauncherScript(modulePath));
+      writeLauncher(
+          versionDir, LatheLayout.MCP_LAUNCHER_SCRIPT, renderMcpLauncherScript(mcpClasspath));
       installNeovim(versionDir);
     } catch (final IOException e) {
       throw new SyncException("lathe:sync failed to install server files", e);
     }
 
     updateCurrentLink(versionDir);
+  }
+
+  private void writeLauncher(final Path versionDir, final String scriptName, final String script)
+      throws IOException {
+    final var launcherScript = versionDir.resolve(scriptName);
+    if (Files.exists(launcherScript)
+        && Files.isExecutable(launcherScript)
+        && script.equals(Files.readString(launcherScript, StandardCharsets.UTF_8))) {
+      log.debug("[server] %s unchanged — skipping write".formatted(scriptName));
+      return;
+    }
+
+    final boolean isUpdate = Files.exists(launcherScript);
+    FileUtil.writeAtomically(versionDir, launcherScript, script, true);
+    log.info(
+        "[server] %s %s at %s"
+            .formatted(isUpdate ? "updated" : "installed", scriptName, launcherScript));
+  }
+
+  private static String pathList(final List<Path> jars) {
+    return jars.stream().map(Path::toString).collect(Collectors.joining(":"));
   }
 
   Path resolveRunnerJar() throws SyncException {
@@ -181,6 +200,14 @@ final class ServerInstaller {
         PluginProps.groupId(), PluginProps.SERVER_ARTIFACT_ID, PluginProps.version());
   }
 
+  // The full runtime closure of lathe-mcp-server (itself + lathe-server + lathe-core + the MCP
+  // SDK),
+  // for the classpath launcher.
+  private List<Path> resolveMcpServerJars() throws SyncException {
+    return resolveTransitiveJars(
+        PluginProps.groupId(), PluginProps.MCP_SERVER_ARTIFACT_ID, PluginProps.version());
+  }
+
   /**
    * The runner jar plus whatever JUnit Platform launcher/engine jars the replay JVM needs.
    * Surefire's own JUnit Platform provider carries junit-platform-launcher (and auto-detects the
@@ -279,20 +306,8 @@ final class ServerInstaller {
           -m io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer "$@"
         """
         .formatted(
-            javacAccessLines(
-                "--add-exports",
-                "ALL-UNNAMED",
-                "api",
-                "code",
-                "comp",
-                "file",
-                "main",
-                "model",
-                "parser",
-                "processing",
-                "tree",
-                "util"),
-            javacAccessLines("--add-opens", "ALL-UNNAMED", "code", "comp"),
+            javacAccessLines("--add-exports", "ALL-UNNAMED", JAVAC_EXPORT_PACKAGES),
+            javacAccessLines("--add-opens", "ALL-UNNAMED", JAVAC_OPEN_PACKAGES),
             javacAccessLines(
                 "--add-exports",
                 "com.google.googlejavaformat",
@@ -305,8 +320,28 @@ final class ServerInstaller {
                 "parser",
                 "tree",
                 "util"),
-            javacAccessLines("--add-opens", "com.google.googlejavaformat", "code", "comp"),
+            javacAccessLines("--add-opens", "com.google.googlejavaformat", JAVAC_OPEN_PACKAGES),
             modulePath);
+  }
+
+  static String renderMcpLauncherScript(final String classpath) {
+    // Classpath launcher: on the classpath lathe-server's module-info is ignored, so LatheEngine
+    // and
+    // the in-process javac it drives run in the unnamed module. That javac needs the same
+    // jdk.compiler
+    // internals the editor launcher grants, but targeted at ALL-UNNAMED — there is no named module
+    // here (google-java-format is unnamed on the classpath too, so the same exports cover it).
+    return """
+        #!/bin/sh
+        exec java \\
+          --add-modules java.net.http \\
+        %s%s  -cp %s \\
+          io.github.aglibs.lathe.mcp.LatheMcpServer "$@"
+        """
+        .formatted(
+            javacAccessLines("--add-exports", "ALL-UNNAMED", JAVAC_EXPORT_PACKAGES),
+            javacAccessLines("--add-opens", "ALL-UNNAMED", JAVAC_OPEN_PACKAGES),
+            classpath);
   }
 
   private static String javacAccessLines(
