@@ -16,6 +16,8 @@ import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.ReferenceContext;
+import org.eclipse.lsp4j.ReferenceParams;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
 
 /**
@@ -59,6 +61,23 @@ public final class LatheEngine {
     final var either = await(service.definition(params));
     final List<? extends Location> locations = either.isLeft() ? either.getLeft() : List.of();
     return locations.stream().map(this::toLatheLocation).toList();
+  }
+
+  /**
+   * References to the symbol at {@code line}/{@code column} (0-based) across the reactor, each
+   * enriched with a snippet, capped to {@code maxResults} with the true total for pagination.
+   */
+  public LatheReferences references(
+      final Path file, final int line, final int column, final int maxResults) {
+    compileFromDisk(file); // register the file and warm its analysis before searching
+    final var params = new ReferenceParams();
+    params.setTextDocument(new TextDocumentIdentifier(file.toUri().toString()));
+    params.setPosition(new Position(line, column));
+    params.setContext(new ReferenceContext(true));
+    final List<? extends Location> locations = await(service.references(params));
+    final List<LatheLocation> capped =
+        locations.stream().limit(maxResults).map(this::toLatheLocation).toList();
+    return new LatheReferences(locations.size(), locations.size() > maxResults, capped);
   }
 
   private List<Diagnostic> compileFromDisk(final Path file) {

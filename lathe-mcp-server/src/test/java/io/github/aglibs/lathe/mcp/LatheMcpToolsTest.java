@@ -36,11 +36,13 @@ class LatheMcpToolsTest {
   void all_registersBothTools_withDeclaredInputSchemas() {
     assertThat(specs)
         .map(spec -> spec.tool().name())
-        .containsExactlyInAnyOrder("get_diagnostics", "get_definition");
+        .containsExactlyInAnyOrder("get_diagnostics", "get_definition", "find_references");
 
     assertThat(tool("get_diagnostics").tool().inputSchema().toString()).contains("file");
     assertThat(tool("get_definition").tool().inputSchema().toString())
         .contains("file", "line", "column");
+    assertThat(tool("find_references").tool().inputSchema().toString())
+        .contains("file", "line", "column", "maxResults");
   }
 
   @Test

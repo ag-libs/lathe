@@ -7,7 +7,10 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -75,6 +78,30 @@ class McpSmokeTest {
                 .formatted(greeter));
 
     assertThat(response).contains("Greeter.java").doesNotContain("\"isError\":true");
+  }
+
+  @Test
+  void findReferences_crossModule_findsUsageInAnotherModule() throws Exception {
+    // upper() is declared in core and called from app/Main.java — a cross-module reference.
+    final Path stringUtils = ROOT.resolve("core/src/main/java/com/example/core/StringUtils.java");
+    final int[] pos = tokenPosition(stringUtils, "upper");
+
+    final String response =
+        request(
+            "tools/call",
+            "{\"name\":\"find_references\",\"arguments\":{\"file\":\"%s\",\"line\":%d,\"column\":%d}}"
+                .formatted(stringUtils, pos[0], pos[1]));
+
+    assertThat(response).contains("Main.java").doesNotContain("\"isError\":true");
+  }
+
+  private static int[] tokenPosition(final Path file, final String token) throws IOException {
+    final List<String> lines = Files.readAllLines(file);
+    return IntStream.range(0, lines.size())
+        .filter(i -> lines.get(i).contains(token))
+        .mapToObj(i -> new int[] {i + 1, lines.get(i).indexOf(token) + 1}) // 1-based line/column
+        .findFirst()
+        .orElseThrow(() -> new AssertionError("token not found: %s".formatted(token)));
   }
 
   // Requests are strictly sequential (send one, read its response before the next), so the next line

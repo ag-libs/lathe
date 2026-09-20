@@ -80,4 +80,30 @@ class LatheEngineTest {
     assertThat(target.origin()).isEqualTo(LatheLocation.Origin.REACTOR);
     assertThat(target.snippet()).contains("void greet");
   }
+
+  @Test
+  void references_methodUsedInAnotherFile_findsUsageWithSnippet() throws Exception {
+    final String calleeContent =
+        """
+        package com.example;
+        class Callee {
+          void greet() {}
+        }
+        """;
+    final Path callee =
+        TestCompiler.writeModuleSource(tmp, "com/example/Callee.java", calleeContent);
+    final String callerContent =
+        "package com.example; class Caller { void run(Callee c) { c.greet(); } }";
+    final Path caller =
+        TestCompiler.writeModuleSource(tmp, "com/example/Caller.java", callerContent);
+    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), callee, caller);
+    engine = new LatheEngine(tmp);
+
+    final var pos = offsetToPosition(calleeContent, calleeContent.indexOf("greet"));
+    final LatheReferences references =
+        engine.references(callee, pos.getLine(), pos.getCharacter(), 50);
+
+    assertThat(references.references())
+        .anyMatch(r -> r.uri().endsWith("Caller.java") && r.snippet().contains("greet"));
+  }
 }

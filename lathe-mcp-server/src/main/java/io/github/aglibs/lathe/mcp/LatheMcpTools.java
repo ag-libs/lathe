@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.mcp;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.LatheEngine;
 import io.github.aglibs.lathe.server.LatheLocation;
+import io.github.aglibs.lathe.server.LatheReferences;
 import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
@@ -24,11 +25,13 @@ import org.eclipse.lsp4j.Diagnostic;
 final class LatheMcpTools {
 
   private static final Logger LOG = Logger.getLogger(LatheMcpTools.class.getName());
+  private static final int DEFAULT_MAX_RESULTS = 50;
 
   private LatheMcpTools() {}
 
   static List<SyncToolSpecification> all(final LatheEngine engine, final McpJsonMapper mapper) {
-    return List.of(diagnostics(engine, mapper), definition(engine, mapper));
+    return List.of(
+        diagnostics(engine, mapper), definition(engine, mapper), references(engine, mapper));
   }
 
   private static SyncToolSpecification diagnostics(
@@ -81,6 +84,35 @@ final class LatheMcpTools {
         .build();
   }
 
+  private static SyncToolSpecification references(
+      final LatheEngine engine, final McpJsonMapper mapper) {
+    final var tool =
+        Tool.builder(
+                "find_references",
+                mapper,
+                """
+                {"type":"object","required":["file","line","column"],
+                 "properties":{
+                   "file":{"type":"string","description":"Absolute path to a .java file."},
+                   "line":{"type":"integer","description":"1-based line of the symbol."},
+                   "column":{"type":"integer","description":"1-based column of the symbol."},
+                   "maxResults":{"type":"integer",
+                     "description":"Max references to return (default 50)."}}}""")
+            .description(
+                """
+                Find every real use of the symbol at a position across the whole reactor — \
+                javac-accurate, not text search: resolves overloads and inheritance, spans all \
+                modules, and returns each use with a source snippet. Use before changing or \
+                removing a symbol to find every site that must change.""")
+            .build();
+    return SyncToolSpecification.builder()
+        .tool(tool)
+        .callHandler(
+            (exchange, request) ->
+                logged("find_references", () -> handleReferences(engine, request)))
+        .build();
+  }
+
   // One INFO line per tool call — the adoption/latency signal (visible without LATHE_DEBUG).
   private static CallToolResult logged(final String tool, final Supplier<CallToolResult> body) {
     final var t = Stopwatch.start();
@@ -107,20 +139,65 @@ final class LatheMcpTools {
 
   private static CallToolResult handleDefinition(
       final LatheEngine engine, final CallToolRequest request) {
+    return atPosition(
+        "get_definition",
+        request,
+        (file, line, column) -> definitionResult(engine.definition(file, line, column)));
+  }
+
+  private static CallToolResult handleReferences(
+      final LatheEngine engine, final CallToolRequest request) {
+    return atPosition(
+        "find_references",
+        request,
+        (file, line, column) ->
+            referencesResult(engine.references(file, line, column, maxResults(request))));
+  }
+
+  // Shared body for the position-based tools: parse the 1-based {file,line,column} into a 0-based
+  // position, run the handler, and turn missing args or an engine failure into an isError result.
+  private static CallToolResult atPosition(
+      final String tool, final CallToolRequest request, final PositionHandler handler) {
     final Path file = filePath(request);
     final Integer line = intArg(request, "line");
     final Integer column = intArg(request, "column");
     if (file == null || line == null || column == null) {
-      return error("get_definition requires 'file', 'line', and 'column' arguments");
+      return error("%s requires 'file', 'line', and 'column' arguments".formatted(tool));
     }
 
     try {
-      // MCP positions are 1-based; LatheEngine (LSP) is 0-based.
-      return definitionResult(engine.definition(file, line - 1, column - 1));
+      return handler.at(file, line - 1, column - 1);
     } catch (final RuntimeException e) {
-      LOG.log(Level.SEVERE, e, () -> "[get_definition] failed for %s".formatted(file));
-      return error("[get_definition] %s".formatted(e.getMessage()));
+      LOG.log(Level.SEVERE, e, () -> "[%s] failed for %s".formatted(tool, file));
+      return error("[%s] %s".formatted(tool, e.getMessage()));
     }
+  }
+
+  @FunctionalInterface
+  private interface PositionHandler {
+    CallToolResult at(Path file, int line, int column);
+  }
+
+  private static int maxResults(final CallToolRequest request) {
+    final Integer max = intArg(request, "maxResults");
+    return max != null ? max : DEFAULT_MAX_RESULTS;
+  }
+
+  private static CallToolResult referencesResult(final LatheReferences refs) {
+    final List<Map<String, Object>> items =
+        refs.references().stream().map(LatheMcpTools::locationMap).toList();
+    final String header =
+        refs.truncated()
+            ? "%d references (showing first %d):".formatted(refs.total(), refs.references().size())
+            : "%d reference(s):".formatted(refs.total());
+    final String text =
+        refs.references().isEmpty()
+            ? "No references found."
+            : "%s%n%s".formatted(header, locationLines(refs.references()));
+    return result(
+        text,
+        Map.<String, Object>of(
+            "total", refs.total(), "truncated", refs.truncated(), "references", items));
   }
 
   private static CallToolResult diagnosticsResult(
@@ -137,25 +214,28 @@ final class LatheMcpTools {
                     diagnostics.stream()
                         .map(LatheMcpTools::diagnosticLine)
                         .collect(Collectors.joining(System.lineSeparator())));
-    return CallToolResult.builder()
-        .addTextContent(text)
-        .structuredContent(Map.<String, Object>of("file", file.toString(), "diagnostics", items))
-        .build();
+    return result(text, Map.<String, Object>of("file", file.toString(), "diagnostics", items));
   }
 
   private static CallToolResult definitionResult(final List<LatheLocation> targets) {
     final List<Map<String, Object>> items =
         targets.stream().map(LatheMcpTools::locationMap).toList();
-    final String text =
-        targets.isEmpty()
-            ? "No definition found."
-            : targets.stream()
-                .map(t -> "→ %s [%s]%n%s".formatted(t.uri(), t.origin(), t.snippet()))
-                .collect(Collectors.joining(System.lineSeparator()));
-    return CallToolResult.builder()
-        .addTextContent(text)
-        .structuredContent(Map.<String, Object>of("targets", items))
-        .build();
+    final String text = targets.isEmpty() ? "No definition found." : locationLines(targets);
+    return result(text, Map.<String, Object>of("targets", items));
+  }
+
+  private static String locationLines(final List<LatheLocation> locations) {
+    return locations.stream()
+        .map(LatheMcpTools::locationLine)
+        .collect(Collectors.joining(System.lineSeparator()));
+  }
+
+  private static String locationLine(final LatheLocation location) {
+    return "→ %s [%s]%n%s".formatted(location.uri(), location.origin(), location.snippet());
+  }
+
+  private static CallToolResult result(final String text, final Map<String, Object> structured) {
+    return CallToolResult.builder().addTextContent(text).structuredContent(structured).build();
   }
 
   private static Map<String, Object> diagnosticMap(final Diagnostic d) {
