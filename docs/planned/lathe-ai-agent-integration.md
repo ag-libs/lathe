@@ -41,8 +41,47 @@ The design optimizes for a single measurable outcome, and the decisions below fl
   see [MCP tool surface](#mcp-tool-surface) for what is in and what is deliberately out.
 
 This frame **supersedes** the earlier tiering in this document that led with run/test as "the MCP-only
-value." For the lead (grep-baseline) audience, javac-accurate **navigation, references, and
-diagnostics with snippets are the wedge**; run/test is the loop-closer, not the opener.
+value." For the lead (grep-baseline) audience, javac-accurate **navigation and diagnostics with
+snippets are the wedge**; run/test is the loop-closer, not the opener.
+**References are not a standalone wedge** — see [Field evidence](#field-evidence--first-ab-2026-09-20):
+reference *enumeration* on distinctive names ties grep; `find_references` pays off inside the
+mutate→verify loop and on polymorphic symbols, not as standalone search.
+
+## Field evidence — first A/B (2026-09-20)
+
+The first measured A/B refines the frame above and corrects one claim in it.
+
+**The result.** On a private payment reactor, task = exhaustively list every call site of a static
+utility method (a currency-conversion helper, `MoneyUtil.toMinorUnits`) across the reactor. Treatment
+(agent + `find_references`) vs baseline (agent + grep only):
+
+- **Correctness: a tie.** Both arms produced the identical, fully correct answer — every call site,
+  and both correctly excluded the shadowing local overloads. The grep-agent even found the module a
+  one-shot `grep -rl` had missed; a thorough agent greps several ways and self-corrects.
+- **Cost: MCP strictly worse.** ~3× cost, ~2× turns, ~2× wall time. The treatment called
+  `find_references` once, then *still* grepped and read files to re-verify the overloads the
+  snippet-enriched result had already distinguished. The tool was **additive, not a replacement**.
+
+**Why, and the test it implies.** "List all uses" of a rare, distinctive name is inside what a careful
+grep-agent does well, so a semantic tool only adds cost. The durable test every MCP tool must pass is
+therefore: *it answers a question the agent cannot cheaply get right itself.* Three axes pass it;
+read-only enumeration of distinctive names does not.
+
+| Axis | What it gives | Why grep / `mvn`-by-hand can't |
+|---|---|---|
+| **A — compiler truth** | `get_diagnostics`, `verify_build` | No text substitute for "does this compile on the real classpath"; full `mvn` is minutes on a large reactor, not a sub-second, single-file, classpath-accurate answer |
+| **B — polymorphic relationships** | implementations, overrides, call / type hierarchy | No text pattern expresses "who implements X" / "what overrides this" / transitive callers — grep is *structurally* wrong, not just slow |
+| **C — correct-by-construction mutation** | `rename` + `verify_build` as a loop | grep+sed risks a missed site or a broken import; the semantic edit is correct by construction and the build oracle proves it cheaply |
+
+**The distrust tax.** The dominant cost was not the tool — it was the agent re-deriving the answer to
+*trust* it. A result that is merely fast, or even name-addressed, does not fix this; an
+**authoritative** result (one that states what it excluded and why) and a **cheap build oracle** do.
+See the authority clause in [Snippet contract](#snippet-contract-shared-result-shape) and the corpus
+guidance in [Measurement](#measurement).
+
+**Bottom line.** Lead with the **mutate→verify loop (Tier 2)** and **polymorphic queries**, not
+read-only reference enumeration. `find_references` earns its place *inside* the loop (feeding rename)
+and on polymorphic symbols — not as standalone search on distinctive names.
 
 ## Motivation
 
@@ -302,6 +341,14 @@ List results (`find_references`, `call_hierarchy`, …) are **ranked** (same-fil
 **capped** to `maxResults` with a tighter per-item window, and paginated via `truncated` + `total` +
 `cursor`.
 
+**Authority clause.** Snippets are necessary but not sufficient: the first A/B showed the agent
+re-verifying results it already had ([Field evidence](#field-evidence--first-ab-2026-09-20)). Every
+result must also be **authoritative** — it states what it *excluded* and why, so nothing is left to
+hand-verify. Concretely, semantic tools carry an `excluded[]` beside the hits: `find_references`
+reports the shadowing overloads it deliberately skipped (`{binaryName, reason}`), and `rename_symbol`
+reports the sites it did *not* touch. A result the agent must re-check with grep has failed this
+contract.
+
 ### Tier 1 — foundational reads (build first; help every workflow)
 
 | Tool | Maps to | In → Out |
@@ -469,6 +516,12 @@ Both compare **with MCP** against a **grep baseline** (the agent with only shell
 Corpus: 20–40 curated tasks on Dropwizard (controllable, 68 modules) plus a handful on Helidon (scale,
 332 modules), each with a golden diff / passing tests, chosen to exercise the moat: cross-module
 caller changes, implement-an-interface, fix-a-compile-error, call-a-dependency-correctly.
+**Discriminator trap (from the first A/B):** do *not* include read-only enumeration of rare,
+distinctive names — grep is near-perfect there, so the result is a guaranteed tie
+([Field evidence](#field-evidence--first-ab-2026-09-20)). Curate tasks where grep is *wrong or
+drowning*: common/overloaded names with cross-type false positives, high module cardinality where a
+missed site breaks the build, overload-sensitive renames, and "who ultimately calls X" — with
+`verify_build` as the oracle.
 Metrics per task, paired: total tokens, pass@1 (patch applies + compiles via Lathe + tests green),
 number of file-read tool calls, number of wrong/superseded edits, wall time.
 Run N repeats for variance; report paired deltas with confidence intervals — the headline number.
@@ -594,6 +647,11 @@ objects over mocks).
   coverage is an optional follow-up.
 - **Upstream JPMS fix release** — SDK `main` commit `183935b` fixes the module names; watch for the
   release, then evaluate moving to the module path.
+- **Name-based addressing (friction-only, deprioritized)** — a jist-inspired name mode (`find_symbol`,
+  `find_references(query:"pkg.Type.member")`) reusing `WorkspaceSymbolResolver` → anchor position → the
+  existing pipeline removes anchor-finding turns but not the distrust tax
+  ([Field evidence](#field-evidence--first-ab-2026-09-20)); a convenience layer behind the mutate→verify
+  loop, not a wedge.
 - **MCP protocol version** to advertise, and how to track SDK/spec revisions over time.
 - **Auth/trust** — Codex project-scoped `.codex/config.toml` requires a trust marker; document the
   implications; check Gemini CLI's equivalent.
