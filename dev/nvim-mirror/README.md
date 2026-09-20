@@ -7,6 +7,11 @@ one-way mirror** of the client that lives in the Lathe monorepo
 (`lathe-maven-plugin/src/main/neovim`). File issues and open pull requests
 [against the monorepo](https://github.com/ag-libs/lathe), not here.
 
+Each commit here is a per-release snapshot. For the changelog and full development history, see the
+[Lathe releases](https://github.com/ag-libs/lathe/releases) and the
+[monorepo](https://github.com/ag-libs/lathe); every mirror commit records the source revision it was
+generated from.
+
 ## Requirements
 
 - Neovim 0.12+
