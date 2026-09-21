@@ -2,7 +2,10 @@ package io.github.aglibs.lathe.mcp;
 
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.Stopwatch;
+import io.github.aglibs.lathe.server.engine.LatheCall;
+import io.github.aglibs.lathe.server.engine.LatheCallHierarchy;
 import io.github.aglibs.lathe.server.engine.LatheEngine;
+import io.github.aglibs.lathe.server.engine.LatheEngine.CallDirection;
 import io.github.aglibs.lathe.server.engine.LatheEngine.TestScope;
 import io.github.aglibs.lathe.server.engine.LatheFileEdit;
 import io.github.aglibs.lathe.server.engine.LatheLocation;
@@ -42,7 +45,8 @@ final class LatheMcpTools {
         definition(engine, mapper),
         references(engine, mapper),
         rename(engine, mapper),
-        runTest(engine, mapper));
+        runTest(engine, mapper),
+        callHierarchy(engine, mapper));
   }
 
   private static SyncToolSpecification diagnostics(
@@ -183,6 +187,36 @@ final class LatheMcpTools {
         .build();
   }
 
+  private static SyncToolSpecification callHierarchy(
+      final LatheEngine engine, final McpJsonMapper mapper) {
+    final var tool =
+        Tool.builder(
+                "call_hierarchy",
+                mapper,
+                """
+                {"type":"object","required":["file","line","column"],
+                 "properties":{
+                   "file":{"type":"string","description":"Absolute path to a .java file."},
+                   "line":{"type":"integer","description":"1-based line of the symbol."},
+                   "column":{"type":"integer","description":"1-based column of the symbol."},
+                   "direction":{"type":"string","enum":["incoming","outgoing"],
+                     "description":"incoming = callers of the symbol (default); outgoing = what it calls."},
+                   "maxResults":{"type":"integer","description":"Max calls to return (default 50)."}}}""")
+            .description(
+                """
+                Trace the symbol's callers (incoming) or the methods it calls (outgoing) across the \
+                whole reactor — javac-accurate, following the real call graph (resolving overrides \
+                and cross-module edges) with a snippet per call. Use to scope the impact of a \
+                change; text search cannot follow calls.""")
+            .build();
+    return SyncToolSpecification.builder()
+        .tool(tool)
+        .callHandler(
+            (exchange, request) ->
+                logged("call_hierarchy", () -> handleCallHierarchy(engine, request)))
+        .build();
+  }
+
   // One INFO line per tool call — the adoption/latency signal (visible without LATHE_DEBUG).
   private static CallToolResult logged(final String tool, final Supplier<CallToolResult> body) {
     final var t = Stopwatch.start();
@@ -270,6 +304,26 @@ final class LatheMcpTools {
     return scope == null ? TestScope.CLASS : TestScope.from(scope).orElse(null);
   }
 
+  private static CallToolResult handleCallHierarchy(
+      final LatheEngine engine, final CallToolRequest request) {
+    final String directionArg = stringArg(request, "direction");
+    final CallDirection direction =
+        directionArg == null
+            ? CallDirection.INCOMING
+            : CallDirection.from(directionArg).orElse(null);
+    if (direction == null) {
+      return error("call_hierarchy 'direction' must be one of incoming, outgoing");
+    }
+
+    return atPosition(
+        "call_hierarchy",
+        request,
+        (file, line, column) ->
+            callHierarchyResult(
+                engine.callHierarchy(file, line, column, direction, maxResults(request)),
+                engine.staleModules()));
+  }
+
   // Shared body for the position-based tools: parse the 1-based {file,line,column} into a 0-based
   // position, run the handler, and turn missing args or an engine failure into an isError result.
   private static CallToolResult atPosition(
@@ -342,6 +396,48 @@ final class LatheMcpTools {
         Map.<String, Object>of(
             "newName", rename.newName(), "totalEdits", rename.totalEdits(), "files", items),
         stale);
+  }
+
+  private static CallToolResult callHierarchyResult(
+      final LatheCallHierarchy ch, final List<String> stale) {
+    final String noun = ch.incoming() ? "caller" : "callee";
+    final String arrow = ch.incoming() ? "←" : "→";
+    final String header =
+        ch.truncated()
+            ? "%d %ss (showing first %d):".formatted(ch.total(), noun, ch.calls().size())
+            : "%d %s(s):".formatted(ch.total(), noun);
+    final String text =
+        ch.calls().isEmpty()
+            ? "No %ss found.".formatted(noun)
+            : "%s%n%s"
+                .formatted(
+                    header,
+                    ch.calls().stream()
+                        .map(call -> callLine(arrow, call))
+                        .collect(Collectors.joining(System.lineSeparator())));
+    return result(
+        text,
+        Map.<String, Object>of(
+            "incoming", ch.incoming(),
+            "total", ch.total(),
+            "truncated", ch.truncated(),
+            "calls", ch.calls().stream().map(LatheMcpTools::callMap).toList()),
+        stale);
+  }
+
+  private static String callLine(final String arrow, final LatheCall call) {
+    return "%s %s [%s]%n%s"
+        .formatted(arrow, call.name(), call.location().origin(), call.location().snippet());
+  }
+
+  private static Map<String, Object> callMap(final LatheCall call) {
+    final LatheLocation loc = call.location();
+    return Map.<String, Object>of(
+        "name", call.name(),
+        "uri", loc.uri(),
+        "origin", loc.origin().name(),
+        "startLine", loc.range().getStart().getLine() + 1,
+        "snippet", loc.snippet());
   }
 
   private static CallToolResult testRunResult(final LatheTestRun run, final List<String> stale) {

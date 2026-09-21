@@ -37,7 +37,12 @@ class LatheMcpToolsTest {
     assertThat(specs)
         .map(spec -> spec.tool().name())
         .containsExactlyInAnyOrder(
-            "get_diagnostics", "get_definition", "find_references", "rename_symbol", "run_test");
+            "get_diagnostics",
+            "get_definition",
+            "find_references",
+            "rename_symbol",
+            "run_test",
+            "call_hierarchy");
 
     assertThat(tool("get_diagnostics").tool().inputSchema().toString()).contains("file");
     assertThat(tool("get_definition").tool().inputSchema().toString())
@@ -48,6 +53,26 @@ class LatheMcpToolsTest {
         .contains("file", "line", "column", "newName");
     assertThat(tool("run_test").tool().inputSchema().toString())
         .contains("file", "scope", "method");
+    assertThat(tool("call_hierarchy").tool().inputSchema().toString())
+        .contains("file", "line", "column", "direction");
+  }
+
+  @Test
+  void callHierarchy_invalidDirection_returnsError() {
+    final CallToolResult result =
+        call(
+            "call_hierarchy",
+            Map.of(
+                "file",
+                tmp.resolve("Any.java").toString(),
+                "line",
+                1,
+                "column",
+                1,
+                "direction",
+                "sideways"));
+
+    assertThat(result.isError()).isTrue();
   }
 
   @Test

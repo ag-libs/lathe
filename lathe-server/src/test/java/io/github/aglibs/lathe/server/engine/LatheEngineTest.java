@@ -4,6 +4,7 @@ import static io.github.aglibs.lathe.server.analysis.SourceLocator.offsetToPosit
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.server.TestCompiler;
+import io.github.aglibs.lathe.server.engine.LatheEngine.CallDirection;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.TestResult;
 import io.github.aglibs.lathe.server.run.TranscriptLine;
@@ -57,27 +58,12 @@ class LatheEngineTest {
 
   @Test
   void definition_crossFileInModule_resolvesTargetWithSnippet() throws Exception {
-    final Path callee =
-        TestCompiler.writeModuleSource(
-            tmp,
-            "com/example/Callee.java",
-            """
-            package com.example;
-            class Callee {
-              void greet() {}
-            }
-            """);
-    final String callerContent =
-        "package com.example; class Caller { void run(Callee c) { c.greet(); } }";
-    final Path caller =
-        TestCompiler.writeModuleSource(tmp, "com/example/Caller.java", callerContent);
-    // Cross-file resolution is against the synced .lathe/ bytecode, so Callee must be compiled.
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), callee, caller);
+    final GreetFixture fx = greetFixture();
     engine = new LatheEngine(tmp);
 
-    final var pos = offsetToPosition(callerContent, callerContent.indexOf("greet()"));
+    final var pos = offsetToPosition(fx.callerSource(), fx.callerSource().indexOf("greet()"));
     final List<LatheLocation> targets =
-        engine.definition(caller, pos.getLine(), pos.getCharacter());
+        engine.definition(fx.caller(), pos.getLine(), pos.getCharacter());
 
     assertThat(targets).hasSize(1);
     final LatheLocation target = targets.getFirst();
@@ -88,28 +74,40 @@ class LatheEngineTest {
 
   @Test
   void references_methodUsedInAnotherFile_findsUsageWithSnippet() throws Exception {
-    final String calleeContent =
-        """
-        package com.example;
-        class Callee {
-          void greet() {}
-        }
-        """;
-    final Path callee =
-        TestCompiler.writeModuleSource(tmp, "com/example/Callee.java", calleeContent);
-    final String callerContent =
-        "package com.example; class Caller { void run(Callee c) { c.greet(); } }";
-    final Path caller =
-        TestCompiler.writeModuleSource(tmp, "com/example/Caller.java", callerContent);
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), callee, caller);
+    final GreetFixture fx = greetFixture();
     engine = new LatheEngine(tmp);
 
-    final var pos = offsetToPosition(calleeContent, calleeContent.indexOf("greet"));
+    final var pos = offsetToPosition(fx.calleeSource(), fx.calleeSource().indexOf("greet"));
     final LatheReferences references =
-        engine.references(callee, pos.getLine(), pos.getCharacter(), 50);
+        engine.references(fx.callee(), pos.getLine(), pos.getCharacter(), 50);
 
     assertThat(references.references())
         .anyMatch(r -> r.uri().endsWith("Caller.java") && r.snippet().contains("greet"));
+  }
+
+  @Test
+  void callHierarchy_findsIncomingCallerAndOutgoingCallee() throws Exception {
+    final GreetFixture fx = greetFixture();
+    engine = new LatheEngine(tmp);
+
+    final var calleePos = offsetToPosition(fx.calleeSource(), fx.calleeSource().indexOf("greet"));
+    final LatheCallHierarchy incoming =
+        engine.callHierarchy(
+            fx.callee(), calleePos.getLine(), calleePos.getCharacter(), CallDirection.INCOMING, 50);
+    assertThat(incoming.incoming()).isTrue();
+    assertThat(incoming.calls())
+        .anySatisfy(
+            call -> {
+              assertThat(call.location().uri()).endsWith("Caller.java");
+              assertThat(call.location().snippet()).contains("greet");
+            });
+
+    final var callerPos = offsetToPosition(fx.callerSource(), fx.callerSource().indexOf("run"));
+    final LatheCallHierarchy outgoing =
+        engine.callHierarchy(
+            fx.caller(), callerPos.getLine(), callerPos.getCharacter(), CallDirection.OUTGOING, 50);
+    assertThat(outgoing.incoming()).isFalse();
+    assertThat(outgoing.calls()).anySatisfy(call -> assertThat(call.name()).contains("greet"));
   }
 
   @Test
@@ -131,24 +129,12 @@ class LatheEngineTest {
 
   @Test
   void rename_methodUsedInAnotherFile_rewritesBothFilesOnDisk() throws Exception {
-    final String calleeContent =
-        """
-        package com.example;
-        class Callee {
-          void greet() {}
-        }
-        """;
-    final Path callee =
-        TestCompiler.writeModuleSource(tmp, "com/example/Callee.java", calleeContent);
-    final String callerContent =
-        "package com.example; class Caller { void run(Callee c) { c.greet(); } }";
-    final Path caller =
-        TestCompiler.writeModuleSource(tmp, "com/example/Caller.java", callerContent);
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), callee, caller);
+    final GreetFixture fx = greetFixture();
     engine = new LatheEngine(tmp);
 
-    final var pos = offsetToPosition(calleeContent, calleeContent.indexOf("greet"));
-    final LatheRename rename = engine.rename(callee, pos.getLine(), pos.getCharacter(), "welcome");
+    final var pos = offsetToPosition(fx.calleeSource(), fx.calleeSource().indexOf("greet"));
+    final LatheRename rename =
+        engine.rename(fx.callee(), pos.getLine(), pos.getCharacter(), "welcome");
 
     assertThat(rename.newName()).isEqualTo("welcome");
     assertThat(rename.totalEdits()).isGreaterThanOrEqualTo(2);
@@ -156,8 +142,8 @@ class LatheEngineTest {
         .extracting(LatheFileEdit::uri)
         .anySatisfy(uri -> assertThat(uri).endsWith("Callee.java"))
         .anySatisfy(uri -> assertThat(uri).endsWith("Caller.java"));
-    assertThat(Files.readString(callee)).contains("void welcome()").doesNotContain("greet");
-    assertThat(Files.readString(caller)).contains("c.welcome()").doesNotContain("greet");
+    assertThat(Files.readString(fx.callee())).contains("void welcome()").doesNotContain("greet");
+    assertThat(Files.readString(fx.caller())).contains("c.welcome()").doesNotContain("greet");
   }
 
   @Test
@@ -203,4 +189,25 @@ class LatheEngineTest {
     assertThat(run.blockedReasons()).containsExactly("no runner jar");
     assertThat(run.total()).isZero();
   }
+
+  // Callee.greet() called from Caller.run(), compiled into .lathe so cross-file resolution works.
+  private GreetFixture greetFixture() throws Exception {
+    final String calleeSource =
+        """
+        package com.example;
+        class Callee {
+          void greet() {}
+        }
+        """;
+    final Path callee =
+        TestCompiler.writeModuleSource(tmp, "com/example/Callee.java", calleeSource);
+    final String callerSource =
+        "package com.example; class Caller { void run(Callee c) { c.greet(); } }";
+    final Path caller =
+        TestCompiler.writeModuleSource(tmp, "com/example/Caller.java", callerSource);
+    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), callee, caller);
+    return new GreetFixture(callee, caller, calleeSource, callerSource);
+  }
+
+  private record GreetFixture(Path callee, Path caller, String calleeSource, String callerSource) {}
 }

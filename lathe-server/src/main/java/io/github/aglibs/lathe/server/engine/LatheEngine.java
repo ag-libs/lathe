@@ -25,6 +25,13 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
+import org.eclipse.lsp4j.CallHierarchyIncomingCall;
+import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams;
+import org.eclipse.lsp4j.CallHierarchyItem;
+import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
+import org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams;
+import org.eclipse.lsp4j.CallHierarchyPrepareParams;
 import org.eclipse.lsp4j.DefinitionParams;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.Location;
@@ -86,6 +93,16 @@ public final class LatheEngine {
 
     public static Optional<TestScope> from(final String wireName) {
       return Arrays.stream(values()).filter(s -> s.name().equalsIgnoreCase(wireName)).findFirst();
+    }
+  }
+
+  /** Which way {@link #callHierarchy} walks: callers of the symbol, or callees it invokes. */
+  public enum CallDirection {
+    INCOMING,
+    OUTGOING;
+
+    public static Optional<CallDirection> from(final String wireName) {
+      return Arrays.stream(values()).filter(d -> d.name().equalsIgnoreCase(wireName)).findFirst();
     }
   }
 
@@ -245,6 +262,62 @@ public final class LatheEngine {
                         ? "no test method '%s' in %s".formatted(method, file.getFileName())
                         : "no %s test target in %s"
                             .formatted(scope.wireName(), file.getFileName())));
+  }
+
+  /**
+   * One level of the call hierarchy for the symbol at {@code line}/{@code column} (0-based): its
+   * callers ({@code INCOMING}) or the methods it calls ({@code OUTGOING}), each with a snippet.
+   * Follows the real cross-module call graph, not text.
+   */
+  public LatheCallHierarchy callHierarchy(
+      final Path file,
+      final int line,
+      final int column,
+      final CallDirection direction,
+      final int maxResults) {
+    compileFromDisk(file);
+    final var prepare =
+        new CallHierarchyPrepareParams(
+            new TextDocumentIdentifier(file.toUri().toString()), new Position(line, column));
+    final List<CallHierarchyItem> items = await(service.prepareCallHierarchy(prepare));
+    final boolean incoming = direction == CallDirection.INCOMING;
+    if (items.isEmpty()) {
+      return new LatheCallHierarchy(incoming, 0, false, List.of());
+    }
+
+    final List<LatheCall> all =
+        incoming ? incomingCalls(items.getFirst()) : outgoingCalls(items.getFirst());
+    return new LatheCallHierarchy(
+        incoming, all.size(), all.size() > maxResults, all.stream().limit(maxResults).toList());
+  }
+
+  // One LatheCall per call site (a caller may invoke the symbol at several ranges).
+  private List<LatheCall> incomingCalls(final CallHierarchyItem item) {
+    return await(service.callHierarchyIncomingCalls(new CallHierarchyIncomingCallsParams(item)))
+        .stream()
+        .flatMap(this::callSites)
+        .toList();
+  }
+
+  private Stream<LatheCall> callSites(final CallHierarchyIncomingCall call) {
+    final CallHierarchyItem from = call.getFrom();
+    return call.getFromRanges().stream()
+        .map(
+            range ->
+                new LatheCall(from.getName(), toLatheLocation(new Location(from.getUri(), range))));
+  }
+
+  private List<LatheCall> outgoingCalls(final CallHierarchyItem item) {
+    return await(service.callHierarchyOutgoingCalls(new CallHierarchyOutgoingCallsParams(item)))
+        .stream()
+        .map(this::toCallee)
+        .toList();
+  }
+
+  private LatheCall toCallee(final CallHierarchyOutgoingCall call) {
+    final CallHierarchyItem to = call.getTo();
+    return new LatheCall(
+        to.getName(), toLatheLocation(new Location(to.getUri(), to.getSelectionRange())));
   }
 
   private List<Diagnostic> compileFromDisk(final Path file) {

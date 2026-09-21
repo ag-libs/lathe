@@ -133,6 +133,22 @@ class McpSmokeTest {
   }
 
   @Test
+  void callHierarchy_incoming_findsCrossModuleCaller() throws Exception {
+    // upper() is declared in core and called from app/Main.java — its caller is cross-module.
+    final Path stringUtils = ROOT.resolve("core/src/main/java/com/example/core/StringUtils.java");
+    final int[] pos = tokenPosition(stringUtils, "upper");
+
+    final String response =
+        request(
+            "tools/call",
+            ("{\"name\":\"call_hierarchy\",\"arguments\":"
+                    + "{\"file\":\"%s\",\"line\":%d,\"column\":%d,\"direction\":\"incoming\"}}")
+                .formatted(stringUtils, pos[0], pos[1]));
+
+    assertThat(response).contains("Main.java").doesNotContain("\"isError\":true");
+  }
+
+  @Test
   void runTest_reactorTestClass_replaysAndPasses() throws Exception {
     // HelloTest in the jpms module is all-passing and its test-launch.json is captured by the build.
     final Path helloTest = ROOT.resolve("jpms/src/test/java/com/example/jpms/HelloTest.java");
