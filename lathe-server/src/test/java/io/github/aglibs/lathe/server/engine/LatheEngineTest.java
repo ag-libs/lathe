@@ -111,6 +111,27 @@ class LatheEngineTest {
   }
 
   @Test
+  void describe_method_returnsSignatureMarkdown() throws Exception {
+    final GreetFixture fx = greetFixture();
+    engine = new LatheEngine(tmp);
+
+    final var pos = offsetToPosition(fx.calleeSource(), fx.calleeSource().indexOf("greet"));
+    final String markup = engine.describe(fx.callee(), pos.getLine(), pos.getCharacter());
+
+    assertThat(markup).contains("greet");
+  }
+
+  @Test
+  void searchSymbols_byName_findsReactorType() throws Exception {
+    greetFixture();
+    engine = new LatheEngine(tmp);
+
+    final List<LatheSymbol> symbols = engine.searchSymbols("Callee", 50);
+
+    assertThat(symbols).anySatisfy(symbol -> assertThat(symbol.name()).contains("Callee"));
+  }
+
+  @Test
   void staleModules_moduleNotYetSynced_reportsModule() throws Exception {
     // Source with no compile stamp (never built) counts as stale.
     TestCompiler.writeModuleSource(

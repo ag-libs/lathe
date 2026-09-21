@@ -149,6 +149,28 @@ class McpSmokeTest {
   }
 
   @Test
+  void describeSymbol_reactorMethod_returnsSignature() throws Exception {
+    final Path stringUtils = ROOT.resolve("core/src/main/java/com/example/core/StringUtils.java");
+    final int[] pos = tokenPosition(stringUtils, "upper");
+
+    final String response =
+        request(
+            "tools/call",
+            "{\"name\":\"describe_symbol\",\"arguments\":{\"file\":\"%s\",\"line\":%d,\"column\":%d}}"
+                .formatted(stringUtils, pos[0], pos[1]));
+
+    assertThat(response).contains("upper").doesNotContain("\"isError\":true");
+  }
+
+  @Test
+  void searchSymbols_byName_findsReactorType() throws Exception {
+    final String response =
+        request("tools/call", "{\"name\":\"search_symbols\",\"arguments\":{\"query\":\"StringUtils\"}}");
+
+    assertThat(response).contains("StringUtils").doesNotContain("\"isError\":true");
+  }
+
+  @Test
   void runTest_reactorTestClass_replaysAndPasses() throws Exception {
     // HelloTest in the jpms module is all-passing and its test-launch.json is captured by the build.
     final Path helloTest = ROOT.resolve("jpms/src/test/java/com/example/jpms/HelloTest.java");

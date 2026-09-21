@@ -42,7 +42,9 @@ class LatheMcpToolsTest {
             "find_references",
             "rename_symbol",
             "run_test",
-            "call_hierarchy");
+            "call_hierarchy",
+            "describe_symbol",
+            "search_symbols");
 
     assertThat(tool("get_diagnostics").tool().inputSchema().toString()).contains("file");
     assertThat(tool("get_definition").tool().inputSchema().toString())
@@ -55,6 +57,14 @@ class LatheMcpToolsTest {
         .contains("file", "scope", "method");
     assertThat(tool("call_hierarchy").tool().inputSchema().toString())
         .contains("file", "line", "column", "direction");
+    assertThat(tool("describe_symbol").tool().inputSchema().toString())
+        .contains("file", "line", "column");
+    assertThat(tool("search_symbols").tool().inputSchema().toString()).contains("query");
+  }
+
+  @Test
+  void searchSymbols_blankQuery_returnsError() {
+    assertThat(call("search_symbols", Map.of("query", " ")).isError()).isTrue();
   }
 
   @Test

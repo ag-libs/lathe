@@ -34,12 +34,15 @@ import org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams;
 import org.eclipse.lsp4j.CallHierarchyPrepareParams;
 import org.eclipse.lsp4j.DefinitionParams;
 import org.eclipse.lsp4j.Diagnostic;
+import org.eclipse.lsp4j.Hover;
+import org.eclipse.lsp4j.HoverParams;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.ReferenceContext;
 import org.eclipse.lsp4j.ReferenceParams;
 import org.eclipse.lsp4j.RenameParams;
+import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.WorkspaceEdit;
@@ -147,6 +150,42 @@ public final class LatheEngine {
     final List<LatheLocation> capped =
         locations.stream().limit(maxResults).map(this::toLatheLocation).toList();
     return new LatheReferences(locations.size(), locations.size() > maxResults, capped);
+  }
+
+  /**
+   * The hover markdown for the symbol at {@code line}/{@code column} (0-based) — rendered signature
+   * and javadoc — or empty when there is nothing to describe.
+   */
+  public String describe(final Path file, final int line, final int column) {
+    compileFromDisk(file); // register the file and warm its analysis before resolving
+    final var params =
+        new HoverParams(
+            new TextDocumentIdentifier(file.toUri().toString()), new Position(line, column));
+    final Hover hover = await(service.hover(params));
+    if (hover == null || hover.getContents() == null || !hover.getContents().isRight()) {
+      return "";
+    }
+
+    return hover.getContents().getRight().getValue();
+  }
+
+  /**
+   * Name-addressed symbol search across the reactor, dependencies, and the JDK (an index query, no
+   * per-file warmup), each hit enriched with a snippet and where it lives, capped to {@code
+   * maxResults}.
+   */
+  public List<LatheSymbol> searchSymbols(final String query, final int maxResults) {
+    final List<? extends SymbolInformation> symbols = await(service.workspaceSymbolFuture(query));
+    return symbols.stream().limit(maxResults).map(this::toLatheSymbol).toList();
+  }
+
+  private LatheSymbol toLatheSymbol(final SymbolInformation symbol) {
+    final String container = symbol.getContainerName() == null ? "" : symbol.getContainerName();
+    return new LatheSymbol(
+        symbol.getName(),
+        symbol.getKind().name(),
+        container,
+        toLatheLocation(symbol.getLocation()));
   }
 
   /**

@@ -11,6 +11,7 @@ import io.github.aglibs.lathe.server.engine.LatheFileEdit;
 import io.github.aglibs.lathe.server.engine.LatheLocation;
 import io.github.aglibs.lathe.server.engine.LatheReferences;
 import io.github.aglibs.lathe.server.engine.LatheRename;
+import io.github.aglibs.lathe.server.engine.LatheSymbol;
 import io.github.aglibs.lathe.server.engine.LatheTestFailure;
 import io.github.aglibs.lathe.server.engine.LatheTestRun;
 import io.modelcontextprotocol.json.McpJsonMapper;
@@ -46,7 +47,9 @@ final class LatheMcpTools {
         references(engine, mapper),
         rename(engine, mapper),
         runTest(engine, mapper),
-        callHierarchy(engine, mapper));
+        callHierarchy(engine, mapper),
+        describeSymbol(engine, mapper),
+        searchSymbols(engine, mapper));
   }
 
   private static SyncToolSpecification diagnostics(
@@ -217,6 +220,56 @@ final class LatheMcpTools {
         .build();
   }
 
+  private static SyncToolSpecification describeSymbol(
+      final LatheEngine engine, final McpJsonMapper mapper) {
+    final var tool =
+        Tool.builder(
+                "describe_symbol",
+                mapper,
+                """
+                {"type":"object","required":["file","line","column"],
+                 "properties":{
+                   "file":{"type":"string","description":"Absolute path to a .java file."},
+                   "line":{"type":"integer","description":"1-based line of the symbol."},
+                   "column":{"type":"integer","description":"1-based column of the symbol."}}}""")
+            .description(
+                """
+                Describe the symbol at a position — its rendered signature, type, and javadoc as \
+                markdown — exactly as the compiler sees it, without opening the file. Use to \
+                understand an API before calling it.""")
+            .build();
+    return SyncToolSpecification.builder()
+        .tool(tool)
+        .callHandler(
+            (exchange, request) -> logged("describe_symbol", () -> handleDescribe(engine, request)))
+        .build();
+  }
+
+  private static SyncToolSpecification searchSymbols(
+      final LatheEngine engine, final McpJsonMapper mapper) {
+    final var tool =
+        Tool.builder(
+                "search_symbols",
+                mapper,
+                """
+                {"type":"object","required":["query"],
+                 "properties":{
+                   "query":{"type":"string","description":"Symbol name (CamelHumps supported)."},
+                   "maxResults":{"type":"integer","description":"Max symbols to return (default 50)."}}}""")
+            .description(
+                """
+                Find a type or symbol by name across the whole reactor, its dependencies, and the \
+                JDK — returning each with its kind, container, and a declaration snippet. Use to \
+                locate a type when you know its name but not its file.""")
+            .build();
+    return SyncToolSpecification.builder()
+        .tool(tool)
+        .callHandler(
+            (exchange, request) ->
+                logged("search_symbols", () -> handleSearchSymbols(engine, request)))
+        .build();
+  }
+
   // One INFO line per tool call — the adoption/latency signal (visible without LATHE_DEBUG).
   private static CallToolResult logged(final String tool, final Supplier<CallToolResult> body) {
     final var t = Stopwatch.start();
@@ -233,12 +286,10 @@ final class LatheMcpTools {
       return error("get_diagnostics requires a 'file' argument");
     }
 
-    try {
-      return diagnosticsResult(file, engine.diagnostics(file), engine.staleModules());
-    } catch (final RuntimeException e) {
-      LOG.log(Level.SEVERE, e, () -> "[get_diagnostics] failed for %s".formatted(file));
-      return error("[get_diagnostics] %s".formatted(e.getMessage()));
-    }
+    return guarded(
+        "get_diagnostics",
+        file,
+        () -> diagnosticsResult(file, engine.diagnostics(file), engine.staleModules()));
   }
 
   private static CallToolResult handleDefinition(
@@ -291,12 +342,10 @@ final class LatheMcpTools {
       return error("run_test with scope=method requires a 'method' argument");
     }
 
-    try {
-      return testRunResult(engine.runTest(file, scope, method), engine.staleModules());
-    } catch (final RuntimeException e) {
-      LOG.log(Level.SEVERE, e, () -> "[run_test] failed for %s".formatted(file));
-      return error("[run_test] %s".formatted(e.getMessage()));
-    }
+    return guarded(
+        "run_test",
+        file,
+        () -> testRunResult(engine.runTest(file, scope, method), engine.staleModules()));
   }
 
   // Optional, case-insensitive; absent means class, unknown means null (caller errors on it).
@@ -324,6 +373,30 @@ final class LatheMcpTools {
                 engine.staleModules()));
   }
 
+  private static CallToolResult handleDescribe(
+      final LatheEngine engine, final CallToolRequest request) {
+    return atPosition(
+        "describe_symbol",
+        request,
+        (file, line, column) ->
+            describeResult(engine.describe(file, line, column), engine.staleModules()));
+  }
+
+  private static CallToolResult handleSearchSymbols(
+      final LatheEngine engine, final CallToolRequest request) {
+    final String query = stringArg(request, "query");
+    if (query == null || query.isBlank()) {
+      return error("search_symbols requires a 'query' argument");
+    }
+
+    return guarded(
+        "search_symbols",
+        query,
+        () ->
+            searchResult(
+                query, engine.searchSymbols(query, maxResults(request)), engine.staleModules()));
+  }
+
   // Shared body for the position-based tools: parse the 1-based {file,line,column} into a 0-based
   // position, run the handler, and turn missing args or an engine failure into an isError result.
   private static CallToolResult atPosition(
@@ -335,10 +408,16 @@ final class LatheMcpTools {
       return error("%s requires 'file', 'line', and 'column' arguments".formatted(tool));
     }
 
+    return guarded(tool, file, () -> handler.at(file, line - 1, column - 1));
+  }
+
+  // Run an engine call, turning an unexpected failure into a logged isError result.
+  private static CallToolResult guarded(
+      final String tool, final Object context, final Supplier<CallToolResult> body) {
     try {
-      return handler.at(file, line - 1, column - 1);
+      return body.get();
     } catch (final RuntimeException e) {
-      LOG.log(Level.SEVERE, e, () -> "[%s] failed for %s".formatted(tool, file));
+      LOG.log(Level.SEVERE, e, () -> "[%s] failed for %s".formatted(tool, context));
       return error("[%s] %s".formatted(tool, e.getMessage()));
     }
   }
@@ -423,6 +502,48 @@ final class LatheMcpTools {
             "truncated", ch.truncated(),
             "calls", ch.calls().stream().map(LatheMcpTools::callMap).toList()),
         stale);
+  }
+
+  private static CallToolResult describeResult(final String markup, final List<String> stale) {
+    final String text = markup.isBlank() ? "No symbol information at that position." : markup;
+    return result(text, Map.<String, Object>of("markup", markup), stale);
+  }
+
+  private static CallToolResult searchResult(
+      final String query, final List<LatheSymbol> symbols, final List<String> stale) {
+    final String text =
+        symbols.isEmpty()
+            ? "No symbols matching '%s'.".formatted(query)
+            : "%d symbol(s):%n%s"
+                .formatted(
+                    symbols.size(),
+                    symbols.stream()
+                        .map(LatheMcpTools::symbolLine)
+                        .collect(Collectors.joining(System.lineSeparator())));
+    return result(
+        text,
+        Map.<String, Object>of(
+            "query", query,
+            "total", symbols.size(),
+            "symbols", symbols.stream().map(LatheMcpTools::symbolMap).toList()),
+        stale);
+  }
+
+  private static String symbolLine(final LatheSymbol symbol) {
+    final String where = symbol.container().isBlank() ? "" : " — %s".formatted(symbol.container());
+    return "%s (%s)%s%n%s"
+        .formatted(symbol.name(), symbol.kind(), where, symbol.location().snippet());
+  }
+
+  private static Map<String, Object> symbolMap(final LatheSymbol symbol) {
+    final LatheLocation loc = symbol.location();
+    return Map.<String, Object>of(
+        "name", symbol.name(),
+        "kind", symbol.kind(),
+        "container", symbol.container(),
+        "uri", loc.uri(),
+        "startLine", loc.range().getStart().getLine() + 1,
+        "snippet", loc.snippet());
   }
 
   private static String callLine(final String arrow, final LatheCall call) {

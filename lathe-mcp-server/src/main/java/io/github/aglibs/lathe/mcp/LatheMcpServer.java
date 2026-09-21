@@ -43,6 +43,9 @@ public final class LatheMcpServer {
       sources: use get_definition (grep cannot follow into non-source).
       - Tracing who calls a method (or what it calls) to scope the impact of a change: use \
       call_hierarchy — it follows the real cross-module call graph, which text search cannot.
+      - Understanding an API before calling it (signature, type, javadoc): use describe_symbol.
+      - Finding a type or symbol by name across the reactor, dependencies, and the JDK: use \
+      search_symbols.
       - Checking whether a file still compiles after an edit: use get_diagnostics (one file, no \
       Maven).
       - Checking whether a specific test, class, or package passes after an edit: use run_test — it \

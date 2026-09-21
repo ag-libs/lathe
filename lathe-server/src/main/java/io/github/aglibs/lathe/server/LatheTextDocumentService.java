@@ -508,7 +508,8 @@ public final class LatheTextDocumentService implements TextDocumentService {
         });
   }
 
-  CompletableFuture<List<? extends SymbolInformation>> workspaceSymbolFuture(final String query) {
+  public CompletableFuture<List<? extends SymbolInformation>> workspaceSymbolFuture(
+      final String query) {
     return worker.submit(() -> session.workspaceSymbol(query));
   }
 
