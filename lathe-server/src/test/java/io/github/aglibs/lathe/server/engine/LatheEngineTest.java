@@ -111,6 +111,30 @@ class LatheEngineTest {
   }
 
   @Test
+  void findImplementations_interface_findsImplementingClass() throws Exception {
+    final String ifaceSource =
+        """
+        package com.example;
+        interface Greeter {
+          void greet();
+        }
+        """;
+    final Path iface = TestCompiler.writeModuleSource(tmp, "com/example/Greeter.java", ifaceSource);
+    final String implSource =
+        "package com.example; class EnGreeter implements Greeter { public void greet() {} }";
+    final Path impl = TestCompiler.writeModuleSource(tmp, "com/example/EnGreeter.java", implSource);
+    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), iface, impl);
+    engine = new LatheEngine(tmp);
+
+    final var pos = offsetToPosition(ifaceSource, ifaceSource.indexOf("Greeter"));
+    final LatheImplementations impls =
+        engine.findImplementations(iface, pos.getLine(), pos.getCharacter(), 50);
+
+    assertThat(impls.implementations())
+        .anySatisfy(loc -> assertThat(loc.uri()).endsWith("EnGreeter.java"));
+  }
+
+  @Test
   void describe_method_returnsSignatureMarkdown() throws Exception {
     final GreetFixture fx = greetFixture();
     engine = new LatheEngine(tmp);

@@ -149,6 +149,21 @@ class McpSmokeTest {
   }
 
   @Test
+  void findImplementations_interface_findsCrossModuleImpls() throws Exception {
+    // Greeter (core) is implemented by CasualGreeter/FormalGreeter in app — a cross-module lookup.
+    final Path greeter = ROOT.resolve("core/src/main/java/com/example/core/Greeter.java");
+    final int[] pos = tokenPosition(greeter, "Greeter");
+
+    final String response =
+        request(
+            "tools/call",
+            "{\"name\":\"find_implementations\",\"arguments\":{\"file\":\"%s\",\"line\":%d,\"column\":%d}}"
+                .formatted(greeter, pos[0], pos[1]));
+
+    assertThat(response).contains("CasualGreeter").doesNotContain("\"isError\":true");
+  }
+
+  @Test
   void describeSymbol_reactorMethod_returnsSignature() throws Exception {
     final Path stringUtils = ROOT.resolve("core/src/main/java/com/example/core/StringUtils.java");
     final int[] pos = tokenPosition(stringUtils, "upper");

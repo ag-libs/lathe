@@ -8,6 +8,7 @@ import io.github.aglibs.lathe.server.engine.LatheEngine;
 import io.github.aglibs.lathe.server.engine.LatheEngine.CallDirection;
 import io.github.aglibs.lathe.server.engine.LatheEngine.TestScope;
 import io.github.aglibs.lathe.server.engine.LatheFileEdit;
+import io.github.aglibs.lathe.server.engine.LatheImplementations;
 import io.github.aglibs.lathe.server.engine.LatheLocation;
 import io.github.aglibs.lathe.server.engine.LatheReferences;
 import io.github.aglibs.lathe.server.engine.LatheRename;
@@ -50,7 +51,8 @@ final class LatheMcpTools {
         runTest(engine, mapper),
         callHierarchy(engine, mapper),
         describeSymbol(engine, mapper),
-        searchSymbols(engine, mapper));
+        searchSymbols(engine, mapper),
+        findImplementations(engine, mapper));
   }
 
   private static SyncToolSpecification diagnostics(
@@ -274,6 +276,37 @@ final class LatheMcpTools {
         .build();
   }
 
+  private static SyncToolSpecification findImplementations(
+      final LatheEngine engine, final McpJsonMapper mapper) {
+    final var tool =
+        Tool.builder(
+                "find_implementations",
+                mapper,
+                """
+                {"type":"object","required":["file","line","column"],
+                 "properties":{
+                   "file":{"type":"string","description":"Absolute path to a .java file."},
+                   "line":{"type":"integer","description":"1-based line of the symbol."},
+                   "column":{"type":"integer","description":"1-based column of the symbol."},
+                   "maxResults":{"type":"integer",
+                     "description":"Max implementations to return (default 50)."}}}""")
+            .description(
+                """
+                Find the implementations of the interface — or the overrides of the method — at a \
+                position, across the whole reactor, javac-accurate and with a snippet each. This is \
+                the "who implements X / what overrides this" question text search cannot answer.""")
+            .build();
+    return SyncToolSpecification.builder()
+        .tool(tool)
+        .callHandler(
+            (exchange, request) ->
+                logged(
+                    "find_implementations",
+                    request,
+                    () -> handleFindImplementations(engine, request)))
+        .build();
+  }
+
   // One INFO line per tool call — the adoption/usage/latency signal (visible without LATHE_DEBUG).
   private static CallToolResult logged(
       final String tool, final CallToolRequest request, final Supplier<CallToolResult> body) {
@@ -332,6 +365,17 @@ final class LatheMcpTools {
         (file, line, column) ->
             referencesResult(
                 engine.references(file, line, column, maxResults(request)), engine.staleModules()));
+  }
+
+  private static CallToolResult handleFindImplementations(
+      final LatheEngine engine, final CallToolRequest request) {
+    return atPosition(
+        "find_implementations",
+        request,
+        (file, line, column) ->
+            implementationsResult(
+                engine.findImplementations(file, line, column, maxResults(request)),
+                engine.staleModules()));
   }
 
   private static CallToolResult handleRename(
@@ -457,20 +501,38 @@ final class LatheMcpTools {
 
   private static CallToolResult referencesResult(
       final LatheReferences refs, final List<String> stale) {
+    return locationListResult(
+        "reference", refs.total(), refs.truncated(), refs.references(), stale);
+  }
+
+  private static CallToolResult implementationsResult(
+      final LatheImplementations impls, final List<String> stale) {
+    return locationListResult(
+        "implementation", impls.total(), impls.truncated(), impls.implementations(), stale);
+  }
+
+  // Shared rendering for a capped, ranked location list. noun drives both the text ("N noun(s)")
+  // and the structured list key (noun + "s").
+  private static CallToolResult locationListResult(
+      final String noun,
+      final int total,
+      final boolean truncated,
+      final List<LatheLocation> locations,
+      final List<String> stale) {
     final List<Map<String, Object>> items =
-        refs.references().stream().map(LatheMcpTools::locationMap).toList();
+        locations.stream().map(LatheMcpTools::locationMap).toList();
     final String header =
-        refs.truncated()
-            ? "%d references (showing first %d):".formatted(refs.total(), refs.references().size())
-            : "%d reference(s):".formatted(refs.total());
+        truncated
+            ? "%d %ss (showing first %d):".formatted(total, noun, locations.size())
+            : "%d %s(s):".formatted(total, noun);
     final String text =
-        refs.references().isEmpty()
-            ? "No references found."
-            : "%s%n%s".formatted(header, locationLines(refs.references()));
+        locations.isEmpty()
+            ? "No %ss found.".formatted(noun)
+            : "%s%n%s".formatted(header, locationLines(locations));
     return result(
         text,
         Map.<String, Object>of(
-            "total", refs.total(), "truncated", refs.truncated(), "references", items),
+            "total", total, "truncated", truncated, "%ss".formatted(noun), items),
         stale);
   }
 

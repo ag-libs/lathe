@@ -46,6 +46,8 @@ public final class LatheMcpServer {
       - Understanding an API before calling it (signature, type, javadoc): use describe_symbol.
       - Finding a type or symbol by name across the reactor, dependencies, and the JDK: use \
       search_symbols.
+      - Finding all implementations of an interface, or overrides of a method: use \
+      find_implementations.
       - Checking whether a file still compiles after an edit: use get_diagnostics (one file, no \
       Maven).
       - Checking whether a specific test, class, or package passes after an edit: use run_test — it \

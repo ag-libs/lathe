@@ -36,6 +36,7 @@ import org.eclipse.lsp4j.DefinitionParams;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.HoverParams;
+import org.eclipse.lsp4j.ImplementationParams;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
@@ -150,6 +151,23 @@ public final class LatheEngine {
     final List<LatheLocation> capped =
         locations.stream().limit(maxResults).map(this::toLatheLocation).toList();
     return new LatheReferences(locations.size(), locations.size() > maxResults, capped);
+  }
+
+  /**
+   * Implementations of the interface (or overrides of the method) at {@code line}/{@code column}
+   * (0-based) across the reactor, each enriched with a snippet, capped to {@code maxResults}.
+   */
+  public LatheImplementations findImplementations(
+      final Path file, final int line, final int column, final int maxResults) {
+    compileFromDisk(file); // register the file and warm its analysis before resolving
+    final var params =
+        new ImplementationParams(
+            new TextDocumentIdentifier(file.toUri().toString()), new Position(line, column));
+    final var either = await(service.implementation(params));
+    final List<? extends Location> locations = either.isLeft() ? either.getLeft() : List.of();
+    final List<LatheLocation> capped =
+        locations.stream().limit(maxResults).map(this::toLatheLocation).toList();
+    return new LatheImplementations(locations.size(), locations.size() > maxResults, capped);
   }
 
   /**

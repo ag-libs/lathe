@@ -49,7 +49,8 @@ class LatheMcpToolsTest {
             "run_test",
             "call_hierarchy",
             "describe_symbol",
-            "search_symbols");
+            "search_symbols",
+            "find_implementations");
 
     assertThat(tool("get_diagnostics").tool().inputSchema().toString()).contains("file");
     assertThat(tool("get_definition").tool().inputSchema().toString())
@@ -65,6 +66,8 @@ class LatheMcpToolsTest {
     assertThat(tool("describe_symbol").tool().inputSchema().toString())
         .contains("file", "line", "column");
     assertThat(tool("search_symbols").tool().inputSchema().toString()).contains("query");
+    assertThat(tool("find_implementations").tool().inputSchema().toString())
+        .contains("file", "line", "column", "maxResults");
   }
 
   @Test
