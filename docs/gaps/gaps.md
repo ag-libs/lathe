@@ -273,6 +273,50 @@ imports") are separate later slices.
 
 ---
 
+## CA-9 — Common JDK types (`java.util.List`) get no import quick fix in dependency-heavy modules
+
+**Status: accepted — Target: next (fix A); ranking follow-up deferred — Target: backlog (fix B).**
+
+Signal: user feedback — adding a field typed `List<…>` to a new record in a large module offered no
+"Import 'java.util.List'" code action, while an unresolved reactor type in the same file imported
+fine.
+
+Design: [Type-Index Name Resolution and Ranking](../planned/lathe-type-index-name-resolution.md).
+
+### Observed behaviour
+
+```java
+public record Order(List<String> lines) {}   // List unresolved → no import code action
+```
+
+`List` is detected as an unresolved `TYPE_REF` (it is listed by `lathe.missingImports`), but resolves
+to zero import candidates, so `ImportQuickFixProvider` emits nothing.
+
+### Root cause
+
+`ImportCandidates.resolve` asks `WorkspaceTypeIndex.search(simpleName, 100)` for the top-100 of the
+`List*` **prefix** and filters to exact matches afterward. `search` orders matches only by
+`binaryName` (after a reactor-first split), with no relevance signal. In a dependency-heavy module,
+100+ `List*`-prefixed dependency types sort before `java.util.List` (whose binary name starts
+`java.`), so the exact match falls outside the limit window and never becomes a candidate. The same
+starvation hits `java.util.Map`, `java.util.Set`, and other common simple names. Completion (limit
+200 + a usage re-rank) mostly survives, which is why the failure is specific to the import path.
+
+### Fix
+
+- **A (this cut):** add `WorkspaceTypeIndex.searchExact(simpleName)` — a direct exact-name group
+  lookup, unbounded — and switch `ImportCandidates.resolve` to it. Removes the limit dependency for
+  imports entirely.
+- **B (backlog):** rank `prefixMatches` by relevance (exact-name, then `usageCount`, then reactor,
+  then `binaryName`) so completion and symbol search surface the obvious type regardless of workspace
+  size.
+
+Regression targets: `WorkspaceTypeIndexTest` (`searchExact` unaffected by >100 prefix siblings);
+`CodeActionTest` (a `List<T>` field with 100+ `List*` dependency entries still offers the
+`java.util.List` import action).
+
+---
+
 # Completion Gaps (CQ)
 
 Active completion-quality gaps. Discovered and triaged via the completion appendix of the
