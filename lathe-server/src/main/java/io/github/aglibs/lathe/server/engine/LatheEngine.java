@@ -2,19 +2,27 @@ package io.github.aglibs.lathe.server.engine;
 
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.launch.TestSelection;
+import io.github.aglibs.lathe.core.launch.TestSelectionKind;
 import io.github.aglibs.lathe.server.LatheTextDocumentService;
 import io.github.aglibs.lathe.server.LatheUri;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
+import io.github.aglibs.lathe.server.run.RunTarget;
+import io.github.aglibs.lathe.server.run.RunnableKind;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.eclipse.lsp4j.DefinitionParams;
@@ -43,8 +51,43 @@ public final class LatheEngine {
   private static final int VERSION = 1;
 
   private final LatheTextDocumentService service = new LatheTextDocumentService();
+  private final AtomicLong runToken = new AtomicLong();
   private final Path workspaceRoot;
   private final Path latheDir;
+
+  /**
+   * What a {@link #runTest} call replays — the adapter between the MCP {@code scope} wire value and
+   * the substrate's runnable/selection kinds, which live in different modules.
+   */
+  public enum TestScope {
+    CLASS(RunnableKind.TEST_CLASS, TestSelectionKind.CLASS),
+    METHOD(RunnableKind.TEST_METHOD, TestSelectionKind.METHOD),
+    PACKAGE(RunnableKind.TEST_PACKAGE, TestSelectionKind.PACKAGE);
+
+    private final RunnableKind runnableKind;
+    private final TestSelectionKind selectionKind;
+
+    TestScope(final RunnableKind runnableKind, final TestSelectionKind selectionKind) {
+      this.runnableKind = runnableKind;
+      this.selectionKind = selectionKind;
+    }
+
+    public RunnableKind runnableKind() {
+      return runnableKind;
+    }
+
+    public TestSelectionKind selectionKind() {
+      return selectionKind;
+    }
+
+    public String wireName() {
+      return name().toLowerCase(Locale.ROOT);
+    }
+
+    public static Optional<TestScope> from(final String wireName) {
+      return Arrays.stream(values()).filter(s -> s.name().equalsIgnoreCase(wireName)).findFirst();
+    }
+  }
 
   public LatheEngine(final Path workspaceRoot) {
     this.workspaceRoot = workspaceRoot;
@@ -171,6 +214,37 @@ public final class LatheEngine {
   /** Reactor-relative paths of modules whose source is newer than their compiled classes. */
   public List<String> staleModules() {
     return await(service.staleModulesFuture());
+  }
+
+  /**
+   * Replay a test at {@code scope} (the whole class, one {@code method}, or the file's package)
+   * against the compiled classpath, no reactor build. Resolves the target from the file's runnables
+   * so it reuses the editor's selection mapping.
+   */
+  public LatheTestRun runTest(final Path file, final TestScope scope, final String method) {
+    compileFromDisk(file);
+    final var uri = file.toUri().toString();
+    final List<RunTarget> targets = await(service.runnablesFuture(uri));
+    final RunTarget target = selectTarget(targets, scope, method, file);
+    final var selection = new TestSelection(scope.selectionKind(), target.id());
+    final String token = "mcp-run-%d".formatted(runToken.incrementAndGet());
+    return LatheTestRun.from(
+        await(service.runTestFuture(target.moduleRel(), List.of(selection), token)));
+  }
+
+  private static RunTarget selectTarget(
+      final List<RunTarget> targets, final TestScope scope, final String method, final Path file) {
+    return targets.stream()
+        .filter(target -> target.kind() == scope.runnableKind())
+        .filter(target -> scope != TestScope.METHOD || target.label().equals(method))
+        .findFirst()
+        .orElseThrow(
+            () ->
+                new IllegalStateException(
+                    scope == TestScope.METHOD
+                        ? "no test method '%s' in %s".formatted(method, file.getFileName())
+                        : "no %s test target in %s"
+                            .formatted(scope.wireName(), file.getFileName())));
   }
 
   private List<Diagnostic> compileFromDisk(final Path file) {

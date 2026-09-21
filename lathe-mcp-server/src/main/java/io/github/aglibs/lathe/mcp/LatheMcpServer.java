@@ -43,6 +43,9 @@ public final class LatheMcpServer {
       sources: use get_definition (grep cannot follow into non-source).
       - Checking whether a file still compiles after an edit: use get_diagnostics (one file, no \
       Maven).
+      - Checking whether a specific test, class, or package passes after an edit: use run_test — it \
+      replays just that against the compiled classpath, no reactor build; prefer it over \
+      `mvn test` for a single target.
 
       A "Stale:" note on a result means a module's source is newer than its compiled classes; run \
       `%s` to refresh, then re-query."""

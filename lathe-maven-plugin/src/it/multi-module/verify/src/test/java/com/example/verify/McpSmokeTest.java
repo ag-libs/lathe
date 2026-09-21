@@ -132,6 +132,19 @@ class McpSmokeTest {
     }
   }
 
+  @Test
+  void runTest_reactorTestClass_replaysAndPasses() throws Exception {
+    // HelloTest in the jpms module is all-passing and its test-launch.json is captured by the build.
+    final Path helloTest = ROOT.resolve("jpms/src/test/java/com/example/jpms/HelloTest.java");
+
+    final String response =
+        request(
+            "tools/call",
+            "{\"name\":\"run_test\",\"arguments\":{\"file\":\"%s\"}}".formatted(helloTest));
+
+    assertThat(response).contains("PASS").doesNotContain("\"isError\":true");
+  }
+
   private static int[] tokenPosition(final Path file, final String token) throws IOException {
     final List<String> lines = Files.readAllLines(file);
     return IntStream.range(0, lines.size())

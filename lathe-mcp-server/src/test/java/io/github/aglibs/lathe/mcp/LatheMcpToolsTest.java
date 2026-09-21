@@ -37,7 +37,7 @@ class LatheMcpToolsTest {
     assertThat(specs)
         .map(spec -> spec.tool().name())
         .containsExactlyInAnyOrder(
-            "get_diagnostics", "get_definition", "find_references", "rename_symbol");
+            "get_diagnostics", "get_definition", "find_references", "rename_symbol", "run_test");
 
     assertThat(tool("get_diagnostics").tool().inputSchema().toString()).contains("file");
     assertThat(tool("get_definition").tool().inputSchema().toString())
@@ -46,6 +46,18 @@ class LatheMcpToolsTest {
         .contains("file", "line", "column", "maxResults");
     assertThat(tool("rename_symbol").tool().inputSchema().toString())
         .contains("file", "line", "column", "newName");
+    assertThat(tool("run_test").tool().inputSchema().toString())
+        .contains("file", "scope", "method");
+  }
+
+  @Test
+  void runTest_invalidArguments_returnError() {
+    final String file = tmp.resolve("FooTest.java").toString();
+
+    assertThat(call("run_test", Map.of()).isError()).isTrue(); // no file
+    assertThat(call("run_test", Map.of("file", file, "scope", "nope")).isError()).isTrue();
+    assertThat(call("run_test", Map.of("file", file, "scope", "method")).isError())
+        .isTrue(); // method scope without a method
   }
 
   @Test

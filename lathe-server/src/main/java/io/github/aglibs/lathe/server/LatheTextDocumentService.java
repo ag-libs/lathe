@@ -512,7 +512,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
     return worker.submit(() -> session.workspaceSymbol(query));
   }
 
-  CompletableFuture<LaunchOutcome> runTestFuture(
+  public CompletableFuture<LaunchOutcome> runTestFuture(
       final String moduleRel, final List<TestSelection> selections, final String token) {
     return worker
         .submit(() -> session.runTestFuture(moduleRel, selections, token))
@@ -536,7 +536,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
     return worker.submit(() -> session.debugMain(moduleRel, mainClass, token));
   }
 
-  CompletableFuture<List<RunTarget>> runnablesFuture(final String uri) {
+  public CompletableFuture<List<RunTarget>> runnablesFuture(final String uri) {
     return worker.submit(() -> session.runnablesFuture(uri)).thenCompose(f -> f);
   }
 

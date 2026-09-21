@@ -4,6 +4,9 @@ import static io.github.aglibs.lathe.server.analysis.SourceLocator.offsetToPosit
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.server.TestCompiler;
+import io.github.aglibs.lathe.server.run.LaunchOutcome;
+import io.github.aglibs.lathe.server.run.TestResult;
+import io.github.aglibs.lathe.server.run.TranscriptLine;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -155,5 +158,49 @@ class LatheEngineTest {
         .anySatisfy(uri -> assertThat(uri).endsWith("Caller.java"));
     assertThat(Files.readString(callee)).contains("void welcome()").doesNotContain("greet");
     assertThat(Files.readString(caller)).contains("c.welcome()").doesNotContain("greet");
+  }
+
+  @Test
+  void latheTestRun_completedOutcome_mapsCountsAndFailure() {
+    final var outcome =
+        LaunchOutcome.completed(
+            0,
+            List.of(new TranscriptLine(TranscriptLine.Stream.STDOUT, "ok")),
+            List.of(
+                new TestResult("com.example.FooTest", "passes", "", "passed", "", -1, null),
+                new TestResult(
+                    "com.example.FooTest",
+                    "fails",
+                    "",
+                    "failed",
+                    "java.lang.AssertionError: boom",
+                    42,
+                    null),
+                new TestResult("com.example.FooTest", "skips", "", "skipped", "", -1, null)));
+
+    final LatheTestRun run = LatheTestRun.from(outcome);
+
+    assertThat(run.launched()).isTrue();
+    assertThat(run.total()).isEqualTo(3);
+    assertThat(run.passed()).isEqualTo(1);
+    assertThat(run.failed()).isEqualTo(1);
+    assertThat(run.skipped()).isEqualTo(1);
+    assertThat(run.failures())
+        .singleElement()
+        .satisfies(
+            f -> {
+              assertThat(f.test()).isEqualTo("com.example.FooTest#fails");
+              assertThat(f.summary()).contains("boom");
+              assertThat(f.line()).isEqualTo(42);
+            });
+  }
+
+  @Test
+  void latheTestRun_blockedOutcome_carriesReasons() {
+    final LatheTestRun run = LatheTestRun.from(LaunchOutcome.blocked(List.of("no runner jar")));
+
+    assertThat(run.launched()).isFalse();
+    assertThat(run.blockedReasons()).containsExactly("no runner jar");
+    assertThat(run.total()).isZero();
   }
 }

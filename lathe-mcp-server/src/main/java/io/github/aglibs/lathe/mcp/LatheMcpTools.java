@@ -3,10 +3,13 @@ package io.github.aglibs.lathe.mcp;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.engine.LatheEngine;
+import io.github.aglibs.lathe.server.engine.LatheEngine.TestScope;
 import io.github.aglibs.lathe.server.engine.LatheFileEdit;
 import io.github.aglibs.lathe.server.engine.LatheLocation;
 import io.github.aglibs.lathe.server.engine.LatheReferences;
 import io.github.aglibs.lathe.server.engine.LatheRename;
+import io.github.aglibs.lathe.server.engine.LatheTestFailure;
+import io.github.aglibs.lathe.server.engine.LatheTestRun;
 import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
@@ -38,7 +41,8 @@ final class LatheMcpTools {
         diagnostics(engine, mapper),
         definition(engine, mapper),
         references(engine, mapper),
-        rename(engine, mapper));
+        rename(engine, mapper),
+        runTest(engine, mapper));
   }
 
   private static SyncToolSpecification diagnostics(
@@ -150,6 +154,35 @@ final class LatheMcpTools {
         .build();
   }
 
+  private static SyncToolSpecification runTest(
+      final LatheEngine engine, final McpJsonMapper mapper) {
+    final var tool =
+        Tool.builder(
+                "run_test",
+                mapper,
+                """
+                {"type":"object","required":["file"],
+                 "properties":{
+                   "file":{"type":"string","description":"Absolute path to a test .java file."},
+                   "scope":{"type":"string","enum":["class","method","package"],
+                     "description":"What to run (default class)."},
+                   "method":{"type":"string",
+                     "description":"Test method name (required when scope=method)."}}}""")
+            .description(
+                """
+                Replay a test against the compiled classpath — no reactor build. Runs one method, \
+                the whole test class, or its package; prefer it over `mvn test` for a single \
+                target after an edit. Returns pass/fail/skip counts and each failure's message and \
+                line. Needs a captured test-launch.json (run `mvn test` once); it reports that if \
+                missing.""")
+            .build();
+    return SyncToolSpecification.builder()
+        .tool(tool)
+        .callHandler(
+            (exchange, request) -> logged("run_test", () -> handleRunTest(engine, request)))
+        .build();
+  }
+
   // One INFO line per tool call — the adoption/latency signal (visible without LATHE_DEBUG).
   private static CallToolResult logged(final String tool, final Supplier<CallToolResult> body) {
     final var t = Stopwatch.start();
@@ -205,6 +238,36 @@ final class LatheMcpTools {
         request,
         (file, line, column) ->
             renameResult(engine.rename(file, line, column, newName), engine.staleModules()));
+  }
+
+  private static CallToolResult handleRunTest(
+      final LatheEngine engine, final CallToolRequest request) {
+    final Path file = filePath(request);
+    if (file == null) {
+      return error("run_test requires a 'file' argument");
+    }
+
+    final TestScope scope = testScope(stringArg(request, "scope"));
+    if (scope == null) {
+      return error("run_test 'scope' must be one of class, method, package");
+    }
+
+    final String method = stringArg(request, "method");
+    if (scope == TestScope.METHOD && method == null) {
+      return error("run_test with scope=method requires a 'method' argument");
+    }
+
+    try {
+      return testRunResult(engine.runTest(file, scope, method), engine.staleModules());
+    } catch (final RuntimeException e) {
+      LOG.log(Level.SEVERE, e, () -> "[run_test] failed for %s".formatted(file));
+      return error("[run_test] %s".formatted(e.getMessage()));
+    }
+  }
+
+  // Optional, case-insensitive; absent means class, unknown means null (caller errors on it).
+  private static TestScope testScope(final String scope) {
+    return scope == null ? TestScope.CLASS : TestScope.from(scope).orElse(null);
   }
 
   // Shared body for the position-based tools: parse the 1-based {file,line,column} into a 0-based
@@ -279,6 +342,46 @@ final class LatheMcpTools {
         Map.<String, Object>of(
             "newName", rename.newName(), "totalEdits", rename.totalEdits(), "files", items),
         stale);
+  }
+
+  private static CallToolResult testRunResult(final LatheTestRun run, final List<String> stale) {
+    if (!run.launched()) {
+      return result(
+          "Test run blocked: %s".formatted(String.join("; ", run.blockedReasons())),
+          Map.<String, Object>of("launched", false, "blockedReasons", run.blockedReasons()),
+          stale);
+    }
+
+    final String header =
+        "%s — %d passed, %d failed, %d skipped"
+            .formatted(
+                run.failed() == 0 ? "PASS" : "FAIL", run.passed(), run.failed(), run.skipped());
+    final String text =
+        run.failures().isEmpty()
+            ? header
+            : "%s%n%s"
+                .formatted(
+                    header,
+                    run.failures().stream()
+                        .map(LatheMcpTools::testFailureLine)
+                        .collect(Collectors.joining(System.lineSeparator())));
+    return result(
+        text,
+        Map.<String, Object>of(
+            "launched", true,
+            "passed", run.passed(),
+            "failed", run.failed(),
+            "skipped", run.skipped(),
+            "failures", run.failures().stream().map(LatheMcpTools::testFailureMap).toList()),
+        stale);
+  }
+
+  private static String testFailureLine(final LatheTestFailure f) {
+    return "  %s:%d — %s".formatted(f.test(), f.line(), f.summary());
+  }
+
+  private static Map<String, Object> testFailureMap(final LatheTestFailure f) {
+    return Map.<String, Object>of("test", f.test(), "line", f.line(), "summary", f.summary());
   }
 
   private static CallToolResult diagnosticsResult(
