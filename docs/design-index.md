@@ -105,8 +105,14 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
   clients. MCP-first because it is the only substrate reaching Codex and the only path that exposes
   `executeCommand` verbs to agents. **Approved architecture:** a separate `lathe-mcp-server` module on
   the official MCP Java SDK, calling the engine in-process via a `LatheEngine` facade, with its own
-  launcher. Phase 0 spike done; phased Tier 1 (edit→verify) → Tiers 2–3 → streaming/cancel → resources
-  → LSP plugin → packaging.
+  launcher. The tool surface is now feature-complete — `get_diagnostics`, `get_definition`,
+  `find_references`, `find_implementations`, `call_hierarchy`, `search_symbols`, `describe_symbol`,
+  `rename_symbol`, and `run_test`, each with per-call usage logging; remaining work is measurement,
+  streaming/cancel, and the Claude Code LSP plugin.
+- [MCP Value Benchmark](planned/lathe-mcp-value-benchmark.md) — how to prove (or disprove) that the
+  MCP server makes an agent measurably better on a real Maven reactor: adopt the SWE-bench /
+  Multi-SWE-bench plumbing and make Lathe the single ablation variable (grep-only baseline vs agent +
+  Lathe MCP), over a moat-curated Dropwizard/Helidon corpus, against a pre-registered hypothesis.
 
 ## Completed Designs
 

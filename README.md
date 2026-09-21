@@ -21,7 +21,7 @@ the compiler reports, and runs and tests replay the real launch without a Maven 
 
 Setup is one extension registration, a first build, and a plugin line in your Neovim config.
 
-Lathe ships a Neovim client; a VS Code client is planned.
+Lathe ships a Neovim client and an MCP server for AI coding agents; a VS Code client is planned.
 
 ## Demo
 
@@ -113,6 +113,31 @@ build.
 |---------|-----------|-------------------------------------------------------------------------|
 | Neovim  | Supported | [Neovim cheatsheet](docs/guide/editors/neovim.md) — install and keymaps |
 | VS Code | Planned   | —                                                                       |
+
+## AI agents (MCP)
+
+Lathe also drives AI coding agents. The same build-derived engine that powers the editor is exposed
+over the Model Context Protocol by `lathe-mcp-server`, so an agent gets javac-accurate, cross-module
+code intelligence instead of guessing from `grep`: compiler-truth diagnostics, navigation that follows
+into dependencies and generated sources, safe reactor-wide rename, and test replay without a Maven
+build. Works with any MCP client — Claude Code, OpenAI Codex CLI, Gemini CLI.
+
+Like the editor, it reads from a populated `.lathe/`, so run a build once first.
+
+| Tool                   | What it does                                                         |
+|------------------------|---------------------------------------------------------------------|
+| `get_diagnostics`      | compiler errors/warnings for one file — no Maven                    |
+| `get_definition`       | resolve a symbol to its definition, incl. dependencies/JDK/generated |
+| `find_references`      | every real use of a symbol across the reactor                       |
+| `find_implementations` | implementers of an interface / overrides of a method                |
+| `call_hierarchy`       | callers or callees of a method, across modules                      |
+| `search_symbols`       | find a type by name (CamelHumps) across reactor, dependencies, JDK   |
+| `describe_symbol`      | signature, type, and javadoc for a symbol                           |
+| `rename_symbol`        | rename a symbol across the whole reactor, applied to disk           |
+| `run_test`             | replay a test / class / package from captured bytecode — no build   |
+
+Full setup — registering with Claude Code, Codex, and Gemini, the result contract, and the freshness
+model — is in the [AI agents guide](docs/guide/ai-agents.md).
 
 ## Requirements
 
@@ -227,6 +252,7 @@ Lathe is active by default and skips automatically in CI:
   [installation](docs/guide/installation.md) · [run configuration](docs/guide/run-configuration.md) ·
   [test capture](docs/guide/test-capture.md)
 - Editor references: [Neovim](docs/guide/editors/neovim.md)
+- AI agents: [MCP server guide](docs/guide/ai-agents.md)
 - Project: [status](docs/status.md) · [roadmap](docs/roadmap.md) ·
   [design index](docs/design-index.md) · [architecture](docs/lathe-design.md)
 

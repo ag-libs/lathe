@@ -7,6 +7,7 @@ The [roadmap](roadmap.md) defines milestone scope; the [design index](design-ind
 
 Lathe is in the M2 Neovim Public Beta stage, published to Maven Central.
 It installs via the `lathe-maven-extension` build extension and is supported for the Neovim workflow only.
+An MCP server (`lathe-mcp-server`) additionally exposes the same engine to AI coding agents; see [AI Agent Integration](#ai-agent-integration-mcp) below.
 The tag-driven release pipeline (CI GPG signing + publish; see [RELEASING.md](../RELEASING.md)) is in use. A stable GA release follows after beta feedback.
 
 ## Build and Workspace Lifecycle
@@ -62,6 +63,24 @@ The tag-driven release pipeline (CI GPG signing + publish; see [RELEASING.md](..
 | Neovim | Current and supported target; distributable plugin is in `neovim/`. |
 | VS Code | Backlog; no supported extension or full semantic-token parity. |
 | Other LSP clients | May work, but are not qualified or supported before their roadmap scope is defined. |
+
+## AI Agent Integration (MCP)
+
+`lathe-mcp-server` exposes the same build-derived engine to AI coding agents over the Model Context Protocol (stdio), calling the engine in-process through the `LatheEngine` facade — no second JVM, behaviour identical to the LSP path by construction. One process per agent session; the reactor is resolved from the working directory; a populated `.lathe/` is required (the server refuses without it). The launcher (`lathe-mcp-launcher.sh`) is installed by `lathe:sync` alongside the editor launcher. See [ai-agents.md](guide/ai-agents.md).
+
+| Tool | Status | Notes |
+|---|---|---|
+| `get_diagnostics` | Implemented | Single-file compiler diagnostics on the captured build classpath — no Maven. |
+| `get_definition` | Implemented | Resolves into reactor, dependency, JDK, and generated sources. |
+| `find_references` | Implemented | Reactor-wide, javac-accurate; resolves overloads/inheritance. |
+| `find_implementations` | Implemented | Interface implementers / method overrides across the reactor. |
+| `call_hierarchy` | Implemented | Incoming (callers) and outgoing (callees) calls across modules. |
+| `search_symbols` | Implemented | Type lookup by name (CamelHumps) across reactor, dependencies, and JDK. |
+| `describe_symbol` | Implemented | Rendered signature, type, and Javadoc (hover) as Markdown. |
+| `rename_symbol` | Implemented | Reactor-wide rename applied to disk; refuses to touch non-reactor files. |
+| `run_test` | Implemented | Replays a test method/class/package from captured bytecode — no reactor build. |
+
+Cross-cutting: every located result carries a source snippet and an origin (reactor / dependency / JDK / generated); results append a `Stale:` advisory when a module's source is newer than its compiled classes; task→tool routing instructions are served at connection time; and each tool call is logged (`[tool] <name> <args> <ms> <outcome>`) to stderr for usage analysis.
 
 ## Implemented Architecture
 
