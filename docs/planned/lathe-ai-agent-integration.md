@@ -12,14 +12,20 @@ stdio, validated live against the private payment reactor.
   (`lathe-mcp-launcher.sh`), workspace resolved from `cwd`, stderr logging (`LATHE_DEBUG`), and an
   in-process `LatheEngine` facade in `lathe-server` (subpackage `server.engine`; the LSP service is
   the shared analysis seam driving both front-ends).
-- Tools: **`get_diagnostics`, `get_definition`, `find_references`, `rename_symbol`, `run_test`** —
-  every located result carries source snippets and an `origin` (REACTOR / GENERATED / EXTERNAL).
+- Tools (8): **`get_diagnostics`, `get_definition`, `find_references`, `rename_symbol`, `run_test`,
+  `call_hierarchy`, `describe_symbol`, `search_symbols`** — every located result carries source
+  snippets and an `origin` (REACTOR / GENERATED / EXTERNAL).
 - `rename_symbol` applies javac-accurate edits to disk across modules and refuses to touch a
   non-reactor file.
 - `run_test` replays a single test **method / class / package** against the compiled classpath (no
   `mvn`, no reactor build), reusing the editor's runnable→selection mapping; returns pass/fail/skip
   counts + each failure's `type: message` and line. Verified live on the payment reactor (sub-3s per
   run). Module scope deferred (no module-run in the substrate yet).
+- `call_hierarchy` traces callers/callees one level across the reactor (transitive depth deferred);
+  `describe_symbol` returns the hover markdown (signature/type/javadoc) as a passthrough;
+  `search_symbols` finds a type/symbol by name across reactor + dependencies + JDK. All verified live
+  on the payment reactor (e.g. incoming `call_hierarchy` on an overloaded method → 97 cross-module
+  callers with snippets).
 - **Freshness advisory:** results append a `Stale:` note listing modules whose source is newer than
   their compiled classes (reusing the existing idle-reconcile scan, cached), so the agent knows to
   re-sync; `rename_symbol` force-refreshes so its own result is current. MCP has no server→model
@@ -27,8 +33,8 @@ stdio, validated live against the private payment reactor.
 - **Routing instructions** served at `initialize` (task→tool dispatch), mirrored into tool
   descriptions for clients that drop server instructions (claude.ai web).
 
-**Next:** `call_hierarchy` / `type_hierarchy` / `find_implementations` (axis B, polymorphic
-queries); `run_test` **module** scope (needs a module-run path in the substrate).
+**Next:** `find_implementations` and `type_hierarchy` (remaining axis-B queries); `add_missing_imports`;
+transitive `call_hierarchy` depth; `run_test` **module** scope (needs a module-run path in the substrate).
 
 **Dropped:** `verify_build` (wrapping `mvn` over the reactor). An agent can run `mvn` itself, so a
 thin wrapper fails the "does Lathe do this better than agent+bash?" test. Lathe's edge is *individual*
@@ -414,7 +420,7 @@ contract.
 |---|---|---|
 | `get_diagnostics` ✅ | diagnostics | `{file}` → `{diagnostics[], stalenessHint?}` — "errors in *this* file after your edit." |
 | `get_definition` ✅ | definition | `{file,line,column}` → `{targets[]{…snippet, resolvedInto: reactor\|dependency\|jdk\|generated}}` |
-| `describe_symbol` | hover | `{file,line,column}` → `{kind, signature, type, javadoc, snippet}` |
+| `describe_symbol` ✅ | hover | `{file,line,column}` → `{markup}` — the rendered signature/type/javadoc markdown (passthrough, not re-parsed). |
 
 ### Tier 2 — the migration / removal loop (highest daily leverage on a reactor)
 
@@ -424,9 +430,9 @@ contract.
 | `rename_symbol` ✅ | rename | **write** | `{file,line,column,newName}` → `{renamed, from, to, editedFiles[], totalEdits}` \| structured refusal. Cross-module confirmed working ([probe](../gaps/gaps-archive.md#fr-017)). |
 | ~~`verify_build`~~ **DROPPED** | — | — | Wrapping `mvn` over the reactor is something the agent can do itself; see [Status](#status). Cross-module verification stays the agent's own `mvn`; Lathe surfaces staleness instead. |
 | `find_implementations` | implementation | read | `{file,line,column,maxResults?}` → `{implementations[]}` |
-| `search_symbols` | workspace/symbol (CamelHumps) | read | `{query, kind?, maxResults?}` → `{symbols[]{…, signatureSnippet}}` |
+| `search_symbols` ✅ | workspace/symbol (CamelHumps) | read | `{query, maxResults?}` → `{query, total, symbols[]{name, kind, container, snippet}}`. Kind filter deferred. |
 
-✅ = shipped (`get_diagnostics`, `get_definition`, `find_references`, `rename_symbol`). These compose
+✅ = shipped. These compose
 into the dominant reactor workflow — cross-module config/API migrations and safe removals — and each
 tool's description hands off to the next: `find_references` (find every site) → `rename_symbol`
 (change them atomically) → **rebuild** (the agent's own `mvn`; a `Stale:` advisory on subsequent
@@ -446,7 +452,7 @@ An optional sibling `run_main` → `lathe.run.main` is deprioritized (not a head
 | Tool | Maps to | Kind | In → Out |
 |---|---|---|---|
 | `document_symbols` | documentSymbol | read | `{file}` → `{symbols[] tree}` — grok a large file without reading it whole. |
-| `call_hierarchy` | call hierarchy | read | `{file,line,column, direction: incoming\|outgoing, maxResults?}` → `{calls[]}` |
+| `call_hierarchy` ✅ | call hierarchy | read | `{file,line,column, direction: incoming\|outgoing, maxResults?}` → `{incoming, total, calls[]{name, snippet}}`. One level; transitive depth deferred. |
 | `type_hierarchy` | typeHierarchy / `lathe.typeHierarchy` | read | `{file,line,column, direction: super\|sub\|both}` → `{types[]{…, relation}}` |
 | `add_missing_imports` | `lathe.missingImports` | **write** | `{file}` → `{added[], ambiguous[]{name, candidates[]}, unresolved[]}` |
 
@@ -510,7 +516,7 @@ in-repo `multi-module` invoker workspace and a large private multi-module worksp
 diagnostics, cross-file `definition`, runnables discovered, and a replay → `[PASSED] exit=0`.
 The `.lsp.json` schema was re-verified against the live plugins reference.
 
-### Phase 1 — Scaffold + Tier 1 (foundational reads) — DONE (except `describe_symbol`)
+### Phase 1 — Scaffold + Tier 1 (foundational reads) — DONE
 
 - New `lathe-mcp-server` module wired into the reactor; SDK dependency; `LatheMcpServer.main` over the
   SDK stdio transport; classpath launcher; `cwd`-based workspace resolution; lazy-open + cache.
@@ -531,7 +537,8 @@ The `.lsp.json` schema was re-verified against the live plugins reference.
 - `find_references` ✅ and `rename_symbol` ✅ shipped (cross-module, javac-accurate; rename applies
   edits to disk and refuses non-reactor files). Measured win on a polymorphic name — see
   [Second A/B](#second-ab--polymorphic-reference-sites-2026-09-20).
-- `find_implementations`, `search_symbols` — not yet.
+- `search_symbols` ✅ shipped (name lookup across reactor + deps + JDK; kind filter deferred).
+- `find_implementations` — not yet.
 - `verify_build` — **dropped** (see [Status](#status)); the loop verifies with the agent's own `mvn`.
 - **Freshness advisory** ✅ and **routing instructions** ✅ shipped as cross-cutting additions this
   phase (not in the original plan): every result flags stale modules, and the server tells the agent
@@ -553,9 +560,11 @@ The `.lsp.json` schema was re-verified against the live plugins reference.
   (stack traces, logs) is a possible capped-tail follow-up. Replay stays gated on the `Stale:`
   advisory (see the [New/Changed-Test Replay Inner Loop](lathe-new-test-replay-loop.md)).
 
-### Phase 4 — Tier 4 (medium tools)
+### Phase 4 — Tier 4 (medium tools) — IN PROGRESS
 
-- `document_symbols`, `call_hierarchy`, `type_hierarchy`, `add_missing_imports`.
+- `call_hierarchy` ✅ shipped — incoming/outgoing, one level (transitive depth deferred); verified
+  live (97 cross-module callers on an overloaded operator method).
+- `document_symbols`, `type_hierarchy`, `add_missing_imports` — not yet.
 
 ### Phase 5 — Measurement harness
 
