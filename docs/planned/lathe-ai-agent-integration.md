@@ -12,10 +12,14 @@ stdio, validated live against the private payment reactor.
   (`lathe-mcp-launcher.sh`), workspace resolved from `cwd`, stderr logging (`LATHE_DEBUG`), and an
   in-process `LatheEngine` facade in `lathe-server` (subpackage `server.engine`; the LSP service is
   the shared analysis seam driving both front-ends).
-- Tools: **`get_diagnostics`, `get_definition`, `find_references`, `rename_symbol`** — every result
-  carries source snippets and an `origin` (REACTOR / GENERATED / EXTERNAL).
+- Tools: **`get_diagnostics`, `get_definition`, `find_references`, `rename_symbol`, `run_test`** —
+  every located result carries source snippets and an `origin` (REACTOR / GENERATED / EXTERNAL).
 - `rename_symbol` applies javac-accurate edits to disk across modules and refuses to touch a
   non-reactor file.
+- `run_test` replays a single test **method / class / package** against the compiled classpath (no
+  `mvn`, no reactor build), reusing the editor's runnable→selection mapping; returns pass/fail/skip
+  counts + each failure's `type: message` and line. Verified live on the payment reactor (sub-3s per
+  run). Module scope deferred (no module-run in the substrate yet).
 - **Freshness advisory:** results append a `Stale:` note listing modules whose source is newer than
   their compiled classes (reusing the existing idle-reconcile scan, cached), so the agent knows to
   re-sync; `rename_symbol` force-refreshes so its own result is current. MCP has no server→model
@@ -23,8 +27,8 @@ stdio, validated live against the private payment reactor.
 - **Routing instructions** served at `initialize` (task→tool dispatch), mirrored into tool
   descriptions for clients that drop server instructions (claude.ai web).
 
-**Next:** `run_test` (individual test replay, no reactor build — designed); `call_hierarchy` /
-`type_hierarchy` / `find_implementations` (axis B, polymorphic queries).
+**Next:** `call_hierarchy` / `type_hierarchy` / `find_implementations` (axis B, polymorphic
+queries); `run_test` **module** scope (needs a module-run path in the substrate).
 
 **Dropped:** `verify_build` (wrapping `mvn` over the reactor). An agent can run `mvn` itself, so a
 thin wrapper fails the "does Lathe do this better than agent+bash?" test. Lathe's edge is *individual*
@@ -433,7 +437,7 @@ results tells it when a re-sync is needed before trusting them).
 | Tool | Maps to | Kind | In → Out |
 |---|---|---|---|
 | `list_runnables` | `lathe.runnables.list` | read | `{file?}` → `{runnables[]{id, kind, module, displayName}}` |
-| `run_test` | `lathe.run.test` replay | **action** | `{runnableId} \| {file,method?} \| {package} \| {module}` → `{status, passed, failed, skipped, failures[], output}`. Runs at **method / class / package / module** scope — the substrate already supports all four (`TestSelectionKind`). **Gated on recompile-before-replay freshness.** |
+| `run_test` ✅ | `lathe.run.test` replay | **action** | `{file, scope: class\|method\|package, method?}` → `{launched, passed, failed, skipped, failures[]}`. Resolves the target from the file's runnables and reuses the editor's `{kind, RunTarget.id}` selection mapping. **method / class / package** shipped; **module** deferred (no module-run path yet). Blocked outcome (no `test-launch.json` / runner jar) returned as an actionable result; `Stale:` advisory rides along. |
 
 An optional sibling `run_main` → `lathe.run.main` is deprioritized (not a headline agent verb).
 
@@ -534,15 +538,20 @@ The `.lsp.json` schema was re-verified against the live plugins reference.
   which tool to reach for per task.
 - Exit: complete a cross-module migration and a safe removal through MCP tools + the agent's `mvn`.
 
-### Phase 3 — Tier 3 (the run loop) — NEXT
+### Phase 3 — Tier 3 (the run loop) — DONE (method/class/package; module deferred)
 
-- `list_runnables` + `run_test` (individual test replay, no reactor build) — **designed**; the capture
-  writer that produces `test-launch.json` is built and present on real reactors, so replay is
-  feasible. **Scope: method / class / package / module** — `TestSelectionKind` already carries all
-  four selectors (`--select-method/-class/-package/-module`), so the tool should expose running a
-  whole package or module, not just one test. **Gated on recompile-before-replay** (and the `Stale:`
-  advisory) so a replay cannot report stale results (see the
-  [New/Changed-Test Replay Inner Loop](lathe-new-test-replay-loop.md)).
+- `run_test` ✅ shipped — replays a test **method / class / package** against the compiled classpath
+  (no reactor build), resolving the target from the file's runnables and reusing the editor's
+  `{kind, RunTarget.id}` selection mapping; returns pass/fail/skip counts + per-failure `type: message`
+  and line. A blocked outcome (no captured `test-launch.json` / runner jar) is returned as an
+  actionable result, and the `Stale:` advisory rides along. Verified live on the payment reactor
+  (sub-3s per run). `list_runnables` was **not** needed as a separate tool — `run_test` resolves
+  runnables internally.
+- **Module** scope deferred: `TestSelectionKind` has a `MODULE` selector but the substrate has no
+  module-level runnable / run path, so it's a follow-up, not "already supported."
+- **Compact output for now** — counts + one-line failure summaries; the full stdout/stderr transcript
+  (stack traces, logs) is a possible capped-tail follow-up. Replay stays gated on the `Stale:`
+  advisory (see the [New/Changed-Test Replay Inner Loop](lathe-new-test-replay-loop.md)).
 
 ### Phase 4 — Tier 4 (medium tools)
 
