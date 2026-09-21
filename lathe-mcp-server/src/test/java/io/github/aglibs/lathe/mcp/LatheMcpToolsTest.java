@@ -8,8 +8,13 @@ import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -126,6 +131,41 @@ class LatheMcpToolsTest {
         call("get_diagnostics", Map.of("file", tmp.resolve("Missing.java").toString()));
 
     assertThat(result.isError()).isTrue();
+  }
+
+  @Test
+  void logged_recordsToolNameAndArguments() {
+    final var records = new ArrayList<LogRecord>();
+    final Logger logger = Logger.getLogger(LatheMcpTools.class.getName());
+    final Handler handler =
+        new Handler() {
+          @Override
+          public void publish(final LogRecord record) {
+            records.add(record);
+          }
+
+          @Override
+          public void flush() {}
+
+          @Override
+          public void close() {}
+        };
+    final Level previous = logger.getLevel();
+    final String file = tmp.resolve("Missing.java").toString();
+    logger.setLevel(Level.INFO);
+    logger.addHandler(handler);
+    try {
+      call("get_diagnostics", Map.of("file", file));
+    } finally {
+      logger.removeHandler(handler);
+      logger.setLevel(previous);
+    }
+
+    assertThat(records)
+        .extracting(LogRecord::getMessage)
+        .anySatisfy(
+            message ->
+                assertThat(message).contains("[tool] get_diagnostics", "file=%s".formatted(file)));
   }
 
   private CallToolResult call(final String name, final Map<String, Object> arguments) {

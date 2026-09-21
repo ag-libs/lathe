@@ -37,6 +37,7 @@ final class LatheMcpTools {
 
   private static final Logger LOG = Logger.getLogger(LatheMcpTools.class.getName());
   private static final int DEFAULT_MAX_RESULTS = 50;
+  private static final int MAX_ARG_VALUE_CHARS = 200;
 
   private LatheMcpTools() {}
 
@@ -72,7 +73,7 @@ final class LatheMcpTools {
         .tool(tool)
         .callHandler(
             (exchange, request) ->
-                logged("get_diagnostics", () -> handleDiagnostics(engine, request)))
+                logged("get_diagnostics", request, () -> handleDiagnostics(engine, request)))
         .build();
   }
 
@@ -98,7 +99,7 @@ final class LatheMcpTools {
         .tool(tool)
         .callHandler(
             (exchange, request) ->
-                logged("get_definition", () -> handleDefinition(engine, request)))
+                logged("get_definition", request, () -> handleDefinition(engine, request)))
         .build();
   }
 
@@ -129,7 +130,7 @@ final class LatheMcpTools {
         .tool(tool)
         .callHandler(
             (exchange, request) ->
-                logged("find_references", () -> handleReferences(engine, request)))
+                logged("find_references", request, () -> handleReferences(engine, request)))
         .build();
   }
 
@@ -157,7 +158,8 @@ final class LatheMcpTools {
     return SyncToolSpecification.builder()
         .tool(tool)
         .callHandler(
-            (exchange, request) -> logged("rename_symbol", () -> handleRename(engine, request)))
+            (exchange, request) ->
+                logged("rename_symbol", request, () -> handleRename(engine, request)))
         .build();
   }
 
@@ -186,7 +188,8 @@ final class LatheMcpTools {
     return SyncToolSpecification.builder()
         .tool(tool)
         .callHandler(
-            (exchange, request) -> logged("run_test", () -> handleRunTest(engine, request)))
+            (exchange, request) ->
+                logged("run_test", request, () -> handleRunTest(engine, request)))
         .build();
   }
 
@@ -216,7 +219,7 @@ final class LatheMcpTools {
         .tool(tool)
         .callHandler(
             (exchange, request) ->
-                logged("call_hierarchy", () -> handleCallHierarchy(engine, request)))
+                logged("call_hierarchy", request, () -> handleCallHierarchy(engine, request)))
         .build();
   }
 
@@ -241,7 +244,8 @@ final class LatheMcpTools {
     return SyncToolSpecification.builder()
         .tool(tool)
         .callHandler(
-            (exchange, request) -> logged("describe_symbol", () -> handleDescribe(engine, request)))
+            (exchange, request) ->
+                logged("describe_symbol", request, () -> handleDescribe(engine, request)))
         .build();
   }
 
@@ -266,17 +270,36 @@ final class LatheMcpTools {
         .tool(tool)
         .callHandler(
             (exchange, request) ->
-                logged("search_symbols", () -> handleSearchSymbols(engine, request)))
+                logged("search_symbols", request, () -> handleSearchSymbols(engine, request)))
         .build();
   }
 
-  // One INFO line per tool call — the adoption/latency signal (visible without LATHE_DEBUG).
-  private static CallToolResult logged(final String tool, final Supplier<CallToolResult> body) {
+  // One INFO line per tool call — the adoption/usage/latency signal (visible without LATHE_DEBUG).
+  private static CallToolResult logged(
+      final String tool, final CallToolRequest request, final Supplier<CallToolResult> body) {
     final var t = Stopwatch.start();
     final CallToolResult result = body.get();
     final boolean ok = !Boolean.TRUE.equals(result.isError());
-    LOG.info(() -> "[tool] %s %dms %s".formatted(tool, t.elapsedMs(), ok ? "ok" : "error"));
+    LOG.info(
+        () ->
+            "[tool] %s %s %dms %s"
+                .formatted(tool, argsSummary(request), t.elapsedMs(), ok ? "ok" : "error"));
     return result;
+  }
+
+  // Compact "key=value" of the call arguments for the usage log; values are paths, positions,
+  // identifiers, and queries — never source content — each capped defensively.
+  private static String argsSummary(final CallToolRequest request) {
+    return request.arguments().entrySet().stream()
+        .map(entry -> "%s=%s".formatted(entry.getKey(), capped(entry.getValue())))
+        .collect(Collectors.joining(" "));
+  }
+
+  private static String capped(final Object value) {
+    final String text = String.valueOf(value);
+    return text.length() <= MAX_ARG_VALUE_CHARS
+        ? text
+        : "%s…".formatted(text.substring(0, MAX_ARG_VALUE_CHARS));
   }
 
   private static CallToolResult handleDiagnostics(
