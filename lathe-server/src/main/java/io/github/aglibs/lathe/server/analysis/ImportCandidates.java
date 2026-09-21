@@ -20,7 +20,7 @@ final class ImportCandidates {
       final WorkspaceTypeIndex typeIndex,
       final Set<String> alreadyImported) {
     final Scope scope = scopeAt(at, analysis);
-    return typeIndex.search(simpleName, 100).stream()
+    return typeIndex.searchExact(simpleName).stream()
         .filter(entry -> entry.simpleName().equals(simpleName) && !entry.packageName().isEmpty())
         .map(entry -> "%s.%s".formatted(entry.packageName(), entry.simpleName()))
         .distinct()

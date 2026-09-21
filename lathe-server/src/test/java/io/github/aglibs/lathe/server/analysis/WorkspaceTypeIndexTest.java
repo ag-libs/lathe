@@ -12,6 +12,8 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -109,6 +111,41 @@ class WorkspaceTypeIndexTest {
     final var index = WorkspaceTypeIndex.build(List.of(shard));
 
     assertThat(index.search("Foo", 2)).hasSize(2);
+  }
+
+  @Test
+  void searchExact_manyPrefixSiblings_returnsAllExactMatchesUnaffectedByLimit() throws IOException {
+    final List<TypeIndexEntry> all =
+        Stream.concat(
+                IntStream.range(0, 120)
+                    .mapToObj(i -> entry("List%03d".formatted(i), "com.example.dep")),
+                Stream.of(entry("List", "java.util"), entry("List", "java.awt")))
+            .toList();
+    final var shard = writeShard(tmp, "shard.json", shard(all.toArray(TypeIndexEntry[]::new)));
+
+    final var index = WorkspaceTypeIndex.build(List.of(shard));
+
+    // The `List*` siblings sort before java.util.List by binaryName, so the limited prefix scan
+    // starves the exact match out of the window; the exact-name lookup is unbounded and does not.
+    assertThat(index.search("List", 100))
+        .extracting(TypeIndexEntry::binaryName)
+        .doesNotContain("java.util.List");
+    assertThat(index.searchExact("List"))
+        .extracting(TypeIndexEntry::binaryName)
+        .containsExactlyInAnyOrder("java.util.List", "java.awt.List");
+  }
+
+  @Test
+  void searchExact_caseInsensitiveAndNoMatch_returnsGroupOrEmpty() throws IOException {
+    final var shard = writeShard(tmp, "shard.json", shard(entry("List", "java.util")));
+
+    final var index = WorkspaceTypeIndex.build(List.of(shard));
+
+    assertThat(index.searchExact("list"))
+        .extracting(TypeIndexEntry::binaryName)
+        .containsExactly("java.util.List");
+    assertThat(index.searchExact("Nope")).isEmpty();
+    assertThat(index.searchExact("")).isEmpty();
   }
 
   @Test

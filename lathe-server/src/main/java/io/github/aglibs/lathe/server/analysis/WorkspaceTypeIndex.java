@@ -229,6 +229,13 @@ public final class WorkspaceTypeIndex {
     return prefixMatches(bySimpleNameLower, prefix, limit);
   }
 
+  // The full group of importable types with this exact simple name, unbounded. Import resolution
+  // needs every exact match; a limit-truncated prefix scan starves common names (java.util.List)
+  // when many `List*` siblings sort ahead of them by binaryName.
+  public List<TypeIndexEntry> searchExact(final String simpleName) {
+    return bySimpleNameLower.getOrDefault(simpleName.toLowerCase(), List.of());
+  }
+
   // Same exact-prefix match as search(), but over the visibility-unfiltered symbol map, so
   // workspace/symbol -- and the stack-frame navigation that resolves frames through it -- can find
   // package-private top-level dependency types (a trace's internal impl classes) and link them to

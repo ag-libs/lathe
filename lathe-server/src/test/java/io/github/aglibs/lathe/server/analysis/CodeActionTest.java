@@ -9,6 +9,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import javax.tools.StandardLocation;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.Command;
@@ -137,6 +139,47 @@ class CodeActionTest {
     assertThat(edits).hasSize(1);
     assertThat(edits.getFirst().getNewText()).isEqualTo("import java.util.ArrayList;\n");
     assertThat(edits.getFirst().getRange().getStart().getLine()).isEqualTo(1);
+  }
+
+  @Test
+  void codeAction_typeRef_manyPrefixSiblingsInIndex_stillOffersExactImport() throws IOException {
+    // The `List*` siblings all sort before java.util.List by binaryName, so a limit-truncated
+    // prefix scan would starve the exact match; resolution must look the exact name up directly.
+    final var siblings =
+        IntStream.range(0, 120)
+            .mapToObj(
+                i ->
+                    new TypeIndexEntry(
+                        "List%03d".formatted(i),
+                        "com.example.dep.List%03d".formatted(i),
+                        "com.example.dep",
+                        TypeKind.CLASS,
+                        true,
+                        List.of()));
+    final var jdkList =
+        Stream.of(
+            new TypeIndexEntry(
+                "List", "java.util.List", "java.util", TypeKind.CLASS, true, List.of()));
+    final WorkspaceTypeIndex listIndex =
+        TempSourceCompiler.typeIndex(
+            tmp.resolve("list_index.json"),
+            Stream.concat(siblings, jdkList).toArray(TypeIndexEntry[]::new));
+
+    final var source =
+        """
+        package com.example;
+        record Order(List<String> lines) {}
+        """;
+
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    final var actions =
+        session.codeAction(
+            TempSourceCompiler.TEST_URI, source, 1, rangeAt(0, 0), toRequests(diags), listIndex);
+
+    assertThat(codeActions(actions))
+        .extracting(CodeAction::getTitle)
+        .containsExactly("Import 'java.util.List'");
   }
 
   @Test
