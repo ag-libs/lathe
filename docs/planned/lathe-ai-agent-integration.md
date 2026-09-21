@@ -122,19 +122,19 @@ and on polymorphic symbols — not as standalone search on distinctive names.
 ### Second A/B — polymorphic reference sites (2026-09-20)
 
 A follow-up on the same reactor tested the axis the first A/B pointed to: an **overloaded,
-polymorphic** name instead of a distinctive one. Task = list every site to rename an operator
-interface method `refund(...)` — declared once, implemented by ~20 adapters, called across modules —
+polymorphic** name instead of a distinctive one. Task = list every site to rename an interface
+method `submit(Request)` — declared once, implemented by ~20 adapters, called across modules —
 excluding unrelated same-named methods. Treatment (`find_references`) vs baseline (grep only), scored
 against the 126-site ground truth from the tool itself.
 
 - **Correctness: tie at 100%** — both reached 126/126 precision *and* recall. But the tie held only
-  because the prompt **named the exclusions** (a static factory `refund`, a second interface's
-  `refund`); in the wild that disambiguation is exactly what `find_references` does for free and the
-  grep-agent must reason out. `find_references` even split two `refund` tokens on a single line
-  (`o.refund(OperatorRequestFactory.refund(c))`), which text search cannot.
+  because the prompt **named the exclusions** (a static factory `submit`, a second interface's
+  `submit`); in the wild that disambiguation is exactly what `find_references` does for free and the
+  grep-agent must reason out. `find_references` even split two `submit` tokens on a single line
+  (`h.submit(RequestFactory.submit(ctx))`), which text search cannot.
 - **Cost: MCP clearly cheaper** — 1 tool call vs 20+ grep/read/bash; **~1.9× fewer turns, ~1.7×
   lower cost, ~2.5× less wall time**. The grep-agent spent its run reconstructing the class hierarchy
-  (interface → sub-interfaces → ~20 overrides) by hand against 396 noisy `refund` matches.
+  (interface → sub-interfaces → ~20 overrides) by hand against 396 noisy `submit` matches.
 
 This is the mirror image of the first A/B: on a *distinctive* name MCP cost **more** for a tie; on a
 *polymorphic* name it cost **less** for the same correctness — and the correctness parity is

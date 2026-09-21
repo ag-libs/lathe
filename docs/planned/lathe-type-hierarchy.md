@@ -72,19 +72,19 @@ jdtls/vscode-java architecture and keeps the "no ad-hoc Java in the client" rule
 `:LatheTypeHierarchy` on a type (or a symbol whose type resolves) opens a Telescope picker:
 
 ```
-▲ supertype   AbstractAdapter          com.example.core
-▲ supertype   Object                   java.lang
-● self        OperatorAdapter          com.example.op
-▼ subtype     DefaultOperatorAdapter   com.example.op
-▼ subtype     GpAdapter                com.example.op.gp
-▼ subtype     StrexAdapter             com.example.op.strex
+▲ supertype   AbstractAdapter   com.example.core
+▲ supertype   Object            java.lang
+● self        Adapter           com.example.adapter
+▼ subtype     DefaultAdapter    com.example.adapter
+▼ subtype     HttpAdapter       com.example.adapter.http
+▼ subtype     FileAdapter       com.example.adapter.file
 ```
 
 - **One list, both directions**, so a single command answers "what is this type's whole family?"
 - Each row is **tagged** (`▲` supertype / `●` self / `▼` subtype), so the up/down a tree would show is
   preserved without a tree widget.
-- The fuzzy-search text (`ordinal`) is the **fully-qualified name**, so typing `strex` filters to
-  `StrexAdapter`; the tag glyph and package are display-only.
+- The fuzzy-search text (`ordinal`) is the **fully-qualified name**, so typing `http` filters to
+  `HttpAdapter`; the tag glyph and package are display-only.
 - `<CR>` jumps to the type's declaration (reactor / dependency / JDK source, wherever `TypeSourceLocator`
   can resolve it). A type with no resolvable source is still listed (informational) and selection
   notifies rather than jumps.
