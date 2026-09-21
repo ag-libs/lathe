@@ -21,7 +21,8 @@ the compiler reports, and runs and tests replay the real launch without a Maven 
 
 Setup is one extension registration, a first build, and a plugin line in your Neovim config.
 
-Lathe ships a Neovim client and an MCP server for AI coding agents; a VS Code client is planned.
+Lathe ships a [Neovim client](#editors) and an [MCP server for AI coding agents](#ai-agents-mcp); a
+[VS Code client](#editors) is planned.
 
 ## Demo
 
