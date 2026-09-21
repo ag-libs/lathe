@@ -35,8 +35,8 @@ public final class LatheMcpServer {
       - Renaming or removing a symbol: ALWAYS use rename_symbol. It rewrites the true declaration, \
       every override/implementation, and all call sites across modules, and nothing that merely \
       shares the name; grep/sed cannot do this safely.
-      - Finding all uses before a change, or when the symbol is a method with overrides/\
-      implementations or a common/overloaded name: use find_references (resolves overloads and \
+      - Finding all uses / call sites of a symbol before changing it — especially a common or \
+      overloaded name where text search is ambiguous: use find_references (resolves overloads and \
       inheritance, excludes same-named unrelated symbols). For a rare, distinctive name a plain \
       grep is fine and cheaper.
       - Resolving or jumping to a definition, especially into dependencies, the JDK, or generated \
@@ -46,8 +46,8 @@ public final class LatheMcpServer {
       - Understanding an API before calling it (signature, type, javadoc): use describe_symbol.
       - Finding a type or symbol by name across the reactor, dependencies, and the JDK: use \
       search_symbols.
-      - Finding all implementations of an interface, or overrides of a method: use \
-      find_implementations.
+      - Finding the implementations of an interface, or the overrides of a method (the declarations \
+      themselves, not their call sites): use find_implementations.
       - Checking whether a file still compiles after an edit: use get_diagnostics (one file, no \
       Maven).
       - Checking whether a specific test, class, or package passes after an edit: use run_test — it \

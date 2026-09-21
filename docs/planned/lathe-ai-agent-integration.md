@@ -12,9 +12,10 @@ stdio, validated live against the private payment reactor.
   (`lathe-mcp-launcher.sh`), workspace resolved from `cwd`, stderr logging (`LATHE_DEBUG`), and an
   in-process `LatheEngine` facade in `lathe-server` (subpackage `server.engine`; the LSP service is
   the shared analysis seam driving both front-ends).
-- Tools (8): **`get_diagnostics`, `get_definition`, `find_references`, `rename_symbol`, `run_test`,
-  `call_hierarchy`, `describe_symbol`, `search_symbols`** — every located result carries source
-  snippets and an `origin` (REACTOR / GENERATED / EXTERNAL).
+- Tools (9): **`get_diagnostics`, `get_definition`, `find_references`, `rename_symbol`, `run_test`,
+  `call_hierarchy`, `describe_symbol`, `search_symbols`, `find_implementations`** — every located
+  result carries source snippets and an `origin` (REACTOR / GENERATED / EXTERNAL). The curated wedge
+  is **feature-complete**.
 - `rename_symbol` applies javac-accurate edits to disk across modules and refuses to touch a
   non-reactor file.
 - `run_test` replays a single test **method / class / package** against the compiled classpath (no
@@ -33,8 +34,10 @@ stdio, validated live against the private payment reactor.
 - **Routing instructions** served at `initialize` (task→tool dispatch), mirrored into tool
   descriptions for clients that drop server instructions (claude.ai web).
 
-**Next:** `find_implementations` and `type_hierarchy` (remaining axis-B queries); `add_missing_imports`;
-transitive `call_hierarchy` depth; `run_test` **module** scope (needs a module-run path in the substrate).
+**Next (optional follow-ups, not blockers):** `type_hierarchy`; `add_missing_imports`; transitive
+`call_hierarchy` depth; `run_test` **module** scope (needs a module-run path in the substrate);
+`search_symbols` kind filter. The core wedge is done — the next real work is **measurement**
+([Measurement](#measurement)), not more tools.
 
 **Dropped:** `verify_build` (wrapping `mvn` over the reactor). An agent can run `mvn` itself, so a
 thin wrapper fails the "does Lathe do this better than agent+bash?" test. Lathe's edge is *individual*
@@ -429,7 +432,7 @@ contract.
 | `find_references` ✅ | references | read | `{file,line,column,maxResults?,cursor?}` → `{total, truncated, references[]}` |
 | `rename_symbol` ✅ | rename | **write** | `{file,line,column,newName}` → `{renamed, from, to, editedFiles[], totalEdits}` \| structured refusal. Cross-module confirmed working ([probe](../gaps/gaps-archive.md#fr-017)). |
 | ~~`verify_build`~~ **DROPPED** | — | — | Wrapping `mvn` over the reactor is something the agent can do itself; see [Status](#status). Cross-module verification stays the agent's own `mvn`; Lathe surfaces staleness instead. |
-| `find_implementations` | implementation | read | `{file,line,column,maxResults?}` → `{implementations[]}` |
+| `find_implementations` ✅ | implementation | read | `{file,line,column,maxResults?}` → `{total, truncated, implementations[]}` — an interface's impls / a method's overrides, cross-module. |
 | `search_symbols` ✅ | workspace/symbol (CamelHumps) | read | `{query, maxResults?}` → `{query, total, symbols[]{name, kind, container, snippet}}`. Kind filter deferred. |
 
 ✅ = shipped. These compose
@@ -532,13 +535,14 @@ The `.lsp.json` schema was re-verified against the live plugins reference.
 - Exit: from a fresh agent session, edit a file, get diagnostics, and navigate — through MCP tools, on
   Codex/Gemini and Claude Code.
 
-### Phase 2 — Tier 2 (the migration / removal loop) — IN PROGRESS
+### Phase 2 — Tier 2 (the migration / removal loop) — DONE
 
 - `find_references` ✅ and `rename_symbol` ✅ shipped (cross-module, javac-accurate; rename applies
   edits to disk and refuses non-reactor files). Measured win on a polymorphic name — see
   [Second A/B](#second-ab--polymorphic-reference-sites-2026-09-20).
 - `search_symbols` ✅ shipped (name lookup across reactor + deps + JDK; kind filter deferred).
-- `find_implementations` — not yet.
+- `find_implementations` ✅ shipped (an interface's impls / a method's overrides, cross-module;
+  verified live — a real interface resolved ~30 implementations a grep would miss).
 - `verify_build` — **dropped** (see [Status](#status)); the loop verifies with the agent's own `mvn`.
 - **Freshness advisory** ✅ and **routing instructions** ✅ shipped as cross-cutting additions this
   phase (not in the original plan): every result flags stale modules, and the server tells the agent
