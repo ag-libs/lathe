@@ -136,6 +136,27 @@ class WorkspaceTypeIndexTest {
   }
 
   @Test
+  void search_usageCount_referencedTypeWinsThenColdStartFallsBackToBinaryName() throws IOException {
+    final var shard =
+        writeShard(tmp, "shard.json", shard(entry("List", "aaa.dep"), entry("List", "java.util")));
+
+    // Cold start: no usage data attached, so the order degrades to alphabetical binaryName.
+    assertThat(WorkspaceTypeIndex.build(List.of(shard)).search("List", 10))
+        .extracting(TypeIndexEntry::binaryName)
+        .containsExactly("aaa.dep.List", "java.util.List");
+
+    // With usage data the referenced type dominates that order and survives a tight cap.
+    final var ranked =
+        WorkspaceTypeIndex.build(List.of(shard)).withUsageCounts(Map.of("java.util.List", 7));
+    assertThat(ranked.search("List", 10))
+        .extracting(TypeIndexEntry::binaryName)
+        .containsExactly("java.util.List", "aaa.dep.List");
+    assertThat(ranked.search("List", 1))
+        .extracting(TypeIndexEntry::binaryName)
+        .containsExactly("java.util.List");
+  }
+
+  @Test
   void searchExact_caseInsensitiveAndNoMatch_returnsGroupOrEmpty() throws IOException {
     final var shard = writeShard(tmp, "shard.json", shard(entry("List", "java.util")));
 

@@ -96,27 +96,38 @@ and the guarantee no longer depends on the dependency count.
 - `CodeActionTest`: a `List<T>` field with 100+ `List*`-prefixed dependency entries in the index still
   yields the `java.util.List` import action — the negative case that fails today.
 
-## B — relevance ordering for prefix search (quality, follow-up)
+## B — usage-aware truncation for prefix search (quality)
 
-`prefixMatches` should rank by relevance rather than by `binaryName` alphabetical accident, so
-completion and symbol search surface the obvious type first regardless of workspace size.
-Proposed order:
+`prefixMatches` orders `(reactor-first, binaryName)` and *then* applies the limit, so the cap keeps the
+alphabetically-first matches rather than the most relevant ones.
+Completion already re-ranks what survives the cap by usage frequency
+(`TypeReferenceCompleter`, shipped as CQ-0059: `exact-prefix → usageCount → originRank → shorter-FQN →
+lexical`), but that runs *after* truncation, and `workspace/symbol` does not re-rank at all — it takes
+`searchSymbols` order verbatim and caps at 100.
+So a common type whose binary name sorts late is starved before either mechanism can help; concretely,
+`java.util.List` (binary-name rank ~107 among `List*`) never reached the symbol results at all.
 
-1. exact simple-name match over longer prefix matches (`List` before `ListIterator`),
-2. higher `usageCount` (document frequency — already computed, currently unused here),
-3. reactor-owned before external,
-4. `binaryName` as the stable tiebreaker.
+The minimal fix makes the truncation itself usage-aware, so the limit keeps the types the project
+actually references. The `prefixMatches` order becomes:
 
-This floats `java.util.List` toward the top of the completion popup without relying on the downstream
-usage re-rank, and removes the alphabetical bias for symbol search too.
-It is larger than A because it changes completion ordering and its expectation tests, so it is a
-separate, deliberate change rather than part of the bugfix.
+1. higher `usageCount` (document frequency across the reactor — already computed, previously unused
+   here),
+2. reactor-owned before external,
+3. `binaryName` as the stable tiebreaker.
+
+`usageCount` is the one signal that matters most and is shared with completion's comparator, so this
+brings `workspace/symbol` close to completion without duplicating the finer comparator there.
+A cold-start index carries no counts, so every entry ties on usage and the order degrades exactly to
+today's `(reactor-first, binaryName)` — keeping existing symbol/completion/EG-021 expectations green.
+Exact-name/originRank/FQN-length tie-breaks are deliberately left to completion's comparator rather
+than relocated here.
 
 ### B — test plan
 
-- `WorkspaceTypeIndexTest`: exact-name and high-usage entries rank ahead of unrelated prefix siblings.
-- Completion ranking tests / the completion expectations contract: `java.util.List` ranks at or near
-  the top for the `List` prefix in a dependency-heavy index.
+- `WorkspaceTypeIndexTest`: a referenced type outranks an alphabetically-earlier sibling and survives
+  a tight cap; a cold-start index (no counts) still falls back to `binaryName` order.
+- Verified end-to-end: `workspace/symbol` for `List` now returns `java.util.List` first in a
+  dependency-heavy workspace.
 
 ## Non-goals
 
@@ -127,5 +138,6 @@ separate, deliberate change rather than part of the bugfix.
 
 ## Status
 
-- A — accepted for the next cut (see gap CA-9); implemented on the import path.
-- B — deferred to backlog (see gap CA-9); ordering change with completion-test impact.
+- A — done (see gap CA-9); `searchExact` on the import path.
+- B — done (see gap CA-9); usage-aware truncation in `prefixMatches`, benefiting `workspace/symbol`
+  and the completion cap.

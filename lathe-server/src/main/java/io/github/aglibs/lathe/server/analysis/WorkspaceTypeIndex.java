@@ -254,9 +254,13 @@ public final class WorkspaceTypeIndex {
     }
 
     final String lower = prefix.toLowerCase();
+    // Usage frequency first, so the limit keeps the types the project actually references (a
+    // ubiquitous java.util.List beats alphabetically-earlier dependency `List*` types) instead of
+    // whatever sorts first by binaryName. A cold-start index carries no counts, so every entry ties
+    // on usage and the order degrades to the reactor-first, binaryName tie-breaks below.
     final Comparator<TypeIndexEntry> order =
-        Comparator.<TypeIndexEntry, Boolean>comparing(
-                e -> !reactorBinaryNames.contains(e.binaryName()))
+        Comparator.<TypeIndexEntry>comparingInt(e -> -usageCount(e.binaryName()))
+            .thenComparing(e -> !reactorBinaryNames.contains(e.binaryName()))
             .thenComparing(TypeIndexEntry::binaryName);
     return index.subMap(lower, lower + "￿").values().stream()
         .flatMap(List::stream)

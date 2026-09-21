@@ -6378,6 +6378,57 @@ the header declaration appears exactly once.
 - `ReferenceLocatorTest.recordComponent_scope_reactorModulesFromPublicAccessor`
 
 
+## CA-9 — Common JDK types (`java.util.List`) got no import quick fix in dependency-heavy modules — done
+
+**Status: done — Target: next.**
+
+Signal: user feedback — adding a field typed `List<…>` to a new record in a large module offered no
+"Import 'java.util.List'" code action, while an unresolved reactor type in the same file imported
+fine.
+
+Design: [Type-Index Name Resolution and Ranking](../planned/lathe-type-index-name-resolution.md).
+
+### Observed behaviour
+
+```java
+public record Order(List<String> lines) {}   // List unresolved → no import code action
+```
+
+`List` was detected as an unresolved `TYPE_REF` (it was listed by `lathe.missingImports`) but resolved
+to zero import candidates, so `ImportQuickFixProvider` emitted nothing.
+
+### Root cause
+
+`ImportCandidates.resolve` asked `WorkspaceTypeIndex.search(simpleName, 100)` for the top-100 of the
+`List*` **prefix** and filtered to exact matches afterward. `search`/`prefixMatches` ordered matches
+only by `binaryName` (after a reactor-first split), with no relevance signal, and applied the limit
+*before* the exact-name filter. In a dependency-heavy module, 100+ `List*`-prefixed dependency types
+sorted before `java.util.List` (binary name starts `java.`), so the exact match fell outside the
+window and never became a candidate. The same starvation hit `java.util.Map`/`Set` and other common
+names. Completion (limit 200 + the CQ-0059 usage re-rank) mostly survived — hence the failure was
+specific to the import path — while `workspace/symbol` (no re-rank, cap 100) dropped `java.util.List`
+entirely.
+
+### Resolution
+
+- **A — exact-name import resolution.** Added `WorkspaceTypeIndex.searchExact(simpleName)`, a direct
+  unbounded lookup of the exact simple-name group, and switched `ImportCandidates.resolve` to it.
+  Import resolution no longer depends on the search limit or `binaryName` ordering.
+- **B — usage-aware truncation.** Made `prefixMatches` order `usageCount(desc) → reactor → binaryName`
+  so the cap keeps the types the project actually references. A cold-start index (no counts) ties on
+  usage and degrades to the previous `(reactor, binaryName)` order, keeping existing
+  completion/symbol/EG-021 expectations green. This subsumes the shared usage signal with completion's
+  finer CQ-0059 comparator without relocating it; `workspace/symbol` now returns `java.util.List`
+  first in a dependency-heavy workspace.
+
+### Regression targets
+
+- `WorkspaceTypeIndexTest.searchExact_manyPrefixSiblings_returnsAllExactMatchesUnaffectedByLimit`
+- `WorkspaceTypeIndexTest.search_usageCount_referencedTypeWinsThenColdStartFallsBackToBinaryName`
+- `CodeActionTest.codeAction_typeRef_manyPrefixSiblingsInIndex_stillOffersExactImport`
+
+---
+
 ## CA-8 — Extract Constant/Field/Variable crashed on a synthetic occurrence, killing the whole code-action menu
 
 **Status: done — Target: next.**

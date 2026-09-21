@@ -76,8 +76,7 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 **Reliability and further work:**
 
 - [Type-Index Name Resolution and Ranking](planned/lathe-type-index-name-resolution.md) — exact-name
-  import resolution (fix A, resolves CA-9) plus a relevance-ordering follow-up for prefix search
-  (fix B).
+  import resolution (fix A) plus usage-aware prefix-search truncation (fix B); resolves CA-9. ✓
 - [Sibling Recompilation](planned/lathe-sibling-recompilation.md) — closed-file diagnostics after API changes.
 - [Lightweight Watcher](planned/lathe-lightweight-watcher.md) — partially stale design; would back a
   non-intrusive source-staleness signal (the deferred WS-2, folded under WS-1) if beta feedback warrants it.
