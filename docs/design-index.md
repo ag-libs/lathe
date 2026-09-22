@@ -75,6 +75,13 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 
 **Reliability and further work:**
 
+- [Named Run Configurations](planned/lathe-named-run-configs.md) — resolves TE-2: the overlay file
+  becomes a `{ defaults, configs }` object (`defaults` = the auto-applied baselines, `configs` =
+  name-keyed selectable entries that pin a target), explicit selection via `:LatheRun {name}` /
+  `:LatheDebug {name}` with server completion, cursor scaffolding via `:LatheRunSave[!] [name]` (the
+  one place Lathe writes `.lathe/run.json`), and active-config visibility (console header +
+  notification + run log). IntelliJ run-config model; builds on the shipped overlay machinery in
+  [Run, Test, and Debug](done/lathe-run-test-debug.md) §8.
 - [Type-Index Name Resolution and Ranking](planned/lathe-type-index-name-resolution.md) — exact-name
   import resolution (fix A) plus usage-aware prefix-search truncation (fix B); resolves CA-9. ✓
 - [Sibling Recompilation](planned/lathe-sibling-recompilation.md) — closed-file diagnostics after API changes.
