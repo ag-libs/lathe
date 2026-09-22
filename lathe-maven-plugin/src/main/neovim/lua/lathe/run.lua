@@ -17,7 +17,19 @@ local M = {}
 -- MAIN_CLASS(4) is its enclosing class declaration. Both are gutter-signed and launch the same
 -- class; TEST_* (1-3) are neotest's. See lathe.neotest's POSITION_TYPE for the test mapping.
 local RUN_KIND_MAIN = 0
+local RUN_KIND_TEST_METHOD = 1
+local RUN_KIND_TEST_CLASS = 2
+local RUN_KIND_TEST_PACKAGE = 3
 local RUN_KIND_MAIN_CLASS = 4
+local SELECTOR_KIND = {
+  [RUN_KIND_TEST_METHOD] = "METHOD",
+  [RUN_KIND_TEST_CLASS] = "CLASS",
+  [RUN_KIND_TEST_PACKAGE] = "PACKAGE",
+}
+
+-- Names of the saved configs, refreshed on attach/save, for :LatheRun/:LatheDebug completion.
+-- Command completion is synchronous, so it reads this cache rather than round-tripping the server.
+local config_names = {}
 
 local SIGN_NS = vim.api.nvim_create_namespace("lathe_run_signs")
 local SIGN_HL = "LatheRunnable"
@@ -119,10 +131,10 @@ local function notify(msg, level)
   vim.notify(msg, level, { title = "Lathe" })
 end
 
-local function on_finished(target, err, outcome)
+local function on_finished(label, err, outcome)
   active_token = nil
   if err then
-    notify("run.main error: " .. vim.inspect(err), vim.log.levels.ERROR)
+    notify("run error: " .. (err.message or vim.inspect(err)), vim.log.levels.ERROR)
     return
   end
 
@@ -133,7 +145,7 @@ local function on_finished(target, err, outcome)
 
   local code = (outcome and outcome.exitCode) or -1
   notify(
-    ("%s exited %d"):format(target.parentId, code),
+    ("%s exited %d"):format(label, code),
     code == 0 and vim.log.levels.INFO or vim.log.levels.WARN
   )
 
@@ -142,24 +154,45 @@ local function on_finished(target, err, outcome)
   stackdecorate.decorate_live_output()
 end
 
-local function launch_main(client, target)
+--- Shared foreground-run scaffolding: mint a token (so :LatheRunStop can cancel), clear and show the
+--- console, notify, then route the command's outcome through on_finished under `label`. `args` gains
+--- the token before dispatch.
+local function launch(client, command, args, label)
   local token = output.next_token()
   active_token = token
+  args.token = token
   output.reset()
   output.ensure_open()
-  notify("Running " .. target.parentId, vim.log.levels.INFO)
+  notify("Running " .. label, vim.log.levels.INFO)
   client:request("workspace/executeCommand", {
-    command = "lathe.run.main",
-    arguments = { {
-      moduleRel = target.moduleRel,
-      mainClass = target.parentId,
-      token = token,
-    } },
+    command = command,
+    arguments = { args },
   }, function(err, outcome)
     vim.schedule(function()
-      on_finished(target, err, outcome)
+      on_finished(label, err, outcome)
     end)
   end)
+end
+
+local function launch_main(client, target)
+  launch(
+    client,
+    "lathe.run.main",
+    { moduleRel = target.moduleRel, mainClass = target.parentId },
+    target.parentId
+  )
+end
+
+--- Runs a saved config selected by name (cursor-independent): the server resolves its pinned target
+--- and composed overlay from `.lathe/run.json` + `lathe-run.json`.
+function M.run_named(name)
+  local client = lathe_client()
+  if not client then
+    notify("server not attached to this buffer", vim.log.levels.WARN)
+    return
+  end
+
+  launch(client, "lathe.run.named", { name = name }, name)
 end
 
 --- Runs the `main` class in the current buffer (the one under the cursor, or the file's only
@@ -195,6 +228,143 @@ function M.run(bufnr)
       launch_main(client, target)
     end)
   end, bufnr)
+end
+
+--- The `lathe.runconfig.save` request body for a resolved runnable target: a MAIN pins its class, a
+--- test pins a single selector. A MAIN_CLASS resolves to its main method. Returns nil for a target
+--- with no saveable shape.
+local function save_request(targets, t)
+  if t.kind == RUN_KIND_MAIN then
+    return { moduleRel = t.moduleRel, kind = "MAIN", mainClass = t.parentId }
+  end
+
+  if t.kind == RUN_KIND_MAIN_CLASS then
+    for _, m in ipairs(targets) do
+      if m.kind == RUN_KIND_MAIN and m.parentId == t.id then
+        return { moduleRel = m.moduleRel, kind = "MAIN", mainClass = m.parentId }
+      end
+    end
+
+    return nil
+  end
+
+  local selector_kind = SELECTOR_KIND[t.kind]
+  if not selector_kind then
+    return nil
+  end
+
+  return {
+    moduleRel = t.moduleRel,
+    kind = "TEST",
+    selectors = { { selectorKind = selector_kind, selectorValue = t.id } },
+  }
+end
+
+--- The save request for a cursor position: the method-level target (main or test) under the cursor,
+--- else the class-level one, else the file's only main; nil when nothing runnable resolves. Pure over
+--- the raw lathe.runnables.list targets, so it is unit-testable without a live client.
+function M._save_target_for(targets, cursor_line)
+  for _, t in ipairs(targets) do
+    if (t.kind == RUN_KIND_MAIN or t.kind == RUN_KIND_TEST_METHOD) and in_range(t.range, cursor_line) then
+      return save_request(targets, t)
+    end
+  end
+
+  for _, t in ipairs(targets) do
+    if (t.kind == RUN_KIND_MAIN_CLASS or t.kind == RUN_KIND_TEST_CLASS) and in_range(t.range, cursor_line) then
+      return save_request(targets, t)
+    end
+  end
+
+  local main = M._main_target_for(targets, cursor_line)
+  return main and save_request(targets, main) or nil
+end
+
+local function on_saved(err, saved)
+  if err then
+    notify("save failed: " .. (err.message or vim.inspect(err)), vim.log.levels.ERROR)
+    return
+  end
+
+  notify("saved config '" .. saved.name .. "'", vim.log.levels.INFO)
+  vim.cmd.edit(saved.path)
+end
+
+--- Saves the runnable under the cursor as a named config in `.lathe/run.json`, then opens the file at
+--- the new entry. `name` may be nil (the server derives it from the class); `overwrite` (the command
+--- bang) replaces an existing entry instead of refusing.
+function M.save(name, overwrite)
+  local bufnr = vim.api.nvim_get_current_buf()
+  local client = lathe_client()
+  if not client then
+    notify("server not attached to this buffer", vim.log.levels.WARN)
+    return
+  end
+
+  local cursor_line = vim.api.nvim_win_get_cursor(0)[1] - 1
+  client:request("workspace/executeCommand", {
+    command = "lathe.runnables.list",
+    arguments = { { uri = vim.uri_from_bufnr(bufnr) } },
+  }, function(err, targets)
+    local request = not err and targets and M._save_target_for(targets, cursor_line) or nil
+    vim.schedule(function()
+      if not request then
+        notify(
+          ":LatheRunSave -- no runnable under cursor (place cursor in a main() or @Test method)",
+          vim.log.levels.WARN
+        )
+        return
+      end
+
+      request.name = name
+      request.overwrite = overwrite
+      client:request("workspace/executeCommand", {
+        command = "lathe.runconfig.save",
+        arguments = { request },
+      }, function(save_err, saved)
+        vim.schedule(function()
+          on_saved(save_err, saved)
+        end)
+      end)
+    end)
+  end, bufnr)
+end
+
+--- Refreshes the saved-config name cache from the server (for :LatheRun/:LatheDebug completion).
+--- Best-effort: a missing client or failed list leaves the previous names in place.
+function M.refresh_configs()
+  local client = lathe_client()
+  if not client then
+    return
+  end
+
+  client:request("workspace/executeCommand", {
+    command = "lathe.runconfigs.list",
+    arguments = { {} },
+  }, function(err, configs)
+    if err or not configs then
+      return
+    end
+
+    local names = {}
+    for _, c in ipairs(configs) do
+      names[#names + 1] = c.name
+    end
+
+    config_names = names
+  end)
+end
+
+--- Command-completion over the cached config names, prefix-filtered by the current argument.
+function M.complete_config(arglead)
+  local matches = {}
+  for _, name in ipairs(config_names) do
+    if name:sub(1, #arglead) == arglead then
+      matches[#matches + 1] = name
+    end
+  end
+
+  return matches
 end
 
 --- Cancels the in-flight main run, if any. The replay JVM is server-side, so the stop is the

@@ -101,6 +101,18 @@ function M._main_config_for(target)
   }
 end
 
+--- The attach config for a saved config selected by name: the server resolves its module and target,
+--- so the client forwards only the name (lathe_config_name routes the adapter to lathe.debug.named).
+function M._named_config_for(name)
+  return {
+    type = "lathe",
+    request = "attach",
+    name = "Lathe: debug " .. name,
+    lathe_config_name = name,
+    lathe_token = output.next_token(),
+  }
+end
+
 --- nvim-dap adapter: launches the suspended debuggee via lathe.debug.test / lathe.debug.main and
 --- resolves to a `server` adapter on the returned DAP port. enrich_config runs on this resolved
 --- adapter (after this callback), so the JDWP port lands in the attach request without a port
@@ -114,7 +126,10 @@ local function start_adapter(callback, config)
   end
 
   local command, argument
-  if config.lathe_main_class then
+  if config.lathe_config_name then
+    command = "lathe.debug.named"
+    argument = { name = config.lathe_config_name, token = config.lathe_token }
+  elseif config.lathe_main_class then
     command = "lathe.debug.main"
     argument = {
       moduleRel = config.lathe_module_rel,
@@ -212,6 +227,23 @@ function M.debug(bufnr)
       end
     end)
   end, bufnr)
+end
+
+--- Debugs a saved config selected by name (cursor-independent), via nvim-dap's attach flow. The
+--- server resolves the config's target and launch mode, so run and debug share one saved entry.
+function M.debug_named(name)
+  local ok, dap = pcall(require, "dap")
+  if not ok then
+    notify("nvim-dap not installed", vim.log.levels.ERROR)
+    return
+  end
+
+  if not lathe_client() then
+    notify("server not attached to this buffer", vim.log.levels.WARN)
+    return
+  end
+
+  dap.run(M._named_config_for(name))
 end
 
 -- Once a Lathe debug session ends, hyperlink the stack frames the debuggee streamed into the

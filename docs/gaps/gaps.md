@@ -355,16 +355,16 @@ values) — is in [lathe-run-test-debug.md](../done/lathe-run-test-debug.md) §1
 
 None yet — to be defined when the fix is scheduled.
 
-## TE-2 — No named run-configuration selection (`:LatheRun {name}`)
+## TE-2 — Named run-configuration selection (`:LatheRun {name}`)
 
-**Status: deferred — Target: backlog**
+**Status: resolved**
 
-The run-config overlay data model (a checkable `lathe-run.json` plus a gitignored `.lathe/run.json`,
-field-merged per `(module, kind)`) is implemented, but only the built-in default and `(module, kind)`
-overlays resolve; there is no command to select a *named* config. `:LatheRun {name}` (with
-server-provided completion; a picker in a future VS Code client) is the planned surface. Gutter and
-neotest runs work without it — a named config is only needed to customize a run. Design:
-[lathe-run-test-debug.md](../done/lathe-run-test-debug.md) §8.2, §12.10.
+Implemented. The run-config file is now a `{ defaults, configs }` object: `defaults` are the
+auto-applied baselines (the former `(module, kind)` overlays), and `configs` are name-keyed entries
+that pin a target and are selected explicitly via `:LatheRun {name}` / `:LatheDebug {name}` (with
+server-provided completion). `:LatheRunSave[!] [name]` scaffolds a config from the runnable under the
+cursor into `.lathe/run.json`, and `:LatheRunOutput` reopens the run console. Design:
+[lathe-named-run-configs.md](../planned/lathe-named-run-configs.md).
 
 ### Regression targets
 

@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server.run;
 
+import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.schema.RunKind;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.util.LinkedHashMap;
@@ -8,15 +9,17 @@ import java.util.Map;
 import java.util.stream.Stream;
 
 /**
- * One run-config entry: an overlay scoped by {@code (module, kind)}. {@code kind} is required;
- * {@code module} is optional — an omitted {@code module} applies to every module of that kind.
- * Every overlay field is optional; an omitted key (null after parse) means "use the generated
- * default", and collections are normalized to immutable-empty so overlay application never branches
- * on null.
+ * One resolved run-config entry: a null {@code name} is a {@code (module, kind)} baseline
+ * auto-applied to cursor runs; a named entry is a selectable config that pins a target. The
+ * baseline-vs-config target rules are enforced by the reader/writer, which know the bucket and can
+ * name it in the error; the constructor keeps only the always-true target-kind consistency.
  */
 public record RunItem(
+    String name,
     String module,
     RunKind kind,
+    String mainClass,
+    List<TestSelection> selectors,
     List<String> args,
     List<String> jvmArgs,
     Map<String, String> env,
@@ -25,7 +28,14 @@ public record RunItem(
     List<String> modulePathAppend) {
 
   public RunItem {
-    ValidCheck.check().notNull(kind, "kind").validate();
+    ValidCheck.check()
+        .notNull(kind, "kind")
+        .assertTrue(mainClass == null || kind == RunKind.MAIN, "mainClass (MAIN only)")
+        .validate();
+    selectors = selectors != null ? List.copyOf(selectors) : List.of();
+    ValidCheck.check()
+        .assertTrue(selectors.isEmpty() || kind == RunKind.TEST, "selectors (TEST only)")
+        .validate();
     args = args != null ? List.copyOf(args) : List.of();
     jvmArgs = jvmArgs != null ? List.copyOf(jvmArgs) : List.of();
     env = env != null ? Map.copyOf(env) : Map.of();
@@ -34,18 +44,55 @@ public record RunItem(
   }
 
   static RunItem empty(final String module, final RunKind kind) {
-    return new RunItem(module, kind, null, null, null, null, null, null);
+    return new RunItem(null, module, kind, null, null, null, null, null, null, null, null);
   }
 
-  /**
-   * Field-level merge with a higher-precedence (local) layer sharing this entry's {@code (module,
-   * kind)}: {@code cwd} is overridden when set locally, lists concatenate shared-then-local, and
-   * env unions with local winning on a key conflict.
-   */
-  RunItem mergedWith(final RunItem local) {
+  RunItem withName(final String named) {
     return new RunItem(
+        named,
         module,
         kind,
+        mainClass,
+        selectors,
+        args,
+        jvmArgs,
+        env,
+        cwd,
+        classpathAppend,
+        modulePathAppend);
+  }
+
+  boolean hasTarget() {
+    return kind == RunKind.MAIN ? mainClass != null : !selectors.isEmpty();
+  }
+
+  /** Label for the run console/log: the config name, else whether a baseline overlay applied. */
+  public String configLabel() {
+    if (name != null) {
+      return name;
+    }
+
+    return hasOverlay() ? "default+baseline" : "default";
+  }
+
+  private boolean hasOverlay() {
+    return !args.isEmpty()
+        || !jvmArgs.isEmpty()
+        || !env.isEmpty()
+        || cwd != null
+        || !classpathAppend.isEmpty()
+        || !modulePathAppend.isEmpty();
+  }
+
+  // Merge under a higher-precedence layer: identity/target from local; lists concat (this first),
+  // env unions local-wins. Used for the layer merge and to compose a config over its baseline.
+  RunItem mergedWith(final RunItem local) {
+    return new RunItem(
+        local.name,
+        local.module,
+        local.kind,
+        local.mainClass,
+        local.selectors,
         concat(args, local.args),
         concat(jvmArgs, local.jvmArgs),
         union(env, local.env),

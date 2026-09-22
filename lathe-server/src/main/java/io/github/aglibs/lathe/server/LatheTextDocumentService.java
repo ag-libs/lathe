@@ -1,11 +1,14 @@
 package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.core.launch.TestSelection;
+import io.github.aglibs.lathe.core.schema.RunKind;
 import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyExplorerResult;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.debug.DebugStartResult;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
+import io.github.aglibs.lathe.server.run.RunConfigInfo;
+import io.github.aglibs.lathe.server.run.RunConfigWriter;
 import io.github.aglibs.lathe.server.run.RunTarget;
 import java.nio.file.Path;
 import java.util.List;
@@ -535,6 +538,29 @@ public final class LatheTextDocumentService implements TextDocumentService {
   CompletableFuture<DebugStartResult> debugMainFuture(
       final String moduleRel, final String mainClass, final String token) {
     return worker.submit(() -> session.debugMain(moduleRel, mainClass, token));
+  }
+
+  CompletableFuture<LaunchOutcome> runNamedFuture(final String name, final String token) {
+    return worker.submit(() -> session.runNamedFuture(name, token)).thenCompose(f -> f);
+  }
+
+  CompletableFuture<DebugStartResult> debugNamedFuture(final String name, final String token) {
+    return worker.submit(() -> session.debugNamed(name, token));
+  }
+
+  CompletableFuture<List<RunConfigInfo>> runConfigsFuture() {
+    return worker.submit(() -> session.listRunConfigs());
+  }
+
+  CompletableFuture<RunConfigWriter.Saved> saveRunConfigFuture(
+      final String name,
+      final String moduleRel,
+      final RunKind kind,
+      final String mainClass,
+      final List<TestSelection> selectors,
+      final boolean overwrite) {
+    return worker.submit(
+        () -> session.saveRunConfig(name, moduleRel, kind, mainClass, selectors, overwrite));
   }
 
   public CompletableFuture<List<RunTarget>> runnablesFuture(final String uri) {

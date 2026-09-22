@@ -85,7 +85,7 @@ guide to configure both.
 | Run a `main`                                         | replays a `main` from captured `.lathe/` bytecode — no Maven rebuild, live output                                                           | `workspace/executeCommand` · `lathe.run.main`                         |
 | Tests                                                | discovers and runs tests (method, class, or package) from `.lathe/` bytecode, with live output and a diagnostic on the failing assertion | `workspace/executeCommand` · `lathe.runnables.list`, `lathe.run.test` |
 | Debug                                                | conditional breakpoints, stepping, variable inspection, and REPL expression evaluation over DAP                                                                         | `workspace/executeCommand` · `lathe.debug.*`, then DAP                |
-| [Run configuration](docs/guide/run-configuration.md) | overlay JVM args, program args, environment, working directory, and class-/module-path per module                                                           | — (`lathe-run.json` overlays)                                         |
+| [Run configuration](docs/guide/run-configuration.md) | auto-applied overlays (JVM/program args, env, cwd, class-/module-path) plus named, selectable run configs (`:LatheRun {name}`, saved from the cursor)         | `lathe.run.named` · `lathe.runconfigs.list` · `lathe.runconfig.save`  |
 
 Run, test, and debug are Lathe extensions exposed through `workspace/executeCommand` (and the Debug
 Adapter Protocol for debugging), not standard LSP methods.
@@ -228,7 +228,7 @@ Lathe has a few moving parts, each documented in depth. In brief — full mechan
 - **Test capture** — the test JVM is captured from inside your Surefire fork by live introspection and
   replayed against `.lathe/` without a Maven rebuild. [Details →](docs/guide/test-capture.md)
 - **Run & debug** — runs and debug sessions replay the captured launch in a fresh JVM; customize it with
-  an overlay. [Details →](docs/guide/run-configuration.md)
+  overlays and named, selectable run configs. [Details →](docs/guide/run-configuration.md)
 
 ## Files and caches
 

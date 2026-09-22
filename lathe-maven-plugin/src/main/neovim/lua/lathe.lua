@@ -321,6 +321,7 @@ function M.setup(opts)
       local client = vim.lsp.get_client_by_id(args.data.client_id)
       if client and client.name == 'lathe' then
         run.refresh_signs(args.buf)
+        run.refresh_configs()
       end
     end,
   })
@@ -333,12 +334,36 @@ function M.setup(opts)
       end
     end,
   })
-  vim.api.nvim_create_user_command('LatheRun', function()
-    run.run(vim.api.nvim_get_current_buf())
-  end, { desc = 'Lathe: run the main class in the current buffer' })
+  vim.api.nvim_create_user_command('LatheRun', function(cmd)
+    if cmd.args ~= '' then
+      run.run_named(cmd.args)
+    else
+      run.run(vim.api.nvim_get_current_buf())
+    end
+  end, {
+    nargs = '?',
+    complete = function(arglead)
+      return run.complete_config(arglead)
+    end,
+    desc = 'Lathe: run the buffer main, or a saved config by name',
+  })
   vim.api.nvim_create_user_command('LatheRunStop', function()
     run.stop()
   end, { desc = 'Lathe: stop the active main run' })
+  vim.api.nvim_create_user_command('LatheRunSave', function(cmd)
+    run.save(cmd.args ~= '' and cmd.args or nil, cmd.bang)
+    run.refresh_configs()
+  end, {
+    nargs = '?',
+    bang = true,
+    complete = function(arglead)
+      return run.complete_config(arglead)
+    end,
+    desc = 'Lathe: save the runnable under the cursor as a named config (! overwrites)',
+  })
+  vim.api.nvim_create_user_command('LatheRunOutput', function()
+    require('lathe.output').open()
+  end, { desc = 'Lathe: toggle the run output console' })
 
   -- New-type surface: :LatheNew scaffolds a class/interface/record/enum through the server (which
   -- owns placement, skeleton, and caret) and opens the returned file.
@@ -369,9 +394,19 @@ function M.setup(opts)
   -- Optional -- the command is only wired when nvim-dap is present, so a runtime without it loads
   -- unaffected.
   if require('lathe.dap').setup() then
-    vim.api.nvim_create_user_command('LatheDebug', function()
-      require('lathe.dap').debug(vim.api.nvim_get_current_buf())
-    end, { desc = 'Lathe: debug the test under the cursor' })
+    vim.api.nvim_create_user_command('LatheDebug', function(cmd)
+      if cmd.args ~= '' then
+        require('lathe.dap').debug_named(cmd.args)
+      else
+        require('lathe.dap').debug(vim.api.nvim_get_current_buf())
+      end
+    end, {
+      nargs = '?',
+      complete = function(arglead)
+        return run.complete_config(arglead)
+      end,
+      desc = 'Lathe: debug the cursor target, or a saved config by name',
+    })
   end
 
   local cache_pattern = root .. '/**'

@@ -35,8 +35,11 @@ final class RunOverlayTest {
   void applyToMain_overlay_appliesEnvCwdAndArgv() {
     final var item =
         new RunItem(
+            null,
             "app",
             RunKind.MAIN,
+            null,
+            null,
             List.of("--flag"),
             List.of("-Dp=1"),
             Map.of("APP_ENV", "prod"),
@@ -58,7 +61,17 @@ final class RunOverlayTest {
   void applyToMain_absoluteCwdAndAppend_passThroughUnchanged() {
     final var item =
         new RunItem(
-            "app", RunKind.MAIN, null, null, Map.of(), "/abs/dir", List.of("/abs/cp"), List.of());
+            null,
+            "app",
+            RunKind.MAIN,
+            null,
+            null,
+            null,
+            null,
+            Map.of(),
+            "/abs/dir",
+            List.of("/abs/cp"),
+            List.of());
 
     final ResolvedLaunch resolved =
         RunOverlay.applyToMain(

@@ -2,11 +2,11 @@
 
 ## Status
 
-Planned — design under review, no code yet.
+Implemented.
 
-The file shape is decided: a single object with a `defaults` array (auto-applied baselines) and a
-`configs` object keyed by config name (explicitly selected). No sentinel value, no temporary configs,
-and nothing is written on a run — the only write is the explicit `:LatheRunSave`.
+The file shape is a single object with a `defaults` array (auto-applied baselines) and a `configs`
+object keyed by config name (explicitly selected). No sentinel value, no temporary configs, and
+nothing is written on a run — the only write is the explicit `:LatheRunSave`.
 
 This resolves [TE-2](../gaps/gaps.md#te-2--no-named-run-configuration-selection-latherun-name)
 and completes the deferred slice sketched in
@@ -240,28 +240,24 @@ The **kind (MAIN/TEST) is derived from the resolved runnable, never guessed**. A
 
 ### 7. Signalling which configuration is active
 
-Three surfaces, so the answer to "which config?" is always available:
+Four surfaces, so the answer to "which config?" is always available:
 
-1. **Console header line** — folded into the existing COMMAND-stream launch line (so no new transcript
-   line, no row-count churn in `output.lua` tests):
-   - `▶ run services/app · com.example.app.AppServer · config: dev` (named run)
-   - `▶ run services/app · com.example.app.AppServer · config: default +overlay` (gutter run, a
-     baseline applied)
-   - `▶ run services/app · com.example.app.AppServer · config: default` (gutter run, no baseline
-     matched)
+1. **Console header line** — the run console's first COMMAND-stream lines are the config label then
+   the launch command on its own line (kept separate so the command stays copy-pasteable):
+   - `config: dev` (named run)
+   - `config: default+baseline` (gutter run, a baseline applied)
+   - `config: default` (gutter run, no baseline matched)
 
    The *absence* of customization is visible too.
 
-2. **Neovim notification** — `vim.notify` on run start **only when an overlay actually applies** (a
-   named config, or a matching baseline) — silent for pure built-in runs, so no per-run noise:
-   `[Lathe] com.example.app.AppServer · config: dev`.
+2. **Neovim notification** — `vim.notify` on run start naming the run (`Running <target>` for a cursor
+   run, `Running <name>` for a named config), and the exit status on completion.
 
 3. **Completion detail** — `:LatheRun <Tab>` / `:LatheDebug <Tab>` list each config's name plus a
    short summary (module, target, key jvmArgs) from `lathe.runconfigs.list`.
 
-4. **Server run log** — the run's existing INFO log line carries the resolved config
-   (`[run] services/app AppServer config=dev …`), so the applied overlay is visible in the log as
-   well. No separate telemetry.
+4. **Server run log** — the run's INFO log line carries the resolved config label, so the applied
+   overlay is visible in the log as well. No separate telemetry.
 
 ### 8. Neovim client
 
@@ -300,7 +296,7 @@ binds `output.open()` to a user command today, so a closed console can only be r
   bang overwrite, atomic replace, cursor-target ladder.
 - Server commands `lathe.run.named`, `lathe.debug.named`, `lathe.runconfigs.list`,
   `lathe.runconfig.save`.
-- Console header config line + `vim.notify` when an overlay applies.
+- Console header config line + run-start `vim.notify` + config on the run INFO log.
 - Client commands `:LatheRun {name}`, `:LatheDebug {name}`, `:LatheRunSave[!] [name]`,
   `:LatheRunOutput` + completion.
 - Docs (`run-configuration.md` rewrite), design §8 update, TE-2 resolution, `status.md`.
@@ -360,10 +356,9 @@ force mechanical updates.
 7. **No temporary configs** — gutter runs are ephemeral; IntelliJ's auto-populated temp entries are a
    non-goal.
 8. **`:LatheDebug {name}` is in scope** — same entry, `run` vs `debug` verb.
-9. **Config name shown via** console header + `vim.notify` (when an overlay applies) + completion
-   detail.
+9. **Config name shown via** the console header (`config: <label>`, label `default` / `default+baseline`
+   / config name) + a run-start `vim.notify` + completion detail.
 10. **Method-level TEST config name is `Class.method`** (e.g. `SmokeTest.testBar`) — the method is
     included so it does not clobber a class-level save of the same class.
-11. **Overlay is surfaced on the run log too** — the server already logs each run at INFO; that line
-    carries the resolved config/overlay (`config=dev`), so the applied overlay is visible in the log
-    as well as the console header and the `vim.notify`. No separate telemetry.
+11. **Config is surfaced on the run log too** — the server's run INFO line carries the resolved config
+    label, so it is visible in the log as well as the console header. No separate telemetry.

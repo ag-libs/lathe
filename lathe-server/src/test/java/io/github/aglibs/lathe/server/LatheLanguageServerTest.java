@@ -68,6 +68,9 @@ class LatheLanguageServerTest {
         .containsExactlyInAnyOrder(
             LatheWorkspaceService.RUN_TEST_COMMAND,
             LatheWorkspaceService.RUN_MAIN_COMMAND,
+            LatheWorkspaceService.RUN_NAMED_COMMAND,
+            LatheWorkspaceService.LIST_RUN_CONFIGS_COMMAND,
+            LatheWorkspaceService.SAVE_RUN_CONFIG_COMMAND,
             LatheWorkspaceService.CANCEL_TEST_COMMAND,
             LatheWorkspaceService.LIST_RUNNABLES_COMMAND,
             LatheWorkspaceService.RESOURCE_REFRESH_COMMAND,

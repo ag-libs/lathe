@@ -1,10 +1,12 @@
 package io.github.aglibs.lathe.server;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
+import io.github.aglibs.lathe.core.schema.RunKind;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -30,6 +32,10 @@ final class LatheWorkspaceService implements WorkspaceService {
   static final String RESOURCE_REFRESH_COMMAND = "lathe.resource.refresh";
   static final String DEBUG_TEST_COMMAND = "lathe.debug.test";
   static final String DEBUG_MAIN_COMMAND = "lathe.debug.main";
+  static final String RUN_NAMED_COMMAND = "lathe.run.named";
+  static final String DEBUG_NAMED_COMMAND = "lathe.debug.named";
+  static final String LIST_RUN_CONFIGS_COMMAND = "lathe.runconfigs.list";
+  static final String SAVE_RUN_CONFIG_COMMAND = "lathe.runconfig.save";
   static final String INSTANTIATIONS_COMMAND = "lathe.instantiations";
   static final String TYPE_HIERARCHY_COMMAND = "lathe.typeHierarchy";
   static final String CREATE_TYPE_COMMAND = "lathe.createType";
@@ -72,6 +78,10 @@ final class LatheWorkspaceService implements WorkspaceService {
       case RESOURCE_REFRESH_COMMAND -> refreshResource(params);
       case DEBUG_TEST_COMMAND -> debugTest(params);
       case DEBUG_MAIN_COMMAND -> debugMain(params);
+      case RUN_NAMED_COMMAND -> runNamed(params);
+      case DEBUG_NAMED_COMMAND -> debugNamed(params);
+      case LIST_RUN_CONFIGS_COMMAND -> textDocumentService.runConfigsFuture().thenApply(r -> r);
+      case SAVE_RUN_CONFIG_COMMAND -> saveRunConfig(params);
       case INSTANTIATIONS_COMMAND -> instantiations(params);
       case TYPE_HIERARCHY_COMMAND -> typeHierarchy(params);
       case CREATE_TYPE_COMMAND -> createType(params);
@@ -109,6 +119,40 @@ final class LatheWorkspaceService implements WorkspaceService {
     return textDocumentService
         .runMainFuture(argument.moduleRel(), argument.mainClass(), argument.token())
         .thenApply(outcome -> outcome);
+  }
+
+  private CompletableFuture<Object> runNamed(final ExecuteCommandParams params) {
+    final var argument = parseNamedArgument(params.getArguments().getFirst());
+    return textDocumentService
+        .runNamedFuture(argument.name(), argument.token())
+        .thenApply(outcome -> (Object) outcome)
+        .exceptionally(LatheWorkspaceService::rethrowInvalidParams);
+  }
+
+  private CompletableFuture<Object> debugNamed(final ExecuteCommandParams params) {
+    final var argument = parseNamedArgument(params.getArguments().getFirst());
+    return textDocumentService
+        .debugNamedFuture(argument.name(), argument.token())
+        .thenApply(result -> (Object) result)
+        .exceptionally(LatheWorkspaceService::rethrowInvalidParams);
+  }
+
+  private CompletableFuture<Object> saveRunConfig(final ExecuteCommandParams params) {
+    final var json = (JsonObject) params.getArguments().getFirst();
+    final String name = optionalString(json, "name");
+    final RunKind kind = RunKind.valueOf(json.get("kind").getAsString());
+    final List<TestSelection> selectors =
+        json.has("selectors") ? parseSelections(json.getAsJsonArray("selectors")) : List.of();
+    return textDocumentService
+        .saveRunConfigFuture(
+            name,
+            json.get("moduleRel").getAsString(),
+            kind,
+            optionalString(json, "mainClass"),
+            selectors,
+            json.has("overwrite") && json.get("overwrite").getAsBoolean())
+        .thenApply(saved -> (Object) saved)
+        .exceptionally(LatheWorkspaceService::rethrowInvalidParams);
   }
 
   private CompletableFuture<Object> cancelTest(final ExecuteCommandParams params) {
@@ -243,6 +287,25 @@ final class LatheWorkspaceService implements WorkspaceService {
     return new TestSelection(
         TestSelectionKind.valueOf(json.get("selectorKind").getAsString()),
         json.get("selectorValue").getAsString());
+  }
+
+  private static List<TestSelection> parseSelections(final JsonArray array) {
+    return array.asList().stream()
+        .map(JsonElement::getAsJsonObject)
+        .map(LatheWorkspaceService::parseSelection)
+        .toList();
+  }
+
+  private record NamedArgument(String name, String token) {}
+
+  private static NamedArgument parseNamedArgument(final Object argument) {
+    final var json = (JsonObject) argument;
+    final String token = json.has("token") ? json.get("token").getAsString() : "";
+    return new NamedArgument(json.get("name").getAsString(), token);
+  }
+
+  private static String optionalString(final JsonObject json, final String key) {
+    return json.has(key) && !json.get(key).isJsonNull() ? json.get(key).getAsString() : null;
   }
 
   private static String parseListRunnablesArgument(final Object argument) {

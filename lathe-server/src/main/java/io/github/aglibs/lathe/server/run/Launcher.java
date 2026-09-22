@@ -15,6 +15,7 @@ public final class Launcher {
 
   public static LaunchSession launch(
       final List<String> argv,
+      final String configLabel,
       final Path resultsSink,
       final Consumer<TranscriptLine> onLine,
       final Consumer<TestResult> onResult,
@@ -22,8 +23,8 @@ public final class Launcher {
       final Path cwd)
       throws IOException {
     LOG.fine(() -> "[launch] argv=%s".formatted(argv));
-    // Surface the launch command as the run's first output line, before any process output, so the
-    // client can show what ran. COMMAND-tagged so the client renders it distinctly.
+    // The config, then the command on its own line (copy-pasteable), before any process output.
+    onLine.accept(new TranscriptLine(TranscriptLine.Stream.COMMAND, "config: " + configLabel));
     onLine.accept(new TranscriptLine(TranscriptLine.Stream.COMMAND, String.join(" ", argv)));
     final var processBuilder = new ProcessBuilder(argv);
     processBuilder.environment().putAll(env);

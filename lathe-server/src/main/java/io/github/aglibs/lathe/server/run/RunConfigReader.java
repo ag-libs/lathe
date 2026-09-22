@@ -8,15 +8,17 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Objects;
+import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Stream;
 
 /**
- * Reads the two run-config layers — the shared {@code lathe-run.json} at the reactor root and the
- * machine-local {@code .lathe/run.json} — and field-merges local over shared into one {@link
- * RunOverlaySet}. Each layer is a JSON array of entries. Lathe never writes these files, so no lock
- * is taken; a missing or malformed layer is treated as empty (fail-open), and every run still
- * resolves to the built-in defaults.
+ * Reads the two run-config layers — the shared {@code lathe-run.json} and the machine-local {@code
+ * .lathe/run.json} — and field-merges local over shared into one {@link RunOverlaySet}. A missing
+ * or malformed layer is treated as empty (fail-open), so every run still resolves to the built-in
+ * defaults.
  */
 public final class RunConfigReader {
 
@@ -29,46 +31,97 @@ public final class RunConfigReader {
   }
 
   public RunOverlaySet read() {
-    final List<RunItem> shared =
+    final RunConfigFile shared =
         readLayer(workspaceRoot.resolve(LatheLayout.RUN_CONFIG_SHARED_FILE), "shared");
-    final List<RunItem> local =
+    final RunConfigFile local =
         readLayer(
             workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.RUN_CONFIG_LOCAL_FILE),
             "local");
-    return new RunOverlaySet(merge(shared, local));
+
+    final List<RunItem> baselineItems =
+        mergeByKey(baselines(shared, "shared"), baselines(local, "local"), RunConfigReader::key);
+    final List<RunItem> configItems =
+        mergeByKey(configs(shared, "shared"), configs(local, "local"), RunItem::name);
+    return new RunOverlaySet(Stream.concat(baselineItems.stream(), configItems.stream()).toList());
   }
 
-  private static List<RunItem> readLayer(final Path file, final String label) {
+  private static RunConfigFile readLayer(final Path file, final String label) {
     if (!Files.exists(file)) {
-      return List.of();
+      return RunConfigFile.empty();
     }
 
     try {
-      final RunItem[] parsed = Json.read(file, RunItem[].class);
-      return parsed != null ? List.of(parsed) : List.of();
+      final RunConfigFile parsed = Json.read(file, RunConfigFile.class);
+      return parsed != null ? parsed : RunConfigFile.empty();
     } catch (final IOException | RuntimeException e) {
       LOG.log(
           Level.WARNING, e, () -> "[run-config] %s layer unreadable, ignoring".formatted(label));
-      return List.of();
+      return RunConfigFile.empty();
     }
   }
 
-  private static List<RunItem> merge(final List<RunItem> shared, final List<RunItem> local) {
-    final var merged = new LinkedHashMap<DefaultKey, RunItem>();
-    for (final RunItem item : shared) {
-      merged.put(defaultKey(item), item);
+  private static List<RunItem> baselines(final RunConfigFile file, final String label) {
+    return file.defaults().stream()
+        .map(entry -> toBaseline(entry, label))
+        .filter(Objects::nonNull)
+        .toList();
+  }
+
+  private static List<RunItem> configs(final RunConfigFile file, final String label) {
+    return file.configs().entrySet().stream()
+        .map(entry -> toConfig(entry.getKey(), entry.getValue(), label))
+        .filter(Objects::nonNull)
+        .toList();
+  }
+
+  // A baseline pins no target; convert, then drop (with a warning) an invalid or target-bearing
+  // one.
+  private static RunItem toBaseline(final RunConfigEntry entry, final String label) {
+    final RunItem item = convert(null, entry, label);
+    if (item != null && item.hasTarget()) {
+      LOG.warning(
+          () ->
+              "[run-config] %s default with a target ignored (baselines pin none)"
+                  .formatted(label));
+      return null;
     }
 
-    for (final RunItem item : local) {
-      merged.merge(defaultKey(item), item, RunItem::mergedWith);
+    return item;
+  }
+
+  // A config must pin a target; convert, then drop (with a warning) an invalid or targetless one.
+  private static RunItem toConfig(
+      final String name, final RunConfigEntry entry, final String label) {
+    final RunItem item = convert(name, entry, label);
+    if (item != null && !item.hasTarget()) {
+      LOG.warning(() -> "[run-config] %s config '%s' has no target ignored".formatted(label, name));
+      return null;
     }
 
+    return item;
+  }
+
+  private static RunItem convert(
+      final String name, final RunConfigEntry entry, final String label) {
+    try {
+      return entry.toItem(name);
+    } catch (final RuntimeException e) {
+      LOG.log(Level.WARNING, e, () -> "[run-config] %s entry invalid, ignoring".formatted(label));
+      return null;
+    }
+  }
+
+  private static <K> List<RunItem> mergeByKey(
+      final List<RunItem> shared, final List<RunItem> local, final Function<RunItem, K> key) {
+    final var merged = new LinkedHashMap<K, RunItem>();
+    shared.forEach(item -> merged.put(key.apply(item), item));
+    local.forEach(item -> merged.merge(key.apply(item), item, RunItem::mergedWith));
     return List.copyOf(merged.values());
   }
 
-  private static DefaultKey defaultKey(final RunItem item) {
-    return new DefaultKey(item.module(), item.kind());
+  private static BaselineKey key(final RunItem item) {
+    return new BaselineKey(item.module(), item.kind());
   }
 
-  private record DefaultKey(String module, RunKind kind) {}
+  private record BaselineKey(String module, RunKind kind) {}
 }

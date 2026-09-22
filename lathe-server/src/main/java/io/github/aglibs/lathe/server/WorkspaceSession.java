@@ -54,9 +54,12 @@ import io.github.aglibs.lathe.server.run.Launcher;
 import io.github.aglibs.lathe.server.run.MainClassScope;
 import io.github.aglibs.lathe.server.run.MainLaunchReader;
 import io.github.aglibs.lathe.server.run.ResolvedLaunch;
+import io.github.aglibs.lathe.server.run.RunConfigInfo;
 import io.github.aglibs.lathe.server.run.RunConfigReader;
+import io.github.aglibs.lathe.server.run.RunConfigWriter;
 import io.github.aglibs.lathe.server.run.RunItem;
 import io.github.aglibs.lathe.server.run.RunOverlay;
+import io.github.aglibs.lathe.server.run.RunOverlaySet;
 import io.github.aglibs.lathe.server.run.RunTarget;
 import io.github.aglibs.lathe.server.run.TestEventParams;
 import io.github.aglibs.lathe.server.run.TestFinishedParams;
@@ -233,6 +236,14 @@ final class WorkspaceSession {
 
   CompletableFuture<LaunchOutcome> runTestFuture(
       final String moduleRel, final List<TestSelection> selections, final String token) {
+    return startTestRun(moduleRel, selections, token, baselineOverlay(moduleRel, RunKind.TEST));
+  }
+
+  private CompletableFuture<LaunchOutcome> startTestRun(
+      final String moduleRel,
+      final List<TestSelection> selections,
+      final String token,
+      final RunItem overlay) {
     final List<Path> runnerClasspath = manifest.runnerClasspath();
     if (runnerClasspath.isEmpty()) {
       LOG.warning(
@@ -263,6 +274,7 @@ final class WorkspaceSession {
                     runnerClasspath,
                     moduleRel,
                     selections,
+                    overlay,
                     onLine,
                     onResult,
                     onStart,
@@ -293,6 +305,14 @@ final class WorkspaceSession {
    */
   DebugStartResult debugTest(
       final String moduleRel, final List<TestSelection> selections, final String token) {
+    return startDebugTest(moduleRel, selections, token, baselineOverlay(moduleRel, RunKind.TEST));
+  }
+
+  private DebugStartResult startDebugTest(
+      final String moduleRel,
+      final List<TestSelection> selections,
+      final String token,
+      final RunItem overlay) {
     final List<Path> runnerClasspath = manifest.runnerClasspath();
     if (runnerClasspath.isEmpty()) {
       throw new IllegalStateException("no lathe-test-runner jar recorded — run a build first");
@@ -310,14 +330,13 @@ final class WorkspaceSession {
       final var jdwp = new JdwpOptions(jdwpPort);
       final var jdwpReady = new CompletableFuture<Void>();
       final Path resultsSink = Files.createTempFile("lathe-results-", ".ndjson");
-      final RunItem overlay =
-          new RunConfigReader(workspaceRoot).read().defaultFor(moduleRel, RunKind.TEST);
       final ResolvedLaunch resolved =
           RunOverlay.applyToTest(
               template, workspaceRoot, runnerClasspath, selections, resultsSink, overlay, jdwp);
       final var session =
           Launcher.launch(
               resolved.argv(),
+              overlay.configLabel(),
               resultsSink,
               jdwpReadyConsumer(jdwp, jdwpReady, streamConsumer(token)),
               resultConsumer(token),
@@ -336,10 +355,16 @@ final class WorkspaceSession {
    * a null sink and a no-op result consumer.
    */
   DebugStartResult debugMain(final String moduleRel, final String mainClass, final String token) {
+    return startDebugMain(moduleRel, mainClass, token, baselineOverlay(moduleRel, RunKind.MAIN));
+  }
+
+  private DebugStartResult startDebugMain(
+      final String moduleRel, final String mainClass, final String token, final RunItem overlay) {
     try {
       final int jdwpPort = PortUtil.free();
       final var jdwp = new JdwpOptions(jdwpPort);
-      final MainLaunchPlan plan = resolveMainLaunch(workspaceRoot, moduleRel, mainClass, jdwp);
+      final MainLaunchPlan plan =
+          resolveMainLaunch(workspaceRoot, moduleRel, mainClass, overlay, jdwp);
       if (plan.blocked()) {
         throw new IllegalStateException("debug launch incomplete: " + plan.blockedReasons());
       }
@@ -349,6 +374,7 @@ final class WorkspaceSession {
       final var session =
           Launcher.launch(
               resolved.argv(),
+              overlay.configLabel(),
               null,
               jdwpReadyConsumer(jdwp, jdwpReady, streamConsumer(token)),
               ignored -> {},
@@ -390,10 +416,9 @@ final class WorkspaceSession {
       final Path workspaceRoot,
       final String moduleRel,
       final String mainClass,
+      final RunItem overlay,
       final JdwpOptions jdwp)
       throws IOException {
-    final RunItem overlay =
-        new RunConfigReader(workspaceRoot).read().defaultFor(moduleRel, RunKind.MAIN);
     if (MainClassScope.isTestScope(workspaceRoot, moduleRel, mainClass)) {
       final Optional<TestLaunchData> template =
           new LaunchTemplateReader(workspaceRoot).read(moduleRel);
@@ -841,6 +866,7 @@ final class WorkspaceSession {
       final List<Path> runnerClasspath,
       final String moduleRel,
       final List<TestSelection> selections,
+      final RunItem overlay,
       final Consumer<TranscriptLine> onLine,
       final Consumer<TestResult> onResult,
       final Consumer<LaunchSession> onStart,
@@ -869,8 +895,6 @@ final class WorkspaceSession {
       }
 
       final Path resultsSink = Files.createTempFile("lathe-results-", ".ndjson");
-      final RunItem overlay =
-          new RunConfigReader(workspaceRoot).read().defaultFor(moduleRel, RunKind.TEST);
       final ResolvedLaunch resolved =
           RunOverlay.applyToTest(
               template.get(),
@@ -882,13 +906,20 @@ final class WorkspaceSession {
               JdwpOptions.NONE);
       final var session =
           Launcher.launch(
-              resolved.argv(), resultsSink, onLine, onResult, resolved.env(), resolved.cwd());
+              resolved.argv(),
+              overlay.configLabel(),
+              resultsSink,
+              onLine,
+              onResult,
+              resolved.env(),
+              resolved.cwd());
       onStart.accept(session);
       final String label = selectionLabel(selections);
       session
           .onExit()
           .whenComplete(
-              (outcome, error) -> completeRun(moduleRel, label, t, result, outcome, error));
+              (outcome, error) ->
+                  completeRun(moduleRel, label, overlay.configLabel(), t, result, outcome, error));
     } catch (final IOException e) {
       LOG.log(
           Level.WARNING,
@@ -905,6 +936,7 @@ final class WorkspaceSession {
   private static void completeRun(
       final String moduleRel,
       final String label,
+      final String configLabel,
       final Stopwatch t,
       final CompletableFuture<LaunchOutcome> result,
       final LaunchOutcome outcome,
@@ -920,13 +952,18 @@ final class WorkspaceSession {
 
     LOG.info(
         () ->
-            "[launch] %s %s exit=%d %dms"
-                .formatted(moduleRel, label, outcome.exitCode(), t.elapsedMs()));
+            "[launch] %s %s config=%s exit=%d %dms"
+                .formatted(moduleRel, label, configLabel, outcome.exitCode(), t.elapsedMs()));
     result.complete(outcome);
   }
 
   CompletableFuture<LaunchOutcome> runMainFuture(
       final String moduleRel, final String mainClass, final String token) {
+    return startMainRun(moduleRel, mainClass, token, baselineOverlay(moduleRel, RunKind.MAIN));
+  }
+
+  private CompletableFuture<LaunchOutcome> startMainRun(
+      final String moduleRel, final String mainClass, final String token, final RunItem overlay) {
     final Consumer<TranscriptLine> onLine = streamConsumer(token);
     final Path root = workspaceRoot;
     final var t = Stopwatch.start();
@@ -937,7 +974,7 @@ final class WorkspaceSession {
 
     final var thread =
         new Thread(
-            () -> launchMain(root, moduleRel, mainClass, onLine, onStart, t, result),
+            () -> launchMain(root, moduleRel, mainClass, overlay, onLine, onStart, t, result),
             "lathe-launch-" + moduleRel);
     thread.setDaemon(true);
     thread.start();
@@ -948,13 +985,14 @@ final class WorkspaceSession {
       final Path workspaceRoot,
       final String moduleRel,
       final String mainClass,
+      final RunItem overlay,
       final Consumer<TranscriptLine> onLine,
       final Consumer<LaunchSession> onStart,
       final Stopwatch t,
       final CompletableFuture<LaunchOutcome> result) {
     try {
       final MainLaunchPlan plan =
-          resolveMainLaunch(workspaceRoot, moduleRel, mainClass, JdwpOptions.NONE);
+          resolveMainLaunch(workspaceRoot, moduleRel, mainClass, overlay, JdwpOptions.NONE);
       if (plan.blocked()) {
         LOG.warning(
             () ->
@@ -969,12 +1007,20 @@ final class WorkspaceSession {
       final ResolvedLaunch resolved = plan.launch();
       final var session =
           Launcher.launch(
-              resolved.argv(), null, onLine, ignored -> {}, resolved.env(), resolved.cwd());
+              resolved.argv(),
+              overlay.configLabel(),
+              null,
+              onLine,
+              ignored -> {},
+              resolved.env(),
+              resolved.cwd());
       onStart.accept(session);
       session
           .onExit()
           .whenComplete(
-              (outcome, error) -> completeRun(moduleRel, mainClass, t, result, outcome, error));
+              (outcome, error) ->
+                  completeRun(
+                      moduleRel, mainClass, overlay.configLabel(), t, result, outcome, error));
     } catch (final IOException e) {
       LOG.log(
           Level.WARNING,
@@ -984,6 +1030,65 @@ final class WorkspaceSession {
                   .formatted(moduleRel, mainClass, t.elapsedMs()));
       result.completeExceptionally(e);
     }
+  }
+
+  CompletableFuture<LaunchOutcome> runNamedFuture(final String name, final String token) {
+    final RunItem config = resolveConfig(name);
+    return switch (config.kind()) {
+      case MAIN -> startMainRun(config.module(), config.mainClass(), token, config);
+      case TEST -> startTestRun(config.module(), config.selectors(), token, config);
+    };
+  }
+
+  DebugStartResult debugNamed(final String name, final String token) {
+    final RunItem config = resolveConfig(name);
+    return switch (config.kind()) {
+      case MAIN -> startDebugMain(config.module(), config.mainClass(), token, config);
+      case TEST -> startDebugTest(config.module(), config.selectors(), token, config);
+    };
+  }
+
+  List<RunConfigInfo> listRunConfigs() {
+    return readRunConfig().configs().stream().map(WorkspaceSession::toInfo).toList();
+  }
+
+  RunConfigWriter.Saved saveRunConfig(
+      final String name,
+      final String moduleRel,
+      final RunKind kind,
+      final String mainClass,
+      final List<TestSelection> selectors,
+      final boolean overwrite)
+      throws IOException {
+    return new RunConfigWriter(workspaceRoot)
+        .save(name, moduleRel, kind, mainClass, selectors, overwrite);
+  }
+
+  // Read fresh every call so an edited config file takes effect on the next run without a reload.
+  private RunOverlaySet readRunConfig() {
+    return new RunConfigReader(workspaceRoot).read();
+  }
+
+  private RunItem baselineOverlay(final String moduleRel, final RunKind kind) {
+    return readRunConfig().defaultFor(moduleRel, kind);
+  }
+
+  private RunItem resolveConfig(final String name) {
+    return readRunConfig()
+        .byName(name)
+        .orElseThrow(
+            () -> new IllegalArgumentException("no run config named '%s'".formatted(name)));
+  }
+
+  private static RunConfigInfo toInfo(final RunItem config) {
+    final String target =
+        config.kind() == RunKind.MAIN ? config.mainClass() : selectionLabel(config.selectors());
+    return new RunConfigInfo(
+        config.name(),
+        config.kind().name(),
+        config.module(),
+        target,
+        String.join(" ", config.jvmArgs()));
   }
 
   CompletableFuture<List<RunTarget>> runnablesFuture(final String uri) {
