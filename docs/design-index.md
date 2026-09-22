@@ -73,6 +73,15 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 - [Type Hierarchy Explorer](planned/lathe-type-hierarchy.md) — a Ctrl-H-style `:LatheTypeHierarchy` custom
   command showing the full both-directions transitive hierarchy in one Telescope picker; resolves NV-6.
 
+**Build-file support:**
+
+- [`pom.xml` Support](planned/lathe-pom-support.md) — a new, self-contained file-type path for
+  `pom.xml`: schema-driven structure completion, XSD well-formedness/validation diagnostics, and
+  build-derived coordinate/property/reactor completion read from a `lathe:sync` capture
+  (`.lathe/pom-index.json`). JDK-native (no LemMinX), sliced no-capture-first, attached client-side by
+  filename (filetype stays `xml`, treesitter intact). Primary open decision: XSD validation server-side
+  vs. Neovim-only (`xmllint`/`lemminx`).
+
 **Reliability and further work:**
 
 - [Named Run Configurations](planned/lathe-named-run-configs.md) — resolves TE-2: the overlay file
