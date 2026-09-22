@@ -211,6 +211,29 @@ require("lathe").setup({
 })
 ```
 
+## pom.xml validation & formatting
+
+Lathe validates a `pom.xml` against the Maven POM schema and can format it — **client-side, via
+`xmllint`** (libxml2). This path does not use the language server: Lathe never attaches to `pom.xml`
+(the server stays a Java-only client), so validation and formatting are ordinary editor tooling and the
+buffer keeps its normal `xml` filetype (treesitter and syntax are untouched).
+
+- **Validation** is on by default. On opening or saving a `pom.xml`, Lathe runs
+  `xmllint --schema <bundled maven-4.0.0.xsd>` and shows any well-formedness or schema errors as
+  diagnostics on their lines. The bundled schema is used with `--nonet`, so validation is fully offline.
+- **Formatting** is opt-in. With `pom = { format = true }`, `pom.xml` buffers get a `formatprg` of
+  `xmllint --format`, so `gq` (e.g. `gggqG`) reindents the document.
+
+```lua
+require("lathe").setup({
+  pom = { validate = true, format = true },  -- validate defaults on; format defaults off
+})
+```
+
+Pass `pom = { validate = false }` to turn validation off. Both features need `xmllint` on your `PATH`
+(`libxml2`; preinstalled on most Linux/macOS systems, `apt install libxml2-utils` / `brew install
+libxml2` otherwise). If it is missing, Lathe notifies once and does nothing further.
+
 ## Create a new type
 
 `:LatheNew` scaffolds a **class / interface / record / enum / test**, plus **`package-info`** and

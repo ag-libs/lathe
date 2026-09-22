@@ -20,6 +20,11 @@
 --   continuation_indent number; pins the wrapped-line continuation width (default: twice the block width).
 --   formatter           nil | "google"; enables on-demand Google Java Format via the server (default: nil).
 --   format_on_save      boolean; format on write; only wired when formatter == "google" (default: false).
+--   pom                 table; client-side pom.xml support via `xmllint` (no server involvement):
+--                       { validate = true, format = false }. validate publishes XSD diagnostics on
+--                       open/save (default on); format points `formatprg` at `xmllint --format` for
+--                       `gq` (default off). Pass { validate = false } to disable. Needs `xmllint`
+--                       (libxml2) on PATH; degrades to a one-time notice otherwise.
 --
 -- Set LATHE_DEBUG=1 in the environment to enable debug logging in the server process.
 -- Requires the Java Treesitter parser for indentation (:TSInstall java).
@@ -363,6 +368,11 @@ function M.setup(opts)
   -- (process-test-classes, or `mvn test` with !) to refresh the .lathe/ mirror after POM/structural
   -- changes. The server never runs Maven itself.
   require('lathe.sync').setup()
+
+  -- pom.xml surface: client-side XSD validation (diagnostics on open/save) and optional formatting,
+  -- both via `xmllint`. No language server involvement -- Lathe is never attached to pom.xml. On by
+  -- default; pass `pom = { validate = false }` to disable, `pom = { format = true }` for `gq`.
+  require('lathe.pom').setup(opts.pom)
 
   -- Debug surface: :LatheDebug attaches nvim-dap to the test or main class under the cursor,
   -- replayed under a suspended JDWP agent (server-side lathe.debug.test / lathe.debug.main).
