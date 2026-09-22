@@ -171,8 +171,8 @@ public final class LatheCompiler implements Compiler {
   }
 
   private Optional<LatheContext> resolveLatheContext(final CompilerConfiguration config) {
-    final var moduleRoot = config.getWorkingDirectory().toPath();
-    return LatheWorkspace.findRoot(moduleRoot)
+    final var moduleRoot = config.getWorkingDirectory().toPath().toAbsolutePath().normalize();
+    return LatheWorkspace.findRoot(moduleRoot, buildRoot())
         .map(
             workspaceRoot -> {
               final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
@@ -180,6 +180,15 @@ public final class LatheCompiler implements Compiler {
               final var moduleDir = latheDir.resolve(moduleRel);
               return new LatheContext(moduleDir, moduleRel);
             });
+  }
+
+  // The directory Maven treats as this build's root — where mvn was invoked (.mvn-anchored when a
+  // .mvn/ is present, otherwise the launch dir). Caps the .lathe/ search so a build inside a nested
+  // worktree/checkout cannot climb out and adopt a parent repo's .lathe/.
+  private static Path buildRoot() {
+    final var root =
+        System.getProperty("maven.multiModuleProjectDirectory", System.getProperty("user.dir"));
+    return root == null ? null : Path.of(root).toAbsolutePath().normalize();
   }
 
   private record LatheContext(Path moduleDir, Path moduleRel) {}
