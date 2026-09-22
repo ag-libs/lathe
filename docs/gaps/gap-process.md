@@ -25,6 +25,7 @@ Each keeps its area prefix:
 | `TE-N` | test execution | Maven test-fork capture, replay launch fidelity, and test-classpath isolation |
 | `DB-N` | debug & evaluation | In-process DAP adapter and expression-evaluator scope, fidelity, and coverage |
 | `NV-N` | neovim client | The shipped Neovim plugin and its recommended configuration |
+| `MC-N` | MCP / agent facade | The in-process `LatheEngine` facade and `lathe-mcp-server` tool surface for AI agents |
 
 Resolved (`done` / `non-goal`) entries move to [gaps-archive.md](gaps-archive.md).
 Discovery and triage follow the single [gap workflow](gap-workflow.md).

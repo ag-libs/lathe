@@ -19,6 +19,7 @@ Each gap keeps its area prefix; the area is the discovery family, not a strict f
 | `TE-N` | test execution | Maven test-fork capture, replay launch fidelity, and test-classpath isolation |
 | `DB-N` | debug & evaluation | In-process DAP adapter and expression-evaluator scope, fidelity, and coverage |
 | `NV-N` | neovim client | The shipped Neovim plugin (`lua/lathe/…`) and its recommended configuration |
+| `MC-N` | MCP / agent facade | The in-process `LatheEngine` facade and `lathe-mcp-server` tool surface that exposes Lathe to AI agents |
 
 ## Finding the work for a release
 
@@ -516,3 +517,211 @@ distinct from the server's LSP/DAP surface. Resolved NV entries move to
 [gaps-archive.md](gaps-archive.md).
 
 All NV entries to date are resolved in [gaps-archive.md](gaps-archive.md); none are currently open.
+
+---
+
+# MCP / Agent Facade Gaps (MC)
+
+Gaps in the in-process `LatheEngine` facade and the `lathe-mcp-server` tool surface that exposes
+Lathe to AI agents, as distinct from the LSP/DAP server behaviour those tools sit on top of.
+Resolved MC entries move to [gaps-archive.md](gaps-archive.md).
+
+## MC-1 — `describe_symbol` (and position tools) return empty on dependency/JDK source files: the MCP warmup skips the External compile route
+
+**Status: accepted — Target: next (root cause confirmed by code trace; fix is small and localized).**
+
+Signal: dogfooding `describe_symbol` while designing [EG-003](#eg-003--hover-returns-null-on-positions-inside-javadoc-type-reference-tags).
+Pointing it at a javac `DocTrees` method to confirm an API returned nothing; the same symbol
+described from a use-site in reactor code returned the full signature + javadoc.
+
+### Observed behaviour
+
+`describe_symbol` aimed at a symbol **in a dependency or JDK source file** (e.g.
+`~/.cache/lathe/jdks/…/jdk.compiler/com/sun/source/util/DocTrees.java`) returns empty
+`{"markup":""}` — on both declarations and references. The identical symbol described from a
+**use-site inside a reactor file** (a `DocTrees` reference in `JavadocLocator.java`) resolves fully:
+
+```
+DocCommentTree getDocCommentTree(TreePath path)
+Returns the doc comment tree, if any, for the Tree node identified by a given TreePath. …
+source: jdk.compiler (JDK 26)
+```
+
+Crucially, **hovering directly inside the same JDK/dep source file works in the editor**, so this is
+an MCP-facade discrepancy, not an inherent "external sources can't be attributed" limitation and not
+a staleness issue.
+
+### Root cause (confirmed by trace)
+
+Every position-based engine tool calls `LatheEngine.compileFromDisk(file)` to register and warm the
+file before issuing the LSP request. `compileFromDisk` routes through
+`WorkspaceSession.diagnosticsFuture`, which switches on `routeCompiler(uri)`:
+
+- `CompilerRoute.Module` → `docs.put(...)` + `submitCompile(...)` — the file is registered and
+  attributed, so the later `hover` finds a cached analysis.
+- `CompilerRoute.External` (dep/JDK sources tracked by the manifest) → short-circuits to
+  `CompletableFuture.completedFuture(List.of())` — **no `docs.put`, no compile**.
+
+So the external file is never attributed, and `service.hover(...)` returns null → empty markup. The
+editor path (`WorkspaceSession.onOpen`) compiles **unconditionally** via
+`workspace.externalWorker()`, which is why the same hover works in the editor. `External` genuinely
+has a compiling worker (`routeCompiler` maps it to `externalWorker()`), so attribution is available —
+the warmup just doesn't use it.
+
+### Fix direction (small)
+
+Give the `External` route the same register-and-compile the `Module` route already gets in
+`diagnosticsFuture`, using `external.worker()`:
+
+```java
+case CompilerRoute.External external -> {
+  final var snapshot = docs.put(uri, content, version);
+  candidateIndex.update(uri, content);
+  final var result = new CompletableFuture<List<Diagnostic>>();
+  submitCompile(
+      external, snapshot, CompileMode.OPEN, (ignored, response) -> result.complete(response.diagnostics()));
+  yield result;
+}
+```
+
+`submitCompile` already accepts a `CompilerRoute` (`onSave` passes an `External` route through it), so
+this is localized — external files attribute and cache exactly as the editor's `onOpen` does, and
+every position tool that pre-warms via `compileFromDisk` benefits (`describe_symbol`,
+`get_definition`/`get_diagnostics` on external paths). The `Missing` route stays empty. Consider
+evicting the warmed external document after the one-shot engine call so read-only dep/JDK files do not
+accumulate in the open-document set.
+
+### Probe commands
+
+```bash
+# Via MCP (returns empty today; expected: rendered signature + javadoc):
+#   describe_symbol file=~/.cache/lathe/jdks/…/com/sun/source/util/DocTrees.java line=110 column=36
+# Contrast (already works): describe_symbol at a `DocTrees` use-site in a reactor .java file.
+```
+
+### Regression targets
+
+To be added with the fix:
+
+- `LatheEngineTest.describe_dependencyOrJdkSourceFile_returnsSignatureAndJavadoc` (positive: a symbol
+  in a manifest-tracked external source resolves to its rendered signature + javadoc).
+- `LatheEngineTest.describe_fileOutsideAnyModuleAndManifest_returnsEmpty` (negative: a `Missing`-route
+  file stays empty).
+
+---
+
+## MC-2 — Non-lathe (MCP SDK / Reactor) logs are silently dropped: no SLF4J provider on the server classpath
+
+**Status: accepted — Target: next (one runtime dependency).**
+
+Signal: every MCP server start prints an SLF4J NOP warning to stderr (visible in the client's
+startup-stderr capture).
+
+### Observed behaviour
+
+The server logs at startup:
+
+```
+SLF4J(W): No SLF4J providers were found.
+SLF4J(W): Defaulting to no-operation (NOP) logger implementation
+SLF4J(W): See https://www.slf4j.org/codes.html#noProviders for further details.
+```
+
+`slf4j-api-2.0.16.jar` is on the runtime classpath (pulled transitively by
+`io.modelcontextprotocol.sdk:mcp` and `io.projectreactor:reactor-core`), but **no SLF4J provider**
+is bound (`slf4j-jdk14`/`logback`/`slf4j-simple` all absent). SLF4J falls back to NOP, so every log
+line those libraries emit — including protocol-level warnings and errors from the MCP SDK and Reactor
+— is discarded.
+
+### Root cause
+
+`lathe-mcp-server` declares no SLF4J provider. lathe's own code logs through JUL, which is
+independent of SLF4J — that is why lathe's logs work while the third-party SLF4J logs vanish.
+
+### Fix direction
+
+Add the SLF4J→JUL bridge so non-lathe logs route into the same JUL configuration lathe already uses,
+pinned to the BOM-resolved `slf4j-api` version:
+
+```xml
+<dependency>
+  <groupId>org.slf4j</groupId>
+  <artifactId>slf4j-jdk14</artifactId>
+  <version>2.0.16</version>
+  <scope>runtime</scope>
+</dependency>
+```
+
+`logging.properties` keeps non-lathe loggers at `.level=WARNING`, so this stays quiet by default but
+finally lets real SDK/Reactor warnings and errors surface. Safe for the stdio protocol: JUL's
+`ConsoleHandler` writes to `System.err`, never the JSON-RPC `stdout` channel. (`slf4j-nop` would only
+mute the warning while keeping the logs suppressed — rejected.)
+
+### Regression targets
+
+To be added with the fix:
+
+- A startup smoke assertion that the server's stderr does **not** contain `No SLF4J providers`
+  (`LatheMcpServerTest.startup_bindsSlf4jProvider_noNopWarning`).
+
+---
+
+## MC-3 — MCP server logs are not observable: the client persists only startup stderr; the server has no durable log sink
+
+**Status: accepted — Target: next.**
+
+Signal: attempting to read the server's per-call logs to diagnose [MC-1](#mc-1--describe_symbol-and-position-tools-return-empty-on-dependencyjdk-source-files-the-mcp-warmup-skips-the-external-compile-route)
+— the logs were nowhere to be found despite the server emitting them.
+
+### Observed behaviour
+
+The server emits one `INFO` line per tool call to stderr by default
+(`io.github.aglibs.lathe.level=INFO`), e.g. `[tool] search_symbols query=DocTrees 875ms ok` — verified
+by driving the launcher standalone and reading its stderr. But **neither** Claude Code sink persists
+the server's stderr past the connection handshake:
+
+- `~/.cache/claude-cli-nodejs/<project>/mcp-logs-<server>/*.jsonl` (undocumented) — one
+  `Server stderr:` snapshot at connect, then only client-side `Calling MCP tool` / `completed` lines.
+- `~/.claude/debug/<session>.txt` (documented, via `claude --debug=mcp`) — the same: a single
+  `[ERROR] … Server stderr:` entry at the connect instant, then only client `[DEBUG]` lines.
+
+So every post-handshake server line — all per-call `[tool]`/`[symbol]` INFO, and any FINE under
+`LATHE_DEBUG` — is unobservable through the client.
+
+### Root cause
+
+A client-side capture limitation, and an undocumented one. The MCP spec says stdio stderr is
+"captured by the host application automatically" but specifies no lifetime or size limit; Claude Code
+records only the startup burst. A request for proper per-server logs is open and marked "not planned"
+(anthropics/claude-code#29035). The server therefore cannot rely on the client to surface its logs,
+and today has no file sink of its own — only a `ConsoleHandler` to stderr.
+
+### Fix direction
+
+Give the MCP server a durable, rotating JUL `FileHandler` alongside the existing `ConsoleHandler`:
+
+- Location (Option B): `~/.cache/lathe/logs/mcp-<workspace-slug>.log`, under the global cache dir the
+  server binary already lives in — untouched by `lathe:sync` cleaning `.lathe`, and disambiguated per
+  workspace with a readable slug (mirroring the client's own `-home-…-lathe` scheme). New
+  `LatheLayout.CACHE_LOGS_DIR = "logs"` (no hardcoded dir names); env override `LATHE_LOG_DIR`.
+- Rotation: pattern `mcp-<slug>.%g.log`, `limit≈5MB`, `count=3`, `append=true`, `%u` to stay safe if
+  two servers share a workspace.
+- Level `INFO` default, `FINE` under `LATHE_DEBUG`. Keep `ConsoleHandler` so the startup snapshot the
+  client *does* capture still works.
+- Emit the resolved log-file path in the startup line
+  (`[startup] lathe-mcp-server ready — logging to <path>`) so the one stderr line the client persists
+  points at the full log.
+- Switch the formatter to **UTC / ISO-8601** timestamps (today JUL prints server-local time, e.g.
+  `22:14` vs the client's `20:14` UTC — a needless correlation hazard).
+
+The MCP `logging` protocol capability (`notifications/message`) is deprecated in favour of
+stderr/OpenTelemetry, so a server-owned file plus stderr is the spec-aligned path — not protocol
+logging.
+
+### Regression targets
+
+To be added with the fix:
+
+- `LatheMcpServerTest.logging_afterToolCall_writesPerCallLineToFile` (positive: a rotating log file is
+  created under the resolved logs dir and receives the `[tool] …` line after a call).
+- `LatheMcpServerTest.logging_timestamps_areUtcIso8601` (formatter emits UTC, not local time).
