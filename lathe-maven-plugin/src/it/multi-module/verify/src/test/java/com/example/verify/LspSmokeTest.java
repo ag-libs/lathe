@@ -21,7 +21,10 @@ import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
 import org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams;
 import org.eclipse.lsp4j.CallHierarchyPrepareParams;
 import org.eclipse.lsp4j.ClientCapabilities;
+import org.eclipse.lsp4j.CompletionItem;
+import org.eclipse.lsp4j.CompletionParams;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
+import org.eclipse.lsp4j.DidSaveTextDocumentParams;
 import org.eclipse.lsp4j.ImplementationParams;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
@@ -50,6 +53,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 class LspSmokeTest {
 
@@ -369,6 +373,88 @@ class LspSmokeTest {
     assertThat(prompt.getActions())
         .extracting(MessageActionItem::getTitle)
         .containsExactlyInAnyOrder("Sync", "Sync + capture tests", "Later");
+  }
+
+  @Test
+  @Timeout(value = 10, unit = SECONDS)
+  void completion_afterUpstreamSave_offersNewMethodInDownstreamFileWithoutKeystroke()
+      throws Exception {
+    // Add a method to core/StringUtils, save it, and assert it becomes visible to completion in
+    // app/Main -- a downstream module -- WITHOUT any edit to Main. Cross-module completion resolves
+    // the upstream type from the compiled .lathe mirror, which a save refreshes; the downstream open
+    // file must then be recompiled so its cached analysis reflects the new member.
+    final Path stringUtilsJava =
+        ROOT.resolve("core/src/main/java/com/example/core/StringUtils.java");
+    final var stringUtilsUri = stringUtilsJava.toUri().toString();
+    final String original = Files.readString(stringUtilsJava);
+    final String upperMethod =
+        """
+          public static String upper(final String s) {
+            return s.toUpperCase();
+          }
+        """;
+    final String upperAndLower =
+        """
+          public static String upper(final String s) {
+            return s.toUpperCase();
+          }
+
+          public static String lower(final String s) {
+            return s.toLowerCase();
+          }
+        """;
+    final String withLower = original.replace(upperMethod, upperAndLower);
+    assertThat(withLower).isNotEqualTo(original);
+
+    final Path mainJava = ROOT.resolve("app/src/main/java/com/example/app/Main.java");
+    final var mainUri = mainJava.toUri().toString();
+    final String mainContent = Files.readString(mainJava);
+    // Cursor immediately after "StringUtils." on the existing StringUtils.upper(...) call.
+    final Position dot = findToken(mainContent, "StringUtils.upper", "upper");
+
+    openDoc(mainUri, mainContent);
+    openDoc(stringUtilsUri, original);
+
+    assertThat(completionLabels(mainUri, dot)).contains("upper").doesNotContain("lower");
+
+    // Saving the upstream buffer is what refreshes the mirror. Main is never re-sent, so reaching the
+    // awaited label proves the downstream reschedule, not a Main keystroke. The @Timeout bounds the
+    // wait for the async reschedule; exceeding it fails the test.
+    saveDoc(stringUtilsUri, withLower);
+    try {
+      awaitCompletionLabel(mainUri, dot, "lower");
+    } finally {
+      saveDoc(stringUtilsUri, original);
+    }
+  }
+
+  private static void awaitCompletionLabel(final String uri, final Position pos, final String label)
+      throws Exception {
+    while (!completionLabels(uri, pos).contains(label)) {
+      Thread.sleep(100);
+    }
+  }
+
+  private static List<String> completionLabels(final String uri, final Position pos)
+      throws Exception {
+    final var params = new CompletionParams(new TextDocumentIdentifier(uri), pos);
+    final var result = server.getTextDocumentService().completion(params).get(30, SECONDS);
+    final List<CompletionItem> items =
+        result.isLeft() ? result.getLeft() : result.getRight().getItems();
+    return items.stream().map(CompletionItem::getLabel).map(LspSmokeTest::memberName).toList();
+  }
+
+  // Method items carry a "name(params)" label; the receiver-member assertions compare on name only.
+  private static String memberName(final String label) {
+    final int paren = label.indexOf('(');
+    return (paren >= 0 ? label.substring(0, paren) : label).trim();
+  }
+
+  private static void saveDoc(final String uri, final String content) {
+    final var params = new DidSaveTextDocumentParams();
+    params.setTextDocument(new TextDocumentIdentifier(uri));
+    params.setText(content);
+    server.getTextDocumentService().didSave(params);
   }
 
   private static List<String> symbolNames(final String query) throws Exception {

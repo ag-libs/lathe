@@ -97,6 +97,12 @@ public final class WorkspaceModuleGraph {
         .toList();
   }
 
+  // The module itself plus every module transitively depending on it -- the set whose open files
+  // must recompile once this module's mirror bytecode changes.
+  public Set<Path> downstreamModuleDirs(final Path moduleDir) {
+    return downstreamOf.getOrDefault(moduleDir, Set.of(moduleDir));
+  }
+
   private static Set<Path> transitiveDownstream(
       final Path root, final Map<Path, Set<Path>> directDependents) {
     final var visited = new HashSet<Path>();

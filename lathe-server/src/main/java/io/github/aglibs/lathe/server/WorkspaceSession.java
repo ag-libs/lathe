@@ -3008,7 +3008,7 @@ final class WorkspaceSession {
     deleteStaleClassOutputs(config, savedSource, result.writtenBinaryNames());
     recordCompileStamp(config, savedSource);
     scheduleAstRefresh(result.uri());
-    scheduleOpenFilesInModule(result.uri(), config);
+    scheduleDownstreamOpenFiles(result.uri(), config);
     refreshReactorShard(config);
   }
 
@@ -3047,12 +3047,13 @@ final class WorkspaceSession {
     };
   }
 
-  private void scheduleOpenFilesInModule(
+  private void scheduleDownstreamOpenFiles(
       final String savedUri, final ModuleSourceConfig savedModule) {
+    final Set<Path> scope = moduleGraph.downstreamModuleDirs(savedModule.moduleDir());
     LOG.fine(
         () ->
-            "[save] checking %d open file(s) for dependents of %s"
-                .formatted(docs.all().size(), savedUri));
+            "[save] checking %d open file(s) across %d module(s) for dependents of %s"
+                .formatted(docs.all().size(), scope.size(), savedUri));
     docs.all().stream()
         .map(OpenDocument::uri)
         .filter(uri -> !uri.equals(savedUri))
@@ -3060,7 +3061,7 @@ final class WorkspaceSession {
             uri ->
                 workspace
                     .moduleSourceFor(LatheUri.toPath(uri))
-                    .map(m -> m.moduleDir().equals(savedModule.moduleDir()))
+                    .map(m -> scope.contains(m.moduleDir()))
                     .orElse(false))
         .forEach(this::scheduleOpenFile);
   }

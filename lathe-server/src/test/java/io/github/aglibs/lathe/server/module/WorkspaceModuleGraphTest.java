@@ -114,4 +114,36 @@ class WorkspaceModuleGraphTest {
     final var graph = WorkspaceModuleGraph.build(List.of(appMain));
     assertThat(graph.referenceSearchScope(appMain)).containsExactly(appMain);
   }
+
+  @Test
+  void downstreamModuleDirs_leafModule_returnsSelfOnly() {
+    final var coreMain = config("core", "classes", List.of());
+    final var otherMain = config("other", "classes", List.of());
+    final var graph = WorkspaceModuleGraph.build(List.of(coreMain, otherMain));
+    assertThat(graph.downstreamModuleDirs(LATHE_DIR.resolve("other")))
+        .containsExactly(LATHE_DIR.resolve("other"));
+  }
+
+  @Test
+  void downstreamModuleDirs_transitiveDependents_includesSelfAndAllDownstream() {
+    final var apiMain = config("api", "classes", List.of());
+    final var serviceMain = config("service", "classes", List.of(reactorTarget("api")));
+    final var appMain = config("app", "classes", List.of(reactorTarget("service")));
+    final var graph = WorkspaceModuleGraph.build(List.of(apiMain, serviceMain, appMain));
+
+    assertThat(graph.downstreamModuleDirs(LATHE_DIR.resolve("api")))
+        .containsExactlyInAnyOrder(
+            LATHE_DIR.resolve("api"), LATHE_DIR.resolve("service"), LATHE_DIR.resolve("app"));
+    // A downstream module carries only itself; its upstream is unaffected by its edits.
+    assertThat(graph.downstreamModuleDirs(LATHE_DIR.resolve("app")))
+        .containsExactly(LATHE_DIR.resolve("app"));
+  }
+
+  @Test
+  void downstreamModuleDirs_unknownModule_returnsSelfOnly() {
+    final var coreMain = config("core", "classes", List.of());
+    final var graph = WorkspaceModuleGraph.build(List.of(coreMain));
+    assertThat(graph.downstreamModuleDirs(LATHE_DIR.resolve("ghost")))
+        .containsExactly(LATHE_DIR.resolve("ghost"));
+  }
 }
