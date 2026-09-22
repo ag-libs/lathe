@@ -10,6 +10,9 @@ public final class LatheLayout {
   public static final String CACHE_DEPS_DIR = "deps";
   public static final String CACHE_JDKS_DIR = "jdks";
   public static final String TYPE_INDEX_DIR = "type-index";
+  public static final String LOGS_DIR = "logs";
+  public static final String MCP_LOG_PREFIX = "mcp-";
+  public static final String LOG_SUFFIX = ".log";
   public static final String SERVERS_DIR = "servers";
   public static final String CURRENT_LINK = "current";
   public static final String LAUNCHER_SCRIPT = "lathe-launcher.sh";
@@ -90,6 +93,16 @@ public final class LatheLayout {
 
   public static Path currentLink() {
     return userCacheRoot().resolve(CURRENT_LINK);
+  }
+
+  public static Path logsDir() {
+    return userCacheRoot().resolve(LOGS_DIR);
+  }
+
+  // Per-session MCP log file, agent-independent; sessionId is the caller's process tag so each
+  // agent session maps to one file and files sort chronologically.
+  public static Path mcpSessionLog(final String sessionId) {
+    return logsDir().resolve("%s%s%s".formatted(MCP_LOG_PREFIX, sessionId, LOG_SUFFIX));
   }
 
   public static String cacheName(final String value) {
