@@ -146,8 +146,16 @@ end
 
 -- On-demand formatting that keeps a closed imports fold from springing open (NV-3). Map a format
 -- key to this instead of raw vim.lsp.buf.format, which reopens the fold on the buffer rewrite.
+-- A pom.xml has no server formatter, so it routes client-side through xmllint; every other buffer
+-- goes through the fold-preserving google-java-format path.
 function M.format(bufnr, opts)
-  require('lathe.fold').format(bufnr or vim.api.nvim_get_current_buf(), opts)
+  bufnr = bufnr or vim.api.nvim_get_current_buf()
+  if vim.fs.basename(vim.api.nvim_buf_get_name(bufnr)) == 'pom.xml' then
+    require('lathe.pom').format_buffer(bufnr)
+    return
+  end
+
+  require('lathe.fold').format(bufnr, opts)
 end
 
 -- Nudge for the standalone install's silent failure modes, which the bundled cache

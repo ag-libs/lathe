@@ -52,4 +52,27 @@ local indent = require("lathe.indent")
 spec.check("indent_style propagates to lathe.indent", indent.config.indent_style, "google")
 spec.check("continuation_indent propagates to lathe.indent", indent.config.continuation_indent, 3)
 
+-- M.format dispatches by filename: pom.xml -> lathe.pom.format_buffer (xmllint), everything else ->
+-- the fold-preserving google-java-format path. Stub both targets so the test records the route only.
+local pom_called, fold_called = nil, nil
+require("lathe.pom").format_buffer = function(b)
+  pom_called = b
+end
+require("lathe.fold").format = function(b)
+  fold_called = b
+end
+
+local pom_buf = vim.api.nvim_create_buf(false, true)
+vim.api.nvim_buf_set_name(pom_buf, "/tmp/proj/pom.xml")
+lathe.format(pom_buf)
+spec.check("format(): pom.xml routes to pom.format_buffer", pom_called, pom_buf)
+spec.check("format(): pom.xml skips the fold path", fold_called, nil)
+
+pom_called = nil
+local java_buf = vim.api.nvim_create_buf(false, true)
+vim.api.nvim_buf_set_name(java_buf, "/tmp/proj/Foo.java")
+lathe.format(java_buf)
+spec.check("format(): .java routes to the fold path", fold_called, java_buf)
+spec.check("format(): .java skips the pom path", pom_called, nil)
+
 spec.finish()
