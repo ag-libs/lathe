@@ -2,12 +2,16 @@
 
 ## Status
 
-Proposed — no code yet. Approved architecture pending; sub-decisions open (see Open decisions).
+Proposed — no code yet.
 
-This is a new area: Lathe is a Java-only LSP server today, and this design adds a second, self-contained
-file-type path for `pom.xml` — schema-driven structure completion and XSD diagnostics, plus
-build-derived coordinate/property/reactor completion read from a `lathe:sync` capture. It touches all
-four modules and the Neovim client, so it is sliced to ship the no-capture parts first.
+**Chosen direction (KISS): client-side only.** After weighing the full server-side path (below), the
+selected approach is a **Neovim-client-only** feature: XSD validation and formatting via `xmllint`,
+against a Maven POM schema that Lathe makes available locally. **The LSP server is not involved** — no
+attach to `pom.xml`, no server classes, no capture schema record. Server-side completion is judged not
+worth the complexity for now and is deferred (see Server design, retained as the fuller alternative).
+
+See [Chosen approach](#chosen-approach--client-side-kiss) for the actual plan; the sections after it
+document the richer server-side design that was considered and deferred.
 
 ## Goal
 
@@ -28,6 +32,48 @@ Confirmed with the user:
 - **Diagnostics** — XML well-formedness + Maven POM schema (XSD) validation **only**. Not unresolved
   dependencies, not duplicate/redundant declarations, not unresolved-property checks (those are possible
   later slices, explicitly out of scope now).
+- **Formatting** — reindent `pom.xml`. Client-side via `xmllint --format` (see Formatting below), not a
+  server formatter.
+
+## Chosen approach — client-side (KISS)
+
+Validation and formatting run in the Neovim client via `xmllint` (libxml2), against a Maven POM XSD that
+Lathe provides locally. The LSP server is untouched; there is no attach to `pom.xml`, so this needs no
+`didOpen`/completion plumbing at all.
+
+**What we build:**
+
+1. **Ship the Maven `4.0.0` POM XSD locally** (Apache-licensed, self-contained — no network includes).
+   Primary placement: **bundle it in the Neovim plugin**, which is delivered both by `lathe:sync`
+   (unpacked from the jar) and as the standalone `lathe.nvim` repo — so the file is guaranteed present
+   for both install paths with **zero Java/server changes** and is versioned with the client. Variant:
+   have `lathe:sync` write it to `.lathe/` (one small sync step + a `LatheLayout` filename constant),
+   chosen only if sync should later select the XSD matching the project's Maven/model version.
+2. **A small client module (`pom.lua`)** with a `pom.xml`-only autocmd that:
+   - resolves the local XSD path;
+   - **validates** on save (and open) — `xmllint --noout --schema <xsd> <file>`, mapping its
+     `pom.xml:LINE: …` errors to `vim.diagnostic`;
+   - **formats** via `xmllint --format` (through `conform.nvim`/`formatprg`, with `XMLLINT_INDENT`);
+   - **degrades gracefully** — no-op with a one-time notify if `xmllint` is not installed, and skips if
+     the XSD is missing.
+3. **Docs** — a short guide/README note; validation and formatting opt-in toggles consistent with the
+   existing `format_on_save`.
+
+`xmllint --schema <local.xsd>` uses the given file and does not fetch the network schemaLocation hint,
+so validation is fully offline once the XSD is local.
+
+**Client-side micro-decisions:** (1) XSD placement — plugin bundle (recommended) vs. sync-written
+`.lathe/`; (2) formatting shipped enabled vs. opt-in (recommend opt-in); (3) validation on save only vs.
+save + open (recommend save + open).
+
+**Why not `lemminx` here:** it would validate *and* complete, but it is a second Java process to
+install/manage and overlaps the deferred server design; `xmllint` is the lighter fit for a
+validation-plus-formatting-only goal. Kept as an alternative if completion is later wanted client-side.
+
+---
+
+The remainder of this document is the **deferred** server-side design (richer: build-derived
+completion), retained for when/if completion is pursued.
 
 ## Architectural constraint
 
@@ -103,10 +149,41 @@ Bundled resource: the Apache-licensed Maven `4.0.0` POM XSD in `lathe-server` re
   `WorkspaceManifestWriter`, reading coordinates/properties/parent/modules straight off the resolved
   projects.
 
-**Coordinate-catalog scope (open decision, see below):** start with the reactor + managed-dependency +
-plugin coordinate set, enriched with the versions of *those* artifacts present in the local repo (so
-"complete the version of a dependency I already use" and "reactor sibling" work offline and cheap). Defer
-a full `~/.m2` walk (comprehensive but large/slow; better as a later globally-cached index).
+**Coordinate-catalog scope (open decision, see below).** Two tiers, driven by what the user is doing:
+
+- **Reactor + managed/plugin set** (per-workspace `.lathe/pom-index.json`) — the resolved reactor
+  coordinates plus every managed dependency and plugin, enriched with the versions of *those* artifacts
+  present in the local repo. Enough for "complete the **version** of a dependency I already use" and
+  "reactor **sibling** module". Cheap, offline, always captured.
+- **Local-repository index** (global `~/.cache/lathe/…`, keyed by repo state, not per-workspace) —
+  a walk of `~/.m2/repository` into `groupId → artifactId → [versions]`. Required to **select a
+  group/artifact for a *new* dependency** you do not already use; the reactor/managed set cannot offer
+  those. Sizable but flat; cached globally and refreshed by `lathe:sync` (or lazily), so it is built
+  once and shared across workspaces.
+
+The "select groupId/artifactId" goal specifically needs the local-repository index; version and sibling
+completion need only the reactor/managed set.
+
+### Coordinate completion (`<groupId>`/`<artifactId>`/`<version>`)
+
+Cascading, build-derived, inline `textDocument/completion` (no custom picker):
+
+- `PomContext` reads the sibling child values already set in the enclosing `<dependency>`/`<plugin>`/
+  `<parent>` block, so `<artifactId>` candidates are filtered by the entered `<groupId>` and `<version>`
+  by both.
+- `PomCompletion` serves the filtered candidates from `PomIndex` (reactor/managed set + local-repo
+  index) as element-text completion items.
+- A dedicated `:LatheAddDependency` **picker** (Telescope browse-first flow) is a heavier alternative —
+  a custom command + client UI — deferred unless type-to-filter proves insufficient.
+
+### Formatting
+
+Client-side, not a server formatter. `xmllint --format` (the same libxml2 binary as the client-side
+validation option) reindents the buffer; wire it via `conform.nvim`/`formatter.nvim` or `formatprg`,
+with `XMLLINT_INDENT` for indent width. Rejected for the server: the JDK's only built-in XML
+pretty-printer (`javax.xml.transform.Transformer` with indent output) handles whitespace unreliably, and
+a good XML formatter is a new dependency — both against KISS. A server `textDocument/formatting` branch
+for format-on-save parity with Java is a deliberate non-KISS follow-up, not this design.
 
 ## Slicing
 
@@ -115,7 +192,12 @@ a full `~/.m2` walk (comprehensive but large/slow; better as a later globally-ca
 2. **Structure completion** (no capture) — `PomContext` + `PomSchema` element model + `PomCompletion`
    structure suggestions.
 3. **Capture + data-driven completion** — `PomIndexWriter` writes `pom-index.json`; `PomIndex` reads it;
-   `PomCompletion` adds coordinate, property, and reactor/parent suggestions.
+   `PomCompletion` adds property and reactor/parent suggestions, plus **version** and **sibling**
+   coordinate completion from the reactor/managed set.
+4. **Local-repository coordinate selection** — the global `~/.m2` index (cached under `~/.cache/lathe`)
+   feeding `<groupId>`/`<artifactId>` selection for *new* dependencies, with cascading sibling filtering.
+5. **Formatting** — client-side `xmllint --format` wiring shipped with the Neovim client (no server
+   code).
 
 ## Alternatives considered
 
@@ -153,7 +235,13 @@ the project's single-implementation / no-heavy-framework preference. The JDK-nat
    Server keeps the "one tool, no external binary" story; client-side is less server code and, via
    lemminx, also yields structure completion for free. See Alternatives.
 2. **XML engine** — JDK-native (recommended) vs. embed LemMinX. Native chosen under KISS above.
-3. **Coordinate-catalog scope** — reactor/managed set first (recommended) vs. full `~/.m2` index.
+3. **Coordinate-catalog scope** — reactor/managed set only (versions + siblings) vs. also building the
+   full `~/.m2` local-repository index. Selecting a group/artifact for a *new* dependency needs the
+   local-repo index; the user's ask implies building it.
+4. **Coordinate completion UX** — inline `textDocument/completion` (recommended, KISS) vs. a
+   `:LatheAddDependency` browse picker.
+5. **Formatting placement** — client-side `xmllint` (recommended) vs. a later server
+   `textDocument/formatting` branch for format-on-save parity with Java.
 
 ## Non-goals (this design)
 
