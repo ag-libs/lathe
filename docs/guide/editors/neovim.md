@@ -230,7 +230,11 @@ buffer keeps its normal `xml` filetype (treesitter and syntax are untouched).
   `xmllint --schema <bundled maven-4.0.0.xsd>` and shows any well-formedness or schema errors as
   diagnostics on their lines. The bundled schema is used with `--nonet`, so validation is fully offline.
 - **Formatting** is opt-in. With `pom = { format = true }`, `pom.xml` buffers get a `formatprg` of
-  `xmllint --format`, so `gq` (e.g. `gggqG`) reindents the document.
+  `xmllint --format`, so `gq` (e.g. `gggqG`) reindents the document. To format from a mapping, bind a
+  key to `require('lathe.pom').format_buffer()` — it captures xmllint's output and replaces the buffer
+  only on success, so an invalid pom is left untouched (a bare `:%!xmllint` would blank it). Indent
+  width follows xmllint's own default; set `XMLLINT_INDENT` (e.g. `export XMLLINT_INDENT='  '`) for a
+  specific width.
 
 ```lua
 require("lathe").setup({

@@ -70,4 +70,28 @@ pom.setup({ validate = false, format = true })
 spec.check("format-only: BufReadPost wired", count("BufReadPost"), 1)
 spec.check("format-only: no BufWritePost validate", count("BufWritePost"), 0)
 
+-- format_buffer reindents a valid pom in place; and (the whole point) leaves an INVALID pom
+-- untouched rather than blanking it the way a naive `:%!xmllint` filter would.
+if vim.fn.executable("xmllint") == 1 then
+  local ok_buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(ok_buf, 0, -1, false, {
+    '<?xml version="1.0"?>',
+    '<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion></project>',
+  })
+  pom.format_buffer(ok_buf)
+  spec.check("format_buffer expands a valid pom", #vim.api.nvim_buf_get_lines(ok_buf, 0, -1, false) > 2, true)
+
+  local bad_buf = vim.api.nvim_create_buf(false, true)
+  local bad = { "<project><modelVersion>4.0.0</modelVersion>" } -- unclosed <project>
+  vim.api.nvim_buf_set_lines(bad_buf, 0, -1, false, bad)
+  pom.format_buffer(bad_buf)
+  spec.check(
+    "format_buffer leaves an invalid pom untouched",
+    vim.api.nvim_buf_get_lines(bad_buf, 0, -1, false)[1],
+    bad[1]
+  )
+else
+  spec.pending("format_buffer end-to-end", "xmllint not installed")
+end
+
 spec.finish()

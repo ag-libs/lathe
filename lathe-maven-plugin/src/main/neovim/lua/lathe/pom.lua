@@ -100,9 +100,39 @@ function M.validate(bufnr)
   )
 end
 
+--- Format the pom.xml in `bufnr` in place via `xmllint --format`, replacing the buffer contents only
+--- when xmllint succeeds. A naive `:%!xmllint` would blank the buffer when the pom is invalid, since
+--- xmllint writes nothing to stdout on a parse error; this captures the output and leaves the buffer
+--- untouched (with a notice) on failure. `--nonet` keeps it offline.
+---@param bufnr integer? defaults to the current buffer
+function M.format_buffer(bufnr)
+  bufnr = bufnr or vim.api.nvim_get_current_buf()
+  if not has_xmllint() then
+    warn_once('pom.xml formatting needs `xmllint` (libxml2) on PATH; skipping.')
+    return
+  end
+
+  local input = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), '\n')
+  local output = vim.fn.system({ 'xmllint', '--nonet', '--format', '-' }, input)
+  if vim.v.shell_error ~= 0 then
+    vim.notify(
+      'Lathe: pom.xml not formatted (invalid XML): ' .. vim.trim(output),
+      vim.log.levels.WARN,
+      { title = 'Lathe' }
+    )
+    return
+  end
+
+  local lines = vim.split(output, '\n')
+  if lines[#lines] == '' then
+    table.remove(lines)
+  end
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+end
+
 -- Point the buffer's formatprg at xmllint so `gq`/`gg=G`-style formatting reindents the pom.
--- pom.xml has no significant mixed content, so `--format` is safe; libxml2 defaults to 2-space
--- indentation. `--nonet` keeps it offline.
+-- pom.xml has no significant mixed content, so `--format` is safe. Indentation follows xmllint's
+-- own default (override with the XMLLINT_INDENT env var). `--nonet` keeps it offline.
 local function set_formatprg(bufnr)
   if has_xmllint() then
     vim.bo[bufnr].formatprg = 'xmllint --nonet --format -'
