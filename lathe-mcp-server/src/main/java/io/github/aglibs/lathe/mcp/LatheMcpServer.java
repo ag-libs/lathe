@@ -10,6 +10,8 @@ import io.modelcontextprotocol.server.transport.StdioServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema.ServerCapabilities;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.logging.Level;
@@ -23,6 +25,11 @@ import java.util.logging.Logger;
 public final class LatheMcpServer {
 
   private static final Logger LOG = Logger.getLogger(LatheMcpServer.class.getName());
+
+  // Session tag for the per-session log filename: process start time, so files sort
+  // chronologically.
+  private static final DateTimeFormatter SESSION_TIMESTAMP =
+      DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").withZone(ZoneId.systemDefault());
 
   // Routing guidance injected into the agent's context (Claude Code reads server instructions).
   // Dispatch-first and kept well under the ~2KB the client truncates at. The tool descriptions
@@ -63,7 +70,12 @@ public final class LatheMcpServer {
   public static void main(final String[] args) throws InterruptedException {
     LatheLogging.init();
 
-    final Optional<Path> workspaceRoot = findWorkspaceRoot();
+    final var cwd = Path.of("").toAbsolutePath();
+    final long pid = ProcessHandle.current().pid();
+    LatheLogging.initFile(LatheLayout.mcpSessionLog(sessionId(pid)));
+    LOG.info(() -> "[startup] pid=%d cwd=%s".formatted(pid, cwd));
+
+    final Optional<Path> workspaceRoot = findWorkspaceRoot(cwd);
     if (workspaceRoot.isEmpty()) {
       LOG.severe(LatheLayout.SETUP_REMEDIATION);
       System.exit(2);
@@ -71,7 +83,7 @@ public final class LatheMcpServer {
     }
 
     final Path root = workspaceRoot.get();
-    LOG.info(() -> "[startup] lathe-mcp-server workspace=%s".formatted(root));
+    LOG.info(() -> "[startup] workspace=%s".formatted(root));
 
     // stdout is the MCP JSON-RPC channel: hand the transport the real stdout and redirect
     // System.out
@@ -94,12 +106,22 @@ public final class LatheMcpServer {
       return;
     }
 
-    LOG.info(() -> "[startup] lathe-mcp-server ready");
+    LOG.info(() -> "[startup] ready");
     new CountDownLatch(1).await(); // serve until the agent terminates the process
   }
 
-  private static Optional<Path> findWorkspaceRoot() {
-    final var cwd = Path.of("").toAbsolutePath();
+  // Process start time + pid, so each agent session maps to one log file; pid alone if the start
+  // time is unavailable.
+  private static String sessionId(final long pid) {
+    return ProcessHandle.current()
+        .info()
+        .startInstant()
+        .map(SESSION_TIMESTAMP::format)
+        .map(timestamp -> "%s-%d".formatted(timestamp, pid))
+        .orElseGet(() -> Long.toString(pid));
+  }
+
+  private static Optional<Path> findWorkspaceRoot(final Path cwd) {
     for (Path dir = cwd; dir != null; dir = dir.getParent()) {
       if (Files.isDirectory(dir.resolve(LatheLayout.LATHE_DIR))) {
         return Optional.of(dir);

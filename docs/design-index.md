@@ -75,12 +75,11 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 
 **Build-file support:**
 
-- [`pom.xml` Support](planned/lathe-pom-support.md) — a new, self-contained file-type path for
-  `pom.xml`: schema-driven structure completion, XSD well-formedness/validation diagnostics, and
-  build-derived coordinate/property/reactor completion read from a `lathe:sync` capture
-  (`.lathe/pom-index.json`). JDK-native (no LemMinX), sliced no-capture-first, attached client-side by
-  filename (filetype stays `xml`, treesitter intact). Primary open decision: XSD validation server-side
-  vs. Neovim-only (`xmllint`/`lemminx`).
+- [`pom.xml` Support](planned/lathe-pom-support.md) — **chosen direction is client-side (KISS)**:
+  Neovim-only XSD validation and formatting via `xmllint`, against a Maven POM schema Lathe ships in the
+  client plugin — the LSP server is untouched (no attach, no server classes). The richer server-side
+  design (JDK-native schema/coordinate/property/reactor completion from a `lathe:sync`
+  `.lathe/pom-index.json` capture) is documented and **deferred** unless completion is later wanted.
 
 **Reliability and further work:**
 

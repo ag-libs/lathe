@@ -39,6 +39,31 @@ final class LatheWorkspaceTest {
   }
 
   @Test
+  void findRoot_markerOnlyAboveCeiling_returnsEmpty() throws IOException {
+    // A parent repo has .lathe/; a nested checkout under it (e.g. a git worktree) has none. The
+    // search from the nested module must stop at the ceiling and NOT adopt the parent's .lathe/.
+    final Path parent = tempDir.resolve("parent");
+    Files.createDirectories(parent.resolve(LatheLayout.LATHE_DIR));
+    final Path nestedRoot = parent.resolve("nested");
+    final Path module = nestedRoot.resolve("module-a");
+    Files.createDirectories(module);
+
+    assertThat(LatheWorkspace.findRoot(module, nestedRoot)).isEmpty();
+    // Unbounded, it would climb into the parent — the leaky behaviour the ceiling prevents.
+    assertThat(LatheWorkspace.findRoot(module, null)).contains(parent);
+  }
+
+  @Test
+  void findRoot_markerAtOrBelowCeiling_returnsIt() throws IOException {
+    final Path reactor = tempDir.resolve("reactor");
+    Files.createDirectories(reactor.resolve(LatheLayout.LATHE_DIR));
+    final Path module = reactor.resolve("app/src/main/java");
+    Files.createDirectories(module);
+
+    assertThat(LatheWorkspace.findRoot(module, reactor)).contains(reactor);
+  }
+
+  @Test
   void findRoot_skipPropertyTrue_returnsEmpty() throws IOException {
     final Path workspace = tempDir.resolve("workspace");
     Files.createDirectories(workspace.resolve(LatheLayout.LATHE_DIR));

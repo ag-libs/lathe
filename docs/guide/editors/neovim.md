@@ -38,6 +38,7 @@ Point `lazy.nvim`'s `dir` at the Neovim runtime installed by `lathe:sync`:
   dir = vim.fn.expand("~/.cache/lathe/current/neovim"),
   ft = "java",
   cmd = "LatheStart",
+  event = { "BufReadPre pom.xml", "BufNewFile pom.xml" },
   config = function()
     require("lathe").setup()
   end,
@@ -58,6 +59,7 @@ require("lathe").setup()
   "ag-libs/lathe.nvim",
   ft = "java",
   cmd = "LatheStart",
+  event = { "BufReadPre pom.xml", "BufNewFile pom.xml" },
   config = function()
     require("lathe").setup()
   end,
@@ -71,6 +73,12 @@ require("lathe").setup()
 > `:LatheStart` is available to bring the server up for workspace navigation before you open any Java
 > file (from a dashboard or an empty buffer). Without it, the command exists only after a Java buffer
 > has loaded the plugin. (`vim.pack` has no lazy-loading, so the plugin is always available there.)
+
+> **`event = { "BufReadPre pom.xml", … }` loads the plugin for `pom.xml` too.** A `pom.xml` is
+> `filetype=xml`, so `ft = "java"` alone never loads Lathe for it — and the client-side pom
+> validation/formatting (see [pom.xml validation & formatting](#pomxml-validation--formatting)) is
+> armed inside `setup()`. `BufReadPre` fires before `BufReadPost`, so validation runs on first open.
+> (`vim.pack` is eager, so it needs nothing extra.)
 
 `setup()` options:
 
@@ -210,6 +218,38 @@ require("lathe").setup({
   format_on_save = true,
 })
 ```
+
+## pom.xml validation & formatting
+
+Lathe validates a `pom.xml` against the Maven POM schema and can format it — **client-side, via
+`xmllint`** (libxml2). This path does not use the language server: Lathe never attaches to `pom.xml`
+(the server stays a Java-only client), so validation and formatting are ordinary editor tooling and the
+buffer keeps its normal `xml` filetype (treesitter and syntax are untouched).
+
+- **Validation** is on by default. On opening or saving a `pom.xml`, Lathe runs
+  `xmllint --schema <bundled maven-4.0.0.xsd>` and shows any well-formedness or schema errors as
+  diagnostics on their lines. The bundled schema is used with `--nonet`, so validation is fully offline.
+- **Formatting** is opt-in. With `pom = { format = true }`, `pom.xml` buffers get a `formatprg` of
+  `xmllint --format`, so `gq` (e.g. `gggqG`) reindents the document. To format from a mapping, bind a
+  key to `require('lathe.pom').format_buffer()` — it captures xmllint's output and replaces the buffer
+  only on success, so an invalid pom is left untouched (a bare `:%!xmllint` would blank it). Indent
+  width follows xmllint's own default; set `XMLLINT_INDENT` (e.g. `export XMLLINT_INDENT='  '`) for a
+  specific width.
+
+```lua
+require("lathe").setup({
+  pom = { validate = true, format = true },  -- validate defaults on; format defaults off
+})
+```
+
+Pass `pom = { validate = false }` to turn validation off. Both features need `xmllint` on your `PATH`
+(`libxml2`; preinstalled on most Linux/macOS systems, `apt install libxml2-utils` / `brew install
+libxml2` otherwise). If it is missing, Lathe notifies once and does nothing further.
+
+> **Lazy-loading gotcha:** if your plugin manager lazy-loads Lathe on `ft = "java"`, add
+> `event = { "BufReadPre pom.xml", "BufNewFile pom.xml" }` to the spec (as the [Install](#install)
+> examples do). A `pom.xml` is `filetype=xml`, so without it the plugin never loads for a pom and this
+> feature silently stays off. `vim.pack` (eager) needs nothing.
 
 ## Create a new type
 
