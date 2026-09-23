@@ -527,6 +527,31 @@ class WorkspaceSessionTest {
         .isEmpty();
   }
 
+  @Test
+  void testSources_resolvesClassesToFilesAndStripsInnerAndLeavesUnknownEmpty() throws Exception {
+    final var testCfg = testConfig("module", "src/test/java");
+    Files.createDirectories(tmp.resolve("module/src/test/java/com/verify"));
+    Files.writeString(
+        tmp.resolve("module/src/test/java/com/verify/FooTest.java"),
+        "package com.verify; class FooTest {}");
+
+    final List<TestSource> sources =
+        WorkspaceSession.testSources(
+            List.of(config, testCfg),
+            tmp,
+            "module",
+            List.of("com.verify.FooTest", "com.verify.FooTest$Nested", "com.verify.GoneTest"));
+
+    final String foo = tmp.resolve("module/src/test/java/com/verify/FooTest.java").toString();
+    assertThat(sources)
+        .containsExactly(
+            new TestSource("com.verify.FooTest", foo),
+            // inner class resolves to its top-level source file
+            new TestSource("com.verify.FooTest$Nested", foo),
+            // a class with no source file on disk resolves to an empty path
+            new TestSource("com.verify.GoneTest", ""));
+  }
+
   private CreateTypeResult render(final TypeKind type, final String name, final String pkg) {
     return WorkspaceSession.renderNewType(sourceRoot, pkg, type, name);
   }

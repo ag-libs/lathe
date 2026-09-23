@@ -769,4 +769,40 @@ do
   spec.check("untimed summary omits the seconds suffix", untimed.text, "C — 2 passed, 0 failed, 0 skipped")
 end
 
+-- _results_qf_items: the run's executed tests -> quickfix rows. Failures come first and jump to their
+-- failure line; passed/skipped follow in run order. A class whose source path resolved (paths map)
+-- becomes a jumpable row (filename+lnum); an unresolved class is a text-only row.
+do
+  local results = {
+    { className = "com.x.AT", methodName = "passes", status = "passed", failureLine = -1 },
+    {
+      className = "com.x.BT",
+      methodName = "breaks",
+      status = "failed",
+      failureMessage = "expected:<1>\n but was:<2>",
+      failureLine = 42,
+    },
+    { className = "com.x.CT", methodName = "ignored", status = "skipped", failureLine = -1 },
+  }
+  local paths = { ["com.x.AT"] = "/w/AT.java", ["com.x.BT"] = "/w/BT.java" } -- CT unresolved
+
+  local items = adapter._results_qf_items(results, paths)
+
+  spec.check("one row per executed test", #items, 3)
+  -- failure first, jumping to its failure line, tagged as an error, message flattened onto one line
+  spec.check("failure sorts first", items[1].text, "com.x.BT#breaks — expected:<1> but was:<2>")
+  spec.check("failure filename", items[1].filename, "/w/BT.java")
+  spec.check("failure jumps to failureLine", items[1].lnum, 42)
+  spec.check("failure typed as error", items[1].type, "E")
+  -- passed row: resolved path, line 1, no error type
+  spec.check("passed text", items[2].text, "com.x.AT#passes — passed")
+  spec.check("passed filename", items[2].filename, "/w/AT.java")
+  spec.check("passed lnum defaults to 1", items[2].lnum, 1)
+  spec.check("passed type blank", items[2].type, "")
+  -- skipped, unresolved class -> text-only row (no filename to jump to)
+  spec.check("skipped text", items[3].text, "com.x.CT#ignored — skipped")
+  spec.check("unresolved class has no filename", items[3].filename, nil)
+  spec.check("skipped typed as warning", items[3].type, "W")
+end
+
 spec.finish()

@@ -614,4 +614,9 @@ public final class LatheTextDocumentService implements TextDocumentService {
   CompletableFuture<DirRun> dirRunFuture(final String uri) {
     return worker.submit(() -> session.dirRun(uri));
   }
+
+  CompletableFuture<List<TestSource>> testSourcesFuture(
+      final String moduleRel, final List<String> classNames) {
+    return worker.submit(() -> session.testSources(moduleRel, classNames));
+  }
 }
