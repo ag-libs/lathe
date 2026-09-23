@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BiFunction;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.*;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
@@ -244,6 +245,28 @@ public final class LatheTextDocumentService implements TextDocumentService {
     return worker.submit(() -> session.foldingRangeFuture(uri)).thenCompose(f -> f);
   }
 
+  // Runs a progress-reporting request and always cleans up: opens a progress bound to the response,
+  // runs `work` with the cancel checker + task, then ends the progress and settles the response
+  // however work completes. The one place the lifecycle lives, so no handler can leak a $/progress.
+  private <T> CompletableFuture<T> withProgress(
+      final Either<String, Integer> token,
+      final BiFunction<CancelChecker, ProgressReporter.Task, CompletableFuture<? extends T>> work) {
+    final var response = new CompletableFuture<T>();
+    final CancelChecker cancelChecker = new CompletableFutures.FutureCancelChecker(response);
+    final ProgressReporter.Task progress = progressReporter.open(token, response);
+    work.apply(cancelChecker, progress)
+        .whenComplete(
+            (result, failure) -> {
+              progress.finish(failure);
+              if (failure == null) {
+                response.complete(result);
+              } else {
+                response.completeExceptionally(failure);
+              }
+            });
+    return response;
+  }
+
   @Override
   public CompletableFuture<List<? extends Location>> references(final ReferenceParams params) {
     final var uri = params.getTextDocument().getUri();
@@ -253,23 +276,12 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    final var response = new CompletableFuture<List<? extends Location>>();
-    final CancelChecker cancelChecker = new CompletableFutures.FutureCancelChecker(response);
-    final var progress = progressReporter.open(params.getWorkDoneToken(), response);
-    final CompletableFuture<List<Location>> work =
-        worker
-            .submit(() -> session.referencesFuture(uri, pos, incl, cancelChecker, progress))
-            .thenCompose(f -> f);
-    work.whenComplete(
-        (locations, failure) -> {
-          progress.finish(failure);
-          if (failure == null) {
-            response.complete(locations);
-          } else {
-            response.completeExceptionally(failure);
-          }
-        });
-    return response;
+    return withProgress(
+        params.getWorkDoneToken(),
+        (cancelChecker, progress) ->
+            worker
+                .submit(() -> session.referencesFuture(uri, pos, incl, cancelChecker, progress))
+                .thenCompose(f -> f));
   }
 
   @Override
@@ -293,23 +305,12 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(null);
     }
 
-    final var response = new CompletableFuture<WorkspaceEdit>();
-    final CancelChecker cancelChecker = new CompletableFutures.FutureCancelChecker(response);
-    final var progress = progressReporter.open(null, response);
-    final CompletableFuture<WorkspaceEdit> work =
-        worker
-            .submit(() -> session.renameFuture(uri, pos, newName, cancelChecker, progress))
-            .thenCompose(f -> f);
-    work.whenComplete(
-        (edit, failure) -> {
-          progress.finish(failure);
-          if (failure == null) {
-            response.complete(edit);
-          } else {
-            response.completeExceptionally(failure);
-          }
-        });
-    return response;
+    return withProgress(
+        null,
+        (cancelChecker, progress) ->
+            worker
+                .submit(() -> session.renameFuture(uri, pos, newName, cancelChecker, progress))
+                .thenCompose(f -> f));
   }
 
   @Override
@@ -399,23 +400,13 @@ public final class LatheTextDocumentService implements TextDocumentService {
   @Override
   public CompletableFuture<List<CallHierarchyIncomingCall>> callHierarchyIncomingCalls(
       final CallHierarchyIncomingCallsParams params) {
-    final var response = new CompletableFuture<List<CallHierarchyIncomingCall>>();
-    final CancelChecker cancelChecker = new CompletableFutures.FutureCancelChecker(response);
-    final var progress = progressReporter.open(params.getWorkDoneToken(), response);
-    final CompletableFuture<List<CallHierarchyIncomingCall>> work =
-        worker
-            .submit(() -> session.incomingCallsFuture(params.getItem(), cancelChecker, progress))
-            .thenCompose(f -> f);
-    work.whenComplete(
-        (result, failure) -> {
-          progress.finish(failure);
-          if (failure == null) {
-            response.complete(result);
-          } else {
-            response.completeExceptionally(failure);
-          }
-        });
-    return response;
+    return withProgress(
+        params.getWorkDoneToken(),
+        (cancelChecker, progress) ->
+            worker
+                .submit(
+                    () -> session.incomingCallsFuture(params.getItem(), cancelChecker, progress))
+                .thenCompose(f -> f));
   }
 
   @Override
@@ -580,10 +571,12 @@ public final class LatheTextDocumentService implements TextDocumentService {
   }
 
   CompletableFuture<List<Location>> instantiationsFuture(final String uri, final Position pos) {
-    final CancelChecker noCancel = () -> {};
-    return worker
-        .submit(() -> session.instantiationsFuture(uri, pos, noCancel))
-        .thenCompose(f -> f);
+    return withProgress(
+        null,
+        (cancelChecker, progress) ->
+            worker
+                .submit(() -> session.instantiationsFuture(uri, pos, cancelChecker, progress))
+                .thenCompose(f -> f));
   }
 
   CompletableFuture<TypeHierarchyExplorerResult> typeHierarchyExplorerFuture(

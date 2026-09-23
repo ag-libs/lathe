@@ -1495,7 +1495,10 @@ final class WorkspaceSession {
   }
 
   CompletableFuture<List<Location>> instantiationsFuture(
-      final String uri, final Position pos, final CancelChecker cancelChecker) {
+      final String uri,
+      final Position pos,
+      final CancelChecker cancelChecker,
+      final ProgressReporter.Task progress) {
     cancelChecker.checkCanceled();
     final OpenDocument openFile = docs.get(uri);
     if (openFile == null) {
@@ -1534,10 +1537,10 @@ final class WorkspaceSession {
                 return CompletableFuture.completedFuture(List.<Location>of());
               }
 
-              // One reference search per constructor (overload), unioned. Candidate discovery keys
-              // on
-              // the type's simple name and ReferenceLocator.visitNewClass emits the match at the
-              // `new XXX` identifier, so this yields exactly the instantiation sites.
+              // One reference search per constructor overload, unioned -- each match sits at the
+              // `new XXX` identifier, so these are exactly the instantiation sites. All overloads
+              // share the one progress task the caller finishes, so a multi-ctor type shows one
+              // bar.
               final List<CompletableFuture<List<Location>>> searches =
                   targets.stream()
                       .map(
@@ -1549,7 +1552,7 @@ final class WorkspaceSession {
                                   target,
                                   false,
                                   cancelChecker,
-                                  progressReporter.open(null, new CompletableFuture<>()),
+                                  progress,
                                   "Finding instantiation sites"))
                       .toList();
               return joinCandidateResults(searches, cancelChecker);

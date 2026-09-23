@@ -243,6 +243,43 @@ class LatheTextDocumentServiceTest {
   }
 
   @Test
+  void instantiations_multiConstructorType_progressAlwaysEnds() throws Exception {
+    final Path sourceRoot = tmp.resolve("module/src/main/java");
+    final Path source = sourceRoot.resolve("com/example/Widget.java");
+    Files.createDirectories(source.getParent());
+    final var content =
+        """
+        package com.example;
+        class Widget {
+          Widget() {}
+          Widget(int n) {}
+          static Widget make() { return new Widget(1); }
+        }
+        """;
+    Files.writeString(source, content);
+    TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
+    service.setWorkDoneProgressSupported(true);
+    service.initialize(tmp);
+    service.didOpen(
+        new DidOpenTextDocumentParams(
+            new TextDocumentItem(source.toUri().toString(), "java", 1, content)));
+
+    // Two constructors => two overload searches sharing one progress; the leak was that it never
+    // ended. Regression: whatever it reports, its final value must be an End.
+    final List<Location> sites =
+        service
+            .instantiationsFuture(
+                source.toUri().toString(), offsetToPosition(content, content.indexOf("Widget {")))
+            .get(5, TimeUnit.SECONDS);
+
+    final var progressCaptor = ArgumentCaptor.forClass(ProgressParams.class);
+    verify(client, timeout(5_000).atLeast(2)).notifyProgress(progressCaptor.capture());
+    assertThat(sites).isNotEmpty();
+    assertThat(progressCaptor.getAllValues().getLast().getValue().getLeft())
+        .isInstanceOf(WorkDoneProgressEnd.class);
+  }
+
+  @Test
   void references_progressCancelled_cancelsResponseAndKeepsServiceUsable() throws Exception {
     final Path source = writeWorkspaceSource();
     final var content = Files.readString(source);
