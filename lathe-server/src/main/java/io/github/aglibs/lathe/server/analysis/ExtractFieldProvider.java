@@ -4,7 +4,6 @@ import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.ExpressionStatementTree;
 import com.sun.source.tree.ExpressionTree;
-import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
@@ -227,7 +226,7 @@ final class ExtractFieldProvider {
     }
 
     final String decl = "private final %s %s = %s;".formatted(typeText, name, exprSource);
-    final VariableTree lastField = lastField(cls, cu, positions, brace);
+    final VariableTree lastField = CodeActionSupport.lastField(cls, cu, positions, brace);
     if (lastField != null) {
       final long fieldEnd = positions.getEndPosition(cu, lastField);
       final long fieldStart = positions.getStartPosition(cu, lastField);
@@ -252,27 +251,6 @@ final class ExtractFieldProvider {
     final var pos = SourceLocator.offsetToPosition(cu, brace + 1);
     final String classIndent = CodeActionSupport.lineIndent(source, (int) classStart);
     return new TextEdit(new Range(pos, pos), "\n%s  %s".formatted(classIndent, decl));
-  }
-
-  private static VariableTree lastField(
-      final ClassTree cls,
-      final CompilationUnitTree cu,
-      final SourcePositions positions,
-      final int brace) {
-    VariableTree last = null;
-    long lastStart = -1;
-    for (final Tree member : cls.getMembers()) {
-      if (!(member instanceof final VariableTree field)) {
-        continue;
-      }
-
-      final long start = positions.getStartPosition(cu, field);
-      if (start > brace && start > lastStart) {
-        lastStart = start;
-        last = field;
-      }
-    }
-    return last;
   }
 
   // ── name derivation (camelCase) ──────────────────────────────────────────────────────────────

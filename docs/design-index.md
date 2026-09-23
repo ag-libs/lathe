@@ -61,6 +61,9 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
   (`psvm`, `sout`, `ctor`) delivered as context-gated snippet completion items (proposed).
 - [Surround with try-with-resources](planned/lathe-try-with-resources.md) — range-driven refactor wrapping an
   `AutoCloseable` declaration in a try-with-resources; sibling of Extract Variable and try/catch wrap (proposed).
+- [Add constructor parameter for a field](planned/lathe-add-constructor-parameter.md) — range-driven refactor
+  (CA-10) that adds a `final` field as a parameter to every constructor and binds it, generating a constructor
+  when none exists; sibling of Extract Field (proposed).
 - [`:LatheNew` Ergonomics Rethink (v4)](planned/lathe-new-type-ergonomics.md) — **shipped**; reworked the `:LatheNew`
   after large-reactor friction: a typed command (context-defaulted anchored path + explicit
   `[module:][scope:]package` location) with the type name always prompted and the package never defaulting by

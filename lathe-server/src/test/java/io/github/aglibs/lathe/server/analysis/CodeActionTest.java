@@ -8,6 +8,8 @@ import io.github.aglibs.lathe.server.TestCompiler;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -15,6 +17,7 @@ import javax.tools.StandardLocation;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.Diagnostic;
+import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
@@ -1644,7 +1647,215 @@ class CodeActionTest {
         .isEqualTo("try (FileReader r = new FileReader(\"x\")) {\n    }");
   }
 
+  // --- Add-constructor-parameter provider (request-driven, CA-10) ---
+
+  @Test
+  void codeAction_finalBlankField_multipleConstructors_bindsEach() {
+    // One empty and one one-arg constructor cover both parameter-insertion forms (into an empty and
+    // a non-empty list) plus the binding into each body, so no separate single-constructor case is
+    // needed.
+    final var source =
+        """
+        package com.example;
+        class Box {
+          private final int size;
+          Box() {
+          }
+          Box(String label) {
+          }
+        }
+        """;
+    // caret on the `size` field
+    final var actions = replaceVarActionsAt(source, 2, 20);
+
+    assertThat(rightTitles(actions)).contains("Add constructor parameter 'size'");
+    final String rewritten = applyEdits(source, addCtorEdits(actions));
+    assertThat(rewritten)
+        .contains("Box(final int size)")
+        .contains("Box(String label, final int size)");
+    assertThat(count(rewritten, "this.size = size;")).isEqualTo(2);
+    assertCompilesClean(rewritten);
+  }
+
+  @Test
+  void codeAction_finalBlankField_delegatingConstructor_forwardsArgument() {
+    final var source =
+        """
+        package com.example;
+        class Point {
+          private final int x;
+          Point() {
+            this(0);
+          }
+          Point(int start) {
+          }
+        }
+        """;
+    final var actions = replaceVarActionsAt(source, 2, 20);
+
+    final String rewritten = applyEdits(source, addCtorEdits(actions));
+    // The delegating constructor forwards the argument and does not bind; only the target binds.
+    assertThat(rewritten).contains("this(0, x)");
+    assertThat(count(rewritten, "this.x = x;")).isEqualTo(1);
+    assertCompilesClean(rewritten);
+  }
+
+  @Test
+  void codeAction_finalBlankField_noConstructor_generatesOne() {
+    final var source =
+        """
+        package com.example;
+        class Widget {
+          private final String id;
+        }
+        """;
+    final var actions = replaceVarActionsAt(source, 2, 23);
+
+    assertThat(rightTitles(actions)).contains("Add constructor parameter 'id'");
+    final String rewritten = applyEdits(source, addCtorEdits(actions));
+    assertThat(rewritten).contains("Widget(final String id)").contains("this.id = id;");
+    assertCompilesClean(rewritten);
+  }
+
+  @Test
+  void codeAction_finalBlankField_ineligible_offersNothing() {
+    final var alreadyAssigns =
+        """
+        package com.example;
+        class Cfg {
+          private final int port;
+          Cfg() {
+            this.port = 8080;
+          }
+        }
+        """;
+    final var paramCollision =
+        """
+        package com.example;
+        class Svc {
+          private final String name;
+          Svc(String name) {
+          }
+        }
+        """;
+    final var nonFinal =
+        """
+        package com.example;
+        class A {
+          private String owner;
+          A() {}
+        }
+        """;
+    final var staticField =
+        """
+        package com.example;
+        class B {
+          private static final String owner = "";
+          B() {}
+        }
+        """;
+    final var initialized =
+        """
+        package com.example;
+        class D {
+          private final String owner = "x";
+          D() {}
+        }
+        """;
+    final var recordComponent =
+        """
+        package com.example;
+        record R(int base) {
+        }
+        """;
+    final var methodLocal =
+        """
+        package com.example;
+        class C {
+          private final int v;
+          void m() {
+            int local = 0;
+          }
+        }
+        """;
+    record Case(String label, String source, int line, int character) {}
+
+    final List<Case> cases =
+        List.of(
+            new Case("constructor already assigns the field", alreadyAssigns, 2, 20),
+            new Case("parameter name collides with the field", paramCollision, 2, 23),
+            new Case("field is not final", nonFinal, 2, 17),
+            new Case("field is static", staticField, 2, 30),
+            new Case("field already has an initializer", initialized, 2, 23),
+            new Case("record component, not a class field", recordComponent, 1, 13),
+            new Case("caret sits on a method-body local", methodLocal, 4, 8));
+
+    for (final Case c : cases) {
+      assertThat(rightTitles(replaceVarActionsAt(c.source(), c.line(), c.character())))
+          .as(c.label())
+          .noneMatch(t -> t.startsWith("Add constructor parameter"));
+    }
+  }
+
   // --- Helpers ---
+
+  private static List<TextEdit> addCtorEdits(final List<Either<Command, CodeAction>> actions) {
+    return editsOfActionStartingWith(actions, "Add constructor parameter");
+  }
+
+  private void assertCompilesClean(final String source) {
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 99, CompileMode.OPEN);
+    assertThat(diags)
+        .filteredOn(d -> d.getSeverity() == DiagnosticSeverity.Error)
+        .extracting(Diagnostic::getMessage)
+        .isEmpty();
+  }
+
+  private static int count(final String haystack, final String needle) {
+    int occurrences = 0;
+    int from = 0;
+    while (true) {
+      final int at = haystack.indexOf(needle, from);
+      if (at < 0) {
+        return occurrences;
+      }
+
+      occurrences++;
+      from = at + needle.length();
+    }
+  }
+
+  // Applies non-overlapping TextEdits to the original source, from the latest offset backwards so
+  // earlier offsets stay valid, so a test can assert on (and recompile) the rewritten file.
+  private static String applyEdits(final String source, final List<TextEdit> edits) {
+    final List<TextEdit> ordered = new ArrayList<>(edits);
+    ordered.sort(
+        Comparator.comparingInt((TextEdit e) -> offsetOf(source, e.getRange().getStart()))
+            .reversed());
+    String result = source;
+    for (final TextEdit edit : ordered) {
+      final int start = offsetOf(source, edit.getRange().getStart());
+      final int end = offsetOf(source, edit.getRange().getEnd());
+      result = result.substring(0, start) + edit.getNewText() + result.substring(end);
+    }
+
+    return result;
+  }
+
+  private static int offsetOf(final String source, final Position position) {
+    int line = 0;
+    int index = 0;
+    while (line < position.getLine() && index < source.length()) {
+      if (source.charAt(index) == '\n') {
+        line++;
+      }
+
+      index++;
+    }
+
+    return index + position.getCharacter();
+  }
 
   private static String tryWithResourcesEdit(final List<Either<Command, CodeAction>> actions) {
     final CodeAction action =

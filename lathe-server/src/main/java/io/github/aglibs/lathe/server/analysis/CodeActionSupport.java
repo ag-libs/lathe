@@ -9,6 +9,7 @@ import com.sun.source.tree.StatementTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
+import java.util.Comparator;
 import javax.lang.model.element.NestingKind;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.ArrayType;
@@ -148,6 +149,22 @@ final class CodeActionSupport {
       current = current.getParentPath();
     }
     return null;
+  }
+
+  // The last field of a class body (by source position), or null when it declares none — the anchor
+  // that keeps an inserted field or constructor grouped after the existing field block. `brace` is
+  // the offset of the class body's opening brace, so nested-type fields do not count.
+  static VariableTree lastField(
+      final ClassTree cls,
+      final CompilationUnitTree cu,
+      final SourcePositions positions,
+      final int brace) {
+    return cls.getMembers().stream()
+        .filter(VariableTree.class::isInstance)
+        .map(VariableTree.class::cast)
+        .filter(field -> positions.getStartPosition(cu, field) > brace)
+        .max(Comparator.comparingLong(field -> positions.getStartPosition(cu, field)))
+        .orElse(null);
   }
 
   // The leading whitespace of the line containing `offset` — the indentation an inserted line must

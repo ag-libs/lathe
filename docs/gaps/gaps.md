@@ -274,6 +274,28 @@ imports") are separate later slices.
 
 ---
 
+## CA-10 — No code action to add a `final` field as a constructor parameter
+
+**Status: accepted — Target: next**
+
+Signal: user feature request — after adding a blank `final` field, the developer must hand-edit every
+constructor to accept the value and store it. IntelliJ offers *"Add constructor parameter"* here; Lathe
+offers nothing on a field declaration.
+
+### Proposed fix
+
+A request-driven `AddConstructorParameterProvider` (`CodeActionKind.RefactorRewrite`, title
+`Add constructor parameter '<field>'`), offered when the caret is on a `final`, non-`static`,
+initializer-less instance field of a `class`/`enum`. It appends a parameter of the field's declared type
+to each constructor and binds it (`this.<field> = <field>;`), forwarding through `this(...)`-delegating
+constructors and generating a constructor when none exists. One atomic `WorkspaceEdit`, no import edit
+(the field type is already resolvable). Design: [lathe-add-constructor-parameter.md](../planned/lathe-add-constructor-parameter.md).
+
+Non-goals for this slice: non-`final` fields, enum-constructor synthesis, parameter reordering, and any
+cross-file/superclass change.
+
+---
+
 # Completion Gaps (CQ)
 
 Active completion-quality gaps. Discovered and triaged via the completion appendix of the
