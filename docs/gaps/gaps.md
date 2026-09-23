@@ -302,6 +302,67 @@ Active completion-quality gaps. Discovered and triaged via the completion append
 [gap workflow](gap-workflow.md); checked against the completion [expectations](../planned/lathe-completion-expectations.md)
 contract. Resolved CQ entries are in [gaps-archive.md](gaps-archive.md).
 
+## CQ-0060 — No completions after `::` (method reference)
+
+ID: CQ-0060
+Status: accepted — Target: next
+Tier: basic
+Failure mode: missing-candidate
+Owner component: SentinelParser
+
+Project/file: any reactor Java file. Probed against the `multi-module` invoker workspace.
+Probe command:
+
+```bash
+printf 'inject "String::"\ninject "args::"\ninject "this::"\n' \
+  | LATHE_DEBUG=1 python3 dev/explore.py <ws>/app/.../Main.java
+```
+
+Cursor context: the caret sits immediately after `::` in a method-reference expression
+(`String::§`, `this::§`, `service::§`), whether or not the target functional-interface type is known.
+
+IntelliJ or JDT behavior: both offer the receiver's compatible methods after `::` — instance and
+static forms distinguished — filtered by the target SAM's arity and parameter types when the
+functional-interface type is available.
+
+Lathe behavior (probe-confirmed): typing `Type::`, `expr::`, or `this::` returns **no** completions;
+the server logs `parsed valid=false sentinelCtx=null`. Two coupled defects: `SentinelInjector` does not
+recognise `::` (`hasDot=false`, `receiver=null`, position classified as a bare statement), and
+`SentinelParser.SentinelFinder` has no `visitMemberReference`, so the sentinel — the `Name` after `::`,
+which is not a visitable identifier node — is never found and the parse yields `ParsedSentinel.invalid`.
+(Historically completion "Gap J", see [lathe-completion-gaps.md](../done/lathe-completion-gaps.md) and
+the "Method References" section of the completion [expectations](../planned/lathe-completion-expectations.md).)
+
+Expected Lathe behavior (per the expectations "Method References" rule):
+
+- **Layer 1:** offer the receiver LHS's accessible methods after `::` — both static and unbound-instance
+  forms for a **type** qualifier (`String::valueOf` *and* `String::length`), instance-only for an
+  **expression/`this`** qualifier, and a `new` candidate for `Type::new`. (Note: member access on a
+  type receiver is static-only, as the probe confirms, so this is not a straight reuse of that filter.)
+- **Layer 2:** when the target functional-interface (SAM) type is resolvable from context, keep only
+  candidates whose arity and parameter types are compatible with the SAM descriptor, and rank the
+  compatible ones first.
+
+Design: [lathe-method-reference-completion.md](../planned/lathe-method-reference-completion.md) —
+reuses the member-access pipeline (receiver resolution, reattribution, ranking, presentation); the only
+genuinely new logic is SAM matching. Touches `SentinelContext`, `SentinelInjector`,
+`SentinelInjectionResult`, `SentinelParser`, `CompletionEngine`, `MemberAccessCompleter`, and
+`CandidateGenerator`/`CandidateFactory`. No ad-hoc parsing — sentinel/recovery pipeline plus javac
+elements only.
+
+Regression target (to be added with the fix): a new `CompletionMethodReferenceTest` with, at minimum,
+`methodReference_typeReceiver_offersStaticAndInstanceForms`,
+`methodReference_instanceReceiver_offersInstanceOnly`,
+`methodReference_typeReceiver_offersNewConstructorReference` (positive),
+`methodReference_incompatibleArity_excludedWhenSamKnown`, and
+`methodReference_noExpectedType_returnsUnfilteredMembers` (Layer 2).
+
+Notes: accepted scope is Layer 1 (members after `::`, including `Type::new`) plus Layer 2 (SAM-aware
+filtering/ranking). Layer 1 is the first, independently-testable commit; Layer 2's SAM matching is the
+second.
+
+---
+
 # Workspace Lifecycle Gaps (WS)
 
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync

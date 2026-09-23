@@ -412,8 +412,10 @@ Expected:
 
 Status:
 
-- deferred.
-Method-reference completion remains outside the current basic-completion contract.
+- planned (CQ-0060, accepted for the next cut).
+Accepted scope is both offering the receiver's members after `::` (including `Type::new`) and
+SAM-aware arity/parameter filtering/ranking; see
+[lathe-method-reference-completion.md](lathe-method-reference-completion.md).
 
 ### In-Token Completion
 

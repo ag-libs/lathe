@@ -59,6 +59,9 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
   catch declaration slots (shipped; type parameters and constants are documented non-goals).
 - [Snippet (Template) Completion](planned/lathe-snippet-completion.md) — a minimal jdtls-style template set
   (`psvm`, `sout`, `ctor`) delivered as context-gated snippet completion items (proposed).
+- [Method-Reference Completion](planned/lathe-method-reference-completion.md) — completion after `::`
+  (`String::§`, `this::§`, `Type::new`) reusing the member-access pipeline, with SAM-aware filtering
+  (resolves CQ-0060; proposed).
 - [Surround with try-with-resources](planned/lathe-try-with-resources.md) — range-driven refactor wrapping an
   `AutoCloseable` declaration in a try-with-resources; sibling of Extract Variable and try/catch wrap (proposed).
 - [Add constructor parameter for a field](planned/lathe-add-constructor-parameter.md) — range-driven refactor
