@@ -59,6 +59,43 @@ class CompletionMethodReferenceTest extends CompletionTestSupport {
   }
 
   @Test
+  void methodReference_typeReceiver_offersNewConstructorReference() {
+    final List<String> labels =
+        labels(
+            fixture.complete(
+                """
+                class Widget {
+                    Widget() {}
+                }
+                class Test {
+                    void m() {
+                        Widget::§
+                    }
+                }"""));
+
+    assertThat(labels).contains("new");
+  }
+
+  @Test
+  void methodReference_abstractType_omitsNewConstructorReference() {
+    final List<String> labels =
+        labels(
+            fixture.complete(
+                """
+                abstract class Shape {
+                    abstract double area();
+                }
+                class Test {
+                    void m() {
+                        Shape::§
+                    }
+                }"""));
+
+    assertThat(labels).doesNotContain("new");
+    assertThat(labels).contains("area"); // methods still offered
+  }
+
+  @Test
   void methodReference_prefix_filtersByName() {
     final List<String> labels =
         labels(

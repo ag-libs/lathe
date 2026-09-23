@@ -9,9 +9,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
+import javax.lang.model.element.Element;
+import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
+import javax.lang.model.util.ElementFilter;
 import org.eclipse.lsp4j.CompletionItem;
 
 final class MemberAccessCompleter {
@@ -147,7 +151,7 @@ final class MemberAccessCompleter {
     final var generator = new CandidateGenerator(snapshot);
     final List<CompletionCandidate> members =
         memberReference
-            ? methodReferenceMembers(generator, resolved, injected.prefix(), scope)
+            ? methodReferenceMembers(generator, resolved, snapshot, injected.prefix(), scope)
             : generator.proposeMemberAccessCandidates(
                 resolved.type(), injected.prefix(), isStaticAccess, scope);
     final Stream<CompletionCandidate> nestedTypes =
@@ -186,10 +190,13 @@ final class MemberAccessCompleter {
     return new CompletionOutcome(items, cacheableAnalysis);
   }
 
-  // A method reference targets a method; a type qualifier admits both static and instance forms.
+  // A method reference targets a method (or a constructor via `Type::new`); a type qualifier admits
+  // both static and unbound-instance forms, while fields and enum constants are never
+  // referenceable.
   private static List<CompletionCandidate> methodReferenceMembers(
       final CandidateGenerator generator,
       final ResolvedReceiver resolved,
+      final AttributedFileAnalysis snapshot,
       final String prefix,
       final Scope scope) {
     final Stream<CompletionCandidate> instanceMembers =
@@ -202,7 +209,70 @@ final class MemberAccessCompleter {
                     .stream(),
                 instanceMembers)
             : instanceMembers;
-    return members.filter(candidate -> candidate.kind() == CandidateKind.METHOD).toList();
+    final List<CompletionCandidate> methods =
+        members.filter(candidate -> candidate.kind() == CandidateKind.METHOD).toList();
+    final CompletionCandidate constructor = constructorReference(resolved, snapshot, prefix, scope);
+    return constructor == null
+        ? methods
+        : Stream.concat(Stream.of(constructor), methods.stream()).toList();
+  }
+
+  // `Type::new` is offered only for a directly-instantiable class/record with an accessible
+  // constructor — interfaces and abstract/sealed types are excluded.
+  private static CompletionCandidate constructorReference(
+      final ResolvedReceiver resolved,
+      final AttributedFileAnalysis snapshot,
+      final String prefix,
+      final Scope scope) {
+    if (!resolved.staticAccess()
+        || !"new".startsWith(prefix)
+        || !(resolved.type() instanceof final DeclaredType declaredType)
+        || !(declaredType.asElement() instanceof final TypeElement typeEl)) {
+      return null;
+    }
+
+    final var kind = typeEl.getKind();
+    if ((kind != ElementKind.CLASS && kind != ElementKind.RECORD)
+        || typeEl.getModifiers().contains(Modifier.ABSTRACT)
+        || typeEl.getModifiers().contains(Modifier.SEALED)) {
+      return null;
+    }
+
+    final boolean hasAccessibleConstructor =
+        ElementFilter.constructorsIn(typeEl.getEnclosedElements()).stream()
+            .anyMatch(ctor -> isAccessible(ctor, declaredType, snapshot, scope));
+    if (!hasAccessibleConstructor) {
+      return null;
+    }
+
+    final String simpleName = typeEl.getSimpleName().toString();
+    return new CompletionCandidate(
+        "new",
+        "new",
+        CandidateKind.METHOD,
+        "%s::new".formatted(simpleName),
+        "new",
+        false,
+        null,
+        declaredType,
+        simpleName,
+        null);
+  }
+
+  private static boolean isAccessible(
+      final Element element,
+      final DeclaredType declaredType,
+      final AttributedFileAnalysis snapshot,
+      final Scope scope) {
+    if (scope == null) {
+      return true;
+    }
+
+    try {
+      return snapshot.trees().isAccessible(scope, element, declaredType);
+    } catch (final IllegalArgumentException ignored) {
+      return true;
+    }
   }
 
   private static boolean isMethodChainReceiver(final ParsedSentinel parsed) {
