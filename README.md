@@ -70,7 +70,7 @@ bindings.
 | Feature             | What it does                                                                                 | LSP method                        |
 |---------------------|----------------------------------------------------------------------------------------------|-----------------------------------|
 | Diagnostics         | `javac` errors and warnings exactly as configured in Maven, plus unused private members and locals | `textDocument/publishDiagnostics` |
-| Code actions        | import missing type · add all missing imports for the file · add `throws` clause · wrap with `try/catch` · declare local variable · replace `var` with the inferred type · extract variable / constant / field (incl. replace all occurrences) · stub a missing method | `textDocument/codeAction`         |
+| Code actions        | import missing type · add all missing imports for the file · add `throws` clause · wrap with `try/catch` · declare local variable · replace `var` with the inferred type · extract variable / constant / field (incl. replace all occurrences) · add a `final` field as a constructor parameter · stub a missing method | `textDocument/codeAction`         |
 | Formatting (opt-in) | whole-document google-java-format with import cleanup — **off by default**                   | `textDocument/formatting`         |
 
 Full-document formatting is **opt-in**: the server advertises `textDocument/formatting` only when a
