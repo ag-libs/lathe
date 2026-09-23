@@ -711,6 +711,42 @@ final class WorkspaceSession {
         .toList();
   }
 
+  List<TestSource> testSources(final String moduleRel, final List<String> classNames) {
+    return testSources(workspace.allConfigs(), workspaceRoot, moduleRel, classNames);
+  }
+
+  // Source file for each test class, resolved from the module's real test source roots by path math
+  // (top-level class -> <root>/<pkg>/<Simple>.java, existence-checked). No attribution, so it works
+  // for classes whose files were never opened. Unresolved classes get an empty path.
+  static List<TestSource> testSources(
+      final List<ModuleSourceConfig> configs,
+      final Path workspaceRoot,
+      final String moduleRel,
+      final List<String> classNames) {
+    final List<Path> roots =
+        testConfigs(configs).stream()
+            .filter(config -> moduleRel(workspaceRoot, config).equals(moduleRel))
+            .flatMap(config -> config.sourceRoots().stream())
+            .toList();
+    return classNames.stream()
+        .distinct()
+        .map(name -> new TestSource(name, sourcePath(roots, name)))
+        .toList();
+  }
+
+  private static String sourcePath(final List<Path> roots, final String className) {
+    final int inner = className.indexOf('$');
+    final String topLevel = inner < 0 ? className : className.substring(0, inner);
+    final String rel = topLevel.replace('.', '/') + ".java";
+    for (final Path root : roots) {
+      final Path candidate = root.resolve(rel);
+      if (Files.isRegularFile(candidate)) {
+        return candidate.toString();
+      }
+    }
+    return "";
+  }
+
   private static DirRun moduleRun(
       final List<ModuleSourceConfig> configs, final Path workspaceRoot, final String moduleRel) {
     final List<DirRun.Selector> selectors =

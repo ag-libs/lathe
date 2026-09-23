@@ -525,6 +525,7 @@ local function run_spec(position_id, module_rel, selections, client, label, stra
       token = token,
       result_future = result_future,
       label = label,
+      module_rel = module_rel,
       started = vim.uv.hrtime(),
     },
     stream = stream_fn(queue),
@@ -842,6 +843,11 @@ end
 local failing = {}
 M._failing = failing
 
+-- The most recent run's full executed-test set (set in results()): { label, module_rel, results },
+-- where results is the raw testResults list -- every method that ran, including files never opened
+-- into the neotest tree. open_results turns it into a quickfix. nil until the first run.
+local last_run = nil
+
 local function failing_index(id)
   for i, existing in ipairs(failing) do
     if existing == id then
@@ -985,6 +991,9 @@ function M.results(spec, result, tree)
   -- run and debug (both reach results() with a reconciled outcome).
   if ctx.outcome and ctx.outcome.testResults then
     update_failing(ctx.outcome.testResults, real, tree)
+    -- Remember the run's full executed-test set (every method that actually ran, incl. never-opened
+    -- files -- see open_results) so <leader>tq can list it. The summary tree only shows opened files.
+    last_run = { label = ctx.label, module_rel = ctx.module_rel, results = ctx.outcome.testResults }
   end
 
   -- One completion toast per run (NV-2), fired here so it covers both run and debug (both reach
@@ -1015,6 +1024,76 @@ function M.run_first_failed()
   end
 
   M._run_position(failing[1])
+end
+
+-- Quickfix `type` per status: a failure is an error row, a skip a warning, a pass unadorned.
+local QF_TYPE = { failed = "E", skipped = "W", passed = "" }
+
+--- Quickfix items for a run's executed tests: failures first (each pointing at its failure line),
+--- then the rest in run order. `paths` maps className -> source file path; an unresolved class
+--- (empty path) becomes a text-only row (still listed, just not jumpable). No LSP round-trip, so it
+--- is unit-testable.
+function M._results_qf_items(results, paths)
+  local failures, others = {}, {}
+  for _, tr in ipairs(results or {}) do
+    local id = tr.className .. "#" .. tr.methodName
+    local failed = tr.status == "failed"
+    local message = failed and tr.failureMessage and tr.failureMessage ~= "" and tr.failureMessage
+      or nil
+    local text = message and (id .. " — " .. message:gsub("%s+", " ")) or (id .. " — " .. tr.status)
+    local item = { text = text, type = QF_TYPE[tr.status] or "" }
+    local path = paths[tr.className]
+    if path and path ~= "" then
+      item.filename = path
+      item.lnum = (failed and tr.failureLine and tr.failureLine > 0) and tr.failureLine or 1
+      item.col = 1
+    end
+
+    local bucket = failed and failures or others
+    bucket[#bucket + 1] = item
+  end
+
+  return vim.list_extend(failures, others)
+end
+
+--- Lists the last run's executed tests in the quickfix window, failures first and jumpable -- even
+--- tests in files never opened into the summary tree (the tree only shows opened files, but the run
+--- executed the whole module). className -> source path is resolved server-side (lathe.testSources,
+--- pure path math, no attribution). Reflects the last run; the next run replaces it. Bind <leader>tq.
+function M.open_results()
+  local run = last_run
+  if not run or #run.results == 0 then
+    vim.notify("No test run to show yet", vim.log.levels.WARN, { title = "Lathe" })
+    return
+  end
+
+  nio().run(function()
+    local paths = {}
+    local client = lathe_client()
+    if client and run.module_rel then
+      -- The server dedups classNames (its testSources returns one entry per class), so collect them
+      -- as-is rather than deduping here too.
+      local names = {}
+      for _, tr in ipairs(run.results) do
+        names[#names + 1] = tr.className
+      end
+      local err, sources = client.request.workspace_executeCommand({
+        command = "lathe.testSources",
+        arguments = { { moduleRel = run.module_rel, classNames = names } },
+      })
+      if not err and sources then
+        for _, source in ipairs(sources) do
+          paths[source.className] = source.path
+        end
+      end
+    end
+
+    local items = M._results_qf_items(run.results, paths)
+    vim.schedule(function()
+      vim.fn.setqflist({}, " ", { title = "Lathe tests: " .. (run.label or ""), items = items })
+      vim.cmd("copen")
+    end)
+  end)
 end
 
 return M
