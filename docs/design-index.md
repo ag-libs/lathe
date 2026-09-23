@@ -72,6 +72,10 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 - [Type Definition Navigation](planned/lathe-type-definition.md) — `textDocument/typeDefinition` for Neovim's `grt`.
 - [Type Hierarchy Explorer](planned/lathe-type-hierarchy.md) — a Ctrl-H-style `:LatheTypeHierarchy` custom
   command showing the full both-directions transitive hierarchy in one Telescope picker; resolves NV-6.
+- [Dependency Resource Grep](planned/lathe-dep-resource-grep.md) — unpack each dependency's main-jar
+  **resource** entries into `~/.cache/lathe/deps/<gav>/` at `lathe:sync` (filtered `.class`/dir denylist,
+  reusing the source-extraction path), so `:LatheDepGrep`/`:LatheDepFiles` search dep resources — including
+  **content** — via native Telescope scoped to the workspace's dep dirs. No server change, no schema change.
 
 **Build-file support:**
 
