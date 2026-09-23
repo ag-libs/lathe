@@ -23,6 +23,7 @@ public record RunItem(
     List<String> args,
     List<String> jvmArgs,
     Map<String, String> env,
+    String envFile,
     String cwd,
     List<String> classpathAppend,
     List<String> modulePathAppend) {
@@ -44,7 +45,7 @@ public record RunItem(
   }
 
   static RunItem empty(final String module, final RunKind kind) {
-    return new RunItem(null, module, kind, null, null, null, null, null, null, null, null);
+    return new RunItem(null, module, kind, null, null, null, null, null, null, null, null, null);
   }
 
   RunItem withName(final String named) {
@@ -57,6 +58,7 @@ public record RunItem(
         args,
         jvmArgs,
         env,
+        envFile,
         cwd,
         classpathAppend,
         modulePathAppend);
@@ -79,13 +81,15 @@ public record RunItem(
     return !args.isEmpty()
         || !jvmArgs.isEmpty()
         || !env.isEmpty()
+        || envFile != null
         || cwd != null
         || !classpathAppend.isEmpty()
         || !modulePathAppend.isEmpty();
   }
 
   // Merge under a higher-precedence layer: identity/target from local; lists concat (this first),
-  // env unions local-wins. Used for the layer merge and to compose a config over its baseline.
+  // env unions local-wins, scalars (envFile, cwd) taken from local when set. Used for the layer
+  // merge and to compose a config over its baseline.
   RunItem mergedWith(final RunItem local) {
     return new RunItem(
         local.name,
@@ -96,6 +100,7 @@ public record RunItem(
         concat(args, local.args),
         concat(jvmArgs, local.jvmArgs),
         union(env, local.env),
+        local.envFile != null ? local.envFile : envFile,
         local.cwd != null ? local.cwd : cwd,
         concat(classpathAppend, local.classpathAppend),
         concat(modulePathAppend, local.modulePathAppend));

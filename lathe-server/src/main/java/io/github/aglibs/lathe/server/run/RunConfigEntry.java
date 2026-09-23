@@ -17,6 +17,7 @@ record RunConfigEntry(
     List<String> args,
     List<String> jvmArgs,
     Map<String, String> env,
+    String envFile,
     String cwd,
     List<String> classpathAppend,
     List<String> modulePathAppend) {
@@ -42,6 +43,7 @@ record RunConfigEntry(
         args,
         jvmArgs,
         env,
+        envFile,
         cwd,
         classpathAppend,
         modulePathAppend);
@@ -49,11 +51,11 @@ record RunConfigEntry(
 
   static RunConfigEntry mainTarget(final String module, final String mainClass) {
     return new RunConfigEntry(
-        module, RunKind.MAIN, mainClass, null, null, null, null, null, null, null);
+        module, RunKind.MAIN, mainClass, null, null, null, null, null, null, null, null);
   }
 
   static RunConfigEntry testTarget(final String module, final List<RunSelector> selectors) {
     return new RunConfigEntry(
-        module, RunKind.TEST, null, selectors, null, null, null, null, null, null);
+        module, RunKind.TEST, null, selectors, null, null, null, null, null, null, null);
   }
 }

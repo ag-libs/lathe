@@ -6,14 +6,19 @@ import io.github.aglibs.lathe.core.launch.JdwpOptions;
 import io.github.aglibs.lathe.core.schema.LaunchMode;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
 import io.github.aglibs.lathe.core.schema.RunKind;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 final class RunOverlayTest {
 
   private static final Path WORKSPACE = Path.of("/workspace");
+
+  @TempDir private Path tmp;
 
   private static MainLaunchData classpathTemplate() {
     return new MainLaunchData(
@@ -43,6 +48,7 @@ final class RunOverlayTest {
             List.of("--flag"),
             List.of("-Dp=1"),
             Map.of("APP_ENV", "prod"),
+            null,
             "run-dir",
             List.of("config"),
             List.of());
@@ -69,6 +75,7 @@ final class RunOverlayTest {
             null,
             null,
             Map.of(),
+            null,
             "/abs/dir",
             List.of("/abs/cp"),
             List.of());
@@ -94,5 +101,54 @@ final class RunOverlayTest {
     // No overlay cwd → default to the module basedir from the template's workingDir.
     assertThat(resolved.cwd()).isEqualTo(Path.of("/workspace/app"));
     assertThat(resolved.env()).isEmpty();
+  }
+
+  @Test
+  void applyToMain_envFile_loadedAsBaseWithInlineEnvOverriding() throws IOException {
+    Files.writeString(tmp.resolve("app.env"), "A=fromFile\nB=fromFile\n# a comment\n");
+    final var item =
+        new RunItem(
+            null,
+            "app",
+            RunKind.MAIN,
+            null,
+            null,
+            null,
+            null,
+            Map.of("B", "inline"),
+            "app.env",
+            null,
+            null,
+            null);
+
+    final ResolvedLaunch resolved =
+        RunOverlay.applyToMain(
+            classpathTemplate(), tmp, "com.example.app.Main", item, JdwpOptions.NONE);
+
+    assertThat(resolved.env()).containsEntry("A", "fromFile").containsEntry("B", "inline");
+  }
+
+  @Test
+  void applyToMain_missingEnvFile_isIgnored() {
+    final var item =
+        new RunItem(
+            null,
+            "app",
+            RunKind.MAIN,
+            null,
+            null,
+            null,
+            null,
+            Map.of("X", "1"),
+            "nope.env",
+            null,
+            null,
+            null);
+
+    final ResolvedLaunch resolved =
+        RunOverlay.applyToMain(
+            classpathTemplate(), tmp, "com.example.app.Main", item, JdwpOptions.NONE);
+
+    assertThat(resolved.env()).containsEntry("X", "1");
   }
 }

@@ -6,8 +6,17 @@ import io.github.aglibs.lathe.core.launch.LaunchPlan;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import java.util.stream.Collectors;
 
 /**
  * Applies a resolved {@link RunItem} onto a captured or derived launch template, producing the
@@ -16,6 +25,8 @@ import java.util.List;
  * launch-correctness fields.
  */
 public final class RunOverlay {
+
+  private static final Logger LOG = Logger.getLogger(RunOverlay.class.getName());
 
   private RunOverlay() {}
 
@@ -29,7 +40,9 @@ public final class RunOverlay {
         LaunchPlan.forMain(
             template, workspaceRoot, mainClass, launchOverlay(item, workspaceRoot), jdwp);
     return new ResolvedLaunch(
-        argv, item.env(), resolveCwd(item, workspaceRoot, template.workingDir()));
+        argv,
+        resolveEnv(item, workspaceRoot),
+        resolveCwd(item, workspaceRoot, template.workingDir()));
   }
 
   public static ResolvedLaunch applyToTestMain(
@@ -42,7 +55,9 @@ public final class RunOverlay {
         LaunchPlan.forTestMain(
             template, workspaceRoot, mainClass, launchOverlay(item, workspaceRoot), jdwp);
     return new ResolvedLaunch(
-        argv, item.env(), resolveCwd(item, workspaceRoot, template.workingDir()));
+        argv,
+        resolveEnv(item, workspaceRoot),
+        resolveCwd(item, workspaceRoot, template.workingDir()));
   }
 
   public static ResolvedLaunch applyToTest(
@@ -63,7 +78,9 @@ public final class RunOverlay {
             launchOverlay(item, workspaceRoot),
             jdwp);
     return new ResolvedLaunch(
-        argv, item.env(), resolveCwd(item, workspaceRoot, template.workingDir()));
+        argv,
+        resolveEnv(item, workspaceRoot),
+        resolveCwd(item, workspaceRoot, template.workingDir()));
   }
 
   private static LaunchOverlay launchOverlay(final RunItem item, final Path workspaceRoot) {
@@ -76,6 +93,41 @@ public final class RunOverlay {
 
   private static List<String> resolvePaths(final List<String> entries, final Path workspaceRoot) {
     return entries.stream().map(entry -> workspaceRoot.resolve(entry).toString()).toList();
+  }
+
+  // The run's environment: an envFile (KEY=VALUE, workspace-root-relative) as the base, with the
+  // inline env overriding it. A missing/unreadable envFile is ignored (fail-open), never a run
+  // error.
+  private static Map<String, String> resolveEnv(final RunItem item, final Path workspaceRoot) {
+    if (item.envFile() == null) {
+      return item.env();
+    }
+
+    final var merged = new LinkedHashMap<String, String>();
+    merged.putAll(readEnvFile(workspaceRoot.resolve(item.envFile())));
+    merged.putAll(item.env());
+    return merged;
+  }
+
+  // A `.properties`-format env file (KEY=VALUE, `#`/`!` comments, backslash escaping) read as
+  // UTF-8.
+  private static Map<String, String> readEnvFile(final Path file) {
+    if (!Files.exists(file)) {
+      LOG.warning(() -> "[run-config] envFile not found, ignoring %s".formatted(file));
+      return Map.of();
+    }
+
+    final var props = new Properties();
+    try (var reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+      props.load(reader);
+    } catch (final IOException e) {
+      LOG.log(
+          Level.WARNING, e, () -> "[run-config] envFile unreadable, ignoring %s".formatted(file));
+      return Map.of();
+    }
+
+    return props.stringPropertyNames().stream()
+        .collect(Collectors.toUnmodifiableMap(name -> name, props::getProperty));
   }
 
   private static Path resolveCwd(

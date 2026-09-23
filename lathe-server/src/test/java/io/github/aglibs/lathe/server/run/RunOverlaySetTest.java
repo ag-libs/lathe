@@ -22,6 +22,7 @@ final class RunOverlaySetTest {
             null,
             null,
             null,
+            null,
             null);
     final var set = new RunOverlaySet(List.of(named));
 
@@ -44,6 +45,7 @@ final class RunOverlaySetTest {
             "app",
             RunKind.MAIN,
             "com.example.App",
+            null,
             null,
             null,
             null,

@@ -27,9 +27,12 @@ local SELECTOR_KIND = {
   [RUN_KIND_TEST_PACKAGE] = "PACKAGE",
 }
 
--- Names of the saved configs, refreshed on attach/save, for :LatheRun/:LatheDebug completion.
--- Command completion is synchronous, so it reads this cache rather than round-tripping the server.
-local config_names = {}
+-- Saved configs (full RunConfigInfo: name/kind/module/target/summary), refreshed on attach/save, for
+-- :LatheRun/:LatheDebug completion and the picker. Completion is synchronous, so it reads this cache
+-- rather than round-tripping the server.
+local config_list = {}
+-- Name of the last config run this session, for :LatheRunLast.
+local last_config
 
 local SIGN_NS = vim.api.nvim_create_namespace("lathe_run_signs")
 local SIGN_HL = "LatheRunnable"
@@ -192,7 +195,40 @@ function M.run_named(name)
     return
   end
 
+  last_config = name
   launch(client, "lathe.run.named", { name = name }, name)
+end
+
+--- Re-runs the most recently run named config (:LatheRunLast).
+function M.run_last()
+  if not last_config then
+    notify("no config run yet this session (try :LatheRun {name})", vim.log.levels.WARN)
+    return
+  end
+
+  M.run_named(last_config)
+end
+
+--- Opens a picker over the saved configs (name · module · target) and runs the chosen one -- the
+--- IntelliJ-style "choose a run config" entry point. Bind to a key, e.g. <leader>tr.
+function M.pick()
+  if #config_list == 0 then
+    notify("no saved run configs (see :LatheRunSave)", vim.log.levels.INFO)
+    return
+  end
+
+  require("lathe.pick").pick({
+    title = "Lathe run config",
+    items = config_list,
+    format = function(config)
+      return ("%s  ·  %s  ·  %s"):format(config.name, config.module or "", config.target or "")
+    end,
+    on_choice = function(config)
+      if config then
+        M.run_named(config.name)
+      end
+    end,
+  })
 end
 
 --- Runs the `main` class in the current buffer (the one under the cursor, or the file's only
@@ -288,6 +324,9 @@ local function on_saved(err, saved)
 
   notify("saved config '" .. saved.name .. "'", vim.log.levels.INFO)
   vim.cmd.edit(saved.path)
+  -- Refresh completion now that the file is written -- the save is async, so refreshing from the
+  -- :LatheRunSave command (before this callback) would race the write and miss the new config.
+  M.refresh_configs()
 end
 
 --- Saves the runnable under the cursor as a named config in `.lathe/run.json`, then opens the file at
@@ -346,21 +385,16 @@ function M.refresh_configs()
       return
     end
 
-    local names = {}
-    for _, c in ipairs(configs) do
-      names[#names + 1] = c.name
-    end
-
-    config_names = names
+    config_list = configs
   end)
 end
 
 --- Command-completion over the cached config names, prefix-filtered by the current argument.
 function M.complete_config(arglead)
   local matches = {}
-  for _, name in ipairs(config_names) do
-    if name:sub(1, #arglead) == arglead then
-      matches[#matches + 1] = name
+  for _, config in ipairs(config_list) do
+    if config.name:sub(1, #arglead) == arglead then
+      matches[#matches + 1] = config.name
     end
   end
 
@@ -371,7 +405,7 @@ end
 --- lathe.run.cancel command keyed by the run token, not a client-side process kill.
 function M.stop()
   if not active_token then
-    notify("no main run to stop", vim.log.levels.WARN)
+    notify("no run to stop", vim.log.levels.WARN)
     return
   end
 

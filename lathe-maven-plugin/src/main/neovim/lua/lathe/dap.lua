@@ -29,6 +29,9 @@ local SELECTOR_KIND = {
 -- Innermost first: the first kind whose range contains the cursor is the one to debug.
 local PRECEDENCE = { TEST_METHOD, TEST_CLASS, TEST_PACKAGE }
 
+-- Run tokens of in-flight Lathe debug sessions, so :LatheRunStop can cancel their replay JVMs.
+local active_tokens = {}
+
 local function lathe_client()
   return vim.lsp.get_clients({ name = "lathe" })[1]
 end
@@ -124,6 +127,10 @@ local function start_adapter(callback, config)
     notify("server not attached; cannot start debug session", vim.log.levels.ERROR)
     return
   end
+
+  -- Track the run token so :LatheRunStop can cancel this debug replay directly (M.stop), rather than
+  -- relying on the attach adapter's terminate semantics. Cleared when the session ends.
+  active_tokens[config.lathe_token] = true
 
   local command, argument
   if config.lathe_config_name then
@@ -246,6 +253,42 @@ function M.debug_named(name)
   dap.run(M._named_config_for(name))
 end
 
+--- Stops any in-flight Lathe debug session by cancelling its replay JVM directly (lathe.run.cancel) --
+--- the same reliable server path a normal run uses, rather than depending on the attach adapter's
+--- terminate semantics. Killing the JVM makes DAP emit exited/terminated (tearing down the UI); a
+--- dap.terminate() follows as belt-and-suspenders cleanup. Returns true if it stopped anything, so
+--- :LatheRunStop can fall through to the normal-run stop when there was no debug session.
+function M.stop()
+  local tokens = {}
+  for token in pairs(active_tokens) do
+    tokens[#tokens + 1] = token
+  end
+
+  if #tokens == 0 then
+    return false
+  end
+
+  local client = lathe_client()
+  for _, token in ipairs(tokens) do
+    active_tokens[token] = nil
+    if client then
+      client:request("workspace/executeCommand", {
+        command = "lathe.run.cancel",
+        arguments = { { token = token } },
+      })
+    end
+  end
+
+  local ok, dap = pcall(require, "dap")
+  if ok then
+    pcall(function()
+      dap.terminate({}, { terminateDebuggee = true })
+    end)
+  end
+
+  return true
+end
+
 -- Once a Lathe debug session ends, hyperlink the stack frames the debuggee streamed into the
 -- shared output buffer -- the debug twin of lathe.run's on_finished / lathe.neotest's results(),
 -- which both call this after their run completes. The debug launch request returns at attach
@@ -256,6 +299,10 @@ end
 -- testable without a live nvim-dap session.
 function M._decorate_on_session_end(session)
   if session and session.config and session.config.type == "lathe" then
+    if session.config.lathe_token then
+      active_tokens[session.config.lathe_token] = nil
+    end
+
     stackdecorate.decorate_live_output()
   end
 end

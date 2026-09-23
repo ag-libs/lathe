@@ -347,6 +347,20 @@ function M.setup(opts)
       end
     end,
   })
+  -- A hand-edited run config (either layer) refreshes the completion/picker cache without a
+  -- re-attach. The `run.json` pattern is a basename match (fires for any run.json), so the callback
+  -- narrows it to Lathe's own files: the reactor-root lathe-run.json or a `.lathe/run.json`. Absent
+  -- configs (or no attached client) make refresh_configs a harmless no-op.
+  vim.api.nvim_create_autocmd('BufWritePost', {
+    group = augroup,
+    pattern = { 'lathe-run.json', 'run.json' },
+    callback = function(ev)
+      local name = ev.file or ''
+      if name:match('/%.lathe/run%.json$') or vim.fs.basename(name) == 'lathe-run.json' then
+        run.refresh_configs()
+      end
+    end,
+  })
   vim.api.nvim_create_user_command('LatheRun', function(cmd)
     if cmd.args ~= '' then
       run.run_named(cmd.args)
@@ -361,11 +375,16 @@ function M.setup(opts)
     desc = 'Lathe: run the buffer main, or a saved config by name',
   })
   vim.api.nvim_create_user_command('LatheRunStop', function()
-    run.stop()
-  end, { desc = 'Lathe: stop the active main run' })
+    -- Stop a debug session if one is live (cancels its replay JVM directly); otherwise the run.
+    if not require('lathe.dap').stop() then
+      run.stop()
+    end
+  end, { desc = 'Lathe: stop the active run or debug session' })
+  vim.api.nvim_create_user_command('LatheRunLast', function()
+    run.run_last()
+  end, { desc = 'Lathe: re-run the last run config' })
   vim.api.nvim_create_user_command('LatheRunSave', function(cmd)
     run.save(cmd.args ~= '' and cmd.args or nil, cmd.bang)
-    run.refresh_configs()
   end, {
     nargs = '?',
     bang = true,

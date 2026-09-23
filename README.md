@@ -90,6 +90,22 @@ guide to configure both.
 Run, test, and debug are Lathe extensions exposed through `workspace/executeCommand` (and the Debug
 Adapter Protocol for debugging), not standard LSP methods.
 
+#### Neovim run/debug commands
+
+| Command | What it does |
+|---|---|
+| `:LatheRun` | Run the `main` under the cursor from `.lathe/` bytecode. |
+| `:LatheRun {name}` | Run a saved config by name (`<Tab>` completes; cursor-independent). |
+| `:LatheDebug` / `:LatheDebug {name}` | Debug the cursor target, or a saved config — run and debug share one entry. |
+| `:LatheRunSave[!] {name}` | Save the runnable under the cursor as a named config in `.lathe/run.json` (`!` overwrites); name optional (derived from the class). |
+| `:LatheRunLast` | Re-run the most recently run config. |
+| `:LatheRunStop` | Stop the active run **or** debug session. |
+| `:LatheRunOutput` | Toggle the run-output console (reopens the last run). |
+
+For an IntelliJ-style config chooser, bind the picker: `vim.keymap.set('n', '<leader>tr', require('lathe.run').pick)`
+— it lists your configs as `name · module · target` and runs the chosen one. See
+[run configuration](docs/guide/run-configuration.md).
+
 ### Scaffolding
 
 | Feature  | What it does                                                                                                      | Command                                                   |

@@ -143,6 +143,19 @@ final class RunConfigReaderTest {
     assertThat(new RunConfigReader(workspaceRoot).read().byName("dev")).isEmpty();
   }
 
+  @Test
+  void read_configWithEnvFile_parsesEnvFile() throws IOException {
+    writeShared(
+        """
+        { "configs": { "dev": { "kind": "MAIN", "module": "app",
+          "mainClass": "com.example.App", "envFile": "config/dev.env" } } }
+        """);
+
+    final RunItem config = new RunConfigReader(workspaceRoot).read().byName("dev").orElseThrow();
+
+    assertThat(config.envFile()).isEqualTo("config/dev.env");
+  }
+
   private void writeShared(final String json) throws IOException {
     Files.writeString(workspaceRoot.resolve(LatheLayout.RUN_CONFIG_SHARED_FILE), json);
   }

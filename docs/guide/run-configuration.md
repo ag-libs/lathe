@@ -91,6 +91,7 @@ Every overlay field is optional; an omitted field keeps the generated default.
 | `jvmArgs` | Appended after the captured/derived JVM args — on a duplicate `-D`/`-X`, yours wins |
 | `args` | Appended to the program arguments |
 | `env` | Merged into the run's environment; it never replaces the inherited environment |
+| `envFile` | Path (workspace-root-relative) to a `.properties`-format env file (`KEY=VALUE`, `#`/`!` comments, backslash escaping) loaded as the environment base; inline `env` overrides it, and a missing/unreadable file is ignored |
 | `cwd` | Working directory, resolved relative to the workspace root (absolute allowed) |
 | `classpathAppend` | Extra class-path entries, appended after the derived class path (workspace-root-relative; absolute allowed) |
 | `modulePathAppend` | Extra module-path entries, appended after the derived module path |
@@ -111,11 +112,20 @@ or reorder them.
 | `:LatheDebug` / `:LatheDebug {name}` | Debug the cursor target, or a named config — run and debug share one entry. |
 | `:LatheRunSave [name]` | Save the runnable under the cursor as a config in `.lathe/run.json`, then open it. With no name, the server derives one from the class (`AppServer`, `SmokeTest.testBar`). |
 | `:LatheRunSave! [name]` | As above, overwriting an existing config of that name. |
+| `:LatheRunLast` | Re-run the most recently run config. |
+| `:LatheRunStop` | Stop the active run **or** debug session. |
 | `:LatheRunOutput` | Toggle the run-output console (reopens the last run without rerunning). |
 
 `:LatheRunSave` resolves the target the same way a run does — the method under the cursor, else the
 enclosing class, else the file's only `main`; if nothing runnable is under the cursor it refuses and
 writes nothing.
+
+For an IntelliJ-style chooser, bind the picker to a key — it lists configs as `name · module · target`
+and runs the chosen one:
+
+```lua
+vim.keymap.set('n', '<leader>tr', require('lathe.run').pick, { desc = 'Lathe: pick a run config' })
+```
 
 ## Which configuration is active
 

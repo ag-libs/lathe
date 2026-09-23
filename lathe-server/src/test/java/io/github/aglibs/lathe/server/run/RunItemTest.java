@@ -16,7 +16,9 @@ final class RunItemTest {
   @Test
   void constructor_nullKind_throws() {
     assertThatThrownBy(
-            () -> new RunItem(null, "app", null, null, null, null, null, null, null, null, null))
+            () ->
+                new RunItem(
+                    null, "app", null, null, null, null, null, null, null, null, null, null))
         .hasMessageContaining("kind");
   }
 
@@ -29,6 +31,7 @@ final class RunItemTest {
                     "app",
                     RunKind.TEST,
                     "com.example.App",
+                    null,
                     null,
                     null,
                     null,
@@ -55,6 +58,7 @@ final class RunItemTest {
                     null,
                     null,
                     null,
+                    null,
                     null))
         .hasMessageContaining("selectors");
   }
@@ -70,6 +74,7 @@ final class RunItemTest {
     assertThat(item.env()).isEmpty();
     assertThat(item.selectors()).isEmpty();
     assertThat(item.classpathAppend()).isEmpty();
+    assertThat(item.envFile()).isNull();
     assertThat(item.cwd()).isNull();
   }
 
@@ -87,19 +92,20 @@ final class RunItemTest {
             null,
             null,
             null,
+            null,
             null);
     final var bareBaseline = RunItem.empty("app", RunKind.TEST);
-    final var richBaseline =
+    final var envFileBaseline =
         new RunItem(
-            null, "app", RunKind.TEST, null, null, null, List.of("-Dx=1"), null, null, null, null);
+            null, "app", RunKind.TEST, null, null, null, null, null, "test.env", null, null, null);
 
     assertThat(named.configLabel()).isEqualTo("dev");
     assertThat(bareBaseline.configLabel()).isEqualTo("default");
-    assertThat(richBaseline.configLabel()).isEqualTo("default+baseline");
+    assertThat(envFileBaseline.configLabel()).isEqualTo("default+baseline");
   }
 
   @Test
-  void mergedWith_localLayer_takesLocalIdentityConcatsListsUnionsEnv() {
+  void mergedWith_localLayer_takesLocalIdentityConcatsListsUnionsEnvAndInheritsUnsetEnvFile() {
     final var shared =
         new RunItem(
             null,
@@ -110,6 +116,7 @@ final class RunItemTest {
             List.of("a"),
             List.of("-Dx=1"),
             Map.of("A", "1", "B", "1"),
+            "shared.env",
             "shared-dir",
             List.of("/cp/shared"),
             null);
@@ -123,6 +130,7 @@ final class RunItemTest {
             List.of("b"),
             List.of("-Dx=2"),
             Map.of("B", "2", "C", "3"),
+            null,
             "local-dir",
             List.of("/cp/local"),
             null);
@@ -132,6 +140,7 @@ final class RunItemTest {
     assertThat(merged.name()).isEqualTo("dev");
     assertThat(merged.mainClass()).isEqualTo("com.example.App");
     assertThat(merged.cwd()).isEqualTo("local-dir");
+    assertThat(merged.envFile()).isEqualTo("shared.env");
     assertThat(merged.args()).containsExactly("a", "b");
     assertThat(merged.jvmArgs()).containsExactly("-Dx=1", "-Dx=2");
     assertThat(merged.classpathAppend()).containsExactly("/cp/shared", "/cp/local");
