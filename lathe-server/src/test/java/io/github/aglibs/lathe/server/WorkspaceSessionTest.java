@@ -475,6 +475,58 @@ class WorkspaceSessionTest {
         .isNull();
   }
 
+  @Test
+  void dirRun_packageDirInsideTestTree_singlePackageSelector() {
+    // A package dir resolves by pure path arithmetic (its package relative to the test root), so no
+    // sources on disk are needed -- unlike the module fan-out below, which walks for packages.
+    final var testCfg = testConfig("module", "src/test/java");
+    final var pkgDir = tmp.resolve("module/src/test/java/com/verify");
+
+    final DirRun run = WorkspaceSession.dirRun(List.of(config, testCfg), tmp, pkgDir);
+
+    assertThat(run.moduleRel()).isEqualTo("module");
+    assertThat(run.selections()).containsExactly(new DirRun.Selector("PACKAGE", "com.verify"));
+  }
+
+  @Test
+  void dirRun_moduleRootAndTestSourceRoot_fanOutAllTestPackages() throws Exception {
+    final var testCfg = testConfig("module", "src/test/java");
+    Files.createDirectories(tmp.resolve("module/src/test/java/com/a"));
+    Files.writeString(
+        tmp.resolve("module/src/test/java/com/a/ATest.java"), "package com.a; class ATest {}");
+    Files.createDirectories(tmp.resolve("module/src/test/java/com/b"));
+    Files.writeString(
+        tmp.resolve("module/src/test/java/com/b/BTest.java"), "package com.b; class BTest {}");
+
+    final DirRun fromRoot =
+        WorkspaceSession.dirRun(List.of(config, testCfg), tmp, tmp.resolve("module"));
+    assertThat(fromRoot.moduleRel()).isEqualTo("module");
+    assertThat(fromRoot.selections())
+        .containsExactlyInAnyOrder(
+            new DirRun.Selector("PACKAGE", "com.a"), new DirRun.Selector("PACKAGE", "com.b"));
+
+    // The test source root itself carries the default package, so it runs the whole module too.
+    final DirRun fromTestRoot =
+        WorkspaceSession.dirRun(List.of(config, testCfg), tmp, tmp.resolve("module/src/test/java"));
+    assertThat(fromTestRoot.selections()).isEqualTo(fromRoot.selections());
+  }
+
+  @Test
+  void dirRun_reactorRootOrUnmatchedDir_empty() {
+    // Enclosure is decided from the configured source roots, not from files on disk.
+    final var testCfg = testConfig("module", "src/test/java");
+    final var otherTestCfg = testConfig("other", "src/test/java");
+
+    // The reactor root encloses two modules -- not a single run target.
+    final DirRun reactor = WorkspaceSession.dirRun(List.of(testCfg, otherTestCfg), tmp, tmp);
+    assertThat(reactor.moduleRel()).isEmpty();
+    assertThat(reactor.selections()).isEmpty();
+
+    // A directory under no source root resolves to nothing either.
+    assertThat(WorkspaceSession.dirRun(List.of(testCfg), tmp, tmp.resolve("loose")).selections())
+        .isEmpty();
+  }
+
   private CreateTypeResult render(final TypeKind type, final String name, final String pkg) {
     return WorkspaceSession.renderNewType(sourceRoot, pkg, type, name);
   }

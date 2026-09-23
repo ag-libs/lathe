@@ -610,4 +610,8 @@ public final class LatheTextDocumentService implements TextDocumentService {
   CompletableFuture<ContextInfo> resolveContextFuture(final String uri) {
     return worker.submit(() -> session.resolveContext(uri));
   }
+
+  CompletableFuture<DirRun> dirRunFuture(final String uri) {
+    return worker.submit(() -> session.dirRun(uri));
+  }
 }

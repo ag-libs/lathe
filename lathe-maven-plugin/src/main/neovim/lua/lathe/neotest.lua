@@ -491,30 +491,6 @@ function M.discover_positions(file_path)
   return build_tree(file_path, targets)
 end
 
---- Derives {moduleRel, package} from a directory path, mirroring how Maven's
---- own layout (and RunnableScanner.packageName() server-side) resolve package
---- identity from source layout: <module>/src/(test|main)/java/<package/as/dirs>.
---- Pure and workspace_root-parameterized (no M.root() call inside) so it's
---- directly unit-testable. Returns nil for anything that doesn't match that
---- shape -- the module root itself, a path above src/, a non-Maven-standard
---- layout, or the default/unnamed package (RunnableScanner.emitPackageOnce
---- skips that one too) -- so build_spec can safely fall back to neotest's own
---- decomposition instead of guessing at a selector that might run the wrong
---- (or nothing at all) thing.
-function M._package_for_dir(dir_path, workspace_root)
-  local module_abs, package_path = dir_path:match("^(.-)/src/[^/]+/java/(.*)$")
-  if not module_abs or package_path == "" then
-    return nil
-  end
-
-  if not vim.startswith(module_abs, workspace_root) then
-    return nil
-  end
-  local module_rel = module_abs:sub(#workspace_root + 2)
-  local package_name = package_path:gsub("/", ".")
-  return module_rel, package_name
-end
-
 --- Builds a spec that runs one or more selectors (a method, class, a package for a directory, or
 --- every class in a file) in a single replay JVM, without blocking: the run is fired asynchronously
 --- and its per-test results stream in via lathe/testEvent, so neotest can mark positions live.
@@ -613,29 +589,36 @@ function M.build_spec(args)
   end
 
   if pos.type == "dir" then
-    -- A directory is a Java package 1:1 in standard Maven layout -- bind
-    -- running it to a single PACKAGE-selector run (selectPackage resolves
-    -- against the real classpath and already includes subpackages
-    -- recursively, so this covers everything under the directory in one
-    -- JVM launch) instead of letting neotest fall through to running every
-    -- file underneath individually. Falls back to normal decomposition
-    -- (return nil) for anything that doesn't look like a package directory.
-    local workspace_root = M.root(pos.path)
-    if not workspace_root then
+    -- What to run for a directory (a package, a whole module in one launch, or nothing for the
+    -- reactor root) is resolved server-side from the real reactor layout: the client parses no
+    -- paths and needs no attribution, so it works even for a never-opened module. Blocking
+    -- round-trip in neotest's async run context, like discover_positions' runnables.list call.
+    local err, run = client.request.workspace_executeCommand({
+      command = "lathe.runnables.dir",
+      arguments = { { uri = vim.uri_from_fname(pos.path) } },
+    })
+    if not err and run and run.selections and #run.selections > 0 then
+      -- Key on the dir node's id (not a package name, which matches no node) so results()' fan-out
+      -- lands the aggregate here and clears every descendant; per-test statuses still win.
+      return run_spec(pos.id, run.moduleRel, run.selections, client, pos.name, strategy)
+    end
+
+    if strategy == "dap" then
+      vim.notify("Nothing here to debug", vim.log.levels.WARN, { title = "Lathe" })
       return nil
     end
-    local module_rel, package_name = M._package_for_dir(pos.path, workspace_root)
-    if not module_rel then
-      return nil
-    end
-    -- The run position is the directory node's own id (its path), NOT the package name: the package
-    -- name is only the PACKAGE selector value and matches no node, so keying the run on it orphans
-    -- the aggregate result and skips results()' subtree fan-out -- leaving the directory glyph stale
-    -- (e.g. a red left over from a prior run never clears). pos.id lands the aggregate on the real
-    -- directory node and lets the fan-out clear/update every descendant; per-test statuses still win.
-    return run_spec(pos.id, module_rel, {
-      { selectorKind = "PACKAGE", selectorValue = package_name },
-    }, client, package_name, strategy)
+
+    -- Not a single run target (reactor root, or a dir with no tests). A no-op skip fires results()
+    -- and clears the glyph honestly, instead of neotest's per-file decomposition -- which runs only
+    -- already-opened files and reports a misleading green for every test it never ran.
+    return {
+      command = { "true" },
+      context = {
+        position_id = pos.id,
+        skip_reason = "no runnable tests here — run a module, package, or file",
+        label = pos.name,
+      },
+    }
   end
 
   if pos.type ~= "file" then
@@ -707,8 +690,9 @@ end
 local STATUS_RANK = { skipped = 1, passed = 2, failed = 3 }
 
 --- FQCN for a `*Test.java` file, or the dotted package for a test source directory, derived from its
---- absolute path (mirrors _package_for_dir's `/src/<scope>/java/` anchor). nil for a path outside a test
---- source root, so a non-standard-layout node falls back to the aggregate rather than mis-matching.
+--- absolute path anchored on `/src/<scope>/java/`. nil for a path outside a test source root, so a
+--- non-standard-layout node falls back to the aggregate rather than mis-matching. This name matching
+--- (results -> tree nodes) is a client-side concern; deciding what to RUN is server-resolved.
 local function path_to_qualified(path)
   local rel = path:match("^.-/src/[^/]+/java/(.*)$")
   if not rel then

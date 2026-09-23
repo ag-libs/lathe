@@ -11,6 +11,7 @@ import io.github.aglibs.lathe.core.PortUtil;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.launch.JdwpOptions;
 import io.github.aglibs.lathe.core.launch.TestSelection;
+import io.github.aglibs.lathe.core.launch.TestSelectionKind;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
 import io.github.aglibs.lathe.core.schema.RunKind;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
@@ -631,6 +632,10 @@ final class WorkspaceSession {
     return resolveContext(workspace.allConfigs(), workspaceRoot, LatheUri.toPath(uri));
   }
 
+  DirRun dirRun(final String uri) {
+    return dirRun(workspace.allConfigs(), workspaceRoot, LatheUri.toPath(uri));
+  }
+
   // Static cores below take (configs, workspaceRoot) so they are covered without a loaded
   // workspace.
 
@@ -658,6 +663,65 @@ final class WorkspaceSession {
         .flatMap(config -> contextIn(workspaceRoot, config, path).stream())
         .findFirst()
         .orElse(null);
+  }
+
+  // Test selectors to run for a directory, from the real reactor layout, not the path string.
+  // A dir inside a module's test tree runs just that package (selectPackage recurses); the
+  // source root, or anything above it (module root, src/), runs every test package in one
+  // launch. A dir enclosing more than one module (the reactor root) resolves to nothing.
+  static DirRun dirRun(
+      final List<ModuleSourceConfig> configs, final Path workspaceRoot, final Path dirPath) {
+    final List<ModuleSourceConfig> testConfigs = testConfigs(configs);
+
+    for (final ModuleSourceConfig config : testConfigs) {
+      final Optional<Path> root = primarySourceRoot(config);
+      if (root.isEmpty() || !dirPath.startsWith(root.get())) {
+        continue;
+      }
+
+      final String pkg = packageOf(root.get(), dirPath);
+      final String moduleRel = moduleRel(workspaceRoot, config);
+      if (pkg.isEmpty()) {
+        return moduleRun(configs, workspaceRoot, moduleRel);
+      }
+
+      return new DirRun(
+          moduleRel, List.of(new DirRun.Selector(TestSelectionKind.PACKAGE.name(), pkg)));
+    }
+
+    // At or above a module's test tree (module root, src/): its real test root is a descendant
+    // of the dir -- deterministic, no path parsing. Only when exactly one module lives under it;
+    // several is a multi-module directory, which is not run.
+    final List<ModuleSourceConfig> enclosed =
+        testConfigs.stream().filter(config -> testRootUnder(config, dirPath)).toList();
+    if (enclosed.size() == 1) {
+      return moduleRun(configs, workspaceRoot, moduleRel(workspaceRoot, enclosed.getFirst()));
+    }
+
+    return new DirRun("", List.of());
+  }
+
+  private static boolean testRootUnder(final ModuleSourceConfig config, final Path dirPath) {
+    return primarySourceRoot(config).filter(root -> root.startsWith(dirPath)).isPresent();
+  }
+
+  private static List<ModuleSourceConfig> testConfigs(final List<ModuleSourceConfig> configs) {
+    return configs.stream()
+        .filter(config -> SourceScope.ofSourceTree(config.sourceTree()) == SourceScope.TEST)
+        .toList();
+  }
+
+  private static DirRun moduleRun(
+      final List<ModuleSourceConfig> configs, final Path workspaceRoot, final String moduleRel) {
+    final List<DirRun.Selector> selectors =
+        packages(configs, workspaceRoot, moduleRel).stream()
+            .filter(entry -> entry.scope().equals(SourceScope.TEST.wire))
+            .map(PackageEntry::pkg)
+            .filter(pkg -> !pkg.isEmpty())
+            .distinct()
+            .map(pkg -> new DirRun.Selector(TestSelectionKind.PACKAGE.name(), pkg))
+            .toList();
+    return new DirRun(moduleRel, selectors);
   }
 
   private static Stream<PackageEntry> packageEntries(final ModuleSourceConfig config) {

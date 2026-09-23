@@ -29,6 +29,7 @@ final class LatheWorkspaceService implements WorkspaceService {
   static final String RUN_MAIN_COMMAND = "lathe.run.main";
   static final String CANCEL_TEST_COMMAND = "lathe.run.cancel";
   static final String LIST_RUNNABLES_COMMAND = "lathe.runnables.list";
+  static final String DIR_RUNNABLES_COMMAND = "lathe.runnables.dir";
   static final String RESOURCE_REFRESH_COMMAND = "lathe.resource.refresh";
   static final String DEBUG_TEST_COMMAND = "lathe.debug.test";
   static final String DEBUG_MAIN_COMMAND = "lathe.debug.main";
@@ -75,6 +76,7 @@ final class LatheWorkspaceService implements WorkspaceService {
       case RUN_MAIN_COMMAND -> runMain(params);
       case CANCEL_TEST_COMMAND -> cancelTest(params);
       case LIST_RUNNABLES_COMMAND -> listRunnables(params);
+      case DIR_RUNNABLES_COMMAND -> dirRunnables(params);
       case RESOURCE_REFRESH_COMMAND -> refreshResource(params);
       case DEBUG_TEST_COMMAND -> debugTest(params);
       case DEBUG_MAIN_COMMAND -> debugMain(params);
@@ -247,6 +249,11 @@ final class LatheWorkspaceService implements WorkspaceService {
     return textDocumentService
         .resolveContextFuture(json.get("uri").getAsString())
         .thenApply(context -> context);
+  }
+
+  private CompletableFuture<Object> dirRunnables(final ExecuteCommandParams params) {
+    final var json = (JsonObject) params.getArguments().getFirst();
+    return textDocumentService.dirRunFuture(json.get("uri").getAsString()).thenApply(plan -> plan);
   }
 
   private CompletableFuture<Object> missingImports(final ExecuteCommandParams params) {

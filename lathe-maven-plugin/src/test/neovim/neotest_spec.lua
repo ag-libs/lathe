@@ -57,9 +57,9 @@ end
 -- Case 1: method -> class -> package. The package is deliberately not a
 -- tracked node here: nesting it under whichever single file's discovery
 -- happened to report it puts it at the wrong tree level (a file is inside
--- its package, not the reverse). Package-level running is bound instead to
--- the directory node (see _package_for_dir's own coverage below), so the
--- class must fall through to the file root directly, not get silently
+-- its package, not the reverse). Package/module-level running is bound
+-- instead to the directory node (server-resolved via lathe.runnables.dir),
+-- so the class must fall through to the file root directly, not get silently
 -- dropped because it's "grouped" under the package's id in the parent-
 -- linking pass.
 do
@@ -106,40 +106,6 @@ do
   spec.check("method reachable from forest", method_pos ~= nil, true)
   spec.check("method type", method_pos and method_pos.type, "test")
   spec.check("method selector kind", method_pos and method_pos.lathe_selector_kind, "METHOD")
-end
-
--- _package_for_dir: derives {moduleRel, package} from a directory path in
--- standard Maven layout, the same convention RunnableScanner.packageName()
--- uses server-side. Pure function, no workspace/LSP needed.
-do
-  local module_rel, package_name = adapter._package_for_dir(
-    "/home/user/git/helidon/dbclient/mongodb/src/test/java/io/helidon/dbclient/mongodb",
-    "/home/user/git/helidon"
-  )
-  spec.check("moduleRel derived from standard layout", module_rel, "dbclient/mongodb")
-  spec.check("package derived from standard layout", package_name, "io.helidon.dbclient.mongodb")
-
-  local single_module_rel, single_package = adapter._package_for_dir(
-    "/workspace/demo/src/main/java/demo", "/workspace"
-  )
-  spec.check("moduleRel for a single-module project", single_module_rel, "demo")
-  spec.check("package for src/main (not just src/test)", single_package, "demo")
-
-  spec.check(
-    "nil for the module root itself (no src/*/java segment)",
-    adapter._package_for_dir("/home/user/git/helidon/dbclient/mongodb", "/home/user/git/helidon"),
-    nil
-  )
-  spec.check(
-    "nil for the default/unnamed package (src/test/java itself)",
-    adapter._package_for_dir("/workspace/demo/src/test/java", "/workspace"),
-    nil
-  )
-  spec.check(
-    "nil when the derived module path escapes the workspace root",
-    adapter._package_for_dir("/other/place/src/test/java/demo", "/workspace"),
-    nil
-  )
 end
 
 -- Case 2: nested class. Inner's real parent is Outer -- a class that itself
@@ -663,6 +629,91 @@ do
   )
   spec.check("dap context is flagged debug", built.context.debug, true)
   spec.check("dap build_spec fires no lathe.run.test replay", #executed, 0)
+
+  package.loaded["nio"] = nil
+end
+
+-- build_spec on a directory: what to run is server-resolved (lathe.runnables.dir), and the reply's
+-- selector list is forwarded verbatim into one lathe.run.test launch keyed on the directory node.
+-- A non-empty reply (a module fan-out here) runs; an empty reply (the reactor root / a non-test dir)
+-- yields a no-op skip spec so the glyph clears honestly instead of neotest's per-file decomposition.
+do
+  local executed = {}
+  -- run = fn -> fn() so run_spec's async lathe.run.test body executes and is recorded; the queue and
+  -- future are inert stubs. The client answers runnables.dir with the given plan, records everything.
+  local function install_nio(dir_reply)
+    executed = {}
+    package.loaded["nio"] = {
+      control = {
+        queue = function()
+          return { put_nowait = function() end, get = function() end }
+        end,
+        future = function()
+          return { set = function() end, wait = function() end }
+        end,
+      },
+      run = function(fn)
+        fn()
+      end,
+      lsp = {
+        get_clients = function()
+          return {
+            { request = { workspace_executeCommand = function(arg)
+              executed[#executed + 1] = arg
+              if arg.command == "lathe.runnables.dir" then
+                return nil, dir_reply
+              end
+              return nil
+            end } },
+          }
+        end,
+      },
+    }
+  end
+
+  local dir = "/w/app/src/test/java"
+  local tree = {
+    data = function()
+      return { id = dir, type = "dir", name = "app", path = dir }
+    end,
+  }
+
+  local function command_arg(command)
+    for _, arg in ipairs(executed) do
+      if arg.command == command then
+        return arg
+      end
+    end
+    return nil
+  end
+
+  -- Module fan-out: two PACKAGE selectors come back and are run in one launch keyed on the dir node.
+  install_nio({
+    moduleRel = "app",
+    selections = {
+      { selectorKind = "PACKAGE", selectorValue = "com.a" },
+      { selectorKind = "PACKAGE", selectorValue = "com.b" },
+    },
+  })
+  local built = adapter.build_spec({ tree = tree })
+  spec.check("dir run resolves via lathe.runnables.dir", command_arg("lathe.runnables.dir") ~= nil, true)
+  spec.check(
+    "dir run asks about the directory uri",
+    command_arg("lathe.runnables.dir").arguments[1].uri,
+    vim.uri_from_fname(dir)
+  )
+  local run_test = command_arg("lathe.run.test")
+  spec.check("dir run fires one lathe.run.test launch", run_test ~= nil, true)
+  spec.check("dir run forwards the module", run_test.arguments[1].moduleRel, "app")
+  spec.check("dir run forwards every selector", #run_test.arguments[1].selections, 2)
+  spec.check("dir run keys the aggregate on the directory node", built.context.position_id, dir)
+  spec.check("a runnable dir is not a skip", built.context.skip_reason, nil)
+
+  -- Empty reply (reactor root / no tests): honest skip, no launch.
+  install_nio({ moduleRel = "", selections = {} })
+  local skip = adapter.build_spec({ tree = tree })
+  spec.check("empty dir reply yields a skip spec", skip.context.skip_reason ~= nil, true)
+  spec.check("empty dir reply fires no lathe.run.test", command_arg("lathe.run.test"), nil)
 
   package.loaded["nio"] = nil
 end
