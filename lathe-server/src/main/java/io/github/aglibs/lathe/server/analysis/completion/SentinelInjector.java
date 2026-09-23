@@ -12,7 +12,12 @@ final class SentinelInjector {
   }
 
   private record BackwardResult(
-      String prefix, int tokenStart, Context context, String receiverText, boolean hasDot) {}
+      String prefix,
+      int tokenStart,
+      Context context,
+      String receiverText,
+      boolean hasDot,
+      boolean memberReference) {}
 
   private record ForwardResult(int unclosedParens, int unclosedBraces) {}
 
@@ -53,6 +58,7 @@ final class SentinelInjector {
         back.receiverText(),
         back.context(),
         back.hasDot(),
+        back.memberReference(),
         injected);
   }
 
@@ -68,8 +74,12 @@ final class SentinelInjector {
     int i = tokenStart - 1;
 
     final boolean hasDot = i >= 0 && content.charAt(i) == '.';
+    final boolean memberReference =
+        !hasDot && i >= 1 && content.charAt(i) == ':' && content.charAt(i - 1) == ':';
     if (hasDot) {
       i--;
+    } else if (memberReference) {
+      i -= 2;
     }
 
     outer:
@@ -168,8 +178,11 @@ final class SentinelInjector {
       i--;
     }
 
-    final String receiverText = hasDot ? collectReceiver(tokenStart - 2) : null;
-    return new BackwardResult(prefix, tokenStart, context, receiverText, hasDot);
+    final String receiverText =
+        hasDot
+            ? collectReceiver(tokenStart - 2)
+            : memberReference ? collectReceiver(tokenStart - 3) : null;
+    return new BackwardResult(prefix, tokenStart, context, receiverText, hasDot, memberReference);
   }
 
   private String collectReceiver(final int from) {

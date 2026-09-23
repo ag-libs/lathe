@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.analysis.completion;
 
 enum SentinelContext {
   MEMBER_ACCESS,
+  MEMBER_REFERENCE,
   SIMPLE_NAME,
   VARIABLE_DECLARATION,
   TYPE_REFERENCE,

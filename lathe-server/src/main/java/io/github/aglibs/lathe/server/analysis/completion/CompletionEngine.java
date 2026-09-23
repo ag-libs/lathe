@@ -108,7 +108,7 @@ public final class CompletionEngine {
                   : (parsed.enclosingMethod() == null
                       ? typeReferenceCompleter.completeTypeReference(parsed, injected, req)
                       : CompletionOutcome.of(List.of()));
-          case MEMBER_ACCESS, STATIC_IMPORT ->
+          case MEMBER_ACCESS, STATIC_IMPORT, MEMBER_REFERENCE ->
               memberAccessCompleter.complete(parsed, injected, req, site);
           case LAMBDA_BODY ->
               parsed.receiverText() != null

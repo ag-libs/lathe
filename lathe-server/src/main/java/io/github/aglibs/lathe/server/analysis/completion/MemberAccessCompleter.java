@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
+import com.sun.source.tree.Scope;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.ImportAnalyzer;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
@@ -138,16 +139,20 @@ final class MemberAccessCompleter {
       final AttributedFileAnalysis snapshot,
       final ResolvedReceiver resolved,
       final AttributedFileAnalysis cacheableAnalysis) {
+    final boolean memberReference = parsed.sentinelContext() == SentinelContext.MEMBER_REFERENCE;
     final boolean isStaticAccess =
         parsed.sentinelContext() == SentinelContext.STATIC_IMPORT || resolved.staticAccess();
     final var scope = TypeResolver.resolveScope(snapshot, req.cursorOffset());
     final var semanticContext = memberAccessSemanticContext(site, req, parsed, snapshot);
     final var generator = new CandidateGenerator(snapshot);
-    final var members =
-        generator.proposeMemberAccessCandidates(
-            resolved.type(), injected.prefix(), isStaticAccess, scope);
+    final List<CompletionCandidate> members =
+        memberReference
+            ? methodReferenceMembers(generator, resolved, injected.prefix(), scope)
+            : generator.proposeMemberAccessCandidates(
+                resolved.type(), injected.prefix(), isStaticAccess, scope);
     final Stream<CompletionCandidate> nestedTypes =
-        isStaticAccess
+        !memberReference
+                && isStaticAccess
                 && resolved.type() instanceof DeclaredType dt
                 && dt.asElement() instanceof TypeElement te
             ? generator.proposeNestedTypes(te, injected.prefix()).stream()
@@ -156,7 +161,7 @@ final class MemberAccessCompleter {
     final List<CompletionCandidate> candidates =
         Stream.concat(
                 Stream.concat(members.stream(), nestedTypes),
-                isStaticAccess
+                !memberReference && isStaticAccess
                     ? TypeReferenceCompleter.classLiteralCandidates(injected.prefix()).stream()
                     : Stream.of())
             .toList();
@@ -179,6 +184,25 @@ final class MemberAccessCompleter {
     }
 
     return new CompletionOutcome(items, cacheableAnalysis);
+  }
+
+  // A method reference targets a method; a type qualifier admits both static and instance forms.
+  private static List<CompletionCandidate> methodReferenceMembers(
+      final CandidateGenerator generator,
+      final ResolvedReceiver resolved,
+      final String prefix,
+      final Scope scope) {
+    final Stream<CompletionCandidate> instanceMembers =
+        generator.proposeMemberAccessCandidates(resolved.type(), prefix, false, scope).stream();
+    final Stream<CompletionCandidate> members =
+        resolved.staticAccess()
+            ? Stream.concat(
+                generator
+                    .proposeMemberAccessCandidates(resolved.type(), prefix, true, scope)
+                    .stream(),
+                instanceMembers)
+            : instanceMembers;
+    return members.filter(candidate -> candidate.kind() == CandidateKind.METHOD).toList();
   }
 
   private static boolean isMethodChainReceiver(final ParsedSentinel parsed) {

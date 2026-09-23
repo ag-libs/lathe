@@ -9,6 +9,7 @@ record SentinelInjectionResult(
     String receiverText,
     SentinelInjector.Context context,
     boolean hasDot,
+    boolean memberReference,
     String injectedContent) {
 
   SentinelInjectionResult {

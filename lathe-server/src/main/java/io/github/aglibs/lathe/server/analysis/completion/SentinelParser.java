@@ -57,6 +57,9 @@ final class SentinelParser {
     if (sentinelPath.getLeaf() instanceof final MemberSelectTree memberSelect) {
       final long pos = sourcePositions.getEndPosition(cu, memberSelect.getExpression());
       receiverEndOffset = pos >= 0 ? (int) pos : -1;
+    } else if (sentinelPath.getLeaf() instanceof final MemberReferenceTree memberReference) {
+      final long pos = sourcePositions.getEndPosition(cu, memberReference.getQualifierExpression());
+      receiverEndOffset = pos >= 0 ? (int) pos : -1;
     } else {
       receiverEndOffset = -1;
     }
@@ -71,7 +74,7 @@ final class SentinelParser {
       return ParsedSentinel.invalid(injected.prefix(), injected.receiverText(), version);
     }
 
-    if (injected.prefix().isEmpty() && !injected.hasDot()) {
+    if (injected.prefix().isEmpty() && !injected.hasDot() && !injected.memberReference()) {
       final long sentinelStart = sourcePositions.getStartPosition(cu, sentinelPath.getLeaf());
       if (sentinelStart >= 0
           && expressionEndsBefore(sentinelStart, cu, sourcePositions, injected.injectedContent())) {
@@ -342,6 +345,10 @@ final class SentinelParser {
   private static Classification classifySentinel(final Tree sentinel, final TreePath parentPath) {
     if (sentinel instanceof VariableTree v) {
       return classifyVariableDeclaration(v);
+    }
+
+    if (sentinel instanceof MemberReferenceTree) {
+      return Classification.of(SentinelContext.MEMBER_REFERENCE);
     }
 
     final Tree parent = parentPath.getLeaf();
@@ -741,6 +748,15 @@ final class SentinelParser {
       }
 
       return super.visitMemberSelect(node, unused);
+    }
+
+    @Override
+    public TreePath visitMemberReference(final MemberReferenceTree node, final Void unused) {
+      if (SentinelInjector.SENTINEL.equals(node.getName().toString())) {
+        return getCurrentPath();
+      }
+
+      return super.visitMemberReference(node, unused);
     }
 
     @Override
