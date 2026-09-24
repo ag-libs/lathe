@@ -109,6 +109,8 @@ final class CompletionItemPresenter {
       case FIELD -> CompletionItemKind.Field;
       case PROPERTY -> CompletionItemKind.Property;
       case METHOD -> CompletionItemKind.Method;
+      // A `::` reference is not a call; the Reference kind keeps clients from auto-appending `()`.
+      case METHOD_REFERENCE -> CompletionItemKind.Reference;
       case PACKAGE -> CompletionItemKind.Module;
       case TYPE_CLASS -> CompletionItemKind.Class;
       case TYPE_INTERFACE -> CompletionItemKind.Interface;

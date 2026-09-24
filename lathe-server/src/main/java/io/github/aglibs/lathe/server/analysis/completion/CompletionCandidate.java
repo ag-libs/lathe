@@ -72,12 +72,14 @@ record CompletionCandidate(
         importEdit);
   }
 
-  // A `::` reference inserts the bare member name — never the method-call snippet with parentheses.
-  CompletionCandidate withBareInsert() {
+  // Recast a member candidate as a `::` reference: it inserts the bare member name (never the
+  // method-call snippet with parentheses) and carries a non-callable kind so clients do not
+  // auto-append `()`.
+  CompletionCandidate asMethodReference() {
     return new CompletionCandidate(
         name,
         label,
-        kind,
+        CandidateKind.METHOD_REFERENCE,
         detail,
         name,
         false,

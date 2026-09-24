@@ -261,7 +261,7 @@ final class MemberAccessCompleter {
     return new CompletionCandidate(
         "new",
         "new",
-        CandidateKind.METHOD,
+        CandidateKind.METHOD_REFERENCE,
         "%s::new".formatted(simpleName),
         "new",
         false,

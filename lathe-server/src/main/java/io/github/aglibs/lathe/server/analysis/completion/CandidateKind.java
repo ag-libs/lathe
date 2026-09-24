@@ -6,6 +6,7 @@ enum CandidateKind {
   FIELD,
   PROPERTY,
   METHOD,
+  METHOD_REFERENCE,
   PACKAGE,
   TYPE_CLASS,
   TYPE_INTERFACE,

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 import org.eclipse.lsp4j.CompletionItem;
+import org.eclipse.lsp4j.CompletionItemKind;
 import org.junit.jupiter.api.Test;
 
 class CompletionMethodReferenceTest extends CompletionTestSupport {
@@ -146,6 +147,28 @@ class CompletionMethodReferenceTest extends CompletionTestSupport {
     // A `::` target is a method name, never a call — no `()` or snippet placeholder.
     assertThat(insertTextOf(items, "charAt")).isEqualTo("charAt");
     assertThat(insertTextOf(items, "valueOf")).isEqualTo("valueOf");
+    // Non-callable kind so clients (e.g. blink auto-brackets) do not append `()`.
+    assertThat(itemLabeled(items, "charAt").orElseThrow().getKind())
+        .isEqualTo(CompletionItemKind.Reference);
+  }
+
+  @Test
+  void methodReference_newCandidate_isReferenceKind() {
+    final List<CompletionItem> items =
+        fixture.complete(
+            """
+            class Widget {
+                Widget() {}
+            }
+            class Test {
+                void m() {
+                    Widget::§
+                }
+            }""");
+
+    final CompletionItem created = itemLabeled(items, "new").orElseThrow();
+    assertThat(created.getKind()).isEqualTo(CompletionItemKind.Reference);
+    assertThat(created.getInsertText()).isEqualTo("new");
   }
 
   @Test
