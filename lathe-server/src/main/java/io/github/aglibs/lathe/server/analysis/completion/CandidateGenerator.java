@@ -21,6 +21,7 @@ import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.ArrayType;
@@ -299,6 +300,52 @@ final class CandidateGenerator {
         new SimpleNameContext(
             enclosingClass, enclosingMethod, prefix, cursorOffset, semanticContext);
     return new SimpleNameProvider(snapshot, itemFactory, context).collect();
+  }
+
+  // Candidates for a `::` reference: methods only, both static and unbound-instance for a type
+  // qualifier, instance-only otherwise. A known SAM arity (>= 0) demotes arity-incompatible
+  // methods.
+  List<CompletionCandidate> proposeMethodReferenceCandidates(
+      final TypeMirror receiverType,
+      final String prefix,
+      final boolean typeQualifier,
+      final Scope scope,
+      final int samArity) {
+    if (receiverType instanceof final ArrayType arrayType) {
+      return proposeArrayMemberCandidates(arrayType, prefix, scope).stream()
+          .filter(candidate -> candidate.kind() == CandidateKind.METHOD)
+          .toList();
+    }
+
+    if (!(receiverType instanceof final DeclaredType declaredType)
+        || !(types.asElement(declaredType) instanceof final TypeElement typeEl)) {
+      return List.of();
+    }
+
+    return snapshot.elements().getAllMembers(typeEl).stream()
+        .filter(el -> el.getKind() == ElementKind.METHOD)
+        .map(ExecutableElement.class::cast)
+        .filter(el -> typeQualifier || !el.getModifiers().contains(Modifier.STATIC))
+        .filter(el -> !isObjectSyncMethod(el))
+        .filter(el -> isAccessible(el, declaredType, scope))
+        .filter(el -> el.getSimpleName().toString().startsWith(prefix))
+        .map(
+            el ->
+                itemFactory
+                    .memberCandidate(el, declaredType)
+                    .withSortText(methodReferenceSortKey(el, typeQualifier, samArity)))
+        .toList();
+  }
+
+  private static String methodReferenceSortKey(
+      final ExecutableElement method, final boolean typeQualifier, final int samArity) {
+    if (samArity < 0) {
+      return sortKey(method);
+    }
+
+    final boolean unbound = typeQualifier && !method.getModifiers().contains(Modifier.STATIC);
+    final int consumed = method.getParameters().size() + (unbound ? 1 : 0);
+    return "%d_%s".formatted(consumed == samArity ? 0 : 1, method.getSimpleName());
   }
 
   private static boolean isObjectSyncMethod(final Element el) {

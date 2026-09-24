@@ -96,6 +96,42 @@ class CompletionMethodReferenceTest extends CompletionTestSupport {
   }
 
   @Test
+  void methodReference_argumentSlot_ranksArityCompatibleAboveIncompatible() {
+    final List<String> labels =
+        labels(
+            fixture.complete(
+                """
+                import java.util.function.Function;
+                class Test {
+                    void take(Function<String, Integer> f) {}
+                    void m() {
+                        take(String::§)
+                    }
+                }"""));
+
+    // SAM apply(T) has arity 1: unbound `length` (0 params + receiver) fits; `concat`
+    // (1 param + receiver = 2) does not, so it is demoted below the compatible candidate.
+    assertThat(labels).contains("length", "concat");
+    assertThat(labels.indexOf("length")).isLessThan(labels.indexOf("concat"));
+  }
+
+  @Test
+  void methodReference_noExpectedType_returnsUnfilteredMembers() {
+    final List<String> labels =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    void m() {
+                        String::§
+                    }
+                }"""));
+
+    // No SAM target: nothing is demoted, so both arities are present.
+    assertThat(labels).contains("length", "concat");
+  }
+
+  @Test
   void methodReference_prefix_filtersByName() {
     final List<String> labels =
         labels(

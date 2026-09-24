@@ -210,6 +210,20 @@ final class TypeResolver {
     return findLambdaPathAtOffset(cursorOffset, snapshot) != null;
   }
 
+  // The parameter count of the functional-interface (SAM) target at a `::` site, or -1 when the
+  // expected type is unknown or not a functional interface. Drives method-reference arity ranking.
+  static int methodReferenceSamArity(
+      final int cursorOffset, final AttributedFileAnalysis snapshot) {
+    if (!(resolveExpectedArgumentValue(cursorOffset, snapshot)
+            instanceof ExpectedValue.Type(final TypeMirror type))
+        || !(type instanceof final DeclaredType declared)) {
+      return -1;
+    }
+
+    final ExecutableElement sam = findFunctionalInterfaceMethod(declared, snapshot);
+    return sam == null ? -1 : sam.getParameters().size();
+  }
+
   static boolean isVoidFunctionalInterface(
       final TypeMirror type, final AttributedFileAnalysis snapshot) {
     if (!(type instanceof final DeclaredType declared)) {

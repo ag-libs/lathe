@@ -11,6 +11,7 @@ import java.util.logging.Logger;
 import java.util.stream.Stream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
@@ -146,12 +147,20 @@ final class MemberAccessCompleter {
     final boolean memberReference = parsed.sentinelContext() == SentinelContext.MEMBER_REFERENCE;
     final boolean isStaticAccess =
         parsed.sentinelContext() == SentinelContext.STATIC_IMPORT || resolved.staticAccess();
+    final int samArity =
+        memberReference ? TypeResolver.methodReferenceSamArity(req.cursorOffset(), snapshot) : -1;
     final var scope = TypeResolver.resolveScope(snapshot, req.cursorOffset());
-    final var semanticContext = memberAccessSemanticContext(site, req, parsed, snapshot);
+    // Method references tolerate void targets and rank by SAM arity — skip the value context, which
+    // would drop void members and rank by return type.
+    final var semanticContext =
+        memberReference
+            ? SemanticCompletionContext.blank(snapshot)
+            : memberAccessSemanticContext(site, req, parsed, snapshot);
     final var generator = new CandidateGenerator(snapshot);
     final List<CompletionCandidate> members =
         memberReference
-            ? methodReferenceMembers(generator, resolved, snapshot, injected.prefix(), scope)
+            ? methodReferenceMembers(
+                generator, resolved, snapshot, injected.prefix(), scope, samArity)
             : generator.proposeMemberAccessCandidates(
                 resolved.type(), injected.prefix(), isStaticAccess, scope);
     final Stream<CompletionCandidate> nestedTypes =
@@ -198,20 +207,13 @@ final class MemberAccessCompleter {
       final ResolvedReceiver resolved,
       final AttributedFileAnalysis snapshot,
       final String prefix,
-      final Scope scope) {
-    final Stream<CompletionCandidate> instanceMembers =
-        generator.proposeMemberAccessCandidates(resolved.type(), prefix, false, scope).stream();
-    final Stream<CompletionCandidate> members =
-        resolved.staticAccess()
-            ? Stream.concat(
-                generator
-                    .proposeMemberAccessCandidates(resolved.type(), prefix, true, scope)
-                    .stream(),
-                instanceMembers)
-            : instanceMembers;
+      final Scope scope,
+      final int samArity) {
     final List<CompletionCandidate> methods =
-        members.filter(candidate -> candidate.kind() == CandidateKind.METHOD).toList();
-    final CompletionCandidate constructor = constructorReference(resolved, snapshot, prefix, scope);
+        generator.proposeMethodReferenceCandidates(
+            resolved.type(), prefix, resolved.staticAccess(), scope, samArity);
+    final CompletionCandidate constructor =
+        constructorReference(resolved, snapshot, prefix, scope, samArity);
     return constructor == null
         ? methods
         : Stream.concat(Stream.of(constructor), methods.stream()).toList();
@@ -223,7 +225,8 @@ final class MemberAccessCompleter {
       final ResolvedReceiver resolved,
       final AttributedFileAnalysis snapshot,
       final String prefix,
-      final Scope scope) {
+      final Scope scope,
+      final int samArity) {
     if (!resolved.staticAccess()
         || !"new".startsWith(prefix)
         || !(resolved.type() instanceof final DeclaredType declaredType)
@@ -238,14 +241,23 @@ final class MemberAccessCompleter {
       return null;
     }
 
-    final boolean hasAccessibleConstructor =
+    final List<ExecutableElement> constructors =
         ElementFilter.constructorsIn(typeEl.getEnclosedElements()).stream()
-            .anyMatch(ctor -> isAccessible(ctor, declaredType, snapshot, scope));
-    if (!hasAccessibleConstructor) {
+            .filter(ctor -> isAccessible(ctor, declaredType, snapshot, scope))
+            .toList();
+    if (constructors.isEmpty()) {
       return null;
     }
 
     final String simpleName = typeEl.getSimpleName().toString();
+    final String sortText =
+        samArity < 0
+            ? null
+            : "%d_new"
+                .formatted(
+                    constructors.stream().anyMatch(c -> c.getParameters().size() == samArity)
+                        ? 0
+                        : 1);
     return new CompletionCandidate(
         "new",
         "new",
@@ -253,7 +265,7 @@ final class MemberAccessCompleter {
         "%s::new".formatted(simpleName),
         "new",
         false,
-        null,
+        sortText,
         declaredType,
         simpleName,
         null);
