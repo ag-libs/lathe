@@ -177,6 +177,22 @@ public final class WorkspaceManifest {
     return resourceRoots.sourceDirs();
   }
 
+  // Each reactor resource dir mapped to its owning module (the resource-finder origin).
+  public Map<Path, String> resourceDirModules() {
+    return resourceRoots.sourceDirModules();
+  }
+
+  // The dependency artifact (main) jars, mapped to their GAV — the jars that carry resources.
+  public Map<Path, String> dependencyJarsToGav() {
+    return jarToGav;
+  }
+
+  // The extracted per-dependency cache dir for a jar (present only when its sources were synced),
+  // reused as the destination when a single resource entry is opened.
+  public Optional<Path> dependencySourceDir(final Path jar) {
+    return Optional.ofNullable(jarToSourceDir.get(jar));
+  }
+
   public List<Path> typeIndexShardPaths() {
     return typeIndexShardPaths;
   }

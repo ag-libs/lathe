@@ -43,6 +43,7 @@ final class ModuleResourcesReader {
     final Path directory = project.getBasedir().toPath().resolve(resource.getDirectory());
     final var relative = workspaceRoot.relativize(directory).toString();
     final String targetPath = resource.getTargetPath() != null ? resource.getTargetPath() : "";
-    return new ResourceRootData(relative, output, targetPath, resource.isFiltering());
+    final String module = ReactorProjects.moduleRel(workspaceRoot, project);
+    return new ResourceRootData(relative, output, targetPath, resource.isFiltering(), module);
   }
 }

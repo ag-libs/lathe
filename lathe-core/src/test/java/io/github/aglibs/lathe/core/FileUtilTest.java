@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -23,6 +25,44 @@ final class FileUtilTest {
     FileUtil.unzip(zip, dest);
 
     assertThat(dest.resolve("com/example/Hello.java")).hasContent("class Hello {}");
+  }
+
+  @Test
+  void listEntries_predicate_keepsMatchesSkipsDirsAndFiltered() throws IOException {
+    final Path jar =
+        ZipFixture.create(
+            tempDir.resolve("lib.jar"),
+            Map.of(
+                "com/x/schema.graphqls", "type Query", "com/x/App.class", "bytecode", "dir/", ""));
+
+    final List<String> names = FileUtil.listEntries(jar, name -> !name.endsWith(".class"));
+
+    // .class filtered by the predicate, "dir/" skipped as a directory
+    assertThat(names).containsExactly("com/x/schema.graphqls");
+  }
+
+  @Test
+  void extractEntry_singleEntry_writesReadOnlyAndNothingElse() throws IOException {
+    final Path jar =
+        ZipFixture.create(
+            tempDir.resolve("lib.jar"),
+            Map.of("com/x/schema.graphqls", "type Query", "com/x/App.class", "bytecode"));
+    final Path dest = tempDir.resolve("out/schema.graphqls");
+
+    FileUtil.extractEntry(jar, "com/x/schema.graphqls", dest);
+
+    assertThat(dest).hasContent("type Query");
+    assertThat(dest.toFile().canWrite()).isFalse();
+    assertThat(tempDir.resolve("out/com/x/App.class")).doesNotExist();
+  }
+
+  @Test
+  void extractEntry_missingEntry_throwsIOException() throws IOException {
+    final Path jar = ZipFixture.create(tempDir.resolve("lib.jar"), "a.txt", "x");
+
+    assertThatThrownBy(() -> FileUtil.extractEntry(jar, "nope.txt", tempDir.resolve("d/nope.txt")))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("no entry");
   }
 
   @Test

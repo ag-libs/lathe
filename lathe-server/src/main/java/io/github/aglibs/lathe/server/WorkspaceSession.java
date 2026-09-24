@@ -83,6 +83,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -713,6 +714,91 @@ final class WorkspaceSession {
 
   List<TestSource> testSources(final String moduleRel, final List<String> classNames) {
     return testSources(workspace.allConfigs(), workspaceRoot, moduleRel, classNames);
+  }
+
+  List<ResourceEntry> resources() {
+    return resources(manifest.resourceDirModules(), manifest.dependencyJarsToGav());
+  }
+
+  // Every resource the finder lists: reactor resource roots (real editable files) and each dep
+  // jar's
+  // entries (read from its central directory -- no decompression, no extraction). `.class` is
+  // excluded; origin comes from the owning module / GAV.
+  static List<ResourceEntry> resources(
+      final Map<Path, String> resourceDirs, final Map<Path, String> jarToGav) {
+    return Stream.concat(
+            resourceDirs.entrySet().stream()
+                .flatMap(dir -> resourcesUnder(dir.getKey(), dir.getValue()).stream()),
+            jarToGav.entrySet().stream()
+                .flatMap(dep -> jarResources(dep.getKey(), dep.getValue()).stream()))
+        .toList();
+  }
+
+  // Extracts one dependency jar entry to disk (read-only) and returns its path -- the only bytes
+  // written, on demand. Reuses the dep's sources cache dir when present, else a temp dir. Reactor
+  // resources need no extraction (they carry their real path).
+  String resourceOpen(final String jar, final String entry) {
+    final var jarPath = Path.of(jar);
+    final Path dest =
+        manifest
+            .dependencySourceDir(jarPath)
+            .map(dir -> dir.resolve(entry))
+            .orElseGet(tempDest(entry));
+    try {
+      FileUtil.extractEntry(jarPath, entry, dest);
+    } catch (final IOException e) {
+      throw new UncheckedIOException("extract %s from %s".formatted(entry, jar), e);
+    }
+
+    return dest.toString();
+  }
+
+  private static List<ResourceEntry> resourcesUnder(final Path dir, final String module) {
+    if (!Files.isDirectory(dir)) {
+      return List.of();
+    }
+
+    try (final var walk = Files.walk(dir)) {
+      return walk.filter(Files::isRegularFile)
+          .filter(WorkspaceSession::isResource)
+          .map(
+              file ->
+                  ResourceEntry.reactor(dir.relativize(file).toString(), module, file.toString()))
+          .toList();
+    } catch (final IOException e) {
+      LOG.log(Level.WARNING, e, () -> "[resources] walk %s failed".formatted(dir));
+      return List.of();
+    }
+  }
+
+  private static List<ResourceEntry> jarResources(final Path jar, final String gav) {
+    try {
+      return FileUtil.listEntries(jar, WorkspaceSession::isResource).stream()
+          .map(entry -> ResourceEntry.dependency(gav, jar.toString(), entry))
+          .toList();
+    } catch (final IOException e) {
+      LOG.log(Level.WARNING, e, () -> "[resources] list %s failed".formatted(jar));
+      return List.of();
+    }
+  }
+
+  // Excluding compiled classes is the whole filter -- a denylist keeps unusual resource extensions.
+  private static boolean isResource(final String name) {
+    return !name.endsWith(".class");
+  }
+
+  private static boolean isResource(final Path file) {
+    return isResource(file.getFileName().toString());
+  }
+
+  private static Supplier<Path> tempDest(final String entry) {
+    return () -> {
+      try {
+        return Files.createTempDirectory("lathe-resource-").resolve(Path.of(entry).getFileName());
+      } catch (final IOException e) {
+        throw new UncheckedIOException("temp dir for %s".formatted(entry), e);
+      }
+    };
   }
 
   // Source file for each test class, resolved from the module's real test source roots by path math

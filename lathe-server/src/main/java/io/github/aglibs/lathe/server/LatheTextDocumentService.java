@@ -612,4 +612,12 @@ public final class LatheTextDocumentService implements TextDocumentService {
       final String moduleRel, final List<String> classNames) {
     return worker.submit(() -> session.testSources(moduleRel, classNames));
   }
+
+  CompletableFuture<List<ResourceEntry>> resourcesFuture() {
+    return worker.submit(session::resources);
+  }
+
+  CompletableFuture<String> resourceOpenFuture(final String jar, final String entry) {
+    return worker.submit(() -> session.resourceOpen(jar, entry));
+  }
 }

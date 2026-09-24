@@ -17,8 +17,9 @@ class ResourceRootIndexTest {
 
   private static List<ResourceRootData> standardRoots() {
     return List.of(
-        new ResourceRootData("app/src/main/resources", "app/target/classes", "", false),
-        new ResourceRootData("app/src/test/resources", "app/target/test-classes", "", false));
+        new ResourceRootData("app/src/main/resources", "app/target/classes", "", false, "app"),
+        new ResourceRootData(
+            "app/src/test/resources", "app/target/test-classes", "", false, "app"));
   }
 
   @Test
@@ -42,7 +43,7 @@ class ResourceRootIndexTest {
   @Test
   void destinationFor_targetPath_prependsUnderOutput() {
     final var roots =
-        List.of(new ResourceRootData("app/config", "app/target/classes", "conf", false));
+        List.of(new ResourceRootData("app/config", "app/target/classes", "conf", false, "app"));
 
     final var result = index(roots).destinationFor(Path.of("/ws/app/config/db/schema.sql"));
 
@@ -62,9 +63,9 @@ class ResourceRootIndexTest {
   void destinationFor_nestedRoots_longestMatchWins() {
     final var roots =
         List.of(
-            new ResourceRootData("app/src/main/resources", "app/target/classes", "", false),
+            new ResourceRootData("app/src/main/resources", "app/target/classes", "", false, "app"),
             new ResourceRootData(
-                "app/src/main/resources/extra", "app/target/classes", "nested", false));
+                "app/src/main/resources/extra", "app/target/classes", "nested", false, "app"));
 
     final var result =
         index(roots).destinationFor(Path.of("/ws/app/src/main/resources/extra/thing.txt"));

@@ -4,14 +4,16 @@ import io.github.aglibs.lathe.core.launch.ReactorRewrite;
 import io.github.aglibs.lathe.core.schema.ResourceRootData;
 import java.nio.file.Path;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 // Maps a changed resource file to its .lathe/ destination from the roots lathe:sync captured;
 // output dirs go target/ -> .lathe/ via ReactorRewrite (the rewrite replay uses), not rebuilt here.
 public final class ResourceRootIndex {
 
-  private record Mapping(Path sourceDir, Path latheOutputDir, String targetPath) {}
+  private record Mapping(Path sourceDir, Path latheOutputDir, String targetPath, String module) {}
 
   private final List<Mapping> mappings;
 
@@ -27,6 +29,13 @@ public final class ResourceRootIndex {
     return mappings.stream().map(Mapping::sourceDir).toList();
   }
 
+  // Each resource source dir mapped to its owning reactor module (the resource-finder origin).
+  public Map<Path, String> sourceDirModules() {
+    final var byDir = new LinkedHashMap<Path, String>();
+    mappings.forEach(mapping -> byDir.put(mapping.sourceDir(), mapping.module()));
+    return byDir;
+  }
+
   public static ResourceRootIndex build(
       final Path workspaceRoot, final List<ResourceRootData> resourceRoots) {
     return new ResourceRootIndex(
@@ -37,7 +46,7 @@ public final class ResourceRootIndex {
     final Path sourceDir = workspaceRoot.resolve(root.directory()).normalize();
     final var latheOutput =
         ReactorRewrite.toLathe(workspaceRoot.resolve(root.outputDir()).toString(), workspaceRoot);
-    return new Mapping(sourceDir, Path.of(latheOutput), root.targetPath());
+    return new Mapping(sourceDir, Path.of(latheOutput), root.targetPath(), root.module());
   }
 
   // Empty if the file is under no resource root; the longest matching root wins (nested roots).

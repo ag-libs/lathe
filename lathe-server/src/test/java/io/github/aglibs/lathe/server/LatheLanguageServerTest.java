@@ -75,6 +75,8 @@ class LatheLanguageServerTest {
             LatheWorkspaceService.LIST_RUNNABLES_COMMAND,
             LatheWorkspaceService.DIR_RUNNABLES_COMMAND,
             LatheWorkspaceService.TEST_SOURCES_COMMAND,
+            LatheWorkspaceService.RESOURCES_COMMAND,
+            LatheWorkspaceService.RESOURCE_OPEN_COMMAND,
             LatheWorkspaceService.RESOURCE_REFRESH_COMMAND,
             LatheWorkspaceService.INSTANTIATIONS_COMMAND,
             LatheWorkspaceService.TYPE_HIERARCHY_COMMAND,
