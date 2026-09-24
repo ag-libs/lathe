@@ -1576,6 +1576,24 @@ class CodeActionTest {
   }
 
   @Test
+  void codeAction_methodReferenceAssignedToVar_notOffered() {
+    // A method reference cannot target `var`, so `x` has an error type; javac treats error types as
+    // assignable to everything, which must not surface try-with-resources on non-compiling code.
+    final var source =
+        """
+        package com.example;
+        import java.time.Clock;
+        class Test {
+          void m() {
+            final var x = Clock::systemUTC;
+          }
+        }
+        """;
+    assertThat(rightTitles(replaceVarActionsAt(source, 4, 4)))
+        .doesNotContain("Surround with try-with-resources");
+  }
+
+  @Test
   void codeAction_declarationWithoutInitializer_notOffered() {
     final var source =
         """

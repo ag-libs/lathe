@@ -21,6 +21,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionKind;
@@ -120,6 +121,13 @@ final class TryWithResourcesProvider {
 
   private static boolean isAutoCloseable(
       final TypeMirror type, final AttributedFileAnalysis analysis) {
+    // Only a real class/interface type can be a resource. An error type (e.g. a method reference or
+    // lambda wrongly assigned to `var`) is assignable to everything in javac, which would otherwise
+    // offer this action on code that does not compile.
+    if (type.getKind() != TypeKind.DECLARED) {
+      return false;
+    }
+
     final TypeElement autoCloseable = analysis.elements().getTypeElement("java.lang.AutoCloseable");
     return autoCloseable != null && analysis.types().isAssignable(type, autoCloseable.asType());
   }
