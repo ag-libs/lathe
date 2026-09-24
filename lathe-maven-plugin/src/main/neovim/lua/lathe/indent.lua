@@ -286,6 +286,13 @@ local function heuristic_indent(lnum, current, prev_lnum, prev)
     return prev_indent
   end
   if starts_with_block_comment_open(prev) then
+    -- A self-contained single-line block comment (`/** ... */`) is transparent: the following line
+    -- stays at the comment's own indent. Only a genuine multi-line opener indents the continuation
+    -- `*` by one.
+    if ends_with_block_comment_close(prev) then
+      return prev_indent
+    end
+
     return prev_indent + 1
   end
   if starts_with_block_comment_star(prev) then

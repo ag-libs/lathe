@@ -178,6 +178,18 @@ local FIXTURES = {
     2,
   },
   {
+    "single-line javadoc: the following member stays at the comment indent, not one deeper",
+    { "  /** setup */", "static {" },
+    2,
+    2,
+  },
+  {
+    "single-line block comment: the following statement stays at the comment indent",
+    { "  /* note */", "int x = 1;" },
+    2,
+    2,
+  },
+  {
     "regression: body after wrapped method declaration indents from the declaration, not the wrap",
     { "void method(", "    int a) {", "" },
     3,
