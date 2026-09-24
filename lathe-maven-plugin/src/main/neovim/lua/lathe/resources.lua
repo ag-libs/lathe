@@ -1,24 +1,42 @@
 -- :LatheResourceFind [name] -- find a resource by name across this workspace's reactor and
--- dependency resources, via the server's `lathe.resources` command. Each row shows the name and its
--- origin (reactor:<module> / dep:<gav>); fuzzy matching is case-insensitive and client-side, from
--- Telescope's sorter or the `lathe.pick` fallback. A reactor hit opens its editable file; a
--- dependency hit is extracted read-only on open (`lathe.resourceOpen`, one entry).
+-- dependency resources, via the server's `lathe.resources` command. Each row shows a source icon and
+-- coordinate (module / GAV) then the path, matching the find_files look; fuzzy matching is
+-- case-insensitive and client-side, from Telescope's sorter or the `lathe.pick` fallback. A reactor
+-- hit opens its editable file; a dependency hit is extracted read-only on open (`lathe.resourceOpen`).
 
 local M = {}
+
+-- Plain-Unicode source glyphs (no Nerd Font dependency), mirroring the origin convention used for
+-- located results: a reactor (own-project) resource vs a Maven dependency resource.
+local ICON_REACTOR = "\u{25A3}" -- ▣ white square with black centre
+local ICON_DEPENDENCY = "\u{25C6}" -- ◆ black diamond
 
 local function notify(message, level)
   vim.notify("Lathe: " .. message, level, { title = "Lathe" })
 end
 
--- Server ResourceEntry list -> entries. `ordinal` is "<name>  <origin>" so a query narrows by name
--- or origin; the kind/path/jar/entry fields drive the open. Pure, so it is unit-testable.
+-- "<icon>  <coordinate>" for the origin column, matching the find_files look: the GAV for a
+-- dependency, the module for a reactor resource (bare icon when the module is unknown -- a workspace
+-- synced by an older plugin, before the module was captured).
+function M._origin_label(origin)
+  local gav = origin:match("^dep:(.+)$")
+  if gav then
+    return ICON_DEPENDENCY .. "  " .. gav
+  end
+
+  local module = origin:match("^reactor:(.+)$")
+  return module and (ICON_REACTOR .. "  " .. module) or ICON_REACTOR
+end
+
+-- Server ResourceEntry list -> picker entries displayed as "<icon>  <coordinate>  <path>" (source
+-- first, like find_files). `ordinal` keeps the raw name + origin so a query narrows by either. The
+-- kind/path/jar/entry fields drive the open. Pure, so it is unit-testable.
 function M._entries(result)
   local entries = {}
   for _, r in ipairs(result or {}) do
-    local label = r.name .. "  " .. r.origin
     entries[#entries + 1] = {
-      display = label,
-      ordinal = label,
+      display = M._origin_label(r.origin) .. "  " .. r.name,
+      ordinal = r.name .. "  " .. r.origin,
       kind = r.kind,
       path = r.path,
       jar = r.jar,

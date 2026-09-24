@@ -27,15 +27,22 @@ local function stub_client(handler)
   end
 end
 
-do -- _entries maps a resource list into name+origin picker entries
+do -- _entries maps a resource list into "<icon>  <coordinate>  <path>" picker entries
   local entries = resources._entries({
     { name = "a.txt", origin = "reactor:core", kind = "FILE", path = "/w/a.txt", jar = "", entry = "" },
   })
 
-  spec.check("entry display", entries[1].display, "a.txt  reactor:core")
-  spec.check("entry ordinal matches display", entries[1].ordinal, "a.txt  reactor:core")
+  -- display leads with the source icon + module (find_files look); ordinal keeps name + origin
+  spec.check("entry display icon+module+path", entries[1].display, "\u{25A3}  core  a.txt")
+  spec.check("entry ordinal keeps name and origin", entries[1].ordinal, "a.txt  reactor:core")
   spec.check("entry kind", entries[1].kind, "FILE")
   spec.check("entry path", entries[1].path, "/w/a.txt")
+end
+
+do -- origin labels: dependency GAV, reactor module, and bare reactor (un-resynced workspace)
+  spec.check("dependency label", resources._origin_label("dep:g:a:1"), "\u{25C6}  g:a:1")
+  spec.check("reactor module label", resources._origin_label("reactor:app"), "\u{25A3}  app")
+  spec.check("bare reactor label", resources._origin_label("reactor"), "\u{25A3}")
 end
 
 do -- dispatches lathe.resources and feeds entries into the picker; open routes by kind
@@ -70,7 +77,11 @@ do -- dispatches lathe.resources and feeds entries into the picker; open routes 
 
   spec.check("dispatch method command", commands[1], "lathe.resources")
   spec.check("entry count", picked and #picked.items, 2)
-  spec.check("display shows name and origin", picked.items[1].display, "com/x/schema.graphqls  reactor:app")
+  spec.check(
+    "display leads with source icon + module + path",
+    picked.items[1].display,
+    "\u{25A3}  app  com/x/schema.graphqls"
+  )
 
   local orig_cmd, orig_schedule = vim.cmd, vim.schedule
   local edited

@@ -23,7 +23,8 @@ record ResourceEntry(
   }
 
   static ResourceEntry reactor(final String name, final String module, final String path) {
-    return new ResourceEntry(name, "reactor:%s".formatted(module), FILE, path, "", "");
+    final String origin = module.isEmpty() ? "reactor" : "reactor:%s".formatted(module);
+    return new ResourceEntry(name, origin, FILE, path, "", "");
   }
 
   static ResourceEntry dependency(final String gav, final String jar, final String entry) {
