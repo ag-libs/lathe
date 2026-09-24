@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.analysis.completion;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
+import org.eclipse.lsp4j.CompletionItem;
 import org.junit.jupiter.api.Test;
 
 class CompletionMethodReferenceTest extends CompletionTestSupport {
@@ -129,6 +130,22 @@ class CompletionMethodReferenceTest extends CompletionTestSupport {
 
     // No SAM target: nothing is demoted, so both arities are present.
     assertThat(labels).contains("length", "concat");
+  }
+
+  @Test
+  void methodReference_accepted_insertsBareNameWithoutParens() {
+    final List<CompletionItem> items =
+        fixture.complete(
+            """
+            class Test {
+                void m() {
+                    String::§
+                }
+            }""");
+
+    // A `::` target is a method name, never a call — no `()` or snippet placeholder.
+    assertThat(insertTextOf(items, "charAt")).isEqualTo("charAt");
+    assertThat(insertTextOf(items, "valueOf")).isEqualTo("valueOf");
   }
 
   @Test

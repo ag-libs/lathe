@@ -314,6 +314,7 @@ final class CandidateGenerator {
     if (receiverType instanceof final ArrayType arrayType) {
       return proposeArrayMemberCandidates(arrayType, prefix, scope).stream()
           .filter(candidate -> candidate.kind() == CandidateKind.METHOD)
+          .map(CompletionCandidate::withBareInsert)
           .toList();
     }
 
@@ -333,7 +334,8 @@ final class CandidateGenerator {
             el ->
                 itemFactory
                     .memberCandidate(el, declaredType)
-                    .withSortText(methodReferenceSortKey(el, typeQualifier, samArity)))
+                    .withSortText(methodReferenceSortKey(el, typeQualifier, samArity))
+                    .withBareInsert())
         .toList();
   }
 

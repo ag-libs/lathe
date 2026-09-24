@@ -71,4 +71,21 @@ record CompletionCandidate(
         declaringType,
         importEdit);
   }
+
+  // A `::` reference inserts the bare member name — never the method-call snippet with parentheses.
+  CompletionCandidate withBareInsert() {
+    return new CompletionCandidate(
+        name,
+        label,
+        kind,
+        detail,
+        name,
+        false,
+        sortText,
+        labelDetail,
+        labelDescription,
+        valueType,
+        declaringType,
+        importEdit);
+  }
 }
