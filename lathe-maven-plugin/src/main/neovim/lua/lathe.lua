@@ -410,6 +410,12 @@ function M.setup(opts)
   -- built-in fuzzy picker when Telescope is absent. Suggested mapping: grh.
   require('lathe.typehierarchy').setup()
 
+  -- Resource finder: :LatheResourceFind [name] finds a resource by name across this workspace's
+  -- reactor + dependency resources (lathe.resources), tagged by origin. A reactor hit opens its
+  -- editable source; a dependency hit is extracted read-only on open. Telescope when installed,
+  -- else the built-in fuzzy picker. Suggested mapping: <leader>lr.
+  require('lathe.resources').setup()
+
   -- Missing-imports surface: :LatheMissingImports adds an import for every unresolved type in the
   -- buffer (server's lathe.missingImports command). Unambiguous names are added automatically; a name
   -- with several candidates is offered one at a time. Also surfaced as the "Add missing imports…"

@@ -7,9 +7,12 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.function.Predicate;
 import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 import java.util.zip.ZipInputStream;
 
 public final class FileUtil {
@@ -137,6 +140,42 @@ public final class FileUtil {
         in.closeEntry();
         entry = in.getNextEntry();
       }
+    }
+  }
+
+  // Entry names of a zip whose name passes `keep`, read from the central directory only (no
+  // decompression), directories excluded. Used to list jar resources without unpacking the jar.
+  public static List<String> listEntries(final Path zipFile, final Predicate<String> keep)
+      throws IOException {
+    try (final var zip = new ZipFile(zipFile.toFile())) {
+      final var names = new ArrayList<String>();
+      final var entries = zip.entries();
+      while (entries.hasMoreElements()) {
+        final ZipEntry entry = entries.nextElement();
+        if (!entry.isDirectory() && keep.test(entry.getName())) {
+          names.add(entry.getName());
+        }
+      }
+
+      return List.copyOf(names);
+    }
+  }
+
+  // Extracts a single zip entry to `dest`, read-only, without unpacking the rest of the archive.
+  public static void extractEntry(final Path zipFile, final String entryName, final Path dest)
+      throws IOException {
+    try (final var zip = new ZipFile(zipFile.toFile())) {
+      final ZipEntry entry = zip.getEntry(entryName);
+      if (entry == null || entry.isDirectory()) {
+        throw new IOException("no entry %s in %s".formatted(entryName, zipFile));
+      }
+
+      Files.createDirectories(dest.getParent());
+      try (final var in = zip.getInputStream(entry)) {
+        Files.copy(in, dest, StandardCopyOption.REPLACE_EXISTING);
+      }
+
+      setReadOnly(dest);
     }
   }
 

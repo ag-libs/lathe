@@ -547,7 +547,7 @@ class LatheTextDocumentServiceTest {
             null,
             List.of(),
             List.of(),
-            List.of(new ResourceRootData(resourceDir, outputDir, "", false))),
+            List.of(new ResourceRootData(resourceDir, outputDir, "", false, "app"))),
         latheDir.resolve(LatheLayout.WORKSPACE_JSON));
   }
 
