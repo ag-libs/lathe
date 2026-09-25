@@ -1,72 +1,50 @@
-# Lathe × Emacs demo (zero-config Eglot)
+# Lathe × Emacs demo
 
-A reproducible, scripted terminal demo built with [vhs](https://github.com/charmbracelet/vhs),
-showing the **truly zero-config** path a newcomer would take: stock `emacs -Q` (no init, no packages)
-plus the **built-in Eglot**, pointed at Lathe's launcher — exactly the flow the Eglot maintainer
-suggests (`M-x eglot RET path/to/your-java-ls RET`).
+A scripted [VHS](https://github.com/charmbracelet/vhs) demo of Lathe driving **vanilla `emacs -Q` +
+built-in Eglot** — no plugins, no config. The `.tape` is the source of truth; the video and GIF are
+regenerated from it, not hand-recorded.
 
-The `.tape` is the source of truth; the video is regenerated from it, not hand-recorded. Same VHS
-rendering approach and fixture as the Neovim demo (`dev/demo/`) and the IDE-config Emacs demo on the
-`emacs-eglot-client` branch — this is just the **vanilla, zero-config** counterpart.
+Shown (Understand → Navigate → Change), all from the real Maven build:
+hover → JDK javadoc, cross-module go-to-definition, completion, extract-variable, rename, and live
+`javac` diagnostics. Recorded against the public `multi-module` invoker fixture (`com.example`).
 
-Output: `docs/videos/emacs-invoker.mp4`.
+## Files
 
-## What it shows (~35s, one take)
+- `tour.tape` — the demo (the finished cut).
+- `tour.ass` — burned-in lower-third captions, timed to the beats.
+- `prepare.sh` — builds Lathe + the invoker fixture (so `.lathe/` exists) and `git init`s it.
 
-Recorded against the **public** `multi-module` invoker fixture (`com.example`, no private identifiers):
-
-1. **Zero-config connect** — open `app/.../Main.java`, `M-x eglot RET /tmp/lathe-launcher.sh RET` →
-   *"now managing (java-mode) … workspace ready"*. No jdtls, no `.dir-locals`, no server config.
-2. **Cross-module go-to-definition** — `M-.` on `StringUtils` jumps from the `app` module into
-   `core/.../StringUtils.java`, straight from the Maven model.
-3. **Completion from the build** — complete after `user.` → the `User` record's accessors
-   (`name`, `age`) resolved from the reactor, via the built-in `completion-at-point`.
-
-## Why it works with no config
-
-Eglot's default project detection uses the version-control backend, and Lathe takes the workspace
-root **verbatim**. When the git root == the reactor root (where `.lathe/` lives), the two line up and
-the stock command just works — which is exactly the "try it on a git-backed project first" advice.
-`prepare.sh` therefore `git init`s the invoker fixture copy; nothing else is configured.
-
-The underlying LSP flow (connect → completion → cross-module definition) is also covered
-non-interactively — see the headless probe used during development, which asserts
-`completion@user.` returns the record accessors and `goto-def StringUtils` lands in the `core` module.
-
-## Prerequisites
-
-Same toolchain as the Neovim demo (`dev/demo/README.md`): `vhs`, `ttyd`, `ffmpeg`, a Nerd/mono font,
-and the headless-Chromium X libraries. `vhs` renders fully headless (off-screen Chromium via go-rod)
-but **does need to download or find a Chromium** on first run — a sandbox with no network and no
-pre-fetched `~/.cache/rod` browser will exit 0 yet produce no file. Render in a normal session.
-
-`emacs` (29+, for the bundled Eglot; verified on 30.1) must be on `PATH`.
-
-## Generate
+## Reproduce
 
 ```bash
-./dev/demo-emacs/prepare.sh     # builds Lathe + the invoker fixture, git-inits the fixture copy
-vhs dev/demo-emacs/demo.tape    # writes docs/videos/emacs-invoker.mp4
+./dev/demo-emacs/prepare.sh                         # build Lathe + the fixture (one time)
+vhs dev/demo-emacs/tour.tape                         # -> docs/videos/emacs-tour.mp4
+
+# burn captions:
+ffmpeg -y -i docs/videos/emacs-tour.mp4 -vf "subtitles=dev/demo-emacs/tour.ass" \
+  -c:v libx264 -pix_fmt yuv420p -crf 20 docs/videos/emacs-tour-captioned.mp4
+
+# GIF (two-pass palette), published to the tracked path:
+ffmpeg -y -i docs/videos/emacs-tour-captioned.mp4 \
+  -vf "fps=10,scale=1000:-1:flags=lanczos,palettegen=max_colors=256:stats_mode=diff" /tmp/pal.png
+ffmpeg -y -i docs/videos/emacs-tour-captioned.mp4 -i /tmp/pal.png \
+  -lavfi "fps=10,scale=1000:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=none:diff_mode=rectangle" \
+  docs/emacs-tour.gif
 ```
 
-`prepare.sh` builds the invoker fixture (a synced copy at
-`lathe-maven-plugin/target/it/multi-module` with `.lathe/`, plus an isolated server cache at
-`target/it-home/.cache/lathe`). The tape's hidden setup symlinks that cache's launcher to
-`/tmp/lathe-launcher.sh` — the stable, machine-independent path typed at the `M-x eglot` prompt — and
-opens `emacs -nw -Q` on the fixture. Nothing touches your `~/.config`, `~/.local/share`, or
-`~/.cache/lathe`.
+All intermediates land in `docs/videos/` (gitignored); only `docs/emacs-tour.gif` is committed.
 
-## Tuning (the part that needs a human)
+## Notes
 
-Lathe is async — server start + reactor indexing is ~15–18s (the tape's big `Sleep` after the connect
-command), and completion/definition have latency. After the first render, watch the video and adjust:
-
-- If *"workspace ready"* hasn't landed before Beat 2 starts, **increase the 18s connect `Sleep`**.
-- If the `*Completions*` window or the cross-module jump hasn't rendered before the next keystroke,
-  bump the preceding `Sleep`.
-- Terminal Emacs `Meta` is driven as `Escape` then the key (`M-x` = `Escape` + `x`, `M-.` =
-  `Escape` + `.`, `M-b` = `Escape` + `b`); `Ctrl` chords use VHS `Ctrl+S` / `Ctrl+G`.
-
-## Privacy
-
-Record only against the `com.example` fixture — never the private validation workspaces (repo policy).
+- The tape launches Emacs with a one-line `--eval` that registers Lathe's launcher for `java-mode`
+  and calls `eglot-ensure` — the "one line of Elisp" a real user keeps in `init.el`. It points at a
+  specific installed server (`~/.cache/lathe/servers/<version>/lathe-launcher.sh`); adjust the version
+  if yours differs.
+- Meta keys are sent as real `Alt+` chords (atomic and reliable) — never faked with `Escape`, which
+  intermittently self-inserts and corrupts the buffer.
+- Rendering VHS on Linux uses a headless Chromium. On Ubuntu 23.10+ its AppArmor user-namespace
+  restriction blocks Chrome's sandbox — prefix the render with `VHS_NO_SANDBOX=true`. A GL-less box
+  additionally needs software WebGL (`--use-gl=angle --use-angle=swiftshader`) via a launcher shim.
+- Only navigation / completion / refactor / diagnostics are shown. Run/test/debug and scaffolding are
+  Neovim-client features, not part of the plain-LSP surface Eglot consumes.
+```
