@@ -1,22 +1,36 @@
-# Lathe — In-Process External-Change Recompilation (parked)
+# Lathe — In-Process External-Change Recompilation (superseded)
 
 This document preserves the design for **recompiling externally changed sources in-process** (without
 a Maven round trip) so the `.lathe/` mirror and in-memory indices stay fresh after an on-disk change —
 a branch switch, a `git pull`, or an AI agent editing files directly.
 
-**Status: potential — not on the active roadmap.** The in-process compilation reaction is **not
-pursued for now.** It only produces a correct, complete result for a change set confined to a *single*
-module — the moment an external change spans multiple modules (common on a large reactor with agent
-edits), correctness needs ordered, cross-module reactor compilation, which is Maven's job and which
-this would effectively reimplement (see the multi-module note in *Correctness and boundaries*). The
-decided direction instead **detects** the staleness and **nudges the user to run Maven**, reusing the
-shipped sync prompt — see
+**Status: superseded** by
+[In-Process Workspace Sync](../planned/lathe-in-process-workspace-sync.md), which revives and
+generalizes this reaction into the approved direction: react in-process to all source/resource
+add/edit/delete, and reserve the Maven sync prompt for POM / module-structure changes only.
+The multi-module blocker below is dissolved there by the observation that closed cross-module
+dependents are **self-healing on open** (their `.class` resolves by its own signature), so the reaction
+need only compile the changed set in dependency order plus re-run open docs — with a full Maven build
+always available as the authoritative "fix everything" fallback.
+
+Read the sections below as the **archive** of the reaction mechanics (R1 batch compile, D2 startup
+reconciliation, live-watch detection, gitignore / Neovim analysis) that the successor builds on — not
+as the current plan.
+
+---
+
+**Historical status (when parked): potential — not on the active roadmap.** The in-process compilation
+reaction was **not pursued**, on the grounds that it only produces a correct, complete result for a
+change set confined to a *single* module — the moment an external change spans multiple modules (common
+on a large reactor with agent edits), correctness was believed to need ordered, cross-module reactor
+compilation, which is Maven's job and which this would effectively reimplement (see the multi-module
+note in *Correctness and boundaries*). The interim direction instead **detected** the staleness and
+**nudged the user to run Maven**, reusing the shipped sync prompt — see
 [External-Change Detection → Sync Prompt](../done/lathe-external-change-detection.md).
 
-Kept because the ideas remain useful: an in-process *single-module fast path* could be revived later
-as a latency optimization once detection→prompt is in place. Read this as an archive of the reaction
-(R1 batch compile), the startup-reconciliation trigger (D2), and the live-watch detection /
-gitignore / Neovim analysis — not as an approved plan.
+Kept because the ideas remain useful: the in-process reaction is now the approved direction. Read this
+as an archive of the reaction (R1 batch compile), the startup-reconciliation trigger (D2), and the
+live-watch detection / gitignore / Neovim analysis.
 
 It relates to the [WS-1](../gaps/gaps.md) freshness umbrella and builds on the existing save-time
 compile pipeline ([Reactor Type Index](../planned/lathe-reactor-type-index.md)).

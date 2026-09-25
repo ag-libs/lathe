@@ -459,6 +459,15 @@ An optional sibling `run_main` → `lathe.run.main` is deprioritized (not a head
 | `type_hierarchy` | typeHierarchy / `lathe.typeHierarchy` | read | `{file,line,column, direction: super\|sub\|both}` → `{types[]{…, relation}}` |
 | `add_missing_imports` | `lathe.missingImports` | **write** | `{file}` → `{added[], ambiguous[]{name, candidates[]}, unresolved[]}` |
 
+### Change impact & verification (paired pre-/post-edit)
+
+Detailed design: [Change Impact & Verification](lathe-change-impact-and-verification.md).
+
+| Tool | Kind | In → Out |
+|---|---|---|
+| `analyze_change` | read | `{file,line,column}` → `{symbol, publicApi, overrideFamily[], productionRefs, testRefs, affectedModules[], relevantTests[]}` — pre-edit "what will this break?", composed from `describe`/`find_implementations`/`find_references` + the reactor graph. |
+| `verify_change` | **action** | `{files?}` → `{changeSet, deferred{toMaven,reason}, perModule[{module, diagnostics[]}], crossModule{affectedModules[], suggestedMvn}}` — post-edit scoped recompile driving the [In-Process Workspace Sync](lathe-in-process-workspace-sync.md) reaction (Tier 1) + a precise `mvn` handoff for the cross-module remainder (Tier 3). |
+
 ### Example — `find_references` result (pins the snippet shape)
 
 ```jsonc

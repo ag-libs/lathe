@@ -103,6 +103,11 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
   [Run, Test, and Debug](done/lathe-run-test-debug.md) §8.
 - [Type-Index Name Resolution and Ranking](planned/lathe-type-index-name-resolution.md) — exact-name
   import resolution (fix A) plus usage-aware prefix-search truncation (fix B); resolves CA-9. ✓
+- [In-Process Workspace Sync](planned/lathe-in-process-workspace-sync.md) — approved IDE-grade reaction:
+  react in-process to all external source/resource add/edit/delete (compile updated files in dependency
+  order, remove classes for deleted files, re-run open docs), reserving the Maven sync prompt for
+  POM/module-structure changes; supersedes the parked in-process recompilation and revises the source
+  half of the shipped detect→prompt. Full Maven build stays the authoritative fallback.
 - [Sibling Recompilation](planned/lathe-sibling-recompilation.md) — closed-file diagnostics after API changes.
 - [Lightweight Watcher](planned/lathe-lightweight-watcher.md) — partially stale design; would back a
   non-intrusive source-staleness signal (the deferred WS-2, folded under WS-1) if beta feedback warrants it.
@@ -135,6 +140,12 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
   `find_references`, `find_implementations`, `call_hierarchy`, `search_symbols`, `describe_symbol`,
   `rename_symbol`, and `run_test`, each with per-call usage logging; remaining work is measurement,
   streaming/cancel, and the Claude Code LSP plugin.
+- [Change Impact & Verification](planned/lathe-change-impact-and-verification.md) — two paired agent
+  tools on the MCP surface: `analyze_change` (pre-edit "what will this break?", read-only composition
+  of describe/impls/references + the reactor graph) and `verify_change` (post-edit scoped recompile that
+  drives the [In-Process Workspace Sync](planned/lathe-in-process-workspace-sync.md) reaction — Tier 1 —
+  plus a precise `mvn` handoff for the cross-module remainder — Tier 3). Approved 2026-09-25;
+  `verify_change` depends on the workspace-sync substrate landing first.
 - [MCP Value Benchmark](planned/lathe-mcp-value-benchmark.md) — how to prove (or disprove) that the
   MCP server makes an agent measurably better on a real Maven reactor: adopt the SWE-bench /
   Multi-SWE-bench plumbing and make Lathe the single ablation variable (grep-only baseline vs agent +
@@ -244,10 +255,9 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 
 - [Potential Design Policy](potential/README.md)
 - [In-Process External-Change Recompilation](potential/lathe-external-change-recompilation.md) —
-  parked design for recompiling externally changed sources in-process (batch FULL compile, startup
-  reconciliation, live-watch/gitignore/Neovim analysis). Correct only for single-module change sets;
-  multi-module needs Maven's reactor. Superseded for now by detection→prompt; a single-module fast
-  path may revive it later.
+  **superseded** by [In-Process Workspace Sync](planned/lathe-in-process-workspace-sync.md); retained as
+  the archive of the reaction mechanics (batch FULL compile, startup reconciliation,
+  live-watch/gitignore/Neovim analysis) the successor builds on.
 - [Shared Workspace Server](potential/lathe-shared-workspace-server.md) — no active milestone commitment.
 - [Analysis Cache Bounding](potential/lathe-analysis-cache-bounding.md) — deferred hard-cap design for
   per-open-file analysis retention (event-loop LRU, eviction delegated to module workers); the issue
