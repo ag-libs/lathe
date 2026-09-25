@@ -370,15 +370,14 @@ prompting, and reload. Resolved WS entries are in [gaps-archive.md](gaps-archive
 
 ## WS-2 — No re-sync prompt after a source-only branch switch
 
-**Status: deferred — Target: backlog (superseded by WS-5)**
+**Status: resolved — source changes are recompiled in-process, not prompted**
 
-**Superseded by [WS-5](#ws-5--external-on-disk-edits-to-sourcesresources-are-not-picked-up-without-a-maven-build)
-for the source case.** WS-2's proposal was a Sync/Later *prompt* for source-only changes; that is not
-pursued — a prompt is intrusive and non-binding (the user can dismiss it and keep working against stale
-state). Instead WS-5 (accepted, M2) makes small source-only changes a non-issue by *auto-recompiling*
-the changed files (the non-intrusive resolution this gap called for), and WS-3 owns the pom/structural
-prompt. This entry stays recorded as the rejected prompt-for-source approach; WS-1 remains the umbrella
-for the wider reconciliation. Original analysis retained below.
+**Resolved by in-process workspace sync** ([design](../done/lathe-in-process-workspace-sync.md)): a
+source-only change made outside the editor is now recompiled into the `.lathe/` mirror on the idle tick
+(changed files in dependency order, deletions removing their classes, open dependents refreshed) — the
+non-intrusive resolution this gap called for, with no prompt. A prompt fires only for a POM/structural
+change (WS-3) or a *bulk* branch-switch-scale change (the escape hatch). WS-2's original Sync/Later
+prompt-for-source proposal is therefore not pursued. Original analysis retained below.
 
 Deferred from M2. The proposed fix was a Sync/Later prompt, but a prompt is both intrusive and
 non-binding: the user can dismiss it and keep working against stale state, so it adds friction without a

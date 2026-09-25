@@ -7890,8 +7890,12 @@ Regression:
 
 **Status: done — Target: M2.**
 
-Resolution: source staleness is detected via per-source compile stamps and surfaced as a Neovim sync
-prompt (detect → prompt, the same model as WS-5) — it is no longer silent.
+Resolution (updated): superseded the original detect → prompt with **in-process workspace sync** —
+source changes made outside the editor are recompiled into the `.lathe/` mirror on the idle tick
+(changed files in dependency order, deletions removing their classes, open dependents refreshed), with
+the Maven prompt reserved for POM/structural and bulk changes. See
+[In-Process Workspace Sync](../done/lathe-in-process-workspace-sync.md). The per-source compile stamps
+introduced for detection remain the freshness signal the reaction reads.
 
 Discovered by workflow analysis (not live probing) while reconciling CA-4; recorded here because it
 is the general problem of which CA-4's closed-file residual is one facet.

@@ -7,7 +7,7 @@ Code-grounded design for two paired MCP tools — a **pre-edit** impact preview 
 **post-edit** scoped recompile (`verify_change`) — and the `LatheEngine` methods behind them.
 
 `verify_change` is deliberately **not** a fresh recompile engine: it is the **agent-facing, synchronous
-consumer of the [In-Process Workspace Sync](lathe-in-process-workspace-sync.md) reaction**, which is
+consumer of the [In-Process Workspace Sync](../done/lathe-in-process-workspace-sync.md) reaction**, which is
 already approved and owns the hard parts (change-set detection, the FULL-compile-from-disk primitive,
 topological cross-module ordering, deletion handling, the POM/bulk escape hatch). This doc adds only
 what the *agent* path needs on top of that substrate — synchronous invocation and **reporting**
@@ -36,14 +36,14 @@ Both tools read `.lathe/`, which may not reflect the working tree. The design tu
 
 - **In-scope staleness — the signal, not the enemy.** A file the agent just edited has
   `source mtime > compile-stamp` (or no stamp). This is exactly the change-set classification
-  [In-Process Workspace Sync §1](lathe-in-process-workspace-sync.md#1-detect-the-change-set-no-new-io)
+  [In-Process Workspace Sync §1](../done/lathe-in-process-workspace-sync.md#1-detect-the-change-set-no-new-io)
   already performs (updated + deleted, grouped by module). `verify_change` reuses it — no agent
   cooperation, works even after a raw `sed`.
 - **Out-of-scope staleness — the answer-invalidator.** A POM/dependency/JDK change, a new module, a
   non-javac generated source, or a bulk branch-switch means `.lathe/`'s captured **classpath/graph** is
   wrong; an in-process recompile would yield **false diagnostics**. The substrate already routes exactly
   these to the Maven sync prompt / bulk cutoff
-  ([escape hatch](lathe-in-process-workspace-sync.md#where-in-process-cannot-win--the-escape-hatch-covers-it)).
+  ([escape hatch](../done/lathe-in-process-workspace-sync.md#where-in-process-cannot-win--the-escape-hatch-covers-it)).
   `verify_change` inherits that boundary: when the reaction defers to Maven, `verify_change` **returns
   the same handoff** to the agent rather than a misleading clean bill of health.
 
@@ -56,7 +56,7 @@ it consumes them.
 
 The substrate is built for the editor: it runs in the **idle reconcile**, and it deliberately does
 **not** eagerly compile closed cross-module dependents — they *self-heal on open*
-([why cross-module is tractable](lathe-in-process-workspace-sync.md#why-cross-module-is-tractable-the-parked-designs-blocker-dissolved)).
+([why cross-module is tractable](../done/lathe-in-process-workspace-sync.md#why-cross-module-is-tractable-the-parked-designs-blocker-dissolved)).
 An MCP agent is **stateless — it has no open documents**, so "self-heal on open" never fires and there
 is nothing to "watch." `verify_change` bridges that gap with two additions:
 
@@ -70,8 +70,8 @@ is nothing to "watch." `verify_change` bridges that gap with two additions:
 
 | Capability | Class / method | Note for this design |
 |---|---|---|
-| Change-set detect (updated/deleted, per module) | [In-Process Workspace Sync §1](lathe-in-process-workspace-sync.md#1-detect-the-change-set-no-new-io); reads `CompiledStamps.load` | reused wholesale; not re-implemented here |
-| FULL compile **from disk** | new primitive introduced by the substrate ([§new primitive](lathe-in-process-workspace-sync.md#the-one-genuinely-new-compiler-primitive)); today `ModuleSourceCompiler.compile()` takes an in-memory buffer | the prerequisite both docs share; `verify_change` waits on it |
+| Change-set detect (updated/deleted, per module) | [In-Process Workspace Sync §1](../done/lathe-in-process-workspace-sync.md#1-detect-the-change-set-no-new-io); reads `CompiledStamps.load` | reused wholesale; not re-implemented here |
+| FULL compile **from disk** | new primitive introduced by the substrate ([§new primitive](../done/lathe-in-process-workspace-sync.md#the-one-genuinely-new-compiler-primitive)); today `ModuleSourceCompiler.compile()` takes an in-memory buffer | the prerequisite both docs share; `verify_change` waits on it |
 | FAST multi-file analyze | `ModuleSourceCompiler.analyzeBatch()` (analyze-only, no `.class`) | used to diagnose caller files cheaply |
 | Topo module order | `WorkspaceModuleGraph` topo accessor (added by the substrate) | changed set compiled upstream-first |
 | file → module | `WorkspaceModuleRegistry.moduleSourceFor(path)` | empty for a brand-new module → handoff |
@@ -191,7 +191,7 @@ LatheVerifyChange(
 ### Stamps: follow the substrate
 
 The substrate **records the compile stamp** after a successful in-process FULL compile
-([§4](lathe-in-process-workspace-sync.md#4-react-per-module-in-order)) — its whole point is to bring the
+([§4](../done/lathe-in-process-workspace-sync.md#4-react-per-module-in-order)) — its whole point is to bring the
 mirror current without Maven. `verify_change` drives that same reaction, so it inherits that behaviour
 rather than overriding it (this reconciles approved decision 2 with the substrate: the editor and the
 agent must not diverge on stamp state). The **cross-module** freshness risk decision 2 worried about is
@@ -230,7 +230,7 @@ instead surfaced by the Tier-3 handoff and the still-active POM prompt, not by w
 ## Open questions
 
 - **Substrate sequencing** — `verify_change` (P1) hard-depends on
-  [In-Process Workspace Sync](lathe-in-process-workspace-sync.md) landing; if that slips, P2
+  [In-Process Workspace Sync](../done/lathe-in-process-workspace-sync.md) landing; if that slips, P2
   (`analyze_change`, no compile dependency) can go first.
 - **Synchronous reaction entry** — expose the reaction as a direct call, or briefly drive the reconcile
   and await it? (P0.)
@@ -250,7 +250,7 @@ instead surfaced by the Tier-3 handoff and the still-active POM prompt, not by w
 
 ## Related work
 
-- [In-Process Workspace Sync](lathe-in-process-workspace-sync.md) — **the substrate.** Owns change-set
+- [In-Process Workspace Sync](../done/lathe-in-process-workspace-sync.md) — **the substrate.** Owns change-set
   detection, the FULL-compile-from-disk primitive, topo ordering, deletion handling, and the
   POM/bulk escape hatch that `verify_change` drives and inherits.
 - [AI Agent Integration](lathe-ai-agent-integration.md) — the MCP tool surface, snippet/authority

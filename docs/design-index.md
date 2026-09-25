@@ -103,11 +103,6 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
   [Run, Test, and Debug](done/lathe-run-test-debug.md) §8.
 - [Type-Index Name Resolution and Ranking](planned/lathe-type-index-name-resolution.md) — exact-name
   import resolution (fix A) plus usage-aware prefix-search truncation (fix B); resolves CA-9. ✓
-- [In-Process Workspace Sync](planned/lathe-in-process-workspace-sync.md) — approved IDE-grade reaction:
-  react in-process to all external source/resource add/edit/delete (compile updated files in dependency
-  order, remove classes for deleted files, re-run open docs), reserving the Maven sync prompt for
-  POM/module-structure changes; supersedes the parked in-process recompilation and revises the source
-  half of the shipped detect→prompt. Full Maven build stays the authoritative fallback.
 - [Sibling Recompilation](planned/lathe-sibling-recompilation.md) — closed-file diagnostics after API changes.
 - [Lightweight Watcher](planned/lathe-lightweight-watcher.md) — partially stale design; would back a
   non-intrusive source-staleness signal (the deferred WS-2, folded under WS-1) if beta feedback warrants it.
@@ -143,7 +138,7 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 - [Change Impact & Verification](planned/lathe-change-impact-and-verification.md) — two paired agent
   tools on the MCP surface: `analyze_change` (pre-edit "what will this break?", read-only composition
   of describe/impls/references + the reactor graph) and `verify_change` (post-edit scoped recompile that
-  drives the [In-Process Workspace Sync](planned/lathe-in-process-workspace-sync.md) reaction — Tier 1 —
+  drives the [In-Process Workspace Sync](done/lathe-in-process-workspace-sync.md) reaction — Tier 1 —
   plus a precise `mvn` handoff for the cross-module remainder — Tier 3). Approved 2026-09-25;
   `verify_change` depends on the workspace-sync substrate landing first.
 - [MCP Value Benchmark](planned/lathe-mcp-value-benchmark.md) — how to prove (or disprove) that the
@@ -232,10 +227,16 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 - [Server Data-Flow Recipe](done/lathe-server-data-flow-recipe.md)
 - [Signature Help](done/lathe-signature-help.md)
 - [Superseded Source URI Scheme](done/lathe-source-uri-scheme.md)
+- [In-Process Workspace Sync](done/lathe-in-process-workspace-sync.md) — **shipped**; IDE-grade
+  reaction that recompiles external source add/change/delete into the `.lathe/` mirror on the idle tick
+  (changed files upstream-first, deletions removing their classes, open dependents refreshed), reserving
+  the Maven sync prompt for POM/structure and bulk (branch-switch-scale) changes; supersedes the parked
+  in-process recompilation and the source half of detect→prompt. Verified end-to-end on the multi-module
+  invoker workspace. ✓
 - [External-Change Detection → Sync Prompt](done/lathe-external-change-detection.md) — detects on-disk
-  edits to Java sources/resources beyond POMs (branch switch, `git pull`, agent edits) server-side and
-  nudges the user to run Maven, reusing the sync prompt (WS-3) + silent refresh (WS-4); resources
-  auto-copy without a build (WS-5). The in-process recompile is parked (see Potential Designs).
+  edits to Java sources/resources beyond POMs (branch switch, `git pull`, agent edits) server-side; its
+  **source** half is now superseded by In-Process Workspace Sync (recompile, not prompt), while the POM
+  prompt (WS-3) + silent refresh (WS-4) and resource auto-copy (WS-5) remain.
 - [Staleness via Compile Stamps](done/lathe-staleness-compile-stamps.md) — replaces the source-staleness
   scan's class-file-path derivation (WS-5) with a per-source compile stamp recorded at build/save time,
   so a missing/wrong `package` or name mismatch can no longer produce an un-clearable sync prompt (WS-9).
@@ -255,7 +256,7 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 
 - [Potential Design Policy](potential/README.md)
 - [In-Process External-Change Recompilation](potential/lathe-external-change-recompilation.md) —
-  **superseded** by [In-Process Workspace Sync](planned/lathe-in-process-workspace-sync.md); retained as
+  **superseded** by [In-Process Workspace Sync](done/lathe-in-process-workspace-sync.md); retained as
   the archive of the reaction mechanics (batch FULL compile, startup reconciliation,
   live-watch/gitignore/Neovim analysis) the successor builds on.
 - [Shared Workspace Server](potential/lathe-shared-workspace-server.md) — no active milestone commitment.

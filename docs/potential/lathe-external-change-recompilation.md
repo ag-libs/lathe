@@ -5,7 +5,7 @@ a Maven round trip) so the `.lathe/` mirror and in-memory indices stay fresh aft
 a branch switch, a `git pull`, or an AI agent editing files directly.
 
 **Status: superseded** by
-[In-Process Workspace Sync](../planned/lathe-in-process-workspace-sync.md), which revives and
+[In-Process Workspace Sync](../done/lathe-in-process-workspace-sync.md), which revives and
 generalizes this reaction into the approved direction: react in-process to all source/resource
 add/edit/delete, and reserve the Maven sync prompt for POM / module-structure changes only.
 The multi-module blocker below is dissolved there by the observation that closed cross-module

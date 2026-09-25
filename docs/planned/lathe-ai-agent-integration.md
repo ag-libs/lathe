@@ -466,7 +466,7 @@ Detailed design: [Change Impact & Verification](lathe-change-impact-and-verifica
 | Tool | Kind | In → Out |
 |---|---|---|
 | `analyze_change` | read | `{file,line,column}` → `{symbol, publicApi, overrideFamily[], productionRefs, testRefs, affectedModules[], relevantTests[]}` — pre-edit "what will this break?", composed from `describe`/`find_implementations`/`find_references` + the reactor graph. |
-| `verify_change` | **action** | `{files?}` → `{changeSet, deferred{toMaven,reason}, perModule[{module, diagnostics[]}], crossModule{affectedModules[], suggestedMvn}}` — post-edit scoped recompile driving the [In-Process Workspace Sync](lathe-in-process-workspace-sync.md) reaction (Tier 1) + a precise `mvn` handoff for the cross-module remainder (Tier 3). |
+| `verify_change` | **action** | `{files?}` → `{changeSet, deferred{toMaven,reason}, perModule[{module, diagnostics[]}], crossModule{affectedModules[], suggestedMvn}}` — post-edit scoped recompile driving the [In-Process Workspace Sync](../done/lathe-in-process-workspace-sync.md) reaction (Tier 1) + a precise `mvn` handoff for the cross-module remainder (Tier 3). |
 
 ### Example — `find_references` result (pins the snippet shape)
 
