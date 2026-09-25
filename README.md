@@ -129,23 +129,15 @@ build.
 Lathe is a standard language server, so any LSP client can drive its build-derived intelligence.
 How much you get depends on the client:
 
-| Editor  | Integration                | What you get                                                                                |
-|---------|----------------------------|---------------------------------------------------------------------------------------------|
-| Neovim  | Dedicated client           | Full LSP **plus** run/test/debug, scaffolding, format-on-save                                |
-| Emacs   | Built-in Eglot (no plugin) | The standard LSP surface — cross-module nav, references, completion, refactors, diagnostics  |
-| VS Code | Planned (dedicated client) | —                                                                                           |
+| Editor  | Integration                                          | Reference                                                                |
+|---------|------------------------------------------------------|--------------------------------------------------------------------------|
+| Neovim  | Dedicated client (LSP + run/test/debug, scaffolding) | [Neovim cheatsheet](docs/guide/editors/neovim.md) — install and keymaps  |
+| Emacs   | Built-in Eglot (standard LSP, no plugin)             | [Emacs (Eglot) guide](docs/guide/editors/emacs.md)                       |
+| VS Code | Planned (dedicated client)                           | —                                                                        |
 
 The [Neovim client](docs/guide/editors/neovim.md) adds Lathe-specific commands (`:LatheRun`,
-`:LatheNew`, neotest, format-on-save) on top of LSP. Everything else is plain LSP, so a generic
-client like **Emacs + Eglot** works with no plugin at all — one line of Elisp, then `M-x eglot`:
-
-```elisp
-;; init.el — point Eglot at Lathe for Java files
-(add-to-list 'eglot-server-programs
-             '(java-mode "~/.cache/lathe/current/lathe-launcher.sh"))
-```
-
-![Lathe plugged into vanilla Emacs via Eglot — cross-module nav, extract, rename, live diagnostics](docs/emacs-tour.gif)
+`:LatheNew`, neotest, format-on-save) on top of LSP. Everything else is plain LSP, so a generic client
+like **Emacs + Eglot** works with no plugin at all — see the [Emacs guide](docs/guide/editors/emacs.md).
 
 ## AI agents (MCP)
 

@@ -1,0 +1,18 @@
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1600
+PlayResY: 900
+WrapStyle: 2
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Title,DejaVu Sans,120,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,0,0,5,0,0,0,1
+Style: Sub,DejaVu Sans,46,&H00E8E8E8,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,0,0,5,0,0,0,1
+Style: Dim,DejaVu Sans,34,&H00A0A0A0,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,0,0,5,0,0,0,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,0:00:02.60,Title,,0,0,0,,{\fad(300,300)\pos(800,350)}Lathe
+Dialogue: 0,0:00:00.20,0:00:02.60,Sub,,0,0,0,,{\fad(300,300)\pos(800,505)}A zero-config Java language server
+Dialogue: 0,0:00:00.40,0:00:02.60,Dim,,0,0,0,,{\fad(300,300)\pos(800,580)}Now in vanilla Emacs — built-in Eglot, one line of Elisp

@@ -12,6 +12,7 @@ hover → JDK javadoc, cross-module go-to-definition, completion, extract-variab
 
 - `tour.tape` — the demo (the finished cut).
 - `tour.ass` — burned-in lower-third captions, timed to the beats.
+- `title-card.ass` / `end-card.ass` — the intro/outro slices.
 - `prepare.sh` — builds Lathe + the invoker fixture (so `.lathe/` exists) and `git init`s it.
 
 ## Reproduce
@@ -24,10 +25,22 @@ vhs dev/demo-emacs/tour.tape                         # -> docs/videos/emacs-tour
 ffmpeg -y -i docs/videos/emacs-tour.mp4 -vf "subtitles=dev/demo-emacs/tour.ass" \
   -c:v libx264 -pix_fmt yuv420p -crf 20 docs/videos/emacs-tour-captioned.mp4
 
+# render intro/outro cards (match the tour's 1600x900):
+ffmpeg -y -f lavfi -i "color=c=0x16181d:s=1600x900:r=25" -t 2.6 \
+  -vf "subtitles=dev/demo-emacs/title-card.ass" -c:v libx264 -pix_fmt yuv420p -crf 20 docs/videos/emacs-title.mp4
+ffmpeg -y -f lavfi -i "color=c=0x16181d:s=1600x900:r=25" -t 3.0 \
+  -vf "subtitles=dev/demo-emacs/end-card.ass"   -c:v libx264 -pix_fmt yuv420p -crf 20 docs/videos/emacs-end.mp4
+
+# stitch title -> tour -> end (re-encode for uniform params):
+printf "file '%s'\n" "$PWD/docs/videos/emacs-title.mp4" "$PWD/docs/videos/emacs-tour-captioned.mp4" \
+  "$PWD/docs/videos/emacs-end.mp4" > /tmp/list.txt
+ffmpeg -y -f concat -safe 0 -i /tmp/list.txt -c:v libx264 -pix_fmt yuv420p -crf 20 -r 25 \
+  docs/videos/emacs-tour-final.mp4
+
 # GIF (two-pass palette), published to the tracked path:
-ffmpeg -y -i docs/videos/emacs-tour-captioned.mp4 \
+ffmpeg -y -i docs/videos/emacs-tour-final.mp4 \
   -vf "fps=10,scale=1000:-1:flags=lanczos,palettegen=max_colors=256:stats_mode=diff" /tmp/pal.png
-ffmpeg -y -i docs/videos/emacs-tour-captioned.mp4 -i /tmp/pal.png \
+ffmpeg -y -i docs/videos/emacs-tour-final.mp4 -i /tmp/pal.png \
   -lavfi "fps=10,scale=1000:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=none:diff_mode=rectangle" \
   docs/emacs-tour.gif
 ```
