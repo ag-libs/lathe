@@ -185,7 +185,7 @@ you already declare):
     <extension>
         <groupId>io.github.ag-libs</groupId>
         <artifactId>lathe-maven-extension</artifactId>
-        <version>0.1.10</version>
+        <version>0.1.11</version>
     </extension>
 </extensions>
 ```
