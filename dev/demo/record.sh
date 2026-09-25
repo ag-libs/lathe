@@ -2,7 +2,7 @@
 # Re-record the Lathe demo (the published highlight cut) from committed sources
 # (dev/demo/beats/*.tape + *.ass). Run AFTER ./dev/demo/prepare.sh, which rebuilds+installs Lathe
 # (incl. the debug-wired server the debug beat needs), rebuilds the multi-module invoker fixture, and
-# copies your Neovim config into dev/demo/.nvim. This script only renders + captions + stitches; it
+# copies the sample config examples/nvim into dev/demo/.nvim. This script only renders + captions + stitches; it
 # does not rebuild Lathe.
 #
 #   ./dev/demo/prepare.sh

@@ -1,7 +1,7 @@
 # Lathe demo — ~30s hero. Run from the repo root after ./dev/demo/prepare.sh:
 #   vhs dev/demo/demo.tape        ->   docs/demo.gif
 #
-# Uses an isolated COPY of your Neovim config (dev/demo/.nvim), with the Lathe
+# Uses an isolated COPY of the sample config examples/nvim (dev/demo/.nvim), with the Lathe
 # client from this checkout (LATHE_NVIM_DIR) and the server from the invoker
 # cache (LATHE_CACHE). The fixture is the multi-module invoker workspace, already
 # built with a .lathe/ capture.
