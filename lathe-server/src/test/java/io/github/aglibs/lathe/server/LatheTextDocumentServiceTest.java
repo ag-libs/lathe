@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.after;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -493,17 +494,6 @@ class LatheTextDocumentServiceTest {
   }
 
   @Test
-  void initialize_closedSourceChangedExternally_recompilesInProcessWithoutPrompting()
-      throws Exception {
-    writeStaleModule(5_000L, 1_000L); // edited after its last compile → recompiled in-process
-
-    service.initialize(tmp);
-
-    // A handful of changed sources is handled silently now; only a bulk change prompts for Maven.
-    verify(client, after(3_000).never()).showMessageRequest(any());
-  }
-
-  @Test
   void initialize_sourceUpToDateWithItsClass_doesNotPrompt() throws Exception {
     writeStaleModule(1_000L, 5_000L); // compiled after the source's last edit → fresh
 
@@ -532,7 +522,8 @@ class LatheTextDocumentServiceTest {
   }
 
   @Test
-  void reconcileNow_closedSourceChangedExternally_recompilesAdvancingStamp() throws Exception {
+  void reconcileNow_closedSourceChangedExternally_recompilesInProcessWithoutPrompting()
+      throws Exception {
     writeStaleModule(5_000L, 1_000L); // stamp behind the source → stale
     service.initialize(tmp);
 
@@ -540,8 +531,10 @@ class LatheTextDocumentServiceTest {
     service.reconcileNow().get(5, TimeUnit.SECONDS);
     service.reconcileNow().get(5, TimeUnit.SECONDS);
 
+    // Recompiled in-process (its stamp advanced to the source's mtime) and not prompted for Maven.
     assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
         .containsEntry("com/example/Foo.java", 5_000L);
+    verify(client, never()).showMessageRequest(any());
   }
 
   @Test

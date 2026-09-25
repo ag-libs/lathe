@@ -2807,15 +2807,8 @@ final class WorkspaceSession {
   // it).
   static int deleteOrphanedClassOutputs(final ModuleSourceConfig config) {
     final Map<String, Long> stamps = CompiledStamps.load(config.moduleDir(), config.sourceTree());
-    if (stamps.isEmpty()) {
-      return 0;
-    }
-
-    final List<Path> roots =
-        config.sourceRoots().stream()
-            .filter(root -> !root.equals(config.originalGenSourcesDir()))
-            .toList();
-    if (roots.isEmpty()) {
+    final List<Path> roots = nonGeneratedSourceRoots(config);
+    if (stamps.isEmpty() || roots.isEmpty()) {
       return 0;
     }
 
@@ -2827,12 +2820,22 @@ final class WorkspaceSession {
       return 0;
     }
 
-    final int removed =
-        orphans.stream()
-            .mapToInt(rel -> deleteClassOutputs(config, roots.get(0).resolve(rel)))
-            .sum();
+    final Path root = roots.getFirst();
+    int removed = 0;
+    for (final var rel : orphans) {
+      removed += deleteClassOutputs(config, root.resolve(rel));
+    }
+
     pruneOrphanStamps(config, orphans);
     return removed;
+  }
+
+  // A module's user source roots -- everything but the annotation-processor output, whose files the
+  // compile regenerates and so must never be scanned or reacted to.
+  private static List<Path> nonGeneratedSourceRoots(final ModuleSourceConfig config) {
+    return config.sourceRoots().stream()
+        .filter(root -> !root.equals(config.originalGenSourcesDir()))
+        .toList();
   }
 
   private static boolean isOrphanedSource(final List<Path> roots, final String rel) {
@@ -3172,8 +3175,7 @@ final class WorkspaceSession {
   private static List<Path> staleSourcesInModule(
       final ModuleSourceConfig config, final Set<Path> openPaths) {
     final Map<String, Long> stamps = CompiledStamps.load(config.moduleDir(), config.sourceTree());
-    return config.sourceRoots().stream()
-        .filter(root -> !root.equals(config.originalGenSourcesDir()))
+    return nonGeneratedSourceRoots(config).stream()
         .flatMap(root -> staleSourcesUnder(root, openPaths, stamps))
         .toList();
   }

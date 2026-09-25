@@ -30,22 +30,16 @@ final class CompiledStampsTest {
   }
 
   @Test
-  void prune_removesNamedEntriesAndLeavesOthers() throws IOException {
+  void prune_dropsNamedEntriesAndIgnoresUnknownKeys() throws IOException {
     CompiledStamps.writeAll(
         moduleDir, "classes", Map.of("com/example/Foo.java", 100L, "com/example/Gone.java", 200L));
 
     CompiledStamps.prune(moduleDir, "classes", Set.of("com/example/Gone.java"));
-
     assertThat(CompiledStamps.load(moduleDir, "classes"))
         .containsExactly(Map.entry("com/example/Foo.java", 100L));
-  }
 
-  @Test
-  void prune_noMatchingEntries_leavesFileUntouched() throws IOException {
-    CompiledStamps.writeAll(moduleDir, "classes", Map.of("com/example/Foo.java", 100L));
-
+    // An unknown key prunes nothing and leaves the survivor in place.
     CompiledStamps.prune(moduleDir, "classes", Set.of("com/example/Absent.java"));
-
     assertThat(CompiledStamps.load(moduleDir, "classes"))
         .containsExactly(Map.entry("com/example/Foo.java", 100L));
   }

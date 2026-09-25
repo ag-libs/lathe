@@ -149,39 +149,38 @@ class WorkspaceModuleGraphTest {
   }
 
   @Test
-  void upstreamFirst_chain_ordersDependencyBeforeDependent() {
+  void upstreamFirst_ordersDependenciesBeforeDependents() {
+    // Chain api -> service -> app: order is fully pinned.
     final var apiMain = config("api", "classes", List.of());
     final var serviceMain = config("service", "classes", List.of(reactorTarget("api")));
     final var appMain = config("app", "classes", List.of(reactorTarget("service")));
-    final var graph = WorkspaceModuleGraph.build(List.of(apiMain, serviceMain, appMain));
+    final var chain = WorkspaceModuleGraph.build(List.of(apiMain, serviceMain, appMain));
 
     assertThat(
-            graph.upstreamFirst(
+            chain.upstreamFirst(
                 Set.of(
                     LATHE_DIR.resolve("app"),
                     LATHE_DIR.resolve("api"),
                     LATHE_DIR.resolve("service"))))
         .containsExactly(
             LATHE_DIR.resolve("api"), LATHE_DIR.resolve("service"), LATHE_DIR.resolve("app"));
-  }
 
-  @Test
-  void upstreamFirst_diamond_dependencyPrecedesBothDependents() {
-    final var apiMain = config("api", "classes", List.of());
+    // Diamond api -> {left, right} -> app: the shared dependency leads, the sink trails, siblings
+    // tie.
     final var leftMain = config("left", "classes", List.of(reactorTarget("api")));
     final var rightMain = config("right", "classes", List.of(reactorTarget("api")));
-    final var appMain =
+    final var app2Main =
         config("app", "classes", List.of(reactorTarget("left"), reactorTarget("right")));
-    final var graph = WorkspaceModuleGraph.build(List.of(apiMain, leftMain, rightMain, appMain));
+    final var diamond = WorkspaceModuleGraph.build(List.of(apiMain, leftMain, rightMain, app2Main));
 
-    final List<Path> order =
-        graph.upstreamFirst(
-            Set.of(
-                LATHE_DIR.resolve("app"),
-                LATHE_DIR.resolve("left"),
-                LATHE_DIR.resolve("right"),
-                LATHE_DIR.resolve("api")));
-
-    assertThat(order).startsWith(LATHE_DIR.resolve("api")).endsWith(LATHE_DIR.resolve("app"));
+    assertThat(
+            diamond.upstreamFirst(
+                Set.of(
+                    LATHE_DIR.resolve("app"),
+                    LATHE_DIR.resolve("left"),
+                    LATHE_DIR.resolve("right"),
+                    LATHE_DIR.resolve("api"))))
+        .startsWith(LATHE_DIR.resolve("api"))
+        .endsWith(LATHE_DIR.resolve("app"));
   }
 }
