@@ -523,6 +523,20 @@ class LatheTextDocumentServiceTest {
   }
 
   @Test
+  void reconcileNow_eager_recompilesStaleSourceInOnePass() throws Exception {
+    writeStaleModule(1_000L, 1_000L); // fresh at init (mtime == stamp) → startup eager is a no-op
+    service.initialize(tmp);
+    awaitStartup(); // let startup reconciliation finish before mutating the source
+    touchFoo(5_000L); // now newer than its stamp → stale
+
+    // A single eager pass compiles it (no two-tick wait), advancing the stamp to the source mtime.
+    service.reconcileNow(true).get(5, TimeUnit.SECONDS);
+
+    assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
+        .containsEntry("com/example/Foo.java", 5_000L);
+  }
+
+  @Test
   void reconcileNow_deletedDependency_republishesOpenDependentWithError() throws Exception {
     final Path sourceRoot = tmp.resolve("module/src/main/java");
     final Path dep = sourceRoot.resolve("com/example/Dep.java");
@@ -565,8 +579,10 @@ class LatheTextDocumentServiceTest {
   @Test
   void reconcileNow_closedSourceChangedExternally_recompilesInProcessWithoutPrompting()
       throws Exception {
-    writeStaleModule(5_000L, 1_000L); // stamp behind the source → stale
+    writeStaleModule(1_000L, 1_000L); // fresh at init → startup eager is a no-op
     service.initialize(tmp);
+    awaitStartup();
+    touchFoo(5_000L); // now stale
 
     // First pass records the change as pending (two-tick stability); the second recompiles it.
     service.reconcileNow().get(5, TimeUnit.SECONDS);
@@ -638,6 +654,20 @@ class LatheTextDocumentServiceTest {
     CompiledStamps.writeAll(
         tmp.resolve(".lathe/module"), "classes", Map.of("com/example/Foo.java", stampMtime));
     TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
+  }
+
+  // A reconcile pass runs after initialize on the FIFO worker, so startup reconciliation is
+  // finished
+  // before the test mutates sources.
+  private void awaitStartup() throws Exception {
+    service.reconcileNow(false).get(5, TimeUnit.SECONDS);
+  }
+
+  private void touchFoo(final long mtime) throws Exception {
+    TestCompiler.writeAt(
+        tmp.resolve("module/src/main/java/com/example/Foo.java"),
+        "package com.example; class Foo {}",
+        mtime);
   }
 
   private Path writeWorkspaceSource() throws Exception {

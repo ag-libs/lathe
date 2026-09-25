@@ -227,11 +227,9 @@ final class WorkspaceSession {
       client.showMessage(new MessageParams(MessageType.Warning, LatheLayout.SETUP_REMEDIATION));
     }
 
-    // Startup reconciliation for the cold-start delta: sources/resources changed while Lathe was
-    // down
-    // (stale-or-missing .class, or a resource newer than its .lathe/ copy). Runs now rather than
-    // waiting for the first 2s tick.
-    reconcileIfIdle();
+    // Startup reconciliation for the cold-start delta (changes while Lathe was down). Eager: the
+    // delta is settled on disk, so compile it now rather than waiting out the two-tick guard.
+    reconcileIfIdle(true);
   }
 
   void close() {
@@ -2855,25 +2853,28 @@ final class WorkspaceSession {
     }
   }
 
-  // Idle-tick and startup reconciliation: clean up deleted sources, recompile externally changed
-  // sources into .lathe/, and copy stale resources. Suppressed mid-build so a partially written
-  // .lathe/ is never read. Returns the in-flight recompiles so reconcileNow can await them.
-  private List<CompletableFuture<Void>> reconcileIfIdle() {
+  // Idle-tick and startup reconciliation: clean deleted sources, recompile externally changed ones,
+  // copy stale resources. Suppressed mid-build. Returns the in-flight recompiles for reconcileNow.
+  private List<CompletableFuture<Void>> reconcileIfIdle(final boolean eager) {
     if (reactorBuildInProgress()) {
       LOG.fine(() -> "[reconcile] skipped — reactor build in progress");
       return List.of();
     }
 
     reconcileDeletedSources();
-    final List<CompletableFuture<Void>> reactions = reconcileChangedSources();
+    final List<CompletableFuture<Void>> reactions = reconcileChangedSources(eager);
     reconcileResources();
     return reactions;
   }
 
   // Test/tool seam: run one reconcile pass and complete once its in-process recompiles finish. Must
-  // be invoked on the worker thread.
+  // be invoked on the worker thread. eager mirrors the startup pass (no two-tick wait).
   CompletableFuture<Void> reconcileNow() {
-    return CompletableFuture.allOf(reconcileIfIdle().toArray(CompletableFuture[]::new));
+    return reconcileNow(false);
+  }
+
+  CompletableFuture<Void> reconcileNow(final boolean eager) {
+    return CompletableFuture.allOf(reconcileIfIdle(eager).toArray(CompletableFuture[]::new));
   }
 
   private void reconcileDeletedSources() {
@@ -2911,11 +2912,12 @@ final class WorkspaceSession {
     scanStaleModules();
   }
 
-  // Recompile sources changed outside the editor into the mirror, so siblings and open dependents
-  // see
-  // them without a Maven round trip. A bulk change (a branch switch) defers to the Maven sync
-  // prompt.
-  private List<CompletableFuture<Void>> reconcileChangedSources() {
+  // Recompile externally changed sources into the mirror (no Maven); a bulk change defers to the
+  // sync
+  // prompt. eager compiles the stale set now (startup, settled on disk); otherwise a source must
+  // hold
+  // its mtime across two ticks, so a file mid-write is left to settle.
+  private List<CompletableFuture<Void>> reconcileChangedSources(final boolean eager) {
     if (pomNotificationPending) {
       LOG.fine(() -> "[react] skipped — sync prompt pending");
       return List.of();
@@ -2934,13 +2936,13 @@ final class WorkspaceSession {
       return List.of();
     }
 
-    final Set<Path> stable = stableSources(current, pendingStale);
+    final Set<Path> ready = eager ? current.keySet() : stableSources(current, pendingStale);
     pendingStale = current;
-    if (stable.isEmpty()) {
+    if (ready.isEmpty()) {
       return List.of();
     }
 
-    return compileChangedInOrder(scan.staleByModule(), stable);
+    return compileChangedInOrder(scan.staleByModule(), ready);
   }
 
   private static Map<Path, Long> staleMtimes(final StaleScan scan) {
@@ -3277,7 +3279,7 @@ final class WorkspaceSession {
         pendingStale = Map.of();
       }
       case POM_CHANGED -> promptForSync(syncPromptMessage(List.of(), List.of()), List.of());
-      case NO_CHANGE -> reconcileIfIdle();
+      case NO_CHANGE -> reconcileIfIdle(false);
     }
   }
 
