@@ -176,6 +176,9 @@ vim.api.nvim_create_autocmd("LspAttach", {
     vim.keymap.set("n", "grr", tel.lsp_references, { buffer = ev.buf, desc = "References" })
     vim.keymap.set("n", "gri", tel.lsp_implementations, { buffer = ev.buf, desc = "Go to Implementation" })
     vim.keymap.set("n", "gO", tel.lsp_document_symbols, { buffer = ev.buf, desc = "Document Symbols" })
+    -- Reactor-wide fuzzy symbol search. The default ranks by the whole path, so an exact name can
+    -- lose to longer ones; a custom entry_maker/tiebreak can rank by name and prefer reactor sources.
+    vim.keymap.set("n", "<leader>ws", tel.lsp_dynamic_workspace_symbols, { buffer = ev.buf, desc = "Workspace Symbols" })
     vim.keymap.set("n", "<C-k>", vim.lsp.buf.signature_help, { buffer = ev.buf, desc = "Signature Help" })
     vim.keymap.set("n", "<leader>ca", vim.lsp.buf.code_action, { buffer = ev.buf, desc = "Code Action" })
   end,
