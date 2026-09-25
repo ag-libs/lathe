@@ -493,14 +493,14 @@ class LatheTextDocumentServiceTest {
   }
 
   @Test
-  void initialize_closedSourceNewerThanItsClass_promptsToSync() throws Exception {
-    writeStaleModule(5_000L, 1_000L); // source edited after its last compile → stale
-    when(client.showMessageRequest(any())).thenReturn(new CompletableFuture<>());
+  void initialize_closedSourceChangedExternally_recompilesInProcessWithoutPrompting()
+      throws Exception {
+    writeStaleModule(5_000L, 1_000L); // edited after its last compile → recompiled in-process
 
     service.initialize(tmp);
 
-    verify(client, timeout(5_000))
-        .showMessageRequest(argThat(p -> p.getMessage().contains("Sources changed in")));
+    // A handful of changed sources is handled silently now; only a bulk change prompts for Maven.
+    verify(client, after(3_000).never()).showMessageRequest(any());
   }
 
   @Test
@@ -510,6 +510,25 @@ class LatheTextDocumentServiceTest {
     service.initialize(tmp);
 
     verify(client, after(500).never()).showMessageRequest(any());
+  }
+
+  @Test
+  void initialize_manyExternalChangesAboveThreshold_promptsBulkSync() throws Exception {
+    final Path sourceRoot = tmp.resolve("module/src/main/java");
+    for (int i = 0; i <= 50; i++) { // 51 unstamped sources → all stale, over the bulk threshold
+      TestCompiler.writeAt(
+          sourceRoot.resolve("com/example/T" + i + ".java"),
+          "package com.example; class T" + i + " {}",
+          5_000L);
+    }
+
+    TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
+    when(client.showMessageRequest(any())).thenReturn(new CompletableFuture<>());
+
+    service.initialize(tmp);
+
+    verify(client, timeout(5_000))
+        .showMessageRequest(argThat(p -> p.getMessage().contains("Sources changed in")));
   }
 
   @Test

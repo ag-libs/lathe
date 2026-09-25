@@ -173,6 +173,18 @@ class WorkspaceSessionTest {
   }
 
   @Test
+  void stableSources_unchangedMtimeAcrossTicks_included_newOrMovedExcluded() {
+    final var settled = sourceRoot.resolve("com/example/Settled.java");
+    final var moving = sourceRoot.resolve("com/example/Moving.java");
+    final var fresh = sourceRoot.resolve("com/example/Fresh.java");
+    final Map<Path, Long> previous = Map.of(settled, 100L, moving, 100L);
+    final Map<Path, Long> current = Map.of(settled, 100L, moving, 200L, fresh, 300L);
+
+    // settled held its mtime across both ticks; moving changed since last tick; fresh is brand new.
+    assertThat(WorkspaceSession.stableSources(current, previous)).containsExactly(settled);
+  }
+
+  @Test
   void staleModules_returnsNewestMtimeAndTheStaleModule() throws Exception {
     writeJava("Edited", 5_000L); // stamped at 1000, edited after → stale
     writeJava("Added", 9_000L); // no stamp (a newly added file) → stale, and the newest

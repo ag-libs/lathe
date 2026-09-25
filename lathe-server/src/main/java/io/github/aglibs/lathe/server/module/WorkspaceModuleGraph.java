@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.module;
 
 import java.nio.file.Path;
 import java.util.ArrayDeque;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -101,6 +102,15 @@ public final class WorkspaceModuleGraph {
   // must recompile once this module's mirror bytecode changes.
   public Set<Path> downstreamModuleDirs(final Path moduleDir) {
     return downstreamOf.getOrDefault(moduleDir, Set.of(moduleDir));
+  }
+
+  // The given modules ordered upstream-first, so recompiling in this order sees fresh upstream
+  // bytecode. Ranking by full downstream-set size is a valid topological order: a dependency's
+  // downstream set strictly contains each of its dependents'.
+  public List<Path> upstreamFirst(final Set<Path> moduleDirs) {
+    return moduleDirs.stream()
+        .sorted(Comparator.comparingInt((Path dir) -> downstreamModuleDirs(dir).size()).reversed())
+        .toList();
   }
 
   private static Set<Path> transitiveDownstream(

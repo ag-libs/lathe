@@ -159,11 +159,13 @@ final class WorkspaceSession {
   private Map<String, Integer> reactorUsageCounts = Map.of();
   private WorkspaceWatcher watcher;
   private boolean pomNotificationPending;
-  // Newest mtime among stale sources already acknowledged, so a dismissed "sync needed" stays quiet
-  // until an even-newer external change appears (mirrors the POM acknowledge baseline). Reset to 0
-  // on
-  // any resync (a workspace.json bump), where the mirror is fresh again.
-  private long acknowledgedSourceMtime;
+  // Stale sources and their mtimes seen on the previous idle tick. A source is recompiled
+  // in-process
+  // only once its mtime has held across two ticks, so a file mid-write is left to settle first.
+  private Map<Path, Long> pendingStale = Map.of();
+  // Sources whose in-process recompile is in flight, so a later tick does not resubmit one still
+  // building. Worker-thread-confined like every other field here.
+  private final Set<Path> reacting = new HashSet<>();
   // The -pl module selectors carried from the pending sync prompt to the sync request (empty = full
   // reactor). Set at prompt time because the request fires later, on the user's response.
   private List<String> pendingSyncModules = List.of();
@@ -2849,8 +2851,8 @@ final class WorkspaceSession {
     }
   }
 
-  // Idle-tick and startup reconciliation: clean up deleted sources, detect stale sources (→ sync
-  // prompt), and copy stale resources into .lathe/. Suppressed mid-build so a partially written
+  // Idle-tick and startup reconciliation: clean up deleted sources, recompile externally changed
+  // sources into .lathe/, and copy stale resources. Suppressed mid-build so a partially written
   // .lathe/ is never read.
   private void reconcileIfIdle() {
     if (reactorBuildInProgress()) {
@@ -2859,7 +2861,7 @@ final class WorkspaceSession {
     }
 
     reconcileDeletedSources();
-    checkSourceStaleness();
+    reconcileChangedSources();
     reconcileResources();
   }
 
@@ -2897,27 +2899,126 @@ final class WorkspaceSession {
     scanStaleModules();
   }
 
-  private void checkSourceStaleness() {
+  // Recompile sources changed outside the editor into the mirror, so siblings and open dependents
+  // see
+  // them without a Maven round trip. A bulk change (a branch switch) defers to the Maven sync
+  // prompt.
+  private void reconcileChangedSources() {
     if (pomNotificationPending) {
-      LOG.fine(() -> "[stale] skipped — sync prompt pending");
+      LOG.fine(() -> "[react] skipped — sync prompt pending");
       return;
     }
 
     final StaleScan scan = scanStaleModules();
-    if (scan.modules().isEmpty()) {
+    final Map<Path, Long> current = staleMtimes(scan);
+    if (current.isEmpty()) {
+      pendingStale = Map.of();
       return;
     }
 
-    final List<String> moduleRels = moduleRels(scan.modules());
-    LOG.fine(
-        () ->
-            "[stale] %s newest=%d ack=%d"
-                .formatted(moduleRels, scan.newestMtime(), acknowledgedSourceMtime));
-    if (scan.newestMtime() > acknowledgedSourceMtime) {
-      final List<String> scope = syncScope(moduleRels, totalModuleCount());
-      LOG.info(() -> "[watcher] source changed in %s — sync needed".formatted(moduleRels));
-      promptForSync(syncPromptMessage(moduleRels, scope), scope);
+    if (current.size() > BULK_CHANGE_THRESHOLD) {
+      pendingStale = Map.of();
+      promptBulkSync(scan);
+      return;
     }
+
+    final Set<Path> stable = stableSources(current, pendingStale);
+    pendingStale = current;
+    if (stable.isEmpty()) {
+      return;
+    }
+
+    compileChangedInOrder(scan.staleByModule(), stable);
+  }
+
+  private static Map<Path, Long> staleMtimes(final StaleScan scan) {
+    return scan.staleFiles().stream()
+        .collect(Collectors.toUnmodifiableMap(source -> source, WorkspaceSession::mtimeMillis));
+  }
+
+  // A source is safe to recompile once its mtime has held across two ticks, so a file still being
+  // written (an agent or editor mid-flush) is skipped until it settles.
+  static Set<Path> stableSources(final Map<Path, Long> current, final Map<Path, Long> previous) {
+    return current.entrySet().stream()
+        .filter(entry -> entry.getValue().equals(previous.get(entry.getKey())))
+        .map(Map.Entry::getKey)
+        .collect(Collectors.toUnmodifiableSet());
+  }
+
+  private void compileChangedInOrder(
+      final Map<ModuleSourceConfig, List<Path>> staleByModule, final Set<Path> stable) {
+    compileOrder(staleByModule.keySet())
+        .forEach(config -> reactToChangedSources(config, staleByModule.get(config), stable));
+  }
+
+  // Modules upstream-first, and within a module the main tree before the test tree, so every
+  // compile
+  // resolves against fresh dependency bytecode.
+  private List<ModuleSourceConfig> compileOrder(final Set<ModuleSourceConfig> configs) {
+    final Map<Path, List<ModuleSourceConfig>> byModule =
+        configs.stream().collect(Collectors.groupingBy(ModuleSourceConfig::moduleDir));
+    return moduleGraph.upstreamFirst(byModule.keySet()).stream()
+        .flatMap(dir -> byModule.get(dir).stream().sorted(mainTreeFirst()))
+        .toList();
+  }
+
+  private static Comparator<ModuleSourceConfig> mainTreeFirst() {
+    return Comparator.comparing(config -> LatheLayout.TEST_CLASSES_DIR.equals(config.sourceTree()));
+  }
+
+  private void reactToChangedSources(
+      final ModuleSourceConfig config, final List<Path> moduleStale, final Set<Path> stable) {
+    moduleStale.stream()
+        .filter(stable::contains)
+        .filter(reacting::add)
+        .forEach(source -> compileChangedSource(config, source));
+  }
+
+  private void compileChangedSource(final ModuleSourceConfig config, final Path source) {
+    final String content = readSource(source);
+    if (content == null) {
+      reacting.remove(source);
+      return;
+    }
+
+    final String uri = source.toUri().toString();
+    final var request = new CompileRequest(uri, content, 0, 0L, CompileMode.FULL);
+    workspace
+        .workerFor(config)
+        .compile(request)
+        .whenComplete(
+            (result, error) ->
+                worker.execute(() -> afterChangedCompile(config, source, result, error)));
+  }
+
+  private void afterChangedCompile(
+      final ModuleSourceConfig config,
+      final Path source,
+      final CompileResponse result,
+      final Throwable error) {
+    reacting.remove(source);
+    if (error != null || result == null) {
+      LOG.log(Level.FINE, error, () -> "[react] %s compile failed".formatted(source.getFileName()));
+      return;
+    }
+
+    afterModuleSave(result, config, source);
+    LOG.fine(() -> "[react] %s".formatted(source.getFileName()));
+  }
+
+  private static String readSource(final Path source) {
+    try {
+      return Files.readString(source);
+    } catch (final IOException e) {
+      return null;
+    }
+  }
+
+  private void promptBulkSync(final StaleScan scan) {
+    final List<String> moduleRels = moduleRels(scan.modules());
+    final List<String> scope = syncScope(moduleRels, totalModuleCount());
+    LOG.info(() -> "[react] bulk change in %s — sync needed".formatted(moduleRels));
+    promptForSync(syncPromptMessage(moduleRels, scope), scope);
   }
 
   private int totalModuleCount() {
@@ -3011,54 +3112,66 @@ final class WorkspaceSession {
         .collect(Collectors.toUnmodifiableSet());
   }
 
-  // The stale modules and the newest stale-source mtime (0 / empty if none). Open files and the
-  // annotation-processor root are excluded. newestMtime drives the dedupe; modules the -pl sync.
-  record StaleScan(long newestMtime, Set<ModuleSourceConfig> modules) {
+  // The stale sources grouped by module and the newest stale-source mtime (0 / empty if none). Open
+  // files and the annotation-processor root are excluded.
+  record StaleScan(long newestMtime, Map<ModuleSourceConfig, List<Path>> staleByModule) {
     StaleScan {
-      modules = Set.copyOf(modules);
+      staleByModule =
+          staleByModule.entrySet().stream()
+              .collect(
+                  Collectors.toUnmodifiableMap(Map.Entry::getKey, e -> List.copyOf(e.getValue())));
+    }
+
+    Set<ModuleSourceConfig> modules() {
+      return staleByModule.keySet();
+    }
+
+    List<Path> staleFiles() {
+      return staleByModule.values().stream().flatMap(List::stream).toList();
     }
   }
 
   static StaleScan staleModules(
       final Collection<ModuleSourceConfig> configs, final Set<Path> openPaths) {
-    final List<ModuleStale> stale =
+    final Map<ModuleSourceConfig, List<Path>> staleByModule =
         configs.stream()
-            .map(config -> new ModuleStale(config, newestStaleInModule(config, openPaths)))
-            .filter(module -> module.mtime() > 0L)
-            .toList();
-    return new StaleScan(
-        stale.stream().mapToLong(ModuleStale::mtime).max().orElse(0L),
-        stale.stream().map(ModuleStale::config).collect(Collectors.toUnmodifiableSet()));
+            .map(config -> Map.entry(config, staleSourcesInModule(config, openPaths)))
+            .filter(entry -> !entry.getValue().isEmpty())
+            .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue));
+    final long newest =
+        staleByModule.values().stream()
+            .flatMap(List::stream)
+            .mapToLong(WorkspaceSession::mtimeMillis)
+            .max()
+            .orElse(0L);
+    return new StaleScan(newest, staleByModule);
   }
 
-  private record ModuleStale(ModuleSourceConfig config, long mtime) {}
-
-  private static long newestStaleInModule(
+  private static List<Path> staleSourcesInModule(
       final ModuleSourceConfig config, final Set<Path> openPaths) {
     final Map<String, Long> stamps = CompiledStamps.load(config.moduleDir(), config.sourceTree());
     return config.sourceRoots().stream()
         .filter(root -> !root.equals(config.originalGenSourcesDir()))
-        .mapToLong(root -> newestStaleUnder(root, openPaths, stamps))
-        .max()
-        .orElse(0L);
+        .flatMap(root -> staleSourcesUnder(root, openPaths, stamps))
+        .toList();
   }
 
-  private static long newestStaleUnder(
+  private static Stream<Path> staleSourcesUnder(
       final Path root, final Set<Path> openPaths, final Map<String, Long> stamps) {
     if (!Files.isDirectory(root)) {
-      return 0L;
+      return Stream.empty();
     }
 
     try (final var walk = Files.walk(root)) {
-      return walk.filter(FileUtil::isJavaFile)
+      return walk
+          .filter(FileUtil::isJavaFile)
           .filter(source -> !openPaths.contains(source))
           .filter(source -> isStale(root, source, stamps))
-          .mapToLong(WorkspaceSession::mtimeMillis)
-          .max()
-          .orElse(0L);
+          .toList()
+          .stream();
     } catch (final IOException e) {
       LOG.log(Level.WARNING, e, () -> "[watcher] source scan failed under %s".formatted(root));
-      return 0L;
+      return Stream.empty();
     }
   }
 
@@ -3105,6 +3218,9 @@ final class WorkspaceSession {
   // Fall back to a full reactor build once at least this percentage of the reactor's modules
   // changed.
   private static final int FULL_SYNC_PERCENT = 75;
+  // Above this many externally changed sources (a branch switch, a large pull), defer to the Maven
+  // sync prompt instead of recompiling in-process file by file.
+  private static final int BULK_CHANGE_THRESHOLD = 50;
   // Name up to this many changed modules in the prompt; beyond it, show just the count.
   private static final int MODULE_NAME_LIMIT = 3;
   private static final String SYNC_ACTION = "Sync";
@@ -3127,12 +3243,12 @@ final class WorkspaceSession {
     switch (watcher.poll()) {
       case WORKSPACE_CHANGED -> {
         reload();
-        acknowledgedSourceMtime = 0L;
-        LOG.fine(() -> "[reload] ack-mtime reset");
+        pendingStale = Map.of();
+        LOG.fine(() -> "[reload] pending-stale reset");
       }
       case REACTOR_REFRESH -> {
         refreshReactorTypeIndex();
-        acknowledgedSourceMtime = 0L;
+        pendingStale = Map.of();
       }
       case POM_CHANGED -> promptForSync(syncPromptMessage(List.of(), List.of()), List.of());
       case NO_CHANGE -> reconcileIfIdle();
@@ -3163,16 +3279,12 @@ final class WorkspaceSession {
   // Any response ends the loop: the acknowledged POM baseline stays quiet until the POMs change
   // again, even while the client's Maven job runs. Sync / Sync + capture ask the client to run
   // Maven
-  // (the server never does); Later just acknowledges.
+  // (the server never does); Later just dismisses.
   private void onSyncPromptResponse(final MessageActionItem action) {
     pomNotificationPending = false;
     watcher.acknowledgePoms();
-    // Acknowledge whatever is currently stale (the prompt may have been POM- or source-triggered),
-    // so
-    // a dismissed prompt stays quiet until a still-newer external change appears.
-    acknowledgedSourceMtime = scanStaleModules().newestMtime();
     final String title = action == null ? null : action.getTitle();
-    LOG.info(() -> "[sync] answered action=%s ack=%d".formatted(title, acknowledgedSourceMtime));
+    LOG.info(() -> "[sync] answered action=%s".formatted(title));
     switch (title) {
       case SYNC_ACTION -> requestSync(false);
       case SYNC_CAPTURE_ACTION -> requestSync(true);

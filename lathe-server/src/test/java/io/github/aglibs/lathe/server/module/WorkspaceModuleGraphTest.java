@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class WorkspaceModuleGraphTest {
@@ -145,5 +146,42 @@ class WorkspaceModuleGraphTest {
     final var graph = WorkspaceModuleGraph.build(List.of(coreMain));
     assertThat(graph.downstreamModuleDirs(LATHE_DIR.resolve("ghost")))
         .containsExactly(LATHE_DIR.resolve("ghost"));
+  }
+
+  @Test
+  void upstreamFirst_chain_ordersDependencyBeforeDependent() {
+    final var apiMain = config("api", "classes", List.of());
+    final var serviceMain = config("service", "classes", List.of(reactorTarget("api")));
+    final var appMain = config("app", "classes", List.of(reactorTarget("service")));
+    final var graph = WorkspaceModuleGraph.build(List.of(apiMain, serviceMain, appMain));
+
+    assertThat(
+            graph.upstreamFirst(
+                Set.of(
+                    LATHE_DIR.resolve("app"),
+                    LATHE_DIR.resolve("api"),
+                    LATHE_DIR.resolve("service"))))
+        .containsExactly(
+            LATHE_DIR.resolve("api"), LATHE_DIR.resolve("service"), LATHE_DIR.resolve("app"));
+  }
+
+  @Test
+  void upstreamFirst_diamond_dependencyPrecedesBothDependents() {
+    final var apiMain = config("api", "classes", List.of());
+    final var leftMain = config("left", "classes", List.of(reactorTarget("api")));
+    final var rightMain = config("right", "classes", List.of(reactorTarget("api")));
+    final var appMain =
+        config("app", "classes", List.of(reactorTarget("left"), reactorTarget("right")));
+    final var graph = WorkspaceModuleGraph.build(List.of(apiMain, leftMain, rightMain, appMain));
+
+    final List<Path> order =
+        graph.upstreamFirst(
+            Set.of(
+                LATHE_DIR.resolve("app"),
+                LATHE_DIR.resolve("left"),
+                LATHE_DIR.resolve("right"),
+                LATHE_DIR.resolve("api")));
+
+    assertThat(order).startsWith(LATHE_DIR.resolve("api")).endsWith(LATHE_DIR.resolve("app"));
   }
 }
