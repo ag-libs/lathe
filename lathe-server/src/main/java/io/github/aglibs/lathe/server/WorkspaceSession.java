@@ -2799,8 +2799,58 @@ final class WorkspaceSession {
     }
   }
 
-  // Idle-tick and startup reconciliation: detect stale sources (→ sync prompt) and copy stale
-  // resources into .lathe/. Suppressed while any module is mid-build, so a partially written
+  // A deleted source leaves its classes in the mirror, still resolvable by every sibling. A stamp
+  // key with no surviving source is that orphan: drop its classes and prune the stamp. Returns the
+  // class files removed (0 when a mismatched class cannot be located — a full mvn clean repairs
+  // it).
+  static int deleteOrphanedClassOutputs(final ModuleSourceConfig config) {
+    final Map<String, Long> stamps = CompiledStamps.load(config.moduleDir(), config.sourceTree());
+    if (stamps.isEmpty()) {
+      return 0;
+    }
+
+    final List<Path> roots =
+        config.sourceRoots().stream()
+            .filter(root -> !root.equals(config.originalGenSourcesDir()))
+            .toList();
+    if (roots.isEmpty()) {
+      return 0;
+    }
+
+    final Set<String> orphans =
+        stamps.keySet().stream()
+            .filter(rel -> isOrphanedSource(roots, rel))
+            .collect(Collectors.toUnmodifiableSet());
+    if (orphans.isEmpty()) {
+      return 0;
+    }
+
+    final int removed =
+        orphans.stream()
+            .mapToInt(rel -> deleteClassOutputs(config, roots.get(0).resolve(rel)))
+            .sum();
+    pruneOrphanStamps(config, orphans);
+    return removed;
+  }
+
+  private static boolean isOrphanedSource(final List<Path> roots, final String rel) {
+    return roots.stream().noneMatch(root -> Files.exists(root.resolve(rel)));
+  }
+
+  private static void pruneOrphanStamps(
+      final ModuleSourceConfig config, final Set<String> orphans) {
+    try {
+      CompiledStamps.prune(config.moduleDir(), config.sourceTree(), orphans);
+    } catch (final IOException e) {
+      LOG.log(
+          Level.WARNING,
+          e,
+          () -> "[delete] stamp prune failed for %s".formatted(config.moduleDir()));
+    }
+  }
+
+  // Idle-tick and startup reconciliation: clean up deleted sources, detect stale sources (→ sync
+  // prompt), and copy stale resources into .lathe/. Suppressed mid-build so a partially written
   // .lathe/ is never read.
   private void reconcileIfIdle() {
     if (reactorBuildInProgress()) {
@@ -2808,8 +2858,23 @@ final class WorkspaceSession {
       return;
     }
 
+    reconcileDeletedSources();
     checkSourceStaleness();
     reconcileResources();
+  }
+
+  private void reconcileDeletedSources() {
+    workspace.allConfigs().forEach(this::reconcileDeletedSourcesIn);
+  }
+
+  private void reconcileDeletedSourcesIn(final ModuleSourceConfig config) {
+    final int removed = deleteOrphanedClassOutputs(config);
+    if (removed == 0) {
+      return;
+    }
+
+    refreshReactorShard(config);
+    LOG.fine(() -> "[delete] %s removed=%d".formatted(config.moduleDir().getFileName(), removed));
   }
 
   private StaleScan scanStaleModules() {

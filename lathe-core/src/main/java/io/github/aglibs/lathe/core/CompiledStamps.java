@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 // Per-source compile stamps (root-relative path -> mtime), one map per module source tree.
 public final class CompiledStamps {
@@ -38,6 +39,17 @@ public final class CompiledStamps {
       throws IOException {
     final var current = new HashMap<String, Long>(load(moduleDir, sourceTree));
     current.put(relPath, mtime);
+    writeAll(moduleDir, sourceTree, current);
+  }
+
+  public static void prune(
+      final Path moduleDir, final String sourceTree, final Set<String> relPaths)
+      throws IOException {
+    final var current = new HashMap<String, Long>(load(moduleDir, sourceTree));
+    if (!current.keySet().removeAll(relPaths)) {
+      return;
+    }
+
     writeAll(moduleDir, sourceTree, current);
   }
 

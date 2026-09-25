@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -26,6 +27,27 @@ final class CompiledStampsTest {
     assertThat(CompiledStamps.load(moduleDir, "classes"))
         .containsOnly(
             Map.entry("com/example/Foo.java", 150L), Map.entry("com/example/Bar.java", 200L));
+  }
+
+  @Test
+  void prune_removesNamedEntriesAndLeavesOthers() throws IOException {
+    CompiledStamps.writeAll(
+        moduleDir, "classes", Map.of("com/example/Foo.java", 100L, "com/example/Gone.java", 200L));
+
+    CompiledStamps.prune(moduleDir, "classes", Set.of("com/example/Gone.java"));
+
+    assertThat(CompiledStamps.load(moduleDir, "classes"))
+        .containsExactly(Map.entry("com/example/Foo.java", 100L));
+  }
+
+  @Test
+  void prune_noMatchingEntries_leavesFileUntouched() throws IOException {
+    CompiledStamps.writeAll(moduleDir, "classes", Map.of("com/example/Foo.java", 100L));
+
+    CompiledStamps.prune(moduleDir, "classes", Set.of("com/example/Absent.java"));
+
+    assertThat(CompiledStamps.load(moduleDir, "classes"))
+        .containsExactly(Map.entry("com/example/Foo.java", 100L));
   }
 
   @Test

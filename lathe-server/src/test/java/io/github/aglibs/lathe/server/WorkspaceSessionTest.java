@@ -75,6 +75,38 @@ class WorkspaceSessionTest {
   }
 
   @Test
+  void deleteOrphanedClassOutputs_deletedSource_removesClassesAndPrunesStamp() throws Exception {
+    writeJava("Live", 2_000L);
+    Files.writeString(outputDir.resolve("Live.class"), "");
+    Files.writeString(outputDir.resolve("Ghost.class"), "");
+    Files.writeString(outputDir.resolve("Ghost$Inner.class"), "");
+    writeStamps(Map.of("com/example/Live.java", 2_000L, "com/example/Ghost.java", 1_000L));
+
+    final int removed = WorkspaceSession.deleteOrphanedClassOutputs(config);
+
+    assertThat(removed).isEqualTo(2);
+    assertThat(outputDir.resolve("Ghost.class")).doesNotExist();
+    assertThat(outputDir.resolve("Ghost$Inner.class")).doesNotExist();
+    assertThat(outputDir.resolve("Live.class")).exists();
+    assertThat(CompiledStamps.load(config.moduleDir(), config.sourceTree()))
+        .containsOnlyKeys("com/example/Live.java");
+  }
+
+  @Test
+  void deleteOrphanedClassOutputs_allSourcesPresent_noOpKeepsStamps() throws Exception {
+    writeJava("Live", 2_000L);
+    Files.writeString(outputDir.resolve("Live.class"), "");
+    writeStamps(Map.of("com/example/Live.java", 2_000L));
+
+    final int removed = WorkspaceSession.deleteOrphanedClassOutputs(config);
+
+    assertThat(removed).isZero();
+    assertThat(outputDir.resolve("Live.class")).exists();
+    assertThat(CompiledStamps.load(config.moduleDir(), config.sourceTree()))
+        .containsOnlyKeys("com/example/Live.java");
+  }
+
+  @Test
   void deleteStaleClassOutputs_namedInnerClassRemoved_deletesStaleClassFile() throws Exception {
     Files.writeString(outputDir.resolve("Foo.class"), "");
     Files.writeString(outputDir.resolve("Foo$Inner.class"), "");
