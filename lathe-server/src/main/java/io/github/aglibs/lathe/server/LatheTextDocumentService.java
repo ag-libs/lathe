@@ -72,6 +72,11 @@ public final class LatheTextDocumentService implements TextDocumentService {
     worker.execute(() -> session.initialize(workspaceRoot));
   }
 
+  // Test/tool seam: run one reconcile pass and complete once its in-process recompiles finish.
+  CompletableFuture<Void> reconcileNow() {
+    return worker.submit(() -> session.reconcileNow()).thenCompose(done -> done);
+  }
+
   public void close() {
     if (!closed.compareAndSet(false, true)) {
       return;

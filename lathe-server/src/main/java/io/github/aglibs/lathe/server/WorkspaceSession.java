@@ -2853,16 +2853,23 @@ final class WorkspaceSession {
 
   // Idle-tick and startup reconciliation: clean up deleted sources, recompile externally changed
   // sources into .lathe/, and copy stale resources. Suppressed mid-build so a partially written
-  // .lathe/ is never read.
-  private void reconcileIfIdle() {
+  // .lathe/ is never read. Returns the in-flight recompiles so reconcileNow can await them.
+  private List<CompletableFuture<Void>> reconcileIfIdle() {
     if (reactorBuildInProgress()) {
       LOG.fine(() -> "[reconcile] skipped — reactor build in progress");
-      return;
+      return List.of();
     }
 
     reconcileDeletedSources();
-    reconcileChangedSources();
+    final List<CompletableFuture<Void>> reactions = reconcileChangedSources();
     reconcileResources();
+    return reactions;
+  }
+
+  // Test/tool seam: run one reconcile pass and complete once its in-process recompiles finish. Must
+  // be invoked on the worker thread.
+  CompletableFuture<Void> reconcileNow() {
+    return CompletableFuture.allOf(reconcileIfIdle().toArray(CompletableFuture[]::new));
   }
 
   private void reconcileDeletedSources() {
@@ -2903,32 +2910,32 @@ final class WorkspaceSession {
   // see
   // them without a Maven round trip. A bulk change (a branch switch) defers to the Maven sync
   // prompt.
-  private void reconcileChangedSources() {
+  private List<CompletableFuture<Void>> reconcileChangedSources() {
     if (pomNotificationPending) {
       LOG.fine(() -> "[react] skipped — sync prompt pending");
-      return;
+      return List.of();
     }
 
     final StaleScan scan = scanStaleModules();
     final Map<Path, Long> current = staleMtimes(scan);
     if (current.isEmpty()) {
       pendingStale = Map.of();
-      return;
+      return List.of();
     }
 
     if (current.size() > BULK_CHANGE_THRESHOLD) {
       pendingStale = Map.of();
       promptBulkSync(scan);
-      return;
+      return List.of();
     }
 
     final Set<Path> stable = stableSources(current, pendingStale);
     pendingStale = current;
     if (stable.isEmpty()) {
-      return;
+      return List.of();
     }
 
-    compileChangedInOrder(scan.staleByModule(), stable);
+    return compileChangedInOrder(scan.staleByModule(), stable);
   }
 
   private static Map<Path, Long> staleMtimes(final StaleScan scan) {
@@ -2945,10 +2952,14 @@ final class WorkspaceSession {
         .collect(Collectors.toUnmodifiableSet());
   }
 
-  private void compileChangedInOrder(
+  private List<CompletableFuture<Void>> compileChangedInOrder(
       final Map<ModuleSourceConfig, List<Path>> staleByModule, final Set<Path> stable) {
-    compileOrder(staleByModule.keySet())
-        .forEach(config -> reactToChangedSources(config, staleByModule.get(config), stable));
+    final var reactions = new ArrayList<CompletableFuture<Void>>();
+    for (final var config : compileOrder(staleByModule.keySet())) {
+      reactToChangedSources(config, staleByModule.get(config), stable, reactions);
+    }
+
+    return reactions;
   }
 
   // Modules upstream-first, and within a module the main tree before the test tree, so every
@@ -2967,28 +2978,39 @@ final class WorkspaceSession {
   }
 
   private void reactToChangedSources(
-      final ModuleSourceConfig config, final List<Path> moduleStale, final Set<Path> stable) {
-    moduleStale.stream()
-        .filter(stable::contains)
-        .filter(reacting::add)
-        .forEach(source -> compileChangedSource(config, source));
+      final ModuleSourceConfig config,
+      final List<Path> moduleStale,
+      final Set<Path> stable,
+      final List<CompletableFuture<Void>> reactions) {
+    for (final var source : moduleStale) {
+      if (stable.contains(source) && reacting.add(source)) {
+        reactions.add(compileChangedSource(config, source));
+      }
+    }
   }
 
-  private void compileChangedSource(final ModuleSourceConfig config, final Path source) {
+  private CompletableFuture<Void> compileChangedSource(
+      final ModuleSourceConfig config, final Path source) {
     final String content = readSource(source);
     if (content == null) {
       reacting.remove(source);
-      return;
+      return CompletableFuture.completedFuture(null);
     }
 
     final String uri = source.toUri().toString();
     final var request = new CompileRequest(uri, content, 0, 0L, CompileMode.FULL);
+    final var done = new CompletableFuture<Void>();
     workspace
         .workerFor(config)
         .compile(request)
         .whenComplete(
             (result, error) ->
-                worker.execute(() -> afterChangedCompile(config, source, result, error)));
+                worker.execute(
+                    () -> {
+                      afterChangedCompile(config, source, result, error);
+                      done.complete(null);
+                    }));
+    return done;
   }
 
   private void afterChangedCompile(

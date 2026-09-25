@@ -532,6 +532,19 @@ class LatheTextDocumentServiceTest {
   }
 
   @Test
+  void reconcileNow_closedSourceChangedExternally_recompilesAdvancingStamp() throws Exception {
+    writeStaleModule(5_000L, 1_000L); // stamp behind the source → stale
+    service.initialize(tmp);
+
+    // First pass records the change as pending (two-tick stability); the second recompiles it.
+    service.reconcileNow().get(5, TimeUnit.SECONDS);
+    service.reconcileNow().get(5, TimeUnit.SECONDS);
+
+    assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
+        .containsEntry("com/example/Foo.java", 5_000L);
+  }
+
+  @Test
   void initialize_copiesOnlyStaleResourcesIntoLathe() throws Exception {
     final Path resDir = tmp.resolve("app/src/main/resources");
     TestCompiler.writeAt(resDir.resolve("stale.conf"), "new", 9_000L); // newer than dest → copied
