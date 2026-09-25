@@ -37,6 +37,7 @@ import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
 import org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams;
 import org.eclipse.lsp4j.CallHierarchyPrepareParams;
 import org.eclipse.lsp4j.CompletionItem;
+import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.DidCloseTextDocumentParams;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
@@ -519,6 +520,46 @@ class LatheTextDocumentServiceTest {
 
     verify(client, timeout(5_000))
         .showMessageRequest(argThat(p -> p.getMessage().contains("Sources changed in")));
+  }
+
+  @Test
+  void reconcileNow_deletedDependency_republishesOpenDependentWithError() throws Exception {
+    final Path sourceRoot = tmp.resolve("module/src/main/java");
+    final Path dep = sourceRoot.resolve("com/example/Dep.java");
+    final Path user = sourceRoot.resolve("com/example/User.java");
+    Files.createDirectories(dep.getParent());
+    Files.writeString(
+        dep, "package com.example;\npublic class Dep { public int v() { return 1; } }\n");
+    Files.writeString(
+        user, "package com.example;\npublic class User { int u() { return new Dep().v(); } }\n");
+    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), dep, user);
+    CompiledStamps.writeAll(
+        tmp.resolve(".lathe/module"),
+        "classes",
+        Map.of(
+            "com/example/Dep.java", Files.getLastModifiedTime(dep).toMillis(),
+            "com/example/User.java", Files.getLastModifiedTime(user).toMillis()));
+    TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
+    service.initialize(tmp);
+
+    final String userUri = user.toUri().toString();
+    service.didOpen(
+        new DidOpenTextDocumentParams(
+            new TextDocumentItem(userUri, "java", 1, Files.readString(user))));
+    verify(client, timeout(5_000))
+        .publishDiagnostics(
+            argThat(p -> p.getUri().equals(userUri) && p.getDiagnostics().isEmpty()));
+
+    Files.delete(dep);
+    service.reconcileNow().get(5, TimeUnit.SECONDS);
+
+    verify(client, timeout(5_000))
+        .publishDiagnostics(
+            argThat(
+                p ->
+                    p.getUri().equals(userUri)
+                        && p.getDiagnostics().stream()
+                            .anyMatch(d -> d.getSeverity() == DiagnosticSeverity.Error)));
   }
 
   @Test

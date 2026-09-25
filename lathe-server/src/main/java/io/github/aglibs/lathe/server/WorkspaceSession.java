@@ -2820,6 +2820,7 @@ final class WorkspaceSession {
       return 0;
     }
 
+    LOG.fine(() -> "[delete] %s orphans=%s".formatted(config.moduleDir().getFileName(), orphans));
     final Path root = roots.getFirst();
     int removed = 0;
     for (final var rel : orphans) {
@@ -2886,6 +2887,7 @@ final class WorkspaceSession {
     }
 
     refreshReactorShard(config);
+    refreshOpenDependents(config, null);
     LOG.fine(() -> "[delete] %s removed=%d".formatted(config.moduleDir().getFileName(), removed));
   }
 
@@ -3503,7 +3505,7 @@ final class WorkspaceSession {
     deleteStaleClassOutputs(config, savedSource, result.writtenBinaryNames());
     recordCompileStamp(config, savedSource);
     scheduleAstRefresh(result.uri());
-    scheduleDownstreamOpenFiles(result.uri(), config);
+    refreshOpenDependents(config, result.uri());
     refreshReactorShard(config);
   }
 
@@ -3542,23 +3544,31 @@ final class WorkspaceSession {
     };
   }
 
-  private void scheduleDownstreamOpenFiles(
-      final String savedUri, final ModuleSourceConfig savedModule) {
-    final Set<Path> scope = moduleGraph.downstreamModuleDirs(savedModule.moduleDir());
+  // Recompile open files in this module or downstream, so a change/deletion here shows in their
+  // diagnostics; excludeUri (the just-saved file, or null) compiles on its own path.
+  private void refreshOpenDependents(final ModuleSourceConfig module, final String excludeUri) {
+    final Set<Path> scope = moduleGraph.downstreamModuleDirs(module.moduleDir());
     LOG.fine(
         () ->
-            "[save] checking %d open file(s) across %d module(s) for dependents of %s"
-                .formatted(docs.all().size(), scope.size(), savedUri));
+            "[dependents] %s: checking %d open file(s) across %d module(s)"
+                .formatted(module.moduleDir().getFileName(), docs.all().size(), scope.size()));
     docs.all().stream()
         .map(OpenDocument::uri)
-        .filter(uri -> !uri.equals(savedUri))
-        .filter(
-            uri ->
-                workspace
-                    .moduleSourceFor(LatheUri.toPath(uri))
-                    .map(m -> scope.contains(m.moduleDir()))
-                    .orElse(false))
-        .forEach(this::scheduleOpenFile);
+        .filter(uri -> !uri.equals(excludeUri))
+        .filter(uri -> inDownstreamScope(uri, scope))
+        .forEach(this::scheduleDependent);
+  }
+
+  private void scheduleDependent(final String uri) {
+    LOG.fine(() -> "[dependents] recompiling %s".formatted(uri));
+    scheduleOpenFile(uri);
+  }
+
+  private boolean inDownstreamScope(final String uri, final Set<Path> scope) {
+    return workspace
+        .moduleSourceFor(LatheUri.toPath(uri))
+        .map(m -> scope.contains(m.moduleDir()))
+        .orElse(false);
   }
 
   private void scheduleAllOpenFiles() {
