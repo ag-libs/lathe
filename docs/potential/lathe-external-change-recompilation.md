@@ -80,7 +80,7 @@ dependency, or module-structure changes) continues to route to the Maven sync pr
 
 - Live **cross-module** recompilation. A change in module A that breaks module B is not live-compiled
   here; that stays bounded by Maven, consistent with
-  [lathe-sibling-recompilation.md](../planned/lathe-sibling-recompilation.md).
+  [lathe-sibling-recompilation.md](../done/lathe-sibling-recompilation.md).
 - Blindly recompiling a whole module or the whole reactor on every change.
 - Replacing Maven as the source of truth for classpaths, JPMS, module structure, or dependency
   resolution — POM/structural changes remain the heavy path (see WS-3/WS-5 prompt).
@@ -186,7 +186,7 @@ Both triggers converge on **per-module batches**, and both honour a shared cutof
   processor aggregating across *different modules* in one pass, which stays Maven-bounded and converges
   at the next `mvn`.
 - **Cross-module staleness** remains: a changed public API in module A does not live-recompile module
-  B. In-module dependents can later be wired via [Sibling Recompilation](../planned/lathe-sibling-recompilation.md);
+  B. In-module dependents can later be wired via [Sibling Recompilation](../done/lathe-sibling-recompilation.md);
   cross-module stays Maven-bounded.
 - **Multi-module change sets — why this design is parked.** When one external change set touches files
   in *several* modules at once, the batches cannot run in any order: a downstream module must compile
@@ -289,7 +289,7 @@ new method is package-private within the module core).
 - WS-3 — the shipped Maven sync **prompt** (loop/actionability fix) the active direction reuses.
 - WS-4 — the shipped post-Maven silent reactor-index refresh.
 - WS-6 — the in-session open-file dependent-module refresh (the open-file cousin of this reaction).
-- [Sibling Recompilation](../planned/lathe-sibling-recompilation.md) — in-module dependents after an
+- [Sibling Recompilation](../done/lathe-sibling-recompilation.md) — in-module dependents after an
   API change.
 - [Reactor Type Index](../planned/lathe-reactor-type-index.md) — the index this refresh keeps current.
 - [Lightweight Watcher](../planned/lathe-lightweight-watcher.md) — the `.lathe/`-poll redesign.

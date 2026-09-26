@@ -235,7 +235,7 @@ fixture only where a full module build is essential.
 - [Staleness via Compile Stamps](../done/lathe-staleness-compile-stamps.md) — the per-source stamp map
   this reaction reads (updates) and prunes (deletions); the enabler that makes deletion detection
   possible across restarts.
-- [Sibling Recompilation](../planned/lathe-sibling-recompilation.md) — the in-module dependent refresh;
+- [Sibling Recompilation](../done/lathe-sibling-recompilation.md) — the in-module dependent refresh;
   its open-file rescheduling is reused here.
 - [Reactor Type Index](../planned/lathe-reactor-type-index.md) — the index the shard refresh keeps
   current.

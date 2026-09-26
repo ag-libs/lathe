@@ -809,7 +809,7 @@ in EXPRESSION context the tail provides the necessary closing tokens.
 Fallback: when sentinel parse fails or the receiver type cannot be resolved from the snapshot,
 index-backed type-name proposals are returned when the type index is available, otherwise an empty list.
 The fallback never returns an error — always a possibly-empty list.
-See [lathe-type-index.md](planned/lathe-type-index.md) for the index design.
+See [lathe-type-index.md](done/lathe-type-index.md) for the index design.
 
 ### Go-to-definition
 

@@ -767,7 +767,7 @@ objects over mocks).
   confirmed-working by probe, per-kind coverage optional.
 - [New/Changed-Test Replay Inner Loop](lathe-new-test-replay-loop.md) — the replay-staleness work that
   gates `run_test`.
-- [Sibling Recompilation](lathe-sibling-recompilation.md) and
+- [Sibling Recompilation](../done/lathe-sibling-recompilation.md) and
   [In-Process External-Change Recompilation](../potential/lathe-external-change-recompilation.md) — the
   bounded single-module freshness work behind the middle row of the freshness table.
 - [External-Change Detection](../done/lathe-external-change-detection.md) and

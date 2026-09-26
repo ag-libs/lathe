@@ -299,5 +299,5 @@ instead surfaced by the Tier-3 handoff and the still-active POM prompt, not by w
   contract, freshness model, and the dropped `verify_build` these two replace honestly.
 - [Staleness via Compile Stamps](../done/lathe-staleness-compile-stamps.md) — the per-source stamp map
   the change-set detection reads.
-- [Sibling Recompilation](lathe-sibling-recompilation.md) — the in-module dependent refresh reused by
+- [Sibling Recompilation](../done/lathe-sibling-recompilation.md) — the in-module dependent refresh reused by
   the substrate's reaction.

@@ -7,7 +7,7 @@ the `e`/`ex`/`exception` idiom for catch — via a shared `VariableNameSuggester
 also uses.
 
 Builds on the completion engine in `lathe-design.md` and the completion contract in
-`planned/lathe-completion-expectations.md`.
+`done/lathe-completion-expectations.md`.
 
 ## Motivation
 

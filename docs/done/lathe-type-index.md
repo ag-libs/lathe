@@ -1,7 +1,12 @@
 # Lathe — Type Index Design
 
-Working design draft.
-This document captures the initial type-index shape for completion and missing-import support.
+## Status
+
+Implemented baseline (reference). The type index described here ships; this is the living design
+reference for its shape. See also [Reactor Type Index](../planned/lathe-reactor-type-index.md) for the
+reactor-shard slice.
+
+This document captures the type-index shape for completion and missing-import support.
 It is intentionally scoped: the index discovers possible type candidates, while javac remains the final authority for
 whether a candidate is legal from a specific source file.
 
@@ -799,7 +804,7 @@ Structured timing fields (checked/resolved/accessible/elapsed) are deferred.
 
 Scan reactor `.lathe/` output directories on server startup/reload.
 Merge reactor candidates into `WorkspaceTypeIndex` alongside static dependency candidates.
-See [lathe-reactor-type-index.md](lathe-reactor-type-index.md) for the detailed design.
+See [lathe-reactor-type-index.md](../planned/lathe-reactor-type-index.md) for the detailed design.
 
 **Status: done.**
 

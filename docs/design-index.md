@@ -19,7 +19,7 @@ discovery via [gap-workflow.md](gaps/gap-workflow.md) and resolved entries in [g
 - [M1 Refactoring](done/lathe-m1-refactoring.md) — single consolidated refactoring plan: documentation accuracy,
   fail-fast propagation, DRY/structural extractions, god-class decomposition, naming, and test-suite hygiene. ✓
 - [Reactor Type Index](planned/lathe-reactor-type-index.md) — implemented baseline and freshness follow-ups.
-- [Type Index](planned/lathe-type-index.md) — implemented baseline plus active schema and freshness context.
+- [Type Index](done/lathe-type-index.md) — implemented baseline plus active schema and freshness context.
 
 ## M2 — Neovim Public Beta
 
@@ -27,7 +27,7 @@ Reliability, the triaged gaps, and rename — see the [roadmap](roadmap.md) for 
 
 - [Gaps](gaps/gaps.md) — active gap registry; the triaged M2 correctness/completion/code-action gaps
   are all resolved (see [gaps-archive.md](gaps/gaps-archive.md)). EG-003 is deferred until after M2.
-- [Completion Expectations](planned/lathe-completion-expectations.md) — completion behavioral contract (reference).
+- [Completion Expectations](done/lathe-completion-expectations.md) — completion behavioral contract (reference).
 - [Gap Workflow](gaps/gap-workflow.md) — reproducible gap discovery and triage (all areas).
 - [Rename](planned/lathe-rename.md) — `textDocument/rename` + `prepareRename` on the Find References
   pipeline (occurrence ranges → `WorkspaceEdit`, no `ASTRewrite`); scoped to the common cases,
@@ -72,8 +72,8 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
   `[module:][scope:]package` location) with the type name always prompted and the package never defaulting by
   omission, a guided `vim.ui.select` fallback for the no-context 20%, selectable main/test scope, and
   `module-info` / `package-info` as special kinds; supersedes CQ-0055 v3's flow.
-- [New Type Creation](planned/lathe-new-type-creation.md) — deferred, editor-agnostic alternative: scaffold a blank
-  file's class/interface/enum/record via snippet completion, with no custom client-side UI (not the shipped path).
+- [New Type Creation](planned/lathe-new-type-creation.md) — **Won't do.** Snippet-completion alternative to
+  the shipped `:LatheNew`; not pursued (kept as a rejected-design record).
 - [Google Indentation](planned/lathe-google-indent.md) — conservative on-type formatting.
 - [Type Definition Navigation](planned/lathe-type-definition.md) — `textDocument/typeDefinition` for Neovim's `grt`.
 - [Type Hierarchy Explorer](done/lathe-type-hierarchy.md) — a Ctrl-H-style `:LatheTypeHierarchy` custom
@@ -103,11 +103,12 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
   [Run, Test, and Debug](done/lathe-run-test-debug.md) §8.
 - [Type-Index Name Resolution and Ranking](done/lathe-type-index-name-resolution.md) — exact-name
   import resolution (fix A) plus usage-aware prefix-search truncation (fix B); resolves CA-9. ✓
-- [Sibling Recompilation](planned/lathe-sibling-recompilation.md) — closed-file diagnostics after API changes.
+- [Sibling Recompilation](done/lathe-sibling-recompilation.md) — open-dependent diagnostics refresh after
+  an API change (shipped via `refreshOpenDependents`); closed-file recompilation dropped as a non-goal.
 - [Lightweight Watcher](planned/lathe-lightweight-watcher.md) — partially stale design; would back a
   non-intrusive source-staleness signal (the deferred WS-2, folded under WS-1) if beta feedback warrants it.
-- [Differential Testing Against jdtls](planned/lathe-jdtls-differential-testing.md) — semantic LSP-response
-  comparison against Eclipse JDT LS to surface behavioral gaps.
+- [Differential Testing Against jdtls](planned/lathe-jdtls-differential-testing.md) — **Won't do.** Semantic
+  LSP-response comparison against Eclipse JDT LS; not pursued (gaps tracked via EG-/CQ- + `dev/` probing).
 - [Standalone `lathe.nvim` Plugin](done/lathe-standalone-nvim-plugin.md) — **shipped**; publishes the
   Neovim Lua client as a plugin-manager-installable repo (unlocks dotfyle/awesome-neovim discovery),
   additive to the zero-plugin cache delivery, via a local no-PAT `publish-nvim.sh` mirror to

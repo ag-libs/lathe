@@ -1,10 +1,9 @@
 # Lathe — New Type Creation via Snippet Completion
 
-> **Status note.** This snippet-completion approach was **not** the path shipped for new-type
-> creation. The `:LatheNew` command (CQ-0055) ships instead, and its interaction model is being
-> reworked in [`:LatheNew` Ergonomics Rethink (v4)](../done/lathe-new-type-ergonomics.md). This document is
-> retained as a deferred, editor-agnostic alternative (zero client UI), a different mechanism for the
-> same goal.
+> **Status: won't do (2026-09-26).** This snippet-completion approach was **not** the path shipped for
+> new-type creation — `:LatheNew` (CQ-0055) ships instead, reworked in [`:LatheNew` Ergonomics Rethink
+> (v4)](../done/lathe-new-type-ergonomics.md). Decided not to pursue this editor-agnostic alternative;
+> retained as a rejected-design record.
 
 Proposed M2 completion enhancement.
 Builds on the completion engine in `lathe-design.md`.

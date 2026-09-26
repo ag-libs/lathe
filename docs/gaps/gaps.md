@@ -14,7 +14,7 @@ Each gap keeps its area prefix; the area is the discovery family, not a strict f
 | `EG-NNN` | exploration | Live-probing of nav, hover, search, completion, code actions, hierarchies, against Helidon, Dropwizard, and the `@Builder`-heavy sample-workspace workspace |
 | `FR-NNN` | references | `textDocument/references` scope, failure propagation, coverage |
 | `CA-N` | code-action | `textDocument/codeAction` providers |
-| `CQ-NNNN` | completion | Completion quality; checked against the completion [expectations](../planned/lathe-completion-expectations.md) contract |
+| `CQ-NNNN` | completion | Completion quality; checked against the completion [expectations](../done/lathe-completion-expectations.md) contract |
 | `WS-N` | workspace lifecycle | Workspace freshness and lifecycle: reactor mirror / type-index staleness, source watching, sync prompting, and reload |
 | `TE-N` | test execution | Maven test-fork capture, replay launch fidelity, and test-classpath isolation |
 | `DB-N` | debug & evaluation | In-process DAP adapter and expression-evaluator scope, fidelity, and coverage |
@@ -299,7 +299,7 @@ cross-file/superclass change.
 # Completion Gaps (CQ)
 
 Active completion-quality gaps. Discovered and triaged via the completion appendix of the
-[gap workflow](gap-workflow.md); checked against the completion [expectations](../planned/lathe-completion-expectations.md)
+[gap workflow](gap-workflow.md); checked against the completion [expectations](../done/lathe-completion-expectations.md)
 contract. Resolved CQ entries are in [gaps-archive.md](gaps-archive.md).
 
 ## CQ-0060 — No completions after `::` (method reference)
@@ -331,7 +331,7 @@ recognise `::` (`hasDot=false`, `receiver=null`, position classified as a bare s
 `SentinelParser.SentinelFinder` has no `visitMemberReference`, so the sentinel — the `Name` after `::`,
 which is not a visitable identifier node — is never found and the parse yields `ParsedSentinel.invalid`.
 (Historically completion "Gap J", see [lathe-completion-gaps.md](../done/lathe-completion-gaps.md) and
-the "Method References" section of the completion [expectations](../planned/lathe-completion-expectations.md).)
+the "Method References" section of the completion [expectations](../done/lathe-completion-expectations.md).)
 
 Expected Lathe behavior (per the expectations "Method References" rule):
 

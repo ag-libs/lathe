@@ -1596,7 +1596,7 @@ command that owns placement, skeleton, formatting, caret) and the Neovim client 
 feature *creates* a new `.java` file — in the right package/directory, with the `package` line and a
 named type skeleton — and opens it. Because it is file creation, not a completion item, it sidesteps the
 completion "live templates" Non-Goal
-([expectations](../planned/lathe-completion-expectations.md) § Non-Goals) entirely. The v1/v2
+([expectations](../done/lathe-completion-expectations.md) § Non-Goals) entirely. The v1/v2
 implementation put every Java/Maven decision in the Lua client (regex-parse the `package` line, split on
 `/src/main|test/java` markers, split dotted names, emit skeleton syntax); v3 **moves all of that into the
 LSP**, per the project's own "no ad-hoc Java in the client" rule and the jdtls / vscode-java reference
@@ -7356,7 +7356,7 @@ Notes:
 Distinct from the typed-tier completion gaps (CQ-0029/0030/0040/0042/0044), which are about *missing
 candidates*; here the candidate is present and correctly ranked, only its display detail is absent.
 This is a presentation-tier gap — the tier the completion
-[expectations](../planned/lathe-completion-expectations.md) defines as the "label vs detail"
+[expectations](../done/lathe-completion-expectations.md) defines as the "label vs detail"
 separation.
 
 ---
@@ -7947,7 +7947,7 @@ Not yet decided; options to weigh when scheduled, cheapest first:
 2. Act on `Created`/`Changed` watched-file events (not only `Deleted`) to invalidate or refresh the
    affected reactor type-index entries between syncs.
 3. A fuller freshness model that reconciles the reactor index and mirror with on-disk sources
-   without a Maven round trip; overlaps with [Sibling Recompilation](../planned/lathe-sibling-recompilation.md)
+   without a Maven round trip; overlaps with [Sibling Recompilation](../done/lathe-sibling-recompilation.md)
    and the [Reactor Type Index](../planned/lathe-reactor-type-index.md) freshness follow-ups.
 
 Scheduled for M2 as **WS-5**. The original plan was option 2 (in-process recompile), but that is
@@ -8240,7 +8240,7 @@ threshold of changed files in a window — or when the batch also carries a `pom
 regime defers to the heavy-path prompt (WS-3) rather than per-file recompiling, so WS-5 owns *small*
 source/resource change sets while a bulk `git pull`/branch switch goes to the prompt (picked up by
 WS-4). Cross-module dependents stay Maven-bounded (see
-[Sibling Recompilation](../planned/lathe-sibling-recompilation.md)).
+[Sibling Recompilation](../done/lathe-sibling-recompilation.md)).
 
 ### Probe commands
 
@@ -8311,7 +8311,7 @@ declaring module plus its transitive downstream dependents (`downstreamOf`). The
 open files in any module within that scope (recompiled in `OPEN` mode against the now-fresh
 `.lathe/A/classes`), instead of filtering to the same module. It stays bounded — only files the user
 has open, no closed-file compile, no reactor rebuild — which is what separates it from WS-5 and from
-[Sibling Recompilation](../planned/lathe-sibling-recompilation.md) (its closed-file, whole-module
+[Sibling Recompilation](../done/lathe-sibling-recompilation.md) (its closed-file, whole-module
 counterpart).
 
 **Caveat to resolve first:** module B's `CompilationWorker` holds a `StandardJavaFileManager` that may
@@ -8334,7 +8334,7 @@ against the new API; no spurious reschedule of open files in unrelated modules).
 
 Relates to WS-1 (the staleness umbrella), WS-5 (the closed-file/external counterpart; its in-process
 recompile is being reconsidered in favour of the WS-3 sync prompt — a docs reconciliation still
-pending), and [Sibling Recompilation](../planned/lathe-sibling-recompilation.md) (the closed-file,
+pending), and [Sibling Recompilation](../done/lathe-sibling-recompilation.md) (the closed-file,
 whole-module dependent recompilation).
 
 ---

@@ -1,5 +1,11 @@
 # Lathe — Differential Testing Against jdtls
 
+## Status
+
+**Won't do (2026-09-26).** Decided not to pursue differential testing against jdtls. Behavioral gaps
+are tracked directly via the `EG-`/`CQ-` gap logs and the existing `dev/` probing workflow; a second
+LSP oracle isn't worth the maintenance. Retained as a rejected-design record.
+
 Post-M2 quality-tooling design.
 Builds on `lathe-design.md` and the existing probing workflow in `dev/`.
 Adopted only after the M2 feature set is stable, since it measures behavior parity rather than adding a feature.

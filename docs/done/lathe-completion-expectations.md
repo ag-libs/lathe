@@ -1,5 +1,12 @@
 # Lathe — Completion Expectations
 
+## Status
+
+Living reference — not pending work. This is the completion behavioral **contract** (used to classify a
+discrepancy as a bug, a planned capability, or a deliberate non-goal); completion is in good shape
+against it. Kept in `done/` as a stable reference, not an open backlog item; residual divergences are
+tracked as `EG-`/`CQ-` gaps.
+
 This document defines the completion contract Lathe should converge on.
 It is informed by IntelliJ IDEA and Eclipse JDT,
 but it is not a promise to clone either implementation.
@@ -415,7 +422,7 @@ Status:
 - planned (CQ-0060, accepted for the next cut).
 Accepted scope is both offering the receiver's members after `::` (including `Type::new`) and
 SAM-aware arity/parameter filtering/ranking; see
-[lathe-method-reference-completion.md](lathe-method-reference-completion.md).
+[lathe-method-reference-completion.md](../planned/lathe-method-reference-completion.md).
 
 ### In-Token Completion
 

@@ -1,5 +1,14 @@
 # Lathe — Reference-Index Guided Sibling Recompilation
 
+## Status
+
+Shipped as the **open-dependents refresh**. After a compile (and on source deletion),
+`WorkspaceSession.refreshOpenDependents` recompiles the *open* downstream dependents in the module
+graph and republishes their diagnostics. The richer design below — API-signature-hash gating and
+recompiling *closed* sibling callers via a debounced `ReferenceCandidateIndex` pass — was **not** built
+and is dropped as a non-goal (LSP clients surface diagnostics for open buffers). Retained for the
+problem statement and the dropped-design rationale.
+
 ## Problem
 
 Lathe maintains low-latency didChange diagnostics by compiling only the currently open file.
