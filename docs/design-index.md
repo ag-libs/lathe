@@ -124,6 +124,13 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 
 **VS Code:** a supported integration; depends on the full semantic-token coverage above.
 
+- [VS Code Client](planned/lathe-vscode-client.md) — **planned**; a thin `vscode-languageclient`
+  passthrough (M1) then full parity mapping the custom `lathe.*` commands onto VS Code APIs (Test
+  Explorer, DebugAdapter, TreeView, CodeLens) (M2). Reuses the cache launcher; monorepo-source-of-truth
+  generated mirror to `ag-libs/lathe.vscode`, published to the Marketplace + Open VSX by a mirror-repo
+  Action (PAT isolated in CI) triggered by a no-PAT `publish-vscode.sh` push; working-tree E2E via
+  `@vscode/test-electron` beside the Neovim specs.
+
 **AI coding agents:**
 
 - [AI Agent Integration](planned/lathe-ai-agent-integration.md) — a new MCP server (universal, carries

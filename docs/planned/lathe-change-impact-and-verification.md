@@ -7,11 +7,12 @@ Code-grounded design for two paired MCP tools — a **pre-edit** impact preview 
 **post-edit** scoped recompile (`verify_change`) — and the `LatheEngine` methods behind them.
 
 `verify_change` is deliberately **not** a fresh recompile engine: it is the **agent-facing, synchronous
-consumer of the [In-Process Workspace Sync](../done/lathe-in-process-workspace-sync.md) reaction**, which is
-already approved and owns the hard parts (change-set detection, the FULL-compile-from-disk primitive,
-topological cross-module ordering, deletion handling, the POM/bulk escape hatch). This doc adds only
-what the *agent* path needs on top of that substrate — synchronous invocation and **reporting**
-diagnostics back — plus the read-only `analyze_change` sibling, which no doc previously covered.
+consumer of the [In-Process Workspace Sync](../done/lathe-in-process-workspace-sync.md) reaction**, which
+has now **shipped** (`docs/done/`) and owns the hard parts (change-set detection, the
+FULL-compile-from-disk reaction, topological cross-module ordering, deletion handling, the POM/bulk
+escape hatch). This doc adds only what the *agent* path needs on top of that substrate — a synchronous
+trigger and **reporting** diagnostics back — plus the read-only `analyze_change` sibling, which no doc
+previously covered. Because the substrate has shipped, `verify_change` (P1) is unblocked.
 
 The MCP tool-surface tables in [AI Agent Integration](lathe-ai-agent-integration.md#mcp-tool-surface)
 reference these two as their detailed design.
@@ -58,22 +59,31 @@ The substrate is built for the editor: it runs in the **idle reconcile**, and it
 **not** eagerly compile closed cross-module dependents — they *self-heal on open*
 ([why cross-module is tractable](../done/lathe-in-process-workspace-sync.md#why-cross-module-is-tractable-the-parked-designs-blocker-dissolved)).
 An MCP agent is **stateless — it has no open documents**, so "self-heal on open" never fires and there
-is nothing to "watch." `verify_change` bridges that gap with two additions:
+is nothing to "watch." `verify_change` bridges that gap with three additions:
 
-1. **Synchronous invocation.** Trigger the reaction *now* for the change set (the same
-   detect→topo-order→react path the idle tick uses), rather than waiting for a timer.
-2. **Report, don't republish.** Collect and return the diagnostics of the changed files **and their
+1. **Synchronous trigger — already shipped.** `LatheTextDocumentService.reconcileNow(true)` runs the
+   whole detect→topo-order→react path on the worker and completes when the recompiles finish; `eager=true`
+   skips the two-tick stability wait the idle tick uses. No new plumbing.
+2. **Own escape-hatch gate.** `reconcileNow` calls `reconcileIfIdle` directly, which **bypasses the
+   watcher's POM/workspace check** (that lives in `checkForChanges`). So `verify_change` must run its own
+   gate — POM/workspace changed, or a changed file that maps to no module — *before* trusting the
+   in-process result, and hand off to Maven when it trips.
+3. **Report, don't republish.** Collect and return the diagnostics of the changed files **and their
    intra-module callers** — the agent cannot get them by "opening" a file — instead of the substrate's
    `scheduleDownstreamOpenFiles` republish.
 
-## Grounding in the existing engine (verified 2026-09-25)
+## Grounding in the shipped engine (verified against code 2026-09-26)
 
-| Capability | Class / method | Note for this design |
+All seams below exist in the shipped tree — no new substrate work is required for P1.
+
+| Capability | Shipped class / method (file) | Note for this design |
 |---|---|---|
-| Change-set detect (updated/deleted, per module) | [In-Process Workspace Sync §1](../done/lathe-in-process-workspace-sync.md#1-detect-the-change-set-no-new-io); reads `CompiledStamps.load` | reused wholesale; not re-implemented here |
-| FULL compile **from disk** | new primitive introduced by the substrate ([§new primitive](../done/lathe-in-process-workspace-sync.md#the-one-genuinely-new-compiler-primitive)); today `ModuleSourceCompiler.compile()` takes an in-memory buffer | the prerequisite both docs share; `verify_change` waits on it |
-| FAST multi-file analyze | `ModuleSourceCompiler.analyzeBatch()` (analyze-only, no `.class`) | used to diagnose caller files cheaply |
-| Topo module order | `WorkspaceModuleGraph` topo accessor (added by the substrate) | changed set compiled upstream-first |
+| Synchronous reaction trigger | `LatheTextDocumentService.reconcileNow(boolean eager)` → `WorkspaceSession.reconcileNow` → `reconcileIfIdle(eager)` | `eager=true` skips the two-tick wait; returns a future that completes when recompiles finish |
+| Change-set detect (updated, per module) | `WorkspaceSession.staleModules(configs, openPaths)` → `StaleScan(newestMtime, Map<ModuleSourceConfig,List<Path>> staleByModule)` (static, reusable) | gives the per-file, per-module updated set before the reaction advances stamps |
+| Deletion detect + cleanup | `WorkspaceSession.deleteOrphanedClassOutputs(config)` (+ `deleteClassOutputs`, `pruneOrphanStamps`) | deletions come from stamp keys with no surviving source; already wired into the reaction |
+| FULL compile from disk | driven inside the reaction via `CompileMode.FULL` on `ModuleSourceCompiler.compile(uri, content, mode, …)` (per file) | writes fresh `.class` to the mirror + records the stamp — no separate call needed |
+| Topo module order | `WorkspaceModuleGraph.upstreamFirst(Set<Path>)` | the reaction already compiles upstream-first |
+| Per-file diagnostics **without opening** | `LatheTextDocumentService.diagnosticsFuture(uri, diskContent, version)` (already used by `LatheEngine.compileFromDisk`) | the report step: diagnose changed + caller files against the freshened mirror |
 | file → module | `WorkspaceModuleRegistry.moduleSourceFor(path)` | empty for a brand-new module → handoff |
 | Reactor graph | `WorkspaceModuleGraph.downstreamModuleDirs(moduleDir)` | drives the Tier-3 `mvn` scope |
 | Intra-module callers | `ReferenceCandidatePlanner.planCandidates(config, target)` scoped to one module | the caller set `verify_change` eagerly diagnoses |
@@ -128,29 +138,30 @@ then be incomplete — references added/removed since the last sync are invisibl
 `LatheVerifyChange`. Not the rejected `verify_build` (an `mvn` wrapper); it drives the in-process
 reaction and reports its result, plus a precise `mvn` recommendation Lathe never runs.
 
-### Step 1 — resolve the change set (from the substrate)
+### Step 1 — capture the change set (before the reaction advances stamps)
 
-Reuse the substrate's classification: updated files (`mtime > stamp` or no stamp) and deleted files
-(stamp key with no surviving source), grouped by module. Accept an explicit `files=[…]` override when
-the agent knows its own change set.
+Call `WorkspaceSession.staleModules(configs, openPaths)` to get `staleByModule` (updated files, per
+module) and scan stamp keys for deletions — **before** `reconcileNow`, because the reaction records
+stamps and a post-reaction scan would show nothing stale. Accept an explicit `files=[…]` override when
+the agent knows its own change set. Also resolve each changed file → module now, to detect new-module
+files (Step 2).
 
-### Step 2 — escape-hatch gate (inherited)
+### Step 2 — own escape-hatch gate (not inherited from `reconcileNow`)
 
-If the substrate would defer to Maven — POM/module-structure change, non-javac generated sources, a
-new module with no `.lathe/` config, or a bulk change set over the cutoff — `verify_change` **skips the
-in-process tier** and returns the Tier-3 full-`mvn` handoff with that reason. No in-process compile runs
-against a stale classpath.
+Because `reconcileNow`→`reconcileIfIdle` bypasses the watcher's POM/workspace check, `verify_change`
+gates explicitly: if the POM/workspace fingerprint changed, a changed file maps to **no** module (a new
+module `.lathe/` predates), or the change set exceeds the bulk cutoff, **skip the in-process tier** and
+return the Tier-3 full-`mvn` handoff with that reason. No in-process compile runs against a stale
+classpath.
 
 ### Step 3 — Tier 1: react in-process, then diagnose (sub-second)
 
-For the change set, in topological (upstream-first) order:
-
-1. Drive the substrate reaction — FULL compile of updated files from disk into the mirror; apply
-   deletions (`deleteClassOutputs` + stamp prune). This writes fresh `.class` so callers resolve the new
-   API.
-2. Eagerly diagnose the **intra-module callers** of each changed file
-   (`ReferenceCandidatePlanner.planCandidates`) via `analyzeBatch()` against the now-updated classpath —
-   the report step the editor gets "for free" from open docs.
+1. `reconcileNow(true)` — the shipped reaction FULL-compiles the updated files from disk into the mirror
+   in upstream-first order and applies deletions, writing fresh `.class` so callers resolve the new API.
+   Await its future.
+2. Eagerly diagnose the changed files **and their intra-module callers**
+   (`ReferenceCandidatePlanner.planCandidates`) via `diagnosticsFuture(uri, diskContent, version)`
+   against the now-freshened mirror — the report step the editor gets "for free" from open docs.
 3. Return the collected diagnostics, grouped per module.
 
 **Diagnostics reported (v1): current in-scope diagnostics only.** There is no stored pre-edit
@@ -207,33 +218,30 @@ instead surfaced by the Tier-3 handoff and the still-active POM prompt, not by w
 2. **Stamp handling follows the substrate**, which records stamps on a successful in-process compile.
    *(Reconciled: the original "leave stamps untouched" intent — keep `staleModules()` honest about
    cross-module risk — is now served by the Tier-3 handoff + the retained POM prompt, so `verify_change`
-   does not fight the substrate's stamp write. Confirm in P0.)*
+   does not fight the substrate's stamp write.)*
 3. **Build order:** `verify_change` (Tier 1 + Tier 3) first; `analyze_change` second.
 
 ## Phases
 
-1. **P0 — spike.** Confirm the substrate's FULL-compile-from-disk primitive and stamp write land as
-   designed, and settle synchronous invocation of the reaction from the MCP engine (the idle-reconcile
-   path is timer-driven; `verify_change` needs an on-demand entry).
-2. **P1 — `verify_change` engine + tool.** `LatheEngine.verifyChange`: reuse the substrate's change-set
-   + reaction, add the eager intra-module caller diagnosis and the Tier-3 handoff; MCP tool + result
-   rendering; skill workflow line. **Depends on the substrate landing first.** Exit: an agent edits N
-   files and gets a module-scoped recompile plus a precise `mvn` for the cross-module remainder.
-3. **P2 — `analyze_change` engine + tool.** `LatheEngine.analyzeChange` composing
+- **P0 — spike: DONE.** The substrate shipped; the seams `verify_change` needs are verified in code
+  (`reconcileNow(eager)`, `staleModules(configs, openPaths)`/`StaleScan`, `upstreamFirst`,
+  `deleteOrphanedClassOutputs`, `diagnosticsFuture`). No substrate work remains; P1 is unblocked.
+1. **P1 — `verify_change` engine + tool.** `LatheEngine.verifyChange(files?)`: Step 1 capture → Step 2
+   own escape-hatch gate → Step 3 `reconcileNow(true)` + per-file `diagnosticsFuture` for changed +
+   callers → Step 4 Tier-3 handoff; `LatheVerifyChange` record; MCP tool + result rendering (reusing the
+   `result()`/stale-advisory helpers); tests mirroring `LatheEngineTest` + `LatheMcpToolsTest`. Exit: an
+   agent edits N files and gets a module-scoped recompile plus a precise `mvn` for the cross-module
+   remainder.
+2. **P2 — `analyze_change` engine + tool.** `LatheEngine.analyzeChange` composing
    describe/impls/references + graph, prod/test split; MCP tool + rendering. Exit: a pre-edit impact
    summary before a rename or signature change.
-4. **P3 — one-shot CLI (packaging follow-on).** Expose `verify_change` as `lathe verify-change --files
+3. **P3 — one-shot CLI (packaging follow-on).** Expose `verify_change` as `lathe verify-change --files
    …` so a future deterministic post-edit hook can fire it without an MCP round trip. (The Claude Code
    plugin packaging doc that would consume this was removed from the tree; re-establish that home before
    wiring the hook.)
 
 ## Open questions
 
-- **Substrate sequencing** — `verify_change` (P1) hard-depends on
-  [In-Process Workspace Sync](../done/lathe-in-process-workspace-sync.md) landing; if that slips, P2
-  (`analyze_change`, no compile dependency) can go first.
-- **Synchronous reaction entry** — expose the reaction as a direct call, or briefly drive the reconcile
-  and await it? (P0.)
 - **`publicApi` precision** — protected/package-private members overridable across modules: treat as
   "effectively public" for impact? (P2 spike.)
 - **Intra-module caller closure depth** — one level (matches `call_hierarchy`) or transitive within the
