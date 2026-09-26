@@ -90,15 +90,20 @@ that reads server instructions steers itself.
 
 Because the protocol is stateless, every tool reads the target file **from disk** at call time and
 compiles it against the captured `.lathe/` classpath. So `get_diagnostics` is accurate for *this*
-file after your edit, with no Maven. The rest of the world still resolves against the last build:
+file after your edit, with no Maven:
 
 - **Single-file** correctness (the file you just edited) is live — in-process `javac`, no Maven.
-- **Cross-module** correctness (a change another module depends on) needs a rebuild; that stays the
-  agent's own `mvn`.
+- **Other files** you change out of band (any module) are reconciled **in-process, automatically**:
+  Lathe watches the workspace and FULL-recompiles externally changed sources into the mirror in
+  dependency order (a short debounce after the edit settles), so cross-module results refresh without
+  Maven. Deletions are cleaned up too.
+- **Maven is still needed** only for POM / dependency / module-structure changes and for reactor-bound
+  code generation (annotation processors, non-javac generated sources) — Lathe does not fake those.
 
-When a referenced module's source is newer than its compiled classes, results append a **`Stale:`**
-note listing those modules. Re-run the build (`mvn process-test-classes`) to refresh, then re-query.
-`rename_symbol` force-refreshes so its own result is current.
+While a referenced module's source is newer than its compiled classes (e.g. in the moment before the
+reconcile catches up), results append a **`Stale:`** note listing those modules; it clears once the
+in-process recompile lands, or you can force it with `mvn process-test-classes`. `rename_symbol`
+force-refreshes so its own result is current.
 
 `rename_symbol` is the one tool that writes: it applies javac-computed edits to disk and **refuses to
 touch a file outside the reactor**.

@@ -78,8 +78,9 @@ All seams below exist in the shipped tree — no new substrate work is required 
 
 | Capability | Shipped class / method (file) | Note for this design |
 |---|---|---|
-| Synchronous reaction trigger | `LatheTextDocumentService.reconcileNow(boolean eager)` → `WorkspaceSession.reconcileNow` → `reconcileIfIdle(eager)` | `eager=true` skips the two-tick wait; returns a future that completes when recompiles finish |
-| Change-set detect (updated, per module) | `WorkspaceSession.staleModules(configs, openPaths)` → `StaleScan(newestMtime, Map<ModuleSourceConfig,List<Path>> staleByModule)` (static, reusable) | gives the per-file, per-module updated set before the reaction advances stamps |
+| Synchronous reaction trigger (existing) | `LatheTextDocumentService.reconcileNow(boolean eager)` → `WorkspaceSession.reconcileNow` → `reconcileIfIdle(eager)` | `void`, package-private, and refuses silently — **not** directly usable by the agent; motivates the new seam below |
+| Reporting reaction trigger (**new, P1**) | `LatheTextDocumentService.reconcileForVerify()` → `ReconcileOutcome(reacted, deleted, deferral)` | the one substrate touch: public, worker-thread, gates on the private flags and returns *what it recompiled* or *why it refused* (see below) |
+| Change-set detect (updated, per module) | `WorkspaceSession.staleModules(configs, openPaths)` → `StaleScan(newestMtime, Map<ModuleSourceConfig,List<Path>> staleByModule)` (static, reusable) | used *inside* `reconcileForVerify` to capture the updated set before stamps advance |
 | Deletion detect + cleanup | `WorkspaceSession.deleteOrphanedClassOutputs(config)` (+ `deleteClassOutputs`, `pruneOrphanStamps`) | deletions come from stamp keys with no surviving source; already wired into the reaction |
 | FULL compile from disk | driven inside the reaction via `CompileMode.FULL` on `ModuleSourceCompiler.compile(uri, content, mode, …)` (per file) | writes fresh `.class` to the mirror + records the stamp — no separate call needed |
 | Topo module order | `WorkspaceModuleGraph.upstreamFirst(Set<Path>)` | the reaction already compiles upstream-first |
@@ -138,31 +139,62 @@ then be incomplete — references added/removed since the last sync are invisibl
 `LatheVerifyChange`. Not the rejected `verify_build` (an `mvn` wrapper); it drives the in-process
 reaction and reports its result, plus a precise `mvn` recommendation Lathe never runs.
 
-### Step 1 — capture the change set (before the reaction advances stamps)
+### The `reconcileForVerify` seam (new — the one substrate touch)
 
-Call `WorkspaceSession.staleModules(configs, openPaths)` to get `staleByModule` (updated files, per
-module) and scan stamp keys for deletions — **before** `reconcileNow`, because the reaction records
-stamps and a post-reaction scan would show nothing stale. Accept an explicit `files=[…]` override when
-the agent knows its own change set. Also resolve each changed file → module now, to detect new-module
-files (Step 2).
+The shipped `reconcileNow(eager)` is unusable as-is by an agent: it returns `void`, is package-private
+(the engine is in `server.engine`, a different package), and its reaction refuses **silently** — it
+returns an empty list with no signal when it hits a private gate (`pomNotificationPending`,
+`reactorBuildInProgress()`, or a change set over `BULK_CHANGE_THRESHOLD` = 50). If `verify_change` just
+drove it and then diagnosed, a pending POM prompt or a 51-file change set would make the reaction a
+no-op and the diagnosis would run against a **stale mirror** — a false "all clear."
 
-### Step 2 — own escape-hatch gate (not inherited from `reconcileNow`)
+So P1 adds **one public, reporting** entry that keeps those private flags encapsulated in the session
+and tells the caller either *what it recompiled* or *why it refused*:
 
-Because `reconcileNow`→`reconcileIfIdle` bypasses the watcher's POM/workspace check, `verify_change`
-gates explicitly: if the POM/workspace fingerprint changed, a changed file maps to **no** module (a new
-module `.lathe/` predates), or the change set exceeds the bulk cutoff, **skip the in-process tier** and
-return the Tier-3 full-`mvn` handoff with that reason. No in-process compile runs against a stale
-classpath.
+```java
+// LatheTextDocumentService (package server) — public, so LatheEngine (server.engine) can call it
+public CompletableFuture<ReconcileOutcome> reconcileForVerify();
 
-### Step 3 — Tier 1: react in-process, then diagnose (sub-second)
+// WorkspaceSession — package-private impl, where the gate flags already live
+record ReconcileOutcome(
+    List<Path> reacted,      // updated sources FULL-compiled into the mirror this pass
+    List<Path> deleted,      // sources whose orphaned .class were pruned
+    DeferReason deferral) {} // NONE when the pass ran
+enum DeferReason { NONE, POM_PENDING, BULK_CHANGE, BUILD_IN_PROGRESS }
+```
 
-1. `reconcileNow(true)` — the shipped reaction FULL-compiles the updated files from disk into the mirror
-   in upstream-first order and applies deletions, writing fresh `.class` so callers resolve the new API.
-   Await its future.
-2. Eagerly diagnose the changed files **and their intra-module callers**
-   (`ReferenceCandidatePlanner.planCandidates`) via `diagnosticsFuture(uri, diskContent, version)`
-   against the now-freshened mirror — the report step the editor gets "for free" from open docs.
-3. Return the collected diagnostics, grouped per module.
+**Algorithm (on the worker thread):**
+
+1. **Build-lock guard** — `reactorBuildInProgress()` ⇒ `([], [], BUILD_IN_PROGRESS)`.
+2. **Capture** the change set *before* stamps advance: `updated = staleModules(allConfigs, openPaths).staleFiles()` (mtime > stamp or no stamp — the same classification the idle tick uses).
+3. **POM gate** — `pomNotificationPending` ⇒ `([], [], POM_PENDING)`.
+4. **Bulk gate** — `updated.size() > BULK_CHANGE_THRESHOLD` ⇒ `([], [], BULK_CHANGE)`. Unlike the idle path it does **not** fire `promptBulkSync` — an MCP call must never pop an editor prompt.
+5. **React** (no deferral) — `reconcileDeletedSources()` (collect `deleted`), then FULL-compile `updated` **eagerly** (no two-tick wait) upstream-first via the existing `compileOrder`/`upstreamFirst`; await all recompiles; return `(updated, deleted, NONE)`.
+
+**Deliberately not its job:** diagnosing (that's `verify_change`, below), new-module detection (derivable
+from the *public* `moduleSourceFor`, so `verify_change` does it), any `mvn`, and any user prompt. The
+existing `reconcileNow` (used by tests) is left untouched.
+
+### Step 1 — react and classify (via `reconcileForVerify`)
+
+`outcome = await(service.reconcileForVerify())`. This captures the change set, applies the private gates,
+and — when viable — freshens the mirror, returning `reacted` / `deleted` / `deferral`. It subsumes the
+old "capture before stamps advance" concern, so `verify_change` needs no separate pre-scan. In
+explicit-`files=[…]` mode, `verify_change` intersects the outcome with the supplied set.
+
+### Step 2 — deferral & new-module gate → hand off
+
+If `outcome.deferral != NONE`, return the Tier-3 full-`mvn` handoff with that reason (`POM_PENDING` /
+`BULK_CHANGE` / `BUILD_IN_PROGRESS`). Additionally, if any changed file maps to **no** module
+(`moduleSourceFor` empty — a new module `.lathe/` predates), hand off likewise. No diagnosis runs against
+a stale classpath.
+
+### Step 3 — Tier 1: diagnose the freshened set (sub-second)
+
+Eagerly diagnose `outcome.reacted` **and their intra-module callers**
+(`ReferenceCandidatePlanner.planCandidates`) via `diagnosticsFuture(uri, diskContent, version)` against
+the now-freshened mirror — the report step the editor gets "for free" from open docs — and return the
+diagnostics grouped per module.
 
 **Diagnostics reported (v1): current in-scope diagnostics only.** There is no stored pre-edit
 diagnostic baseline, so "new vs resolved" is not computed. In practice the baseline is empty (a synced
@@ -180,8 +212,8 @@ are reactor properties it will not fake. It emits the minimal correct invocation
 mvn -pl <changed>,<downstream…> -amd process-test-classes
 ```
 
-Lathe makes the agent's `mvn` precise; it never runs `mvn` itself. Tier 3 is also the fallback for the
-Step-2 escape hatch and for cross-module deletions.
+Lathe makes the agent's `mvn` precise; it never runs `mvn` itself. Tier 3 is also the fallback for a
+Step-2 deferral (any `DeferReason` or a new-module file) and for cross-module deletions.
 
 Tier 2 (in-process cross-module recompile) stays **deferred**, matching the substrate: the self-healing
 argument makes it *analysis*-correct in the codegen-free case, but the cross-module AP / generated-source
@@ -226,12 +258,14 @@ instead surfaced by the Tier-3 handoff and the still-active POM prompt, not by w
 - **P0 — spike: DONE.** The substrate shipped; the seams `verify_change` needs are verified in code
   (`reconcileNow(eager)`, `staleModules(configs, openPaths)`/`StaleScan`, `upstreamFirst`,
   `deleteOrphanedClassOutputs`, `diagnosticsFuture`). No substrate work remains; P1 is unblocked.
-1. **P1 — `verify_change` engine + tool.** `LatheEngine.verifyChange(files?)`: Step 1 capture → Step 2
-   own escape-hatch gate → Step 3 `reconcileNow(true)` + per-file `diagnosticsFuture` for changed +
-   callers → Step 4 Tier-3 handoff; `LatheVerifyChange` record; MCP tool + result rendering (reusing the
-   `result()`/stale-advisory helpers); tests mirroring `LatheEngineTest` + `LatheMcpToolsTest`. Exit: an
-   agent edits N files and gets a module-scoped recompile plus a precise `mvn` for the cross-module
-   remainder.
+1. **P1 — `verify_change` engine + tool.** Substrate touch: add `reconcileForVerify()` +
+   `ReconcileOutcome`/`DeferReason` on `LatheTextDocumentService`/`WorkspaceSession`. Then
+   `LatheEngine.verifyChange(files?)`: Step 1 `reconcileForVerify` → Step 2 deferral & new-module gate →
+   Step 3 per-file `diagnosticsFuture` for `reacted` + callers → Step 4 Tier-3 handoff; `LatheVerifyChange`
+   record; MCP tool + result rendering (reusing the `result()`/stale-advisory helpers); tests mirroring
+   `LatheEngineTest` + `LatheMcpToolsTest` (plus a `reconcileForVerify` deferral unit test in the server
+   module). Exit: an agent edits N files and gets a module-scoped recompile plus a precise `mvn` for the
+   cross-module remainder.
 2. **P2 — `analyze_change` engine + tool.** `LatheEngine.analyzeChange` composing
    describe/impls/references + graph, prod/test split; MCP tool + rendering. Exit: a pre-edit impact
    summary before a rename or signature change.
