@@ -22,9 +22,9 @@
 --   format_on_save      boolean; format on write; only wired when formatter == "google" (default: false).
 --   pom                 table; client-side pom.xml support via `xmllint` (no server involvement):
 --                       { validate = true, format = false }. validate publishes XSD diagnostics on
---                       open/save (default on); format points `formatprg` at `xmllint --format` for
---                       `gq` (default off). Pass { validate = false } to disable. Needs `xmllint`
---                       (libxml2) on PATH; degrades to a one-time notice otherwise.
+--                       open and live (debounced) as you type (default on); format points `formatprg`
+--                       at `xmllint --format` for `gq` (default off). Pass { validate = false } to
+--                       disable. Needs `xmllint` (libxml2) on PATH; degrades to a one-time notice.
 --
 -- Set LATHE_DEBUG=1 in the environment to enable debug logging in the server process.
 -- Requires the Java Treesitter parser for indentation (:TSInstall java).

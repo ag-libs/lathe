@@ -1,8 +1,9 @@
 -- Client-side pom.xml support: XSD validation and optional formatting, both via `xmllint`
 -- (libxml2). This is pure editor tooling -- the Lathe language server is NOT involved and is
 -- never attached to pom.xml (its filetypes stay `java`). Validation runs `xmllint` against the
--- bundled Maven POM schema and maps its errors into a private diagnostic namespace; formatting
--- points the buffer's `formatprg` at `xmllint --format` so `gq` reindents.
+-- bundled Maven POM schema on open and (debounced) as you type, mapping its errors into a private
+-- diagnostic namespace; formatting points the buffer's `formatprg` at `xmllint --format` so `gq`
+-- reindents.
 --
 -- Degrades silently when `xmllint` is not installed or the schema cannot be found: a one-time
 -- notification, then no-op, so a runtime without libxml2 is unaffected.
@@ -28,6 +29,15 @@ end
 local function has_xmllint()
   return vim.fn.executable('xmllint') == 1
 end
+
+-- Whole-buffer contents as one newline-joined string, fed to xmllint over stdin.
+local function buffer_text(bufnr)
+  return table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), '\n')
+end
+
+-- Debounce state for live (on-change) validation: one reusable libuv timer per buffer.
+local validate_timers = {}
+local DEBOUNCE_MS = 250
 
 --- Absolute path to the bundled Maven POM XSD, found on the runtimepath so it resolves for both the
 --- cache-unpacked bundle and the standalone plugin.
@@ -62,8 +72,9 @@ function M.parse_diagnostics(lines, filename)
 end
 
 --- Validate the pom.xml backing `bufnr` against the bundled schema and publish diagnostics.
---- Reads the file on disk (xmllint needs a file), so it reflects the last save -- which is why it
---- is wired to BufReadPost/BufWritePost, not every change. `--nonet` keeps it offline.
+--- Feeds the live buffer contents to `xmllint` via stdin (not the file on disk), so it reflects
+--- unsaved edits and can run on every change. xmllint labels stdin errors with a `-:<line>:` prefix,
+--- so diagnostics parse against the `-` filename. `--nonet` keeps it offline.
 ---@param bufnr integer? defaults to the current buffer
 function M.validate(bufnr)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
@@ -82,20 +93,15 @@ function M.validate(bufnr)
     return
   end
 
-  local file = vim.api.nvim_buf_get_name(bufnr)
-  if file == '' then
-    return
-  end
-
   vim.system(
-    { 'xmllint', '--nonet', '--noout', '--schema', schema, file },
-    { text = true },
+    { 'xmllint', '--nonet', '--noout', '--schema', schema, '-' },
+    { text = true, stdin = buffer_text(bufnr) },
     vim.schedule_wrap(function(result)
       if not vim.api.nvim_buf_is_valid(bufnr) then
         return
       end
       local lines = vim.split(result.stderr or '', '\n', { trimempty = true })
-      vim.diagnostic.set(ns, bufnr, M.parse_diagnostics(lines, file))
+      vim.diagnostic.set(ns, bufnr, M.parse_diagnostics(lines, '-'))
     end)
   )
 end
@@ -112,8 +118,7 @@ function M.format_buffer(bufnr)
     return
   end
 
-  local input = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), '\n')
-  local output = vim.fn.system({ 'xmllint', '--nonet', '--format', '-' }, input)
+  local output = vim.fn.system({ 'xmllint', '--nonet', '--format', '-' }, buffer_text(bufnr))
   if vim.v.shell_error ~= 0 then
     vim.notify(
       'Lathe: pom.xml not formatted (invalid XML): ' .. vim.trim(output),
@@ -139,6 +144,38 @@ local function set_formatprg(bufnr)
   end
 end
 
+-- Stop and release a buffer's debounce timer (on buffer wipeout, so timers do not leak).
+local function cancel_timer(bufnr)
+  local timer = validate_timers[bufnr]
+  if not timer then
+    return
+  end
+  timer:stop()
+  if not timer:is_closing() then
+    timer:close()
+  end
+  validate_timers[bufnr] = nil
+end
+
+-- Debounce M.validate so a burst of keystrokes triggers a single xmllint run once typing settles.
+local function schedule_validate(bufnr)
+  local timer = validate_timers[bufnr]
+  if not timer then
+    timer = assert((vim.uv or vim.loop).new_timer())
+    validate_timers[bufnr] = timer
+  end
+  timer:stop()
+  timer:start(
+    DEBOUNCE_MS,
+    0,
+    vim.schedule_wrap(function()
+      if vim.api.nvim_buf_is_valid(bufnr) then
+        M.validate(bufnr)
+      end
+    end)
+  )
+end
+
 function M.setup(opts)
   opts = opts or {}
   M.config = {
@@ -149,11 +186,27 @@ function M.setup(opts)
   local augroup = vim.api.nvim_create_augroup('LathePom', { clear = true })
 
   if M.config.validate then
-    vim.api.nvim_create_autocmd({ 'BufReadPost', 'BufWritePost' }, {
+    -- Validate immediately on open, then live (debounced) on every edit -- buffer contents, not the
+    -- saved file -- so schema errors surface as you type rather than only on write.
+    vim.api.nvim_create_autocmd('BufReadPost', {
       group = augroup,
       pattern = 'pom.xml',
       callback = function(ev)
         M.validate(ev.buf)
+      end,
+    })
+    vim.api.nvim_create_autocmd({ 'TextChanged', 'TextChangedI' }, {
+      group = augroup,
+      pattern = 'pom.xml',
+      callback = function(ev)
+        schedule_validate(ev.buf)
+      end,
+    })
+    vim.api.nvim_create_autocmd('BufWipeout', {
+      group = augroup,
+      pattern = 'pom.xml',
+      callback = function(ev)
+        cancel_timer(ev.buf)
       end,
     })
   end

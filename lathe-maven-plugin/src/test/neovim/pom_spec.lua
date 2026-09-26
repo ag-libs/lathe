@@ -52,46 +52,91 @@ spec.check(
   0
 )
 
--- setup() wiring: validate on by default registers the open/save autocmds; format off by default.
+-- Stdin validation labels errors with a "-:<line>:" prefix (no file on disk), which is the default
+-- validate() path, so it must parse against the "-" filename.
+spec.check("stdin '-' prefix parses to a diagnostic", #pom.parse_diagnostics({ "-:7: bad element" }, "-"), 1)
+
+-- setup() wiring: validate on by default registers open (BufReadPost) + live (TextChanged/TextChangedI)
+-- autocmds, and no longer the save-only BufWritePost; format off by default.
 local function count(event)
   return #vim.api.nvim_get_autocmds({ group = "LathePom", event = event })
 end
 
 pom.setup({})
-spec.check("default: validate wired on BufWritePost", count("BufWritePost"), 1)
 spec.check("default: validate wired on BufReadPost", count("BufReadPost"), 1)
+spec.check("default: live validate wired on TextChanged", count("TextChanged"), 1)
+spec.check("default: live validate wired on TextChangedI", count("TextChangedI"), 1)
+spec.check("default: no save-only BufWritePost validate", count("BufWritePost"), 0)
 
 -- validate=false, format=false: the augroup is cleared, no autocmds.
 pom.setup({ validate = false, format = false })
 spec.check("disabled: no LathePom autocmds", #vim.api.nvim_get_autocmds({ group = "LathePom" }), 0)
 
--- format=true (validate off): only the BufReadPost formatprg autocmd.
+-- format=true (validate off): only the BufReadPost formatprg autocmd, no live-validate events.
 pom.setup({ validate = false, format = true })
 spec.check("format-only: BufReadPost wired", count("BufReadPost"), 1)
-spec.check("format-only: no BufWritePost validate", count("BufWritePost"), 0)
+spec.check("format-only: no live TextChanged validate", count("TextChanged"), 0)
 
--- format_buffer reindents a valid pom in place; and (the whole point) leaves an INVALID pom
--- untouched rather than blanking it the way a naive `:%!xmllint` filter would.
+-- End-to-end against the real xmllint binary (schema already asserted present above): format_buffer
+-- reindents/refuses, and validate() exercises the stdin path (buffer contents, no file on disk).
 if vim.fn.executable("xmllint") == 1 then
-  local ok_buf = vim.api.nvim_create_buf(false, true)
-  vim.api.nvim_buf_set_lines(ok_buf, 0, -1, false, {
+  local function make_buf(lines)
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    return buf
+  end
+
+  -- format_buffer reindents a valid pom in place; and (the whole point) leaves an INVALID pom
+  -- untouched rather than blanking it the way a naive `:%!xmllint` filter would.
+  local ok_buf = make_buf({
     '<?xml version="1.0"?>',
     '<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion></project>',
   })
   pom.format_buffer(ok_buf)
   spec.check("format_buffer expands a valid pom", #vim.api.nvim_buf_get_lines(ok_buf, 0, -1, false) > 2, true)
 
-  local bad_buf = vim.api.nvim_create_buf(false, true)
   local bad = { "<project><modelVersion>4.0.0</modelVersion>" } -- unclosed <project>
-  vim.api.nvim_buf_set_lines(bad_buf, 0, -1, false, bad)
+  local bad_buf = make_buf(bad)
   pom.format_buffer(bad_buf)
   spec.check(
     "format_buffer leaves an invalid pom untouched",
     vim.api.nvim_buf_get_lines(bad_buf, 0, -1, false)[1],
     bad[1]
   )
+
+  -- validate() feeds the buffer contents to xmllint via stdin, so an invalid (unsaved) pom yields a
+  -- diagnostic and a valid one yields none -- the live, unsaved-aware path.
+  pom.setup({}) -- re-enable validate (a previous case left it off)
+  local function diags_after_validate(buf_lines, expect_any)
+    local buf = make_buf(buf_lines)
+    pom.validate(buf)
+    vim.wait(4000, function()
+      return (#vim.diagnostic.get(buf) > 0) == expect_any
+    end, 50)
+    return vim.diagnostic.get(buf)
+  end
+
+  local invalid = diags_after_validate({
+    '<?xml version="1.0"?>',
+    '<project xmlns="http://maven.apache.org/POM/4.0.0">',
+    "  <modelVersion>4.0.0</modelVersion>",
+    "  <bogusElement>nope</bogusElement>",
+    "</project>",
+  }, true)
+  spec.check("validate flags an invalid pom from buffer contents", #invalid >= 1, true)
+
+  local valid = diags_after_validate({
+    '<?xml version="1.0"?>',
+    '<project xmlns="http://maven.apache.org/POM/4.0.0">',
+    "  <modelVersion>4.0.0</modelVersion>",
+    "  <groupId>com.example</groupId>",
+    "  <artifactId>app</artifactId>",
+    "  <version>1.0.0</version>",
+    "</project>",
+  }, false)
+  spec.check("validate passes a valid pom from buffer contents", #valid, 0)
 else
-  spec.pending("format_buffer end-to-end", "xmllint not installed")
+  spec.pending("xmllint end-to-end (format + validate)", "xmllint not installed")
 end
 
 spec.finish()
