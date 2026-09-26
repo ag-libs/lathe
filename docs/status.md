@@ -81,6 +81,7 @@ The tag-driven release pipeline (CI GPG signing + publish; see [RELEASING.md](..
 | `rename_symbol` | Implemented | Reactor-wide rename applied to disk; refuses to touch non-reactor files. |
 | `run_test` | Implemented | Replays a test method/class/package from captured bytecode — no reactor build. |
 | `verify_change` | Implemented | After edits, recompiles the changed set in-process (auto-detected from disk, or scoped by `files`), reports new diagnostics per module, and emits the scoped `mvn -pl … -amd` command for the cross-module remainder — no Maven run. |
+| `analyze_change` | Implemented | Pre-edit impact of a symbol: override/implementation family, production vs test reference counts, affected reactor modules, and relevant test classes. Read-only. |
 
 Cross-cutting: every located result carries a source snippet and an origin (reactor / dependency / JDK / generated); results append a `Stale:` advisory when a module's source is newer than its compiled classes; task→tool routing instructions are served at connection time; and each tool call is logged (`[tool] <name> <args> <ms> <outcome>`) to stderr for usage analysis.
 

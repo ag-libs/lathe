@@ -100,6 +100,11 @@ public final class LatheTextDocumentService implements TextDocumentService {
     return worker.submit(() -> session.downstreamModuleRels(changed));
   }
 
+  /** Reactor placement (module rel + test/production) for each path that maps to a module. */
+  public CompletableFuture<Map<Path, ModulePlacement>> classifyPaths(final List<Path> paths) {
+    return worker.submit(() -> session.classifyPaths(paths));
+  }
+
   public void close() {
     if (!closed.compareAndSet(false, true)) {
       return;

@@ -23,6 +23,12 @@ public final class FileUtil {
     return path.getFileName().toString().endsWith(".java");
   }
 
+  // The top-level type name of a .java source — its file name without the .java suffix.
+  public static String javaTypeName(final Path javaFile) {
+    final var name = javaFile.getFileName().toString();
+    return name.endsWith(".java") ? name.substring(0, name.length() - ".java".length()) : name;
+  }
+
   // Every directory below root (excluding root itself), sorted; empty when root is not a directory.
   public static List<Path> subdirectories(final Path root) throws IOException {
     if (!Files.isDirectory(root)) {

@@ -51,6 +51,7 @@ class LatheMcpToolsTest {
             "describe_symbol",
             "search_symbols",
             "find_implementations",
+            "analyze_change",
             "verify_change");
 
     assertThat(tool("get_diagnostics").tool().inputSchema().toString()).contains("file");
@@ -70,6 +71,14 @@ class LatheMcpToolsTest {
     assertThat(tool("find_implementations").tool().inputSchema().toString())
         .contains("file", "line", "column", "maxResults");
     assertThat(tool("verify_change").tool().inputSchema().toString()).contains("files");
+    assertThat(tool("analyze_change").tool().inputSchema().toString())
+        .contains("file", "line", "column");
+  }
+
+  @Test
+  void analyzeChange_missingPositionArguments_returnsError() {
+    assertThat(call("analyze_change", Map.of("file", tmp.resolve("Any.java").toString())).isError())
+        .isTrue();
   }
 
   @Test

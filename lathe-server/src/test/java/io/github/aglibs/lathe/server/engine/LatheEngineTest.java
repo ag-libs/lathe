@@ -238,6 +238,40 @@ class LatheEngineTest {
   }
 
   @Test
+  void analyzeChange_interfaceMethod_reportsOverrideFamilyAndReferences() throws Exception {
+    final String ifaceSource =
+        """
+        package com.example;
+        interface Greeter {
+          void greet();
+        }
+        """;
+    final Path iface = TestCompiler.writeModuleSource(tmp, "com/example/Greeter.java", ifaceSource);
+    final Path impl =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/EnGreeter.java",
+            "package com.example; class EnGreeter implements Greeter { public void greet() {} }");
+    final Path caller =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/Caller.java",
+            "package com.example; class Caller { void run(Greeter g) { g.greet(); } }");
+    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), iface, impl, caller);
+    engine = new LatheEngine(tmp);
+
+    final var pos = offsetToPosition(ifaceSource, ifaceSource.indexOf("greet"));
+    final LatheChangeImpact impact = engine.analyzeChange(iface, pos.getLine(), pos.getCharacter());
+
+    assertThat(impact.signature()).contains("greet");
+    assertThat(impact.overrideFamily())
+        .anySatisfy(loc -> assertThat(loc.uri()).endsWith("EnGreeter.java"));
+    assertThat(impact.productionRefs()).isGreaterThanOrEqualTo(1);
+    assertThat(impact.testRefs()).isZero();
+    assertThat(impact.affectedModules()).containsExactly("module");
+  }
+
+  @Test
   void verifyChange_externalEditBreaksSibling_reportsDiagnostic() throws Exception {
     final GreetFixture fx = greetFixture();
     stampModule(fx.callee(), fx.caller());

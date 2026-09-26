@@ -4,6 +4,7 @@ import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.engine.LatheCall;
 import io.github.aglibs.lathe.server.engine.LatheCallHierarchy;
+import io.github.aglibs.lathe.server.engine.LatheChangeImpact;
 import io.github.aglibs.lathe.server.engine.LatheEngine;
 import io.github.aglibs.lathe.server.engine.LatheEngine.CallDirection;
 import io.github.aglibs.lathe.server.engine.LatheEngine.TestScope;
@@ -56,6 +57,7 @@ final class LatheMcpTools {
         describeSymbol(engine, mapper),
         searchSymbols(engine, mapper),
         findImplementations(engine, mapper),
+        analyzeChange(engine, mapper),
         verifyChange(engine, mapper));
   }
 
@@ -329,6 +331,33 @@ final class LatheMcpTools {
         .build();
   }
 
+  private static SyncToolSpecification analyzeChange(
+      final LatheEngine engine, final McpJsonMapper mapper) {
+    final var tool =
+        Tool.builder(
+                "analyze_change",
+                mapper,
+                """
+                {"type":"object","required":["file","line","column"],
+                 "properties":{
+                   "file":{"type":"string","description":"Absolute path to a .java file."},
+                   "line":{"type":"integer","description":"1-based line of the symbol."},
+                   "column":{"type":"integer","description":"1-based column of the symbol."}}}""")
+            .description(
+                """
+                Before editing a symbol, preview its blast radius — javac-accurate and cross-module: \
+                its override/implementation family, how many production vs test references it has, \
+                which reactor modules use it, and the relevant test classes. Use it to scope a rename \
+                or signature change before making it.""")
+            .build();
+    return SyncToolSpecification.builder()
+        .tool(tool)
+        .callHandler(
+            (exchange, request) ->
+                logged("analyze_change", request, () -> handleAnalyzeChange(engine, request)))
+        .build();
+  }
+
   private static SyncToolSpecification verifyChange(
       final LatheEngine engine, final McpJsonMapper mapper) {
     final var tool =
@@ -463,6 +492,15 @@ final class LatheMcpTools {
         "run_test",
         file,
         () -> testRunResult(engine.runTest(file, scope, method), engine.staleModules()));
+  }
+
+  private static CallToolResult handleAnalyzeChange(
+      final LatheEngine engine, final CallToolRequest request) {
+    return atPosition(
+        "analyze_change",
+        request,
+        (file, line, column) ->
+            analyzeResult(engine.analyzeChange(file, line, column), engine.staleModules()));
   }
 
   private static CallToolResult handleVerifyChange(
@@ -742,6 +780,46 @@ final class LatheMcpTools {
 
   private static Map<String, Object> testFailureMap(final LatheTestFailure f) {
     return Map.<String, Object>of("test", f.test(), "line", f.line(), "summary", f.summary());
+  }
+
+  private static CallToolResult analyzeResult(
+      final LatheChangeImpact impact, final List<String> stale) {
+    final String overrides =
+        impact.overrideFamily().isEmpty()
+            ? "none"
+            : "%d%n%s"
+                .formatted(impact.overrideFamily().size(), locationLines(impact.overrideFamily()));
+    final String text =
+        """
+        %s
+        references: %d production, %d test%s
+        affected modules: %s
+        relevant tests: %s
+        override family: %s"""
+            .formatted(
+                impact.signature().isBlank() ? "(no symbol at that position)" : impact.signature(),
+                impact.productionRefs(),
+                impact.testRefs(),
+                impact.referencesTruncated() ? " (truncated)" : "",
+                joinOrNone(impact.affectedModules()),
+                joinOrNone(impact.relevantTests()),
+                overrides);
+    return result(
+        text,
+        Map.<String, Object>of(
+            "signature", impact.signature(),
+            "productionRefs", impact.productionRefs(),
+            "testRefs", impact.testRefs(),
+            "referencesTruncated", impact.referencesTruncated(),
+            "affectedModules", impact.affectedModules(),
+            "relevantTests", impact.relevantTests(),
+            "overrideFamily",
+                impact.overrideFamily().stream().map(LatheMcpTools::locationMap).toList()),
+        stale);
+  }
+
+  private static String joinOrNone(final List<String> items) {
+    return items.isEmpty() ? "none" : String.join(", ", items);
   }
 
   private static CallToolResult verifyChangeResult(final LatheVerifyChange verify) {

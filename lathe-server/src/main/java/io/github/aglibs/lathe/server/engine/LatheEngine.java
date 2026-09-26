@@ -1,11 +1,13 @@
 package io.github.aglibs.lathe.server.engine;
 
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
 import io.github.aglibs.lathe.server.LatheTextDocumentService;
 import io.github.aglibs.lathe.server.LatheUri;
+import io.github.aglibs.lathe.server.ModulePlacement;
 import io.github.aglibs.lathe.server.ReconcileOutcome;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import io.github.aglibs.lathe.server.run.RunTarget;
@@ -60,6 +62,10 @@ public final class LatheEngine {
 
   private static final long REQUEST_TIMEOUT_SECONDS = 30;
   private static final int SNIPPET_CONTEXT_LINES = 3;
+
+  // analyze_change classifies every reference, so it needs the full set, not a page. The cap is a
+  // safety bound; LatheChangeImpact.referencesTruncated flags when it is exceeded.
+  private static final int IMPACT_MAX_RESULTS = 1000;
 
   // Every put creates a fresh generation, so the LSP version is irrelevant to freshness here.
   private static final int VERSION = 1;
@@ -146,6 +152,11 @@ public final class LatheEngine {
   public LatheReferences references(
       final Path file, final int line, final int column, final int maxResults) {
     compileFromDisk(file); // register the file and warm its analysis before searching
+    return referencesAt(file, line, column, maxResults);
+  }
+
+  private LatheReferences referencesAt(
+      final Path file, final int line, final int column, final int maxResults) {
     final var params = new ReferenceParams();
     params.setTextDocument(new TextDocumentIdentifier(file.toUri().toString()));
     params.setPosition(new Position(line, column));
@@ -163,6 +174,11 @@ public final class LatheEngine {
   public LatheImplementations findImplementations(
       final Path file, final int line, final int column, final int maxResults) {
     compileFromDisk(file); // register the file and warm its analysis before resolving
+    return implementationsAt(file, line, column, maxResults);
+  }
+
+  private LatheImplementations implementationsAt(
+      final Path file, final int line, final int column, final int maxResults) {
     final var params =
         new ImplementationParams(
             new TextDocumentIdentifier(file.toUri().toString()), new Position(line, column));
@@ -179,6 +195,10 @@ public final class LatheEngine {
    */
   public String describe(final Path file, final int line, final int column) {
     compileFromDisk(file); // register the file and warm its analysis before resolving
+    return hoverAt(file, line, column);
+  }
+
+  private String hoverAt(final Path file, final int line, final int column) {
     final var params =
         new HoverParams(
             new TextDocumentIdentifier(file.toUri().toString()), new Position(line, column));
@@ -418,6 +438,50 @@ public final class LatheEngine {
 
   private static String crossModuleMvn(final Set<String> changedModuleRels) {
     return LatheLayout.scopedSyncCommand(String.join(",", new TreeSet<>(changedModuleRels)));
+  }
+
+  /**
+   * Pre-edit impact of the symbol at {@code line}/{@code column} (0-based): its signature, override
+   * family, production vs test reference counts, the reactor modules that use it, and the relevant
+   * test classes. Read-only — composes definition/reference analysis, no compile of the change.
+   */
+  public LatheChangeImpact analyzeChange(final Path file, final int line, final int column) {
+    compileFromDisk(file); // warm once; the queries below reuse the analysis
+    final String signature = hoverAt(file, line, column);
+    final List<LatheLocation> overrideFamily =
+        implementationsAt(file, line, column, IMPACT_MAX_RESULTS).implementations();
+    final LatheReferences refs = referencesAt(file, line, column, IMPACT_MAX_RESULTS);
+    final List<Path> paths =
+        refs.references().stream().map(ref -> LatheUri.toPath(ref.uri())).toList();
+    final Map<Path, ModulePlacement> placements = await(service.classifyPaths(paths));
+
+    int production = 0;
+    int test = 0;
+    final var affectedModules = new TreeSet<String>();
+    final var relevantTests = new TreeSet<String>();
+    for (final LatheLocation ref : refs.references()) {
+      final ModulePlacement placement = placements.get(LatheUri.toPath(ref.uri()));
+      if (placement == null) {
+        continue; // a reference outside the reactor (dependency/JDK) — not in the impact set
+      }
+
+      affectedModules.add(placement.moduleRel());
+      if (placement.test()) {
+        test++;
+        relevantTests.add(FileUtil.javaTypeName(LatheUri.toPath(ref.uri())));
+      } else {
+        production++;
+      }
+    }
+
+    return new LatheChangeImpact(
+        signature,
+        overrideFamily,
+        production,
+        test,
+        refs.truncated(),
+        List.copyOf(affectedModules),
+        List.copyOf(relevantTests));
   }
 
   private List<Diagnostic> compileFromDisk(final Path file) {

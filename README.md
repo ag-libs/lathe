@@ -143,6 +143,7 @@ Like the editor, it reads from a populated `.lathe/`, so run a build once first.
 | `describe_symbol`      | signature, type, and javadoc for a symbol                           |
 | `rename_symbol`        | rename a symbol across the whole reactor, applied to disk           |
 | `run_test`             | replay a test / class / package from captured bytecode — no build   |
+| `analyze_change`       | pre-edit impact of a symbol: override family, production/test reference counts, affected modules, relevant tests |
 | `verify_change`        | recompile a change set in-process, report new diagnostics per module + the scoped `mvn` for cross-module impact — no build |
 
 Full setup — registering with Claude Code, Codex, and Gemini, the result contract, and the freshness

@@ -4,8 +4,11 @@
 
 **`verify_change` — DONE** (P1 shipped 2026-09-26): engine method + MCP tool + `reconcileForVerify`
 seam, unit-tested and probe-validated on the `multi-module` invoker fixture (auto change-detection,
-per-module diagnostics, cross-module `mvn -pl … -amd` handoff). **`analyze_change` — proposed** (P2,
-not started).
+per-module diagnostics, cross-module `mvn -pl … -amd` handoff). **`analyze_change` — DONE** (P2 shipped
+2026-09-26): pre-edit impact (override family, production/test reference split, affected modules,
+relevant tests), composed from `describe`/`find_implementations`/`find_references` + a path-placement
+accessor. `publicApi` was dropped from the KISS cut (no semantic-modifier accessor) — revisit after
+measurement.
 Code-grounded design for two paired MCP tools — a **pre-edit** impact preview (`analyze_change`) and a
 **post-edit** scoped recompile (`verify_change`) — and the `LatheEngine` methods behind them.
 
@@ -269,9 +272,10 @@ instead surfaced by the Tier-3 handoff and the still-active POM prompt, not by w
    `LatheEngineTest` + `LatheMcpToolsTest` (plus a `reconcileForVerify` deferral unit test in the server
    module). Exit: an agent edits N files and gets a module-scoped recompile plus a precise `mvn` for the
    cross-module remainder.
-2. **P2 — `analyze_change` engine + tool.** `LatheEngine.analyzeChange` composing
-   describe/impls/references + graph, prod/test split; MCP tool + rendering. Exit: a pre-edit impact
-   summary before a rename or signature change.
+2. **P2 — `analyze_change` engine + tool. ✅ DONE (2026-09-26).** `LatheEngine.analyzeChange` composing
+   describe/impls/references + a `classifyPaths` placement accessor, prod/test split; MCP tool +
+   rendering. `publicApi` dropped from the KISS cut (deferred). Exit: a pre-edit impact summary before a
+   rename or signature change.
 3. **P3 — one-shot CLI (packaging follow-on).** Expose `verify_change` as `lathe verify-change --files
    …` so a future deterministic post-edit hook can fire it without an MCP round trip. (The Claude Code
    plugin packaging doc that would consume this was removed from the tree; re-establish that home before

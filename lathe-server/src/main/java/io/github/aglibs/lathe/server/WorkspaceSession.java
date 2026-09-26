@@ -2729,7 +2729,7 @@ final class WorkspaceSession {
       return 0;
     }
 
-    final var typeName = typeNameFrom(deletedSource);
+    final var typeName = FileUtil.javaTypeName(deletedSource);
     try (final var stream = Files.list(classDir)) {
       final var matchingClassFiles =
           stream.filter(path -> deletedClassFile(typeName, path)).toList();
@@ -2767,7 +2767,7 @@ final class WorkspaceSession {
       return 0;
     }
 
-    final var typeName = typeNameFrom(savedSource);
+    final var typeName = FileUtil.javaTypeName(savedSource);
     try (final var stream = Files.list(classDir)) {
       final var staleClassFiles =
           stream
@@ -2877,11 +2877,9 @@ final class WorkspaceSession {
     return CompletableFuture.allOf(reconcileIfIdle(eager).toArray(CompletableFuture[]::new));
   }
 
-  // verify_change's freshen step. Like the idle reconcile it recompiles the change set, but it
-  // never
-  // prompts: when an in-process recompile can't be trusted (a pending POM sync, too many files, or
-  // a
-  // running build) it returns a DeferReason so the caller falls back to Maven. Runs on the worker.
+  // verify_change's freshen step: recompile the change set, but never prompt. If the in-process
+  // recompile can't be trusted (POM sync pending, bulk change, or a running build) it returns a
+  // DeferReason so the caller falls back to Maven. Runs on the worker.
   CompletableFuture<ReconcileOutcome> reconcileForVerify() {
     if (reactorBuildInProgress()) {
       return CompletableFuture.completedFuture(
@@ -2927,11 +2925,11 @@ final class WorkspaceSession {
         .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, e -> List.copyOf(e.getValue())));
   }
 
-  // Candidates are matched by type-name token, so this can over-select (an unrelated file that
-  // merely
-  // mentions the name) but never miss a real caller; a false candidate just compiles clean.
+  // Matched by type-name token: may over-select (a file that only mentions the name) but never
+  // misses
+  // a real caller; an extra candidate just compiles clean.
   private List<Path> sameModuleReferrers(final Path file, final ModuleSourceConfig config) {
-    return candidateIndex.candidateUris(typeNameFrom(file)).stream()
+    return candidateIndex.candidateUris(FileUtil.javaTypeName(file)).stream()
         .map(LatheUri::toPath)
         .filter(path -> !path.equals(file))
         .filter(path -> inSameModule(path, config))
@@ -2945,9 +2943,27 @@ final class WorkspaceSession {
         .orElse(false);
   }
 
+  // Placement (module rel + test/production) for each path that maps to a reactor module. Lets
+  // analyze_change split references by module and into production vs test.
+  Map<Path, ModulePlacement> classifyPaths(final List<Path> paths) {
+    final Map<Path, ModulePlacement> placements = new LinkedHashMap<>();
+    for (final Path path : paths) {
+      workspace
+          .moduleSourceFor(path)
+          .ifPresent(
+              config ->
+                  placements.put(
+                      path,
+                      new ModulePlacement(
+                          moduleRelForDir(config.moduleDir()),
+                          LatheLayout.TEST_CLASSES_DIR.equals(config.sourceTree()))));
+    }
+
+    return Map.copyOf(placements);
+  }
+
   // The reactor remainder a cross-module change may break: modules that transitively depend on the
-  // changed ones. verify_change hands these to `mvn` rather than recompiling (codegen/AP are
-  // Maven's).
+  // changed ones. verify_change hands these to `mvn`, not recompile (codegen/AP are Maven's job).
   List<String> downstreamModuleRels(final List<Path> changed) {
     final Set<Path> changedModuleDirs =
         changed.stream()
@@ -3313,11 +3329,6 @@ final class WorkspaceSession {
         .filter(file::startsWith)
         .max(Comparator.comparingInt(Path::getNameCount))
         .orElse(null);
-  }
-
-  private static String typeNameFrom(final Path sourceFile) {
-    final var name = sourceFile.getFileName().toString();
-    return name.substring(0, name.length() - ".java".length());
   }
 
   private static boolean deletedClassFile(final String typeName, final Path path) {

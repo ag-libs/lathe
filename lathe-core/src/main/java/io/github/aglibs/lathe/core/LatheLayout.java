@@ -64,9 +64,8 @@ public final class LatheLayout {
   public static final String SYNC_PHASE = "process-test-classes";
   public static final String SYNC_COMMAND = "%s %s".formatted(MVN, SYNC_PHASE);
 
-  // The scoped form of SYNC_COMMAND: refresh only the given modules and everything downstream of
-  // them (-amd = also-make-dependents). Shares the mvn/phase wording with SYNC_COMMAND so they
-  // never drift.
+  // Scoped form of SYNC_COMMAND: refresh the given modules and everything downstream (-amd =
+  // also-make-dependents). Shares the mvn/phase wording with SYNC_COMMAND so the two never drift.
   public static String scopedSyncCommand(final String modules) {
     return "%s -pl %s -amd %s".formatted(MVN, modules, SYNC_PHASE);
   }
