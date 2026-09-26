@@ -11,7 +11,7 @@ Option 1 shipped — [NV-5](../gaps/gaps.md) resolved. Option 2 deferred (revive
 - **Follow-up — Option 2: re-run *all* failed tests in one replay JVM** (repeat the previous run with
   the selection narrowed to the failures). Heavier; deferred past M2.
 
-The [Debug/neotest Unification](lathe-debug-neotest-unification.md) has landed (`eba2c0e`), so
+The [Debug/neotest Unification](../done/lathe-debug-neotest-unification.md) has landed (`eba2c0e`), so
 `run_spec` already accepts an arbitrary `selections` list and a `strategy`, and `results()` carries the
 name-match container rollup. Option 2 builds on that unified `results()`; Option 1 needs none of it.
 

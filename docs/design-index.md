@@ -32,10 +32,10 @@ Reliability, the triaged gaps, and rename — see the [roadmap](roadmap.md) for 
 - [Rename](planned/lathe-rename.md) — `textDocument/rename` + `prepareRename` on the Find References
   pipeline (occurrence ranges → `WorkspaceEdit`, no `ASTRewrite`); scoped to the common cases,
   correctness-gated (freshness refusal + minimal conflict checks), with explicit non-goals.
-- [Javac Crash Capture](planned/lathe-javac-crash-capture.md) — resolved for M2 as a minimal,
+- [Javac Crash Capture](done/lathe-javac-crash-capture.md) — resolved for M2 as a minimal,
   source-free `[javacCrash]` log line (phase + JDK + stack trace); the full repro-bundle design is a
   deferred backlog follow-up. ✓
-- [Debug/neotest Unification](planned/lathe-debug-neotest-unification.md) — route test-debug through
+- [Debug/neotest Unification](done/lathe-debug-neotest-unification.md) — route test-debug through
   neotest's `dap` strategy so gutters/summary/console/pass-fail match a run; resolves NV-3/NV-4 and
   makes NV-2 an implement-once change via a new `lathe/testFinished` outcome notification.
 - [Re-run Failed Tests](planned/lathe-rerun-failed-tests.md) — resolves NV-5. **M2:** re-run the
@@ -55,19 +55,19 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 
 **Editing features (deferred from M2):**
 
-- [Declaration Name Completion](planned/lathe-declaration-name-completion.md) — names in variable/field/parameter/
+- [Declaration Name Completion](done/lathe-declaration-name-completion.md) — names in variable/field/parameter/
   catch declaration slots (shipped; type parameters and constants are documented non-goals).
 - [Snippet (Template) Completion](planned/lathe-snippet-completion.md) — a minimal jdtls-style template set
   (`psvm`, `sout`, `ctor`) delivered as context-gated snippet completion items (proposed).
 - [Method-Reference Completion](planned/lathe-method-reference-completion.md) — completion after `::`
   (`String::§`, `this::§`, `Type::new`) reusing the member-access pipeline, with SAM-aware filtering
   (resolves CQ-0060; proposed).
-- [Surround with try-with-resources](planned/lathe-try-with-resources.md) — range-driven refactor wrapping an
+- [Surround with try-with-resources](done/lathe-try-with-resources.md) — range-driven refactor wrapping an
   `AutoCloseable` declaration in a try-with-resources; sibling of Extract Variable and try/catch wrap (proposed).
 - [Add constructor parameter for a field](planned/lathe-add-constructor-parameter.md) — range-driven refactor
   (CA-10) that adds a `final` field as a parameter to every constructor and binds it, generating a constructor
   when none exists; sibling of Extract Field (proposed).
-- [`:LatheNew` Ergonomics Rethink (v4)](planned/lathe-new-type-ergonomics.md) — **shipped**; reworked the `:LatheNew`
+- [`:LatheNew` Ergonomics Rethink (v4)](done/lathe-new-type-ergonomics.md) — **shipped**; reworked the `:LatheNew`
   after large-reactor friction: a typed command (context-defaulted anchored path + explicit
   `[module:][scope:]package` location) with the type name always prompted and the package never defaulting by
   omission, a guided `vim.ui.select` fallback for the no-context 20%, selectable main/test scope, and
@@ -76,7 +76,7 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
   file's class/interface/enum/record via snippet completion, with no custom client-side UI (not the shipped path).
 - [Google Indentation](planned/lathe-google-indent.md) — conservative on-type formatting.
 - [Type Definition Navigation](planned/lathe-type-definition.md) — `textDocument/typeDefinition` for Neovim's `grt`.
-- [Type Hierarchy Explorer](planned/lathe-type-hierarchy.md) — a Ctrl-H-style `:LatheTypeHierarchy` custom
+- [Type Hierarchy Explorer](done/lathe-type-hierarchy.md) — a Ctrl-H-style `:LatheTypeHierarchy` custom
   command showing the full both-directions transitive hierarchy in one Telescope picker; resolves NV-6.
 - [Resource Finder](planned/lathe-resource-finder.md) — one `:LatheResourceFind` picker to find a
   resource **by name** across the workspace's reactor and dependency resources, each row tagged by
@@ -94,7 +94,7 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 
 **Reliability and further work:**
 
-- [Named Run Configurations](planned/lathe-named-run-configs.md) — resolves TE-2: the overlay file
+- [Named Run Configurations](done/lathe-named-run-configs.md) — resolves TE-2: the overlay file
   becomes a `{ defaults, configs }` object (`defaults` = the auto-applied baselines, `configs` =
   name-keyed selectable entries that pin a target), explicit selection via `:LatheRun {name}` /
   `:LatheDebug {name}` with server completion, cursor scaffolding via `:LatheRunSave[!] [name]` (the
@@ -108,7 +108,7 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
   non-intrusive source-staleness signal (the deferred WS-2, folded under WS-1) if beta feedback warrants it.
 - [Differential Testing Against jdtls](planned/lathe-jdtls-differential-testing.md) — semantic LSP-response
   comparison against Eclipse JDT LS to surface behavioral gaps.
-- [Standalone `lathe.nvim` Plugin](planned/lathe-standalone-nvim-plugin.md) — **shipped**; publishes the
+- [Standalone `lathe.nvim` Plugin](done/lathe-standalone-nvim-plugin.md) — **shipped**; publishes the
   Neovim Lua client as a plugin-manager-installable repo (unlocks dotfyle/awesome-neovim discovery),
   additive to the zero-plugin cache delivery, via a local no-PAT `publish-nvim.sh` mirror to
   `ag-libs/lathe.nvim`, plus the first-run readiness nudge, double-load detection, and the coarse

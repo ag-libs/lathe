@@ -446,7 +446,7 @@ auto-applied baselines (the former `(module, kind)` overlays), and `configs` are
 that pin a target and are selected explicitly via `:LatheRun {name}` / `:LatheDebug {name}` (with
 server-provided completion). `:LatheRunSave[!] [name]` scaffolds a config from the runnable under the
 cursor into `.lathe/run.json`, and `:LatheRunOutput` reopens the run console. Design:
-[lathe-named-run-configs.md](../planned/lathe-named-run-configs.md).
+[lathe-named-run-configs.md](../done/lathe-named-run-configs.md).
 
 ### Regression targets
 

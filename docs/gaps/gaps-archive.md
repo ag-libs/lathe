@@ -8892,7 +8892,7 @@ installed, the built-in `lathe.pick` fuzzy picker otherwise. The standard lazy
 The result record lives in `server.analysis`, opened to Gson in `module-info` (each DTO-producing layer
 opens its package).
 
-Design: [Type Hierarchy Explorer](../planned/lathe-type-hierarchy.md). Regression:
+Design: [Type Hierarchy Explorer](../done/lathe-type-hierarchy.md). Regression:
 `WorkspaceTypeIndexTest.graph_transitiveSupertypes_*`, `TypeHierarchyTest.explore_*`,
 `LatheLanguageServerTest.createCapabilities_includesExecuteCommandProvider` (advertises
 `lathe.typeHierarchy`), and the Neovim `typehierarchy_spec.lua`.
@@ -8966,7 +8966,7 @@ the run context), at `INFO` when the run launched cleanly with no failures and `
 failure, a blocked launch, an error, or a no-tests skip). Format:
 `AppServerTest — 12 passed, 1 failed, 2 skipped (1.8s)`. Because it fires from `results()`, it covers a
 debug run too (which now flows through `results()` — see
-[lathe-debug-neotest-unification.md](../planned/lathe-debug-neotest-unification.md)). No server change;
+[lathe-debug-neotest-unification.md](../done/lathe-debug-neotest-unification.md)). No server change;
 the duration is client-timed.
 
 ### Regression targets
@@ -8979,7 +8979,7 @@ with counts; blocked / errored / no-tests-skip → WARN; an untimed run omits th
 ## NV-3 — Debugging a test does not update neotest gutters or the summary panel — done
 
 **Status: done — Target: M2.** — design:
-[lathe-debug-neotest-unification.md](../planned/lathe-debug-neotest-unification.md) (Shape 1).
+[lathe-debug-neotest-unification.md](../done/lathe-debug-neotest-unification.md) (Shape 1).
 
 ### Observed behaviour
 
@@ -9042,7 +9042,7 @@ token and fires no `lathe.run.test` replay.
 ## NV-4 — Debugging a test flashes the output window and never shows pass/fail — done
 
 **Status: done — Target: M2.** — design:
-[lathe-debug-neotest-unification.md](../planned/lathe-debug-neotest-unification.md) (Shape 1, NV-4
+[lathe-debug-neotest-unification.md](../done/lathe-debug-neotest-unification.md) (Shape 1, NV-4
 solved for free by going through build_spec/results()).
 
 ### Observed behaviour

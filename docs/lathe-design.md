@@ -969,7 +969,7 @@ so editor clients stay thin pickers:
   module → package pick and the current-file context default.
 
 These read the same module registry and source-root model as the compiler-backed features; no client
-parses Java or Maven layout. See [new-type ergonomics](planned/lathe-new-type-ergonomics.md).
+parses Java or Maven layout. See [new-type ergonomics](done/lathe-new-type-ergonomics.md).
 
 ### Document symbols
 

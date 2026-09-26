@@ -1,5 +1,10 @@
 # Lathe — Launcher JVM Options
 
+## Status
+
+Proposed — not implemented. `lathe-launcher.sh` does not expand `LATHE_JVM_OPTS` yet (see Current
+State).
+
 ## Goal
 
 Allow users to tune the Lathe server JVM without editing generated launcher scripts.

@@ -106,7 +106,7 @@ Separate editing-experience gaps observed in the same session are tracked on the
 
 - [Rename](lathe-rename.md) — no `renameProvider` today.
 - [Extract Variable](lathe-extract-variable.md) — first extraction refactor.
-- [Declaration Name Completion](lathe-declaration-name-completion.md) — covers the override /
+- [Declaration Name Completion](../done/lathe-declaration-name-completion.md) — covers the override /
   declaration-context completion gap (typing a supertype method in a class body yields a call, not an
   override stub).
 

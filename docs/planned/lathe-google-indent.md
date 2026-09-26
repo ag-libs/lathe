@@ -1,3 +1,13 @@
+# Lathe — Google-Format On-Type Indentation
+
+## Status
+
+Proposed — not implemented. The server's `onTypeFormatting` handler is a stub that logs and returns
+no edits (`LatheTextDocumentService.onTypeFormatting`); the conservative google-format indentation
+described below is not built yet.
+
+## Design
+
 Lathe can use its built-in google-java-format integration as an optional source of high-confidence indentation for `textDocument/onTypeFormatting`. When Neovim sends an on-type formatting request for newline, Lathe can attempt to format the current document snapshot and compare the formatted output with the editor contents. If formatting succeeds, Lathe should derive only the leading whitespace for the current line and return a minimal `TextEdit` that replaces that line's indentation. If formatting fails, or if the relevant formatted line cannot be mapped back confidently, Lathe should return no edits.
 
 This feature should be conservative because on-type formatting runs while the user is editing incomplete Java. Lathe should avoid returning broad whole-file edits from an on-type request, even if full formatting is fast. The on-type response should be limited to indentation near the typed character, and only when the document version still matches the request. Returning `null` or an empty edit list is the normal fallback path and lets Neovim keep its local Treesitter indentation.

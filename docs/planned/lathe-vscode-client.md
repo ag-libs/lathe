@@ -126,7 +126,7 @@ mirror repo required yet.
 
 For **M2**, a standalone `ag-libs/lathe.vscode` repo is added as a **generated one-way mirror**,
 exactly as for the Neovim client (see
-[Standalone `lathe.nvim` Plugin](lathe-standalone-nvim-plugin.md) §1), because the Marketplace
+[Standalone `lathe.nvim` Plugin](../done/lathe-standalone-nvim-plugin.md) §1), because the Marketplace
 publish runs from a mirror-repo Action (§5) and the listing's `repository` link wants a public repo.
 
 **Why monorepo-source-of-truth.** The parity client (§2) co-evolves tightly with the server: every

@@ -144,7 +144,7 @@ prompt; the only fallback is a module with no derivable base package, which asks
 
 ## Relationship to other work
 
-- **Distinct from** [New Type Creation via Snippet Completion](lathe-new-type-creation.md), a deferred
+- **Distinct from** [New Type Creation via Snippet Completion](../planned/lathe-new-type-creation.md), a deferred
   editor-agnostic snippet approach with no client UI — a different mechanism for the same goal.
 - **Pairs with** the WS gap on module-mirror corruption (a `module-info` affordance for modular
   projects).
