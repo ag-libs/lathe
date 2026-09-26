@@ -2,16 +2,23 @@
 
 ## Status
 
-Proposed — no code yet.
+**Client-side validation + formatting: implemented** (shipped in the Neovim client). `lathe/pom.lua`
+validates `pom.xml` against a bundled Maven `4.0.0` XSD via `xmllint`, and formats via `xmllint
+--format`. Validation runs on open and **live as you type** (debounced ~250ms), feeding the **buffer
+contents** to `xmllint` over stdin (`xmllint … -`) so unsaved edits are checked; its `-:LINE:` errors
+map to a private diagnostic namespace. Degrades to a one-time notice when `xmllint` or the schema are
+absent. The LSP server is **not** involved and is never attached to `pom.xml`.
 
-**Chosen direction (KISS): client-side only.** After weighing the full server-side path (below), the
-selected approach is a **Neovim-client-only** feature: XSD validation and formatting via `xmllint`,
-against a Maven POM schema that Lathe makes available locally. **The LSP server is not involved** — no
-attach to `pom.xml`, no server classes, no capture schema record. Server-side completion is judged not
-worth the complexity for now and is deferred (see Server design, retained as the fuller alternative).
+**Server-side `pom.xml` support: planned next step.** The client-side path has one structural limit:
+it is **Neovim-only**. Because the validation lives in the Lua client rather than the server, Emacs
+(Eglot), VS Code, and every other LSP client get **nothing** on `pom.xml`. Moving validation — and,
+later, the build-derived completion below — into the server gives every editor the same live
+diagnostics from **one** implementation, over standard `textDocument/publishDiagnostics`. That
+cross-editor parity is the motivation to pursue the server design retained below; the richer
+completion slices remain deferred.
 
-See [Chosen approach](#chosen-approach--client-side-kiss) for the actual plan; the sections after it
-document the richer server-side design that was considered and deferred.
+See [Chosen approach](#chosen-approach--client-side-kiss) for the shipped client feature; the sections
+after it document the server-side design now targeted as the next step.
 
 ## Goal
 
@@ -49,10 +56,11 @@ Lathe provides locally. The LSP server is untouched; there is no attach to `pom.
    for both install paths with **zero Java/server changes** and is versioned with the client. Variant:
    have `lathe:sync` write it to `.lathe/` (one small sync step + a `LatheLayout` filename constant),
    chosen only if sync should later select the XSD matching the project's Maven/model version.
-2. **A small client module (`pom.lua`)** with a `pom.xml`-only autocmd that:
+2. **A small client module (`pom.lua`)** with `pom.xml`-only autocmds that:
    - resolves the local XSD path;
-   - **validates** on save (and open) — `xmllint --noout --schema <xsd> <file>`, mapping its
-     `pom.xml:LINE: …` errors to `vim.diagnostic`;
+   - **validates** on open (`BufReadPost`) and **live while editing** (`TextChanged`/`TextChangedI`,
+     debounced ~250ms) — `xmllint --noout --schema <xsd> -` fed the **buffer contents** over stdin, so
+     unsaved edits are checked; maps its `-:LINE: …` errors to `vim.diagnostic`;
    - **formats** via `xmllint --format` (through `conform.nvim`/`formatprg`, with `XMLLINT_INDENT`);
    - **degrades gracefully** — no-op with a one-time notify if `xmllint` is not installed, and skips if
      the XSD is missing.
@@ -62,9 +70,9 @@ Lathe provides locally. The LSP server is untouched; there is no attach to `pom.
 `xmllint --schema <local.xsd>` uses the given file and does not fetch the network schemaLocation hint,
 so validation is fully offline once the XSD is local.
 
-**Client-side micro-decisions:** (1) XSD placement — plugin bundle (recommended) vs. sync-written
-`.lathe/`; (2) formatting shipped enabled vs. opt-in (recommend opt-in); (3) validation on save only vs.
-save + open (recommend save + open).
+**Client-side micro-decisions (as shipped):** (1) XSD placement — bundled in the Neovim plugin;
+(2) formatting is opt-in (`pom = { format = true }`), validation on by default; (3) validation runs on
+open and live (debounced) on change, not save-only.
 
 **Why not `lemminx` here:** it would validate *and* complete, but it is a second Java process to
 install/manage and overlaps the deferred server design; `xmllint` is the lighter fit for a
