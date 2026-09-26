@@ -6386,7 +6386,7 @@ Signal: user feedback — adding a field typed `List<…>` to a new record in a 
 "Import 'java.util.List'" code action, while an unresolved reactor type in the same file imported
 fine.
 
-Design: [Type-Index Name Resolution and Ranking](../planned/lathe-type-index-name-resolution.md).
+Design: [Type-Index Name Resolution and Ranking](../done/lathe-type-index-name-resolution.md).
 
 ### Observed behaviour
 

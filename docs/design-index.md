@@ -78,7 +78,7 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 - [Type Definition Navigation](planned/lathe-type-definition.md) — `textDocument/typeDefinition` for Neovim's `grt`.
 - [Type Hierarchy Explorer](done/lathe-type-hierarchy.md) — a Ctrl-H-style `:LatheTypeHierarchy` custom
   command showing the full both-directions transitive hierarchy in one Telescope picker; resolves NV-6.
-- [Resource Finder](planned/lathe-resource-finder.md) — one `:LatheResourceFind` picker to find a
+- [Resource Finder](done/lathe-resource-finder.md) — one `:LatheResourceFind` picker to find a
   resource **by name** across the workspace's reactor and dependency resources, each row tagged by
   origin (`reactor:<module>` / `dep:<gav>`). Lists entries from jar central directories (no
   decompression) and reactor resource roots, and extracts **only the entry you open** — no bulk
@@ -101,7 +101,7 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
   one place Lathe writes `.lathe/run.json`), and active-config visibility (console header +
   notification + run log). IntelliJ run-config model; builds on the shipped overlay machinery in
   [Run, Test, and Debug](done/lathe-run-test-debug.md) §8.
-- [Type-Index Name Resolution and Ranking](planned/lathe-type-index-name-resolution.md) — exact-name
+- [Type-Index Name Resolution and Ranking](done/lathe-type-index-name-resolution.md) — exact-name
   import resolution (fix A) plus usage-aware prefix-search truncation (fix B); resolves CA-9. ✓
 - [Sibling Recompilation](planned/lathe-sibling-recompilation.md) — closed-file diagnostics after API changes.
 - [Lightweight Watcher](planned/lathe-lightweight-watcher.md) — partially stale design; would back a

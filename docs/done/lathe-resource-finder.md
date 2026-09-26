@@ -2,7 +2,9 @@
 
 ## Status
 
-Proposed.
+Shipped. `:LatheResourceFind` lists reactor + dependency resources by name (each row origin-tagged),
+extracting only the entry you open. Content (full-text) search remains a deferred non-goal (see
+[Deferred](#9-deferred)).
 Supersedes the earlier *Dependency Resource Grep* design, which extracted **every** dependency
 main-jar resource to disk at `lathe:sync` so native Telescope `live_grep` could search them.
 That optimized for full-text search at the cost of bulk unpacking (disk, binaries, sync time) — but
