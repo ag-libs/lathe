@@ -10,17 +10,20 @@ import io.github.aglibs.lathe.server.engine.LatheEngine.TestScope;
 import io.github.aglibs.lathe.server.engine.LatheFileEdit;
 import io.github.aglibs.lathe.server.engine.LatheImplementations;
 import io.github.aglibs.lathe.server.engine.LatheLocation;
+import io.github.aglibs.lathe.server.engine.LatheModuleDiagnostics;
 import io.github.aglibs.lathe.server.engine.LatheReferences;
 import io.github.aglibs.lathe.server.engine.LatheRename;
 import io.github.aglibs.lathe.server.engine.LatheSymbol;
 import io.github.aglibs.lathe.server.engine.LatheTestFailure;
 import io.github.aglibs.lathe.server.engine.LatheTestRun;
+import io.github.aglibs.lathe.server.engine.LatheVerifyChange;
 import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.modelcontextprotocol.spec.McpSchema.Tool;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
@@ -52,7 +55,8 @@ final class LatheMcpTools {
         callHierarchy(engine, mapper),
         describeSymbol(engine, mapper),
         searchSymbols(engine, mapper),
-        findImplementations(engine, mapper));
+        findImplementations(engine, mapper),
+        verifyChange(engine, mapper));
   }
 
   private static SyncToolSpecification diagnostics(
@@ -64,12 +68,14 @@ final class LatheMcpTools {
                 """
                 {"type":"object","required":["file"],
                  "properties":{"file":{"type":"string",
-                   "description":"Absolute path to a .java file in this project."}}}""")
+                   "description":"Absolute path to a .java file in this project."}}}\
+                """)
             .description(
                 """
                 Compiler-accurate errors and warnings for a Java file, exactly as javac sees \
                 them on the real build classpath. Call after editing a file to check whether \
-                it compiles — no Maven, no whole-project build.""")
+                it compiles — no Maven, no whole-project build.\
+                """)
             .build();
     return SyncToolSpecification.builder()
         .tool(tool)
@@ -90,12 +96,14 @@ final class LatheMcpTools {
                  "properties":{
                    "file":{"type":"string","description":"Absolute path to a .java file."},
                    "line":{"type":"integer","description":"1-based line of the symbol."},
-                   "column":{"type":"integer","description":"1-based column of the symbol."}}}""")
+                   "column":{"type":"integer","description":"1-based column of the symbol."}}}\
+                """)
             .description(
                 """
                 Resolve the symbol at a position to its definition — across modules and into \
                 dependency, JDK, and generated sources — returning each target with a source \
-                snippet, not just a file:line.""")
+                snippet, not just a file:line.\
+                """)
             .build();
     return SyncToolSpecification.builder()
         .tool(tool)
@@ -118,7 +126,8 @@ final class LatheMcpTools {
                    "line":{"type":"integer","description":"1-based line of the symbol."},
                    "column":{"type":"integer","description":"1-based column of the symbol."},
                    "maxResults":{"type":"integer",
-                     "description":"Max references to return (default 50)."}}}""")
+                     "description":"Max references to return (default 50)."}}}\
+                """)
             .description(
                 """
                 Find every real use of the symbol at a position across the whole reactor — \
@@ -126,7 +135,8 @@ final class LatheMcpTools {
                 modules, and returns each use with a source snippet. Use before changing or \
                 removing a symbol, and especially when it is a method with overrides/\
                 implementations or a common/overloaded name where text search is ambiguous; for a \
-                rare, distinctive name a plain grep is fine.""")
+                rare, distinctive name a plain grep is fine.\
+                """)
             .build();
     return SyncToolSpecification.builder()
         .tool(tool)
@@ -148,14 +158,16 @@ final class LatheMcpTools {
                    "file":{"type":"string","description":"Absolute path to a .java file."},
                    "line":{"type":"integer","description":"1-based line of the symbol."},
                    "column":{"type":"integer","description":"1-based column of the symbol."},
-                   "newName":{"type":"string","description":"The new identifier."}}}""")
+                   "newName":{"type":"string","description":"The new identifier."}}}\
+                """)
             .description(
                 """
                 Rename the symbol at a position across the whole reactor and apply the edits to \
                 disk — javac-accurate, so it renames only the true declaration and its uses \
                 (respecting overloads and shadowing locals) across every module, never a text \
                 match. Refuses if it would touch a file outside the reactor. After a cross-module \
-                rename, rebuild the reactor to confirm it still compiles.""")
+                rename, rebuild the reactor to confirm it still compiles.\
+                """)
             .build();
     return SyncToolSpecification.builder()
         .tool(tool)
@@ -178,14 +190,16 @@ final class LatheMcpTools {
                    "scope":{"type":"string","enum":["class","method","package"],
                      "description":"What to run (default class)."},
                    "method":{"type":"string",
-                     "description":"Test method name (required when scope=method)."}}}""")
+                     "description":"Test method name (required when scope=method)."}}}\
+                """)
             .description(
                 """
                 Replay a test against the compiled classpath — no reactor build. Runs one method, \
                 the whole test class, or its package; prefer it over `mvn test` for a single \
                 target after an edit. Returns pass/fail/skip counts and each failure's message and \
                 line. Needs a captured test-launch.json (run `mvn test` once); it reports that if \
-                missing.""")
+                missing.\
+                """)
             .build();
     return SyncToolSpecification.builder()
         .tool(tool)
@@ -209,13 +223,15 @@ final class LatheMcpTools {
                    "column":{"type":"integer","description":"1-based column of the symbol."},
                    "direction":{"type":"string","enum":["incoming","outgoing"],
                      "description":"incoming = callers of the symbol (default); outgoing = what it calls."},
-                   "maxResults":{"type":"integer","description":"Max calls to return (default 50)."}}}""")
+                   "maxResults":{"type":"integer","description":"Max calls to return (default 50)."}}}\
+                """)
             .description(
                 """
                 Trace the symbol's callers (incoming) or the methods it calls (outgoing) across the \
                 whole reactor — javac-accurate, following the real call graph (resolving overrides \
                 and cross-module edges) with a snippet per call. Use to scope the impact of a \
-                change; text search cannot follow calls.""")
+                change; text search cannot follow calls.\
+                """)
             .build();
     return SyncToolSpecification.builder()
         .tool(tool)
@@ -236,12 +252,14 @@ final class LatheMcpTools {
                  "properties":{
                    "file":{"type":"string","description":"Absolute path to a .java file."},
                    "line":{"type":"integer","description":"1-based line of the symbol."},
-                   "column":{"type":"integer","description":"1-based column of the symbol."}}}""")
+                   "column":{"type":"integer","description":"1-based column of the symbol."}}}\
+                """)
             .description(
                 """
                 Describe the symbol at a position — its rendered signature, type, and javadoc as \
                 markdown — exactly as the compiler sees it, without opening the file. Use to \
-                understand an API before calling it.""")
+                understand an API before calling it.\
+                """)
             .build();
     return SyncToolSpecification.builder()
         .tool(tool)
@@ -261,12 +279,14 @@ final class LatheMcpTools {
                 {"type":"object","required":["query"],
                  "properties":{
                    "query":{"type":"string","description":"Symbol name (CamelHumps supported)."},
-                   "maxResults":{"type":"integer","description":"Max symbols to return (default 50)."}}}""")
+                   "maxResults":{"type":"integer","description":"Max symbols to return (default 50)."}}}\
+                """)
             .description(
                 """
                 Find a type or symbol by name across the whole reactor, its dependencies, and the \
                 JDK — returning each with its kind, container, and a declaration snippet. Use to \
-                locate a type when you know its name but not its file.""")
+                locate a type when you know its name but not its file.\
+                """)
             .build();
     return SyncToolSpecification.builder()
         .tool(tool)
@@ -289,12 +309,14 @@ final class LatheMcpTools {
                    "line":{"type":"integer","description":"1-based line of the symbol."},
                    "column":{"type":"integer","description":"1-based column of the symbol."},
                    "maxResults":{"type":"integer",
-                     "description":"Max implementations to return (default 50)."}}}""")
+                     "description":"Max implementations to return (default 50)."}}}\
+                """)
             .description(
                 """
                 Find the implementations of the interface — or the overrides of the method — at a \
                 position, across the whole reactor, javac-accurate and with a snippet each. This is \
-                the "who implements X / what overrides this" question text search cannot answer.""")
+                the "who implements X / what overrides this" question text search cannot answer.\
+                """)
             .build();
     return SyncToolSpecification.builder()
         .tool(tool)
@@ -304,6 +326,34 @@ final class LatheMcpTools {
                     "find_implementations",
                     request,
                     () -> handleFindImplementations(engine, request)))
+        .build();
+  }
+
+  private static SyncToolSpecification verifyChange(
+      final LatheEngine engine, final McpJsonMapper mapper) {
+    final var tool =
+        Tool.builder(
+                "verify_change",
+                mapper,
+                """
+                {"type":"object",
+                 "properties":{"files":{"type":"array","items":{"type":"string"},
+                   "description":"Optional absolute paths of changed .java files; omit to auto-detect from disk."}}}\
+                """)
+            .description(
+                """
+                After editing Java files, recompile just the changed set in-process against the real \
+                classpath — no full Maven build — and report the new compiler diagnostics grouped by \
+                module. Detects the change set from disk automatically, or pass `files` to scope it. \
+                When the change reaches other modules it returns the exact scoped `mvn` command to \
+                verify the remainder. Use it to confirm your edits still compile before a build.\
+                """)
+            .build();
+    return SyncToolSpecification.builder()
+        .tool(tool)
+        .callHandler(
+            (exchange, request) ->
+                logged("verify_change", request, () -> handleVerifyChange(engine, request)))
         .build();
   }
 
@@ -413,6 +463,14 @@ final class LatheMcpTools {
         "run_test",
         file,
         () -> testRunResult(engine.runTest(file, scope, method), engine.staleModules()));
+  }
+
+  private static CallToolResult handleVerifyChange(
+      final LatheEngine engine, final CallToolRequest request) {
+    return guarded(
+        "verify_change",
+        "files",
+        () -> verifyChangeResult(engine.verifyChange(fileListArg(request))));
   }
 
   // Optional, case-insensitive; absent means class, unknown means null (caller errors on it).
@@ -686,6 +744,85 @@ final class LatheMcpTools {
     return Map.<String, Object>of("test", f.test(), "line", f.line(), "summary", f.summary());
   }
 
+  private static CallToolResult verifyChangeResult(final LatheVerifyChange verify) {
+    if (verify.deferral() != null) {
+      final String text =
+          "Verification deferred: %s. Run `%s`, then re-check."
+              .formatted(deferralText(verify.deferral()), verify.suggestedMvn());
+      return result(
+          text,
+          Map.<String, Object>of(
+              "deferred", verify.deferral(), "suggestedMvn", verify.suggestedMvn()),
+          List.of());
+    }
+
+    final int total = verify.perModule().stream().mapToInt(m -> m.diagnostics().size()).sum();
+    final String head =
+        total == 0
+            ? "No new diagnostics — the changed files compile cleanly."
+            : "%d diagnostic(s) after recompile:%n%s"
+                .formatted(total, moduleDiagnosticsLines(verify.perModule()));
+    return result(head + crossModuleNote(verify), verifyStructured(verify, total), List.of());
+  }
+
+  private static String crossModuleNote(final LatheVerifyChange verify) {
+    if (verify.suggestedMvn() == null) {
+      return "";
+    }
+
+    return "%n%n%d module(s) depend on your change (%s); verify them with:%n  %s"
+        .formatted(
+            verify.affectedModules().size(),
+            String.join(", ", verify.affectedModules()),
+            verify.suggestedMvn());
+  }
+
+  private static Map<String, Object> verifyStructured(
+      final LatheVerifyChange verify, final int total) {
+    final var structured = new LinkedHashMap<String, Object>();
+    structured.put("diagnosticCount", total);
+    structured.put(
+        "perModule", verify.perModule().stream().map(LatheMcpTools::moduleDiagnosticsMap).toList());
+    structured.put("affectedModules", verify.affectedModules());
+    if (verify.suggestedMvn() != null) {
+      structured.put("suggestedMvn", verify.suggestedMvn());
+    }
+
+    return structured;
+  }
+
+  private static String moduleDiagnosticsLines(final List<LatheModuleDiagnostics> perModule) {
+    return perModule.stream()
+        .map(LatheMcpTools::moduleDiagnosticsLine)
+        .collect(Collectors.joining(System.lineSeparator()));
+  }
+
+  private static String moduleDiagnosticsLine(final LatheModuleDiagnostics module) {
+    return "%s:%n%s"
+        .formatted(
+            module.module(),
+            module.diagnostics().stream()
+                .map(LatheMcpTools::diagnosticLine)
+                .collect(Collectors.joining(System.lineSeparator())));
+  }
+
+  private static Map<String, Object> moduleDiagnosticsMap(final LatheModuleDiagnostics module) {
+    return Map.<String, Object>of(
+        "module",
+        module.module(),
+        "diagnostics",
+        module.diagnostics().stream().map(LatheMcpTools::diagnosticMap).toList());
+  }
+
+  private static String deferralText(final String reason) {
+    return switch (reason) {
+      case "POM_PENDING" -> "a pending POM/dependency change needs a full build";
+      case "BULK_CHANGE" -> "too many changed files for an in-process recompile";
+      case "BUILD_IN_PROGRESS" -> "a reactor build is in progress";
+      default -> reason;
+    };
+  }
+
   private static CallToolResult diagnosticsResult(
       final Path file, final List<Diagnostic> diagnostics, final List<String> stale) {
     final List<Map<String, Object>> items =
@@ -788,6 +925,15 @@ final class LatheMcpTools {
 
   private static Integer intArg(final CallToolRequest request, final String name) {
     return request.arguments().get(name) instanceof Number n ? n.intValue() : null;
+  }
+
+  // Optional "files" array of absolute paths; absent or malformed means "detect the change set".
+  private static List<Path> fileListArg(final CallToolRequest request) {
+    if (!(request.arguments().get("files") instanceof List<?> files)) {
+      return List.of();
+    }
+
+    return files.stream().map(String::valueOf).map(Path::of).toList();
   }
 
   private static CallToolResult error(final String message) {

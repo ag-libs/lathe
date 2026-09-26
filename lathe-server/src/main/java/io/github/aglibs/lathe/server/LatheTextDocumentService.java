@@ -12,6 +12,7 @@ import io.github.aglibs.lathe.server.run.RunConfigWriter;
 import io.github.aglibs.lathe.server.run.RunTarget;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiFunction;
@@ -79,6 +80,24 @@ public final class LatheTextDocumentService implements TextDocumentService {
 
   CompletableFuture<Void> reconcileNow(final boolean eager) {
     return worker.submit(() -> session.reconcileNow(eager)).thenCompose(done -> done);
+  }
+
+  /**
+   * Freshen the mirror for a verify_change call, reporting what recompiled or why it was refused.
+   */
+  public CompletableFuture<ReconcileOutcome> reconcileForVerify() {
+    return worker.submit(() -> session.reconcileForVerify()).thenCompose(done -> done);
+  }
+
+  /** The changed files plus their same-module candidate callers, grouped by module rel. */
+  public CompletableFuture<Map<String, List<Path>>> verifyTargetsByModule(
+      final List<Path> changed) {
+    return worker.submit(() -> session.verifyTargetsByModule(changed));
+  }
+
+  /** Module rels that transitively depend on the changed files' modules (excluding them). */
+  public CompletableFuture<List<String>> downstreamModuleRels(final List<Path> changed) {
+    return worker.submit(() -> session.downstreamModuleRels(changed));
   }
 
   public void close() {

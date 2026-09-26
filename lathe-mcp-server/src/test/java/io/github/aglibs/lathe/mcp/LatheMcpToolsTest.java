@@ -50,7 +50,8 @@ class LatheMcpToolsTest {
             "call_hierarchy",
             "describe_symbol",
             "search_symbols",
-            "find_implementations");
+            "find_implementations",
+            "verify_change");
 
     assertThat(tool("get_diagnostics").tool().inputSchema().toString()).contains("file");
     assertThat(tool("get_definition").tool().inputSchema().toString())
@@ -68,6 +69,17 @@ class LatheMcpToolsTest {
     assertThat(tool("search_symbols").tool().inputSchema().toString()).contains("query");
     assertThat(tool("find_implementations").tool().inputSchema().toString())
         .contains("file", "line", "column", "maxResults");
+    assertThat(tool("verify_change").tool().inputSchema().toString()).contains("files");
+  }
+
+  @Test
+  void verifyChange_emptyWorkspace_reportsCleanNotError() {
+    final CallToolResult result = call("verify_change", Map.of());
+
+    assertThat(result.isError()).isNotEqualTo(true);
+    @SuppressWarnings("unchecked")
+    final Map<String, Object> structured = (Map<String, Object>) result.structuredContent();
+    assertThat(structured).containsEntry("diagnosticCount", 0);
   }
 
   @Test

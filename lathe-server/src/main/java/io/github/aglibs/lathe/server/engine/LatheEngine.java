@@ -6,6 +6,7 @@ import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
 import io.github.aglibs.lathe.server.LatheTextDocumentService;
 import io.github.aglibs.lathe.server.LatheUri;
+import io.github.aglibs.lathe.server.ReconcileOutcome;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import io.github.aglibs.lathe.server.run.RunTarget;
 import io.github.aglibs.lathe.server.run.RunnableKind;
@@ -18,6 +19,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -375,6 +378,46 @@ public final class LatheEngine {
     final CallHierarchyItem to = call.getTo();
     return new LatheCall(
         to.getName(), toLatheLocation(new Location(to.getUri(), to.getSelectionRange())));
+  }
+
+  /**
+   * Recompile the change set in-process against the captured classpath (no reactor build) and
+   * report the resulting compiler diagnostics, grouped by module. With no {@code files}, the change
+   * set is detected from disk (sources newer than their last compile); otherwise it is those files.
+   * When the change reaches other modules, {@link LatheVerifyChange#suggestedMvn()} carries the
+   * precise scoped build to verify the remainder — Lathe never runs Maven. If the in-process
+   * recompile cannot be trusted (a pending POM sync, too many files, or a running build), the
+   * result is deferred to Maven.
+   */
+  public LatheVerifyChange verifyChange(final List<Path> files) {
+    final ReconcileOutcome outcome = await(service.reconcileForVerify());
+    if (outcome.deferral() != ReconcileOutcome.DeferReason.NONE) {
+      return new LatheVerifyChange(
+          outcome.deferral().name(), List.of(), List.of(), LatheLayout.SYNC_COMMAND);
+    }
+
+    final List<Path> changed = files.isEmpty() ? outcome.reacted() : files;
+    if (changed.isEmpty()) {
+      return new LatheVerifyChange(null, List.of(), List.of(), null);
+    }
+
+    final Map<String, List<Path>> targets = await(service.verifyTargetsByModule(changed));
+    final List<LatheModuleDiagnostics> perModule =
+        targets.entrySet().stream()
+            .map(entry -> new LatheModuleDiagnostics(entry.getKey(), diagnose(entry.getValue())))
+            .filter(module -> !module.diagnostics().isEmpty())
+            .toList();
+    final List<String> downstream = await(service.downstreamModuleRels(changed));
+    final String suggestedMvn = downstream.isEmpty() ? null : crossModuleMvn(targets.keySet());
+    return new LatheVerifyChange(null, perModule, downstream, suggestedMvn);
+  }
+
+  private List<Diagnostic> diagnose(final List<Path> files) {
+    return files.stream().flatMap(file -> compileFromDisk(file).stream()).toList();
+  }
+
+  private static String crossModuleMvn(final Set<String> changedModuleRels) {
+    return LatheLayout.scopedSyncCommand(String.join(",", new TreeSet<>(changedModuleRels)));
   }
 
   private List<Diagnostic> compileFromDisk(final Path file) {

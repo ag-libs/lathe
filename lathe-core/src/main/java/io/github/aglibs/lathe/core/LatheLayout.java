@@ -60,8 +60,16 @@ public final class LatheLayout {
   // The Maven phase that runs lathe:sync (bound via LifecyclePhase.PROCESS_TEST_CLASSES) and the
   // command we suggest users/agents run to refresh .lathe/. The single source for that wording —
   // every remediation string below and the MCP instructions compose it rather than repeating it.
+  private static final String MVN = "mvn";
   public static final String SYNC_PHASE = "process-test-classes";
-  public static final String SYNC_COMMAND = "mvn %s".formatted(SYNC_PHASE);
+  public static final String SYNC_COMMAND = "%s %s".formatted(MVN, SYNC_PHASE);
+
+  // The scoped form of SYNC_COMMAND: refresh only the given modules and everything downstream of
+  // them (-amd = also-make-dependents). Shares the mvn/phase wording with SYNC_COMMAND so they
+  // never drift.
+  public static String scopedSyncCommand(final String modules) {
+    return "%s -pl %s -amd %s".formatted(MVN, modules, SYNC_PHASE);
+  }
 
   // A missing .lathe/ can mean the project is not set up for Lathe at all, or set up but not yet
   // built — so this remediation covers both rather than assuming a build alone will fix it.

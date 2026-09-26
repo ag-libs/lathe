@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.engine;
 import static io.github.aglibs.lathe.server.analysis.SourceLocator.offsetToPosition;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.server.TestCompiler;
 import io.github.aglibs.lathe.server.engine.LatheEngine.CallDirection;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
@@ -10,6 +11,7 @@ import io.github.aglibs.lathe.server.run.TestResult;
 import io.github.aglibs.lathe.server.run.TranscriptLine;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.List;
 import org.eclipse.lsp4j.Diagnostic;
 import org.junit.jupiter.api.AfterEach;
@@ -233,6 +235,61 @@ class LatheEngineTest {
     assertThat(run.launched()).isFalse();
     assertThat(run.blockedReasons()).containsExactly("no runner jar");
     assertThat(run.total()).isZero();
+  }
+
+  @Test
+  void verifyChange_externalEditBreaksSibling_reportsDiagnostic() throws Exception {
+    final GreetFixture fx = greetFixture();
+    stampModule(fx.callee(), fx.caller());
+    engine = new LatheEngine(tmp);
+
+    // Rename greet() on disk without touching the caller: the caller no longer compiles.
+    writeNewer(fx.callee(), "package com.example; class Callee { void welcome() {} }");
+    final LatheVerifyChange verify = engine.verifyChange(List.of());
+
+    assertThat(verify.deferral()).isNull();
+    assertThat(verify.perModule())
+        .anySatisfy(
+            module ->
+                assertThat(module.diagnostics())
+                    .anyMatch(d -> d.getMessage().getLeft().contains("greet")));
+  }
+
+  @Test
+  void verifyChange_noExternalChange_reportsNoDiagnostics() throws Exception {
+    final GreetFixture fx = greetFixture();
+    stampModule(fx.callee(), fx.caller());
+    engine = new LatheEngine(tmp);
+
+    final LatheVerifyChange verify = engine.verifyChange(List.of());
+
+    assertThat(verify.deferral()).isNull();
+    assertThat(verify.perModule()).isEmpty();
+    assertThat(verify.suggestedMvn()).isNull();
+  }
+
+  // Record a compile stamp per source so a freshly started engine sees the module as already
+  // synced;
+  // a later writeNewer() edit is then the only thing that reads as changed.
+  private void stampModule(final Path... sources) throws Exception {
+    final Path moduleDir = tmp.resolve(".lathe/module");
+    final Path sourceRoot = tmp.resolve("module/src/main/java");
+    for (final Path source : sources) {
+      CompiledStamps.record(
+          moduleDir,
+          "classes",
+          sourceRoot.relativize(source).toString(),
+          Files.getLastModifiedTime(source).toMillis());
+    }
+  }
+
+  private void writeNewer(final Path source, final String content) throws Exception {
+    Files.writeString(source, content);
+    final long stamp =
+        CompiledStamps.load(tmp.resolve(".lathe/module"), "classes").values().stream()
+            .max(Long::compareTo)
+            .orElse(0L);
+    Files.setLastModifiedTime(source, FileTime.fromMillis(stamp + 10_000));
   }
 
   // Callee.greet() called from Caller.run(), compiled into .lathe so cross-file resolution works.

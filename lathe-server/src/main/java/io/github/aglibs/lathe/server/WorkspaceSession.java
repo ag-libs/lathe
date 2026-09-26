@@ -2877,6 +2877,93 @@ final class WorkspaceSession {
     return CompletableFuture.allOf(reconcileIfIdle(eager).toArray(CompletableFuture[]::new));
   }
 
+  // verify_change's freshen step. Like the idle reconcile it recompiles the change set, but it
+  // never
+  // prompts: when an in-process recompile can't be trusted (a pending POM sync, too many files, or
+  // a
+  // running build) it returns a DeferReason so the caller falls back to Maven. Runs on the worker.
+  CompletableFuture<ReconcileOutcome> reconcileForVerify() {
+    if (reactorBuildInProgress()) {
+      return CompletableFuture.completedFuture(
+          new ReconcileOutcome(List.of(), ReconcileOutcome.DeferReason.BUILD_IN_PROGRESS));
+    }
+
+    if (pomNotificationPending) {
+      return CompletableFuture.completedFuture(
+          new ReconcileOutcome(List.of(), ReconcileOutcome.DeferReason.POM_PENDING));
+    }
+
+    reconcileDeletedSources();
+    final StaleScan scan = scanStaleModules();
+    final List<Path> updated = scan.staleFiles();
+    if (updated.size() > BULK_CHANGE_THRESHOLD) {
+      return CompletableFuture.completedFuture(
+          new ReconcileOutcome(List.of(), ReconcileOutcome.DeferReason.BULK_CHANGE));
+    }
+
+    final List<CompletableFuture<Void>> reactions =
+        compileChangedInOrder(scan.staleByModule(), Set.copyOf(updated));
+    return CompletableFuture.allOf(reactions.toArray(CompletableFuture[]::new))
+        .thenApply(done -> new ReconcileOutcome(updated, ReconcileOutcome.DeferReason.NONE));
+  }
+
+  // Files to diagnose for verify_change: each changed file plus its same-module callers, by module.
+  Map<String, List<Path>> verifyTargetsByModule(final List<Path> changed) {
+    final Map<String, Set<Path>> byModule = new LinkedHashMap<>();
+    for (final Path file : changed) {
+      final Optional<ModuleSourceConfig> config = workspace.moduleSourceFor(file);
+      if (config.isEmpty()) {
+        continue;
+      }
+
+      final Set<Path> targets =
+          byModule.computeIfAbsent(
+              moduleRelForDir(config.get().moduleDir()), k -> new LinkedHashSet<>());
+      targets.add(file);
+      targets.addAll(sameModuleReferrers(file, config.get()));
+    }
+
+    return byModule.entrySet().stream()
+        .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, e -> List.copyOf(e.getValue())));
+  }
+
+  // Candidates are matched by type-name token, so this can over-select (an unrelated file that
+  // merely
+  // mentions the name) but never miss a real caller; a false candidate just compiles clean.
+  private List<Path> sameModuleReferrers(final Path file, final ModuleSourceConfig config) {
+    return candidateIndex.candidateUris(typeNameFrom(file)).stream()
+        .map(LatheUri::toPath)
+        .filter(path -> !path.equals(file))
+        .filter(path -> inSameModule(path, config))
+        .toList();
+  }
+
+  private boolean inSameModule(final Path path, final ModuleSourceConfig config) {
+    return workspace
+        .moduleSourceFor(path)
+        .map(other -> other.moduleDir().equals(config.moduleDir()))
+        .orElse(false);
+  }
+
+  // The reactor remainder a cross-module change may break: modules that transitively depend on the
+  // changed ones. verify_change hands these to `mvn` rather than recompiling (codegen/AP are
+  // Maven's).
+  List<String> downstreamModuleRels(final List<Path> changed) {
+    final Set<Path> changedModuleDirs =
+        changed.stream()
+            .map(workspace::moduleSourceFor)
+            .flatMap(Optional::stream)
+            .map(ModuleSourceConfig::moduleDir)
+            .collect(Collectors.toSet());
+    return changedModuleDirs.stream()
+        .flatMap(dir -> moduleGraph.downstreamModuleDirs(dir).stream())
+        .filter(dir -> !changedModuleDirs.contains(dir))
+        .distinct()
+        .map(this::moduleRelForDir)
+        .sorted()
+        .toList();
+  }
+
   private void reconcileDeletedSources() {
     workspace.allConfigs().forEach(this::reconcileDeletedSourcesIn);
   }
@@ -3059,12 +3146,15 @@ final class WorkspaceSession {
   // from the .lathe mirror (moduleDir = latheDir/moduleRel); the classes/test-classes configs of
   // one module share a moduleDir, so distinct dedupes them.
   private List<String> moduleRels(final Set<ModuleSourceConfig> modules) {
-    final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
     return modules.stream()
-        .map(config -> latheDir.relativize(config.moduleDir()).toString())
+        .map(config -> moduleRelForDir(config.moduleDir()))
         .distinct()
         .sorted()
         .toList();
+  }
+
+  private String moduleRelForDir(final Path moduleDir) {
+    return workspaceRoot.resolve(LatheLayout.LATHE_DIR).relativize(moduleDir).toString();
   }
 
   // Full reactor (empty) when at least FULL_SYNC_PERCENT of the reactor's modules changed: targeted

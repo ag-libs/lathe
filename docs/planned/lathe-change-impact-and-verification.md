@@ -2,7 +2,10 @@
 
 ## Status
 
-Proposed. Design approved 2026-09-25; no code yet.
+**`verify_change` — DONE** (P1 shipped 2026-09-26): engine method + MCP tool + `reconcileForVerify`
+seam, unit-tested and probe-validated on the `multi-module` invoker fixture (auto change-detection,
+per-module diagnostics, cross-module `mvn -pl … -amd` handoff). **`analyze_change` — proposed** (P2,
+not started).
 Code-grounded design for two paired MCP tools — a **pre-edit** impact preview (`analyze_change`) and a
 **post-edit** scoped recompile (`verify_change`) — and the `LatheEngine` methods behind them.
 
@@ -258,7 +261,7 @@ instead surfaced by the Tier-3 handoff and the still-active POM prompt, not by w
 - **P0 — spike: DONE.** The substrate shipped; the seams `verify_change` needs are verified in code
   (`reconcileNow(eager)`, `staleModules(configs, openPaths)`/`StaleScan`, `upstreamFirst`,
   `deleteOrphanedClassOutputs`, `diagnosticsFuture`). No substrate work remains; P1 is unblocked.
-1. **P1 — `verify_change` engine + tool.** Substrate touch: add `reconcileForVerify()` +
+1. **P1 — `verify_change` engine + tool. ✅ DONE (2026-09-26).** Substrate touch: add `reconcileForVerify()` +
    `ReconcileOutcome`/`DeferReason` on `LatheTextDocumentService`/`WorkspaceSession`. Then
    `LatheEngine.verifyChange(files?)`: Step 1 `reconcileForVerify` → Step 2 deferral & new-module gate →
    Step 3 per-file `diagnosticsFuture` for `reacted` + callers → Step 4 Tier-3 handoff; `LatheVerifyChange`
@@ -276,6 +279,12 @@ instead surfaced by the Tier-3 handoff and the still-active POM prompt, not by w
 
 ## Open questions
 
+- **Skip re-diagnosing changed files (follow-up optimization).** `verify_change` compiles each changed
+  file twice: once FULL in the reaction (which already yields its diagnostics) and once OPEN in the
+  diagnosis step. The FULL `CompileResponse.diagnostics()` is available in `afterChangedCompile` but
+  discarded. Surfacing it would skip the second compile (~37 ms/file), but it changes the return type of
+  the shared `compileChangedSource`/`compileChangedInOrder`/`reconcileIfIdle` path (also used by the idle
+  sync and `reconcileNow`), so it was deferred out of P1 rather than destabilize the shipped reaction.
 - **`publicApi` precision** — protected/package-private members overridable across modules: treat as
   "effectively public" for impact? (P2 spike.)
 - **Intra-module caller closure depth** — one level (matches `call_hierarchy`) or transitive within the

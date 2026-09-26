@@ -8,13 +8,10 @@
 Lathe is a Java language server for Maven projects — code intelligence, diagnostics, and run, test, and
 debug. It is built on the JDK's own Java compiler, so its analysis matches what `javac` sees.
 
-If you've fought a Java LSP in your editor, the pain is usually project import and classpath or
-module-path config drifting from the build. Lathe's project model comes straight from your actual Maven build: it
-captures the exact configuration Maven compiles, tests, and runs with, and works from it directly — so
-the setups that are hardest to get right in an editor tend to just work. This shows most on modular Java
-projects: reactor type discovery, exported-package visibility, and module-aware completion follow your
-module graph as the build defines it. Annotation processors and plugins that add source roots or change
-how a module compiles are handled the same way.
+If you've fought a Java LSP, the pain is usually project import and classpath or module-path config
+drifting from the build. Lathe skips that: its model comes straight from your Maven build — the exact
+configuration Maven compiles, tests, and runs with — so the setups hardest to get right in an editor
+(modular projects, annotation processors, plugins that add source roots) tend to just work.
 
 Because the editor uses the build's own configuration, it stays in sync with it — diagnostics are what
 the compiler reports, and runs and tests replay the real launch without a Maven rebuild.
@@ -52,7 +49,7 @@ bindings.
 | Implementation / subtypes    | concrete implementations of a method, or all subtypes of a type across the workspace              | `textDocument/implementation`                     |
 | Find references              | usages across the workspace                                                                       | `textDocument/references`                         |
 | Highlight uses               | read/write uses of the symbol under the cursor, within the current file                          | `textDocument/documentHighlight`                  |
-| Rename                       | renames locals, parameters, type parameters, fields, methods (incl. the override family), record components, and constructors, and every reference **across the whole reactor — all modules** — as one atomic edit | `textDocument/rename` · `textDocument/prepareRename` |
+| Rename                       | renames a symbol and every reference **across the whole reactor — all modules** — as one atomic edit (locals, fields, methods incl. the override family, record components, constructors) | `textDocument/rename` · `textDocument/prepareRename` |
 | Instantiation sites          | where a type is instantiated (`new AppServer(...)`), from the type under the cursor               | `workspace/executeCommand` · `lathe.instantiations` |
 | Hover                        | AST-resolved Javadoc, rendered as Markdown                                                        | `textDocument/hover`                              |
 | Signature help               | parameter lists for methods and constructors                                                      | `textDocument/signatureHelp`                      |
@@ -70,13 +67,12 @@ bindings.
 | Feature             | What it does                                                                                 | LSP method                        |
 |---------------------|----------------------------------------------------------------------------------------------|-----------------------------------|
 | Diagnostics         | `javac` errors and warnings exactly as configured in Maven, plus unused private members and locals | `textDocument/publishDiagnostics` |
-| Code actions        | import missing type · add all missing imports for the file · add `throws` clause · wrap with `try/catch` · declare local variable · replace `var` with the inferred type · extract variable / constant / field (incl. replace all occurrences) · add a `final` field as a constructor parameter · stub a missing method | `textDocument/codeAction`         |
+| Code actions        | quick fixes and refactors: missing imports, add `throws`, wrap in `try/catch`, declare local, replace `var` with the inferred type, extract variable / constant / field, add a `final` field as a constructor parameter, stub a missing method | `textDocument/codeAction`         |
 | Formatting (opt-in) | whole-document google-java-format with import cleanup — **off by default**                   | `textDocument/formatting`         |
 
-Full-document formatting is **opt-in**: the server advertises `textDocument/formatting` only when a
-client enables the `google` formatter, so Lathe never rewrites a project whose style contract isn't
-Google Java Format. Live-editing indentation is a separate, always-on client concern — see the editor
-guide to configure both.
+Formatting is **opt-in** — the server advertises `textDocument/formatting` only when a client enables
+the `google` formatter, so Lathe never reformats a project whose style isn't Google Java Format.
+(Live-edit indentation is a separate client concern; the editor guide configures both.)
 
 ### Run, test & debug
 
@@ -88,23 +84,9 @@ guide to configure both.
 | [Run configuration](docs/guide/run-configuration.md) | auto-applied overlays (JVM/program args, env, cwd, class-/module-path) plus named, selectable run configs (`:LatheRun {name}`, saved from the cursor)         | `lathe.run.named` · `lathe.runconfigs.list` · `lathe.runconfig.save`  |
 
 Run, test, and debug are Lathe extensions exposed through `workspace/executeCommand` (and the Debug
-Adapter Protocol for debugging), not standard LSP methods.
-
-#### Neovim run/debug commands
-
-| Command | What it does |
-|---|---|
-| `:LatheRun` | Run the `main` under the cursor from `.lathe/` bytecode. |
-| `:LatheRun {name}` | Run a saved config by name (`<Tab>` completes; cursor-independent). |
-| `:LatheDebug` / `:LatheDebug {name}` | Debug the cursor target, or a saved config — run and debug share one entry. |
-| `:LatheRunSave[!] {name}` | Save the runnable under the cursor as a named config in `.lathe/run.json` (`!` overwrites); name optional (derived from the class). |
-| `:LatheRunLast` | Re-run the most recently run config. |
-| `:LatheRunStop` | Stop the active run **or** debug session. |
-| `:LatheRunOutput` | Toggle the run-output console (reopens the last run). |
-
-For an IntelliJ-style config chooser, bind the picker: `vim.keymap.set('n', '<leader>tr', require('lathe.run').pick)`
-— it lists your configs as `name · module · target` and runs the chosen one. See
-[run configuration](docs/guide/run-configuration.md).
+Adapter Protocol for debugging), not standard LSP methods. The Neovim commands (`:LatheRun`,
+`:LatheDebug`, save/last/stop, the config picker) are in the
+[Neovim cheatsheet](docs/guide/editors/neovim.md) and [run configuration](docs/guide/run-configuration.md).
 
 ### Scaffolding
 
@@ -112,17 +94,17 @@ For an IntelliJ-style config chooser, bind the picker: `vim.keymap.set('n', '<le
 |----------|------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------|
 | New type | scaffolds a `class` / `interface` / `record` / `enum` / `annotation` / `test`, plus `package-info` and `module-info` — pick the kind, fuzzy-pick the destination package, and name it; the server resolves placement, writes the file, and opens it | Neovim `:LatheNew` |
 
-`:LatheNew <kind>` adds a type in the current file's package; run `:LatheNew` with no arguments for a
-guided flow that fuzzy-picks the destination module and package. The server owns every Java/Maven
-decision — module, source root, package, and skeleton. Full walkthrough in the
-[Neovim cheatsheet](docs/guide/editors/neovim.md#create-a-new-type).
+`:LatheNew <kind>` adds a type in the current package; bare `:LatheNew` runs a guided module/package
+picker. The server owns placement — module, source root, package, and skeleton.
+[Walkthrough →](docs/guide/editors/neovim.md#create-a-new-type).
 
 ### Workspace freshness
 
 Lathe keeps its model in step with your build. Open files are analysed live as you edit and save; when
 sources or resources change **outside** the editor — a branch switch, a `git pull`, or an AI agent
-editing files — Lathe detects it and offers to refresh. Changed resources are copied in without a
-build.
+editing files — Lathe reconciles in-process automatically, recompiling the changed files in dependency
+order and cleaning up deletions with no Maven build. Only **POM / module-structure** changes prompt a
+full refresh.
 
 ## Editors
 
@@ -144,8 +126,9 @@ like **Emacs + Eglot** works with no plugin at all — see the [Emacs guide](doc
 Lathe also drives AI coding agents. The same build-derived engine that powers the editor is exposed
 over the Model Context Protocol by `lathe-mcp-server`, so an agent gets javac-accurate, cross-module
 code intelligence instead of guessing from `grep`: compiler-truth diagnostics, navigation that follows
-into dependencies and generated sources, safe reactor-wide rename, and test replay without a Maven
-build. Works with any MCP client — Claude Code, OpenAI Codex CLI, Gemini CLI.
+into dependencies and generated sources, safe reactor-wide rename, test replay without a Maven build,
+and scoped recompile-and-verify of a change set. Works with any MCP client — Claude Code, OpenAI Codex
+CLI, Gemini CLI.
 
 Like the editor, it reads from a populated `.lathe/`, so run a build once first.
 
@@ -160,6 +143,7 @@ Like the editor, it reads from a populated `.lathe/`, so run a build once first.
 | `describe_symbol`      | signature, type, and javadoc for a symbol                           |
 | `rename_symbol`        | rename a symbol across the whole reactor, applied to disk           |
 | `run_test`             | replay a test / class / package from captured bytecode — no build   |
+| `verify_change`        | recompile a change set in-process, report new diagnostics per module + the scoped `mvn` for cross-module impact — no build |
 
 Full setup — registering with Claude Code, Codex, and Gemini, the result contract, and the freshness
 model — is in the [AI agents guide](docs/guide/ai-agents.md).
@@ -235,9 +219,9 @@ work without extra maps. Full keymaps, formatting options, and the neotest test-
 in the [Neovim cheatsheet](docs/guide/editors/neovim.md). Requires Neovim 0.12+.
 
 After that, it keeps up on its own: every Maven build (`mvn test`, `verify`, `install`) refreshes
-Lathe's configuration, and the editor watches for changes made outside it. The added build cost is
-marginal — Lathe runs your real `javac` and just records its parameters (plus a one-time resolve of
-dependency and JDK sources). See
+Lathe's configuration, and Lathe reconciles source changes made outside the editor in-process.
+The added build cost is marginal — Lathe runs your real `javac` and just records its parameters (plus a
+one-time resolve of dependency and JDK sources). See
 [what the build writes](docs/guide/installation.md#what-and-where-lathe-writes) for the details.
 
 ## How it works
