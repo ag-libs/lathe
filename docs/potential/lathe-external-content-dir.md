@@ -1,10 +1,16 @@
 # Lathe — External content directory
 
-Status: proposed.
+Status: potential — not on the roadmap.
 Let a project redirect the bulky generated `.lathe/` mirror to a Lathe-generated directory under the
 user cache, keeping `.lathe/` itself as a tiny in-tree marker holding only the workspace manifest, the
 build lock, and local run configuration.
 Opt-in via a single boolean, backward-compatible default.
+
+**Deferred pending a cheaper path.** The adopter's complaint has two halves — jdtls choking on
+`.lathe/`, and git-cleanliness — and both may be solvable without this feature: `**/.lathe/**` in
+jdtls's `java.import.exclusions` stops jdtls from scanning Lathe's tree, and an auto-written
+`.lathe/.gitignore` (`*`) keeps it out of `git status`. This design is kept as the fallback if those
+prove insufficient; the full design below stands, but it is not planned work.
 
 ## Motivation
 

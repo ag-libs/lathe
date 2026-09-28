@@ -107,12 +107,6 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
   an API change (shipped via `refreshOpenDependents`); closed-file recompilation dropped as a non-goal.
 - [Lightweight Watcher](planned/lathe-lightweight-watcher.md) — partially stale design; would back a
   non-intrusive source-staleness signal (the deferred WS-2, folded under WS-1) if beta feedback warrants it.
-- [External Content Directory](planned/lathe-external-content-dir.md) — opt-in redirection of the bulky
-  generated `.lathe/` mirror to a Lathe-generated `~/.cache/lathe/projects/<id>` dir, keeping `.lathe/`
-  as a tiny in-tree marker (`workspace.json` + `lathe.lock` + `run.json`); a boolean
-  `lathe.content.cached` POM property whose computed absolute path is persisted into
-  `workspace.json.contentDir` (default `""` = in-tree, no behavior change), a marker-vs-content resolver
-  split, per-checkout auto-isolation, and a deferred zero-footprint-via-pom-discovery option (proposed).
 - [Differential Testing Against jdtls](planned/lathe-jdtls-differential-testing.md) — **Won't do.** Semantic
   LSP-response comparison against Eclipse JDT LS; not pursued (gaps tracked via EG-/CQ- + `dev/` probing).
 - [Standalone `lathe.nvim` Plugin](done/lathe-standalone-nvim-plugin.md) — **shipped**; publishes the
@@ -277,6 +271,11 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
   the archive of the reaction mechanics (batch FULL compile, startup reconciliation,
   live-watch/gitignore/Neovim analysis) the successor builds on.
 - [Shared Workspace Server](potential/lathe-shared-workspace-server.md) — no active milestone commitment.
+- [External Content Directory](potential/lathe-external-content-dir.md) — opt-in redirection of the
+  bulky generated `.lathe/` mirror to a Lathe-generated `~/.cache/lathe/projects/<id>` dir via a boolean
+  `lathe.content.cached` (default in-tree, no behavior change), keeping `.lathe/` as a tiny marker.
+  **Deferred:** the adopter's pain may be met more cheaply by `**/.lathe/**` in jdtls
+  `java.import.exclusions` plus an auto-written `.lathe/.gitignore`; kept as the fallback.
 - [Analysis Cache Bounding](potential/lathe-analysis-cache-bounding.md) — deferred hard-cap design for
   per-open-file analysis retention (event-loop LRU, eviction delegated to module workers); the issue
   is accepted but a lighter warning-based mitigation is preferred first.
