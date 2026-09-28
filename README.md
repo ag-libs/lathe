@@ -152,7 +152,7 @@ model — is in the [AI agents guide](docs/guide/ai-agents.md).
 ## Requirements
 
 - **Java 21+** — the same JDK your Maven build uses.
-- **Maven 3.x**
+- **Maven 3.9+** — earlier 3.x releases are not supported. 3.9.x is verified.
 
 Test run and debug have additional requirements (Surefire and JUnit Platform
 versions); see [test-capture.md](docs/guide/test-capture.md).
