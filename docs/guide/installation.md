@@ -187,6 +187,25 @@ Lathe writes to two locations: `.lathe/` inside the project, and `~/.cache/lathe
 Everything under `~/.cache/lathe/` is derived and safe to delete; the next `sync`/build rebuilds what
 it needs.
 
+## Coexisting with another Java language server (jdtls)
+
+`.lathe/` is generated build output. Another Java language server in the same editor (Eclipse JDT LS,
+via `nvim-jdtls` or the VS Code Java extension) scans it by default and may treat the mirrored sources
+and classes as duplicate projects. Add `**/.lathe/**` to its `java.import.exclusions` so the two coexist
+— jdtls scopes imports with explicit globs, not `.gitignore`, so gitignoring `.lathe/` alone is not
+enough:
+
+```jsonc
+"java.import.exclusions": [
+  "**/node_modules/**",
+  "**/.metadata/**",
+  "**/.lathe/**"        // add this line, keep jdtls's defaults
+]
+```
+
+In VS Code this goes in `settings.json`; with `nvim-jdtls` it is the `settings.java.import.exclusions`
+table you pass to `start_or_attach`.
+
 ## Verify
 
 After the recommended first run above, confirm `.lathe/` exists at the reactor root and that each
