@@ -107,6 +107,11 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
   an API change (shipped via `refreshOpenDependents`); closed-file recompilation dropped as a non-goal.
 - [Lightweight Watcher](planned/lathe-lightweight-watcher.md) — partially stale design; would back a
   non-intrusive source-staleness signal (the deferred WS-2, folded under WS-1) if beta feedback warrants it.
+- [External Content Directory](planned/lathe-external-content-dir.md) — opt-in redirection of the bulky
+  generated `.lathe/` mirror to a directory outside the working tree, keeping `.lathe/` as a tiny
+  in-tree marker (`workspace.json` + `lathe.lock` + `run.json`); explicit `lathe.content.dir` POM
+  property persisted into `workspace.json.contentDir` (default `""` = in-tree, no behavior change),
+  a marker-vs-content resolver split, and an ownership collision guard (proposed).
 - [Differential Testing Against jdtls](planned/lathe-jdtls-differential-testing.md) — **Won't do.** Semantic
   LSP-response comparison against Eclipse JDT LS; not pursued (gaps tracked via EG-/CQ- + `dev/` probing).
 - [Standalone `lathe.nvim` Plugin](done/lathe-standalone-nvim-plugin.md) — **shipped**; publishes the
