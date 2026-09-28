@@ -47,13 +47,14 @@ public final class ClassFileTypeScanner {
   }
 
   public static List<TypeIndexEntry> scanDirectory(final Path root) throws IOException {
-    return sorted(readDirectory(root).stream().map(ClassFileTypeScanner::toEntry));
+    return sorted(
+        readDirectory(root).stream().map(ClassFileTypeScanner::toEntry).flatMap(Optional::stream));
   }
 
   public static ReactorScan scanReactorDirectory(final Path root) throws IOException {
     final List<ClassMetadata> classes = readDirectory(root);
     final List<TypeIndexEntry> entries =
-        sorted(classes.stream().map(ClassFileTypeScanner::toEntry));
+        sorted(classes.stream().map(ClassFileTypeScanner::toEntry).flatMap(Optional::stream));
     final Map<String, Integer> referenceCounts =
         classes.stream()
             .flatMap(metadata -> metadata.referencedTypes().stream())
@@ -107,7 +108,7 @@ public final class ClassFileTypeScanner {
 
   private static Optional<TypeIndexEntry> scanClassEntry(
       final String className, final InputStream in) throws IOException {
-    return readMetadata(className, in).map(ClassFileTypeScanner::toEntry);
+    return readMetadata(className, in).flatMap(ClassFileTypeScanner::toEntry);
   }
 
   private static Optional<ClassMetadata> readMetadata(final String className, final InputStream in)
@@ -172,20 +173,24 @@ public final class ClassFileTypeScanner {
     return metadata.binaryName().replace('.', '/') + CLASS_SUFFIX;
   }
 
-  private static TypeIndexEntry toEntry(final ClassMetadata metadata) {
+  private static Optional<TypeIndexEntry> toEntry(final ClassMetadata metadata) {
     final String binaryName = metadata.binaryName();
     final int packageEnd = binaryName.lastIndexOf('.');
     final String packageName = packageEnd > 0 ? binaryName.substring(0, packageEnd) : "";
     final int nestedNameStart = binaryName.lastIndexOf('$') + 1;
     final int simpleNameStart = Math.max(packageEnd + 1, nestedNameStart);
     final String simpleName = binaryName.substring(simpleNameStart);
+    // Obfuscators emit binary names ending in '$', leaving nothing after the last separator — no
+    // usable simple name to index, so drop the entry rather than fail the whole scan.
+    if (simpleName.isBlank()) {
+      return Optional.empty();
+    }
+
     // Nested types are candidates too (`Map.Entry`, `HttpClient.Version`), so they complete and
     // auto-import by simple name; a name starting with a digit is a synthetic anonymous/local
     // class.
     final boolean typeNameCandidate =
-        metadata.access().isPublicType()
-            && !simpleName.isEmpty()
-            && Character.isJavaIdentifierStart(simpleName.charAt(0));
+        metadata.access().isPublicType() && Character.isJavaIdentifierStart(simpleName.charAt(0));
     final TypeKind kind = metadata.access().kind();
     final List<String> directSupertypes =
         kind == TypeKind.INTERFACE || kind == TypeKind.ANNOTATION
@@ -193,7 +198,8 @@ public final class ClassFileTypeScanner {
                 .filter(name -> !"java.lang.Object".equals(name))
                 .toList()
             : metadata.directSupertypes();
-    return new TypeIndexEntry(
-        simpleName, binaryName, packageName, kind, typeNameCandidate, directSupertypes);
+    return Optional.of(
+        new TypeIndexEntry(
+            simpleName, binaryName, packageName, kind, typeNameCandidate, directSupertypes));
   }
 }

@@ -44,6 +44,26 @@ class ClassFileTypeScannerTest {
   }
 
   @Test
+  void scanDirectory_binaryNameEndingInDollar_skipsEntryWithoutFailing() throws Exception {
+    // A trailing '$' (legal Java, and what obfuscated classes produce) leaves no simple name after
+    // the last separator; the scan must drop it rather than throw on the blank name.
+    final Path classes =
+        compile(
+            Map.of(
+                "PublicType.java",
+                "package com.example; public class PublicType {}",
+                "Bar$.java",
+                "package com.example; public class Bar$ {}"));
+
+    final List<TypeIndexEntry> entries = ClassFileTypeScanner.scanDirectory(classes);
+
+    assertThat(entries)
+        .extracting(TypeIndexEntry::binaryName)
+        .contains("com.example.PublicType")
+        .doesNotContain("com.example.Bar$");
+  }
+
+  @Test
   void scanDirectory_missingDirectory_returnsEmpty() throws Exception {
     final List<TypeIndexEntry> entries = ClassFileTypeScanner.scanDirectory(tmp.resolve("missing"));
 
