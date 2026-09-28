@@ -159,6 +159,9 @@ final class WorkspaceSession {
   private Map<String, Integer> reactorUsageCounts = Map.of();
   private WorkspaceWatcher watcher;
   private boolean pomNotificationPending;
+  // Guards against re-notifying every idle tick while churn continues; reset when the stale set
+  // drains.
+  private boolean bulkNoticeShown;
   // Stale sources and their mtimes seen on the previous idle tick. A source is recompiled
   // in-process
   // only once its mtime has held across two ticks, so a file mid-write is left to settle first.
@@ -3030,12 +3033,13 @@ final class WorkspaceSession {
     final Map<Path, Long> current = staleMtimes(scan);
     if (current.isEmpty()) {
       pendingStale = Map.of();
+      bulkNoticeShown = false;
       return List.of();
     }
 
     if (current.size() > BULK_CHANGE_THRESHOLD) {
       pendingStale = Map.of();
-      promptBulkSync(scan);
+      noticeBulkChange(scan, current.size());
       return List.of();
     }
 
@@ -3146,16 +3150,23 @@ final class WorkspaceSession {
     }
   }
 
-  private void promptBulkSync(final StaleScan scan) {
-    final List<String> moduleRels = moduleRels(scan.modules());
-    final List<String> scope = syncScope(moduleRels, totalModuleCount());
-    LOG.info(() -> "[react] bulk change in %s — sync needed".formatted(moduleRels));
-    promptForSync(syncPromptMessage(moduleRels, scope), scope);
-  }
+  // Too much changed to catch up in-process. A single non-blocking notice (not a repeating modal)
+  // recommends a sync, keeping the editor usable during churn.
+  private void noticeBulkChange(final StaleScan scan, final int changedCount) {
+    if (bulkNoticeShown) {
+      return;
+    }
 
-  private int totalModuleCount() {
-    return (int)
-        workspace.allConfigs().stream().map(ModuleSourceConfig::moduleDir).distinct().count();
+    bulkNoticeShown = true;
+    LOG.info(
+        () ->
+            "[react] bulk change in %s count=%d — sync recommended"
+                .formatted(moduleRels(scan.modules()), changedCount));
+    client.showMessage(
+        new MessageParams(
+            MessageType.Warning,
+            "Lathe: %d files changed at once — analysis may be stale. Run a Lathe sync to refresh."
+                .formatted(changedCount)));
   }
 
   // The reactor-relative module paths of the stale modules, for the client's -pl selector. Derived
@@ -3171,36 +3182,6 @@ final class WorkspaceSession {
 
   private String moduleRelForDir(final Path moduleDir) {
     return workspaceRoot.resolve(LatheLayout.LATHE_DIR).relativize(moduleDir).toString();
-  }
-
-  // Full reactor (empty) when at least FULL_SYNC_PERCENT of the reactor's modules changed: targeted
-  // -pl saves little then (its -am upstream union approaches a full build), a broad change is
-  // likelier
-  // structural, and a full build also regenerates workspace.json, which -pl cannot. Otherwise the
-  // changed modules themselves.
-  static List<String> syncScope(final List<String> moduleRels, final int totalModules) {
-    return moduleRels.size() * 100 >= totalModules * FULL_SYNC_PERCENT ? List.of() : moduleRels;
-  }
-
-  // Reflects the actual action: a targeted (-pl) refresh names its modules in brackets, or shows
-  // the
-  // count when there are many; a full refresh shows the count; a structural/POM change (no modules)
-  // is generic.
-  static String syncPromptMessage(final List<String> changed, final List<String> scope) {
-    if (changed.isEmpty()) {
-      return "Maven project changed. Lathe will run a full refresh.";
-    }
-
-    if (scope.isEmpty()) {
-      return "Sources changed in %d modules. Lathe will run a full refresh."
-          .formatted(changed.size());
-    }
-
-    return scope.size() <= MODULE_NAME_LIMIT
-        ? "Sources changed in [%s]. Lathe will run a partial refresh."
-            .formatted(String.join(", ", scope))
-        : "Sources changed in %d modules. Lathe will run a partial refresh."
-            .formatted(scope.size());
   }
 
   // Copy any resource whose .lathe/ destination is missing or older than the source, so an external
@@ -3344,14 +3325,9 @@ final class WorkspaceSession {
         .replace(classFile.getFileSystem().getSeparator(), ".");
   }
 
-  // Fall back to a full reactor build once at least this percentage of the reactor's modules
-  // changed.
-  private static final int FULL_SYNC_PERCENT = 75;
-  // Above this many externally changed sources (a branch switch, a large pull), defer to the Maven
-  // sync prompt instead of recompiling in-process file by file.
+  // Above this many externally changed sources (a branch switch, a large pull), recommend a Maven
+  // sync instead of recompiling in-process file by file.
   private static final int BULK_CHANGE_THRESHOLD = 50;
-  // Name up to this many changed modules in the prompt; beyond it, show just the count.
-  private static final int MODULE_NAME_LIMIT = 3;
   private static final String SYNC_ACTION = "Sync";
   private static final String SYNC_CAPTURE_ACTION = "Sync + capture tests";
   private static final String LATER_ACTION = "Later";
@@ -3379,7 +3355,8 @@ final class WorkspaceSession {
         refreshReactorTypeIndex();
         pendingStale = Map.of();
       }
-      case POM_CHANGED -> promptForSync(syncPromptMessage(List.of(), List.of()), List.of());
+      case POM_CHANGED ->
+          promptForSync("Maven project changed. Lathe will run a full refresh.", List.of());
       case NO_CHANGE -> reconcileIfIdle(false);
     }
   }

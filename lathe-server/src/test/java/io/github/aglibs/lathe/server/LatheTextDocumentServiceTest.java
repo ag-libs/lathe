@@ -11,7 +11,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.Json;
@@ -28,7 +27,6 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CancellationException;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams;
@@ -50,6 +48,7 @@ import org.eclipse.lsp4j.FormattingOptions;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.HoverParams;
 import org.eclipse.lsp4j.Location;
+import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.ProgressParams;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
@@ -504,7 +503,7 @@ class LatheTextDocumentServiceTest {
   }
 
   @Test
-  void initialize_manyExternalChangesAboveThreshold_promptsBulkSync() throws Exception {
+  void manyExternalChangesAboveThreshold_showsBulkNoticeOnceNotModalNotRepeated() throws Exception {
     final Path sourceRoot = tmp.resolve("module/src/main/java");
     for (int i = 0; i <= 50; i++) { // 51 unstamped sources → all stale, over the bulk threshold
       TestCompiler.writeAt(
@@ -514,12 +513,14 @@ class LatheTextDocumentServiceTest {
     }
 
     TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
-    when(client.showMessageRequest(any())).thenReturn(new CompletableFuture<>());
 
     service.initialize(tmp);
+    service.reconcileNow().get(5, TimeUnit.SECONDS); // still over threshold → must not re-notify
 
-    verify(client, timeout(5_000))
-        .showMessageRequest(argThat(p -> p.getMessage().contains("Sources changed in")));
+    verify(client, timeout(5_000).times(1))
+        .showMessage(
+            argThat((MessageParams p) -> p.getMessage().contains("files changed at once")));
+    verify(client, never()).showMessageRequest(any()); // non-blocking notice, never a modal
   }
 
   @Test
