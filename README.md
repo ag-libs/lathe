@@ -285,6 +285,18 @@ request. Thank you for trying Lathe.
 
 Maintainers: see [RELEASING.md](RELEASING.md) for the release process.
 
+## Built with AI assistance
+
+Lathe is developed with the help of AI coding tools (primarily Claude Code).
+AI-assisted contributions are reviewed by a human maintainer, who takes responsibility for every
+change that lands, the same as for any hand-written code.
+Commits produced with AI assistance carry a `Co-Authored-By` trailer so the provenance stays visible
+in the git history.
+
+AI-generated output is used only where it is compatible with this project's Apache-2.0 license, in
+line with the [Apache Software Foundation's generative-tooling
+guidance](https://www.apache.org/legal/generative-tooling.html).
+
 ## License
 
 Apache License 2.0 — see [LICENSE](LICENSE).
