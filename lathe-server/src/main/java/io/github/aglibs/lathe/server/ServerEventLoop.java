@@ -18,6 +18,8 @@ final class ServerEventLoop {
 
   private static final Logger LOG = Logger.getLogger(ServerEventLoop.class.getName());
 
+  private static final long SHUTDOWN_TIMEOUT_SECONDS = 5;
+
   private final AtomicReference<Thread> workerThread = new AtomicReference<>();
   private final ScheduledExecutorService executor =
       Executors.newSingleThreadScheduledExecutor(this::newWorkerThread);
@@ -77,8 +79,19 @@ final class ServerEventLoop {
     }
   }
 
+  // Await termination so no in-flight worker task can outlive close() and race the caller's
+  // teardown. The fixed-rate change scan walks and writes under the workspace root, so a returning
+  // close() that left it running would let a test's @TempDir delete race a live scan.
   void close() {
     executor.shutdownNow();
+    try {
+      if (!executor.awaitTermination(SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+        LOG.warning(
+            () -> "[worker] shutdown timed out after %ds".formatted(SHUTDOWN_TIMEOUT_SECONDS));
+      }
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
   }
 
   private boolean isWorkerThread() {
