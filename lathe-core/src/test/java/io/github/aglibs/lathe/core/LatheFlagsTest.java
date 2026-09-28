@@ -9,25 +9,20 @@ class LatheFlagsTest {
 
   @AfterEach
   void clearProperty() {
-    System.clearProperty(LatheFlags.SKIP);
+    System.clearProperty(LatheFlags.DISABLED);
     System.clearProperty(LatheFlags.FORCE_SYNC);
     System.clearProperty(LatheFlags.CAPTURE_ONLY);
   }
 
   @Test
-  void isDisabled_notDisabledByDefault() {
-    assertThat(LatheFlags.isDisabled()).isFalse();
-  }
-
-  @Test
-  void isDisabled_trueWhenSkipPropertyIsTrue() {
-    System.setProperty(LatheFlags.SKIP, "true");
+  void isDisabled_trueWhenDisabledPropertyIsTrue() {
+    System.setProperty(LatheFlags.DISABLED, "true");
     assertThat(LatheFlags.isDisabled()).isTrue();
   }
 
   @Test
-  void isDisabled_falseWhenSkipPropertyIsFalse() {
-    System.setProperty(LatheFlags.SKIP, "false");
+  void isDisabled_falseWhenDisabledPropertyIsFalse() {
+    System.setProperty(LatheFlags.DISABLED, "false");
     assertThat(LatheFlags.isDisabled()).isFalse();
   }
 

@@ -37,7 +37,7 @@ public final class SyncMojo extends AbstractMojo {
     }
 
     if (LatheFlags.isDisabled()) {
-      getLog().info("[sync] disabled (CI or lathe.skip) — skipping");
+      getLog().info("[sync] disabled (CI or lathe.disabled) — skipping");
       return;
     }
 

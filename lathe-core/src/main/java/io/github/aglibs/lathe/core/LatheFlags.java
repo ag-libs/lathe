@@ -2,7 +2,7 @@ package io.github.aglibs.lathe.core;
 
 public final class LatheFlags {
 
-  public static final String SKIP = "lathe.skip";
+  public static final String DISABLED = "lathe.disabled";
   public static final String FORCE_SYNC = "lathe.sync.force";
   public static final String CAPTURE_ONLY = "lathe.capture.only";
   public static final String RESULTS_SINK = "lathe.results.sink";
@@ -27,12 +27,12 @@ public final class LatheFlags {
   private LatheFlags() {}
 
   public static boolean isDisabled() {
-    final var skip = System.getProperty(SKIP);
-    if ("true".equals(skip)) {
+    final var disabled = System.getProperty(DISABLED);
+    if ("true".equals(disabled)) {
       return true;
     }
 
-    if ("false".equals(skip)) {
+    if ("false".equals(disabled)) {
       return false;
     }
 

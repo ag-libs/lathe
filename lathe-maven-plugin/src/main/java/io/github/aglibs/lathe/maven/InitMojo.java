@@ -21,7 +21,7 @@ public final class InitMojo extends AbstractMojo {
   @Override
   public void execute() throws MojoExecutionException {
     if (LatheFlags.isDisabled()) {
-      getLog().debug("[init] disabled (CI or lathe.skip) — skipping");
+      getLog().debug("[init] disabled (CI or lathe.disabled) — skipping");
       return;
     }
 

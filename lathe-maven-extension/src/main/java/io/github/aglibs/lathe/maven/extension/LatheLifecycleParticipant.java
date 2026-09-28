@@ -13,6 +13,7 @@ import javax.inject.Named;
 import javax.inject.Singleton;
 import org.apache.maven.AbstractMavenLifecycleParticipant;
 import org.apache.maven.execution.MavenSession;
+import org.apache.maven.project.MavenProject;
 
 /**
  * Injects the Lathe build wiring into the reactor model via {@link LatheModelInjector}, and holds a
@@ -35,14 +36,15 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
 
   @Override
   public void afterProjectsRead(final MavenSession session) {
-    if (LatheFlags.isDisabled()) {
+    final var latheDir = reactorRoot(session).resolve(LatheLayout.LATHE_DIR);
+    if (LatheFlags.isDisabled() || isPomOptOut(session.getTopLevelProject(), latheDir)) {
       return;
     }
 
     final var injector = new LatheModelInjector(ExtensionProps.version());
     session.getProjects().forEach(injector::injectProject);
     injector.injectRootExecutions(session.getTopLevelProject());
-    startReactorLock(reactorRoot(session).resolve(LatheLayout.LATHE_DIR));
+    startReactorLock(latheDir);
   }
 
   @Override
@@ -52,6 +54,15 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
 
   private static Path reactorRoot(final MavenSession session) {
     return session.getRequest().getMultiModuleProjectDirectory().toPath();
+  }
+
+  // Team-wide opt-out committed in the reactor POM (<lathe.disabled>true</...>), read from the
+  // resolved model since mvnd cannot be trusted with System.getenv. A developer opts back in by
+  // creating an empty .lathe/ at the reactor root; a -Dlathe.disabled / CI kill stays absolute via
+  // isDisabled().
+  static boolean isPomOptOut(final MavenProject topLevelProject, final Path latheDir) {
+    return "true".equals(topLevelProject.getProperties().getProperty(LatheFlags.DISABLED))
+        && !Files.isDirectory(latheDir);
   }
 
   // Skipped on a first-ever build (no .lathe/ yet): there is no mirror to protect, and creating it

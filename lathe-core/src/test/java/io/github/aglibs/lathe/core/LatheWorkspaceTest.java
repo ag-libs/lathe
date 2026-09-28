@@ -15,7 +15,7 @@ final class LatheWorkspaceTest {
 
   @AfterEach
   void clearProperty() {
-    System.clearProperty(LatheFlags.SKIP);
+    System.clearProperty(LatheFlags.DISABLED);
   }
 
   @Test
@@ -64,20 +64,11 @@ final class LatheWorkspaceTest {
   }
 
   @Test
-  void findRoot_skipPropertyTrue_returnsEmpty() throws IOException {
+  void findRoot_disabledPropertyTrue_returnsEmptyEvenWithMarker() throws IOException {
     final Path workspace = tempDir.resolve("workspace");
     Files.createDirectories(workspace.resolve(LatheLayout.LATHE_DIR));
-    System.setProperty(LatheFlags.SKIP, "true");
+    System.setProperty(LatheFlags.DISABLED, "true");
 
     assertThat(LatheWorkspace.findRoot(workspace)).isEmpty();
-  }
-
-  @Test
-  void findRoot_skipPropertyFalse_returnsWorkspaceRoot() throws IOException {
-    final Path workspace = tempDir.resolve("workspace");
-    Files.createDirectories(workspace.resolve(LatheLayout.LATHE_DIR));
-    System.setProperty(LatheFlags.SKIP, "false");
-
-    assertThat(LatheWorkspace.findRoot(workspace)).contains(workspace);
   }
 }

@@ -48,7 +48,7 @@
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
           <systemPropertyVariables>
-            <lathe.skip>true</lathe.skip>
+            <lathe.disabled>true</lathe.disabled>
           </systemPropertyVariables>
         </configuration>
       </plugin>

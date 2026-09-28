@@ -248,13 +248,27 @@ with `-Dlathe.cache=<dir>`, safe to delete). What each holds:
 
 ## Opt-out and CI
 
-Lathe is active by default and skips automatically in CI:
+Lathe is active by default and skips automatically in CI. To turn it off for a whole team, commit the
+property in the reactor `pom.xml`:
+
+```xml
+<properties>
+  <lathe.disabled>true</lathe.disabled>
+</properties>
+```
+
+Precedence:
 
 | Condition                        | Effect                                |
 |----------------------------------|---------------------------------------|
+| `<lathe.disabled>true</...>` in the reactor POM | disabled for everyone building the repo |
+| `-Dlathe.disabled=true`          | disabled regardless of other settings |
+| `-Dlathe.disabled=false`         | enabled, overrides `CI`               |
 | `CI` environment variable is set | Lathe does not run                    |
-| `-Dlathe.skip=true`              | disabled regardless of other settings |
-| `-Dlathe.skip=false`             | enabled, overrides `CI`               |
+
+When the POM opts out, a developer can opt back in by creating an empty `.lathe/` at the repo root: it
+overrides the POM opt-out, so the next build wires Lathe up and repopulates the directory. (A
+`-Dlathe.disabled=true` or `CI` kill stays absolute — `.lathe/` does not override it.)
 
 ## Documentation
 
