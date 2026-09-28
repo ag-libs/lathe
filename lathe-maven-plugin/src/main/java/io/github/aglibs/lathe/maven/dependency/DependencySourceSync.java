@@ -26,7 +26,7 @@ public final class DependencySourceSync {
     try {
       final Map<Boolean, Long> counts =
           sources.stream()
-              .map(source -> IOUtil.unchecked(() -> extract(source)))
+              .map(source -> IOUtil.unchecked(() -> extract(source, log)))
               .collect(Collectors.partitioningBy(b -> b, Collectors.counting()));
       log.info(
           "[sync] extracted %d source artifacts, %d already cached in %dms"
@@ -37,7 +37,7 @@ public final class DependencySourceSync {
     }
   }
 
-  private static boolean extract(final DependencySource source) throws IOException {
+  private static boolean extract(final DependencySource source, final Log log) throws IOException {
     final var artifact = source.sourceArtifact();
     final var sourceJar = artifact.getFile().toPath();
     final var targetDir = source.dir();
@@ -45,8 +45,15 @@ public final class DependencySourceSync {
       return false;
     }
 
-    ZipCache.extract(
-        sourceJar, targetDir, tempDir -> writeSourceMarker(tempDir, artifact, sourceJar));
+    final int skipped =
+        ZipCache.extract(
+            sourceJar, targetDir, tempDir -> writeSourceMarker(tempDir, artifact, sourceJar));
+    if (skipped > 0) {
+      log.warn(
+          "[sync] %s skipped %d unsafe source entries"
+              .formatted(ReactorProjects.gav(artifact), skipped));
+    }
+
     return true;
   }
 

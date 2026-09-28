@@ -24,7 +24,11 @@ public final class JdkSourceSync {
         return;
       }
 
-      ZipCache.extract(source.sourceZip(), source.sourceDir(), ignored -> {});
+      final int skipped = ZipCache.extract(source.sourceZip(), source.sourceDir(), ignored -> {});
+      if (skipped > 0) {
+        log.warn("[sync] jdk sources skipped %d unsafe entries".formatted(skipped));
+      }
+
       log.info("[sync] jdk sources extracted in %dms".formatted(t.elapsedMs()));
     } catch (final IOException e) {
       throw new SyncException("lathe:sync failed to extract JDK sources", e);

@@ -134,19 +134,26 @@ public final class FileUtil {
     }
   }
 
-  public static void unzip(final Path zipFile, final Path destDir) throws IOException {
-    unzip(Files.newInputStream(zipFile), destDir);
+  public static int unzip(final Path zipFile, final Path destDir) throws IOException {
+    return unzip(Files.newInputStream(zipFile), destDir);
   }
 
-  public static void unzip(final InputStream zipStream, final Path destDir) throws IOException {
+  // Returns the number of entries skipped because they would escape destDir (see extractZipEntry).
+  public static int unzip(final InputStream zipStream, final Path destDir) throws IOException {
+    int skipped = 0;
     try (final var in = new ZipInputStream(zipStream)) {
       ZipEntry entry = in.getNextEntry();
       while (entry != null) {
-        extractZipEntry(destDir, in, entry);
+        if (!extractZipEntry(destDir, in, entry)) {
+          skipped++;
+        }
+
         in.closeEntry();
         entry = in.getNextEntry();
       }
     }
+
+    return skipped;
   }
 
   // Entry names of a zip whose name passes `keep`, read from the central directory only (no
@@ -195,21 +202,33 @@ public final class FileUtil {
     }
   }
 
-  private static void extractZipEntry(
+  // Extracts one entry under destDir. An absolute entry name (e.g. "/home/x/Foo.java", seen in
+  // obfuscated or vendored jars) is neutralized to a path relative to destDir; anything that would
+  // still escape destDir after normalization — a zip-slip attempt — is skipped rather than written,
+  // returning false so a single hostile or malformed entry cannot abort the whole archive.
+  private static boolean extractZipEntry(
       final Path destDir, final ZipInputStream in, final ZipEntry entry) throws IOException {
-    final Path target = destDir.resolve(entry.getName()).normalize();
+    final Path entryPath = Path.of(entry.getName());
+    final Path relative =
+        entryPath.isAbsolute() ? entryPath.getRoot().relativize(entryPath) : entryPath;
+    if (relative.getNameCount() == 0) {
+      return false;
+    }
+
+    final Path target = destDir.resolve(relative).normalize();
     if (!target.startsWith(destDir)) {
-      throw new IOException("zip contains unsafe path %s".formatted(entry.getName()));
+      return false;
     }
 
     if (entry.isDirectory()) {
       Files.createDirectories(target);
-      return;
+      return true;
     }
 
     Files.createDirectories(target.getParent());
     Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
     setReadOnly(target);
+    return true;
   }
 
   private static void setReadOnly(final Path path) throws IOException {

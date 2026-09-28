@@ -16,18 +16,6 @@ final class FileUtilTest {
   @TempDir private Path tempDir;
 
   @Test
-  void unzip_nestedFiles_extractsToDestination() throws IOException {
-    final Path zip =
-        ZipFixture.create(
-            tempDir.resolve("sources.jar"), "com/example/Hello.java", "class Hello {}");
-
-    final Path dest = tempDir.resolve("dest");
-    FileUtil.unzip(zip, dest);
-
-    assertThat(dest.resolve("com/example/Hello.java")).hasContent("class Hello {}");
-  }
-
-  @Test
   void listEntries_predicate_keepsMatchesSkipsDirsAndFiltered() throws IOException {
     final Path jar =
         ZipFixture.create(
@@ -66,12 +54,25 @@ final class FileUtilTest {
   }
 
   @Test
-  void unzip_unsafePath_throwsIOException() throws IOException {
-    final Path zip = ZipFixture.create(tempDir.resolve("bad.jar"), "../escape.java", "bad");
+  void unzip_absoluteAndEscapingEntries_neutralizesAbsoluteSkipsEscapingReturnsCount()
+      throws IOException {
+    final Path zip =
+        ZipFixture.create(
+            tempDir.resolve("bad.jar"),
+            Map.of(
+                "com/example/Hello.java", "class Hello {}",
+                "/home/x/Abs.java", "abs",
+                "../escape.java", "bad"));
 
-    assertThatThrownBy(() -> FileUtil.unzip(zip, tempDir.resolve("dest")))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("unsafe path");
+    final Path dest = tempDir.resolve("dest");
+    final int skipped = FileUtil.unzip(zip, dest);
+
+    // Normal entry extracted, absolute entry neutralized to a path under dest.
+    assertThat(dest.resolve("com/example/Hello.java")).hasContent("class Hello {}");
+    assertThat(dest.resolve("home/x/Abs.java")).hasContent("abs");
+    // The escaping entry is skipped, never written outside dest, and counted.
+    assertThat(tempDir.resolve("escape.java")).doesNotExist();
+    assertThat(skipped).isEqualTo(1);
   }
 
   @Test
