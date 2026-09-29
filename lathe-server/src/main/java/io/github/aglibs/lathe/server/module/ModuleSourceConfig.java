@@ -37,7 +37,7 @@ public record ModuleSourceConfig(
   }
 
   public Path generatedSourcesDir() {
-    return moduleDir.resolve(LatheLayout.GENERATED_SOURCES);
+    return moduleDir.resolve(LatheLayout.generatedSourcesDir(sourceTree));
   }
 
   // Source roots plus the .lathe generated-sources mirror (when the module has generated sources).
@@ -48,7 +48,18 @@ public record ModuleSourceConfig(
       return sourceRoots;
     }
 
-    return Stream.concat(sourceRoots.stream(), Stream.of(generatedSourcesDir())).toList();
+    return Stream.concat(sourceRoots.stream(), generatedSourceRoots().stream()).toList();
+  }
+
+  // Each scope searches its own generated mirror; the test scope also searches the main one,
+  // since test code can reference the module's main annotation-processor output.
+  private List<Path> generatedSourceRoots() {
+    final var scoped = generatedSourcesDir();
+    if (!LatheLayout.TEST_CLASSES_DIR.equals(sourceTree)) {
+      return List.of(scoped);
+    }
+
+    return List.of(scoped, moduleDir.resolve(LatheLayout.GENERATED_SOURCES));
   }
 
   public List<Path> remappedClasspath() {

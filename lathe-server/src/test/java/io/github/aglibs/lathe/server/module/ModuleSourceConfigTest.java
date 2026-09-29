@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.module;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.server.TestCompiler;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
@@ -32,11 +33,38 @@ class ModuleSourceConfigTest {
     assertThat(config.searchRoots()).containsExactly(src);
   }
 
+  @Test
+  void testScope_usesSeparateGeneratedMirror_andAlsoSearchesMainMirror() {
+    final Path testSrc = WORKSPACE.resolve("module/src/test/java");
+    final Path gen = WORKSPACE.resolve("module/target/generated-test-sources/test-annotations");
+    final Path moduleDir = LATHE_DIR.resolve("module");
+    final var config = testConfig(gen, testSrc);
+
+    assertThat(config.generatedSourcesDir())
+        .isEqualTo(moduleDir.resolve(LatheLayout.GENERATED_TEST_SOURCES));
+    assertThat(config.searchRoots())
+        .containsExactly(
+            testSrc,
+            moduleDir.resolve(LatheLayout.GENERATED_TEST_SOURCES),
+            moduleDir.resolve(LatheLayout.GENERATED_SOURCES));
+  }
+
   private static ModuleSourceConfig config(
       final Path originalGenSourcesDir, final Path sourceRoot) {
     final Path moduleDir = LATHE_DIR.resolve("module");
     return TestCompiler.moduleConfig(
         moduleDir, moduleDir.resolve("classes"), sourceRoot, originalGenSourcesDir);
+  }
+
+  private static ModuleSourceConfig testConfig(
+      final Path originalGenSourcesDir, final Path sourceRoot) {
+    final Path moduleDir = LATHE_DIR.resolve("module");
+    return TestCompiler.moduleConfig(
+        moduleDir,
+        moduleDir.resolve("test-classes"),
+        sourceRoot,
+        originalGenSourcesDir,
+        LatheLayout.TEST_CLASSES_DIR);
   }
 
   @Test
