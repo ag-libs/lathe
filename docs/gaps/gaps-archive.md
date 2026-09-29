@@ -1411,6 +1411,25 @@ printf 'refs "bucket,"\n' | python3 dev/explore.py /path/to/workspace/.../Config
 
 # Completion (CQ) — resolved
 
+## CQ-0060 — No completions after `::` (method reference) — done
+
+**Status: done — Target: next.**
+Tier: basic. Failure mode: missing-candidate.
+
+Typing `Type::`, `expr::`, or `this::` returned no completions: `SentinelInjector` did not recognise
+`::` and `SentinelParser.SentinelFinder` had no `visitMemberReference`, so the sentinel after `::` was
+never found and the parse was invalid.
+
+**Resolution.** The `::` sentinel is recognised as `SentinelContext.MEMBER_REFERENCE`
+(`SentinelInjector` + `SentinelParser.visitMemberReference`). Layer 1 offers the receiver's members via
+`MemberAccessCompleter.methodReferenceMembers` — static+instance for a type qualifier, instance-only for
+an expression/`this`/`super` qualifier, plus a `Type::new` `constructorReference`; candidates insert the
+bare name as `CompletionItemKind.Reference` (no auto-parens). Layer 2 adds SAM-aware arity ranking
+(`TypeResolver.methodReferenceSamArity`, `CandidateGenerator.methodReferenceSortKey`). Durable design:
+[lathe-method-reference-completion.md](../done/lathe-method-reference-completion.md).
+
+Regression: `CompletionMethodReferenceTest`.
+
 ## CQ-0002 — Method-reference completion returns no candidates
 
 ID: CQ-0002

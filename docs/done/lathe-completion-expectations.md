@@ -419,10 +419,10 @@ Expected:
 
 Status:
 
-- planned (CQ-0060, accepted for the next cut).
-Accepted scope is both offering the receiver's members after `::` (including `Type::new`) and
-SAM-aware arity/parameter filtering/ranking; see
-[lathe-method-reference-completion.md](../planned/lathe-method-reference-completion.md).
+- implemented (CQ-0060).
+Both offering the receiver's members after `::` (including `Type::new`) and SAM-aware
+arity/parameter filtering/ranking ship; see
+[lathe-method-reference-completion.md](lathe-method-reference-completion.md).
 
 ### In-Token Completion
 

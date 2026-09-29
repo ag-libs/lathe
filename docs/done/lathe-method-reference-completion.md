@@ -1,15 +1,27 @@
 # Lathe — Method-Reference Completion
 
 Completion after `::` in a method-reference expression (`String::§`, `this::§`, `service::§`,
-`Type::new`). Tracked as [CQ-0060](../gaps/gaps.md#cq-0060--no-completions-after--method-reference)
-(historically completion "Gap J", see [lathe-completion-gaps.md](../done/lathe-completion-gaps.md)).
+`Type::new`). Tracked as
+[CQ-0060](../gaps/gaps-archive.md#cq-0060--no-completions-after--method-reference--done)
+(historically completion "Gap J", see [lathe-completion-gaps.md](lathe-completion-gaps.md)).
+
+## Status
+
+Implemented. Completion after `::` ships end to end: the `::` sentinel is recognized as
+`SentinelContext.MEMBER_REFERENCE` (`SentinelInjector`/`SentinelParser.visitMemberReference`),
+member candidates come from `MemberAccessCompleter.methodReferenceMembers` — static+instance for a
+type qualifier, instance-only for an expression/`this`/`super` qualifier, plus a `Type::new`
+`constructorReference` — and Layer 2 SAM-aware arity ranking is done in
+`TypeResolver.methodReferenceSamArity` + `CandidateGenerator.methodReferenceSortKey`. Candidates
+insert the bare name with `CompletionItemKind.Reference` (no auto-parens). Covered by
+`CompletionMethodReferenceTest`.
 
 ## Motivation
 
 Method references are everyday Java at any functional-interface call site — `stream.map(String::trim)`,
 `list.forEach(System.out::println)`, `supplier(Foo::new)`. Today Lathe offers **nothing** after `::`,
 so the developer must type the whole member name blind. Both IntelliJ and Eclipse JDT LS complete here,
-and the completion [expectations](../done/lathe-completion-expectations.md) already list "Method References" as
+and the completion [expectations](lathe-completion-expectations.md) already list "Method References" as
 an expected site.
 
 ## Current Lathe behavior (probed)
