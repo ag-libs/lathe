@@ -26,6 +26,7 @@ public final class LatheLayout {
   public static final String MODULE_INFO_JAVA = "module-info.java";
   public static final String POM_XML = "pom.xml";
   public static final String GENERATED_SOURCES = "generated-sources";
+  public static final String GENERATED_TEST_SOURCES = "generated-test-sources";
   public static final String TARGET_DIR = "target";
   public static final String CLASSES_DIR = "classes";
   public static final String TEST_CLASSES_DIR = "test-classes";
@@ -122,6 +123,12 @@ public final class LatheLayout {
 
   public static String compiledStampsFileName(final String sourceTree) {
     return STAMPS_FILE_PREFIX + sourceTree + ".json";
+  }
+
+  // The main and test compile each mirror their annotation-processor output to a scope-specific dir
+  // (like classes/test-classes) so the test compile does not clobber the main compile's sources.
+  public static String generatedSourcesDir(final String sourceTree) {
+    return TEST_CLASSES_DIR.equals(sourceTree) ? GENERATED_TEST_SOURCES : GENERATED_SOURCES;
   }
 
   public static boolean isParamsFile(final Path path) {
