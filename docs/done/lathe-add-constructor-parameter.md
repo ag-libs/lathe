@@ -1,11 +1,18 @@
 # Lathe — Add constructor parameter for a field
 
-Status: proposed.
 A request-driven refactor code action that, for a `final` instance field with no initializer, adds a
 matching parameter to the class's constructors and binds it to the field — generating a constructor
 when none exists.
 Sibling of `ExtractFieldProvider` (field-shaped edits, placement, source-span reuse) and
 `MissingMethodImplProvider` (member-generating quick fix).
+
+## Status
+
+Implemented as `AddConstructorParameterProvider` (`CodeActionKind.RefactorRewrite`, title
+`Add constructor parameter '<field>'`): offered on a `final`, non-static, initializer-less instance
+field of a class/enum, it appends a `final` parameter of the field's type to each constructor and binds
+it (`this.<field> = <field>;`), forwards through `this(...)`-delegating constructors, and generates a
+constructor when none exists — one atomic `WorkspaceEdit`. Covered by `CodeActionTest`. Resolved CA-10.
 
 ## Motivation
 

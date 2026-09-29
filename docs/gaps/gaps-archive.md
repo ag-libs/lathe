@@ -7,6 +7,22 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## CA-10 — No code action to add a `final` field as a constructor parameter — done
+
+**Status: done — Target: next.**
+
+After adding a blank `final` field, the developer had to hand-edit every constructor to accept and store
+the value; Lathe offered nothing on the field declaration.
+
+**Resolution.** `AddConstructorParameterProvider` (`CodeActionKind.RefactorRewrite`, title
+`Add constructor parameter '<field>'`), offered on a `final`, non-static, initializer-less instance
+field of a class/enum: it appends a `final` parameter of the field's type to each constructor and binds
+it (`this.<field> = <field>;`), forwards through `this(...)`-delegating constructors, and generates a
+constructor when none exists — one atomic `WorkspaceEdit`, no import edit. Durable design:
+[lathe-add-constructor-parameter.md](../done/lathe-add-constructor-parameter.md).
+
+Regression: `CodeActionTest`.
+
 ## EG-017 — `textDocument/documentHighlight` not implemented
 
 **Status: done — Target: M2.**
