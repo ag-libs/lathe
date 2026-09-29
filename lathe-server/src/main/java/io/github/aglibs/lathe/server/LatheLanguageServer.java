@@ -1,9 +1,11 @@
 package io.github.aglibs.lathe.server;
 
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.server.analysis.ExtractionSupport;
 import io.github.aglibs.lathe.server.analysis.TokenScanner;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -46,16 +48,18 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
   @Override
   public CompletableFuture<InitializeResult> initialize(final InitializeParams params) {
     final var rootUri = rootUri(params);
-    final var formattingEnabled = formattingEnabled(params);
+    final Path rootPath = rootUri != null ? LatheUri.toPath(rootUri) : null;
+    final FormatEngine formatEngine = resolveFormatEngine(params, rootPath);
+    final boolean formattingEnabled = formatEngine != null;
     LOG.fine(
         () ->
             "[initialize] rootUri=%s client=%s formatting=%s"
                 .formatted(rootUri, params.getClientInfo(), formattingEnabled));
 
     textDocumentService.setWorkDoneProgressSupported(workDoneProgressSupported(params));
-    textDocumentService.setFormattingEnabled(formattingEnabled);
-    if (rootUri != null) {
-      textDocumentService.initialize(LatheUri.toPath(rootUri));
+    textDocumentService.setFormatEngine(formatEngine);
+    if (rootPath != null) {
+      textDocumentService.initialize(rootPath);
     } else {
       LOG.warning(() -> "[initialize] no rootUri — module registry not available");
     }
@@ -175,20 +179,52 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     return params.getRootUri();
   }
 
-  private static boolean formattingEnabled(final InitializeParams params) {
+  // Reads initializationOptions.lathe.formatter: the string "google" selects the in-process engine,
+  // an object {"command": [...]} selects an external command. Anything else disables formatting.
+  private static FormatEngine resolveFormatEngine(
+      final InitializeParams params, final Path workingDir) {
     if (!(params.getInitializationOptions() instanceof JsonObject options)) {
-      return false;
+      return null;
     }
 
-    final var lathe = options.get(LatheFlags.INIT_OPTIONS_KEY);
+    final JsonElement lathe = options.get(LatheFlags.INIT_OPTIONS_KEY);
     if (lathe == null || !lathe.isJsonObject()) {
-      return false;
+      return null;
     }
 
-    final var formatter = lathe.getAsJsonObject().get(LatheFlags.FORMATTER_OPTION);
-    return formatter != null
-        && formatter.isJsonPrimitive()
-        && LatheFlags.FORMATTER_GOOGLE.equals(formatter.getAsString());
+    final JsonElement formatter = lathe.getAsJsonObject().get(LatheFlags.FORMATTER_OPTION);
+    if (formatter == null) {
+      return null;
+    }
+
+    if (formatter.isJsonPrimitive()
+        && LatheFlags.FORMATTER_GOOGLE.equals(formatter.getAsString())) {
+      return new GoogleFormatEngine();
+    }
+
+    if (formatter.isJsonObject()) {
+      return externalFormatEngine(formatter.getAsJsonObject(), workingDir);
+    }
+
+    return null;
+  }
+
+  private static FormatEngine externalFormatEngine(
+      final JsonObject formatter, final Path workingDir) {
+    final JsonElement command = formatter.get(LatheFlags.FORMATTER_COMMAND_OPTION);
+    if (command == null || !command.isJsonArray()) {
+      return null;
+    }
+
+    final List<JsonElement> elements = command.getAsJsonArray().asList();
+    if (elements.isEmpty() || !elements.stream().allMatch(JsonElement::isJsonPrimitive)) {
+      return null;
+    }
+
+    return new ExternalCommandFormatEngine(
+        elements.stream().map(JsonElement::getAsString).toList(),
+        ExternalCommandFormatEngine.DEFAULT_TIMEOUT,
+        workingDir);
   }
 
   private static boolean workDoneProgressSupported(final InitializeParams params) {

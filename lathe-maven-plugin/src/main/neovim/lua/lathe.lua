@@ -280,9 +280,9 @@ function M.setup(opts)
     M.start(vim.api.nvim_get_current_buf())
   end, { desc = 'Lathe: start the language server for the current directory' })
 
-  -- Format-on-save is only meaningful with the Google formatter enabled; without it the server does
-  -- not advertise formatting, so wiring the autocmd would be a no-op.
-  local format_on_save = opts.formatter == 'google' and opts.format_on_save == true
+  -- Format-on-save is only meaningful with a formatter configured; without it the server does not
+  -- advertise formatting, so wiring the autocmd would be a no-op.
+  local format_on_save = opts.formatter ~= nil and opts.format_on_save == true
   if format_on_save then
     local fold = require('lathe.fold')
     vim.api.nvim_create_autocmd('LspAttach', {
@@ -317,7 +317,7 @@ function M.setup(opts)
 
   -- Manual formatting is available whenever the server advertises it (formatter enabled), whether or
   -- not format-on-save is wired. :LatheFormat routes through M.format so the imports fold survives.
-  if opts.formatter == 'google' then
+  if opts.formatter ~= nil then
     vim.api.nvim_create_user_command('LatheFormat', function()
       M.format(vim.api.nvim_get_current_buf())
     end, { desc = 'Lathe: format the current buffer (preserving the imports fold)' })

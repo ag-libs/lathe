@@ -86,8 +86,8 @@ require("lathe").setup()
 |---|---|---|
 | `indent_style` | `"editor_config"` | live-editing indent profile: `"editor_config"` (follow `.editorconfig`, else a 4-space Java baseline) or `"google"` (2-space block, 4-space continuation) |
 | `continuation_indent` | `nil` | pin the wrapped-line indent width; when `nil`, derived as 2× the block indent |
-| `formatter` | `nil` | full-document formatter; set `"google"` to enable google-java-format |
-| `format_on_save` | `false` | wire format-on-save (takes effect only with `formatter = "google"`) |
+| `formatter` | `nil` | full-document formatter; `"google"` for the built-in google-java-format, or `{ command = { … } }` to run an external tool (see below) |
+| `format_on_save` | `false` | wire format-on-save (takes effect only when a `formatter` is set) |
 | `capabilities` | `make_client_capabilities()` | LSP capabilities table |
 
 See [Formatting & indentation](#formatting--indentation) below.
@@ -110,7 +110,7 @@ freely.
 | Completion (with auto-import) | `vim.lsp.completion` / omnifunc | `<C-x><C-o>` | auto |
 | Code action (import type · add `throws` · wrap `try/catch` · declare local · replace `var` · stub missing method) | `vim.lsp.buf.code_action()` | `gra` | `<leader>ca` |
 | Add missing imports (whole file, one pass) | `:LatheMissingImports` | — | `<leader>li` |
-| Format document (opt-in — needs `formatter = "google"`) | `require('lathe').format()` / `:LatheFormat` | — | `<leader>f` |
+| Format document (opt-in — needs a `formatter`) | `require('lathe').format()` / `:LatheFormat` | — | `<leader>f` |
 | Document symbols (outline) | `vim.lsp.buf.document_symbol()` | `gO` | `gO` |
 | Workspace symbols (CamelCase-hump aware) | `vim.lsp.buf.workspace_symbol()` | — | `<leader>ws` |
 | Type hierarchy (super / sub, one level) | `vim.lsp.buf.typehierarchy("supertypes"/"subtypes")` | — | `<leader>hs` / `<leader>hi` |
@@ -195,9 +195,19 @@ Google Java Format.
 
 **Formatting** — set `formatter = "google"` to enable google-java-format (whole document, with import
 cleanup). It is off by default. When enabled it runs on demand via `require('lathe').format()` (or
-`:LatheFormat`); add `format_on_save = true` to also format on write (that autocmd is wired only when
-`formatter = "google"`). Range and on-type formatting are intentionally disabled, so a stray client
+`:LatheFormat`); add `format_on_save = true` to also format on write (that autocmd is wired only when a
+`formatter` is set). Range and on-type formatting are intentionally disabled, so a stray client
 request can't trigger a whole-document rewrite.
+
+To plug in a different formatter, set `formatter = { command = { "jfmt", "print", "-" } }`. The server
+runs that command per format, piping the buffer to its stdin and taking stdout as the result — any tool
+that reads Java on stdin and writes formatted Java to stdout works. The command runs with the workspace
+root as its working directory, so it finds project config and a repo-relative command (e.g.
+`{ "./tools/fmt" }`) resolves; a bare command is looked up on the server's `PATH`. The tool's stderr
+flows to `lsp.log`, and on a non-zero exit, timeout, or missing command the buffer is left unchanged.
+Note that a JVM-based formatter pays full process startup on every call, so expect it to be noticeably
+slower than the in-process `"google"` engine. Set `indent_style` / `continuation_indent` to match your
+tool so live typing does not fight format-on-save.
 
 Prefer `require('lathe').format()` over a bare `vim.lsp.buf.format()`: the whole-document rewrite
 makes nvim-ufo reopen a closed imports fold, and `lathe.format` snapshots and restores that fold (the

@@ -110,13 +110,32 @@ class LatheLanguageServerTest {
     server.shutdown().join();
   }
 
+  @Test
+  void initialize_formatterCommand_advertisesFormatting() throws Exception {
+    final var server = new LatheLanguageServer();
+    server.connect(mock(LanguageClient.class));
+    final var params = new InitializeParams();
+    params.setInitializationOptions(
+        JsonParser.parseString("{\"lathe\":{\"formatter\":{\"command\":[\"cat\"]}}}")
+            .getAsJsonObject());
+
+    final var capabilities = server.initialize(params).get().getCapabilities();
+
+    assertThat(capabilities.getDocumentFormattingProvider().getLeft()).isTrue();
+    server.shutdown().join();
+  }
+
   static Stream<Arguments> initialize_nonGoogleFormatter_cases() {
     return Stream.of(
         Arguments.of((Object) null),
         Arguments.of(JsonParser.parseString("{}").getAsJsonObject()),
         Arguments.of(JsonParser.parseString("{\"lathe\":{}}").getAsJsonObject()),
         Arguments.of(
-            JsonParser.parseString("{\"lathe\":{\"formatter\":\"eclipse\"}}").getAsJsonObject()));
+            JsonParser.parseString("{\"lathe\":{\"formatter\":\"eclipse\"}}").getAsJsonObject()),
+        Arguments.of(JsonParser.parseString("{\"lathe\":{\"formatter\":{}}}").getAsJsonObject()),
+        Arguments.of(
+            JsonParser.parseString("{\"lathe\":{\"formatter\":{\"command\":[]}}}")
+                .getAsJsonObject()));
   }
 
   @ParameterizedTest

@@ -41,7 +41,10 @@ public final class LatheTextDocumentService implements TextDocumentService {
   private final long debounceMs;
   private ProgressReporter progressReporter;
   private WorkspaceSession session;
-  private volatile boolean formattingEnabled;
+  // Written in initialize, read in formatting; volatile publishes it safely across lsp4j's
+  // request-handling thread(s). The engine runs on the worker, not here. Null = formatting
+  // disabled.
+  private volatile FormatEngine formatEngine;
 
   public LatheTextDocumentService() {
     this(DEFAULT_DEBOUNCE_MS);
@@ -61,8 +64,8 @@ public final class LatheTextDocumentService implements TextDocumentService {
     progressReporter.setSupported(supported);
   }
 
-  void setFormattingEnabled(final boolean enabled) {
-    formattingEnabled = enabled;
+  void setFormatEngine(final FormatEngine engine) {
+    formatEngine = engine;
   }
 
   void cancelProgress(final WorkDoneProgressCancelParams params) {
@@ -479,7 +482,8 @@ public final class LatheTextDocumentService implements TextDocumentService {
   @Override
   public CompletableFuture<List<? extends TextEdit>> formatting(
       final DocumentFormattingParams params) {
-    if (!formattingEnabled) {
+    final FormatEngine engine = formatEngine;
+    if (engine == null) {
       return CompletableFuture.completedFuture(List.of());
     }
 
@@ -488,7 +492,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    return worker.submit(() -> session.format(uri));
+    return worker.submit(() -> session.format(uri, engine));
   }
 
   @Override

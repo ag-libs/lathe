@@ -197,7 +197,7 @@ class LatheTextDocumentServiceTest {
   @Test
   void formatting_enabled_delegatesToFormatter() throws Exception {
     service.initialize(tmp);
-    service.setFormattingEnabled(true);
+    service.setFormatEngine(new GoogleFormatEngine());
     service.didOpen(
         new DidOpenTextDocumentParams(
             new TextDocumentItem(URI, "java", 1, "class Foo {\nint x;\n}\n")));
@@ -210,7 +210,7 @@ class LatheTextDocumentServiceTest {
 
   @Test
   void rangeFormatting_anyProfile_returnsEmptyEdits() throws Exception {
-    service.setFormattingEnabled(true);
+    service.setFormatEngine(new GoogleFormatEngine());
     final var params = new DocumentRangeFormattingParams();
     params.setTextDocument(new TextDocumentIdentifier(URI));
     params.setRange(new Range(new Position(0, 0), new Position(0, 0)));

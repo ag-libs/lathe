@@ -7,11 +7,11 @@ public final class LatheFlags {
   public static final String CAPTURE_ONLY = "lathe.capture.only";
   public static final String RESULTS_SINK = "lathe.results.sink";
 
-  // LSP initialization option keys, sent by the editor client as
-  // {"lathe": {"formatter": "google"}} and read by the server to gate formatting.
+  // Client init options {"lathe": {...}} selecting the formatter: "google" or {"command":[..]}.
   public static final String INIT_OPTIONS_KEY = "lathe";
   public static final String FORMATTER_OPTION = "formatter";
   public static final String FORMATTER_GOOGLE = "google";
+  public static final String FORMATTER_COMMAND_OPTION = "command";
 
   // Coarse client<->server contract version. The server advertises it via
   // capabilities.experimental.latheProtocol; the standalone client compares it against its own

@@ -6,8 +6,10 @@ import org.junit.jupiter.api.Test;
 
 class FormattingTest {
 
+  private static final FormatEngine ENGINE = new GoogleFormatEngine();
+
   private static String formattedText(final String source) {
-    final var edits = JavaFormatter.format(source);
+    final var edits = JavaFormatter.format(ENGINE, source);
     assertThat(edits).hasSize(1);
     return edits.getFirst().getNewText();
   }
@@ -36,6 +38,7 @@ class FormattingTest {
   void format_alreadyFormattedAndImportsOptimized_returnsEmpty() {
     assertThat(
             JavaFormatter.format(
+                ENGINE,
                 """
                 import static java.util.Objects.requireNonNull;
 
@@ -81,6 +84,6 @@ class FormattingTest {
 
   @Test
   void format_syntaxError_returnsEmpty() {
-    assertThat(JavaFormatter.format("class { broken")).isEmpty();
+    assertThat(JavaFormatter.format(ENGINE, "class { broken")).isEmpty();
   }
 }

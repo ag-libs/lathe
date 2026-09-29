@@ -2655,11 +2655,11 @@ final class WorkspaceSession {
             ex -> logAndReturn(ex, "[foldingRange] failed for %s".formatted(uri), List.of()));
   }
 
-  List<? extends TextEdit> format(final String uri) {
+  List<? extends TextEdit> format(final String uri, final FormatEngine engine) {
     final var t = Stopwatch.start();
     final OpenDocument openFile = docs.get(uri);
     final List<TextEdit> result =
-        JavaFormatter.format(openFile != null ? openFile.content() : null);
+        JavaFormatter.format(engine, openFile != null ? openFile.content() : null);
     LOG.info(() -> "[%s] %s %dms edits=%d".formatted("format", uri, t.elapsedMs(), result.size()));
     return result;
   }
