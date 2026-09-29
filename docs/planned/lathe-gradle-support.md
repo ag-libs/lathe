@@ -140,6 +140,17 @@ Capture is driven by `latheSync` running the `test` task in **capture-only** mod
 `CaptureOnlyPostDiscoveryFilter` skips executing tests; the listener still fires) — exactly Maven's
 `-Dlathe.capture.only=true` fork.
 
+**Cache interaction — the capture must be bound to `test-launch.json`, not to source changes.** The
+listener only fires when Gradle actually forks the worker; an `UP-TO-DATE` or `FROM-CACHE` `test` task
+forks nothing. For an *unchanged* build this is harmless — the launch that would fire is byte-identical
+to the captured one, so the existing `test-launch.json` stays valid. The one case that is not harmless
+is a **missing** `test-launch.json` (first sync, a deleted `.lathe/`, or the build cache serving the
+`test` task `FROM-CACHE` even after `clean`): source-change detection alone would leave it unforked and
+unregenerated. Therefore the capture-only `test` task **declares `test-launch.json` as its output**, so
+a missing file forces a fork regardless of build-cache/up-to-date state — the capture's freshness is
+tied to the artifact it produces, not to the sources. (Compiler capture (A) has no analog because its
+finalizer is unconditionally non-cacheable.)
+
 *Fallback (no-fork mode):* build-side derivation from the `Test` task (`getClasspath()`,
 `getAllJvmArgs()`, `getSystemProperties()`, `getEnvironment()`, `getWorkingDir()`, `getModularity()`),
 for environments where forking the test JVM during sync is undesirable. Documented, not primary.
@@ -377,7 +388,11 @@ and the fidelity claims are all under test.
 3. **Minimum supported Gradle version** — confirm the floor (7.x candidate) against the toolchain and
    annotation-processor-path APIs; `getGeneratedSourceOutputDirectory` is 6.4+.
 4. **Capture finalizer shape** — per-task finalizer vs one aggregating task; must stay non-cacheable and
-   configuration-cache-safe either way.
+   configuration-cache-safe either way. Two constraints pull opposite ways: config-cache *compatibility*
+   (no `Project` at execution; read values via `Provider`s) but execution-cache *exemption*
+   (always-run). Compiler capture (A) resolves this by being an unconditionally non-cacheable finalizer;
+   test capture (B) resolves it by declaring `test-launch.json` as an output so a missing artifact
+   forces a fork even when the `test` task would otherwise be `UP-TO-DATE`/`FROM-CACHE`.
 5. **Plugin Portal release wiring** — how `com.gradle.plugin-publish` slots into the tag-driven release.
 
 ## Non-goals (this design)

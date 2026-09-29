@@ -92,6 +92,18 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
   design (JDK-native schema/coordinate/property/reactor completion from a `lathe:sync`
   `.lathe/pom-index.json` capture) is documented and **deferred** unless completion is later wanted.
 
+**Build-tool front-ends** (new front-ends onto the existing `.lathe/` contract; everything downstream
+reused):
+
+- [Gradle Support](planned/lathe-gradle-support.md) — **proposed.** A `lathe-gradle-plugin` (settings +
+  project plugin + `latheSync`) emitting the same `.lathe/` files: typed-API compiler capture on
+  `JavaCompile`, in-fork test-launch capture reusing `lathe-junit`, plexus-java module placement,
+  polyglot Maven-orchestrated build.
+- [OpenJDK Support](planned/lathe-openjdk-support.md) — **proposed.** A `lathe-openjdk` reader that emits
+  `.lathe/` for the JDK's own GNU Make build by reading the per-module compile descriptors the build
+  already persists (`_the.<module>.vardeps` / `_the.<module>_batch.filelist`). Code-intelligence MVP;
+  jtreg run/test deferred.
+
 **Reliability and further work:**
 
 - [Named Run Configurations](done/lathe-named-run-configs.md) — resolves TE-2: the overlay file
