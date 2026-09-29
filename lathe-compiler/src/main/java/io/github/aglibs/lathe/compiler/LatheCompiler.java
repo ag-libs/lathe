@@ -118,10 +118,7 @@ public final class LatheCompiler implements Compiler {
       ParamsWriter.write(config, moduleDir);
       final var outputDir = Path.of(config.getOutputLocation());
       FileUtil.replaceDir(outputDir, moduleDir.resolve(outputDir.getFileName()));
-      final var genSources = config.getGeneratedSourcesDirectory();
-      if (genSources != null && Files.isDirectory(genSources.toPath())) {
-        FileUtil.replaceDir(genSources.toPath(), moduleDir.resolve(LatheLayout.GENERATED_SOURCES));
-      }
+      mirrorGeneratedSources(config, moduleDir);
 
       writeCompiledStamps(config, moduleDir, outputDir.getFileName().toString());
 
@@ -133,6 +130,20 @@ public final class LatheCompiler implements Compiler {
     } catch (final IOException e) {
       LOG.warn("[lathe] {} post-compile step failed", moduleRel, e);
     }
+  }
+
+  // Mirror the compile's annotation-processor output into the module's .lathe dir, to a
+  // scope-specific target so the test compile does not overwrite the main compile's sources.
+  static void mirrorGeneratedSources(final CompilerConfiguration config, final Path moduleDir)
+      throws IOException {
+    final var genSources = config.getGeneratedSourcesDirectory();
+    if (genSources == null || !Files.isDirectory(genSources.toPath())) {
+      return;
+    }
+
+    final var sourceTree = Path.of(config.getOutputLocation()).getFileName().toString();
+    FileUtil.replaceDir(
+        genSources.toPath(), moduleDir.resolve(LatheLayout.generatedSourcesDir(sourceTree)));
   }
 
   // A compile stamp per source (root-relative path -> mtime), excluding the annotation-processor
