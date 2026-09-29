@@ -68,13 +68,12 @@ bindings.
 |---------------------|----------------------------------------------------------------------------------------------|-----------------------------------|
 | Diagnostics         | `javac` errors and warnings exactly as configured in Maven, plus unused private members and locals | `textDocument/publishDiagnostics` |
 | Code actions        | quick fixes and refactors: missing imports, add `throws`, wrap in `try/catch`, declare local, replace `var` with the inferred type, extract variable / constant / field, add a `final` field as a constructor parameter, stub a missing method | `textDocument/codeAction`         |
-| Formatting (opt-in) | whole-document formatting: built-in google-java-format with import cleanup, or your own external formatter command — **off by default** | `textDocument/formatting`         |
+| Formatting (opt-in) | whole-document google-java-format (with import cleanup) **or** your own external formatter command — **off by default** | `textDocument/formatting`         |
 
-Formatting is **opt-in** — the server advertises `textDocument/formatting` only when a client selects a
-formatter, so Lathe never reformats a project whose style isn't set up. Choose the built-in
-`google` engine (fast, in-process) or plug in any external command that reads Java on stdin and writes
-it back on stdout; the server runs it in the workspace root and leaves the buffer untouched if it
-fails. (Live-edit indentation is a separate client concern; the editor guide configures both.)
+Formatting is **opt-in**: advertised only when a client picks a formatter — the built-in `google`
+engine (fast, in-process) or any external command that reads Java on stdin and writes it back on
+stdout (run in the workspace root; the buffer is left untouched on failure). Live-edit indentation is
+a separate client concern.
 
 ### Run, test & debug
 
