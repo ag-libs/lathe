@@ -37,6 +37,7 @@ import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.CompletionContext;
+import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DocumentSymbol;
 import org.eclipse.lsp4j.FoldingRange;
 import org.eclipse.lsp4j.Hover;
@@ -137,6 +138,11 @@ public final class CompilationWorker {
 
   public CompletableFuture<Set<String>> compileBatch(final List<TransientSource> sources) {
     return submit(ctx -> ctx.compileBatch(sources, () -> {}));
+  }
+
+  public CompletableFuture<List<Diagnostic>> diagnoseInBatch(
+      final List<TransientSource> sources, final String targetUri) {
+    return submit(ctx -> ctx.diagnoseInBatch(sources, targetUri, () -> {}));
   }
 
   public CompletableFuture<SignatureHelp> signatureHelp(final SourceFeatureRequest request) {

@@ -6,6 +6,7 @@ import com.sun.source.tree.ClassTree;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.server.TestCompiler;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
+import io.github.aglibs.lathe.server.analysis.CompilerResult;
 import io.github.aglibs.lathe.server.analysis.SourceAnalysisSession;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import io.github.aglibs.lathe.server.analysis.TransientAnalysis;
@@ -251,6 +252,39 @@ class ModuleSourceCompilerTest {
       assertThat(config.latheClassesDir().resolve("shapes/Shape.class")).exists();
       assertThat(config.latheClassesDir().resolve("shapes/Square.class")).exists();
     }
+  }
+
+  @Test
+  void diagnoseInBatch_targetResolvedBySiblings_reportsOnlyTargetDiagnostics() throws Exception {
+    final Path sourceRoot = td.resolve("src/main/java");
+    Files.createDirectories(sourceRoot.resolve("shapes"));
+    final String shapeUri = sourceRoot.resolve("shapes/Shape.java").toUri().toString();
+    final String circleUri = sourceRoot.resolve("shapes/Circle.java").toUri().toString();
+    final String squareUri = sourceRoot.resolve("shapes/Square.java").toUri().toString();
+    final var config =
+        TestCompiler.moduleConfig(td.resolve(".lathe"), td.resolve("target/classes"), sourceRoot);
+
+    // Square carries an unrelated error, to prove only the target's diagnostics are returned.
+    final List<TransientSource> sources =
+        List.of(
+            new TransientSource(
+                shapeUri, "package shapes; sealed interface Shape permits Circle, Square {}"),
+            new TransientSource(
+                circleUri, "package shapes; final class Circle implements Shape {}"),
+            new TransientSource(
+                squareUri,
+                "package shapes; final class Square implements Shape { void x() { nope(); } }"));
+
+    try (var compiler = new ModuleSourceCompiler(config, new CompilationAdmission(1))) {
+      // Shape resolves the new Square via the batch, and Square's unrelated error does not leak in.
+      assertThat(hasError(compiler.diagnoseInBatch(sources, shapeUri, () -> {}))).isFalse();
+      // The target's own error still surfaces.
+      assertThat(hasError(compiler.diagnoseInBatch(sources, squareUri, () -> {}))).isTrue();
+    }
+  }
+
+  private static boolean hasError(final CompilerResult result) {
+    return result.diagnostics().stream().anyMatch(d -> d.getKind() == Diagnostic.Kind.ERROR);
   }
 
   @Test

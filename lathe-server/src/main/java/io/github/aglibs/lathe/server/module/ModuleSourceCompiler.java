@@ -15,12 +15,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
+import javax.tools.Diagnostic;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
@@ -85,15 +87,9 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
   public CompilerResult compileBatch(
       final List<TransientSource> sources, final CancelChecker cancelChecker) {
     final var options = buildOptions(config, compilerArgs, CompileMode.FULL);
-    final var tempFiles = new ArrayList<Path>(sources.size());
-    for (final var source : sources) {
-      cancelChecker.checkCanceled();
-      tempFiles.add(writeTempFile(source.uri(), source.content()));
-    }
-
+    final Map<Path, String> uriByTempFile = writeTempSources(sources, cancelChecker);
     try {
-      return runner.compileBatch(
-          fm.getJavaFileObjects(tempFiles.toArray(Path[]::new)), options, cancelChecker);
+      return runner.compileBatch(javaFilesOf(uriByTempFile), options, cancelChecker);
     } finally {
       IOUtil.unchecked(fm::flush);
     }
@@ -103,25 +99,66 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
   public List<TransientAnalysis> analyzeBatch(
       final List<TransientSource> sources, final CancelChecker cancelChecker) {
     final var options = buildOptions(config, compilerArgs, CompileMode.FAST);
-    final Map<Path, String> uriByTempFile = new HashMap<>();
-    final var tempFiles = new ArrayList<Path>(sources.size());
-    for (final var source : sources) {
-      cancelChecker.checkCanceled();
-      final var tempFile = writeTempFile(source.uri(), source.content());
-      tempFiles.add(tempFile);
-      uriByTempFile.put(tempFile.normalize(), source.uri());
-    }
-
+    final Map<Path, String> uriByTempFile = writeTempSources(sources, cancelChecker);
     final List<AttributedFileAnalysis> analyses =
-        runner.analyzeBatch(
-            fm.getJavaFileObjects(tempFiles.toArray(Path[]::new)), options, cancelChecker);
+        runner.analyzeBatch(javaFilesOf(uriByTempFile), options, cancelChecker);
     return analyses.stream().map(analysis -> toTransientAnalysis(analysis, uriByTempFile)).toList();
+  }
+
+  // Analyze the target with its siblings, returning only the target's diagnostics and tree.
+  @Override
+  public CompilerResult diagnoseInBatch(
+      final List<TransientSource> sources,
+      final String targetUri,
+      final CancelChecker cancelChecker) {
+    final var options = buildOptions(config, compilerArgs, CompileMode.FAST);
+    final Map<Path, String> uriByTempFile = writeTempSources(sources, cancelChecker);
+    final JavacRunner.BatchAnalysis batch =
+        runner.analyzeBatchDiagnosed(javaFilesOf(uriByTempFile), options, cancelChecker);
+    final AttributedFileAnalysis targetAnalysis =
+        batch.analyses().stream()
+            .filter(analysis -> targetUri.equals(uriByTempFile.get(sourcePathOf(analysis))))
+            .findFirst()
+            .orElseGet(AttributedFileAnalysis::diagnosticsOnly);
+    final List<Diagnostic<? extends JavaFileObject>> targetDiagnostics =
+        batch.diagnostics().stream()
+            .filter(diagnostic -> targetUri.equals(uriByTempFile.get(sourcePathOf(diagnostic))))
+            .toList();
+    return new CompilerResult(targetDiagnostics, targetAnalysis, Set.of());
   }
 
   private static TransientAnalysis toTransientAnalysis(
       final AttributedFileAnalysis analysis, final Map<Path, String> uriByTempFile) {
-    final Path sourcePath = Path.of(analysis.tree().getSourceFile().toUri()).normalize();
-    return new TransientAnalysis(uriByTempFile.get(sourcePath), analysis);
+    return new TransientAnalysis(uriByTempFile.get(sourcePathOf(analysis)), analysis);
+  }
+
+  private static Path sourcePathOf(final AttributedFileAnalysis analysis) {
+    return analysis.tree() == null
+        ? null
+        : Path.of(analysis.tree().getSourceFile().toUri()).normalize();
+  }
+
+  private static Path sourcePathOf(final Diagnostic<? extends JavaFileObject> diagnostic) {
+    return diagnostic.getSource() == null
+        ? null
+        : Path.of(diagnostic.getSource().toUri()).normalize();
+  }
+
+  // Write each source to a temp file, keyed by normalized temp path -> original uri, so callers can
+  // map compiler outputs back to their source.
+  private Map<Path, String> writeTempSources(
+      final List<TransientSource> sources, final CancelChecker cancelChecker) {
+    final Map<Path, String> uriByTempFile = new LinkedHashMap<>();
+    for (final var source : sources) {
+      cancelChecker.checkCanceled();
+      uriByTempFile.put(writeTempFile(source.uri(), source.content()).normalize(), source.uri());
+    }
+
+    return uriByTempFile;
+  }
+
+  private Iterable<? extends JavaFileObject> javaFilesOf(final Map<Path, String> uriByTempFile) {
+    return fm.getJavaFileObjects(uriByTempFile.keySet().toArray(Path[]::new));
   }
 
   private Path writeTempFile(final String uri, final String content) {

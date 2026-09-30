@@ -64,10 +64,8 @@ public interface JavaSourceCompiler extends AutoCloseable {
   }
 
   /**
-   * Full-compiles several mutually dependent sources in one javac task so intra-batch
-   * cross-references (a sealed type and a newly added permitted subtype) resolve. The default falls
-   * back to one FULL compile per file; {@code ModuleSourceCompiler} overrides it with a single
-   * multi-file task.
+   * Full-compiles mutually dependent sources in one task so their cross-references resolve. The
+   * default compiles per file; {@code ModuleSourceCompiler} overrides with one multi-file task.
    */
   default CompilerResult compileBatch(
       final List<TransientSource> sources, final CancelChecker cancelChecker) {
@@ -82,6 +80,19 @@ public interface JavaSourceCompiler extends AutoCloseable {
     }
 
     return new CompilerResult(diagnostics, AttributedFileAnalysis.diagnosticsOnly(), written);
+  }
+
+  /**
+   * Re-diagnoses {@code targetUri} with its siblings in one task, returning only the target's
+   * result. The default compiles the target alone; {@code ModuleSourceCompiler} overrides it.
+   */
+  default CompilerResult diagnoseInBatch(
+      final List<TransientSource> sources,
+      final String targetUri,
+      final CancelChecker cancelChecker) {
+    final TransientSource target =
+        sources.stream().filter(source -> source.uri().equals(targetUri)).findFirst().orElseThrow();
+    return compile(target.uri(), target.content(), CompileMode.FAST, cancelChecker);
   }
 
   StandardJavaFileManager fileManager();

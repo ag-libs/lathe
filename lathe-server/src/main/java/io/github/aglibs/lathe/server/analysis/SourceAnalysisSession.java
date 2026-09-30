@@ -86,9 +86,8 @@ public final class SourceAnalysisSession implements AutoCloseable {
     return lastWrittenBinaryNames;
   }
 
-  // Reaction-path batch: full-compile the changed closed files of one source tree together so a
-  // sealed/permits pair resolves. Closed files, so no open-document cache to update; returns the
-  // union of written binary names for stale-output cleanup.
+  // Full-compile a tree's changed (closed) files together so a sealed/permits pair resolves;
+  // returns the union of written binary names for stale-output cleanup.
   public Set<String> compileBatch(
       final List<TransientSource> sources, final CancelChecker cancelChecker) {
     final var t = Stopwatch.start();
@@ -116,20 +115,48 @@ public final class SourceAnalysisSession implements AutoCloseable {
       cache.put(uri, new CachedFileAnalysis(content, version, run.fileAnalysis()));
     }
 
-    final var compiled = JavacDiagnosticMapper.filterAndMap(run.diagnostics(), content);
+    final List<Diagnostic> diags = mapDiagnostics(run, content);
+    LOG.info(
+        () ->
+            "[compile:%s] %s %dms diags=%d".formatted(mode.tag, uri, t.elapsedMs(), diags.size()));
+    return diags;
+  }
+
+  // Recompute the target's diagnostics with its siblings present; analyze-only.
+  public List<Diagnostic> diagnoseInBatch(
+      final List<TransientSource> sources,
+      final String targetUri,
+      final CancelChecker cancelChecker) {
+    final var t = Stopwatch.start();
+    final CompilerResult run = compiler.diagnoseInBatch(sources, targetUri, cancelChecker);
+    cancelChecker.checkCanceled();
+    final List<Diagnostic> diags = mapDiagnostics(run, targetContent(sources, targetUri));
+    LOG.fine(
+        () ->
+            "[widen] %s %d files %dms diags=%d"
+                .formatted(targetUri, sources.size(), t.elapsedMs(), diags.size()));
+    return diags;
+  }
+
+  private static List<Diagnostic> mapDiagnostics(final CompilerResult run, final String content) {
+    final List<Diagnostic> compiled =
+        JavacDiagnosticMapper.filterAndMap(run.diagnostics(), content);
     JavacDiagnosticMapper.enrich(compiled, run.fileAnalysis());
     final boolean compileFailed =
         compiled.stream().anyMatch(d -> d.getSeverity() == DiagnosticSeverity.Error);
     final List<Diagnostic> unusedDiags =
         compileFailed ? List.of() : UnusedDeclarationScanner.scan(run.fileAnalysis(), content);
-    final List<Diagnostic> diags =
-        unusedDiags.isEmpty()
-            ? compiled
-            : Stream.concat(compiled.stream(), unusedDiags.stream()).toList();
-    LOG.info(
-        () ->
-            "[compile:%s] %s %dms diags=%d".formatted(mode.tag, uri, t.elapsedMs(), diags.size()));
-    return diags;
+    return unusedDiags.isEmpty()
+        ? compiled
+        : Stream.concat(compiled.stream(), unusedDiags.stream()).toList();
+  }
+
+  private static String targetContent(final List<TransientSource> sources, final String targetUri) {
+    return sources.stream()
+        .filter(source -> source.uri().equals(targetUri))
+        .map(TransientSource::content)
+        .findFirst()
+        .orElse("");
   }
 
   public CompletionOutcome complete(

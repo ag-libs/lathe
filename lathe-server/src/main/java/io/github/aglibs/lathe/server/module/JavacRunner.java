@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Set;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
+import javax.tools.Diagnostic;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
@@ -53,17 +54,26 @@ final class JavacRunner {
       final Iterable<? extends JavaFileObject> sourceFiles,
       final List<String> options,
       final CancelChecker cancelChecker) {
+    return analyzeBatchDiagnosed(sourceFiles, options, cancelChecker).analyses();
+  }
+
+  // Analyze several files in one task, keeping the diagnostics, so a live compile can widen a
+  // single-file failure into the file's siblings.
+  BatchAnalysis analyzeBatchDiagnosed(
+      final Iterable<? extends JavaFileObject> sourceFiles,
+      final List<String> options,
+      final CancelChecker cancelChecker) {
     cancelChecker.checkCanceled();
     return admission.run(
         cancelChecker,
         () -> {
-          final List<AttributedFileAnalysis> analyses = attributeBatch(sourceFiles, options);
+          final BatchAnalysis batch = attributeBatch(sourceFiles, options);
           cancelChecker.checkCanceled();
-          return analyses;
+          return batch;
         });
   }
 
-  private List<AttributedFileAnalysis> attributeBatch(
+  private BatchAnalysis attributeBatch(
       final Iterable<? extends JavaFileObject> sourceFiles, final List<String> options) {
     final var collector = new DiagnosticCollector<JavaFileObject>();
     final var task = createTask(sourceFiles, options, collector);
@@ -78,15 +88,23 @@ final class JavacRunner {
         analyses.add(new AttributedFileAnalysis(trees, elements, types, cu, null));
       }
 
-      return List.copyOf(analyses);
+      return new BatchAnalysis(analyses, collector.getDiagnostics());
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }
   }
 
-  // Full-compile several mutually dependent sources in one task so intra-batch cross-references (a
-  // sealed type and a newly added permitted subtype) resolve; no SOURCE_PATH, so the batch is the
-  // only way stale siblings see each other's fresh bytecode.
+  record BatchAnalysis(
+      List<AttributedFileAnalysis> analyses,
+      List<Diagnostic<? extends JavaFileObject>> diagnostics) {
+    BatchAnalysis {
+      analyses = List.copyOf(analyses);
+      diagnostics = List.copyOf(diagnostics);
+    }
+  }
+
+  // Full-compile mutually dependent sources in one task so their cross-references resolve; no
+  // SOURCE_PATH, so batching is the only way stale siblings see each other's bytecode.
   CompilerResult compileBatch(
       final Iterable<? extends JavaFileObject> sourceFiles,
       final List<String> options,

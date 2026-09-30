@@ -99,6 +99,7 @@ import org.eclipse.lsp4j.CodeActionContext;
 import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.CompletionContext;
 import org.eclipse.lsp4j.Diagnostic;
+import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.DocumentHighlight;
 import org.eclipse.lsp4j.DocumentSymbol;
 import org.eclipse.lsp4j.FoldingRange;
@@ -3051,7 +3052,10 @@ final class WorkspaceSession {
 
     final List<CompletableFuture<Void>> reactions =
         compileChangedInOrder(scan.staleByModule(), ready);
-    noticeStaleRecompile(reactions.size());
+    if (!reactions.isEmpty()) {
+      noticeStaleRecompile(ready.size());
+    }
+
     return reactions;
   }
 
@@ -3106,15 +3110,14 @@ final class WorkspaceSession {
     return Comparator.comparing(config -> LatheLayout.TEST_CLASSES_DIR.equals(config.sourceTree()));
   }
 
-  // One FULL batch per source tree over its claimed stable/stale set; empty when nothing is ready.
+  // One batch per tree over its claimed stale set; empty when nothing is ready.
   private List<CompletableFuture<Void>> reactToChangedSources(
       final ModuleSourceConfig config, final List<Path> moduleStale, final Set<Path> stable) {
     final List<Path> batch = claimStable(moduleStale, stable);
     return batch.isEmpty() ? List.of() : List.of(compileChangedBatch(config, batch));
   }
 
-  // Claim each stable, not-already-reacting source (marking it in-flight); the returned set is what
-  // this batch owns and must release once compiled.
+  // Claim each stable, not-already-reacting source; the batch owns and later releases these.
   private List<Path> claimStable(final List<Path> moduleStale, final Set<Path> stable) {
     final var claimed = new ArrayList<Path>(moduleStale.size());
     for (final var source : moduleStale) {
@@ -3126,8 +3129,8 @@ final class WorkspaceSession {
     return List.copyOf(claimed);
   }
 
-  // One FULL compile per source tree over its whole changed set, so a sealed type and a newly added
-  // permitted subtype (each referencing the other) resolve against one another inside the batch.
+  // One FULL compile over the tree's whole changed set, so mutually referencing files (a sealed
+  // root and a new permitted subtype) resolve inside the batch.
   private CompletableFuture<Void> compileChangedBatch(
       final ModuleSourceConfig config, final List<Path> sources) {
     final var transientSources = new ArrayList<TransientSource>(sources.size());
@@ -3534,15 +3537,17 @@ final class WorkspaceSession {
       final CompileMode mode,
       final AfterCompile afterCompile) {
     switch (route) {
-      case CompilerRoute.Module module -> submitTo(module.worker(), snapshot, mode, afterCompile);
+      case CompilerRoute.Module module ->
+          submitTo(route, module.worker(), snapshot, mode, afterCompile);
       case CompilerRoute.External external ->
-          submitTo(external.worker(), snapshot, mode, afterCompile);
+          submitTo(route, external.worker(), snapshot, mode, afterCompile);
       case CompilerRoute.Missing missing ->
           publisher.publishMissing(missing.uri(), missing.message());
     }
   }
 
   private void submitTo(
+      final CompilerRoute route,
       final CompilationWorker moduleWorker,
       final OpenDocument snapshot,
       final CompileMode mode,
@@ -3553,12 +3558,91 @@ final class WorkspaceSession {
             snapshot.uri(), snapshot.content(), snapshot.version(), snapshot.generation(), mode);
     moduleWorker
         .compile(request)
-        .thenAccept(result -> worker.execute(() -> afterCompile.accept(snapshot, result)))
+        .thenAccept(
+            result ->
+                worker.execute(
+                    () -> {
+                      afterCompile.accept(snapshot, result);
+                      maybeWidenSealed(route, snapshot, result);
+                    }))
         .exceptionally(
             ex -> {
               worker.execute(() -> publisher.publishError(snapshot, mode, ex));
               return null;
             });
+  }
+
+  // Single-file failures that may just be a missing sibling declaration; both clear once the
+  // siblings compile together.
+  private static final String CANT_RESOLVE_CODE = "compiler.err.cant.resolve";
+  private static final String SEALED_INHERIT_CODE = "compiler.err.cant.inherit.from.sealed";
+
+  // Re-diagnose the target with its siblings when a failure looks cross-file, then republish just
+  // the target. Analyze-only.
+  private void maybeWidenSealed(
+      final CompilerRoute route, final OpenDocument snapshot, final CompileResponse result) {
+    if (!(route instanceof final CompilerRoute.Module module)
+        || !hasCrossFileResolutionError(result)) {
+      return;
+    }
+
+    final List<TransientSource> sources = widenSources(module.config(), snapshot);
+    if (sources.size() < 2 || sources.size() > BULK_CHANGE_THRESHOLD) {
+      return;
+    }
+
+    module
+        .worker()
+        .diagnoseInBatch(sources, snapshot.uri())
+        .thenAccept(
+            diagnostics ->
+                worker.execute(
+                    () ->
+                        publisher.publishIfCurrent(
+                            snapshot,
+                            new CompileResponse(
+                                snapshot.uri(), snapshot.generation(), diagnostics, Set.of()))));
+  }
+
+  private static boolean hasCrossFileResolutionError(final CompileResponse result) {
+    return result.diagnostics().stream()
+        .filter(diagnostic -> diagnostic.getSeverity() == DiagnosticSeverity.Error)
+        .anyMatch(WorkspaceSession::isCrossFileResolutionCode);
+  }
+
+  private static boolean isCrossFileResolutionCode(final Diagnostic diagnostic) {
+    final Either<String, Integer> code = diagnostic.getCode();
+    if (code == null || !code.isLeft()) {
+      return false;
+    }
+
+    final String javacCode = code.getLeft();
+    return javacCode.equals(SEALED_INHERIT_CODE) || javacCode.startsWith(CANT_RESOLVE_CODE);
+  }
+
+  // The target plus its same-tree siblings (open buffers and stale on-disk sources).
+  private List<TransientSource> widenSources(
+      final ModuleSourceConfig config, final OpenDocument target) {
+    final var sources = new ArrayList<TransientSource>();
+    sources.add(new TransientSource(target.uri(), target.content()));
+    for (final var doc : docs.all()) {
+      if (!doc.uri().equals(target.uri()) && inSourceTree(doc.uri(), config)) {
+        sources.add(new TransientSource(doc.uri(), doc.content()));
+      }
+    }
+
+    for (final var stale : staleSourcesInModule(config, openSourcePaths())) {
+      final String content = readSource(stale);
+      if (content != null) {
+        sources.add(new TransientSource(stale.toUri().toString(), content));
+      }
+    }
+
+    return List.copyOf(sources);
+  }
+
+  private boolean inSourceTree(final String uri, final ModuleSourceConfig config) {
+    return workspace.moduleSourceFor(LatheUri.toPath(uri)).map(config::equals).orElse(false);
   }
 
   private CompilerRoute routeCompiler(final String uri) {

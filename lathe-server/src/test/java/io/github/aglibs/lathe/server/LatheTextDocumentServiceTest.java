@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.after;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
@@ -573,6 +574,59 @@ class LatheTextDocumentServiceTest {
     assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
         .containsEntry("shapes/Shape.java", 5_000L)
         .containsEntry("shapes/Square.java", 5_000L);
+  }
+
+  @Test
+  void openSealedSubtype_liveDiagnostics_widenClearsErrorAgainstOpenSibling() throws Exception {
+    final Path sourceRoot = tmp.resolve("module/src/main/java");
+    final Path shape = sourceRoot.resolve("shapes/Shape.java");
+    final Path circle = sourceRoot.resolve("shapes/Circle.java");
+    final Path square = sourceRoot.resolve("shapes/Square.java");
+
+    // Mirror baseline: Shape permits Circle only, both compiled and stamped fresh.
+    TestCompiler.writeAt(shape, "package shapes; sealed interface Shape permits Circle {}", 1_000L);
+    TestCompiler.writeAt(circle, "package shapes; final class Circle implements Shape {}", 1_000L);
+    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), shape, circle);
+    CompiledStamps.writeAll(
+        tmp.resolve(".lathe/module"),
+        "classes",
+        Map.of("shapes/Shape.java", 1_000L, "shapes/Circle.java", 1_000L));
+    TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
+    service.initialize(tmp);
+
+    final String shapeUri = shape.toUri().toString();
+    final String squareUri = square.toUri().toString();
+    // Open the edited pair as unsaved buffers: Shape now permits Square (opened first, so it is a
+    // live sibling), then Square implements Shape (its single-file compile hits the stale mirror's
+    // sealed clause). The widen recompiles Square with the open Shape buffer and clears the error.
+    service.didOpen(
+        new DidOpenTextDocumentParams(
+            new TextDocumentItem(
+                shapeUri,
+                "java",
+                1,
+                "package shapes; sealed interface Shape permits Circle, Square {}")));
+    service.didOpen(
+        new DidOpenTextDocumentParams(
+            new TextDocumentItem(
+                squareUri, "java", 1, "package shapes; final class Square implements Shape {}")));
+
+    // The widen's clean republish for Square eventually arrives.
+    verify(client, timeout(5_000).atLeastOnce())
+        .publishDiagnostics(
+            argThat(p -> p.getUri().equals(squareUri) && p.getDiagnostics().isEmpty()));
+
+    // Square's final published state is clean, though the sealed error was reported first.
+    final var captor = ArgumentCaptor.forClass(PublishDiagnosticsParams.class);
+    verify(client, atLeastOnce()).publishDiagnostics(captor.capture());
+    final List<PublishDiagnosticsParams> squarePublishes =
+        captor.getAllValues().stream().filter(p -> p.getUri().equals(squareUri)).toList();
+    assertThat(squarePublishes)
+        .anyMatch(
+            p ->
+                p.getDiagnostics().stream()
+                    .anyMatch(d -> d.getSeverity() == DiagnosticSeverity.Error));
+    assertThat(squarePublishes.getLast().getDiagnostics()).isEmpty();
   }
 
   @Test

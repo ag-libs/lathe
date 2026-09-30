@@ -335,7 +335,25 @@ in sync).
 
 ## WS-10 — A `sealed` type and a newly added permitted subtype cannot both be saved: each single-file compile fails against the other's stale mirror bytecode
 
-**Status: accepted — Target: next**
+**Status: resolved**
+
+Fixed by compiling mutually dependent same-tree sources together in one javac task (the batch FULL
+primitive the design called for), so a sealed root and a new permitted subtype resolve against one
+another instead of each other's stale mirror bytecode. Two paths, both shipped:
+
+- **Background reaction** — `WorkspaceSession` now issues one FULL batch per source tree over its
+  stable stale set (`compileChangedBatch` → `CompilationWorker.compileBatch` →
+  `ModuleSourceCompiler.compileBatch` → `JavacRunner.compileBatch`), replacing the per-file loop.
+  Verified live: an externally-changed sealed pair recompiles both `.class` into the mirror in one
+  pass, either edit order.
+- **Live editor diagnostics** — a single-file compile that fails with `compiler.err.cant.resolve*`
+  or `compiler.err.cant.inherit.from.sealed` widens into the module's open + stale siblings
+  (analyze-only, `diagnoseInBatch`) and republishes just the target's diagnostics, clearing the
+  spurious squiggle.
+
+Out of scope (rare, debugger-only): a sealed pair that is both *open and saved* leaves the mirror
+`.class` stale until close or a Maven sync — the reaction skips open files and the single-file save
+still can't write that mirror. Diagnostics are correct either way.
 
 ### Observed behaviour
 
