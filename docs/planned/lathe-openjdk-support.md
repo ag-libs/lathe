@@ -101,9 +101,13 @@ reaction in the server.
 dependency `-sources` resolution (the JDK source *is* the code being edited — navigation targets are all
 in-tree).
 
-**New:** a small `lathe-openjdk` module (depends on `lathe-core`) — a JVM tool that reads a JDK build
-output directory's per-module descriptors and emits `.lathe/`. It is a normal Maven module (no Gradle
-distribution artifacts needed, unlike the Gradle plugin), the direct analog of `lathe-maven-plugin`.
+**New:** a single `lathe-openjdk-maven-plugin` module (depends on `lathe-core`). It is a Maven **plugin**
+with one goal, `sync`, declared `@Mojo(requiresProject = false)` so it runs in the JDK checkout (which is
+not a Maven project) with no pom. The `SyncMojo` is a thin adapter; the descriptor reader and the
+`.lathe/` writer live in ordinary, unit-testable classes in the same module (no business logic in
+`execute()`, per house rules). Maven itself is the bootstrap — see [Delivery & gating](#delivery--gating).
+No standalone CLI and no shaded jar: Maven resolves the plugin and its transitive deps (incl.
+`lathe-core`) from Central, honouring the user's `settings.xml` (mirrors/proxies).
 
 ## OpenJDK source structure (primer)
 
@@ -131,7 +135,7 @@ The JDK's Java layout is unusual enough to state explicitly, because it drives t
 
 ## Capture — compiler arguments & the bytecode mirror
 
-For each module, `lathe-openjdk` reads the two durable descriptors the build already wrote and produces
+For each module, the `sync` goal reads the two durable descriptors the build already wrote and produces
 `ModuleConfigData`:
 
 | `ModuleConfigData` | Source in the OpenJDK build |
@@ -192,21 +196,60 @@ capture (observing the JVM jtreg forks per `@run`) is a candidate follow-up, not
 
 ## Delivery & gating
 
-Registration mirrors the JDK's own IDE generators (`make idea`, `make eclipse`) — personal, no edits to
-the tracked tree:
+**The trigger is a `make lathe` target that invokes the Maven goal directly by coordinate** — no
+generated pom, no CLI, no shaded jar. Maven's direct-invocation grammar plus `requiresProject = false`
+lets the plugin run in the JDK checkout, and Maven does all resolution/bootstrapping:
 
-- **Make target** (primary) — a small include that adds a `lathe` target, run after a build:
-  `make jdk lathe` or `make <module>-java-only lathe`. This is the analog of `make idea` and fits the
-  build's existing pattern (a `MakeFileStart.gmk`/`Modules.gmk`-based target that reads module vars and
-  writes a file).
-- **Standalone CLI** (underlying implementation) — `lathe-openjdk sync --build-dir
-  build/<conf>` — for environments where adding a make target is undesirable; the make target is a thin
-  wrapper over it.
+```make
+lathe:
+	mvn io.github.ag-libs:lathe-openjdk-maven-plugin:$(if $(LATHE_VERSION),$(LATHE_VERSION):,)sync \
+	    -Dlathe.buildDir=$(OUTPUTDIR)
+```
 
-**Gating** reuses `LatheFlags`: opt in with `mkdir .lathe`; disable with a property / `CI` env, same
-precedence as Maven/Gradle. `.lathe/` is git-ignored (`.git/info/exclude` or `.gitignore`).
+The `make lathe` include is the "extension" — the registered-once artifact (analog of the Maven
+`.mvn/extensions.xml`), personal and requiring no edits to the tracked tree, exactly like `make idea`.
+Its only job is to supply the live `$(OUTPUTDIR)` (and, optionally, the module list) and call the goal;
+all real work is in the plugin. Run it after a build: `make jdk lathe` or
+`make <module>-java-only lathe`.
+
+**Version resolution — versionless by default, pin optional.** Maven's three-part
+`groupId:artifactId:goal` form omits the version and resolves the latest release from Central metadata,
+so the zero-config path needs neither a pom nor a `settings.xml` change:
+
+- **No `.lathe/lathe.version`** → `…-maven-plugin:sync` → latest release.
+- **`.lathe/lathe.version` present** → `…-maven-plugin:<version>:sync` → pinned, for teams wanting
+  reproducibility (the POM-`<version>` analog).
+
+Versionless is safe for **bundle agreement**: whatever plugin version Maven resolves, `SyncMojo` installs
+the server/client **of its own version** into `~/.cache/lathe/`, so the capture tool, server, and client
+never mismatch. The only thing given up is cross-machine/time determinism — a non-issue because `.lathe/`
+is local and git-ignored.
+
+**Always the canonical coordinate; never a `settings.xml` edit.** The goal is invoked by its full
+`groupId:artifactId[:version]:goal` name. We deliberately do **not** use the short plugin prefix
+(`mvn lathe-openjdk:sync`), because that would require every user to add a `<pluginGroups>` entry to
+their `settings.xml` — an edit we do not expect anyone to make. The canonical form needs no `settings.xml`
+change at all. (Lathe still *reads* an existing `settings.xml` for the org's mirrors/proxies during
+resolution — it just never asks the user to modify it.)
+
+**Discovery.** `-Dlathe.buildDir` (passed by the make target from the live `$(OUTPUTDIR)`) is the
+authoritative source — the configured build's own output, not a guessed conf name. Run standalone
+without it, the goal scans `build/*/spec.gmk`; with several configs it requires an explicit
+`-Dlathe.buildDir` rather than guessing. Within the build dir it discovers modules by scanning
+`jdk/modules/*/` for `_the.<module>.vardeps`, and **logs any modules skipped** because they were not
+built (partial builds like `make java.base-java-only` capture only what is present — no silent
+truncation).
+
+**Offline / air-gapped** JDK CI runs `mvn -o` against a pre-populated `~/.m2`.
+
+**Gating** reuses `LatheFlags`: `.lathe/` opt-in, disable via property / `CI` env, same precedence as
+Maven/Gradle. Running the explicit `make lathe` target is itself the opt-in, so creating `.lathe/` on
+invocation is consistent; if a user wires `lathe` into the default build, the flag gating applies first.
+`.lathe/` is git-ignored (`.git/info/exclude` or `.gitignore`).
 
 ## End-user setup (developer workflow)
+
+Prerequisite: `mvn` on the machine (Maven is the bootstrap — it fetches the plugin + deps from Central).
 
 ```bash
 git clone https://github.com/openjdk/jdk && cd jdk
@@ -214,7 +257,9 @@ bash configure --with-boot-jdk=/path/to/jdk-N     # normal JDK setup, unchanged
 echo ".lathe/" >> .git/info/exclude
 mkdir .lathe                                       # opt-in gate
 
-make jdk lathe                                     # build once; capture reads the descriptors
+make jdk lathe                                     # build once, then:
+                                                   #   mvn …:lathe-openjdk-maven-plugin:sync
+                                                   #   reads the descriptors → .lathe/, installs the bundle
 ```
 
 Then open the repo in any Lathe editor client (Neovim, VS Code, Emacs, IntelliJ-via-LSP — all reused
@@ -257,7 +302,7 @@ drive the module flags. Refresh is scoped and fast via the build's own increment
 The obstacle is that a realistic fixture requires a **built JDK**, which is expensive. Two layers:
 
 1. **Descriptor-fixture unit tests.** Check in captured real `_the.<module>.vardeps` /
-   `_the.<module>_batch.filelist` samples (small, path-normalized) and assert `lathe-openjdk` produces
+   `_the.<module>_batch.filelist` samples (small, path-normalized) and assert the reader produces
    the correct `ModuleConfigData` — including multi-root ordering, `--system none`, `--add-exports`, and
    gensrc roots. No JDK build needed; runs in CI.
 2. **Cross-tool contract test (gated).** On a machine with a built JDK, run capture against
@@ -271,12 +316,13 @@ rebuild is an explicit case (proves the in-process refresh model).
 
 ## Slicing
 
-1. **Descriptor capture (`ModuleConfigData` + mirror + stamps)** — the `lathe-openjdk` reader over one
-   module's `_the.*.vardeps` / `_the.*_batch.filelist`, with multi-root ordering. Delivers code
-   intelligence for a single module.
+1. **Descriptor capture (`ModuleConfigData` + mirror + stamps)** — the reader over one module's
+   `_the.*.vardeps` / `_the.*_batch.filelist`, with multi-root ordering, wired into the `sync` goal.
+   Delivers code intelligence for a single module.
 2. **Full module set + `workspace.json`** — enumerate via `FindAllModules`; capture all ~66 modules;
    cross-module navigation. Completes the editor experience.
-3. **Registration + gating** — the `make lathe` target / CLI, `.lathe/` opt-in, git-ignore.
+3. **Registration + gating** — the `make lathe` target invoking the goal by canonical coordinate,
+   `.lathe/` opt-in, git-ignore, bundle install into `~/.cache/lathe/`.
 4. **In-process refresh wiring + tests** — confirm add/edit/delete without rebuild; the fixture matrix.
 5. **(Later, separate design) jtreg launch capture** — run/test/debug.
 
@@ -300,18 +346,21 @@ rebuild is an explicit case (proves the in-process refresh model).
 
 ## Open decisions
 
-1. **Registration surface** — a bundled `make lathe` include vs a standalone `lathe-openjdk` CLI the
-   developer points at `build/<conf>`. Leaning: CLI as the implementation, make target as the ergonomic
-   wrapper.
-2. **Descriptor parse stability** — the exact on-disk format of `_the.<module>.vardeps` (a make
+1. **Descriptor parse stability** — the exact on-disk format of `_the.<module>.vardeps` (a make
    `X_old := …` line) is confirmed from the makefiles but not yet from a live build; lock it against a
-   real `make java.base` before finalizing the reader.
-3. **Minimum JDK / build version** — confirm the descriptor mechanism and `SRC_SUBDIRS`/`FindAllModules`
+   real `make java.base` before finalizing the reader. *This is the one item that gates implementation.*
+2. **Minimum JDK / build version** — confirm the descriptor mechanism and `SRC_SUBDIRS`/`FindAllModules`
    contracts across the JDK versions Lathe intends to support (they are stable but version-check).
-4. **Multi-root override representation** — carry ordered `sourceRoots` and rely on the server's
+3. **Multi-root override representation** — carry ordered `sourceRoots` and rely on the server's
    first-found resolution, vs an explicit per-file override map. Ordered roots is the KISS default.
-5. **jtreg capture** — whether a future run/test slice observes the JVM jtreg forks per `@run`, or is
+4. **jtreg capture** — whether a future run/test slice observes the JVM jtreg forks per `@run`, or is
    left to the existing jtreg tooling. Out of scope now; noted so it is not assumed solved.
+
+**Settled** (earlier open questions, now decided): single `lathe-openjdk-maven-plugin` module with a
+`sync` goal (`requiresProject = false`); trigger is `make lathe` invoking the goal by **canonical
+coordinate** (versionless by default, `.lathe/lathe.version` to pin); no standalone CLI, no shaded jar,
+no `settings.xml` edit; partial builds capture-present-and-log-skipped; `-Dlathe.buildDir` authoritative
+with a `build/*/spec.gmk` fallback that requires an explicit dir when several configs exist.
 
 ## Non-goals (this design)
 
