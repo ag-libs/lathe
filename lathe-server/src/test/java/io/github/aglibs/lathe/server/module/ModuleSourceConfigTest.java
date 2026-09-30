@@ -34,19 +34,18 @@ class ModuleSourceConfigTest {
   }
 
   @Test
-  void testScope_usesSeparateGeneratedMirror_andAlsoSearchesMainMirror() {
+  void testScope_usesSeparateGeneratedMirror() {
     final Path testSrc = WORKSPACE.resolve("module/src/test/java");
     final Path gen = WORKSPACE.resolve("module/target/generated-test-sources/test-annotations");
     final Path moduleDir = LATHE_DIR.resolve("module");
     final var config = testConfig(gen, testSrc);
 
+    // Each scope owns exactly one generated mirror; the main mirror belongs to the main config, so
+    // it must NOT appear here (double-ownership breaks candidate->source-root routing in analysis).
     assertThat(config.generatedSourcesDir())
         .isEqualTo(moduleDir.resolve(LatheLayout.GENERATED_TEST_SOURCES));
     assertThat(config.searchRoots())
-        .containsExactly(
-            testSrc,
-            moduleDir.resolve(LatheLayout.GENERATED_TEST_SOURCES),
-            moduleDir.resolve(LatheLayout.GENERATED_SOURCES));
+        .containsExactly(testSrc, moduleDir.resolve(LatheLayout.GENERATED_TEST_SOURCES));
   }
 
   private static ModuleSourceConfig config(
