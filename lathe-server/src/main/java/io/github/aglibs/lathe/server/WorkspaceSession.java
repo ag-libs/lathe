@@ -3049,7 +3049,22 @@ final class WorkspaceSession {
       return List.of();
     }
 
-    return compileChangedInOrder(scan.staleByModule(), ready);
+    final List<CompletableFuture<Void>> reactions =
+        compileChangedInOrder(scan.staleByModule(), ready);
+    noticeStaleRecompile(reactions.size());
+    return reactions;
+  }
+
+  // The in-process counterpart to the sync toast; the bulk path (> threshold) has its own notice.
+  private void noticeStaleRecompile(final int count) {
+    if (count == 0) {
+      return;
+    }
+
+    LOG.fine(() -> "[react] recompiling %d changed file(s)".formatted(count));
+    client.showMessage(
+        new MessageParams(
+            MessageType.Info, "Lathe: recompiling %d changed file(s)…".formatted(count)));
   }
 
   private static Map<Path, Long> staleMtimes(final StaleScan scan) {

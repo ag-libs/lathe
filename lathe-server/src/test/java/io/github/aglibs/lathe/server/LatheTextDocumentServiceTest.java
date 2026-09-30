@@ -500,6 +500,8 @@ class LatheTextDocumentServiceTest {
     service.initialize(tmp);
 
     verify(client, after(500).never()).showMessageRequest(any());
+    verify(client, never())
+        .showMessage(argThat((MessageParams p) -> p.getMessage().contains("recompiling")));
   }
 
   @Test
@@ -593,6 +595,9 @@ class LatheTextDocumentServiceTest {
     assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
         .containsEntry("com/example/Foo.java", 5_000L);
     verify(client, never()).showMessageRequest(any());
+    verify(client, timeout(5_000))
+        .showMessage(
+            argThat((MessageParams p) -> p.getMessage().contains("recompiling 1 changed")));
   }
 
   @Test
