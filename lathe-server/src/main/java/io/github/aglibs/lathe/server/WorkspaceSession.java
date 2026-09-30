@@ -3085,10 +3085,10 @@ final class WorkspaceSession {
       final Map<ModuleSourceConfig, List<Path>> staleByModule, final Set<Path> stable) {
     final var reactions = new ArrayList<CompletableFuture<Void>>();
     for (final var config : compileOrder(staleByModule.keySet())) {
-      reactToChangedSources(config, staleByModule.get(config), stable, reactions);
+      reactions.addAll(reactToChangedSources(config, staleByModule.get(config), stable));
     }
 
-    return reactions;
+    return List.copyOf(reactions);
   }
 
   // Modules upstream-first, and within a module the main tree before the test tree, so every
@@ -3106,55 +3106,91 @@ final class WorkspaceSession {
     return Comparator.comparing(config -> LatheLayout.TEST_CLASSES_DIR.equals(config.sourceTree()));
   }
 
-  private void reactToChangedSources(
-      final ModuleSourceConfig config,
-      final List<Path> moduleStale,
-      final Set<Path> stable,
-      final List<CompletableFuture<Void>> reactions) {
-    for (final var source : moduleStale) {
-      if (stable.contains(source) && reacting.add(source)) {
-        reactions.add(compileChangedSource(config, source));
-      }
-    }
+  // One FULL batch per source tree over its claimed stable/stale set; empty when nothing is ready.
+  private List<CompletableFuture<Void>> reactToChangedSources(
+      final ModuleSourceConfig config, final List<Path> moduleStale, final Set<Path> stable) {
+    final List<Path> batch = claimStable(moduleStale, stable);
+    return batch.isEmpty() ? List.of() : List.of(compileChangedBatch(config, batch));
   }
 
-  private CompletableFuture<Void> compileChangedSource(
-      final ModuleSourceConfig config, final Path source) {
-    final String content = readSource(source);
-    if (content == null) {
-      reacting.remove(source);
+  // Claim each stable, not-already-reacting source (marking it in-flight); the returned set is what
+  // this batch owns and must release once compiled.
+  private List<Path> claimStable(final List<Path> moduleStale, final Set<Path> stable) {
+    final var claimed = new ArrayList<Path>(moduleStale.size());
+    for (final var source : moduleStale) {
+      if (stable.contains(source) && reacting.add(source)) {
+        claimed.add(source);
+      }
+    }
+
+    return List.copyOf(claimed);
+  }
+
+  // One FULL compile per source tree over its whole changed set, so a sealed type and a newly added
+  // permitted subtype (each referencing the other) resolve against one another inside the batch.
+  private CompletableFuture<Void> compileChangedBatch(
+      final ModuleSourceConfig config, final List<Path> sources) {
+    final var transientSources = new ArrayList<TransientSource>(sources.size());
+    final var readable = new ArrayList<Path>(sources.size());
+    for (final var source : sources) {
+      final String content = readSource(source);
+      if (content == null) {
+        reacting.remove(source);
+        continue;
+      }
+
+      transientSources.add(new TransientSource(source.toUri().toString(), content));
+      readable.add(source);
+    }
+
+    if (transientSources.isEmpty()) {
       return CompletableFuture.completedFuture(null);
     }
 
-    final String uri = source.toUri().toString();
-    final var request = new CompileRequest(uri, content, 0, 0L, CompileMode.FULL);
+    final List<Path> batch = List.copyOf(readable);
     final var done = new CompletableFuture<Void>();
     workspace
         .workerFor(config)
-        .compile(request)
+        .compileBatch(List.copyOf(transientSources))
         .whenComplete(
-            (result, error) ->
+            (written, error) ->
                 worker.execute(
                     () -> {
-                      afterChangedCompile(config, source, result, error);
+                      afterChangedBatch(config, batch, written, error);
                       done.complete(null);
                     }));
     return done;
   }
 
-  private void afterChangedCompile(
+  private void afterChangedBatch(
       final ModuleSourceConfig config,
-      final Path source,
-      final CompileResponse result,
+      final List<Path> sources,
+      final Set<String> writtenBinaryNames,
       final Throwable error) {
-    reacting.remove(source);
-    if (error != null || result == null) {
-      LOG.log(Level.FINE, error, () -> "[react] %s compile failed".formatted(source.getFileName()));
+    sources.forEach(reacting::remove);
+    if (error != null || writtenBinaryNames == null) {
+      LOG.log(
+          Level.FINE,
+          error,
+          () ->
+              "[react] batch compile failed in %s".formatted(moduleRelForDir(config.moduleDir())));
       return;
     }
 
-    afterModuleSave(result, config, source);
-    LOG.fine(() -> "[react] %s".formatted(source.getFileName()));
+    sources.forEach(source -> freshenClassOutputs(config, source, writtenBinaryNames));
+    refreshOpenDependents(config, null);
+    refreshReactorShard(config);
+    LOG.fine(
+        () ->
+            "[react] recompiled %d file(s) in %s"
+                .formatted(sources.size(), moduleRelForDir(config.moduleDir())));
+  }
+
+  // Prune the .class files a compile no longer produces and advance the source's compile stamp.
+  private void freshenClassOutputs(
+      final ModuleSourceConfig config, final Path source, final Set<String> writtenBinaryNames) {
+    deleteStaleClassOutputs(config, source, writtenBinaryNames);
+    recordCompileStamp(config, source);
   }
 
   private static String readSource(final Path source) {
@@ -3597,8 +3633,7 @@ final class WorkspaceSession {
 
   private void afterModuleSave(
       final CompileResponse result, final ModuleSourceConfig config, final Path savedSource) {
-    deleteStaleClassOutputs(config, savedSource, result.writtenBinaryNames());
-    recordCompileStamp(config, savedSource);
+    freshenClassOutputs(config, savedSource, result.writtenBinaryNames());
     scheduleAstRefresh(result.uri());
     refreshOpenDependents(config, result.uri());
     refreshReactorShard(config);

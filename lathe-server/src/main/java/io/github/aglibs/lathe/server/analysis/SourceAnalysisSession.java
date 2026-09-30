@@ -86,6 +86,21 @@ public final class SourceAnalysisSession implements AutoCloseable {
     return lastWrittenBinaryNames;
   }
 
+  // Reaction-path batch: full-compile the changed closed files of one source tree together so a
+  // sealed/permits pair resolves. Closed files, so no open-document cache to update; returns the
+  // union of written binary names for stale-output cleanup.
+  public Set<String> compileBatch(
+      final List<TransientSource> sources, final CancelChecker cancelChecker) {
+    final var t = Stopwatch.start();
+    final CompilerResult run = compiler.compileBatch(sources, cancelChecker);
+    cancelChecker.checkCanceled();
+    LOG.info(
+        () ->
+            "[compile:batch] %d files %dms diags=%d"
+                .formatted(sources.size(), t.elapsedMs(), run.diagnostics().size()));
+    return run.writtenBinaryNames();
+  }
+
   private List<Diagnostic> compile(
       final String uri,
       final String content,

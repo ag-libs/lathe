@@ -14,6 +14,7 @@ import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import javax.tools.Diagnostic;
 import org.eclipse.lsp4j.CompletionItem;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -203,6 +204,53 @@ class ModuleSourceCompilerTest {
   private static String declaredTypeName(final TransientAnalysis analysis) {
     final var declared = (ClassTree) analysis.analysis().tree().getTypeDecls().getFirst();
     return declared.getSimpleName().toString();
+  }
+
+  @Test
+  void compileBatch_sealedRootAndNewPermittedSubtype_resolveAgainstEachOther() throws Exception {
+    final Path sourceRoot = td.resolve("src/main/java");
+    final Path shape = sourceRoot.resolve("shapes/Shape.java");
+    final Path circle = sourceRoot.resolve("shapes/Circle.java");
+    final Path square = sourceRoot.resolve("shapes/Square.java");
+    Files.createDirectories(shape.getParent());
+
+    // A consistent, already-mirrored baseline: Shape permits Circle only.
+    Files.writeString(shape, "package shapes; sealed interface Shape permits Circle {}");
+    Files.writeString(circle, "package shapes; final class Circle implements Shape {}");
+    final var config =
+        TestCompiler.moduleConfig(td.resolve(".lathe"), td.resolve("target/classes"), sourceRoot);
+    TestCompiler.compileToDir(config.latheClassesDir(), shape, circle);
+
+    // The edit: Shape now permits a brand-new Square absent from the mirror.
+    final String editedShape = "package shapes; sealed interface Shape permits Circle, Square {}";
+    final String newSquare = "package shapes; final class Square implements Shape {}";
+
+    try (var compiler = new ModuleSourceCompiler(config, new CompilationAdmission(1))) {
+      // Neither file compiles on its own -- each needs the other's fresh bytecode (the deadlock).
+      assertThat(
+              compiler
+                  .compile(shape.toUri().toString(), editedShape, CompileMode.FULL)
+                  .diagnostics())
+          .anyMatch(d -> d.getKind() == Diagnostic.Kind.ERROR);
+      assertThat(
+              compiler
+                  .compile(square.toUri().toString(), newSquare, CompileMode.FULL)
+                  .diagnostics())
+          .anyMatch(d -> d.getKind() == Diagnostic.Kind.ERROR);
+
+      // Batched into one task, they resolve against one another and both .class files are written.
+      final var result =
+          compiler.compileBatch(
+              List.of(
+                  new TransientSource(shape.toUri().toString(), editedShape),
+                  new TransientSource(square.toUri().toString(), newSquare)),
+              () -> {});
+
+      assertThat(result.diagnostics()).noneMatch(d -> d.getKind() == Diagnostic.Kind.ERROR);
+      assertThat(result.writtenBinaryNames()).contains("shapes.Shape", "shapes.Square");
+      assertThat(config.latheClassesDir().resolve("shapes/Shape.class")).exists();
+      assertThat(config.latheClassesDir().resolve("shapes/Square.class")).exists();
+    }
   }
 
   @Test

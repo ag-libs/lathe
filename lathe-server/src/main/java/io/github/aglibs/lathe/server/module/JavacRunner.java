@@ -84,9 +84,31 @@ final class JavacRunner {
     }
   }
 
+  // Full-compile several mutually dependent sources in one task so intra-batch cross-references (a
+  // sealed type and a newly added permitted subtype) resolve; no SOURCE_PATH, so the batch is the
+  // only way stale siblings see each other's fresh bytecode.
+  CompilerResult compileBatch(
+      final Iterable<? extends JavaFileObject> sourceFiles,
+      final List<String> options,
+      final CancelChecker cancelChecker) {
+    cancelChecker.checkCanceled();
+    return admission.run(
+        cancelChecker,
+        () -> {
+          final CompilerResult result = generate(sourceFiles, options);
+          cancelChecker.checkCanceled();
+          return result;
+        });
+  }
+
   private CompilerResult compileFull(final JavaFileObject sourceFile, final List<String> options) {
+    return generate(List.of(sourceFile), options);
+  }
+
+  private CompilerResult generate(
+      final Iterable<? extends JavaFileObject> sourceFiles, final List<String> options) {
     final var collector = new DiagnosticCollector<JavaFileObject>();
-    final var task = createTask(List.of(sourceFile), options, collector);
+    final var task = createTask(sourceFiles, options, collector);
     try {
       task.analyze();
       final Iterable<? extends JavaFileObject> generated = task.generate();

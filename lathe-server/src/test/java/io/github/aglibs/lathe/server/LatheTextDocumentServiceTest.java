@@ -540,6 +540,42 @@ class LatheTextDocumentServiceTest {
   }
 
   @Test
+  void reconcileNow_sealedRootAndNewPermittedSubtypeChangedExternally_recompilesBothInOneBatch()
+      throws Exception {
+    final Path sourceRoot = tmp.resolve("module/src/main/java");
+    final Path shape = sourceRoot.resolve("shapes/Shape.java");
+    final Path circle = sourceRoot.resolve("shapes/Circle.java");
+    final Path square = sourceRoot.resolve("shapes/Square.java");
+
+    // Consistent, already-mirrored baseline: Shape permits Circle only, both compiled and stamped.
+    TestCompiler.writeAt(shape, "package shapes; sealed interface Shape permits Circle {}", 1_000L);
+    TestCompiler.writeAt(circle, "package shapes; final class Circle implements Shape {}", 1_000L);
+    final Path classesDir = tmp.resolve(".lathe/module/classes");
+    TestCompiler.compileToDir(classesDir, shape, circle);
+    CompiledStamps.writeAll(
+        tmp.resolve(".lathe/module"),
+        "classes",
+        Map.of("shapes/Shape.java", 1_000L, "shapes/Circle.java", 1_000L));
+    TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
+
+    service.initialize(tmp);
+    awaitStartup();
+
+    // The edit lands on disk: Shape permits a new Square, and Square is created -- both stale. A
+    // per-file recompile would deadlock (each needs the other); the batch resolves them together.
+    TestCompiler.writeAt(
+        shape, "package shapes; sealed interface Shape permits Circle, Square {}", 5_000L);
+    TestCompiler.writeAt(square, "package shapes; final class Square implements Shape {}", 5_000L);
+
+    service.reconcileNow(true).get(5, TimeUnit.SECONDS);
+
+    assertThat(classesDir.resolve("shapes/Square.class")).exists();
+    assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
+        .containsEntry("shapes/Shape.java", 5_000L)
+        .containsEntry("shapes/Square.java", 5_000L);
+  }
+
+  @Test
   void reconcileNow_deletedDependency_republishesOpenDependentWithError() throws Exception {
     final Path sourceRoot = tmp.resolve("module/src/main/java");
     final Path dep = sourceRoot.resolve("com/example/Dep.java");

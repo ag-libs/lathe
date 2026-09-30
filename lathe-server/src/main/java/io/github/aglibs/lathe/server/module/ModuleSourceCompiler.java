@@ -82,6 +82,24 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
   }
 
   @Override
+  public CompilerResult compileBatch(
+      final List<TransientSource> sources, final CancelChecker cancelChecker) {
+    final var options = buildOptions(config, compilerArgs, CompileMode.FULL);
+    final var tempFiles = new ArrayList<Path>(sources.size());
+    for (final var source : sources) {
+      cancelChecker.checkCanceled();
+      tempFiles.add(writeTempFile(source.uri(), source.content()));
+    }
+
+    try {
+      return runner.compileBatch(
+          fm.getJavaFileObjects(tempFiles.toArray(Path[]::new)), options, cancelChecker);
+    } finally {
+      IOUtil.unchecked(fm::flush);
+    }
+  }
+
+  @Override
   public List<TransientAnalysis> analyzeBatch(
       final List<TransientSource> sources, final CancelChecker cancelChecker) {
     final var options = buildOptions(config, compilerArgs, CompileMode.FAST);

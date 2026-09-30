@@ -6,10 +6,12 @@ import com.sun.source.util.Trees;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import javax.tools.Diagnostic;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
@@ -59,6 +61,27 @@ public interface JavaSourceCompiler extends AutoCloseable {
     }
 
     return List.copyOf(analyses);
+  }
+
+  /**
+   * Full-compiles several mutually dependent sources in one javac task so intra-batch
+   * cross-references (a sealed type and a newly added permitted subtype) resolve. The default falls
+   * back to one FULL compile per file; {@code ModuleSourceCompiler} overrides it with a single
+   * multi-file task.
+   */
+  default CompilerResult compileBatch(
+      final List<TransientSource> sources, final CancelChecker cancelChecker) {
+    final var diagnostics = new ArrayList<Diagnostic<? extends JavaFileObject>>();
+    final var written = new HashSet<String>();
+    for (final var source : sources) {
+      cancelChecker.checkCanceled();
+      final CompilerResult result =
+          compile(source.uri(), source.content(), CompileMode.FULL, cancelChecker);
+      diagnostics.addAll(result.diagnostics());
+      written.addAll(result.writtenBinaryNames());
+    }
+
+    return new CompilerResult(diagnostics, AttributedFileAnalysis.diagnosticsOnly(), written);
   }
 
   StandardJavaFileManager fileManager();

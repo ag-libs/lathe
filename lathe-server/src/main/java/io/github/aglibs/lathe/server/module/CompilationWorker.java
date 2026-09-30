@@ -135,6 +135,10 @@ public final class CompilationWorker {
         });
   }
 
+  public CompletableFuture<Set<String>> compileBatch(final List<TransientSource> sources) {
+    return submit(ctx -> ctx.compileBatch(sources, () -> {}));
+  }
+
   public CompletableFuture<SignatureHelp> signatureHelp(final SourceFeatureRequest request) {
     return submit(ctx -> ctx.signatureHelp(request));
   }
