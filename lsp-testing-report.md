@@ -8,6 +8,15 @@
 
 Both captured with `mvn clean test -Dlathe.capture.only=true` (tests **not** executed).
 
+> **Status: RESOLVED (2026-09-30).** Both findings below were one bug and are now fixed — the
+> generated-sources mirror is scope-split (main → `generated-sources`, test → `generated-test-sources`),
+> mirroring the existing `classes`/`test-classes` split, in `LatheCompiler.mirrorGeneratedSources`
+> (write) and `ModuleSourceConfig` (read), keyed off `LatheLayout.generatedSourcesDir(sourceTree)`.
+> Verified by re-capturing Helidon with the fixed build: empty main mirrors dropped **71 → 2**, and the
+> probe now resolves `def`/`sym` for `WebServerConfig` into the mirror and reports clean diagnostics on
+> the previously-broken test converter. The 2 residual empty mirrors are a **separate, pre-existing**
+> limitation — see [Residual](#residual-separate-pre-existing-limitation). Details per finding below.
+
 ## Method
 
 Driven by the moat axes in `docs/planned/lathe-mcp-value-benchmark.md` (cross-module signature
@@ -24,13 +33,14 @@ Probes are read-only. The `rename` probe only requests a `WorkspaceEdit`; nothin
 
 ## Headline findings
 
-| # | Severity | Area | Finding |
-|---|----------|------|---------|
-| 1 | **HIGH** | Generated-source capture | 71 of 93 Helidon modules have an **empty** `.lathe/<module>/generated-sources` mirror → their generated `*Config` / `*Config.Builder` / `*Impl` types are invisible to go-to-definition and workspace-symbol. Defeats Lathe's unique moat for most of Helidon. |
-| 2 | LOW–MED | Generated-source capture | Test-scoped generated sources (`generated-test-sources`) are mirrored into the **main** `generated-sources` folder and compiled with the main classpath → spurious "package … does not exist" diagnostics. |
+| # | Severity | Area | Finding | Status |
+|---|----------|------|---------|--------|
+| 1 | **HIGH** | Generated-source capture | 71 of 93 Helidon modules have an **empty** `.lathe/<module>/generated-sources` mirror → their generated `*Config` / `*Config.Builder` / `*Impl` types are invisible to go-to-definition and workspace-symbol. Defeats Lathe's unique moat for most of Helidon. | ✅ Fixed |
+| 2 | LOW–MED | Generated-source capture | Test-scoped generated sources (`generated-test-sources`) are mirrored into the **main** `generated-sources` folder and compiled with the main classpath → spurious "package … does not exist" diagnostics. | ✅ Fixed |
 
 **Both are the same concrete bug** in `LatheCompiler.syncOutput` (deterministic — not caching, not
-config; see [Root cause](#root-cause-one-bug-behind-both-gaps)).
+config; see [Root cause](#root-cause-one-bug-behind-both-gaps)), **now fixed** (see
+[Resolution](#resolution)).
 
 ## Root cause (one bug behind both gaps)
 
@@ -78,11 +88,41 @@ ordering). Helidon's build cache is disabled (`.mvn/cache-config.xml` → `<enab
 and the earlier failed first capture is irrelevant because the successful run did a full `clean`.
 Dropwizard escapes it only because its sole generated module has no test-generated sources.
 
-**Fix direction:** give the generated-sources mirror the same main/test split the classes mirror
-already has — e.g. mirror main → `.lathe/<mod>/generated-sources` and test →
-`.lathe/<mod>/generated-test-sources`, and have the server add each to the correct scope's sourcepath
-(the `SourceScope` machinery already exists for classes/test-classes). That fixes Gap 1 (main gen no
-longer clobbered) and Gap 2 (test gen compiled with the test classpath) together.
+## Resolution
+
+Fixed by giving the generated-sources mirror the same main/test split the classes mirror already has,
+in three focused commits:
+
+- **`LatheLayout.generatedSourcesDir(sourceTree)`** — a sibling of `paramsFileName`/
+  `compiledStampsFileName` that maps `classes → generated-sources` and `test-classes →
+  generated-test-sources`. The Maven source path is still read from `getGeneratedSourcesDirectory()`;
+  only the Lathe-owned destination name is scope-derived.
+- **`LatheCompiler.mirrorGeneratedSources`** (write) — mirrors each compile's output to its
+  scope-specific dir, so `default-testCompile` no longer overwrites `default-compile`.
+- **`ModuleSourceConfig.generatedSourcesDir()` / `searchRoots()`** (read) — resolves the scope-specific
+  dir; the test scope also searches the main mirror, since test code can reference the module's main
+  annotation-processor output.
+
+**Verification** (re-captured Helidon with the fixed build, Corretto 26):
+
+| Check | Before | After |
+|---|---|---|
+| Modules with generated Java but an empty main mirror | 71 / 93 | **2 / 93** (both a separate limitation — see below) |
+| `def WebServerConfig` / `.Builder` | no definition found | resolve into `.lathe/…/generated-sources/WebServerConfig.java` |
+| `sym WebServerConfig` | generated interface absent | `[Interface] WebServerConfig` + `WebServerConfigImpl` present |
+| Test converter (`generated-test-sources`) | in main mirror, 7 false errors | in `generated-test-sources`, diagnostics clean |
+
+Covered by unit tests (`GeneratedSourcesMirrorTest`, `ModuleSourceConfigTest`) and the `multi-module`
+invoker fixture, all green.
+
+### Residual (separate, pre-existing limitation)
+
+The 2 modules still showing an empty main mirror (`common/common`, `data/codegen/parser`) are **not**
+this bug: their generated Java lives under source roots *other than* the compiler's annotation-processor
+dir — build-helper `generated-sources/templates/` (`Version.java`) and ANTLR `generated-sources/antlr4/`
+(`MethodName.java`, `QueryParams.java`). Lathe mirrors only `getGeneratedSourcesDirectory()` (the
+`…/annotations` dir), so plugin-added generated roots are not captured. Both were empty before and after
+this fix. A follow-up could mirror all compile-source roots that fall under `target/generated-sources`.
 
 Everything else tested — cross-module references, callers/callees, implementations, type hierarchy,
 rename (incl. overload precision), definition into dependencies/JDK, workspace symbol (CamelHumps),
@@ -241,13 +281,10 @@ calling a rename/refs exclusion a "miss".
 
 ## Suggested next steps
 
-1. **Fix GAP 1 + GAP 2 together** (one bug) — in `LatheCompiler.syncOutput`, mirror the
-   generated-sources dir to a **scope-specific** destination (main → `generated-sources`,
-   test → `generated-test-sources`) instead of the shared `LatheLayout.GENERATED_SOURCES`, and add
-   each to the correct `SourceScope` sourcepath in the server. Re-run capture and re-count populated
-   vs empty. A regression test: a module with tests but no test-generated sources must keep its main
-   generated sources mirrored.
-2. Add a `rename` probe to `dev/explore.py`.
-4. The upcoming **MCP** exercise will hit the same capture: `get_definition` / `search_symbols` /
-   `describe_symbol` on Helidon generated types will fail for the 71 empty-mirror modules until GAP 1
-   is fixed — worth validating there too.
+1. ✅ **Done** — GAP 1 + GAP 2 fixed (scope-split mirror); see [Resolution](#resolution).
+2. **Follow-up (optional):** mirror plugin-added generated-source roots under `target/generated-sources`
+   (build-helper `templates/`, ANTLR `antlr4/`), not just the annotation-processor dir — the
+   [residual](#residual-separate-pre-existing-limitation) 2-module case.
+3. Add a `rename` probe to `dev/explore.py` (rename currently has no probe command).
+4. The upcoming **MCP** exercise reads the same capture: with the fix in place, `get_definition` /
+   `search_symbols` / `describe_symbol` on Helidon generated types now resolve — worth confirming there.
