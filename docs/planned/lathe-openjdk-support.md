@@ -22,9 +22,9 @@ Findings below are grounded in a read of `openjdk/jdk` at the makefile level
 
 Give a developer on the **OpenJDK source tree** the same "the tool understands my build" experience
 Lathe gives Maven/Gradle users: javac-accurate diagnostics, completion, and cross-module navigation for
-the JDK's own Java modules — including the module-system flags (`--system none`, `--release`,
-`--add-exports`, `--patch-module`) and generated sources that the JDK's own `make idea` / `make eclipse`
-generators drop. Register once, build once, point the editor at the cache.
+the JDK's own Java modules — including the module-system flags (`--system none`, `--add-exports`,
+`--patch-module`, and the `-source/-target` level) and generated sources that the JDK's own
+`make idea` / `make eclipse` generators drop. Register once, build once, point the editor at the cache.
 
 ## Architectural constraint — `.lathe/` is the seam
 
@@ -36,7 +36,7 @@ relevant subset for the MVP:
 | File | Schema (`lathe-core`) | Produced by (OpenJDK) |
 |---|---|---|
 | `.lathe/<module>/lsp-params-<tree>.json` | `ModuleConfigData` | read from the build's per-module compile descriptors |
-| `.lathe/<module>/{classes}` | (mirrored bytecode) | mirror `<jdk-out>/modules/<module>` |
+| `.lathe/<module>/classes` | (mirrored bytecode) | mirror `<jdk-out>/modules/<module>` |
 | `.lathe/<module>/lsp-stamps-<tree>.json` | `CompiledStampsData` | source mtimes at capture time |
 | `.lathe/workspace.json` | `WorkspaceManifestData` | module map from `FindAllModules` |
 
@@ -80,7 +80,7 @@ the three obvious alternatives (see [Alternatives](#alternatives-considered)).
   build descriptors, plus the bytecode mirror and compile stamps.
 - Multiple source roots per module (share + OS overlays + generated sources) with correct override
   precedence.
-- Module-system flags (`--system none`, `--release`, `--module-source-path`, `--module-path`,
+- Module-system flags (`--system none`, `-source/-target`, `--module-source-path`, `--module-path`,
   `--add-exports`, `--patch-module`) carried through verbatim.
 - `workspace.json` for the ~66-module set; registration and `.lathe/` opt-in gating.
 - The in-process add/edit/delete refresh model, reused from
@@ -134,8 +134,9 @@ The JDK's Java layout is unusual enough to state explicitly, because it drives t
   `VarHandle` families, `CharacterData`, module loader maps, …) is generated. Editing without gensrc on
   the source path yields a flood of false errors.
 - **Module-graph compilation, not classpath.** Each module compiles with `--module-source-path` +
-  `--module-path` + `--system none` + `--release` (`CompileJavaModules.gmk:105-128`); output to
-  `<build>/jdk/modules/<module>/`.
+  `--module-path` + `--system none` + `-source/-target N` (`TARGET_RELEASE_NEWJDK`,
+  `CompileJavaModules.gmk:105-128` / `JavaCompilation.gmk:48`) — **not `--release`** (that is only the
+  JDK 8 legacy path); output to `<build>/jdk/modules/<module>/`.
 - **Tests live in a separate tree** (`test/jdk`, `test/langtools`, …) under jtreg — not a Maven
   `src/test/java` layout, not JUnit/Surefire.
 
@@ -162,7 +163,7 @@ reader:
 2. **drops build-mechanics flags** — `-XDmodifiedInputs=…`, the API-digest plugin (`-Xplugin:"depend …"`,
    `-XDinternalAPIPath`, `-XDLOG_LEVEL`), `-d <dir>` (we set our own `outputDir`), `-h <dir>` (native
    headers), and `@<filelist>` (read separately);
-3. **maps the rest** → `release`/source-level, `encoding`, `-cp` (usually empty), and the module directives
+3. **maps the rest** → `encoding`, `-cp` (usually empty), and the module directives
    `--module-source-path` / `--module-path` / `--system none` / `--add-exports` / `--add-reads` /
    `--patch-module` **carried verbatim — never inferred** (contrast the Gradle front-end, which must run a
    plexus-java split); the remaining `-g`/`-Xlint…`/`-implicit:none`/`-XDstringConcat=inline` pass through
@@ -170,6 +171,14 @@ reader:
 
 Whitespace tokenization is safe: sources are behind `@filelist`, and path-valued flags are single
 `PathList` tokens (no spaces).
+
+**Source level must stay `-source/-target`, not `--release` — they conflict with `--system none`.** The
+JDK compiles main modules with `-source N -target N --system none` (not `--release`). This matters because
+`lathe-server`'s `ModuleSourceCompiler` emits `--release` from `ModuleConfigData.release`, and javac
+**rejects `--release` together with `--system`** (*"option --system cannot be used together with
+--release"*). So the OpenJDK reader **leaves `ModuleConfigData.release` empty** and carries `-source/-target
+N` inside `compilerArgs` alongside `--system none` — otherwise every module compile in the server would
+fail. (Verify against a live build; noted in open decisions.)
 
 **`sourceRoots` (ordered).** Preferred: the `make lathe` target dumps each module's `FindModuleSrcDirs`
 result (precedence-ordered), exactly as `make idea` dumps `MODULE_ROOTS` — authoritative, and these *are*
@@ -202,8 +211,9 @@ The JDK is the hardest possible JPMS case — every module is real, `java.base` 
 bootstrap, and nothing is a plain classpath library — yet capture makes it **easy**, because the module
 directives are not inferred, they are read:
 
-- **Module path / `--system none` / `--add-exports` / `--patch-module`** are all literally in
-  `_the.<module>.vardeps`. Carried through verbatim; no plexus-java placement step, unlike Gradle.
+- **Module path / `--system none` / `--add-exports` / `--patch-module`** are all literally in the captured
+  command (`_the.<module>_batch.cmdline`). Carried through verbatim; no plexus-java placement step, unlike
+  Gradle.
 - **`module-info.java`** is the single share-tree marker per module.
 - No whitebox-test quadrant in the MVP (tests are out of scope), so the subtle case that dominates the
   Gradle design does not arise here.
@@ -318,8 +328,9 @@ resolution — it just never asks the user to modify it.)
 authoritative source — the configured build's own output, not a guessed conf name. Run standalone
 without it, the goal scans `build/*/spec.gmk`; with several configs it requires an explicit
 `-Dlathe.buildDir` rather than guessing. Within the build dir it discovers modules by scanning
-`jdk/modules/*/` for `_the.<module>.vardeps`, and **logs any modules skipped** because they were not
-built (partial builds like `make java.base-java-only` capture only what is present — no silent
+`jdk/modules/*/` for `_the.<module>_batch.cmdline` (the primary capture artifact, and the same
+`_the.*_batch` family the freshness check keys off), and **logs any modules skipped** because they were
+not built (partial builds like `make java.base-java-only` capture only what is present — no silent
 truncation).
 
 **Offline / air-gapped** JDK CI runs `mvn -o` against a pre-populated `~/.m2`.
@@ -348,8 +359,8 @@ Then open the repo in any Lathe editor client (Neovim, VS Code, Emacs, IntelliJ-
 unchanged). The developer immediately gets javac-accurate:
 
 - **diagnostics that match the build**, with `--add-exports` / `--patch-module` / `--system none` /
-  `--release` honoured — no false errors of the kind `make idea`/`make eclipse` produce by dropping the
-  module flags;
+  `-source/-target` honoured — no false errors of the kind `make idea`/`make eclipse` produce by dropping
+  the module flags;
 - **completion / hover / signature help** over the real module graph;
 - **go-to-definition / find-references across all ~66 modules** (e.g. `java.desktop` → `java.base`),
   resolving to real source, not stubs;
@@ -378,6 +389,54 @@ The mental model is identical to Maven/Gradle Lathe — *file edits are in-proce
 changes need a sync* — with one OpenJDK twist: `module-info` edits carry more weight here because they
 drive the module flags. Refresh is scoped and fast via the build's own incrementality:
 `make <module>-java-only lathe` runs in milliseconds when nothing else changed.
+
+## Freshness & staleness
+
+Two kinds of freshness, handled very differently. Most of the machinery is reused; only the build-shape
+detection is new and OpenJDK-specific.
+
+**Per-source edit freshness — self-healing, reuse the shipped stamps.** Lathe already ships per-source
+compile stamps (`CompiledStampsData` in `.lathe/<module>/lsp-stamps-<tree>.json`; `isStaleSource` compares
+a source's live mtime to its recorded stamp). For Maven these are written by `LatheCompiler.syncOutput`;
+here the **`sync` goal writes them** — it already reads `_the.<module>_batch.filelist`, so it stats each
+listed source and records its mtime. The consequence is that **edits need no freshness detection at all**:
+an edited file's mtime exceeds its stamp, so the server marks it stale and analyzes it **in-process** (the
+source overlay), giving live diagnostics whether or not `make`/`make lathe` ran. This falls out of the
+existing stamp + in-process-analysis path unchanged.
+
+**Build-shape freshness — detected, then prompted.** The only case that truly needs a re-sync is a
+configuration change (the "Yes" rows above: `module-info`/flags, a new module or source root, a gensrc
+regeneration, or `make reconfigure` / a different `build/<conf>`). The build hands us a free marker:
+`SetupJavaCompilation` **touches `_the.<module>_batch` after every module compile** (`JavaCompilation.gmk:518`),
+so its mtime is that module's last-compile time. So:
+
+- `sync` records each module's `_the.<module>_batch` mtime (and the `spec.gmk`/conf identity) at capture.
+- A lightweight check (on file-open / the existing watcher tick) compares the current marker mtime against
+  the recorded one; newer ⇒ the module was rebuilt since capture ⇒ its params may be stale.
+- The response is a **prompt, never an action** — the analog of Maven's POM-change prompt: *"`java.base`
+  changed since last sync; run `make java.base-java-only lathe`"*, optionally surfaced as a
+  command/code-action. **The server never runs `make`** (same rule as LSP never running Maven).
+
+**The mirror's staleness is low-severity here.** Because JDK modules compile with
+`--module-source-path <all sources> --system none`, the analysis javac resolves cross-module types **from
+source**, not from the bytecode mirror. So a stale mirror barely affects code intelligence — what actually
+matters is picking up **new files / changed config**, which is exactly what the prompt covers. The mirror
+still feeds the reactor type-index, so `sync` refreshes it, but its staleness is not correctness-critical
+the way it is for Maven's dependency jars.
+
+**Maintaining it.** Primary: scoped `make <module>-java-only lathe` (ms when nothing changed — the analog
+of `mvn process-test-classes`). Optional: the `make lathe` include can wire `lathe` as a
+finalizer/dependency of the module `-java` targets so every `make <module>-java` also refreshes capture,
+approaching Maven's build-bound automatic sync — opt-in, since it touches the build graph; the default
+stays explicit. A filesystem watch over all ~66 modules' markers is **out of the MVP** (heavier than the
+file-open check + explicit re-sync warrant).
+
+| Concern | Mechanism | New? |
+|---|---|---|
+| Per-source edit freshness | `CompiledStampsData` stamps + `isStaleSource` + in-process analysis | reused; `sync` writes the stamps |
+| Structural add/edit/delete reaction | [In-Process Workspace Sync](../done/lathe-in-process-workspace-sync.md) | reused unchanged |
+| Build-shape re-sync detection | compare `_the.*_batch` marker mtime vs recorded; prompt `make lathe` | **new, small, OpenJDK-specific** |
+| Automatic refresh | `lathe` finalizer on `-java` targets | new, optional |
 
 ## Testing (end-to-end)
 
@@ -433,12 +492,15 @@ rebuild is an explicit case (proves the in-process refresh model).
 
 1. **Server-JVM pinning (the load-bearing assumption).** javac fidelity requires launching the server on
    a javac ≥ the mainline feature version (28 today). Verify the cache launcher can **pin the server's
-   JVM per workspace** (to an EA or the built image), and confirm `--release`/`--system none` behave on an
-   EA javac. This is the item that decides whether the feature is low-risk — the flag capture is the easy
-   part. See [javac fidelity](#javac-fidelity--the-servers-runtime-jdk-the-real-hard-part).
-2. **Descriptor parse stability** — the exact on-disk content of `_the.<module>_batch.cmdline` /
-   `_the.<module>.vardeps` is confirmed from the makefiles but not yet from a live build; lock it against
-   a real `make java.base` before finalizing the parser. *Gates implementation of the reader.*
+   JVM per workspace** (to an EA or the built image), and confirm `-source/-target` + `--system none`
+   behave on an EA javac. This is the item that decides whether the feature is low-risk — the flag capture
+   is the easy part. See [javac fidelity](#javac-fidelity--the-servers-runtime-jdk-the-real-hard-part).
+2. **Descriptor parse stability + source-level mapping** — the exact on-disk content of
+   `_the.<module>_batch.cmdline` / `_the.<module>.vardeps` is confirmed from the makefiles but not yet from
+   a live build; lock it against a real `make java.base` before finalizing the parser. Confirm in the same
+   pass that carrying `-source/-target` + `--system none` (with `ModuleConfigData.release` left empty)
+   compiles cleanly in the server — i.e. that we correctly avoid the `--release`/`--system` conflict.
+   *Gates implementation of the reader.*
 3. **Minimum JDK / build version** — confirm the descriptor mechanism and `SRC_SUBDIRS`/`FindAllModules`
    contracts across the JDK versions Lathe intends to support (they are stable but version-check).
 4. **Multi-root override representation** — carry ordered `sourceRoots` and rely on the server's
