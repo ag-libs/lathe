@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed.** Lathe today derives its whole model from a **Maven** build (the
+**Proposed — core feasibility PoC-validated (2026-09-30).** Lathe today derives its whole model from a **Maven** build (the
 [Maven extension](../done/lathe-maven-extension.md) injects the compiler shim and `init`/`sync` goals),
 with a **Gradle** front-end designed in parallel ([Gradle Support](lathe-gradle-support.md)). Both
 produce the same `.lathe/` contract that the language server, `lathe-test-runner`, the MCP server, and
@@ -16,7 +16,50 @@ scope for the MVP.
 
 Findings below are grounded in a read of `openjdk/jdk` at the makefile level
 (`make/common/JavaCompilation.gmk`, `make/CompileJavaModules.gmk`, `make/common/Modules.gmk`,
-`make/common/MakeBase.gmk`, `make/ide/idea`, `make/ide/eclipse`).
+`make/common/MakeBase.gmk`, `make/ide/idea`, `make/ide/eclipse`) **and, since 2026-09-30, a live build
+and a headless server probe** (see next section).
+
+## PoC validation (2026-09-30)
+
+Built `openjdk/jdk` mainline (feature **28**) with boot JDK 27 (`configure --with-boot-jdk=…27` then
+`make images`), then drove `lathe-server` headlessly (`dev/explore.py`) against a hand-written `.lathe/`
+for a single module (`java.base`), with the server **hosted on the build's own `build/…/images/jdk`**
+(`javac 28-internal`). This exercised the two things the makefile read could not settle: does the captured
+flag set actually analyze cleanly *inside the server*, and does the javac-fidelity story hold without an
+external download.
+
+**Confirmed working:**
+
+- **No-download javac path.** The build's own `images/jdk` is a version-exact javac 28 that hosts the
+  server — no EA download needed. `-source 28` compiles (the boot-27 javac cannot: *"invalid source
+  release: 28"*), and `-source 28 -target 28 --system none` coexist (no `--release`/`--system` conflict).
+- **Module-mode analysis is clean.** With `ModuleConfigData.release` empty and `compilerArgs` carrying
+  `-source 28 -target 28 --module-source-path <gensrc/*:src/*/{linux,unix,share}/classes> --system none`
+  plus a **synthetic `--patch-module <module>=.`**, the server compiled a real java.base file
+  (`ArrayList.java`) with **zero errors**. Hover on a cross-referenced type resolved its Javadoc from
+  **java.base source** (`source: java.base`) — proving `--system none` makes platform types resolve from
+  the source tree, not the host runtime. Source and runtime never mix.
+- **The server's existing `--patch-module` handling is the overlay mechanism.** `ModuleSourceCompiler`
+  writes the edited buffer to a temp dir and rewrites any `--patch-module <mod>=…` to point at that temp
+  dir. A single-file module compile fails *without* this (*"not in a module on the module source path"*)
+  and succeeds *with* it — so the reader emits a synthetic `--patch-module <module>=.` per module and the
+  existing server does the rest.
+
+**One required server change (revises the "no server change" claim below).** Any *second* compile pass
+throws `--module-source-path specified more than once` — the file manager is reused across passes and
+javac forbids re-applying a `--module-source-path` (both the `*`-pattern and the module-specific form).
+**Fix:** hoist `--module-source-path` (and `--system`) into a **one-time `fm.handleOption` in the
+`ModuleSourceCompiler` constructor** and strip them from the per-compile options — exactly symmetric to
+the existing `processPatchModules`. Small and well-scoped; it is the one server touch this feature needs,
+and it unblocks both live diagnostics and cross-module analysis (the `*`-pattern spans all 66 modules).
+
+**Incumbent comparison, now read from the generators (not inferred).** `make idea` and `make eclipse`
+**deliberately drop the entire module system** — no `--module-source-path` / `--system none` /
+`--add-exports` / `--patch-module`; Eclipse *excludes every `module-info.java`* (generator comment: it
+"crashes when processing multiple module-info.java files … not been fixed for some time");
+IntelliJ excludes `src/build/make/test` from its own compiler. Neither invokes real javac (IntelliJ's own
+builder; Eclipse's ECJ). This is structural, so it will not self-improve — and it is precisely the gap
+Lathe closes by replaying the real javac invocation.
 
 ## Goal
 
@@ -94,13 +137,21 @@ the three obvious alternatives (see [Alternatives](#alternatives-considered)).
   in-fork capture does not apply. A jtreg launch-capture is a separate, later design.
 - HotSpot / native (C/C++) code — Lathe is Java-only.
 - The langtools bootstrap (interim compiler) as a *build* concern — transparent to capture.
-- Any change to the server, runner, MCP server, clients, or the `.lathe/` schema.
+- Any change to the runner, MCP server, clients, or the `.lathe/` schema. **One small `lathe-server`
+  change is required** — hoisting `--module-source-path`/`--system` to a one-time file-manager option (see
+  [PoC validation](#poc-validation-2026-09-30)); this was discovered by the probe and revises the
+  original "server untouched" goal.
 
 ## What is reused vs new
 
 **Reused unchanged:** `lathe-core` (schema, `LatheLayout`, `LatheFlags`, `LatheWorkspace`, `LatheLock`,
-type-index), `lathe-server`, `lathe-mcp-server`, all editor clients, and the in-process workspace-sync
-reaction in the server.
+type-index), `lathe-mcp-server`, all editor clients, and the in-process workspace-sync reaction in the
+server.
+
+**One small `lathe-server` change (discovered by the PoC):** `ModuleSourceCompiler` must set
+`--module-source-path`/`--system` **once** on its reused file manager (constructor-time `fm.handleOption`)
+rather than passing them per-compile, because javac rejects re-applying a `--module-source-path`. Symmetric
+to the existing `processPatchModules`; scoped to one class. See [PoC validation](#poc-validation-2026-09-30).
 
 **Not needed here:** `lathe-junit` / `lathe-test-runner` (no MVP test capture); **plexus-java
 `LocationManager`** (the module/classpath split is explicit in the captured flags, so nothing to infer);
@@ -128,7 +179,10 @@ The JDK's Java layout is unusual enough to state explicitly, because it drives t
   10, …). **First-found wins** — an OS-specific file overrides the shared one of the same name
   (`JavaCompilation.gmk:367`). So one module routinely has 3–4 source roots with ordering that must be
   preserved.
-- **`module-info.java` lives only in `share/classes`** — one per module.
+- **`module-info.java` — one per module, in `share/classes` or generated.** Most modules keep it in
+  `share/classes`; some (e.g. `java.base`, which needs build-computed module hashes) have it **generated**
+  into `<build>/support/gensrc/<module>/module-info.java`. Either way it is listed in the `.filelist`, so
+  capture reads it from there rather than assuming a fixed location.
 - **Generated sources are first-class and large.** `GENERATED_SRC_DIRS` (`Modules.gmk:67`) folds
   `<build>/support/gensrc` into every module's roots; much of `java.base` (charset coders, `Buffer` /
   `VarHandle` families, `CharacterData`, module loader maps, …) is generated. Editing without gensrc on
@@ -161,13 +215,17 @@ reader:
 1. **strips the launcher prefix** — everything up to and including `…com.sun.tools.javac.Main` (interim
    compiler) or `javacserver.Main --conf=<f>` (javac-server mode); the rest are javac args;
 2. **drops build-mechanics flags** — `-XDmodifiedInputs=…`, the API-digest plugin (`-Xplugin:"depend …"`,
-   `-XDinternalAPIPath`, `-XDLOG_LEVEL`), `-d <dir>` (we set our own `outputDir`), `-h <dir>` (native
-   headers), and `@<filelist>` (read separately);
-3. **maps the rest** → `encoding`, `-cp` (usually empty), and the module directives
-   `--module-source-path` / `--module-path` / `--system none` / `--add-exports` / `--add-reads` /
-   `--patch-module` **carried verbatim — never inferred** (contrast the Gradle front-end, which must run a
-   plexus-java split); the remaining `-g`/`-Xlint…`/`-implicit:none`/`-XDstringConcat=inline` pass through
-   as `compilerArgs`.
+   `-XDinternalAPIPath`, `-XDLOG_LEVEL`) **and the `-cp` that loads it** (a live `java.base` carries
+   `-cp "<build>/buildtools/depend:<build>/jdk/modules"` — the depend-plugin classes plus the
+   compiled-module output dir, both build-local — not a user classpath), `-d <dir>` (we set our own
+   `outputDir`), `-h <dir>` (native headers), and `@<filelist>` (read separately);
+3. **maps the rest** → `encoding` and the module directives
+   `--module-source-path` / `--module-path` (empty on a live `java.base`) / `--system none` /
+   `--add-exports` / `--add-reads` / `--patch-module` **carried verbatim — never inferred** (contrast the
+   Gradle front-end, which must run a plexus-java split); the remaining
+   `-g`/`-Xlint…`/`-implicit:none`/`-source N`/`-target N`/`-XDstringConcat=inline` pass through as
+   `compilerArgs`. The module compile carries **no user classpath** — the only `-cp` present is the
+   depend plugin's, dropped above.
 
 Whitespace tokenization is safe: sources are behind `@filelist`, and path-valued flags are single
 `PathList` tokens (no spaces).
@@ -178,7 +236,8 @@ JDK compiles main modules with `-source N -target N --system none` (not `--relea
 **rejects `--release` together with `--system`** (*"option --system cannot be used together with
 --release"*). So the OpenJDK reader **leaves `ModuleConfigData.release` empty** and carries `-source/-target
 N` inside `compilerArgs` alongside `--system none` — otherwise every module compile in the server would
-fail. (Verify against a live build; noted in open decisions.)
+fail. (Confirmed on a live `make java.base`: the command carries `-source 28 -target 28 --system none`
+and no `--release`; the server-side compile with these flags is still to be verified — open decision 2.)
 
 **`sourceRoots` (ordered).** Preferred: the `make lathe` target dumps each module's `FindModuleSrcDirs`
 result (precedence-ordered), exactly as `make idea` dumps `MODULE_ROOTS` — authoritative, and these *are*
@@ -214,7 +273,8 @@ directives are not inferred, they are read:
 - **Module path / `--system none` / `--add-exports` / `--patch-module`** are all literally in the captured
   command (`_the.<module>_batch.cmdline`). Carried through verbatim; no plexus-java placement step, unlike
   Gradle.
-- **`module-info.java`** is the single share-tree marker per module.
+- **`module-info.java`** is the single per-module descriptor — in `share/classes`, or generated into
+  `support/gensrc/<module>/` (as `java.base`'s is); read from the `.filelist` either way.
 - No whitebox-test quadrant in the MVP (tests are out of scope), so the subtle case that dominates the
   Gradle design does not arise here.
 
@@ -264,8 +324,16 @@ the build — and more accurate than IntelliJ on precisely those features.
 
 **Residual costs (stated honestly):** it is a moving target (28 now, 29 next) — but "use a new-enough
 javac" is launcher config, not a code change; and the narrow gap (syntax in mainline but not yet in any
-EA) is closed only by the built-image tier. The load-bearing assumption to verify is that the launcher
-can **pin the server's JVM per workspace** (see open decisions).
+EA) is closed only by the built-image tier.
+
+**Per-workspace JVM pin — the mechanism (PoC-validated approach).** `sync` writes `.lathe/java-home` (a
+symlink or one-line file, git-ignored) pointing at a javac ≥ the tree's feature version — by default the
+build's own `images/jdk` (fall back to the exploded `build/…/jdk`). The cache launcher runs with cwd = the
+workspace root, so it reads the pin without a client or server-jar change:
+`if [ -e .lathe/java-home ]; then JH=$(cat .lathe/java-home); exec "$JH/bin/java" … ; else exec java … ; fi`.
+If no JDK ≥ the feature version is found, `sync` **fails loudly** with the one-line instruction rather than
+letting the server boot on a too-old javac. The PoC confirmed the no-download built-image path works
+(server hosted on `images/jdk`); wiring `.lathe/java-home` is the remaining launcher work.
 
 ## Run and test — jtreg (deferred)
 
@@ -275,6 +343,42 @@ depends on the `lathe-junit` `LauncherSessionListener` firing inside a **JUnit P
 (Surefire, or Gradle's worker); jtreg is neither, so that mechanism does not port. Run/test/debug is
 therefore **out of the MVP**; developers keep using `make test`/jtreg as today. A jtreg-shaped launch
 capture (observing the JVM jtreg forks per `@run`) is a candidate follow-up, not part of this design.
+
+## Build-tool sources (follow-up, out of MVP)
+
+The MVP captures the ~66 `src/` **modules**. But the build compiles more Java than that — the langtools
+build tools, the JDK build tools, the javac-server, the interim langtools modules, the break-iterator
+generators — and **every one flows through the same `SetupJavaCompilation` macro**, so each leaves its own
+`_the.<name>_batch.cmdline` / `.filelist` under `<build>/buildtools/`. A live `make java.base` already
+drops, among others:
+
+```
+buildtools/langtools_tools_classes/_the.BUILD_TOOLS_LANGTOOLS_batch.cmdline
+buildtools/jdk_tools_classes/_the.BUILD_TOOLS_JDK_batch.cmdline
+buildtools/langtools_javacserver_classes/_the.BUILD_JAVAC_SERVER_batch.cmdline
+buildtools/interim_langtools_modules/<mod>.interim/_the.BUILD_<mod>.interim_batch.cmdline
+```
+
+So the **same parser** could give javac-accurate LSP over `make/**/*.java` (e.g.
+`make/langtools/tools/previewfeature/SetupPreviewFeature.java`) for build/langtools contributors, with no
+new capture logic. The shape is actually **simpler** than the module capture:
+
+- **Plain classpath, not the module graph** — the build-tool command is `javac -cp … -d … @filelist` with
+  **no `--module-source-path` / `--system none` / `--add-exports`**. This is the classpath shape the Maven
+  front-end already handles.
+- **No javac-fidelity risk** — build tools compile `-source/-target N` at the **boot JDK** level (27 in the
+  captured build), not mainline, so any supported javac analyzes them. The version gate that dominates
+  `src/` does not apply here.
+- **A second launcher form** — the real `javac -J…` binary here, vs `… javacserver.Main --conf=<f>` for
+  modules. The `.cmdline` parser must recognise **both** launcher prefixes.
+- **On-demand tools may be absent in a partial build** — `SetupPreviewFeature.java` exists on disk but is
+  not compiled by `make java.base`, so it has no descriptor until the target that needs it runs; the same
+  capture-present-and-log-skipped policy applies.
+
+Deferred because it is a distinct "workspace" (its own `.lathe/` pseudo-modules and enumeration) beyond the
+module set the MVP targets — but noted here because it is nearly free once Slice 1 lands, and it
+strengthens the "observe, don't reconstruct" story: essentially all Java the build compiles leaves a
+descriptor Lathe can read.
 
 ## `workspace.json`
 
@@ -461,8 +565,12 @@ rebuild is an explicit case (proves the in-process refresh model).
 
 1. **Descriptor capture (`ModuleConfigData` + mirror + stamps)** — the `.cmdline` parser (launcher strip,
    flag mapping) over one module's `_the.*_batch.cmdline` / `_the.*_batch.filelist`, with multi-root
-   ordering, wired into the `sync` goal. Delivers code intelligence for a single module. **Pairs with the
-   server-JVM version gate** — this slice is only meaningful when the server runs on a javac ≥ mainline.
+   ordering, wired into the `sync` goal. The reader leaves `release` empty, carries `-source/-target` +
+   `--system none` + `--module-source-path` verbatim, and **emits a synthetic `--patch-module <module>=.`**
+   so the edited buffer overlays the module. **Includes the one `lathe-server` change** — hoist
+   `--module-source-path`/`--system` to a one-time `fm.handleOption` in `ModuleSourceCompiler` (PoC-proven
+   necessary) — and the `.lathe/java-home` JVM pin. Delivers live diagnostics for a single module; only
+   meaningful with the server on a javac ≥ mainline (the built image satisfies this with no download).
 2. **Full module set + `workspace.json`** — enumerate via `FindAllModules`; capture all ~66 modules;
    cross-module navigation. Completes the editor experience.
 3. **Registration + gating** — the `make lathe` target invoking the goal by canonical coordinate,
@@ -490,17 +598,21 @@ rebuild is an explicit case (proves the in-process refresh model).
 
 ## Open decisions
 
-1. **Server-JVM pinning (the load-bearing assumption).** javac fidelity requires launching the server on
-   a javac ≥ the mainline feature version (28 today). Verify the cache launcher can **pin the server's
-   JVM per workspace** (to an EA or the built image), and confirm `-source/-target` + `--system none`
-   behave on an EA javac. This is the item that decides whether the feature is low-risk — the flag capture
-   is the easy part. See [javac fidelity](#javac-fidelity--the-servers-runtime-jdk-the-real-hard-part).
-2. **Descriptor parse stability + source-level mapping** — the exact on-disk content of
-   `_the.<module>_batch.cmdline` / `_the.<module>.vardeps` is confirmed from the makefiles but not yet from
-   a live build; lock it against a real `make java.base` before finalizing the parser. Confirm in the same
-   pass that carrying `-source/-target` + `--system none` (with `ModuleConfigData.release` left empty)
-   compiles cleanly in the server — i.e. that we correctly avoid the `--release`/`--system` conflict.
-   *Gates implementation of the reader.*
+1. **Server-JVM pinning** — ✅ **approach validated (2026-09-30).** The server ran on the build's own
+   `images/jdk` (version-exact javac 28); `-source 28 -target 28 --system none` behave correctly. The
+   per-workspace pin is `.lathe/java-home` read by the cache launcher (see
+   [javac fidelity](#javac-fidelity--the-servers-runtime-jdk-the-real-hard-part)). **Remaining:** implement
+   the `.lathe/java-home` write in `sync` and the launcher's `exec "$JH/bin/java"` branch.
+2. **Descriptor parse stability + source-level mapping** — ✅ **confirmed against a live `make java.base`
+   (JDK 28 mainline, boot JDK 27, 2026-09-30).** `_the.java.base_batch.cmdline` is javac-server mode
+   (`… javacserver.Main --conf=<f>`); `-source 28 -target 28 --system none` are carried with **no
+   `--release`**; `--module-source-path` is a single `*`-glob in `gensrc → linux → unix → share` order;
+   `--module-path` is empty; the drop-list held except for a depend-plugin `-cp` (now folded into the parse
+   spec above). ✅ **Server-side confirmed too (probe, 2026-09-30):** carrying `-source/-target` + `--system
+   none` with `release` empty compiles a real java.base file cleanly inside the server — with the caveat
+   that `--module-source-path` must be hoisted to a one-time file-manager option (see
+   [PoC validation](#poc-validation-2026-09-30)) and the reader must emit a synthetic `--patch-module
+   <module>=.` so the edited buffer overlays the module.
 3. **Minimum JDK / build version** — confirm the descriptor mechanism and `SRC_SUBDIRS`/`FindAllModules`
    contracts across the JDK versions Lathe intends to support (they are stable but version-check).
 4. **Multi-root override representation** — carry ordered `sourceRoots` and rely on the server's
@@ -517,5 +629,6 @@ with a `build/*/spec.gmk` fallback that requires an explicit dir when several co
 ## Non-goals (this design)
 
 - jtreg run/test/debug in the MVP; HotSpot / native code; the langtools bootstrap as a build concern.
-- Any change to the server, runner, MCP server, clients, or the `.lathe/` schema — the whole point is
-  that they are untouched.
+- Any change to the runner, MCP server, clients, or the `.lathe/` schema. The one `lathe-server` change
+  (the `--module-source-path` hoist, [PoC validation](#poc-validation-2026-09-30)) is the sole exception —
+  small and localized; everything else downstream is untouched.
