@@ -60,8 +60,12 @@ compile flows through) to `DependOnVariable`:
   build (it is the build's own incremental-change mechanism, not a debug artifact).
 - It writes the full source list (the `@argfile`, **including generated sources**) to
   **`<jdk-out>/modules/<module>/_the.<module>_batch.filelist`** (`JavaCompilation.gmk:482`).
-- The compiled bytecode lands in **`<jdk-out>/modules/<module>/`**, and `ExecuteWithLog` additionally
-  records the exact command line.
+- `ExecuteWithLog` writes the **exact javac command line** to
+  **`<jdk-out>/modules/<module>/_the.<module>_batch.cmdline`** *unconditionally, before each compile*
+  (`MakeBase.gmk:370`) — not just on failure. This is the cleanest capture target (a real command that
+  references the `@filelist`), and it is what the reader parses; the `.vardeps` is a fallback/cross-check.
+- The compiled bytecode lands in **`<jdk-out>/modules/<module>/`** (intermixed with the `_the.*` marker
+  files).
 
 **Therefore the capture is: read the build's own descriptors.** No compiler replacement, no log
 parsing, no tree patching, no layout reconstruction. This is the purest form of "observe, don't
@@ -81,6 +85,8 @@ the three obvious alternatives (see [Alternatives](#alternatives-considered)).
 - `workspace.json` for the ~66-module set; registration and `.lathe/` opt-in gating.
 - The in-process add/edit/delete refresh model, reused from
   [In-Process Workspace Sync](../done/lathe-in-process-workspace-sync.md).
+- A **runtime-JDK version gate**: run the server on a javac ≥ the mainline feature version, else fail
+  loudly (see [javac fidelity](#javac-fidelity--the-servers-runtime-jdk-the-real-hard-part)).
 
 **Out (this design):**
 
@@ -135,22 +141,56 @@ The JDK's Java layout is unusual enough to state explicitly, because it drives t
 
 ## Capture — compiler arguments & the bytecode mirror
 
-For each module, the `sync` goal reads the two durable descriptors the build already wrote and produces
-`ModuleConfigData`:
+Capture per module is **three reads and one copy**: parse `.cmdline` for the flags, read `.filelist`
+for the sources, take the module dir (minus `_the.*`) as the bytecode mirror. The file inventory under
+`<jdk-out>/modules/<module>/`:
 
-| `ModuleConfigData` | Source in the OpenJDK build |
-|---|---|
-| `sourceRoots` (ordered) | `FindModuleSrcDirs` result / the roots implied by the filelist — share + OS overlays + gensrc, precedence preserved |
-| `classpath` | the `-cp` entry in `_the.<module>.vardeps` (usually empty for modules) |
-| `modulepath` / module flags | `--module-source-path`, `--module-path`, `--system none` from the vardeps — carried verbatim, **not inferred** |
-| `compilerArgs` (incl. `--add-exports`, `--patch-module`, `-XD…`, `-Xlint`) | the residual flags in the vardeps |
-| `release` / `encoding` | `--release`/`-source/-target` and `-encoding utf-8` from the vardeps |
-| `outputDir` | `<jdk-out>/modules/<module>` |
-| (source files) | `_the.<module>_batch.filelist` — the exact `@argfile`, gensrc included |
+| File | Role | Use |
+|---|---|---|
+| `_the.<module>_batch.cmdline` | the real javac command line (always written, `MakeBase.gmk:370`) | **primary — parse flags** |
+| `_the.<module>_batch.filelist` | the `@argfile`: every source file, gensrc included | source list → roots/stamps |
+| `_the.<module>.vardeps` | change-detection fingerprint (`<var>_old := <cmd> <flags> <meta>`) | fallback / cross-check |
+| `_the.<module>_batch.log`, `_the.<module>_batch[.modfiles[.fixed]]`, `_the.<module>.config_vardeps`, `_the.<module>-javacserver.conf`, `_the.<module>_pubapi`, `_the.<module>_internalapi` | build plumbing (logs, incremental, javac-server, API digest) | ignore |
+| `<pkg>/**/*.class`, `module-info.class` | compiled bytecode | **mirror** (everything except `_the.*`) |
 
-The **bytecode mirror** copies `<jdk-out>/modules/<module>/` into `.lathe/<module>/classes`, and stamps
-record source mtimes at capture time — the same shape as `LatheCompiler.syncOutput` and the
-[compile-stamps design](../done/lathe-completion-expectations.md).
+**Parsing `.cmdline` → `ModuleConfigData`.** The command is
+`<launcher> <FLAGS> <API_DIGEST_FLAGS> -XDmodifiedInputs=<f> -d <BIN> <HEADERS_ARG> @<FILELIST>`, so the
+reader:
+
+1. **strips the launcher prefix** — everything up to and including `…com.sun.tools.javac.Main` (interim
+   compiler) or `javacserver.Main --conf=<f>` (javac-server mode); the rest are javac args;
+2. **drops build-mechanics flags** — `-XDmodifiedInputs=…`, the API-digest plugin (`-Xplugin:"depend …"`,
+   `-XDinternalAPIPath`, `-XDLOG_LEVEL`), `-d <dir>` (we set our own `outputDir`), `-h <dir>` (native
+   headers), and `@<filelist>` (read separately);
+3. **maps the rest** → `release`/source-level, `encoding`, `-cp` (usually empty), and the module directives
+   `--module-source-path` / `--module-path` / `--system none` / `--add-exports` / `--add-reads` /
+   `--patch-module` **carried verbatim — never inferred** (contrast the Gradle front-end, which must run a
+   plexus-java split); the remaining `-g`/`-Xlint…`/`-implicit:none`/`-XDstringConcat=inline` pass through
+   as `compilerArgs`.
+
+Whitespace tokenization is safe: sources are behind `@filelist`, and path-valued flags are single
+`PathList` tokens (no spaces).
+
+**`sourceRoots` (ordered).** Preferred: the `make lathe` target dumps each module's `FindModuleSrcDirs`
+result (precedence-ordered), exactly as `make idea` dumps `MODULE_ROOTS` — authoritative, and these *are*
+top-level make functions so no macro patching is needed. Fallback (standalone): derive roots from the
+`.filelist` by matching each file against the known boundaries (`…/src/<mod>/{os,os-type,share}/classes/`,
+`…/support/gensrc/<mod>/`) and ordering by the `SRC_SUBDIR` precedence (`Modules.gmk:81`).
+
+**Why parse `.cmdline` rather than have make dump the flags?** The per-module `$1_FLAGS` is internal to
+`SetupJavaCompilation`'s eval — not a top-level make variable — so make cannot echo it without *patching*
+the macro (rejected). `.cmdline` is how those flags escape to disk. So the clean division is: **make
+dumps the top-level facts it does expose** (module list, `FindModuleSrcDirs`, `SUPPORT_OUTPUTDIR`, boot
+JDK — `env.cfg`-style, no JSON), and **the plugin parses `.cmdline` for the flags** and writes
+schema-correct `.lathe/` via `lathe-core`.
+
+The **bytecode mirror** copies `<jdk-out>/modules/<module>/` into `.lathe/<module>/classes`, **excluding
+the `_the.*` markers**; stamps record source mtimes at capture time — the same shape as
+`LatheCompiler.syncOutput` and the [compile-stamps design](../done/lathe-completion-expectations.md).
+
+Two policy decisions: **keep `-Xlint…` but drop `-Werror`** — the editor should show the build's warnings
+as warnings, not fail-fatal errors; and **`.cmdline` is primary, `.vardeps` the fallback** if a module
+dir lacks the `.cmdline`.
 
 The one genuinely OpenJDK-specific correctness point is **source-root ordering**: the editor must
 resolve the same OS-overlay file `javac` did, so `sourceRoots` preserves the `<os>` → `<os-type>` →
@@ -174,6 +214,48 @@ Solved for free by the descriptor capture: `_the.<module>_batch.filelist` alread
 files, and `FindModuleSrcDirs` already includes `<build>/support/gensrc/<module>` as a source root. The
 only requirement is that the build has run the `gensrc` phase before capture — which any normal `make`
 does. Navigation into a generated `CharacterData` or `VarHandle` resolves to the real generated file.
+
+## javac fidelity — the server's runtime JDK (the real hard part)
+
+Capturing the flags is the easy, stable part. The genuine risk is that **mainline JDK source uses a
+language level newer than most installed JDKs**, and Lathe analyzes with the javac of *its own runtime*:
+`JavaSourceCompiler.COMPILER = ToolProvider.getSystemJavaCompiler()` (an in-process `JavacTask`). So the
+analysis language level **equals the JDK the server is launched on** — nothing in the captured flags can
+change that.
+
+**The failure is binary, not gradual.** Mainline is JDK 28 (`version-numbers.conf`) and modules compile
+`-source 28 -target 28` (`JavaCompilation.gmk:48`). Passing `-source 28` to a javac older than 28 fails
+outright (*"invalid source release: 28"*) — **every** module errors, not just files using new syntax.
+The whole feature hinges on one variable: which JDK runs the server.
+
+**Half the problem is already handled.** Because the build uses `--system none --module-source-path …`,
+javac reads platform types (`java.lang.String`, …) **from the source tree, not its runtime**. So the
+runtime's *class library* being old doesn't matter — only the *compiler binary's language level* does.
+That reduces the risk to one dimension: the server's javac version.
+
+**That dimension is a launcher decision Lathe already owns.** `getSystemJavaCompiler()` binds to the
+launch JVM, and the cache launcher chooses it. The rule: **launch the server on a javac ≥ the mainline
+feature version.** Three tiers:
+
+| Tier | javac | Fidelity | Trade-off |
+|---|---|---|---|
+| Built image `<build>/images/jdk` (or the interim compiler) | in-tree, version-exact | perfect, incl. just-landed syntax | the JDK under development may be unstable |
+| **EA build of the feature version** (jdk.java.net) | stable, same feature version | finalized + preview features | lags mainline by one EA snapshot |
+| GA | once the version ships | fine post-release | n/a while the version is in development |
+
+The `sync` step already parsed the required release, so the launcher can **validate and fail loudly** —
+"this JDK source needs javac ≥ 28; the server is on 25 — point it at an EA or the built image" — instead
+of emitting a screen of false errors. That turns the scary failure into a one-line setup instruction.
+
+**This is a differentiator, not just a mitigation.** IntelliJ ships its own reimplemented parser, which
+structurally lags preview features (the exact "false red errors / IDE not compiling" complaint JDK
+developers report). Lathe uses a *real* javac, so on an EA or the in-tree compiler it is as accurate as
+the build — and more accurate than IntelliJ on precisely those features.
+
+**Residual costs (stated honestly):** it is a moving target (28 now, 29 next) — but "use a new-enough
+javac" is launcher config, not a code change; and the narrow gap (syntax in mainline but not yet in any
+EA) is closed only by the built-image tier. The load-bearing assumption to verify is that the launcher
+can **pin the server's JVM per workspace** (see open decisions).
 
 ## Run and test — jtreg (deferred)
 
@@ -301,14 +383,16 @@ drive the module flags. Refresh is scoped and fast via the build's own increment
 
 The obstacle is that a realistic fixture requires a **built JDK**, which is expensive. Two layers:
 
-1. **Descriptor-fixture unit tests.** Check in captured real `_the.<module>.vardeps` /
-   `_the.<module>_batch.filelist` samples (small, path-normalized) and assert the reader produces
-   the correct `ModuleConfigData` — including multi-root ordering, `--system none`, `--add-exports`, and
-   gensrc roots. No JDK build needed; runs in CI.
-2. **Cross-tool contract test (gated).** On a machine with a built JDK, run capture against
-   `build/<conf>`, then boot `lathe-server` against the produced `.lathe/` and assert javac-accurate
-   diagnostics on a known module (e.g. edit `java.base`, expect zero false errors; resolve a symbol into
-   another module and into gensrc). Gated behind a profile because of the build cost.
+1. **Descriptor-fixture unit tests.** Check in captured real `_the.<module>_batch.cmdline` /
+   `_the.<module>_batch.filelist` samples (small, path-normalized) and assert the parser produces
+   the correct `ModuleConfigData` — including launcher-prefix stripping, multi-root ordering,
+   `--system none`, `--add-exports`, `-Werror` dropped, and gensrc roots. No JDK build needed; runs in CI.
+2. **Cross-tool contract test (gated).** On a machine with a built JDK **and a javac ≥ the mainline
+   feature version**, run capture against `build/<conf>`, then boot `lathe-server` (on that javac — see
+   [javac fidelity](#javac-fidelity--the-servers-runtime-jdk-the-real-hard-part)) against the produced
+   `.lathe/` and assert javac-accurate diagnostics on a known module (e.g. edit `java.base`, expect zero
+   false errors; resolve a symbol into another module and into gensrc). Gated behind a profile because of
+   the build cost and the JDK-version requirement.
 
 **Fixture focus:** a multi-root module (share + OS overlay), a heavily-generated module (`java.base`),
 and a cross-module navigation case — so the structural claims are all under test. Add-file-without-
@@ -316,9 +400,10 @@ rebuild is an explicit case (proves the in-process refresh model).
 
 ## Slicing
 
-1. **Descriptor capture (`ModuleConfigData` + mirror + stamps)** — the reader over one module's
-   `_the.*.vardeps` / `_the.*_batch.filelist`, with multi-root ordering, wired into the `sync` goal.
-   Delivers code intelligence for a single module.
+1. **Descriptor capture (`ModuleConfigData` + mirror + stamps)** — the `.cmdline` parser (launcher strip,
+   flag mapping) over one module's `_the.*_batch.cmdline` / `_the.*_batch.filelist`, with multi-root
+   ordering, wired into the `sync` goal. Delivers code intelligence for a single module. **Pairs with the
+   server-JVM version gate** — this slice is only meaningful when the server runs on a javac ≥ mainline.
 2. **Full module set + `workspace.json`** — enumerate via `FindAllModules`; capture all ~66 modules;
    cross-module navigation. Completes the editor experience.
 3. **Registration + gating** — the `make lathe` target invoking the goal by canonical coordinate,
@@ -346,14 +431,19 @@ rebuild is an explicit case (proves the in-process refresh model).
 
 ## Open decisions
 
-1. **Descriptor parse stability** — the exact on-disk format of `_the.<module>.vardeps` (a make
-   `X_old := …` line) is confirmed from the makefiles but not yet from a live build; lock it against a
-   real `make java.base` before finalizing the reader. *This is the one item that gates implementation.*
-2. **Minimum JDK / build version** — confirm the descriptor mechanism and `SRC_SUBDIRS`/`FindAllModules`
+1. **Server-JVM pinning (the load-bearing assumption).** javac fidelity requires launching the server on
+   a javac ≥ the mainline feature version (28 today). Verify the cache launcher can **pin the server's
+   JVM per workspace** (to an EA or the built image), and confirm `--release`/`--system none` behave on an
+   EA javac. This is the item that decides whether the feature is low-risk — the flag capture is the easy
+   part. See [javac fidelity](#javac-fidelity--the-servers-runtime-jdk-the-real-hard-part).
+2. **Descriptor parse stability** — the exact on-disk content of `_the.<module>_batch.cmdline` /
+   `_the.<module>.vardeps` is confirmed from the makefiles but not yet from a live build; lock it against
+   a real `make java.base` before finalizing the parser. *Gates implementation of the reader.*
+3. **Minimum JDK / build version** — confirm the descriptor mechanism and `SRC_SUBDIRS`/`FindAllModules`
    contracts across the JDK versions Lathe intends to support (they are stable but version-check).
-3. **Multi-root override representation** — carry ordered `sourceRoots` and rely on the server's
+4. **Multi-root override representation** — carry ordered `sourceRoots` and rely on the server's
    first-found resolution, vs an explicit per-file override map. Ordered roots is the KISS default.
-4. **jtreg capture** — whether a future run/test slice observes the JVM jtreg forks per `@run`, or is
+5. **jtreg capture** — whether a future run/test slice observes the JVM jtreg forks per `@run`, or is
    left to the existing jtreg tooling. Out of scope now; noted so it is not assumed solved.
 
 **Settled** (earlier open questions, now decided): single `lathe-openjdk-maven-plugin` module with a
