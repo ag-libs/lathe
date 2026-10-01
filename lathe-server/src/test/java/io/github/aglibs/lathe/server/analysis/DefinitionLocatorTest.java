@@ -163,6 +163,35 @@ class DefinitionLocatorTest extends SampleFixture {
   }
 
   @Test
+  void locate_sameFile_overlayCompilationUnit_returnsRealWorkspaceFile(@TempDir final Path tempDir)
+      throws IOException {
+    // The compiler parses an open buffer from its temp overlay copy, so the attributed compilation
+    // unit's source file is that overlay path. Definition must resolve to the real workspace file
+    // under the source roots, never the detached overlay copy.
+    final var realRoot = tempDir.resolve("real");
+    Files.createDirectories(realRoot);
+    final var realFile = realRoot.resolve("Greeter.java");
+    Files.writeString(realFile, GREETER_SOURCE);
+
+    final var overlayFile = tempDir.resolve("Greeter.java");
+    Files.writeString(overlayFile, GREETER_SOURCE);
+
+    try (final var parsed = TestCompiler.parse(overlayFile)) {
+      final var greet = memberNamed(parsed.task().getElements().getTypeElement("Greeter"), "greet");
+      assertThat(parsed.trees().getPath(greet)).isNotNull();
+
+      final var location =
+          new DefinitionLocator(parsed.parser())
+              .locate(greet, parsed.trees(), List.of(realRoot), overlayFile.toUri().toString());
+
+      assertThat(location).isPresent();
+      assertThat(location.get().getUri())
+          .isEqualTo(realFile.toUri().toString())
+          .isNotEqualTo(overlayFile.toUri().toString());
+    }
+  }
+
+  @Test
   void locate_sameFile_enumConstantArgument_returnsDeclaration(@TempDir final Path tempDir)
       throws IOException {
     final var sourceFile = tempDir.resolve("EnumArgument.java");

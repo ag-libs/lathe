@@ -57,9 +57,13 @@ public final class DefinitionLocator {
     final var path = trees.getPath(element);
     if (path != null) {
       final var cu = path.getCompilationUnit();
-      // URI must come from the target's own compilation unit, not the open file (sourceUri): a
-      // cross-file target compiled in the same task would otherwise resolve to the open file.
-      final var targetUri = cu.getSourceFile().toUri().toString();
+      // Reconstruct the target's real workspace file: its compilation unit may be the compiler's
+      // temp overlay copy of an open buffer (/tmp/lathe-.../...), which opens detached with no
+      // language features. Fall back to the compilation unit only for generated/external sources.
+      final String targetUri =
+          findSourceFile(element, sourceRoots)
+              .map(file -> file.toUri().toString())
+              .orElseGet(() -> cu.getSourceFile().toUri().toString());
       try {
         final Optional<Position> position =
             SourceLocator.declarationNamePosition(
