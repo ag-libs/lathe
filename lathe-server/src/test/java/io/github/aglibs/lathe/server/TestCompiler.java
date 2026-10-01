@@ -126,7 +126,8 @@ public final class TestCompiler {
             false,
             false,
             null,
-            List.of());
+            List.of(),
+            null);
     final Path paramsFile = latheModuleDir.resolve(LatheLayout.paramsFileName("classes"));
     Json.write(config, paramsFile);
   }

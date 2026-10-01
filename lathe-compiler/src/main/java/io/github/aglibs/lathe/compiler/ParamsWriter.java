@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.compiler;
 
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.AnalysisMode;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -32,7 +33,8 @@ final class ParamsWriter {
             config.isParameters(),
             enablePreview(config),
             config.getProc(),
-            compilerArgs(config));
+            compilerArgs(config),
+            AnalysisMode.CLASSPATH);
     Json.write(moduleConfig, latheModuleDir.resolve(LatheLayout.paramsFileName(sourceTree)));
   }
 

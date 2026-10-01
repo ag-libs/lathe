@@ -17,10 +17,12 @@ public record ModuleConfigData(
     boolean parameters,
     boolean enablePreview,
     String proc,
-    List<String> compilerArgs) {
+    List<String> compilerArgs,
+    AnalysisMode analysisMode) {
 
   public ModuleConfigData {
     encoding = Objects.requireNonNullElse(encoding, "UTF-8");
+    analysisMode = Objects.requireNonNullElse(analysisMode, AnalysisMode.CLASSPATH);
     sourceRoots = sourceRoots != null ? List.copyOf(sourceRoots) : List.of();
     classpath = classpath != null ? List.copyOf(classpath) : List.of();
     modulepath = modulepath != null ? List.copyOf(modulepath) : List.of();
