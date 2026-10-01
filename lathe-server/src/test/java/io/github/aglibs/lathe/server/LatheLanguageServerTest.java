@@ -7,18 +7,26 @@ import static org.mockito.Mockito.mock;
 
 import com.google.gson.JsonParser;
 import io.github.aglibs.lathe.core.LatheFlags;
+import io.github.aglibs.lathe.core.LatheLayout;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.stream.Stream;
 import org.eclipse.lsp4j.InitializeParams;
+import org.eclipse.lsp4j.ServerCapabilities;
 import org.eclipse.lsp4j.TextDocumentSyncKind;
 import org.eclipse.lsp4j.WorkDoneProgressCancelParams;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class LatheLanguageServerTest {
+
+  @TempDir private Path root;
 
   @Test
   void createCapabilities_supportedFeatures_advertisesProviders() {
@@ -150,6 +158,42 @@ class LatheLanguageServerTest {
 
     assertThat(capabilities.getDocumentFormattingProvider()).isNull();
     server.shutdown().join();
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"google", "aosp"})
+  void initialize_styleFileInProcessEngine_advertisesFormatting(final String engine)
+      throws Exception {
+    writeStyle("{\"schemaVersion\":\"1\",\"formatter\":{\"engine\":\"%s\"}}".formatted(engine));
+
+    assertThat(initializeWithRoot(null).getDocumentFormattingProvider().getLeft()).isTrue();
+  }
+
+  @Test
+  void initialize_styleFileNone_overridesClientGoogleAndOmitsFormatting() throws Exception {
+    writeStyle("{\"schemaVersion\":\"1\",\"formatter\":{\"engine\":\"none\"}}");
+    final var clientGoogle =
+        JsonParser.parseString("{\"lathe\":{\"formatter\":\"google\"}}").getAsJsonObject();
+
+    assertThat(initializeWithRoot(clientGoogle).getDocumentFormattingProvider()).isNull();
+  }
+
+  private void writeStyle(final String json) throws Exception {
+    final Path latheDir = root.resolve(LatheLayout.LATHE_DIR);
+    Files.createDirectories(latheDir);
+    Files.writeString(latheDir.resolve(LatheLayout.STYLE_FILE), json);
+  }
+
+  private ServerCapabilities initializeWithRoot(final Object initOptions) throws Exception {
+    final var server = new LatheLanguageServer();
+    server.connect(mock(LanguageClient.class));
+    final var params = new InitializeParams();
+    params.setRootUri(root.toUri().toString());
+    params.setInitializationOptions(initOptions);
+
+    final var capabilities = server.initialize(params).get().getCapabilities();
+    server.shutdown().join();
+    return capabilities;
   }
 
   @Test

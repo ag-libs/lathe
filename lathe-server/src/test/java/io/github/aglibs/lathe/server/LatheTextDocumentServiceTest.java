@@ -13,6 +13,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
+import com.google.googlejavaformat.java.JavaFormatterOptions.Style;
 import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
@@ -198,7 +199,7 @@ class LatheTextDocumentServiceTest {
   @Test
   void formatting_enabled_delegatesToFormatter() throws Exception {
     service.initialize(tmp);
-    service.setFormatEngine(new GoogleFormatEngine());
+    service.setFormatEngine(new GoogleFormatEngine(Style.GOOGLE));
     service.didOpen(
         new DidOpenTextDocumentParams(
             new TextDocumentItem(URI, "java", 1, "class Foo {\nint x;\n}\n")));
@@ -211,7 +212,7 @@ class LatheTextDocumentServiceTest {
 
   @Test
   void rangeFormatting_anyProfile_returnsEmptyEdits() throws Exception {
-    service.setFormatEngine(new GoogleFormatEngine());
+    service.setFormatEngine(new GoogleFormatEngine(Style.GOOGLE));
     final var params = new DocumentRangeFormattingParams();
     params.setTextDocument(new TextDocumentIdentifier(URI));
     params.setRange(new Range(new Position(0, 0), new Position(0, 0)));

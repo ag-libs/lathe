@@ -2,11 +2,12 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.google.googlejavaformat.java.JavaFormatterOptions.Style;
 import org.junit.jupiter.api.Test;
 
 class FormattingTest {
 
-  private static final FormatEngine ENGINE = new GoogleFormatEngine();
+  private static final FormatEngine ENGINE = new GoogleFormatEngine(Style.GOOGLE);
 
   private static String formattedText(final String source) {
     final var edits = JavaFormatter.format(ENGINE, source);
