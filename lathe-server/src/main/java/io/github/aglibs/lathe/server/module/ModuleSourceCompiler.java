@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.module;
 
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
+import io.github.aglibs.lathe.core.schema.AnalysisMode;
 import io.github.aglibs.lathe.server.LatheUri;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
@@ -206,18 +207,28 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
   }
 
   private void initLocations() throws IOException {
-    final var classesDir = config.latheClassesDir();
-    Files.createDirectories(classesDir);
-    fm.setLocationFromPaths(StandardLocation.CLASS_OUTPUT, List.of(classesDir));
-    LOG.fine(() -> "[cache] CLASS_OUTPUT=%s".formatted(classesDir));
+    // MODULE_SYSTEM has no bytecode mirror: write throwaway output under the temp dir, not .lathe/.
+    final var classOutput =
+        config.analysisMode() == AnalysisMode.MODULE_SYSTEM
+            ? tempDir.resolve("classes")
+            : config.latheClassesDir();
+    Files.createDirectories(classOutput);
+    fm.setLocationFromPaths(StandardLocation.CLASS_OUTPUT, List.of(classOutput));
+    LOG.fine(() -> "[cache] CLASS_OUTPUT=%s".formatted(classOutput));
 
     final var genSourcesDir = config.generatedSourcesDir();
     Files.createDirectories(genSourcesDir);
     fm.setLocationFromPaths(StandardLocation.SOURCE_OUTPUT, List.of(genSourcesDir));
     LOG.fine(() -> "[cache] SOURCE_OUTPUT=%s".formatted(genSourcesDir));
 
+    // MODULE_SYSTEM resolves dependencies from the host JDK's module system plus the --patch-module
+    // overlay, so it sets no class/module path (no mirror) — unlike the Maven classpath model.
+    if (config.analysisMode() == AnalysisMode.MODULE_SYSTEM) {
+      return;
+    }
+
     final var classpath =
-        Stream.concat(Stream.of(classesDir), config.remappedClasspath().stream())
+        Stream.concat(Stream.of(classOutput), config.remappedClasspath().stream())
             .distinct()
             .toList();
     if (!classpath.isEmpty()) {

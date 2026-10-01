@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.module;
 
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.AnalysisMode;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -22,7 +23,8 @@ public record ModuleSourceConfig(
     boolean parameters,
     boolean enablePreview,
     String proc,
-    List<String> compilerArgs) {
+    List<String> compilerArgs,
+    AnalysisMode analysisMode) {
 
   public ModuleSourceConfig {
     sourceRoots = sourceRoots != null ? List.copyOf(sourceRoots) : List.of();
@@ -30,6 +32,7 @@ public record ModuleSourceConfig(
     modulepath = modulepath != null ? List.copyOf(modulepath) : List.of();
     processorPath = processorPath != null ? List.copyOf(processorPath) : List.of();
     compilerArgs = compilerArgs != null ? List.copyOf(compilerArgs) : List.of();
+    analysisMode = analysisMode != null ? analysisMode : AnalysisMode.CLASSPATH;
   }
 
   public Path latheClassesDir() {
@@ -118,7 +121,8 @@ public record ModuleSourceConfig(
         config.parameters(),
         config.enablePreview(),
         config.proc(),
-        config.compilerArgs());
+        config.compilerArgs(),
+        config.analysisMode());
   }
 
   private static List<Path> toPaths(final List<String> strings) {

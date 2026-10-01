@@ -93,7 +93,8 @@ public final class TestCompiler {
         false,
         false,
         null,
-        List.of());
+        List.of(),
+        null);
   }
 
   public static Path writeAt(final Path path, final String content, final long mtimeMillis)

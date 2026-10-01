@@ -69,7 +69,8 @@ class ModuleNameDiscoveryTest {
         false,
         false,
         null,
-        List.of());
+        List.of(),
+        null);
   }
 
   private static void writeModule(
