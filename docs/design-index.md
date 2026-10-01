@@ -142,6 +142,9 @@ reused):
   the sanctioned successor to per-project `-J` flags the in-process compiler drops.
 - [Workspace-Specific Server JDK](done/lathe-workspace-java-home.md) — **shipped.** The launcher runs the
   server under the project's build JDK (captured in `.lathe/java-home`), overridable with `LATHE_JAVA_HOME`.
+- [Workspace-Scoped Style](planned/lathe-workspace-style.md) — **proposed.** Per-workspace `style.json`
+  (committed `lathe-style.json` / generated `.lathe/style.json`, Spotless-detected) drives both the
+  server formatter and the client indent profile.
 
 **VS Code:** a supported integration; depends on the full semantic-token coverage above.
 
