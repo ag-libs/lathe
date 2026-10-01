@@ -32,6 +32,11 @@ Reliability, the triaged gaps, and rename — see the [roadmap](roadmap.md) for 
 - [Rename](planned/lathe-rename.md) — `textDocument/rename` + `prepareRename` on the Find References
   pipeline (occurrence ranges → `WorkspaceEdit`, no `ASTRewrite`); scoped to the common cases,
   correctness-gated (freshness refusal + minimal conflict checks), with explicit non-goals.
+- [Interactive Request Priority & Reaction Coalescing](planned/lathe-interactive-request-priority.md) —
+  server-wide: stop multi-second background recompiles (the in-process-sync reaction) from blocking
+  millisecond interactive requests on the single serial worker; prioritize/cancel, coalesce the reaction,
+  and keep the open buffer's analysis from being evicted by background disk-content compiles. Surfaced by
+  the OpenJDK PoC on `java.base`; benefits every project.
 - [Javac Crash Capture](done/lathe-javac-crash-capture.md) — resolved for M2 as a minimal,
   source-free `[javacCrash]` log line (phase + JDK + stack trace); the full repro-bundle design is a
   deferred backlog follow-up. ✓
