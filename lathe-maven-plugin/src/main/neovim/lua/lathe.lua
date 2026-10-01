@@ -253,7 +253,11 @@ function M.setup(opts)
   local augroup = vim.api.nvim_create_augroup('LathePlugin', { clear = true })
 
   vim.lsp.config('lathe', {
-    cmd = { launcher },
+    -- A function cmd is the only hook that sees the per-buffer root_dir: spawn with cwd = root so the
+    -- launcher reads `.lathe/java-home` relative to it. Covers both auto-start and M.start.
+    cmd = function(dispatchers, config)
+      return vim.lsp.rpc.start({ launcher }, dispatchers, { cwd = config.root_dir })
+    end,
     filetypes = { 'java' },
     single_file_support = false,
     on_exit = function(code)

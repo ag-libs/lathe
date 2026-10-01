@@ -300,12 +300,13 @@ final class ServerInstaller {
     // google-java-format is a named module on the module path and uses module-qualified exports.
     return """
         #!/bin/sh
-        exec java ${LATHE_JVM_OPTS:-} \\
+        %sexec "$java_bin" ${LATHE_JVM_OPTS:-} \\
           --add-modules java.net.http \\
         %s%s%s%s  --module-path %s \\
           -m io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer "$@"
         """
         .formatted(
+            javaResolvePrologue(),
             javacAccessLines("--add-exports", "ALL-UNNAMED", JAVAC_EXPORT_PACKAGES),
             javacAccessLines("--add-opens", "ALL-UNNAMED", JAVAC_OPEN_PACKAGES),
             javacAccessLines(
@@ -333,15 +334,37 @@ final class ServerInstaller {
     // here (google-java-format is unnamed on the classpath too, so the same exports cover it).
     return """
         #!/bin/sh
-        exec java ${LATHE_JVM_OPTS:-} \\
+        %sexec "$java_bin" ${LATHE_JVM_OPTS:-} \\
           --add-modules java.net.http \\
         %s%s  -cp %s \\
           io.github.aglibs.lathe.mcp.LatheMcpServer "$@"
         """
         .formatted(
+            javaResolvePrologue(),
             javacAccessLines("--add-exports", "ALL-UNNAMED", JAVAC_EXPORT_PACKAGES),
             javacAccessLines("--add-opens", "ALL-UNNAMED", JAVAC_OPEN_PACKAGES),
             classpath);
+  }
+
+  // Picks the JDK for the server's in-process compiler: LATHE_JAVA_HOME, else the build JDK in
+  // .lathe/java-home (relative to the server cwd = workspace root), else PATH java. Shared by both
+  // launchers. In a method body, not a field, so the plugin descriptor's QDOX parser skips the
+  // block.
+  private static String javaResolvePrologue() {
+    return """
+        jhome="${LATHE_JAVA_HOME:-}"
+        if [ -z "$jhome" ] && [ -r .lathe/java-home ]; then
+          jhome="$(cat .lathe/java-home)"
+        fi
+        java_bin=java
+        if [ -n "$jhome" ]; then
+          if [ -x "$jhome/bin/java" ]; then
+            java_bin="$jhome/bin/java"
+          else
+            echo "lathe: no bin/java under $jhome; using PATH java" >&2
+          fi
+        fi
+        """;
   }
 
   private static String javacAccessLines(

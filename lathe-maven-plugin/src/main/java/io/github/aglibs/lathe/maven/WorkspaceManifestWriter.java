@@ -47,6 +47,7 @@ final class WorkspaceManifestWriter {
     final var newContent = Json.toJson(data);
     try {
       Files.createDirectories(latheDir);
+      writeJavaHome(latheDir, jdkSource);
       if (Files.exists(manifestPath)
           && newContent.equals(Files.readString(manifestPath, StandardCharsets.UTF_8))) {
         // Content is unchanged, but reactor classes may have been recompiled. Touch the mtime so
@@ -61,5 +62,22 @@ final class WorkspaceManifestWriter {
     } catch (final IOException e) {
       throw new SyncException("lathe:sync failed to write workspace manifest", e);
     }
+  }
+
+  // The build JDK, as a plain path the launcher reads to run the server's javac at the project's
+  // language level.
+  private void writeJavaHome(final Path latheDir, final JdkSource jdkSource) throws IOException {
+    if (jdkSource.home() == null) {
+      return;
+    }
+
+    final var javaHomePath = latheDir.resolve(LatheLayout.JAVA_HOME_FILE);
+    final String home = jdkSource.home().toString();
+    if (Files.exists(javaHomePath)
+        && home.equals(Files.readString(javaHomePath, StandardCharsets.UTF_8))) {
+      return;
+    }
+
+    FileUtil.writeAtomically(latheDir, javaHomePath, home, false);
   }
 }

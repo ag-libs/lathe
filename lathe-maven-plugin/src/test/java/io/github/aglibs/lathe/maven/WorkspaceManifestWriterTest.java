@@ -66,6 +66,11 @@ class WorkspaceManifestWriterTest {
     assertThat(entry.dir()).isEqualTo("/cache/dep");
     assertThat(entry.classpath()).containsExactly("/repo/transitive.jar");
     assertThat(data.pomPaths()).containsExactly("pom.xml");
+
+    // The build JDK is also written as a plain path for the launcher to run the server under.
+    final var javaHome =
+        workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.JAVA_HOME_FILE);
+    assertThat(Files.readString(javaHome)).isEqualTo("/jdk");
   }
 
   @Test

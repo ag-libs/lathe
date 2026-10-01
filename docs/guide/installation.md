@@ -210,6 +210,29 @@ export LATHE_JVM_OPTS="-Xmx4g -XX:+UseZGC"
 export LATHE_JVM_OPTS="--add-opens jdk.compiler/com.sun.tools.javac.jvm=ALL-UNNAMED"
 ```
 
+## Choosing the server JDK (`LATHE_JAVA_HOME`)
+
+The server's in-process javac must be at least as new as the Java version your project targets — open a
+Java 26 module under a Java 21 `java` and every file shows parse errors. So Lathe does **not** just use
+whatever `java` is on `PATH`: `lathe:sync` records the build JDK (the JVM Maven ran on) in
+`.lathe/java-home`, and the launcher runs the server under it. No configuration is needed — build your
+project and the server matches it.
+
+The launcher chooses the JDK in this order:
+
+1. `LATHE_JAVA_HOME`, if exported in the environment your editor launches from — an explicit override;
+2. `.lathe/java-home`, the build JDK captured by `lathe:sync`;
+3. `java` on `PATH`, if neither is available (with a warning if a chosen JDK has no `bin/java`).
+
+```bash
+# Force a specific JDK regardless of what the build used:
+export LATHE_JAVA_HOME="$HOME/.sdkman/candidates/java/26-tem"
+```
+
+For a multi-module reactor the one server JVM runs the highest JDK the build used, which down-compiles
+the lower-release modules via `--release`. (Editor clients spawn the server with its working directory
+set to the workspace root so the launcher can find `.lathe/java-home`.)
+
 ## Coexisting with another Java language server (jdtls)
 
 `.lathe/` is generated build output. Another Java language server in the same editor (Eclipse JDT LS,

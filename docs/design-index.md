@@ -140,6 +140,8 @@ reused):
   publishing itself is M2.)
 - [Launcher JVM Options](done/lathe-launcher-jvm-opts.md) — **shipped.** `LATHE_JVM_OPTS` support; also
   the sanctioned successor to per-project `-J` flags the in-process compiler drops.
+- [Workspace-Specific Server JDK](done/lathe-workspace-java-home.md) — **shipped.** The launcher runs the
+  server under the project's build JDK (captured in `.lathe/java-home`), overridable with `LATHE_JAVA_HOME`.
 
 **VS Code:** a supported integration; depends on the full semantic-token coverage above.
 

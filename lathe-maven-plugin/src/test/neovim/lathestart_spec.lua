@@ -33,12 +33,25 @@ vim.env.LATHE_CACHE = cache
 local lathe = require("lathe")
 lathe.setup({})
 
--- Default: the launcher resolves under the cache's `current` server dir.
+-- `cmd` is a function (spawns with cwd = root); stub rpc.start to capture its launcher path and cwd.
+local rpc_args
+vim.lsp.rpc.start = function(cmd, _dispatchers, params)
+  rpc_args = { cmd = cmd, params = params }
+  return { request = function() end, notify = function() end, is_closing = function() end }
+end
+
+local function spawn_launcher(root)
+  vim.lsp.config["lathe"].cmd({}, { root_dir = root })
+  return rpc_args
+end
+
+-- Default: the launcher resolves under the cache's `current` server dir, spawned with cwd = root.
 spec.check(
   "launcher: default resolves under the cache current dir",
-  vim.lsp.config["lathe"].cmd[1],
+  spawn_launcher(project).cmd[1],
   vim.fs.normalize(cache .. "/current") .. "/lathe-launcher.sh"
 )
+spec.check("launcher: server cwd is the workspace root", rpc_args.params.cwd, project)
 
 -- LATHE_SERVER_DIR overrides the launcher location for local server development,
 -- without repointing the shared `current` symlink.
@@ -51,7 +64,7 @@ vim.env.LATHE_SERVER_DIR = override
 lathe.setup({})
 spec.check(
   "launcher: LATHE_SERVER_DIR overrides the cache current dir",
-  vim.lsp.config["lathe"].cmd[1],
+  spawn_launcher(project).cmd[1],
   vim.fs.normalize(override) .. "/lathe-launcher.sh"
 )
 vim.env.LATHE_SERVER_DIR = nil
