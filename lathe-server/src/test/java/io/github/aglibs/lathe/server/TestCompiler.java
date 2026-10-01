@@ -5,6 +5,7 @@ import com.sun.source.util.JavacTask;
 import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.AnalysisMode;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
@@ -95,6 +96,29 @@ public final class TestCompiler {
         null,
         List.of(),
         null);
+  }
+
+  // MODULE_SYSTEM analysis: blank release (so patching a system module is not rejected), no
+  // class/module path (deps come from the host JDK), and the --patch-module overlay the server
+  // repoints at its temp dir.
+  public static ModuleSourceConfig moduleSystemConfig(
+      final Path moduleDir, final Path sourceRoot, final String patchedModule) {
+    return new ModuleSourceConfig(
+        moduleDir,
+        LatheLayout.CLASSES_DIR,
+        moduleDir.resolve(LatheLayout.CLASSES_DIR),
+        null,
+        List.of(sourceRoot),
+        List.of(),
+        List.of(),
+        List.of(),
+        "",
+        "UTF-8",
+        false,
+        false,
+        null,
+        List.of("--patch-module", "%s=.".formatted(patchedModule)),
+        AnalysisMode.MODULE_SYSTEM);
   }
 
   public static Path writeAt(final Path path, final String content, final long mtimeMillis)

@@ -306,6 +306,61 @@ class ModuleSourceCompilerTest {
     return result.diagnostics().stream().anyMatch(d -> d.getKind() == Diagnostic.Kind.ERROR);
   }
 
+  // MODULE_SYSTEM sets no class/module path: a type from the host JDK's java.base (AbstractList)
+  // must still resolve, and declaring into java.util only compiles because --patch-module overlays
+  // the source onto the base module.
+  @Test
+  void compile_moduleSystemMode_resolvesHostModuleTypesWithoutClasspath() throws Exception {
+    final Path sourceRoot = td.resolve("src");
+    final Path source = sourceRoot.resolve("java/util/LatheProbe.java");
+    Files.createDirectories(source.getParent());
+    final var config =
+        TestCompiler.moduleSystemConfig(td.resolve(".lathe/java.base"), sourceRoot, "java.base");
+
+    try (var compiler = new ModuleSourceCompiler(config, new CompilationAdmission(1))) {
+      final var result =
+          compiler.compile(
+              source.toUri().toString(),
+              "package java.util; public abstract class LatheProbe extends AbstractList<Object> {}",
+              CompileMode.OPEN);
+
+      assertThat(result.diagnostics()).noneMatch(d -> d.getKind() == Diagnostic.Kind.ERROR);
+    }
+  }
+
+  // The dirty overlay (open ∪ dirty siblings) resolves cross-file references in MODULE_SYSTEM: a
+  // producer absent from the host java.base is seen only because the batch writes it into the
+  // --patch-module overlay dir alongside the consumer.
+  @Test
+  void diagnoseInBatch_moduleSystemMode_siblingResolvedViaPatchOverlay() throws Exception {
+    final Path sourceRoot = td.resolve("src");
+    final Path consumer = sourceRoot.resolve("java/util/LatheConsumer.java");
+    final Path producer = sourceRoot.resolve("java/util/LatheProducer.java");
+    Files.createDirectories(consumer.getParent());
+    final String consumerSrc =
+        "package java.util; public class LatheConsumer { int use() { return new LatheProducer().ping(); } }";
+    final String producerSrc =
+        "package java.util; public class LatheProducer { public int ping() { return 1; } }";
+    final var config =
+        TestCompiler.moduleSystemConfig(td.resolve(".lathe/java.base"), sourceRoot, "java.base");
+
+    try (var compiler = new ModuleSourceCompiler(config, new CompilationAdmission(1))) {
+      // The producer is in neither the host java.base nor the overlay, so the consumer alone fails.
+      assertThat(
+              compiler
+                  .compile(consumer.toUri().toString(), consumerSrc, CompileMode.OPEN)
+                  .diagnostics())
+          .anyMatch(d -> d.getKind() == Diagnostic.Kind.ERROR);
+
+      final List<TransientSource> sources =
+          List.of(
+              new TransientSource(consumer.toUri().toString(), consumerSrc),
+              new TransientSource(producer.toUri().toString(), producerSrc));
+      assertThat(hasError(compiler.diagnoseInBatch(sources, consumer.toUri().toString(), () -> {})))
+          .isFalse();
+    }
+  }
+
   @Test
   void complete_reactorOutputTypeInSameModule_suggestsIndexedType() throws Exception {
     final Path sourceRoot = td.resolve("module/src/main/java");
