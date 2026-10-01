@@ -55,6 +55,25 @@ class ModuleSourceCompilerTest {
     assertThat(ModuleSourceCompiler.modeCompilerArgs(args, CompileMode.FULL)).isSameAs(args);
   }
 
+  // -J flags only reach a forked javac executable (maven-compiler-plugin fork=true); the in-process
+  // javac API rejects them as "invalid flag", so they are dropped before any compile while every
+  // other arg is preserved in order.
+  @Test
+  void dropForkedLauncherArgs_removesOnlyForkedJvmOptions() {
+    assertThat(
+            ModuleSourceCompiler.dropForkedLauncherArgs(
+                List.of(
+                    "-Xlint:unchecked",
+                    "-J--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED",
+                    "-J-Xmx2g",
+                    "-Xplugin:ErrorProne")))
+        .containsExactly("-Xlint:unchecked", "-Xplugin:ErrorProne");
+
+    final var withoutForked = List.of("-Xlint:unchecked", "-Xplugin:ErrorProne");
+    assertThat(ModuleSourceCompiler.dropForkedLauncherArgs(withoutForked))
+        .containsExactlyElementsOf(withoutForked);
+  }
+
   @Test
   void compile_fullMode_withInnerClass_writtenBinaryNamesContainsBothClasses() throws Exception {
     final Path sourceRoot = td.resolve("src/main/java");

@@ -81,6 +81,19 @@ class ServerInstallerTest {
         .hasContent("return { second = true }");
   }
 
+  @Test
+  void renderLaunchers_expandLatheJvmOptsBeforeFixedArgs() {
+    assertExpandsJvmOptsBeforeFixedArgs(ServerInstaller.renderLauncherScript("/abs/module-path"));
+    assertExpandsJvmOptsBeforeFixedArgs(
+        ServerInstaller.renderMcpLauncherScript("/abs/classpath.jar"));
+  }
+
+  private static void assertExpandsJvmOptsBeforeFixedArgs(final String script) {
+    assertThat(script).contains("exec java ${LATHE_JVM_OPTS:-} \\");
+    assertThat(script.indexOf("${LATHE_JVM_OPTS:-}"))
+        .isLessThan(script.indexOf("--add-modules java.net.http"));
+  }
+
   private Path runtimeZip(final String name, final String content) throws IOException {
     return ZipFixture.create(
         tmp.resolve(name),

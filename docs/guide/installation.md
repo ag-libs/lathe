@@ -187,6 +187,29 @@ Lathe writes to two locations: `.lathe/` inside the project, and `~/.cache/lathe
 Everything under `~/.cache/lathe/` is derived and safe to delete; the next `sync`/build rebuilds what
 it needs.
 
+## Tuning the server JVM (`LATHE_JVM_OPTS`)
+
+The language server analyzes your code with an **in-process** javac, so it replays the javac options
+your Maven build captured — with one exception: forked-launcher `-J` flags are dropped.
+
+`-J` options (for example `-J--add-exports=…` or `-J-Xmx…`) only reach a **forked** `javac`
+executable, which Maven uses when a module sets `<fork>true</fork>` on `maven-compiler-plugin` — often
+to run Error Prone. The in-process javac API has no launcher to receive them and would reject them as
+`invalid flag`, so Lathe drops them (just as Maven's own non-forked compiler ignores them). When this
+happens the server logs one line per module naming what it dropped.
+
+Most `-J--add-exports`/`-J--add-opens` into `jdk.compiler` are already granted to the server JVM by
+Lathe's launcher, which is why in-process Error Prone keeps working. If an annotation processor or
+javac plugin genuinely needs JVM access the launcher does not grant — or you simply want to tune heap
+or GC — set `LATHE_JVM_OPTS` in the environment your editor launches from. It is expanded ahead of
+Lathe's own arguments:
+
+```bash
+export LATHE_JVM_OPTS="-Xmx4g -XX:+UseZGC"
+# or restore a JVM option a forked build passed via -J:
+export LATHE_JVM_OPTS="--add-opens jdk.compiler/com.sun.tools.javac.jvm=ALL-UNNAMED"
+```
+
 ## Coexisting with another Java language server (jdtls)
 
 `.lathe/` is generated build output. Another Java language server in the same editor (Eclipse JDT LS,

@@ -294,6 +294,10 @@ overrides the POM opt-out, so the next build wires Lathe up and repopulates the 
   scans Lathe's generated `.lathe/` mirror and can treat it as duplicate projects. Add `**/.lathe/**` to
   its `java.import.exclusions`; see
   [installation.md](docs/guide/installation.md#coexisting-with-another-java-language-server-jdtls).
+- **A processor or plugin needs extra JVM access in the editor** — Lathe analyzes with an in-process
+  javac and drops a forked build's `-J` options. Restore any it needs (or tune heap/GC) with
+  `LATHE_JVM_OPTS`; see
+  [installation.md](docs/guide/installation.md#tuning-the-server-jvm-lathe_jvm_opts).
 
 ## Feedback & contributions
 

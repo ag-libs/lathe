@@ -138,7 +138,8 @@ reused):
 - Promote the Maven Central beta to a stable `0.1.0`: versioning/compatibility/support policies, remove
   preview/beta terminology, rollback, and full clean-install/upgrade qualification. (Maven Central *beta*
   publishing itself is M2.)
-- [Launcher JVM Options](planned/lathe-launcher-jvm-opts.md) — `LATHE_JVM_OPTS` support.
+- [Launcher JVM Options](done/lathe-launcher-jvm-opts.md) — **shipped.** `LATHE_JVM_OPTS` support; also
+  the sanctioned successor to per-project `-J` flags the in-process compiler drops.
 
 **VS Code:** a supported integration; depends on the full semantic-token coverage above.
 

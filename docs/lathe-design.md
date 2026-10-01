@@ -58,6 +58,12 @@ and owns integration tests via maven-invoker.
 **`lathe-server`** — the LSP server.
 Reads params files written by the shim and the workspace manifest written by the Maven plugin, builds a fresh
 `JavacTask` per compilation pass, and serves LSP requests.
+It replays Maven's captured javac options but drops forked-launcher-only `-J` flags:
+these forward JVM options to a forked `javac` executable (`maven-compiler-plugin` `fork=true`), and the
+in-process javac API has no launcher to receive them — it rejects them as `invalid flag`, where
+Maven's own non-forked compiler would ignore them. JVM access the in-process compiler genuinely needs
+is granted by the launcher (and extensible via `LATHE_JVM_OPTS`), not by per-project `-J`
+(see [Launcher JVM Options](done/lathe-launcher-jvm-opts.md)).
 It reads dependency/JDK sources from `~/.cache/lathe/`.
 `WorkspaceWatcher` watches `workspace.json` and reactor POM fingerprints,
 prompting the user to re-sync when Maven project files change.
@@ -197,7 +203,7 @@ the next `process-test-classes`, `package`, or `install` run refreshes params an
 
 JVM customization should stay outside project files and generated launcher edits.
 Launcher support for user-provided `LATHE_JVM_OPTS` is described in
-[lathe-launcher-jvm-opts.md](planned/lathe-launcher-jvm-opts.md);
+[lathe-launcher-jvm-opts.md](done/lathe-launcher-jvm-opts.md);
 its status is tracked in the roadmap.
 
 ### Javac API Boundary
@@ -1100,7 +1106,7 @@ exec java \
 
 The module path is a colon-separated list of absolute `.m2` JAR paths rendered by `ServerInstaller` at install time;
 no staging `lib/` directory is created.
-Launcher JVM options are described in [lathe-launcher-jvm-opts.md](planned/lathe-launcher-jvm-opts.md).
+Launcher JVM options are described in [lathe-launcher-jvm-opts.md](done/lathe-launcher-jvm-opts.md).
 
 ### Neovim
 

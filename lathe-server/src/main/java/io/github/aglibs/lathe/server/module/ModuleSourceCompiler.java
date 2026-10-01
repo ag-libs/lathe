@@ -22,6 +22,7 @@ import java.util.Set;
 import java.util.function.BiPredicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.tools.Diagnostic;
 import javax.tools.JavaFileObject;
@@ -51,7 +52,10 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
       this.runner = new JavacRunner(fm, compilationAdmission);
       initLocations();
       this.compilerArgs =
-          processPatchModules(hoistFileManagerOptions(config.compilerArgs(), fm), fm, tempDir);
+          processPatchModules(
+              hoistFileManagerOptions(dropForkedLauncherArgs(config.compilerArgs()), fm),
+              fm,
+              tempDir);
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }
@@ -332,5 +336,22 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
 
   private static boolean isInteractiveCompilerArg(final String arg) {
     return !arg.startsWith("-Xplugin:") && !arg.startsWith("-Xep");
+  }
+
+  // -J flags forward JVM options to a forked javac executable (fork=true); the in-process javac API
+  // has no launcher to receive them and rejects them as invalid flags, where Maven's own non-forked
+  // compiler would ignore them. Lost JVM access can be restored via LATHE_JVM_OPTS.
+  static List<String> dropForkedLauncherArgs(final List<String> args) {
+    final Map<Boolean, List<String>> partitioned =
+        args.stream().collect(Collectors.partitioningBy(arg -> arg.startsWith("-J")));
+    final List<String> dropped = partitioned.get(true);
+    if (!dropped.isEmpty()) {
+      LOG.info(
+          () ->
+              "[compile] dropped %d forked-javac -J option(s) %s; set LATHE_JVM_OPTS to extend in-process access"
+                  .formatted(dropped.size(), dropped));
+    }
+
+    return List.copyOf(partitioned.get(false));
   }
 }

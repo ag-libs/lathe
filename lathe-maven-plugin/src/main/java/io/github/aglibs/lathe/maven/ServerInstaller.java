@@ -300,7 +300,7 @@ final class ServerInstaller {
     // google-java-format is a named module on the module path and uses module-qualified exports.
     return """
         #!/bin/sh
-        exec java \\
+        exec java ${LATHE_JVM_OPTS:-} \\
           --add-modules java.net.http \\
         %s%s%s%s  --module-path %s \\
           -m io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer "$@"
@@ -333,7 +333,7 @@ final class ServerInstaller {
     // here (google-java-format is unnamed on the classpath too, so the same exports cover it).
     return """
         #!/bin/sh
-        exec java \\
+        exec java ${LATHE_JVM_OPTS:-} \\
           --add-modules java.net.http \\
         %s%s  -cp %s \\
           io.github.aglibs.lathe.mcp.LatheMcpServer "$@"

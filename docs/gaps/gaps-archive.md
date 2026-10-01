@@ -7795,7 +7795,7 @@ closed candidate files use a transient FAST compile path and do not populate the
 The cap was validated with 300-file probes against Helidon and import-heavy Dropwizard test classes;
 Dropwizard stayed stable with semantic tokens, hover, and definition requests after eviction.
 Raising the JVM heap can still provide more headroom for transient compile/search spikes
-(the M3 `LATHE_JVM_OPTS` knob, [lathe-launcher-jvm-opts.md](../planned/lathe-launcher-jvm-opts.md),
+(the M3 `LATHE_JVM_OPTS` knob, [lathe-launcher-jvm-opts.md](../done/lathe-launcher-jvm-opts.md),
 is the planned first-class way; `JAVA_TOOL_OPTIONS=-Xmx…` works today).
 
 ### Regression targets

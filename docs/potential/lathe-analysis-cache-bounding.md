@@ -277,6 +277,6 @@ Much shorter than in the superseded design, because nothing is shared:
 - Observability: `FINE` log on eviction at the event loop (`[evict] uri open=N`)
   and on a recompute triggered by a miss in the session,
   so churn from an undersized cap is diagnosable via `LATHE_DEBUG=1`.
-- The heap ceiling itself remains governed by JVM ergonomics / the planned `LATHE_JVM_OPTS`
-  (see [lathe-launcher-jvm-opts.md](../planned/lathe-launcher-jvm-opts.md));
+- The heap ceiling itself remains governed by JVM ergonomics / `LATHE_JVM_OPTS`
+  (see [lathe-launcher-jvm-opts.md](../done/lathe-launcher-jvm-opts.md));
   this design bounds growth so the ceiling is not reached under normal use.
