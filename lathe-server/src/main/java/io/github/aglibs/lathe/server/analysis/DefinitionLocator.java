@@ -57,6 +57,9 @@ public final class DefinitionLocator {
     final var path = trees.getPath(element);
     if (path != null) {
       final var cu = path.getCompilationUnit();
+      // URI must come from the target's own compilation unit, not the open file (sourceUri): a
+      // cross-file target compiled in the same task would otherwise resolve to the open file.
+      final var targetUri = cu.getSourceFile().toUri().toString();
       try {
         final Optional<Position> position =
             SourceLocator.declarationNamePosition(
@@ -65,9 +68,9 @@ public final class DefinitionLocator {
           final var lspPos = position.get();
           LOG.fine(
               () ->
-                  "[definition] same-file %s %d:%d"
-                      .formatted(sourceUri, lspPos.getLine(), lspPos.getCharacter()));
-          return Optional.of(new Location(sourceUri, new Range(lspPos, lspPos)));
+                  "[definition] in-compilation %s %d:%d"
+                      .formatted(targetUri, lspPos.getLine(), lspPos.getCharacter()));
+          return Optional.of(new Location(targetUri, new Range(lspPos, lspPos)));
         }
       } catch (final IOException e) {
         LOG.log(

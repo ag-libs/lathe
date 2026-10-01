@@ -19,6 +19,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BiPredicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
@@ -32,7 +33,8 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
 
   private static final Logger LOG = Logger.getLogger(ModuleSourceCompiler.class.getName());
   private static final String PATCH_MODULE = "--patch-module";
-  private static final String PATCH_MODULE_EQ = PATCH_MODULE + "=";
+  private static final String MODULE_SOURCE_PATH = "--module-source-path";
+  private static final String SYSTEM = "--system";
 
   private final ModuleSourceConfig config;
   private final StandardJavaFileManager fm;
@@ -48,7 +50,8 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
       this.fm = JavaSourceCompiler.createFileManager();
       this.runner = new JavacRunner(fm, compilationAdmission);
       initLocations();
-      this.compilerArgs = processPatchModules(config.compilerArgs(), fm, tempDir);
+      this.compilerArgs =
+          processPatchModules(hoistFileManagerOptions(config.compilerArgs(), fm), fm, tempDir);
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }
@@ -231,25 +234,61 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
     }
   }
 
+  // Reused file manager: javac rejects re-applying --module-source-path, so set these once and drop
+  // them from the per-compile options (keeping any the file manager doesn't accept).
+  private static List<String> hoistFileManagerOptions(
+      final List<String> args, final StandardJavaFileManager fm) {
+    return consumeFileManagerFlags(
+        args, Set.of(MODULE_SOURCE_PATH, SYSTEM), (flag, value) -> applyOption(fm, flag, value));
+  }
+
+  // Repoint each patched module at tempDir so the edited buffer overlays it.
   private static List<String> processPatchModules(
       final List<String> args, final StandardJavaFileManager fm, final Path tempDir) {
-    final var normalized = new ArrayList<String>(args.size());
+    return consumeFileManagerFlags(
+        args, Set.of(PATCH_MODULE), (flag, spec) -> patchToTempDir(fm, spec, tempDir));
+  }
+
+  private static boolean patchToTempDir(
+      final StandardJavaFileManager fm, final String spec, final Path tempDir) {
+    final int eq = spec.indexOf('=');
+    if (eq > 0) {
+      applyOption(fm, PATCH_MODULE, "%s=%s".formatted(spec.substring(0, eq), tempDir));
+    }
+    return true;
+  }
+
+  private static boolean applyOption(
+      final StandardJavaFileManager fm, final String option, final String value) {
+    return fm.handleOption(option, List.of(value).iterator());
+  }
+
+  // Feeds each matched `<flag> <value>`/`<flag>=<value>` pair to handler; a false result keeps the
+  // pair in the returned args.
+  private static List<String> consumeFileManagerFlags(
+      final List<String> args, final Set<String> flags, final BiPredicate<String, String> handler) {
+    final var remaining = new ArrayList<String>(args.size());
     final var it = args.iterator();
     while (it.hasNext()) {
       final var arg = it.next();
-      normalized.add(arg.equals(PATCH_MODULE) && it.hasNext() ? PATCH_MODULE_EQ + it.next() : arg);
+      final String inlineFlag =
+          flags.stream().filter(flag -> arg.startsWith(flag + "=")).findFirst().orElse(null);
+      final boolean spaced = inlineFlag == null && flags.contains(arg) && it.hasNext();
+      if (inlineFlag == null && !spaced) {
+        remaining.add(arg);
+        continue;
+      }
+
+      final String flag = inlineFlag != null ? inlineFlag : arg;
+      final String value = inlineFlag != null ? arg.substring(flag.length() + 1) : it.next();
+      if (!handler.test(flag, value)) {
+        remaining.add(arg);
+        if (inlineFlag == null) {
+          remaining.add(value);
+        }
+      }
     }
-    normalized.stream()
-        .filter(a -> a.startsWith(PATCH_MODULE_EQ))
-        .map(a -> a.substring(PATCH_MODULE_EQ.length()))
-        .filter(v -> v.indexOf('=') > 0)
-        .forEach(
-            v ->
-                fm.handleOption(
-                    PATCH_MODULE,
-                    List.of("%s=%s".formatted(v.substring(0, v.indexOf('=')), tempDir))
-                        .iterator()));
-    return normalized.stream().filter(a -> !a.startsWith(PATCH_MODULE_EQ)).toList();
+    return List.copyOf(remaining);
   }
 
   private static List<String> buildOptions(
