@@ -62,6 +62,12 @@ final class ConvertToVarProvider {
       return List.of();
     }
 
+    // An already-`var` local would convert to a no-op; decline it from the source keyword rather
+    // than the inferred type tree's position, which is absent through JDK 26 but present from 27.
+    if (CodeActionSupport.varKeywordStart(analysis, cu, varTree) >= 0) {
+      return List.of();
+    }
+
     final TreePath parentPath = varPath.getParentPath();
     if (parentPath == null || !(parentPath.getLeaf() instanceof final BlockTree block)) {
       return List.of();

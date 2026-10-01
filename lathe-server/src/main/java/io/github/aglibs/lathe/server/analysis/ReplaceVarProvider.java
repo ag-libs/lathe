@@ -3,7 +3,6 @@ package io.github.aglibs.lathe.server.analysis;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
-import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -43,7 +42,7 @@ final class ReplaceVarProvider {
     }
 
     final var varTree = (VariableTree) varPath.getLeaf();
-    final long varStart = varTokenStart(analysis, cu, varTree);
+    final long varStart = CodeActionSupport.varKeywordStart(analysis, cu, varTree);
     if (varStart < 0) {
       return List.of();
     }
@@ -79,41 +78,5 @@ final class ReplaceVarProvider {
 
     LOG.fine(() -> "[codeAction:replaceVar] %s".formatted(typeText));
     return List.of(Either.forRight(action));
-  }
-
-  /**
-   * The source offset of the `var` keyword, or -1 when the declaration is not a {@code var} local.
-   * Attribution rewrites the {@code var} type tree to the inferred type with no source position, so
-   * the keyword is located from source: the whole-word {@code var} token from the declaration
-   * start, bounded to before the initializer (a modifier or a variable name can never be {@code
-   * var}).
-   */
-  private static long varTokenStart(
-      final AttributedFileAnalysis analysis,
-      final CompilationUnitTree cu,
-      final VariableTree varTree) {
-    final var positions = analysis.trees().getSourcePositions();
-    final long declStart = positions.getStartPosition(cu, varTree);
-    if (declStart < 0) {
-      return -1;
-    }
-
-    final long bound =
-        varTree.getInitializer() != null
-            ? positions.getStartPosition(cu, varTree.getInitializer())
-            : positions.getEndPosition(cu, varTree);
-    final String content;
-    try {
-      content = cu.getSourceFile().getCharContent(false).toString();
-    } catch (final IOException e) {
-      return -1;
-    }
-
-    final long varStart = SourceLocator.findIdentifierFrom(content, declStart, VAR);
-    if (varStart < 0 || (bound >= 0 && varStart >= bound)) {
-      return -1;
-    }
-
-    return varStart;
   }
 }

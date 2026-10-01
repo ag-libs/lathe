@@ -18,9 +18,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 21 is the release baseline (see release.yml); 26 guards forward
-        # compatibility (e.g. JDK-specific CompletableFuture cancellation shapes).
-        java: [ '21', '26' ]
+        # 21 is the release baseline (see release.yml); 25 is the current LTS;
+        # 27 is the latest release under active adoption and guards forward
+        # compatibility (e.g. JDK-specific javac source-position and
+        # CompletableFuture cancellation shapes). Bump the latest as it moves.
+        java: [ '21', '25', '27' ]
     steps:
       - name: Checkout
         uses: actions/checkout@v5
