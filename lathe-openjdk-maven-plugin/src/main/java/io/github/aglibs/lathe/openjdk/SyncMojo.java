@@ -23,8 +23,11 @@ import org.eclipse.aether.RepositorySystem;
 @Mojo(name = "sync", requiresProject = false, threadSafe = true)
 public final class SyncMojo extends AbstractMojo {
 
-  /** The configured build output dir, e.g. {@code build/linux-x86_64-server-release}. */
-  @Parameter(property = "lathe.buildDir", required = true)
+  /**
+   * The configured build output dir, e.g. {@code build/linux-x86_64-server-release}. Optional: when
+   * omitted, the single configured build under {@code <root>/build} is discovered automatically.
+   */
+  @Parameter(property = "lathe.buildDir")
   private String buildDir;
 
   @Parameter(defaultValue = "${basedir}", readonly = true, required = true)
@@ -43,8 +46,12 @@ public final class SyncMojo extends AbstractMojo {
     }
 
     try {
-      OpenJdkSync.sync(
-          Path.of(buildDir), Path.of(workspaceRoot), PluginProps.version(), getLog()::info);
+      final Path buildPath = BuildDiscovery.resolve(buildDir, Path.of(workspaceRoot));
+      if (buildDir == null || buildDir.isBlank()) {
+        getLog().info("[discover] build %s selected".formatted(buildPath));
+      }
+
+      OpenJdkSync.sync(buildPath, Path.of(workspaceRoot), PluginProps.version(), getLog()::info);
       installServer();
     } catch (final IOException e) {
       throw new MojoExecutionException("lathe openjdk sync failed", e);
