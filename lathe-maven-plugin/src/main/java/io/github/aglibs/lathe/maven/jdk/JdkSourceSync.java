@@ -2,7 +2,7 @@ package io.github.aglibs.lathe.maven.jdk;
 
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.ZipCache;
-import io.github.aglibs.lathe.maven.SyncException;
+import io.github.aglibs.lathe.install.SyncException;
 import java.io.IOException;
 import java.nio.file.Files;
 import org.apache.maven.plugin.logging.Log;

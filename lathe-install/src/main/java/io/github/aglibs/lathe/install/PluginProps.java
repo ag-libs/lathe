@@ -1,10 +1,10 @@
-package io.github.aglibs.lathe.maven;
+package io.github.aglibs.lathe.install;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Properties;
 
-final class PluginProps {
+public final class PluginProps {
 
   static final String GROUP_ID = "io.github.ag-libs";
   static final String SERVER_ARTIFACT_ID = "lathe-server";
@@ -19,7 +19,7 @@ final class PluginProps {
     return GROUP_ID;
   }
 
-  static String version() {
+  public static String version() {
     return PROPS.getProperty("version");
   }
 
@@ -27,7 +27,7 @@ final class PluginProps {
     final var props = new Properties();
     try (final InputStream in =
         PluginProps.class.getResourceAsStream(
-            "/META-INF/maven/%s/lathe-maven-plugin/pom.properties".formatted(GROUP_ID))) {
+            "/META-INF/maven/%s/lathe-install/pom.properties".formatted(GROUP_ID))) {
       if (in != null) {
         props.load(in);
       }

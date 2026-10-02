@@ -1,18 +1,14 @@
-package io.github.aglibs.lathe.maven;
+package io.github.aglibs.lathe.install;
 
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import java.io.IOException;
-import java.io.InputStream;
-import java.net.URL;
-import java.net.URLConnection;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Properties;
 import java.util.stream.Collectors;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.plugin.logging.Log;
@@ -29,13 +25,7 @@ import org.eclipse.aether.resolution.DependencyRequest;
 import org.eclipse.aether.resolution.DependencyResolutionException;
 import org.eclipse.aether.util.artifact.JavaScopes;
 
-final class ServerInstaller {
-
-  private static final String NVIM_BUNDLE_RESOURCE =
-      "/META-INF/lathe/%s".formatted(LatheLayout.NVIM_BUNDLE);
-  private static final String MARKER_SCHEMA = "schema";
-  private static final String MARKER_BUNDLE_SIZE = "bundleSize";
-  private static final String MARKER_BUNDLE_MODIFIED = "bundleModified";
+public final class ServerInstaller {
 
   // jdk.compiler internals the in-process javac needs. Shared by both launchers: the editor grants
   // them to ALL-UNNAMED (Error Prone) and to the google-java-format module; the MCP launcher runs
@@ -50,7 +40,7 @@ final class ServerInstaller {
   private final List<RemoteRepository> remoteRepositories;
   private final Log log;
 
-  ServerInstaller(
+  public ServerInstaller(
       final RepositorySystem repositorySystem,
       final RepositorySystemSession repoSession,
       final List<RemoteRepository> remoteRepositories,
@@ -61,7 +51,9 @@ final class ServerInstaller {
     this.log = log;
   }
 
-  void install() throws SyncException {
+  // Installs the server + MCP launchers for this plugin's version and points `current` at them;
+  // returns the version dir so a caller can layer editor-client bundles on top of it.
+  public Path install() throws SyncException {
     final String version = PluginProps.version();
     final Path versionDir = LatheLayout.serverVersionDir(version);
 
@@ -73,12 +65,12 @@ final class ServerInstaller {
       writeLauncher(versionDir, LatheLayout.LAUNCHER_SCRIPT, renderLauncherScript(modulePath));
       writeLauncher(
           versionDir, LatheLayout.MCP_LAUNCHER_SCRIPT, renderMcpLauncherScript(mcpClasspath));
-      installNeovim(versionDir);
     } catch (final IOException e) {
       throw new SyncException("lathe:sync failed to install server files", e);
     }
 
     updateCurrentLink(versionDir);
+    return versionDir;
   }
 
   private void writeLauncher(final Path versionDir, final String scriptName, final String script)
@@ -124,77 +116,6 @@ final class ServerInstaller {
     }
   }
 
-  private void installNeovim(final Path versionDir) throws IOException {
-    final URL bundleUrl = ServerInstaller.class.getResource(NVIM_BUNDLE_RESOURCE);
-    if (bundleUrl == null) {
-      throw new IOException("Neovim runtime bundle not found");
-    }
-
-    final URLConnection connection = bundleUrl.openConnection();
-    connection.setUseCaches(false);
-    final long bundleSize = connection.getContentLengthLong();
-    final long bundleModified = connection.getLastModified();
-    final Path neovimDir = versionDir.resolve(LatheLayout.NVIM_DIR);
-    if (isNeovimCurrent(neovimDir, bundleSize, bundleModified)) {
-      log.debug("[server] Neovim runtime unchanged — skipping unzip");
-      return;
-    }
-
-    try (final InputStream in = connection.getInputStream()) {
-      installNeovimBundle(in, versionDir, bundleSize, bundleModified);
-      log.debug("[server] installed Neovim runtime at %s".formatted(versionDir));
-    }
-  }
-
-  static boolean installNeovimBundle(
-      final InputStream bundle,
-      final Path versionDir,
-      final long bundleSize,
-      final long bundleModified)
-      throws IOException {
-    final Path neovimDir = versionDir.resolve(LatheLayout.NVIM_DIR);
-    if (isNeovimCurrent(neovimDir, bundleSize, bundleModified)) {
-      return false;
-    }
-
-    if (Files.exists(neovimDir)) {
-      FileUtil.deleteDir(neovimDir);
-    }
-    Files.createDirectories(neovimDir);
-    FileUtil.unzip(bundle, neovimDir);
-    writeNeovimMarker(neovimDir, bundleSize, bundleModified);
-    return true;
-  }
-
-  private static boolean isNeovimCurrent(
-      final Path neovimDir, final long bundleSize, final long bundleModified) {
-    final Path marker = neovimDir.resolve(LatheLayout.NVIM_MARKER);
-    if (!Files.exists(marker)) {
-      return false;
-    }
-
-    final var properties = new Properties();
-    try (final InputStream in = Files.newInputStream(marker)) {
-      properties.load(in);
-      return LatheLayout.SCHEMA_VERSION.equals(properties.getProperty(MARKER_SCHEMA))
-          && Long.toString(bundleSize).equals(properties.getProperty(MARKER_BUNDLE_SIZE))
-          && Long.toString(bundleModified).equals(properties.getProperty(MARKER_BUNDLE_MODIFIED));
-    } catch (final IOException e) {
-      return false;
-    }
-  }
-
-  private static void writeNeovimMarker(
-      final Path neovimDir, final long bundleSize, final long bundleModified) throws IOException {
-    final var properties = new Properties();
-    properties.setProperty(MARKER_SCHEMA, LatheLayout.SCHEMA_VERSION);
-    properties.setProperty(MARKER_BUNDLE_SIZE, Long.toString(bundleSize));
-    properties.setProperty(MARKER_BUNDLE_MODIFIED, Long.toString(bundleModified));
-    try (final var out = Files.newOutputStream(neovimDir.resolve(LatheLayout.NVIM_MARKER))) {
-      properties.store(out, null);
-    }
-  }
-
   private List<Path> resolveServerJars() throws SyncException {
     return resolveTransitiveJars(
         PluginProps.groupId(), PluginProps.SERVER_ARTIFACT_ID, PluginProps.version());
@@ -216,7 +137,7 @@ final class ServerInstaller {
    * here, at sync time, against whatever JUnit Platform/Jupiter version the reactor actually uses,
    * so the versions match what the project resolved rather than a hardcoded pin.
    */
-  List<Path> resolveRunnerClasspath(final Map<String, Artifact> externalArtifacts)
+  public List<Path> resolveRunnerClasspath(final Map<String, Artifact> externalArtifacts)
       throws SyncException {
     final var classpath = new ArrayList<Path>();
     classpath.add(resolveRunnerJar());

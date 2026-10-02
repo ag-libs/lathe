@@ -1,8 +1,8 @@
 package io.github.aglibs.lathe.maven.dependency;
 
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.install.SyncException;
 import io.github.aglibs.lathe.maven.ReactorProjects;
-import io.github.aglibs.lathe.maven.SyncException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;

@@ -34,6 +34,7 @@
     <module>lathe-server</module>
     <module>lathe-mcp-server</module>
     <module>lathe-maven-extension</module>
+    <module>lathe-install</module>
     <module>lathe-maven-plugin</module>
     <module>lathe-openjdk-maven-plugin</module>
   </modules>
@@ -80,6 +81,10 @@
     <validcheck.version>0.11.0</validcheck.version>
     <java-debug.version>0.53.1</java-debug.version>
     <mcp-sdk.version>2.0.1</mcp-sdk.version>
+
+    <!-- Maven plugin/extension API, shared by lathe-install and the three Maven front-ends -->
+    <maven-api.version>3.9.15</maven-api.version>
+    <maven-plugin.version>3.15.2</maven-plugin.version>
 
     <!-- release plugin versions (activated by the release profile) -->
     <maven-source.version>3.3.1</maven-source.version>

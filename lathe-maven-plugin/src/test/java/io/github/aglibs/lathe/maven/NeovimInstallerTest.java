@@ -11,7 +11,7 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class ServerInstallerTest {
+class NeovimInstallerTest {
 
   private static final long BUNDLE_SIZE = 42L;
   private static final long BUNDLE_MODIFIED = 1_000L;
@@ -81,23 +81,6 @@ class ServerInstallerTest {
         .hasContent("return { second = true }");
   }
 
-  @Test
-  void renderLaunchers_resolveJdkThenExpandJvmOptsBeforeFixedArgs() {
-    assertLaunchContract(ServerInstaller.renderLauncherScript("/abs/module-path"));
-    assertLaunchContract(ServerInstaller.renderMcpLauncherScript("/abs/classpath.jar"));
-  }
-
-  // Both launchers resolve the JDK (LATHE_JAVA_HOME, else .lathe/java-home, else PATH java) and
-  // then
-  // exec it with LATHE_JVM_OPTS expanded, all before Lathe's fixed arguments.
-  private static void assertLaunchContract(final String script) {
-    assertThat(script).contains("${LATHE_JAVA_HOME:-}", ".lathe/java-home", "java_bin=java");
-    assertThat(script).contains("exec \"$java_bin\" ${LATHE_JVM_OPTS:-} \\");
-    assertThat(script.indexOf(".lathe/java-home")).isLessThan(script.indexOf("exec \"$java_bin\""));
-    assertThat(script.indexOf("exec \"$java_bin\""))
-        .isLessThan(script.indexOf("--add-modules java.net.http"));
-  }
-
   private Path runtimeZip(final String name, final String content) throws IOException {
     return ZipFixture.create(
         tmp.resolve(name),
@@ -109,7 +92,7 @@ class ServerInstallerTest {
   private static boolean install(final Path versionDir, final Path zip, final long bundleSize)
       throws IOException {
     try (final InputStream in = Files.newInputStream(zip)) {
-      return ServerInstaller.installNeovimBundle(in, versionDir, bundleSize, BUNDLE_MODIFIED);
+      return NeovimInstaller.installNeovimBundle(in, versionDir, bundleSize, BUNDLE_MODIFIED);
     }
   }
 

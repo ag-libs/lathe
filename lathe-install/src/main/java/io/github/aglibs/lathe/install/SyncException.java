@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.maven;
+package io.github.aglibs.lathe.install;
 
 import java.io.Serial;
 

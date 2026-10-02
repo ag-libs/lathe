@@ -9,7 +9,7 @@ import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexFile;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexOrigin;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexOriginKind;
-import io.github.aglibs.lathe.maven.SyncException;
+import io.github.aglibs.lathe.install.SyncException;
 import io.github.aglibs.lathe.maven.jdk.JdkSource;
 import java.io.IOException;
 import java.io.UncheckedIOException;

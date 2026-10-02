@@ -14,10 +14,6 @@
   <name>lathe-maven-extension</name>
   <description>Lathe Maven build extension that injects the build wiring in memory.</description>
 
-  <properties>
-    <maven-api.version>3.9.15</maven-api.version>
-  </properties>
-
   <dependencies>
     <dependency>
       <groupId>io.github.ag-libs</groupId>

@@ -15,9 +15,7 @@
   <description>Lathe Maven plugin providing the init and sync goals.</description>
 
   <properties>
-    <maven-api.version>3.9.15</maven-api.version>
     <maven-assembly-plugin.version>3.7.1</maven-assembly-plugin.version>
-    <maven-plugin.version>3.15.2</maven-plugin.version>
     <maven-invoker-plugin.version>3.9.1</maven-invoker-plugin.version>
     <exec-maven-plugin.version>3.5.1</exec-maven-plugin.version>
   </properties>
@@ -26,6 +24,11 @@
     <dependency>
       <groupId>io.github.ag-libs</groupId>
       <artifactId>lathe-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.github.ag-libs</groupId>
+      <artifactId>lathe-install</artifactId>
+      <version>${project.version}</version>
     </dependency>
     <dependency>
       <groupId>io.github.ag-libs.validcheck</groupId>
