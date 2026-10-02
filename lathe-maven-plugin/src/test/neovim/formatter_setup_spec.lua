@@ -1,8 +1,8 @@
 -- Verifies lathe.setup()'s formatter wiring from the formatting-and-indentation
--- design: the server `formatter` init option and the gated format-on-save
--- autocmd. The autocmd is installed only when formatter == "google" AND
--- format_on_save == true; the server capability itself is gated separately in
--- LatheLanguageServerTest.
+-- design: the server `formatter` init option and the format-on-save autocmd. The
+-- autocmd is installed whenever format_on_save == true; the actual formatting is
+-- gated at runtime on the server's advertised capability (checked per attach),
+-- which itself is covered in LatheLanguageServerTest.
 --
 -- The default (formatter absent) case runs first because vim.lsp.config merges
 -- successive config calls, so only the first setup observes a fresh config.
@@ -42,9 +42,10 @@ spec.check("google+save: format-on-save autocmd installed", lspattach_count(), 2
 lathe.setup({ formatter = "google", format_on_save = false })
 spec.check("google, no save: no format-on-save autocmd", lspattach_count(), 1)
 
--- format_on_save without a formatter: gated off.
+-- format_on_save wires the autocmd even without a global formatter option: the formatter can come
+-- from a workspace style file, so the capability is checked at runtime (per attach), not here.
 lathe.setup({ format_on_save = true })
-spec.check("save without formatter: gated off", lspattach_count(), 1)
+spec.check("save without global formatter: autocmd wired (runtime-gated)", lspattach_count(), 2)
 
 -- Indent profile options propagate from lathe.setup into the lathe.indent module.
 lathe.setup({ indent_style = "google", continuation_indent = 3 })

@@ -284,16 +284,20 @@ function M.setup(opts)
     M.start(vim.api.nvim_get_current_buf())
   end, { desc = 'Lathe: start the language server for the current directory' })
 
-  -- Format-on-save is only meaningful with a formatter configured; without it the server does not
-  -- advertise formatting, so wiring the autocmd would be a no-op.
-  local format_on_save = opts.formatter ~= nil and opts.format_on_save == true
-  if format_on_save then
+  -- Format-on-save follows the server's advertised formatting capability (enabled by a workspace
+  -- style file or the client option), checked per attach, rather than a static setup() flag -- so a
+  -- project whose formatter comes from .lathe/style.json gets it without a global formatter option.
+  if opts.format_on_save == true then
     local fold = require('lathe.fold')
     vim.api.nvim_create_autocmd('LspAttach', {
       group = augroup,
       callback = function(args)
         local client = vim.lsp.get_client_by_id(args.data.client_id)
         if not (client and client.name == 'lathe') then
+          return
+        end
+
+        if not client.server_capabilities.documentFormattingProvider then
           return
         end
 
@@ -319,13 +323,11 @@ function M.setup(opts)
     })
   end
 
-  -- Manual formatting is available whenever the server advertises it (formatter enabled), whether or
-  -- not format-on-save is wired. :LatheFormat routes through M.format so the imports fold survives.
-  if opts.formatter ~= nil then
-    vim.api.nvim_create_user_command('LatheFormat', function()
-      M.format(vim.api.nvim_get_current_buf())
-    end, { desc = 'Lathe: format the current buffer (preserving the imports fold)' })
-  end
+  -- Manual formatting is a no-op unless the server advertises it, so :LatheFormat is always
+  -- registered; it routes through M.format so the imports fold survives the whole-document rewrite.
+  vim.api.nvim_create_user_command('LatheFormat', function()
+    M.format(vim.api.nvim_get_current_buf())
+  end, { desc = 'Lathe: format the current buffer (preserving the imports fold)' })
 
   -- Run surface: gutter signs for `main` methods plus :LatheRun to replay the buffer's main
   -- class from .lathe/ bytecode. Tests keep going through the neotest adapter; this is the
