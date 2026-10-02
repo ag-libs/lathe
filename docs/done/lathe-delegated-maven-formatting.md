@@ -1,13 +1,12 @@
 # Lathe — Delegated Formatting via Maven (Spotless)
 
-**Status: non-google delegation approved for implementation (MVP below); the broader direction stays
-potential.**
-Decision: **keep the in-process google-java-format engine** (`google`/`aosp`) for speed — a colleague's
-input, and the measured sub-ms path — and **delegate only non-google Spotless formatters** (eclipse,
-palantir, …) to `mvn spotless:apply` run on the file in place. Fully replacing the in-process engine,
-Gradle support, and range-scoped formatting remain **future/potential** (see
-[Future](#future--potential)). Builds on the shipped
-[workspace-scoped style](../done/lathe-workspace-style.md).
+**Status: shipped (mvn only).**
+The in-process google-java-format engine (`google`/`aosp`) is kept for speed; non-google Spotless
+formatters (eclipse, palantir, …) are delegated to `mvn spotless:apply` run on the file in place,
+preferring mvnd → `./mvnw` → mvn. Verified on equalsverifier (eclipse): formatting applied via mvnd in
+~0.2–0.6s, keeping the project's own style. Fully replacing the in-process engine, Gradle support, and
+range-scoped formatting remain **future/potential** (see [Future](#future--potential)). Builds on the
+shipped [workspace-scoped style](lathe-workspace-style.md).
 
 ## Goal
 

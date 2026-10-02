@@ -68,12 +68,14 @@ bindings.
 |---------------------|----------------------------------------------------------------------------------------------|-----------------------------------|
 | Diagnostics         | `javac` errors and warnings exactly as configured in Maven, plus unused private members and locals | `textDocument/publishDiagnostics` |
 | Code actions        | quick fixes and refactors: missing imports, add `throws`, wrap in `try/catch`, declare local, replace `var` with the inferred type, extract variable / constant / field, add a `final` field as a constructor parameter, stub a missing method | `textDocument/codeAction`         |
-| Formatting (per-workspace) | whole-document google-java-format / AOSP (with import cleanup) **or** your own external formatter command — resolved per project, **off by default** | `textDocument/formatting`         |
+| Formatting (per-workspace) | whole-document google-java-format / AOSP, **or the project's own Spotless formatter via `mvn spotless:apply`**, **or** a custom external command — auto-detected per project | `textDocument/formatting`         |
 
-Formatting follows a **per-workspace style** (a project's `lathe-style.json` / `.lathe/style.json`,
-else the editor's global default), and is advertised only when one resolves a formatter: the built-in
-`google`/`aosp` engine (fast, in-process) or any external command that reads Java on stdin and writes
-it back on stdout (run in the workspace root; the buffer is left untouched on failure). Live-edit
+Formatting follows a **per-workspace style**, auto-detected from the project's `spotless-maven-plugin`
+by `lathe:sync` (a committed `lathe-style.json` or the editor's global default otherwise). It is
+advertised only when a formatter resolves: the built-in `google`/`aosp` engine (fast, in-process); a
+non-google Spotless formatter (eclipse, palantir, …) **delegated to `mvn spotless:apply`** on the edited
+file (preferring mvnd → `./mvnw` → mvn), so the editor applies the project's own formatter; or a custom
+stdin/stdout command. Opt out with `-Dlathe.spotless=false` or a committed `lathe-style.json`. Live-edit
 indentation follows the same style file and is otherwise a separate client concern.
 
 ### Run, test & debug

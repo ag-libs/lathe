@@ -70,12 +70,13 @@ declared in a profile (as in equalsverifier's `static-analysis`) is visible.
 |---|---|---|
 | `<googleJavaFormat>` (style GOOGLE / unset) | `google` | `{google, 2, 4}` |
 | `<googleJavaFormat><style>AOSP` | `aosp` | `{google, 4, 8}` |
-| `<eclipse>` / `<palantirJavaFormat>` / unknown | `none` | `{editorconfig}` |
+| `<eclipse>` / `<palantirJavaFormat>` / unknown | `command-file` | `{editorconfig}` |
 | no `spotless-maven-plugin` | *(no file written)* | — |
 
-Eclipse/Palantir map to `none` by design: Lathe will not run them in-process and must never produce a
-diff the project's own formatter would reject. A team wanting Lathe to run such a formatter sets
-`engine: "command"` in a committed `lathe-style.json`.
+Non-google formatters are **delegated to `mvn spotless:apply`** on the edited file (the `command-file`
+engine), so Lathe applies the project's own formatter without running it in-process — see
+[delegated Maven formatting](lathe-delegated-maven-formatting.md). Opt out with `-Dlathe.spotless=false`
+(sync writes `none` instead) or a committed `lathe-style.json`.
 
 ### Hand-authored
 
@@ -88,7 +89,8 @@ The client's existing setup options remain the **global fallback**, migrated to 
 `require('lathe').setup({ style = { formatter = { engine = 'google' }, indent = { profile = 'google' } } })`
 (replacing today's `formatter = "google"` / `indent_style = "google"`). This gives a developer Google
 style on every project that has no file — while a project's own file (committed or Spotless-detected)
-still wins, so a Spotless-eclipse project safely resolves to `none`.
+still wins, so a Spotless-eclipse project resolves to its delegated `command-file` (or `none` when
+delegation is opted out).
 
 ## Consumers
 
@@ -115,11 +117,12 @@ formatter**. Changes:
   the client honors the advertised capability. This also fixes today's assumption that formatting
   always exists.
 
-## Capability limit (the file does not remove it)
+## In-process vs delegated
 
-The file is a delivery mechanism, not new formatting power. In-process Lathe runs google-java-format
-(GOOGLE / AOSP) only; everything else is `none` (safe) or an external `command`. equalsverifier
-therefore resolves to `formatter: none` + EditorConfig-driven indent.
+In-process Lathe runs google-java-format (GOOGLE / AOSP) only. Every other Spotless formatter is
+**delegated** to the project's build via `mvn spotless:apply` (the `command-file` engine) rather than
+run in-process — see [delegated Maven formatting](lathe-delegated-maven-formatting.md). equalsverifier
+therefore formats with its own eclipse config through mvn, keeping EditorConfig-driven live indent.
 
 ## Components touched (by module)
 

@@ -171,9 +171,12 @@ Lathe writes to two locations: `.lathe/` inside the project, and `~/.cache/lathe
 - `lathe:sync` writes `workspace.json` and each module's derived `main-launch.json`. The write is
   skipped when the content is unchanged, so a no-op build does not trigger a server reload.
 - `lathe:sync` also writes `style.json` (formatter + indent) when the reactor configures
-  `spotless-maven-plugin` — `googleJavaFormat` becomes the in-process formatter, anything else becomes
-  `none`. Commit a `lathe-style.json` at the repo root to override it. See
-  [lathe-workspace-style.md](../done/lathe-workspace-style.md).
+  `spotless-maven-plugin` — `googleJavaFormat` becomes the in-process formatter; any other Spotless
+  formatter (eclipse, palantir) is delegated to `mvn spotless:apply` on the edited file (preferring
+  mvnd → `./mvnw` → mvn), so the editor applies the project's own formatter. Commit a `lathe-style.json`
+  at the repo root to override it, or opt out of mvn delegation entirely (see below). See
+  [lathe-workspace-style.md](../done/lathe-workspace-style.md) and
+  [lathe-delegated-maven-formatting.md](../done/lathe-delegated-maven-formatting.md).
 - `lathe-junit` writes each module's `test-launch.json` from inside the Surefire fork during the `test`
   phase — so test run/debug needs a build that reaches `test` (see the table above and
   [test-capture.md](test-capture.md)).
@@ -236,6 +239,35 @@ export LATHE_JAVA_HOME="$HOME/.sdkman/candidates/java/26-tem"
 For a multi-module reactor the one server JVM runs the highest JDK the build used, which down-compiles
 the lower-release modules via `--release`. (Editor clients spawn the server with its working directory
 set to the workspace root so the launcher can find `.lathe/java-home`.)
+
+## Choosing, overriding, or opting out of the formatter
+
+`lathe:sync` derives the formatter from your `spotless-maven-plugin` config (above): `googleJavaFormat`
+runs in-process; any other Spotless formatter is **delegated to `mvn spotless:apply`** on the edited
+file. You control it at three levels, in precedence order:
+
+1. **Per project (highest): a committed `lathe-style.json`** at the repo root — overrides the generated
+   `.lathe/style.json`. This is both the override and the per-project opt-out:
+
+   ```jsonc
+   // disable Lathe formatting for this project entirely:
+   { "formatter": { "engine": "none" } }
+
+   // or force a specific engine instead of what sync detected:
+   { "formatter": { "engine": "google" } }
+   ```
+
+   Edit the **committed** `lathe-style.json`, not `.lathe/style.json` — the latter is regenerated (and
+   gitignored) on every sync. Setting `engine` to `"none"` is an authoritative off; *omitting* the
+   `formatter` section instead falls back to the editor's global default.
+
+2. **Globally, opt out of mvn delegation: `-Dlathe.spotless=false`** on the build. Sync then writes
+   `none` for non-google formatters (google/aosp still run in-process), so Lathe never shells out to
+   Maven to format. Set it on the sync build, e.g. `mvn -Dlathe.spotless=false process-test-classes`
+   (or in the Maven extension/CI config).
+
+3. **Editor global default** — the `style` you pass to the client `setup()` applies only to projects
+   with no style file (see the [Neovim cheatsheet](editors/neovim.md)).
 
 ## Coexisting with another Java language server (jdtls)
 

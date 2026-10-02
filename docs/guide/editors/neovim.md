@@ -198,10 +198,15 @@ Both follow a per-workspace **style** — a project's committed `lathe-style.jso
   `style.indent.continuation` (or override the block with `style.indent.block`).
 - `google` — 2-space block, 4-space continuation.
 
-**Formatting** — `style.formatter.engine`: `"google"` or `"aosp"` runs the in-process
-google-java-format (whole document, with import cleanup); `"none"` disables it; `"command"` runs an
-external tool. It runs on demand via `require('lathe').format()` (or `:LatheFormat`); add
-`format_on_save = true` to also format on write (wired whenever the server advertises a formatter).
+**Formatting** — usually you set nothing: `lathe:sync` writes the project's formatter into
+`.lathe/style.json` from its Spotless config. `style.formatter.engine` is `"google"`/`"aosp"`
+(in-process google-java-format, with import cleanup), `"command-file"` (a non-google Spotless formatter
+run via `mvn spotless:apply` on the edited file — the project's own eclipse/palantir/etc.), `"command"`
+(a stdin/stdout tool), or `"none"`. It runs on demand via `require('lathe').format()` (or
+`:LatheFormat`); add `format_on_save = true` to also format on write (wired whenever the server
+advertises a formatter). To disable or override per project, commit a `lathe-style.json`
+(`{ "formatter": { "engine": "none" } }`) or globally opt out of mvn delegation with
+`-Dlathe.spotless=false` — see [installation](../installation.md#choosing-overriding-or-opting-out-of-the-formatter).
 Range and on-type formatting are intentionally disabled, so a stray client request can't trigger a
 whole-document rewrite.
 

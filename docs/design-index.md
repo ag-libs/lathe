@@ -145,6 +145,9 @@ reused):
 - [Workspace-Scoped Style](done/lathe-workspace-style.md) — **shipped.** Per-workspace `style.json`
   (committed `lathe-style.json` / generated `.lathe/style.json`, Spotless-detected) drives both the
   server formatter and the client indent profile.
+- [Delegated Formatting via Maven (Spotless)](done/lathe-delegated-maven-formatting.md) — **shipped
+  (mvn only).** Non-google Spotless formatters are applied via `mvn spotless:apply` on the file in
+  place (mvnd → `./mvnw` → mvn); in-process google/aosp kept for speed.
 
 **VS Code:** a supported integration; depends on the full semantic-token coverage above.
 
@@ -293,10 +296,6 @@ reused):
 ## Potential Designs
 
 - [Potential Design Policy](potential/README.md)
-- [Delegated Formatting via Maven (Spotless)](potential/lathe-delegated-maven-formatting.md) —
-  **non-google delegation approved (MVP).** Keep in-process google/aosp for speed; format non-google
-  Spotless projects via `mvn -pl <module> spotless:apply` on the file in place (assumes mvnd).
-  Dropping the bundled engine, Gradle, and range-format stay potential.
 - [In-Process External-Change Recompilation](potential/lathe-external-change-recompilation.md) —
   **superseded** by [In-Process Workspace Sync](done/lathe-in-process-workspace-sync.md); retained as
   the archive of the reaction mechanics (batch FULL compile, startup reconciliation,
