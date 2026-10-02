@@ -2660,21 +2660,20 @@ final class WorkspaceSession {
     final var t = Stopwatch.start();
     final OpenDocument openFile = docs.get(uri);
     final String content = openFile != null ? openFile.content() : null;
-    // External formatters (mvn spotless / custom command) can take seconds; report progress so the
-    // editor shows the format is running. The in-process google engine is too fast to bother.
-    final ProgressReporter.Task progress =
-        engine.external() ? progressReporter.open(null, new CompletableFuture<>()) : null;
-    if (progress != null) {
-      progress.begin("Formatting (external)");
-    }
-
-    Throwable failure = null;
     try {
       final List<TextEdit> result = JavaFormatter.format(engine, content, LatheUri.toPath(uri));
       LOG.info(() -> "[format] %s %dms edits=%d".formatted(uri, t.elapsedMs(), result.size()));
+      // Formatting is a synchronous request (format-on-save blocks the editor), so a progress
+      // spinner would only paint after the edit; report the outcome once it is done instead. Stay
+      // quiet when nothing changed, so saving an already-formatted file does not nag.
+      if (!result.isEmpty()) {
+        client.showMessage(
+            new MessageParams(
+                MessageType.Info, "Lathe: formatted in %dms".formatted(t.elapsedMs())));
+      }
+
       return result;
     } catch (final Exception e) {
-      failure = e;
       if (e instanceof InterruptedException) {
         Thread.currentThread().interrupt();
       }
@@ -2683,10 +2682,6 @@ final class WorkspaceSession {
       client.showMessage(
           new MessageParams(MessageType.Warning, "Lathe: formatting failed — see the server log."));
       return List.of();
-    } finally {
-      if (progress != null) {
-        progress.finish(failure);
-      }
     }
   }
 

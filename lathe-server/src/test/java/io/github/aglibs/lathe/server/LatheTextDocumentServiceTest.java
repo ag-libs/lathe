@@ -209,6 +209,10 @@ class LatheTextDocumentServiceTest {
         service.formatting(formattingParams()).get(5, TimeUnit.SECONDS);
 
     assertThat(edits).isNotEmpty();
+    verify(client, timeout(2000))
+        .showMessage(
+            argThat(
+                m -> m.getType() == MessageType.Info && m.getMessage().contains("formatted in")));
   }
 
   @Test

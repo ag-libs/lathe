@@ -56,11 +56,6 @@ record FileCommandFormatEngine(List<String> command, Path workspaceRoot, Duratio
     }
   }
 
-  @Override
-  public boolean external() {
-    return true;
-  }
-
   private List<String> resolve(final Path file) {
     final String absolute = file.toAbsolutePath().toString();
     final String module = moduleRelativePath(file);

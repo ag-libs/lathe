@@ -211,9 +211,9 @@ advertises a formatter). To disable or override per project, commit a `lathe-sty
 (`{ "formatter": { "engine": "none" } }`) or globally opt out of mvn delegation with
 `-Dlathe.spotless=false` — see [installation](../installation.md#choosing-overriding-or-opting-out-of-the-formatter).
 Range and on-type formatting are intentionally disabled, so a stray client request can't trigger a
-whole-document rewrite. An external/delegated format (mvn Spotless or a custom command) shows a
-work-done progress spinner while it runs; any formatter failure shows a warning notification, with the
-detail in `lsp.log`.
+whole-document rewrite. A format that changes the buffer shows a brief `formatted in Xms` notification
+(handy for the slower mvn-delegated formatters); any formatter failure shows a warning notification,
+with the detail in `lsp.log`.
 
 For an external tool, set `style.formatter = { engine = "command", command = { "jfmt", "print", "-" } }`.
 The server runs that command per format, piping the buffer to its stdin and taking stdout as the result
