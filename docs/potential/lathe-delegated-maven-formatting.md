@@ -1,105 +1,151 @@
 # Lathe — Delegated Formatting via Maven (Spotless)
 
-**Status: potential / exploratory.**
-Preferred direction: move formatting **out of the Lathe server process** and delegate it to the
-project's own `spotless-maven-plugin`, invoked as `mvn spotless:apply` (expecting
-[mvnd](https://github.com/apache/maven-mvnd) for latency). This would eventually remove Lathe's
-in-process google-java-format engine, so Lathe depends on no bundled formatter and always matches the
-project's exact formatter contract. Builds on the shipped
+**Status: non-google delegation approved for implementation (MVP below); the broader direction stays
+potential.**
+Decision: **keep the in-process google-java-format engine** (`google`/`aosp`) for speed — a colleague's
+input, and the measured sub-ms path — and **delegate only non-google Spotless formatters** (eclipse,
+palantir, …) to `mvn spotless:apply` run on the file in place. Fully replacing the in-process engine,
+Gradle support, and range-scoped formatting remain **future/potential** (see
+[Future](#future--potential)). Builds on the shipped
 [workspace-scoped style](../done/lathe-workspace-style.md).
 
 ## Goal
 
-Format a Java file through the formatter the project's build already defines, with no formatter
-bundled in the server. One source of truth — the project's Spotless config — so Lathe's output can
-never diverge from what the project's own `spotless:check` enforces, for **any** Spotless formatter
-(google-java-format, eclipse-jdt, palantir, …), not just google/aosp.
+When a project configures Spotless with a formatter Lathe cannot run in-process, format the file
+through the project's own build (`mvn spotless:apply`) instead of declining (`none`) — so the editor's
+output is byte-identical to `spotless:check`, for any Spotless formatter, with no formatter knowledge
+in Lathe and no extra user configuration. google/aosp projects keep the fast in-process engine.
 
-## Motivation
+## Decision summary (the hybrid)
 
-Today the server formats in-process with google-java-format, and the shipped style design maps
-anything else to `none` (Lathe must never emit a diff `spotless:check` would reject). That leaves
-eclipse/palantir projects with no Lathe formatting and keeps a formatter dependency (and its
-`jdk.compiler` add-exports) inside the server. Delegating to Maven:
+`lathe:sync` detects the reactor's Spotless java formatter and writes `style.json`:
 
-- **Removes the bundled formatter** — no google-java-format on the server module path, no version skew
-  with the project's formatter, no "google-only" limitation.
-- **Exact project fidelity** — the build and the editor run byte-identical formatting.
-- **Covers every Spotless formatter** uniformly.
+| Spotless `<java>` | `style.formatter` | engine |
+|---|---|---|
+| `googleJavaFormat` (GOOGLE) | `{ "engine": "google" }` | in-process (unchanged) |
+| `googleJavaFormat` AOSP | `{ "engine": "aosp" }` | in-process (unchanged) |
+| eclipse / palantir / other | `{ "engine": "command-file", "command": [ … mvn … ] }` | **delegated, in place (new)** |
+| no Spotless | *(no file)* | — |
+
+The two engines coexist: each workspace resolves exactly one, the google fast path is untouched, and
+the new path is purely additive.
 
 ## Why now plausible: mvnd
 
 A full `mvn` per format is normally too slow (JVM boot + eclipse-jdt init every call, ~2–5s). With a
-warm **mvnd** daemon the JVM and formatter stay resident. Measured on equalsverifier (eclipse Spotless):
+warm **mvnd** daemon the JVM and formatter stay resident. Measured on equalsverifier (eclipse Spotless,
+single file, mvnd warm): **~0.12–0.19s** — acceptable even for format-on-save. The design therefore
+**assumes mvnd**; cold daemon / plain `mvn` is slow (see Trade-offs).
 
-| Invocation (mvnd, warm) | Wall time |
-|---|---|
-| `mvn -pl <module> spotless:apply -DspotlessFiles=…/Foo.java`, file already clean | ~0.19s |
-| same, forcing a real reformat | ~0.12s |
+## Design
 
-~0.1–0.2s warm is acceptable even for format-on-save. The design therefore **assumes mvnd**; see
-Tradeoffs for the non-daemon fallback.
+### Engine abstraction
 
-## Proposed approach
+`FormatEngine` gains the target path so an in-place engine can locate the file:
 
-Add a delegated `FormatEngine` that runs the project's Spotless on a single file:
+```java
+sealed interface FormatEngine permits GoogleFormatEngine, ExternalCommandFormatEngine, FileCommandFormatEngine {
+  String format(String source, Path file) throws Exception;
+}
+```
 
-1. Map the file to its module and run, from the workspace root,
-   `mvn -pl <moduleRel> spotless:apply -DspotlessFiles=<regex for the file>` (mvnd on `PATH`).
-2. Spotless rewrites the file **in place**; read it back and return one whole-document `TextEdit`
-   (the existing `JavaFormatter`/fold-preservation path is unchanged — it only consumes edits).
+`GoogleFormatEngine` and `ExternalCommandFormatEngine` ignore `file` and are otherwise **unchanged** —
+the existing stdin/stdout `command` engine stays exactly as it is. `JavaFormatter` and
+`WorkspaceSession.format` pass the path (from the uri via `LatheUri.toPath`).
 
-`lathe:sync` already detects Spotless; `style.json`'s `formatter.engine` would become `spotless`
-(delegated) whenever the reactor configures a Spotless java formatter — replacing today's
-google/aosp/none mapping. No Spotless → `none` (unchanged).
+### New `FileCommandFormatEngine`
 
-## The two hard problems
+A `record (List<String> command, Path workspaceRoot, Duration timeout)`. On `format(source, file)`:
 
-### 1. Not a stdin/stdout filter
+1. write `source` to `file` (Spotless formats the **buffer**, not stale disk — this is the deliberate
+   "update the given file" behavior),
+2. run `command` with placeholders substituted, cwd = `workspaceRoot`,
+3. return `Files.readString(file)`.
 
-The current `ExternalCommandFormatEngine` is a stdin→stdout filter. `spotless:apply` reads nothing from
-stdin and writes the result **in place by path** (stdout is Maven log noise). So this needs a **new
-"in-place file" engine mode**: materialize the buffer at the file path, run Spotless, read it back.
+Any failure — non-zero exit, timeout (`destroyForcibly`), missing `mvn`, empty output — throws; the
+existing `JavaFormatter` late-catch logs `SEVERE` and leaves the buffer unchanged. stdout is Maven log
+noise (ignored); stderr inherits to `lsp.log`.
 
-### 2. Dirty buffers vs on-disk files
+Placeholders substituted by the engine:
 
-LSP `textDocument/formatting` operates on the (possibly unsaved) **buffer**; Spotless formats **files
-on disk** matched by its `<includes>` (a temp file outside `src/**` won't match). So delegated
-formatting has to run against the real path:
+- `%FILE%` → the file's **absolute path**.
+- `%MODULE%` → the file's module path for `-pl`: the nearest ancestor directory of `file` containing a
+  `pom.xml`, **relativized to `workspaceRoot`**. If that is the root itself (empty relative path), the
+  `-pl %MODULE%` pair is dropped so the command targets the whole reactor.
 
-- **Format-on-save** fits naturally — the content is being written anyway.
-- **On-demand format of a dirty buffer** would require writing the buffer to the real file first (a
-  disk side effect before the user saved). Options: restrict delegated formatting to save, or write a
-  shadow copy at a matching relative path, or accept the pre-write. This is the main open problem.
+### `-pl` is in the MVP
 
-## Tradeoffs
+Running `spotless:apply` at the reactor root initializes Spotless for **every** module (slow even with
+mvnd). The command therefore scopes to the file's module:
 
-- **Depends on mvnd for usability.** Cold daemon (first call / after idle) and plain `mvn` pay full
-  startup (seconds) — poor for format-on-save. Needs a clear capability/degradation story when mvnd is
-  absent (fall back to `none`? to the in-process engine during a transition?).
-- **A subprocess per format** vs a warm in-process call — even at 0.12s it is ~100× the in-process
-  google path, and serialized behind the daemon.
-- **Couples Lathe to Spotless** specifically (goal name, `-DspotlessFiles`, includes semantics) and to
-  Maven; Gradle/other builds get nothing until a parallel path exists.
-- **Spotless incremental cache / ratchet** interactions, `spotlessFiles` regex escaping, and
-  multi-module `-pl` targeting all need care.
-- **Removing the in-process engine** is a net simplification (no bundled formatter, fewer add-exports)
-  but trades guaranteed sub-ms formatting for daemon-dependent latency.
+```json
+"command": ["mvn", "-pl", "%MODULE%", "spotless:apply", "-DspotlessFiles=\\Q%FILE%\\E"]
+```
 
-## Open questions
+`\Q…\E` makes Spotless's `spotlessFiles` **regex** match the absolute path literally. Module
+resolution is a filesystem walk from `file` (no dependency on the server's module registry), so the
+engine stays self-contained.
 
-1. Delegated formatting for **on-demand dirty buffers** — disable, pre-write, or shadow-copy?
-2. **No-mvnd degradation** — fall back to `none`, or keep the in-process google engine as an optional
-   fast path during migration?
-3. Fully **remove** the in-process google engine, or keep it selectable (`engine: "google"`) alongside
-   `engine: "spotless"`?
-4. How to surface a **failed/slow** Spotless run (timeout, non-zero exit) without corrupting the buffer
-   — reuse the current "leave unchanged on failure" guarantee.
-5. **Capability timing** — `documentFormattingProvider` is advertised at `initialize`; mvnd/Spotless
-   availability may not be known then. Advertise optimistically and no-op, or probe once?
+### Detection and `engineFor`
+
+`WorkspaceStyleWriter` emits the `command-file` template (above, **mvn hard-coded for now**) for a
+non-google Spotless java formatter. `LatheLanguageServer.engineFor` maps `command-file` →
+`new FileCommandFormatEngine(command, rootPath, DEFAULT_TIMEOUT)`. google/aosp/none/command are
+unchanged.
+
+### Opt-out and override
+
+- **Override / per-project opt-out** — a committed `lathe-style.json` already wins over the generated
+  `.lathe/style.json`: set any engine, a custom `command`, or `{ "engine": "none" }` to opt out. No new
+  code.
+- **Global opt-out of auto-delegation** — a sync system property `-Dlathe.spotless=false`
+  (`LatheFlags`) makes detection emit `none` for non-google formatters instead of `command-file`, for a
+  developer or CI that never wants Lathe shelling out.
+
+## The two hard problems (accepted)
+
+1. **In-place, not a filter.** `spotless:apply` rewrites the file by path; it is not a stdin/stdout
+   filter, hence the separate `FileCommandFormatEngine`. The current `command` engine is unchanged.
+2. **Dirty buffers vs on-disk files.** The engine writes the buffer to the real path before formatting,
+   so on-demand formatting of an unsaved buffer touches disk before the user saved. This fits
+   format-on-save naturally; it is the deliberate "updates the given file" semantics, accepted for the
+   MVP.
+
+## Trade-offs
+
+- **Depends on mvnd** for usable latency; cold daemon / plain `mvn` is slow. Capability is advertised
+  at `initialize` regardless; a missing/slow `mvn` fails gracefully (no edits, buffer unchanged).
+- **A subprocess per format** vs the warm in-process google path — kept only for the non-google case.
+- **Couples the delegated path to Maven/Spotless** (`-pl`, `-DspotlessFiles`); Gradle is future work.
+- **In-place disk write** as above.
+
+## Future / potential
+
+- **Drop the in-process google engine entirely** — rejected for now (speed). Revisit only if the
+  delegated path proves fast and robust enough.
+- **Gradle** — the engine is build-agnostic (`command` + placeholders); a Gradle sync would emit
+  `["./gradlew", ":%MODULE%:spotlessApply", "-PspotlessFiles=…%FILE%…"]`. Gradle's always-on daemon
+  removes the mvnd prerequisite. See [Gradle support](../planned/lathe-gradle-support.md).
+- **Range-scoped formatting** — google-java-format's `getFormatReplacements(String, ranges)` formats
+  only changed line ranges; a later speed optimization for the in-process path (not tree-based — there
+  is no API to pass a compiled tree; see Non-goals).
 
 ## Non-goals
 
 - Reimplementing any formatter in-process (the opposite of this direction).
-- Non-Maven builds (Gradle) in the first cut.
+- Passing Lathe's attributed javac tree to google-java-format — investigated and rejected: its API is
+  String-based, it re-tokenizes the text and runs its own parse-only `Trees.parse`, and the one public
+  hook (`JavaInput.setCompilationUnit`) can't drive the package-private formatter; its own parse is
+  already cheap, so there is no meaningful speedup.
 - A `spotless:print`-to-stdout mode — Spotless has none; in-place is the only contract.
+- `onTypeFormatting` / editor-driven range formatting.
+
+## Tests
+
+- `FileCommandFormatEngine` driven by a **fake in-place script** (rewrites the file), so no real `mvn`
+  is needed; cover success, `%MODULE%`/`%FILE%` substitution, root-module (no `-pl`), and failure
+  (non-zero exit → buffer unchanged).
+- `WorkspaceStyleWriter`: eclipse → `command-file` mvn template; `-Dlathe.spotless=false` → `none`.
+- Update existing engine tests for the `format(source, file)` signature.
+- Invoker: multi-module stays google; optionally a second fixture with eclipse asserting the
+  `command-file` template is written.
