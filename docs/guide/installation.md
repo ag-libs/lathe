@@ -170,6 +170,10 @@ Lathe writes to two locations: `.lathe/` inside the project, and `~/.cache/lathe
   other `javac` inputs the language server needs.
 - `lathe:sync` writes `workspace.json` and each module's derived `main-launch.json`. The write is
   skipped when the content is unchanged, so a no-op build does not trigger a server reload.
+- `lathe:sync` also writes `style.json` (formatter + indent) when the reactor configures
+  `spotless-maven-plugin` — `googleJavaFormat` becomes the in-process formatter, anything else becomes
+  `none`. Commit a `lathe-style.json` at the repo root to override it. See
+  [lathe-workspace-style.md](../done/lathe-workspace-style.md).
 - `lathe-junit` writes each module's `test-launch.json` from inside the Surefire fork during the `test`
   phase — so test run/debug needs a build that reaches `test` (see the table above and
   [test-capture.md](test-capture.md)).

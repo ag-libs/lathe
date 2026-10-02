@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented; the option shape is **superseded by [lathe-workspace-style.md](../planned/lathe-workspace-style.md)**.
+Implemented; the option shape is **superseded by [lathe-workspace-style.md](lathe-workspace-style.md)**.
 The profiles still ship as described, but are now resolved per-workspace from a project
 `lathe-style.json` / `.lathe/style.json`: `indent_style`/`continuation_indent` became
 `style.indent = { profile, block, continuation }` (profile `editorconfig` default | `google`) and the

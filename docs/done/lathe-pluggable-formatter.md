@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented; the option shape is **superseded by [lathe-workspace-style.md](../planned/lathe-workspace-style.md)**.
+Implemented; the option shape is **superseded by [lathe-workspace-style.md](lathe-workspace-style.md)**.
 The formatter is now resolved per-workspace as `style.formatter = { engine, command }` (engine
 `google`/`aosp`/`none`/`command`) from a project `lathe-style.json` / `.lathe/style.json`, with the
 client `setup({ style = ... })` as the global-default fallback. The engines and external-command

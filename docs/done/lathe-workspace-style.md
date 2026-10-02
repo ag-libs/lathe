@@ -2,7 +2,9 @@
 
 ## Status
 
-Proposed. Decisions settled; not implemented.
+Implemented (phases 1 and 2). The server reads the per-workspace style file for the formatter, the
+nvim client reads it for indentation and gates format-on-save on the advertised capability, and
+`lathe:sync` auto-detects the formatter from `spotless-maven-plugin`.
 
 ## Goal
 
