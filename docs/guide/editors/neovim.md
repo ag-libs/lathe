@@ -123,6 +123,9 @@ freely.
 | Folding (classes, methods, blocks, import groups) | automatic (with a fold provider) | — | — |
 
 Diagnostics (`javac` errors/warnings, plus unused-private-member hints) publish automatically.
+Live edits show `javac` diagnostics; Error Prone and other annotation-processor diagnostics (including
+`-Werror` promotions) run on **save** — so a file can look clean on open and surface more after the
+first save. See [Diagnostics: live vs. on save](../how-it-works.md#diagnostics-live-vs-on-save).
 Formatting is opt-in — see [Formatting & indentation](#formatting--indentation).
 
 `:LatheInstances` lists **where the type under the cursor is instantiated** (`new AppServer(...)` sites) in

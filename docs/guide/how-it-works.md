@@ -54,6 +54,18 @@ or extra class-/module-path entries with an optional overlay (`lathe-run.json` /
 applied by the server and unable to change launch-correctness fields. Schema and selection rules are in
 [run-configuration.md](run-configuration.md).
 
+## Diagnostics: live vs. on save
+
+While you edit, Lathe runs a fast `javac` pass that reports parser and type-checker diagnostics for the
+file you are in — immediately, on every change.
+Annotation processors and classpath javac plugins — Error Prone and its `-Xep` checks, and anything
+that generates sources — are **not** run on this fast pass; they run only when you **save**, as part of
+the full compile that mirrors your build.
+So a file can look clean when you open it and surface more diagnostics after the first save — including
+Error Prone findings and, where the build sets `-Werror`, warnings promoted to errors.
+This is intentional: processor runs are too expensive to repeat on every keystroke, so Lathe keeps live
+editing responsive and reserves the full, build-faithful pass for save.
+
 ## Workspace freshness
 
 Files you have open are analysed live as you edit and save them. When sources or resources change
