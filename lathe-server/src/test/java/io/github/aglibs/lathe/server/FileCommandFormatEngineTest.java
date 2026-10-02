@@ -7,6 +7,7 @@ import io.github.aglibs.validcheck.ValidationException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -21,17 +22,23 @@ class FileCommandFormatEngineTest {
   }
 
   @Test
-  void format_writesBufferRunsCommandInPlace_thenReadsBack() throws Exception {
+  void format_returnsFormattedBuffer_withoutTouchingTheOpenFile() throws Exception {
     Files.writeString(root.resolve("pom.xml"), "<project/>");
     final Path file = root.resolve("Foo.java");
-    // Fake in-place formatter: uppercase the file (%FILE% -> absolute path).
+    Files.writeString(file, "on disk\n");
+    final FileTime before = Files.getLastModifiedTime(file);
+    // Fake in-place formatter: uppercase whatever is in the file (%FILE% -> the scratch temp).
     final var upper =
         engine(List.of("sh", "-c", "tr a-z A-Z < %FILE% > %FILE%.tmp && mv %FILE%.tmp %FILE%"));
 
-    final String result = upper.format("abc\n", file);
+    final String result = upper.format("buffer\n", file);
 
-    assertThat(result).isEqualTo("ABC\n");
-    assertThat(Files.readString(file)).isEqualTo("ABC\n"); // file updated in place
+    assertThat(result)
+        .isEqualTo("BUFFER\n"); // the buffer, formatted via a scratch file, is returned
+    assertThat(Files.readString(file)).isEqualTo("on disk\n"); // the open file is never touched
+    assertThat(Files.getLastModifiedTime(file)).isEqualTo(before); // nor its mtime
+    assertThat(Files.list(root).map(Path::getFileName).map(Path::toString).toList())
+        .containsExactlyInAnyOrder("pom.xml", "Foo.java"); // scratch temp removed
   }
 
   @Test

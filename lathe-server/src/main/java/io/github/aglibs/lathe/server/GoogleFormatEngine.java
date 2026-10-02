@@ -13,4 +13,9 @@ record GoogleFormatEngine(Style style) implements FormatEngine {
     final var options = JavaFormatterOptions.builder().style(style).build();
     return new Formatter(options).formatSourceAndFixImports(source);
   }
+
+  @Override
+  public boolean external() {
+    return false;
+  }
 }

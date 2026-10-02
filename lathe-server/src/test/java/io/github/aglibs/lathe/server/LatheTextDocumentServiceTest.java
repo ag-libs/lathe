@@ -51,6 +51,7 @@ import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.HoverParams;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.MessageParams;
+import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.ProgressParams;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
@@ -208,6 +209,25 @@ class LatheTextDocumentServiceTest {
         service.formatting(formattingParams()).get(5, TimeUnit.SECONDS);
 
     assertThat(edits).isNotEmpty();
+  }
+
+  @Test
+  void formatting_engineFails_notifiesClientAndReturnsEmpty() throws Exception {
+    service.initialize(tmp);
+    service.setFormatEngine(new GoogleFormatEngine(Style.GOOGLE));
+    service.didOpen(
+        new DidOpenTextDocumentParams(new TextDocumentItem(URI, "java", 1, "class { broken")));
+
+    final List<? extends TextEdit> edits =
+        service.formatting(formattingParams()).get(5, TimeUnit.SECONDS);
+
+    assertThat(edits).isEmpty();
+    verify(client, timeout(2000))
+        .showMessage(
+            argThat(
+                m ->
+                    m.getType() == MessageType.Warning
+                        && m.getMessage().contains("formatting failed")));
   }
 
   @Test

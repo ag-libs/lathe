@@ -62,6 +62,11 @@ record ExternalCommandFormatEngine(List<String> command, Duration timeout, Path 
     return formatted;
   }
 
+  @Override
+  public boolean external() {
+    return true;
+  }
+
   private static void deleteQuietly(final Path path) {
     try {
       Files.deleteIfExists(path);

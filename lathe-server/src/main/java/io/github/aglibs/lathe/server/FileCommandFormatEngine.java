@@ -10,13 +10,18 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
-// Formats by running a build command that rewrites the file in place (e.g. `mvn spotless:apply`),
-// unlike the stdin/stdout ExternalCommandFormatEngine: write the buffer to `file`, run the command,
-// read `file` back. Tokens: %MVN% -> mvnd/mvnw/mvn, %FILE% -> absolute path, %MODULE% -> the file's
-// module dir (nearest-pom ancestor) relative to the workspace root (else "." for the root module).
+// Runs a build command that formats a file in place (e.g. `mvn spotless:apply`), unlike the
+// stdin/stdout ExternalCommandFormatEngine. Touching the open file on disk would make the editor
+// flicker or flag a write conflict, so it instead formats a throwaway sibling temp file in the same
+// source directory (which still matches Spotless's src/**/*.java includes) and returns its content.
+// Tokens: %MVN% -> mvnd/mvnw/mvn, %FILE% -> temp path, %MODULE% -> module dir or ".".
 record FileCommandFormatEngine(List<String> command, Path workspaceRoot, Duration timeout)
     implements FormatEngine {
+
+  private static final Logger LOG = Logger.getLogger(FileCommandFormatEngine.class.getName());
 
   static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(60);
 
@@ -32,9 +37,28 @@ record FileCommandFormatEngine(List<String> command, Path workspaceRoot, Duratio
   @Override
   public String format(final String source, final Path file)
       throws IOException, InterruptedException {
-    Files.writeString(file, source, StandardCharsets.UTF_8);
-    run(resolve(file));
-    return Files.readString(file, StandardCharsets.UTF_8);
+    final Path scratch =
+        Files.createTempFile(file.toAbsolutePath().getParent(), "lathe-fmt-", ".java");
+    try {
+      Files.writeString(scratch, source, StandardCharsets.UTF_8);
+      run(resolve(scratch));
+      return Files.readString(scratch, StandardCharsets.UTF_8);
+    } finally {
+      deleteQuietly(scratch);
+    }
+  }
+
+  private static void deleteQuietly(final Path file) {
+    try {
+      Files.deleteIfExists(file);
+    } catch (final IOException e) {
+      LOG.log(Level.WARNING, e, () -> "[format] failed to delete scratch file %s".formatted(file));
+    }
+  }
+
+  @Override
+  public boolean external() {
+    return true;
   }
 
   private List<String> resolve(final Path file) {

@@ -9,4 +9,8 @@ sealed interface FormatEngine
     permits GoogleFormatEngine, ExternalCommandFormatEngine, FileCommandFormatEngine {
 
   String format(String source, Path file) throws Exception;
+
+  // True for engines that run an external process (slow enough to report progress); false for the
+  // in-process google/aosp engine.
+  boolean external();
 }
