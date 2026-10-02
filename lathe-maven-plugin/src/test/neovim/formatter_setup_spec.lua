@@ -1,8 +1,8 @@
 -- Verifies lathe.setup()'s formatter wiring from the formatting-and-indentation
--- design: the server `formatter` init option and the gated format-on-save
--- autocmd. The autocmd is installed only when formatter == "google" AND
--- format_on_save == true; the server capability itself is gated separately in
--- LatheLanguageServerTest.
+-- design: the server `formatter` init option and the format-on-save autocmd. The
+-- autocmd is installed whenever format_on_save == true; the actual formatting is
+-- gated at runtime on the server's advertised capability (checked per attach),
+-- which itself is covered in LatheLanguageServerTest.
 --
 -- The default (formatter absent) case runs first because vim.lsp.config merges
 -- successive config calls, so only the first setup observes a fresh config.
@@ -24,33 +24,34 @@ local function lspattach_count()
   return #vim.api.nvim_get_autocmds({ group = "LathePlugin", event = "LspAttach" })
 end
 
--- Default: no formatter init option, no format-on-save autocmd.
+-- Default: no style init option, no format-on-save autocmd.
 lathe.setup({})
-spec.check("default: no formatter init option", vim.lsp.config["lathe"].init_options.lathe.formatter, nil)
+spec.check("default: no style init option", vim.lsp.config["lathe"].init_options.lathe.style, nil)
 spec.check("default: no format-on-save autocmd", lspattach_count(), 1)
 
--- formatter="google" + format_on_save: init option present and save autocmd wired.
-lathe.setup({ formatter = "google", format_on_save = true })
+-- style.formatter is forwarded to the server as the global-default init option.
+lathe.setup({ style = { formatter = { engine = "google" } }, format_on_save = true })
 spec.check(
-  "google: formatter init option",
-  vim.lsp.config["lathe"].init_options.lathe.formatter,
+  "google: formatter engine init option",
+  vim.lsp.config["lathe"].init_options.lathe.style.formatter.engine,
   "google"
 )
-spec.check("google+save: format-on-save autocmd installed", lspattach_count(), 2)
+spec.check("format_on_save: autocmd installed", lspattach_count(), 2)
 
--- formatter="google" without format_on_save: no save autocmd.
-lathe.setup({ formatter = "google", format_on_save = false })
-spec.check("google, no save: no format-on-save autocmd", lspattach_count(), 1)
+-- format_on_save == false: no save autocmd regardless of the formatter.
+lathe.setup({ style = { formatter = { engine = "google" } }, format_on_save = false })
+spec.check("no save: no format-on-save autocmd", lspattach_count(), 1)
 
--- format_on_save without a formatter: gated off.
+-- format_on_save wires the autocmd even without a global formatter option: the formatter can come
+-- from a workspace style file, so the capability is checked at runtime (per attach), not here.
 lathe.setup({ format_on_save = true })
-spec.check("save without formatter: gated off", lspattach_count(), 1)
+spec.check("save without global formatter: autocmd wired (runtime-gated)", lspattach_count(), 2)
 
--- Indent profile options propagate from lathe.setup into the lathe.indent module.
-lathe.setup({ indent_style = "google", continuation_indent = 3 })
+-- The style.indent fallback propagates from lathe.setup into the lathe.indent module.
+lathe.setup({ style = { indent = { profile = "google", continuation = 3 } } })
 local indent = require("lathe.indent")
-spec.check("indent_style propagates to lathe.indent", indent.config.indent_style, "google")
-spec.check("continuation_indent propagates to lathe.indent", indent.config.continuation_indent, 3)
+spec.check("indent profile propagates to lathe.indent", indent.config.profile, "google")
+spec.check("indent continuation propagates to lathe.indent", indent.config.continuation, 3)
 
 -- M.format dispatches by filename: pom.xml -> lathe.pom.format_buffer (xmllint), everything else ->
 -- the fold-preserving google-java-format path. Stub both targets so the test records the route only.

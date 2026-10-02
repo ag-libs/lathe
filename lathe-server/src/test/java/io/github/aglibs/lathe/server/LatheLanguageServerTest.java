@@ -7,18 +7,26 @@ import static org.mockito.Mockito.mock;
 
 import com.google.gson.JsonParser;
 import io.github.aglibs.lathe.core.LatheFlags;
+import io.github.aglibs.lathe.core.LatheLayout;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.stream.Stream;
 import org.eclipse.lsp4j.InitializeParams;
+import org.eclipse.lsp4j.ServerCapabilities;
 import org.eclipse.lsp4j.TextDocumentSyncKind;
 import org.eclipse.lsp4j.WorkDoneProgressCancelParams;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class LatheLanguageServerTest {
+
+  @TempDir private Path root;
 
   @Test
   void createCapabilities_supportedFeatures_advertisesProviders() {
@@ -97,26 +105,12 @@ class LatheLanguageServerTest {
   }
 
   @Test
-  void initialize_formatterGoogle_advertisesFormatting() throws Exception {
+  void initialize_optionFormatterGoogle_advertisesFormatting() throws Exception {
     final var server = new LatheLanguageServer();
     server.connect(mock(LanguageClient.class));
     final var params = new InitializeParams();
     params.setInitializationOptions(
-        JsonParser.parseString("{\"lathe\":{\"formatter\":\"google\"}}").getAsJsonObject());
-
-    final var capabilities = server.initialize(params).get().getCapabilities();
-
-    assertThat(capabilities.getDocumentFormattingProvider().getLeft()).isTrue();
-    server.shutdown().join();
-  }
-
-  @Test
-  void initialize_formatterCommand_advertisesFormatting() throws Exception {
-    final var server = new LatheLanguageServer();
-    server.connect(mock(LanguageClient.class));
-    final var params = new InitializeParams();
-    params.setInitializationOptions(
-        JsonParser.parseString("{\"lathe\":{\"formatter\":{\"command\":[\"cat\"]}}}")
+        JsonParser.parseString("{\"lathe\":{\"style\":{\"formatter\":{\"engine\":\"google\"}}}}")
             .getAsJsonObject());
 
     final var capabilities = server.initialize(params).get().getCapabilities();
@@ -125,22 +119,44 @@ class LatheLanguageServerTest {
     server.shutdown().join();
   }
 
-  static Stream<Arguments> initialize_nonGoogleFormatter_cases() {
+  @Test
+  void initialize_optionFormatterCommand_advertisesFormatting() throws Exception {
+    final var server = new LatheLanguageServer();
+    server.connect(mock(LanguageClient.class));
+    final var params = new InitializeParams();
+    params.setInitializationOptions(
+        JsonParser.parseString(
+                "{\"lathe\":{\"style\":{\"formatter\":{\"engine\":\"command\",\"command\":[\"cat\"]}}}}")
+            .getAsJsonObject());
+
+    final var capabilities = server.initialize(params).get().getCapabilities();
+
+    assertThat(capabilities.getDocumentFormattingProvider().getLeft()).isTrue();
+    server.shutdown().join();
+  }
+
+  static Stream<Arguments> initialize_optionNoFormatter_cases() {
     return Stream.of(
         Arguments.of((Object) null),
         Arguments.of(JsonParser.parseString("{}").getAsJsonObject()),
         Arguments.of(JsonParser.parseString("{\"lathe\":{}}").getAsJsonObject()),
+        Arguments.of(JsonParser.parseString("{\"lathe\":{\"style\":{}}}").getAsJsonObject()),
         Arguments.of(
-            JsonParser.parseString("{\"lathe\":{\"formatter\":\"eclipse\"}}").getAsJsonObject()),
-        Arguments.of(JsonParser.parseString("{\"lathe\":{\"formatter\":{}}}").getAsJsonObject()),
+            JsonParser.parseString(
+                    "{\"lathe\":{\"style\":{\"formatter\":{\"engine\":\"eclipse\"}}}}")
+                .getAsJsonObject()),
         Arguments.of(
-            JsonParser.parseString("{\"lathe\":{\"formatter\":{\"command\":[]}}}")
+            JsonParser.parseString("{\"lathe\":{\"style\":{\"formatter\":{}}}}").getAsJsonObject()),
+        Arguments.of(
+            JsonParser.parseString(
+                    "{\"lathe\":{\"style\":{\"formatter\":{\"engine\":\"command\",\"command\":[]}}}}")
                 .getAsJsonObject()));
   }
 
   @ParameterizedTest
-  @MethodSource("initialize_nonGoogleFormatter_cases")
-  void initialize_formatterNotGoogle_omitsFormatting(final Object initOptions) throws Exception {
+  @MethodSource("initialize_optionNoFormatter_cases")
+  void initialize_optionNoUsableFormatter_omitsFormatting(final Object initOptions)
+      throws Exception {
     final var server = new LatheLanguageServer();
     server.connect(mock(LanguageClient.class));
     final var params = new InitializeParams();
@@ -150,6 +166,42 @@ class LatheLanguageServerTest {
 
     assertThat(capabilities.getDocumentFormattingProvider()).isNull();
     server.shutdown().join();
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"google", "aosp"})
+  void initialize_styleFileInProcessEngine_advertisesFormatting(final String engine)
+      throws Exception {
+    writeStyle("{\"formatter\":{\"engine\":\"%s\"}}".formatted(engine));
+
+    assertThat(initializeWithRoot(null).getDocumentFormattingProvider().getLeft()).isTrue();
+  }
+
+  @Test
+  void initialize_styleFileNone_overridesClientGoogleAndOmitsFormatting() throws Exception {
+    writeStyle("{\"formatter\":{\"engine\":\"none\"}}");
+    final var clientGoogle =
+        JsonParser.parseString("{\"lathe\":{\"formatter\":\"google\"}}").getAsJsonObject();
+
+    assertThat(initializeWithRoot(clientGoogle).getDocumentFormattingProvider()).isNull();
+  }
+
+  private void writeStyle(final String json) throws Exception {
+    final Path latheDir = root.resolve(LatheLayout.LATHE_DIR);
+    Files.createDirectories(latheDir);
+    Files.writeString(latheDir.resolve(LatheLayout.STYLE_FILE), json);
+  }
+
+  private ServerCapabilities initializeWithRoot(final Object initOptions) throws Exception {
+    final var server = new LatheLanguageServer();
+    server.connect(mock(LanguageClient.class));
+    final var params = new InitializeParams();
+    params.setRootUri(root.toUri().toString());
+    params.setInitializationOptions(initOptions);
+
+    final var capabilities = server.initialize(params).get().getCapabilities();
+    server.shutdown().join();
+    return capabilities;
   }
 
   @Test

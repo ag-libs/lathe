@@ -7,7 +7,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -30,7 +29,8 @@ record ExternalCommandFormatEngine(List<String> command, Duration timeout, Path 
   }
 
   @Override
-  public String format(final String source) throws IOException, InterruptedException {
+  public String format(final String source, final Path file)
+      throws IOException, InterruptedException {
     final Path stdin = Files.createTempFile("lathe-format-in", ".java");
     final Path stdout = Files.createTempFile("lathe-format-out", ".java");
     try {
@@ -52,23 +52,7 @@ record ExternalCommandFormatEngine(List<String> command, Duration timeout, Path 
     builder.redirectInput(stdin.toFile());
     builder.redirectOutput(stdout.toFile());
     builder.redirectError(ProcessBuilder.Redirect.INHERIT);
-    final Process process;
-    try {
-      process = builder.start();
-    } catch (final IOException e) {
-      throw new IOException("external formatter failed to start: %s".formatted(command), e);
-    }
-
-    if (!process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
-      process.destroyForcibly();
-      throw new IOException(
-          "external formatter timed out after %dms: %s".formatted(timeout.toMillis(), command));
-    }
-
-    final int exit = process.exitValue();
-    if (exit != 0) {
-      throw new IOException("external formatter exited %d: %s".formatted(exit, command));
-    }
+    FormatProcess.run(builder, timeout, command);
 
     final String formatted = Files.readString(stdout, StandardCharsets.UTF_8);
     if (formatted.isEmpty() && !source.isEmpty()) {
@@ -76,6 +60,11 @@ record ExternalCommandFormatEngine(List<String> command, Duration timeout, Path 
     }
 
     return formatted;
+  }
+
+  @Override
+  public boolean external() {
+    return true;
   }
 
   private static void deleteQuietly(final Path path) {

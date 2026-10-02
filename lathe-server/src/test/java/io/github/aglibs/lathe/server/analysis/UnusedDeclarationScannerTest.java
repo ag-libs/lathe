@@ -356,6 +356,40 @@ class UnusedDeclarationScannerTest {
         .isEqualTo("Unused local variable 'forgotten'");
   }
 
+  @Test
+  void compile_variableNamedIgnored_notReportedButNamedStillIs() {
+    // `ignored` conventionally marks an intentionally-unused binding (catch parameter, discarded
+    // result), so it is suppressed like `_`. A genuinely-unused named local proves the exclusion is
+    // scoped to the `ignored` name.
+    final List<Diagnostic> hints =
+        unusedHintsFor(
+            """
+            class Test {
+              public void method() {
+                try {
+                  risky();
+                } catch (final IllegalStateException ignored) {
+                  recover();
+                }
+                var ignored = compute();
+                int forgotten = 42;
+              }
+
+              private void risky() {}
+
+              private void recover() {}
+
+              private int compute() {
+                return 1;
+              }
+            }
+            """);
+
+    assertThat(hints).hasSize(1);
+    assertThat(hints.getFirst().getMessage().getLeft())
+        .isEqualTo("Unused local variable 'forgotten'");
+  }
+
   // --- Inner classes ---
 
   @Test

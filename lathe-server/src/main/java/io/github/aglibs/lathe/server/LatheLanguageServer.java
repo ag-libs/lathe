@@ -1,10 +1,15 @@
 package io.github.aglibs.lathe.server;
 
+import com.google.googlejavaformat.java.JavaFormatterOptions.Style;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.github.aglibs.lathe.core.LatheFlags;
+import io.github.aglibs.lathe.core.WorkspaceStyle;
+import io.github.aglibs.lathe.core.schema.FormatterSpec;
+import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
 import io.github.aglibs.lathe.server.analysis.ExtractionSupport;
 import io.github.aglibs.lathe.server.analysis.TokenScanner;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -179,10 +184,78 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     return params.getRootUri();
   }
 
-  // Reads initializationOptions.lathe.formatter: the string "google" selects the in-process engine,
-  // an object {"command": [...]} selects an external command. Anything else disables formatting.
+  // The workspace style file wins when it declares a formatter; otherwise the client's
+  // initializationOptions.lathe.formatter. "none"/unknown or absent means formatting is disabled.
   private static FormatEngine resolveFormatEngine(
       final InitializeParams params, final Path workingDir) {
+    final FormatterSpec spec = workspaceFormatterSpec(workingDir);
+    if (spec != null) {
+      return engineFor(spec, workingDir);
+    }
+
+    return initOptionFormatEngine(params, workingDir);
+  }
+
+  private static FormatterSpec workspaceFormatterSpec(final Path workingDir) {
+    if (workingDir == null) {
+      return null;
+    }
+
+    try {
+      final WorkspaceStyleData style = WorkspaceStyle.read(workingDir);
+      return style != null ? style.formatter() : null;
+    } catch (final IOException e) {
+      LOG.warning(() -> "[initialize] malformed style file: %s".formatted(e.getMessage()));
+      return null;
+    }
+  }
+
+  private static FormatEngine engineFor(final FormatterSpec spec, final Path workingDir) {
+    return switch (spec.engine()) {
+      case LatheFlags.FORMATTER_GOOGLE -> new GoogleFormatEngine(Style.GOOGLE);
+      case LatheFlags.FORMATTER_AOSP -> new GoogleFormatEngine(Style.AOSP);
+      case LatheFlags.FORMATTER_COMMAND -> commandEngine(spec.command(), workingDir);
+      case LatheFlags.FORMATTER_COMMAND_FILE -> fileCommandEngine(spec.command(), workingDir);
+      default -> null;
+    };
+  }
+
+  private static FormatEngine commandEngine(final List<String> command, final Path workingDir) {
+    if (command.isEmpty()) {
+      return null;
+    }
+
+    return new ExternalCommandFormatEngine(
+        command, ExternalCommandFormatEngine.DEFAULT_TIMEOUT, workingDir);
+  }
+
+  private static FormatEngine fileCommandEngine(final List<String> command, final Path workingDir) {
+    if (command.isEmpty() || workingDir == null) {
+      return null;
+    }
+
+    return new FileCommandFormatEngine(
+        command, workingDir, FileCommandFormatEngine.DEFAULT_TIMEOUT);
+  }
+
+  // The global-default formatter from initializationOptions.lathe.style.formatter, same {engine,
+  // command} shape as the file, so it flows through engineFor too.
+  private static FormatEngine initOptionFormatEngine(
+      final InitializeParams params, final Path workingDir) {
+    final JsonObject formatter = initOptionFormatter(params);
+    if (formatter == null) {
+      return null;
+    }
+
+    final JsonElement engine = formatter.get(LatheFlags.FORMATTER_ENGINE_OPTION);
+    if (engine == null || !engine.isJsonPrimitive() || engine.getAsString().isBlank()) {
+      return null;
+    }
+
+    return engineFor(new FormatterSpec(engine.getAsString(), commandOf(formatter)), workingDir);
+  }
+
+  private static JsonObject initOptionFormatter(final InitializeParams params) {
     if (!(params.getInitializationOptions() instanceof JsonObject options)) {
       return null;
     }
@@ -192,39 +265,25 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
       return null;
     }
 
-    final JsonElement formatter = lathe.getAsJsonObject().get(LatheFlags.FORMATTER_OPTION);
-    if (formatter == null) {
+    final JsonElement style = lathe.getAsJsonObject().get(LatheFlags.STYLE_OPTION);
+    if (style == null || !style.isJsonObject()) {
       return null;
     }
 
-    if (formatter.isJsonPrimitive()
-        && LatheFlags.FORMATTER_GOOGLE.equals(formatter.getAsString())) {
-      return new GoogleFormatEngine();
-    }
-
-    if (formatter.isJsonObject()) {
-      return externalFormatEngine(formatter.getAsJsonObject(), workingDir);
-    }
-
-    return null;
+    final JsonElement formatter = style.getAsJsonObject().get(LatheFlags.FORMATTER_OPTION);
+    return formatter != null && formatter.isJsonObject() ? formatter.getAsJsonObject() : null;
   }
 
-  private static FormatEngine externalFormatEngine(
-      final JsonObject formatter, final Path workingDir) {
+  private static List<String> commandOf(final JsonObject formatter) {
     final JsonElement command = formatter.get(LatheFlags.FORMATTER_COMMAND_OPTION);
     if (command == null || !command.isJsonArray()) {
-      return null;
+      return List.of();
     }
 
-    final List<JsonElement> elements = command.getAsJsonArray().asList();
-    if (elements.isEmpty() || !elements.stream().allMatch(JsonElement::isJsonPrimitive)) {
-      return null;
-    }
-
-    return new ExternalCommandFormatEngine(
-        elements.stream().map(JsonElement::getAsString).toList(),
-        ExternalCommandFormatEngine.DEFAULT_TIMEOUT,
-        workingDir);
+    return command.getAsJsonArray().asList().stream()
+        .filter(JsonElement::isJsonPrimitive)
+        .map(JsonElement::getAsString)
+        .toList();
   }
 
   private static boolean workDoneProgressSupported(final InitializeParams params) {

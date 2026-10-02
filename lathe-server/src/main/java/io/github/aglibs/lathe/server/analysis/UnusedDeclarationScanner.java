@@ -122,7 +122,7 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
 
   @Override
   public Void visitVariable(final VariableTree node, final Void v) {
-    if (declarationPhase && !isUnnamedVariable(node)) {
+    if (declarationPhase && !isUnnamedVariable(node) && !isConventionallyIgnored(node)) {
       final var element = trees.getElement(getCurrentPath());
       if (element != null) {
         final var parent = getCurrentPath().getParentPath().getLeaf();
@@ -169,6 +169,12 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
   private static boolean isUnnamedVariable(final VariableTree node) {
     final var name = node.getName();
     return name.isEmpty() || name.contentEquals("_");
+  }
+
+  // A variable named `ignored` conventionally marks an intentionally-unused binding (e.g.
+  // `catch (Exception ignored)` or a discarded result), so suppress the hint like the unnamed `_`.
+  private static boolean isConventionallyIgnored(final VariableTree node) {
+    return node.getName().contentEquals("ignored");
   }
 
   @Override

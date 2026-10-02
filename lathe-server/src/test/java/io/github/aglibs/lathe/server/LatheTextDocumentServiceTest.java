@@ -13,6 +13,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
+import com.google.googlejavaformat.java.JavaFormatterOptions.Style;
 import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
@@ -50,6 +51,7 @@ import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.HoverParams;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.MessageParams;
+import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.ProgressParams;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
@@ -198,7 +200,7 @@ class LatheTextDocumentServiceTest {
   @Test
   void formatting_enabled_delegatesToFormatter() throws Exception {
     service.initialize(tmp);
-    service.setFormatEngine(new GoogleFormatEngine());
+    service.setFormatEngine(new GoogleFormatEngine(Style.GOOGLE));
     service.didOpen(
         new DidOpenTextDocumentParams(
             new TextDocumentItem(URI, "java", 1, "class Foo {\nint x;\n}\n")));
@@ -210,8 +212,27 @@ class LatheTextDocumentServiceTest {
   }
 
   @Test
+  void formatting_engineFails_notifiesClientAndReturnsEmpty() throws Exception {
+    service.initialize(tmp);
+    service.setFormatEngine(new GoogleFormatEngine(Style.GOOGLE));
+    service.didOpen(
+        new DidOpenTextDocumentParams(new TextDocumentItem(URI, "java", 1, "class { broken")));
+
+    final List<? extends TextEdit> edits =
+        service.formatting(formattingParams()).get(5, TimeUnit.SECONDS);
+
+    assertThat(edits).isEmpty();
+    verify(client, timeout(2000))
+        .showMessage(
+            argThat(
+                m ->
+                    m.getType() == MessageType.Warning
+                        && m.getMessage().contains("formatting failed")));
+  }
+
+  @Test
   void rangeFormatting_anyProfile_returnsEmptyEdits() throws Exception {
-    service.setFormatEngine(new GoogleFormatEngine());
+    service.setFormatEngine(new GoogleFormatEngine(Style.GOOGLE));
     final var params = new DocumentRangeFormattingParams();
     params.setTextDocument(new TextDocumentIdentifier(URI));
     params.setRange(new Range(new Position(0, 0), new Position(0, 0)));

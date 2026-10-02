@@ -35,6 +35,13 @@ vim.loop.fs_unlink = function(path)
   return true
 end
 
+-- Control which maven executables "exist" so the mvnd/mvnw/mvn preference is deterministic. Empty =
+-- only plain `mvn`.
+local available = {}
+vim.fn.executable = function(name)
+  return available[name] and 1 or 0
+end
+
 local sync = require("lathe.sync")
 
 sync.run_maven("/ws/a", false)
@@ -82,5 +89,18 @@ spec.check("lathe/sync handler runs Maven at the given root", calls[#calls].opts
 spec.check("registers :LatheSync", vim.fn.exists(":LatheSync"), 2)
 spec.check("registers :LatheSyncCaptureTest", vim.fn.exists(":LatheSyncCaptureTest"), 2)
 spec.check("registers :LatheSyncOutput", vim.fn.exists(":LatheSyncOutput"), 2)
+
+-- Maven executable preference: mvnd (daemon) wins, else the project ./mvnw wrapper, else mvn.
+available = { mvnd = true }
+sync.run_maven("/ws/mvnd", false)
+spec.check("prefers mvnd when available", calls[#calls].cmd[1], "mvnd")
+
+available = { ["/ws/wrap/mvnw"] = true }
+sync.run_maven("/ws/wrap", false)
+spec.check("falls back to the project mvnw wrapper", calls[#calls].cmd[1], "/ws/wrap/mvnw")
+
+available = {}
+sync.run_maven("/ws/plain", false)
+spec.check("falls back to plain mvn", calls[#calls].cmd[1], "mvn")
 
 spec.finish("lathe.sync")

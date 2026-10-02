@@ -2,10 +2,13 @@
 
 ## Status
 
-Implemented.
-The profiles ship as described: `indent_style` (`editor_config` default | `google`), the opt-in
-`formatter = "google"` server gate, `format_on_save` defaulting off, and `continuation_indent`. The
-range-aware and on-type formatting work under "Future Work — Range-Aware Formatting" remains deferred.
+Implemented; the option shape is **superseded by [lathe-workspace-style.md](lathe-workspace-style.md)**.
+The profiles still ship as described, but are now resolved per-workspace from a project
+`lathe-style.json` / `.lathe/style.json`: `indent_style`/`continuation_indent` became
+`style.indent = { profile, block, continuation }` (profile `editorconfig` default | `google`) and the
+`formatter` gate became `style.formatter = { engine, command }`; `format_on_save` still defaults off
+and now gates on the server's advertised capability. The range-aware and on-type formatting work under
+"Future Work — Range-Aware Formatting" remains deferred.
 
 This design changes Lathe's default formatting behavior from "Google Java Format on save" to an explicit,
 project-sensitive choice.

@@ -146,6 +146,22 @@ public final class ProgressReporter {
       this.createRequired = createRequired;
     }
 
+    // Indeterminate single-shot progress (no count/percentage), e.g. a formatter running; pair with
+    // finish(). Dispatch stays under the task lock to preserve begin/end order.
+    public synchronized void begin(final String title) {
+      if (token == null || state != State.PENDING) {
+        return;
+      }
+
+      state = State.ACTIVE;
+      if (createRequired) {
+        reporter.createProgress(token);
+      }
+      final var begin = new WorkDoneProgressBegin();
+      begin.setTitle(title);
+      reporter.notifyProgress(token, begin);
+    }
+
     // Dispatch stays under this task lock to preserve begin/report/end order across module workers.
     public synchronized void begin(final String title, final int total) {
       if (token == null || state != State.PENDING) {

@@ -39,6 +39,8 @@ public final class LatheLayout {
   public static final String MAIN_LAUNCH_FILE = "main-launch.json";
   public static final String RUN_CONFIG_SHARED_FILE = "lathe-run.json";
   public static final String RUN_CONFIG_LOCAL_FILE = "run.json";
+  public static final String STYLE_FILE = "style.json";
+  public static final String STYLE_SHARED_FILE = "lathe-style.json";
   public static final String TEST_LAUNCH_SCHEMA_VERSION = "1";
   public static final String MAIN_LAUNCH_SCHEMA_VERSION = "1";
   public static final String TEST_RUNNER_MAIN_CLASS =

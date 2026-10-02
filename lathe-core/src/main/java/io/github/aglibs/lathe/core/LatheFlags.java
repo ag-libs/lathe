@@ -6,12 +6,25 @@ public final class LatheFlags {
   public static final String FORCE_SYNC = "lathe.sync.force";
   public static final String CAPTURE_ONLY = "lathe.capture.only";
   public static final String RESULTS_SINK = "lathe.results.sink";
+  // Opt out of delegating non-google Spotless formatters to `mvn spotless:apply` (sync writes
+  // `none`).
+  public static final String SPOTLESS = "lathe.spotless";
 
-  // Client init options {"lathe": {...}} selecting the formatter: "google" or {"command":[..]}.
+  // Client init options {"lathe": {"style": {"formatter": {"engine": "...", "command": [..]}}}} —
+  // the global-default style, same shape as the workspace style file; a project file overrides it.
   public static final String INIT_OPTIONS_KEY = "lathe";
+  public static final String STYLE_OPTION = "style";
   public static final String FORMATTER_OPTION = "formatter";
-  public static final String FORMATTER_GOOGLE = "google";
+  public static final String FORMATTER_ENGINE_OPTION = "engine";
   public static final String FORMATTER_COMMAND_OPTION = "command";
+  public static final String FORMATTER_GOOGLE = "google";
+  public static final String FORMATTER_AOSP = "aosp";
+  public static final String FORMATTER_NONE = "none";
+  public static final String FORMATTER_COMMAND = "command";
+  public static final String FORMATTER_COMMAND_FILE = "command-file";
+  public static final String FORMAT_FILE_TOKEN = "%FILE%";
+  public static final String FORMAT_MODULE_TOKEN = "%MODULE%";
+  public static final String FORMAT_MVN_TOKEN = "%MVN%";
 
   // Coarse client<->server contract version. The server advertises it via
   // capabilities.experimental.latheProtocol; the standalone client compares it against its own
@@ -45,5 +58,10 @@ public final class LatheFlags {
 
   public static boolean isCaptureOnly() {
     return "true".equals(System.getProperty(CAPTURE_ONLY));
+  }
+
+  // Delegating non-google Spotless to `mvn spotless:apply` is on unless explicitly disabled.
+  public static boolean isSpotlessDelegationEnabled() {
+    return !"false".equals(System.getProperty(SPOTLESS));
   }
 }

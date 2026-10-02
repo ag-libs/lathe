@@ -149,6 +149,19 @@ local function release_lock(root)
   pcall(vim.loop.fs_unlink, lock_path(root))
 end
 
+--- The fastest/most-faithful Maven available: the mvnd daemon, else the project's ./mvnw wrapper,
+--- else plain mvn on PATH.
+local function maven_executable(root)
+  if vim.fn.executable('mvnd') == 1 then
+    return 'mvnd'
+  end
+  local wrapper = root .. '/mvnw'
+  if vim.fn.executable(wrapper) == 1 then
+    return wrapper
+  end
+  return 'mvn'
+end
+
 --- Runs `mvn <goal>` at `root` as a background job, notifying on start and completion. `modules` (a
 --- list of reactor-relative paths) narrows it to `-pl <modules> -am`; empty/nil is a full reactor.
 function M.run_maven(root, capture_tests, modules)
@@ -163,7 +176,8 @@ function M.run_maven(root, capture_tests, modules)
   local goal = capture_tests and 'test' or 'process-test-classes'
   -- --no-transfer-progress drops the download chatter; the build cache is disabled so the sync always
   -- reproduces the outputs Lathe mirrors from `.lathe/`.
-  local cmd = { 'mvn', '--no-transfer-progress', '-Dmaven.build.cache.enabled=false' }
+  local cmd =
+    { maven_executable(root), '--no-transfer-progress', '-Dmaven.build.cache.enabled=false' }
   if modules and #modules > 0 then
     vim.list_extend(cmd, { '-pl', table.concat(modules, ','), '-am' })
   end

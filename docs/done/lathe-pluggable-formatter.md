@@ -2,10 +2,12 @@
 
 ## Status
 
-Implemented.
-`formatter = "google"` runs the built-in google-java-format engine in-process; `formatter =
-{ command = [...] }` runs a user-supplied external command. Range and on-type formatting stay
-deferred (see `lathe-formatting-profiles.md`).
+Implemented; the option shape is **superseded by [lathe-workspace-style.md](lathe-workspace-style.md)**.
+The formatter is now resolved per-workspace as `style.formatter = { engine, command }` (engine
+`google`/`aosp`/`none`/`command`) from a project `lathe-style.json` / `.lathe/style.json`, with the
+client `setup({ style = ... })` as the global-default fallback. The engines and external-command
+behaviour below are unchanged. Range and on-type formatting stay deferred (see
+`lathe-formatting-profiles.md`).
 
 ## Problem
 

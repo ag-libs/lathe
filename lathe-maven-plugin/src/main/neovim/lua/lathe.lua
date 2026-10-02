@@ -14,12 +14,15 @@
 --
 -- Options (all optional):
 --   capabilities        LSP capabilities table; defaults to vim.lsp.protocol.make_client_capabilities()
---   indent_style        "editor_config" | "google"; Java indentation profile (default: "editor_config").
---                       editor_config follows Neovim's built-in EditorConfig (4-space fallback);
---                       google uses fixed 2-space / 4-space Google Java Format indentation.
---   continuation_indent number; pins the wrapped-line continuation width (default: twice the block width).
---   formatter           nil | "google"; enables on-demand Google Java Format via the server (default: nil).
---   format_on_save      boolean; format on write; only wired when formatter == "google" (default: false).
+--   style               table; the global-default style, overridden per project by a workspace
+--                       lathe-style.json / .lathe/style.json. Same shape as that file:
+--                         style.formatter { engine = "google"|"aosp"|"none"|"command", command = {..} }
+--                                         server-side save-formatter (default: none).
+--                         style.indent    { profile = "google"|"editorconfig", block, continuation }
+--                                         editorconfig follows Neovim's built-in EditorConfig
+--                                         (4-space fallback); google uses 2/4-space widths. block and
+--                                         continuation (when > 0) override the profile widths.
+--   format_on_save      boolean; format on write when the server advertises formatting (default: false).
 --   pom                 table; client-side pom.xml support via `xmllint` (no server involvement):
 --                       { validate = true, format = false }. validate publishes XSD diagnostics on
 --                       open and live (debounced) as you type (default on); format points `formatprg`
@@ -245,10 +248,7 @@ function M.setup(opts)
   local root = cache_root()
   local launcher = launcher_path()
 
-  require('lathe.indent').setup({
-    indent_style = opts.indent_style,
-    continuation_indent = opts.continuation_indent,
-  })
+  require('lathe.indent').setup({ indent = opts.style and opts.style.indent })
 
   local augroup = vim.api.nvim_create_augroup('LathePlugin', { clear = true })
 
@@ -273,7 +273,9 @@ function M.setup(opts)
       end
     end,
     capabilities = opts.capabilities or vim.lsp.protocol.make_client_capabilities(),
-    init_options = { lathe = { formatter = opts.formatter } },
+    -- The global-default style (same shape as a workspace style file); a project's file overrides it.
+    -- The server reads style.formatter; indent is consumed client-side by lathe.indent.
+    init_options = { lathe = { style = opts.style } },
   })
   vim.lsp.enable('lathe')
 
@@ -284,16 +286,20 @@ function M.setup(opts)
     M.start(vim.api.nvim_get_current_buf())
   end, { desc = 'Lathe: start the language server for the current directory' })
 
-  -- Format-on-save is only meaningful with a formatter configured; without it the server does not
-  -- advertise formatting, so wiring the autocmd would be a no-op.
-  local format_on_save = opts.formatter ~= nil and opts.format_on_save == true
-  if format_on_save then
+  -- Format-on-save follows the server's advertised formatting capability (enabled by a workspace
+  -- style file or the client option), checked per attach, rather than a static setup() flag -- so a
+  -- project whose formatter comes from .lathe/style.json gets it without a global formatter option.
+  if opts.format_on_save == true then
     local fold = require('lathe.fold')
     vim.api.nvim_create_autocmd('LspAttach', {
       group = augroup,
       callback = function(args)
         local client = vim.lsp.get_client_by_id(args.data.client_id)
         if not (client and client.name == 'lathe') then
+          return
+        end
+
+        if not client.server_capabilities.documentFormattingProvider then
           return
         end
 
@@ -319,13 +325,11 @@ function M.setup(opts)
     })
   end
 
-  -- Manual formatting is available whenever the server advertises it (formatter enabled), whether or
-  -- not format-on-save is wired. :LatheFormat routes through M.format so the imports fold survives.
-  if opts.formatter ~= nil then
-    vim.api.nvim_create_user_command('LatheFormat', function()
-      M.format(vim.api.nvim_get_current_buf())
-    end, { desc = 'Lathe: format the current buffer (preserving the imports fold)' })
-  end
+  -- Manual formatting is a no-op unless the server advertises it, so :LatheFormat is always
+  -- registered; it routes through M.format so the imports fold survives the whole-document rewrite.
+  vim.api.nvim_create_user_command('LatheFormat', function()
+    M.format(vim.api.nvim_get_current_buf())
+  end, { desc = 'Lathe: format the current buffer (preserving the imports fold)' })
 
   -- Run surface: gutter signs for `main` methods plus :LatheRun to replay the buffer's main
   -- class from .lathe/ bytecode. Tests keep going through the neotest adapter; this is the
