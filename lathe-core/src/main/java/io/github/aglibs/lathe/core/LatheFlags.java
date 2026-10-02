@@ -24,6 +24,7 @@ public final class LatheFlags {
   public static final String FORMATTER_COMMAND_FILE = "command-file";
   public static final String FORMAT_FILE_TOKEN = "%FILE%";
   public static final String FORMAT_MODULE_TOKEN = "%MODULE%";
+  public static final String FORMAT_MVN_TOKEN = "%MVN%";
 
   // Coarse client<->server contract version. The server advertises it via
   // capabilities.experimental.latheProtocol; the standalone client compares it against its own

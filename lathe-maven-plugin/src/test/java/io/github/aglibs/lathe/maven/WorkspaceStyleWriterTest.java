@@ -54,7 +54,7 @@ class WorkspaceStyleWriterTest {
     assertThat(style.formatter().engine()).isEqualTo("command-file");
     assertThat(style.formatter().command())
         .containsExactly(
-            "mvn", "-pl", "%MODULE%", "spotless:apply", "-DspotlessFiles=\\Q%FILE%\\E");
+            "%MVN%", "-pl", "%MODULE%", "spotless:apply", "-DspotlessFiles=\\Q%FILE%\\E");
     assertThat(style.indent().profile()).isEqualTo("editorconfig");
   }
 

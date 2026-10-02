@@ -90,7 +90,7 @@ final class WorkspaceStyleWriter {
   // \Q..\E makes spotless's spotlessFiles regex match the absolute path literally.
   private static List<String> mavenSpotlessCommand() {
     return List.of(
-        "mvn",
+        LatheFlags.FORMAT_MVN_TOKEN,
         "-pl",
         LatheFlags.FORMAT_MODULE_TOKEN,
         "spotless:apply",

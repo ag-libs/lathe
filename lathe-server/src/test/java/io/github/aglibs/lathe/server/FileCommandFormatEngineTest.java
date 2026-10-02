@@ -64,6 +64,29 @@ class FileCommandFormatEngineTest {
   }
 
   @Test
+  void mavenExecutable_prefersMvndThenWrapperThenMvn() throws Exception {
+    final Path binDir = root.resolve("bin");
+    Files.createDirectories(binDir);
+    final Path mvnd = binDir.resolve("mvnd");
+    Files.writeString(mvnd, "#!/bin/sh\n");
+    mvnd.toFile().setExecutable(true);
+
+    // mvnd on PATH wins even when a wrapper exists.
+    final Path wrapper = root.resolve("mvnw");
+    Files.writeString(wrapper, "#!/bin/sh\n");
+    wrapper.toFile().setExecutable(true);
+    assertThat(FileCommandFormatEngine.mavenExecutable(root, binDir.toString())).isEqualTo("mvnd");
+
+    // No mvnd on PATH: the project's ./mvnw wrapper.
+    assertThat(FileCommandFormatEngine.mavenExecutable(root, ""))
+        .isEqualTo(wrapper.toAbsolutePath().toString());
+
+    // Neither: plain mvn.
+    Files.delete(wrapper);
+    assertThat(FileCommandFormatEngine.mavenExecutable(root, "")).isEqualTo("mvn");
+  }
+
+  @Test
   void constructor_invalidComponents_throw() {
     assertThatThrownBy(() -> engine(List.of()))
         .as("empty command")

@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.validcheck.ValidCheck;
+import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -12,8 +13,8 @@ import java.util.List;
 
 // Formats by running a build command that rewrites the file in place (e.g. `mvn spotless:apply`),
 // unlike the stdin/stdout ExternalCommandFormatEngine: write the buffer to `file`, run the command,
-// read `file` back. %FILE% -> absolute path; %MODULE% -> the file's module dir (nearest ancestor
-// pom.xml) relative to the workspace root, or "." for the root, so `-pl %MODULE%` scopes the build.
+// read `file` back. Tokens: %MVN% -> mvnd/mvnw/mvn, %FILE% -> absolute path, %MODULE% -> the file's
+// module dir (nearest-pom ancestor) relative to the workspace root (else "." for the root module).
 record FileCommandFormatEngine(List<String> command, Path workspaceRoot, Duration timeout)
     implements FormatEngine {
 
@@ -39,12 +40,43 @@ record FileCommandFormatEngine(List<String> command, Path workspaceRoot, Duratio
   private List<String> resolve(final Path file) {
     final String absolute = file.toAbsolutePath().toString();
     final String module = moduleRelativePath(file);
+    final String maven = mavenExecutable(workspaceRoot, System.getenv("PATH"));
     return command.stream()
         .map(
             arg ->
-                arg.replace(LatheFlags.FORMAT_FILE_TOKEN, absolute)
+                arg.replace(LatheFlags.FORMAT_MVN_TOKEN, maven)
+                    .replace(LatheFlags.FORMAT_FILE_TOKEN, absolute)
                     .replace(LatheFlags.FORMAT_MODULE_TOKEN, module))
         .toList();
+  }
+
+  // %MVN% -> the fastest/most-faithful Maven in the server env: the mvnd daemon, else the project's
+  // ./mvnw wrapper, else plain mvn. Package-private (with an explicit PATH) for tests.
+  static String mavenExecutable(final Path workspaceRoot, final String path) {
+    if (onPath("mvnd", path)) {
+      return "mvnd";
+    }
+
+    final Path wrapper = workspaceRoot.resolve("mvnw");
+    if (Files.isExecutable(wrapper)) {
+      return wrapper.toAbsolutePath().toString();
+    }
+
+    return "mvn";
+  }
+
+  private static boolean onPath(final String name, final String path) {
+    if (path == null) {
+      return false;
+    }
+
+    for (final String dir : path.split(File.pathSeparator)) {
+      if (!dir.isEmpty() && Files.isExecutable(Path.of(dir, name))) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   // The file's Maven module for `-pl`: the nearest ancestor holding a pom.xml, relative to the
