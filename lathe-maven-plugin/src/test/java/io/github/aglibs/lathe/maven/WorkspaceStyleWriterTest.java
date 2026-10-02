@@ -21,7 +21,7 @@ class WorkspaceStyleWriterTest {
   void fromConfig_googleJavaFormat_mapsToGoogle() throws Exception {
     final WorkspaceStyleData style =
         WorkspaceStyleWriter.fromConfig(
-            config("<configuration><java><googleJavaFormat/></java></configuration>"));
+            config("<configuration><java><googleJavaFormat/></java></configuration>"), true);
 
     assertThat(style.formatter().engine()).isEqualTo("google");
     assertThat(style.indent().profile()).isEqualTo("google");
@@ -35,7 +35,8 @@ class WorkspaceStyleWriterTest {
         WorkspaceStyleWriter.fromConfig(
             config(
                 "<configuration><java><googleJavaFormat><style>AOSP</style>"
-                    + "</googleJavaFormat></java></configuration>"));
+                    + "</googleJavaFormat></java></configuration>"),
+            true);
 
     assertThat(style.formatter().engine()).isEqualTo("aosp");
     assertThat(style.indent().block()).isEqualTo(4);
@@ -43,20 +44,35 @@ class WorkspaceStyleWriterTest {
   }
 
   @Test
-  void fromConfig_eclipse_mapsToNone() throws Exception {
+  void fromConfig_nonGoogleWithDelegation_mapsToCommandFile() throws Exception {
     final WorkspaceStyleData style =
         WorkspaceStyleWriter.fromConfig(
             config(
-                "<configuration><java><eclipse><file>fmt.xml</file></eclipse></java></configuration>"));
+                "<configuration><java><eclipse><file>fmt.xml</file></eclipse></java></configuration>"),
+            true);
 
-    assertThat(style.formatter().engine()).isEqualTo("none");
+    assertThat(style.formatter().engine()).isEqualTo("command-file");
+    assertThat(style.formatter().command())
+        .containsExactly(
+            "mvn", "-pl", "%MODULE%", "spotless:apply", "-DspotlessFiles=\\Q%FILE%\\E");
     assertThat(style.indent().profile()).isEqualTo("editorconfig");
   }
 
   @Test
+  void fromConfig_nonGoogleWithoutDelegation_mapsToNone() throws Exception {
+    final WorkspaceStyleData style =
+        WorkspaceStyleWriter.fromConfig(
+            config(
+                "<configuration><java><eclipse><file>fmt.xml</file></eclipse></java></configuration>"),
+            false);
+
+    assertThat(style.formatter().engine()).isEqualTo("none");
+  }
+
+  @Test
   void fromConfig_noJavaSection_returnsNull() throws Exception {
-    assertThat(WorkspaceStyleWriter.fromConfig(config("<configuration/>"))).isNull();
-    assertThat(WorkspaceStyleWriter.fromConfig(null)).isNull();
+    assertThat(WorkspaceStyleWriter.fromConfig(config("<configuration/>"), true)).isNull();
+    assertThat(WorkspaceStyleWriter.fromConfig(null, true)).isNull();
   }
 
   @Test

@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.maven;
 
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Json;
+import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.core.schema.IndentSpec;
@@ -17,8 +18,8 @@ import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
 
 // Derives .lathe/style.json from the reactor's spotless-maven-plugin. googleJavaFormat maps to the
-// in-process engine; anything Lathe cannot run in-process (eclipse, palantir) maps to "none", so it
-// never emits a diff the project's own spotless:check would reject.
+// in-process engine; any other formatter is delegated to `mvn spotless:apply` (command-file), or
+// disabled (none) when delegation is opted out — so Lathe never fights the project's own formatter.
 final class WorkspaceStyleWriter {
 
   private static final String SPOTLESS_PLUGIN_KEY = "com.diffplug.spotless:spotless-maven-plugin";
@@ -58,12 +59,16 @@ final class WorkspaceStyleWriter {
         rootProject.getBuild() == null
             ? null
             : rootProject.getBuild().getPluginsAsMap().get(SPOTLESS_PLUGIN_KEY);
-    return spotless == null ? null : fromConfig((Xpp3Dom) spotless.getConfiguration());
+    return spotless == null
+        ? null
+        : fromConfig(
+            (Xpp3Dom) spotless.getConfiguration(), LatheFlags.isSpotlessDelegationEnabled());
   }
 
-  // Maps a spotless <configuration> to the style, or null when it does not format Java.
-  // (Package-private for tests.)
-  static WorkspaceStyleData fromConfig(final Xpp3Dom config) {
+  // Maps a spotless <configuration> to a style, or null when it formats no Java. google runs
+  // in-process; other formatters delegate to `mvn spotless:apply` (command-file), else disabled
+  // (none). Package-private for tests.
+  static WorkspaceStyleData fromConfig(final Xpp3Dom config, final boolean delegate) {
     final Xpp3Dom java = config == null ? null : config.getChild("java");
     if (java == null) {
       return null;
@@ -74,8 +79,22 @@ final class WorkspaceStyleWriter {
       return googleStyle(googleJavaFormat);
     }
 
-    return new WorkspaceStyleData(
-        new FormatterSpec("none", List.of()), new IndentSpec("editorconfig", 0, 0));
+    final FormatterSpec formatter =
+        delegate
+            ? new FormatterSpec(LatheFlags.FORMATTER_COMMAND_FILE, mavenSpotlessCommand())
+            : new FormatterSpec(LatheFlags.FORMATTER_NONE, List.of());
+    return new WorkspaceStyleData(formatter, new IndentSpec("editorconfig", 0, 0));
+  }
+
+  // Runs `mvn -pl <module> spotless:apply` on the edited file. The engine fills %MODULE%/%FILE%;
+  // \Q..\E makes spotless's spotlessFiles regex match the absolute path literally.
+  private static List<String> mavenSpotlessCommand() {
+    return List.of(
+        "mvn",
+        "-pl",
+        LatheFlags.FORMAT_MODULE_TOKEN,
+        "spotless:apply",
+        "-DspotlessFiles=\\Q" + LatheFlags.FORMAT_FILE_TOKEN + "\\E");
   }
 
   private static WorkspaceStyleData googleStyle(final Xpp3Dom googleJavaFormat) {
