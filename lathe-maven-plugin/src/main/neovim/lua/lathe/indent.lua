@@ -1,19 +1,17 @@
 local M = {}
 
--- Profile config supplied by lathe.setup(). `indent_style` selects the profile ("editor_config" or
--- "google"); `continuation_indent`, when non-nil, pins the continuation width, otherwise it is
--- derived as twice the block width.
-M.config = { indent_style = "editor_config", continuation_indent = nil }
+-- Global fallback indent from lathe.setup({ style = { indent = ... } }), same shape as a workspace
+-- style file's `indent`: profile ("google"|"editorconfig") with optional block/continuation widths.
+M.config = { profile = "editorconfig" }
 
--- Block indent baseline, in spaces, applied per profile by apply_buffer_options. For editor_config
--- this is only a fallback: native EditorConfig runs after ftplugins and overrides it when a matching
--- `.editorconfig` exists. For google it is the fixed 2-space width.
+-- Block indent baseline, in spaces, per profile. For editor_config this is only a fallback: native
+-- EditorConfig runs after ftplugins and overrides it when a matching `.editorconfig` exists. For
+-- google it is the fixed 2-space width.
 local BASELINE_BLOCK = { editor_config = 4, google = 2 }
 
 function M.setup(opts)
   opts = opts or {}
-  M.config.indent_style = opts.indent_style or M.config.indent_style
-  M.config.continuation_indent = opts.continuation_indent
+  M.config = opts.indent or { profile = "editorconfig" }
 end
 
 local function buffer_root(bufnr)
@@ -23,22 +21,30 @@ local function buffer_root(bufnr)
   return ok and root or nil
 end
 
+-- Block and pinned-continuation widths for an `indent` table ({profile, block, continuation}), or nil
+-- when the table is nil. profile selects the baseline block; block/continuation (> 0) override it. A
+-- nil continuation means the caller derives it as twice the block.
+local function widths(indent)
+  if not indent then
+    return nil
+  end
+
+  local profile = indent.profile == "google" and "google" or "editor_config"
+  local block = (indent.block and indent.block > 0) and indent.block or BASELINE_BLOCK[profile]
+  local continuation = (indent.continuation and indent.continuation > 0) and indent.continuation or nil
+  return block, continuation
+end
+
 -- Per-buffer indent: the workspace style file's `indent` (committed/generated, under the root the
--- existing get_root resolves) when present, else the global setup() fallback. Returns the block width
--- and a pinned continuation width (nil = derive as twice the block).
+-- existing get_root resolves) when present, else the global setup() fallback.
 local function resolve(bufnr)
   local style = require("lathe.style").read(buffer_root(bufnr))
-  local indent = style and style.indent
-  if indent then
-    local profile = indent.profile == "google" and "google" or "editor_config"
-    local block = (indent.block and indent.block > 0) and indent.block or BASELINE_BLOCK[profile]
-    local continuation = (indent.continuation and indent.continuation > 0) and indent.continuation
-      or nil
+  local block, continuation = widths(style and style.indent)
+  if block then
     return block, continuation
   end
 
-  local baseline = BASELINE_BLOCK[M.config.indent_style] or BASELINE_BLOCK.editor_config
-  return baseline, M.config.continuation_indent
+  return widths(M.config)
 end
 
 -- Apply the resolved profile's baseline widths to a Java buffer. Called from ftplugin/java.lua at
@@ -65,7 +71,7 @@ local function block_width()
 end
 
 -- Continuation indent width: the width apply_buffer_options pinned for this buffer (from the
--- workspace style file or the global continuation_indent), otherwise twice the block width.
+-- workspace style file or the global indent fallback), otherwise twice the block width.
 local function continuation_width()
   local pinned = vim.b.lathe_continuation
   if pinned and pinned > 0 then

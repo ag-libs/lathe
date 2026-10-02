@@ -68,12 +68,13 @@ bindings.
 |---------------------|----------------------------------------------------------------------------------------------|-----------------------------------|
 | Diagnostics         | `javac` errors and warnings exactly as configured in Maven, plus unused private members and locals | `textDocument/publishDiagnostics` |
 | Code actions        | quick fixes and refactors: missing imports, add `throws`, wrap in `try/catch`, declare local, replace `var` with the inferred type, extract variable / constant / field, add a `final` field as a constructor parameter, stub a missing method | `textDocument/codeAction`         |
-| Formatting (opt-in) | whole-document google-java-format (with import cleanup) **or** your own external formatter command — **off by default** | `textDocument/formatting`         |
+| Formatting (per-workspace) | whole-document google-java-format / AOSP (with import cleanup) **or** your own external formatter command — resolved per project, **off by default** | `textDocument/formatting`         |
 
-Formatting is **opt-in**: advertised only when a client picks a formatter — the built-in `google`
-engine (fast, in-process) or any external command that reads Java on stdin and writes it back on
-stdout (run in the workspace root; the buffer is left untouched on failure). Live-edit indentation is
-a separate client concern.
+Formatting follows a **per-workspace style** (a project's `lathe-style.json` / `.lathe/style.json`,
+else the editor's global default), and is advertised only when one resolves a formatter: the built-in
+`google`/`aosp` engine (fast, in-process) or any external command that reads Java on stdin and writes
+it back on stdout (run in the workspace root; the buffer is left untouched on failure). Live-edit
+indentation follows the same style file and is otherwise a separate client concern.
 
 ### Run, test & debug
 
@@ -206,7 +207,7 @@ plugin manager at that directory. With `lazy.nvim`:
   cmd = "LatheStart",                             -- also start it from a non-Java buffer
   dependencies = { "mfussenegger/nvim-dap" },     -- optional: enables :LatheDebug
   config = function()
-    require("lathe").setup()                       -- formatter/indent are opt-in; see the cheatsheet
+    require("lathe").setup()                       -- per-workspace style; `style`/`format_on_save` opts in the cheatsheet
     -- Lathe adds no maps of its own; a starting set for commands with no Neovim default:
     vim.keymap.set("n", "<leader>rr", "<cmd>LatheRun<cr>",          { desc = "Run main under cursor" })
     vim.keymap.set("n", "grN",        "<cmd>LatheInstances<cr>",     { desc = "Instantiation sites" })

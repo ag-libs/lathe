@@ -30,7 +30,7 @@ local function project(style_json)
 end
 
 -- Global fallback is google (2-space); the workspace file pins editorconfig 4-space / 8 continuation.
-indent.setup({ indent_style = "google" })
+indent.setup({ indent = { profile = "google" } })
 local dir = project('{"schemaVersion":"1","indent":{"profile":"editorconfig","block":4,"continuation":8}}')
 vim.cmd.edit(dir .. "/src/main/java/Foo.java")
 indent.apply_buffer_options(vim.api.nvim_get_current_buf())
@@ -45,7 +45,7 @@ vim.fn.mkdir(plain .. "/src/main/java", "p")
 local src = assert(io.open(plain .. "/src/main/java/Bar.java", "w"))
 src:write("var x =\ny;\n")
 src:close()
-indent.setup({ indent_style = "google" })
+indent.setup({ indent = { profile = "google" } })
 vim.cmd.edit(plain .. "/src/main/java/Bar.java")
 indent.apply_buffer_options(vim.api.nvim_get_current_buf())
 spec.check("no style file falls back to global block", vim.bo.shiftwidth, 2)

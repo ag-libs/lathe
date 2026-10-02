@@ -105,26 +105,12 @@ class LatheLanguageServerTest {
   }
 
   @Test
-  void initialize_formatterGoogle_advertisesFormatting() throws Exception {
+  void initialize_optionFormatterGoogle_advertisesFormatting() throws Exception {
     final var server = new LatheLanguageServer();
     server.connect(mock(LanguageClient.class));
     final var params = new InitializeParams();
     params.setInitializationOptions(
-        JsonParser.parseString("{\"lathe\":{\"formatter\":\"google\"}}").getAsJsonObject());
-
-    final var capabilities = server.initialize(params).get().getCapabilities();
-
-    assertThat(capabilities.getDocumentFormattingProvider().getLeft()).isTrue();
-    server.shutdown().join();
-  }
-
-  @Test
-  void initialize_formatterCommand_advertisesFormatting() throws Exception {
-    final var server = new LatheLanguageServer();
-    server.connect(mock(LanguageClient.class));
-    final var params = new InitializeParams();
-    params.setInitializationOptions(
-        JsonParser.parseString("{\"lathe\":{\"formatter\":{\"command\":[\"cat\"]}}}")
+        JsonParser.parseString("{\"lathe\":{\"style\":{\"formatter\":{\"engine\":\"google\"}}}}")
             .getAsJsonObject());
 
     final var capabilities = server.initialize(params).get().getCapabilities();
@@ -133,22 +119,44 @@ class LatheLanguageServerTest {
     server.shutdown().join();
   }
 
-  static Stream<Arguments> initialize_nonGoogleFormatter_cases() {
+  @Test
+  void initialize_optionFormatterCommand_advertisesFormatting() throws Exception {
+    final var server = new LatheLanguageServer();
+    server.connect(mock(LanguageClient.class));
+    final var params = new InitializeParams();
+    params.setInitializationOptions(
+        JsonParser.parseString(
+                "{\"lathe\":{\"style\":{\"formatter\":{\"engine\":\"command\",\"command\":[\"cat\"]}}}}")
+            .getAsJsonObject());
+
+    final var capabilities = server.initialize(params).get().getCapabilities();
+
+    assertThat(capabilities.getDocumentFormattingProvider().getLeft()).isTrue();
+    server.shutdown().join();
+  }
+
+  static Stream<Arguments> initialize_optionNoFormatter_cases() {
     return Stream.of(
         Arguments.of((Object) null),
         Arguments.of(JsonParser.parseString("{}").getAsJsonObject()),
         Arguments.of(JsonParser.parseString("{\"lathe\":{}}").getAsJsonObject()),
+        Arguments.of(JsonParser.parseString("{\"lathe\":{\"style\":{}}}").getAsJsonObject()),
         Arguments.of(
-            JsonParser.parseString("{\"lathe\":{\"formatter\":\"eclipse\"}}").getAsJsonObject()),
-        Arguments.of(JsonParser.parseString("{\"lathe\":{\"formatter\":{}}}").getAsJsonObject()),
+            JsonParser.parseString(
+                    "{\"lathe\":{\"style\":{\"formatter\":{\"engine\":\"eclipse\"}}}}")
+                .getAsJsonObject()),
         Arguments.of(
-            JsonParser.parseString("{\"lathe\":{\"formatter\":{\"command\":[]}}}")
+            JsonParser.parseString("{\"lathe\":{\"style\":{\"formatter\":{}}}}").getAsJsonObject()),
+        Arguments.of(
+            JsonParser.parseString(
+                    "{\"lathe\":{\"style\":{\"formatter\":{\"engine\":\"command\",\"command\":[]}}}}")
                 .getAsJsonObject()));
   }
 
   @ParameterizedTest
-  @MethodSource("initialize_nonGoogleFormatter_cases")
-  void initialize_formatterNotGoogle_omitsFormatting(final Object initOptions) throws Exception {
+  @MethodSource("initialize_optionNoFormatter_cases")
+  void initialize_optionNoUsableFormatter_omitsFormatting(final Object initOptions)
+      throws Exception {
     final var server = new LatheLanguageServer();
     server.connect(mock(LanguageClient.class));
     final var params = new InitializeParams();

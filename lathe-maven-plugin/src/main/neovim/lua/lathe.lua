@@ -14,12 +14,15 @@
 --
 -- Options (all optional):
 --   capabilities        LSP capabilities table; defaults to vim.lsp.protocol.make_client_capabilities()
---   indent_style        "editor_config" | "google"; Java indentation profile (default: "editor_config").
---                       editor_config follows Neovim's built-in EditorConfig (4-space fallback);
---                       google uses fixed 2-space / 4-space Google Java Format indentation.
---   continuation_indent number; pins the wrapped-line continuation width (default: twice the block width).
---   formatter           nil | "google"; enables on-demand Google Java Format via the server (default: nil).
---   format_on_save      boolean; format on write; only wired when formatter == "google" (default: false).
+--   style               table; the global-default style, overridden per project by a workspace
+--                       lathe-style.json / .lathe/style.json. Same shape as that file:
+--                         style.formatter { engine = "google"|"aosp"|"none"|"command", command = {..} }
+--                                         server-side save-formatter (default: none).
+--                         style.indent    { profile = "google"|"editorconfig", block, continuation }
+--                                         editorconfig follows Neovim's built-in EditorConfig
+--                                         (4-space fallback); google uses 2/4-space widths. block and
+--                                         continuation (when > 0) override the profile widths.
+--   format_on_save      boolean; format on write when the server advertises formatting (default: false).
 --   pom                 table; client-side pom.xml support via `xmllint` (no server involvement):
 --                       { validate = true, format = false }. validate publishes XSD diagnostics on
 --                       open and live (debounced) as you type (default on); format points `formatprg`
@@ -245,10 +248,7 @@ function M.setup(opts)
   local root = cache_root()
   local launcher = launcher_path()
 
-  require('lathe.indent').setup({
-    indent_style = opts.indent_style,
-    continuation_indent = opts.continuation_indent,
-  })
+  require('lathe.indent').setup({ indent = opts.style and opts.style.indent })
 
   local augroup = vim.api.nvim_create_augroup('LathePlugin', { clear = true })
 
@@ -273,7 +273,9 @@ function M.setup(opts)
       end
     end,
     capabilities = opts.capabilities or vim.lsp.protocol.make_client_capabilities(),
-    init_options = { lathe = { formatter = opts.formatter } },
+    -- The global-default style (same shape as a workspace style file); a project's file overrides it.
+    -- The server reads style.formatter; indent is consumed client-side by lathe.indent.
+    init_options = { lathe = { style = opts.style } },
   })
   vim.lsp.enable('lathe')
 

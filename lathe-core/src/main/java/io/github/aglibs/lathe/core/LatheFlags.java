@@ -7,14 +7,17 @@ public final class LatheFlags {
   public static final String CAPTURE_ONLY = "lathe.capture.only";
   public static final String RESULTS_SINK = "lathe.results.sink";
 
-  // Client init options {"lathe": {...}} selecting the formatter: "google" or {"command":[..]}.
+  // Client init options {"lathe": {"style": {"formatter": {"engine": "...", "command": [..]}}}} —
+  // the global-default style, same shape as the workspace style file; a project file overrides it.
   public static final String INIT_OPTIONS_KEY = "lathe";
+  public static final String STYLE_OPTION = "style";
   public static final String FORMATTER_OPTION = "formatter";
+  public static final String FORMATTER_ENGINE_OPTION = "engine";
+  public static final String FORMATTER_COMMAND_OPTION = "command";
   public static final String FORMATTER_GOOGLE = "google";
   public static final String FORMATTER_AOSP = "aosp";
   public static final String FORMATTER_NONE = "none";
   public static final String FORMATTER_COMMAND = "command";
-  public static final String FORMATTER_COMMAND_OPTION = "command";
 
   // Coarse client<->server contract version. The server advertises it via
   // capabilities.experimental.latheProtocol; the standalone client compares it against its own

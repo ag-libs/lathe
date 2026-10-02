@@ -21,7 +21,7 @@ local function compute(lines, target)
 end
 
 -- google profile: fixed 2-space block, 4-space continuation.
-indent.setup({ indent_style = "google" })
+indent.setup({ indent = { profile = "google" } })
 indent.apply_buffer_options(0)
 spec.check("google: expandtab", vim.bo.expandtab, true)
 spec.check("google: shiftwidth", vim.bo.shiftwidth, 2)
@@ -31,7 +31,7 @@ spec.check("google: block indent", compute({ "void m() {", "body();" }, 2), 2)
 spec.check("google: continuation indent", compute({ "var x =", "y;" }, 2), 4)
 
 -- editor_config baseline (no matching .editorconfig): 4-space block, 8-space continuation.
-indent.setup({ indent_style = "editor_config" })
+indent.setup({ indent = { profile = "editorconfig" } })
 indent.apply_buffer_options(0)
 spec.check("editor_config: expandtab baseline", vim.bo.expandtab, true)
 spec.check("editor_config: shiftwidth baseline", vim.bo.shiftwidth, 4)
@@ -42,7 +42,7 @@ spec.check("editor_config: continuation indent", compute({ "var x =", "y;" }, 2)
 
 -- Tab indentation (EditorConfig indent_style=tab sets expandtab off and shiftwidth 0): block width
 -- falls back to tabstop per Vim's rule.
-indent.setup({ indent_style = "editor_config" })
+indent.setup({ indent = { profile = "editorconfig" } })
 vim.bo.expandtab = false
 vim.bo.shiftwidth = 0
 vim.bo.softtabstop = 0
@@ -50,12 +50,12 @@ vim.bo.tabstop = 4
 spec.check("shiftwidth=0 falls back to tabstop", compute({ "void m() {", "body();" }, 2), 4)
 
 -- continuation_indent pins the continuation width regardless of profile/block width.
-indent.setup({ indent_style = "google", continuation_indent = 3 })
+indent.setup({ indent = { profile = "google", continuation = 3 } })
 indent.apply_buffer_options(0)
 spec.check("continuation_indent override", compute({ "var x =", "y;" }, 2), 3)
 
 -- An unknown indent_style falls back to the editor_config 4-space baseline.
-indent.setup({ indent_style = "bogus" })
+indent.setup({ indent = { profile = "bogus" } })
 indent.apply_buffer_options(0)
 spec.check("unknown indent_style falls back to 4-space baseline", vim.bo.shiftwidth, 4)
 
@@ -71,7 +71,7 @@ local src = assert(io.open(dir .. "/Foo.java", "w"))
 src:write("class Foo {}\n")
 src:close()
 
-indent.setup({ indent_style = "editor_config" })
+indent.setup({ indent = { profile = "editorconfig" } })
 vim.cmd.edit(dir .. "/Foo.java")
 local ec_buf = vim.api.nvim_get_current_buf()
 indent.apply_buffer_options(ec_buf) -- ftplugin baseline (4), applied at FileType time

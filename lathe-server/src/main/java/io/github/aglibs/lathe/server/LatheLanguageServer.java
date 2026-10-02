@@ -228,8 +228,24 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
         command, ExternalCommandFormatEngine.DEFAULT_TIMEOUT, workingDir);
   }
 
+  // The global-default formatter from initializationOptions.lathe.style.formatter, same {engine,
+  // command} shape as the file, so it flows through engineFor too.
   private static FormatEngine initOptionFormatEngine(
       final InitializeParams params, final Path workingDir) {
+    final JsonObject formatter = initOptionFormatter(params);
+    if (formatter == null) {
+      return null;
+    }
+
+    final JsonElement engine = formatter.get(LatheFlags.FORMATTER_ENGINE_OPTION);
+    if (engine == null || !engine.isJsonPrimitive() || engine.getAsString().isBlank()) {
+      return null;
+    }
+
+    return engineFor(new FormatterSpec(engine.getAsString(), commandOf(formatter)), workingDir);
+  }
+
+  private static JsonObject initOptionFormatter(final InitializeParams params) {
     if (!(params.getInitializationOptions() instanceof JsonObject options)) {
       return null;
     }
@@ -239,39 +255,25 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
       return null;
     }
 
-    final JsonElement formatter = lathe.getAsJsonObject().get(LatheFlags.FORMATTER_OPTION);
-    if (formatter == null) {
+    final JsonElement style = lathe.getAsJsonObject().get(LatheFlags.STYLE_OPTION);
+    if (style == null || !style.isJsonObject()) {
       return null;
     }
 
-    if (formatter.isJsonPrimitive()
-        && LatheFlags.FORMATTER_GOOGLE.equals(formatter.getAsString())) {
-      return new GoogleFormatEngine(Style.GOOGLE);
-    }
-
-    if (formatter.isJsonObject()) {
-      return externalFormatEngine(formatter.getAsJsonObject(), workingDir);
-    }
-
-    return null;
+    final JsonElement formatter = style.getAsJsonObject().get(LatheFlags.FORMATTER_OPTION);
+    return formatter != null && formatter.isJsonObject() ? formatter.getAsJsonObject() : null;
   }
 
-  private static FormatEngine externalFormatEngine(
-      final JsonObject formatter, final Path workingDir) {
+  private static List<String> commandOf(final JsonObject formatter) {
     final JsonElement command = formatter.get(LatheFlags.FORMATTER_COMMAND_OPTION);
     if (command == null || !command.isJsonArray()) {
-      return null;
+      return List.of();
     }
 
-    final List<JsonElement> elements = command.getAsJsonArray().asList();
-    if (elements.isEmpty() || !elements.stream().allMatch(JsonElement::isJsonPrimitive)) {
-      return null;
-    }
-
-    return new ExternalCommandFormatEngine(
-        elements.stream().map(JsonElement::getAsString).toList(),
-        ExternalCommandFormatEngine.DEFAULT_TIMEOUT,
-        workingDir);
+    return command.getAsJsonArray().asList().stream()
+        .filter(JsonElement::isJsonPrimitive)
+        .map(JsonElement::getAsString)
+        .toList();
   }
 
   private static boolean workDoneProgressSupported(final InitializeParams params) {
