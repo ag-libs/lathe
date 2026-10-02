@@ -146,9 +146,9 @@ class LspSmokeTest {
     assertThat(caps.getImplementationProvider()).isNotNull();
     assertThat(caps.getTypeHierarchyProvider()).isNotNull();
     assertThat(caps.getReferencesProvider()).isNotNull();
-    // Formatting is opt-in: advertised only when the client sends the formatter="google" init
-    // option. This smoke test initializes without it, so the capability must be absent by default.
-    assertThat(caps.getDocumentFormattingProvider()).isNull();
+    // Formatting is per-workspace: this fixture's spotless googleJavaFormat config makes lathe:sync
+    // write .lathe/style.json with the google engine, so the server advertises formatting here.
+    assertThat(caps.getDocumentFormattingProvider()).isNotNull();
     assertThat(caps.getSemanticTokensProvider()).isNotNull();
   }
 

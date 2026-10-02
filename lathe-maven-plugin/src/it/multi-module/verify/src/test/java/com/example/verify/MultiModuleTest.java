@@ -93,6 +93,15 @@ class MultiModuleTest {
   }
 
   @Test
+  void sync_styleJson_detectsGoogleFromSpotless() throws IOException {
+    final var style = lathe("style.json");
+    assertThat(style).exists();
+    final var content = read(style);
+    assertThat(content).contains("\"engine\": \"google\"");
+    assertThat(content).contains("\"profile\": \"google\"");
+  }
+
+  @Test
   void sync_workspaceJson_recordsResourceRoots() throws IOException {
     final var content = read(lathe("workspace.json"));
     assertThat(content).contains("\"resourceRoots\"");
