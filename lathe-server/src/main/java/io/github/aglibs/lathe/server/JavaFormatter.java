@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -15,7 +16,7 @@ final class JavaFormatter {
 
   private JavaFormatter() {}
 
-  static List<TextEdit> format(final FormatEngine engine, final String content) {
+  static List<TextEdit> format(final FormatEngine engine, final String content, final Path file) {
     if (content == null) {
       return List.of();
     }
@@ -23,7 +24,7 @@ final class JavaFormatter {
     final String engineType = engine.getClass().getSimpleName();
     final var t = Stopwatch.start();
     try {
-      final String formatted = engine.format(content);
+      final String formatted = engine.format(content, file);
       if (formatted.equals(content)) {
         LOG.fine(() -> "[format] %s no changes %dms".formatted(engineType, t.elapsedMs()));
         return List.of();

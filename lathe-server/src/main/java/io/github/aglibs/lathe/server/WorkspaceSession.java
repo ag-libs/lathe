@@ -2660,7 +2660,8 @@ final class WorkspaceSession {
     final var t = Stopwatch.start();
     final OpenDocument openFile = docs.get(uri);
     final List<TextEdit> result =
-        JavaFormatter.format(engine, openFile != null ? openFile.content() : null);
+        JavaFormatter.format(
+            engine, openFile != null ? openFile.content() : null, LatheUri.toPath(uri));
     LOG.info(() -> "[%s] %s %dms edits=%d".formatted("format", uri, t.elapsedMs(), result.size()));
     return result;
   }

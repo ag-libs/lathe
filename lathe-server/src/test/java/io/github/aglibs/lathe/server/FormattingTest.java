@@ -3,14 +3,16 @@ package io.github.aglibs.lathe.server;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.google.googlejavaformat.java.JavaFormatterOptions.Style;
+import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 
 class FormattingTest {
 
   private static final FormatEngine ENGINE = new GoogleFormatEngine(Style.GOOGLE);
+  private static final Path FILE = Path.of("Sample.java");
 
   private static String formattedText(final String source) {
-    final var edits = JavaFormatter.format(ENGINE, source);
+    final var edits = JavaFormatter.format(ENGINE, source, FILE);
     assertThat(edits).hasSize(1);
     return edits.getFirst().getNewText();
   }
@@ -51,7 +53,8 @@ class FormattingTest {
                     return List.of(value);
                   }
                 }
-                """))
+                """,
+                FILE))
         .isEmpty();
   }
 
@@ -85,6 +88,6 @@ class FormattingTest {
 
   @Test
   void format_syntaxError_returnsEmpty() {
-    assertThat(JavaFormatter.format(ENGINE, "class { broken")).isEmpty();
+    assertThat(JavaFormatter.format(ENGINE, "class { broken", FILE)).isEmpty();
   }
 }

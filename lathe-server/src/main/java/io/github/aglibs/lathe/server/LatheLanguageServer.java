@@ -215,6 +215,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
       case LatheFlags.FORMATTER_GOOGLE -> new GoogleFormatEngine(Style.GOOGLE);
       case LatheFlags.FORMATTER_AOSP -> new GoogleFormatEngine(Style.AOSP);
       case LatheFlags.FORMATTER_COMMAND -> commandEngine(spec.command(), workingDir);
+      case LatheFlags.FORMATTER_COMMAND_FILE -> fileCommandEngine(spec.command(), workingDir);
       default -> null;
     };
   }
@@ -226,6 +227,15 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
 
     return new ExternalCommandFormatEngine(
         command, ExternalCommandFormatEngine.DEFAULT_TIMEOUT, workingDir);
+  }
+
+  private static FormatEngine fileCommandEngine(final List<String> command, final Path workingDir) {
+    if (command.isEmpty() || workingDir == null) {
+      return null;
+    }
+
+    return new FileCommandFormatEngine(
+        command, workingDir, FileCommandFormatEngine.DEFAULT_TIMEOUT);
   }
 
   // The global-default formatter from initializationOptions.lathe.style.formatter, same {engine,
