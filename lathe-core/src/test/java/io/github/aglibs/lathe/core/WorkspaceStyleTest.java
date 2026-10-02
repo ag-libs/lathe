@@ -36,7 +36,7 @@ final class WorkspaceStyleTest {
   void read_committedAndGenerated_committedWins() throws IOException {
     writeGenerated(new FormatterSpec("google", List.of()), new IndentSpec("google", 2, 4));
     Json.write(
-        new WorkspaceStyleData("1", new FormatterSpec("none", List.of()), null),
+        new WorkspaceStyleData(new FormatterSpec("none", List.of()), null),
         root.resolve(LatheLayout.STYLE_SHARED_FILE));
 
     assertThat(WorkspaceStyle.read(root).formatter().engine()).isEqualTo("none");
@@ -53,7 +53,6 @@ final class WorkspaceStyleTest {
       throws IOException {
     final Path latheDir = root.resolve(LatheLayout.LATHE_DIR);
     Files.createDirectories(latheDir);
-    Json.write(
-        new WorkspaceStyleData("1", formatter, indent), latheDir.resolve(LatheLayout.STYLE_FILE));
+    Json.write(new WorkspaceStyleData(formatter, indent), latheDir.resolve(LatheLayout.STYLE_FILE));
   }
 }

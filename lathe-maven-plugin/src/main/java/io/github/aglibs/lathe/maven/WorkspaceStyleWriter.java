@@ -74,18 +74,17 @@ final class WorkspaceStyleWriter {
       return googleStyle(googleJavaFormat);
     }
 
-    return style(new FormatterSpec("none", List.of()), new IndentSpec("editorconfig", 0, 0));
+    return new WorkspaceStyleData(
+        new FormatterSpec("none", List.of()), new IndentSpec("editorconfig", 0, 0));
   }
 
   private static WorkspaceStyleData googleStyle(final Xpp3Dom googleJavaFormat) {
     final Xpp3Dom styleEl = googleJavaFormat.getChild("style");
     final boolean aosp = styleEl != null && "AOSP".equalsIgnoreCase(styleEl.getValue().trim());
     return aosp
-        ? style(new FormatterSpec("aosp", List.of()), new IndentSpec("google", 4, 8))
-        : style(new FormatterSpec("google", List.of()), new IndentSpec("google", 2, 4));
-  }
-
-  private static WorkspaceStyleData style(final FormatterSpec formatter, final IndentSpec indent) {
-    return new WorkspaceStyleData(LatheLayout.STYLE_SCHEMA_VERSION, formatter, indent);
+        ? new WorkspaceStyleData(
+            new FormatterSpec("aosp", List.of()), new IndentSpec("google", 4, 8))
+        : new WorkspaceStyleData(
+            new FormatterSpec("google", List.of()), new IndentSpec("google", 2, 4));
   }
 }

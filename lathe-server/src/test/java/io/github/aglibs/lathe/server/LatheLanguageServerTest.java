@@ -172,14 +172,14 @@ class LatheLanguageServerTest {
   @ValueSource(strings = {"google", "aosp"})
   void initialize_styleFileInProcessEngine_advertisesFormatting(final String engine)
       throws Exception {
-    writeStyle("{\"schemaVersion\":\"1\",\"formatter\":{\"engine\":\"%s\"}}".formatted(engine));
+    writeStyle("{\"formatter\":{\"engine\":\"%s\"}}".formatted(engine));
 
     assertThat(initializeWithRoot(null).getDocumentFormattingProvider().getLeft()).isTrue();
   }
 
   @Test
   void initialize_styleFileNone_overridesClientGoogleAndOmitsFormatting() throws Exception {
-    writeStyle("{\"schemaVersion\":\"1\",\"formatter\":{\"engine\":\"none\"}}");
+    writeStyle("{\"formatter\":{\"engine\":\"none\"}}");
     final var clientGoogle =
         JsonParser.parseString("{\"lathe\":{\"formatter\":\"google\"}}").getAsJsonObject();
 

@@ -35,7 +35,6 @@ client):
 
 ```json
 {
-  "schemaVersion": "1",
   "formatter": { "engine": "google" | "aosp" | "none" | "command",
                  "command": ["spotless-cli", "-"] },
   "indent":    { "profile": "google" | "editorconfig",
@@ -48,9 +47,9 @@ client):
   native EditorConfig and treats the widths as fallback; `google` profile uses them directly
   (defaults 2 / 4).
 
-Records (`lathe-core`): `WorkspaceStyleData(schemaVersion, FormatterSpec, IndentSpec)`,
-`FormatterSpec(engine, command)`, `IndentSpec(profile, block, continuation)`. Each with a compact
-constructor validating the enum-like string fields and defensively copying `command`.
+Records (`lathe-core`): `WorkspaceStyleData(FormatterSpec, IndentSpec)` (both sections optional),
+`FormatterSpec(engine, command)`, `IndentSpec(profile, block, continuation)`. The leaf records carry a
+compact constructor validating the enum-like string fields and defensively copying `command`.
 
 ### Precedence (both consumers)
 
