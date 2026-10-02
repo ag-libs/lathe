@@ -293,6 +293,9 @@ reused):
 ## Potential Designs
 
 - [Potential Design Policy](potential/README.md)
+- [Delegated Formatting via Maven (Spotless)](potential/lathe-delegated-maven-formatting.md) — move
+  formatting out-of-process by calling `mvn spotless:apply` per file (assumes mvnd), dropping the
+  bundled google-java-format; preferred direction, open problems noted.
 - [In-Process External-Change Recompilation](potential/lathe-external-change-recompilation.md) —
   **superseded** by [In-Process Workspace Sync](done/lathe-in-process-workspace-sync.md); retained as
   the archive of the reaction mechanics (batch FULL compile, startup reconciliation,
