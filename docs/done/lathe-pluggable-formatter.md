@@ -48,10 +48,11 @@ implementations:
 - `ExternalCommandFormatEngine` — a `record (List<String> command, Duration timeout, Path
   workingDir)`.
 
-Engines throw their native failure type (`FormatterException`, `IOException`, …). `JavaFormatter` is
-the single late catch: it runs the engine, returns one whole-document `TextEdit` when the text
-changed, an empty edit list when it did not, and on any exception logs `SEVERE` (with the engine type)
-and returns an empty list — leaving the buffer unchanged. No custom exception hierarchy.
+Engines throw their native failure type (`FormatterException`, `IOException`, …). `JavaFormatter` runs
+the engine and returns a **minimal** `TextEdit` (the changed span only, via common prefix/suffix
+trimming) when the text changed, an empty edit list when it did not; it propagates any failure to
+`WorkspaceSession.format`, which logs `SEVERE` (with the engine type), sends a warning notification, and
+returns an empty list — leaving the buffer unchanged. No custom exception hierarchy.
 
 ### Running the external command
 

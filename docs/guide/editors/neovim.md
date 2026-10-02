@@ -225,9 +225,9 @@ unchanged. Note that a JVM-based formatter pays full process startup on every ca
 noticeably slower than the in-process engine. Set `style.indent` to match your tool so live typing does
 not fight format-on-save.
 
-Prefer `require('lathe').format()` over a bare `vim.lsp.buf.format()`: the whole-document rewrite
-makes nvim-ufo reopen a closed imports fold, and `lathe.format` snapshots and restores that fold (the
-same preservation format-on-save applies). To bind it:
+Prefer `require('lathe').format()` over a bare `vim.lsp.buf.format()`: a format edit that touches the
+import block makes nvim-ufo reopen a closed imports fold, and `lathe.format` snapshots and restores that
+fold (the same preservation format-on-save applies). To bind it:
 
 ```lua
 vim.keymap.set({ "n", "x" }, "<leader>f", function()

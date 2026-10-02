@@ -2,9 +2,9 @@
 
 **Status: shipped (mvn only).**
 The in-process google-java-format engine (`google`/`aosp`) is kept for speed; non-google Spotless
-formatters (eclipse, palantir, …) are delegated to `mvn spotless:apply` run on the file in place,
-preferring mvnd → `./mvnw` → mvn. Verified on equalsverifier (eclipse): formatting applied via mvnd in
-~0.2–0.6s, keeping the project's own style. Fully replacing the in-process engine, Gradle support, and
+formatters (eclipse, palantir, …) are delegated to `mvn spotless:apply` run on a throwaway scratch copy
+of the file, preferring mvnd → `./mvnw` → mvn. Verified on equalsverifier (eclipse): formatting applied
+via mvnd in ~0.2–0.6s, keeping the project's own style. Fully replacing the in-process engine, Gradle support, and
 range-scoped formatting remain **future/potential** (see [Future](#future--potential)). Builds on the
 shipped [workspace-scoped style](lathe-workspace-style.md).
 
@@ -23,7 +23,7 @@ in Lathe and no extra user configuration. google/aosp projects keep the fast in-
 |---|---|---|
 | `googleJavaFormat` (GOOGLE) | `{ "engine": "google" }` | in-process (unchanged) |
 | `googleJavaFormat` AOSP | `{ "engine": "aosp" }` | in-process (unchanged) |
-| eclipse / palantir / other | `{ "engine": "command-file", "command": [ … mvn … ] }` | **delegated, in place (new)** |
+| eclipse / palantir / other | `{ "engine": "command-file", "command": [ … mvn … ] }` | **delegated via a scratch file (new)** |
 | no Spotless | *(no file)* | — |
 
 The two engines coexist: each workspace resolves exactly one, the google fast path is untouched, and
@@ -40,7 +40,7 @@ single file, mvnd warm): **~0.12–0.19s** — acceptable even for format-on-sav
 
 ### Engine abstraction
 
-`FormatEngine` gains the target path so an in-place engine can locate the file:
+`FormatEngine` gains the target path so the delegated engine can place its scratch file next to it:
 
 ```java
 sealed interface FormatEngine permits GoogleFormatEngine, ExternalCommandFormatEngine, FileCommandFormatEngine {
@@ -56,18 +56,22 @@ the existing stdin/stdout `command` engine stays exactly as it is. `JavaFormatte
 
 A `record (List<String> command, Path workspaceRoot, Duration timeout)`. On `format(source, file)`:
 
-1. write `source` to `file` (Spotless formats the **buffer**, not stale disk — this is the deliberate
-   "update the given file" behavior),
-2. run `command` with placeholders substituted, cwd = `workspaceRoot`,
-3. return `Files.readString(file)`.
+1. create a throwaway sibling temp file (`lathe-fmt-*.java`) in `file`'s own source directory and write
+   `source` (the buffer) to it — so the **open file on disk is never touched**, yet the scratch still
+   matches Spotless's `src/**/*.java` includes,
+2. run `command` with placeholders substituted (`%FILE%` → the scratch path), cwd = `workspaceRoot`,
+3. read the scratch back, delete it, and return its content.
+
+The real file's bytes and mtime are left exactly as they were, so the editor neither flickers nor
+raises a write-conflict on save; unique temp names keep concurrent formats from colliding.
 
 Any failure — non-zero exit, timeout (`destroyForcibly`), missing `mvn`, empty output — throws; the
-existing `JavaFormatter` late-catch logs `SEVERE` and leaves the buffer unchanged. stdout is Maven log
-noise (ignored); stderr inherits to `lsp.log`.
+`JavaFormatter` late-catch logs `SEVERE`, sends a warning notification, and leaves the buffer unchanged.
+stdout is Maven log noise (ignored); stderr inherits to `lsp.log`.
 
 Placeholders substituted by the engine:
 
-- `%FILE%` → the file's **absolute path**.
+- `%FILE%` → the **scratch file's** absolute path.
 - `%MODULE%` → the file's module path for `-pl`: the nearest ancestor directory of `file` containing a
   `pom.xml`, **relativized to `workspaceRoot`**. If that is the root itself (empty relative path), the
   `-pl %MODULE%` pair is dropped so the command targets the whole reactor.
@@ -101,14 +105,20 @@ unchanged.
   (`LatheFlags`) makes detection emit `none` for non-google formatters instead of `command-file`, for a
   developer or CI that never wants Lathe shelling out.
 
-## The two hard problems (accepted)
+## The two problems, and how they're solved
 
-1. **In-place, not a filter.** `spotless:apply` rewrites the file by path; it is not a stdin/stdout
+1. **In-place, not a filter.** `spotless:apply` rewrites a file by path; it is not a stdin/stdout
    filter, hence the separate `FileCommandFormatEngine`. The current `command` engine is unchanged.
-2. **Dirty buffers vs on-disk files.** The engine writes the buffer to the real path before formatting,
-   so on-demand formatting of an unsaved buffer touches disk before the user saved. This fits
-   format-on-save naturally; it is the deliberate "updates the given file" semantics, accepted for the
-   MVP.
+2. **Never disturb the open file.** Writing the buffer to the real path (the original approach) made the
+   editor flicker and raised a "file changed since reading it" write-conflict on save. Instead the
+   engine formats a throwaway **scratch sibling** and returns its content as the edit; the open file on
+   disk is never written, so neither problem can occur.
+
+Formatting returns a **minimal edit** (only the changed span, via common prefix/suffix trimming in
+`JavaFormatter`) rather than a whole-document replacement, so applying the result doesn't force the
+editor to re-render every line (which read as flicker on save). A successful format that changes the
+buffer sends a `window/showMessage` `Lathe: formatted in Xms` notice — useful for the slower delegated
+path, since the request is synchronous and a progress spinner could only paint after the edit.
 
 ## Trade-offs
 
@@ -116,7 +126,8 @@ unchanged.
   at `initialize` regardless; a missing/slow `mvn` fails gracefully (no edits, buffer unchanged).
 - **A subprocess per format** vs the warm in-process google path — kept only for the non-google case.
 - **Couples the delegated path to Maven/Spotless** (`-pl`, `-DspotlessFiles`); Gradle is future work.
-- **In-place disk write** as above.
+- **A scratch temp file** briefly appears in the source directory during a format (removed in a
+  `finally`); the real file is never touched.
 
 ## Future / potential
 
@@ -141,9 +152,9 @@ unchanged.
 
 ## Tests
 
-- `FileCommandFormatEngine` driven by a **fake in-place script** (rewrites the file), so no real `mvn`
-  is needed; cover success, `%MODULE%`/`%FILE%` substitution, root-module (no `-pl`), and failure
-  (non-zero exit → buffer unchanged).
+- `FileCommandFormatEngine` driven by a **fake script that rewrites the scratch file**, so no real `mvn`
+  is needed; cover success (and that the open file's bytes/mtime are untouched with no leftover scratch),
+  `%MODULE%`/`%FILE%` substitution, root-module (no `-pl`), and failure (non-zero exit / timeout).
 - `WorkspaceStyleWriter`: eclipse → `command-file` mvn template; `-Dlathe.spotless=false` → `none`.
 - Update existing engine tests for the `format(source, file)` signature.
 - Invoker: multi-module stays google; optionally a second fixture with eclipse asserting the

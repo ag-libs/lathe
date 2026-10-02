@@ -311,7 +311,8 @@ capabilities are **not advertised** (only `documentFormattingProvider` is), so a
 client never invokes them — the defect is dormant. If a client calls `rangeFormatting` anyway, it
 delegates to the same whole-document path as `formatting`
 (`JavaFormatter.format` → `Formatter().formatSourceAndFixImports(content)`): it ignores the request's
-range and reformats — and reorders and removes imports across — the entire document. `onTypeFormatting`
+range and reformats — and reorders and removes imports across — the entire document (the result is
+emitted as a minimal edit, but still computed over the whole file). `onTypeFormatting`
 is a stub returning no edits.
 
 ### Near-term (this design's slice)
@@ -324,7 +325,8 @@ noted under Server Changes. This neutralises the dormant range-format hazard for
 
 - Add a range path in `JavaFormatter` using GJF `Formatter.formatSource(text, ranges)`, deriving the
   character range(s) from the request's LSP range and emitting only the resulting in-range edits (no
-  import fixing, which is inherently whole-file). Keep the whole-document path for `formatting`.
+  import fixing, which is inherently whole-file). Keep the whole-document path for `formatting` (which
+  already emits a minimal edit).
 - Advertise `documentRangeFormattingProvider` only when `formatter = "google"`, alongside
   `documentFormattingProvider`.
 - This range-scoped path is the prerequisite for conservative on-type formatting (below).
