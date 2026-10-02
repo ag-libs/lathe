@@ -16,14 +16,40 @@ function M.setup(opts)
   M.config.continuation_indent = opts.continuation_indent
 end
 
--- Apply the profile's baseline indent options to a Java buffer. Called from ftplugin/java.lua at
+local function buffer_root(bufnr)
+  local ok, root = pcall(function()
+    return require("lathe").get_root(bufnr)
+  end)
+  return ok and root or nil
+end
+
+-- Per-buffer indent: the workspace style file's `indent` (committed/generated, under the root the
+-- existing get_root resolves) when present, else the global setup() fallback. Returns the block width
+-- and a pinned continuation width (nil = derive as twice the block).
+local function resolve(bufnr)
+  local style = require("lathe.style").read(buffer_root(bufnr))
+  local indent = style and style.indent
+  if indent then
+    local profile = indent.profile == "google" and "google" or "editor_config"
+    local block = (indent.block and indent.block > 0) and indent.block or BASELINE_BLOCK[profile]
+    local continuation = (indent.continuation and indent.continuation > 0) and indent.continuation
+      or nil
+    return block, continuation
+  end
+
+  local baseline = BASELINE_BLOCK[M.config.indent_style] or BASELINE_BLOCK.editor_config
+  return baseline, M.config.continuation_indent
+end
+
+-- Apply the resolved profile's baseline widths to a Java buffer. Called from ftplugin/java.lua at
 -- FileType time; for editor_config, native EditorConfig applies afterward and takes precedence.
 function M.apply_buffer_options(bufnr)
-  local block = BASELINE_BLOCK[M.config.indent_style] or BASELINE_BLOCK.editor_config
+  local block, continuation = resolve(bufnr)
   vim.bo[bufnr].expandtab = true
   vim.bo[bufnr].shiftwidth = block
   vim.bo[bufnr].softtabstop = block
   vim.bo[bufnr].tabstop = block
+  vim.b[bufnr].lathe_continuation = continuation
 end
 
 -- Block indent width, in display columns, for the current buffer: the effective 'shiftwidth',
@@ -38,10 +64,15 @@ local function block_width()
   return vim.bo.tabstop
 end
 
--- Continuation indent width: the pinned `continuation_indent` when configured, otherwise twice the
--- block width. EditorConfig has no continuation concept, so this ratio is Lathe's heuristic.
+-- Continuation indent width: the width apply_buffer_options pinned for this buffer (from the
+-- workspace style file or the global continuation_indent), otherwise twice the block width.
 local function continuation_width()
-  return M.config.continuation_indent or block_width() * 2
+  local pinned = vim.b.lathe_continuation
+  if pinned and pinned > 0 then
+    return pinned
+  end
+
+  return block_width() * 2
 end
 
 local BLOCK_NODES = {
