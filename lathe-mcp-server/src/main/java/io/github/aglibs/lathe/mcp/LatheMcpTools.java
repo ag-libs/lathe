@@ -134,10 +134,12 @@ final class LatheMcpTools {
                 """
                 Find every real use of the symbol at a position across the whole reactor — \
                 javac-accurate, not text search: resolves overloads and inheritance, spans all \
-                modules, and returns each use with a source snippet. Use before changing or \
-                removing a symbol, and especially when it is a method with overrides/\
-                implementations or a common/overloaded name where text search is ambiguous; for a \
-                rare, distinctive name a plain grep is fine.\
+                modules, and returns each use with a source snippet. It finds uses a grep misses — a \
+                Class passed in a variable, a mock verify(x).m(...), two same-named calls on one \
+                line — and excludes unrelated symbols that merely share the name, so you need not \
+                re-check with grep. Use before changing or removing a symbol, especially a method \
+                with overrides/implementations or a common/overloaded name; for a rare, distinctive \
+                name a plain grep is fine.\
                 """)
             .build();
     return SyncToolSpecification.builder()
@@ -167,8 +169,11 @@ final class LatheMcpTools {
                 Rename the symbol at a position across the whole reactor and apply the edits to \
                 disk — javac-accurate, so it renames only the true declaration and its uses \
                 (respecting overloads and shadowing locals) across every module, never a text \
-                match. Refuses if it would touch a file outside the reactor. After a cross-module \
-                rename, rebuild the reactor to confirm it still compiles.\
+                match. It updates sites grep+sed would miss or silently rebind to the wrong overload \
+                — a Class held in a variable, a mock verify(...), the correct one of several \
+                same-named methods — and reports exactly which files it changed. Refuses if it would \
+                touch a file outside the reactor. After a cross-module rename, rebuild the reactor to \
+                confirm it still compiles.\
                 """)
             .build();
     return SyncToolSpecification.builder()
@@ -317,7 +322,9 @@ final class LatheMcpTools {
                 """
                 Find the implementations of the interface — or the overrides of the method — at a \
                 position, across the whole reactor, javac-accurate and with a snippet each. This is \
-                the "who implements X / what overrides this" question text search cannot answer.\
+                the "who implements X / what overrides this" question text search cannot answer: it \
+                follows the type hierarchy across modules and includes anonymous and nested \
+                implementers a name grep cannot find.\
                 """)
             .build();
     return SyncToolSpecification.builder()
@@ -595,26 +602,50 @@ final class LatheMcpTools {
     return max != null ? max : DEFAULT_MAX_RESULTS;
   }
 
+  // Authority lines appended to semantic-result text so the agent trusts the result instead of
+  // re-verifying with grep (the "distrust tax"). True by construction: the search is
+  // javac-resolved.
+  private static final String REFERENCES_AUTHORITY =
+      "All javac-resolved references to this exact declaration; same-named but unrelated symbols are"
+          + " already excluded — no need to re-verify with grep.";
+  private static final String IMPLEMENTATIONS_AUTHORITY =
+      "All javac-resolved implementers/overriders across modules; unrelated same-named types are"
+          + " excluded — no need to re-verify with grep.";
+  private static final String RENAME_AUTHORITY =
+      "Only javac-resolved uses of this declaration were renamed (overload- and scope-correct);"
+          + " same-named unrelated symbols were left untouched.";
+
   private static CallToolResult referencesResult(
       final LatheReferences refs, final List<String> stale) {
     return locationListResult(
-        "reference", refs.total(), refs.truncated(), refs.references(), stale);
+        "reference",
+        refs.total(),
+        refs.truncated(),
+        refs.references(),
+        stale,
+        REFERENCES_AUTHORITY);
   }
 
   private static CallToolResult implementationsResult(
       final LatheImplementations impls, final List<String> stale) {
     return locationListResult(
-        "implementation", impls.total(), impls.truncated(), impls.implementations(), stale);
+        "implementation",
+        impls.total(),
+        impls.truncated(),
+        impls.implementations(),
+        stale,
+        IMPLEMENTATIONS_AUTHORITY);
   }
 
   // Shared rendering for a capped, ranked location list. noun drives both the text ("N noun(s)")
-  // and the structured list key (noun + "s").
+  // and the structured list key (noun + "s"); authority is appended when the list is non-empty.
   private static CallToolResult locationListResult(
       final String noun,
       final int total,
       final boolean truncated,
       final List<LatheLocation> locations,
-      final List<String> stale) {
+      final List<String> stale,
+      final String authority) {
     final List<Map<String, Object>> items =
         locations.stream().map(LatheMcpTools::locationMap).toList();
     final String header =
@@ -624,7 +655,7 @@ final class LatheMcpTools {
     final String text =
         locations.isEmpty()
             ? "No %ss found.".formatted(noun)
-            : "%s%n%s".formatted(header, locationLines(locations));
+            : "%s%n%s%n%n%s".formatted(header, locationLines(locations), authority);
     return result(
         text,
         Map.<String, Object>of(
@@ -643,14 +674,15 @@ final class LatheMcpTools {
     final List<Map<String, Object>> items =
         rename.files().stream().map(LatheMcpTools::fileEditMap).toList();
     final String text =
-        "Renamed to %s: %d edit(s) across %d file(s):%n%s"
+        "Renamed to %s: %d edit(s) across %d file(s):%n%s%n%n%s"
             .formatted(
                 rename.newName(),
                 rename.totalEdits(),
                 rename.files().size(),
                 rename.files().stream()
                     .map(LatheMcpTools::fileEditLine)
-                    .collect(Collectors.joining(System.lineSeparator())));
+                    .collect(Collectors.joining(System.lineSeparator())),
+                RENAME_AUTHORITY);
     return result(
         text,
         Map.<String, Object>of(
