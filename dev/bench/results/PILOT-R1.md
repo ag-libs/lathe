@@ -1,5 +1,8 @@
 # Pilot results — R=1 (2026-10-03, model: opus)
 
+> **Superseded by [`PILOT-R4.md`](PILOT-R4.md)** — the R=4 run confirmed the sonnet correctness gap is
+> systematic (baseline missed 3/4, not the single miss seen here). Kept as the first-look record.
+
 First end-to-end 3-arm runs. **Directional only — R=1, so variance is uncaught.** Per the
 pre-registration, the pilot's job is to establish direction and mechanism, not an effect size.
 
