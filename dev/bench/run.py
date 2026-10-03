@@ -210,7 +210,7 @@ def main(argv):
     task_dir = Path(args.task_dir).resolve()
     task = load_task(task_dir)
     repo = (REPOS_DIR / task["repo"]).resolve()
-    out = BENCH / "results" / task["id"] / args.arm / str(args.repeat)
+    out = BENCH / "results" / task["id"] / args.model / args.arm / str(args.repeat)
     out.mkdir(parents=True, exist_ok=True)
     worktree = Path("/tmp/bench-wt-%s-%s-%d" % (task["id"], args.arm, args.repeat))
     remove_worktree(repo, worktree)

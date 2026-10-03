@@ -39,6 +39,33 @@ doc's prior polymorphic A/B. Two consequences:
 2. R=1 cannot distinguish a 2.6× cost delta from run-to-run variance. **Next: R≥4 per arm** for
    bootstrap CIs before any claim.
 
+## dw-02 — same task, SONNET agent (weaker-baseline experiment)
+
+Re-ran dw-02's three arms with `--model sonnet` to test the refinement above: does a *less thorough*
+baseline start to **miss** sites (so correctness, not just cost, separates the arms)?
+
+| arm | resolved | missed sites | cost $ | turns | lathe calls | grep/read/bash |
+|---|---|---|---|---|---|---|
+| baseline (grep) | ✅ | **1 / 15** | 0.84 | **42** | 0 | **38** |
+| treatment-natural | ✅ | 0 / 15 | 0.35 | 9 | 1 | 25 |
+| treatment-primed | ✅ | 0 / 15 | 0.24 | 8 | 2 | 4 |
+
+Paired vs baseline (primed): **cost 0.29×, turns 0.19×, grep/read 0.11×.**
+
+### What it says — the correctness gap appears
+
+- **The weaker baseline MISSED a real site** (`MyApplicationTest`'s `verify(jersey).register(eq(
+  MyResource.class))` Mockito line) — despite spending *more* effort than the opus baseline (42 turns,
+  38 searches). It greps more but less accurately. Both Lathe arms found all 15.
+- So the axis behaves as pre-registered: with a thorough frontier model the value is **efficiency**
+  (opus: correctness tie); with a weaker model the value is **efficiency *and* correctness** (sonnet:
+  baseline misses, Lathe doesn't).
+- Note `resolved` stayed ✅ for the sonnet baseline even though it missed a site — the jersey-scoped
+  oracle doesn't build `docs/examples/core`, and a wrong-overload miss compiles silently. This is
+  exactly why **missed-sites (gold-diff), not resolved, is the headline metric** for this axis.
+- Caveat: N=1 — this single miss could be run variance. R≥4 is needed to establish a baseline
+  *miss-rate*. But the direction matches the hypothesis and is the first correctness separation seen.
+
 ## dw-01 — add-method-across-modules (compiler-enforced) — baseline only, R=1
 
 | arm | resolved | missed | cost $ | turns | grep/read |
@@ -54,5 +81,15 @@ not re-run after the permissions fix — low priority given the axis.
 - **R=1** — directional, not significant. CIs require repeats.
 - **`missed_sites` is file-level** in `score.py`; dw-02 was additionally verified line-level by hand
   (all arms: 15/15 renames, `classObj` site included).
-- Single model (opus), single reactor (dropwizard), synthetic-on-HEAD tasks. Real historical commits
-  (provenance A) and a second model are the next credibility steps.
+- Two models (opus, sonnet), single reactor (dropwizard), synthetic-on-HEAD tasks, one task per axis.
+  Real historical commits (provenance A) and R≥4 repeats are the next credibility steps.
+
+## Bottom line (R=1, directional)
+
+On the overload-sensitive rename (dw-02), agent+Lathe beat grep-only on **both** models:
+- **opus:** correctness tie (15/15 both), but Lathe ~2.6× cheaper / ~3× fewer turns.
+- **sonnet:** Lathe ~3–4× cheaper **and** the grep baseline missed a real site (1/15) that Lathe caught.
+
+Directionally this answers the main question — Lathe improves agent quality/cost on the moat axis —
+with the honest nuance that *what* it improves (cost vs. correctness) depends on how thorough the base
+model is. Significance still needs R≥4.
