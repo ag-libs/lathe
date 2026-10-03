@@ -10,6 +10,7 @@ import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -50,6 +51,7 @@ public final class OpenJdkSync {
     }
 
     int modules = 0;
+    final var moduleRoots = new ArrayList<Path>();
     try (Stream<Path> dirs = Files.list(modulesDir)) {
       for (final Path moduleOut : dirs.filter(Files::isDirectory).sorted().toList()) {
         final var module = moduleOut.getFileName().toString();
@@ -58,12 +60,12 @@ public final class OpenJdkSync {
           log.accept("[sync] %s skipped — not compiled (no .cmdline)".formatted(module));
           continue;
         }
-        syncModule(module, moduleOut, cmdline, workspaceRoot);
+        moduleRoots.addAll(syncModule(module, moduleOut, cmdline, workspaceRoot));
         modules++;
       }
     }
 
-    final int tools = syncBuildTools(buildDir, workspaceRoot, log);
+    final int tools = syncBuildTools(buildDir, workspaceRoot, List.copyOf(moduleRoots), log);
 
     writeWorkspace(workspaceRoot, serverVersion);
     writeJavaHome(workspaceRoot, explodedJdk);
@@ -73,7 +75,8 @@ public final class OpenJdkSync {
             .formatted(moduleCount, tools, latheDir(workspaceRoot)));
   }
 
-  private static void syncModule(
+  // Returns the module's source roots, so the build-tool pass can skip tools that overlap a module.
+  private static List<Path> syncModule(
       final String module, final Path moduleOut, final Path cmdlineFile, final Path workspaceRoot)
       throws IOException {
     final CmdlineReader.Parsed parsed = CmdlineReader.read(Files.readString(cmdlineFile), module);
@@ -97,24 +100,22 @@ public final class OpenJdkSync {
             true);
     final List<Path> sources = readFilelist(siblingFilelist(cmdlineFile));
     writeConfig(latheDir(workspaceRoot).resolve(module), config, sources, sourceRoots);
+    return sourceRoots;
   }
 
-  // Non-module compilations (make/ build tools): plain classpath javac, captured as CLASSPATH
-  // configs that read the build's own output dir directly. Module compilations under buildtools/
-  // (interim bootstrap modules, which use --module-source-path) are out of scope and skipped.
+  // Non-module build tools: plain classpath javac, captured as CLASSPATH configs that read the
+  // build's output dir directly. Tools whose roots overlap a real module are skipped (interim
+  // modules; data-gen steps that compile a few module sources, e.g. break-iterator for java.base),
+  // since the module already covers those files and a second config would mislabel its packages.
   private static int syncBuildTools(
-      final Path buildDir, final Path workspaceRoot, final Consumer<String> log)
+      final Path buildDir,
+      final Path workspaceRoot,
+      final List<Path> moduleRoots,
+      final Consumer<String> log)
       throws IOException {
     final Path toolsRoot = buildDir.resolve(BUILDTOOLS_DIR);
     int synced = 0;
     for (final Path cmdline : toolCmdlines(toolsRoot)) {
-      // Interim bootstrap modules (BUILD_<module>.interim) recompile real module sources with the
-      // boot JDK; their source roots overlap the real modules, so skip them to avoid route
-      // ambiguity.
-      if (batchName(cmdline).endsWith(".interim")) {
-        continue;
-      }
-
       final String content = Files.readString(cmdline);
       if (content.contains("--module-source-path")) {
         continue;
@@ -123,8 +124,7 @@ public final class OpenJdkSync {
       final Path outputDir = cmdline.getParent();
       final List<Path> sources = readFilelist(siblingFilelist(cmdline));
       final List<Path> sourceRoots = inferRoots(outputDir, sources);
-      if (sources.isEmpty() || sourceRoots.isEmpty()) {
-        log.accept("[sync] %s skipped — no sources or source roots".formatted(batchName(cmdline)));
+      if (sources.isEmpty() || sourceRoots.isEmpty() || overlapsModule(sourceRoots, moduleRoots)) {
         continue;
       }
 
@@ -196,6 +196,13 @@ public final class OpenJdkSync {
 
   private static List<Path> existingRoots(final List<String> patterns) {
     return patterns.stream().map(Path::of).filter(Files::isDirectory).toList();
+  }
+
+  // A tool root overlaps a module when one contains the other (equal or nested either way).
+  private static boolean overlapsModule(final List<Path> toolRoots, final List<Path> moduleRoots) {
+    return toolRoots.stream()
+        .anyMatch(
+            tool -> moduleRoots.stream().anyMatch(m -> tool.startsWith(m) || m.startsWith(tool)));
   }
 
   private static void writeConfig(
