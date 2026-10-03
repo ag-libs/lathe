@@ -62,9 +62,12 @@ final class DiagnosticPublisher {
     client.publishDiagnostics(new PublishDiagnosticsParams(uri, List.of()));
   }
 
+  // A file outside every module source root (e.g. JDK tests/tools, or an unopened new module) is a
+  // normal thing to open in a large repo, not an actionable problem — surface it as an unobtrusive
+  // Hint, not a Warning, and keep the log quiet.
   void publishMissing(final String uri, final String message) {
-    LOG.warning(() -> "[compile] no module for %s".formatted(uri));
-    client.publishDiagnostics(singleDiag(uri, message, DiagnosticSeverity.Warning));
+    LOG.fine(() -> "[compile] no module for %s".formatted(uri));
+    client.publishDiagnostics(singleDiag(uri, message, DiagnosticSeverity.Hint));
   }
 
   void publishError(final OpenDocument snapshot, final CompileMode mode, final Throwable ex) {

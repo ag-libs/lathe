@@ -104,15 +104,16 @@ class DiagnosticPublisherTest {
   }
 
   @Test
-  void publishMissing_sendsWarningDiagnostic() {
+  void publishMissing_sendsHintDiagnostic() {
     publisher.publishMissing("file:///A.java", "no module");
 
     final var captor = ArgumentCaptor.forClass(PublishDiagnosticsParams.class);
     verify(client).publishDiagnostics(captor.capture());
     assertThat(captor.getValue().getUri()).isEqualTo("file:///A.java");
     assertThat(captor.getValue().getDiagnostics()).hasSize(1);
+    // Outside a module root is normal in a large repo, not actionable — an unobtrusive Hint.
     assertThat(captor.getValue().getDiagnostics().getFirst().getSeverity())
-        .isEqualTo(DiagnosticSeverity.Warning);
+        .isEqualTo(DiagnosticSeverity.Hint);
   }
 
   @Test
