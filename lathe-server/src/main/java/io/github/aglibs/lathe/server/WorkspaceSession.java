@@ -12,7 +12,6 @@ import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.launch.JdwpOptions;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
-import io.github.aglibs.lathe.core.schema.AnalysisMode;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
 import io.github.aglibs.lathe.core.schema.RunKind;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
@@ -2723,11 +2722,10 @@ final class WorkspaceSession {
   }
 
   private void refreshReactorShard(final ModuleSourceConfig config) {
-    // Incremental save: entries only. Usage counts are refreshed on a full scan, not per save.
-    // MODULE_SYSTEM reuses the cached bytecode base (modules/ changes only on make+sync) and just
-    // re-derives the source delta; CLASSPATH rescans the freshly recompiled mirror.
+    // Incremental save. External output reuses the cached base (build changes only on make+sync)
+    // and re-derives the delta; Maven rescans the freshly recompiled mirror.
     final List<TypeIndexEntry> base =
-        config.analysisMode() == AnalysisMode.MODULE_SYSTEM
+        config.externalOutput()
             ? reactorBaseShards.getOrDefault(config, List.of())
             : scanReactorDir(config).entries();
     reactorBaseShards.put(config, base);
@@ -2735,13 +2733,11 @@ final class WorkspaceSession {
     typeIndex = typeIndex.withReactorEntries(reactorShards.values());
   }
 
-  // MODULE_SYSTEM: overlay types from dirty/open source files the exploded modules/ does not yet
-  // reflect (newly added, or edited-and-saved but un-built), so they appear in symbols before a
-  // make+sync. Keyed on disk staleness — not open buffers — so a saved new file persists once
-  // closed. The complete, kind-accurate entry supersedes it once the file is built and re-synced.
+  // External output: index types from dirty/open sources not yet built, so they show in symbols
+  // before a make+sync. Keyed on disk staleness, not open buffers (so they survive closing).
   private List<TypeIndexEntry> withSourceDelta(
       final ModuleSourceConfig config, final List<TypeIndexEntry> base) {
-    if (config.analysisMode() != AnalysisMode.MODULE_SYSTEM) {
+    if (!config.externalOutput()) {
       return base;
     }
 
@@ -2776,16 +2772,9 @@ final class WorkspaceSession {
     }
   }
 
-  // MODULE_SYSTEM has no bytecode mirror: a module's compiled types live in the exploded JDK the
-  // server runs on, under modules/<module>. CLASSPATH modules read the .lathe mirror.
+  // External-output configs scan the build output dir directly; Maven scans the .lathe mirror.
   private static Path reactorScanRoot(final ModuleSourceConfig config) {
-    if (config.analysisMode() != AnalysisMode.MODULE_SYSTEM) {
-      return config.latheClassesDir();
-    }
-
-    return Path.of(System.getProperty("java.home"))
-        .resolve("modules")
-        .resolve(config.moduleDir().getFileName());
+    return config.externalOutput() ? config.outputDir() : config.latheClassesDir();
   }
 
   static int deleteClassOutputs(final ModuleSourceConfig config, final Path deletedSource) {
