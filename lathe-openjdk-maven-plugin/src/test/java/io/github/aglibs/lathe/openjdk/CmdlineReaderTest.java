@@ -74,4 +74,36 @@ class CmdlineReaderTest {
     assertThat(parsed.compilerArgs()).containsSequence("--patch-module", "java.base=.");
     assertThat(parsed.compilerArgs()).containsSequence("-source", "21");
   }
+
+  // A plain classpath build-tool compile: boot javac, -source/-target, -cp, -d, @filelist. Keeps
+  // the
+  // fidelity flags + the classpath; no patch-module or module-source-path synthesis.
+  private static final String BUILD_TOOL =
+      "/boot/bin/javac -J-Xms32M -g -Xlint:all -source 27 -target 27 -implicit:none -encoding utf-8"
+          + " -Werror --add-exports jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED"
+          + " -cp /build/buildtools/langtools_interim:/build/support/gensrc"
+          + " -d /build/buildtools/langtools_tools_classes"
+          + " @/build/buildtools/langtools_tools_classes/_the.BUILD_TOOLS_LANGTOOLS_batch.filelist";
+
+  @Test
+  void readTool_classpathCompile_keepsFidelityAndClasspathDropsMechanics() {
+    final var parsed = CmdlineReader.readTool(BUILD_TOOL);
+
+    assertThat(parsed.compilerArgs())
+        .containsExactly(
+            "-source",
+            "27",
+            "-target",
+            "27",
+            "-implicit:none",
+            "-Xlint:-options",
+            "--add-exports",
+            "jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED");
+    assertThat(parsed.encoding()).isEqualTo("utf-8");
+    assertThat(parsed.classpath())
+        .containsExactly("/build/buildtools/langtools_interim", "/build/support/gensrc");
+    // no module-system or build-mechanics flags leak in
+    assertThat(parsed.compilerArgs())
+        .doesNotContain("--patch-module", "-g", "-Xlint:all", "-Werror", "-d", "-cp");
+  }
 }

@@ -18,7 +18,10 @@ public record ModuleConfigData(
     boolean enablePreview,
     String proc,
     List<String> compilerArgs,
-    AnalysisMode analysisMode) {
+    AnalysisMode analysisMode,
+    // True when outputDir is the build's own compiled output, read directly (OpenJDK modules and
+    // build tools); false when Lathe mirrors it into .lathe/ (Maven/Gradle).
+    boolean externalOutput) {
 
   public ModuleConfigData {
     encoding = Objects.requireNonNullElse(encoding, "UTF-8");

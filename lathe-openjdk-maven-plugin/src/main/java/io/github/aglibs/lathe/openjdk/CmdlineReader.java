@@ -25,6 +25,15 @@ final class CmdlineReader {
     }
   }
 
+  // A plain classpath compilation (OpenJDK build tools): no module-source-path or patch-module,
+  // just the fidelity flags plus the -cp the tool was built with.
+  record ToolParsed(List<String> compilerArgs, String encoding, List<String> classpath) {
+    ToolParsed {
+      compilerArgs = List.copyOf(compilerArgs);
+      classpath = List.copyOf(classpath);
+    }
+  }
+
   static Parsed read(final String cmdline, final String module) {
     final var addFlags = new ArrayList<String>();
     final var sourceRootPatterns = new ArrayList<String>();
@@ -62,6 +71,42 @@ final class CmdlineReader {
     return new Parsed(args, encoding, sourceRootPatterns);
   }
 
+  static ToolParsed readTool(final String cmdline) {
+    final var addFlags = new ArrayList<String>();
+    final var classpath = new ArrayList<String>();
+    String source = null;
+    String target = null;
+    String encoding = "UTF-8";
+
+    final var it = stripLauncher(tokenize(cmdline)).iterator();
+    while (it.hasNext()) {
+      final String token = it.next();
+      switch (token) {
+        case "-source" -> source = next(it);
+        case "-target" -> target = next(it);
+        case "-encoding" -> encoding = next(it);
+        case "--add-exports", "--add-reads" -> {
+          addFlags.add(token);
+          addFlags.add(next(it));
+        }
+        case "-cp", "-classpath", "--class-path" -> classpath.addAll(splitPaths(next(it)));
+        default -> {
+          // Build-mechanics and source-model flags (-g, -Werror, -d, @filelist, ...) are dropped.
+        }
+      }
+    }
+
+    final var args = new ArrayList<String>();
+    addPair(args, "-source", source);
+    addPair(args, "-target", target);
+    args.add("-implicit:none");
+    // Tools build at the boot JDK's -source, below the analysis javac, which otherwise warns the
+    // system modules path is unset (the build suppresses it the same way).
+    args.add("-Xlint:-options");
+    args.addAll(addFlags);
+    return new ToolParsed(args, encoding, classpath);
+  }
+
   private static List<String> tokenize(final String cmdline) {
     return Arrays.stream(cmdline.trim().split("\\s+"))
         .map(CmdlineReader::unquote)
@@ -94,10 +139,11 @@ final class CmdlineReader {
 
   // "<gensrc>/*:<jdk>/src/*/{os}/classes:…" → the module's roots, substituting it for the '*' glob.
   private static List<String> patterns(final String moduleSourcePath, final String module) {
-    return Arrays.stream(moduleSourcePath.split(File.pathSeparator))
-        .filter(p -> !p.isEmpty())
-        .map(p -> p.replace("*", module))
-        .toList();
+    return splitPaths(moduleSourcePath).stream().map(p -> p.replace("*", module)).toList();
+  }
+
+  private static List<String> splitPaths(final String value) {
+    return Arrays.stream(value.split(File.pathSeparator)).filter(p -> !p.isEmpty()).toList();
   }
 
   private static void addPair(final List<String> args, final String flag, final String value) {

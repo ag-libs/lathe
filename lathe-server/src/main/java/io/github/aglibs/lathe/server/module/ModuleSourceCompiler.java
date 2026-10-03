@@ -227,8 +227,13 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
       return;
     }
 
+    // External output (OpenJDK build tools) resolves siblings from the build's own compiled dir,
+    // added raw — it is not mirrored into .lathe/, so it must not be remapped like Maven outputs.
+    final var externalOutput =
+        config.externalOutput() ? Stream.of(config.outputDir()) : Stream.<Path>empty();
     final var classpath =
-        Stream.concat(Stream.of(classOutput), config.remappedClasspath().stream())
+        Stream.of(Stream.of(classOutput), externalOutput, config.remappedClasspath().stream())
+            .flatMap(stream -> stream)
             .distinct()
             .toList();
     if (!classpath.isEmpty()) {

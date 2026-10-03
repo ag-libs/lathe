@@ -34,7 +34,8 @@ final class ParamsWriter {
             enablePreview(config),
             config.getProc(),
             compilerArgs(config),
-            AnalysisMode.CLASSPATH);
+            AnalysisMode.CLASSPATH,
+            false);
     Json.write(moduleConfig, latheModuleDir.resolve(LatheLayout.paramsFileName(sourceTree)));
   }
 

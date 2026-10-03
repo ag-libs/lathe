@@ -26,10 +26,12 @@ class ModuleConfigDataTest {
             false,
             null,
             List.of("--enable-preview"),
-            AnalysisMode.MODULE_SYSTEM);
+            AnalysisMode.MODULE_SYSTEM,
+            true);
     assertThat(data.sourceTree()).isEqualTo("classes");
     assertThat(data.compilerArgs()).containsExactly("--enable-preview");
     assertThat(data.analysisMode()).isEqualTo(AnalysisMode.MODULE_SYSTEM);
+    assertThat(data.externalOutput()).isTrue();
   }
 
   @Test
@@ -37,7 +39,7 @@ class ModuleConfigDataTest {
     final var data =
         new ModuleConfigData(
             "classes", "/out", null, List.of(), List.of(), List.of(), List.of(), null, null, false,
-            false, null, null, null);
+            false, null, null, null, false);
     assertThat(data.analysisMode()).isEqualTo(AnalysisMode.CLASSPATH);
   }
 
@@ -47,7 +49,7 @@ class ModuleConfigDataTest {
             () ->
                 new ModuleConfigData(
                     null, "/out", null, List.of(), List.of(), List.of(), List.of(), null, null,
-                    false, false, null, null, null))
+                    false, false, null, null, null, false))
         .hasMessageContaining("sourceTree");
   }
 
@@ -56,7 +58,7 @@ class ModuleConfigDataTest {
     final var data =
         new ModuleConfigData(
             "classes", "/out", null, List.of(), List.of(), List.of(), List.of(), null, null, false,
-            false, null, null, null);
+            false, null, null, null, false);
     assertThat(data.compilerArgs()).isEmpty();
     assertThat(data.encoding()).isEqualTo("UTF-8");
   }
@@ -68,7 +70,7 @@ class ModuleConfigDataTest {
     final var data =
         new ModuleConfigData(
             "classes", "/out", null, List.of(), List.of(), List.of(), List.of(), null, null, false,
-            false, null, mutable, null);
+            false, null, mutable, null, false);
     mutable.add("-Abar");
     assertThat(data.compilerArgs()).containsExactly("-Afoo");
   }

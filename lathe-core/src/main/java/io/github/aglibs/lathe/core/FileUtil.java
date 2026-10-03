@@ -40,6 +40,18 @@ public final class FileUtil {
     }
   }
 
+  // Every regular file below root matching keep, sorted; empty when root is not a directory.
+  public static List<Path> walkFiles(final Path root, final Predicate<Path> keep)
+      throws IOException {
+    if (!Files.isDirectory(root)) {
+      return List.of();
+    }
+
+    try (final var walk = Files.walk(root)) {
+      return walk.filter(Files::isRegularFile).filter(keep).sorted().toList();
+    }
+  }
+
   // Dotted names of every package that contains at least one .class file below root, sorted and
   // deduped; empty when root is not a directory. The default (root) package is excluded — a named
   // module never has default-package classes.

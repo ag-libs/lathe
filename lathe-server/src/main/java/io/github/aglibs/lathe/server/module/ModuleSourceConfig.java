@@ -24,7 +24,10 @@ public record ModuleSourceConfig(
     boolean enablePreview,
     String proc,
     List<String> compilerArgs,
-    AnalysisMode analysisMode) {
+    AnalysisMode analysisMode,
+    // True when outputDir is the build's own compiled output read directly (OpenJDK), not a .lathe
+    // mirror (Maven). Drives raw-classpath resolution and the type-index base.
+    boolean externalOutput) {
 
   public ModuleSourceConfig {
     sourceRoots = sourceRoots != null ? List.copyOf(sourceRoots) : List.of();
@@ -122,7 +125,8 @@ public record ModuleSourceConfig(
         config.enablePreview(),
         config.proc(),
         config.compilerArgs(),
-        config.analysisMode());
+        config.analysisMode(),
+        config.externalOutput());
   }
 
   private static List<Path> toPaths(final List<String> strings) {

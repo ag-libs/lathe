@@ -95,7 +95,8 @@ public final class TestCompiler {
         false,
         null,
         List.of(),
-        null);
+        null,
+        false);
   }
 
   // MODULE_SYSTEM analysis: blank release (so patching a system module is not rejected), no
@@ -118,7 +119,8 @@ public final class TestCompiler {
         false,
         null,
         List.of("--patch-module", "%s=.".formatted(patchedModule)),
-        AnalysisMode.MODULE_SYSTEM);
+        AnalysisMode.MODULE_SYSTEM,
+        true);
   }
 
   public static Path writeAt(final Path path, final String content, final long mtimeMillis)
@@ -152,7 +154,8 @@ public final class TestCompiler {
             false,
             null,
             List.of(),
-            null);
+            null,
+            false);
     final Path paramsFile = latheModuleDir.resolve(LatheLayout.paramsFileName("classes"));
     Json.write(config, paramsFile);
   }
