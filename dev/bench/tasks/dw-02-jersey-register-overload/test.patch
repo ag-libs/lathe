@@ -1,0 +1,36 @@
+diff --git a/dropwizard-jersey/src/test/java/io/dropwizard/jersey/setup/RegisterResourceClassTest.java b/dropwizard-jersey/src/test/java/io/dropwizard/jersey/setup/RegisterResourceClassTest.java
+new file mode 100644
+index 0000000000..f77d1b303e
+--- /dev/null
++++ b/dropwizard-jersey/src/test/java/io/dropwizard/jersey/setup/RegisterResourceClassTest.java
+@@ -0,0 +1,30 @@
++package io.dropwizard.jersey.setup;
++
++import static org.assertj.core.api.Assertions.assertThat;
++import static org.mockito.Mockito.mock;
++
++import io.dropwizard.jersey.DropwizardResourceConfig;
++import org.junit.jupiter.api.Test;
++
++/**
++ * Hidden oracle for benchmark task dw-02 (FAIL_TO_PASS). Pins
++ * {@code JerseyEnvironment.registerResourceClass(Class)} to the Class-overload semantics: a class
++ * registered through it must land in the config's registered CLASSES, not its singleton instances. A
++ * wrong rebind to {@code register(Object)} would register the {@code Class} object as a singleton and
++ * fail both assertions.
++ */
++class RegisterResourceClassTest {
++
++    private final JerseyContainerHolder holder = mock(JerseyContainerHolder.class);
++    private final DropwizardResourceConfig config = new DropwizardResourceConfig();
++    private final JerseyEnvironment env = new JerseyEnvironment(holder, config);
++
++    public static final class SampleResource {}
++
++    @Test
++    void registerResourceClass_withClass_registersAsClassNotSingleton() {
++        env.registerResourceClass(SampleResource.class);
++        assertThat(config.getClasses()).contains(SampleResource.class);
++        assertThat(config.getSingletons()).doesNotContain(SampleResource.class);
++    }
++}

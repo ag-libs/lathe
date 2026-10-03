@@ -1,0 +1,165 @@
+diff --git a/docs/source/examples/core/src/main/java/io/dropwizard/documentation/MyApplication.java b/docs/source/examples/core/src/main/java/io/dropwizard/documentation/MyApplication.java
+index d40e199e58..a04c0fac34 100644
+--- a/docs/source/examples/core/src/main/java/io/dropwizard/documentation/MyApplication.java
++++ b/docs/source/examples/core/src/main/java/io/dropwizard/documentation/MyApplication.java
+@@ -8,6 +8,6 @@ import io.dropwizard.documentation.resources.MyResource;
+ public class MyApplication extends Application<MyConfiguration> {
+     @Override
+     public void run(MyConfiguration configuration, Environment environment) {
+-        environment.jersey().register(MyResource.class);
++        environment.jersey().registerResourceClass(MyResource.class);
+     }
+ }
+diff --git a/docs/source/examples/core/src/test/java/io/dropwizard/documentation/MyApplicationTest.java b/docs/source/examples/core/src/test/java/io/dropwizard/documentation/MyApplicationTest.java
+index 761b433a0a..6a9e416a44 100644
+--- a/docs/source/examples/core/src/test/java/io/dropwizard/documentation/MyApplicationTest.java
++++ b/docs/source/examples/core/src/test/java/io/dropwizard/documentation/MyApplicationTest.java
+@@ -36,7 +36,7 @@ class MyApplicationTest {
+     void buildsMyResource() throws Exception {
+         application.run(config, environment);
+ 
+-        verify(jersey).register(eq(MyResource.class));
++        verify(jersey).registerResourceClass(eq(MyResource.class));
+     }
+ }
+ // core: MyApplicationTest
+diff --git a/dropwizard-client/src/test/java/io/dropwizard/client/DropwizardApacheConnectorTest.java b/dropwizard-client/src/test/java/io/dropwizard/client/DropwizardApacheConnectorTest.java
+index f782c5b793..506da46c5d 100644
+--- a/dropwizard-client/src/test/java/io/dropwizard/client/DropwizardApacheConnectorTest.java
++++ b/dropwizard-client/src/test/java/io/dropwizard/client/DropwizardApacheConnectorTest.java
+@@ -227,7 +227,7 @@ class DropwizardApacheConnectorTest {
+ 
+         @Override
+         public void run(Configuration configuration, Environment environment) {
+-            environment.jersey().register(TestResource.class);
++            environment.jersey().registerResourceClass(TestResource.class);
+             environment.healthChecks().register("dummy", new HealthCheck() {
+                 @Override
+                 protected Result check() {
+diff --git a/dropwizard-client/src/test/java/io/dropwizard/client/DropwizardSSLConnectionSocketFactoryTest.java b/dropwizard-client/src/test/java/io/dropwizard/client/DropwizardSSLConnectionSocketFactoryTest.java
+index 7e63c31477..63d85e108d 100644
+--- a/dropwizard-client/src/test/java/io/dropwizard/client/DropwizardSSLConnectionSocketFactoryTest.java
++++ b/dropwizard-client/src/test/java/io/dropwizard/client/DropwizardSSLConnectionSocketFactoryTest.java
+@@ -62,7 +62,7 @@ class DropwizardSSLConnectionSocketFactoryTest {
+ 
+         @Override
+         public void run(Configuration configuration, Environment environment) {
+-            environment.jersey().register(TestResource.class);
++            environment.jersey().registerResourceClass(TestResource.class);
+         }
+     }
+ 
+diff --git a/dropwizard-client/src/test/java/io/dropwizard/client/JerseyIgnoreRequestUserAgentHeaderFilterTest.java b/dropwizard-client/src/test/java/io/dropwizard/client/JerseyIgnoreRequestUserAgentHeaderFilterTest.java
+index 600205bc14..91c114fa4c 100644
+--- a/dropwizard-client/src/test/java/io/dropwizard/client/JerseyIgnoreRequestUserAgentHeaderFilterTest.java
++++ b/dropwizard-client/src/test/java/io/dropwizard/client/JerseyIgnoreRequestUserAgentHeaderFilterTest.java
+@@ -95,7 +95,7 @@ class JerseyIgnoreRequestUserAgentHeaderFilterTest {
+ 
+         @Override
+         public void run(Configuration configuration, Environment environment) throws Exception {
+-            environment.jersey().register(TestResource.class);
++            environment.jersey().registerResourceClass(TestResource.class);
+         }
+     }
+ }
+diff --git a/dropwizard-e2e/src/main/java/com/example/validation/DefaultValidatorApp.java b/dropwizard-e2e/src/main/java/com/example/validation/DefaultValidatorApp.java
+index 03764ccbf8..94dff9dcf9 100644
+--- a/dropwizard-e2e/src/main/java/com/example/validation/DefaultValidatorApp.java
++++ b/dropwizard-e2e/src/main/java/com/example/validation/DefaultValidatorApp.java
+@@ -8,6 +8,6 @@ public class DefaultValidatorApp extends Application<Configuration> {
+ 
+     @Override
+     public void run(Configuration configuration, Environment environment) throws Exception {
+-        environment.jersey().register(ValidatedResource.class);
++        environment.jersey().registerResourceClass(ValidatedResource.class);
+     }
+ }
+diff --git a/dropwizard-e2e/src/test/java/com/example/auth/AuthIntegrationTest.java b/dropwizard-e2e/src/test/java/com/example/auth/AuthIntegrationTest.java
+index f30e2bae0f..9dde172415 100644
+--- a/dropwizard-e2e/src/test/java/com/example/auth/AuthIntegrationTest.java
++++ b/dropwizard-e2e/src/test/java/com/example/auth/AuthIntegrationTest.java
+@@ -41,7 +41,7 @@ public class AuthIntegrationTest {
+ 
+         @Override
+         public void run(Configuration configuration, Environment environment) {
+-            environment.jersey().register(TestResource.class);
++            environment.jersey().registerResourceClass(TestResource.class);
+             AuthFilter<?, ?> basicAuthFilter = new BasicCredentialAuthFilter.Builder<PrincipalImpl>()
+                 .setAuthenticator(credentials -> Optional.of(new PrincipalImpl(credentials.getUsername())))
+                 .setAuthorizer((principal, role, requestContext) -> true)
+diff --git a/dropwizard-e2e/src/test/java/com/example/request_log/AbstractRequestLogIntegrationTest.java b/dropwizard-e2e/src/test/java/com/example/request_log/AbstractRequestLogIntegrationTest.java
+index ef08fd8f52..258d7454f1 100644
+--- a/dropwizard-e2e/src/test/java/com/example/request_log/AbstractRequestLogIntegrationTest.java
++++ b/dropwizard-e2e/src/test/java/com/example/request_log/AbstractRequestLogIntegrationTest.java
+@@ -118,9 +118,9 @@ public abstract class AbstractRequestLogIntegrationTest {
+     public static class TestApplication extends Application<Configuration> {
+         @Override
+         public void run(Configuration configuration, Environment environment) {
+-            environment.jersey().register(TestResource.class);
+-            environment.jersey().register(SentinelResource.class);
+-            environment.jersey().register(HeaderToAttributeFilter.class);
++            environment.jersey().registerResourceClass(TestResource.class);
++            environment.jersey().registerResourceClass(SentinelResource.class);
++            environment.jersey().registerResourceClass(HeaderToAttributeFilter.class);
+             AuthFilter<?, ?> basicAuthFilter = new BasicCredentialAuthFilter.Builder<PrincipalImpl>()
+                 .setAuthenticator(credentials -> Optional.of(new PrincipalImpl(credentials.getUsername())))
+                 .setAuthorizer((principal, role, requestContext) -> true)
+diff --git a/dropwizard-example/src/main/java/com/example/helloworld/HelloWorldApplication.java b/dropwizard-example/src/main/java/com/example/helloworld/HelloWorldApplication.java
+index 1ecc144a48..099d559d61 100644
+--- a/dropwizard-example/src/main/java/com/example/helloworld/HelloWorldApplication.java
++++ b/dropwizard-example/src/main/java/com/example/helloworld/HelloWorldApplication.java
+@@ -85,14 +85,14 @@ public class HelloWorldApplication extends Application<HelloWorldConfiguration>
+ 
+         environment.healthChecks().register("template", new TemplateHealthCheck(template));
+         environment.admin().addTask(new EchoTask());
+-        environment.jersey().register(DateRequiredFeature.class);
++        environment.jersey().registerResourceClass(DateRequiredFeature.class);
+         environment.jersey().register(new AuthDynamicFeature(new BasicCredentialAuthFilter.Builder<User>()
+                 .setAuthenticator(new ExampleAuthenticator())
+                 .setAuthorizer(new ExampleAuthorizer())
+                 .setRealm("SUPER SECRET STUFF")
+                 .buildAuthFilter()));
+         environment.jersey().register(new AuthValueFactoryProvider.Binder<>(User.class));
+-        environment.jersey().register(RolesAllowedDynamicFeature.class);
++        environment.jersey().registerResourceClass(RolesAllowedDynamicFeature.class);
+         environment.jersey().register(new HelloWorldResource(template));
+         environment.jersey().register(new ViewResource());
+         environment.jersey().register(new ProtectedResource());
+diff --git a/dropwizard-forms/src/main/java/io/dropwizard/forms/MultiPartBundle.java b/dropwizard-forms/src/main/java/io/dropwizard/forms/MultiPartBundle.java
+index 808061035f..fbf55471bd 100644
+--- a/dropwizard-forms/src/main/java/io/dropwizard/forms/MultiPartBundle.java
++++ b/dropwizard-forms/src/main/java/io/dropwizard/forms/MultiPartBundle.java
+@@ -14,6 +14,6 @@ import org.glassfish.jersey.media.multipart.MultiPartFeature;
+ public class MultiPartBundle implements ConfiguredBundle<Configuration> {
+     @Override
+     public void run(Configuration configuration, Environment environment) {
+-        environment.jersey().register(MultiPartFeature.class);
++        environment.jersey().registerResourceClass(MultiPartFeature.class);
+     }
+ }
+diff --git a/dropwizard-jersey/src/main/java/io/dropwizard/jersey/setup/JerseyEnvironment.java b/dropwizard-jersey/src/main/java/io/dropwizard/jersey/setup/JerseyEnvironment.java
+index 1b58b3bfd6..3227ad5966 100644
+--- a/dropwizard-jersey/src/main/java/io/dropwizard/jersey/setup/JerseyEnvironment.java
++++ b/dropwizard-jersey/src/main/java/io/dropwizard/jersey/setup/JerseyEnvironment.java
+@@ -42,7 +42,7 @@ public class JerseyEnvironment {
+      *
+      * @param componentClass a Jersey component class
+      */
+-    public void register(Class<?> componentClass) {
++    public void registerResourceClass(Class<?> componentClass) {
+         config.register(requireNonNull(componentClass));
+     }
+ 
+diff --git a/dropwizard-testing/src/main/java/io/dropwizard/testing/common/DropwizardClient.java b/dropwizard-testing/src/main/java/io/dropwizard/testing/common/DropwizardClient.java
+index 76a01a3969..8ce3129d1e 100644
+--- a/dropwizard-testing/src/main/java/io/dropwizard/testing/common/DropwizardClient.java
++++ b/dropwizard-testing/src/main/java/io/dropwizard/testing/common/DropwizardClient.java
+@@ -64,7 +64,7 @@ public class DropwizardClient {
+ 
+             for (Object resource : resources) {
+                 if (resource instanceof Class<?> classObj) {
+-                    environment.jersey().register(classObj);
++                    environment.jersey().registerResourceClass(classObj);
+                 } else {
+                     environment.jersey().register(resource);
+                 }

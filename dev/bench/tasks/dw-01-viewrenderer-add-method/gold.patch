@@ -1,0 +1,84 @@
+diff --git a/dropwizard-views-freemarker/src/main/java/io/dropwizard/views/freemarker/FreemarkerViewRenderer.java b/dropwizard-views-freemarker/src/main/java/io/dropwizard/views/freemarker/FreemarkerViewRenderer.java
+index 5b0626d357..c4ad861aca 100644
+--- a/dropwizard-views-freemarker/src/main/java/io/dropwizard/views/freemarker/FreemarkerViewRenderer.java
++++ b/dropwizard-views-freemarker/src/main/java/io/dropwizard/views/freemarker/FreemarkerViewRenderer.java
+@@ -21,6 +21,7 @@ import java.nio.charset.StandardCharsets;
+ import java.util.Collections;
+ import java.util.Locale;
+ import java.util.Map;
++import java.util.Set;
+ import java.util.regex.Pattern;
+ 
+ /**
+@@ -109,4 +110,9 @@ public class FreemarkerViewRenderer implements ViewRenderer {
+     public String getConfigurationKey() {
+         return "freemarker";
+     }
++
++    @Override
++    public Set<String> getSupportedTemplateSuffixes() {
++        return Set.of(".ftl", ".ftlh", ".ftlx");
++    }
+ }
+diff --git a/dropwizard-views-mustache/src/main/java/io/dropwizard/views/mustache/MustacheViewRenderer.java b/dropwizard-views-mustache/src/main/java/io/dropwizard/views/mustache/MustacheViewRenderer.java
+index babdbf803c..a0f8d76802 100644
+--- a/dropwizard-views-mustache/src/main/java/io/dropwizard/views/mustache/MustacheViewRenderer.java
++++ b/dropwizard-views-mustache/src/main/java/io/dropwizard/views/mustache/MustacheViewRenderer.java
+@@ -20,6 +20,7 @@ import java.nio.charset.StandardCharsets;
+ import java.util.Locale;
+ import java.util.Map;
+ import java.util.Optional;
++import java.util.Set;
+ import java.util.regex.Pattern;
+ 
+ /**
+@@ -75,6 +76,11 @@ public class MustacheViewRenderer implements ViewRenderer {
+         return "mustache";
+     }
+ 
++    @Override
++    public Set<String> getSupportedTemplateSuffixes() {
++        return Set.of(".mustache");
++    }
++
+     private MustacheFactory createNewMustacheFactory(Class<? extends View> key) {
+         return new DefaultMustacheFactory(
+                 fileRoot.isPresent() ? new FileSystemResolver(fileRoot.get()) : new PerClassMustacheResolver(key));
+diff --git a/dropwizard-views/src/main/java/io/dropwizard/views/common/ViewRenderer.java b/dropwizard-views/src/main/java/io/dropwizard/views/common/ViewRenderer.java
+index 2b1506ed21..b60c9472f3 100644
+--- a/dropwizard-views/src/main/java/io/dropwizard/views/common/ViewRenderer.java
++++ b/dropwizard-views/src/main/java/io/dropwizard/views/common/ViewRenderer.java
+@@ -6,6 +6,7 @@ import java.io.IOException;
+ import java.io.OutputStream;
+ import java.util.Locale;
+ import java.util.Map;
++import java.util.Set;
+ 
+ /**
+  * The rendering engine for a type of view.
+@@ -43,4 +44,9 @@ public interface ViewRenderer {
+      * @return the key to use in the view configurations, i.e. 'freemarker' or 'mustache'.
+      */
+     String getConfigurationKey();
++
++    /**
++     * @return the template file suffixes this renderer handles, e.g. {@code ".mustache"}.
++     */
++    Set<String> getSupportedTemplateSuffixes();
+ }
+diff --git a/dropwizard-views/src/test/java/io/dropwizard/views/common/ViewBundleTest.java b/dropwizard-views/src/test/java/io/dropwizard/views/common/ViewBundleTest.java
+index b7d0797366..c2009e9baa 100644
+--- a/dropwizard-views/src/test/java/io/dropwizard/views/common/ViewBundleTest.java
++++ b/dropwizard-views/src/test/java/io/dropwizard/views/common/ViewBundleTest.java
+@@ -82,6 +82,11 @@ class ViewBundleTest {
+             public String getConfigurationKey() {
+                 return configurationKey;
+             }
++
++            @Override
++            public java.util.Set<String> getSupportedTemplateSuffixes() {
++                return Collections.emptySet();
++            }
+         };
+ 
+         new ViewBundle<MyConfiguration>(Collections.singletonList(renderer)) {

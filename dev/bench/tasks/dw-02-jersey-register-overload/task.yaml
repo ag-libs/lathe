@@ -1,0 +1,70 @@
+# Benchmark task manifest. One dir per task: task.yaml + gold.patch + test.patch.
+# gold.patch here was authored by rename_symbol and then VERIFIED BY HAND (every changed line is a
+# genuine Class-overload call; the adjacent register(Object) call is correctly untouched; the 15-edit
+# count matches find_references). Verification — not the tool's say-so — makes it ground truth.
+
+id: dw-02-jersey-register-overload
+repo: dropwizard
+base_ref: HEAD
+moat_axis: overload-sensitive-rename
+discriminating_metric: missed_sites     # a missed site SILENTLY rebinds to register(Object) + compiles
+module_cardinality: multi               # 12 files across client/e2e/example/forms/testing/docs/jersey
+
+problem_statement: |
+  `io.dropwizard.jersey.setup.JerseyEnvironment` has two overloads:
+  `register(Object component)` registers a singleton instance, and `register(Class<?> componentClass)`
+  registers a class for Jersey's dependency injection.
+
+  Rename ONLY the class overload `register(Class<?>)` to `registerResourceClass(Class<?>)`. Leave
+  `register(Object)` unchanged. Update every call site across the reactor that passes a Class to the
+  class overload so it calls `registerResourceClass` instead.
+
+  Caution: because `Class<?>` is also an `Object`, a call site you miss will still COMPILE — it will
+  silently bind to `register(Object)` and register the class as a singleton instance, which is wrong.
+  The build will not warn you.
+
+# Verified ground-truth site set (NOT shown to the agent). 15 edits across 12 files.
+gold_sites:
+  declaration:
+    - dropwizard-jersey/src/main/java/io/dropwizard/jersey/setup/JerseyEnvironment.java
+  call_sites:
+    - dropwizard-client/src/test/java/io/dropwizard/client/DropwizardApacheConnectorTest.java
+    - dropwizard-client/src/test/java/io/dropwizard/client/DropwizardSSLConnectionSocketFactoryTest.java
+    - dropwizard-client/src/test/java/io/dropwizard/client/JerseyIgnoreRequestUserAgentHeaderFilterTest.java
+    - dropwizard-e2e/src/main/java/com/example/validation/DefaultValidatorApp.java
+    - dropwizard-e2e/src/test/java/com/example/auth/AuthIntegrationTest.java
+    - dropwizard-e2e/src/test/java/com/example/request_log/AbstractRequestLogIntegrationTest.java   # 3 edits
+    - dropwizard-example/src/main/java/com/example/helloworld/HelloWorldApplication.java            # 2 edits
+    - dropwizard-forms/src/main/java/io/dropwizard/forms/MultiPartBundle.java
+    - docs/source/examples/core/src/main/java/io/dropwizard/documentation/MyApplication.java
+    - docs/source/examples/core/src/test/java/io/dropwizard/documentation/MyApplicationTest.java    # Mockito verify(...)
+  # THE moat site: a Class held in a variable, invisible to a `register(X.class)` grep.
+  variable_typed_class:
+    - dropwizard-testing/src/main/java/io/dropwizard/testing/common/DropwizardClient.java           # register(classObj)
+
+oracle:
+  # Scoped to dropwizard-jersey: resolved certifies the rename itself is correct (the new method
+  # exists and carries the class-overload semantics). A missed caller compiles silently, so caller
+  # modules can't certify correctness anyway — missed_sites (gold-diff) is the headline metric.
+  mvn_test: "mvn -q -pl dropwizard-jersey -am test -Dtest=RegisterResourceClassTest,JerseyEnvironmentTest -Dsurefire.failIfNoSpecifiedTests=false"
+  fail_to_pass:
+    - "io.dropwizard.jersey.setup.RegisterResourceClassTest"
+  pass_to_pass:
+    - "io.dropwizard.jersey.setup.JerseyEnvironmentTest"
+
+scoring:
+  # resolved certifies the rename; the PRIMARY signal for this task is missed_sites (silent rebinds).
+  resolved_requires: [compiles, fail_to_pass_green, pass_to_pass_green]
+  primary_metric: missed_sites
+
+prescreen:
+  note: "grep `register(` drowns (hundreds of hits); grep `register(X.class)` misses the variable-typed DropwizardClient.classObj site; a missed site compiles silently. Strong silently-wrong discriminator."
+  admitted: null
+
+# Gold authored via rename_symbol, hand-verified, and validated under Corretto 25 on 2026-10-03:
+# RegisterResourceClassTest passes, JerseyEnvironmentTest stays green.
+gold_validated: true
+
+artifacts:
+  gold_patch: gold.patch
+  test_patch: test.patch

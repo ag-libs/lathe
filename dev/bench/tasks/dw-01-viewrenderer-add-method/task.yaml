@@ -1,0 +1,74 @@
+# Benchmark task manifest (SWE-bench-compatible schema + our extensions).
+# One directory per task: task.yaml + gold.patch (reference solution) + test.patch (hidden oracle).
+# gold.patch and test.patch are authored-and-build-validated in the dry run (M1): the gold+test
+# patches must themselves score `resolved`, or the task is malformed.
+
+id: dw-01-viewrenderer-add-method
+repo: dropwizard                       # resolved to ../dropwizard by run.py
+base_ref: HEAD                         # provenance C phase 1: synthetic-on-HEAD
+moat_axis: implement-interface-across-modules
+discriminating_metric: tokens         # compiler-enforced => missed-sites ties at 0; cost is the signal
+module_cardinality: multi             # implementors live in dropwizard-views-mustache + -freemarker
+
+# Shown to the agent verbatim as the sole prompt. States the WHAT, never the implementor list.
+problem_statement: |
+  The view-rendering SPI `io.dropwizard.views.common.ViewRenderer` should be able to report which
+  template file suffixes each rendering engine handles, so the view bundle can validate configuration
+  up front.
+
+  Add a new method to the `ViewRenderer` interface:
+
+      /**
+       * @return the template file suffixes this renderer handles, e.g. {@code ".mustache"}.
+       */
+      java.util.Set<String> getSupportedTemplateSuffixes();
+
+  Implement it in every `ViewRenderer` across the project so the build compiles and all existing tests
+  pass. Each implementation must return exactly the suffixes that renderer already recognises (see each
+  renderer's `isRenderable` / file pattern): the Mustache renderer handles `.mustache`; the Freemarker
+  renderer handles `.ftl`, `.ftlh`, and `.ftlx`.
+
+# Known-correct site set (for the missed-sites metric + gold authoring; NOT shown to the agent).
+gold_sites:
+  interface:
+    - dropwizard-views/src/main/java/io/dropwizard/views/common/ViewRenderer.java
+  implementations:
+    - dropwizard-views-mustache/src/main/java/io/dropwizard/views/mustache/MustacheViewRenderer.java      # -> {".mustache"}
+    - dropwizard-views-freemarker/src/main/java/io/dropwizard/views/freemarker/FreemarkerViewRenderer.java # -> {".ftl",".ftlh",".ftlx"}
+  # Caught only by the compiler during gold validation: an ANONYMOUS `new ViewRenderer(){...}` in a test.
+  # A grep for `implements ViewRenderer` MISSES this; the agent will hit it as a compile error too.
+  anonymous_impls:
+    - dropwizard-views/src/test/java/io/dropwizard/views/common/ViewBundleTest.java   # -> Collections.emptySet()
+
+# Hermetic oracle (mvn, never Lathe). Applied at SCORING time in a clean tree.
+oracle:
+  modules: [dropwizard-views-mustache, dropwizard-views-freemarker]
+  mvn_test: "mvn -q -pl dropwizard-views-mustache,dropwizard-views-freemarker -am test"
+  # FAIL_TO_PASS: injected per module by test.patch; each asserts its renderer's exact suffix set, so
+  # a lazy `return Set.of()` or a missing impl fails. Compiles+passes only when both impls are correct.
+  fail_to_pass:
+    - "io.dropwizard.views.mustache.MustacheSupportedSuffixesTest"
+    - "io.dropwizard.views.freemarker.FreemarkerSupportedSuffixesTest"
+  # PASS_TO_PASS: existing tests that must stay green (unchanged by the SPI addition).
+  pass_to_pass:
+    - "io.dropwizard.views.mustache.MustacheViewRendererTest"
+    - "io.dropwizard.views.freemarker.FreemarkerViewRendererTest"
+
+scoring:
+  resolved_requires: [compiles, fail_to_pass_green, pass_to_pass_green]
+
+# Discrimination pre-screen (admission gate). This axis is compiler-enforced, so the expected signal is
+# in tokens/turns (front-loading implementors via find_implementations), NOT missed-sites. Admitted
+# only if the baseline pilot shows a non-trivial discover-via-compile-error loop; else treat as a
+# pipeline-prover only and exclude from the headline missed-sites claim.
+prescreen:
+  note: "implementors are grep-findable; moat is the compile-fix loop length + reading each renderer's suffix pattern + the grep-invisible anonymous impl in ViewBundleTest"
+  admitted: null
+
+# Gold validated under Corretto 25 on 2026-10-03: gold.patch + test.patch apply cleanly to a clean
+# tree; both FAIL_TO_PASS tests pass; all PASS_TO_PASS tests green; full compile across the 3 modules.
+gold_validated: true
+
+artifacts:
+  gold_patch: gold.patch       # authored + build-validated in the dry run (M1)
+  test_patch: test.patch       # authored + build-validated in the dry run (M1)

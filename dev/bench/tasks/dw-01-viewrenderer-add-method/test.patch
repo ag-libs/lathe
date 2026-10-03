@@ -1,0 +1,53 @@
+diff --git a/dropwizard-views-mustache/src/test/java/io/dropwizard/views/mustache/MustacheSupportedSuffixesTest.java b/dropwizard-views-mustache/src/test/java/io/dropwizard/views/mustache/MustacheSupportedSuffixesTest.java
+new file mode 100644
+index 0000000000..936abbab89
+--- /dev/null
++++ b/dropwizard-views-mustache/src/test/java/io/dropwizard/views/mustache/MustacheSupportedSuffixesTest.java
+@@ -0,0 +1,19 @@
++package io.dropwizard.views.mustache;
++
++import static org.assertj.core.api.Assertions.assertThat;
++
++import org.junit.jupiter.api.Test;
++
++/**
++ * Hidden oracle for benchmark task dw-01 (FAIL_TO_PASS). Pins the Mustache renderer's implementation
++ * of the new {@code ViewRenderer.getSupportedTemplateSuffixes()} SPI method to its exact suffix set,
++ * so a missing or placeholder implementation fails.
++ */
++class MustacheSupportedSuffixesTest {
++
++    @Test
++    void getSupportedTemplateSuffixes_mustacheRenderer_returnsMustacheSuffix() {
++        assertThat(new MustacheViewRenderer().getSupportedTemplateSuffixes())
++            .containsExactlyInAnyOrder(".mustache");
++    }
++}
+diff --git a/dropwizard-views-freemarker/src/test/java/io/dropwizard/views/freemarker/FreemarkerSupportedSuffixesTest.java b/dropwizard-views-freemarker/src/test/java/io/dropwizard/views/freemarker/FreemarkerSupportedSuffixesTest.java
+new file mode 100644
+index 0000000000..b5cd812ce5
+--- /dev/null
++++ b/dropwizard-views-freemarker/src/test/java/io/dropwizard/views/freemarker/FreemarkerSupportedSuffixesTest.java
+@@ -0,0 +1,22 @@
++package io.dropwizard.views.freemarker;
++
++import static org.assertj.core.api.Assertions.assertThat;
++
++import freemarker.template.Configuration;
++import org.junit.jupiter.api.Test;
++
++/**
++ * Hidden oracle for benchmark task dw-01 (FAIL_TO_PASS). Pins the Freemarker renderer's implementation
++ * of the new {@code ViewRenderer.getSupportedTemplateSuffixes()} SPI method to its exact suffix set,
++ * so a missing or placeholder implementation fails.
++ */
++class FreemarkerSupportedSuffixesTest {
++
++    @Test
++    void getSupportedTemplateSuffixes_freemarkerRenderer_returnsFreemarkerSuffixes() {
++        assertThat(
++                new FreemarkerViewRenderer(Configuration.DEFAULT_INCOMPATIBLE_IMPROVEMENTS)
++                    .getSupportedTemplateSuffixes())
++            .containsExactlyInAnyOrder(".ftl", ".ftlh", ".ftlx");
++    }
++}
