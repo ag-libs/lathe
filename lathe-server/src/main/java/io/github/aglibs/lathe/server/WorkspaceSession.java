@@ -12,6 +12,7 @@ import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.launch.JdwpOptions;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
+import io.github.aglibs.lathe.core.schema.AnalysisMode;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
 import io.github.aglibs.lathe.core.schema.RunKind;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
@@ -2722,15 +2723,25 @@ final class WorkspaceSession {
   }
 
   private static ClassFileTypeScanner.ReactorScan scanReactorDir(final ModuleSourceConfig config) {
+    final Path scanRoot = reactorScanRoot(config);
     try {
-      return ClassFileTypeScanner.scanReactorDirectory(config.latheClassesDir());
+      return ClassFileTypeScanner.scanReactorDirectory(scanRoot);
     } catch (final IOException e) {
-      LOG.log(
-          Level.WARNING,
-          e,
-          () -> "[type-index] reactor scan failed: %s".formatted(config.latheClassesDir()));
+      LOG.log(Level.WARNING, e, () -> "[type-index] reactor scan failed: %s".formatted(scanRoot));
       return new ClassFileTypeScanner.ReactorScan(List.of(), Map.of());
     }
+  }
+
+  // MODULE_SYSTEM has no bytecode mirror: a module's compiled types live in the exploded JDK the
+  // server runs on, under modules/<module>. CLASSPATH modules read the .lathe mirror.
+  private static Path reactorScanRoot(final ModuleSourceConfig config) {
+    if (config.analysisMode() != AnalysisMode.MODULE_SYSTEM) {
+      return config.latheClassesDir();
+    }
+
+    return Path.of(System.getProperty("java.home"))
+        .resolve("modules")
+        .resolve(config.moduleDir().getFileName());
   }
 
   static int deleteClassOutputs(final ModuleSourceConfig config, final Path deletedSource) {
