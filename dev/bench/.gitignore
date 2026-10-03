@@ -1,0 +1,7 @@
+# Raw per-run artifacts are NOT committed: they carry absolute local paths and the local Claude Code
+# config dump, are bulky, and are fully reproducible from the committed harness + tasks. Only curated
+# summaries (results/*.md, e.g. PILOT-R1.md) are tracked.
+/results/*/
+
+# Per-run MCP config dropped into worktrees (belt-and-suspenders; worktrees live under /tmp anyway).
+.mcp-bench.json
