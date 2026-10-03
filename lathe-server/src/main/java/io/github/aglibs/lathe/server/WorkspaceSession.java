@@ -17,6 +17,7 @@ import io.github.aglibs.lathe.core.schema.MainLaunchData;
 import io.github.aglibs.lathe.core.schema.RunKind;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
+import io.github.aglibs.lathe.core.typeindex.SourceTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.analysis.CallHierarchyItemData;
 import io.github.aglibs.lathe.server.analysis.CallHierarchyItemDataCodec;
@@ -157,6 +158,10 @@ final class WorkspaceSession {
   private ReferenceCandidateIndex candidateIndex = ReferenceCandidateIndex.build(List.of());
   private WorkspaceTypeIndex typeIndex = WorkspaceTypeIndex.empty();
   private final Map<ModuleSourceConfig, List<TypeIndexEntry>> reactorShards = new LinkedHashMap<>();
+  // MODULE_SYSTEM only: the bytecode base scanned once (modules/ changes just on make+sync), kept
+  // apart from reactorShards so per-save delta refresh never rescans it. Empty for CLASSPATH.
+  private final Map<ModuleSourceConfig, List<TypeIndexEntry>> reactorBaseShards =
+      new LinkedHashMap<>();
   // Reactor type-usage document frequency, aggregated on a full scan; feeds completion ranking.
   private Map<String, Integer> reactorUsageCounts = Map.of();
   private WorkspaceWatcher watcher;
@@ -2709,7 +2714,8 @@ final class WorkspaceSession {
     final var counts = new HashMap<String, Integer>();
     for (final var config : workspace.allConfigs()) {
       final ClassFileTypeScanner.ReactorScan scan = scanReactorDir(config);
-      reactorShards.put(config, scan.entries());
+      reactorBaseShards.put(config, scan.entries());
+      reactorShards.put(config, withSourceDelta(config, scan.entries()));
       scan.referenceCounts().forEach((name, count) -> counts.merge(name, count, Integer::sum));
     }
 
@@ -2718,8 +2724,46 @@ final class WorkspaceSession {
 
   private void refreshReactorShard(final ModuleSourceConfig config) {
     // Incremental save: entries only. Usage counts are refreshed on a full scan, not per save.
-    reactorShards.put(config, scanReactorDir(config).entries());
+    // MODULE_SYSTEM reuses the cached bytecode base (modules/ changes only on make+sync) and just
+    // re-derives the source delta; CLASSPATH rescans the freshly recompiled mirror.
+    final List<TypeIndexEntry> base =
+        config.analysisMode() == AnalysisMode.MODULE_SYSTEM
+            ? reactorBaseShards.getOrDefault(config, List.of())
+            : scanReactorDir(config).entries();
+    reactorBaseShards.put(config, base);
+    reactorShards.put(config, withSourceDelta(config, base));
     typeIndex = typeIndex.withReactorEntries(reactorShards.values());
+  }
+
+  // MODULE_SYSTEM: overlay types from dirty/open source files the exploded modules/ does not yet
+  // reflect (newly added, or edited-and-saved but un-built), so they appear in symbols before a
+  // make+sync. Keyed on disk staleness — not open buffers — so a saved new file persists once
+  // closed. The complete, kind-accurate entry supersedes it once the file is built and re-synced.
+  private List<TypeIndexEntry> withSourceDelta(
+      final ModuleSourceConfig config, final List<TypeIndexEntry> base) {
+    if (config.analysisMode() != AnalysisMode.MODULE_SYSTEM) {
+      return base;
+    }
+
+    final Set<String> known =
+        base.stream().map(TypeIndexEntry::binaryName).collect(Collectors.toUnmodifiableSet());
+    final List<TypeIndexEntry> delta =
+        deltaSourceFiles(config).stream()
+            .map(file -> SourceTypeScanner.deriveEntry(sourceRootFor(config, file), file))
+            .flatMap(Optional::stream)
+            .filter(entry -> !known.contains(entry.binaryName()))
+            .toList();
+    return delta.isEmpty() ? base : Stream.concat(base.stream(), delta.stream()).toList();
+  }
+
+  // Files the bytecode base may not cover: on-disk sources stale vs their compile stamp, plus open
+  // buffers (which the stale scan excludes), restricted to this module's source roots.
+  private List<Path> deltaSourceFiles(final ModuleSourceConfig config) {
+    final Set<Path> open = openSourcePaths();
+    return Stream.concat(staleSourcesInModule(config, open).stream(), open.stream())
+        .filter(path -> sourceRootFor(config, path) != null)
+        .distinct()
+        .toList();
   }
 
   private static ClassFileTypeScanner.ReactorScan scanReactorDir(final ModuleSourceConfig config) {
@@ -3526,6 +3570,7 @@ final class WorkspaceSession {
   private void refreshReactorTypeIndex() {
     final var t = Stopwatch.start();
     reactorShards.clear();
+    reactorBaseShards.clear();
     scanReactorShards();
     typeIndex =
         WorkspaceTypeIndex.build(manifest.typeIndexShardPaths(), reactorShards.values())
