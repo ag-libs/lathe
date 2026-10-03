@@ -3,10 +3,11 @@
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.ag-libs/lathe-maven-extension?label=Maven%20Central)](https://central.sonatype.com/artifact/io.github.ag-libs/lathe-maven-extension)
 [![CI](https://github.com/ag-libs/lathe/actions/workflows/ci.yml/badge.svg)](https://github.com/ag-libs/lathe/actions/workflows/ci.yml)
 
-**A Java language server that works from your Maven build — no project import, no classpath setup.**
+**A Java language server that works from your build — no project import, no classpath setup.**
 
-Lathe is a Java language server for Maven projects — code intelligence, diagnostics, and run, test, and
-debug. It is built on the JDK's own Java compiler, so its analysis matches what `javac` sees.
+Lathe is a Java language server — code intelligence, diagnostics, and run, test, and debug — driven by
+your build rather than a separate project model. It is built on the JDK's own Java compiler, so its
+analysis matches what `javac` sees.
 
 If you've fought a Java LSP, the pain is usually project import and classpath or module-path config
 drifting from the build. Lathe skips that: its model comes straight from your Maven build — the exact
