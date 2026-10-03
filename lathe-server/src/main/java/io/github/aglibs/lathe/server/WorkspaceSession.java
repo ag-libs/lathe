@@ -3135,9 +3135,14 @@ final class WorkspaceSession {
             MessageType.Info, "Lathe: recompiling %d changed file(s)…".formatted(count)));
   }
 
-  private static Map<Path, Long> staleMtimes(final StaleScan scan) {
+  static Map<Path, Long> staleMtimes(final StaleScan scan) {
+    // A file can be stale under more than one config (overlapping build-tool source roots); its
+    // mtime
+    // is the same either way, so dedupe by path rather than letting toMap throw on the duplicate.
     return scan.staleFiles().stream()
-        .collect(Collectors.toUnmodifiableMap(source -> source, WorkspaceSession::mtimeMillis));
+        .collect(
+            Collectors.toUnmodifiableMap(
+                source -> source, WorkspaceSession::mtimeMillis, (first, ignored) -> first));
   }
 
   // A source is safe to recompile once its mtime has held across two ticks, so a file still being

@@ -240,6 +240,19 @@ class WorkspaceSessionTest {
   }
 
   @Test
+  void staleMtimes_samePathStaleUnderTwoConfigs_dedupesNotThrows() {
+    // Overlapping build-tool source roots can report the same file as stale under two configs; its
+    // mtime is identical either way, so the scan dedupes by path rather than crashing on a dup key.
+    final var shared = tmp.resolve("make/jdk/src/classes/build/tools/depend/Depend.java");
+    final var scan =
+        new WorkspaceSession.StaleScan(
+            1_000L,
+            Map.of(config, List.of(shared), config(tmp.resolve("other/src")), List.of(shared)));
+
+    assertThat(WorkspaceSession.staleMtimes(scan)).containsOnlyKeys(shared);
+  }
+
+  @Test
   void isInPackageScope_generatedSourcesCandidate_reactorScope_inScope() {
     // FR-012/FR-013 + EG-052: a reactor-scoped search uses a null packageRel; the generated builder
     // lives under the .lathe generated-sources mirror (the fresh copy Lathe keeps in sync), never
