@@ -21,6 +21,8 @@ Setup is one extension registration, a first build, and a plugin line in your Ne
 Lathe ships a [Neovim client](#editors) and an [MCP server for AI coding agents](#ai-agents-mcp); a
 [VS Code client](#editors) is planned.
 
+Beyond Maven, Lathe also works from the [OpenJDK `make` build](docs/guide/openjdk.md).
+
 ## Demo
 
 A ~1-minute walkthrough — capture your Maven build's classpath once, then a zero-config Java IDE:
@@ -109,6 +111,16 @@ sources or resources change **outside** the editor — a branch switch, a `git p
 editing files — Lathe reconciles in-process automatically, recompiling the changed files in dependency
 order and cleaning up deletions with no Maven build. Only **POM / module-structure** changes prompt a
 full refresh.
+
+## OpenJDK
+
+Lathe also works from the **OpenJDK `make` build**, not only Maven. The
+`lathe-openjdk-maven-plugin:sync` goal reads the build's per-module `javac` invocations and the JDK you
+built, and writes the same `.lathe/` the language server consumes — so analysis is build-accurate across
+all ~66 modules and the `make/` build tools, in any LSP client. Code intelligence only for now; test
+execution (jtreg) is not yet supported.
+
+See the [OpenJDK guide](docs/guide/openjdk.md).
 
 ## Editors
 
