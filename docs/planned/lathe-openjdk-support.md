@@ -2,21 +2,37 @@
 
 ## Status
 
-**Proposed — fully spiked, ready to plan implementation (2026-10-01).** The analysis model is settled and
-validated end-to-end: **compiled-deps on the exploded JDK** (see
+**Shipped — code-intelligence MVP (2026-10-03).** The analysis model is the validated
+**compiled-deps on the exploded JDK** (see
 [Analysis compilation model](#analysis-compilation-model--compiled-deps-on-the-exploded-jdk-validated-2026-10-01)),
-which supersedes the earlier "replay `--module-source-path` verbatim + mirror bytecode" framing. Lathe today
-derives its whole model from a **Maven** build (the
-[Maven extension](../done/lathe-maven-extension.md) injects the compiler shim and `init`/`sync` goals),
-with a **Gradle** front-end designed in parallel ([Gradle Support](lathe-gradle-support.md)). Both
-produce the same `.lathe/` contract that the language server, `lathe-test-runner`, the MCP server, and
-all editor clients read. This document designs a third front-end for the **OpenJDK build itself** — a
-GNU Make build — so a JDK developer editing `java.base` (or any module) gets the same javac-accurate
-code intelligence, derived from the real build.
+which superseded the earlier "replay `--module-source-path` verbatim + mirror bytecode" framing. The
+OpenJDK front-end is now implemented end-to-end: a `lathe-openjdk-maven-plugin` `sync` goal reads the
+build's per-module (and build-tool) compile descriptors and emits the OpenJDK-native `.lathe/`, which
+the existing language server, MCP server, and editor clients consume **unchanged**. A JDK developer
+editing `java.base` — any built module, or the `make/` build tools — gets javac-accurate diagnostics,
+navigation, completion, hover, signature help, and workspace symbols, derived from the real build.
 
-No OpenJDK code exists yet. This is a design, sliced for incremental delivery, and it is deliberately
-**narrower** than the Maven/Gradle front-ends: code intelligence first, test execution (jtreg) out of
-scope for the MVP.
+Lathe otherwise derives its model from a **Maven** build (the
+[Maven extension](../done/lathe-maven-extension.md) injects the compiler shim and `init`/`sync` goals),
+with a **Gradle** front-end designed in parallel ([Gradle Support](lathe-gradle-support.md)); all
+front-ends produce the same `.lathe/` contract. This document designs — and now records — a third
+front-end, for the **OpenJDK build itself** (a GNU Make build).
+
+**What shipped** (per-slice detail under [Slicing](#slicing)):
+
+- Per-module compiled-deps analysis (`AnalysisMode.MODULE_SYSTEM`), hosted on the exploded
+  `build/<conf>/jdk`, overlaying open/dirty sources via `--patch-module`.
+- `sync` goal: descriptor reader (`CmdlineReader`) + `.lathe/` writer (`OpenJdkSync`), build-dir
+  auto-discovery, and server-bundle install via the shared `lathe-install` module.
+- Workspace symbols + type-name completion: a bytecode base (the build's own compiled output) **∪** a
+  source-derived delta for new/edited-but-unbuilt files, keyed on the `externalOutput` config flag.
+- `make/` **build tools** as CLASSPATH source roots that read the build output directly.
+- Fixes surfaced by live probing: `module-info.java` sees its own module's packages; a file outside
+  every module source root surfaces an unobtrusive hint, not a warning.
+
+**Deferred / out of scope:** test execution (jtreg), and with it analysis of the ~39k `test/` sources
+— designed below as [on-demand jtreg modules](#on-demand-jtreg-modules-future); other-OS source
+overlays; modules that were not built.
 
 Findings below are grounded in a read of `openjdk/jdk` at the makefile level
 (`make/common/JavaCompilation.gmk`, `make/CompileJavaModules.gmk`, `make/common/Modules.gmk`,
@@ -84,7 +100,7 @@ relevant subset for the MVP:
 |---|---|---|
 | `.lathe/<module>/lsp-params-<tree>.json` | `ModuleConfigData` (OpenJDK/compiled-deps mode) | transformed from the build's per-module descriptors |
 | `.lathe/<module>/lsp-stamps-<tree>.json` | `CompiledStampsData` | source mtimes vs the build — **drives the dirty-overlay set** |
-| `.lathe/workspace.json` | `WorkspaceManifestData` | module map (`FindAllModules`) + exploded-JDK base path + javac gate |
+| `.lathe/workspace.json` | `WorkspaceManifestData` | server version + workspace root; `.lathe/java-home` points at the exploded JDK base |
 
 **No `.lathe/<module>/classes` bytecode mirror** — OpenJDK references the build's exploded `modules/`
 read-only (mirroring it would be GBs and redundant). See
@@ -320,9 +336,10 @@ feature version.** Three tiers:
 | **EA build of the feature version** (jdk.java.net) | stable, same feature version | finalized + preview features | lags mainline by one EA snapshot |
 | GA | once the version ships | fine post-release | n/a while the version is in development |
 
-The `sync` step already parsed the required release, so the launcher can **validate and fail loudly** —
-"this JDK source needs javac ≥ 28; the server is on 25 — point it at an EA or the built image" — instead
-of emitting a screen of false errors. That turns the scary failure into a one-line setup instruction.
+If the server ran on too old a javac, each file would show `invalid source release: 28` — javac's own
+message, which already names the offending release and points at the fix (the built image or an EA). A
+dedicated fail-loud version gate was considered but **dropped** (see [Slicing](#slicing)): in practice
+the server runs on the build's own javac via `.lathe/java-home`, so the mismatch does not arise.
 
 **This is a differentiator, not just a mitigation.** IntelliJ ships its own reimplemented parser, which
 structurally lags preview features (the exact "false red errors / IDE not compiling" complaint JDK
@@ -338,8 +355,7 @@ EA) is closed only by the built-image tier.
 workspace root), else PATH `java` — landed in `feat(server): run the server JVM under the project's build
 JDK`. So OpenJDK needs **no launcher work**: `sync` simply writes `.lathe/java-home` pointing at the
 **exploded** `build/<conf>/jdk` — which is both a javac ≥ the tree's feature version *and* the live base for
-the compiled-deps model. If no suitable JDK is found, `sync` **fails loudly** with the one-line instruction
-rather than letting the server boot on a too-old javac.
+the compiled-deps model.
 
 ## Analysis compilation model — compiled-deps on the exploded JDK (validated 2026-10-01)
 
@@ -406,11 +422,12 @@ model stays available as a max-fidelity fallback (always-live cross-file at ~4.4
 
 - **No `.lathe/<module>/classes`** — mirroring the exploded modules would be GBs and redundant; the build's
   `modules/` is the base, referenced read-only.
-- `workspace.json` — module map (`FindAllModules`), the exploded-JDK base path (host `java-home`), the
-  javac-version gate.
+- `workspace.json` + `.lathe/java-home` → the exploded-JDK base path (the host `java-home` the server
+  runs on).
 - `.lathe/<module>/` — per-module params (ordered `sourceRoots`, `--add-exports`/`--add-reads`,
-  `-source/-target`, an OpenJDK/compiled-deps **mode** marker) and **stamps** (mtimes vs the build —
-  load-bearing here: they define the dirty set).
+  `-source/-target`, the `MODULE_SYSTEM` mode marker, and the `externalOutput` flag → the build's
+  output dir, scanned for the type-index base) and **stamps** (mtimes vs the build — load-bearing: they
+  define the dirty set). Build tools get the same shape in `CLASSPATH` mode.
 
 ### What the server needs: an OpenJDK analysis mode
 
@@ -485,6 +502,12 @@ descriptor Lathe can read.
 - **`runnerClasspath`** — omitted (no MVP runner).
 
 ## Delivery & gating
+
+> **Status:** `LatheFlags` gating, the server-bundle install (shared `lathe-install`), build-dir
+> auto-discovery, and `requiresProject=false` invocation by coordinate **shipped**. The `make lathe`
+> target and `.lathe/` git-ignore below are **deferred to docs** (a personal make include; no repo
+> code), and the javac-version gate was **dropped** (see [Slicing](#slicing)). The rest of this
+> section is the original delivery design.
 
 **The trigger is a `make lathe` target that invokes the Maven goal directly by coordinate** — no
 generated pom, no CLI, no shaded jar. Maven's direct-invocation grammar plus `requiresProject = false`
@@ -657,33 +680,70 @@ rebuild is an explicit case (proves the in-process refresh model).
 
 ## Slicing
 
-Re-sliced for the validated [analysis compilation model](#analysis-compilation-model--compiled-deps-on-the-exploded-jdk-validated-2026-10-01).
-The two foundations (server mode, plugin reader) are independent and can proceed in parallel against the
-hand-crafted `java.base` fixture that already exists in the test checkout.
+Delivered in reviewable slices against the validated
+[analysis compilation model](#analysis-compilation-model--compiled-deps-on-the-exploded-jdk-validated-2026-10-01).
+Status as of 2026-10-03.
 
-1. **Server OpenJDK analysis mode (foundational server work).** A workspace/module **kind** that configures
-   the reused `StandardJavaFileManager` as: **base** from the host JVM system (the exploded `modules/`),
-   **overlay** applied **once** via `--patch-module <module>=<tempdir>` holding the open buffers, no
-   `CLASS_PATH`/mirror remapping; navigation via `sourceRoots`. Reuses the existing one-time-`fm.handleOption`
-   pattern (already landed for `--module-source-path`/`--patch-module`). Delivers ~0.6s single-file analysis;
-   validated by the spikes. (The `.lathe/java-home` JVM pin needs **no launcher work** — already landed; the
-   plugin just writes the file in Slice 2.)
-2. **`lathe-openjdk` plugin reader + `sync` (the new front-end).** Parse `_the.*_batch.cmdline` /
-   `.filelist` for the *fidelity facts* (ordered `sourceRoots`, `--add-exports`/`--add-reads`,
-   `-source/-target`) and **emit the OpenJDK-native `.lathe/`**: compiled-deps-mode `ModuleConfigData`
-   (no `--module-source-path`/`--system none`, no classpath), `workspace.json` with the exploded-base path
-   and javac gate, `CompiledStampsData`, and **`.lathe/java-home` → the exploded `build/<conf>/jdk`**.
-   **No bytecode mirror.** One module first, then all ~66 via `FindAllModules`.
-3. **Dirty-overlay + freshness.** Stamps define the dirty set; the overlay = **open ∪ dirty** sources; a
-   bound on the overlay with a re-sync prompt past the threshold; `make <module>-java-only` as the
-   developer-run performance reset (never run by Lathe). Cross-module navigation falls out of the shared
-   base + `sourceRoots`.
-4. **Registration + gating.** The `make lathe` target invoking the goal by canonical coordinate; `.lathe/`
-   opt-in + git-ignore; bundle install into `~/.cache/lathe/`; exploded-JDK detection and the fail-loud
-   javac-version gate; **disable auto-format for JDK workspaces**.
-5. **Refinements + tests.** Multi-buffer overlay edge cases; the fixture matrix (multi-root module, heavy
-   gensrc, cross-module nav, edit-without-rebuild).
-6. **(Later, separate design) jtreg launch capture** — run/test/debug.
+**Shipped:**
+
+1. **Server MODULE_SYSTEM analysis mode.** The reused `StandardJavaFileManager` resolves dependencies
+   from the host JVM's system modules (the exploded `modules/`) and overlays open/dirty buffers via a
+   one-time `--patch-module <module>=<tempdir>:<outputdir>` — the compiled module is on the patch path
+   too, so cross-file references and `module-info` exports/opens/uses/provides resolve against the
+   module's own packages. No `CLASS_PATH`/mirror remapping; navigation via `sourceRoots`. ~0.6s
+   single-file analysis. `.lathe/java-home` JVM pin reused as-is (no launcher work).
+2. **`lathe-openjdk-maven-plugin` reader + `sync`.** `CmdlineReader` parses `_the.*_batch.cmdline` /
+   `.filelist` for the fidelity facts (ordered `sourceRoots`, `--add-exports`/`--add-reads`,
+   `-source/-target`); `OpenJdkSync` emits the OpenJDK-native `.lathe/` — MODULE_SYSTEM
+   `ModuleConfigData` (no `--module-source-path`/`--system none`/classpath), `CompiledStampsData`,
+   `workspace.json`, and `.lathe/java-home` → the exploded `build/<conf>/jdk` — for every built module
+   (a scan of `jdk/modules/*`; no `FindAllModules` needed). **No bytecode mirror.**
+   `requiresProject=false`; build dir auto-discovered from `build/*/spec.gmk` when `-Dlathe.buildDir`
+   is omitted.
+3. **Dirty-overlay + freshness.** The overlay is **open ∪ dirty** (dirty = mtime > compile stamp), so
+   edited and newly-added files are analyzed from source before a rebuild; the existing bulk-change
+   reaction prompts a re-sync past a threshold; `make <module>-java-only` is the developer-run reset
+   (never run by Lathe). Cross-module navigation falls out of the shared base + `sourceRoots`.
+4. **Workspace symbols + type-name completion.** The reactor type index = a **bytecode base** scanned
+   from each config's build output (the `externalOutput` flag) **∪** a **source-derived delta**
+   (`SourceTypeScanner`, type-from-path) for the dirty/open files the build output does not yet
+   reflect. New/edited types appear before a `make`+sync; keyed on disk staleness, so a saved new file
+   survives closing and hands off to the base on the next sync.
+5. **`make/` build tools.** Non-module compilations are captured as CLASSPATH configs that read the
+   build's output dir directly (raw classpath, `externalOutput`); `CmdlineReader.readTool` parses the
+   plain-javac invocation and source roots are inferred from the compiled `-d` layout. Interim
+   bootstrap modules (whose roots overlap real modules) are skipped.
+6. **Delivery + gating.** `LatheFlags` opt-in / CI gating in the goal; the server bundle is installed
+   into `~/.cache/lathe/` via the shared **`lathe-install`** module, extracted from `lathe-maven-plugin`
+   so both front-ends share one installer (no drift). Out-of-workspace files degrade to a hint.
+
+**Dropped / deferred:**
+
+- **Fail-loud javac-version gate — dropped.** By construction the build JDK that wrote the descriptors
+  satisfies the captured `-source/-target`, and javac's own `invalid source release` message is already
+  clear; the existing `modules/` check already covers "not built."
+- **`make lathe` target + `.lathe/` git-ignore — deferred to docs** (a personal make include and a
+  `.git/info/exclude` line; no repo code).
+- **Per-workspace auto-format disable — handled separately** (the server formatter is opt-in; a JDK
+  workspace simply enables none).
+- **jtreg run/test/debug and `test/` analysis — deferred** (see below).
+- **Other-OS source overlays, unbuilt modules — out of scope** (build the module and it is synced).
+
+## On-demand jtreg modules (future)
+
+Test execution (jtreg) stays out of the code-intelligence MVP, and analysing `test/` is a distinct
+problem from modules: the main build records **no compile descriptors for tests** (jtreg compiles each
+test on demand), and `test/` holds ~39,000 `.java` files — a bulk sync would be both heavy and wrong,
+since each test's real classpath lives in its own jtreg tag header, not in the build.
+
+The proposed shape is **lazy, per-file config synthesis on open**: when a jtreg test file is opened,
+detect it and synthesise a one-off config from its tag header
+(`@test`/`@library`/`@modules`/`@build`/`@run`) — the test JDK is the exploded image Lathe already
+hosts on, `@library` dirs become source roots / classpath, and `@modules` map to
+`--add-exports`/`--add-reads`/`--patch-module`. This pays only for files actually opened (no 39k-file
+scan, no build descriptors needed) and reuses the existing analysis pipeline. It is a natural companion
+to the eventual jtreg run/debug launcher, which would drive the real `jtreg` harness against the build
+image (IntelliJ-plugin style) rather than any Lathe-built artifact.
 
 ## Alternatives considered
 
@@ -705,10 +765,11 @@ hand-crafted `java.base` fixture that already exists in the test checkout.
 
 ## Open decisions
 
-1. **Server-JVM pinning** — ✅ **resolved.** The launcher already reads `LATHE_JAVA_HOME` → `.lathe/java-home`
-   → PATH (landed in `feat(server): run the server JVM under the project's build JDK`), and the server runs
-   correctly on the exploded `build/<conf>/jdk`. **Remaining:** only that `sync` *writes* `.lathe/java-home`
-   → the exploded JDK (Slice 2) and fails loud if no javac ≥ the feature version exists.
+1. **Server-JVM pinning** — ✅ **resolved & shipped.** The launcher reads `LATHE_JAVA_HOME` →
+   `.lathe/java-home` → PATH, the server runs on the exploded `build/<conf>/jdk`, and `sync` writes
+   `.lathe/java-home` → the exploded JDK. The once-planned fail-loud javac-version gate was **dropped**
+   (see [Slicing](#slicing)): the build JDK that wrote the descriptors satisfies their `-source/-target`
+   by construction, and javac's own `invalid source release` message already explains a mismatch.
 2. **Descriptor parse stability + source-level mapping** — ✅ **confirmed against a live `make java.base`
    (JDK 28 mainline, boot JDK 27, 2026-09-30).** `_the.java.base_batch.cmdline` is javac-server mode
    (`… javacserver.Main --conf=<f>`); `-source 28 -target 28 --system none` are carried with **no
