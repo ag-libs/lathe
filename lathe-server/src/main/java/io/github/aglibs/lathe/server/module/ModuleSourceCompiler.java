@@ -10,6 +10,7 @@ import io.github.aglibs.lathe.server.analysis.CompilerResult;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
 import io.github.aglibs.lathe.server.analysis.TransientAnalysis;
 import io.github.aglibs.lathe.server.analysis.TransientSource;
+import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
@@ -54,9 +55,7 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
       initLocations();
       this.compilerArgs =
           processPatchModules(
-              hoistFileManagerOptions(dropForkedLauncherArgs(config.compilerArgs()), fm),
-              fm,
-              tempDir);
+              hoistFileManagerOptions(dropForkedLauncherArgs(config.compilerArgs()), fm), fm);
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }
@@ -262,18 +261,21 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
         args, Set.of(MODULE_SOURCE_PATH, SYSTEM), (flag, value) -> applyOption(fm, flag, value));
   }
 
-  // Repoint each patched module at tempDir so the edited buffer overlays it.
-  private static List<String> processPatchModules(
-      final List<String> args, final StandardJavaFileManager fm, final Path tempDir) {
+  // Repoint each patched module at tempDir (edited buffers, first so they win) plus the module's
+  // compiled output, so cross-file references and module-info exports/opens see the module's own
+  // packages — which the overlay alone (just the open file) does not contain.
+  private List<String> processPatchModules(
+      final List<String> args, final StandardJavaFileManager fm) {
+    final String patch = tempDir + File.pathSeparator + config.outputDir();
     return consumeFileManagerFlags(
-        args, Set.of(PATCH_MODULE), (flag, spec) -> patchToTempDir(fm, spec, tempDir));
+        args, Set.of(PATCH_MODULE), (flag, spec) -> patchModule(fm, spec, patch));
   }
 
-  private static boolean patchToTempDir(
-      final StandardJavaFileManager fm, final String spec, final Path tempDir) {
+  private static boolean patchModule(
+      final StandardJavaFileManager fm, final String spec, final String patch) {
     final int eq = spec.indexOf('=');
     if (eq > 0) {
-      applyOption(fm, PATCH_MODULE, "%s=%s".formatted(spec.substring(0, eq), tempDir));
+      applyOption(fm, PATCH_MODULE, "%s=%s".formatted(spec.substring(0, eq), patch));
     }
     return true;
   }
