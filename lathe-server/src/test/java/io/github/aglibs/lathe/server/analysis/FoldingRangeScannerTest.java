@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import java.util.List;
 import org.eclipse.lsp4j.FoldingRange;
@@ -113,6 +114,63 @@ class FoldingRangeScannerTest {
     final List<FoldingRange> ranges = scanAs(source, "module-info.java");
 
     assertThat(ranges).isEmpty();
+  }
+
+  @Test
+  void scan_multilineJavadocOnDeclarations_returnsCommentFoldsSpanningDelimiters() {
+    final String source =
+        """
+        package demo;
+
+        /**
+         * Type doc
+         * continued.
+         */
+        class Outer {
+          /**
+           * Field doc
+           * continued.
+           */
+          int field;
+
+          /**
+           * Method doc
+           * continued.
+           */
+          void method() {
+          }
+        }
+        """;
+
+    final List<FoldingRange> ranges = scan(source);
+
+    assertThat(ranges)
+        .filteredOn(range -> FoldingRangeKind.Comment.equals(range.getKind()))
+        .extracting(FoldingRange::getStartLine, FoldingRange::getEndLine)
+        .containsExactlyInAnyOrder(tuple(2, 5), tuple(7, 10), tuple(13, 16));
+  }
+
+  @Test
+  void scan_singleLineJavadocAndNonJavadocComments_returnNoCommentFold() {
+    final String source =
+        """
+        class Outer {
+          /** One-line field doc. */
+          int field;
+
+          /*
+           * Not a javadoc block.
+           */
+          // line comment
+          // another line comment
+          void method() {
+          }
+        }
+        """;
+
+    final List<FoldingRange> ranges = scan(source);
+
+    assertThat(ranges).extracting(FoldingRange::getKind).doesNotContain(FoldingRangeKind.Comment);
   }
 
   private static List<FoldingRange> scan(final String source) {
