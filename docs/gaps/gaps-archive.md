@@ -8552,6 +8552,201 @@ Depends on WS-7 (the `-pl`/submodule `.lathe` behaviour must be sound first).
 
 ---
 
+## WS-2 — No re-sync prompt after a source-only branch switch
+
+**Status: resolved (superseded) — Target: n/a.**
+
+**Resolved by in-process workspace sync** ([design](../done/lathe-in-process-workspace-sync.md)): a
+source-only change made outside the editor is now recompiled into the `.lathe/` mirror on the idle tick
+(changed files in dependency order, deletions removing their classes, open dependents refreshed) — the
+non-intrusive resolution this gap called for, with no prompt. A prompt fires only for a POM/structural
+change (WS-3) or a *bulk* branch-switch-scale change (the escape hatch). WS-2's original Sync/Later
+prompt-for-source proposal is therefore not pursued. Original analysis retained below.
+
+Deferred from M2. The proposed fix was a Sync/Later prompt, but a prompt is both intrusive and
+non-binding: the user can dismiss it and keep working against stale state, so it adds friction without a
+reliable payoff — and a developer who deliberately switches branches already knows Lathe needs a manual
+re-sync. The behaviour is documented instead (README → "How it works → Build capture"): files you have
+open are analysed live, and changes to files you don't have open are picked up at the next
+`mvn process-test-classes`. Revisit only if beta users report silent-staleness confusion (e.g. after a
+`git pull` or merge they did not initiate), and then with a non-intrusive signal rather than a prompt.
+WS-1 remains the backlog umbrella for actual invalidation/reconciliation.
+
+### Observed behaviour
+
+After a `git checkout` that changes only Java sources, `WorkspaceWatcher.poll()` reports `NO_CHANGE` and
+the user is never told to re-sync, so completion, missing-import, `workspace/symbol`, and navigation
+silently reflect the *previous* branch until the next `mvn process-test-classes`. For a public user
+switching branches daily, silent staleness reads as "Lathe is wrong."
+
+### Root cause
+
+Staleness detection is keyed only to Lathe's own artifacts: `WorkspaceWatcher.poll()` checks
+`workspace.json` mtime and POM fingerprints, never source-root contents (see WS-1 root cause).
+
+### Proposed direction
+
+WS-1 option 1 (cheapest): detect that a tracked source root's newest mtime is ahead of the last recorded
+sync and raise the same advisory "run `mvn process-test-classes`" prompt already used for `POM_CHANGED` —
+detection and an honest nudge, no invalidation. Full auto-invalidation / no-Maven freshness (WS-1
+options 2–3) stays backlog.
+
+### Regression targets
+
+None yet — to be defined when scheduled (source newer than last sync → advisory prompt; no prompt when
+in sync).
+
+---
+
+## WS-10 — A `sealed` type and a newly added permitted subtype cannot both be saved: each single-file compile fails against the other's stale mirror bytecode
+
+**Status: done — Target: next.**
+
+Fixed by compiling mutually dependent same-tree sources together in one javac task (the batch FULL
+primitive the design called for), so a sealed root and a new permitted subtype resolve against one
+another instead of each other's stale mirror bytecode. Two paths, both shipped:
+
+- **Background reaction** — `WorkspaceSession` now issues one FULL batch per source tree over its
+  stable stale set (`compileChangedBatch` → `CompilationWorker.compileBatch` →
+  `ModuleSourceCompiler.compileBatch` → `JavacRunner.compileBatch`), replacing the per-file loop.
+  Verified live: an externally-changed sealed pair recompiles both `.class` into the mirror in one
+  pass, either edit order.
+- **Live editor diagnostics** — a single-file compile that fails with `compiler.err.cant.resolve*`
+  or `compiler.err.cant.inherit.from.sealed` widens into the module's open + stale siblings
+  (analyze-only, `diagnoseInBatch`) and republishes just the target's diagnostics, clearing the
+  spurious squiggle.
+
+Out of scope (rare, debugger-only): a sealed pair that is both *open and saved* leaves the mirror
+`.class` stale until close or a Maven sync — the reaction skips open files and the single-file save
+still can't write that mirror. Diagnostics are correct either way.
+
+### Observed behaviour
+
+Adding a new permitted subtype to an existing sealed hierarchy leaves both files un-saveable — every
+save order produces a spurious, un-clearable error. Starting from a consistent, mirrored pair
+(`sealed interface Shape permits Circle` + `final class Circle implements Shape`), the user edits
+`Shape` to `permits Circle, Square` and creates `Square implements Shape`:
+
+- Save `Shape` first → `cannot find symbol: class Square` (the new `Square.class` is not in the mirror yet).
+- Save `Square` first → `class is not allowed to extend sealed class: Shape (as it is not listed in
+  its 'permits' clause)` (the mirror's `Shape.class` still permits only `Circle`).
+
+Neither file can advance, because each needs the *other's fresh* bytecode and the stale `.lathe/` mirror
+has neither. The same red diagnostic also appears live on the open buffers before any save.
+
+### Root cause
+
+Lathe compiles each changed/open file **in isolation**:
+
+- The compile unit is a single `JavaFileObject` — `JavacRunner.compileFull` wraps it as
+  `List.of(sourceFile)`, and both the live path (`WorkspaceSession.onChange`/`onSave` →
+  `compileAndPublish`) and the background reaction (`compileChangedSource` → one `CompileRequest`) drive
+  one file at a time.
+- `StandardLocation.CLASS_PATH` points at the `.lathe/` mirror's compiled `.class` files — *stale*
+  bytecode (`ModuleSourceCompiler.initLocations`).
+- **No `StandardLocation.SOURCE_PATH` is ever set**, so javac cannot pull a sibling `.java` on demand.
+
+The `sealed`/`permits` relationship is encoded bidirectionally in bytecode (the parent's
+`PermittedSubclasses` attribute and the child's superclass reference), and javac validates *both*
+directions at compile time. So there is no valid intermediate single-file state — a genuine deadlock.
+
+This is one instance of a general class: **any two same-module files where each, in its edited state,
+references something newly added in the other.** Empirically, only `sealed` is un-stageable:
+
+| Construction | Both save-orders fail? | Stageable (a valid save order exists)? |
+|---|---|---|
+| `sealed` / `permits` (new subtype) | yes | **no** — the two edits must land atomically |
+| Mutual new methods/fields | yes | yes — add members first, then the calls (verified) |
+| F-bounded generics `A<T extends B<T>>` ↔ `B<T extends A<T>>` | when both bounds are new | mostly |
+| `module-info` `provides…with` + new impl | rarely | yes — save the impl first |
+
+`sealed`/`permits` is therefore the only construction a user can actually get stuck on; the others share
+the identical root cause and are fixed for free by the same primitive, but are worked around by save
+order.
+
+### Proposed fix — batch compilation, grouped by module
+
+Compile mutually dependent sources **together in one javac task** so intra-batch cross-references
+resolve. This needs the batch **FULL**-compile primitive already called for (but never built) in the
+archived R1 design ([external-change-recompilation](../potential/lathe-external-change-recompilation.md)):
+a multi-file `analyzeBatch` exists but writes no `.class`.
+
+**Batch boundary: the module, not the package.** An explicit `permits` clause requires permitted
+subtypes to be in the same *module* (named/JPMS) or same *package* (unnamed module — a Maven module with
+no `module-info`). Same-package is exactly correct only for non-JPMS modules and **misses** sealed
+families that cross packages inside a JPMS module (the `multi-module` invoker's `jpms` module is such a
+case). The module boundary is a guaranteed-complete superset — a sealed family can never cross it — and a
+broader batch is never *incorrect* (javac just compiles the stale set together). Grouping by module also
+matches the existing `staleByModule` grouping and the R1 design. The batch only ever contains the
+**stale/dirty set** (what actually changed), so it stays small.
+
+**Rejected alternative — set `SOURCE_PATH` to the real source roots.** It works when the source is newer
+than the mirror, but it is **mtime-fragile**: javac's default `-Xprefer:newer` reverts to the stale
+`.class` whenever Lathe's own mirror rewrites push the counterpart's `.class` mtime ahead of an untouched
+source, silently reintroducing the deadlock. Forcing `-Xprefer:source` removes the mtime dependence but
+makes javac recompile everything reachable on the sourcepath from source on *every* compile — defeating
+the `.lathe` mirror's latency purpose. Both were verified empirically.
+
+**Two compile paths to cover:**
+
+1. **Background reaction** (mirror freshness, `compileChangedInOrder` / `reactToChangedSources`): replace
+   the per-file loop with **one FULL batch compile per source tree (`ModuleSourceConfig`)** over the
+   *stable* stale set, iterated in the existing `compileOrder` (upstream modules first, main tree before
+   test tree). The batch unit is the source tree — not the module dir — because main (`classes`) and test
+   (`test-classes`) trees have distinct `CLASS_OUTPUT`/`CLASS_PATH`/file managers and cannot share one
+   javac task; a sealed family always lives within a single tree, so nothing is lost. Batching all stable
+   stale files of a tree together (rather than file-by-file, or by computed connected-components) is what
+   makes mutual dependencies resolve *and* gives correct annotation-processor aggregation — an AP that
+   aggregates across sources must see the whole changed set at once, as Maven runs it. Safety: keep the
+   two-tick `stableSources` settle gate (don't pull mid-write files in — a split pair self-heals on the
+   next tick); the set is already bounded by `BULK_CHANGE_THRESHOLD`; javac's per-type `generate()` still
+   writes error-free files even if a sibling is broken, so the coupled blast radius is limited and no
+   diagnostics are published for non-open reaction files. `afterModuleSave` then runs once per batch
+   instead of once per file. Connected-component sub-grouping is rejected as over-engineering — it needs
+   the reference graph the compile would produce, and the stale set is already small.
+2. **Live editor diagnostics** (`compileAndPublish`, the red squiggle before save): keep the fast
+   single-file path and **widen on failure** — when a single-file compile fails with an
+   unresolved-same-module-symbol or a sealed-`permits` error, rebuild the batch from the module's
+   dirty (`docs`) + stale set using current buffer content and retry, then publish only the target file's
+   per-file diagnostics.
+
+**Implementation sketch (no ad-hoc parsing; javac drives everything):**
+
+- `JavacRunner` — generalize `compileFull` to an `Iterable<JavaFileObject>` (mirror of
+  `attributeBatch`): `task.analyze()` → `task.generate()` → union of `writtenBinaryNames` + per-file
+  diagnostics.
+- `ModuleSourceCompiler` / `JavaSourceCompiler` — a `compileBatch(sources, mode)` FULL entry that writes
+  temp files (like `analyzeBatch`) and returns the union.
+- `CompilationWorker` — a `compileBatch(List<CompileRequest>)` returning one `CompileResponse` per uri.
+- `WorkspaceSession` — reaction fans the module's stale set into one batch; `afterModuleSave` runs once
+  per module. Live path adds the widen-on-failure retry.
+
+No new abstraction beyond the batch primitive, and no `permits`-clause parsing: membership is decided by
+module + stale/dirty, and javac resolves the hierarchy inside the batch.
+
+### Investigation evidence (empirical, javac 26, `--release 21`)
+
+| Config | `Shape` first | `Square` first |
+|---|---|---|
+| Single file, `CLASS_PATH`=stale mirror, no sourcepath (Lathe today) | ❌ | ❌ |
+| Single file + `SOURCE_PATH`=src, source newer than mirror | ✅ | ✅ |
+| Single file + `SOURCE_PATH`=src, mirror newer than source | ✅ | ❌ (reverts to stale `.class`) |
+| **Batch both units, `CLASS_PATH`=stale mirror, no sourcepath** | **✅ writes both** | **✅ writes both** |
+
+### Regression targets
+
+- Batch compile of a sealed root + a new permitted subtype in the same module writes both `.class` files
+  and reports no diagnostics, in either edit order (non-JPMS package and JPMS cross-package).
+- The reaction path issues one FULL compile per source tree (`ModuleSourceConfig`) over the stable stale
+  set (not N single-file compiles), in `compileOrder`.
+- Live path: a single-file compile that fails on an unresolved same-module symbol / sealed-`permits`
+  error is retried as a module batch and clears the spurious diagnostic; an unrelated real error still
+  surfaces on the correct file.
+- Negative: a single stale file (counterpart already consistent in the mirror) still takes the fast
+  single-file path — no needless widening.
+
+---
+
 # Test Execution (TE) — resolved
 
 ## TE-1 — Capture-only dependencies leak into the recorded replay classpath
@@ -8665,6 +8860,23 @@ Maven's Surefire/exec fork.
 
 `RunOverlayTest` — asserts the resolved cwd equals the module basedir for the default case and
 that an explicit overlay `cwd` wins.
+
+---
+
+## TE-2 — Named run-configuration selection (`:LatheRun {name}`)
+
+**Status: done — Target: next.**
+
+Implemented. The run-config file is now a `{ defaults, configs }` object: `defaults` are the
+auto-applied baselines (the former `(module, kind)` overlays), and `configs` are name-keyed entries
+that pin a target and are selected explicitly via `:LatheRun {name}` / `:LatheDebug {name}` (with
+server-provided completion). `:LatheRunSave[!] [name]` scaffolds a config from the runnable under the
+cursor into `.lathe/run.json`, and `:LatheRunOutput` reopens the run console. Design:
+[lathe-named-run-configs.md](../done/lathe-named-run-configs.md).
+
+### Regression targets
+
+None yet — to be defined when the fix is scheduled.
 
 ---
 
