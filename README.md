@@ -132,11 +132,12 @@ How much you get depends on the client:
 |---------|------------------------------------------------------|--------------------------------------------------------------------------|
 | Neovim  | Dedicated client (LSP + run/test/debug, scaffolding) | [Neovim cheatsheet](docs/guide/editors/neovim.md) — install and keymaps  |
 | Emacs   | Built-in Eglot (standard LSP, no plugin)             | [Emacs (Eglot) guide](docs/guide/editors/emacs.md)                       |
-| VS Code | Planned (dedicated client)                           | —                                                                        |
+| VS Code | Generic LSP bridge (standard LSP); client planned    | [VS Code guide](docs/guide/editors/vscode.md)                            |
 
 The [Neovim client](docs/guide/editors/neovim.md) adds Lathe-specific commands (`:LatheRun`,
 `:LatheNew`, neotest, format-on-save) on top of LSP. Everything else is plain LSP, so a generic client
-like **Emacs + Eglot** works with no plugin at all — see the [Emacs guide](docs/guide/editors/emacs.md).
+like **Emacs + Eglot** — or VS Code via a [generic LSP bridge](docs/guide/editors/vscode.md) — works
+with no dedicated plugin at all.
 
 ## AI agents (MCP)
 
