@@ -2,6 +2,10 @@
 """
 Lathe LSP exploratory client — drives the server directly via JSON-RPC.
 
+`LspClient` is the generic stdio JSON-RPC base (transport + standard LSP feature helpers).
+`LatheClient` is the Lathe preset (working-tree launcher, Lathe capabilities, lathe.* commands).
+A `JdtlsClient` preset lives in `dev/jdtls.py` and reuses the same base for differential testing.
+
 Usage:
     python3 dev/lsp.py <file> [<file> ...]            # diagnostics for each file
     python3 dev/lsp.py <file>:<line>:<col> [...]      # diagnostics + hover (1-based line/col)
@@ -60,7 +64,7 @@ class RequestCancelledError(RuntimeError):
 class RequestHandle:
     """One in-flight JSON-RPC request that can be waited on or cancelled."""
 
-    def __init__(self, client: "LatheClient", request_id: int, method: str,
+    def __init__(self, client: "LspClient", request_id: int, method: str,
                  responses: queue.SimpleQueue):
         self._client = client
         self.id = request_id
@@ -74,11 +78,15 @@ class RequestHandle:
         self._client.notify("$/cancelRequest", {"id": self.id})
 
 
-# ── LatheClient ───────────────────────────────────────────────────────────────
+# ── LspClient ───────────────────────────────────────────────────────────────
 
-class LatheClient:
+class LspClient:
     """
-    Synchronous LSP client wrapper around the Lathe language server process.
+    Generic synchronous stdio JSON-RPC LSP client.
+
+    Holds the transport (read loop, request/notify, progress handling) and the standard
+    textDocument/* feature helpers shared by every server. Server-specific launch, handshake,
+    and custom commands live in presets (`LatheClient`, `JdtlsClient`).
 
     Use as a context manager or call .stop() explicitly.
     """
@@ -104,15 +112,17 @@ class LatheClient:
     # ── lifecycle ──────────────────────────────────────────────────────────
 
     @classmethod
-    def start(cls, workspace_root: str | Path, debug: bool | None = None) -> "LatheClient":
-        root = Path(workspace_root).resolve()
-        cmd = [LATHE_LAUNCHER]
-        use_debug = debug if debug is not None else bool(os.environ.get("LATHE_DEBUG"))
-        env = {**os.environ, **({"LATHE_DEBUG": "1"} if use_debug else {})}
+    def _spawn(cls, cmd: list[str], env: dict, root: Path, cwd: Path | None = None) -> "LspClient":
+        """Launch a server process, wire its stderr, construct the client, and run the
+        preset's _handshake. Shared by every preset's start().
+
+        `cwd` sets the server's working directory (default: inherit the caller's). Pass the
+        workspace root to mimic how editors launch the server -- Lathe's launcher resolves
+        `.lathe/java-home` relative to it."""
         proc = subprocess.Popen(
             cmd,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            env=env,
+            env=env, cwd=str(cwd) if cwd else None,
         )
         stderr_lines: list[str] = []
         threading.Thread(
@@ -125,33 +135,7 @@ class LatheClient:
         return client
 
     def _handshake(self, root: Path):
-        resp = self.request("initialize", {
-            "processId": os.getpid(),
-            "rootUri": root.as_uri(),
-            "workspaceFolders": [{"uri": root.as_uri(), "name": root.name}],
-            "capabilities": {
-                "textDocument": {
-                    "publishDiagnostics": {"relatedInformation": False},
-                    "hover": {"contentFormat": ["plaintext", "markdown"]},
-                    "definition": {},
-                    "declaration": {},
-                    "references": {},
-                    "implementation": {},
-                    "typeHierarchy": {},
-                    "completion": {"completionItem": {"snippetSupport": False}},
-                    "signatureHelp": {},
-                    "semanticTokens": {
-                        "requests": {"full": True},
-                        "tokenTypes": [],
-                        "tokenModifiers": [],
-                        "formats": ["relative"],
-                    },
-                },
-                "window": {"workDoneProgress": True},
-            },
-        })
-        self.notify("initialized", {})
-        return resp
+        raise NotImplementedError("preset must implement _handshake")
 
     def stop(self):
         if self._stopped:
@@ -538,75 +522,56 @@ class LatheClient:
         result = self.request("workspace/symbol", {"query": query})
         return result or []
 
+    def document_highlight(self, file: str | Path, line: int, col: int) -> list[dict]:
+        """Document highlights at 0-based line/col. Returns list of DocumentHighlight."""
+        result = self.request("textDocument/documentHighlight", {
+            "textDocument": {"uri": Path(file).resolve().as_uri()},
+            "position": {"line": line, "character": col},
+        })
+        return result or []
+
+    def semantic_tokens(self, file: str | Path) -> dict | None:
+        """Full semantic tokens. Returns SemanticTokens ({data: int[]}) or None."""
+        return self.request("textDocument/semanticTokens/full", {
+            "textDocument": {"uri": Path(file).resolve().as_uri()},
+        })
+
+    def code_action(self, file: str | Path, line: int, col: int,
+                    end_line: int | None = None, end_col: int | None = None,
+                    diagnostics: list[dict] | None = None) -> list[dict]:
+        """Code actions over a 0-based range (defaults to a zero-width range at line/col)."""
+        start = {"line": line, "character": col}
+        end = {"line": end_line if end_line is not None else line,
+               "character": end_col if end_col is not None else col}
+        result = self.request("textDocument/codeAction", {
+            "textDocument": {"uri": Path(file).resolve().as_uri()},
+            "range": {"start": start, "end": end},
+            "context": {"diagnostics": diagnostics or []},
+        })
+        return result or []
+
+    def prepare_rename(self, file: str | Path, line: int, col: int) -> dict | None:
+        """Prepare rename at 0-based line/col. Returns the renameable Range (or {range,placeholder})
+        when the position is renameable, else None."""
+        return self.request("textDocument/prepareRename", {
+            "textDocument": {"uri": Path(file).resolve().as_uri()},
+            "position": {"line": line, "character": col},
+        })
+
+    def rename(self, file: str | Path, line: int, col: int, new_name: str) -> dict | None:
+        """Rename at 0-based line/col. Returns a WorkspaceEdit ({changes|documentChanges})."""
+        return self.request("textDocument/rename", {
+            "textDocument": {"uri": Path(file).resolve().as_uri()},
+            "position": {"line": line, "character": col},
+            "newName": new_name,
+        })
+
     def execute_command(self, command: str, arguments: list) -> Any:
         """Send workspace/executeCommand and return the raw result."""
         return self.request("workspace/executeCommand", {
             "command": command,
             "arguments": arguments,
         })
-
-    def runnables(self, file: str | Path) -> list[dict]:
-        """List discovered run targets (main/test methods/classes/packages) in a file."""
-        uri = Path(file).resolve().as_uri()
-        result = self.execute_command("lathe.runnables.list", [{"uri": uri}])
-        return result or []
-
-    def run_test(self, module_rel: str, selector_kind: str, selector_value: str) -> dict:
-        """Trigger lathe.run.test. Returns a ReplayOutcome dict
-        ({launched, blockedReasons, exitCode}).
-
-        The server expects a `selections` array of {selectorKind, selectorValue}; sending the
-        legacy flat {selectorKind, selectorValue} shape makes parseRunTestArgument NPE."""
-        return self.execute_command("lathe.run.test", [{
-            "moduleRel": module_rel,
-            "selections": [{
-                "selectorKind": selector_kind,
-                "selectorValue": selector_value,
-            }],
-            "token": "probe",
-        }])
-
-    def debug_test(self, module_rel: str, selections: list[dict],
-                   token: str = "probe", timeout: int = 60) -> dict:
-        """Trigger lathe.debug.test. Launches the selected test suspended under a JDWP agent and
-        opens an in-process DAP host, returning a DebugStartResult dict ({dapPort, jdwpPort}).
-        Returns as soon as the host is listening -- it does not block until the debuggee exits."""
-        return self.request("workspace/executeCommand", {
-            "command": "lathe.debug.test",
-            "arguments": [{
-                "moduleRel": module_rel,
-                "selections": selections,
-                "token": token,
-            }],
-        }, timeout=timeout)
-
-    def debug_main(self, module_rel: str, main_class: str,
-                   token: str = "probe", timeout: int = 60) -> dict:
-        """Trigger lathe.debug.main. Launches the module's main class suspended under a JDWP agent
-        and opens an in-process DAP host, returning a DebugStartResult dict ({dapPort, jdwpPort})."""
-        return self.request("workspace/executeCommand", {
-            "command": "lathe.debug.main",
-            "arguments": [{
-                "moduleRel": module_rel,
-                "mainClass": main_class,
-                "token": token,
-            }],
-        }, timeout=timeout)
-
-    def run_main(self, module_rel: str, main_class: str, timeout: int = 120) -> dict:
-        """Trigger lathe.run.main. The server holds the response open until the replay JVM
-        exits, so this uses a longer timeout than a normal request. Returns a LaunchOutcome
-        dict ({launched, blockedReasons, exitCode, output, testResults})."""
-        return self.request("workspace/executeCommand", {
-            "command": "lathe.run.main",
-            "arguments": [{"moduleRel": module_rel, "mainClass": main_class}],
-        }, timeout=timeout)
-
-    def refresh_resource(self, file: str | Path) -> str | None:
-        """Trigger lathe.resource.refresh for a changed resource file. Returns the .lathe/
-        destination the server copied it to, or None if it maps to no resource root."""
-        uri = Path(file).resolve().as_uri()
-        return self.execute_command("lathe.resource.refresh", [{"uri": uri}])
 
     def implementation(self, file: str | Path, line: int, col: int) -> list[dict]:
         """Go-to-implementation at 0-based line/col. Returns list of Locations."""
@@ -680,6 +645,118 @@ class LatheClient:
         """Fetch outgoing calls for a CallHierarchyItem. Returns list of CallHierarchyOutgoingCalls."""
         result = self.request("callHierarchy/outgoingCalls", {"item": item})
         return result or []
+
+
+# ── LatheClient ───────────────────────────────────────────────────────────────
+
+class LatheClient(LspClient):
+    """Lathe preset: working-tree launcher, Lathe client capabilities, and lathe.* commands."""
+
+    @classmethod
+    def start(cls, workspace_root: str | Path, debug: bool | None = None) -> "LatheClient":
+        root = Path(workspace_root).resolve()
+        cmd = [LATHE_LAUNCHER]
+        use_debug = debug if debug is not None else bool(os.environ.get("LATHE_DEBUG"))
+        env = {**os.environ, **({"LATHE_DEBUG": "1"} if use_debug else {})}
+        return cls._spawn(cmd, env, root, cwd=root)
+
+    def _handshake(self, root: Path):
+        resp = self.request("initialize", {
+            "processId": os.getpid(),
+            "rootUri": root.as_uri(),
+            "workspaceFolders": [{"uri": root.as_uri(), "name": root.name}],
+            "capabilities": {
+                "textDocument": {
+                    "publishDiagnostics": {"relatedInformation": False},
+                    "hover": {"contentFormat": ["plaintext", "markdown"]},
+                    "definition": {"linkSupport": True},
+                    "declaration": {"linkSupport": True},
+                    "references": {},
+                    "implementation": {"linkSupport": True},
+                    "documentHighlight": {},
+                    "documentSymbol": {"hierarchicalDocumentSymbolSupport": True},
+                    "typeHierarchy": {},
+                    "callHierarchy": {},
+                    "foldingRange": {},
+                    "codeAction": {},
+                    "rename": {"prepareSupport": True},
+                    "completion": {"completionItem": {"snippetSupport": False}},
+                    "signatureHelp": {},
+                    "semanticTokens": {
+                        "requests": {"full": True},
+                        "tokenTypes": [],
+                        "tokenModifiers": [],
+                        "formats": ["relative"],
+                    },
+                },
+                "window": {"workDoneProgress": True},
+            },
+        })
+        self.notify("initialized", {})
+        return resp
+
+    def runnables(self, file: str | Path) -> list[dict]:
+        """List discovered run targets (main/test methods/classes/packages) in a file."""
+        uri = Path(file).resolve().as_uri()
+        result = self.execute_command("lathe.runnables.list", [{"uri": uri}])
+        return result or []
+
+    def run_test(self, module_rel: str, selector_kind: str, selector_value: str) -> dict:
+        """Trigger lathe.run.test. Returns a ReplayOutcome dict
+        ({launched, blockedReasons, exitCode}).
+
+        The server expects a `selections` array of {selectorKind, selectorValue}; sending the
+        legacy flat {selectorKind, selectorValue} shape makes parseRunTestArgument NPE."""
+        return self.execute_command("lathe.run.test", [{
+            "moduleRel": module_rel,
+            "selections": [{
+                "selectorKind": selector_kind,
+                "selectorValue": selector_value,
+            }],
+            "token": "probe",
+        }])
+
+    def debug_test(self, module_rel: str, selections: list[dict],
+                   token: str = "probe", timeout: int = 60) -> dict:
+        """Trigger lathe.debug.test. Launches the selected test suspended under a JDWP agent and
+        opens an in-process DAP host, returning a DebugStartResult dict ({dapPort, jdwpPort}).
+        Returns as soon as the host is listening -- it does not block until the debuggee exits."""
+        return self.request("workspace/executeCommand", {
+            "command": "lathe.debug.test",
+            "arguments": [{
+                "moduleRel": module_rel,
+                "selections": selections,
+                "token": token,
+            }],
+        }, timeout=timeout)
+
+    def debug_main(self, module_rel: str, main_class: str,
+                   token: str = "probe", timeout: int = 60) -> dict:
+        """Trigger lathe.debug.main. Launches the module's main class suspended under a JDWP agent
+        and opens an in-process DAP host, returning a DebugStartResult dict ({dapPort, jdwpPort})."""
+        return self.request("workspace/executeCommand", {
+            "command": "lathe.debug.main",
+            "arguments": [{
+                "moduleRel": module_rel,
+                "mainClass": main_class,
+                "token": token,
+            }],
+        }, timeout=timeout)
+
+    def run_main(self, module_rel: str, main_class: str, timeout: int = 120) -> dict:
+        """Trigger lathe.run.main. The server holds the response open until the replay JVM
+        exits, so this uses a longer timeout than a normal request. Returns a LaunchOutcome
+        dict ({launched, blockedReasons, exitCode, output, testResults})."""
+        return self.request("workspace/executeCommand", {
+            "command": "lathe.run.main",
+            "arguments": [{"moduleRel": module_rel, "mainClass": main_class}],
+        }, timeout=timeout)
+
+    def refresh_resource(self, file: str | Path) -> str | None:
+        """Trigger lathe.resource.refresh for a changed resource file. Returns the .lathe/
+        destination the server copied it to, or None if it maps to no resource root."""
+        uri = Path(file).resolve().as_uri()
+        return self.execute_command("lathe.resource.refresh", [{"uri": uri}])
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────

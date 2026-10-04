@@ -216,6 +216,214 @@ None yet — re-triaged from backlog when scheduled.
 
 ---
 
+<!-- EG-049..EG-055 were discovered by differential testing against jdtls (dev/jdtls_diff.py; see
+docs/planned/lathe-jdtls-differential-testing.md) on a real multi-module reactor. Each is a behaviour
+where jdtls returns a result Lathe does not, or the two disagree substantively. -->
+
+## EG-049 — Rename unsupported for types, enum constants, and constructors
+
+**Status: documented**
+
+### Observed behaviour
+
+`textDocument/prepareRename` reports *not renameable* (and `textDocument/rename` returns zero edits)
+when the cursor is on a type name (class / interface / enum / `@interface` / record), an enum
+constant, or a constructor / type-name position. jdtls renames all of these across the workspace
+(e.g. renaming a public top-level class produces 100+ edits). Renaming **methods, fields, locals,
+parameters** works and — unlike jdtls — covers *more* references, so the gap is specifically the
+declaration kinds above.
+
+```bash
+# Discovered across 6 files of varied kinds (class, enum, interface, annotation, record):
+#   27 positions prepareRename=false / rename=0 in Lathe, all renameable in jdtls.
+python3 dev/jdtls_diff.py --methods prepareRename,rename <ws>/.../Option.java
+```
+
+### Expected behaviour
+
+Offer rename on type declarations (updating the declaring `.java` file name for a public top-level
+type), enum constants, and constructors — the common refactoring targets jdtls supports.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-050 — Javadoc `{@link}` / `{@code}` regions not resolved for references, highlight, completion
+
+**Status: documented**
+
+### Observed behaviour
+
+Sibling of [EG-003](#eg-003--hover-returns-null-on-positions-inside-javadoc-type-reference-tags)
+(hover). Because Javadoc comment regions are not attributed for reference resolution, member
+references written in Javadoc tags are invisible to several features:
+
+- `textDocument/references` and `textDocument/documentHighlight` omit `{@link #of(Class)}` /
+  `{@code}` member references written in Javadoc, which jdtls includes.
+- `textDocument/completion` returns nothing inside a `{@link …}` / `{@code …}` tag, where jdtls
+  offers type/member completion.
+
+```bash
+python3 dev/jdtls_diff.py --methods references,documentHighlight,completion <ws>/.../Api.java
+```
+
+### Root cause
+
+The same Javadoc-attribution gap as EG-003: positions inside Javadoc resolve to a comment node, not
+the referenced element. A `DocTrees`-based two-phase lookup (per EG-003) would feed references,
+highlight, and completion as well as hover.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-051 — Hover signature rendering: varargs as array, constructor `<init>`, method type params dropped
+
+**Status: documented**
+
+### Observed behaviour
+
+Hover renders method/constructor signatures differently from the source and from jdtls:
+
+| Case | Lathe hover | Expected (source / jdtls) |
+|---|---|---|
+| Varargs parameter | `register(String name, Option[] options)` | `… Option... options` |
+| Constructor | `void <init>()` | `Api()` |
+| Generic method's own type params | `Builder<T> of(…)` | `<T> Builder<T> of(…)` |
+
+```bash
+python3 dev/jdtls_diff.py --methods hover <ws>/.../Api.java
+```
+
+### Expected behaviour
+
+Render varargs with `...`, constructors with the type name (no `void <init>`), and include the
+method's own type-parameter declaration.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-052 — Go-to-implementation misses lambda implementations of functional interfaces
+
+**Status: documented**
+
+### Observed behaviour
+
+`textDocument/implementation` on a functional-interface method (e.g. `Transformer.apply`) returns
+nothing; jdtls returns the lambda expressions that implement it (e.g. a lambda at a call site in
+another module).
+
+```bash
+python3 dev/jdtls_diff.py --methods implementation <ws>/.../Transformer.java
+```
+
+### Expected behaviour
+
+Include lambda / method-reference implementations of a single-abstract-method interface among the
+implementation results.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-053 — Folding ranges fewer than the reference server (no import-group fold)
+
+**Status: documented**
+
+### Observed behaviour
+
+`textDocument/foldingRange` emits fewer regions than jdtls on every probed file — notably no fold for
+the import group, and fewer granular/comment folds. (Lathe advertises import-group folding, so this
+may be a region-detection gap rather than a missing feature.)
+
+```bash
+python3 dev/jdtls_diff.py --methods foldingRange <ws>/.../Api.java
+```
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-054 — No completion on array-typed expressions (`arr.length`, `arr.clone()`)
+
+**Status: documented**
+
+### Observed behaviour
+
+Member completion on an expression of array type returns nothing. jdtls offers `length`, `clone()`,
+and the inherited `Object` members.
+
+```java
+// points has array type (Point[])
+return points.length == 0;
+//            ^ completion on `points.`: Lathe ∅, jdtls {length, clone, …}
+```
+
+Discovered while verifying completion quality with `dev/jdtls_diff.py` / a focused member-completion
+probe. Completion quality is otherwise strong: on ordinary member access Lathe matches jdtls member
+for member, and is in several respects *more* correct — it omits `static` members from
+instance-receiver completion (jdtls offers them) and respects the module's `--release` level (jdtls
+offers JDK methods newer than the release, e.g. `Class.accessFlags()` on a release-17 module). The
+array case is the one clear deficiency: `arr.length` is a common idiom.
+
+### Expected behaviour
+
+On an array-typed receiver, offer `length`, `clone()`, and the inherited `Object` members.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-055 — `workspace/symbol` misses nested / inner type declarations
+
+**Status: documented**
+
+### Observed behaviour
+
+Workspace symbol search does not find types declared inside another type (nested classes, records,
+enums, interfaces). jdtls finds them. The types *are* present in the file's `documentSymbol` outline,
+so the gap is specific to the cross-reactor symbol index.
+
+```java
+// Fixtures.java — nested record declarations
+record Point(int x, int y) {}                       // workspace/symbol "Point": Lathe ∅, jdtls ✓
+record Box<T>(T value) {}                            // workspace/symbol "Box":   Lathe ∅, jdtls ✓
+record Bounded<T extends Serializable>(T value) {}
+```
+
+```bash
+python3 dev/jdtls_diff.py --methods workspaceSymbol <ws>/.../Fixtures.java
+```
+
+Discovered by cross-module differential testing. Cross-module navigation is otherwise strong:
+`definition`, `references`, and method `callHierarchy` all resolve across module boundaries and agree
+with jdtls, and cross-module **rename is more complete than jdtls** (renames every usage across all
+modules, where jdtls under-scoped). Nested-type indexing for `workspace/symbol` is the outlier.
+
+### Expected behaviour
+
+Index nested / inner type declarations (class, record, enum, interface) so `workspace/symbol` and
+CamelHump search can find them across the reactor.
+
+### Regression targets
+
+None yet.
+
+---
+
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work

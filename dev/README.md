@@ -14,8 +14,36 @@ All files live in `dev/` and are never shipped with the distribution.
 | `neotest-e2e.sh` | Headless end-to-end check of the neotest adapter against a live server + real replay |
 | `debug-e2e.sh` | Headless end-to-end check of the debug attach flow (DAP over JDWP) against a live server + real replay |
 | `debug_probe.py` | Raw DAP client the debug harness drives (launch → attach → breakpoint → inspect → resume) |
-| `lsp.py` | Python LSP client library and CLI diagnostics tool |
+| `lsp.py` | Python LSP client library (`LspClient` base + `LatheClient` preset) and CLI diagnostics tool |
+| `jdtls.py` | `JdtlsClient` preset — runs Eclipse jdtls on Corretto 25 for differential testing |
+| `jdtls_diff.py` | Differential tester — drives Lathe and jdtls over identical probes, reports divergences |
 | `explore.py` | Interactive LSP shell — explore any file like an engineer would |
+
+---
+
+## jdtls_diff.py — differential testing against jdtls
+
+Drives Lathe and Eclipse jdtls over identical probe points on the same project and reports where they
+disagree, as triage candidates for the [gap logs](../docs/gaps/gaps.md). Design and rationale:
+[lathe-jdtls-differential-testing.md](../docs/planned/lathe-jdtls-differential-testing.md).
+
+```bash
+# Whole capability surface on one or more files (or a directory):
+python3 dev/jdtls_diff.py path/to/File.java
+python3 dev/jdtls_diff.py --methods hover,references,rename path/to/File.java
+python3 dev/jdtls_diff.py --out dev/jdtls-diff-report.md --max-files 6 path/to/src/main/java/pkg
+```
+
+Requirements and behaviour:
+
+- **jdtls** on `PATH` (or `JDTLS_LAUNCHER`), run on **Corretto 25** (`JDTLS_JAVA_HOME`, default
+  `/opt/amazon-corretto-25.0.0.36.2-linux-x64`) — jdtls 1.51 cannot run on JDK 26.
+- Self-contained coexistence: `JdtlsClient` passes `-Dlathe.disabled=true` as a jdtls-only JVM arg, so
+  jdtls imports a plain-`javac` build path even on a Lathe-enabled repo, with no project change.
+- First run per workspace imports the project into a cached jdtls `-data` dir (`~/.cache/jdtls-diff/…`);
+  later runs reuse it and start in seconds.
+- Output: a categorised markdown report — per-capability agreement table plus `lathe_missing` / `differ`
+  gap candidates, with a known-difference allowlist for deliberate divergences.
 
 ---
 

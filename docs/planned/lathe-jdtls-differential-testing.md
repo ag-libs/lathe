@@ -2,13 +2,34 @@
 
 ## Status
 
-**Won't do (2026-09-26).** Decided not to pursue differential testing against jdtls. Behavioral gaps
-are tracked directly via the `EG-`/`CQ-` gap logs and the existing `dev/` probing workflow; a second
-LSP oracle isn't worth the maintenance. Retained as a rejected-design record.
+**Implemented (2026-10-04).** Reverses the earlier "won't do". The maintenance objection was
+outweighed once a concrete multi-module anchor repo made the oracle cheap to run: jdtls imports
+the same project cleanly as long as Lathe's model injection is disabled for *its* Maven only, which
+costs nothing (the harness passes `-Dlathe.disabled=true` as a jdtls-only JVM arg). The harness lives
+at `dev/jdtls_diff.py`, reuses the `LspClient` presets in `dev/lsp.py` (`LatheClient`) and
+`dev/jdtls.py` (`JdtlsClient`), and writes a categorised markdown report. The first run surfaced
+EG-049..EG-055.
 
-Post-M2 quality-tooling design.
+Earlier status — **Won't do (2026-09-26):** a second LSP oracle wasn't thought worth the maintenance;
+gaps were tracked only via the `EG-`/`CQ-` logs and the `dev/` probing workflow. Retained for history.
+
 Builds on `lathe-design.md` and the existing probing workflow in `dev/`.
-Adopted only after the M2 feature set is stable, since it measures behavior parity rather than adding a feature.
+
+### As built
+
+- **Clients.** `dev/lsp.py` was refactored to a generic `LspClient` base (transport + standard LSP
+  helpers) with `LatheClient` as a thin preset; `dev/jdtls.py` adds `JdtlsClient` (Corretto-25 launch
+  — jdtls 1.51 cannot run on JDK 26 — a per-workspace `-data` cache, and an import-readiness wait on
+  `language/status`).
+- **Coexistence.** `JdtlsClient` launches jdtls with `-Dlathe.disabled=true` as a jdtls-only JVM arg,
+  so jdtls's embedded Maven imports a plain-javac build path while Lathe keeps serving from `.lathe/`.
+  See the [installation coexistence section](../guide/installation.md#coexisting-with-jdtls-or-other-m2e-tools).
+- **Coverage.** `dev/jdtls_diff.py` exercises hover, definition, declaration, implementation,
+  references, documentHighlight, documentSymbol, foldingRange, workspaceSymbol, type/call hierarchy,
+  completion, signatureHelp, prepareRename, rename, diagnostics, semanticTokens. Probe points are
+  auto-derived from documentSymbol identifier positions, member-access sites, and call sites. Per-method
+  normalizers reduce each response to a canonical form and classify agree / lathe_missing / jdtls_missing
+  / differ; a known-difference allowlist suppresses deliberate divergences.
 
 ---
 

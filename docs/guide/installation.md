@@ -271,11 +271,53 @@ file. You control it at three levels, in precedence order:
 
 ## Coexisting with another Java language server (jdtls)
 
-`.lathe/` is generated build output. Another Java language server in the same editor (Eclipse JDT LS,
-via `nvim-jdtls` or the VS Code Java extension) scans it by default and may treat the mirrored sources
-and classes as duplicate projects. Add `**/.lathe/**` to its `java.import.exclusions` so the two coexist
-— jdtls scopes imports with explicit globs, not `.gitignore`, so gitignoring `.lathe/` alone is not
-enough:
+You can run Lathe side by side with Eclipse JDT LS (`nvim-jdtls` / the VS Code Java extension) on the
+same project — useful when migrating, or for comparing behaviour. Two things need handling.
+
+### 1. Keep Lathe's build injection out of jdtls's project import (the important one)
+
+jdtls imports a project with its own embedded Maven (m2e). The Lathe extension injects
+`compilerId=lathe` into the effective POM (see [What Lathe needs](#what-lathe-needs-in-the-build)),
+and m2e does not recognise that compiler id — so it imports the modules but **cannot configure their
+Java build path**, and every jdtls request (hover, definition, completion, …) then returns empty, with
+no error. Lathe itself is unaffected: it serves from the already-captured `.lathe/` and never runs
+Maven at query time.
+
+The fix is to disable Lathe's injection **for jdtls's Maven only**. Lathe honours the
+`-Dlathe.disabled=true` system property and skips all injection when it is set — so jdtls imports a
+normal plain-`javac` build path, while your command-line `mvn` and the Lathe server stay fully enabled.
+
+**Recommended — a jdtls-only JVM arg (no effect on your CLI builds).** m2e runs in-process in the
+jdtls JVM, so a `-D` on the jdtls process reaches it. With `nvim-jdtls`:
+
+```lua
+require("jdtls").start_or_attach({
+  cmd = { "jdtls", "--jvm-arg=-Dlathe.disabled=true" },
+  -- jdtls 1.51 runs on JDK 21–25, NOT 26 (its bundled ASM rejects class version 70). Point its
+  -- runtime at a JDK <= 25; this is separate from your project's own JDK.
+  cmd_env = { JAVA_HOME = "/path/to/jdk-25" },
+  -- ... your root_dir, settings, etc.
+})
+```
+
+**Alternative — `.mvn/maven.config`** (one line, no editor config), at the reactor root:
+
+```
+-Dlathe.disabled=true
+```
+
+This is read by jdtls's embedded Maven *and* your CLI `mvn`, so plain `mvn` builds also skip Lathe;
+refresh `.lathe/` explicitly by overriding on the command line:
+
+```bash
+mvn -Dlathe.disabled=false clean test -Dlathe.capture.only=true
+```
+
+### 2. Keep jdtls from indexing `.lathe/` (hygiene)
+
+`.lathe/` is generated build output. Add `**/.lathe/**` to jdtls's `java.import.exclusions` so it never
+scans the mirror — jdtls scopes imports with explicit globs, not `.gitignore`, so gitignoring `.lathe/`
+alone is not enough:
 
 ```jsonc
 "java.import.exclusions": [
@@ -287,6 +329,10 @@ enough:
 
 In VS Code this goes in `settings.json`; with `nvim-jdtls` it is the `settings.java.import.exclusions`
 table you pass to `start_or_attach`.
+
+> For a systematic behavioural comparison of the two servers, the `dev/jdtls_diff.py` differential
+> harness drives both over identical probe points and reports divergences — see
+> [the differential-testing design](../planned/lathe-jdtls-differential-testing.md).
 
 ## Verify
 
