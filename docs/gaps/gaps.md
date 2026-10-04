@@ -306,19 +306,33 @@ None yet.
 
 ---
 
-## EG-053 — Folding ranges fewer than the reference server (no import-group fold)
+## EG-053 — Multi-line comment / Javadoc blocks are not folded
 
 **Status: documented**
 
 ### Observed behaviour
 
-`textDocument/foldingRange` emits fewer regions than jdtls on every probed file — notably no fold for
-the import group, and fewer granular/comment folds. (Lathe advertises import-group folding, so this
-may be a region-detection gap rather than a missing feature.)
+`textDocument/foldingRange` does not fold multi-line comments or Javadoc blocks (e.g. a type's
+leading Javadoc), which jdtls folds. Import-group, class-body, and method-body folds **do** work —
+re-probing corrected the earlier "no import-group fold" wording:
+
+```
+# A heavily-Javadoc'd source file — Lathe folds (kinds shown):
+(2, 9, imports)      # import group IS folded
+(36, 195, region)    # class body
+(55, 58) (68, 71) …  # method bodies
+# jdtls additionally folds the class Javadoc (the block before the type) and finer sub-blocks.
+```
 
 ```bash
 python3 dev/jdtls_diff.py --methods foldingRange <ws>/.../Api.java
 ```
+
+### Root cause
+
+`FoldingRangeScanner` is a `TreePathScanner` over the AST (imports, class, method, module nodes);
+comments are not AST nodes, so a comment-fold pass would need the token/comment stream (within the
+no-ad-hoc-parsing constraint — javac comment APIs, not regex). Not a quick win.
 
 ### Regression targets
 
@@ -326,31 +340,37 @@ None yet.
 
 ---
 
-## EG-054 — No completion on array-typed expressions (`arr.length`, `arr.clone()`)
+## EG-054 — Completion on a method call that returns an array resolves to the wrong receiver type
 
 **Status: documented**
 
 ### Observed behaviour
 
-Member completion on an expression of array type returns nothing. jdtls offers `length`, `clone()`,
-and the inherited `Object` members.
+Array member completion works for a **simple array variable** (CQ-0053 synthesises `length`, `clone`,
+and the Object instance members). It breaks only when the array-typed receiver is a **method call**:
+the receiver resolves to the wrong type, so the wrong members are offered.
 
 ```java
-// points has array type (Point[])
-return points.length == 0;
-//            ^ completion on `points.`: Lathe ∅, jdtls {length, clone, …}
+String[] names;
+names.            // OK -> length, clone, equals, getClass, hashCode, toString
+"x".toCharArray().// WRONG -> String members (charAt, chars, …) instead of array members
+type.getEnumConstants().length   // original probe: returned nothing
 ```
 
-Discovered while verifying completion quality with `dev/jdtls_diff.py` / a focused member-completion
-probe. Completion quality is otherwise strong: on ordinary member access Lathe matches jdtls member
-for member, and is in several respects *more* correct — it omits `static` members from
-instance-receiver completion (jdtls offers them) and respects the module's `--release` level (jdtls
-offers JDK methods newer than the release, e.g. `Class.accessFlags()` on a release-17 module). The
-array case is the one clear deficiency: `arr.length` is a common idiom.
+Re-probing corrected the earlier "no completion on array-typed expressions" wording: the deficiency is
+a method-chain receiver whose return type is an array, not array completion in general.
+
+### Root cause (suspected)
+
+`MemberAccessCompleter` / `TypeResolver.resolveReceiver` resolves a method-chain receiver to the
+chain's base type rather than the method's array return type; `CandidateGenerator` already handles an
+`ArrayType` receiver correctly (see `proposeArrayMemberCandidates`), so the fix is in receiver-type
+resolution, not member synthesis.
 
 ### Expected behaviour
 
-On an array-typed receiver, offer `length`, `clone()`, and the inherited `Object` members.
+A method call returning `T[]` completes as an array (`length`, `clone`, Object instance members),
+matching the simple-array-variable case.
 
 ### Regression targets
 
