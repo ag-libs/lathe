@@ -37,15 +37,24 @@ printf "file '%s'\n" "$PWD/docs/videos/emacs-title.mp4" "$PWD/docs/videos/emacs-
 ffmpeg -y -f concat -safe 0 -i /tmp/list.txt -c:v libx264 -pix_fmt yuv420p -crf 20 -r 25 \
   docs/videos/emacs-tour-final.mp4
 
-# GIF (two-pass palette), published to the tracked path:
+# GIF (two-pass palette):
 ffmpeg -y -i docs/videos/emacs-tour-final.mp4 \
   -vf "fps=10,scale=1000:-1:flags=lanczos,palettegen=max_colors=256:stats_mode=diff" /tmp/pal.png
 ffmpeg -y -i docs/videos/emacs-tour-final.mp4 -i /tmp/pal.png \
   -lavfi "fps=10,scale=1000:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=none:diff_mode=rectangle" \
-  docs/emacs-tour.gif
+  /tmp/emacs-tour.gif
+
+# Publish under a content-hashed name (busts browser/CDN caches), delete the previous one, and rewrite
+# the embed in docs/guide/editors/emacs.md — same convention as the Neovim (dev/demo/record.sh) and
+# OpenJDK (dev/demo-openjdk/record.sh) demos:
+hash="$(sha1sum /tmp/emacs-tour.gif | cut -c1-8)"
+for old in docs/emacs-tour-*.gif; do [ "$old" != "docs/emacs-tour-$hash.gif" ] && rm -f "$old"; done
+mv /tmp/emacs-tour.gif "docs/emacs-tour-$hash.gif"
+sed -i -E "s#\(\.\./\.\./emacs-tour(-[0-9a-f]+)?\.gif\)#(../../emacs-tour-$hash.gif)#" docs/guide/editors/emacs.md
 ```
 
-All intermediates land in `docs/videos/` (gitignored); only `docs/emacs-tour.gif` is committed.
+All intermediates land in `docs/videos/` (gitignored); only the content-hashed
+`docs/emacs-tour-<hash>.gif` is committed.
 
 ## Notes
 

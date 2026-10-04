@@ -4,7 +4,7 @@ Lathe is a standard LSP server, and Emacs ships a standard LSP client — **Eglo
 Emacs 29). So you get Lathe's build-derived intelligence in a **vanilla `emacs -Q`**, with no plugins
 (no `lsp-mode`, no `company`/`corfu`) — just one line of Elisp.
 
-![Lathe plugged into vanilla Emacs via Eglot — hover, cross-module nav, extract, rename, live diagnostics](../../emacs-tour.gif)
+![Lathe plugged into vanilla Emacs via Eglot — hover, cross-module nav, extract, rename, live diagnostics](../../emacs-tour-ebbbb6f4.gif)
 
 ## Setup
 

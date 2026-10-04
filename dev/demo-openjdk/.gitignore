@@ -1,0 +1,3 @@
+# Generated demo state — never committed. The published GIF lives at docs/openjdk-demo-<hash>.gif; the
+# intermediate mp4s live in docs/videos/ (gitignored there).
+.nvim/

@@ -8,6 +8,13 @@ This front-end reads the **`make` build** instead of Maven: the per-module `java
 ran, and the exploded JDK you built. The editor uses the build's own configuration — the same module
 graph, the same `--add-exports` / `--patch-module` flags, the same language level (preview included).
 
+![Lathe on the OpenJDK source — whole-JDK symbol search, completion, live diagnostics, and cross-module go-to-definition](../openjdk-demo-ecd74b0f.gif)
+
+<!-- The GIF filename carries a content hash (openjdk-demo-<hash>.gif) so browsers never serve a stale
+     cached copy: dev/demo-openjdk/record.sh regenerates it, renames it by content hash, deletes the
+     previous one, and rewrites the link above. Do not hand-edit the hash. Recorded against a built +
+     synced openjdk/jdk checkout. -->
+
 ## Setup
 
 Prerequisites: a buildable JDK checkout, and `mvn` on `PATH` (any stable JDK runs Maven).
