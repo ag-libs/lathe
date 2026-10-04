@@ -134,10 +134,11 @@ final class LatheMcpTools {
                 """
                 Find every real use of the symbol at a position across the whole reactor — \
                 javac-accurate, not text search: resolves overloads and inheritance, spans all \
-                modules, and returns each use with a source snippet. It finds uses a grep misses — a \
-                Class passed in a variable, a mock verify(x).m(...), two same-named calls on one \
-                line — and excludes unrelated symbols that merely share the name, so you need not \
-                re-check with grep. Use before changing or removing a symbol, especially a method \
+                modules, and returns each use with a source snippet. It finds uses a plain grep \
+                misses or misattributes — a symbol reached through a variable, or one of several \
+                overloads that share a name — and excludes unrelated symbols that merely share the \
+                name, so you need not re-check with grep. Use before changing or removing a symbol, \
+                especially a method \
                 with overrides/implementations or a common/overloaded name; for a rare, distinctive \
                 name a plain grep is fine.\
                 """)
@@ -169,9 +170,8 @@ final class LatheMcpTools {
                 Rename the symbol at a position across the whole reactor and apply the edits to \
                 disk — javac-accurate, so it renames only the true declaration and its uses \
                 (respecting overloads and shadowing locals) across every module, never a text \
-                match. It updates sites grep+sed would miss or silently rebind to the wrong overload \
-                — a Class held in a variable, a mock verify(...), the correct one of several \
-                same-named methods — and reports exactly which files it changed. Refuses if it would \
+                match. It updates uses grep+sed would miss or silently rebind to the wrong overload, \
+                and reports exactly which files it changed. Refuses if it would \
                 touch a file outside the reactor. After a cross-module rename, rebuild the reactor to \
                 confirm it still compiles.\
                 """)
