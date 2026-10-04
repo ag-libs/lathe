@@ -320,20 +320,42 @@ interface's), so the cheap candidate-file narrowing cannot reach it. Confirmed b
 argument-position lambda in a caller that does not mention the interface is correctly absent from the
 results today.
 
-Covering it needs a persistent index of lambda/method-reference sites keyed by their target
-functional interface (a full-reactor compile on every request is too slow for an interactive nav
-feature). The index is cheaply buildable from the `.class` mirror Lathe already maintains: a lambda /
-method reference compiles to an `invokedynamic` whose `NameAndType` descriptor return type **is** the
-target functional interface, with a `BootstrapMethods` entry pointing at
-`java.lang.invoke.LambdaMetafactory.metafactory` / `altMetafactory` (verified via `javap -v`; holds
-for argument-position lambdas whose source never names the interface). `ClassMetadataReader` already
-parses reactor `.class` constant pools at `--release 21` and recognizes the `InvokeDynamic` tag (it
-currently skips it); extending it to read the `BootstrapMethods` attribute, built in the existing
-`ClassFileTypeScanner.scanReactorDirectory` pass and refreshed per compile via `writtenBinaryNames()`,
-yields a `functionalInterface → owning classes` map with no new dependency and no compiler-release
-bump. Candidate files from that index then feed the existing `MethodImplementationLocator` to pin the
-precise lambda / `::` positions — the same composition the shipped slice already uses. Tracked as the
-next slice.
+Covering it reads the reactor `.class` mirror Lathe already maintains, because a lambda / method
+reference compiles to an `invokedynamic` whose descriptor return type **is** the target functional
+interface, with a `BootstrapMethods` entry pointing at
+`java.lang.invoke.LambdaMetafactory.metafactory` / `altMetafactory` (verified via `javap -v`). The
+interface's erased descriptor string (`Lpkg/Iface;`) is therefore present in the class's constant pool
+even when the source never names it — exactly the argument-position case. Both steps work at
+`--release 21` with no new dependency: discovery is a raw byte scan (no class-file API), and the
+confirm step reuses the existing `ClassMetadataReader` (it already recognizes the `InvokeDynamic` tag
+and only needs the `BootstrapMethods` attribute added).
+
+Gated design — runs only when the cursor is on a functional-interface SAM (the existing
+`functionalInterfaceName` check): (1) binary-grep the reactor `.class` bytes for `Lpkg/Iface;` to get a
+candidate superset; (2) parse those candidates to confirm a `LambdaMetafactory` `invokedynamic` whose
+return type is the interface; (3) map confirmed classes to source files and feed the existing
+`MethodImplementationLocator` to pin precise lambda / `::` positions. Step 2 is the crucial narrowing —
+it replaces compiling every candidate source with a cheap bytecode check.
+
+Spike measured (Helidon, 19,174 classes / 82 MB, warm): grep-all ≈ 90–130 ms (~850 MB/s, correct
+superset), confirm-parse of candidates ≈ 50 ms, for the pathological `java.util.function.Function`
+target (2,448 candidates → 1,924 confirmed); a project-specific SAM is a handful. Full-parse of the
+whole corpus (a persistent-index alternative, refreshable via `writtenBinaryNames()` and foldable into
+the `ClassFileTypeScanner` load pass Lathe already runs) ≈ 315 ms. Correctness confirmed on a probe
+whose caller source never names the interface. Either shape (on-demand grep, or persistent index) keeps
+this to find-references-class latency on SAM queries only.
+
+False positives: the user-visible result is exact. The confirm-parse keys on the `invokedynamic` return
+type, which is exactly the implemented interface, and the full descriptor `Lpkg/Iface;` is
+package-precise — so there are no same-simple-name cross-package false positives (a correctness gain
+over a source simple-name index), and the existing `MethodImplementationLocator` re-verifies via javac
+as a final authority. Spike: post-parse result was EXACT (0 false positive, 0 false negative vs a
+full-index ground truth) for both `java.util.function.Function` (962 confirmed) and a project SAM
+`io.helidon.webserver.http.Handler` (228 grep candidates → 80 confirmed). The grep stage over-fetches
+(~60–65% of candidates are non-lambda references — the interface in a field / parameter / return / cast)
+but those never reach the user: the confirm-parse removes them in ~10 ms.
+
+Tracked as the next slice.
 
 ```bash
 python3 dev/jdtls_diff.py --methods implementation <ws>/.../Transformer.java
