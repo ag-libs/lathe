@@ -7,6 +7,25 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-055 — `workspace/symbol` misses nested / inner type declarations — done
+
+**Status: done — Target: next.**
+
+Workspace symbol search found only top-level types: nested / inner type declarations (classes,
+records, enums, interfaces) were absent from `workspace/symbol` across the reactor, dependencies, and
+the JDK (e.g. `Map.Entry`) — even though they were present in the index data and already offered by
+completion.
+
+**Resolution.** `WorkspaceTypeIndex` built its symbol map with a top-level-only filter
+(`isTopLevel()`); replaced with `isNamedSymbol()`, which admits any named type — top-level and nested,
+any visibility — while excluding synthetic anonymous/local classes (digit-started simple names) and
+blank obfuscator names. `WorkspaceSymbolResolver` now sets `containerName` to the enclosing type for
+nested entries (was always the package), so a result shows `Entry — java.util.Map`. Discovered by
+jdtls differential testing (`dev/jdtls_diff.py`).
+
+Regression: `WorkspaceTypeIndexTest` (named-nested included, public JDK nested found, synthetic
+excluded), `WorkspaceSymbolTest`.
+
 ## CA-10 — No code action to add a `final` field as a constructor parameter — done
 
 **Status: done — Target: next.**

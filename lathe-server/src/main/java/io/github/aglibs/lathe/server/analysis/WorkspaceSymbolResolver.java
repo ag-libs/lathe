@@ -84,8 +84,20 @@ public final class WorkspaceSymbolResolver {
     final var info =
         new SymbolInformation(
             entry.simpleName(), SymbolKinds.fromTypeIndex(entry.kind()), location);
-    info.setContainerName(entry.packageName());
+    info.setContainerName(containerName(entry));
     return info;
+  }
+
+  // For a nested type, the enclosing type's qualified name (java.util.Map for Map$Entry) so the
+  // client shows where it is declared; for a top-level type, its package.
+  private static String containerName(final TypeIndexEntry entry) {
+    final String binaryName = entry.binaryName();
+    final int lastNesting = binaryName.lastIndexOf('$');
+    if (lastNesting < 0) {
+      return entry.packageName();
+    }
+
+    return binaryName.substring(0, lastNesting).replace('$', '.');
   }
 
   private static Range declarationRange(

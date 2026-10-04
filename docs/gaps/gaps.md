@@ -387,43 +387,6 @@ None yet.
 
 ---
 
-## EG-055 — `workspace/symbol` misses nested / inner type declarations
-
-**Status: documented**
-
-### Observed behaviour
-
-Workspace symbol search does not find types declared inside another type (nested classes, records,
-enums, interfaces). jdtls finds them. The types *are* present in the file's `documentSymbol` outline,
-so the gap is specific to the cross-reactor symbol index.
-
-```java
-// Fixtures.java — nested record declarations
-record Point(int x, int y) {}                       // workspace/symbol "Point": Lathe ∅, jdtls ✓
-record Box<T>(T value) {}                            // workspace/symbol "Box":   Lathe ∅, jdtls ✓
-record Bounded<T extends Serializable>(T value) {}
-```
-
-```bash
-python3 dev/jdtls_diff.py --methods workspaceSymbol <ws>/.../Fixtures.java
-```
-
-Discovered by cross-module differential testing. Cross-module navigation is otherwise strong:
-`definition`, `references`, and method `callHierarchy` all resolve across module boundaries and agree
-with jdtls, and cross-module **rename is more complete than jdtls** (renames every usage across all
-modules, where jdtls under-scoped). Nested-type indexing for `workspace/symbol` is the outlier.
-
-### Expected behaviour
-
-Index nested / inner type declarations (class, record, enum, interface) so `workspace/symbol` and
-CamelHump search can find them across the reactor.
-
-### Regression targets
-
-None yet.
-
----
-
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work

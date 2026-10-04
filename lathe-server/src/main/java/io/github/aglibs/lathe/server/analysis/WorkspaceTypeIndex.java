@@ -150,11 +150,14 @@ public final class WorkspaceTypeIndex {
                     Collectors.collectingAndThen(Collectors.toList(), List::copyOf)));
     final NavigableMap<String, List<TypeIndexEntry>> map =
         Collections.unmodifiableNavigableMap(mutable);
-    // No visibility filter: every top-level type, so workspace/symbol can resolve package-private
-    // dependency classes (a stack frame's internal impl class) to their extracted source.
+    // No visibility filter: every named type -- top-level and nested, any visibility -- so
+    // workspace/symbol can resolve package-private dependency classes (a stack frame's internal
+    // impl
+    // class) and nested types (Map.Entry, a reactor record nested in a test class). Synthetic
+    // anonymous/local classes (digit-started simple names) and blank obfuscator names are excluded.
     final TreeMap<String, List<TypeIndexEntry>> symbolMutable =
         deduped.stream()
-            .filter(TypeIndexEntry::isTopLevel)
+            .filter(WorkspaceTypeIndex::isNamedSymbol)
             .collect(
                 Collectors.groupingBy(
                     e -> e.simpleName().toLowerCase(),
@@ -189,6 +192,14 @@ public final class WorkspaceTypeIndex {
 
   public int usageCount(final String binaryName) {
     return usageCounts.getOrDefault(binaryName, 0);
+  }
+
+  // A type a user could meaningfully search for by name: top-level or named nested, any visibility.
+  // Excludes synthetic anonymous/local classes (binary names like Foo$1, whose simple name starts
+  // with a digit) and blank obfuscator names.
+  private static boolean isNamedSymbol(final TypeIndexEntry entry) {
+    final String simpleName = entry.simpleName();
+    return !simpleName.isEmpty() && Character.isJavaIdentifierStart(simpleName.charAt(0));
   }
 
   private static List<TypeIndexEntry> deduplicate(

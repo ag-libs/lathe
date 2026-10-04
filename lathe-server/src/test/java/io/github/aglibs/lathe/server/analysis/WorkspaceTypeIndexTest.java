@@ -215,15 +215,41 @@ class WorkspaceTypeIndexTest {
   }
 
   @Test
-  void searchSymbols_nestedType_excludedLikeSearch() throws IOException {
+  void searchSymbols_namedNestedType_includedButSearchExcludesNonCandidate() throws IOException {
     final var shard =
         writeShard(tmp, "shard.json", shard(graphEntry("com.example.Outer$Inner", false)));
 
     final var index = WorkspaceTypeIndex.build(List.of(shard));
 
-    // Nested types are queried through their top-level simple name, so neither map indexes them.
-    assertThat(index.searchSymbols("Inner", 10)).isEmpty();
+    // Completion/import (search) still excludes a non-candidate (package-private) nested type.
     assertThat(index.search("Inner", 10)).isEmpty();
+    // workspace/symbol (searchSymbols) now surfaces the named nested type by its simple name.
+    assertThat(index.searchSymbols("Inner", 10))
+        .extracting(TypeIndexEntry::binaryName)
+        .containsExactly("com.example.Outer$Inner");
+  }
+
+  @Test
+  void searchSymbols_publicNestedJdkType_found() throws IOException {
+    final var shard = writeShard(tmp, "shard.json", shard(graphEntry("java.util.Map$Entry", true)));
+
+    final var index = WorkspaceTypeIndex.build(List.of(shard));
+
+    assertThat(index.searchSymbols("Entry", 10))
+        .extracting(TypeIndexEntry::binaryName)
+        .containsExactly("java.util.Map$Entry");
+  }
+
+  @Test
+  void searchSymbols_syntheticAnonymousClass_excluded() throws IOException {
+    // An anonymous/local class has a digit-started simple name (Outer$1); it must not pollute
+    // search.
+    final var shard =
+        writeShard(tmp, "shard.json", shard(graphEntry("com.example.Outer$1", false)));
+
+    final var index = WorkspaceTypeIndex.build(List.of(shard));
+
+    assertThat(index.searchSymbols("1", 10)).isEmpty();
   }
 
   @Test
