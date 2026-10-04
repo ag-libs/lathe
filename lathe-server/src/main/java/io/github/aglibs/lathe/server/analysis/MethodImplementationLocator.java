@@ -2,6 +2,9 @@ package io.github.aglibs.lathe.server.analysis;
 
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.ExpressionTree;
+import com.sun.source.tree.LambdaExpressionTree;
+import com.sun.source.tree.MemberReferenceTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
@@ -16,6 +19,7 @@ import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.DeclaredType;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
@@ -26,6 +30,9 @@ final class MethodImplementationLocator extends TreePathScanner<Void, Void> {
   private final ReferenceTarget target;
   private final Set<String> candidateBinaryNames;
   private final ExecutableElement targetMethod;
+  // The functional interface whose single abstract method is the target, or null when the target is
+  // not a SAM; drives lambda / method-reference matching.
+  private final DeclaredType functionalInterface;
   private final String uri;
   private final List<Location> results = new ArrayList<>();
 
@@ -34,11 +41,13 @@ final class MethodImplementationLocator extends TreePathScanner<Void, Void> {
       final ReferenceTarget target,
       final Set<String> candidateBinaryNames,
       final ExecutableElement targetMethod,
+      final DeclaredType functionalInterface,
       final String uri) {
     this.analysis = analysis;
     this.target = target;
     this.candidateBinaryNames = candidateBinaryNames;
     this.targetMethod = targetMethod;
+    this.functionalInterface = functionalInterface;
     this.uri = uri;
   }
 
@@ -58,9 +67,26 @@ final class MethodImplementationLocator extends TreePathScanner<Void, Void> {
     }
 
     final var locator =
-        new MethodImplementationLocator(analysis, target, candidateBinaryNames, targetMethod, uri);
+        new MethodImplementationLocator(
+            analysis,
+            target,
+            candidateBinaryNames,
+            targetMethod,
+            functionalInterfaceOf(targetMethod, analysis),
+            uri);
     locator.scan(analysis.tree(), null);
     return List.copyOf(locator.results);
+  }
+
+  private static DeclaredType functionalInterfaceOf(
+      final ExecutableElement targetMethod, final AttributedFileAnalysis analysis) {
+    if (!(targetMethod.getEnclosingElement() instanceof final TypeElement owner)
+        || owner.getKind() != ElementKind.INTERFACE) {
+      return null;
+    }
+
+    final var sam = FunctionalInterfaces.singleAbstractMethod(owner, analysis.elements());
+    return sam != null && sam.equals(targetMethod) ? (DeclaredType) owner.asType() : null;
   }
 
   @Override
@@ -82,6 +108,34 @@ final class MethodImplementationLocator extends TreePathScanner<Void, Void> {
     }
 
     return super.visitClass(classTree, unused);
+  }
+
+  @Override
+  public Void visitLambdaExpression(final LambdaExpressionTree node, final Void unused) {
+    addFunctionalImplementation(node);
+    return super.visitLambdaExpression(node, unused);
+  }
+
+  @Override
+  public Void visitMemberReference(final MemberReferenceTree node, final Void unused) {
+    addFunctionalImplementation(node);
+    return super.visitMemberReference(node, unused);
+  }
+
+  private void addFunctionalImplementation(final ExpressionTree node) {
+    if (functionalInterface == null) {
+      return;
+    }
+
+    final var converted = analysis.trees().getTypeMirror(getCurrentPath());
+    final var types = analysis.types();
+    if (converted == null
+        || !types.isSameType(types.erasure(converted), types.erasure(functionalInterface))) {
+      return;
+    }
+
+    final var start = SourceLocator.range(analysis.trees(), analysis.tree(), node).getStart();
+    results.add(new Location(uri, new Range(start, start)));
   }
 
   private Optional<Location> location(

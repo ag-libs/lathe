@@ -24,6 +24,7 @@ import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.server.analysis.FunctionalInterfaces;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
@@ -33,7 +34,6 @@ import java.util.logging.Logger;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
-import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.ExecutableType;
@@ -1291,46 +1291,9 @@ final class TypeResolver {
 
   private static ExecutableElement findFunctionalInterfaceMethod(
       final DeclaredType declared, final AttributedFileAnalysis snapshot) {
-    if (!(declared.asElement() instanceof final TypeElement element)) {
-      return null;
-    }
-
-    ExecutableElement result = null;
-    for (final Element member : snapshot.elements().getAllMembers(element)) {
-      if (!(member instanceof final ExecutableElement method)) {
-        continue;
-      }
-
-      if (!method.getModifiers().contains(Modifier.ABSTRACT)
-          || overridesObjectMethod(method, element, snapshot)) {
-        continue;
-      }
-
-      if (result != null) {
-        return null;
-      }
-
-      result = method;
-    }
-
-    return result;
-  }
-
-  private static boolean overridesObjectMethod(
-      final ExecutableElement method,
-      final TypeElement functionalInterface,
-      final AttributedFileAnalysis snapshot) {
-    final var objectType = snapshot.elements().getTypeElement("java.lang.Object");
-    if (objectType == null) {
-      return false;
-    }
-
-    return snapshot.elements().getAllMembers(objectType).stream()
-        .filter(member -> member.getKind() == ElementKind.METHOD)
-        .map(ExecutableElement.class::cast)
-        .anyMatch(
-            objectMethod ->
-                snapshot.elements().overrides(method, objectMethod, functionalInterface));
+    return declared.asElement() instanceof final TypeElement element
+        ? FunctionalInterfaces.singleAbstractMethod(element, snapshot.elements())
+        : null;
   }
 
   private static TypeMirror effectiveDeclaredType(

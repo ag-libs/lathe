@@ -163,4 +163,68 @@ class MethodImplementationTest {
       assertThat(compiler.count(CompileMode.OPEN)).isEqualTo(1);
     }
   }
+
+  @Test
+  void methodImplementations_functionalInterface_returnsSamImplsAndIgnoresOtherInterface()
+      throws IOException {
+    final String content = "interface Transformer { String apply(String input); }\n";
+    final var source = Files.writeString(tempDir.resolve("Transformer.java"), content);
+    final var classDir = tempDir.resolve("classes");
+    TestCompiler.compileToDir(classDir, source);
+    final String candidateContent =
+        """
+        import java.util.function.Supplier;
+        class Impl implements Transformer {
+          public String apply(String s) { return s; }
+        }
+        class Usage {
+          Transformer a = s -> s.trim();
+          Transformer b = String::toUpperCase;
+          Supplier<String> other = () -> "ignored";
+        }
+        """;
+    final var candidateUri = tempDir.resolve("Usage.java").toUri().toString();
+
+    final ReferenceTarget target = samTarget(content);
+    try (var candidateSession =
+        new SourceAnalysisSession(new TempSourceCompiler(List.of(classDir)))) {
+      final List<Location> locations =
+          candidateSession.methodImplementations(
+              candidateUri, candidateContent, 1, target, Set.of("Impl"));
+
+      // The named override (apply, line 2), the Transformer lambda (line 5), and the Transformer
+      // method reference (line 6) — but not the Supplier lambda (line 7), whose target type is a
+      // different functional interface.
+      assertThat(locations).allSatisfy(l -> assertThat(l.getUri()).isEqualTo(candidateUri));
+      assertThat(locations.stream().map(l -> l.getRange().getStart().getLine()).toList())
+          .containsExactlyInAnyOrder(2, 5, 6);
+    }
+  }
+
+  @Test
+  void functionalInterfaceName_samVsNonSam_returnsNameOnlyForSam() {
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      final String sam = "interface Transformer { String apply(String input); }\n";
+      session.compile(TempSourceCompiler.TEST_URI, sam, 1, CompileMode.OPEN);
+      assertThat(session.functionalInterfaceName(samRequest(sam, new Position(0, 32))))
+          .contains("Transformer");
+
+      final String twoAbstract = "interface Two { void a(); void b(); }\n";
+      session.compile(TempSourceCompiler.TEST_URI, twoAbstract, 2, CompileMode.OPEN);
+      assertThat(session.functionalInterfaceName(samRequest(twoAbstract, new Position(0, 21))))
+          .isEmpty();
+    }
+  }
+
+  private ReferenceTarget samTarget(final String interfaceContent) {
+    try (var targetSession = new SourceAnalysisSession(new TempSourceCompiler())) {
+      targetSession.compile(TempSourceCompiler.TEST_URI, interfaceContent, 1, CompileMode.OPEN);
+      return targetSession.resolveTarget(samRequest(interfaceContent, new Position(0, 32)));
+    }
+  }
+
+  private SourceFeatureRequest samRequest(final String content, final Position pos) {
+    return new SourceFeatureRequest(
+        TempSourceCompiler.TEST_URI, content, 0, pos, List.of(tempDir), WorkspaceManifest.empty());
+  }
 }

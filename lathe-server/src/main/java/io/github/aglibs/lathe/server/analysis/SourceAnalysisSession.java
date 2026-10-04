@@ -675,6 +675,31 @@ public final class SourceAnalysisSession implements AutoCloseable {
         : List.of();
   }
 
+  /**
+   * The simple name of the functional interface whose single abstract method is under the cursor,
+   * or empty when the cursor is not on such a SAM. Lets the workspace decide whether to widen the
+   * implementation search to lambda / method-reference sites that spell that interface.
+   */
+  public Optional<String> functionalInterfaceName(final SourceFeatureRequest request) {
+    final var cur = resolve(request);
+    if (cur == null) {
+      return Optional.empty();
+    }
+
+    final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
+    if (!(element instanceof final ExecutableElement method)
+        || method.getKind() != ElementKind.METHOD
+        || !(method.getEnclosingElement() instanceof final TypeElement owner)
+        || owner.getKind() != ElementKind.INTERFACE) {
+      return Optional.empty();
+    }
+
+    final var sam = FunctionalInterfaces.singleAbstractMethod(owner, cur.analysis().elements());
+    return sam != null && sam.equals(method)
+        ? Optional.of(owner.getSimpleName().toString())
+        : Optional.empty();
+  }
+
   public List<Location> methodImplementationsTransient(
       final String uri,
       final String content,

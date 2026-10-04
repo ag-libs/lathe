@@ -2168,17 +2168,22 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(List.of());
     }
 
+    return cursorWorker
+        .functionalInterfaceName(request)
+        .thenCompose(samInterface -> implementationsForMethod(target, samInterface, indexSnapshot));
+  }
+
+  private CompletableFuture<List<Location>> implementationsForMethod(
+      final ReferenceTarget target,
+      final Optional<String> samInterface,
+      final WorkspaceTypeIndex indexSnapshot) {
     final Map<Path, Set<String>> candidatesByFile =
-        indexSnapshot.transitiveSubtypes(target.qualifiedName()).stream()
-            .filter(TypeSourceLocator::isNamedDeclaration)
-            .flatMap(
-                entry ->
-                    TypeSourceLocator.findSourceFile(entry, workspace.allSourceRoots()).stream()
-                        .map(path -> Map.entry(path, entry.binaryName())))
+        Stream.concat(
+                subtypeImplementationFiles(target, indexSnapshot),
+                lambdaImplementationFiles(samInterface))
             .collect(
-                Collectors.groupingBy(
-                    Map.Entry::getKey,
-                    Collectors.mapping(Map.Entry::getValue, Collectors.toUnmodifiableSet())));
+                Collectors.toMap(
+                    Map.Entry::getKey, Map.Entry::getValue, WorkspaceSession::unionNames));
     return candidatesByFile.entrySet().stream()
         .map(entry -> methodImplementationFuture(entry.getKey(), entry.getValue(), target))
         .reduce(
@@ -2187,6 +2192,32 @@ final class WorkspaceSession {
                 left.thenCombine(
                     right,
                     (first, second) -> Stream.concat(first.stream(), second.stream()).toList()));
+  }
+
+  private Stream<Map.Entry<Path, Set<String>>> subtypeImplementationFiles(
+      final ReferenceTarget target, final WorkspaceTypeIndex indexSnapshot) {
+    return indexSnapshot.transitiveSubtypes(target.qualifiedName()).stream()
+        .filter(TypeSourceLocator::isNamedDeclaration)
+        .flatMap(
+            entry ->
+                TypeSourceLocator.findSourceFile(entry, workspace.allSourceRoots()).stream()
+                    .map(path -> Map.entry(path, Set.of(entry.binaryName()))));
+  }
+
+  // Lambdas and method references where the functional interface is spelled (a typed variable,
+  // field, parameter, return, or cast) are reachable through the identifier index. An argument-
+  // position lambda never spells the interface, so it is not discoverable this way and is not
+  // covered yet. Empty when the target method is not a functional-interface SAM.
+  private Stream<Map.Entry<Path, Set<String>>> lambdaImplementationFiles(
+      final Optional<String> samInterface) {
+    return samInterface.stream()
+        .flatMap(name -> candidateIndex.candidateUris(name).stream())
+        .map(LatheUri::toPath)
+        .map(path -> Map.entry(path, Set.<String>of()));
+  }
+
+  private static Set<String> unionNames(final Set<String> left, final Set<String> right) {
+    return Stream.concat(left.stream(), right.stream()).collect(Collectors.toUnmodifiableSet());
   }
 
   private CompletableFuture<List<Location>> methodImplementationFuture(

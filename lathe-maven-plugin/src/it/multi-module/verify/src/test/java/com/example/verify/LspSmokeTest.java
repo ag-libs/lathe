@@ -277,6 +277,30 @@ class LspSmokeTest {
   }
 
   @Test
+  void implementation_samMethodCursor_findsLambdaAndMethodReference() throws Exception {
+    // Cursor on the functional-interface SAM (greet) returns the named *Greeter classes plus the
+    // lambda and method-reference implementations in another module (app/Main.java), which spell the
+    // Greeter type.
+    final Path greeterJava = ROOT.resolve("core/src/main/java/com/example/core/Greeter.java");
+    final String greeterUri = greeterJava.toUri().toString();
+    final String greeterContent = Files.readString(greeterJava);
+    openDoc(greeterUri, greeterContent);
+
+    final var params = new ImplementationParams();
+    params.setTextDocument(new TextDocumentIdentifier(greeterUri));
+    params.setPosition(findToken(greeterContent, "String greet(String", "greet"));
+
+    final List<? extends Location> impls =
+        server.getTextDocumentService().implementation(params).get(30, SECONDS).getLeft();
+
+    assertThat(impls)
+        .anyMatch(loc -> loc.getUri().contains("FormalGreeter.java"))
+        .anyMatch(loc -> loc.getUri().contains("CasualGreeter.java"))
+        .filteredOn(loc -> loc.getUri().contains("Main.java"))
+        .hasSize(2);
+  }
+
+  @Test
   void typeHierarchy_subtypes_returnsImplementorsAcrossModules() throws Exception {
     final Path greeterJava =
         ROOT.resolve("core/src/main/java/com/example/core/Greeter.java");

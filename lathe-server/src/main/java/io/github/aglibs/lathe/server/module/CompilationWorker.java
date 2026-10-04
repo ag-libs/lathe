@@ -243,6 +243,11 @@ public final class CompilationWorker {
         ctx -> ctx.methodImplementationsTransient(uri, content, target, candidateBinaryNames));
   }
 
+  public CompletableFuture<Optional<String>> functionalInterfaceName(
+      final SourceFeatureRequest request) {
+    return submit(ctx -> ctx.functionalInterfaceName(request));
+  }
+
   public CompletableFuture<Optional<Location>> definition(final SourceFeatureRequest request) {
     return submit(ctx -> ctx.definition(request));
   }

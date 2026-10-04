@@ -283,26 +283,51 @@ None yet.
 
 ## EG-052 — Go-to-implementation misses lambda implementations of functional interfaces
 
-**Status: documented**
+**Status: partially resolved — spelled-interface lambdas/method-refs done; argument-position deferred (Target: next).**
 
-### Observed behaviour
+### Delivered — lambdas and method references where the interface is spelled
 
-`textDocument/implementation` on a functional-interface method (e.g. `Transformer.apply`) returns
-nothing; jdtls returns the lambda expressions that implement it (e.g. a lambda at a call site in
-another module).
+`textDocument/implementation` on a functional interface's single abstract method (e.g.
+`Greeter.greet`) now returns, alongside the named overriding classes it already found, every lambda
+and method reference whose target type is that interface — **when the enclosing file spells the
+interface** (a typed variable, field, parameter, return, or cast). This covers cross-module cases: a
+`Greeter` interface in one module and lambdas / `Type::method` references in another are all
+returned.
+
+How it works: `WorkspaceSession` detects the cursor method is a functional-interface SAM (a shared
+`FunctionalInterfaces.singleAbstractMethod` helper, also used by completion), and only then widens the
+candidate-file set to files the identifier index records as spelling the interface name.
+`MethodImplementationLocator` gained `visitLambdaExpression` / `visitMemberReference` passes that match
+a node whose converted type erases to the functional interface. No ad-hoc parsing — javac's
+`getTypeMirror` drives the converted-type check.
+
+Verified by probe against the `multi-module` invoker workspace: `impl` on `Greeter.greet` returns the
+two named `*Greeter` classes plus a `Greeter`-typed lambda and a `StringUtils::upper` method reference
+in another module.
+
+Regression targets:
+`MethodImplementationTest.methodImplementations_functionalInterface_returnsLambdaMethodRefAndNamedClass`,
+`MethodImplementationTest.methodImplementations_functionalInterface_ignoresLambdaOfOtherInterface`,
+`MethodImplementationTest.functionalInterfaceName_samVsNonSam_returnsNameOnlyForSam`, and the
+multi-module invoker smoke test
+`LspSmokeTest.implementation_samMethodCursor_findsLambdaAndMethodReference`.
+
+### Remaining — argument-position lambdas (deferred, Target: next)
+
+A lambda passed directly as a method argument — `register(x -> …)` where `register`'s parameter is the
+functional interface — is **not** found when its enclosing file never otherwise spells the interface.
+Such a file is invisible to the identifier index (it writes only the called method's name, never the
+interface's), so the cheap candidate-file narrowing cannot reach it. Confirmed by probe: an
+argument-position lambda in a caller that does not mention the interface is correctly absent from the
+results today.
+
+Covering it needs either a full-reactor compile on every request (too slow for an interactive nav
+feature) or a persistent index of lambda/method-reference sites keyed by their resolved target type.
+We want to implement this — the natural fix is the lambda-site index — tracked as the next slice.
 
 ```bash
 python3 dev/jdtls_diff.py --methods implementation <ws>/.../Transformer.java
 ```
-
-### Expected behaviour
-
-Include lambda / method-reference implementations of a single-abstract-method interface among the
-implementation results.
-
-### Regression targets
-
-None yet.
 
 ---
 
