@@ -52,7 +52,7 @@ Requirements and behaviour:
 Drives the real neotest adapter (`lathe.neotest`) through a headless Neovim against a live Lathe
 server and a real replay run over the built `multi-module` invoker fixture — discovery, run, and
 per-test results as a user would drive them. It is the red/green signal the
-[neotest experience spec](../docs/planned/lathe-neotest-experience.md) is written against; each
+[neotest experience spec](../docs/done/lathe-neotest-experience.md) is written against; each
 assertion names the acceptance-criterion id (D1, D3, R1, R3, …) it covers, and known gaps are
 printed as `pend` rather than failing until the behaviour is built.
 

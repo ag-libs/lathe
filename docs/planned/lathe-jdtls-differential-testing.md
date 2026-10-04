@@ -23,7 +23,7 @@ Builds on `lathe-design.md` and the existing probing workflow in `dev/`.
   `language/status`).
 - **Coexistence.** `JdtlsClient` launches jdtls with `-Dlathe.disabled=true` as a jdtls-only JVM arg,
   so jdtls's embedded Maven imports a plain-javac build path while Lathe keeps serving from `.lathe/`.
-  See the [installation coexistence section](../guide/installation.md#coexisting-with-jdtls-or-other-m2e-tools).
+  See the [installation coexistence section](../guide/installation.md#coexisting-with-another-java-language-server-jdtls).
 - **Coverage.** `dev/jdtls_diff.py` exercises hover, definition, declaration, implementation,
   references, documentHighlight, documentSymbol, foldingRange, workspaceSymbol, type/call hierarchy,
   completion, signatureHelp, prepareRename, rename, diagnostics, semanticTokens. Probe points are
