@@ -343,35 +343,31 @@ python3 dev/jdtls_diff.py --methods implementation <ws>/.../Transformer.java
 
 ## EG-053 — Multi-line comment / Javadoc blocks are not folded
 
-**Status: documented**
+**Status: accepted — Target: next (multi-line Javadoc folding shipped; non-Javadoc comments deferred).**
 
-### Observed behaviour
+### Delivered — multi-line Javadoc blocks fold
 
-`textDocument/foldingRange` does not fold multi-line comments or Javadoc blocks (e.g. a type's
-leading Javadoc), which jdtls folds. Import-group, class-body, and method-body folds **do** work —
-re-probing corrected the earlier "no import-group fold" wording:
+`FoldingRangeScanner` now folds a declaration's leading multi-line Javadoc (`/** … */`) as a
+`FoldingRangeKind.Comment` range spanning the `/**`…`*/` delimiters. Javadoc is reachable without a
+token stream: `Trees.getDocCommentTree(path)` attaches the doc comment to its class / method / field
+declaration node, and the reported content span is widened outward to the enclosing delimiters.
+Import-group, class-body, and method-body folds continue to work.
 
-```
-# A heavily-Javadoc'd source file — Lathe folds (kinds shown):
-(2, 9, imports)      # import group IS folded
-(36, 195, region)    # class body
-(55, 58) (68, 71) …  # method bodies
-# jdtls additionally folds the class Javadoc (the block before the type) and finer sub-blocks.
-```
+Regression targets:
+`FoldingRangeScannerTest.scan_multilineJavadocOnDeclarations_returnsCommentFoldsSpanningDelimiters`,
+`FoldingRangeScannerTest.scan_singleLineJavadocAndNonJavadocComments_returnNoCommentFold`.
+
+### Remaining — non-Javadoc comments (deferred, Target: next)
+
+jdtls also folds plain multi-line block comments (`/* … */` not attached to a declaration) and runs of
+consecutive single-line `//` comments. These are **not** folded: a free-floating comment is not an AST
+node and is not reachable through `getDocCommentTree`, so a fold pass would need javac's token/comment
+stream (not regex, per the no-ad-hoc-parsing constraint). Single-line Javadoc and single-line/plain
+comments correctly produce no fold today (asserted by the second test above).
 
 ```bash
 python3 dev/jdtls_diff.py --methods foldingRange <ws>/.../Api.java
 ```
-
-### Root cause
-
-`FoldingRangeScanner` is a `TreePathScanner` over the AST (imports, class, method, module nodes);
-comments are not AST nodes, so a comment-fold pass would need the token/comment stream (within the
-no-ad-hoc-parsing constraint — javac comment APIs, not regex). Not a quick win.
-
-### Regression targets
-
-None yet.
 
 ---
 
