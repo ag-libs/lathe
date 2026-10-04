@@ -7,6 +7,24 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-051 — Hover signature rendering: varargs as array, constructor `<init>`, method type params dropped — done
+
+**Status: done — Target: next.**
+
+Hover rendered method/constructor signatures unlike the source and jdtls: a varargs parameter showed
+as an array (`Option[] options`), a constructor as `void <init>()`, and a generic method dropped its
+own type-parameter declaration (`Builder<T> of(…)` instead of `<T> Builder<T> of(…)`).
+
+**Resolution.** `HoverFormatter` now: renders a varargs parameter with `...` (the shared
+`formatParam` gained a `vararg` flag that swaps a trailing `[]` for `...`); renders a constructor as
+the enclosing type's name with no return type (was the element's `<init>` name and `void` return);
+and prepends the method's own type parameters via `formatTypeParameters` (names only, e.g. `<T> `).
+The `formatParam` change flows through `SignatureHelpResolver` and the hover-on-parameter path in
+`SourceAnalysisSession`, so varargs render as `...` there too. Found by jdtls differential testing.
+
+Regression: `HoverTest` (varargs renders `...`, constructor renders `Type(...)` not `void <init>`,
+generic method shows leading `<T>`).
+
 ## EG-055 — `workspace/symbol` misses nested / inner type declarations — done
 
 **Status: done — Target: next.**

@@ -256,7 +256,9 @@ final class SignatureHelpResolver {
     final var paramInfos = new ArrayList<ParameterInformation>();
     for (int i = 0; i < params.size(); i++) {
       final int start = label.length();
-      label.append(HoverFormatter.formatParam(params.get(i), fmt, sourceNames, i));
+      label.append(
+          HoverFormatter.formatParam(
+              params.get(i), fmt, sourceNames, i, method.isVarArgs() && i == params.size() - 1));
       final int end = label.length();
 
       if (i < params.size() - 1) {

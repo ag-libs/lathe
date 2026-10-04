@@ -72,6 +72,47 @@ class HoverTest extends SampleFixture {
   }
 
   @Test
+  void hover_varargsMethod_rendersEllipsisNotArray() {
+    final var src =
+        """
+        class A {
+          /** logs */
+          void log(String fmt, Object... args) {}
+          void use() { log("x", 1); }
+        }
+        """;
+    final var md = hoverText(src, "log(\"x\"", "log");
+    assertThat(md).contains("Object... args").doesNotContain("Object[]");
+  }
+
+  @Test
+  void hover_constructor_rendersTypeNameNotInitVoid() {
+    final var src =
+        """
+        class Widget {
+          /** makes a widget */
+          Widget(int size) {}
+        }
+        """;
+    final var md = hoverText(src, "Widget(int size)", "Widget");
+    assertThat(md).contains("Widget(int size)").doesNotContain("<init>");
+  }
+
+  @Test
+  void hover_genericMethod_rendersLeadingTypeParameter() {
+    final var src =
+        """
+        class Box {
+          /** firsts */
+          <T> T first(java.util.List<T> items) { return items.get(0); }
+          void use() { first(java.util.List.of("a")); }
+        }
+        """;
+    final var md = hoverText(src, "first(java.util.List.of", "first");
+    assertThat(md).contains("<T>").contains("first");
+  }
+
+  @Test
   void hover_methodInLambda_showsJavadoc() {
     // "greet" inside ".map(s -> greet())"
     final var md = hoverAt(146, 52);

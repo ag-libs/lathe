@@ -281,35 +281,6 @@ None yet.
 
 ---
 
-## EG-051 — Hover signature rendering: varargs as array, constructor `<init>`, method type params dropped
-
-**Status: documented**
-
-### Observed behaviour
-
-Hover renders method/constructor signatures differently from the source and from jdtls:
-
-| Case | Lathe hover | Expected (source / jdtls) |
-|---|---|---|
-| Varargs parameter | `register(String name, Option[] options)` | `… Option... options` |
-| Constructor | `void <init>()` | `Api()` |
-| Generic method's own type params | `Builder<T> of(…)` | `<T> Builder<T> of(…)` |
-
-```bash
-python3 dev/jdtls_diff.py --methods hover <ws>/.../Api.java
-```
-
-### Expected behaviour
-
-Render varargs with `...`, constructors with the type name (no `void <init>`), and include the
-method's own type-parameter declaration.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-052 — Go-to-implementation misses lambda implementations of functional interfaces
 
 **Status: documented**
