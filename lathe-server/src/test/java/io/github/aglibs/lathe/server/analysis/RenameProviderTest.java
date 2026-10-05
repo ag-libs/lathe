@@ -8,6 +8,7 @@ import java.util.List;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.RenameFile;
 import org.junit.jupiter.api.Test;
 
 class RenameProviderTest {
@@ -57,6 +58,25 @@ class RenameProviderTest {
     assertThat(edit.getChanges().get("file:///B.java")).hasSize(1);
     assertThat(edit.getChanges().values().stream().flatMap(List::stream))
         .allMatch(e -> e.getNewText().equals("renamed"));
+  }
+
+  @Test
+  void toWorkspaceEditWithFileRename_emitsTextEditsThenRenameFile() {
+    final var occurrence = new Location("file:///dir/Foo.java", range(0, 13, 0, 16));
+
+    final var edit =
+        RenameProvider.toWorkspaceEditWithFileRename(
+            List.of(occurrence), "Bar", "file:///dir/Foo.java", "file:///dir/Bar.java");
+
+    // resource operations require documentChanges, not the plain changes map
+    assertThat(edit.getChanges()).isNullOrEmpty();
+    final var documentChanges = edit.getDocumentChanges();
+    assertThat(documentChanges).hasSize(2);
+    assertThat(documentChanges.get(0).isLeft()).isTrue();
+    assertThat(documentChanges.get(1).getRight()).isInstanceOf(RenameFile.class);
+    final var rename = (RenameFile) documentChanges.get(1).getRight();
+    assertThat(rename.getOldUri()).isEqualTo("file:///dir/Foo.java");
+    assertThat(rename.getNewUri()).isEqualTo("file:///dir/Bar.java");
   }
 
   // --- integration: rename edit through the reference pipeline ---
@@ -127,21 +147,60 @@ class RenameProviderTest {
   }
 
   @Test
-  void resolveRenameTarget_nestedType_isRenameable_publicTopLevel_isRefused() {
+  void resolveRenameTarget_topLevelAndNestedTypes_areRenameable() {
+    // The session resolves both as renameable; the file-move gating for a public top-level type
+    // lives in WorkspaceSession (client-capability aware), not here.
     final var source = "public class Outer { static class Inner {} }";
     withSession(
         source,
         session -> {
-          // public top-level type would need a file move — refused for now
           assertThat(
                   session.resolveRenameTarget(
                       requestAt(source, posOf(source, "class Outer", "Outer"))))
-              .isNull();
-          // nested type renames in place
+              .isNotNull();
           assertThat(
                   session.resolveRenameTarget(
                       requestAt(source, posOf(source, "class Inner", "Inner"))))
               .isNotNull();
+        });
+  }
+
+  @Test
+  void rename_type_editsDeclarationConstructorAndInstantiations() {
+    final var source =
+        """
+        class Holder {
+            static class Widget {
+                Widget() {}
+                Widget(int n) {}
+            }
+            Widget make() { return new Widget(); }
+            Widget makeN() { return new Widget(42); }
+        }
+        """;
+    withSession(
+        source,
+        session -> {
+          final var target =
+              session.resolveRenameTarget(
+                  requestAt(source, posOf(source, "class Widget", "Widget")));
+          final List<Location> occurrences =
+              session
+                  .searchReferences(TempSourceCompiler.TEST_URI, source, 1, target, true)
+                  .stream()
+                  .map(match -> new Location(match.uri(), match.range()))
+                  .toList();
+          final var edits =
+              RenameProvider.toWorkspaceEdit(occurrences, "Gadget")
+                  .getChanges()
+                  .get(TempSourceCompiler.TEST_URI);
+
+          // class decl, two constructor decl names, two field-type uses (make/makeN return), and
+          // two `new Widget(...)` sites — every occurrence rewritten, so no `Widget` token
+          // survives.
+          assertThat(edits).allMatch(e -> e.getNewText().equals("Gadget"));
+          assertThat(edits.stream().map(e -> e.getRange().getStart().getLine()).toList())
+              .contains(1, 2, 3);
         });
   }
 

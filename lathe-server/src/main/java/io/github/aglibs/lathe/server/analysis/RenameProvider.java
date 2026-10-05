@@ -3,12 +3,19 @@ package io.github.aglibs.lathe.server.analysis;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import javax.lang.model.SourceVersion;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.RenameFile;
+import org.eclipse.lsp4j.ResourceOperation;
+import org.eclipse.lsp4j.SnippetTextEdit;
+import org.eclipse.lsp4j.TextDocumentEdit;
 import org.eclipse.lsp4j.TextEdit;
+import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
 import org.eclipse.lsp4j.WorkspaceEdit;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 // Turns resolved occurrence locations into a rename WorkspaceEdit and validates the new name. A
 // rename is a semantically-resolved substitution: every occurrence range (declaration included) is
@@ -38,16 +45,50 @@ public final class RenameProvider {
 
   public static WorkspaceEdit toWorkspaceEdit(
       final List<Location> occurrences, final String newName) {
-    final Map<String, List<TextEdit>> changes =
-        occurrences.stream()
-            .collect(
-                Collectors.groupingBy(
-                    Location::getUri,
-                    Collectors.mapping(
-                        occurrence -> new TextEdit(occurrence.getRange(), newName),
-                        Collectors.toList())));
     final var edit = new WorkspaceEdit();
-    edit.setChanges(changes);
+    edit.setChanges(editsByUri(occurrences, newName));
     return edit;
+  }
+
+  // A type rename that also moves the declaring file (`Foo.java` -> `Bar.java`). documentChanges is
+  // the only WorkspaceEdit form that carries a resource operation; the text edits apply first (on
+  // the old URI), then the file is renamed.
+  public static WorkspaceEdit toWorkspaceEditWithFileRename(
+      final List<Location> occurrences,
+      final String newName,
+      final String oldFileUri,
+      final String newFileUri) {
+    final List<Either<TextDocumentEdit, ResourceOperation>> changes =
+        Stream.concat(
+                editsByUri(occurrences, newName).entrySet().stream()
+                    .map(RenameProvider::textDocumentEdit),
+                Stream.of(
+                    Either.<TextDocumentEdit, ResourceOperation>forRight(
+                        new RenameFile(oldFileUri, newFileUri))))
+            .toList();
+    final var edit = new WorkspaceEdit();
+    edit.setDocumentChanges(changes);
+    return edit;
+  }
+
+  private static Either<TextDocumentEdit, ResourceOperation> textDocumentEdit(
+      final Map.Entry<String, List<TextEdit>> fileEdits) {
+    final List<Either<TextEdit, SnippetTextEdit>> edits =
+        fileEdits.getValue().stream()
+            .map(edit -> Either.<TextEdit, SnippetTextEdit>forLeft(edit))
+            .collect(Collectors.toUnmodifiableList());
+    return Either.forLeft(
+        new TextDocumentEdit(new VersionedTextDocumentIdentifier(fileEdits.getKey(), null), edits));
+  }
+
+  private static Map<String, List<TextEdit>> editsByUri(
+      final List<Location> occurrences, final String newName) {
+    return occurrences.stream()
+        .collect(
+            Collectors.groupingBy(
+                Location::getUri,
+                Collectors.mapping(
+                    occurrence -> new TextEdit(occurrence.getRange(), newName),
+                    Collectors.toUnmodifiableList())));
   }
 }

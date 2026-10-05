@@ -45,6 +45,9 @@ public final class LatheTextDocumentService implements TextDocumentService {
   // request-handling thread(s). The engine runs on the worker, not here. Null = formatting
   // disabled.
   private volatile FormatEngine formatEngine;
+  // Whether the client can apply a RenameFile resource operation; gates renaming a public top-level
+  // type (which must move its .java file). Written in initialize, read per rename request.
+  private volatile boolean fileRenameSupported;
 
   public LatheTextDocumentService() {
     this(DEFAULT_DEBOUNCE_MS);
@@ -66,6 +69,10 @@ public final class LatheTextDocumentService implements TextDocumentService {
 
   void setFormatEngine(final FormatEngine engine) {
     formatEngine = engine;
+  }
+
+  void setFileRenameSupported(final boolean supported) {
+    fileRenameSupported = supported;
   }
 
   void cancelProgress(final WorkDoneProgressCancelParams params) {
@@ -329,7 +336,9 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(null);
     }
 
-    return worker.submit(() -> session.prepareRenameFuture(uri, pos)).thenCompose(f -> f);
+    return worker
+        .submit(() -> session.prepareRenameFuture(uri, pos, fileRenameSupported))
+        .thenCompose(f -> f);
   }
 
   @Override
@@ -345,7 +354,10 @@ public final class LatheTextDocumentService implements TextDocumentService {
         null,
         (cancelChecker, progress) ->
             worker
-                .submit(() -> session.renameFuture(uri, pos, newName, cancelChecker, progress))
+                .submit(
+                    () ->
+                        session.renameFuture(
+                            uri, pos, newName, fileRenameSupported, cancelChecker, progress))
                 .thenCompose(f -> f));
   }
 

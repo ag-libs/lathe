@@ -163,9 +163,26 @@ final class ReferenceLocator extends SourceTreeLocator {
       final var element = matchedElement();
       if (element != null) {
         addDeclarationMatch(node, SourceLocator.declarationName(element).toString());
+      } else {
+        addConstructorDeclarationForTypeTarget(node);
       }
     }
     return super.visitMethod(node, ignored);
+  }
+
+  // Renaming a type must also rewrite its constructors' declaration names, which spell the type's
+  // simple name (`Foo() {}` becomes `Bar() {}`); the constructor element itself does not match a
+  // type target, so match on its enclosing type.
+  private void addConstructorDeclarationForTypeTarget(final MethodTree node) {
+    final var element = trees.getElement(getCurrentPath());
+    if (element == null || element.getKind() != ElementKind.CONSTRUCTOR) {
+      return;
+    }
+
+    final var enclosing = element.getEnclosingElement();
+    if (matchesTarget(enclosing)) {
+      addDeclarationMatch(node, enclosing.getSimpleName().toString());
+    }
   }
 
   @Override

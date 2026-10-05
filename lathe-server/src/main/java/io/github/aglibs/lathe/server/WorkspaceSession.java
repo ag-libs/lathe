@@ -1506,7 +1506,7 @@ final class WorkspaceSession {
   }
 
   CompletableFuture<Either3<Range, PrepareRenameResult, PrepareRenameDefaultBehavior>>
-      prepareRenameFuture(final String uri, final Position pos) {
+      prepareRenameFuture(final String uri, final Position pos, final boolean fileRenameSupported) {
     final OpenDocument openFile = docs.get(uri);
     if (openFile == null || !(routeCompiler(uri) instanceof final CompilerRoute.Module module)) {
       return CompletableFuture.completedFuture(null);
@@ -1518,7 +1518,11 @@ final class WorkspaceSession {
         .resolveRenameTarget(request)
         .thenApply(
             target -> {
-              if (target == null) {
+              // Refuse a type whose declaring file must move when the client cannot apply the file
+              // rename, rather than returning a half-rename that leaves a public type in a
+              // mismatched file.
+              if (target == null
+                  || (!fileRenameSupported && renameDeclaringFile(target).isPresent())) {
                 return null;
               }
 
@@ -1527,10 +1531,47 @@ final class WorkspaceSession {
             });
   }
 
+  // The source file to rename when the target is the file-defining type for its file (so `Foo.java`
+  // must become `Bar.java`); empty for members, nested types, and secondary top-level types that
+  // stay in place.
+  private Optional<Path> renameDeclaringFile(final ReferenceTarget target) {
+    if (!(target.kind().isClass() || target.kind().isInterface())) {
+      return Optional.empty();
+    }
+
+    return TypeSourceLocator.findSourceFile(target.qualifiedName(), workspace.allSourceRoots())
+        .filter(file -> file.getFileName().toString().equals(target.simpleName() + ".java"));
+  }
+
+  private WorkspaceEdit renameEdit(
+      final ReferenceTarget target,
+      final List<Location> occurrences,
+      final String newName,
+      final boolean fileRenameSupported) {
+    if (occurrences.isEmpty()) {
+      return null;
+    }
+
+    final Optional<Path> declaringFile = renameDeclaringFile(target);
+    if (declaringFile.isEmpty()) {
+      return RenameProvider.toWorkspaceEdit(occurrences, newName);
+    }
+
+    if (!fileRenameSupported) {
+      return null;
+    }
+
+    final var file = declaringFile.get();
+    final var oldUri = file.toUri().toString();
+    final var newUri = file.resolveSibling(newName + ".java").toUri().toString();
+    return RenameProvider.toWorkspaceEditWithFileRename(occurrences, newName, oldUri, newUri);
+  }
+
   CompletableFuture<WorkspaceEdit> renameFuture(
       final String uri,
       final Position pos,
       final String newName,
+      final boolean fileRenameSupported,
       final CancelChecker cancelChecker,
       final ProgressReporter.Task progress) {
     cancelChecker.checkCanceled();
@@ -1577,9 +1618,8 @@ final class WorkspaceSession {
                                                     t.elapsedMs(),
                                                     searchTarget.simpleName(),
                                                     locations.size()));
-                                    return locations.isEmpty()
-                                        ? null
-                                        : RenameProvider.toWorkspaceEdit(locations, newName);
+                                    return renameEdit(
+                                        searchTarget, locations, newName, fileRenameSupported);
                                   }));
             });
   }

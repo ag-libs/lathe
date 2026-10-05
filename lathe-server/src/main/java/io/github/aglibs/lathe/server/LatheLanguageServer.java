@@ -24,6 +24,7 @@ import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.InitializeResult;
 import org.eclipse.lsp4j.InitializedParams;
 import org.eclipse.lsp4j.RenameOptions;
+import org.eclipse.lsp4j.ResourceOperationKind;
 import org.eclipse.lsp4j.SemanticTokensLegend;
 import org.eclipse.lsp4j.SemanticTokensWithRegistrationOptions;
 import org.eclipse.lsp4j.ServerCapabilities;
@@ -62,6 +63,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
                 .formatted(rootUri, params.getClientInfo(), formattingEnabled));
 
     textDocumentService.setWorkDoneProgressSupported(workDoneProgressSupported(params));
+    textDocumentService.setFileRenameSupported(fileRenameSupported(params));
     textDocumentService.setFormatEngine(formatEngine);
     if (rootPath != null) {
       textDocumentService.initialize(rootPath);
@@ -290,5 +292,20 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     return params.getCapabilities() != null
         && params.getCapabilities().getWindow() != null
         && Boolean.TRUE.equals(params.getCapabilities().getWindow().getWorkDoneProgress());
+  }
+
+  // The client can apply a RenameFile resource operation — required to rename a public top-level
+  // type, whose declaring .java file must move.
+  private static boolean fileRenameSupported(final InitializeParams params) {
+    final var capabilities = params.getCapabilities();
+    if (capabilities == null
+        || capabilities.getWorkspace() == null
+        || capabilities.getWorkspace().getWorkspaceEdit() == null) {
+      return false;
+    }
+
+    final var resourceOperations =
+        capabilities.getWorkspace().getWorkspaceEdit().getResourceOperations();
+    return resourceOperations != null && resourceOperations.contains(ResourceOperationKind.Rename);
   }
 }

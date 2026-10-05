@@ -690,6 +690,12 @@ class LatheClient(LspClient):
                     },
                 },
                 "window": {"workDoneProgress": True},
+                "workspace": {
+                    "workspaceEdit": {
+                        "documentChanges": True,
+                        "resourceOperations": ["create", "rename", "delete"],
+                    },
+                },
             },
         })
         self.notify("initialized", {})

@@ -29,8 +29,6 @@ import java.util.stream.Stream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
-import javax.lang.model.element.Modifier;
-import javax.lang.model.element.NestingKind;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;
@@ -489,17 +487,9 @@ public final class SourceAnalysisSession implements AutoCloseable {
           METHOD,
           RECORD_COMPONENT ->
           true;
-      case CLASS, INTERFACE, ENUM, RECORD, ANNOTATION_TYPE ->
-          !isPublicTopLevel((TypeElement) element);
+      case CLASS, INTERFACE, ENUM, RECORD, ANNOTATION_TYPE -> true;
       default -> false;
     };
-  }
-
-  // A public top-level type rename would have to move Foo.java -> Bar.java (resource operation);
-  // deferred, so it is refused here. Nested and non-public top-level types rename in place.
-  private static boolean isPublicTopLevel(final TypeElement type) {
-    return type.getNestingKind() == NestingKind.TOP_LEVEL
-        && type.getModifiers().contains(Modifier.PUBLIC);
   }
 
   /**
