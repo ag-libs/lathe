@@ -44,6 +44,48 @@ jdtls differential testing (`dev/jdtls_diff.py`).
 Regression: `WorkspaceTypeIndexTest` (named-nested included, public JDK nested found, synthetic
 excluded), `WorkspaceSymbolTest`.
 
+## EG-052 — Go-to-implementation misses lambda / method-reference implementations of functional interfaces — done
+
+**Status: done — Target: next.**
+
+`textDocument/implementation` on a functional interface's single abstract method now returns, besides
+the named overriding classes, every reactor lambda and method reference that implements it — whether
+the enclosing source names the interface (a typed variable, field, parameter, return, or cast) or
+passes the lambda straight as an argument (`register(x -> …)`) where the interface is never named,
+and whether the target is the interface itself or a functional sub-interface that inherits/overrides
+the SAM.
+
+How it works:
+
+- `MethodImplementationLocator` matches a lambda / method reference when the converted type's single
+  abstract method is (or overrides) the target method (`FunctionalInterfaces.singleAbstractMethod`), so
+  sub-interface conversions resolve while a sub-interface whose SAM comes from a different parent is
+  rejected.
+- Argument-position lambdas (invisible to the identifier index, since the source never names the
+  interface) are discovered from a compiled-bytecode index: `ClassMetadataReader` records each class's
+  `invokedynamic` target interfaces (the descriptor return type) during the reactor `.class` scan Lathe
+  already runs; `WorkspaceSession` aggregates a `functional interface → implementing classes` map,
+  refreshed with the type index, and `implementationsForMethod` queries it over the SAM interface plus
+  its functional sub-interfaces. The AST locator then pins precise positions.
+
+Verified on a real project (EqualsVerifier): go-to-implementation on `Rethrow.ThrowingSupplier.get()`
+returns 19 argument-position `rethrow(() -> …)` lambdas across files that never name the interface.
+
+Residual (universal to type navigation, not specific to this feature): discovery reflects the last
+compile, so an argument-position lambda added to an unopened, not-yet-recompiled file appears only
+after the next sync.
+
+### Regression targets
+
+- `ClassMetadataReaderTest.read_argumentPositionLambdaAndMethodRef_capturesFunctionalInterfaceTargets`,
+  `ClassMetadataReaderTest.read_signatureUseWithoutLambda_hasNoLambdaTargets` (bytecode extraction).
+- `MethodImplementationTest.methodImplementations_functionalInterface_returnsSamImplsAndIgnoresOtherInterface`,
+  `MethodImplementationTest.methodImplementations_subInterfaces_matchInheritedSamButNotUnrelatedSam`,
+  `MethodImplementationTest.functionalInterfaceName_samVsNonSam_returnsNameOnlyForSam`.
+- Multi-module invoker `LspSmokeTest.implementation_samMethodCursor_findsLambdaAndMethodReference`.
+
+---
+
 ## CA-10 — No code action to add a `final` field as a constructor parameter — done
 
 **Status: done — Target: next.**
