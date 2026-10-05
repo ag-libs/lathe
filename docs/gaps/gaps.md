@@ -43,7 +43,7 @@ which is a non-trivial hover extension.
 
 ## EG-003 — Hover returns null on positions inside Javadoc type-reference tags
 
-**Status: accepted — Target: backlog**
+**Status: deferred — Target: backlog**
 
 ### Observed behaviour
 
@@ -116,7 +116,7 @@ These are reference data, not gap items.
 
 ## EG-018 — `textDocument/selectionRange` not implemented
 
-**Status: accepted — Target: backlog**
+**Status: deferred — Target: backlog**
 
 ### Observed behaviour
 
@@ -283,7 +283,7 @@ None yet.
 
 ## EG-053 — Multi-line comment / Javadoc blocks are not folded
 
-**Status: accepted — Target: next (multi-line Javadoc folding shipped; non-Javadoc comments deferred).**
+**Status: deferred — Target: backlog (multi-line Javadoc folding shipped; non-Javadoc comments deferred).**
 
 ### Delivered — multi-line Javadoc blocks fold
 
