@@ -163,6 +163,11 @@ final class WorkspaceSession {
       new LinkedHashMap<>();
   // Reactor type-usage document frequency, aggregated on a full scan; feeds completion ranking.
   private Map<String, Integer> reactorUsageCounts = Map.of();
+  // Per-config lambda/method-ref target index (functional interface → implementing classes) and its
+  // merged view; lets go-to-implementation find lambdas whose source never names the interface.
+  private final Map<ModuleSourceConfig, Map<String, List<String>>> reactorLambdaShards =
+      new LinkedHashMap<>();
+  private Map<String, List<String>> reactorLambdaImplementors = Map.of();
   private WorkspaceWatcher watcher;
   private boolean pomNotificationPending;
   // Guards against re-notifying every idle tick while churn continues; reset when the stale set
@@ -2120,6 +2125,7 @@ final class WorkspaceSession {
             workspace.allSourceRoots(),
             manifest);
     final var indexSnapshot = typeIndex;
+    final var lambdaSnapshot = reactorLambdaImplementors;
     final var cursorWorker =
         switch (routeCompiler(uri)) {
           case CompilerRoute.Module module -> module.worker();
@@ -2139,7 +2145,9 @@ final class WorkspaceSession {
             target ->
                 worker
                     .submit(
-                        () -> implementationForTarget(target, request, cursorWorker, indexSnapshot))
+                        () ->
+                            implementationForTarget(
+                                target, request, cursorWorker, indexSnapshot, lambdaSnapshot))
                     .thenCompose(future -> future))
         .thenApply(
             locations -> {
@@ -2155,7 +2163,8 @@ final class WorkspaceSession {
       final ReferenceTarget target,
       final SourceFeatureRequest request,
       final CompilationWorker cursorWorker,
-      final WorkspaceTypeIndex indexSnapshot) {
+      final WorkspaceTypeIndex indexSnapshot,
+      final Map<String, List<String>> lambdaSnapshot) {
     if (target == null) {
       return CompletableFuture.completedFuture(List.of());
     }
@@ -2170,17 +2179,23 @@ final class WorkspaceSession {
 
     return cursorWorker
         .functionalInterfaceName(request)
-        .thenCompose(samInterface -> implementationsForMethod(target, samInterface, indexSnapshot));
+        .thenCompose(
+            samInterface ->
+                implementationsForMethod(target, samInterface, indexSnapshot, lambdaSnapshot));
   }
 
   private CompletableFuture<List<Location>> implementationsForMethod(
       final ReferenceTarget target,
       final Optional<String> samInterface,
-      final WorkspaceTypeIndex indexSnapshot) {
+      final WorkspaceTypeIndex indexSnapshot,
+      final Map<String, List<String>> lambdaSnapshot) {
     final Map<Path, Set<String>> candidatesByFile =
-        Stream.concat(
+        Stream.of(
                 subtypeImplementationFiles(target, indexSnapshot),
-                lambdaImplementationFiles(samInterface))
+                lambdaImplementationFiles(samInterface),
+                bytecodeLambdaImplementationFiles(
+                    target, samInterface, indexSnapshot, lambdaSnapshot))
+            .flatMap(stream -> stream)
             .collect(
                 Collectors.toMap(
                     Map.Entry::getKey, Map.Entry::getValue, WorkspaceSession::unionNames));
@@ -2204,16 +2219,52 @@ final class WorkspaceSession {
                     .map(path -> Map.entry(path, Set.of(entry.binaryName()))));
   }
 
-  // Lambdas and method references where the functional interface is spelled (a typed variable,
-  // field, parameter, return, or cast) are reachable through the identifier index. An argument-
-  // position lambda never spells the interface, so it is not discoverable this way and is not
-  // covered yet. Empty when the target method is not a functional-interface SAM.
+  // Files that spell the functional interface (via the identifier index) — the freshest path for
+  // lambdas in open/edited files. Empty when the target method is not a functional-interface SAM.
+  // Argument-position lambdas, which never spell the interface, are covered instead by
+  // bytecodeLambdaImplementationFiles.
   private Stream<Map.Entry<Path, Set<String>>> lambdaImplementationFiles(
       final Optional<String> samInterface) {
     return samInterface.stream()
         .flatMap(name -> candidateIndex.candidateUris(name).stream())
         .map(LatheUri::toPath)
         .map(path -> Map.entry(path, Set.<String>of()));
+  }
+
+  // Classes the compiled bytecode records as converting a lambda / method reference to the target
+  // SAM interface or a functional sub-interface of it — including argument-position lambdas whose
+  // source never names the interface. Empty when the target method is not a functional-interface
+  // SAM.
+  private Stream<Map.Entry<Path, Set<String>>> bytecodeLambdaImplementationFiles(
+      final ReferenceTarget target,
+      final Optional<String> samInterface,
+      final WorkspaceTypeIndex indexSnapshot,
+      final Map<String, List<String>> lambdaSnapshot) {
+    if (samInterface.isEmpty()) {
+      return Stream.empty();
+    }
+
+    return functionalInterfaceFamily(target.qualifiedName(), indexSnapshot).stream()
+        .flatMap(iface -> lambdaSnapshot.getOrDefault(iface, List.of()).stream())
+        .distinct()
+        .flatMap(
+            binaryName ->
+                TypeSourceLocator.findSourceFile(binaryName, workspace.allSourceRoots()).stream())
+        .map(path -> Map.entry(path, Set.<String>of()));
+  }
+
+  // The interface itself plus its functional sub-interfaces: a lambda converted to a sub-interface
+  // compiles to that sub-interface's descriptor, so the index must be queried for each.
+  private static Set<String> functionalInterfaceFamily(
+      final String interfaceBinaryName, final WorkspaceTypeIndex indexSnapshot) {
+    return Stream.concat(
+            Stream.of(interfaceBinaryName),
+            indexSnapshot.transitiveSubtypes(interfaceBinaryName).stream()
+                .filter(
+                    entry ->
+                        entry.kind() == io.github.aglibs.lathe.core.typeindex.TypeKind.INTERFACE)
+                .map(TypeIndexEntry::binaryName))
+        .collect(Collectors.toUnmodifiableSet());
   }
 
   private static Set<String> unionNames(final Set<String> left, final Set<String> right) {
@@ -2746,22 +2797,40 @@ final class WorkspaceSession {
       final ClassFileTypeScanner.ReactorScan scan = scanReactorDir(config);
       reactorBaseShards.put(config, scan.entries());
       reactorShards.put(config, withSourceDelta(config, scan.entries()));
+      reactorLambdaShards.put(config, scan.lambdaImplementors());
       scan.referenceCounts().forEach((name, count) -> counts.merge(name, count, Integer::sum));
     }
 
     reactorUsageCounts = Map.copyOf(counts);
+    reactorLambdaImplementors = mergeLambdaShards();
+  }
+
+  private Map<String, List<String>> mergeLambdaShards() {
+    return reactorLambdaShards.values().stream()
+        .flatMap(shard -> shard.entrySet().stream())
+        .collect(
+            Collectors.toMap(
+                Map.Entry::getKey,
+                Map.Entry::getValue,
+                (left, right) -> Stream.concat(left.stream(), right.stream()).toList()));
   }
 
   private void refreshReactorShard(final ModuleSourceConfig config) {
     // Incremental save. External output reuses the cached base (build changes only on make+sync)
     // and re-derives the delta; Maven rescans the freshly recompiled mirror.
-    final List<TypeIndexEntry> base =
-        config.externalOutput()
-            ? reactorBaseShards.getOrDefault(config, List.of())
-            : scanReactorDir(config).entries();
+    final List<TypeIndexEntry> base;
+    if (config.externalOutput()) {
+      base = reactorBaseShards.getOrDefault(config, List.of());
+    } else {
+      final ClassFileTypeScanner.ReactorScan scan = scanReactorDir(config);
+      base = scan.entries();
+      reactorLambdaShards.put(config, scan.lambdaImplementors());
+    }
+
     reactorBaseShards.put(config, base);
     reactorShards.put(config, withSourceDelta(config, base));
     typeIndex = typeIndex.withReactorEntries(reactorShards.values());
+    reactorLambdaImplementors = mergeLambdaShards();
   }
 
   // External output: index types from dirty/open sources not yet built, so they show in symbols
