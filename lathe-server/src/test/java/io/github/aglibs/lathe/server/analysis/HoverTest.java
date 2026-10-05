@@ -72,6 +72,28 @@ class HoverTest extends SampleFixture {
   }
 
   @Test
+  void hover_javadocLinkTags_resolveReferencedTypeAndMember() {
+    final var src =
+        """
+        /** A documented greeter. */
+        class Greeter {
+          /** Returns a greeting. */
+          String greet() { return "hi"; }
+        }
+        /**
+         * Use {@link Greeter} and {@link Greeter#greet()}.
+         */
+        class User {}
+        """;
+    assertThat(hoverText(src, "{@link Greeter}", "Greeter"))
+        .contains("class Greeter")
+        .contains("A documented greeter");
+    assertThat(hoverText(src, "Greeter#greet", "greet"))
+        .contains("greet")
+        .contains("Returns a greeting");
+  }
+
+  @Test
   void hover_varargsMethod_rendersEllipsisNotArray() {
     final var src =
         """

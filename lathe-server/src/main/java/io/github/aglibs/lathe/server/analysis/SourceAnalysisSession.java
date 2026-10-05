@@ -401,7 +401,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
       return new Hover(new MarkupContent("markdown", "```java\n%s\n```".formatted(label)));
     }
 
-    final Element element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
+    final Element element = elementOrJavadocReference(cur);
     final TypeMirror type =
         cur.path() != null ? cur.analysis().trees().getTypeMirror(cur.path()) : null;
     final List<Path> allRoots = allRoots(request);
@@ -437,8 +437,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
 
     final var trees = cur.analysis().trees();
     final var constructor = SourceLocator.constructorAtNewClassType(trees, cur.path());
-    final var element =
-        constructor != null ? constructor : SourceLocator.elementAt(trees, cur.path());
+    final var element = constructor != null ? constructor : elementOrJavadocReference(cur);
     if (element == null) {
       return null;
     }
@@ -737,7 +736,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
       return Optional.empty();
     }
 
-    final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
+    final var element = elementOrJavadocReference(cur);
     final var result = findDefinitionLocation(request, cur, element);
 
     LOG.fine(
@@ -1154,7 +1153,16 @@ public final class SourceAnalysisSession implements AutoCloseable {
     compiler.close();
   }
 
-  private record CursorContext(AttributedFileAnalysis analysis, TreePath path) {}
+  private record CursorContext(AttributedFileAnalysis analysis, TreePath path, long offset) {}
+
+  // The element at the cursor, falling back to a Javadoc reference tag ({@link} / @see / @throws)
+  // when the cursor is not on an attributed AST node. Shared by hover, definition, and references.
+  private static Element elementOrJavadocReference(final CursorContext cur) {
+    final Element element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
+    return element != null
+        ? element
+        : JavadocReferenceResolver.referenceAt(cur.analysis(), cur.offset());
+  }
 
   private CachedFileAnalysis currentCache(final String uri, final String content) {
     final CachedFileAnalysis cached = cache.get(uri);
@@ -1172,6 +1180,6 @@ public final class SourceAnalysisSession implements AutoCloseable {
         SourceLocator.toOffset(
             analysis.tree(), request.pos().getLine(), request.pos().getCharacter());
     return new CursorContext(
-        analysis, SourceLocator.pathAt(analysis.trees(), analysis.tree(), offset));
+        analysis, SourceLocator.pathAt(analysis.trees(), analysis.tree(), offset), offset);
   }
 }
