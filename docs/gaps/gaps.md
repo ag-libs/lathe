@@ -311,44 +311,6 @@ python3 dev/jdtls_diff.py --methods foldingRange <ws>/.../Api.java
 
 ---
 
-## EG-054 — Completion on a method call that returns an array resolves to the wrong receiver type
-
-**Status: documented**
-
-### Observed behaviour
-
-Array member completion works for a **simple array variable** (CQ-0053 synthesises `length`, `clone`,
-and the Object instance members). It breaks only when the array-typed receiver is a **method call**:
-the receiver resolves to the wrong type, so the wrong members are offered.
-
-```java
-String[] names;
-names.            // OK -> length, clone, equals, getClass, hashCode, toString
-"x".toCharArray().// WRONG -> String members (charAt, chars, …) instead of array members
-type.getEnumConstants().length   // original probe: returned nothing
-```
-
-Re-probing corrected the earlier "no completion on array-typed expressions" wording: the deficiency is
-a method-chain receiver whose return type is an array, not array completion in general.
-
-### Root cause (suspected)
-
-`MemberAccessCompleter` / `TypeResolver.resolveReceiver` resolves a method-chain receiver to the
-chain's base type rather than the method's array return type; `CandidateGenerator` already handles an
-`ArrayType` receiver correctly (see `proposeArrayMemberCandidates`), so the fix is in receiver-type
-resolution, not member synthesis.
-
-### Expected behaviour
-
-A method call returning `T[]` completes as an array (`length`, `clone`, Object instance members),
-matching the simple-array-variable case.
-
-### Regression targets
-
-None yet.
-
----
-
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work

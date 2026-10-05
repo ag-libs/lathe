@@ -86,6 +86,28 @@ after the next sync.
 
 ---
 
+## EG-054 — Completion on a method call that returns an array resolves to the wrong receiver type — done
+
+**Status: done — Target: next.**
+
+Member-access completion on a method-chain receiver whose return type is an array (`"x".toCharArray().`,
+`type.getEnumConstants().`) now offers the array's members (the `length` field, `clone()`, and the
+inherited Object methods) instead of the chain's base-type members or nothing. A simple array variable
+already worked.
+
+Root cause: `Trees.getTypeMirror` on a method invocation yields its result type directly, so an
+array-returning chain arrives as an `ArrayType`; the receiver resolver (`TypeResolver.check`) ran it
+through `effectiveDeclaredType`, which only returns `DECLARED` types and dropped the array to null,
+whereupon the text fallback resolved the chain's base expression instead. The fix keeps an `ArrayType`
+receiver as-is — `CandidateGenerator` already synthesises the array members.
+
+### Regression targets
+
+- `CompletionMemberAccessTest.memberAccess_methodCallReturningArray_offersArrayMembers` (parameterized
+  over a concrete `char[]` return and a generic `T[]` return).
+
+---
+
 ## CA-10 — No code action to add a `final` field as a constructor parameter — done
 
 **Status: done — Target: next.**
