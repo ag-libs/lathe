@@ -35,64 +35,6 @@ grep -n 'Target: next' docs/gaps/gaps.md                       # what the next c
 Entries follow, grouped by area: exploration (EG) below, then Find References (FR), Code Actions
 (CA), Completion (CQ), Workspace Lifecycle (WS), and Test Execution (TE).
 
-EG-003 is deferred until after M2 because it requires `DocTrees` attribution of Javadoc comment
-positions,
-which is a non-trivial hover extension.
-
----
-
-## EG-003 — Hover returns null on positions inside Javadoc type-reference tags
-
-**Status: deferred — Target: backlog**
-
-### Observed behaviour
-
-Pressing `K` (hover) on a type name inside a Javadoc `{@link …}` or `{@see …}` reference tag
-returns no result.
-
-```java
-/**
- * ... {@link Scheduling} ...     ← hover on 'Scheduling' → null
- * @see TaskManager               ← hover on 'TaskManager' → null
- */
-```
-
-Type names at the same or nearby positions in source code resolve correctly.
-
-### Root cause
-
-The Javadoc region is not attributed for reference resolution.
-The cursor position falls inside a `DocCommentTree` or raw comment block that javac does not
-include in the attributed element table.
-`HoverLocator` (or equivalent) receives a position whose `TreePath` resolves to a Javadoc
-comment node, finds no attributed element, and returns null.
-
-### Proposed fix
-
-Two-phase lookup for positions inside Javadoc:
-
-1. Detect that the cursor falls inside a `DocCommentTree` (by checking `DocTrees.getDocComment`
-   and comparing character offsets).
-2. Extract the referenced type name from the `{@link}`, `{@see}`, or `@throws` tag using
-   `DocTrees.getElement(DocTreePath)`.
-3. Delegate to the normal hover path with that resolved element.
-
-This is a bounded change: only `HoverLocator` and possibly a helper on `SourceAnalysisSession`
-need modification.
-
-### Probe commands
-
-```bash
-printf 'hover "Scheduling"\n' \
-  | python3 dev/explore.py \
-      /home/ag-libs/git/helidon/scheduling/src/main/java/io/helidon/scheduling/Scheduling.java
-```
-
-### Regression targets
-
-`HoverTest.hover_javadocLinkTag_resolvesReferencedType`
-`HoverTest.hover_javadocSeeTag_resolvesReferencedType`
-
 ---
 
 ## Timing Observations
@@ -238,32 +180,32 @@ None yet.
 
 ## EG-050 — Javadoc `{@link}` / `{@code}` regions not resolved for references, highlight, completion
 
-**Status: documented**
+**Status: deferred — Target: backlog (references/highlight shipped; completion deferred).**
 
-### Observed behaviour
+### Delivered — references, highlight, and rename over Javadoc references
 
-Sibling of [EG-003](#eg-003--hover-returns-null-on-positions-inside-javadoc-type-reference-tags)
-(hover). Because Javadoc comment regions are not attributed for reference resolution, member
-references written in Javadoc tags are invisible to several features:
+`textDocument/references`, `textDocument/documentHighlight`, and rename now cover a symbol's Javadoc
+reference-tag mentions (`{@link #of(Class)}`, `{@linkplain}`, `@see`, `@throws`), for both members and
+types; and go-to-definition / hover resolve a reference under the cursor (hover is the archived
+EG-003). Implemented via javac's structured `DocTrees` — the comment is read as a parsed
+`DocCommentTree`, never by scanning its text: a shared `JavadocReferences.forEachReference` delivers
+each reference resolved to an element + source span, consumed by `JavadocReferenceResolver` (cursor →
+element) and `ReferenceLocator.scanJavadocReferences` (match + emit).
 
-- `textDocument/references` and `textDocument/documentHighlight` omit `{@link #of(Class)}` /
-  `{@code}` member references written in Javadoc, which jdtls includes.
-- `textDocument/completion` returns nothing inside a `{@link …}` / `{@code …}` tag, where jdtls
-  offers type/member completion.
+Regression targets:
+`ReferenceLocatorTest.javadocLinkMentions_includedForMemberAndType`,
+`HoverTest.hover_javadocLinkTags_resolveReferencedTypeAndMember`.
+
+### Remaining — completion inside `{@link}` / `{@code}` (deferred)
+
+`textDocument/completion` still returns nothing inside a `{@link …}` / `{@code …}` tag, where jdtls
+offers type/member completion. This is the one part that cannot use structured `DocTrees`: an
+in-progress tag in a not-yet-parseable comment needs detecting "the cursor is after `{@link `" from the
+raw comment text — the comment-text parsing deliberately deferred here. A separate, larger slice.
 
 ```bash
-python3 dev/jdtls_diff.py --methods references,documentHighlight,completion <ws>/.../Api.java
+python3 dev/jdtls_diff.py --methods completion <ws>/.../Api.java
 ```
-
-### Root cause
-
-The same Javadoc-attribution gap as EG-003: positions inside Javadoc resolve to a comment node, not
-the referenced element. A `DocTrees`-based two-phase lookup (per EG-003) would feed references,
-highlight, and completion as well as hover.
-
-### Regression targets
-
-None yet.
 
 ---
 

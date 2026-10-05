@@ -139,6 +139,26 @@ cross-module edits plus `RenameFile Greeter.java -> Salutation.java`.
 
 ---
 
+## EG-003 — Hover returns null on positions inside Javadoc type-reference tags — done
+
+**Status: done — Target: next.**
+
+Hover on a type or member inside a Javadoc reference tag (`{@link Foo}`, `{@link #bar()}`, `@see`,
+`@throws`) now resolves the referenced element and renders its signature + doc, instead of returning
+nothing. Implemented via javac's structured `DocTrees`, not by parsing the comment text: a new
+`JavadocReferenceResolver` maps the cursor offset to the `ReferenceTree` and resolves it with
+`DocTrees.getElement`; a shared `elementOrJavadocReference` in `SourceAnalysisSession` feeds hover (and,
+through the same resolver, definition and references).
+
+The sibling features (references / highlight / rename over Javadoc mentions) shipped with EG-050;
+completion inside a tag stays deferred there.
+
+### Regression targets
+
+- `HoverTest.hover_javadocLinkTags_resolveReferencedTypeAndMember`.
+
+---
+
 ## CA-10 — No code action to add a `final` field as a constructor parameter — done
 
 **Status: done — Target: next.**
