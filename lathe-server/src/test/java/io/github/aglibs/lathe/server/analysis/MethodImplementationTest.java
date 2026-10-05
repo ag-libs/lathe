@@ -202,6 +202,42 @@ class MethodImplementationTest {
   }
 
   @Test
+  void methodImplementations_subInterfaces_matchInheritedSamButNotUnrelatedSam()
+      throws IOException {
+    final String content = "interface Transformer { String apply(String input); }\n";
+    final var source = Files.writeString(tempDir.resolve("Transformer.java"), content);
+    final var classDir = tempDir.resolve("classes");
+    TestCompiler.compileToDir(classDir, source);
+    // SubTransformer only inherits the SAM → its lambda (line 6) implements Transformer.apply.
+    // Mixed defaults apply, so its SAM is Other.run → its lambda (line 7) implements run(), not
+    // apply, and must be excluded.
+    final String candidateContent =
+        """
+        interface SubTransformer extends Transformer {}
+        interface Other { void run(); }
+        interface Mixed extends Transformer, Other {
+          default String apply(String s) { return s; }
+        }
+        class Usage {
+          SubTransformer a = s -> s.trim();
+          Mixed b = () -> {};
+        }
+        """;
+    final var candidateUri = tempDir.resolve("Usage.java").toUri().toString();
+
+    final ReferenceTarget target = samTarget(content);
+    try (var candidateSession =
+        new SourceAnalysisSession(new TempSourceCompiler(List.of(classDir)))) {
+      final List<Location> locations =
+          candidateSession.methodImplementations(
+              candidateUri, candidateContent, 1, target, Set.of());
+
+      assertThat(locations.stream().map(l -> l.getRange().getStart().getLine()).toList())
+          .containsExactly(6);
+    }
+  }
+
+  @Test
   void functionalInterfaceName_samVsNonSam_returnsNameOnlyForSam() {
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       final String sam = "interface Transformer { String apply(String input); }\n";

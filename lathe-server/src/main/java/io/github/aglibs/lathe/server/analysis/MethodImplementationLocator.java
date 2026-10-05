@@ -128,14 +128,25 @@ final class MethodImplementationLocator extends TreePathScanner<Void, Void> {
     }
 
     final var converted = analysis.trees().getTypeMirror(getCurrentPath());
-    final var types = analysis.types();
-    if (converted == null
-        || !types.isSameType(types.erasure(converted), types.erasure(functionalInterface))) {
+    if (!(analysis.types().asElement(converted) instanceof final TypeElement convertedType)) {
+      return;
+    }
+
+    // Match when the converted type's single abstract method is (or overrides) the target — so a
+    // lambda typed as the interface itself or as a functional sub-interface that inherits/overrides
+    // the SAM is found, while a sub-interface whose SAM comes from a different parent is not.
+    final var sam = FunctionalInterfaces.singleAbstractMethod(convertedType, analysis.elements());
+    if (sam == null || !implementsTarget(sam, convertedType)) {
       return;
     }
 
     final var start = SourceLocator.range(analysis.trees(), analysis.tree(), node).getStart();
     results.add(new Location(uri, new Range(start, start)));
+  }
+
+  private boolean implementsTarget(final ExecutableElement sam, final TypeElement convertedType) {
+    return sam.equals(targetMethod)
+        || analysis.elements().overrides(sam, targetMethod, convertedType);
   }
 
   private Optional<Location> location(
