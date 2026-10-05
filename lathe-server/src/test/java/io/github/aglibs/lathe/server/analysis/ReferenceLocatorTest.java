@@ -596,6 +596,32 @@ class ReferenceLocatorTest {
         .noneMatch(l -> l.range().getStart().equals(posOf(source, "java.util", "util")));
   }
 
+  @Test
+  void import_nestedType_matchesEnclosingTypeInImportQualifier() throws IOException {
+    final var source =
+        """
+        import java.util.Map;
+        import java.util.Map.Entry;
+        class Test {
+            Map<String, String> m;
+            Entry<String, String> e;
+        }
+        """;
+    final var analysis = compile(source);
+    final var target = targetAt(analysis, "Map<String, String> m", "Map");
+
+    final List<ReferenceMatch> result = refs(analysis, target, false);
+
+    // Renaming Map must rewrite its own import, the enclosing-type qualifier of the nested-type
+    // import `import java.util.Map.Entry`, and the field type — and must not touch `util`.
+    assertThat(result)
+        .extracting(match -> match.range().getStart())
+        .containsExactlyInAnyOrder(
+            posOf(source, "import java.util.Map;", "Map"),
+            posOf(source, "java.util.Map.Entry", "Map"),
+            posOf(source, "Map<String, String> m", "Map"));
+  }
+
   // --- types ---
 
   @Test

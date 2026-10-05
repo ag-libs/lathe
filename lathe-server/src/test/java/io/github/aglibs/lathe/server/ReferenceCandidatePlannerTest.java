@@ -157,6 +157,30 @@ class ReferenceCandidatePlannerTest {
   }
 
   @Test
+  void planCandidates_nestedTypeImportFromOtherPackage_returnsFile() throws IOException {
+    write(
+        "com/example/Outer.java",
+        """
+        package com.example;
+        public interface Outer<T> {
+          interface Inner<A, T> extends Outer<T> {}
+        }
+        """);
+    // Different package, and its only link to Outer is importing the nested type Outer.Inner — the
+    // case that silently escaped candidate discovery and left rename/find-references incomplete.
+    final Path consumer =
+        write(
+            "com/other/Consumer.java",
+            """
+            package com.other;
+            import com.example.Outer.Inner;
+            class Consumer { Inner<String, Integer> field; }
+            """);
+
+    assertThat(plan(type("com.example.Outer", "Outer"))).contains(uri(consumer));
+  }
+
+  @Test
   void planCandidates_noImport_excludesFile() throws IOException {
     write(
         "C.java",

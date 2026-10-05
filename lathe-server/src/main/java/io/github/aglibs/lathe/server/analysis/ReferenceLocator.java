@@ -145,6 +145,20 @@ final class ReferenceLocator extends SourceTreeLocator {
             positions.getStartPosition(cu, qualId), it.getName().length(), ReferenceRole.IMPORT);
       }
     }
+
+    // A nested-type or static-member import spells its enclosing type as the qualifier of the
+    // imported member (`import pkg.Outer.Inner`); match that enclosing type so a reference to it
+    // is found there, not just when it is the imported leaf itself. Resolve the qualifier exactly
+    // (not via SourceLocator's walk-up) so package segments do not over-match the enclosing type.
+    if (qualId instanceof final MemberSelectTree mst
+        && mst.getExpression() instanceof final MemberSelectTree qualifier) {
+      final var qualifierPath = new TreePath(new TreePath(getCurrentPath(), qualId), qualifier);
+      final var qualifierElement = trees.getElement(qualifierPath);
+      if (target.matchesWithOverrides(qualifierElement, types, elements, targetMethod)) {
+        addMatchAtIdentifier(qualifier, qualifier.getIdentifier().toString(), ReferenceRole.IMPORT);
+      }
+    }
+
     return null;
   }
 

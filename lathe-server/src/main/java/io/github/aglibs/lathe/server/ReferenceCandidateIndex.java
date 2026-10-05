@@ -122,11 +122,33 @@ final class ReferenceCandidateIndex {
         imp = imp.replace(" ", "").replace("\t", "").replace("\n", "").replace("\r", "");
         if (!imp.isEmpty()) {
           tokens.add(imp);
+          addEnclosingTypeToken(tokens, imp);
         }
       }
       importIdx = content.indexOf("import ", importIdx + 7);
     }
 
     return Set.copyOf(tokens);
+  }
+
+  // A nested-type or static-member import (`import pkg.Outer.Inner`) also references the enclosing
+  // type `pkg.Outer`, but never spells it on its own — so candidate discovery, which keys on import
+  // spellings, would miss this file when searching for `pkg.Outer`. Index the enclosing spelling
+  // too, gated on the uppercase-type convention so ordinary imports' package prefixes (`java.util`
+  // from `java.util.List`) are not indexed.
+  private static void addEnclosingTypeToken(final Set<String> tokens, final String imp) {
+    if (imp.endsWith(".*")) {
+      return;
+    }
+
+    final int lastDot = imp.lastIndexOf('.');
+    if (lastDot <= 0) {
+      return;
+    }
+
+    final String enclosing = imp.substring(0, lastDot);
+    if (Character.isUpperCase(enclosing.charAt(enclosing.lastIndexOf('.') + 1))) {
+      tokens.add(enclosing);
+    }
   }
 }

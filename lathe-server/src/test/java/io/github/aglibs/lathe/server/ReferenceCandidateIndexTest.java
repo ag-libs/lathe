@@ -122,6 +122,28 @@ class ReferenceCandidateIndexTest {
   }
 
   @Test
+  void update_nestedTypeImport_indexesEnclosingTypeSpelling() throws IOException {
+    final var src = Files.createDirectories(root.resolve("src"));
+    final var file =
+        Files.writeString(
+            src.resolve("A.java"),
+            """
+            import com.example.Outer.Inner;
+            import static com.example.Owner.member;
+            import java.util.List;
+            class A {}""");
+    final var index = ReferenceCandidateIndex.build(List.of(TestCompiler.moduleConfig(root, src)));
+
+    // A search for the enclosing type `com.example.Outer` must discover the file that only imports
+    // its nested type `com.example.Outer.Inner`; likewise the static-import owner
+    // `com.example.Owner`.
+    assertThat(index.candidateUris("com.example.Outer")).containsExactly(uri(file));
+    assertThat(index.candidateUris("com.example.Owner")).containsExactly(uri(file));
+    // The lowercase package prefix of an ordinary import must not be indexed as a type token.
+    assertThat(index.candidateUris("java.util")).isEmpty();
+  }
+
+  @Test
   void build_includesGeneratedSourcesDir_whenPresent() throws IOException {
     final var src = Files.createDirectories(root.resolve("src"));
     Files.writeString(
