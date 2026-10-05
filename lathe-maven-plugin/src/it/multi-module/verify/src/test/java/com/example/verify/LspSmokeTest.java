@@ -21,6 +21,12 @@ import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
 import org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams;
 import org.eclipse.lsp4j.CallHierarchyPrepareParams;
 import org.eclipse.lsp4j.ClientCapabilities;
+import org.eclipse.lsp4j.RenameFile;
+import org.eclipse.lsp4j.RenameParams;
+import org.eclipse.lsp4j.ResourceOperationKind;
+import org.eclipse.lsp4j.WorkspaceClientCapabilities;
+import org.eclipse.lsp4j.WorkspaceEdit;
+import org.eclipse.lsp4j.WorkspaceEditCapabilities;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionParams;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
@@ -105,7 +111,7 @@ class LspSmokeTest {
 
     final var params = new InitializeParams();
     params.setRootUri(ROOT.toUri().toString());
-    params.setCapabilities(new ClientCapabilities());
+    params.setCapabilities(renameCapableClient());
     initResult = server.initialize(params).get(10, SECONDS);
     server.initialized(new InitializedParams());
 
@@ -331,6 +337,42 @@ class LspSmokeTest {
   }
 
   @Test
+  void rename_publicType_editsAcrossModulesAndRenamesDeclaringFile() throws Exception {
+    final Path greeterJava = ROOT.resolve("core/src/main/java/com/example/core/Greeter.java");
+    final String greeterUri = greeterJava.toUri().toString();
+    final String greeterContent = Files.readString(greeterJava);
+    openDoc(greeterUri, greeterContent);
+
+    final var params = new RenameParams();
+    params.setTextDocument(new TextDocumentIdentifier(greeterUri));
+    params.setPosition(findToken(greeterContent, "interface Greeter", "Greeter"));
+    params.setNewName("Salutation");
+
+    final WorkspaceEdit edit =
+        server.getTextDocumentService().rename(params).get(30, SECONDS);
+
+    // A public top-level type rename is a resource operation: documentChanges, not the plain map.
+    assertThat(edit.getDocumentChanges()).isNotNull();
+    final List<String> editedFiles =
+        edit.getDocumentChanges().stream()
+            .filter(org.eclipse.lsp4j.jsonrpc.messages.Either::isLeft)
+            .map(change -> change.getLeft().getTextDocument().getUri())
+            .toList();
+    assertThat(editedFiles)
+        .anyMatch(uri -> uri.contains("core/src/main/java/com/example/core/Greeter.java"))
+        .anyMatch(uri -> uri.contains("app/src/main/java/com/example/app/FormalGreeter.java"));
+
+    final List<RenameFile> renames =
+        edit.getDocumentChanges().stream()
+            .filter(org.eclipse.lsp4j.jsonrpc.messages.Either::isRight)
+            .map(change -> (RenameFile) change.getRight())
+            .toList();
+    assertThat(renames).hasSize(1);
+    assertThat(renames.getFirst().getOldUri()).endsWith("/core/src/main/java/com/example/core/Greeter.java");
+    assertThat(renames.getFirst().getNewUri()).endsWith("/core/src/main/java/com/example/core/Salutation.java");
+  }
+
+  @Test
   void incomingCalls_publicMethod_findsCrossModuleCaller() throws Exception {
     final Path stringUtilsJava =
         ROOT.resolve("core/src/main/java/com/example/core/StringUtils.java");
@@ -480,6 +522,17 @@ class LspSmokeTest {
     params.setTextDocument(new TextDocumentIdentifier(uri));
     params.setText(content);
     server.getTextDocumentService().didSave(params);
+  }
+
+  private static ClientCapabilities renameCapableClient() {
+    final var workspaceEdit = new WorkspaceEditCapabilities();
+    workspaceEdit.setDocumentChanges(true);
+    workspaceEdit.setResourceOperations(List.of(ResourceOperationKind.Rename));
+    final var workspace = new WorkspaceClientCapabilities();
+    workspace.setWorkspaceEdit(workspaceEdit);
+    final var capabilities = new ClientCapabilities();
+    capabilities.setWorkspace(workspace);
+    return capabilities;
   }
 
   private static List<String> symbolNames(final String query) throws Exception {

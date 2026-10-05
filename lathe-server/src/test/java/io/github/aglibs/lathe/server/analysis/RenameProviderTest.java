@@ -9,6 +9,7 @@ import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.RenameFile;
+import org.eclipse.lsp4j.TextEdit;
 import org.junit.jupiter.api.Test;
 
 class RenameProviderTest {
@@ -181,23 +182,10 @@ class RenameProviderTest {
     withSession(
         source,
         session -> {
-          final var target =
-              session.resolveRenameTarget(
-                  requestAt(source, posOf(source, "class Widget", "Widget")));
-          final List<Location> occurrences =
-              session
-                  .searchReferences(TempSourceCompiler.TEST_URI, source, 1, target, true)
-                  .stream()
-                  .map(match -> new Location(match.uri(), match.range()))
-                  .toList();
-          final var edits =
-              RenameProvider.toWorkspaceEdit(occurrences, "Gadget")
-                  .getChanges()
-                  .get(TempSourceCompiler.TEST_URI);
+          final var edits = renameEdits(session, source, "class Widget", "Widget", "Gadget");
 
-          // class decl, two constructor decl names, two field-type uses (make/makeN return), and
-          // two `new Widget(...)` sites — every occurrence rewritten, so no `Widget` token
-          // survives.
+          // class decl (line 1), two constructor decl names (lines 2-3), two field-type uses, and
+          // two `new Widget(...)` sites — every occurrence rewritten.
           assertThat(edits).allMatch(e -> e.getNewText().equals("Gadget"));
           assertThat(edits.stream().map(e -> e.getRange().getStart().getLine()).toList())
               .contains(1, 2, 3);
@@ -232,18 +220,7 @@ class RenameProviderTest {
     withSession(
         source,
         session -> {
-          final var target =
-              session.resolveRenameTarget(requestAt(source, posOf(source, "RED, GREEN", "RED")));
-          final List<Location> occurrences =
-              session
-                  .searchReferences(TempSourceCompiler.TEST_URI, source, 1, target, true)
-                  .stream()
-                  .map(match -> new Location(match.uri(), match.range()))
-                  .toList();
-          final var edits =
-              RenameProvider.toWorkspaceEdit(occurrences, "CRIMSON")
-                  .getChanges()
-                  .get(TempSourceCompiler.TEST_URI);
+          final var edits = renameEdits(session, source, "RED, GREEN", "RED", "CRIMSON");
 
           // declaration, `case RED`, and `return RED`
           assertThat(edits).hasSize(3).allMatch(e -> e.getNewText().equals("CRIMSON"));
@@ -286,19 +263,7 @@ class RenameProviderTest {
     withSession(
         source,
         session -> {
-          final var target =
-              session.resolveRenameTarget(requestAt(source, posOf(source, "int count", "count")));
-          final List<Location> occurrences =
-              session
-                  .searchReferences(TempSourceCompiler.TEST_URI, source, 1, target, true)
-                  .stream()
-                  .map(match -> new Location(match.uri(), match.range()))
-                  .toList();
-          final var edits =
-              RenameProvider.toWorkspaceEdit(occurrences, "total")
-                  .getChanges()
-                  .get(TempSourceCompiler.TEST_URI);
-
+          final var edits = renameEdits(session, source, "int count", "count", "total");
           assertThat(edits).hasSize(3).allMatch(e -> e.getNewText().equals("total"));
         });
   }
@@ -309,6 +274,24 @@ class RenameProviderTest {
       session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
       body.accept(session);
     }
+  }
+
+  // Resolve the rename target at the cursor, search its references, and return the file's edits.
+  private static List<TextEdit> renameEdits(
+      final SourceAnalysisSession session,
+      final String source,
+      final String cursorText,
+      final String cursorToken,
+      final String newName) {
+    final var target =
+        session.resolveRenameTarget(requestAt(source, posOf(source, cursorText, cursorToken)));
+    final List<Location> occurrences =
+        session.searchReferences(TempSourceCompiler.TEST_URI, source, 1, target, true).stream()
+            .map(match -> new Location(match.uri(), match.range()))
+            .toList();
+    return RenameProvider.toWorkspaceEdit(occurrences, newName)
+        .getChanges()
+        .get(TempSourceCompiler.TEST_URI);
   }
 
   private static Range range(final int sl, final int sc, final int el, final int ec) {
