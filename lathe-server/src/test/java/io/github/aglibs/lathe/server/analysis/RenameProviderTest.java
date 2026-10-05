@@ -146,13 +146,49 @@ class RenameProviderTest {
   }
 
   @Test
-  void resolveRenameTarget_enumConstant_isRefused() {
+  void resolveRenameTarget_enumConstant_isRenameable() {
     final var source = "enum Color { RED, GREEN }";
     withSession(
         source,
         session ->
             assertThat(session.resolveRenameTarget(requestAt(source, posOf(source, "RED", "RED"))))
-                .isNull());
+                .isNotNull());
+  }
+
+  @Test
+  void rename_enumConstant_editsDeclarationUseAndCaseLabel() {
+    final var source =
+        """
+        enum Color {
+            RED, GREEN;
+            static String name(Color c) {
+                return switch (c) {
+                    case RED -> "r";
+                    case GREEN -> "g";
+                };
+            }
+            Color self() { return RED; }
+        }
+        """;
+    withSession(
+        source,
+        session -> {
+          final var target =
+              session.resolveRenameTarget(requestAt(source, posOf(source, "RED, GREEN", "RED")));
+          final List<Location> occurrences =
+              session
+                  .searchReferences(TempSourceCompiler.TEST_URI, source, 1, target, true)
+                  .stream()
+                  .map(match -> new Location(match.uri(), match.range()))
+                  .toList();
+          final var edits =
+              RenameProvider.toWorkspaceEdit(occurrences, "CRIMSON")
+                  .getChanges()
+                  .get(TempSourceCompiler.TEST_URI);
+
+          // declaration, `case RED`, and `return RED`
+          assertThat(edits).hasSize(3).allMatch(e -> e.getNewText().equals("CRIMSON"));
+        });
   }
 
   @Test

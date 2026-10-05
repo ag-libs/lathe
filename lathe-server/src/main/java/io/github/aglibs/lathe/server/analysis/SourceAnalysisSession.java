@@ -485,6 +485,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
           BINDING_VARIABLE,
           TYPE_PARAMETER,
           FIELD,
+          ENUM_CONSTANT,
           METHOD,
           RECORD_COMPONENT ->
           true;
