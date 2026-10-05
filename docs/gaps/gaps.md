@@ -220,20 +220,6 @@ None yet — re-triaged from backlog when scheduled.
 docs/planned/lathe-jdtls-differential-testing.md) on a real multi-module reactor. Each is a behaviour
 where jdtls returns a result Lathe does not, or the two disagree substantively. -->
 
-## EG-049 — Rename unsupported for types, enum constants, and constructors
-
-**Status: documented**
-
-### Observed behaviour
-
-`textDocument/prepareRename` reports *not renameable* (and `textDocument/rename` returns zero edits)
-when the cursor is on a type name (class / interface / enum / `@interface` / record), an enum
-constant, or a constructor / type-name position. jdtls renames all of these across the workspace
-(e.g. renaming a public top-level class produces 100+ edits). Renaming **methods, fields, locals,
-parameters** works and — unlike jdtls — covers *more* references, so the gap is specifically the
-declaration kinds above.
-
-```bash
 # Discovered across 6 files of varied kinds (class, enum, interface, annotation, record):
 #   27 positions prepareRename=false / rename=0 in Lathe, all renameable in jdtls.
 python3 dev/jdtls_diff.py --methods prepareRename,rename <ws>/.../Option.java

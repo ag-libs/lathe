@@ -108,6 +108,37 @@ receiver as-is — `CandidateGenerator` already synthesises the array members.
 
 ---
 
+## EG-049 — Rename unsupported for types, enum constants, and constructors — done
+
+**Status: done — Target: next.**
+
+`textDocument/rename` / `prepareRename` now support enum constants, type declarations (class /
+interface / enum / `@interface` / record), and constructors, in addition to the methods, fields,
+locals, and parameters that already worked.
+
+- Enum constants were simply missing from the rename allow-list; the find-references + edit pipeline
+  already handled them (declaration, uses, and `case` labels).
+- Public top-level types rename across the reactor and move the declaring file (`Foo.java` ->
+  `Bar.java`) via a `documentChanges` `RenameFile` resource operation; nested and secondary top-level
+  types rename in place. The move is gated on the client advertising
+  `workspace.workspaceEdit.resourceOperations = rename` — otherwise the rename is refused rather than
+  leaving a public type in a mismatched file.
+- Constructors redirect to their enclosing type, and a type rename now rewrites the constructor
+  declaration names too (`Foo() {}` -> `Bar()`), which the reference search previously missed.
+
+Verified by probe on the multi-module workspace: renaming the public interface `Greeter` produces
+cross-module edits plus `RenameFile Greeter.java -> Salutation.java`.
+
+### Regression targets
+
+- `RenameProviderTest` — enum constant renameable + edits (declaration, use, `case` label); top-level
+  and nested types renameable; a type rename edits the class declaration, both constructor
+  declarations, and `new X(...)` sites; `toWorkspaceEditWithFileRename` emits text edits then a
+  `RenameFile`.
+- Multi-module invoker `LspSmokeTest.rename_publicType_editsAcrossModulesAndRenamesDeclaringFile`.
+
+---
+
 ## CA-10 — No code action to add a `final` field as a constructor parameter — done
 
 **Status: done — Target: next.**
