@@ -62,6 +62,30 @@ class ClassMetadataReaderTest {
   }
 
   @Test
+  void read_argumentPositionLambdaAndMethodRef_capturesFunctionalInterfaceTargets()
+      throws IOException {
+    final var metadata = ClassMetadataReader.read(classFile(ArgumentLambdas.class));
+
+    // ArgumentLambdas never names Transformer in a declaration — only passes lambdas / method refs
+    // to a Transformer-typed parameter — yet the bytecode records the target interface.
+    assertThat(metadata).isPresent();
+    assertThat(metadata.orElseThrow().lambdaTargets())
+        .containsExactly(
+            "io.github.aglibs.lathe.core.typeindex.ClassMetadataReaderTest$Transformer");
+  }
+
+  @Test
+  void read_signatureUseWithoutLambda_hasNoLambdaTargets() throws IOException {
+    // Registrar declares a Transformer-typed parameter (so Transformer is in its pool) but converts
+    // no lambda to it; the invokedynamic-return-type read must not treat the signature use as a
+    // target.
+    final var metadata = ClassMetadataReader.read(classFile(Registrar.class));
+
+    assertThat(metadata).isPresent();
+    assertThat(metadata.orElseThrow().lambdaTargets()).isEmpty();
+  }
+
+  @Test
   void read_invalidMagic_returnsEmpty() throws IOException {
     final var bytes = new byte[] {0, 0, 0, 0};
 
@@ -84,12 +108,18 @@ class ClassMetadataReaderTest {
 
   @Test
   void metadata_invalidValues_throws() {
-    assertThatThrownBy(() -> new ClassMetadata(new ClassAccess(0), " ", List.of(), Set.of()))
+    assertThatThrownBy(
+            () -> new ClassMetadata(new ClassAccess(0), " ", List.of(), Set.of(), Set.of()))
         .hasMessageContaining("binaryName");
-    assertThatThrownBy(() -> new ClassMetadata(new ClassAccess(0), "example.Type", null, Set.of()))
+    assertThatThrownBy(
+            () -> new ClassMetadata(new ClassAccess(0), "example.Type", null, Set.of(), Set.of()))
         .hasMessageContaining("directSupertypes");
-    assertThatThrownBy(() -> new ClassMetadata(new ClassAccess(0), "example.Type", List.of(), null))
+    assertThatThrownBy(
+            () -> new ClassMetadata(new ClassAccess(0), "example.Type", List.of(), null, Set.of()))
         .hasMessageContaining("referencedTypes");
+    assertThatThrownBy(
+            () -> new ClassMetadata(new ClassAccess(0), "example.Type", List.of(), Set.of(), null))
+        .hasMessageContaining("lambdaTargets");
   }
 
   private static InputStream classFile(final Class<?> type) {
@@ -127,6 +157,23 @@ class ClassMetadataReaderTest {
   private interface ParentInterface {}
 
   private interface ChildInterface extends ParentInterface {}
+
+  @FunctionalInterface
+  private interface Transformer {
+    String apply(String value);
+  }
+
+  private static final class Registrar {
+    static void register(final Transformer transformer) {}
+  }
+
+  @SuppressWarnings("unused")
+  private static final class ArgumentLambdas {
+    void go() {
+      Registrar.register(value -> value.trim());
+      Registrar.register(String::toUpperCase);
+    }
+  }
 
   @SuppressWarnings("unused")
   private static final class Constants {

@@ -2799,7 +2799,7 @@ final class WorkspaceSession {
       return ClassFileTypeScanner.scanReactorDirectory(scanRoot);
     } catch (final IOException e) {
       LOG.log(Level.WARNING, e, () -> "[type-index] reactor scan failed: %s".formatted(scanRoot));
-      return new ClassFileTypeScanner.ReactorScan(List.of(), Map.of());
+      return new ClassFileTypeScanner.ReactorScan(List.of(), Map.of(), Map.of());
     }
   }
 

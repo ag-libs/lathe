@@ -8,7 +8,10 @@ record ClassMetadata(
     ClassAccess access,
     String binaryName,
     List<String> directSupertypes,
-    Set<String> referencedTypes) {
+    Set<String> referencedTypes,
+    // Functional-interface binary names this class converts a lambda / method reference to (the
+    // return type of each invokedynamic descriptor); present even when the source never names them.
+    Set<String> lambdaTargets) {
 
   ClassMetadata {
     ValidCheck.check()
@@ -16,8 +19,10 @@ record ClassMetadata(
         .notBlank(binaryName, "binaryName")
         .notNull(directSupertypes, "directSupertypes")
         .notNull(referencedTypes, "referencedTypes")
+        .notNull(lambdaTargets, "lambdaTargets")
         .validate();
     directSupertypes = List.copyOf(directSupertypes);
     referencedTypes = Set.copyOf(referencedTypes);
+    lambdaTargets = Set.copyOf(lambdaTargets);
   }
 }

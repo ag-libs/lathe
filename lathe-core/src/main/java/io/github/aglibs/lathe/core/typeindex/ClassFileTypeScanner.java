@@ -23,15 +23,23 @@ public final class ClassFileTypeScanner {
   private ClassFileTypeScanner() {}
 
   // referenceCounts: how many scanned classes reference each type (document frequency).
-  public record ReactorScan(List<TypeIndexEntry> entries, Map<String, Integer> referenceCounts) {
+  // lambdaImplementors: functional-interface binary name → binary names of classes that convert a
+  // lambda / method reference to it (via invokedynamic), reachable even when the source never names
+  // the interface.
+  public record ReactorScan(
+      List<TypeIndexEntry> entries,
+      Map<String, Integer> referenceCounts,
+      Map<String, List<String>> lambdaImplementors) {
 
     public ReactorScan {
       ValidCheck.check()
           .notNull(entries, "entries")
           .notNull(referenceCounts, "referenceCounts")
+          .notNull(lambdaImplementors, "lambdaImplementors")
           .validate();
       entries = List.copyOf(entries);
       referenceCounts = Map.copyOf(referenceCounts);
+      lambdaImplementors = Map.copyOf(lambdaImplementors);
     }
   }
 
@@ -59,7 +67,19 @@ public final class ClassFileTypeScanner {
         classes.stream()
             .flatMap(metadata -> metadata.referencedTypes().stream())
             .collect(Collectors.groupingBy(name -> name, Collectors.summingInt(name -> 1)));
-    return new ReactorScan(entries, referenceCounts);
+    final Map<String, List<String>> lambdaImplementors =
+        classes.stream()
+            .flatMap(ClassFileTypeScanner::lambdaImplementorEntries)
+            .collect(
+                Collectors.groupingBy(
+                    Map.Entry::getKey,
+                    Collectors.mapping(Map.Entry::getValue, Collectors.toUnmodifiableList())));
+    return new ReactorScan(entries, referenceCounts, lambdaImplementors);
+  }
+
+  private static Stream<Map.Entry<String, String>> lambdaImplementorEntries(
+      final ClassMetadata metadata) {
+    return metadata.lambdaTargets().stream().map(iface -> Map.entry(iface, metadata.binaryName()));
   }
 
   private static List<ClassMetadata> readDirectory(final Path root) throws IOException {
