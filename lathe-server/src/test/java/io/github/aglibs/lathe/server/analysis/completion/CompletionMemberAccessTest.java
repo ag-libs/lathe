@@ -226,6 +226,26 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
     assertThat(labels).anyMatch(l -> l.startsWith("getClass"));
   }
 
+  static Stream<Arguments> arrayReturningReceiverCases() {
+    // A concrete-array return (char[]) previously resolved to the chain's base String type; a
+    // generic-array return (T[]) previously resolved to nothing. Both must offer array members.
+    return Stream.of(
+        Arguments.of("primitiveArrayReturn", "class Test { void m() { \"x\".toCharArray().§ } }"),
+        Arguments.of(
+            "genericArrayReturn",
+            "class Test { void m(Class<Thread.State> t) { t.getEnumConstants().§ } }"));
+  }
+
+  @ParameterizedTest(name = "memberAccess_{0}_offersArrayMembers")
+  @MethodSource("arrayReturningReceiverCases")
+  void memberAccess_methodCallReturningArray_offersArrayMembers(
+      final String scenario, final String source) {
+    // The receiver completes as an array — exactly the length field, clone(), and the inherited
+    // Object methods — not as the chain's base type, so no element-type members leak in.
+    assertThat(labels(fixture.complete(source)))
+        .containsExactlyInAnyOrder("length", "clone", "equals", "getClass", "hashCode", "toString");
+  }
+
   @Test
   void memberAccess_instanceMethod_prefixFiltered() {
     final var items =

@@ -1075,7 +1075,13 @@ final class TypeResolver {
         final TypeMirror raw = snapshot.trees().getTypeMirror(getCurrentPath());
         TypeMirror type = methodInvocationReturnType(node, raw);
         if (type == null) {
-          type = effectiveDeclaredType(raw, snapshot);
+          // getTypeMirror on a method invocation yields its result type directly, so an array-
+          // returning chain (`"x".toCharArray().`) arrives here as an ArrayType. Keep it — dropping
+          // it to null falls through to resolving the chain's base type and offers its members.
+          type =
+              raw != null && raw.getKind() == TypeKind.ARRAY
+                  ? raw
+                  : effectiveDeclaredType(raw, snapshot);
         }
 
         if (type == null) {
