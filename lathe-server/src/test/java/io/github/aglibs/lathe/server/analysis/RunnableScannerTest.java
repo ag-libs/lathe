@@ -275,10 +275,35 @@ class RunnableScannerTest {
     assertThat(scan(source)).isEmpty();
   }
 
+  @Test
+  void runnables_rootModuleBlankModuleRel_returnsTargetsWithBlankModuleRel() {
+    final String source =
+        """
+        package demo;
+
+        class App {
+          public static void main(String[] args) {
+          }
+        }
+        """;
+
+    // "" is the reactor-root module's key (single-module project). The scan must not reject it.
+    final List<RunTarget> targets = scan(source, "");
+
+    assertThat(targets)
+        .extracting(RunTarget::kind)
+        .containsExactly(RunnableKind.MAIN, RunnableKind.MAIN_CLASS);
+    assertThat(targets).extracting(RunTarget::moduleRel).containsOnly("");
+  }
+
   private static List<RunTarget> scan(final String source) {
+    return scan(source, MODULE_REL);
+  }
+
+  private static List<RunTarget> scan(final String source, final String moduleRel) {
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(URI, source, 1, CompileMode.OPEN);
-      return session.runnables(URI, source, 1, MODULE_REL);
+      return session.runnables(URI, source, 1, moduleRel);
     }
   }
 }

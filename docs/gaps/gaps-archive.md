@@ -8880,6 +8880,52 @@ None yet — to be defined when the fix is scheduled.
 
 ---
 
+## TE-6 — Runnable discovery throws on a single-module project (reactor root is the module) — done
+
+**Status: done — Target: next.**
+
+### Observed behaviour
+
+In a single-module Maven project (one POM, no `<modules>` — the reactor root *is* the module),
+requesting runnables for any file with a `main` or `@Test` method fails the whole scan with an
+internal error:
+
+```
+Internal error — ValidationException: 'moduleRel' must not be blank
+  at RunTarget.<init>(RunTarget.java)
+  at RunnableScanner.mainTarget(RunnableScanner.java)
+```
+
+The run/test code-lenses and neotest discovery are therefore dead for every root-is-module project.
+Discovered against the public `jqno/AnnotationScript` repo (user report): `FizzBuzz#main` could not
+be run even though diagnostics, folding, and the derived `main-launch.json` were all correct — the
+file's heavily nested annotations were a red herring.
+
+### Root cause
+
+For the reactor-root module, the compiler params live directly in `.lathe/` (not `.lathe/<submodule>/`),
+so `config.moduleDir()` equals `.lathe` itself and `WorkspaceSession.moduleRel()`
+(`.lathe` ▷ `.lathe`) relativizes to the empty string. Empty is the server's *intended* root-module
+key — `MainLaunchReader` (`.lathe/` + `""` → `.lathe/main-launch.json`) and `configsFor("")` both
+resolve it, consistent with TE-4's empty `workingDir`. The sole over-strict check was `RunTarget`'s
+compact constructor asserting `notBlank(moduleRel)`, which threw on the first target built and aborted
+the entire scan.
+
+### Resolution
+
+`RunTarget` now validates `moduleRel` with `notNull` instead of `notBlank`, so `""` (the root-module
+key) is accepted. No other change was needed: the run-execution path already resolves `""` to the
+workspace root. Verified end-to-end against AnnotationScript — runnables list cleanly and
+`FizzBuzz#main` runs to exit 0 through the Lathe run path.
+
+### Regression targets
+
+`RunnableScannerTest.runnables_rootModuleBlankModuleRel_returnsTargetsWithBlankModuleRel` — scans a
+`main` in a root-is-module layout (`moduleRel == ""`) and asserts the MAIN / MAIN_CLASS targets come
+back carrying `moduleRel == ""` instead of throwing.
+
+---
+
 # Debug (DB) — resolved
 
 ## DB-3 — Object-scoped `evaluate` overload — done

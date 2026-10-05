@@ -18,7 +18,8 @@ public record RunTarget(
         .notNull(parentId, "parentId")
         .notNull(kind, "kind")
         .notBlank(label, "label")
-        .notBlank(moduleRel, "moduleRel")
+        // "" is the reactor-root module's key (params sit directly in .lathe/).
+        .notNull(moduleRel, "moduleRel")
         .notBlank(uri, "uri")
         .notNull(range, "range")
         .validate();
