@@ -15,6 +15,7 @@ import com.sun.source.tree.Tree;
 import com.sun.source.tree.TypeParameterTree;
 import com.sun.source.tree.UnaryTree;
 import com.sun.source.tree.VariableTree;
+import com.sun.source.util.DocTrees;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;
 import java.io.IOException;
@@ -167,6 +168,8 @@ final class ReferenceLocator extends SourceTreeLocator {
         addConstructorDeclarationForTypeTarget(node);
       }
     }
+
+    scanJavadocReferences();
     return super.visitMethod(node, ignored);
   }
 
@@ -190,6 +193,8 @@ final class ReferenceLocator extends SourceTreeLocator {
     if (includeDeclaration && matchedElement() != null) {
       addDeclarationMatch(node, node.getName().toString());
     }
+
+    scanJavadocReferences();
     return super.visitVariable(node, ignored);
   }
 
@@ -201,7 +206,35 @@ final class ReferenceLocator extends SourceTreeLocator {
         addDeclarationMatch(node, name);
       }
     }
+
+    scanJavadocReferences();
     return super.visitClass(node, ignored);
+  }
+
+  // Javadoc reference tags ({@link #bar}, {@see Foo}, @throws) resolve to elements too; include the
+  // ones that point at the target so references / highlight / rename cover a symbol's Javadoc
+  // mentions. Structured DocTrees — the comment text is never parsed.
+  private void scanJavadocReferences() {
+    if (!(trees instanceof final DocTrees docTrees)) {
+      return;
+    }
+
+    JavadocReferences.forEachReference(
+        docTrees,
+        cu,
+        getCurrentPath(),
+        reference -> {
+          if (reference.element() == null || !matchesTarget(reference.element())) {
+            return;
+          }
+
+          final String name = target.simpleName();
+          final long nameStart =
+              SourceLocator.findIdentifierFrom(content, reference.startOffset(), name);
+          if (nameStart >= 0 && nameStart < reference.endOffset()) {
+            addMatch(nameStart, name.length(), roleForElement(reference.element()));
+          }
+        });
   }
 
   private Element matchedElement() {

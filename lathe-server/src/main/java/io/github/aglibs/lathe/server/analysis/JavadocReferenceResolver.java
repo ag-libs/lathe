@@ -1,14 +1,10 @@
 package io.github.aglibs.lathe.server.analysis;
 
 import com.sun.source.doctree.DocCommentTree;
-import com.sun.source.doctree.ReferenceTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.VariableTree;
-import com.sun.source.util.DocSourcePositions;
-import com.sun.source.util.DocTreePath;
-import com.sun.source.util.DocTreePathScanner;
 import com.sun.source.util.DocTrees;
 import com.sun.source.util.TreePathScanner;
 import java.util.concurrent.atomic.AtomicReference;
@@ -31,7 +27,6 @@ final class JavadocReferenceResolver {
     }
 
     final CompilationUnitTree cu = analysis.tree();
-    final DocSourcePositions positions = docTrees.getSourcePositions();
     final var result = new AtomicReference<Element>();
 
     new TreePathScanner<Void, Void>() {
@@ -58,26 +53,18 @@ final class JavadocReferenceResolver {
           return;
         }
 
-        final DocCommentTree doc = docTrees.getDocCommentTree(getCurrentPath());
-        if (doc == null) {
-          return;
-        }
-
-        new DocTreePathScanner<Void, Void>() {
-          @Override
-          public Void visitReference(final ReferenceTree reference, final Void unused) {
-            final long start = positions.getStartPosition(cu, doc, reference);
-            final long end = positions.getEndPosition(cu, doc, reference);
-            if (result.get() == null && start <= offset && offset < end) {
-              final Element element = docTrees.getElement(getCurrentPath());
-              if (element != null) {
-                result.set(element);
+        JavadocReferences.forEachReference(
+            docTrees,
+            cu,
+            getCurrentPath(),
+            reference -> {
+              if (result.get() == null
+                  && reference.element() != null
+                  && reference.startOffset() <= offset
+                  && offset < reference.endOffset()) {
+                result.set(reference.element());
               }
-            }
-
-            return super.visitReference(reference, unused);
-          }
-        }.scan(new DocTreePath(getCurrentPath(), doc), null);
+            });
       }
     }.scan(cu, null);
 

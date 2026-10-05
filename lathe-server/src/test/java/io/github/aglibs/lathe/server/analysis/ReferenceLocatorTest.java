@@ -94,6 +94,30 @@ class ReferenceLocatorTest {
   }
 
   @Test
+  void javadocLinkMentions_includedForMemberAndType() throws IOException {
+    final var source =
+        """
+        class Other {}
+        class Test {
+            void run() {}
+            /** See {@link #run()} and {@link Other}. */
+            void test() { run(); }
+        }
+        """;
+    final var analysis = compile(source);
+
+    // The {@link #run()} mention (line 3) joins the run() call site (line 4).
+    assertThat(refs(analysis, targetAt(analysis, "void run", "run"), false))
+        .extracting(match -> match.range().getStart().getLine())
+        .containsExactlyInAnyOrder(3, 4);
+
+    // The {@link Other} mention is the only reference to Other.
+    assertThat(refs(analysis, targetAt(analysis, "class Other", "Other"), false))
+        .extracting(match -> match.range().getStart().getLine())
+        .containsExactly(3);
+  }
+
+  @Test
   void field_memberSelect_reportsNamePosition() throws IOException {
     final var source =
         """
