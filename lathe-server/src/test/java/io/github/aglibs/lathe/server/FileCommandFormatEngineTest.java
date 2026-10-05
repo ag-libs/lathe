@@ -42,6 +42,18 @@ class FileCommandFormatEngineTest {
   }
 
   @Test
+  void format_scratchFileIsHiddenDotfile_soFileTreesDoNotFlashIt() throws Exception {
+    final Path file = root.resolve("Foo.java");
+    Files.writeString(file, "on disk\n");
+    // The formatter sees %FILE% = the scratch path; echo its basename back so we can inspect it.
+    final var echoName = engine(List.of("sh", "-c", "basename %FILE% > %FILE%"));
+
+    final String scratchName = echoName.format("buffer\n", file).strip();
+
+    assertThat(scratchName).startsWith(".lathe-fmt-").endsWith(".java");
+  }
+
+  @Test
   void format_substitutesModulePath_relativeForSubmoduleDotForRoot() throws Exception {
     Files.writeString(root.resolve("pom.xml"), "<project/>");
     Files.createDirectories(root.resolve("sub"));

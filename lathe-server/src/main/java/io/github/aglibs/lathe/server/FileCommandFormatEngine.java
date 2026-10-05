@@ -17,6 +17,8 @@ import java.util.logging.Logger;
 // stdin/stdout ExternalCommandFormatEngine. Touching the open file on disk would make the editor
 // flicker or flag a write conflict, so it instead formats a throwaway sibling temp file in the same
 // source directory (which still matches Spotless's src/**/*.java includes) and returns its content.
+// The name is a dotfile so file-trees/fuzzy-finders that hide dotfiles (neo-tree, oil, Telescope)
+// do not flash it during a slow in-place build; it still ends in .java, so Spotless formats it.
 // Tokens: %MVN% -> mvnd/mvnw/mvn, %FILE% -> temp path, %MODULE% -> module dir or ".".
 record FileCommandFormatEngine(List<String> command, Path workspaceRoot, Duration timeout)
     implements FormatEngine {
@@ -38,7 +40,7 @@ record FileCommandFormatEngine(List<String> command, Path workspaceRoot, Duratio
   public String format(final String source, final Path file)
       throws IOException, InterruptedException {
     final Path scratch =
-        Files.createTempFile(file.toAbsolutePath().getParent(), "lathe-fmt-", ".java");
+        Files.createTempFile(file.toAbsolutePath().getParent(), ".lathe-fmt-", ".java");
     try {
       Files.writeString(scratch, source, StandardCharsets.UTF_8);
       run(resolve(scratch));
