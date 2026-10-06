@@ -66,6 +66,7 @@ import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.TypeHierarchyItem;
 import org.eclipse.lsp4j.TypeHierarchySubtypesParams;
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
+import org.eclipse.lsp4j.WorkDoneProgressBegin;
 import org.eclipse.lsp4j.WorkDoneProgressCancelParams;
 import org.eclipse.lsp4j.WorkDoneProgressEnd;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
@@ -522,12 +523,13 @@ class LatheTextDocumentServiceTest {
   @Test
   void initialize_sourceUpToDateWithItsClass_doesNotPrompt() throws Exception {
     writeStaleModule(1_000L, 5_000L); // compiled after the source's last edit → fresh
+    service.setWorkDoneProgressSupported(true);
 
     service.initialize(tmp);
 
     verify(client, after(500).never()).showMessageRequest(any());
-    verify(client, never())
-        .showMessage(argThat((MessageParams p) -> p.getMessage().contains("recompiling")));
+    // Nothing is stale, so no in-process recompile progress is reported (only workspace indexing).
+    verify(client, never()).notifyProgress(argThat(LatheTextDocumentServiceTest::isRecompileBegin));
   }
 
   @Test
@@ -595,6 +597,63 @@ class LatheTextDocumentServiceTest {
 
     service.reconcileNow(true).get(5, TimeUnit.SECONDS);
 
+    assertThat(classesDir.resolve("shapes/Square.class")).exists();
+    assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
+        .containsEntry("shapes/Shape.java", 5_000L)
+        .containsEntry("shapes/Square.java", 5_000L);
+  }
+
+  @Test
+  void reconcileNow_openClusterUnderUnrelatedBacklogOverThreshold_stillRecompilesCluster()
+      throws Exception {
+    // Reproduces the cross-module rename failure. A legitimate small change-set -- the rename's
+    // mutually-referencing files, every one of which the editor's WorkspaceEdit opens -- never
+    // reaches the mirror because an unrelated backlog of mtime-stale files keeps the WHOLE
+    // workspace over the bulk threshold, so reconcileChangedSources bails to the sync notice and
+    // never batches the cluster. The cluster is a sealed root and a new permitted subtype, which
+    // deadlock on a piecemeal compile (each needs the other) and resolve only when batched.
+    final Path sourceRoot = tmp.resolve("module/src/main/java");
+    final Path shape = sourceRoot.resolve("shapes/Shape.java");
+    final Path circle = sourceRoot.resolve("shapes/Circle.java");
+    final Path square = sourceRoot.resolve("shapes/Square.java");
+
+    // Mirrored baseline: Shape permits Circle only, both compiled and stamped.
+    TestCompiler.writeAt(shape, "package shapes; sealed interface Shape permits Circle {}", 1_000L);
+    TestCompiler.writeAt(circle, "package shapes; final class Circle implements Shape {}", 1_000L);
+    final Path classesDir = tmp.resolve(".lathe/module/classes");
+    TestCompiler.compileToDir(classesDir, shape, circle);
+    CompiledStamps.writeAll(
+        tmp.resolve(".lathe/module"),
+        "classes",
+        Map.of("shapes/Shape.java", 1_000L, "shapes/Circle.java", 1_000L));
+
+    // An unrelated backlog of 51 unstamped sources -- stale only by mtime, enough on its own to
+    // trip the workspace-wide bulk threshold (> 50) and disable in-process reconcile for
+    // everything.
+    for (int i = 0; i <= 50; i++) {
+      TestCompiler.writeAt(
+          sourceRoot.resolve("backlog/T" + i + ".java"),
+          "package backlog; class T" + i + " {}",
+          5_000L);
+    }
+
+    TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
+    service.initialize(tmp);
+    awaitStartup();
+
+    // The rename lands on disk and the editor opens every touched file: Shape now permits a new
+    // Square, and Square is created.
+    final String shapeSrc = "package shapes; sealed interface Shape permits Circle, Square {}";
+    final String squareSrc = "package shapes; final class Square implements Shape {}";
+    TestCompiler.writeAt(shape, shapeSrc, 5_000L);
+    TestCompiler.writeAt(square, squareSrc, 5_000L);
+    openDoc(shape, shapeSrc);
+    openDoc(square, squareSrc);
+
+    service.reconcileNow(true).get(5, TimeUnit.SECONDS);
+    service.reconcileNow(true).get(5, TimeUnit.SECONDS);
+
+    // The cluster must reach the mirror despite the backlog; the backlog alone stays deferred.
     assertThat(classesDir.resolve("shapes/Square.class")).exists();
     assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
         .containsEntry("shapes/Shape.java", 5_000L)
@@ -698,6 +757,7 @@ class LatheTextDocumentServiceTest {
   void reconcileNow_closedSourceChangedExternally_recompilesInProcessWithoutPrompting()
       throws Exception {
     writeStaleModule(1_000L, 1_000L); // fresh at init → startup eager is a no-op
+    service.setWorkDoneProgressSupported(true);
     service.initialize(tmp);
     awaitStartup();
     touchFoo(5_000L); // now stale
@@ -710,9 +770,9 @@ class LatheTextDocumentServiceTest {
     assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
         .containsEntry("com/example/Foo.java", 5_000L);
     verify(client, never()).showMessageRequest(any());
-    verify(client, timeout(5_000))
-        .showMessage(
-            argThat((MessageParams p) -> p.getMessage().contains("recompiling 1 changed")));
+    // The in-process recompile reports a self-clearing progress task (begin "recompiling" + end).
+    verify(client, timeout(5_000).atLeastOnce())
+        .notifyProgress(argThat(LatheTextDocumentServiceTest::isRecompileBegin));
   }
 
   @Test
@@ -809,6 +869,19 @@ class LatheTextDocumentServiceTest {
         tmp.resolve("module/src/main/java/com/example/Foo.java"),
         "package com.example; class Foo {}",
         mtime);
+  }
+
+  private void openDoc(final Path file, final String content) {
+    service.didOpen(
+        new DidOpenTextDocumentParams(
+            new TextDocumentItem(file.toUri().toString(), "java", 1, content)));
+  }
+
+  // A $/progress "begin" for the in-process recompile (its title carries "recompiling"), as opposed
+  // to the workspace-indexing progress that also fires on initialize.
+  private static boolean isRecompileBegin(final ProgressParams params) {
+    return params.getValue().getLeft() instanceof WorkDoneProgressBegin begin
+        && begin.getTitle().contains("recompiling");
   }
 
   private Path writeWorkspaceSource() throws Exception {

@@ -3223,10 +3223,9 @@ final class WorkspaceSession {
     scanStaleModules();
   }
 
-  // Recompile externally changed sources into the mirror (no Maven); a bulk change defers to the
-  // sync
-  // prompt. eager compiles the stale set now (startup, settled on disk); otherwise a source must
-  // hold
+  // Recompile externally changed sources into the mirror (no Maven); a bulk *untouched* remainder
+  // defers to the sync prompt, while open-and-saved edits always reconcile (see the split below).
+  // eager compiles the stale set now (startup, settled on disk); otherwise a source must hold
   // its mtime across two ticks, so a file mid-write is left to settle.
   // Runs even while a POM-sync prompt is pending: a POM change gates the classpath, but a source
   // edit (a rename) only needs recompiling against the current one — it must not freeze behind it.
@@ -3239,13 +3238,30 @@ final class WorkspaceSession {
       return List.of();
     }
 
-    if (current.size() > BULK_CHANGE_THRESHOLD) {
-      pendingStale = Map.of();
-      noticeBulkChange(scan, current.size());
-      return List.of();
+    // The active edit surface -- open-and-saved files, which a rename's WorkspaceEdit opens for
+    // every file it touches -- is always reconciled in-process: it is bounded by the open-editor
+    // count and resolves its own mutually-referencing cluster in one batch. Only the untouched
+    // remainder is gated by the bulk threshold, so a standing mtime-stale backlog (a build left the
+    // mirror older than the sources) can no longer disable reconcile for a live edit buried under
+    // it. A bulk remainder still defers to the sync prompt.
+    final Set<Path> openPaths = openSourcePaths();
+    final Map<Boolean, Map<Path, Long>> byOpen =
+        current.entrySet().stream()
+            .collect(
+                Collectors.partitioningBy(
+                    entry -> openPaths.contains(entry.getKey()),
+                    Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue)));
+    final Map<Path, Long> externalStale = byOpen.get(false);
+    final boolean externalBulk = externalStale.size() > BULK_CHANGE_THRESHOLD;
+    if (externalBulk) {
+      noticeBulkChange(scan, externalStale.size());
+    } else {
+      bulkNoticeShown = false;
     }
 
-    final Set<Path> ready = eager ? current.keySet() : stableSources(current, pendingStale);
+    final Map<Path, Long> reconcilable = externalBulk ? byOpen.get(true) : current;
+    final Set<Path> ready =
+        eager ? reconcilable.keySet() : stableSources(reconcilable, pendingStale);
     pendingStale = current;
     if (ready.isEmpty()) {
       return List.of();
@@ -3253,23 +3269,24 @@ final class WorkspaceSession {
 
     final List<CompletableFuture<Void>> reactions =
         compileChangedInOrder(scan.staleByModule(), ready);
-    if (!reactions.isEmpty()) {
-      noticeStaleRecompile(ready.size());
-    }
+    reportRecompile(ready.size(), reactions);
 
     return reactions;
   }
 
-  // The in-process counterpart to the sync toast; the bulk path (> threshold) has its own notice.
-  private void noticeStaleRecompile(final int count) {
-    if (count == 0) {
+  // A self-clearing $/progress task spanning the in-process recompile, so the editor shows the
+  // catch-up after a saved external change (a rename) and clears it once the mirror is current.
+  // The bulk remainder keeps its own one-shot notice.
+  private void reportRecompile(final int count, final List<CompletableFuture<Void>> reactions) {
+    if (reactions.isEmpty()) {
       return;
     }
 
     LOG.fine(() -> "[react] recompiling %d changed file(s)".formatted(count));
-    client.showMessage(
-        new MessageParams(
-            MessageType.Info, "Lathe: recompiling %d changed file(s)…".formatted(count)));
+    final var progress = progressReporter.open(null, new CompletableFuture<>());
+    progress.begin("Lathe: recompiling %d file(s)".formatted(count), 1);
+    CompletableFuture.allOf(reactions.toArray(CompletableFuture[]::new))
+        .whenComplete((ignored, error) -> progress.finish(error));
   }
 
   static Map<Path, Long> staleMtimes(final StaleScan scan) {

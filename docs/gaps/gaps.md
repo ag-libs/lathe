@@ -162,22 +162,6 @@ None yet — re-triaged from backlog when scheduled.
 docs/planned/lathe-jdtls-differential-testing.md) on a real multi-module reactor. Each is a behaviour
 where jdtls returns a result Lathe does not, or the two disagree substantively. -->
 
-# Discovered across 6 files of varied kinds (class, enum, interface, annotation, record):
-#   27 positions prepareRename=false / rename=0 in Lathe, all renameable in jdtls.
-python3 dev/jdtls_diff.py --methods prepareRename,rename <ws>/.../Option.java
-```
-
-### Expected behaviour
-
-Offer rename on type declarations (updating the declaring `.java` file name for a public top-level
-type), enum constants, and constructors — the common refactoring targets jdtls supports.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-050 — Javadoc `{@link}` / `{@code}` regions not resolved for references, highlight, completion
 
 **Status: deferred — Target: backlog (references/highlight shipped; completion deferred).**
