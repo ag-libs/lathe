@@ -3228,12 +3228,9 @@ final class WorkspaceSession {
   // prompt. eager compiles the stale set now (startup, settled on disk); otherwise a source must
   // hold
   // its mtime across two ticks, so a file mid-write is left to settle.
+  // Runs even while a POM-sync prompt is pending: a POM change gates the classpath, but a source
+  // edit (a rename) only needs recompiling against the current one — it must not freeze behind it.
   private List<CompletableFuture<Void>> reconcileChangedSources(final boolean eager) {
-    if (pomNotificationPending) {
-      LOG.fine(() -> "[react] skipped — sync prompt pending");
-      return List.of();
-    }
-
     final StaleScan scan = scanStaleModules();
     final Map<Path, Long> current = staleMtimes(scan);
     if (current.isEmpty()) {
@@ -3618,8 +3615,10 @@ final class WorkspaceSession {
         refreshReactorTypeIndex();
         pendingStale = Map.of();
       }
-      case POM_CHANGED ->
-          promptForSync("Maven project changed. Lathe will run a full refresh.", List.of());
+      case POM_CHANGED -> {
+        promptForSync("Maven project changed. Lathe will run a full refresh.", List.of());
+        reconcileIfIdle(false);
+      }
       case NO_CHANGE -> reconcileIfIdle(false);
     }
   }
