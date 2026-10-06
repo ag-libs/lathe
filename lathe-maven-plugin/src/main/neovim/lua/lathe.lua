@@ -448,12 +448,6 @@ function M.setup(opts)
   -- built-in fuzzy picker when Telescope is absent. Suggested mapping: grh.
   require('lathe.typehierarchy').setup()
 
-  -- Rename surface: :LatheRename renames the symbol under the cursor and, unlike the built-in `grn`,
-  -- writes every edited reference file to disk and retires the renamed declaration's old buffer/path
-  -- (Neovim otherwise leaves the edits unsaved and can resurrect the old file as a duplicate).
-  -- Suggested mapping: grn (override the built-in).
-  require('lathe.rename').setup()
-
   -- Resource finder: :LatheResourceFind [name] finds a resource by name across this workspace's
   -- reactor + dependency resources (lathe.resources), tagged by origin. A reactor hit opens its
   -- editable source; a dependency hit is extracted read-only on open. Telescope when installed,
