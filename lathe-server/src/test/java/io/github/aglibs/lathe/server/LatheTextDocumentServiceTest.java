@@ -716,6 +716,26 @@ class LatheTextDocumentServiceTest {
   }
 
   @Test
+  void reconcileNow_compileFails_doesNotAdvanceStamp() throws Exception {
+    writeStaleModule(1_000L, 1_000L);
+    service.initialize(tmp);
+    awaitStartup();
+    // A reference to a missing type: the compile emits no class for Foo.
+    TestCompiler.writeAt(
+        tmp.resolve("module/src/main/java/com/example/Foo.java"),
+        "package com.example; class Foo { Missing field; }",
+        5_000L);
+
+    service.reconcileNow().get(5, TimeUnit.SECONDS);
+    service.reconcileNow().get(5, TimeUnit.SECONDS);
+
+    // A failed compile must not stamp the source fresh: it stays stale so a later batch retries it
+    // once its dependency lands, instead of leaving a stale mirror class marked up to date.
+    assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
+        .containsEntry("com/example/Foo.java", 1_000L);
+  }
+
+  @Test
   void initialize_copiesOnlyStaleResourcesIntoLathe() throws Exception {
     final Path resDir = tmp.resolve("app/src/main/resources");
     TestCompiler.writeAt(resDir.resolve("stale.conf"), "new", 9_000L); // newer than dest → copied

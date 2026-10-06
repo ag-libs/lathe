@@ -191,7 +191,7 @@ class WorkspaceSessionTest {
     writeJava("Fresh", 2_000L); // stamp matches its mtime → up to date, ignored
     writeStamps(Map.of("com/example/Edited.java", 1_000L, "com/example/Fresh.java", 2_000L));
 
-    final var scan = WorkspaceSession.staleModules(List.of(config), Set.of());
+    final var scan = WorkspaceSession.staleModules(List.of(config));
 
     assertThat(scan.newestMtime()).isEqualTo(9_000L);
     assertThat(scan.modules()).containsExactly(config);
@@ -203,7 +203,7 @@ class WorkspaceSessionTest {
     writeJava("Mismatch", 3_000L);
     writeStamps(Map.of("com/example/Mismatch.java", 3_000L));
 
-    final var scan = WorkspaceSession.staleModules(List.of(config), Set.of());
+    final var scan = WorkspaceSession.staleModules(List.of(config));
 
     assertThat(scan.modules()).isEmpty();
   }
@@ -213,17 +213,20 @@ class WorkspaceSessionTest {
     writeJava("Live", 2_000L);
     writeStamps(Map.of("com/example/Live.java", 2_000L, "com/example/Ghost.java", 1_000L));
 
-    final var scan = WorkspaceSession.staleModules(List.of(config), Set.of());
+    final var scan = WorkspaceSession.staleModules(List.of(config));
 
     assertThat(scan.modules()).isEmpty();
   }
 
   @Test
-  void staleModules_ignoresOpenFilesAndGeneratedRoots() throws Exception {
-    final var open = writeJava("Open", 9_000L); // stale (no stamp) but open → the editor owns it
-    writeJava("Real", 5_000L); // stale, and the only source that should count
+  void staleModules_includesOpenFiles_excludesGeneratedRoots() throws Exception {
+    // The reconcile batch recompiles the whole changed set together, so a saved rename's open files
+    // must be included -- an interface rename saves its users, which resolve the new type only if
+    // they compile in the same batch. So the newest-stale mtime here is the open file's.
+    writeJava("Open", 9_000L); // stale and open -> still counted
+    writeJava("Real", 5_000L);
 
-    // A second module whose sole source root IS its annotation-processor output: wholly excluded.
+    // A module whose sole source root IS its annotation-processor output: still wholly excluded.
     final var genRoot = tmp.resolve("gen-module/target/generated-sources/annotations");
     TestCompiler.writeAt(genRoot.resolve("com/example/Gen.java"), "", 8_000L);
     final var genConfig =
@@ -233,9 +236,9 @@ class WorkspaceSessionTest {
             genRoot,
             genRoot);
 
-    final var scan = WorkspaceSession.staleModules(List.of(config, genConfig), Set.of(open));
+    final var scan = WorkspaceSession.staleModules(List.of(config, genConfig));
 
-    assertThat(scan.newestMtime()).isEqualTo(5_000L);
+    assertThat(scan.newestMtime()).isEqualTo(9_000L);
     assertThat(scan.modules()).containsExactly(config);
   }
 

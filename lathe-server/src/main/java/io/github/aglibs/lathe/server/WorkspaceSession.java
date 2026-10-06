@@ -2896,7 +2896,7 @@ final class WorkspaceSession {
   // buffers (which the stale scan excludes), restricted to this module's source roots.
   private List<Path> deltaSourceFiles(final ModuleSourceConfig config) {
     final Set<Path> open = openSourcePaths();
-    return Stream.concat(staleSourcesInModule(config, open).stream(), open.stream())
+    return Stream.concat(staleSourcesInModule(config, open, false).stream(), open.stream())
         .filter(path -> sourceRootFor(config, path) != null)
         .distinct()
         .toList();
@@ -3206,7 +3206,7 @@ final class WorkspaceSession {
   private StaleScan scanStaleModules() {
     final var sw = Stopwatch.start();
     final List<ModuleSourceConfig> configs = workspace.allConfigs();
-    final StaleScan scan = staleModules(configs, openSourcePaths());
+    final StaleScan scan = staleModules(configs);
     cachedStaleModules = moduleRels(scan.modules());
     LOG.fine(
         () ->
@@ -3395,11 +3395,32 @@ final class WorkspaceSession {
                 .formatted(sources.size(), moduleRelForDir(config.moduleDir())));
   }
 
-  // Prune the .class files a compile no longer produces and advance the source's compile stamp.
+  // Only prune + stamp a source whose primary class the compile actually emitted. A source that
+  // failed to compile (an ordering error mid-rename emits no bytecode) keeps its old mirror class
+  // and stays unstamped, so the next batch retries it once its dependencies land -- otherwise the
+  // stamp would mark it fresh while its mirror class is stale and dependents keep seeing the old
+  // type.
   private void freshenClassOutputs(
       final ModuleSourceConfig config, final Path source, final Set<String> writtenBinaryNames) {
+    if (!wrotePrimaryClass(config, source, writtenBinaryNames)) {
+      return;
+    }
+
     deleteStaleClassOutputs(config, source, writtenBinaryNames);
     recordCompileStamp(config, source);
+  }
+
+  private static boolean wrotePrimaryClass(
+      final ModuleSourceConfig config, final Path source, final Set<String> writtenBinaryNames) {
+    final var root = sourceRootFor(config, source);
+    if (root == null) {
+      return true;
+    }
+
+    // No primary type to key on (package-info/module-info or unparseable) -- do not block.
+    return SourceTypeScanner.deriveEntry(root, source)
+        .map(entry -> writtenBinaryNames.contains(entry.binaryName()))
+        .orElse(true);
   }
 
   private static String readSource(final Path source) {
@@ -3507,11 +3528,12 @@ final class WorkspaceSession {
     }
   }
 
-  static StaleScan staleModules(
-      final Collection<ModuleSourceConfig> configs, final Set<Path> openPaths) {
+  // The reconcile batch includes open files (see staleSourcesInModule), so there is no open-set to
+  // exclude here.
+  static StaleScan staleModules(final Collection<ModuleSourceConfig> configs) {
     final Map<ModuleSourceConfig, List<Path>> staleByModule =
         configs.stream()
-            .map(config -> Map.entry(config, staleSourcesInModule(config, openPaths)))
+            .map(config -> Map.entry(config, staleSourcesInModule(config, Set.of(), true)))
             .filter(entry -> !entry.getValue().isEmpty())
             .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue));
     final long newest =
@@ -3523,16 +3545,24 @@ final class WorkspaceSession {
     return new StaleScan(newest, staleByModule);
   }
 
+  // Open files normally stay on the live didChange/onSave path, but the reconcile passes
+  // includeOpen=true: an editor rename saves a set of mutually-referencing open files that must
+  // compile together in one batch (from their saved disk content) to resolve each other, since
+  // piecemeal onSave fails on ordering. The mtime-vs-stamp gate still admits only *saved* open
+  // files, so live-but-unsaved buffers are never pulled in.
   private static List<Path> staleSourcesInModule(
-      final ModuleSourceConfig config, final Set<Path> openPaths) {
+      final ModuleSourceConfig config, final Set<Path> openPaths, final boolean includeOpen) {
     final Map<String, Long> stamps = CompiledStamps.load(config.moduleDir(), config.sourceTree());
     return nonGeneratedSourceRoots(config).stream()
-        .flatMap(root -> staleSourcesUnder(root, openPaths, stamps))
+        .flatMap(root -> staleSourcesUnder(root, openPaths, stamps, includeOpen))
         .toList();
   }
 
   private static Stream<Path> staleSourcesUnder(
-      final Path root, final Set<Path> openPaths, final Map<String, Long> stamps) {
+      final Path root,
+      final Set<Path> openPaths,
+      final Map<String, Long> stamps,
+      final boolean includeOpen) {
     if (!Files.isDirectory(root)) {
       return Stream.empty();
     }
@@ -3540,7 +3570,7 @@ final class WorkspaceSession {
     try (final var walk = Files.walk(root)) {
       return walk
           .filter(FileUtil::isJavaFile)
-          .filter(source -> !openPaths.contains(source))
+          .filter(source -> includeOpen || !openPaths.contains(source))
           .filter(source -> isStale(root, source, stamps))
           .toList()
           .stream();
@@ -3840,7 +3870,7 @@ final class WorkspaceSession {
       }
     }
 
-    for (final var stale : staleSourcesInModule(config, openSourcePaths())) {
+    for (final var stale : staleSourcesInModule(config, openSourcePaths(), false)) {
       final String content = readSource(stale);
       if (content != null) {
         sources.add(new TransientSource(stale.toUri().toString(), content));
