@@ -279,6 +279,36 @@ function M.setup(opts)
   })
   vim.lsp.enable('lathe')
 
+  -- Safety net for vim.lsp.enable's async root_dir gate. Native LSP attaches only when the
+  -- root_dir resolver calls on_dir, and it never retries: if get_root returns nil at FileType
+  -- time (a .lathe/cache buffer before last_root is seeded, or a split that opened a distinct
+  -- buffer for an already-open file) the buffer stays unattached, silently. Re-check on BufEnter
+  -- and attach once a root resolves. Deferred so native enable still owns the normal open; the
+  -- get_clients short-circuit then skips the fs walk, and vim.lsp.start reuses the client already
+  -- running for that root, so a redundant call is a no-op. buftype guard skips artificial/diff
+  -- buffers, which native enable also refuses to attach.
+  vim.api.nvim_create_autocmd('BufEnter', {
+    group = augroup,
+    pattern = '*.java',
+    callback = function(ev)
+      vim.schedule(function()
+        if not vim.api.nvim_buf_is_valid(ev.buf) or vim.bo[ev.buf].buftype ~= '' then
+          return
+        end
+
+        if #vim.lsp.get_clients({ name = 'lathe', bufnr = ev.buf }) > 0 then
+          return
+        end
+
+        if vim.fn.executable(launcher) ~= 1 or not M.get_root(ev.buf) then
+          return
+        end
+
+        M.start(ev.buf)
+      end)
+    end,
+  })
+
   -- Start the server for the current directory without a Java buffer open, so
   -- workspace navigation works from any buffer (e.g. a dashboard). The filetype
   -- auto-start above still covers the normal case of opening a .java file.
