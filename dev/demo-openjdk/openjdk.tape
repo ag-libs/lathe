@@ -8,8 +8,8 @@
 #   Beat 3  break it — live, javac-accurate diagnostics (then undo)
 #   Beat 4  cross-module go-to-definition (java.net.http -> java.base) — the finale
 #
-# Uses an isolated COPY of the sample config examples/nvim (dev/demo-openjdk/.nvim), the published Lathe
-# client+server from ~/.cache/lathe/current (installed by lathe-openjdk-maven-plugin:sync), and an
+# Uses an isolated COPY of the sample config examples/nvim (dev/demo-openjdk/.nvim), the Lathe
+# client+server linked at $LATHE_OPENJDK_DIR/.lathe (installed by lathe-openjdk-maven-plugin:sync), and an
 # already-built + synced OpenJDK checkout at $LATHE_OPENJDK_DIR (see docs/guide/openjdk.md).
 #
 # Leader is '\' (examples/nvim), so workspace-symbol search is '\ws'. A blank `nvim` has no `java`

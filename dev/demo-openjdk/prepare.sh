@@ -9,7 +9,7 @@
 #
 # This script then:
 #   1. verifies $LATHE_OPENJDK_DIR is a built + synced checkout (has .lathe/ and .lathe/java-home);
-#   2. verifies the Lathe server is installed at ~/.cache/lathe/current (the sync installs it);
+#   2. verifies the Lathe server launcher is linked at $LATHE_OPENJDK_DIR/.lathe (the sync creates it);
 #   3. takes an ISOLATED COPY of the sample config examples/nvim (dev/demo-openjdk/.nvim), so the demo
 #      is reproducible from the repo and never leaks anything from your personal ~/.config. Override
 #      the source config with LATHE_DEMO_NVIM_CONFIG.
@@ -24,8 +24,8 @@ src_cfg="${LATHE_DEMO_NVIM_CONFIG:-$repo/examples/nvim}"
   || { echo "[demo] no .lathe/ at $jdk — build + sync the JDK first (docs/guide/openjdk.md)" >&2; exit 1; }
 [ -f "$jdk/.lathe/java-home" ] \
   || { echo "[demo] no .lathe/java-home at $jdk — re-run lathe-openjdk-maven-plugin:sync" >&2; exit 1; }
-[ -x "$HOME/.cache/lathe/current/lathe-launcher.sh" ] \
-  || { echo "[demo] no server at ~/.cache/lathe/current — run lathe-openjdk-maven-plugin:sync" >&2; exit 1; }
+[ -x "$jdk/.lathe/lathe-launcher.sh" ] \
+  || { echo "[demo] no server launcher at $jdk/.lathe — run lathe-openjdk-maven-plugin:sync" >&2; exit 1; }
 
 echo "[demo] copying the sample Neovim config from $src_cfg …"
 [ -d "$src_cfg" ] || { echo "[demo] no config at $src_cfg (set LATHE_DEMO_NVIM_CONFIG)" >&2; exit 1; }

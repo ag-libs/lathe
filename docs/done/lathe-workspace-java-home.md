@@ -16,8 +16,9 @@ server JVM should default to the JDK the build used.
 
 The JDK must be chosen *before* the JVM starts, so the decision belongs to the launcher, not the
 running server (which only learns the workspace from the LSP `rootUri` after start). The launcher is
-shared per server version (`~/.cache/lathe/current/lathe-launcher.sh`) and is deliberately
-workspace-blind — we do not pass it a workspace directory. Instead:
+shared per server version (`~/.cache/lathe/servers/<version>/lathe-launcher.sh`, which each workspace
+links at as `.lathe/lathe-launcher.sh`) and is deliberately workspace-blind — we do not pass it a
+workspace directory. Instead:
 
 - the **build** already resolves the JDK and `lathe:sync` records it in `.lathe/`, and
 - the **client** already computes the workspace root to start the server.

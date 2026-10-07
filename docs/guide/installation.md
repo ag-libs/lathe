@@ -170,6 +170,10 @@ Lathe writes to two locations: `.lathe/` inside the project, and `~/.cache/lathe
   other `javac` inputs the language server needs.
 - `lathe:sync` writes `workspace.json` and each module's derived `main-launch.json`. The write is
   skipped when the content is unchanged, so a no-op build does not trigger a server reload.
+- `lathe:sync` also links `lathe-launcher.sh` and `lathe-mcp-launcher.sh` here — symlinks into the
+  machine cache's `servers/<version>/` for the server version this project pins. These are what every
+  editor client and the MCP agent launch; being version-pinned per workspace, two projects on
+  different Lathe versions each resolve the right server.
 - `lathe:sync` also writes `style.json` (formatter + indent) when the reactor configures
   `spotless-maven-plugin` — `googleJavaFormat` becomes the in-process formatter; any other Spotless
   formatter (eclipse, palantir) is delegated to `mvn spotless:apply` on the edited file (preferring
@@ -183,8 +187,9 @@ Lathe writes to two locations: `.lathe/` inside the project, and `~/.cache/lathe
 
 **On the machine — `~/.cache/lathe/`** (machine-wide, regenerable, override with `-Dlathe.cache=<dir>`):
 
-- `servers/<version>/` — the unpacked language server and its editor client; `current` symlinks the
-  active version.
+- `servers/<version>/` — the unpacked language server for that version, shared across every workspace
+  that pins it. Each project's `.lathe/lathe-launcher.sh` symlinks into the matching version here;
+  there is no machine-global `current` pointer.
 - `deps/` and `jdks/` — dependency and JDK **source** trees. `lathe:sync` resolves each dependency's
   `-sources` JAR through Maven and extracts it here, and extracts the JDK's sources when available;
   these back go-to-definition into library and JDK code. A dependency with no published `-sources` JAR

@@ -128,7 +128,8 @@ reused):
   LSP-response comparison against Eclipse JDT LS; not pursued (gaps tracked via EG-/CQ- + `dev/` probing).
 - [Standalone `lathe.nvim` Plugin](done/lathe-standalone-nvim-plugin.md) — **shipped**; publishes the
   Neovim Lua client as a plugin-manager-installable repo (unlocks dotfyle/awesome-neovim discovery),
-  additive to the zero-plugin cache delivery, via a local no-PAT `publish-nvim.sh` mirror to
+  now the sole client delivery path (the bundled cache path was since removed along with the `current`
+  symlink), via a local no-PAT `publish-nvim.sh` mirror to
   `ag-libs/lathe.nvim`, plus the first-run readiness nudge, double-load detection, and the coarse
   `LATHE_PROTOCOL` handshake (server advertises `capabilities.experimental.latheProtocol`, client
   compares at `on_init`, a drift-guard test keeps the Java constant and `version.lua` in lockstep).

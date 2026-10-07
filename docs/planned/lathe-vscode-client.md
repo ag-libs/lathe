@@ -15,8 +15,9 @@ completion, navigation, and the Lathe-specific run/test/debug/resource features 
 VS Code users install any extension.
 
 This is **additive**. It does not change server delivery: the server stays Maven-resolved and
-version-pinned via the `lathe-maven-extension`, unpacked into `~/.cache/lathe/current` by
-`lathe:sync` exactly as today. Only a new client is added.
+version-pinned via the `lathe-maven-extension`, installed into `~/.cache/lathe/servers/<version>/` and
+linked at each workspace's `.lathe/lathe-launcher.sh` by `lathe:sync` exactly as for the other clients.
+Only a new client is added.
 
 ## Motivation
 
@@ -30,10 +31,10 @@ Code picker can consume the same command"). So this is client work, not server w
 
 - The server exposes the full LSP surface plus ~28 custom `lathe.*` `executeCommand` commands and the
   custom notifications `lathe/sync`, `lathe/testEvent`, `lathe/testFinished`, `lathe/testOutput`.
-- The launcher the client execs is a plain stdio LSP server at
-  `${LATHE_SERVER_DIR:-${LATHE_CACHE:-~/.cache/lathe}/current}/lathe-launcher.sh` — no handshake env
-  required (the launcher just `exec java … "$@"`). Same discovery the Neovim client uses
-  (`lathe.lua:43-49`).
+- The launcher the client execs is a plain stdio LSP server at `<root>/.lathe/lathe-launcher.sh` (or
+  `${LATHE_SERVER_DIR}/lathe-launcher.sh` when that override is set) — no handshake env required (the
+  launcher just `exec java … "$@"`). Same discovery the Neovim client uses (`lathe.lua`
+  `launcher_path`).
 - The workspace root is identified by the `.lathe` directory marker, walked up from the open file
   (`lathe.lua` `ROOT_MARKER`, `get_root`).
 - Semantic tokens (the roadmap's stated VS Code prerequisite) have shipped server-side; a stock
@@ -97,12 +98,12 @@ against VS Code APIs.
 Test Explorer and debug are the two big rocks. AST-aware indentation is the one case that is *harder*
 in VS Code than in Neovim, because it fights VS Code's built-in indentation model.
 
-### 3. Launch model: reuse the cache launcher (DECIDED)
+### 3. Launch model: reuse the workspace launcher (DECIDED)
 
-The extension spawns the existing cache launcher over stdio — the same target the Neovim client uses:
+The extension spawns the existing launcher over stdio — the same target the Neovim client uses:
 
-1. Resolve the launcher: `LATHE_SERVER_DIR` (dev override) → else
-   `${LATHE_CACHE:-~/.cache/lathe}/current` → `/lathe-launcher.sh`.
+1. Resolve the launcher: `LATHE_SERVER_DIR` (dev override) `/lathe-launcher.sh` → else the workspace's
+   own `<root>/.lathe/lathe-launcher.sh`, spawned with cwd = workspace root.
 2. If it is not executable, drive the first-run UX (§7) rather than failing silently.
 3. `ServerOptions = { command: launcher, transport: stdio }`;
    `LanguageClientOptions = { documentSelector: [{ language: 'java' }] }`, `rootUri` = the folder
@@ -284,10 +285,11 @@ and testing splits into three tiers by how much of the stack each needs:
    that returns a canned `initialize` response; assert the client starts, initializes, and registers
    for Java. No real server.
 3. **True E2E (real server + fixture).** Real diagnostics/completion on real Java, needing a **built
-   server** in `~/.cache/lathe/current`, a **`.lathe/`** workspace from `lathe:sync`, and the **cache
-   launcher** — all of which the monorepo already produces via the `multi-module` invoker fixture. A
-   `@vscode/test-electron` run slots in beside `run-specs.sh` in `integration-test`, testing the
-   **working-tree** server before release. CI needs `xvfb` (headless Electron is heavier than nvim).
+   server** in `~/.cache/lathe/servers/<version>/`, a **`.lathe/`** workspace from `lathe:sync`, and
+   the workspace's **`.lathe/lathe-launcher.sh`** — all of which the monorepo already produces via the
+   `multi-module` invoker fixture. A `@vscode/test-electron` run slots in beside `run-specs.sh` in
+   `integration-test`, testing the **working-tree** server before release. CI needs `xvfb` (headless
+   Electron is heavier than nvim).
 
 The working-tree E2E of tier 3 is the reason the client lives in the monorepo (§4). A standalone repo
 could reach tier 3 only via a **published-server bootstrap** (a sample project using the released

@@ -1,5 +1,11 @@
 # Lathe — Standalone `lathe.nvim` Plugin
 
+> **Superseded (distribution):** the "bundled cache" install path described below (unpacking the client
+> into `~/.cache/lathe/current/neovim`) was later removed along with the machine-global `current`
+> symlink. The standalone `ag-libs/lathe.nvim` repo is now the **sole** client delivery path; the
+> server still comes from the Maven build, resolved per workspace via `.lathe/lathe-launcher.sh`. The
+> rest of this doc (protocol handshake, drift guard, publishing) still stands.
+
 > **Status: shipped.** Delivered: the standalone `ag-libs/lathe.nvim` mirror published by the local,
 > no-PAT `publish-nvim.sh`; the three documented install paths; the first-run readiness nudge (§6);
 > double-load detection (§6); the `serverInfo` + `version.lua` `{VERSION, PROTOCOL}` schema (§2); and

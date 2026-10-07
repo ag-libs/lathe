@@ -24,7 +24,7 @@ fail() {
 command -v nvim >/dev/null 2>&1 || fail "nvim not found on PATH"
 [ -d "$fixture/.lathe" ] ||
   fail "fixture not built — run: mvn verify -pl lathe-maven-plugin -am -Dinvoker.test=multi-module -Dsurefire.skip=true"
-[ -x "$cache/current/lathe-launcher.sh" ] || fail "no launcher under $cache/current"
+[ -x "$fixture/.lathe/lathe-launcher.sh" ] || fail "no launcher at $fixture/.lathe — rebuild the fixture"
 
 export LATHE_CACHE="$cache"
 export LATHE_E2E_FIXTURE="$fixture"

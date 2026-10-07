@@ -51,8 +51,10 @@ public final class ServerInstaller {
     this.log = log;
   }
 
-  // Installs the server + MCP launchers for this plugin's version and points `current` at them;
-  // returns the version dir so a caller can layer editor-client bundles on top of it.
+  // Installs the server + MCP launchers for this plugin's version into an immutable,
+  // version-addressed dir shared across workspaces, and returns it so the caller can link each
+  // workspace's .lathe/ at it. There is no machine-global `current` pointer — discovery is
+  // per-workspace (see WorkspaceLauncherLinker).
   public Path install() throws SyncException {
     final String version = PluginProps.version();
     final Path versionDir = LatheLayout.serverVersionDir(version);
@@ -69,7 +71,6 @@ public final class ServerInstaller {
       throw new SyncException("lathe:sync failed to install server files", e);
     }
 
-    updateCurrentLink(versionDir);
     return versionDir;
   }
 
@@ -192,19 +193,6 @@ public final class ServerInstaller {
       throw new SyncException(
           "lathe:sync failed to resolve %s:%s:%s".formatted(groupId, artifactId, version), e);
     }
-  }
-
-  private void updateCurrentLink(final Path versionDir) throws SyncException {
-    final Path currentLink = LatheLayout.currentLink();
-    try {
-      Files.createDirectories(currentLink.getParent());
-      Files.deleteIfExists(currentLink);
-      Files.createSymbolicLink(currentLink, versionDir);
-    } catch (final IOException e) {
-      throw new SyncException("lathe:sync failed to update current server symlink", e);
-    }
-
-    log.debug("[server] current → %s".formatted(versionDir));
   }
 
   static String renderLauncherScript(final String modulePath) {

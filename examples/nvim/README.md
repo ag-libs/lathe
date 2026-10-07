@@ -12,16 +12,17 @@ per-action keymap guide see [docs/guide/editors/neovim.md](../../docs/guide/edit
 
 ## Try it
 
-Requires **Neovim 0.12+**, the Java Treesitter parser (`:TSInstall java`), and Lathe installed in
-your Maven project (`lathe:sync` unpacks the Neovim client to `~/.cache/lathe/current/neovim`, which
-this config loads). To try it in isolation without touching your own config:
+Requires **Neovim 0.12+**, the Java Treesitter parser (`:TSInstall java`), and a Maven project Lathe
+has built (so its `.lathe/lathe-launcher.sh` exists). The config installs the client from the
+standalone `ag-libs/lathe.nvim` repo; set `LATHE_NVIM_DIR` to a working-tree checkout to load that
+instead. To try it in isolation without touching your own config:
 
 ```sh
 XDG_CONFIG_HOME=/path/to/lathe/examples nvim SomeFile.java
 ```
 
-On first launch Neovim bootstraps `lazy.nvim` and downloads the plugins. If Lathe isn't built yet,
-the Lathe and neotest specs are skipped cleanly and the rest still works.
+On first launch Neovim bootstraps `lazy.nvim` and downloads the plugins, including `lathe.nvim`. The
+server still comes from your Maven build; until a project is built, Lathe nudges you to run it.
 
 ## Keymaps
 

@@ -17,15 +17,19 @@ not available this way.
 
    ```jsonc
    {
-     "glspc.server.command": "/home/you/.cache/lathe/current/lathe-launcher.sh",
+     "glspc.server.command": ".lathe/lathe-launcher.sh",
      "glspc.server.commandArguments": [],
      "glspc.server.languageId": ["java"],
      "files.readonlyFromPermissions": true
    }
    ```
 
-   `glspc.server.languageId` is an **array** — `["java"]`, not `"java"`; a bare string silently
-   matches nothing and the server never starts. `files.readonlyFromPermissions` is explained under
+   The launcher is the symlink `lathe:sync` links at `.lathe/`, pinned to the server version this
+   project uses. The bridge launches it with the workspace folder as the working directory, so the
+   project-relative path resolves there — which also means this `settings.json` carries no absolute,
+   per-machine path and is safe to commit. `glspc.server.languageId` is an **array** — `["java"]`, not
+   `"java"`; a bare string silently matches nothing and the server never starts.
+   `files.readonlyFromPermissions` is explained under
    [Read-only dependency sources](#read-only-dependency-sources).
 
 3. Open the **reactor root** (the folder with `.lathe/`) as the VS Code workspace, then open a Java

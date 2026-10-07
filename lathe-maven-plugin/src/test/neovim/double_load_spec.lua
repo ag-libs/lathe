@@ -1,7 +1,8 @@
 -- Verifies double-load detection (lathe.warn_if_double_loaded): a single client copy
--- on runtimepath is silent; two or more copies (e.g. the standalone plugin AND the
--- bundled cache dir) produce exactly one warning naming the paths; and it fires at
--- most once. Stubs nvim_get_runtime_file so no real runtimepath is needed.
+-- on runtimepath is silent; two or more copies (e.g. two plugin-manager installs, or one
+-- alongside a stale copy left in the cache by an older Lathe) produce exactly one warning
+-- naming the paths; and it fires at most once. Stubs nvim_get_runtime_file so no real
+-- runtimepath is needed.
 --
 -- Run via run-specs.sh, or headless:
 --   nvim --headless --clean -u NONE \

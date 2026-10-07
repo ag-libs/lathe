@@ -42,15 +42,18 @@ from typing import Any, Callable
 # ── Config ────────────────────────────────────────────────────────────────────
 
 def _default_launcher() -> str:
-    """Prefer the working-tree SNAPSHOT server so the probe exercises the checkout, not the
-    published release pinned by ~/.cache/lathe/current. A SNAPSHOT launcher exists once the
-    checkout has been installed (mvn install -pl lathe-server -am); it runs the ~/.m2 SNAPSHOT
-    jars, so rebuild before probing. Falls back to `current` when no SNAPSHOT is installed."""
+    """Prefer the working-tree SNAPSHOT server so the probe exercises the checkout, not a
+    published release. A SNAPSHOT launcher exists once the checkout has been installed
+    (mvn install -pl lathe-server -am); it runs the ~/.m2 SNAPSHOT jars, so rebuild before
+    probing. Falls back to the newest installed version when no SNAPSHOT is present."""
     servers = Path.home() / ".cache/lathe/servers"
     snapshots = sorted(servers.glob("*-SNAPSHOT/lathe-launcher.sh"))
     if snapshots:
         return str(snapshots[-1])
-    return str(Path.home() / ".cache/lathe/current/lathe-launcher.sh")
+    installed = sorted(servers.glob("*/lathe-launcher.sh"))
+    if installed:
+        return str(installed[-1])
+    raise SystemExit("no lathe-launcher.sh under %s — install the server first" % servers)
 
 
 LATHE_LAUNCHER = os.environ.get("LATHE_LAUNCHER", _default_launcher())

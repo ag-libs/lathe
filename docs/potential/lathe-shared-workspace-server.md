@@ -583,7 +583,7 @@ Supporting native Windows requires `ServerInstaller` to provide a Windows launch
 
 ### Extension configuration
 
-The extension resolves the launcher from `LATHE_CACHE` or the default `~/.cache/lathe/current` location, matching Neovim.
+The extension resolves the launcher from the workspace's `.lathe/lathe-launcher.sh` (or `LATHE_SERVER_DIR`), matching Neovim.
 If no executable launcher exists, it reports that the user must run `mvn process-test-classes` in the workspace.
 
 Per-root settings are read with that workspace folder as the VS Code configuration scope.

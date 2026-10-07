@@ -59,10 +59,10 @@ if [ -z "${SKIP_BUILD:-}" ] && [ "$workspace" = "$fixture" ]; then
 fi
 
 [ -d "$workspace/.lathe" ] || fail "workspace not built (.lathe missing): $workspace"
-[ -x "$cache/current/lathe-launcher.sh" ] || fail "no launcher under $cache/current (build the fixture first)"
+[ -x "$workspace/.lathe/lathe-launcher.sh" ] || fail "no launcher at $workspace/.lathe (build the fixture first)"
 command -v python3 >/dev/null 2>&1 || fail "python3 not found on PATH"
 
-export LATHE_LAUNCHER="$cache/current/lathe-launcher.sh"
+export LATHE_LAUNCHER="$workspace/.lathe/lathe-launcher.sh"
 
 echo "[debug-e2e] probing test $file:$line (method $method)"
 python3 "$here/debug_probe.py" \

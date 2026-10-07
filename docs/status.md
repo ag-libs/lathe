@@ -21,7 +21,7 @@ The tag-driven release pipeline (CI GPG signing + publish; see [RELEASING.md](..
 | Dependency/JDK source sync | Implemented | Sources are extracted under `~/.cache/lathe/`. |
 | Type-index shards | Implemented | Dependency, JDK, and reactor type candidates are available. |
 | Workspace manifest | Implemented | Server version, source roots, type indexes, and POM fingerprints are recorded. |
-| Server launcher installation | Implemented | Maven installs versioned launchers and updates the `current` symlink. |
+| Server launcher installation | Implemented | Maven installs versioned launchers under `servers/<version>/` and links each workspace's `.lathe/lathe-launcher.sh` (+ MCP) at the pinned version; no machine-global `current` symlink. |
 | POM staleness detection | Implemented | Neovim receives a sync prompt after a POM / project-structure change (or a bulk, branch-switch-scale source change). |
 | In-process workspace sync | Implemented | Sources changed outside the editor (a git pull, branch switch, or agent) are recompiled in-process into the `.lathe/` mirror on the idle tick — the changed files in dependency order, deletions removing their mirrored classes, plus a refresh of open dependents — no Maven round trip. |
 | Server-exit surfacing & manual start | Implemented | Neovim notifies on an unexpected server exit (pointing at the LSP log); `:LatheStart` starts the server for a directory with no Java file open. |

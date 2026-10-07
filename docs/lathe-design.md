@@ -102,7 +102,7 @@ lathe-server
 ```
 
 `lathe:init` does not install server binaries.
-`lathe:sync` installs the server launcher into `~/.cache/lathe/servers/<version>/` and updates the `~/.cache/lathe/current` symlink.
+`lathe:sync` installs the server launcher into `~/.cache/lathe/servers/<version>/` and links each workspace's `.lathe/lathe-launcher.sh` at that version.
 
 ---
 
@@ -1036,21 +1036,26 @@ the roadmap defines scope and the status document defines current behavior.
 
 `lathe:sync` installs the server launcher that matches the Maven plugin version into
 `~/.cache/lathe/servers/<version>/` when the launcher script is missing there (idempotent).
-It then updates `~/.cache/lathe/current` to point at that version.
+It then links each workspace's `.lathe/lathe-launcher.sh` (and `.lathe/lathe-mcp-launcher.sh`) at that
+version directory. The `servers/<version>/` tree is immutable and shared across every workspace that
+pins the same version; there is no machine-global `current` pointer.
 
-Upgrading the Maven plugin and running any build that reaches `process-test-classes` also updates the user-level
-server installation.
+Upgrading the Maven plugin and running any build that reaches `process-test-classes` also updates the
+workspace's launcher symlinks to the new version.
 Old versions are left in place; they are small and can be deleted manually.
 
 Editor integrations stay thin.
 They do not need to understand Maven or resolve Lathe artifacts;
-they launch `~/.cache/lathe/current/lathe-launcher.sh` and let Maven keep that target current.
+they launch the workspace's `.lathe/lathe-launcher.sh`, which `lathe:sync` keeps pointing at the right
+version — so two projects on different Lathe versions each get the server they pin.
 
 ### Server upgrade and restart
 
-`lathe:sync` is the only component that installs server distributions and moves `~/.cache/lathe/current`.
+`lathe:sync` is the only component that installs server distributions and re-links each workspace's
+`.lathe/lathe-launcher.sh`.
 The launcher does not poll for updates and does not run a restart loop.
-It starts exactly one server process using the module path from the `current` distribution at process start.
+It starts exactly one server process using the module path from the version its `.lathe/` symlink
+resolves to at process start.
 
 The running server records its own implementation version.
 The workspace manifest records the server version that wrote it.
@@ -1066,9 +1071,9 @@ The restart policy belongs to the editor integration:
   Users can run `:LspRestart`.
 - **Post-M3 VS Code extension** — listen for a Lathe-specific server-update notification,
   stop the current `LanguageClient`,
-  and start a new one from `~/.cache/lathe/current/lathe-launcher.sh`.
-  The restarted client naturally picks up the new module path because `current` has already been updated by
-  `lathe:sync`.
+  and start a new one from the workspace's `.lathe/lathe-launcher.sh`.
+  The restarted client naturally picks up the new module path because `lathe:sync` has already re-linked
+  that symlink at the new version.
 
 The custom notification payload is intentionally small:
 
@@ -1076,7 +1081,7 @@ The custom notification payload is intentionally small:
 {
   "runningVersion": "0.1.0",
   "workspaceVersion": "0.2.0",
-  "launcher": "/home/user/.cache/lathe/current/lathe-launcher.sh"
+  "launcher": "/home/user/project/.lathe/lathe-launcher.sh"
 }
 ```
 
@@ -1117,7 +1122,11 @@ Launcher JVM options are described in [lathe-launcher-jvm-opts.md](done/lathe-la
 
 ```lua
 vim.lsp.config('lathe', {
-    cmd = { vim.env.HOME .. '/.cache/lathe/current/lathe-launcher.sh' },
+    -- Resolve the launcher from the buffer's own workspace: <root>/.lathe/lathe-launcher.sh.
+    cmd = function(dispatchers, config)
+        return vim.lsp.rpc.start(
+            { config.root_dir .. '/.lathe/lathe-launcher.sh' }, dispatchers, { cwd = config.root_dir })
+    end,
     filetypes = { 'java' },
     root_dir = function(fname)
         return vim.fs.root(fname, '.lathe')
@@ -1127,7 +1136,8 @@ vim.lsp.enable('lathe')
 ```
 
 Static personal configuration — never project-specific, never committed.
-The `current` symlink means this config does not need version-specific edits.
+Resolving the launcher from each workspace's `.lathe/` means this config needs no version-specific
+edits, and every project automatically gets the server version it pins.
 
 For dependency and JDK source files opened from the extracted cache,
 the Neovim integration marks buffers read-only at the editor layer.

@@ -4,9 +4,9 @@
 -- completion, cross-module go-to-definition, and running tests. It is a DEMONSTRATION you can read
 -- and borrow from -- not a config meant to replace your own ~/.config/nvim wholesale.
 --
--- Requires Neovim 0.12+ and the Java Treesitter parser (:TSInstall java). Lathe must be installed
--- (its Neovim client is unpacked to ~/.cache/lathe/current/neovim by `lathe:sync`); the config
--- skips the Lathe/neotest specs cleanly if it isn't there yet.
+-- Requires Neovim 0.12+ and the Java Treesitter parser (:TSInstall java). The client is the
+-- standalone `ag-libs/lathe.nvim` plugin (installed below like any other); the server still comes from
+-- your Maven build (`lathe:sync` links it at each project's `.lathe/lathe-launcher.sh`).
 
 vim.g.mapleader = "\\"
 vim.g.maplocalleader = "\\"
@@ -29,11 +29,10 @@ if not (vim.uv or vim.loop).fs_stat(lazypath) then
 end
 vim.opt.rtp:prepend(lazypath)
 
--- Lathe is a locally installed language server, so it loads from a local directory rather than a
--- GitHub URL. The client is unpacked here by `lathe:sync`; guard on its presence so opening a Java
--- file doesn't error on a machine where Lathe hasn't been built.
-local lathe_dir = vim.fn.expand("~/.cache/lathe/current/neovim")
-local lathe_available = (vim.uv or vim.loop).fs_stat(lathe_dir) ~= nil
+-- Lathe client: the standalone plugin from GitHub. For local development or demo recording, set
+-- LATHE_NVIM_DIR to a working-tree checkout of the client to load that instead of the published repo.
+local lathe_nvim_dir = vim.env.LATHE_NVIM_DIR
+local lathe_source = lathe_nvim_dir and { dir = lathe_nvim_dir } or { "ag-libs/lathe.nvim" }
 
 require("lazy").setup({
   -- Colorscheme. High priority so its highlights exist before lualine themes off them.
@@ -107,11 +106,9 @@ require("lazy").setup({
   },
 
   -- Lathe: the Java language server (code intelligence, formatting, AST-aware indentation).
-  {
-    dir = lathe_dir,
+  vim.tbl_extend("force", lathe_source, {
     ft = "java",
     cmd = "LatheStart",
-    cond = lathe_available,
     config = function()
       require("lathe").setup({
         indent_style = "google",
@@ -122,7 +119,7 @@ require("lazy").setup({
       -- split (reopen with <leader>to). Its own <leader>r group keeps it clear of tests (<leader>t).
       vim.keymap.set("n", "<leader>rr", "<cmd>LatheRun<cr>", { desc = "Run main under cursor" })
     end,
-  },
+  }),
 
   -- Test runner (neotest via Lathe's adapter): gutter signs, run-under-cursor, pass/fail status.
   -- Discovery and execution both go through the running Lathe server -- no separate Maven run.
@@ -130,7 +127,6 @@ require("lazy").setup({
     "nvim-neotest/neotest",
     dependencies = { "nvim-neotest/nvim-nio", "nvim-lua/plenary.nvim" },
     ft = "java",
-    cond = lathe_available,
     config = function()
       local neotest = require("neotest")
       local lathe_adapter = require("lathe.neotest")

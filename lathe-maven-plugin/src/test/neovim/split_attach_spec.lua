@@ -16,9 +16,10 @@ local work = vim.fn.tempname()
 local project = work .. "/project"
 local nomarker = work .. "/nomarker"
 local cache = work .. "/cache"
+vim.fn.mkdir(project .. "/.lathe", "p")
 vim.fn.mkdir(project .. "/src/main/java", "p")
 vim.fn.mkdir(nomarker .. "/src", "p")
-vim.fn.mkdir(cache .. "/current", "p")
+vim.fn.mkdir(cache, "p")
 
 local function write_file(path, contents)
   local f = assert(io.open(path, "w"))
@@ -26,10 +27,9 @@ local function write_file(path, contents)
   f:close()
 end
 
-write_file(project .. "/.lathe", "")
 write_file(project .. "/src/main/java/Foo.java", "class Foo {}\n")
 write_file(nomarker .. "/src/Bar.java", "class Bar {}\n")
-local launcher = cache .. "/current/lathe-launcher.sh"
+local launcher = project .. "/.lathe/lathe-launcher.sh"
 write_file(launcher, "#!/bin/sh\n")
 vim.fn.setfperm(launcher, "rwxr-xr-x")
 

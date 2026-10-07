@@ -20,39 +20,18 @@ Installing the client and building the project are **two independent steps**.
 The **server** is resolved and installed by your Maven build — not by the plugin manager — so you also
 need the build wired up and run at least once (see the [installation guide](../installation.md)); until
 then the client nudges you to do so.
-The **client** installs one of three ways below.
+The **client** is the standalone [`ag-libs/lathe.nvim`](https://github.com/ag-libs/lathe.nvim)
+repository, installed like any other plugin — either way below (don't combine them; Lathe warns if it
+finds the client loaded from more than one place).
 
-Pick **one** — don't combine them (Lathe warns if it finds the client loaded from more than one place):
-
-- **Bundled cache `dir`** — zero separate plugin to manage: a fresh checkout plus one Maven build just
-  works, because `lathe:sync` unpacks the client into `~/.cache/lathe/current/neovim`.
-- **Standalone repo** (`vim.pack` or a plugin manager) — if you prefer plugins to come from a plugin
-  manager and update with `:Lazy update` / `vim.pack.update`.
-
-### Bundled cache directory (no separate plugin)
-
-Point `lazy.nvim`'s `dir` at the Neovim runtime installed by `lathe:sync`:
-
-```lua
-{
-  dir = vim.fn.expand("~/.cache/lathe/current/neovim"),
-  ft = "java",
-  cmd = "LatheStart",
-  event = { "BufReadPre pom.xml", "BufNewFile pom.xml" },
-  config = function()
-    require("lathe").setup()
-  end,
-}
-```
-
-### Standalone repo — built-in package manager (Neovim 0.12+)
+### Built-in package manager (Neovim 0.12+)
 
 ```lua
 vim.pack.add({ "https://github.com/ag-libs/lathe.nvim" })
 require("lathe").setup()
 ```
 
-### Standalone repo — lazy.nvim
+### lazy.nvim
 
 ```lua
 {

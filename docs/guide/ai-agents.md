@@ -24,15 +24,15 @@ launcher (below). If the server reports a missing `.lathe/`, this is the fix.
 
 ## The launcher
 
-There is no separate install. `lathe:sync` generates the launcher during the build above and installs
-it to a stable, version-independent path:
+There is no separate install. `lathe:sync` generates the launcher during the build above and links it
+at a per-project path, pinned to the server version this project uses:
 
 ```
-~/.cache/lathe/current/lathe-mcp-launcher.sh
+.lathe/lathe-mcp-launcher.sh
 ```
 
-(`current` is a symlink Lathe keeps pointing at the installed server version, so the path stays valid
-across upgrades.)
+(It's a symlink into `~/.cache/lathe/servers/<version>/`, re-created by every build, so it always
+matches the project's pinned server and carries no absolute, per-machine path.)
 
 ## Register with Claude Code
 
@@ -40,13 +40,14 @@ From inside your project, point Claude Code at the launcher:
 
 ```bash
 cd your-project
-claude mcp add --transport stdio lathe -- ~/.cache/lathe/current/lathe-mcp-launcher.sh
+claude mcp add --transport stdio lathe -- .lathe/lathe-mcp-launcher.sh
 ```
 
 - **Run it from the project root.** The server finds its reactor by walking up from its working
-  directory to the nearest `.lathe/`, so the client must launch it with the project as its cwd.
+  directory to the nearest `.lathe/`, so the client must launch it with the project as its cwd — which
+  is also what resolves the relative launcher path.
 - **Scope.** The default scope is this project, for you only. Add `--scope project` to write a shared
-  `.mcp.json` you can commit so teammates get the same setup.
+  `.mcp.json` you can commit so teammates get the same setup — the relative path keeps it portable.
 - **Verify** with `claude mcp list`, or run `/mcp` inside a session — you should see `lathe` and its
   tools.
 
@@ -55,8 +56,9 @@ claude mcp add --transport stdio lathe -- ~/.cache/lathe/current/lathe-mcp-launc
 Lathe speaks standard stdio MCP, so any MCP-capable agent (for example OpenAI Codex CLI or Gemini
 CLI) can use it. Two facts are all a client needs:
 
-- the command is `~/.cache/lathe/current/lathe-mcp-launcher.sh`, and
-- it must run with your project as its working directory (that is how Lathe locates the reactor).
+- the command is `.lathe/lathe-mcp-launcher.sh` (relative to the project root), and
+- it must run with your project as its working directory (that is how Lathe locates the reactor, and
+  what resolves the relative launcher path).
 
 Consult that client's own MCP-server configuration docs for the exact config file and syntax. The
 setups below have not been validated against every client, so their own documentation is the

@@ -88,7 +88,14 @@ class McpClient:
 
 def _default_launcher() -> Path:
     cache = os.environ.get("LATHE_CACHE", str(Path.home() / ".cache" / "lathe"))
-    return Path(cache) / "current" / "lathe-mcp-launcher.sh"
+    servers = Path(cache) / "servers"
+    snapshots = sorted(servers.glob("*-SNAPSHOT/lathe-mcp-launcher.sh"))
+    if snapshots:
+        return snapshots[-1]
+    installed = sorted(servers.glob("*/lathe-mcp-launcher.sh"))
+    if installed:
+        return installed[-1]
+    raise SystemExit("no lathe-mcp-launcher.sh under %s — install the server first" % servers)
 
 
 def _print_text(result: dict):

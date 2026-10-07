@@ -130,10 +130,10 @@ and verifies Java Tree-sitter indentation for `module-info.java`.
 It redirects Neovim cache and state writes into a temporary directory.
 
 By default it checks the source runtime under `lathe-maven-plugin/src/main/neovim`.
-To check the runtime installed by `lathe:sync`:
+To check the runtime installed by `lathe:sync` into a workspace, point at that workspace's `.lathe/neovim`:
 
 ```bash
-LATHE_NVIM_RUNTIME="$HOME/.cache/lathe/current/neovim" ./dev/check-nvim.sh
+LATHE_NVIM_RUNTIME="/path/to/workspace/.lathe/neovim" ./dev/check-nvim.sh
 ```
 
 If your Java parser is not under the common `nvim-treesitter` lazy path,

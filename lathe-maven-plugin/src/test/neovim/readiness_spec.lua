@@ -16,7 +16,8 @@ local work = vim.fn.tempname()
 local cache = work .. "/cache"
 local synced = work .. "/synced"
 local bare = work .. "/bare"
-vim.fn.mkdir(cache .. "/current", "p")
+vim.fn.mkdir(cache, "p")
+vim.fn.mkdir(synced .. "/.lathe", "p") -- a resolvable Lathe workspace; `bare` has none
 vim.fn.mkdir(synced .. "/src/main/java", "p")
 vim.fn.mkdir(bare .. "/src/main/java", "p")
 
@@ -25,8 +26,6 @@ local function write_file(path, contents)
   f:write(contents)
   f:close()
 end
-
-write_file(synced .. "/.lathe", "") -- a resolvable Lathe workspace; `bare` has none
 
 vim.env.LATHE_CACHE = cache
 local lathe = require("lathe")

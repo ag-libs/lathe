@@ -27,7 +27,7 @@ fail() {
 command -v nvim >/dev/null 2>&1 || fail "nvim not found on PATH"
 [ -d "$fixture/.lathe" ] ||
   fail "fixture not built — run: mvn verify -pl lathe-maven-plugin -Dinvoker.test=multi-module"
-[ -x "$cache/current/lathe-launcher.sh" ] || fail "no launcher under $cache/current"
+[ -x "$fixture/.lathe/lathe-launcher.sh" ] || fail "no launcher at $fixture/.lathe — rebuild the fixture"
 for plugin in neotest nvim-nio plenary.nvim; do
   [ -d "$plugins/$plugin" ] || fail "missing Neovim plugin: $plugin (looked in $plugins)"
 done

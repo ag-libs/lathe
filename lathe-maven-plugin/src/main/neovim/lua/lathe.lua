@@ -3,14 +3,12 @@
 -- Installation: copy this file (or symlink it) into your Neovim config and call:
 --   require('lathe').setup()
 --
--- The launcher is read from ~/.cache/lathe/current/lathe-launcher.sh, which is
--- written by `mvn process-test-classes` when the Lathe Maven plugin is present.
--- Override the cache location by setting LATHE_CACHE in your environment.
+-- The launcher is read from <root>/.lathe/lathe-launcher.sh, a symlink `mvn process-test-classes`
+-- links at the server version this workspace pins (when the Lathe Maven plugin is present).
 --
--- For local server development, set LATHE_SERVER_DIR to a built server version
--- directory (e.g. ~/.cache/lathe/servers/0.1.0-SNAPSHOT) to run that launcher
--- instead of the installed `current` server, without repointing the shared
--- `current` symlink. Mirrors LATHE_NVIM_DIR for the Lua client.
+-- For local server development, set LATHE_SERVER_DIR to a built server version directory (e.g.
+-- ~/.cache/lathe/servers/0.1.0-SNAPSHOT) to run that launcher instead of the workspace-pinned one,
+-- without rebuilding. Mirrors LATHE_NVIM_DIR for the Lua client.
 --
 -- Options (all optional):
 --   capabilities        LSP capabilities table; defaults to vim.lsp.protocol.make_client_capabilities()
@@ -43,14 +41,19 @@ local function cache_root()
   return vim.fs.normalize(vim.env.LATHE_CACHE or (vim.fn.expand('~') .. '/.cache/lathe'))
 end
 
---- Absolute path to the server launcher script the client execs. Honors the
+--- Absolute path to the server launcher this client execs. Honors the
 --- LATHE_SERVER_DIR dev override (a built server version directory, e.g. a
---- SNAPSHOT under the cache) so a working-tree server can be run without
---- repointing the shared `current` symlink; falls back to the installed
---- `current` server otherwise. Mirrors LATHE_NVIM_DIR for the Lua client.
-local function launcher_path()
-  local dir = vim.env.LATHE_SERVER_DIR or (cache_root() .. '/current')
-  return vim.fs.normalize(dir) .. '/lathe-launcher.sh'
+--- SNAPSHOT under the cache) so a working-tree server can be run without a
+--- build; otherwise resolves the per-workspace launcher that `lathe:sync` links
+--- at <root>/.lathe/, pinned to the server version this project uses. Mirrors
+--- LATHE_NVIM_DIR for the Lua client.
+---@param root string? workspace root; required unless LATHE_SERVER_DIR is set
+local function launcher_path(root)
+  local override = vim.env.LATHE_SERVER_DIR
+  if override then
+    return vim.fs.normalize(override) .. '/lathe-launcher.sh'
+  end
+  return vim.fs.normalize(root) .. '/' .. M.ROOT_MARKER .. '/lathe-launcher.sh'
 end
 
 --- Resolve the workspace root for a buffer, for any code (this plugin's own
@@ -123,21 +126,21 @@ end
 ---@param bufnr integer? defaults to the current buffer
 function M.start(bufnr)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
-  local launcher = launcher_path()
-  if vim.fn.executable(launcher) ~= 1 then
-    vim.notify(
-      'Lathe: launcher not found at ' .. launcher .. '; run mvn process-test-classes.',
-      vim.log.levels.ERROR,
-      { title = 'Lathe' }
-    )
-    return
-  end
-
   local root = M.get_root(bufnr) or vim.fs.root(vim.fn.getcwd(), M.ROOT_MARKER)
   if not root then
     vim.notify(
       'Lathe: no ' .. M.ROOT_MARKER .. ' workspace found from the current directory.',
       vim.log.levels.WARN,
+      { title = 'Lathe' }
+    )
+    return
+  end
+
+  local launcher = launcher_path(root)
+  if vim.fn.executable(launcher) ~= 1 then
+    vim.notify(
+      'Lathe: launcher not found at ' .. launcher .. '; run mvn process-test-classes.',
+      vim.log.levels.ERROR,
       { title = 'Lathe' }
     )
     return
@@ -161,9 +164,8 @@ function M.format(bufnr, opts)
   require('lathe.fold').format(bufnr, opts)
 end
 
--- Nudge for the standalone install's silent failure modes, which the bundled cache
--- path cannot hit: a Java buffer is open but Lathe can't serve it because the client
--- was never configured, or no `.lathe/` workspace exists (the Lathe Maven build isn't
+-- Nudge for the two silent failure modes: a Java buffer is open but Lathe can't serve it because the
+-- client was never configured, or no `.lathe/` workspace exists (the Lathe Maven build isn't
 -- configured, or the project hasn't been synced). Both otherwise fail silently.
 --
 -- Called from ftplugin/java.lua, the one place that runs even when `setup()` was
@@ -189,11 +191,11 @@ function M.warn_if_not_ready(bufnr)
   vim.notify(msg, vim.log.levels.WARN, { title = 'Lathe' })
 end
 
--- Warn when the client is loaded from more than one location -- e.g. the standalone
--- `lathe.nvim` plugin AND the bundled cache `dir`. Both ship the same modules, so
--- require('lathe') silently binds to whichever is first on runtimepath and shadows
--- the rest; an update to one copy is then invisibly overridden by the other. Keyed
--- on the version module (unique to the client). Fires at most once.
+-- Warn when the client is loaded from more than one location -- e.g. two plugin-manager installs, or
+-- a current one alongside a stale copy left in the cache by an older Lathe. Both ship the same
+-- modules, so require('lathe') silently binds to whichever is first on runtimepath and shadows the
+-- rest; an update to one copy is then invisibly overridden by the other. Keyed on the version module
+-- (unique to the client). Fires at most once.
 local double_load_notified = false
 function M.warn_if_double_loaded()
   if double_load_notified then
@@ -220,8 +222,7 @@ end
 -- "these two can't talk" without nagging on every benign version difference. The server version is
 -- pinned by the `lathe-maven-extension` in the build, so an older/absent server means that pin must
 -- be bumped (re-running the sync alone reinstalls the same version); a newer server means the client
--- must be updated. Called from on_init, so it runs once per server (re)start; the bundled cache path
--- always matches and stays silent.
+-- must be updated. Called from on_init, so it runs once per server (re)start.
 function M.check_protocol(server_protocol)
   local client_protocol = require('lathe.version').PROTOCOL
   if server_protocol == client_protocol then
@@ -246,17 +247,21 @@ function M.setup(opts)
   not_ready_notified = false
   M.warn_if_double_loaded()
   local root = cache_root()
-  local launcher = launcher_path()
 
   require('lathe.indent').setup({ indent = opts.style and opts.style.indent })
 
   local augroup = vim.api.nvim_create_augroup('LathePlugin', { clear = true })
 
   vim.lsp.config('lathe', {
-    -- A function cmd is the only hook that sees the per-buffer root_dir: spawn with cwd = root so the
-    -- launcher reads `.lathe/java-home` relative to it. Covers both auto-start and M.start.
+    -- A function cmd is the only hook that sees the per-buffer root_dir: resolve that workspace's
+    -- launcher (<root>/.lathe/) and spawn with cwd = root so it reads `.lathe/java-home` relative to
+    -- it. Covers both auto-start and M.start.
     cmd = function(dispatchers, config)
-      return vim.lsp.rpc.start({ launcher }, dispatchers, { cwd = config.root_dir })
+      return vim.lsp.rpc.start(
+        { launcher_path(config.root_dir) },
+        dispatchers,
+        { cwd = config.root_dir }
+      )
     end,
     filetypes = { 'java' },
     single_file_support = false,
@@ -268,7 +273,7 @@ function M.setup(opts)
     end,
     root_dir = function(bufnr, on_dir)
       local r = M.get_root(bufnr)
-      if r and vim.fn.executable(launcher) == 1 then
+      if r and vim.fn.executable(launcher_path(r)) == 1 then
         on_dir(r)
       end
     end,
@@ -300,7 +305,8 @@ function M.setup(opts)
           return
         end
 
-        if vim.fn.executable(launcher) ~= 1 or not M.get_root(ev.buf) then
+        local r = M.get_root(ev.buf)
+        if not r or vim.fn.executable(launcher_path(r)) ~= 1 then
           return
         end
 

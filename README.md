@@ -213,12 +213,12 @@ Lathe.
 > (`-Dmaven.build.cache.enabled=false`) — a cache hit skips compilation, so Lathe would not see the real
 > build and its captured configuration would go stale.
 
-**3. Add the Neovim client.** The build unpacks it into `~/.cache/lathe/current/neovim`; point your
-plugin manager at that directory. With `lazy.nvim`:
+**3. Add the Neovim client.** It's the standalone [`ag-libs/lathe.nvim`](https://github.com/ag-libs/lathe.nvim)
+plugin — install it like any other. With `lazy.nvim`:
 
 ```lua
 {
-  dir = vim.fn.expand("~/.cache/lathe/current/neovim"),  -- installed by the Lathe build
+  "ag-libs/lathe.nvim",
   ft = "java",
   cmd = "LatheStart",                             -- also start it from a non-Java buffer
   dependencies = { "mfussenegger/nvim-dap" },     -- optional: enables :LatheDebug

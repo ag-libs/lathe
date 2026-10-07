@@ -14,9 +14,9 @@ local work = vim.fn.tempname()
 local project = work .. "/project"
 local nomarker = work .. "/nomarker"
 local cache = work .. "/cache"
-vim.fn.mkdir(project, "p")
+vim.fn.mkdir(project .. "/.lathe", "p")
 vim.fn.mkdir(nomarker, "p")
-vim.fn.mkdir(cache .. "/current", "p")
+vim.fn.mkdir(cache, "p")
 
 local function write_file(path, contents)
   local f = assert(io.open(path, "w"))
@@ -24,8 +24,9 @@ local function write_file(path, contents)
   f:close()
 end
 
-write_file(project .. "/.lathe", "")
-local launcher = cache .. "/current/lathe-launcher.sh"
+-- The launcher is the per-workspace symlink `lathe:sync` links at <root>/.lathe/, pinned to the
+-- server version this project uses. Here a plain executable stub stands in for it.
+local launcher = project .. "/.lathe/lathe-launcher.sh"
 write_file(launcher, "#!/bin/sh\n")
 vim.fn.setfperm(launcher, "rwxr-xr-x")
 
@@ -45,16 +46,16 @@ local function spawn_launcher(root)
   return rpc_args
 end
 
--- Default: the launcher resolves under the cache's `current` server dir, spawned with cwd = root.
+-- Default: the launcher resolves under the workspace's own .lathe/, spawned with cwd = root.
 spec.check(
-  "launcher: default resolves under the cache current dir",
+  "launcher: default resolves under the workspace .lathe dir",
   spawn_launcher(project).cmd[1],
-  vim.fs.normalize(cache .. "/current") .. "/lathe-launcher.sh"
+  vim.fs.normalize(project) .. "/.lathe/lathe-launcher.sh"
 )
 spec.check("launcher: server cwd is the workspace root", rpc_args.params.cwd, project)
 
 -- LATHE_SERVER_DIR overrides the launcher location for local server development,
--- without repointing the shared `current` symlink.
+-- without rebuilding the workspace symlink.
 local override = work .. "/override"
 vim.fn.mkdir(override, "p")
 local override_launcher = override .. "/lathe-launcher.sh"
@@ -63,7 +64,7 @@ vim.fn.setfperm(override_launcher, "rwxr-xr-x")
 vim.env.LATHE_SERVER_DIR = override
 lathe.setup({})
 spec.check(
-  "launcher: LATHE_SERVER_DIR overrides the cache current dir",
+  "launcher: LATHE_SERVER_DIR overrides the workspace .lathe dir",
   spawn_launcher(project).cmd[1],
   vim.fs.normalize(override) .. "/lathe-launcher.sh"
 )

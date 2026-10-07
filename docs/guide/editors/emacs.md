@@ -8,12 +8,16 @@ Emacs 29). So you get Lathe's build-derived intelligence in a **vanilla `emacs -
 
 ## Setup
 
-One line in `init.el` points Eglot at Lathe's launcher for Java files:
+One line in `init.el` points Eglot at Lathe's per-workspace launcher for Java files:
 
 ```elisp
 (add-to-list 'eglot-server-programs
-             '(java-mode "~/.cache/lathe/current/lathe-launcher.sh"))
+             '(java-mode ".lathe/lathe-launcher.sh"))
 ```
+
+The launcher is the symlink `lathe:sync` links at `<root>/.lathe/`, pinned to the server version this
+project uses. Eglot starts the server with the project root as its working directory, so the relative
+path resolves there (and the launcher finds `.lathe/java-home` relative to it).
 
 Open a Java file in a Maven project Lathe has synced (any `mvn` build populates `.lathe/`), then
 `M-x eglot` — or add `eglot-ensure` to `java-mode-hook` to connect automatically. Eglot picks the

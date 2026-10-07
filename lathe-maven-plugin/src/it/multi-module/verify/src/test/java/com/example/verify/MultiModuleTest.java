@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class MultiModuleTest {
@@ -46,17 +47,13 @@ class MultiModuleTest {
   }
 
   @Test
-  void sync_currentSymlink_created() {
-    assertThat(LATHE_CACHE.resolve("current")).isSymbolicLink();
-  }
-
-  @Test
-  void sync_neovimRuntime_extracted() {
-    final var neovim = LATHE_CACHE.resolve("current").resolve("neovim");
-    assertThat(neovim.resolve("lua/lathe.lua")).exists();
-    assertThat(neovim.resolve("lua/lathe/indent.lua")).exists();
-    assertThat(neovim.resolve("ftplugin/java.lua")).exists();
-    assertThat(neovim.resolve("after/indent/java.lua")).exists();
+  void sync_workspaceLauncherSymlinks_linkedToVersionDir() throws IOException {
+    final var versionDir = LATHE_CACHE.resolve("servers").resolve(LATHE_VERSION);
+    for (final var script : List.of("lathe-launcher.sh", "lathe-mcp-launcher.sh")) {
+      final var link = lathe(script);
+      assertThat(link).isSymbolicLink().exists().isExecutable();
+      assertThat(Files.readSymbolicLink(link)).isEqualTo(versionDir.resolve(script));
+    }
   }
 
   @Test

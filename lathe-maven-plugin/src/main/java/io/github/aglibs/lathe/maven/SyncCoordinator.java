@@ -4,6 +4,7 @@ import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.install.PluginProps;
 import io.github.aglibs.lathe.install.ServerInstaller;
 import io.github.aglibs.lathe.install.SyncException;
+import io.github.aglibs.lathe.install.WorkspaceLauncherLinker;
 import io.github.aglibs.lathe.maven.dependency.DependencySource;
 import io.github.aglibs.lathe.maven.dependency.DependencySourceResolver;
 import io.github.aglibs.lathe.maven.dependency.DependencySourceSync;
@@ -65,7 +66,7 @@ final class SyncCoordinator {
     final var serverInstaller =
         new ServerInstaller(repositorySystem, session.getRepositorySession(), remoteRepos, log);
     final Path versionDir = serverInstaller.install();
-    new NeovimInstaller(log).install(versionDir);
+    new WorkspaceLauncherLinker(log).link(workspaceRoot, versionDir);
     final var mainLaunchWriter =
         new MainLaunchWriter(
             new LocationManager(), ReactorProjects.reactorOutputDirs(projects), log);

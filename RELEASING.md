@@ -62,12 +62,10 @@ tag is out — see [The Neovim client mirror](#the-neovim-client-mirror).
 
 ## The Neovim client mirror
 
-The Neovim client lives in the monorepo (`lathe-maven-plugin/src/main/neovim`) and ships two ways:
-
-- **Bundled** in the `lathe-maven-plugin` jar and unpacked to `~/.cache/lathe/current/neovim` by
-  `lathe:sync` — the zero-plugin cache path, delivered automatically by the Maven release above.
-- **Standalone**, as `github.com/ag-libs/lathe.nvim`, so it is installable by any plugin manager or
-  Neovim 0.12+'s `vim.pack`, and discoverable on dotfyle / awesome-neovim.
+The Neovim client lives in the monorepo (`lathe-maven-plugin/src/main/neovim`) and ships as a
+**standalone** repository, `github.com/ag-libs/lathe.nvim`, so it is installable by any plugin manager
+or Neovim 0.12+'s `vim.pack`, and discoverable on dotfyle / awesome-neovim. (The Maven build no longer
+bundles the client into the cache; the build produces only the server.)
 
 `ag-libs/lathe.nvim` is a **generated, one-way mirror** — never edit it directly; issues and PRs go to
 the monorepo. `publish-nvim.sh` publishes it entirely locally (no CI secret or PAT, mirroring

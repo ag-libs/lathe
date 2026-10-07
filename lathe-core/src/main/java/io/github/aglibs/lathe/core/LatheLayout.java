@@ -14,12 +14,8 @@ public final class LatheLayout {
   public static final String MCP_LOG_PREFIX = "mcp-";
   public static final String LOG_SUFFIX = ".log";
   public static final String SERVERS_DIR = "servers";
-  public static final String CURRENT_LINK = "current";
   public static final String LAUNCHER_SCRIPT = "lathe-launcher.sh";
   public static final String MCP_LAUNCHER_SCRIPT = "lathe-mcp-launcher.sh";
-  public static final String NVIM_DIR = "neovim";
-  public static final String NVIM_BUNDLE = "lathe-neovim.zip";
-  public static final String NVIM_MARKER = ".lathe-neovim.properties";
   public static final String SCHEMA_VERSION = "4";
   public static final String WORKSPACE_JSON = "workspace.json";
   public static final String JAVA_HOME_FILE = "java-home";
@@ -100,10 +96,6 @@ public final class LatheLayout {
 
   public static Path serverVersionDir(final String version) {
     return userCacheRoot().resolve(SERVERS_DIR).resolve(version);
-  }
-
-  public static Path currentLink() {
-    return userCacheRoot().resolve(CURRENT_LINK);
   }
 
   public static Path logsDir() {
