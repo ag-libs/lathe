@@ -2,7 +2,11 @@ package io.github.aglibs.lathe.install;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class ServerInstallerTest {
 
@@ -10,6 +14,22 @@ class ServerInstallerTest {
   void renderLaunchers_resolveJdkThenExpandJvmOptsBeforeFixedArgs() {
     assertLaunchContract(ServerInstaller.renderLauncherScript("/abs/module-path"));
     assertLaunchContract(ServerInstaller.renderMcpLauncherScript("/abs/classpath.jar"));
+  }
+
+  @Test
+  void newestVersionDir_releaseBeatsOlderSnapshot_picksHighestVersion(@TempDir final Path servers)
+      throws IOException {
+    Files.createDirectories(servers.resolve("0.1.9"));
+    Files.createDirectories(servers.resolve("0.1.16-SNAPSHOT"));
+    Files.createDirectories(servers.resolve("0.1.15"));
+    Files.createDirectories(servers.resolve("0.1.16"));
+
+    assertThat(ServerInstaller.newestVersionDir(servers)).isEqualTo(servers.resolve("0.1.16"));
+  }
+
+  @Test
+  void newestVersionDir_missingServersDir_returnsNull(@TempDir final Path root) {
+    assertThat(ServerInstaller.newestVersionDir(root.resolve("absent"))).isNull();
   }
 
   // Both launchers resolve the JDK (LATHE_JAVA_HOME, else .lathe/java-home, else PATH java) and

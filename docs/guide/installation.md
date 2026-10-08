@@ -189,7 +189,10 @@ Lathe writes to two locations: `.lathe/` inside the project, and `~/.cache/lathe
 
 - `servers/<version>/` — the unpacked language server for that version, shared across every workspace
   that pins it. Each project's `.lathe/lathe-launcher.sh` symlinks into the matching version here;
-  there is no machine-global `current` pointer.
+  version-correct discovery is per-workspace, not through any machine-global pointer.
+- `latest` — a symlink at the newest installed server version. Not used by version-correct clients;
+  it exists only for a user-global MCP registration that has no project context (see
+  [ai-agents.md](ai-agents.md)).
 - `deps/` and `jdks/` — dependency and JDK **source** trees. `lathe:sync` resolves each dependency's
   `-sources` JAR through Maven and extracts it here, and extracts the JDK's sources when available;
   these back go-to-definition into library and JDK code. A dependency with no published `-sources` JAR

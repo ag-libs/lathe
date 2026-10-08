@@ -240,8 +240,10 @@ Never needs to be gitignored.
 ~/.cache/lathe/
 ├── servers/                              ← server launchers installed by lathe:sync
 │   └── 0.1.0/
-│       └── lathe-launcher.sh            ← generated; --module-path points at absolute .m2 paths
-├── current -> servers/0.1.0/
+│       ├── lathe-launcher.sh            ← generated; --module-path points at absolute .m2 paths
+│       └── lathe-mcp-launcher.sh        ← classpath launcher for the MCP server
+├── latest -> servers/0.1.0/             ← newest installed; for a user-global MCP registration only
+│                                           (version-correct clients use <project>/.lathe/lathe-launcher.sh)
 ├── jdks/                                ← JDK sources extracted by lathe:sync
 │   └── Eclipse-Adoptium/
 │       └── 21.0.7/
@@ -1038,7 +1040,10 @@ the roadmap defines scope and the status document defines current behavior.
 `~/.cache/lathe/servers/<version>/` when the launcher script is missing there (idempotent).
 It then links each workspace's `.lathe/lathe-launcher.sh` (and `.lathe/lathe-mcp-launcher.sh`) at that
 version directory. The `servers/<version>/` tree is immutable and shared across every workspace that
-pins the same version; there is no machine-global `current` pointer.
+pins the same version; version-correct discovery is per-workspace, not through any machine-global
+pointer. The one exception is `~/.cache/lathe/latest`, a best-effort symlink at the newest installed
+version for a user-global MCP registration that has no project context; sync also deletes a leftover
+`current` symlink so an un-upgraded client fails loudly instead of silently running a stale server.
 
 Upgrading the Maven plugin and running any build that reaches `process-test-classes` also updates the
 workspace's launcher symlinks to the new version.

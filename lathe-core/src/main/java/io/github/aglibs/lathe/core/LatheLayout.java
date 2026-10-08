@@ -14,6 +14,16 @@ public final class LatheLayout {
   public static final String MCP_LOG_PREFIX = "mcp-";
   public static final String LOG_SUFFIX = ".log";
   public static final String SERVERS_DIR = "servers";
+
+  // Best-effort machine-global pointer at the newest installed server, for the one consumer with no
+  // workspace context: a user-global MCP registration. Version-correct clients use the
+  // per-workspace
+  // launcher instead.
+  public static final String LATEST_LINK = "latest";
+
+  // Removed discovery pointer; kept only so sync can delete a leftover `current` and make an
+  // un-upgraded client fail loudly instead of silently running a stale server.
+  public static final String LEGACY_CURRENT_LINK = "current";
   public static final String LAUNCHER_SCRIPT = "lathe-launcher.sh";
   public static final String MCP_LAUNCHER_SCRIPT = "lathe-mcp-launcher.sh";
   public static final String SCHEMA_VERSION = "4";
@@ -96,6 +106,18 @@ public final class LatheLayout {
 
   public static Path serverVersionDir(final String version) {
     return userCacheRoot().resolve(SERVERS_DIR).resolve(version);
+  }
+
+  public static Path serversDir() {
+    return userCacheRoot().resolve(SERVERS_DIR);
+  }
+
+  public static Path latestLink() {
+    return userCacheRoot().resolve(LATEST_LINK);
+  }
+
+  public static Path legacyCurrentLink() {
+    return userCacheRoot().resolve(LEGACY_CURRENT_LINK);
   }
 
   public static Path logsDir() {

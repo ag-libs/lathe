@@ -107,6 +107,18 @@ public final class FileUtil {
     }
   }
 
+  // Points link at target as a symlink, replacing any existing one; returns false if it already
+  // pointed there so callers can skip logging.
+  public static boolean linkSymbolic(final Path link, final Path target) throws IOException {
+    if (Files.isSymbolicLink(link) && target.equals(Files.readSymbolicLink(link))) {
+      return false;
+    }
+
+    Files.deleteIfExists(link);
+    Files.createSymbolicLink(link, target);
+    return true;
+  }
+
   public static void moveReplacing(final Path src, final Path dest) throws IOException {
     try {
       Files.move(src, dest, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);

@@ -7,10 +7,12 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import org.apache.maven.artifact.Artifact;
+import org.apache.maven.artifact.versioning.ComparableVersion;
 import org.apache.maven.plugin.logging.Log;
 import org.eclipse.aether.RepositorySystem;
 import org.eclipse.aether.RepositorySystemSession;
@@ -53,8 +55,8 @@ public final class ServerInstaller {
 
   // Installs the server + MCP launchers for this plugin's version into an immutable,
   // version-addressed dir shared across workspaces, and returns it so the caller can link each
-  // workspace's .lathe/ at it. There is no machine-global `current` pointer — discovery is
-  // per-workspace (see WorkspaceLauncherLinker).
+  // workspace's .lathe/ at it. Version-correct discovery is per-workspace (see
+  // WorkspaceLauncherLinker); `latest` is only the best-effort pointer for user-global MCP.
   public Path install() throws SyncException {
     final String version = PluginProps.version();
     final Path versionDir = LatheLayout.serverVersionDir(version);
@@ -71,7 +73,55 @@ public final class ServerInstaller {
       throw new SyncException("lathe:sync failed to install server files", e);
     }
 
+    updateLatestLink();
+    removeLegacyCurrentLink();
     return versionDir;
+  }
+
+  // Repoints the machine-global `latest` symlink at the newest installed version. By newest version
+  // (not last synced) so syncing an older repo cannot drag it backward.
+  private void updateLatestLink() {
+    final Path newest = newestVersionDir(LatheLayout.serversDir());
+    if (newest == null) {
+      return;
+    }
+
+    try {
+      if (FileUtil.linkSymbolic(LatheLayout.latestLink(), newest)) {
+        log.info("[server] latest → %s".formatted(newest.getFileName()));
+      }
+    } catch (final IOException e) {
+      log.debug("[server] could not update latest symlink: %s".formatted(e.getMessage()));
+    }
+  }
+
+  // Deletes a leftover `current` symlink so an un-upgraded client fails loudly rather than silently
+  // running a stale server. Guarded to a symlink so a real directory is never removed.
+  private void removeLegacyCurrentLink() {
+    final Path currentLink = LatheLayout.legacyCurrentLink();
+    try {
+      if (Files.isSymbolicLink(currentLink)) {
+        Files.delete(currentLink);
+        log.info("[server] removed stale current symlink");
+      }
+    } catch (final IOException e) {
+      log.debug("[server] could not remove stale current symlink: %s".formatted(e.getMessage()));
+    }
+  }
+
+  static Path newestVersionDir(final Path serversDir) {
+    try {
+      return FileUtil.subdirectories(serversDir).stream()
+          .filter(path -> serversDir.equals(path.getParent()))
+          .max(Comparator.comparing(ServerInstaller::versionOf))
+          .orElse(null);
+    } catch (final IOException e) {
+      return null;
+    }
+  }
+
+  private static ComparableVersion versionOf(final Path versionDir) {
+    return new ComparableVersion(versionDir.getFileName().toString());
   }
 
   private void writeLauncher(final Path versionDir, final String scriptName, final String script)

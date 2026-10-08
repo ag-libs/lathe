@@ -24,15 +24,31 @@ launcher (below). If the server reports a missing `.lathe/`, this is the fix.
 
 ## The launcher
 
-There is no separate install. `lathe:sync` generates the launcher during the build above and links it
-at a per-project path, pinned to the server version this project uses:
+There is no separate install. `lathe:sync` generates the launcher during the build above and exposes
+it two ways:
 
-```
-.lathe/lathe-mcp-launcher.sh
-```
+- **Per-project** (recommended) — a symlink pinned to the server version *this* project uses:
 
-(It's a symlink into `~/.cache/lathe/servers/<version>/`, re-created by every build, so it always
-matches the project's pinned server and carries no absolute, per-machine path.)
+  ```
+  .lathe/lathe-mcp-launcher.sh
+  ```
+
+  Re-created by every build, so it always matches the project's pinned server and carries no absolute,
+  per-machine path (a committed registration stays portable).
+
+- **User-global** — a machine-wide symlink at the newest installed server version:
+
+  ```
+  ~/.cache/lathe/latest/lathe-mcp-launcher.sh
+  ```
+
+  Use this for a single, user-scoped registration that works across all your projects (a relative
+  per-project path does not resolve reliably at user scope). It runs whatever server version you most
+  recently installed — fine when your repos track one version; prefer the per-project launcher when
+  they are pinned to different Lathe versions.
+
+Both locate the reactor the same way — by walking up from the server's working directory to the
+nearest `.lathe/` — so either one must be launched with your project as its cwd.
 
 ## Register with Claude Code
 
@@ -48,6 +64,15 @@ claude mcp add --transport stdio lathe -- .lathe/lathe-mcp-launcher.sh
   is also what resolves the relative launcher path.
 - **Scope.** The default scope is this project, for you only. Add `--scope project` to write a shared
   `.mcp.json` you can commit so teammates get the same setup — the relative path keeps it portable.
+- **One registration for every project** — register the user-global launcher once at user scope:
+
+  ```bash
+  claude mcp add --scope user --transport stdio lathe -- ~/.cache/lathe/latest/lathe-mcp-launcher.sh
+  ```
+
+  It resolves in whatever project you launch `claude` from (the server still finds that project's
+  reactor via its cwd). It runs the newest installed server rather than each project's pinned version —
+  see the launcher note above.
 - **Verify** with `claude mcp list`, or run `/mcp` inside a session — you should see `lathe` and its
   tools.
 
@@ -56,7 +81,8 @@ claude mcp add --transport stdio lathe -- .lathe/lathe-mcp-launcher.sh
 Lathe speaks standard stdio MCP, so any MCP-capable agent (for example OpenAI Codex CLI or Gemini
 CLI) can use it. Two facts are all a client needs:
 
-- the command is `.lathe/lathe-mcp-launcher.sh` (relative to the project root), and
+- the command is `.lathe/lathe-mcp-launcher.sh` (relative to the project root), or
+  `~/.cache/lathe/latest/lathe-mcp-launcher.sh` for one config shared across projects, and
 - it must run with your project as its working directory (that is how Lathe locates the reactor, and
   what resolves the relative launcher path).
 

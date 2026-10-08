@@ -510,3 +510,11 @@ LSP log above and set `LATHE_DEBUG=1` for verbose compiler logging. If it does n
 confirm the launcher exists (`:LatheStart` reports when it is missing) and run `mvn process-test-classes`.
 For workspace-level issues (`.lathe/` not found, missing params file), see the **Troubleshooting**
 section of the [README](../../../README.md#troubleshooting).
+
+**`Lathe: launcher not found at ~/.cache/lathe/current/lathe-launcher.sh; run mvn process-test-classes`**
+— this is an **outdated client**. Older versions resolved the server through a machine-global
+`~/.cache/lathe/current` symlink; discovery is now per-workspace (`<project>/.lathe/lathe-launcher.sh`),
+and `lathe:sync` deletes that stale `current` link on the next build so an outdated client fails here
+instead of silently launching an old server. Despite what the message says, re-running
+`mvn process-test-classes` will **not** fix it — **update the `ag-libs/lathe.nvim` plugin** (via your
+plugin manager), then reopen the project. The current client needs no machine-global pointer.

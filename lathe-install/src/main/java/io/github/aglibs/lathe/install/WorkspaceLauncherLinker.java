@@ -1,9 +1,9 @@
 package io.github.aglibs.lathe.install;
 
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import java.io.IOException;
 import java.nio.file.Files;
-import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.List;
 import org.apache.maven.plugin.logging.Log;
@@ -37,16 +37,11 @@ public final class WorkspaceLauncherLinker {
   }
 
   private void linkScript(final Path link, final Path target) throws IOException {
-    if (Files.isSymbolicLink(link) && target.equals(Files.readSymbolicLink(link))) {
+    if (!FileUtil.linkSymbolic(link, target)) {
       log.debug("[sync] %s unchanged — skipping link".formatted(link.getFileName()));
       return;
     }
 
-    final boolean isUpdate = Files.exists(link, LinkOption.NOFOLLOW_LINKS);
-    Files.deleteIfExists(link);
-    Files.createSymbolicLink(link, target);
-    log.info(
-        "[sync] %s %s → %s"
-            .formatted(isUpdate ? "relinked" : "linked", link.getFileName(), target));
+    log.info("[sync] linked %s → %s".formatted(link.getFileName(), target));
   }
 }
