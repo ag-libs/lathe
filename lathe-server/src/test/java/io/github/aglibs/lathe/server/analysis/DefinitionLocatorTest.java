@@ -46,6 +46,13 @@ class DefinitionLocatorTest extends SampleFixture {
       }
       """;
 
+  private static final String APP_MODULE =
+      """
+      module com.example.app {
+        requires java.base;
+      }
+      """;
+
   @Test
   void locate_sameFile_typeReference_returnsDeclaration() {
     // "Status" in return type of getStatus()
@@ -189,6 +196,48 @@ class DefinitionLocatorTest extends SampleFixture {
           .isEqualTo(realFile.toUri().toString())
           .isNotEqualTo(overlayFile.toUri().toString());
     }
+  }
+
+  @Test
+  void locate_moduleInfo_overlayCompilationUnit_returnsRealWorkspaceFile(
+      @TempDir final Path tempDir) throws IOException {
+    // The module resolves to a ModuleElement whose compilation unit is the compiler's temp overlay
+    // copy; definition must land on the real module-info under the source roots, not the /tmp copy.
+    final var realFile = writeModuleInfo(tempDir.resolve("real"), APP_MODULE);
+
+    final var location =
+        locateModule(tempDir, APP_MODULE, "com.example.app", tempDir.resolve("real"));
+
+    assertThat(location).isPresent();
+    assertThat(location.get().getUri()).isEqualTo(realFile.toUri().toString());
+    // Cursor on the module name "com.example.app": line 0, col 7 (after "module ").
+    assertThat(location.get().getRange().getStart().getLine()).isEqualTo(0);
+    assertThat(location.get().getRange().getStart().getCharacter()).isEqualTo(7);
+  }
+
+  @Test
+  void locate_moduleInfo_moduleSourcePathLayout_returnsModulePrefixedFile(
+      @TempDir final Path tempDir) throws IOException {
+    // module-source-path layout nests module-info under a <moduleName>/ directory; the file must be
+    // found by its declared name, not a bare root/module-info.java.
+    final var lib = "module com.example.lib {\n}\n";
+    final var srcRoot = tempDir.resolve("src");
+    final var realFile = writeModuleInfo(srcRoot.resolve("com.example.lib"), lib);
+
+    final var location = locateModule(tempDir, lib, "com.example.lib", srcRoot);
+
+    assertThat(location).isPresent();
+    assertThat(location.get().getUri()).isEqualTo(realFile.toUri().toString());
+  }
+
+  @Test
+  void locate_moduleInfo_jdkModuleWithoutSource_returnsEmpty(@TempDir final Path tempDir)
+      throws IOException {
+    // A `requires java.base` directive targets a module with no source on the roots; definition
+    // returns nothing rather than falling back to the overlay compilation unit under /tmp.
+    final var location = locateModule(tempDir, APP_MODULE, "java.base", tempDir);
+
+    assertThat(location).isNotPresent();
   }
 
   @Test
@@ -425,6 +474,29 @@ class DefinitionLocatorTest extends SampleFixture {
 
       return new DefinitionLocator(parsed.parser())
           .locate(member, parsed.trees(), List.of(srcDir), "file:///irrelevant");
+    }
+  }
+
+  private static Path writeModuleInfo(final Path dir, final String source) throws IOException {
+    Files.createDirectories(dir);
+    final var file = dir.resolve("module-info.java");
+    Files.writeString(file, source);
+    return file;
+  }
+
+  // Writes the overlay module-info under overlayDir (the temp-copy stand-in), parses it, and
+  // resolves the definition of targetModule against sourceRoot.
+  private static Optional<Location> locateModule(
+      final Path overlayDir,
+      final String overlaySource,
+      final String targetModule,
+      final Path sourceRoot)
+      throws IOException {
+    final var overlayFile = writeModuleInfo(overlayDir, overlaySource);
+    try (final var parsed = TestCompiler.parse(overlayFile)) {
+      final var module = parsed.task().getElements().getModuleElement(targetModule);
+      return new DefinitionLocator(parsed.parser())
+          .locate(module, parsed.trees(), List.of(sourceRoot), overlayFile.toUri().toString());
     }
   }
 

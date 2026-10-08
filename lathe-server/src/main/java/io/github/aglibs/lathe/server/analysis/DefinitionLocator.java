@@ -54,6 +54,10 @@ public final class DefinitionLocator {
       final Trees trees,
       final List<Path> sourceRoots,
       final String sourceUri) {
+    if (element instanceof final ModuleElement module && !module.isUnnamed()) {
+      return locateModule(module, sourceRoots);
+    }
+
     final var path = trees.getPath(element);
     if (path != null) {
       final var cu = path.getCompilationUnit();
@@ -96,6 +100,35 @@ public final class DefinitionLocator {
                                       .formatted(file, lspPos.getLine(), lspPos.getCharacter()));
                           return new Location(file.toUri().toString(), new Range(lspPos, lspPos));
                         }));
+  }
+
+  // A module has no top-level class, so findSourceFile can't remap its overlay copy; resolve the
+  // real module-info.java on the source roots by matching the declared module name.
+  private Optional<Location> locateModule(
+      final ModuleElement module, final List<Path> sourceRoots) {
+    final var name = module.getQualifiedName().toString();
+    return sourceRoots.stream()
+        .flatMap(
+            root ->
+                Stream.of(
+                    root.resolve(name).resolve("module-info.java"),
+                    root.resolve("module-info.java")))
+        .filter(Files::isRegularFile)
+        .map(file -> parser.parseFile(file, (trees, cu) -> moduleLocation(trees, cu, file, name)))
+        .flatMap(Optional::stream)
+        .findFirst();
+  }
+
+  private static Location moduleLocation(
+      final Trees trees, final CompilationUnitTree cu, final Path file, final String name) {
+    final var module = cu.getModule();
+    if (module == null || !name.equals(module.getName().toString())) {
+      return null;
+    }
+
+    final long start = trees.getSourcePositions().getStartPosition(cu, module.getName());
+    final var pos = start >= 0L ? SourceLocator.offsetToPosition(cu, start) : new Position(0, 0);
+    return new Location(file.toUri().toString(), new Range(pos, pos));
   }
 
   /**
