@@ -15,7 +15,7 @@
   <description>Lathe Maven plugin providing the init and sync goals.</description>
 
   <properties>
-    <maven-invoker-plugin.version>3.9.1</maven-invoker-plugin.version>
+    <maven-invoker-plugin.version>3.10.1</maven-invoker-plugin.version>
   </properties>
 
   <dependencies>

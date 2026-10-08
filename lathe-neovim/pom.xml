@@ -16,7 +16,7 @@
     ag-libs/lathe.nvim by publish-nvim.sh.</description>
 
   <properties>
-    <exec-maven-plugin.version>3.5.1</exec-maven-plugin.version>
+    <exec-maven-plugin.version>3.6.4</exec-maven-plugin.version>
   </properties>
 
   <build>
