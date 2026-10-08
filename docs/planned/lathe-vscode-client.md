@@ -1,10 +1,15 @@
 # Lathe — VS Code Client
 
-> **Status: planned.** No code yet. Two milestones agreed:
+> **Status: M1 passthrough built + wired.** The extension is its own reactor module (`lathe-vscode/`):
+> `displayName "Lathe for Java"`, id `ag-libs.lathe`, esbuild-bundled, a ~70-line passthrough that
+> resolves `<root>/.lathe/lathe-launcher.sh` (or `LATHE_SERVER_DIR`) and starts a stdio
+> `LanguageClient`. It builds with **one tool** — `frontend-maven-plugin` fetches Node, runs the
+> prettier/tsc checks, and packages `lathe-vscode/target/lathe-<version>.vsix` (built once on JDK 21 in
+> CI), which `release.yml` attaches to the GitHub Release. Next: M2.
 > **M1 — self-built, tester distribution:** we build the `.vsix` ourselves and hand it to a handful of
-> testers via a GitHub release asset (no Marketplace, no publisher account, no PAT).
+> testers (local `.vsix` now; a GitHub release asset once `release.yml` is wired).
 > **M2 — go all in:** publish to the VS Code Marketplace + Open VSX, gated on naming/trademark
-> resolution and the first-run UX below.
+> resolution and the first-run UX below (including the detect-pom-but-no-`.lathe` opt-in/build flow).
 > This doc captures the scope, launch/distribution model, source-of-truth decision, naming, first-run
 > UX, and end-to-end testing so the shape is agreed before any TypeScript is written.
 
@@ -121,7 +126,7 @@ separately and locates the already-cached server — no bundled-vsix staleness, 
 
 ### 4. Source of truth: monorepo (DECIDED); mirror only when M2 needs it
 
-The client source lives in the monorepo (`lathe-maven-plugin/src/main/vscode`). For **M1**, that is
+The client source lives in the monorepo (`lathe-vscode`). For **M1**, that is
 all that is needed — the release-asset `.vsix` is built straight from that directory in CI (§5); no
 mirror repo required yet.
 
@@ -152,17 +157,24 @@ same as documented for Neovim and stays explicitly reversible.
 
 `release.yml` already creates a GitHub Release on tag with `github.token`, which **can attach assets
 to its own repo** (the cross-repo limitation that forces a mirror-Action for the Marketplace does not
-apply here). So M1 is a small addition to the existing release job:
+apply here).
+
+**One build, not two.** The extension is its own reactor module (`lathe-vscode`) built through the
+**Maven lifecycle** via **frontend-maven-plugin**: Maven downloads Node into `target/node` (no system
+Node, no nvm), runs `npm ci` + `npm run check` (prettier + tsc), and packages
+`lathe-vscode/target/lathe-<version>.vsix`. `skipTests` skips it for a fast local build; CI builds it
+**once on JDK 21** (excluded via `-pl '!lathe-vscode'` on the other matrix rows). So `release.yml` needs
+no Node step — `mvn -Prelease … deploy` produces the `.vsix` and the release just attaches it:
 
 ```yaml
-      - name: Package VS Code extension
-        run: cd examples/vscode && npm ci && npx vsce package -o lathe.vsix
+      # mvn fetches Node via frontend-maven-plugin and builds lathe-vscode/target/lathe-<version>.vsix
       - name: Create GitHub Release
         run: gh release create "$GITHUB_REF_NAME" --title "Lathe $GITHUB_REF_NAME" \
-             --generate-notes examples/vscode/lathe.vsix
+             --generate-notes lathe-vscode/target/lathe-*.vsix
 ```
 
-No new secret, no PAT, no mirror. Testers install from the release page:
+CI's own `mvn install` builds the extension on the JDK 21 row, so no separate CI job is needed. No new
+secret, no PAT, no mirror. Testers install from the release page:
 ```bash
 code --install-extension ~/Downloads/lathe.vsix   # --install-extension takes a local path, not a URL
 ```
@@ -178,7 +190,7 @@ script stays a no-PAT git push:
 
 - **`publish-vscode.sh`** (monorepo, run after `release.sh` tags and the tag is pushed): a
   snapshot-per-release script modeled on `publish-nvim.sh` — tag worktree checkout, rebuild the mirror
-  tree from `src/main/vscode` + `dev/vscode-mirror` overlays, stamp the semver into `package.json`,
+  tree from `lathe-vscode` + `dev/vscode-mirror` overlays, stamp the semver into `package.json`,
   `--dry-run` support, and the "tag must be on origin first" guard. Pushes the snapshot + `vX.Y.Z` tag
   to `lathe.vscode`. **No PAT** — a cross-repo `git push` with the maintainer's own creds.
 - **`.github/workflows/publish.yml`** (in the mirror, kept in the `dev/vscode-mirror` overlay so the
@@ -274,7 +286,7 @@ the server) does not need this; it is an M2 concern.
 
 ## End-to-end testing
 
-The Neovim client establishes the pattern: `src/test/neovim/run-specs.sh` runs headless nvim against
+The Neovim client establishes the pattern: `lathe-neovim/test/run-specs.sh` runs headless nvim against
 the client, bound to the `integration-test` phase via exec-maven-plugin, and **hard-fails under CI but
 skips gracefully when the binary is absent locally**. The VS Code analogue is `@vscode/test-electron`,
 and testing splits into three tiers by how much of the stack each needs:

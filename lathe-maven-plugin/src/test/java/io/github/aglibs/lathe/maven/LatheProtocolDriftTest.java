@@ -10,12 +10,11 @@ import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
 // Guards that the client's wire-protocol integer stays in lockstep with the server's: the client
-// carries it in lua/lathe/version.lua, the server in LatheFlags.LATHE_PROTOCOL, and the on_init
-// handshake only works if they agree. This module owns the bundled neovim client tree, so the drift
-// guard lives here. Reading a single integer out of the Lua source is not LSP Java parsing.
+// carries it in version.lua, the server in LatheFlags.LATHE_PROTOCOL. The guard reads version.lua
+// from the sibling lathe-neovim module (Lua-only, no test runner) by path.
 class LatheProtocolDriftTest {
 
-  private static final Path VERSION_LUA = Path.of("src/main/neovim/lua/lathe/version.lua");
+  private static final Path VERSION_LUA = Path.of("../lathe-neovim/runtime/lua/lathe/version.lua");
   private static final Pattern PROTOCOL = Pattern.compile("PROTOCOL\\s*=\\s*(\\d+)");
 
   @Test

@@ -6,7 +6,7 @@
 # client+server linked at $LATHE_OPENJDK_DIR/.lathe (installed by `lathe-openjdk-maven-plugin:sync`) — so
 # we do NOT override LATHE_CACHE (the client resolves the server from the workspace's .lathe by default).
 export XDG_CONFIG_HOME="$R/dev/demo-openjdk/.nvim/config" XDG_DATA_HOME="$R/dev/demo-openjdk/.nvim/data" XDG_STATE_HOME="$R/dev/demo-openjdk/.nvim/state" XDG_CACHE_HOME="$R/dev/demo-openjdk/.nvim/cache"
-export LATHE_NVIM_DIR="$R/lathe-maven-plugin/src/main/neovim"
+export LATHE_NVIM_DIR="$R/lathe-neovim/runtime"
 # Point at a built + synced OpenJDK checkout. Override on the command line for a non-default location:
 #   LATHE_OPENJDK_DIR=~/src/jdk ./dev/demo-openjdk/record.sh
 export LATHE_OPENJDK_DIR="${LATHE_OPENJDK_DIR:-$HOME/git/jdk}"

@@ -1,0 +1,44 @@
+{
+  "name": "lathe",
+  "displayName": "Lathe for Java",
+  "description": "Java language server driven straight from your build.",
+  "version": "0.1.0-SNAPSHOT",
+  "publisher": "ag-libs",
+  "license": "Apache-2.0",
+  "homepage": "https://ag-libs.github.io",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ag-libs/lathe.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ag-libs/lathe/issues"
+  },
+  "engines": {
+    "vscode": "^1.84.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "main": "./target/main.js",
+  "activationEvents": [
+    "onLanguage:java",
+    "workspaceContains:**/.lathe"
+  ],
+  "scripts": {
+    "check": "prettier --check . && tsc --noEmit -p ./",
+    "format": "prettier --write .",
+    "vscode:prepublish": "node esbuild.js --production",
+    "package": "vsce package --no-dependencies -o target"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "@types/vscode": "^1.84.0",
+    "@vscode/vsce": "^3.2.0",
+    "esbuild": "^0.24.0",
+    "prettier": "^3.3.0",
+    "typescript": "^5.5.0"
+  }
+}

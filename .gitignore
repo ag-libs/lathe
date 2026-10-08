@@ -4,5 +4,6 @@ target/
 __pycache__/
 .worktrees/
 .claude/
+node_modules/
 
 /docs/videos/

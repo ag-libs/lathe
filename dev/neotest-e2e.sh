@@ -15,8 +15,8 @@ repo="$(cd "$here/.." && pwd)"
 
 fixture="$repo/lathe-maven-plugin/target/it/multi-module"
 cache="$repo/lathe-maven-plugin/target/it-home/.cache/lathe"
-runtime="$repo/lathe-maven-plugin/src/main/neovim"
-spec_helper_dir="$repo/lathe-maven-plugin/src/test/neovim"
+runtime="$repo/lathe-neovim/runtime"
+spec_helper_dir="$repo/lathe-neovim/test"
 plugins="${XDG_DATA_HOME:-$HOME/.local/share}/nvim/lazy"
 
 fail() {

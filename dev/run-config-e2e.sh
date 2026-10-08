@@ -13,8 +13,8 @@ repo="$(cd "$here/.." && pwd)"
 
 fixture="$repo/lathe-maven-plugin/target/it/multi-module"
 cache="$repo/lathe-maven-plugin/target/it-home/.cache/lathe"
-runtime="$repo/lathe-maven-plugin/src/main/neovim"
-spec_helper_dir="$repo/lathe-maven-plugin/src/test/neovim"
+runtime="$repo/lathe-neovim/runtime"
+spec_helper_dir="$repo/lathe-neovim/test"
 
 fail() {
   echo "[run-config-e2e] $1" >&2

@@ -37,6 +37,8 @@
     <module>lathe-install</module>
     <module>lathe-maven-plugin</module>
     <module>lathe-openjdk-maven-plugin</module>
+    <module>lathe-neovim</module>
+    <module>lathe-vscode</module>
   </modules>
 
   <scm>

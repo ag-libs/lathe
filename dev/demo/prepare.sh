@@ -41,7 +41,7 @@ cp -r "$src_cfg/." "$here/.nvim/config/nvim/"
 echo "[demo] warming plugins into the isolated copy…"
 export XDG_CONFIG_HOME="$here/.nvim/config" XDG_DATA_HOME="$here/.nvim/data"
 export XDG_STATE_HOME="$here/.nvim/state" XDG_CACHE_HOME="$here/.nvim/cache"
-export LATHE_NVIM_DIR="$repo/lathe-maven-plugin/src/main/neovim" LATHE_CACHE="$cache"
+export LATHE_NVIM_DIR="$repo/lathe-neovim/runtime" LATHE_CACHE="$cache"
 nvim --headless "+Lazy! sync" +qa || true
 
 echo

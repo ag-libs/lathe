@@ -19,8 +19,8 @@ the compiler reports, and runs and tests replay the real launch without a Maven 
 
 Setup is one extension registration, a first build, and a plugin line in your Neovim config.
 
-Lathe ships a [Neovim client](#editors) and an [MCP server for AI coding agents](#ai-agents-mcp); a
-[VS Code client](#editors) is planned.
+Lathe ships a [Neovim client](#editors), a [VS Code extension](#editors), and an
+[MCP server for AI coding agents](#ai-agents-mcp).
 
 Beyond Maven, Lathe also works from the [OpenJDK `make` build](docs/guide/openjdk.md).
 
@@ -132,12 +132,11 @@ How much you get depends on the client:
 |---------|------------------------------------------------------|--------------------------------------------------------------------------|
 | Neovim  | Dedicated client (LSP + run/test/debug, scaffolding) | [Neovim cheatsheet](docs/guide/editors/neovim.md) — install and keymaps  |
 | Emacs   | Built-in Eglot (standard LSP, no plugin)             | [Emacs (Eglot) guide](docs/guide/editors/emacs.md)                       |
-| VS Code | Generic LSP bridge (standard LSP); client planned    | [VS Code guide](docs/guide/editors/vscode.md)                            |
+| VS Code | Extension — "Lathe for Java" (standard LSP)          | [VS Code guide](docs/guide/editors/vscode.md)                            |
 
 The [Neovim client](docs/guide/editors/neovim.md) adds Lathe-specific commands (`:LatheRun`,
-`:LatheNew`, neotest, format-on-save) on top of LSP. Everything else is plain LSP, so a generic client
-like **Emacs + Eglot** — or VS Code via a [generic LSP bridge](docs/guide/editors/vscode.md) — works
-with no dedicated plugin at all.
+`:LatheNew`, neotest, format-on-save) on top of LSP. Everything else is plain LSP, so a standard client
+like **Emacs + Eglot** — or the VS Code extension — works with no extra configuration.
 
 ## AI agents (MCP)
 

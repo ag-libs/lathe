@@ -128,7 +128,7 @@ echo "  git push origin HEAD ${tag}"
 # unpublished. This is a reminder only — publish-nvim.sh runs separately, after the
 # tag is pushed, and pushes to a different repo with your own credentials.
 prev="$(release_tags | sed -n '2p')" # the tag before the one just cut
-client_paths=(lathe-maven-plugin/src/main/neovim dev/nvim-mirror publish-nvim.sh)
+client_paths=(lathe-neovim/runtime lathe-neovim/mirror publish-nvim.sh)
 if [ -z "$prev" ] || ! git diff --quiet "$prev" HEAD -- "${client_paths[@]}"; then
   echo
   echo "The Neovim client changed since ${prev:-the last release} — after pushing, publish the mirror:"

@@ -1,6 +1,6 @@
 -- End-to-end driver for the Lathe neotest adapter, run headlessly by
 -- dev/neotest-e2e.sh. Unlike the pure-function specs under
--- lathe-maven-plugin/src/test/neovim, this exercises the REAL adapter against a
+-- lathe-neovim/test, this exercises the REAL adapter against a
 -- LIVE Lathe server and a real replay run over a built .lathe/ fixture --
 -- discovery, run, and per-test results as a user would drive them. It is the
 -- red/green signal the neotest-experience acceptance spec

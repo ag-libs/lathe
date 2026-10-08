@@ -152,9 +152,10 @@ reused):
 
 **VS Code:** a supported integration; depends on the full semantic-token coverage above.
 
-- [VS Code Client](planned/lathe-vscode-client.md) — **planned**, two milestones. **M1:** we build the
-  `.vsix` ourselves and hand it to testers via a GitHub release asset (no Marketplace, no PAT — rides the
-  existing `release.yml` + `github.token`). **M2:** go all in — publish to the Marketplace + Open VSX via
+- [VS Code Client](planned/lathe-vscode-client.md) — **M1 passthrough built** (`lathe-vscode/`,
+  `ag-libs.lathe`), two milestones. **M1:** we build the
+  `.vsix` ourselves and hand it to testers (local `.vsix` now; a GitHub release asset once `release.yml`
+  is wired — no Marketplace, no PAT, rides `github.token`). **M2:** go all in — publish to the Marketplace + Open VSX via
   a mirror-repo Action (PAT isolated in CI) triggered by a no-PAT `publish-vscode.sh` push, gated on
   naming/trademark ("Java" nominative use + disclaimer) and a first-run UX (run-build nudge + walkthrough)
   to defuse the unbundled-server "nothing happens" trap. Thin `vscode-languageclient` passthrough

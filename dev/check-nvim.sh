@@ -3,7 +3,7 @@ set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-RUNTIME_DIR="${LATHE_NVIM_RUNTIME:-$REPO_ROOT/lathe-maven-plugin/src/main/neovim}"
+RUNTIME_DIR="${LATHE_NVIM_RUNTIME:-$REPO_ROOT/lathe-neovim/runtime}"
 NVIM="${NVIM:-$(command -v nvim || true)}"
 NVIM_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 PARSER_RUNTIME="${LATHE_NVIM_PARSER_RUNTIME:-$NVIM_DATA_HOME/nvim/lazy/nvim-treesitter}"

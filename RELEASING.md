@@ -39,13 +39,13 @@ tag is out — see [The Neovim client mirror](#the-neovim-client-mirror).
 5. Verify the artifacts at
    [central.sonatype.com/namespace/io.github.ag-libs](https://central.sonatype.com/namespace/io.github.ag-libs).
 6. **Publish the Neovim client mirror — only if it changed.** In step 2, `release.sh` prints a reminder
-   when the client sources (`lathe-maven-plugin/src/main/neovim`, `dev/nvim-mirror`, or
+   when the client sources (`lathe-neovim/runtime`, `lathe-neovim/mirror`, or
    `publish-nvim.sh`) changed since the previous tag. If it did, once the tag is on origin:
    ```bash
    ./publish-nvim.sh 0.1.1          # or just ./publish-nvim.sh for the latest tag
    ```
    This snapshots the client **from the release tag**, overlays the standalone-only files
-   (`dev/nvim-mirror` + the repo `LICENSE`), stamps the version into `lua/lathe/version.lua`, shows the
+   (`lathe-neovim/mirror` + the repo `LICENSE`), stamps the version into `lua/lathe/version.lua`, shows the
    diff, and — on your `[y/N]` confirmation — pushes a `release vX.Y.Z` commit + tag to
    `ag-libs/lathe.nvim`. Preview first with `./publish-nvim.sh --dry-run`. If the client did not change,
    skip this — the mirror keeps its own version cadence.
@@ -62,7 +62,7 @@ tag is out — see [The Neovim client mirror](#the-neovim-client-mirror).
 
 ## The Neovim client mirror
 
-The Neovim client lives in the monorepo (`lathe-maven-plugin/src/main/neovim`) and ships as a
+The Neovim client lives in the monorepo (`lathe-neovim/runtime`) and ships as a
 **standalone** repository, `github.com/ag-libs/lathe.nvim`, so it is installable by any plugin manager
 or Neovim 0.12+'s `vim.pack`, and discoverable on dotfyle / awesome-neovim. (The Maven build no longer
 bundles the client into the cache; the build produces only the server.)

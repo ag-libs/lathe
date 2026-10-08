@@ -1,48 +1,38 @@
-# Lathe in VS Code (generic LSP bridge)
+# Lathe in VS Code
 
-Lathe has no dedicated VS Code extension yet (it is planned). Until then, VS Code can still drive
-Lathe's build-derived intelligence through a **generic LSP bridge** — a small extension that launches
-any stdio language server from settings. You get the standard LSP surface (navigation, completion,
-diagnostics, hover, symbols, rename); the Lathe-specific run/test/debug and scaffolding commands are
-not available this way.
+Lathe ships a VS Code extension — **Lathe for Java** — a thin client that launches Lathe's
+build-derived language server from your project. You get the standard LSP surface (navigation,
+completion, diagnostics, hover, symbols, rename). It installs from a GitHub release asset for now; a
+Marketplace listing is planned.
 
-## Setup
+The server itself is **not** bundled in the extension — it comes from your Maven build, exactly as for
+the other editors. The extension just finds and launches it.
 
-1. Install a generic LSP bridge extension. [**Generic LSP Client**
-   (`zsol.vscode-glspc`)](https://marketplace.visualstudio.com/items?itemName=zsol.vscode-glspc) is a
-   good choice — it exposes a language filter and an environment-variable map, both of which Lathe uses.
+## Install
 
-2. Point it at Lathe's launcher for Java files. Add to the **workspace** `.vscode/settings.json` in a
-   project Lathe has synced (any `mvn` build populates `.lathe/`):
+1. **Build your project with Lathe at least once** so the launcher exists. Any `mvn` build populates
+   `.lathe/` (see the [installation guide](../installation.md)); the launcher lands at
+   `.lathe/lathe-launcher.sh`.
 
-   ```jsonc
-   {
-     "glspc.server.command": ".lathe/lathe-launcher.sh",
-     "glspc.server.commandArguments": [],
-     "glspc.server.languageId": ["java"],
-     "files.readonlyFromPermissions": true
-   }
+2. **Download** the latest `lathe-<version>.vsix` from the
+   [Releases page](https://github.com/ag-libs/lathe/releases).
+
+3. **Install it:**
+   ```bash
+   code --install-extension lathe-<version>.vsix
    ```
+   (or *Extensions → ⋯ → Install from VSIX…* in the UI).
 
-   The launcher is the symlink `lathe:sync` links at `.lathe/`, pinned to the server version this
-   project uses. The bridge launches it with the workspace folder as the working directory, so the
-   project-relative path resolves there — which also means this `settings.json` carries no absolute,
-   per-machine path and is safe to commit. `glspc.server.languageId` is an **array** — `["java"]`, not
-   `"java"`; a bare string silently matches nothing and the server never starts.
-   `files.readonlyFromPermissions` is explained under
-   [Read-only dependency sources](#read-only-dependency-sources).
-
-3. Open the **reactor root** (the folder with `.lathe/`) as the VS Code workspace, then open a Java
-   file. The bridge launches the server with that folder as its working directory, so Lathe resolves
-   the project's JDK from `.lathe/java-home` automatically.
+4. **Open the reactor root** (the folder containing `.lathe/`) as the VS Code workspace and open a Java
+   file. The extension launches the server automatically, resolving the project's JDK from
+   `.lathe/java-home`.
 
 If VS Code's built-in Java support (the Red Hat "Language Support for Java" extension) is installed,
-disable it for this workspace — two servers attaching to `.java` files will conflict, and the bridge
-registers only one.
+disable it for this workspace — two servers attaching to `.java` files will conflict.
 
 ## What works
 
-Through VS Code's standard LSP UI, resolved from your real Maven build:
+Resolved from your real Maven build, through VS Code's standard LSP UI:
 
 | Feature                          | VS Code                                   |
 |----------------------------------|-------------------------------------------|
@@ -59,32 +49,26 @@ Through VS Code's standard LSP UI, resolved from your real Maven build:
 
 ## Read-only dependency sources
 
-Go-to-definition into a dependency or the JDK opens a source file Lathe extracts to its cache, which it
-marks **read-only on disk** (no write bit). Neovim honors that automatically; VS Code does not — by
-default it opens the buffer as editable and only fails at *save* time ("impossible to save"). Set
-`files.readonlyFromPermissions: true` (in the settings block above) so VS Code reflects the permission:
-dependency sources then open locked, with a lock icon in the title bar and editing disabled.
-
-## If the wrong JDK is picked
-
-The launcher reads `.lathe/java-home` relative to the server's working directory. If a bridge does not
-launch the server in the workspace folder, Lathe falls back to `java` on `PATH` — which may be the
-wrong JDK and produce spurious diagnostics. Pin it explicitly with the bridge's environment map (the
-value is the line in `.lathe/java-home`):
+Go-to-definition into a dependency or the JDK opens a source file Lathe extracts to its cache, marked
+**read-only on disk** (no write bit). VS Code does not honor that by default — it opens the buffer as
+editable and only fails at *save* time ("impossible to save"). Add this to your settings so VS Code
+reflects the permission (dependency sources then open locked, with a lock icon, editing disabled):
 
 ```jsonc
 {
-  "glspc.server.environmentVariables": {
-    "LATHE_JAVA_HOME": "/path/to/the/jdk/the/build/used"
-  }
+  "files.readonlyFromPermissions": true
 }
 ```
 
-This is also how you run Lathe against an [OpenJDK](../openjdk.md) checkout, whose server must run on
-the exploded build image rather than any JDK on `PATH`.
+## If the wrong JDK is picked
 
-## Not available via a generic bridge
+The extension runs the launcher with the workspace folder as its working directory, so it reads
+`.lathe/java-home` automatically — no configuration needed. To override (for example to run Lathe
+against an [OpenJDK](../openjdk.md) checkout), set `LATHE_JAVA_HOME` in the environment VS Code is
+launched from. To point at a working-tree server build, set `LATHE_SERVER_DIR` the same way.
+
+## Not available yet
 
 Run/test/debug, scaffolding (`:LatheNew`), and format-on-save are **[Neovim-client](neovim.md)**
-features — they use Lathe's custom client commands, not the standard LSP surface. A dedicated VS Code
-client that adds them is [planned](../../planned/lathe-vscode-client.md).
+features today — they use Lathe's custom client commands, not the standard LSP surface. Adding them to
+the VS Code extension is [planned](../../planned/lathe-vscode-client.md).

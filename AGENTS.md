@@ -50,6 +50,8 @@ Which file answers which question:
 | `lathe-compiler`     | Plexus compiler SPI (`hint=lathe`)                                                                                                                               |
 | `lathe-maven-plugin` | `lathe:init` (auto-bound to `initialize`, creates `.lathe/`) and `lathe:sync` (auto-bound to `process-test-classes`) Mojos; owns Maven invoker integration tests |
 | `lathe-server`       | LSP server; reads files produced by the other two; JPMS module; regular dep on `lathe-core`                                                                      |
+| `lathe-neovim`       | Neovim client (Lua), source of truth mirrored to `ag-libs/lathe.nvim`; `mvn` runs its headless specs. No reactor-code dep.                                       |
+| `lathe-vscode`       | VS Code extension (TypeScript); `frontend-maven-plugin` fetches Node and packages the `.vsix`. No reactor-code dep.                                              |
 
 Build order: `lathe-core` → `lathe-compiler` → `lathe-server` → `lathe-maven-plugin`.
 

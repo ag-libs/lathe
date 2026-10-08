@@ -35,9 +35,8 @@ jobs:
           cache: maven
 
       - name: Set up Neovim
-        # The Neovim client specs run during `verify` (run-specs.sh via
-        # exec-maven-plugin); the script hard-fails the build under CI when nvim
-        # is absent, so it must be on PATH. `stable` is >= the supported 0.11.7 floor.
+        # lathe-neovim's run-specs.sh needs nvim on PATH (it hard-fails under CI otherwise). VS Code's
+        # Node is fetched by Maven via frontend-maven-plugin, so no setup-node step is needed.
         uses: rhysd/action-setup-vim@v1
         with:
           neovim: true
@@ -52,7 +51,14 @@ jobs:
         # forks, invoker builds, and their forks all inherit it), so Lathe runs
         # ENABLED during tests. Otherwise LatheFlags.isDisabled() treats CI=true
         # as a skip signal and every enabled-path test fails.
-        run: env -u CI mvn -B --no-transfer-progress clean install
+        #
+        # The client modules are JDK-agnostic — build them once on JDK 21, exclude them elsewhere.
+        run: |
+          if [ "${{ matrix.java }}" = "21" ]; then
+            env -u CI mvn -B --no-transfer-progress clean install
+          else
+            env -u CI mvn -B --no-transfer-progress clean install -pl '!lathe-neovim,!lathe-vscode'
+          fi
 
       - name: Verify javadoc and sources generate
         # Catch javadoc/source-jar breakage here rather than mid-release, since

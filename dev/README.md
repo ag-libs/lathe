@@ -129,7 +129,7 @@ loads the Lathe runtime for that process only,
 and verifies Java Tree-sitter indentation for `module-info.java`.
 It redirects Neovim cache and state writes into a temporary directory.
 
-By default it checks the source runtime under `lathe-maven-plugin/src/main/neovim`.
+By default it checks the source runtime under `lathe-neovim/runtime`.
 To check the runtime installed by `lathe:sync` into a workspace, point at that workspace's `.lathe/neovim`:
 
 ```bash

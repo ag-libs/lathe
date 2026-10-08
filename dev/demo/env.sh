@@ -3,5 +3,5 @@
 # the Lathe client from this checkout, the server/launcher from the invoker cache, and the Maven build
 # cache turned off so captures actually compile.
 export XDG_CONFIG_HOME="$R/dev/demo/.nvim/config" XDG_DATA_HOME="$R/dev/demo/.nvim/data" XDG_STATE_HOME="$R/dev/demo/.nvim/state" XDG_CACHE_HOME="$R/dev/demo/.nvim/cache"
-export LATHE_NVIM_DIR="$R/lathe-maven-plugin/src/main/neovim" LATHE_CACHE="$R/lathe-maven-plugin/target/it-home/.cache/lathe"
+export LATHE_NVIM_DIR="$R/lathe-neovim/runtime" LATHE_CACHE="$R/lathe-maven-plugin/target/it-home/.cache/lathe"
 export MAVEN_ARGS="-Dmaven.build.cache.enabled=false"

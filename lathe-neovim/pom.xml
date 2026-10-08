@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>io.github.ag-libs</groupId>
+    <artifactId>lathe-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>lathe-neovim</artifactId>
+  <packaging>pom</packaging>
+
+  <name>lathe-neovim</name>
+  <description>Neovim client (Lua). Runs the headless specs during the build; published to
+    ag-libs/lathe.nvim by publish-nvim.sh.</description>
+
+  <properties>
+    <exec-maven-plugin.version>3.5.1</exec-maven-plugin.version>
+  </properties>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>${exec-maven-plugin.version}</version>
+        <executions>
+          <execution>
+            <id>neovim-specs</id>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <phase>integration-test</phase>
+            <configuration>
+              <skip>${skipTests}</skip>
+              <executable>bash</executable>
+              <arguments>
+                <argument>${project.basedir}/test/run-specs.sh</argument>
+              </arguments>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

@@ -11,8 +11,8 @@
 #                                      # current working tree.
 #
 # The mirror is a generated, snapshot-per-release copy of
-# lathe-maven-plugin/src/main/neovim, overlaid with the standalone-only files in
-# dev/nvim-mirror (README, :help) plus the repo LICENSE, and with the release
+# lathe-neovim/runtime, overlaid with the standalone-only files in
+# lathe-neovim/mirror (README, :help) plus the repo LICENSE, and with the release
 # version stamped into lua/lathe/version.lua. For a real publish the snapshot is
 # taken from a fresh checkout of the release tag, so it is a pure function of the
 # tag — no working-tree or branch state can leak in, and it can be run from any
@@ -25,8 +25,8 @@ set -euo pipefail
 
 mirror_url="git@github.com:ag-libs/lathe.nvim.git"
 mirror_branch="main"
-src="lathe-maven-plugin/src/main/neovim"
-templates="dev/nvim-mirror"
+src="lathe-neovim/runtime"
+templates="lathe-neovim/mirror"
 version_lua="lua/lathe/version.lua"
 
 die() {
