@@ -69,7 +69,7 @@
             </goals>
             <phase>package</phase>
             <configuration>
-              <arguments>run package</arguments>
+              <arguments>run package ${vsce.package.args}</arguments>
             </configuration>
           </execution>
         </executions>

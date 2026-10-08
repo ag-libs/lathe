@@ -93,6 +93,13 @@
     <maven-javadoc.version>3.11.2</maven-javadoc.version>
     <maven-gpg.version>3.2.7</maven-gpg.version>
     <central-publishing.version>0.8.0</central-publishing.version>
+
+    <!--
+      Extra args appended to the VS Code `npm run package` (vsce) invocation. Empty
+      by default so local/dev builds package the SNAPSHOT version from package.json;
+      the release profile overrides this to stamp the release version into the .vsix.
+    -->
+    <vsce.package.args></vsce.package.args>
   </properties>
 
   <dependencyManagement>
@@ -340,6 +347,16 @@
   <profiles>
     <profile>
       <id>release</id>
+      <properties>
+        <!--
+          Stamp the release version into the VS Code .vsix. Passing the version to
+          vsce with the no-update-package-json flag names and versions the artifact
+          without writing package.json (which stays on 0.1.0-SNAPSHOT like the POMs)
+          and without running npm version or git, so it is safe in the dirty CI tree
+          that versions:set leaves behind.
+        -->
+        <vsce.package.args>-- ${project.version} --no-update-package-json</vsce.package.args>
+      </properties>
       <build>
         <plugins>
           <plugin>
@@ -387,6 +404,18 @@
               <publishingServerId>central</publishingServerId>
               <autoPublish>true</autoPublish>
               <waitUntil>published</waitUntil>
+              <!--
+                The Neovim and VS Code clients are editor plugins, not library
+                artifacts: they are distributed through their own channels (the
+                lathe.nvim mirror and the VS Code Marketplace / Open VSX), not
+                Maven Central. They are pom-only modules whose presence in the
+                aggregated bundle breaks the Central deployment. Exclude them by
+                artifactId so vscode still drives the final publish of the rest.
+              -->
+              <excludeArtifacts>
+                <excludeArtifact>lathe-neovim</excludeArtifact>
+                <excludeArtifact>lathe-vscode</excludeArtifact>
+              </excludeArtifacts>
             </configuration>
           </plugin>
         </plugins>
