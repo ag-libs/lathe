@@ -9585,3 +9585,60 @@ results. Revive Option 2 if users ask for a whole-red-set re-run.
 `neotest_spec.lua` — failures captured in execution order (passes excluded); `run_first_failed` runs
 the head, advances to the next after a passing re-run, ignores an undiscovered failure, and runs
 nothing (WARN) when the list is empty.
+
+---
+
+# MCP / Agent Facade (resolved)
+
+## MC-2 — Non-lathe (MCP SDK / Reactor) logs are silently dropped: no SLF4J provider on the server classpath — done
+
+**Status: done — fixed in `417f296d` (added `slf4j-jdk14` runtime provider to `lathe-mcp-server`).**
+
+Signal: every MCP server start prints an SLF4J NOP warning to stderr (visible in the client's
+startup-stderr capture).
+
+### Observed behaviour
+
+The server logs at startup:
+
+```
+SLF4J(W): No SLF4J providers were found.
+SLF4J(W): Defaulting to no-operation (NOP) logger implementation
+SLF4J(W): See https://www.slf4j.org/codes.html#noProviders for further details.
+```
+
+`slf4j-api-2.0.16.jar` is on the runtime classpath (pulled transitively by
+`io.modelcontextprotocol.sdk:mcp` and `io.projectreactor:reactor-core`), but **no SLF4J provider**
+is bound (`slf4j-jdk14`/`logback`/`slf4j-simple` all absent). SLF4J falls back to NOP, so every log
+line those libraries emit — including protocol-level warnings and errors from the MCP SDK and Reactor
+— is discarded.
+
+### Root cause
+
+`lathe-mcp-server` declares no SLF4J provider. lathe's own code logs through JUL, which is
+independent of SLF4J — that is why lathe's logs work while the third-party SLF4J logs vanish.
+
+### Resolution
+
+Added the SLF4J→JUL bridge so non-lathe logs route into the same JUL configuration lathe already
+uses, pinned to the BOM-resolved `slf4j-api` version:
+
+```xml
+<dependency>
+  <groupId>org.slf4j</groupId>
+  <artifactId>slf4j-jdk14</artifactId>
+  <version>2.0.16</version>
+  <scope>runtime</scope>
+</dependency>
+```
+
+`logging.properties` keeps non-lathe loggers at `.level=WARNING`, so this stays quiet by default but
+finally lets real SDK/Reactor warnings and errors surface. Safe for the stdio protocol: JUL's
+`ConsoleHandler` writes to `System.err`, never the JSON-RPC `stdout` channel. (`slf4j-nop` would only
+mute the warning while keeping the logs suppressed — rejected.)
+
+### Regression targets
+
+Intentionally skipped — this is a dependency-only change with no lathe code to exercise; a startup
+smoke assertion (`LatheMcpServerTest.startup_bindsSlf4jProvider_noNopWarning`) was discussed and
+deliberately not added.
