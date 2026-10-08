@@ -1,0 +1,57 @@
+version: 2
+
+# Dependabot opens update PRs; the dependabot-auto-merge workflow merges the low-risk ones
+# (patch/minor dev/test deps) once CI is green. Runtime bumps and all majors wait for review.
+updates:
+  # Java reactor — all module poms are discovered from the root. Versions are centralized as
+  # `*.version>` properties in the parent pom, which Dependabot edits in place.
+  - package-ecosystem: maven
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - java
+    groups:
+      # One PR per week for all non-major Java bumps keeps the reactor churn in a single review.
+      maven-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  # VS Code extension (Node). Caret ranges + a committed lockfile — split dev tooling from the
+  # runtime client so the auto-merge policy can treat them differently.
+  - package-ecosystem: npm
+    directory: /lathe-vscode
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - vscode
+    groups:
+      npm-dev-minor-patch:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+      npm-prod-minor-patch:
+        dependency-type: production
+        update-types:
+          - minor
+          - patch
+
+  # Pin-and-bump the Actions used by CI/release (checkout, setup-java, …).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+      - ci
+    groups:
+      github-actions:
+        update-types:
+          - minor
+          - patch
