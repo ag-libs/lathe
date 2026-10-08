@@ -46,6 +46,10 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
 
   private final LatheTextDocumentService textDocumentService = new LatheTextDocumentService();
 
+  // Loaded in initialized(), not initialize(): the load's progress is a server→client request the
+  // spec forbids before the handshake (clients reject it as unhandled).
+  private Path workspaceRoot;
+
   @Override
   public void connect(final LanguageClient client) {
     textDocumentService.connect(client);
@@ -65,9 +69,8 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     textDocumentService.setWorkDoneProgressSupported(workDoneProgressSupported(params));
     textDocumentService.setFileRenameSupported(fileRenameSupported(params));
     textDocumentService.setFormatEngine(formatEngine);
-    if (rootPath != null) {
-      textDocumentService.initialize(rootPath);
-    } else {
+    workspaceRoot = rootPath;
+    if (rootPath == null) {
       LOG.warning(() -> "[initialize] no rootUri — module registry not available");
     }
 
@@ -147,6 +150,11 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
   @Override
   public void initialized(final InitializedParams params) {
     LOG.info(() -> "[initialized] handshake complete");
+    // Load now (deferred from initialize): its progress create is a server→client request clients
+    // only accept post-handshake.
+    if (workspaceRoot != null) {
+      textDocumentService.initialize(workspaceRoot);
+    }
   }
 
   @Override

@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.analysis;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
+import java.util.stream.Stream;
 import org.eclipse.lsp4j.DocumentSymbol;
 import org.eclipse.lsp4j.SymbolKind;
 import org.junit.jupiter.api.Test;
@@ -49,6 +50,28 @@ class DocumentSymbolScannerTest {
     assertThat(named(outer.getChildren(), "Inner").getChildren())
         .extracting(DocumentSymbol::getName)
         .containsExactly("nested");
+  }
+
+  @Test
+  void scan_anonymousClass_omitsEmptyNameSymbol() {
+    // An anonymous class has an empty javac simple name; emitting it as a DocumentSymbol produces a
+    // blank name, which VS Code rejects ("name must not be falsy"), killing the whole outline.
+    final String source =
+        """
+        class Host {
+          Runnable r =
+              new Runnable() {
+                public void run() {}
+              };
+        }
+        """;
+
+    final List<DocumentSymbol> symbols = scan(source);
+
+    assertThat(allNames(symbols)).contains("Host", "r").doesNotContain("");
+    assertThat(symbols.getFirst().getChildren())
+        .extracting(DocumentSymbol::getName)
+        .containsExactly("r");
   }
 
   @Test
@@ -205,5 +228,13 @@ class DocumentSymbolScannerTest {
 
   private static List<DocumentSymbol> children(final DocumentSymbol symbol) {
     return symbol.getChildren() != null ? symbol.getChildren() : List.of();
+  }
+
+  private static List<String> allNames(final List<DocumentSymbol> symbols) {
+    return symbols.stream()
+        .flatMap(
+            symbol ->
+                Stream.concat(Stream.of(symbol.getName()), allNames(children(symbol)).stream()))
+        .toList();
   }
 }

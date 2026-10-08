@@ -61,7 +61,14 @@ final class DocumentSymbolScanner extends TreePathScanner<Void, Void> {
 
   @Override
   public Void visitClass(final ClassTree node, final Void unused) {
-    final var symbol = symbol(node, node.getSimpleName().toString(), kind(node), false);
+    final var name = node.getSimpleName().toString();
+    if (name.isEmpty()) {
+      // Anonymous class: javac gives it an empty simple name, which is not a valid LSP symbol name
+      // (VS Code rejects a blank DocumentSymbol name). Skip it and its members from the outline.
+      return null;
+    }
+
+    final var symbol = symbol(node, name, kind(node), false);
     add(symbol);
     stack.push(symbol);
     super.visitClass(node, unused);
