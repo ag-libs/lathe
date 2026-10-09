@@ -32,9 +32,10 @@ a standalone library and CLI are a secondary by-product.
   See [Phase 5 result](#phase-5-result).
 - **Phase 6 — `RemoveUnusedImports`: DONE.**
   No main code imports javac internals any more. See [Phase 6 result](#phase-6-result).
-- **Phase 7+ — NOT STARTED.**
-  Delete every main-code `--add-exports` and restore `--release 21`, then integrate into the
-  server. See [Plan](#plan).
+- **Phase 7 — sever: DONE.**
+  Main code compiles with `--release 21` and no `--add-exports`, and runs without them.
+  See [Phase 7 result](#phase-7-result).
+- **Phase 8 — server integration: NOT STARTED.** See [Plan](#plan).
 
 Work happens in a git worktree at `~/work/git/lathe-format` so `main` stays free for parallel work.
 The GJF source and golden fixtures are cloned at `~/work/git/google-java-format` (tag `v1.35.0`),
@@ -338,7 +339,8 @@ each dropping its own `--add-exports`:
 6. **Phase 6 — `RemoveUnusedImports` (DONE)**: its `JCImport`/`JCFieldAccess`/`DCTree`/`JavacTrees`
    internals onto `ImportTree`/`MemberSelectTree`/`DocTrees`
    (`StringWrapper` already went public in Phase 3).
-7. **Phase 7 — sever**: remove the last internal imports, delete all `--add-exports`, confirm green.
+7. **Phase 7 — sever (DONE)**: remove the last internal imports, delete all `--add-exports`,
+   confirm green.
 8. **Phase 8 — server integration**: the formatter is then fully on the public tree API.
    See [Integration into lathe-server](#integration-into-lathe-server).
 
@@ -435,7 +437,22 @@ same output or the same failure and message:
 After the fixes: **all 7,160 Helidon files format identically to GJF** (both styles, whole and
 truncated); the lexer oracle and import parity match on all Helidon and JDK sources on JDK 21, 26,
 and 27; `clean verify` is green on all three (1,807 tests; 1,788 on 21, where JDK 25+ inputs are
-gated). A private production codebase is checked separately with the same corpus switch.
+gated).
+
+A private production codebase (2,485 files, kept Spotless-clean with google-java-format) was also
+run through the fork with Spotless's pipeline (`formatSource`, remove unused imports, reorder
+imports; Google style): **no file changed**, the fork matched GJF `1.35.0` on every file, and the
+run used no `--add-exports`.
+
+### Phase 7 result
+
+- Main compilation: the parent's `--release 21`, no `--add-exports`; class files are Java 21.
+  A probe importing `com.sun.tools.javac.util.Context` into main code fails to compile.
+- Test compilation and runtime keep only what the scanner oracle and the GJF reference need
+  (see [Key technical decisions](#key-technical-decisions)).
+- `clean verify` green on JDK 21, 26, and 27 (1,788 / 1,807 / 1,807 tests).
+- The formatter runs with no access flags at all: the private-codebase run (see
+  [Test hardening](#test-hardening-after-phase-6)) used a plain `java -cp`.
 
 ## Degradation on new syntax
 
@@ -518,15 +535,15 @@ The compass for residual divergence once the lexer lands, and the long-term regr
 
 ## Key technical decisions
 
-- **`source`/`target 21`, not `--release`.**
-  Exporting `jdk.compiler` internals is incompatible with `--release`;
-  the module overrides the parent's release flag for compilation.
-  Restored to `--release 21` at Phase 7, when there is nothing left to export.
-- **`--add-exports` targets.**
-  During the fork phases, the module name at compile time,
-  and both the module name and `ALL-UNNAMED` at test runtime
-  (the fork is in the named module; the live GJF reference is an unnamed classpath dep).
-  Each seam-cut removes its packages from this set.
+- **Main code: `--release 21`, no `--add-exports`.**
+  The release flag also rejects any `jdk.compiler` internal, so the build itself keeps main code
+  on the public API (a javac-internal import fails with "package … does not exist").
+- **Test code: `source`/`target 21` plus the oracle's exports.**
+  The release flag forbids internal exports, which the test-only scanner oracle
+  (`JavacTokens`, `JavacLexOracle`) needs, so test compilation uses the compiler plugin's
+  `testRelease`/`testSource`/`testTarget` and exports `file`, `parser`, and `util` to the module.
+  At test runtime the module gets the same three; the live GJF reference (an unnamed classpath
+  dependency) keeps its `ALL-UNNAMED` exports and opens.
 - **`module-info` now, not deferred.**
   `lathe-format` is a proper JPMS module from the start;
   `requires` guava + the compile-only annotation modules; `exports` the `gjf.java` API package.

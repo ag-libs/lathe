@@ -16,10 +16,12 @@
     standalone.</description>
 
   <properties>
-    <!-- Exporting jdk.compiler internals is incompatible with the release flag; use source/target. -->
-    <maven.compiler.release></maven.compiler.release>
-    <maven.compiler.source>21</maven.compiler.source>
-    <maven.compiler.target>21</maven.compiler.target>
+    <!-- Main code compiles with the parent's release 21, which also forbids any javac-internal
+         export. The test-only javac scanner oracle needs internal exports, which the release flag
+         rejects, so test code compiles with source/target instead. -->
+    <maven.compiler.testRelease></maven.compiler.testRelease>
+    <maven.compiler.testSource>21</maven.compiler.testSource>
+    <maven.compiler.testTarget>21</maven.compiler.testTarget>
     <guava.version>32.1.3-jre</guava.version>
     <jspecify.version>1.0.0</jspecify.version>
     <errorprone.version>2.47.0</errorprone.version>
@@ -114,17 +116,8 @@
               <version>${auto-value.version}</version>
             </path>
           </annotationProcessorPaths>
-          <!-- RemoveUnusedImports still reaches into javac internals; the fork module needs them
-               exported to it at compile time. -Werror is dropped: lint on third-party code is not
-               actionable. -->
-          <compilerArgs combine.self="override">
-            <arg>--add-exports</arg>
-            <arg>jdk.compiler/com.sun.tools.javac.api=io.github.aglibs.lathe.format</arg>
-            <arg>--add-exports</arg>
-            <arg>jdk.compiler/com.sun.tools.javac.tree=io.github.aglibs.lathe.format</arg>
-            <arg>--add-exports</arg>
-            <arg>jdk.compiler/com.sun.tools.javac.util=io.github.aglibs.lathe.format</arg>
-          </compilerArgs>
+          <!-- -Werror is dropped: lint on the vendored google-java-format code is not actionable. -->
+          <compilerArgs combine.self="override"></compilerArgs>
         </configuration>
         <executions>
           <execution>
@@ -136,6 +129,8 @@
                 <arg>jdk.compiler/com.sun.tools.javac.file=io.github.aglibs.lathe.format</arg>
                 <arg>--add-exports</arg>
                 <arg>jdk.compiler/com.sun.tools.javac.parser=io.github.aglibs.lathe.format</arg>
+                <arg>--add-exports</arg>
+                <arg>jdk.compiler/com.sun.tools.javac.util=io.github.aglibs.lathe.format</arg>
               </compilerArgs>
             </configuration>
           </execution>
@@ -145,8 +140,8 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
-          <!-- Both the forked module and the GJF reference (test-classpath, unnamed) reach into
-               javac internals. Temporary: the fork's half goes away as seams are de-internalized. -->
+          <!-- The formatter needs no javac internals. The GJF reference (test classpath, unnamed)
+               does, and so does the test-only scanner oracle, which lives in the fork's module. -->
           <argLine>@{argLine}
             --add-exports jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED
             --add-exports jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED
@@ -158,10 +153,8 @@
             --add-exports jdk.compiler/com.sun.tools.javac.processing=ALL-UNNAMED
             --add-exports jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED
             --add-exports jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED
-            --add-exports jdk.compiler/com.sun.tools.javac.api=io.github.aglibs.lathe.format
             --add-exports jdk.compiler/com.sun.tools.javac.file=io.github.aglibs.lathe.format
             --add-exports jdk.compiler/com.sun.tools.javac.parser=io.github.aglibs.lathe.format
-            --add-exports jdk.compiler/com.sun.tools.javac.tree=io.github.aglibs.lathe.format
             --add-exports jdk.compiler/com.sun.tools.javac.util=io.github.aglibs.lathe.format
             --add-opens jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED
             --add-opens jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED</argLine>
