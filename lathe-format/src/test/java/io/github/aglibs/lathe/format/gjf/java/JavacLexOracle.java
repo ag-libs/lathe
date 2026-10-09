@@ -48,8 +48,7 @@ public final class JavacLexOracle {
     return diagnostic.getKind() == Diagnostic.Kind.ERROR;
   }
 
-  // javac lexes multi-character operators as one token; the formatter splits them into characters,
-  // so the oracle does too. Ranges past the text come from the scanner's appended EOF comment.
+  // Ranges past the text come from the scanner's appended EOF comment.
   private static void addRanges(
       final String text, final RawTok rawToken, final List<LexToken> out) {
     final int start = rawToken.pos();
@@ -64,14 +63,7 @@ public final class JavacLexOracle {
       return;
     }
 
-    if (rawToken.kind() == null || !isSplitOperator(raw)) {
-      out.add(new LexToken(start, end));
-      return;
-    }
-
-    for (int i = start; i < end; i++) {
-      out.add(new LexToken(i, i + 1));
-    }
+    out.add(new LexToken(start, end));
   }
 
   // Since JDK 23 (JEP 467) javac merges consecutive /// lines into one Markdown doc comment; the
@@ -103,18 +95,5 @@ public final class JavacLexOracle {
     }
 
     return i;
-  }
-
-  private static boolean isSplitOperator(final String raw) {
-    final char first = raw.charAt(0);
-    final boolean number =
-        Character.isDigit(first)
-            || (first == '.' && raw.length() > 1 && Character.isDigit(raw.charAt(1)));
-    return raw.length() > 1
-        && raw.indexOf('\\') < 0
-        && !number
-        && first != '"'
-        && first != '\''
-        && !Character.isJavaIdentifierStart(first);
   }
 }

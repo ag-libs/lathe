@@ -348,19 +348,24 @@ The differential gate runs before the server swap; distribution comes last.
 
 - **`JavaLexer`** (our code, `io.github.aglibs.lathe.format`, not exported) returns the contiguous
   `LexToken(start, end)` ranges of the source — whitespace runs, comments, literals and text blocks,
-  identifiers, numbers, and **single operator/separator characters** — or empty on a lex error.
-  It reports **no token kinds**: `JavaInput.buildToks` already classified every range by its text
-  and split operators into characters, so only the boundaries matter.
+  identifiers, numbers, operators, and separators — **cut exactly where javac's scanner cuts them**,
+  up to the first lex error (`lex` returns the tokens before it and whether the text was complete).
+  It reports **no token kinds**: `JavaInput.buildToks` already classified every range by its text.
+  Operators are cut like javac (longest match over its operator set, e.g. `>>>=`, `->`, `::`),
+  although `buildToks` splits them into characters: GJF advances its column counter by the whole
+  operator's length for each piece, and those columns drive layout heuristics such as tabular
+  argument lists.
   Unicode escapes are decoded first (JLS 3.3, including the even-backslash rule) with a map back to
   raw offsets, so escaped comments and identifiers lex correctly and ranges stay raw.
 - **Kinds replaced by text.**
   `ImportOrderer` stops at the words `class`/`interface`/`enum` and `ModifierOrderer` switches on
   modifier keywords — reserved words, so text is exact (`Foo.class` included, as before).
-  `JavaInput.Tok` lost its kind; string-literal text now comes from the source (javac's
-  `stringVal` only fed error messages).
-  On a lex error `buildToks` returns the lone EOF token as before; the parse reports the error.
+  `JavaInput.Tok` lost its kind; a string literal's text is its Unicode-decoded source, because
+  javac's decoded `stringVal` is what classified a literal with escaped quotes as a string.
+  A lex error after the first stop word is ignored, as javac's scanner never reached it; any other
+  lex error makes `buildToks` return the lone EOF token as before, and the parse reports it.
 - **Oracle.** `JavacTokens` moved to test scope; `JavacLexOracle` reduces javac's scanner output to
-  the same ranges (splitting multi-character operators the way the formatter does), and
+  the same ranges, and
   `TokenOracleTest` requires identical ranges on every golden input and output and a set of tricky
   snippets. With `-Dlathe.format.corpus=<dir>` it also checks a source tree:
   **all 7,160 Helidon files and 6,578 JDK sources (`java.base`, `jdk.compiler`, `java.desktop`)
@@ -394,6 +399,43 @@ The differential gate runs before the server swap; distribution comes last.
   JDK sources match, on JDK 21, 26, and 27**. The corpus listing moved to `CorpusProvider`, shared
   with `TokenOracleTest`.
 - Only the test-scope oracle (`JavacTokens`, `JavacLexOracle`) still uses javac internals.
+
+### Test hardening (after Phase 6)
+
+Until here the lexer and import removal were compared with javac/GJF on real code, but the whole
+formatter only on the golden fixtures. Added, all comparing the fork with live GJF `1.35.0`
+through the server's call (`formatSourceAndFixImports`, Google and AOSP style) and requiring the
+same output or the same failure and message:
+
+- `FormatterDifferentialTest` — every golden input, the golden inputs truncated at three offsets
+  (the half-typed files an editor formats), named snippets, and with `-Dlathe.format.corpus` whole
+  source trees (each file whole and cut in half).
+- Shared, named snippets in `CorpusProvider` (operators and compound assignments, unary forms,
+  record and enum variants, interleaved annotations and modifiers, unnamed variables, string
+  concatenation, javadoc references, and — on JDK 25+ — flexible constructor bodies, module
+  imports, implicit classes, primitive patterns). Each runs through all three checks (lexer oracle,
+  import parity, formatter differential), and must format successfully in GJF so it cannot pass by
+  failing alike. Composed annotations (`@GoldenFixtures`, `@Snippets`, `@CorpusFiles`) keep the
+  parameter sources in one place.
+
+**It found three lexer bugs** that the fixtures and the earlier oracles missed, all fixed:
+
+1. **Operator boundaries affect layout.** `buildToks` splits operators into characters but advances
+   GJF's column counter by the whole javac operator's length per piece; those columns drive the
+   tabular-arguments heuristic. Splitting operators in the lexer changed the layout of `Map.of(...)`
+   argument lists in 2 Helidon files. `JavaLexer` now cuts operators like javac, and the oracle
+   compares javac's unsplit tokens.
+2. **Lex errors after the stop word.** javac's scanner stops at `class`/`interface`/`enum` during
+   import reordering, so a later error never counted; the lexer failed on it, skipped the reorder,
+   and reported the parse error one line off in 1,067 truncated Helidon files. Lexing now stops
+   lazily.
+3. **String literals with Unicode-escaped quotes** were classified as operator characters; they are
+   now classified by their decoded text, as javac's decoded `stringVal` did.
+
+After the fixes: **all 7,160 Helidon files format identically to GJF** (both styles, whole and
+truncated); the lexer oracle and import parity match on all Helidon and JDK sources on JDK 21, 26,
+and 27; `clean verify` is green on all three (1,807 tests; 1,788 on 21, where JDK 25+ inputs are
+gated). A private production codebase is checked separately with the same corpus switch.
 
 ## Degradation on new syntax
 

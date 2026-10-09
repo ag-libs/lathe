@@ -38,7 +38,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Optional;
 
 /** {@code JavaInput} extends {@link Input} to represent a Java input document. */
 public final class JavaInput extends Input {
@@ -319,21 +318,27 @@ public final class JavaInput extends Input {
    */
   static ImmutableList<Tok> buildToks(String text, ImmutableSet<String> stopWords)
       throws FormatterException {
-    Optional<List<LexToken>> lexed = JavaLexer.tokenize(text);
-    if (lexed.isEmpty()) {
+    // Like javac's scanner, stop at the first stop word: a lex error after it does not count.
+    JavaLexer.Lexed lexed = JavaLexer.lex(text);
+    if (!lexed.complete()
+        && lexed.tokens().stream()
+            .noneMatch(t -> stopWords.contains(text.substring(t.start(), t.end())))) {
       return ImmutableList.of(new Tok(0, "", "", 0, 0, true)); // EOF
     }
     int kN = 0;
     List<Tok> toks = new ArrayList<>();
     int charI = 0;
     int columnI = 0;
-    for (LexToken t : lexed.get()) {
+    for (LexToken t : lexed.tokens()) {
       // Get string, possibly with Unicode escapes.
       String originalTokText = text.substring(t.start(), t.end());
       if (stopWords.contains(originalTokText)) {
         break;
       }
-      String tokText = originalTokText;
+      // javac reported string literals by their decoded value, so a literal whose quotes are
+      // Unicode escapes is still classified as a string.
+      String decodedTokText = JavaLexer.decodeUnicodeEscapes(originalTokText);
+      String tokText = decodedTokText.startsWith("\"") ? decodedTokText : originalTokText;
       char tokText0 = tokText.charAt(0); // The token's first character.
       final boolean isToken; // Is this tok a token?
       final boolean isNumbered; // Is this tok numbered? (tokens and comments)

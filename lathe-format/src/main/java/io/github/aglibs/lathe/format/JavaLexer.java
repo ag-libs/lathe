@@ -3,12 +3,13 @@ package io.github.aglibs.lathe.format;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.IntPredicate;
 
 /**
  * Splits Java source into the contiguous ranges the formatter consumes: whitespace runs, comments,
- * literals, identifiers, numbers, and single operator or separator characters. Token kinds are not
- * reported; the formatter classifies ranges by their text.
+ * literals, identifiers, numbers, operators, and separators, cut exactly where javac's scanner cuts
+ * them. Token kinds are not reported; the formatter classifies ranges by their text.
  */
 public final class JavaLexer {
 
@@ -22,30 +23,64 @@ public final class JavaLexer {
     }
   }
 
+  /**
+   * The tokens before the first lex error, in order; {@code complete} when the whole text lexed.
+   * Like javac's scanner, a caller that stops early never sees an error further on.
+   */
+  public record Lexed(List<LexToken> tokens, boolean complete) {
+
+    public Lexed {
+      tokens = List.copyOf(tokens);
+    }
+  }
+
   private static final int ERROR = -1;
   private static final char END = Character.MAX_VALUE;
   private static final String TEXT_BLOCK = "\"\"\"";
 
-  // Source with Unicode escapes decoded; rawPos maps each decoded char back to its raw offset, and
-  // rawPos[length] is the raw text length.
+  // javac's operator tokens; it extends an operator while the longer text is still one. The
+  // formatter splits operators into characters, but counts columns by javac's operator length.
+  private static final Set<String> OPERATORS =
+      Set.of(
+          "!", "%", "&", "*", "?", "+", "-", ":", "<", "=", ">", "^", "|", "~", "/", "->", "::",
+          "==", "<=", ">=", "!=", "&&", "||", "++", "--", "+=", "-=", "*=", "/=", "&=", "|=", "^=",
+          "%=", "<<", ">>", ">>>", "<<=", ">>=", ">>>=");
+
+  // Source with Unicode escapes decoded up to the first malformed one; rawPos maps each decoded
+  // char back to its raw offset, and rawPos[length] is the raw offset where decoding stopped.
   private final char[] chars;
   private final int[] rawPos;
   private final int length;
+  private final boolean decoded;
 
-  private JavaLexer(final char[] chars, final int[] rawPos, final int length) {
+  private JavaLexer(
+      final char[] chars, final int[] rawPos, final int length, final boolean decoded) {
     this.chars = chars;
     this.rawPos = rawPos;
     this.length = length;
+    this.decoded = decoded;
+  }
+
+  /** Returns {@code text} with its Unicode escapes decoded, or unchanged if one is malformed. */
+  public static String decodeUnicodeEscapes(final String text) {
+    final JavaLexer lexer = decode(text);
+    return lexer.decoded ? new String(lexer.chars, 0, lexer.length) : text;
   }
 
   /** Returns the ranges covering {@code text}, or empty if it cannot be lexed. */
   public static Optional<List<LexToken>> tokenize(final String text) {
-    return decode(text).flatMap(JavaLexer::scan);
+    final Lexed lexed = lex(text);
+    return lexed.complete() ? Optional.of(lexed.tokens()) : Optional.empty();
+  }
+
+  /** Lexes {@code text} up to its first error. */
+  public static Lexed lex(final String text) {
+    return decode(text).scan();
   }
 
   // JLS 3.3: a backslash starts a Unicode escape only when preceded by an even number of raw
   // backslashes; a backslash produced by an escape never starts another one.
-  private static Optional<JavaLexer> decode(final String text) {
+  private static JavaLexer decode(final String text) {
     final var chars = new char[text.length()];
     final var rawPos = new int[text.length() + 1];
     int n = 0;
@@ -68,7 +103,7 @@ public final class JavaLexer {
 
       final int value = hexValue(text, digits);
       if (value == ERROR) {
-        return Optional.empty();
+        return new JavaLexer(chars, rawPos, n, false);
       }
 
       chars[n++] = (char) value;
@@ -77,7 +112,7 @@ public final class JavaLexer {
     }
 
     rawPos[n] = text.length();
-    return Optional.of(new JavaLexer(chars, rawPos, n));
+    return new JavaLexer(chars, rawPos, n, true);
   }
 
   private static char rawAt(final String text, final int i) {
@@ -102,20 +137,29 @@ public final class JavaLexer {
     return value;
   }
 
-  private Optional<List<LexToken>> scan() {
+  private Lexed scan() {
     final List<LexToken> tokens = new ArrayList<>();
     int i = 0;
     while (i < length) {
       final int end = tokenEnd(i);
       if (end == ERROR) {
-        return Optional.empty();
+        return new Lexed(tokens, false);
       }
 
       tokens.add(new LexToken(rawPos[i], rawPos[end]));
       i = end;
     }
 
-    return Optional.of(List.copyOf(tokens));
+    if (decoded) {
+      return new Lexed(tokens, true);
+    }
+
+    // Decoding stopped at a malformed escape, which may have cut the last token short.
+    if (!tokens.isEmpty()) {
+      tokens.removeLast();
+    }
+
+    return new Lexed(tokens, false);
   }
 
   private int tokenEnd(final int i) {
@@ -144,12 +188,29 @@ public final class JavaLexer {
       return numberEnd(i);
     }
 
+    if (startsWith(i, "...")) {
+      return i + 3;
+    }
+
     final int codePoint = Character.codePointAt(chars, i, length);
     if (Character.isJavaIdentifierStart(codePoint)) {
       return identifierEnd(i);
     }
 
+    if (OPERATORS.contains(String.valueOf(c))) {
+      return operatorEnd(i);
+    }
+
     return i + Character.charCount(codePoint);
+  }
+
+  private int operatorEnd(final int start) {
+    int end = start + 1;
+    while (end < length && OPERATORS.contains(new String(chars, start, end + 1 - start))) {
+      end++;
+    }
+
+    return end;
   }
 
   private int blockCommentEnd(final int start) {

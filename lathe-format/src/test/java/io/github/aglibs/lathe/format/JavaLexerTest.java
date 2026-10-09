@@ -46,14 +46,30 @@ final class JavaLexerTest {
   }
 
   @Test
-  void tokenize_operatorsAndNumbers_splitAsFormatterExpects() {
-    assertThat(texts("a>>>=b")).containsExactly("a", ">", ">", ">", "=", "b");
-    assertThat(texts("x->y::z")).containsExactly("x", "-", ">", "y", ":", ":", "z");
+  void tokenize_operatorsAndNumbers_cutLikeJavac() {
+    assertThat(texts("a>>>=b")).containsExactly("a", ">>>=", "b");
+    assertThat(texts("x->y::z")).containsExactly("x", "->", "y", "::", "z");
+    assertThat(texts("i--->0")).containsExactly("i", "--", "->", "0");
+    assertThat(texts("a<-b")).containsExactly("a", "<", "-", "b");
+    assertThat(texts("f(String...a)")).containsExactly("f", "(", "String", "...", "a", ")");
 
     assertThat(texts("0x1.8p-3f")).containsExactly("0x1.8p-3f");
     assertThat(texts("1_000L+.5e+2d")).containsExactly("1_000L", "+", ".5e+2d");
     assertThat(texts("0b1010_1010")).containsExactly("0b1010_1010");
     assertThat(texts("1.f")).containsExactly("1.f");
+  }
+
+  @Test
+  void lex_errorAfterValidTokens_keepsTokensBeforeIt() {
+    final JavaLexer.Lexed complete = JavaLexer.lex("class A {}");
+    final JavaLexer.Lexed broken = JavaLexer.lex("import a.B; class A { /* open");
+    final JavaLexer.Lexed badEscape = JavaLexer.lex("class A { int ab\\u00G1; }");
+
+    assertThat(complete.complete()).isTrue();
+    assertThat(broken.complete()).isFalse();
+    assertThat(broken.tokens().getLast().end()).isEqualTo("import a.B; class A { ".length());
+    assertThat(badEscape.complete()).isFalse();
+    assertThat(badEscape.tokens().getLast().end()).isEqualTo("class A { int ".length());
   }
 
   private static List<String> texts(final String source) {
