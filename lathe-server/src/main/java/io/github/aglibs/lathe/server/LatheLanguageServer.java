@@ -1,12 +1,12 @@
 package io.github.aglibs.lathe.server;
 
-import com.google.googlejavaformat.java.JavaFormatterOptions.Style;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.WorkspaceStyle;
 import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
+import io.github.aglibs.lathe.format.gjf.java.JavaFormatterOptions.Style;
 import io.github.aglibs.lathe.server.analysis.ExtractionSupport;
 import io.github.aglibs.lathe.server.analysis.TokenScanner;
 import java.io.IOException;

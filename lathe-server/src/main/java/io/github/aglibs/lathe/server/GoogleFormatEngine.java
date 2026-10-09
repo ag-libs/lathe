@@ -1,11 +1,13 @@
 package io.github.aglibs.lathe.server;
 
-import com.google.googlejavaformat.java.Formatter;
-import com.google.googlejavaformat.java.JavaFormatterOptions;
-import com.google.googlejavaformat.java.JavaFormatterOptions.Style;
+import io.github.aglibs.lathe.format.gjf.java.Formatter;
+import io.github.aglibs.lathe.format.gjf.java.JavaFormatterOptions;
+import io.github.aglibs.lathe.format.gjf.java.JavaFormatterOptions.Style;
 import java.nio.file.Path;
 
-// Built-in in-process engine: Google Java Format, which also reorders and prunes imports.
+// Built-in in-process engine: Google Java Style via lathe-format (google-java-format re-hosted on
+// the
+// public javac API, so it needs no javac access flags), which also reorders and prunes imports.
 record GoogleFormatEngine(Style style) implements FormatEngine {
 
   @Override

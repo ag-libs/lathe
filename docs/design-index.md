@@ -63,7 +63,8 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 - [Lathe Format](planned/lathe-format.md) — a fork of google-java-format that makes formatting a
   first-class part of `lathe-server`, re-hosted off `com.sun.tools.javac` internals onto the public
   Compiler Tree API (no `--add-exports`). The fork is fully off javac internals and compiles with
-  `--release 21`, verified against google-java-format on large corpora; server integration remains.
+  `--release 21`, verified against google-java-format on large corpora, and is lathe-server's built-in
+  formatter (the server no longer depends on GJF).
   Reusing Lathe's attributed tree was measured and rejected. A standalone library/CLI is secondary.
 
 **Editing features (deferred from M2):**

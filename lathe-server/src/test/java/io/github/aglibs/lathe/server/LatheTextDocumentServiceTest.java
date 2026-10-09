@@ -13,7 +13,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
-import com.google.googlejavaformat.java.JavaFormatterOptions.Style;
 import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
@@ -21,6 +20,7 @@ import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
 import io.github.aglibs.lathe.core.schema.ResourceRootData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
+import io.github.aglibs.lathe.format.gjf.java.JavaFormatterOptions.Style;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyItemData;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyItemDataCodec;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;

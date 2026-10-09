@@ -3,7 +3,7 @@ package io.github.aglibs.lathe.server;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.google.googlejavaformat.java.JavaFormatterOptions.Style;
+import io.github.aglibs.lathe.format.gjf.java.JavaFormatterOptions.Style;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import java.nio.file.Path;
 import java.util.List;

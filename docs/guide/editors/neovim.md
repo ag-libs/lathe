@@ -182,7 +182,7 @@ Both follow a per-workspace **style** — a project's committed `lathe-style.jso
 
 **Formatting** — usually you set nothing: `lathe:sync` writes the project's formatter into
 `.lathe/style.json` from its Spotless config. `style.formatter.engine` is `"google"`/`"aosp"`
-(in-process google-java-format, with import cleanup), `"command-file"` (a non-google Spotless formatter
+(the built-in google-java-format–compatible formatter, with import cleanup), `"command-file"` (a non-google Spotless formatter
 run via `mvn spotless:apply` on the edited file — the project's own eclipse/palantir/etc.), `"command"`
 (a stdin/stdout tool), or `"none"`. It runs on demand via `require('lathe').format()` (or
 `:LatheFormat`); add `format_on_save = true` to also format on write (wired whenever the server

@@ -29,9 +29,9 @@ import org.eclipse.aether.util.artifact.JavaScopes;
 
 public final class ServerInstaller {
 
-  // jdk.compiler internals the in-process javac needs. Shared by both launchers: the editor grants
-  // them to ALL-UNNAMED (Error Prone) and to the google-java-format module; the MCP launcher runs
-  // entirely on the classpath, so it grants them to ALL-UNNAMED only.
+  // jdk.compiler internals that classpath javac plugins (Error Prone) need. Both launchers grant
+  // them to ALL-UNNAMED; lathe-server and its formatter (lathe-format) use only the public javac
+  // API and need none.
   private static final String[] JAVAC_EXPORT_PACKAGES = {
     "api", "code", "comp", "file", "main", "model", "parser", "processing", "tree", "util"
   };
@@ -255,32 +255,17 @@ public final class ServerInstaller {
     // Classpath javac plugins (e.g. Error Prone, loaded via -Xplugin: on the processor path) run
     // in the unnamed module. They access javac internals directly and need ALL-UNNAMED exports.
     // Without these, didSave full passes that replay -Xplugin:ErrorProne throw IllegalAccessError.
-    //
-    // google-java-format is a named module on the module path and uses module-qualified exports.
     return """
         #!/bin/sh
         %sexec "$java_bin" ${LATHE_JVM_OPTS:-} \\
           --add-modules java.net.http \\
-        %s%s%s%s  --module-path %s \\
+        %s%s  --module-path %s \\
           -m io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer "$@"
         """
         .formatted(
             javaResolvePrologue(),
             javacAccessLines("--add-exports", "ALL-UNNAMED", JAVAC_EXPORT_PACKAGES),
             javacAccessLines("--add-opens", "ALL-UNNAMED", JAVAC_OPEN_PACKAGES),
-            javacAccessLines(
-                "--add-exports",
-                "com.google.googlejavaformat",
-                "api",
-                "code",
-                "comp",
-                "file",
-                "main",
-                "model",
-                "parser",
-                "tree",
-                "util"),
-            javacAccessLines("--add-opens", "com.google.googlejavaformat", JAVAC_OPEN_PACKAGES),
             modulePath);
   }
 
@@ -290,7 +275,7 @@ public final class ServerInstaller {
     // the in-process javac it drives run in the unnamed module. That javac needs the same
     // jdk.compiler
     // internals the editor launcher grants, but targeted at ALL-UNNAMED — there is no named module
-    // here (google-java-format is unnamed on the classpath too, so the same exports cover it).
+    // here.
     return """
         #!/bin/sh
         %sexec "$java_bin" ${LATHE_JVM_OPTS:-} \\

@@ -71,7 +71,7 @@ bindings.
 |---------------------|----------------------------------------------------------------------------------------------|-----------------------------------|
 | Diagnostics         | `javac` errors and warnings exactly as configured in Maven, plus unused private members and locals | `textDocument/publishDiagnostics` |
 | Code actions        | quick fixes and refactors: missing imports, add `throws`, wrap in `try/catch`, declare local, replace `var` with the inferred type, extract variable / constant / field, add a `final` field as a constructor parameter, stub a missing method | `textDocument/codeAction`         |
-| Formatting (per-workspace) | whole-document google-java-format / AOSP, **or the project's own Spotless formatter via `mvn spotless:apply`**, **or** a custom external command — auto-detected per project | `textDocument/formatting`         |
+| Formatting (per-workspace) | whole-document google-java-format / AOSP style (built in, byte-identical to google-java-format), **or the project's own Spotless formatter via `mvn spotless:apply`**, **or** a custom external command — auto-detected per project | `textDocument/formatting`         |
 
 Formatting follows a **per-workspace style**, auto-detected from the project's `spotless-maven-plugin`
 by `lathe:sync` (a committed `lathe-style.json` or the editor's global default otherwise). It is

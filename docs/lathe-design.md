@@ -98,7 +98,7 @@ lathe-server
     reads        → .lathe/ params files + workspace manifest
     reads/writes → .lathe/<rel>/classes/, .lathe/<rel>/test-classes/, .lathe/<rel>/generated-sources/
     reads        → ~/.cache/lathe/ (sources)
-    depends on   → lathe-core, lsp4j, google-java-format
+    depends on   → lathe-core, lathe-format, lsp4j
 ```
 
 `lathe:init` does not install server binaries.
@@ -210,8 +210,9 @@ its status is tracked in the roadmap.
 
 Lathe server code may use the public `javax.tools`, `javax.lang.model`, and exported `com.sun.source.*` APIs.
 It must not import `com.sun.tools.javac.*`.
-JVM `--add-exports` / `--add-opens` flags for `com.sun.tools.javac.*` are allowed only for third-party modules that
-require them, such as `com.google.googlejavaformat` and classpath-loaded javac plugins.
+JVM `--add-exports` / `--add-opens` flags for `com.sun.tools.javac.*` are allowed only for third-party code that
+requires them, such as classpath-loaded javac plugins (Error Prone).
+The built-in formatter (`lathe-format`) uses only the public API too.
 Interactive attribution (`didOpen` / `didChange`) does not replay javac plugins from captured Maven compiler arguments.
 Options such as `-Xplugin:ErrorProne` and Error Prone's `-Xep*` flags are stripped for interactive passes.
 Full save passes replay them for Maven-faithful diagnostics.
@@ -939,14 +940,16 @@ Token coverage is tracked in the roadmap and the feature-specific semantic-token
 
 Formatting is resolved per workspace from a style file (`lathe-style.json` / `.lathe/style.json`,
 auto-detected from `spotless-maven-plugin` by `lathe:sync`). The in-process engine is
-`google-java-format` (GOOGLE/AOSP); a non-google Spotless formatter is delegated to `mvn spotless:apply`
+`lathe-format` (GOOGLE/AOSP) — google-java-format re-hosted on the public javac API, byte-identical
+output, no access flags (see [Lathe Format](planned/lathe-format.md)); a non-google Spotless formatter is
+delegated to `mvn spotless:apply`
 on the edited file (the `command-file` engine, preferring mvnd → `./mvnw` → mvn), and an arbitrary
 stdin/stdout tool via `command`. `FormatterException` and command failures are caught gracefully,
 leaving the buffer unchanged. Whole file only; range and on-type formatting are deferred. See
 [workspace-scoped style](done/lathe-workspace-style.md) and
 [delegated Maven formatting](done/lathe-delegated-maven-formatting.md).
 
-Import optimization uses google-java-format's import-fixing formatter (the in-process google/aosp
+Import optimization uses `lathe-format`'s import-fixing formatter (the in-process google/aosp
 path), keeping format-on-save and organize-import in the same backend.
 
 ### Code action dispatch
@@ -1110,11 +1113,8 @@ exec java \
   ... (all 10 packages) ...
   --add-opens jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED \
   --add-opens jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED \
-  # google-java-format is a named module on the module path; use module-qualified exports.
-  --add-exports jdk.compiler/com.sun.tools.javac.api=com.google.googlejavaformat \
-  ... (9 packages, no processing) ...
-  --add-opens jdk.compiler/com.sun.tools.javac.code=com.google.googlejavaformat \
-  --add-opens jdk.compiler/com.sun.tools.javac.comp=com.google.googlejavaformat \
+  # lathe-server and its formatter (lathe-format) use only the public javac API: no
+  # module-qualified flags.
   --module-path /abs/.m2/.../lathe-server.jar:/abs/.m2/.../lathe-core.jar:... \
   -m io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer "$@"
 ```

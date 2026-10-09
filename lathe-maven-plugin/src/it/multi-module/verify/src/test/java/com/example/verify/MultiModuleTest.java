@@ -65,7 +65,8 @@ class MultiModuleTest {
     assertThat(content).contains("--add-modules java.net.http");
     assertThat(content).contains("--add-exports jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED");
     assertThat(content).contains("--add-opens jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED");
-    assertThat(content).contains("--add-exports jdk.compiler/com.sun.tools.javac.api=com.google.googlejavaformat");
+    // The built-in formatter (lathe-format) needs no javac access flags of its own.
+    assertThat(content).doesNotContain("com.google.googlejavaformat");
     assertThat(content).contains("--module-path");
     assertThat(content).contains("-m io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer");
   }
