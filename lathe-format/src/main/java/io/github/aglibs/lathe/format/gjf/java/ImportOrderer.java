@@ -22,7 +22,6 @@ import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedSet;
-import com.sun.tools.javac.parser.Tokens.TokenKind;
 import io.github.aglibs.lathe.format.gjf.Newlines;
 import io.github.aglibs.lathe.format.gjf.java.JavaFormatterOptions.Style;
 import io.github.aglibs.lathe.format.gjf.java.JavaInput.Tok;
@@ -105,11 +104,11 @@ public class ImportOrderer {
   }
 
   /**
-   * {@link TokenKind}s that indicate the start of a type definition. We use this to avoid scanning
-   * the whole file, since we know that imports must precede any type definition.
+   * Keywords that indicate the start of a type definition. We use this to avoid scanning the whole
+   * file, since we know that imports must precede any type definition.
    */
-  private static final ImmutableSet<TokenKind> CLASS_START =
-      ImmutableSet.of(TokenKind.CLASS, TokenKind.INTERFACE, TokenKind.ENUM);
+  private static final ImmutableSet<String> CLASS_START =
+      ImmutableSet.of("class", "interface", "enum");
 
   /**
    * We use this set to find the first import, and again to check that there are no imports after

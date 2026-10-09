@@ -24,7 +24,6 @@ import com.google.common.collect.Ordering;
 import com.google.common.collect.Range;
 import com.google.common.collect.RangeSet;
 import com.google.common.collect.TreeRangeMap;
-import com.sun.tools.javac.parser.Tokens.TokenKind;
 import io.github.aglibs.lathe.format.gjf.Input.Tok;
 import io.github.aglibs.lathe.format.gjf.Input.Token;
 import java.util.ArrayList;
@@ -206,29 +205,23 @@ final class ModifierOrderer {
    * is not a modifier.
    */
   private static @Nullable Modifier asModifier(Token token) {
-    TokenKind kind = ((JavaInput.Tok) token.getTok()).kind();
-    if (kind == null) {
-      return null;
-    }
-    return switch (kind) {
-      case PUBLIC -> Modifier.PUBLIC;
-      case PROTECTED -> Modifier.PROTECTED;
-      case PRIVATE -> Modifier.PRIVATE;
-      case ABSTRACT -> Modifier.ABSTRACT;
-      case STATIC -> Modifier.STATIC;
-      case DEFAULT -> Modifier.DEFAULT;
+    // Modifier keywords are reserved words, so the token text identifies them exactly.
+    return switch (token.getTok().getText()) {
+      case "public" -> Modifier.PUBLIC;
+      case "protected" -> Modifier.PROTECTED;
+      case "private" -> Modifier.PRIVATE;
+      case "abstract" -> Modifier.ABSTRACT;
+      case "static" -> Modifier.STATIC;
+      case "default" -> Modifier.DEFAULT;
 
-      case FINAL -> Modifier.FINAL;
-      case TRANSIENT -> Modifier.TRANSIENT;
-      case VOLATILE -> Modifier.VOLATILE;
-      case SYNCHRONIZED -> Modifier.SYNCHRONIZED;
-      case NATIVE -> Modifier.NATIVE;
-      case STRICTFP -> Modifier.STRICTFP;
-      default ->
-          switch (token.getTok().getText()) {
-            case "sealed" -> Modifier.SEALED;
-            default -> null;
-          };
+      case "final" -> Modifier.FINAL;
+      case "transient" -> Modifier.TRANSIENT;
+      case "volatile" -> Modifier.VOLATILE;
+      case "synchronized" -> Modifier.SYNCHRONIZED;
+      case "native" -> Modifier.NATIVE;
+      case "strictfp" -> Modifier.STRICTFP;
+      case "sealed" -> Modifier.SEALED;
+      default -> null;
     };
   }
 

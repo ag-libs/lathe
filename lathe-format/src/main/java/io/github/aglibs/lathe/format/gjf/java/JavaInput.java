@@ -16,7 +16,6 @@ package io.github.aglibs.lathe.format.gjf.java;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.collect.Iterables.getLast;
-import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.google.common.base.MoreObjects;
 import com.google.common.base.Verify;
@@ -31,32 +30,15 @@ import com.google.common.collect.Range;
 import com.google.common.collect.RangeSet;
 import com.google.common.collect.TreeRangeSet;
 import com.sun.source.tree.CompilationUnitTree;
-import com.sun.tools.javac.file.JavacFileManager;
-import com.sun.tools.javac.parser.Tokens.TokenKind;
-import com.sun.tools.javac.util.Context;
-import com.sun.tools.javac.util.JCDiagnostic;
-import com.sun.tools.javac.util.Log;
-import com.sun.tools.javac.util.Log.DeferredDiagnosticHandler;
-import com.sun.tools.javac.util.Options;
+import io.github.aglibs.lathe.format.JavaLexer;
+import io.github.aglibs.lathe.format.JavaLexer.LexToken;
 import io.github.aglibs.lathe.format.gjf.Input;
 import io.github.aglibs.lathe.format.gjf.Newlines;
-import io.github.aglibs.lathe.format.gjf.java.JavacTokens.RawTok;
-import java.io.IOException;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Method;
-import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
-import javax.tools.Diagnostic;
-import javax.tools.DiagnosticCollector;
-import javax.tools.DiagnosticListener;
-import javax.tools.JavaFileManager;
-import javax.tools.JavaFileObject;
-import javax.tools.JavaFileObject.Kind;
-import javax.tools.SimpleJavaFileObject;
-import org.jspecify.annotations.Nullable;
+import java.util.Optional;
 
 /** {@code JavaInput} extends {@link Input} to represent a Java input document. */
 public final class JavaInput extends Input {
@@ -79,7 +61,6 @@ public final class JavaInput extends Input {
     private final int position;
     private final int columnI;
     private final boolean isToken;
-    private final TokenKind kind;
 
     /**
      * The {@code Tok} constructor.
@@ -90,23 +71,14 @@ public final class JavaInput extends Input {
      * @param position its {@code 0}-origin position in the input
      * @param columnI its {@code 0}-origin column number in the input
      * @param isToken whether the {@code Tok} is a token
-     * @param kind the token kind
      */
-    Tok(
-        int index,
-        String originalText,
-        String text,
-        int position,
-        int columnI,
-        boolean isToken,
-        TokenKind kind) {
+    Tok(int index, String originalText, String text, int position, int columnI, boolean isToken) {
       this.index = index;
       this.originalText = originalText;
       this.text = text;
       this.position = position;
       this.columnI = columnI;
       this.isToken = isToken;
-      this.kind = kind;
     }
 
     @Override
@@ -179,10 +151,6 @@ public final class JavaInput extends Input {
           .add("columnI", columnI)
           .add("isToken", isToken)
           .toString();
-    }
-
-    public TokenKind kind() {
-      return kind;
     }
   }
 
@@ -349,51 +317,23 @@ public final class JavaInput extends Input {
    * @param stopTokens a set of tokens which should cause lexing to stop. If one of these is found,
    *     the returned list will include tokens up to but not including that token.
    */
-  static ImmutableList<Tok> buildToks(String text, ImmutableSet<TokenKind> stopTokens)
+  static ImmutableList<Tok> buildToks(String text, ImmutableSet<String> stopWords)
       throws FormatterException {
-    stopTokens = ImmutableSet.<TokenKind>builder().addAll(stopTokens).add(TokenKind.EOF).build();
-    Context context = new Context();
-    Options.instance(context).put("--enable-preview", "true");
-    JavaFileManager fileManager = new JavacFileManager(context, false, UTF_8);
-    context.put(JavaFileManager.class, fileManager);
-    DiagnosticCollector<JavaFileObject> diagnosticCollector = new DiagnosticCollector<>();
-    context.put(DiagnosticListener.class, diagnosticCollector);
-    Log log = Log.instance(context);
-    log.useSource(
-        new SimpleJavaFileObject(URI.create("Source.java"), Kind.SOURCE) {
-          @Override
-          public CharSequence getCharContent(boolean ignoreEncodingErrors) throws IOException {
-            return text;
-          }
-        });
-    DeferredDiagnosticHandler diagnostics = deferredDiagnosticHandler(log);
-    ImmutableList<RawTok> rawToks = JavacTokens.getTokens(text, context, stopTokens);
-    Collection<JCDiagnostic> ds;
-    try {
-      @SuppressWarnings("unchecked")
-      var extraLocalForSuppression = (Collection<JCDiagnostic>) GET_DIAGNOSTICS.invoke(diagnostics);
-      ds = extraLocalForSuppression;
-    } catch (ReflectiveOperationException e) {
-      throw new LinkageError(e.getMessage(), e);
-    }
-    if (ds.stream().anyMatch(d -> d.getKind() == Diagnostic.Kind.ERROR)) {
-      return ImmutableList.of(new Tok(0, "", "", 0, 0, true, null)); // EOF
+    Optional<List<LexToken>> lexed = JavaLexer.tokenize(text);
+    if (lexed.isEmpty()) {
+      return ImmutableList.of(new Tok(0, "", "", 0, 0, true)); // EOF
     }
     int kN = 0;
     List<Tok> toks = new ArrayList<>();
     int charI = 0;
     int columnI = 0;
-    for (RawTok t : rawToks) {
-      if (stopTokens.contains(t.kind())) {
+    for (LexToken t : lexed.get()) {
+      // Get string, possibly with Unicode escapes.
+      String originalTokText = text.substring(t.start(), t.end());
+      if (stopWords.contains(originalTokText)) {
         break;
       }
-      int charI0 = t.pos();
-      // Get string, possibly with Unicode escapes.
-      String originalTokText = text.substring(charI0, t.endPos());
-      String tokText =
-          t.kind() == TokenKind.STRINGLITERAL
-              ? t.stringVal() // Unicode escapes removed.
-              : originalTokText;
+      String tokText = originalTokText;
       char tokText0 = tokText.charAt(0); // The token's first character.
       final boolean isToken; // Is this tok a token?
       final boolean isNumbered; // Is this tok numbered? (tokens and comments)
@@ -451,14 +391,7 @@ public final class JavaInput extends Input {
       }
       if (strings.size() == 1) {
         toks.add(
-            new Tok(
-                isNumbered ? kN++ : -1,
-                originalTokText,
-                tokText,
-                charI,
-                columnI,
-                isToken,
-                t.kind()));
+            new Tok(isNumbered ? kN++ : -1, originalTokText, tokText, charI, columnI, isToken));
         charI += originalTokText.length();
         columnI = updateColumn(columnI, originalTokText);
 
@@ -468,52 +401,19 @@ public final class JavaInput extends Input {
               "Unicode escapes not allowed in whitespace or multi-character operators");
         }
         for (String str : strings) {
-          toks.add(new Tok(isNumbered ? kN++ : -1, str, str, charI, columnI, isToken, null));
+          toks.add(new Tok(isNumbered ? kN++ : -1, str, str, charI, columnI, isToken));
           charI += str.length();
           columnI = updateColumn(columnI, originalTokText);
         }
       }
       if (extraNewline != null) {
-        toks.add(new Tok(-1, extraNewline, extraNewline, charI, columnI, false, null));
+        toks.add(new Tok(-1, extraNewline, extraNewline, charI, columnI, false));
         columnI = 0;
         charI += extraNewline.length();
       }
     }
-    toks.add(new Tok(kN, "", "", charI, columnI, true, null)); // EOF tok.
+    toks.add(new Tok(kN, "", "", charI, columnI, true)); // EOF tok.
     return ImmutableList.copyOf(toks);
-  }
-
-  private static final Constructor<DeferredDiagnosticHandler>
-      DEFERRED_DIAGNOSTIC_HANDLER_CONSTRUCTOR = getDeferredDiagnosticHandlerConstructor();
-
-  // Depending on the JDK version, we might have a static class whose constructor has an explicit
-  // Log parameter, or an inner class whose constructor has an *implicit* Log parameter. They are
-  // different at the source level, but look the same to reflection.
-
-  private static Constructor<DeferredDiagnosticHandler> getDeferredDiagnosticHandlerConstructor() {
-    try {
-      return DeferredDiagnosticHandler.class.getConstructor(Log.class);
-    } catch (NoSuchMethodException e) {
-      throw new LinkageError(e.getMessage(), e);
-    }
-  }
-
-  private static DeferredDiagnosticHandler deferredDiagnosticHandler(Log log) {
-    try {
-      return DEFERRED_DIAGNOSTIC_HANDLER_CONSTRUCTOR.newInstance(log);
-    } catch (ReflectiveOperationException e) {
-      throw new LinkageError(e.getMessage(), e);
-    }
-  }
-
-  private static final Method GET_DIAGNOSTICS = getGetDiagnostics();
-
-  private static @Nullable Method getGetDiagnostics() {
-    try {
-      return DeferredDiagnosticHandler.class.getMethod("getDiagnostics");
-    } catch (NoSuchMethodException e) {
-      throw new LinkageError(e.getMessage(), e);
-    }
   }
 
   private static int updateColumn(int columnI, String originalTokText) {

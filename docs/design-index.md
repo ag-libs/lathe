@@ -62,8 +62,8 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 
 - [Lathe Format](planned/lathe-format.md) — a fork of google-java-format that makes formatting a
   first-class part of `lathe-server`, re-hosted off `com.sun.tools.javac` internals onto the public
-  Compiler Tree API (no `--add-exports`). Baseline, audit, widened test bar, visitor flags, and
-  public parse/positions are done; the lexer, `RemoveUnusedImports`, and server integration remain.
+  Compiler Tree API (no `--add-exports`). Baseline, audit, widened test bar, visitor flags, public
+  parse/positions, and an own lexer are done; `RemoveUnusedImports` and server integration remain.
   Reusing Lathe's attributed tree was measured and rejected. A standalone library/CLI is secondary.
 
 **Editing features (deferred from M2):**

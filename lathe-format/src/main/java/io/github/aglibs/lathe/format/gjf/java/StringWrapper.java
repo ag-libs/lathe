@@ -41,8 +41,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
-import javax.tools.Diagnostic;
-import javax.tools.JavaFileObject;
 
 /** Wraps string literals that exceed the column limit. */
 public final class StringWrapper {
@@ -79,8 +77,8 @@ public final class StringWrapper {
     {
       // We really don't want bugs in this pass to change the behaviour of programs we're
       // formatting, so check that the pretty-printed AST is the same before and after reformatting.
-      String expected = parse(input, /* allowStringFolding= */ true).unit().toString();
-      String actual = parse(result, /* allowStringFolding= */ true).unit().toString();
+      String expected = Trees.parse(input, /* allowStringFolding= */ true).unit().toString();
+      String actual = Trees.parse(result, /* allowStringFolding= */ true).unit().toString();
       if (!expected.equals(actual)) {
         throw new FormatterException(
             String.format(
@@ -113,7 +111,7 @@ public final class StringWrapper {
       this.columnLimit = columnLimit;
       this.input = input;
       this.separator = Newlines.guessLineSeparator(input);
-      this.unit = parse(input, /* allowStringFolding= */ false);
+      this.unit = Trees.parse(input, /* allowStringFolding= */ false);
       this.lineMap = unit.unit().getLineMap();
     }
 
@@ -458,18 +456,6 @@ public final class StringWrapper {
       }
     }
     return false;
-  }
-
-  /** Parses the given Java source. */
-  private static Trees.ParsedUnit parse(String source, boolean allowStringFolding)
-      throws FormatterException {
-    List<Diagnostic<? extends JavaFileObject>> errorDiagnostics = new ArrayList<>();
-    Trees.ParsedUnit unit = Trees.parse(errorDiagnostics, allowStringFolding, source);
-    if (!errorDiagnostics.isEmpty()) {
-      // error handling is done during formatting
-      throw FormatterException.fromJavacDiagnostics(errorDiagnostics);
-    }
-    return unit;
   }
 
   /** Applies replacements to the given string. */

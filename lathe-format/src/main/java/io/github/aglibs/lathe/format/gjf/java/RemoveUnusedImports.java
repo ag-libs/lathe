@@ -46,13 +46,10 @@ import com.sun.tools.javac.tree.JCTree.JCFieldAccess;
 import com.sun.tools.javac.tree.JCTree.JCImport;
 import io.github.aglibs.lathe.format.gjf.Newlines;
 import java.lang.reflect.Method;
-import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import javax.tools.Diagnostic;
-import javax.tools.JavaFileObject;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -201,7 +198,7 @@ public class RemoveUnusedImports {
   }
 
   public static String removeUnusedImports(final String contents) throws FormatterException {
-    Trees.ParsedUnit parsed = parse(contents);
+    Trees.ParsedUnit parsed = Trees.parse(contents, /* allowStringFolding= */ false);
     // The javac-internal tree and javadoc types below are cut over separately; the parse itself is
     // public, and its trees are javac's implementation classes at runtime.
     JCCompilationUnit unit = (JCCompilationUnit) parsed.unit();
@@ -210,17 +207,6 @@ public class RemoveUnusedImports {
     return applyReplacements(
         contents,
         buildReplacements(contents, parsed, unit, scanner.usedNames, scanner.usedInJavadoc));
-  }
-
-  private static Trees.ParsedUnit parse(String javaInput) throws FormatterException {
-    List<Diagnostic<? extends JavaFileObject>> errorDiagnostics = new ArrayList<>();
-    Trees.ParsedUnit parsed =
-        Trees.parse(errorDiagnostics, /* allowStringFolding= */ false, javaInput);
-    if (!errorDiagnostics.isEmpty()) {
-      // error handling is done during formatting
-      throw FormatterException.fromJavacDiagnostics(errorDiagnostics);
-    }
-    return parsed;
   }
 
   /** Construct replacements to fix unused imports. */

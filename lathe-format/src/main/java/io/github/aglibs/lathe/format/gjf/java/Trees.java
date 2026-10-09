@@ -31,6 +31,7 @@ import com.sun.source.util.TreePath;
 import java.io.IOError;
 import java.io.IOException;
 import java.net.URI;
+import java.util.ArrayList;
 import java.util.List;
 import javax.lang.model.element.Name;
 import javax.tools.Diagnostic;
@@ -187,21 +188,17 @@ class Trees {
     return ((ParenthesizedTree) node).getExpression();
   }
 
-  static ParsedUnit parse(
-      List<Diagnostic<? extends JavaFileObject>> errorDiagnostics,
-      boolean allowStringFolding,
-      String javaInput) {
+  /**
+   * Parses {@code javaInput} with a public {@link JavacTask}.
+   *
+   * @throws FormatterException if parsing reports an error
+   */
+  static ParsedUnit parse(String javaInput, boolean allowStringFolding) throws FormatterException {
+    List<Diagnostic<? extends JavaFileObject>> errorDiagnostics = new ArrayList<>();
     DiagnosticListener<JavaFileObject> diagnostics =
         diagnostic -> {
           if (errorDiagnostic(diagnostic)) {
             errorDiagnostics.add(diagnostic);
-          }
-        };
-    SimpleJavaFileObject source =
-        new SimpleJavaFileObject(URI.create("source"), JavaFileObject.Kind.SOURCE) {
-          @Override
-          public String getCharContent(boolean ignoreEncodingErrors) {
-            return javaInput;
           }
         };
     // Preview syntax is always accepted; it needs -source pinned to the running JDK's version.
@@ -214,7 +211,8 @@ class Trees {
             "-XDallowStringFolding=" + allowStringFolding);
     JavacTask task =
         (JavacTask)
-            COMPILER.getTask(null, null, diagnostics, options, null, ImmutableList.of(source));
+            COMPILER.getTask(
+                null, null, diagnostics, options, null, ImmutableList.of(sourceFile(javaInput)));
     CompilationUnitTree unit;
     try {
       unit = Iterables.getOnlyElement(task.parse());
@@ -222,7 +220,20 @@ class Trees {
       // impossible: the source is in memory
       throw new IOError(e);
     }
+    if (!errorDiagnostics.isEmpty()) {
+      throw FormatterException.fromJavacDiagnostics(errorDiagnostics);
+    }
     return new ParsedUnit(javaInput, unit, DocTrees.instance(task));
+  }
+
+  /** An in-memory compilation unit with the given text. */
+  static JavaFileObject sourceFile(String javaInput) {
+    return new SimpleJavaFileObject(URI.create("Source.java"), JavaFileObject.Kind.SOURCE) {
+      @Override
+      public String getCharContent(boolean ignoreEncodingErrors) {
+        return javaInput;
+      }
+    };
   }
 
   private static boolean errorDiagnostic(Diagnostic<?> input) {

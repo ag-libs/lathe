@@ -32,8 +32,6 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
-import javax.tools.Diagnostic;
-import javax.tools.JavaFileObject;
 
 /**
  * This is google-java-format, a new Java formatter that follows the Google Java Style Guide quite
@@ -95,14 +93,8 @@ public final class Formatter {
    */
   static void format(final JavaInput javaInput, JavaOutput javaOutput, JavaFormatterOptions options)
       throws FormatterException {
-    List<Diagnostic<? extends JavaFileObject>> errorDiagnostics = new ArrayList<>();
-    Trees.ParsedUnit parsed =
-        Trees.parse(errorDiagnostics, /* allowStringFolding= */ false, javaInput.getText());
-
+    Trees.ParsedUnit parsed = Trees.parse(javaInput.getText(), /* allowStringFolding= */ false);
     javaInput.setCompilationUnit(parsed.unit());
-    if (!errorDiagnostics.isEmpty()) {
-      throw FormatterException.fromJavacDiagnostics(errorDiagnostics);
-    }
     OpsBuilder builder = new OpsBuilder(javaInput, javaOutput);
     // Output the compilation unit.
     JavaInputAstVisitor visitor =
@@ -114,15 +106,6 @@ public final class Formatter {
     doc.computeBreaks(javaOutput.getCommentsHelper(), MAX_LINE_LENGTH, new Doc.State(+0, 0));
     doc.write(javaOutput);
     javaOutput.flush();
-  }
-
-  static boolean errorDiagnostic(Diagnostic<?> input) {
-    if (input.getKind() != Diagnostic.Kind.ERROR) {
-      return false;
-    }
-    // accept constructor-like method declarations that don't match the name of their
-    // enclosing class
-    return !input.getCode().equals("compiler.err.invalid.meth.decl.ret.type.req");
   }
 
   /**

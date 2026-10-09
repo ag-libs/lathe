@@ -114,21 +114,32 @@
               <version>${auto-value.version}</version>
             </path>
           </annotationProcessorPaths>
-          <!-- Vendored GJF reaches into javac internals; the fork module needs them exported to it
-               at compile time. -Werror is dropped: lint on third-party code is not actionable. -->
+          <!-- RemoveUnusedImports still reaches into javac internals; the fork module needs them
+               exported to it at compile time. -Werror is dropped: lint on third-party code is not
+               actionable. -->
           <compilerArgs combine.self="override">
             <arg>--add-exports</arg>
             <arg>jdk.compiler/com.sun.tools.javac.api=io.github.aglibs.lathe.format</arg>
-            <arg>--add-exports</arg>
-            <arg>jdk.compiler/com.sun.tools.javac.file=io.github.aglibs.lathe.format</arg>
-            <arg>--add-exports</arg>
-            <arg>jdk.compiler/com.sun.tools.javac.parser=io.github.aglibs.lathe.format</arg>
             <arg>--add-exports</arg>
             <arg>jdk.compiler/com.sun.tools.javac.tree=io.github.aglibs.lathe.format</arg>
             <arg>--add-exports</arg>
             <arg>jdk.compiler/com.sun.tools.javac.util=io.github.aglibs.lathe.format</arg>
           </compilerArgs>
         </configuration>
+        <executions>
+          <execution>
+            <id>default-testCompile</id>
+            <configuration>
+              <!-- The javac scanner oracle (JavacTokens, JavacLexOracle) is test-only. -->
+              <compilerArgs combine.children="append">
+                <arg>--add-exports</arg>
+                <arg>jdk.compiler/com.sun.tools.javac.file=io.github.aglibs.lathe.format</arg>
+                <arg>--add-exports</arg>
+                <arg>jdk.compiler/com.sun.tools.javac.parser=io.github.aglibs.lathe.format</arg>
+              </compilerArgs>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>

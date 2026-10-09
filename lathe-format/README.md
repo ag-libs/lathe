@@ -25,10 +25,14 @@ and modified as follows:
 - every parse goes through a public `JavacTask` returning `Trees.ParsedUnit`, and positions come
   from `SourcePositions` (passed to the visitor, `DimensionHelpers`, `StringWrapper`, and
   `RemoveUnusedImports`); `operatorName`/`precedence` use `Tree.Kind` tables; annotation/modifier
-  ordering moved from `AnnotationOrModifier.compareTo` into the visitor.
+  ordering moved from `AnnotationOrModifier.compareTo` into the visitor;
+- javac's scanner replaced by our `io.github.aglibs.lathe.format.JavaLexer`: `JavaInput.buildToks`
+  takes its ranges and stops on keyword text, `JavaInput.Tok` has no token kind, and
+  `ModifierOrderer`/`ImportOrderer` match keywords by text; `JavacTokens` moved to test scope as
+  the lexer's oracle.
 
-Further modifications will replace the remaining javac-internals seams (tokenizer
-and its diagnostics, and the import/javadoc internals in `RemoveUnusedImports`) with public-API equivalents.
+Further modifications will replace the remaining javac internals (the import and javadoc
+internals in `RemoveUnusedImports`) with public-API equivalents.
 
 Per-file Apache 2.0 headers are retained. The golden fixtures under
 `src/test/resources/golden/` are also copied verbatim from google-java-format

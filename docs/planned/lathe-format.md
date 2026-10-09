@@ -27,9 +27,12 @@ a standalone library and CLI are a secondary by-product.
   See [Phase 3 result](#phase-3-result).
 - **Phase 4 — caller-supplied unused imports: DROPPED.**
   Measured too small to pay for itself; see [Primary goal](#primary-goal-formatting-inside-lathe).
-- **Phase 5+ — NOT STARTED.**
-  Finish moving the formatter onto the public tree API (lexer, `RemoveUnusedImports`, delete every
-  `--add-exports`), then integrate into the server. See [Plan](#plan).
+- **Phase 5 — own lexer: DONE.**
+  `JavaLexer` replaces javac's scanner; `JavacTokens` survives only as a test-scope oracle.
+  See [Phase 5 result](#phase-5-result).
+- **Phase 6+ — NOT STARTED.**
+  `RemoveUnusedImports` internals, delete every `--add-exports`, then integrate into the server.
+  See [Plan](#plan).
 
 Work happens in a git worktree at `~/work/git/lathe-format` so `main` stays free for parallel work.
 The GJF source and golden fixtures are cloned at `~/work/git/google-java-format` (tag `v1.35.0`),
@@ -325,7 +328,7 @@ each dropping its own `--add-exports`:
    where `SourcePositions` reports `NOPOS`; the Phase 2 predicates accept both.
 4. **Phase 4 — caller-supplied unused imports (DROPPED).**
    See [the decision](#decision-keep-it-simple--no-reuse-of-lathes-attributed-tree).
-5. **Phase 5 — Seam ① tokenizer** (`JavacTokens` + `JavaInput`, plus `ModifierOrderer` and
+5. **Phase 5 — Seam ① tokenizer (DONE)** (`JavacTokens` + `JavaInput`, plus `ModifierOrderer` and
    `ImportOrderer`, which consume its token kinds) — the real rewrite:
    a hand-written Java lexer producing the same flat token stream,
    validated against `JavacTokens` as a standalone token-level oracle
@@ -339,29 +342,39 @@ each dropping its own `--add-exports`:
 
 The differential gate runs before the server swap; distribution comes last.
 
-### Seam ① in detail: the lexer
+### Phase 5 result
 
-The tokenizer is the only seam with no public replacement, so it gets its own design.
-
-- **Contract.** Reproduce `JavacTokens.getTokens(source, ...)`:
-  the flat list of tokens with `kind`, `pos`, `endPos`, and attached comments
-  (style, position, raw text).
-  `JavaInput.buildToks` consumes only that, so the lexer can be validated in isolation.
-- **Token kinds.** Our own enum, not `Tokens.TokenKind`.
-  `JavaInput` only needs a handful of distinctions (identifier, literal, operator, EOF, error);
-  the rest is carried as text.
-- **Lexer, not parser.** A token scanner is allowed here —
-  this is exactly what the formatter needs, and the CLAUDE.md ban on ad hoc Java parsing targets
-  LSP features, not a formatter's lexer.
-  It does not try to understand structure; nesting comes from the javac tree.
-- **Hard cases**, each with dedicated oracle fixtures:
-  `>>`/`>>>` (lexed as one token; the visitor already splits them for generics),
-  text blocks (incl. `\<newline>` and trailing-space escapes),
-  numeric literals (underscores, hex floats, `L`/`f`/`d` suffixes),
-  unicode escapes (`\u000a` inside comments), and unterminated comments/strings.
-- **Oracle.** `TokenOracleTest` runs both lexers over every golden input and the helidon/dropwizard
-  corpora, asserting identical `(kind-class, pos, endPos, comments)` streams.
-  It keeps `JavacTokens` alive in **test scope only** until the oracle is retired.
+- **`JavaLexer`** (our code, `io.github.aglibs.lathe.format`, not exported) returns the contiguous
+  `LexToken(start, end)` ranges of the source — whitespace runs, comments, literals and text blocks,
+  identifiers, numbers, and **single operator/separator characters** — or empty on a lex error.
+  It reports **no token kinds**: `JavaInput.buildToks` already classified every range by its text
+  and split operators into characters, so only the boundaries matter.
+  Unicode escapes are decoded first (JLS 3.3, including the even-backslash rule) with a map back to
+  raw offsets, so escaped comments and identifiers lex correctly and ranges stay raw.
+- **Kinds replaced by text.**
+  `ImportOrderer` stops at the words `class`/`interface`/`enum` and `ModifierOrderer` switches on
+  modifier keywords — reserved words, so text is exact (`Foo.class` included, as before).
+  `JavaInput.Tok` lost its kind; string-literal text now comes from the source (javac's
+  `stringVal` only fed error messages).
+  On a lex error `buildToks` returns the lone EOF token as before; the parse reports the error.
+- **Oracle.** `JavacTokens` moved to test scope; `JavacLexOracle` reduces javac's scanner output to
+  the same ranges (splitting multi-character operators the way the formatter does), and
+  `TokenOracleTest` requires identical ranges on every golden input and output and a set of tricky
+  snippets. With `-Dlathe.format.corpus=<dir>` it also checks a source tree:
+  **all 7,160 Helidon files and 6,578 JDK sources (`java.base`, `jdk.compiler`, `java.desktop`)
+  match**.
+- **One deliberate difference.** Since JDK 23 (JEP 467) javac merges consecutive `///` lines into
+  one Markdown doc-comment token; `JavaLexer` keeps one comment per line, like javac 21 and 22.
+  The formatted output is the same (GJF re-indents each line of a `//` comment, and the affected
+  fixtures `B38241237` and `I1153` pass either way), and it keeps the token stream independent of
+  the JDK the formatter runs on. The oracle splits javac's merged comments back into lines.
+- **Flags.** Main code now needs only `api`, `tree`, and `util` (all for `RemoveUnusedImports`);
+  test compilation keeps `file`/`parser` for the oracle.
+- All 1,126 tests green (898 before plus the lexer and oracle tests); performance unchanged within
+  noise.
+- **Verified on JDK 21, 26, and 27**: `clean verify` green on each (1,122 on 21, where the JDK 25+
+  fixtures are version-gated), and the corpus oracle matches on all Helidon and JDK sources on each
+  — javac 21's scanner (before `///` merging) and javac 26/27's agree with `JavaLexer`.
 
 ## Degradation on new syntax
 
@@ -369,9 +382,9 @@ The fork must not turn "the host JDK knows syntax GJF doesn't" into a broken sav
 
 - **Parsing** comes from the host JDK's own `JavacTask.parse()`, so new syntax always parses
   when the project's JDK supports it.
-- **The lexer** is ours, so a new token class (rare — the last ones were text blocks and `->` in
-  `case`) produces an `error` token.
-  Policy: abort formatting for the file and return the input unchanged.
+- **The lexer** is ours. Unknown operator characters already lex as single characters, so only a
+  new literal or comment form could break it (rare — the last one was text blocks); a lex error
+  leaves the token list empty and the file unformatted.
 - **The visitor** dispatches on the tree; a new `Tree.Kind` reaches GJF's default visit path.
   Policy: fail closed, never emit a partial reformat.
   The input is returned unchanged with a `FINE`-level log line;
@@ -478,10 +491,10 @@ The compass for residual divergence once the lexer lands, and the long-term regr
 
 ## Risks and residual fidelity
 
-- **Biggest risk — tokenizer alignment.**
-  Our lexer's token boundaries (generic `>>` splitting, text blocks, number literals)
-  must match what `JavacTokens` produced.
-  Mitigated by a standalone token-stream oracle against `JavacTokens` before formatting is involved.
+- **Tokenizer alignment — retired.**
+  Our lexer's boundaries must match what javac's scanner produced.
+  The oracle shows they do on every fixture, all Helidon sources, and three JDK modules
+  (see [Phase 5 result](#phase-5-result)); the only difference is the deliberate per-line `///`.
 - **Comment attachment.**
   The one place output can structurally diverge from GJF,
   because the fork's comment handling is reproduced on our lexer rather than javac's token stream.
