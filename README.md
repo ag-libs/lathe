@@ -133,10 +133,12 @@ How much you get depends on the client:
 | Neovim  | Dedicated client (LSP + run/test/debug, scaffolding) | [Neovim cheatsheet](docs/guide/editors/neovim.md) — install and keymaps  |
 | Emacs   | Built-in Eglot (standard LSP, no plugin)             | [Emacs (Eglot) guide](docs/guide/editors/emacs.md)                       |
 | VS Code | Extension — "Lathe for Java" (standard LSP)          | [VS Code guide](docs/guide/editors/vscode.md)                            |
+| Zed     | Java extension's server slot (one settings file)     | [Zed guide](docs/guide/editors/zed.md)                                   |
 
 The [Neovim client](docs/guide/editors/neovim.md) adds Lathe-specific commands (`:LatheRun`,
 `:LatheNew`, neotest, format-on-save) on top of LSP. Everything else is plain LSP, so a standard client
-like **Emacs + Eglot** — or the VS Code extension — works with no extra configuration.
+like **Emacs + Eglot** — or the VS Code extension — works with no extra configuration, and **Zed** needs
+only a project settings file.
 
 ## AI agents (MCP)
 

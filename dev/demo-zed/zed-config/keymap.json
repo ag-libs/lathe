@@ -1,0 +1,13 @@
+[
+  {
+    "context": "Editor",
+    "bindings": {
+      "f3": "pane::CloseActiveItem",
+      "f6": "editor::Hover",
+      "f7": "editor::GoToImplementation",
+      "f8": "editor::SelectLargerSyntaxNode",
+      "f9": "editor::ToggleCodeActions",
+      "f10": "pane::GoBack"
+    }
+  }
+]
