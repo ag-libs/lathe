@@ -29,10 +29,11 @@ and modified as follows:
 - javac's scanner replaced by our `io.github.aglibs.lathe.format.JavaLexer`: `JavaInput.buildToks`
   takes its ranges and stops on keyword text, `JavaInput.Tok` has no token kind, and
   `ModifierOrderer`/`ImportOrderer` match keywords by text; `JavacTokens` moved to test scope as
-  the lexer's oracle.
+  the lexer's oracle;
+- `RemoveUnusedImports` uses the public `ImportTree`/`DocTrees`, reading javadoc reference names
+  from `ReferenceTree.getSignature()` with `JavaLexer`.
 
-Further modifications will replace the remaining javac internals (the import and javadoc
-internals in `RemoveUnusedImports`) with public-API equivalents.
+No main code uses javac internals; only the test-scope lexer oracle does.
 
 Per-file Apache 2.0 headers are retained. The golden fixtures under
 `src/test/resources/golden/` are also copied verbatim from google-java-format

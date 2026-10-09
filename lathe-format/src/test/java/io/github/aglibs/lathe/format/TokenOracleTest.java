@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.aglibs.lathe.format.gjf.java.JavacLexOracle;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.stream.Stream;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -14,8 +13,6 @@ import org.junit.jupiter.params.provider.ValueSource;
 // JavaLexer must cut the source exactly where javac's scanner did, since every formatter decision
 // downstream is keyed to those boundaries.
 final class TokenOracleTest {
-
-  private static final String CORPUS_PROPERTY = "lathe.format.corpus";
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("io.github.aglibs.lathe.format.CorpusProvider#goldenCases")
@@ -48,17 +45,10 @@ final class TokenOracleTest {
   }
 
   @ParameterizedTest(name = "{0}")
-  @MethodSource("corpusFiles")
-  @EnabledIfSystemProperty(named = CORPUS_PROPERTY, matches = ".+")
+  @MethodSource("io.github.aglibs.lathe.format.CorpusProvider#corpusFiles")
+  @EnabledIfSystemProperty(named = CorpusProvider.CORPUS_PROPERTY, matches = ".+")
   void tokenize_corpusFile_matchesJavac(final Path file) throws Exception {
     assertMatchesJavac(Files.readString(file));
-  }
-
-  static Stream<Path> corpusFiles() throws Exception {
-    final Path root = Path.of(System.getProperty(CORPUS_PROPERTY));
-    try (Stream<Path> files = Files.walk(root)) {
-      return files.filter(path -> path.toString().endsWith(".java")).sorted().toList().stream();
-    }
   }
 
   private static void assertMatchesJavac(final String source) {

@@ -30,9 +30,11 @@ a standalone library and CLI are a secondary by-product.
 - **Phase 5 — own lexer: DONE.**
   `JavaLexer` replaces javac's scanner; `JavacTokens` survives only as a test-scope oracle.
   See [Phase 5 result](#phase-5-result).
-- **Phase 6+ — NOT STARTED.**
-  `RemoveUnusedImports` internals, delete every `--add-exports`, then integrate into the server.
-  See [Plan](#plan).
+- **Phase 6 — `RemoveUnusedImports`: DONE.**
+  No main code imports javac internals any more. See [Phase 6 result](#phase-6-result).
+- **Phase 7+ — NOT STARTED.**
+  Delete every main-code `--add-exports` and restore `--release 21`, then integrate into the
+  server. See [Plan](#plan).
 
 Work happens in a git worktree at `~/work/git/lathe-format` so `main` stays free for parallel work.
 The GJF source and golden fixtures are cloned at `~/work/git/google-java-format` (tag `v1.35.0`),
@@ -333,7 +335,7 @@ each dropping its own `--add-exports`:
    a hand-written Java lexer producing the same flat token stream,
    validated against `JavacTokens` as a standalone token-level oracle
    **before** it can perturb formatting.
-6. **Phase 6 — `RemoveUnusedImports`**: its `JCImport`/`JCFieldAccess`/`DCTree`/`JavacTrees`
+6. **Phase 6 — `RemoveUnusedImports` (DONE)**: its `JCImport`/`JCFieldAccess`/`DCTree`/`JavacTrees`
    internals onto `ImportTree`/`MemberSelectTree`/`DocTrees`
    (`StringWrapper` already went public in Phase 3).
 7. **Phase 7 — sever**: remove the last internal imports, delete all `--add-exports`, confirm green.
@@ -375,6 +377,23 @@ The differential gate runs before the server swap; distribution comes last.
 - **Verified on JDK 21, 26, and 27**: `clean verify` green on each (1,122 on 21, where the JDK 25+
   fixtures are version-gated), and the corpus oracle matches on all Helidon and JDK sources on each
   — javac 21's scanner (before `///` merging) and javac 26/27's agree with `JavaLexer`.
+
+### Phase 6 result
+
+- Imports use the public `ImportTree`/`MemberSelectTree`/`CompilationUnitTree`
+  (the reflective `getQualifiedIdentifier` work-around is gone; `isModule()` stays reflective
+  because it does not exist on JDK 21), and javadoc comes from `DocTrees`.
+- **Javadoc references.** The public `ReferenceTree` exposes only `getSignature()`, so the names a
+  reference uses are taken from that text with `JavaLexer`: like javac's own walk over its internal
+  reference tree, each identifier that starts a (possibly qualified) name in the qualifier and the
+  parameter types — not the `module/` prefix or the member name.
+  The unused source ranges upstream collected for them are dropped.
+- **Parity.** `RemoveUnusedImportsParityTest` compares the fork's `removeUnusedImports` with live
+  GJF's byte for byte (or both failing) on every golden input and output and javadoc-reference
+  snippets; with `-Dlathe.format.corpus` also on whole trees — **all 7,160 Helidon files and 6,578
+  JDK sources match, on JDK 21, 26, and 27**. The corpus listing moved to `CorpusProvider`, shared
+  with `TokenOracleTest`.
+- Only the test-scope oracle (`JavacTokens`, `JavacLexOracle`) still uses javac internals.
 
 ## Degradation on new syntax
 

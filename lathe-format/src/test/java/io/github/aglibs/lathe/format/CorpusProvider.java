@@ -13,6 +13,9 @@ final class CorpusProvider {
 
   private CorpusProvider() {}
 
+  // Opt-in: -Dlathe.format.corpus=<dir> runs the corpus tests over every .java file below <dir>.
+  static final String CORPUS_PROPERTY = "lathe.format.corpus";
+
   private static final Map<String, Integer> MIN_FEATURE =
       Map.ofEntries(
           Map.entry("SwitchGuardClause", 21),
@@ -45,6 +48,13 @@ final class CorpusProvider {
     }
 
     return cases.stream();
+  }
+
+  static Stream<Path> corpusFiles() throws Exception {
+    final Path root = Path.of(System.getProperty(CORPUS_PROPERTY));
+    try (Stream<Path> files = Files.walk(root)) {
+      return files.filter(path -> path.toString().endsWith(".java")).sorted().toList().stream();
+    }
   }
 
   private static boolean isInput(final Path path) {

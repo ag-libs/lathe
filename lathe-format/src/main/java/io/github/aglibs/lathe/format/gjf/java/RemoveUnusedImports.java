@@ -20,8 +20,6 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static java.lang.Math.max;
 
 import com.google.common.base.CharMatcher;
-import com.google.common.collect.HashMultimap;
-import com.google.common.collect.Multimap;
 import com.google.common.collect.Range;
 import com.google.common.collect.RangeMap;
 import com.google.common.collect.RangeSet;
@@ -30,20 +28,17 @@ import com.google.common.collect.TreeRangeSet;
 import com.sun.source.doctree.DocCommentTree;
 import com.sun.source.doctree.ReferenceTree;
 import com.sun.source.tree.CaseTree;
+import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.ImportTree;
+import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.util.DocTreePath;
 import com.sun.source.util.DocTreePathScanner;
+import com.sun.source.util.DocTrees;
 import com.sun.source.util.TreePathScanner;
-import com.sun.source.util.TreeScanner;
-import com.sun.tools.javac.api.JavacTrees;
-import com.sun.tools.javac.tree.DCTree;
-import com.sun.tools.javac.tree.DCTree.DCReference;
-import com.sun.tools.javac.tree.JCTree;
-import com.sun.tools.javac.tree.JCTree.JCCompilationUnit;
-import com.sun.tools.javac.tree.JCTree.JCFieldAccess;
-import com.sun.tools.javac.tree.JCTree.JCImport;
+import io.github.aglibs.lathe.format.JavaLexer;
+import io.github.aglibs.lathe.format.JavaLexer.LexToken;
 import io.github.aglibs.lathe.format.gjf.Newlines;
 import java.lang.reflect.Method;
 import java.util.LinkedHashSet;
@@ -77,11 +72,11 @@ public class RemoveUnusedImports {
   private static class UnusedImportScanner extends TreePathScanner<Void, Void> {
 
     private final Set<String> usedNames = new LinkedHashSet<>();
-    private final Multimap<String, Range<Integer>> usedInJavadoc = HashMultimap.create();
-    final JavacTrees trees;
+    private final Set<String> usedInJavadoc = new LinkedHashSet<>();
+    final DocTrees trees;
     final DocTreeScanner docTreeSymbolScanner;
 
-    private UnusedImportScanner(JavacTrees trees) {
+    private UnusedImportScanner(DocTrees trees) {
       this.trees = trees;
       docTreeSymbolScanner = new DocTreeScanner();
     }
@@ -155,74 +150,60 @@ public class RemoveUnusedImports {
 
       @Override
       public Void visitReference(ReferenceTree referenceTree, Void unused) {
-        DCReference reference = (DCReference) referenceTree;
-        long basePos =
-            reference
-                .pos((DCTree.DCDocComment) getCurrentPath().getDocComment())
-                .getStartPosition();
-        // the position of trees inside the reference node aren't stored, but the qualifier's
-        // start position is the beginning of the reference node
-        if (reference.qualifierExpression != null) {
-          new ReferenceScanner(basePos).scan(reference.qualifierExpression, null);
-        }
-        // Record uses inside method parameters. The javadoc tool doesn't use these, but
-        // IntelliJ does.
-        if (reference.paramTypes != null) {
-          for (JCTree param : reference.paramTypes) {
-            // TODO(cushon): get start positions for the parameters
-            new ReferenceScanner(-1).scan(param, null);
-          }
-        }
+        addReferencedNames(referenceTree.getSignature(), usedInJavadoc);
         return null;
       }
+    }
+  }
 
-      // scans the qualifier and parameters of a javadoc reference for possible type names
-      private class ReferenceScanner extends TreeScanner<Void, Void> {
-        private final long basePos;
+  // The public ReferenceTree exposes a javadoc reference only as its signature text, e.g.
+  // `java.base/java.util.Map.Entry#put(Object, List<K>)`. Like javac's own reference tree walk,
+  // record the identifiers that start a (possibly qualified) name in the qualifier and in the
+  // parameter types, but not the module prefix or the member name.
+  private static void addReferencedNames(String signature, Set<String> names) {
+    String reference = signature.substring(signature.indexOf('/') + 1);
+    int memberStart = reference.indexOf('#');
+    int paramsStart = reference.indexOf('(');
+    int qualifierEnd =
+        memberStart >= 0 ? memberStart : paramsStart >= 0 ? paramsStart : reference.length();
+    addLeadingIdentifiers(reference.substring(0, qualifierEnd), names);
+    if (paramsStart >= 0) {
+      addLeadingIdentifiers(reference.substring(paramsStart), names);
+    }
+  }
 
-        public ReferenceScanner(long basePos) {
-          this.basePos = basePos;
-        }
-
-        @Override
-        public Void visitIdentifier(IdentifierTree node, Void aVoid) {
-          usedInJavadoc.put(
-              node.getName().toString(),
-              basePos != -1
-                  ? Range.closedOpen((int) basePos, (int) basePos + node.getName().length())
-                  : null);
-          return super.visitIdentifier(node, aVoid);
-        }
+  private static void addLeadingIdentifiers(String text, Set<String> names) {
+    String previous = "";
+    for (LexToken token : JavaLexer.tokenize(text).orElse(List.of())) {
+      String tokenText = text.substring(token.start(), token.end());
+      if (tokenText.isBlank()) {
+        continue;
       }
+      if (Character.isJavaIdentifierStart(tokenText.codePointAt(0)) && !previous.equals(".")) {
+        names.add(tokenText);
+      }
+      previous = tokenText;
     }
   }
 
   public static String removeUnusedImports(final String contents) throws FormatterException {
     Trees.ParsedUnit parsed = Trees.parse(contents, /* allowStringFolding= */ false);
-    // The javac-internal tree and javadoc types below are cut over separately; the parse itself is
-    // public, and its trees are javac's implementation classes at runtime.
-    JCCompilationUnit unit = (JCCompilationUnit) parsed.unit();
-    UnusedImportScanner scanner = new UnusedImportScanner((JavacTrees) parsed.trees());
-    scanner.scan(unit, null);
+    UnusedImportScanner scanner = new UnusedImportScanner(parsed.trees());
+    scanner.scan(parsed.unit(), null);
     return applyReplacements(
-        contents,
-        buildReplacements(contents, parsed, unit, scanner.usedNames, scanner.usedInJavadoc));
+        contents, buildReplacements(contents, parsed, scanner.usedNames, scanner.usedInJavadoc));
   }
 
   /** Construct replacements to fix unused imports. */
   private static RangeMap<Integer, String> buildReplacements(
-      String contents,
-      Trees.ParsedUnit parsed,
-      JCCompilationUnit unit,
-      Set<String> usedNames,
-      Multimap<String, Range<Integer>> usedInJavadoc) {
+      String contents, Trees.ParsedUnit parsed, Set<String> usedNames, Set<String> usedInJavadoc) {
     RangeMap<Integer, String> replacements = TreeRangeMap.create();
-    for (JCTree importTree : unit.getImports()) {
+    for (ImportTree importTree : parsed.unit().getImports()) {
       if (isModuleImport(importTree)) {
         continue;
       }
       String simpleName = getSimpleName(importTree);
-      if (!isUnused(unit, usedNames, usedInJavadoc, importTree, simpleName)) {
+      if (!isUnused(parsed.unit(), usedNames, usedInJavadoc, importTree, simpleName)) {
         continue;
       }
       // delete the import
@@ -233,22 +214,22 @@ public class RemoveUnusedImports {
           && contents.subSequence(endPosition, endPosition + sep.length()).toString().equals(sep)) {
         endPosition += sep.length();
       }
-      replacements.put(Range.closedOpen(importTree.getStartPosition(), endPosition), "");
+      replacements.put(Range.closedOpen(parsed.getStartPosition(importTree), endPosition), "");
     }
     return replacements;
   }
 
-  private static String getSimpleName(JCTree importTree) {
+  private static String getSimpleName(ImportTree importTree) {
     return getQualifiedIdentifier(importTree).getIdentifier().toString();
   }
 
   private static boolean isUnused(
-      JCCompilationUnit unit,
+      CompilationUnitTree unit,
       Set<String> usedNames,
-      Multimap<String, Range<Integer>> usedInJavadoc,
-      JCTree importTree,
+      Set<String> usedInJavadoc,
+      ImportTree importTree,
       String simpleName) {
-    JCFieldAccess qualifiedIdentifier = getQualifiedIdentifier(importTree);
+    MemberSelectTree qualifiedIdentifier = getQualifiedIdentifier(importTree);
     String qualifier = qualifiedIdentifier.getExpression().toString();
     if (qualifier.equals("java.lang")) {
       return true;
@@ -263,30 +244,15 @@ public class RemoveUnusedImports {
     if (usedNames.contains(simpleName)) {
       return false;
     }
-    if (usedInJavadoc.containsKey(simpleName)) {
+    if (usedInJavadoc.contains(simpleName)) {
       return false;
     }
     return true;
   }
 
-  private static final Method GET_QUALIFIED_IDENTIFIER_METHOD = getQualifiedIdentifierMethod();
-
-  private static @Nullable Method getQualifiedIdentifierMethod() {
-    try {
-      return JCImport.class.getMethod("getQualifiedIdentifier");
-    } catch (NoSuchMethodException e) {
-      return null;
-    }
-  }
-
-  private static JCFieldAccess getQualifiedIdentifier(JCTree importTree) {
+  private static MemberSelectTree getQualifiedIdentifier(ImportTree importTree) {
     checkArgument(!isModuleImport(importTree));
-    // Use reflection because the return type is JCTree in some versions and JCFieldAccess in others
-    try {
-      return (JCFieldAccess) GET_QUALIFIED_IDENTIFIER_METHOD.invoke(importTree);
-    } catch (ReflectiveOperationException e) {
-      throw new LinkageError(e.getMessage(), e);
-    }
+    return (MemberSelectTree) importTree.getQualifiedIdentifier();
   }
 
   private static final @Nullable Method IS_MODULE_METHOD = getIsModuleMethod();
@@ -299,7 +265,7 @@ public class RemoveUnusedImports {
     }
   }
 
-  private static boolean isModuleImport(JCTree importTree) {
+  private static boolean isModuleImport(ImportTree importTree) {
     if (IS_MODULE_METHOD == null) {
       return false;
     }
