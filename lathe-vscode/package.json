@@ -24,6 +24,13 @@
     "onLanguage:java",
     "workspaceContains:**/.lathe"
   ],
+  "contributes": {
+    "configurationDefaults": {
+      "files.readonlyInclude": {
+        "**/.cache/lathe/**": true
+      }
+    }
+  },
   "scripts": {
     "check": "prettier --check . && tsc --noEmit -p ./",
     "format": "prettier --write .",
