@@ -28,6 +28,7 @@
 
   <modules>
     <module>lathe-core</module>
+    <module>lathe-format</module>
     <module>lathe-junit</module>
     <module>lathe-test-runner</module>
     <module>lathe-compiler</module>

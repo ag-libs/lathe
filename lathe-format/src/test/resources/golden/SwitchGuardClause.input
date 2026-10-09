@@ -1,0 +1,73 @@
+class SwitchGuardClause {
+  boolean test(Object x) {
+    return switch (x) {
+      case String s when s.length() < 5 -> true;
+      case Integer i -> false;
+      default -> true;
+    };
+  }
+
+  {
+    switch (o) {
+      case TypeWithVeryVeryVeryVeryLongName variableWithVeryLongName when variableWithVeryLongName
+          .methodWithVeryVeryVeryVeryLongNameReturnThis()
+          .methodWithVeryVeryVeryVeryLongNameReturnBoolean() -> {
+        System.err.println();
+      }
+      default -> {}
+    }
+    switch (o) {
+      case TypeWithVeryVeryVeryVeryLongName
+              variableWithVeryVeryVeryVeryVeryVeryVeryVeryVeryLongName when variableWithVeryVeryVeryVeryVeryVeryVeryVeryVeryLongName
+          .methodWithVeryVeryVeryVeryLongNameReturnThis()
+          .methodWithVeryVeryVeryVeryLongNameReturnBoolean() -> {
+        System.err.println();
+      }
+      default -> {}
+    }
+    switch (o) {
+      case TypeWithVeryVeryVeryVeryLongName variableWithVeryVeryVeryVeryVeryVeryVeryVeryVeryVeryVeryVeryVeryVeryVeryLongName
+          when variableWithVeryVeryVeryVeryVeryVeryVeryVeryVeryVeryVeryVeryVeryVeryVeryLongName
+              .methodWithVeryVeryVeryVeryLongNameReturnThis()
+              .methodWithVeryVeryVeryVeryLongNameReturnBoolean() -> {
+        System.err.println();
+      }
+      default -> {}
+    }
+    switch (o) {
+      case SwitchRecord(
+              int one,
+              int two,
+              int three,
+              int four,
+              int five,
+              int six,
+              int seven,
+              int eight,
+              int variableWithVeryVeryVeryVeryVeryVeryVeryVeryVeryLongName)
+          when variableWithVeryVeryVeryVeryVeryVeryVeryVeryVeryLongName
+              .methodWithVeryVeryVeryVeryLongNameReturnThis()
+              .methodWithVeryVeryVeryVeryLongNameReturnBoolean() -> {
+        System.err.println();
+      }
+      default -> {}
+    }
+    switch (o) {
+      case SwitchRecord(
+              int one,
+              int two,
+              int three,
+              int four,
+              int five,
+              int six,
+              int seven,
+              int eight,
+              int variableWithVeryVeryVeryVeryVeryVeryVeryVeryVeryLongName)
+          when variableWithVeryVeryVeryVeryVeryVeryVeryVeryVeryLongName
+              .methodWithVeryVeryVeryVeryLongNameReturnThis()
+              .methodWithVeryVeryVeryVeryLongNameReturnBoolean() ->
+          System.err.println();
+      default -> {}
+    }
+  }
+}
