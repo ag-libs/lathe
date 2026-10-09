@@ -16,7 +16,7 @@
     bundle, and packages the .vsix into target/; published as a GitHub release asset.</description>
 
   <properties>
-    <frontend-maven-plugin.version>1.15.1</frontend-maven-plugin.version>
+    <frontend-maven-plugin.version>2.0.2</frontend-maven-plugin.version>
     <!-- Build toolchain only; the extension's runtime (host) Node is pinned in esbuild.js. -->
     <node.version>v24.14.1</node.version>
   </properties>

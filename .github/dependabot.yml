@@ -19,9 +19,23 @@ updates:
         update-types:
           - minor
           - patch
+    ignore:
+      # Pinned to the Maven 3.9 compatibility floor: these provided-scope artifacts are the minimum
+      # Maven we compile (and therefore run) against. Bumping them would silently raise the floor.
+      - dependency-name: org.apache.maven:maven-core
+      - dependency-name: org.apache.maven:maven-plugin-api
+      # Held at 1.35.0 — google-java-format 1.37 can't be invoked by spotless 3.10.3. Revisit when a
+      # spotless release documents support for the newer formatter.
+      - dependency-name: com.google.googlejavaformat:google-java-format
+      # Pinned to 3.5.4 — surefire 3.5.5+ regresses the forked-VM exit handshake under a directly
+      # launched mvn (how CI runs): "VM terminated without properly saying goodbye", Tests run: 0.
+      - dependency-name: org.apache.maven.plugins:maven-surefire-plugin
+      # Must track the mcp-bom-resolved slf4j-api version, not the latest — a provider/api mismatch
+      # reintroduces the SLF4J warning the dependency was added to silence.
+      - dependency-name: org.slf4j:slf4j-jdk14
 
-  # VS Code extension (Node). Caret ranges + a committed lockfile — split dev tooling from the
-  # runtime client so the auto-merge policy can treat them differently.
+  # VS Code extension (Node). Versions are pinned exact (no caret) with a committed lockfile; the
+  # ignore rules below keep Dependabot from proposing bumps that would drop VS Code coverage.
   - package-ecosystem: npm
     directory: /lathe-vscode
     schedule:
@@ -41,6 +55,21 @@ updates:
         update-types:
           - minor
           - patch
+    ignore:
+      # vscode-languageclient 10+ requires VS Code ^1.91; we support the ^1.84 floor to maximise the
+      # installable base. Bump only together with a deliberate engines.vscode raise.
+      - dependency-name: vscode-languageclient
+        update-types: [version-update:semver-major]
+      # @types/node must match the Node bundled in the minimum-supported VS Code extension host
+      # (1.84 → Node 18), not the latest LTS — newer typings invite APIs that crash on older hosts.
+      - dependency-name: "@types/node"
+        update-types: [version-update:semver-major]
+      # Pinned to the engines.vscode floor (1.84) so typings can't reference newer VS Code APIs.
+      # Raise this in lockstep with engines.vscode, never automatically.
+      - dependency-name: "@types/vscode"
+      # TypeScript 7 is the native-port preview and breaks Node-builtin module resolution; stay on 5.x.
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
 
   # Pin-and-bump the Actions used by CI/release (checkout, setup-java, …).
   - package-ecosystem: github-actions
