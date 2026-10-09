@@ -34,6 +34,11 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
+      - name: Set up Maven 3.9.16
+        uses: stCarolas/setup-maven@v5
+        with:
+          maven-version: 3.9.16
+
       - name: Set up Neovim
         # lathe-neovim's run-specs.sh needs nvim on PATH (it hard-fails under CI otherwise). VS Code's
         # Node is fetched by Maven via frontend-maven-plugin, so no setup-node step is needed.
