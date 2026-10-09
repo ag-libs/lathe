@@ -177,6 +177,10 @@ final class WorkspaceSession {
   // in-process
   // only once its mtime has held across two ticks, so a file mid-write is left to settle first.
   private Map<Path, Long> pendingStale = Map.of();
+  // Not !pendingStale.isEmpty(): a standing bulk backlog would keep that true and defeat back-off.
+  private boolean awaitingSettle;
+  private Stopwatch lastActivity = Stopwatch.start();
+  private Stopwatch lastReconcile = Stopwatch.start();
   // Sources whose in-process recompile is in flight, so a later tick does not resubmit one still
   // building. Worker-thread-confined like every other field here.
   private final Set<Path> reacting = new HashSet<>();
@@ -1331,6 +1335,7 @@ final class WorkspaceSession {
   }
 
   void onOpen(final String uri, final String content, final int version) {
+    lastActivity = Stopwatch.start();
     final var snapshot = docs.put(uri, content, version);
     LOG.info(() -> "[open] %s".formatted(uri));
     candidateIndex.update(uri, content);
@@ -1363,6 +1368,7 @@ final class WorkspaceSession {
   }
 
   void onChange(final String uri, final String content, final int version) {
+    lastActivity = Stopwatch.start();
     docs.put(uri, content, version);
     LOG.fine(() -> "[change] %s".formatted(uri));
     candidateIndex.update(uri, content);
@@ -1380,6 +1386,7 @@ final class WorkspaceSession {
   }
 
   void onClose(final String uri) {
+    lastActivity = Stopwatch.start();
     docs.remove(uri);
     LOG.info(() -> "[close] %s".formatted(uri));
     worker.cancel(uri);
@@ -1390,6 +1397,7 @@ final class WorkspaceSession {
   }
 
   void onSave(final String uri, final String savedContent) {
+    lastActivity = Stopwatch.start();
     LOG.info(() -> "[save] %s".formatted(uri));
     worker.cancel(uri);
 
@@ -3069,6 +3077,7 @@ final class WorkspaceSession {
       return List.of();
     }
 
+    lastReconcile = Stopwatch.start();
     reconcileDeletedSources();
     final List<CompletableFuture<Void>> reactions = reconcileChangedSources(eager);
     reconcileResources();
@@ -3234,6 +3243,7 @@ final class WorkspaceSession {
     final Map<Path, Long> current = staleMtimes(scan);
     if (current.isEmpty()) {
       pendingStale = Map.of();
+      awaitingSettle = false;
       bulkNoticeShown = false;
       return List.of();
     }
@@ -3263,6 +3273,7 @@ final class WorkspaceSession {
     final Set<Path> ready =
         eager ? reconcilable.keySet() : stableSources(reconcilable, pendingStale);
     pendingStale = current;
+    awaitingSettle = ready.size() < reconcilable.size();
     if (ready.isEmpty()) {
       return List.of();
     }
@@ -3635,6 +3646,8 @@ final class WorkspaceSession {
   // Above this many externally changed sources (a branch switch, a large pull), recommend a Maven
   // sync instead of recompiling in-process file by file.
   private static final int BULK_CHANGE_THRESHOLD = 50;
+  static final long ACTIVE_WINDOW_MS = 30_000L;
+  static final long IDLE_RECONCILE_INTERVAL_MS = 20_000L;
   private static final String SYNC_ACTION = "Sync";
   private static final String SYNC_CAPTURE_ACTION = "Sync + capture tests";
   private static final String LATER_ACTION = "Later";
@@ -3666,8 +3679,20 @@ final class WorkspaceSession {
         promptForSync("Maven project changed. Lathe will run a full refresh.", List.of());
         reconcileIfIdle(false);
       }
-      case NO_CHANGE -> reconcileIfIdle(false);
+      case NO_CHANGE -> {
+        if (reconcileDue(lastActivity.elapsedMs(), lastReconcile.elapsedMs(), awaitingSettle)) {
+          reconcileIfIdle(false);
+        }
+      }
     }
+  }
+
+  // The pass stats every reactor source and resource -- costly on macOS -- so back off when idle.
+  static boolean reconcileDue(
+      final long sinceActivityMs, final long sinceReconcileMs, final boolean awaitingSettle) {
+    return awaitingSettle
+        || sinceActivityMs < ACTIVE_WINDOW_MS
+        || sinceReconcileMs >= IDLE_RECONCILE_INTERVAL_MS;
   }
 
   private void promptForSync(final String message, final List<String> scope) {
