@@ -3,9 +3,7 @@
 A fork of [google-java-format](https://github.com/google/google-java-format) (GJF)
 whose **primary purpose is to make formatting a first-class part of `lathe-server`**:
 re-hosted off `com.sun.tools.javac` internals onto the public Compiler Tree API,
-so it needs no `--add-exports` and does not break on JDK updates,
-and able to take **unused imports from Lathe's attributed tree**
-instead of re-deriving them with GJF's expensive syntactic pass.
+so it needs no `--add-exports` and does not break on JDK updates.
 Lives in the `lathe-format` module, bundled by `lathe-server`;
 a standalone library and CLI are a secondary by-product.
 
@@ -27,8 +25,11 @@ a standalone library and CLI are a secondary by-product.
   Every parse goes through a public `JavacTask`; positions come from `SourcePositions`;
   `Trees`, `Formatter`, `StringWrapper`, `DimensionHelpers`, and the visitor import no internals.
   See [Phase 3 result](#phase-3-result).
-- **Phase 4+ — NOT STARTED.**
-  Caller-supplied unused imports and server integration, then the lexer. See [Plan](#plan).
+- **Phase 4 — caller-supplied unused imports: DROPPED.**
+  Measured too small to pay for itself; see [Primary goal](#primary-goal-formatting-inside-lathe).
+- **Phase 5+ — NOT STARTED.**
+  Finish moving the formatter onto the public tree API (lexer, `RemoveUnusedImports`, delete every
+  `--add-exports`), then integrate into the server. See [Plan](#plan).
 
 Work happens in a git worktree at `~/work/git/lathe-format` so `main` stays free for parallel work.
 The GJF source and golden fixtures are cloned at `~/work/git/google-java-format` (tag `v1.35.0`),
@@ -65,84 +66,55 @@ Tree API — no internals.
 Among Lathe's own runtime dependencies, GJF is the only one coupled to javac internals.
 
 **Goal.**
-Primarily: formatting inside `lathe-server` that never breaks on a JDK update and uses what Lathe
-already knows about the document — its attributed tree — where that pays off.
-Output stays as close to GJF as possible, on public APIs only — no `--add-exports`,
-no per-JDK breakage, soft-degrades on new syntax.
+Primarily: formatting inside `lathe-server` that never breaks on a JDK update —
+output as close to GJF as possible, on public APIs only, no `--add-exports`,
+soft-degrades on new syntax.
 Secondarily: ship the same engine as a standalone library and CLI.
 
 ## Primary goal: formatting inside Lathe
 
 ### Where formatting time goes
 
-GJF `1.35.0` on Helidon files (JDK 26, median of 30 runs after warmup;
-"parse" is a public `JavacTask.parse()` including task setup, so an upper bound):
+GJF `1.35.0` on Helidon files (JDK 26, median of 30 runs after warmup),
+each stage of `formatSourceAndFixImports` — the call `lathe-server` makes — timed on its own:
 
-| File | Lines | Parse | `formatSource` | `formatSourceAndFixImports` |
-|---|---|---|---|---|
-| `Scheduling` | 312 | 3.8 ms | 8.0 ms | 8.4 ms |
-| `StaticContentHandler` | 1,031 | 6.4 ms | 21.7 ms | 34.4 ms |
-| `ServiceDescriptorCodegen` | 3,127 | 4.0 ms | 40.4 ms | 87.7 ms |
-| `OpenApiDocument` | 4,851 | 3.5 ms | 42.4 ms | 98.7 ms |
-| `HuffmanTables` | 4,927 | 5.5 ms | 106.4 ms | 113.4 ms |
+| File | Lines | Reorder imports | Unused imports | Format | Wrap long strings | Total |
+|---|---|---|---|---|---|---|
+| `Scheduling` | 312 | 0.7 ms | 1.7 ms | 5.0 ms | 0.0 ms | 5.6 ms |
+| `StaticContentHandler` | 1,031 | 0.1 ms | 2.8 ms | 15.9 ms | 15.9 ms | 25.1 ms |
+| `ServiceDescriptorCodegen` | 3,127 | 0.6 ms | 3.6 ms | 40.9 ms | 47.0 ms | 89.2 ms |
+| `OpenApiDocument` | 4,851 | 0.1 ms | 4.6 ms | 42.5 ms | 52.5 ms | 99.0 ms |
+| `HuffmanTables` | 4,927 | 0.1 ms | 6.7 ms | 107.6 ms | 0.2 ms | 115.2 ms |
 
-`lathe-server` calls `formatSourceAndFixImports`.
-Parsing is a small, flat cost; layout (break computation) grows with the file;
-and the import-fixing pass — `RemoveUnusedImports` re-parses and walks the whole tree, javadoc
-included — adds up to ~55 ms on large files.
+A bare public `JavacTask.parse()` of the same files takes 3–6 ms.
+The cost is layout (break computation, growing with the file) and, only for files with string
+literals past the column limit, `StringWrapper.wrap`, which re-parses, runs a second partial
+format, and parses twice more for its safety check.
+Parsing and unused-import detection are small, flat costs.
 
-### Decision: Lathe supplies unused imports; the formatter keeps its own parse
+### Decision: keep it simple — no reuse of Lathe's attributed tree
 
-- **Adopted — unused imports from the attributed tree.**
-  Lathe's attributed tree knows which imports are actually used.
-  When the server has an analysis compiled from exactly the text being formatted, it passes the
-  unused imports to the formatter, which then skips `RemoveUnusedImports`' detection pass.
-  It is also more accurate than GJF's syntactic guess.
-- **Rejected — reusing the attributed tree in place of the formatter's parse.**
-  It would save ~5 ms per parse, but costs a lot of complexity:
-  the formatter would have to survive what attribution adds to the tree
-  (default constructors, implicit `super()` calls, synthesized `var` and lambda-parameter types),
+Both ways of feeding Lathe's attributed tree into formatting were evaluated and rejected because
+the saving is a few milliseconds (the parse, or unused-import detection) against substantial
+complexity:
+
+- **Reusing the tree in place of the formatter's parse** (~3–6 ms):
+  the formatter would have to survive what attribution adds to the tree,
   the server would have to compile with `-XDallowStringFolding=false`,
   format requests would have to move onto the module's compilation thread,
   and the import pipeline would have to be reordered because the tree only matches the original
   text.
   Probe findings are kept in [Rejected: formatting from the attributed tree](#rejected-formatting-from-the-attributed-tree).
-- **Future — better ways to use the tree.**
-  Not decided; candidates to revisit once the integration is in place:
-  pre-formatting in the background after each debounced compile so format-on-write becomes a
-  lookup, and formatting only the members that changed (the tree gives member boundaries;
-  layout cost would follow the edit instead of the file).
+- **Supplying unused imports from the tree** (Phase 4, ~2–7 ms):
+  an earlier reading of the timings wrongly attributed `StringWrapper`'s cost to import fixing.
+  Semantic detection would also have to walk the whole tree and parse every javadoc comment,
+  shrinking the saving further.
+  It was started and discarded before any tests were written.
 
-### Caller-supplied unused imports
-
-- **Contract.**
-  `formatSourceAndFixImports` gains an overload taking the unused import declarations of the
-  input text as source ranges.
-  The formatter deletes them with the same line-and-whitespace rule `RemoveUnusedImports` applies
-  today, then runs the rest of GJF's pipeline (reorder imports → format → wrap long strings).
-  Without the argument, behavior is exactly GJF's.
-- **Validity.**
-  Ranges are only valid for the exact text they were computed from.
-  The server supplies them only when the cached analysis's content equals the document text
-  (`CachedFileAnalysis` keeps that content); otherwise it calls the text-only overload.
-  It never triggers a compile just to format.
-- **Detection in the server** (new logic next to `ImportAnalyzer`), on the module's compilation
-  thread where the tree lives:
-  an import is unused when nothing in the compilation unit resolves through it.
-  To stay close to GJF:
-  - references in javadoc (`{@link}`, `@see`, `@throws`) count as uses, resolved through `DocTrees`;
-  - an import that does not resolve (a half-configured classpath) is kept — never remove what
-    cannot be proven unused;
-  - on-demand (`.*`) imports are left alone, as GJF does.
-- **Parity.**
-  Semantic detection can disagree with GJF's syntactic rule in edge cases
-  (for example a simple name that is shadowed, or used only as an unrelated identifier).
-  The differential harness compares both detections over the golden suite and the corpora and
-  reports every disagreement as its own bucket; each is reviewed, and it is the server's detector
-  that is fixed when it is wrong.
-- **Expected win.**
-  On a hit, the import-fixing overhead (`formatSourceAndFixImports` − `formatSource` above,
-  up to ~55 ms) shrinks to applying a few deletions; measured again after integration.
+**Future candidates**, not decided, aimed at the real costs and not needing the tree:
+background pre-formatting after each debounced compile (a format-on-write request for unchanged
+text becomes a lookup), a cheaper long-string wrapping pass, and formatting only the members that
+changed.
 
 ### Rejected: formatting from the attributed tree
 
@@ -325,7 +297,7 @@ and the unused `VarArgsOrNot.fromVariable` (the only `Flags.VARARGS` use) was de
   and `TreeInfo.opPrec`.
 - `StringWrapper` is fully public: its AST-equality safety check uses the public tree's `toString()`.
 - `RemoveUnusedImports` uses the public parse but still casts to `JCCompilationUnit`/`JavacTrees`
-  for its import and javadoc internals (Phase 7).
+  for its import and javadoc internals (Phase 6).
 - No flag could be dropped yet: `api` is still used by `RemoveUnusedImports`, `file` by the lexer.
 - Performance is unchanged within noise (Helidon files, same method as
   [Where formatting time goes](#where-formatting-time-goes));
@@ -351,25 +323,21 @@ each dropping its own `--add-exports`:
    `operatorName`/`precedence` become `Tree.Kind` tables.
    GJF's internal end-position handle reports an empty span (end == start) for synthesized nodes
    where `SourcePositions` reports `NOPOS`; the Phase 2 predicates accept both.
-4. **Phase 4 — caller-supplied unused imports.**
-   The [overload](#caller-supplied-unused-imports) in the fork, and a harness subject that feeds it
-   ranges from an attributed tree, so semantic and syntactic detection can be compared.
-5. **Phase 5 — server integration** (the primary goal, delivered before the lexer),
-   including the server-side detector.
-   See [Integration into lathe-server](#integration-into-lathe-server).
-   Until Phase 6 the fork still needs a few internal packages for its own lexer, so the server's
-   module-qualified flags are retargeted from `com.google.googlejavaformat` to the fork's module
-   and shrink to that remaining set.
-6. **Phase 6 — Seam ① tokenizer** (`JavacTokens` + `JavaInput`, plus `ModifierOrderer` and
+4. **Phase 4 — caller-supplied unused imports (DROPPED).**
+   See [the decision](#decision-keep-it-simple--no-reuse-of-lathes-attributed-tree).
+5. **Phase 5 — Seam ① tokenizer** (`JavacTokens` + `JavaInput`, plus `ModifierOrderer` and
    `ImportOrderer`, which consume its token kinds) — the real rewrite:
    a hand-written Java lexer producing the same flat token stream,
    validated against `JavacTokens` as a standalone token-level oracle
    **before** it can perturb formatting.
-7. **Phase 7 — stragglers**: `RemoveUnusedImports` (`DCTree`/javadoc)
-   and `StringWrapper` (`Pretty`), case-by-case.
-8. **Phase 8 — sever**: remove the last internal imports, delete all `--add-exports`, confirm green.
+6. **Phase 6 — `RemoveUnusedImports`**: its `JCImport`/`JCFieldAccess`/`DCTree`/`JavacTrees`
+   internals onto `ImportTree`/`MemberSelectTree`/`DocTrees`
+   (`StringWrapper` already went public in Phase 3).
+7. **Phase 7 — sever**: remove the last internal imports, delete all `--add-exports`, confirm green.
+8. **Phase 8 — server integration**: the formatter is then fully on the public tree API.
+   See [Integration into lathe-server](#integration-into-lathe-server).
 
-The differential gate runs from Phase 4 on; distribution comes last.
+The differential gate runs before the server swap; distribution comes last.
 
 ### Seam ① in detail: the lexer
 
@@ -420,12 +388,8 @@ the difference is that ours fails on the host JDK's newest syntax, not on any JD
 Today `GoogleFormatEngine` calls
 `new Formatter(JavaFormatterOptions.builder().style(style).build()).formatSourceAndFixImports(source)`
 with `Style.GOOGLE` and `Style.AOSP`.
-The fork keeps that text-only API and adds the
-[unused-imports overload](#caller-supplied-unused-imports).
-The server side computes the unused imports on the module's compilation thread when its cached
-analysis matches the document text, and passes them to the engine.
-This touches `FormatEngine`, `WorkspaceSession`, and the analysis code, and gets its own design
-approval at Phase 5.
+The fork keeps that API unchanged, so the server side is an engine swap;
+it gets its own design approval at Phase 8.
 
 Rollout, in two steps:
 
@@ -433,13 +397,13 @@ Rollout, in two steps:
    `FORMATTER_GOOGLE`/`FORMATTER_AOSP`) selects the fork, so it can be dogfooded on the lathe repo
    alongside GJF.
    The `FormatEngine` permit list grows by one; nothing else in `JavaFormatter` changes.
-2. **Swap.** Once the differential gate is clean (the lexer need not be done),
+2. **Swap.** Once Phase 7 is done and the differential gate is clean,
    `GoogleFormatEngine` is retargeted to the fork's package,
    the opt-in value is removed again,
    and GJF is dropped from `lathe-server` (it stays a test-scope dependency of `lathe-format` only).
    User-facing configuration (`google`/`aosp`) does not change.
-   The module-qualified access flags are retargeted to the fork's module at the swap,
-   and deleted from both places once Phase 8 is done:
+   The fork needs no access flags by then, so the module-qualified ones are deleted from both
+   places:
    - `lathe-server/pom.xml` — the `=com.google.googlejavaformat` lines in the Surefire `argLine`;
    - `ServerInstaller.renderLauncherScript` — the two `javacAccessLines(..., "com.google.googlejavaformat", ...)` calls.
 
@@ -450,7 +414,7 @@ it can be skipped if dogfooding via `LATHE_SERVER_DIR` against a branch build is
 
 ## Distribution (secondary)
 
-Not needed for the primary goal; done after Phase 8.
+Not needed for the primary goal; done after server integration.
 
 - **Library** — publish `lathe-format` to Maven Central with the rest of the reactor
   (`io.github.ag-libs:lathe-format`).
@@ -469,12 +433,7 @@ The compass for residual divergence once the lexer lands, and the long-term regr
 - **Corpora**: helidon and dropwizard sources (read in place, never vendored — they live outside the
   repo), plus the lathe repo itself.
 - **Subjects**: `formatSource` and `formatSourceAndFixImports`, both styles,
-  fork vs. live GJF `1.35.0` —
-  and, from Phase 4, the fork with **unused imports from an attributed tree**
-  (`JavacTask.analyze()` on the same text) vs. GJF's own detection,
-  with every disagreement reported as its own bucket.
-  Golden fixtures need not compile: attribution with unresolved types still yields the tree,
-  and unresolved imports are kept.
+  fork vs. live GJF `1.35.0`.
 - **Output**: a byte-identical percentage plus a bucketed report of the first differing line per
   file, so divergences group by cause (comment attachment, lexer boundary, ...) rather than by file.
 - **Where it runs**: a dedicated profile, not the default `mvn verify` —
@@ -488,7 +447,7 @@ The compass for residual divergence once the lexer lands, and the long-term regr
 - **`source`/`target 21`, not `--release`.**
   Exporting `jdk.compiler` internals is incompatible with `--release`;
   the module overrides the parent's release flag for compilation.
-  Restored to `--release 21` at Phase 8, when there is nothing left to export.
+  Restored to `--release 21` at Phase 7, when there is nothing left to export.
 - **`--add-exports` targets.**
   During the fork phases, the module name at compile time,
   and both the module name and `ALL-UNNAMED` at test runtime
@@ -527,10 +486,6 @@ The compass for residual divergence once the lexer lands, and the long-term regr
   The one place output can structurally diverge from GJF,
   because the fork's comment handling is reproduced on our lexer rather than javac's token stream.
   The differential harness measures it at the byte level.
-- **Semantic import removal deletes a used import.**
-  The worst outcome of the adopted design: the formatted file no longer compiles.
-  Mitigated by keeping unresolved imports, counting javadoc references, the differential
-  comparison against GJF's detection, and the content-equality check that keeps stale ranges out.
 - **Under-tested server path.**
   Import fixing and AOSP style are invisible to the golden suite;
   Phase 1b exists so the seam-cuts are not flying blind there.
@@ -543,11 +498,8 @@ The primary goal is met when:
 
 - `lathe-server` formats with the fork, on any JDK the project uses, with no GJF-targeted access
   flags;
-- it supplies unused imports from its attributed tree when the cached analysis matches the text,
-  and falls back to the formatter's own detection otherwise;
-- every disagreement between semantic and GJF detection over the golden suite and the corpora is
-  reviewed, and none removes a used import;
-- the import-fixing overhead on large files is measured before and after and recorded in this doc.
+- formatting time stays within noise of the GJF baseline in
+  [Where formatting time goes](#where-formatting-time-goes).
 
 The whole project is done when, in addition:
 
@@ -563,13 +515,9 @@ The whole project is done when, in addition:
 
 ## Open questions
 
-- **Wait for an in-flight compile on a miss?**
-  Under format-on-write the debounced FAST compile often has not run yet, so the server falls back
-  to the formatter's own detection.
-  Waiting only pays if a compile for the same text is already running.
-  Decide from a logged hit rate (`[format] <uri> imports=analysis|own <n>ms` at `FINE`).
-- **A better use of the tree?**
-  See [the future candidates](#decision-lathe-supplies-unused-imports-the-formatter-keeps-its-own-parse).
+- **Make formatting faster later?**
+  See the [future candidates](#decision-keep-it-simple--no-reuse-of-lathes-attributed-tree);
+  none is planned.
 
 - **Opt-in step or straight swap?**
   The opt-in engine value costs a public `LatheFlags` constant that is removed again later;
