@@ -120,19 +120,9 @@
             <arg>--add-exports</arg>
             <arg>jdk.compiler/com.sun.tools.javac.api=io.github.aglibs.lathe.format</arg>
             <arg>--add-exports</arg>
-            <arg>jdk.compiler/com.sun.tools.javac.code=io.github.aglibs.lathe.format</arg>
-            <arg>--add-exports</arg>
-            <arg>jdk.compiler/com.sun.tools.javac.comp=io.github.aglibs.lathe.format</arg>
-            <arg>--add-exports</arg>
             <arg>jdk.compiler/com.sun.tools.javac.file=io.github.aglibs.lathe.format</arg>
             <arg>--add-exports</arg>
-            <arg>jdk.compiler/com.sun.tools.javac.main=io.github.aglibs.lathe.format</arg>
-            <arg>--add-exports</arg>
-            <arg>jdk.compiler/com.sun.tools.javac.model=io.github.aglibs.lathe.format</arg>
-            <arg>--add-exports</arg>
             <arg>jdk.compiler/com.sun.tools.javac.parser=io.github.aglibs.lathe.format</arg>
-            <arg>--add-exports</arg>
-            <arg>jdk.compiler/com.sun.tools.javac.processing=io.github.aglibs.lathe.format</arg>
             <arg>--add-exports</arg>
             <arg>jdk.compiler/com.sun.tools.javac.tree=io.github.aglibs.lathe.format</arg>
             <arg>--add-exports</arg>
@@ -158,19 +148,12 @@
             --add-exports jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED
             --add-exports jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED
             --add-exports jdk.compiler/com.sun.tools.javac.api=io.github.aglibs.lathe.format
-            --add-exports jdk.compiler/com.sun.tools.javac.code=io.github.aglibs.lathe.format
-            --add-exports jdk.compiler/com.sun.tools.javac.comp=io.github.aglibs.lathe.format
             --add-exports jdk.compiler/com.sun.tools.javac.file=io.github.aglibs.lathe.format
-            --add-exports jdk.compiler/com.sun.tools.javac.main=io.github.aglibs.lathe.format
-            --add-exports jdk.compiler/com.sun.tools.javac.model=io.github.aglibs.lathe.format
             --add-exports jdk.compiler/com.sun.tools.javac.parser=io.github.aglibs.lathe.format
-            --add-exports jdk.compiler/com.sun.tools.javac.processing=io.github.aglibs.lathe.format
             --add-exports jdk.compiler/com.sun.tools.javac.tree=io.github.aglibs.lathe.format
             --add-exports jdk.compiler/com.sun.tools.javac.util=io.github.aglibs.lathe.format
             --add-opens jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED
-            --add-opens jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED
-            --add-opens jdk.compiler/com.sun.tools.javac.code=io.github.aglibs.lathe.format
-            --add-opens jdk.compiler/com.sun.tools.javac.comp=io.github.aglibs.lathe.format</argLine>
+            --add-opens jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED</argLine>
         </configuration>
       </plugin>
     </plugins>

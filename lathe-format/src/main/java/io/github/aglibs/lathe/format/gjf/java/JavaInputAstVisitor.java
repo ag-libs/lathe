@@ -45,6 +45,7 @@ import static io.github.aglibs.lathe.format.gjf.java.Trees.skipParen;
 import static java.util.Objects.requireNonNull;
 import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toList;
+import static javax.tools.Diagnostic.NOPOS;
 
 import com.google.auto.value.AutoOneOf;
 import com.google.common.base.MoreObjects;
@@ -138,11 +139,7 @@ import com.sun.source.tree.WildcardTree;
 import com.sun.source.tree.YieldTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
-import com.sun.tools.javac.code.Flags;
-import com.sun.tools.javac.tree.JCTree;
-import com.sun.tools.javac.tree.JCTree.JCMethodDecl;
-import com.sun.tools.javac.tree.TreeInfo;
-import com.sun.tools.javac.tree.TreeScanner;
+import com.sun.source.util.TreeScanner;
 import io.github.aglibs.lathe.format.gjf.CloseOp;
 import io.github.aglibs.lathe.format.gjf.Doc;
 import io.github.aglibs.lathe.format.gjf.Doc.FillMode;
@@ -171,6 +168,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import javax.lang.model.element.Modifier;
 import javax.lang.model.element.Name;
 import org.jspecify.annotations.Nullable;
 
@@ -266,10 +264,6 @@ public class JavaInputAstVisitor extends TreePathScanner<Void, Void> {
     boolean isYes() {
       return this == YES;
     }
-
-    static VarArgsOrNot fromVariable(VariableTree node) {
-      return valueOf((((JCTree.JCVariableDecl) node).mods.flags & Flags.VARARGS) == Flags.VARARGS);
-    }
   }
 
   /** Whether the formal parameter declaration is a receiver. */
@@ -364,10 +358,10 @@ public class JavaInputAstVisitor extends TreePathScanner<Void, Void> {
 
   @Override
   public Void scan(Tree tree, Void unused) {
-    // Pre-visit AST for preview features, since com.sun.source.tree.AnyPattern can't be
-    // accessed directly without --enable-preview.
-    if (tree instanceof JCTree.JCAnyPattern) {
-      visitJcAnyPattern((JCTree.JCAnyPattern) tree);
+    // Pre-visit AST for the unnamed pattern `_`; Tree.Kind.ANY_PATTERN and AnyPatternTree do not
+    // exist on the JDK 21 floor, so match the kind by name.
+    if (tree != null && tree.getKind().name().equals("ANY_PATTERN")) {
+      visitAnyPatternUnderscore();
       return null;
     }
     inExpression.addLast(tree instanceof ExpressionTree || inExpression.peekLast());
@@ -447,12 +441,33 @@ public class JavaInputAstVisitor extends TreePathScanner<Void, Void> {
     }
   }
 
-  // Replace with Flags.IMPLICIT_CLASS once JDK 25 is the minimum supported version
-  private static final int IMPLICIT_CLASS = 1 << 19;
+  // javac synthesizes the implicit class's `final` modifier, so its modifiers carry flags but have
+  // no source position; explicit modifiers are illegal there, and ordinary classes never get
+  // synthesized flags at parse time.
+  private static boolean isImplicitClass(ClassTree tree) {
+    ModifiersTree modifiers = tree.getModifiers();
+    return !modifiers.getFlags().isEmpty() && getStartPosition(modifiers) == NOPOS;
+  }
+
+  // Generated record component fields are the only non-static fields of a record: javac's parser
+  // rejects instance fields declared in a record body.
+  private static boolean isRecordComponentField(ClassTree record, Tree member) {
+    return record.getKind() == Tree.Kind.RECORD
+        && member instanceof VariableTree variable
+        && !variable.getModifiers().getFlags().contains(Modifier.STATIC);
+  }
+
+  // javac synthesizes an enum constant's type from the enclosing enum's name with an empty span
+  // (end == start, or no end position at all, depending on the position API); a written field type
+  // always spans its source text.
+  private boolean isEnumConstant(VariableTree variable) {
+    Tree type = variable.getType();
+    return type != null && getEndPosition(type, getCurrentPath()) <= getStartPosition(type);
+  }
 
   @Override
   public Void visitClass(ClassTree tree, Void unused) {
-    if ((TreeInfo.flags((JCTree) tree) & IMPLICIT_CLASS) == IMPLICIT_CLASS) {
+    if (isImplicitClass(tree)) {
       visitImplicitClass(tree);
       return null;
     }
@@ -890,12 +905,9 @@ public class JavaInputAstVisitor extends TreePathScanner<Void, Void> {
     ArrayList<VariableTree> enumConstants = new ArrayList<>();
     ArrayList<Tree> members = new ArrayList<>();
     for (Tree member : node.getMembers()) {
-      if (member instanceof JCTree.JCVariableDecl) {
-        JCTree.JCVariableDecl variableDecl = (JCTree.JCVariableDecl) member;
-        if ((variableDecl.mods.flags & Flags.ENUM) == Flags.ENUM) {
-          enumConstants.add(variableDecl);
-          continue;
-        }
+      if (member instanceof VariableTree variableDecl && isEnumConstant(variableDecl)) {
+        enumConstants.add(variableDecl);
+        continue;
       }
       members.add(member);
     }
@@ -974,7 +986,7 @@ public class JavaInputAstVisitor extends TreePathScanner<Void, Void> {
       if (!node.getTypeParameters().isEmpty()) {
         typeParametersRest(node.getTypeParameters(), hasSuperInterfaceTypes ? plusFour : ZERO);
       }
-      ImmutableList<JCTree.JCVariableDecl> parameters = JavaInputAstVisitor.recordVariables(node);
+      ImmutableList<VariableTree> parameters = JavaInputAstVisitor.recordVariables(node);
       token("(");
       if (!parameters.isEmpty()) {
         // Break before args.
@@ -1006,18 +1018,17 @@ public class JavaInputAstVisitor extends TreePathScanner<Void, Void> {
     } else {
       ImmutableList<Tree> members =
           node.getMembers().stream()
-              .filter(t -> (TreeInfo.flags((JCTree) t) & Flags.GENERATED_MEMBER) == 0)
+              .filter(t -> !isRecordComponentField(node, t))
               .collect(toImmutableList());
       addBodyDeclarations(members, BracesOrNot.YES, FirstDeclarationsOrNot.YES);
     }
     dropEmptyDeclarations();
   }
 
-  private static ImmutableList<JCTree.JCVariableDecl> recordVariables(ClassTree node) {
+  private static ImmutableList<VariableTree> recordVariables(ClassTree node) {
     return node.getMembers().stream()
-        .filter(JCTree.JCVariableDecl.class::isInstance)
-        .map(JCTree.JCVariableDecl.class::cast)
-        .filter(m -> (m.mods.flags & RECORD) == RECORD)
+        .filter(m -> isRecordComponentField(node, m))
+        .map(VariableTree.class::cast)
         .collect(toImmutableList());
   }
 
@@ -1491,11 +1502,24 @@ public class JavaInputAstVisitor extends TreePathScanner<Void, Void> {
     return null;
   }
 
-  // TODO(cushon): Use Flags if/when we drop support for Java 11
-
-  protected static final long COMPACT_RECORD_CONSTRUCTOR = 1L << 51;
-
-  protected static final long RECORD = 1L << 61;
+  // javac's compact-constructor flag is internal; a compact record constructor is the only
+  // constructor without a `(` token between its modifiers and its body.
+  private boolean isCompactRecordConstructor(MethodTree node) {
+    if (node.getReturnType() != null || node.getBody() == null) {
+      return false;
+    }
+    int modifiersEnd = getEndPosition(node.getModifiers(), getCurrentPath());
+    int start = modifiersEnd == NOPOS ? getStartPosition(node) : modifiersEnd;
+    int bodyStart = getStartPosition(node.getBody());
+    return builder
+        .getInput()
+        .getPositionTokenMap()
+        .subRangeMap(Range.closedOpen(start, bodyStart))
+        .asMapOfRanges()
+        .values()
+        .stream()
+        .noneMatch(token -> token.getTok().getText().equals("("));
+  }
 
   @Override
   public Void visitMethod(MethodTree node, Void unused) {
@@ -1503,9 +1527,7 @@ public class JavaInputAstVisitor extends TreePathScanner<Void, Void> {
     List<? extends AnnotationTree> annotations = node.getModifiers().getAnnotations();
     List<? extends AnnotationTree> returnTypeAnnotations = ImmutableList.of();
 
-    boolean isRecordConstructor =
-        (((JCMethodDecl) node).mods.flags & COMPACT_RECORD_CONSTRUCTOR)
-            == COMPACT_RECORD_CONSTRUCTOR;
+    boolean isRecordConstructor = isCompactRecordConstructor(node);
 
     if (!node.getTypeParameters().isEmpty() && !annotations.isEmpty()) {
       int typeParameterStart = getStartPosition(node.getTypeParameters().get(0));
@@ -1873,7 +1895,7 @@ public class JavaInputAstVisitor extends TreePathScanner<Void, Void> {
   public Void visitUnary(UnaryTree node, Void unused) {
     sync(node);
     String operatorName = operatorName(node);
-    if (((JCTree) node).getTag().isPostUnaryOp()) {
+    if (isPostfixOperator(node.getKind())) {
       scan(node.getExpression(), null);
       splitToken(operatorName);
     } else {
@@ -1899,11 +1921,11 @@ public class JavaInputAstVisitor extends TreePathScanner<Void, Void> {
         return false;
       }
     }
-    JCTree.Tag tag = unaryTag(node.getExpression());
-    if (tag == null) {
+    Tree.Kind kind = unaryKind(node.getExpression());
+    if (kind == null) {
       return false;
     }
-    if (tag.isPostUnaryOp()) {
+    if (isPostfixOperator(kind)) {
       return false;
     }
     if (!operatorName(node).startsWith(operatorName)) {
@@ -1912,13 +1934,17 @@ public class JavaInputAstVisitor extends TreePathScanner<Void, Void> {
     return true;
   }
 
-  private JCTree.Tag unaryTag(ExpressionTree expression) {
+  private static boolean isPostfixOperator(Tree.Kind kind) {
+    return kind == Tree.Kind.POSTFIX_INCREMENT || kind == Tree.Kind.POSTFIX_DECREMENT;
+  }
+
+  private Tree.Kind unaryKind(ExpressionTree expression) {
     if (expression instanceof UnaryTree) {
-      return ((JCTree) expression).getTag();
+      return expression.getKind();
     }
     if (expression instanceof LiteralTree
         && isUnaryMinusLiteral(getSourceForNode(expression, getCurrentPath()))) {
-      return JCTree.Tag.MINUS;
+      return Tree.Kind.UNARY_MINUS;
     }
     return null;
   }
@@ -3492,15 +3518,15 @@ public class JavaInputAstVisitor extends TreePathScanner<Void, Void> {
   private boolean isStringConcat(ExpressionTree first) {
     final boolean[] stringLiteral = {true};
     final boolean[] formatString = {false};
-    new TreeScanner() {
+    new TreeScanner<Void, Void>() {
       @Override
-      public void scan(JCTree tree) {
+      public Void scan(Tree tree, Void unused) {
         if (tree == null) {
-          return;
+          return null;
         }
         switch (tree.getKind()) {
           case STRING_LITERAL -> {}
-          case PLUS -> super.scan(tree);
+          case PLUS -> super.scan(tree, null);
           default -> stringLiteral[0] = false;
         }
         if (tree.getKind() == STRING_LITERAL) {
@@ -3509,8 +3535,9 @@ public class JavaInputAstVisitor extends TreePathScanner<Void, Void> {
             formatString[0] = true;
           }
         }
+        return null;
       }
-    }.scan((JCTree) first);
+    }.scan(first, null);
     return stringLiteral[0] && formatString[0];
   }
 
@@ -3987,7 +4014,7 @@ public class JavaInputAstVisitor extends TreePathScanner<Void, Void> {
 
   /** Does this declaration have javadoc preceding it? */
   private boolean hasJavaDoc(Tree bodyDeclaration) {
-    int position = ((JCTree) bodyDeclaration).getStartPosition();
+    int position = getStartPosition(bodyDeclaration);
     Input.Token token = builder.getInput().getPositionTokenMap().get(position);
     if (token != null) {
       for (Input.Tok tok : token.getToksBefore()) {
@@ -4093,7 +4120,7 @@ public class JavaInputAstVisitor extends TreePathScanner<Void, Void> {
    * @param node the ASTNode holding the input position
    */
   protected final void sync(Tree node) {
-    builder.sync(((JCTree) node).getStartPosition());
+    builder.sync(getStartPosition(node));
   }
 
   final BreakTag genSym() {
@@ -4179,7 +4206,7 @@ public class JavaInputAstVisitor extends TreePathScanner<Void, Void> {
     return null;
   }
 
-  private void visitJcAnyPattern(JCTree.JCAnyPattern unused) {
+  private void visitAnyPatternUnderscore() {
     token("_");
   }
 }

@@ -21,7 +21,6 @@ import com.sun.source.tree.AnnotatedTypeTree;
 import com.sun.source.tree.AnnotationTree;
 import com.sun.source.tree.ArrayTypeTree;
 import com.sun.source.tree.Tree;
-import com.sun.tools.javac.tree.JCTree;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -83,7 +82,7 @@ final class DimensionHelpers {
     int idx = 0;
     for (List<AnnotationTree> dim : dims) {
       if (!dim.isEmpty()) {
-        int pos = ((JCTree) dim.get(0)).getStartPosition();
+        int pos = Trees.getStartPosition(dim.get(0));
         if (pos < lastPos) {
           List<List<AnnotationTree>> list = new ArrayList<>(dims);
           Collections.rotate(list, -(lastAnnotation + 1));

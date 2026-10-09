@@ -15,7 +15,11 @@ Lives in the `lathe-format` module, bundled by `lathe-server` and publishable st
   The GJF unit suites that cover the server's actual entry point are vendored and green against the
   intact fork: 898 tests in total (420 golden/reference + 478 upstream).
   See [Test coverage gap](#test-coverage-gap).
-- **Phase 2+ — de-internalization: NOT STARTED.**
+- **Phase 2 — flags and visitor internals: DONE.**
+  `JavaInputAstVisitor` and `DimensionHelpers` import no javac internals;
+  the fork module no longer needs `code`, `comp`, `main`, `model`, or `processing` exported.
+  See [Phase 2 result](#phase-2-result).
+- **Phase 3+ — remaining seams: NOT STARTED.**
   Cut the seams one at a time onto public APIs, dropping `--add-exports` as each closes.
 
 Work happens in a git worktree at `~/work/git/lathe-format` so `main` stays free for parallel work.
@@ -180,9 +184,33 @@ Every `com.sun.tools.javac` touch, across 10 files and 6 internal packages:
 | **④ Positions / Trees** | `api.JavacTrees`, `tree.{JCTree*, TreeInfo, Pretty, TreeScanner, DCTree}`, `util.Position` | `Trees`, `JavaInputAstVisitor`, `RemoveUnusedImports`, `StringWrapper` | `SourcePositions` / `DocTrees` |
 | **⑤ Flag inspection** | `code.Flags`, `tree.TreeInfo` | `JavaInputAstVisitor` | `ModifiersTree.getFlags()` / `getKind()` |
 
-Encouraging read: the 3,200-line `JavaInputAstVisitor` has only **5** touch-points
-(all flags and positions), confirming the visitor ports almost clean;
-the hard work is concentrated in the tokenizer.
+The audit undercounted the visitor: Phase 2 found about 13 touch-points
+(flags, tree tags, an internal `TreeScanner`, the any-pattern class, raw start positions),
+not 5 — but every one had a public replacement, so the visitor still ported cleanly.
+The hard work remains concentrated in the tokenizer.
+
+`ModifierOrderer` and `ImportOrderer` import `Tokens.TokenKind`, but only because
+`JavaInput.Tok.kind()` and `JavaInput.buildToks(…, stopTokens)` expose it;
+they belong to seam ①, not ⑤, and move with it.
+
+## Phase 2 result
+
+javac records several declaration facts only as internal `Flags` bits.
+The public tree exposes none of them, so each became a positional predicate,
+probed against `JavacTask.parse()` (including annotated and zero-component forms)
+and covered by existing fixtures:
+
+| Internal fact | Public predicate | Covered by |
+|---|---|---|
+| `Flags.ENUM` (enum constant) | the variable's type has an empty span — javac synthesizes it from the enum name | enum golden fixtures, `partialEnum` |
+| `RECORD` + `GENERATED_MEMBER` (component field) | a non-static field of a `RECORD` — the parser rejects explicit instance fields there | `Records`, `I1020`, `I1037` |
+| `COMPACT_RECORD_CONSTRUCTOR` | a constructor with no `(` token between its modifiers and its body | `I574`, `Records` |
+| `IMPLICIT_CLASS` | a class whose modifiers carry flags but have no source position — javac synthesizes `final` | `InstanceMain` |
+| `JCTree.Tag` post-unary / `MINUS` | `Tree.Kind.POSTFIX_*` / `UNARY_MINUS` | unary golden fixtures |
+| `JCAnyPattern` | `getKind().name().equals("ANY_PATTERN")` — the constant is absent on the JDK 21 floor | `Unnamed` |
+
+The internal `TreeScanner` became the public `com.sun.source.util.TreeScanner`,
+and the unused `VarArgsOrNot.fromVariable` (the only `Flags.VARARGS` use) was deleted.
 
 ## Plan
 
@@ -193,15 +221,19 @@ each dropping its own `--add-exports`:
 1. **Phase 1b — widen the green bar (DONE).**
    Vendor the upstream unit suites listed under [Test coverage gap](#test-coverage-gap);
    all green against the intact fork.
-2. **Phase 2 — Seam ⑤ (flags) + the three 1-ref files**
-   (`ModifierOrderer`, `ImportOrderer`, `DimensionHelpers`).
-   Mechanical; establishes the per-seam rhythm.
+2. **Phase 2 — Seam ⑤ (flags) + visitor internals + `DimensionHelpers` (DONE).**
+   Establishes the per-seam rhythm.
 3. **Phase 3 — Seam ④ `Trees.java`** → `SourcePositions`/`DocTrees` (11 refs, one file).
+   All start positions in the visitor and `DimensionHelpers` already route through
+   `Trees.getStartPosition`, so this is one file.
+   Watch synthesized nodes: GJF's internal end-position handle reports an empty span (end == start)
+   where `SourcePositions` reports `NOPOS`; the Phase 2 predicates accept both.
 4. **Phase 4 — Seam ③ diagnostics** → `DiagnosticCollector`.
 5. **Phase 5 — Seam ② parse** → `JavacTask.parse()`.
    Near-free: the public task wraps the same `JavacParser`,
    so for well-formed input it yields an identical tree and end positions.
-6. **Phase 6 — Seam ① tokenizer** (`JavacTokens` + `JavaInput`) — the real rewrite:
+6. **Phase 6 — Seam ① tokenizer** (`JavacTokens` + `JavaInput`, plus `ModifierOrderer` and
+   `ImportOrderer`, which consume its token kinds) — the real rewrite:
    a hand-written Java lexer producing the same flat token stream,
    validated against `JavacTokens` as a standalone token-level oracle
    **before** it can perturb formatting.

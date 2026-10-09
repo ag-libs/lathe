@@ -16,10 +16,15 @@ and modified as follows:
 - package `com.google.googlejavaformat` renamed to `io.github.aglibs.lathe.format.gjf`;
 - the command-line front end pruned (`Main`, `CommandLineOptions*`, `*Tool*`,
   `FormatFileCallable`, `UsageException`) — this module is a library;
-- the version template dropped.
+- the version template dropped;
+- `JavaInputAstVisitor` and `DimensionHelpers` moved off javac internals: internal `Flags`
+  checks (enum constants, record component fields, compact constructors, implicit classes)
+  replaced by public-position predicates, `JCTree.Tag` by `Tree.Kind`, the internal
+  `TreeScanner` by `com.sun.source.util.TreeScanner`, and the unused
+  `VarArgsOrNot.fromVariable` removed.
 
-Further modifications will replace the javac-internals seams (tokenizer, parse
-invocation, position access, flag inspection) with public-API equivalents.
+Further modifications will replace the remaining javac-internals seams (tokenizer,
+parse invocation, diagnostics, position access) with public-API equivalents.
 
 Per-file Apache 2.0 headers are retained. The golden fixtures under
 `src/test/resources/golden/` are also copied verbatim from google-java-format
