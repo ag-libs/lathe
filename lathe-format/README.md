@@ -24,3 +24,22 @@ invocation, position access, flag inspection) with public-API equivalents.
 Per-file Apache 2.0 headers are retained. The golden fixtures under
 `src/test/resources/golden/` are also copied verbatim from google-java-format
 `v1.35.0` and drive the conformance suite.
+
+## Vendored upstream tests
+
+The upstream unit suites under `src/test/java/io/github/aglibs/lathe/format/gjf/**`
+(and their resources under `src/test/resources/io/github/aglibs/lathe/format/gjf/`)
+are copied from google-java-format `v1.35.0` `core/src/test` and modified only by
+the same package rename (including resource paths). They stay JUnit 4 + Truth and
+run on the JUnit Vintage engine, so upstream merges apply cleanly.
+
+The pruned command-line front end (`Main`, `CommandLineOptions`,
+`CommandLineOptionsParser`, `FormatFileCallable`, `UsageException`) is restored in
+**test scope only**, together with a `GoogleJavaFormatVersion` generated from the
+upstream template, because many upstream formatting tests drive the formatter
+through `Main`. It is not part of the published library.
+
+Not vendored: `MainTest` (uses javac internals directly), `CommandLineOptionsParserTest`,
+`CommandLineFlagsTest`, `GoogleJavaFormatToolTest`, `GoogleJavaFormatToolProviderTest`
+(CLI and tool-provider behavior, not formatting), and `FormatterIntegrationTest`
+(superseded by `GoldenConformanceTest`).

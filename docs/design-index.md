@@ -62,8 +62,8 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 
 - [Lathe Format](planned/lathe-format.md) — a JDK-resilient fork of google-java-format re-hosted off
   `com.sun.tools.javac` internals onto the public Compiler Tree API (no `--add-exports`). Phase 0
-  (byte-identical baseline) and the internals audit are done; widening the test bar to the
-  import-fixing path and de-internalizing the five seams is the remaining work. Bundled by `lathe-server`, publishable standalone.
+  (byte-identical baseline), the internals audit, and the widened upstream test bar are done;
+  de-internalizing the five seams is the remaining work. Bundled by `lathe-server`, publishable standalone.
 
 **Editing features (deferred from M2):**
 

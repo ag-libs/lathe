@@ -11,8 +11,10 @@ Lives in the `lathe-format` module, bundled by `lathe-server` and publishable st
   The intact fork reproduces every GJF golden output byte-for-byte (420/420 tests green).
 - **Phase 1 — internals audit: DONE.**
   The full `com.sun.tools.javac` surface is enumerated and categorized into five seams (below).
-- **Phase 1b — widen the green bar: NOT STARTED.**
-  Vendor the GJF unit suites that cover the server's actual entry point (see [Test coverage gap](#test-coverage-gap)).
+- **Phase 1b — widen the green bar: DONE.**
+  The GJF unit suites that cover the server's actual entry point are vendored and green against the
+  intact fork: 898 tests in total (420 golden/reference + 478 upstream).
+  See [Test coverage gap](#test-coverage-gap).
 - **Phase 2+ — de-internalization: NOT STARTED.**
   Cut the seams one at a time onto public APIs, dropping `--add-exports` as each closes.
 
@@ -153,10 +155,16 @@ Phase 1b closes this before any seam is cut, by vendoring the upstream unit suit
 - `ImportOrdererTest`, `RemoveUnusedImportsTest`, `RemoveUnusedImportsCaseLabelsTest`
 - `ModifierOrdererTest`, `ArrayDimensionTest`, `JavadocFormattingTest`
 - `FormatterTest`, `PartialFormattingTest`, `DiagnosticTest`
-- `StringWrapperTest`, `SnippetFormatterTest`, `ReplacementTest`
+- `StringWrapperTest`, `StringWrapperIntegrationTest`, `SnippetFormatterTest`, `ReplacementTest`
+- `TypeNameClassifierTest`, `LineRangesToCharRangesTest`, `NewlinesTest`
 
-The CLI suites (`MainTest`, `CommandLineOptionsParserTest`, `GoogleJavaFormatTool*Test`) are
-skipped along with the pruned CLI; any of their cases that assert formatting behavior are ported.
+They stay **verbatim** — JUnit 4 + Truth on the JUnit Vintage engine — so upstream merges apply to
+them as cleanly as to the main sources.
+About 30 of their cases (including `testFormatAosp` and the `testimports` fix-imports fixtures)
+drive the formatter through GJF's `Main`, so the pruned CLI front end is restored in
+**test scope only**; the published library still has no CLI.
+Skipped: `MainTest` (uses javac internals directly), the CLI-parsing and tool-provider suites, and
+`FormatterIntegrationTest` (superseded by `GoldenConformanceTest`).
 `FormatHarness` gains a `fixImports` subject per style
 so the differential layer compares the exact server entry point, not just `formatSource`.
 
@@ -182,7 +190,7 @@ De-internalization order (easy → hard),
 each gated by the full suite (golden + Phase 1b unit suites) staying green,
 each dropping its own `--add-exports`:
 
-1. **Phase 1b — widen the green bar.**
+1. **Phase 1b — widen the green bar (DONE).**
    Vendor the upstream unit suites listed under [Test coverage gap](#test-coverage-gap);
    all green against the intact fork.
 2. **Phase 2 — Seam ⑤ (flags) + the three 1-ref files**
