@@ -17,7 +17,6 @@
 package io.github.aglibs.lathe.format.gjf.java;
 
 import static com.google.common.base.Preconditions.checkArgument;
-import static io.github.aglibs.lathe.format.gjf.java.Trees.getEndPosition;
 import static java.lang.Math.max;
 
 import com.google.common.base.CharMatcher;
@@ -45,7 +44,6 @@ import com.sun.tools.javac.tree.JCTree;
 import com.sun.tools.javac.tree.JCTree.JCCompilationUnit;
 import com.sun.tools.javac.tree.JCTree.JCFieldAccess;
 import com.sun.tools.javac.tree.JCTree.JCImport;
-import com.sun.tools.javac.util.Context;
 import io.github.aglibs.lathe.format.gjf.Newlines;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -203,33 +201,32 @@ public class RemoveUnusedImports {
   }
 
   public static String removeUnusedImports(final String contents) throws FormatterException {
-    Context context = new Context();
-    JCCompilationUnit unit = parse(context, contents);
-    if (unit == null) {
-      // error handling is done during formatting
-      return contents;
-    }
-    UnusedImportScanner scanner = new UnusedImportScanner(JavacTrees.instance(context));
+    Trees.ParsedUnit parsed = parse(contents);
+    // The javac-internal tree and javadoc types below are cut over separately; the parse itself is
+    // public, and its trees are javac's implementation classes at runtime.
+    JCCompilationUnit unit = (JCCompilationUnit) parsed.unit();
+    UnusedImportScanner scanner = new UnusedImportScanner((JavacTrees) parsed.trees());
     scanner.scan(unit, null);
     return applyReplacements(
-        contents, buildReplacements(contents, unit, scanner.usedNames, scanner.usedInJavadoc));
+        contents,
+        buildReplacements(contents, parsed, unit, scanner.usedNames, scanner.usedInJavadoc));
   }
 
-  private static JCCompilationUnit parse(Context context, String javaInput)
-      throws FormatterException {
+  private static Trees.ParsedUnit parse(String javaInput) throws FormatterException {
     List<Diagnostic<? extends JavaFileObject>> errorDiagnostics = new ArrayList<>();
-    JCTree.JCCompilationUnit unit =
-        Trees.parse(context, errorDiagnostics, /* allowStringFolding= */ false, javaInput);
+    Trees.ParsedUnit parsed =
+        Trees.parse(errorDiagnostics, /* allowStringFolding= */ false, javaInput);
     if (!errorDiagnostics.isEmpty()) {
       // error handling is done during formatting
       throw FormatterException.fromJavacDiagnostics(errorDiagnostics);
     }
-    return unit;
+    return parsed;
   }
 
   /** Construct replacements to fix unused imports. */
   private static RangeMap<Integer, String> buildReplacements(
       String contents,
+      Trees.ParsedUnit parsed,
       JCCompilationUnit unit,
       Set<String> usedNames,
       Multimap<String, Range<Integer>> usedInJavadoc) {
@@ -243,7 +240,7 @@ public class RemoveUnusedImports {
         continue;
       }
       // delete the import
-      int endPosition = getEndPosition(importTree, unit);
+      int endPosition = parsed.getEndPosition(importTree);
       endPosition = max(CharMatcher.isNot(' ').indexIn(contents, endPosition), endPosition);
       String sep = Newlines.guessLineSeparator(contents);
       if (endPosition + sep.length() < contents.length()

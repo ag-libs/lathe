@@ -14,83 +14,63 @@
 
 package io.github.aglibs.lathe.format.gjf.java;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
-
-import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Iterables;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
-import com.sun.source.tree.CompoundAssignmentTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.ParenthesizedTree;
 import com.sun.source.tree.Tree;
+import com.sun.source.util.DocTrees;
+import com.sun.source.util.JavacTask;
+import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
-import com.sun.tools.javac.file.JavacFileManager;
-import com.sun.tools.javac.parser.JavacParser;
-import com.sun.tools.javac.parser.ParserFactory;
-import com.sun.tools.javac.tree.JCTree;
-import com.sun.tools.javac.tree.JCTree.JCCompilationUnit;
-import com.sun.tools.javac.tree.Pretty;
-import com.sun.tools.javac.tree.TreeInfo;
-import com.sun.tools.javac.util.Context;
-import com.sun.tools.javac.util.Log;
-import com.sun.tools.javac.util.Options;
 import java.io.IOError;
 import java.io.IOException;
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
-import java.lang.invoke.VarHandle;
 import java.net.URI;
 import java.util.List;
 import javax.lang.model.element.Name;
 import javax.tools.Diagnostic;
 import javax.tools.DiagnosticListener;
+import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
 import javax.tools.SimpleJavaFileObject;
-import javax.tools.StandardLocation;
-import org.jspecify.annotations.Nullable;
+import javax.tools.ToolProvider;
 
 /** Utilities for working with {@link Tree}s. */
 class Trees {
-  /** Returns the length of the source for the node. */
-  static int getLength(Tree tree, TreePath path) {
-    return getEndPosition(tree, path) - getStartPosition(tree);
-  }
 
-  /** Returns the source start position of the node. */
-  static int getStartPosition(Tree expression) {
-    return ((JCTree) expression).getStartPosition();
-  }
+  /**
+   * A compilation unit parsed from {@code source}, with the positions of its trees. Positions come
+   * from the public {@link SourcePositions}, which need the unit they were parsed in.
+   */
+  record ParsedUnit(String source, CompilationUnitTree unit, DocTrees trees) {
 
-  /** Returns the source end position of the node. */
-  static int getEndPosition(Tree expression, TreePath path) {
-    return getEndPosition(expression, path.getCompilationUnit());
-  }
+    /** Returns the source start position of the node. */
+    int getStartPosition(Tree tree) {
+      return (int) trees.getSourcePositions().getStartPosition(unit, tree);
+    }
 
-  /** Returns the source end position of the node. */
-  public static int getEndPosition(Tree tree, CompilationUnitTree unit) {
-    try {
-      return (int) GET_END_POS_HANDLE.invokeExact((JCTree) tree, (JCCompilationUnit) unit);
-    } catch (Throwable e) {
-      Throwables.throwIfUnchecked(e);
-      throw new AssertionError(e);
+    /** Returns the source end position of the node. */
+    int getEndPosition(Tree tree) {
+      return (int) trees.getSourcePositions().getEndPosition(unit, tree);
+    }
+
+    /** Returns the length of the source for the node. */
+    int getLength(Tree tree) {
+      return getEndPosition(tree) - getStartPosition(tree);
+    }
+
+    /** Returns the source text for the node. */
+    String getSourceForNode(Tree node) {
+      return source.substring(getStartPosition(node), getEndPosition(node));
     }
   }
 
-  /** Returns the source text for the node. */
-  static String getSourceForNode(Tree node, TreePath path) {
-    CharSequence source;
-    try {
-      source = path.getCompilationUnit().getSourceFile().getCharContent(false);
-    } catch (IOException e) {
-      throw new IOError(e);
-    }
-    return source.subSequence(getStartPosition(node), getEndPosition(node, path)).toString();
-  }
+  private static final JavaCompiler COMPILER = ToolProvider.getSystemJavaCompiler();
 
   /** Returns the simple name of a (possibly qualified) method invocation expression. */
   static Name getMethodName(MethodInvocationTree methodInvocation) {
@@ -108,21 +88,82 @@ class Trees {
 
   /** Returns the string name of an operator, including assignment and compound assignment. */
   static String operatorName(ExpressionTree expression) {
-    JCTree.Tag tag = ((JCTree) expression).getTag();
-    if (tag == JCTree.Tag.ASSIGN) {
-      return "=";
-    }
-    boolean assignOp = expression instanceof CompoundAssignmentTree;
-    if (assignOp) {
-      tag = tag.noAssignOp();
-    }
-    String name = new Pretty(/*writer*/ null, /*sourceOutput*/ true).operatorName(tag);
-    return assignOp ? name + "=" : name;
+    return switch (expression.getKind()) {
+      case ASSIGNMENT -> "=";
+      case UNARY_PLUS, PLUS -> "+";
+      case UNARY_MINUS, MINUS -> "-";
+      case LOGICAL_COMPLEMENT -> "!";
+      case BITWISE_COMPLEMENT -> "~";
+      case PREFIX_INCREMENT, POSTFIX_INCREMENT -> "++";
+      case PREFIX_DECREMENT, POSTFIX_DECREMENT -> "--";
+      case CONDITIONAL_OR -> "||";
+      case CONDITIONAL_AND -> "&&";
+      case EQUAL_TO -> "==";
+      case NOT_EQUAL_TO -> "!=";
+      case LESS_THAN -> "<";
+      case GREATER_THAN -> ">";
+      case LESS_THAN_EQUAL -> "<=";
+      case GREATER_THAN_EQUAL -> ">=";
+      case OR -> "|";
+      case XOR -> "^";
+      case AND -> "&";
+      case LEFT_SHIFT -> "<<";
+      case RIGHT_SHIFT -> ">>";
+      case UNSIGNED_RIGHT_SHIFT -> ">>>";
+      case MULTIPLY -> "*";
+      case DIVIDE -> "/";
+      case REMAINDER -> "%";
+      case OR_ASSIGNMENT -> "|=";
+      case XOR_ASSIGNMENT -> "^=";
+      case AND_ASSIGNMENT -> "&=";
+      case LEFT_SHIFT_ASSIGNMENT -> "<<=";
+      case RIGHT_SHIFT_ASSIGNMENT -> ">>=";
+      case UNSIGNED_RIGHT_SHIFT_ASSIGNMENT -> ">>>=";
+      case PLUS_ASSIGNMENT -> "+=";
+      case MINUS_ASSIGNMENT -> "-=";
+      case MULTIPLY_ASSIGNMENT -> "*=";
+      case DIVIDE_ASSIGNMENT -> "/=";
+      case REMAINDER_ASSIGNMENT -> "%=";
+      default -> throw new AssertionError(expression.getKind());
+    };
   }
 
-  /** Returns the precedence of an expression's operator. */
+  /** Returns the precedence of an expression's operator; the values are javac's. */
   static int precedence(ExpressionTree expression) {
-    return TreeInfo.opPrec(((JCTree) expression).getTag());
+    return switch (expression.getKind()) {
+      case ASSIGNMENT -> 1;
+      case OR_ASSIGNMENT,
+          XOR_ASSIGNMENT,
+          AND_ASSIGNMENT,
+          LEFT_SHIFT_ASSIGNMENT,
+          RIGHT_SHIFT_ASSIGNMENT,
+          UNSIGNED_RIGHT_SHIFT_ASSIGNMENT,
+          PLUS_ASSIGNMENT,
+          MINUS_ASSIGNMENT,
+          MULTIPLY_ASSIGNMENT,
+          DIVIDE_ASSIGNMENT,
+          REMAINDER_ASSIGNMENT ->
+          2;
+      case CONDITIONAL_OR -> 4;
+      case CONDITIONAL_AND -> 5;
+      case OR -> 6;
+      case XOR -> 7;
+      case AND -> 8;
+      case EQUAL_TO, NOT_EQUAL_TO -> 9;
+      case LESS_THAN, GREATER_THAN, LESS_THAN_EQUAL, GREATER_THAN_EQUAL, INSTANCE_OF -> 10;
+      case LEFT_SHIFT, RIGHT_SHIFT, UNSIGNED_RIGHT_SHIFT -> 11;
+      case PLUS, MINUS -> 12;
+      case MULTIPLY, DIVIDE, REMAINDER -> 13;
+      case UNARY_PLUS,
+          UNARY_MINUS,
+          LOGICAL_COMPLEMENT,
+          BITWISE_COMPLEMENT,
+          PREFIX_INCREMENT,
+          PREFIX_DECREMENT ->
+          14;
+      case POSTFIX_INCREMENT, POSTFIX_DECREMENT -> 15;
+      default -> throw new AssertionError(expression.getKind());
+    };
   }
 
   /**
@@ -146,8 +187,7 @@ class Trees {
     return ((ParenthesizedTree) node).getExpression();
   }
 
-  static JCCompilationUnit parse(
-      Context context,
+  static ParsedUnit parse(
       List<Diagnostic<? extends JavaFileObject>> errorDiagnostics,
       boolean allowStringFolding,
       String javaInput) {
@@ -157,16 +197,6 @@ class Trees {
             errorDiagnostics.add(diagnostic);
           }
         };
-    context.put(DiagnosticListener.class, diagnostics);
-    Options.instance(context).put("--enable-preview", "true");
-    Options.instance(context).put("allowStringFolding", Boolean.toString(allowStringFolding));
-    JavacFileManager fileManager = new JavacFileManager(context, /* register= */ true, UTF_8);
-    try {
-      fileManager.setLocation(StandardLocation.PLATFORM_CLASS_PATH, ImmutableList.of());
-    } catch (IOException e) {
-      // impossible
-      throw new IOError(e);
-    }
     SimpleJavaFileObject source =
         new SimpleJavaFileObject(URI.create("source"), JavaFileObject.Kind.SOURCE) {
           @Override
@@ -174,37 +204,25 @@ class Trees {
             return javaInput;
           }
         };
-    Log.instance(context).useSource(source);
-    ParserFactory parserFactory = ParserFactory.instance(context);
-    JavacParser parser;
+    // Preview syntax is always accepted; it needs -source pinned to the running JDK's version.
+    ImmutableList<String> options =
+        ImmutableList.of(
+            "-proc:none",
+            "--enable-preview",
+            "-source",
+            Integer.toString(Runtime.version().feature()),
+            "-XDallowStringFolding=" + allowStringFolding);
+    JavacTask task =
+        (JavacTask)
+            COMPILER.getTask(null, null, diagnostics, options, null, ImmutableList.of(source));
+    CompilationUnitTree unit;
     try {
-      parser =
-          newParser(
-              parserFactory,
-              javaInput,
-              /* keepDocComments= */ true,
-              /* keepEndPos= */ true,
-              /* keepLineMap= */ true);
-    } catch (Throwable e) {
-      Throwables.throwIfUnchecked(e);
-      throw new AssertionError(e);
+      unit = Iterables.getOnlyElement(task.parse());
+    } catch (IOException e) {
+      // impossible: the source is in memory
+      throw new IOError(e);
     }
-    JCCompilationUnit unit = parser.parseCompilationUnit();
-    unit.sourcefile = source;
-    return unit;
-  }
-
-  private static JavacParser newParser(
-      ParserFactory parserFactory,
-      CharSequence source,
-      boolean keepDocComments,
-      boolean keepEndPos,
-      boolean keepLineMap) {
-    if (END_POS_TABLE_CLASS != null) {
-      return parserFactory.newParser(source, keepDocComments, keepEndPos, keepLineMap);
-    }
-    return parserFactory.newParser(
-        source, keepDocComments, keepLineMap, /* parseModuleInfo */ false);
+    return new ParsedUnit(javaInput, unit, DocTrees.instance(task));
   }
 
   private static boolean errorDiagnostic(Diagnostic<?> input) {
@@ -214,47 +232,5 @@ class Trees {
     // accept constructor-like method declarations that don't match the name of their
     // enclosing class
     return !input.getCode().equals("compiler.err.invalid.meth.decl.ret.type.req");
-  }
-
-  private static final @Nullable Class<?> END_POS_TABLE_CLASS = getEndPosTableClass();
-
-  private static @Nullable Class<?> getEndPosTableClass() {
-    try {
-      return Class.forName("com.sun.tools.javac.tree.EndPosTable");
-    } catch (ClassNotFoundException e) {
-      // JDK versions after https://bugs.openjdk.org/browse/JDK-8372948
-      return null;
-    }
-  }
-
-  private static final MethodHandle GET_END_POS_HANDLE = getEndPosMethodHandle();
-
-  private static MethodHandle getEndPosMethodHandle() {
-    MethodHandles.Lookup lookup = MethodHandles.lookup();
-    if (END_POS_TABLE_CLASS == null) {
-      try {
-        // (tree, unit) -> tree.getEndPosition()
-        return MethodHandles.dropArguments(
-            lookup.findVirtual(JCTree.class, "getEndPosition", MethodType.methodType(int.class)),
-            1,
-            JCCompilationUnit.class);
-      } catch (ReflectiveOperationException e1) {
-        throw new LinkageError(e1.getMessage(), e1);
-      }
-    }
-    try {
-      // (tree, unit) -> tree.getEndPosition(unit.endPositions)
-      return MethodHandles.filterArguments(
-          lookup.findVirtual(
-              JCTree.class,
-              "getEndPosition",
-              MethodType.methodType(int.class, END_POS_TABLE_CLASS)),
-          1,
-          lookup
-              .findVarHandle(JCCompilationUnit.class, "endPositions", END_POS_TABLE_CLASS)
-              .toMethodHandle(VarHandle.AccessMode.GET));
-    } catch (ReflectiveOperationException e) {
-      throw new LinkageError(e.getMessage(), e);
-    }
   }
 }

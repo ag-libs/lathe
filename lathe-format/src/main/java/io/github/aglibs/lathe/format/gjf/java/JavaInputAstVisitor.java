@@ -34,11 +34,7 @@ import static io.github.aglibs.lathe.format.gjf.Doc.FillMode.UNIFIED;
 import static io.github.aglibs.lathe.format.gjf.Indent.If.make;
 import static io.github.aglibs.lathe.format.gjf.OpsBuilder.BlankLineWanted.PRESERVE;
 import static io.github.aglibs.lathe.format.gjf.OpsBuilder.BlankLineWanted.YES;
-import static io.github.aglibs.lathe.format.gjf.java.Trees.getEndPosition;
-import static io.github.aglibs.lathe.format.gjf.java.Trees.getLength;
 import static io.github.aglibs.lathe.format.gjf.java.Trees.getMethodName;
-import static io.github.aglibs.lathe.format.gjf.java.Trees.getSourceForNode;
-import static io.github.aglibs.lathe.format.gjf.java.Trees.getStartPosition;
 import static io.github.aglibs.lathe.format.gjf.java.Trees.operatorName;
 import static io.github.aglibs.lathe.format.gjf.java.Trees.precedence;
 import static io.github.aglibs.lathe.format.gjf.java.Trees.skipParen;
@@ -340,13 +336,34 @@ public class JavaInputAstVisitor extends TreePathScanner<Void, Void> {
    *
    * @param builder the {@link OpsBuilder}
    */
-  public JavaInputAstVisitor(OpsBuilder builder, int indentMultiplier) {
+  private final Trees.ParsedUnit parsed;
+
+  public JavaInputAstVisitor(OpsBuilder builder, int indentMultiplier, Trees.ParsedUnit parsed) {
     this.builder = builder;
     this.indentMultiplier = indentMultiplier;
+    this.parsed = parsed;
     minusTwo = Indent.Const.make(-2, indentMultiplier);
     minusFour = Indent.Const.make(-4, indentMultiplier);
     plusTwo = Indent.Const.make(+2, indentMultiplier);
     plusFour = Indent.Const.make(+4, indentMultiplier);
+  }
+
+  // Positions come from the public SourcePositions of the parsed unit; the path arguments are kept
+  // so call sites match upstream.
+  private int getStartPosition(Tree tree) {
+    return parsed.getStartPosition(tree);
+  }
+
+  private int getEndPosition(Tree tree, TreePath unused) {
+    return parsed.getEndPosition(tree);
+  }
+
+  private int getLength(Tree tree, TreePath unused) {
+    return parsed.getLength(tree);
+  }
+
+  private String getSourceForNode(Tree node, TreePath unused) {
+    return parsed.getSourceForNode(node);
   }
 
   /** A record of whether we have visited into an expression. */
@@ -444,7 +461,7 @@ public class JavaInputAstVisitor extends TreePathScanner<Void, Void> {
   // javac synthesizes the implicit class's `final` modifier, so its modifiers carry flags but have
   // no source position; explicit modifiers are illegal there, and ordinary classes never get
   // synthesized flags at parse time.
-  private static boolean isImplicitClass(ClassTree tree) {
+  private boolean isImplicitClass(ClassTree tree) {
     ModifiersTree modifiers = tree.getModifiers();
     return !modifiers.getFlags().isEmpty() && getStartPosition(modifiers) == NOPOS;
   }
@@ -522,7 +539,8 @@ public class JavaInputAstVisitor extends TreePathScanner<Void, Void> {
       token("new");
       builder.space();
 
-      TypeWithDims extractedDims = DimensionHelpers.extractDims(node.getType(), SortedDims.YES);
+      TypeWithDims extractedDims =
+          DimensionHelpers.extractDims(node.getType(), SortedDims.YES, parsed);
       Tree base = extractedDims.node();
 
       Deque<ExpressionTree> dimExpressions = new ArrayDeque<>(node.getDimensions());
@@ -648,7 +666,7 @@ public class JavaInputAstVisitor extends TreePathScanner<Void, Void> {
   }
 
   private void visitAnnotatedArrayType(Tree node) {
-    TypeWithDims extractedDims = DimensionHelpers.extractDims(node, SortedDims.YES);
+    TypeWithDims extractedDims = DimensionHelpers.extractDims(node, SortedDims.YES, parsed);
     builder.open(plusFour);
     scan(extractedDims.node(), null);
     Deque<List<? extends AnnotationTree>> dims = new ArrayDeque<>(extractedDims.dims());
@@ -1089,15 +1107,14 @@ public class JavaInputAstVisitor extends TreePathScanner<Void, Void> {
     }
   }
 
-  private static TypeWithDims variableFragmentDims(
-      boolean afterFirstToken, int leadingDims, Tree type) {
+  private TypeWithDims variableFragmentDims(boolean afterFirstToken, int leadingDims, Tree type) {
     if (type == null) {
       return null;
     }
     if (!afterFirstToken) {
-      return DimensionHelpers.extractDims(type, SortedDims.YES);
+      return DimensionHelpers.extractDims(type, SortedDims.YES, parsed);
     }
-    TypeWithDims dims = DimensionHelpers.extractDims(type, SortedDims.NO);
+    TypeWithDims dims = DimensionHelpers.extractDims(type, SortedDims.NO, parsed);
     return new TypeWithDims(
         null,
         leadingDims > 0 ? dims.dims().subList(0, dims.dims().size() - leadingDims) : dims.dims());
@@ -1558,7 +1575,7 @@ public class JavaInputAstVisitor extends TreePathScanner<Void, Void> {
     Deque<List<? extends AnnotationTree>> dims = null;
     if (node.getReturnType() != null) {
       TypeWithDims extractedDims =
-          DimensionHelpers.extractDims(node.getReturnType(), SortedDims.YES);
+          DimensionHelpers.extractDims(node.getReturnType(), SortedDims.YES, parsed);
       baseReturnType = extractedDims.node();
       dims = new ArrayDeque<>(extractedDims.dims());
     } else {
@@ -2529,7 +2546,7 @@ public class JavaInputAstVisitor extends TreePathScanner<Void, Void> {
 
   /** Represents an annotation or a modifier in a {@link ModifiersTree}. */
   @AutoOneOf(AnnotationOrModifier.Kind.class)
-  abstract static class AnnotationOrModifier implements Comparable<AnnotationOrModifier> {
+  abstract static class AnnotationOrModifier {
     enum Kind {
       MODIFIER,
       ANNOTATION
@@ -2556,21 +2573,15 @@ public class JavaInputAstVisitor extends TreePathScanner<Void, Void> {
     boolean isAnnotation() {
       return getKind().equals(Kind.ANNOTATION);
     }
+  }
 
-    int position() {
-      return switch (getKind()) {
-        case MODIFIER -> modifier().getPosition();
-        case ANNOTATION -> getStartPosition(annotation());
-      };
-    }
-
-    private static final Comparator<AnnotationOrModifier> COMPARATOR =
-        Comparator.comparingInt(AnnotationOrModifier::position);
-
-    @Override
-    public int compareTo(AnnotationOrModifier o) {
-      return COMPARATOR.compare(this, o);
-    }
+  // An annotation's position needs the parsed unit, so ordering lives in the visitor rather than in
+  // AnnotationOrModifier.compareTo as upstream.
+  private int position(AnnotationOrModifier annotationOrModifier) {
+    return switch (annotationOrModifier.getKind()) {
+      case MODIFIER -> annotationOrModifier.modifier().getPosition();
+      case ANNOTATION -> getStartPosition(annotationOrModifier.annotation());
+    };
   }
 
   /**
@@ -2634,7 +2645,7 @@ public class JavaInputAstVisitor extends TreePathScanner<Void, Void> {
                         .filter(t -> !annotationRanges.contains(t.getPosition()))
                         .map(AnnotationOrModifier::ofModifier),
                     annotations.stream().map(AnnotationOrModifier::ofAnnotation))
-                .sorted()
+                .sorted(Comparator.comparingInt(this::position))
                 .collect(toList()));
     // Take a suffix of annotations that are well-known type annotations, and which appear after any
     // declaration annotations or modifiers
@@ -2994,7 +3005,8 @@ public class JavaInputAstVisitor extends TreePathScanner<Void, Void> {
     Optional<TypeWithDims> typeWithDims;
     Tree type;
     if (node.getType() != null) {
-      TypeWithDims extractedDims = DimensionHelpers.extractDims(node.getType(), SortedDims.YES);
+      TypeWithDims extractedDims =
+          DimensionHelpers.extractDims(node.getType(), SortedDims.YES, parsed);
       typeWithDims = Optional.of(extractedDims);
       type = extractedDims.node();
     } else {
@@ -3866,7 +3878,7 @@ public class JavaInputAstVisitor extends TreePathScanner<Void, Void> {
         modifiers, annotationDirection, /* declarationAnnotationBreak= */ Optional.empty());
     builder.open(plusFour);
     builder.open(ZERO);
-    TypeWithDims extractedDims = DimensionHelpers.extractDims(type, SortedDims.YES);
+    TypeWithDims extractedDims = DimensionHelpers.extractDims(type, SortedDims.YES, parsed);
     Deque<List<? extends AnnotationTree>> dims = new ArrayDeque<>(extractedDims.dims());
     scan(extractedDims.node(), null);
     int baseDims = dims.size();
@@ -3997,8 +4009,7 @@ public class JavaInputAstVisitor extends TreePathScanner<Void, Void> {
    *
    * <p>e.g. {@code int x, y;} is parsed as {@code int x; int y;}.
    */
-  private static List<VariableTree> variableFragments(
-      PeekingIterator<? extends Tree> it, Tree first) {
+  private List<VariableTree> variableFragments(PeekingIterator<? extends Tree> it, Tree first) {
     List<VariableTree> fragments = new ArrayList<>();
     if (first.getKind() == VARIABLE) {
       int start = getStartPosition(first);

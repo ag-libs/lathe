@@ -21,10 +21,14 @@ and modified as follows:
   checks (enum constants, record component fields, compact constructors, implicit classes)
   replaced by public-position predicates, `JCTree.Tag` by `Tree.Kind`, the internal
   `TreeScanner` by `com.sun.source.util.TreeScanner`, and the unused
-  `VarArgsOrNot.fromVariable` removed.
+  `VarArgsOrNot.fromVariable` removed;
+- every parse goes through a public `JavacTask` returning `Trees.ParsedUnit`, and positions come
+  from `SourcePositions` (passed to the visitor, `DimensionHelpers`, `StringWrapper`, and
+  `RemoveUnusedImports`); `operatorName`/`precedence` use `Tree.Kind` tables; annotation/modifier
+  ordering moved from `AnnotationOrModifier.compareTo` into the visitor.
 
-Further modifications will replace the remaining javac-internals seams (tokenizer,
-parse invocation, diagnostics, position access) with public-API equivalents.
+Further modifications will replace the remaining javac-internals seams (tokenizer
+and its diagnostics, and the import/javadoc internals in `RemoveUnusedImports`) with public-API equivalents.
 
 Per-file Apache 2.0 headers are retained. The golden fixtures under
 `src/test/resources/golden/` are also copied verbatim from google-java-format

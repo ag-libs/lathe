@@ -51,12 +51,12 @@ final class DimensionHelpers {
   }
 
   /** Returns a (possibly re-ordered) {@link TypeWithDims} for the given type. */
-  static TypeWithDims extractDims(Tree node, SortedDims sorted) {
+  static TypeWithDims extractDims(Tree node, SortedDims sorted, Trees.ParsedUnit parsed) {
     Deque<List<AnnotationTree>> builder = new ArrayDeque<>();
     node = extractDims(builder, node);
     Iterable<List<AnnotationTree>> dims;
     if (sorted == SortedDims.YES) {
-      dims = reorderBySourcePosition(builder);
+      dims = reorderBySourcePosition(builder, parsed);
     } else {
       dims = builder;
     }
@@ -76,13 +76,13 @@ final class DimensionHelpers {
    * checks the token stream to figure out which side of the method name they appear on.
    */
   private static Iterable<List<AnnotationTree>> reorderBySourcePosition(
-      Deque<List<AnnotationTree>> dims) {
+      Deque<List<AnnotationTree>> dims, Trees.ParsedUnit parsed) {
     int lastAnnotation = -1;
     int lastPos = -1;
     int idx = 0;
     for (List<AnnotationTree> dim : dims) {
       if (!dim.isEmpty()) {
-        int pos = Trees.getStartPosition(dim.get(0));
+        int pos = parsed.getStartPosition(dim.get(0));
         if (pos < lastPos) {
           List<List<AnnotationTree>> list = new ArrayList<>(dims);
           Collections.rotate(list, -(lastAnnotation + 1));

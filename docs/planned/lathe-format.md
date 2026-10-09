@@ -23,10 +23,12 @@ a standalone library and CLI are a secondary by-product.
   `JavaInputAstVisitor` and `DimensionHelpers` import no javac internals;
   the fork module no longer needs `code`, `comp`, `main`, `model`, or `processing` exported.
   See [Phase 2 result](#phase-2-result).
-- **Phase 3+ — NOT STARTED.**
-  Re-planned around the [primary goal](#primary-goal-formatting-inside-lathe):
-  public parse and positions first, then caller-supplied unused imports and server integration,
-  and only then the lexer. See [Plan](#plan).
+- **Phase 3 — public parse and positions: DONE.**
+  Every parse goes through a public `JavacTask`; positions come from `SourcePositions`;
+  `Trees`, `Formatter`, `StringWrapper`, `DimensionHelpers`, and the visitor import no internals.
+  See [Phase 3 result](#phase-3-result).
+- **Phase 4+ — NOT STARTED.**
+  Caller-supplied unused imports and server integration, then the lexer. See [Plan](#plan).
 
 Work happens in a git worktree at `~/work/git/lathe-format` so `main` stays free for parallel work.
 The GJF source and golden fixtures are cloned at `~/work/git/google-java-format` (tag `v1.35.0`),
@@ -306,6 +308,31 @@ and covered by existing fixtures:
 The internal `TreeScanner` became the public `com.sun.source.util.TreeScanner`,
 and the unused `VarArgsOrNot.fromVariable` (the only `Flags.VARARGS` use) was deleted.
 
+## Phase 3 result
+
+- `Trees.parse` is a public `JavacTask.parse()`
+  (`-proc:none`, `--enable-preview -source <running JDK>`, `-XDallowStringFolding=<flag>`,
+  a `DiagnosticListener` with GJF's error filter) returning a `ParsedUnit`
+  (source text, `CompilationUnitTree`, `DocTrees`) that answers start/end positions, lengths,
+  and source slices.
+  The reflective end-position handle, `Context`, `JavacFileManager`, `ParserFactory`, and `Options`
+  are gone from `Trees`.
+- The visitor gets the `ParsedUnit` in its constructor and resolves positions through private
+  methods named like the old static helpers, so its call sites are unchanged;
+  annotation/modifier ordering moved from `AnnotationOrModifier.compareTo` into the visitor,
+  which owns the positions.
+- `operatorName`/`precedence` are `Tree.Kind` tables copied from javac's `Pretty.operatorName`
+  and `TreeInfo.opPrec`.
+- `StringWrapper` is fully public: its AST-equality safety check uses the public tree's `toString()`.
+- `RemoveUnusedImports` uses the public parse but still casts to `JCCompilationUnit`/`JavacTrees`
+  for its import and javadoc internals (Phase 7).
+- No flag could be dropped yet: `api` is still used by `RemoveUnusedImports`, `file` by the lexer.
+- Performance is unchanged within noise (Helidon files, same method as
+  [Where formatting time goes](#where-formatting-time-goes));
+  the per-call public task setup may cost 1–3 ms on small files.
+- All 898 tests green on the first run, including the synthesized-node predicates now fed by
+  `SourcePositions` (`NOPOS`) instead of the internal handle (empty span).
+
 ## Plan
 
 De-internalization order (easy → hard),
@@ -317,7 +344,7 @@ each dropping its own `--add-exports`:
    all green against the intact fork.
 2. **Phase 2 — Seam ⑤ (flags) + visitor internals + `DimensionHelpers` (DONE).**
    Establishes the per-seam rhythm.
-3. **Phase 3 — public parse and positions** (seams ②, ④, and the parse half of ③, merged:
+3. **Phase 3 — public parse and positions (DONE)** (seams ②, ④, and the parse half of ③, merged:
    public `SourcePositions` only exist on a `JavacTask`, so positions cannot move before parsing).
    `Trees.parse` becomes a public `JavacTask.parse()` returning the unit with its `DocTrees`;
    positions come from its `SourcePositions`;

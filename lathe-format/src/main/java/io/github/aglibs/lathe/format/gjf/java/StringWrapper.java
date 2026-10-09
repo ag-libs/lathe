@@ -16,8 +16,6 @@ package io.github.aglibs.lathe.format.gjf.java;
 
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.Iterables.getLast;
-import static io.github.aglibs.lathe.format.gjf.java.Trees.getEndPosition;
-import static io.github.aglibs.lathe.format.gjf.java.Trees.getStartPosition;
 import static java.lang.Math.min;
 import static java.util.stream.Collectors.joining;
 
@@ -28,15 +26,13 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Range;
 import com.google.common.collect.TreeRangeMap;
 import com.sun.source.tree.BinaryTree;
+import com.sun.source.tree.LineMap;
 import com.sun.source.tree.LiteralTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.Tree.Kind;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
-import com.sun.tools.javac.tree.JCTree;
-import com.sun.tools.javac.util.Context;
-import com.sun.tools.javac.util.Position;
 import io.github.aglibs.lathe.format.gjf.Newlines;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -83,8 +79,8 @@ public final class StringWrapper {
     {
       // We really don't want bugs in this pass to change the behaviour of programs we're
       // formatting, so check that the pretty-printed AST is the same before and after reformatting.
-      String expected = parse(input, /* allowStringFolding= */ true).toString();
-      String actual = parse(result, /* allowStringFolding= */ true).toString();
+      String expected = parse(input, /* allowStringFolding= */ true).unit().toString();
+      String actual = parse(result, /* allowStringFolding= */ true).unit().toString();
       if (!expected.equals(actual)) {
         throw new FormatterException(
             String.format(
@@ -110,15 +106,15 @@ public final class StringWrapper {
     private final String input;
     private final int columnLimit;
     private final String separator;
-    private final JCTree.JCCompilationUnit unit;
-    private final Position.LineMap lineMap;
+    private final Trees.ParsedUnit unit;
+    private final LineMap lineMap;
 
     Reflower(int columnLimit, String input) throws FormatterException {
       this.columnLimit = columnLimit;
       this.input = input;
       this.separator = Newlines.guessLineSeparator(input);
       this.unit = parse(input, /* allowStringFolding= */ false);
-      this.lineMap = unit.getLineMap();
+      this.lineMap = unit.unit().getLineMap();
     }
 
     TreeRangeMap<Integer, String> getReflowReplacements() {
@@ -127,7 +123,7 @@ public final class StringWrapper {
       // Paths to text blocks to be re-indented.
       List<Tree> textBlocks = new ArrayList<>();
       new LongStringsAndTextBlockScanner(longStringLiterals, textBlocks)
-          .scan(new TreePath(unit), null);
+          .scan(new TreePath(unit.unit()), null);
       TreeRangeMap<Integer, String> replacements = TreeRangeMap.create();
       indentTextBlocks(replacements, textBlocks);
       wrapLongStrings(replacements, longStringLiterals);
@@ -149,7 +145,7 @@ public final class StringWrapper {
         if (literalTree.getKind() != Kind.STRING_LITERAL) {
           return null;
         }
-        int pos = getStartPosition(literalTree);
+        int pos = unit.getStartPosition(literalTree);
         if (input.substring(pos, min(input.length(), pos + 3)).equals(TEXT_BLOCK_DELIMITER)) {
           textBlocks.add(literalTree);
           return null;
@@ -159,7 +155,7 @@ public final class StringWrapper {
             && ((MemberSelectTree) parent).getExpression().equals(literalTree)) {
           return null;
         }
-        int endPosition = getEndPosition(literalTree, unit);
+        int endPosition = unit.getEndPosition(literalTree);
         int lineEnd = endPosition;
         while (Newlines.hasNewlineAt(input, lineEnd) == -1) {
           lineEnd++;
@@ -175,8 +171,9 @@ public final class StringWrapper {
     private void indentTextBlocks(
         TreeRangeMap<Integer, String> replacements, List<Tree> textBlocks) {
       for (Tree tree : textBlocks) {
-        int startPosition = lineMap.getStartPosition(lineMap.getLineNumber(getStartPosition(tree)));
-        int endPosition = getEndPosition(tree, unit);
+        int startPosition =
+            (int) lineMap.getStartPosition(lineMap.getLineNumber(unit.getStartPosition(tree)));
+        int endPosition = unit.getEndPosition(tree);
         String text = input.substring(startPosition, endPosition);
         int leadingWhitespace = CharMatcher.whitespace().negate().indexIn(text);
 
@@ -238,11 +235,11 @@ public final class StringWrapper {
         // to be wrapped.
         List<Tree> flat = flatten(input, unit, path, enclosing, first);
         // Zero-indexed start column
-        int startColumn = lineMap.getColumnNumber(getStartPosition(flat.get(0))) - 1;
+        int startColumn = (int) lineMap.getColumnNumber(unit.getStartPosition(flat.get(0))) - 1;
 
         // Handling leaving trailing non-string tokens at the end of the literal,
         // e.g. the trailing `);` in `foo("...");`.
-        int end = getEndPosition(getLast(flat), unit);
+        int end = unit.getEndPosition(getLast(flat));
         int lineEnd = end;
         while (Newlines.hasNewlineAt(input, lineEnd) == -1) {
           lineEnd++;
@@ -252,7 +249,8 @@ public final class StringWrapper {
         // Get the original source text of the string literals, excluding `"` and `+`.
         ImmutableList<String> components = stringComponents(input, unit, flat);
         replacements.put(
-            Range.closedOpen(getStartPosition(flat.get(0)), getEndPosition(getLast(flat), unit)),
+            Range.closedOpen(
+                unit.getStartPosition(flat.get(0)), unit.getEndPosition(getLast(flat))),
             reflow(separator, columnLimit, startColumn, trailing, components, first.get()));
       }
     }
@@ -263,12 +261,12 @@ public final class StringWrapper {
    * double-quotes and the `+` operator.
    */
   private static ImmutableList<String> stringComponents(
-      String input, JCTree.JCCompilationUnit unit, List<Tree> flat) {
+      String input, Trees.ParsedUnit unit, List<Tree> flat) {
     ImmutableList.Builder<String> result = ImmutableList.builder();
     StringBuilder piece = new StringBuilder();
     for (Tree tree : flat) {
       // adjust for leading and trailing double quotes
-      String text = input.substring(getStartPosition(tree) + 1, getEndPosition(tree, unit) - 1);
+      String text = input.substring(unit.getStartPosition(tree) + 1, unit.getEndPosition(tree) - 1);
       int start = 0;
       for (int idx = 0; idx < text.length(); idx++) {
         if (CharMatcher.whitespace().matches(text.charAt(idx))) {
@@ -397,7 +395,7 @@ public final class StringWrapper {
    */
   private static List<Tree> flatten(
       String input,
-      JCTree.JCCompilationUnit unit,
+      Trees.ParsedUnit unit,
       TreePath path,
       TreePath parent,
       AtomicBoolean firstInChain) {
@@ -438,10 +436,9 @@ public final class StringWrapper {
     return ImmutableList.copyOf(flat.subList(startIdx, endIdx));
   }
 
-  private static boolean noComments(
-      String input, JCTree.JCCompilationUnit unit, Tree one, Tree two) {
+  private static boolean noComments(String input, Trees.ParsedUnit unit, Tree one, Tree two) {
     return STRING_CONCAT_DELIMITER.matchesAllOf(
-        input.subSequence(getEndPosition(one, unit), getStartPosition(two)));
+        input.subSequence(unit.getEndPosition(one), unit.getStartPosition(two)));
   }
 
   public static final CharMatcher STRING_CONCAT_DELIMITER =
@@ -464,12 +461,10 @@ public final class StringWrapper {
   }
 
   /** Parses the given Java source. */
-  private static JCTree.JCCompilationUnit parse(String source, boolean allowStringFolding)
+  private static Trees.ParsedUnit parse(String source, boolean allowStringFolding)
       throws FormatterException {
     List<Diagnostic<? extends JavaFileObject>> errorDiagnostics = new ArrayList<>();
-    Context context = new Context();
-    JCTree.JCCompilationUnit unit =
-        Trees.parse(context, errorDiagnostics, allowStringFolding, source);
+    Trees.ParsedUnit unit = Trees.parse(errorDiagnostics, allowStringFolding, source);
     if (!errorDiagnostics.isEmpty()) {
       // error handling is done during formatting
       throw FormatterException.fromJavacDiagnostics(errorDiagnostics);

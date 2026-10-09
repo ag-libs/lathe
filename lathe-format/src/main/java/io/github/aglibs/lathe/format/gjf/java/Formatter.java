@@ -22,8 +22,6 @@ import com.google.common.collect.TreeRangeSet;
 import com.google.common.io.CharSink;
 import com.google.common.io.CharSource;
 import com.google.errorprone.annotations.Immutable;
-import com.sun.tools.javac.tree.JCTree.JCCompilationUnit;
-import com.sun.tools.javac.util.Context;
 import io.github.aglibs.lathe.format.gjf.Doc;
 import io.github.aglibs.lathe.format.gjf.DocBuilder;
 import io.github.aglibs.lathe.format.gjf.FormattingError;
@@ -97,20 +95,19 @@ public final class Formatter {
    */
   static void format(final JavaInput javaInput, JavaOutput javaOutput, JavaFormatterOptions options)
       throws FormatterException {
-    Context context = new Context();
     List<Diagnostic<? extends JavaFileObject>> errorDiagnostics = new ArrayList<>();
-    JCCompilationUnit unit =
-        Trees.parse(
-            context, errorDiagnostics, /* allowStringFolding= */ false, javaInput.getText());
+    Trees.ParsedUnit parsed =
+        Trees.parse(errorDiagnostics, /* allowStringFolding= */ false, javaInput.getText());
 
-    javaInput.setCompilationUnit(unit);
+    javaInput.setCompilationUnit(parsed.unit());
     if (!errorDiagnostics.isEmpty()) {
       throw FormatterException.fromJavacDiagnostics(errorDiagnostics);
     }
     OpsBuilder builder = new OpsBuilder(javaInput, javaOutput);
     // Output the compilation unit.
-    JavaInputAstVisitor visitor = new JavaInputAstVisitor(builder, options.indentationMultiplier());
-    visitor.scan(unit, null);
+    JavaInputAstVisitor visitor =
+        new JavaInputAstVisitor(builder, options.indentationMultiplier(), parsed);
+    visitor.scan(parsed.unit(), null);
     builder.sync(javaInput.getText().length());
     builder.drain();
     Doc doc = new DocBuilder().withOps(builder.build()).build();

@@ -30,9 +30,9 @@ import com.google.common.collect.Iterators;
 import com.google.common.collect.Range;
 import com.google.common.collect.RangeSet;
 import com.google.common.collect.TreeRangeSet;
+import com.sun.source.tree.CompilationUnitTree;
 import com.sun.tools.javac.file.JavacFileManager;
 import com.sun.tools.javac.parser.Tokens.TokenKind;
-import com.sun.tools.javac.tree.JCTree.JCCompilationUnit;
 import com.sun.tools.javac.util.Context;
 import com.sun.tools.javac.util.JCDiagnostic;
 import com.sun.tools.javac.util.Log;
@@ -683,23 +683,23 @@ public final class JavaInput extends Input {
         .toString();
   }
 
-  private JCCompilationUnit unit;
+  private CompilationUnitTree unit;
 
   @Override
   public int getLineNumber(int inputPosition) {
     Verify.verifyNotNull(unit, "Expected compilation unit to be set.");
-    return unit.getLineMap().getLineNumber(inputPosition);
+    return (int) unit.getLineMap().getLineNumber(inputPosition);
   }
 
   @Override
   public int getColumnNumber(int inputPosition) {
     Verify.verifyNotNull(unit, "Expected compilation unit to be set.");
-    return unit.getLineMap().getColumnNumber(inputPosition);
+    return (int) unit.getLineMap().getColumnNumber(inputPosition);
   }
 
   // TODO(cushon): refactor JavaInput so the CompilationUnit can be passed into
   // the constructor.
-  public void setCompilationUnit(JCCompilationUnit unit) {
+  public void setCompilationUnit(CompilationUnitTree unit) {
     this.unit = unit;
   }
 
