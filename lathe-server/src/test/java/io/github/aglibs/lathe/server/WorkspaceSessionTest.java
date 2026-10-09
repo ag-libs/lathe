@@ -185,6 +185,18 @@ class WorkspaceSessionTest {
   }
 
   @Test
+  void reconcileDue_idleWithNothingSettling_waitsForIdleInterval_activityOrSettlingForcesIt() {
+    final long idle = WorkspaceSession.ACTIVE_WINDOW_MS;
+    final long interval = WorkspaceSession.IDLE_RECONCILE_INTERVAL_MS;
+
+    assertThat(WorkspaceSession.reconcileDue(idle, 2_000L, false)).isFalse();
+    assertThat(WorkspaceSession.reconcileDue(idle, interval - 1, false)).isFalse();
+    assertThat(WorkspaceSession.reconcileDue(idle, interval, false)).isTrue();
+    assertThat(WorkspaceSession.reconcileDue(idle - 1, 2_000L, false)).isTrue();
+    assertThat(WorkspaceSession.reconcileDue(idle, 2_000L, true)).isTrue();
+  }
+
+  @Test
   void staleModules_returnsNewestMtimeAndTheStaleModule() throws Exception {
     writeJava("Edited", 5_000L); // stamped at 1000, edited after → stale
     writeJava("Added", 9_000L); // no stamp (a newly added file) → stale, and the newest
