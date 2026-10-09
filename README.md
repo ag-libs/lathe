@@ -71,7 +71,7 @@ bindings.
 |---------------------|----------------------------------------------------------------------------------------------|-----------------------------------|
 | Diagnostics         | `javac` errors and warnings exactly as configured in Maven, plus unused private members and locals | `textDocument/publishDiagnostics` |
 | Code actions        | quick fixes and refactors: missing imports, add `throws`, wrap in `try/catch`, declare local, replace `var` with the inferred type, extract variable / constant / field, add a `final` field as a constructor parameter, stub a missing method | `textDocument/codeAction`         |
-| Formatting (per-workspace) | whole-document google-java-format / AOSP style (built in, byte-identical to google-java-format), **or the project's own Spotless formatter via `mvn spotless:apply`**, **or** a custom external command — auto-detected per project | `textDocument/formatting`         |
+| Formatting (per-workspace) | whole-document google-java-format / AOSP style (built in: a port of google-java-format without javac-internals dependencies), **or the project's own Spotless formatter via `mvn spotless:apply`**, **or** a custom external command — auto-detected per project | `textDocument/formatting`         |
 
 Formatting follows a **per-workspace style**, auto-detected from the project's `spotless-maven-plugin`
 by `lathe:sync` (a committed `lathe-style.json` or the editor's global default otherwise). It is
@@ -80,6 +80,10 @@ non-google Spotless formatter (eclipse, palantir, …) **delegated to `mvn spotl
 file (preferring mvnd → `./mvnw` → mvn), so the editor applies the project's own formatter; or a custom
 stdin/stdout command. Opt out with `-Dlathe.spotless=false` or a committed `lathe-style.json`. Live-edit
 indentation follows the same style file and is otherwise a separate client concern.
+
+The built-in engine is [`lathe-format`](lathe-format/README.md), a port of google-java-format onto the
+public javac API: it produces the same output, but does not depend on javac internals, so it needs no
+`--add-exports` flags and keeps working when the project moves to a new JDK.
 
 ### Run, test & debug
 
