@@ -58,6 +58,13 @@ Reliability, the triaged gaps, and rename — see the [roadmap](roadmap.md) for 
 Everything beyond M2. The next release — general availability (a stable `0.1.0`) — is scheduled only
 after public-beta feedback (see the [roadmap](roadmap.md)).
 
+**Tooling / infrastructure:**
+
+- [Lathe Format](planned/lathe-format.md) — a JDK-resilient fork of google-java-format re-hosted off
+  `com.sun.tools.javac` internals onto the public Compiler Tree API (no `--add-exports`). Phase 0
+  (byte-identical baseline) and the internals audit are done; widening the test bar to the
+  import-fixing path and de-internalizing the five seams is the remaining work. Bundled by `lathe-server`, publishable standalone.
+
 **Editing features (deferred from M2):**
 
 - [Declaration Name Completion](done/lathe-declaration-name-completion.md) — names in variable/field/parameter/
