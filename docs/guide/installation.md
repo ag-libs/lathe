@@ -225,6 +225,9 @@ export LATHE_JVM_OPTS="-Xmx4g -XX:+UseZGC"
 export LATHE_JVM_OPTS="--add-opens jdk.compiler/com.sun.tools.javac.jvm=ALL-UNNAMED"
 ```
 
+The server talks to the editor over stdout, so the launcher sends the JVM's own output (startup failures, `-Xlog` warnings) to stderr, where it lands in the editor's LSP log (`:LspLog` in Neovim).
+If you add an `-Xlog` option, give it a `stderr` or file output (e.g. `-Xlog:gc:stderr`); the JVM's default `stdout` target would corrupt the protocol stream.
+
 ## Choosing the server JDK (`LATHE_JAVA_HOME`)
 
 The server's in-process javac must be at least as new as the Java version your project targets — open a

@@ -37,6 +37,11 @@ public final class ServerInstaller {
   };
   private static final String[] JAVAC_OPEN_PACKAGES = {"code", "comp"};
 
+  // stdout is the LSP channel; route JVM startup errors and -Xlog output to stderr so they reach
+  // the editor's log.
+  private static final String STDOUT_GUARD_JVM_OPTS =
+      "-XX:+DisplayVMOutputToStderr -Xlog:disable -Xlog:all=warning:stderr";
+
   private final RepositorySystem repositorySystem;
   private final RepositorySystemSession repoSession;
   private final List<RemoteRepository> remoteRepositories;
@@ -259,13 +264,14 @@ public final class ServerInstaller {
     // google-java-format is a named module on the module path and uses module-qualified exports.
     return """
         #!/bin/sh
-        %sexec "$java_bin" ${LATHE_JVM_OPTS:-} \\
+        %sexec "$java_bin" %s ${LATHE_JVM_OPTS:-} \\
           --add-modules java.net.http \\
         %s%s%s%s  --module-path %s \\
           -m io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer "$@"
         """
         .formatted(
             javaResolvePrologue(),
+            STDOUT_GUARD_JVM_OPTS,
             javacAccessLines("--add-exports", "ALL-UNNAMED", JAVAC_EXPORT_PACKAGES),
             javacAccessLines("--add-opens", "ALL-UNNAMED", JAVAC_OPEN_PACKAGES),
             javacAccessLines(
@@ -293,13 +299,14 @@ public final class ServerInstaller {
     // here (google-java-format is unnamed on the classpath too, so the same exports cover it).
     return """
         #!/bin/sh
-        %sexec "$java_bin" ${LATHE_JVM_OPTS:-} \\
+        %sexec "$java_bin" %s ${LATHE_JVM_OPTS:-} \\
           --add-modules java.net.http \\
         %s%s  -cp %s \\
           io.github.aglibs.lathe.mcp.LatheMcpServer "$@"
         """
         .formatted(
             javaResolvePrologue(),
+            STDOUT_GUARD_JVM_OPTS,
             javacAccessLines("--add-exports", "ALL-UNNAMED", JAVAC_EXPORT_PACKAGES),
             javacAccessLines("--add-opens", "ALL-UNNAMED", JAVAC_OPEN_PACKAGES),
             classpath);
