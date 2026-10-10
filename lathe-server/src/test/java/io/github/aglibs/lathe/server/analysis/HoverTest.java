@@ -223,6 +223,29 @@ class HoverTest extends SampleFixture {
   }
 
   @Test
+  void hover_insideMethodRefArgument_showsOwnSymbol_plainArgumentShowsParameter() {
+    final var source =
+        """
+        import java.util.Optional;
+        class T {
+            void setPattern(String p) {}
+            void use(Optional<String> path, T jersey, String plain) {
+                path.ifPresent(jersey::setPattern);
+                setPattern(plain);
+            }
+        }
+        """;
+    assertThat(hoverText(source, "ifPresent(jersey", "jersey"))
+        .contains("T jersey")
+        .doesNotContain("action");
+    assertThat(hoverText(source, "jersey::setPattern", "setPattern"))
+        .contains("setPattern(String p)")
+        .doesNotContain("action");
+    // A plain argument still gets the callee's parameter hint.
+    assertThat(hoverText(source, "setPattern(plain", "plain")).contains("String p");
+  }
+
+  @Test
   void hover_classFileDependencyArgument_showsSourceParameterName(@TempDir final Path tmpDir)
       throws Exception {
     // EG-046: hovering an argument whose callee is a class-file dependency compiled without

@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.analysis;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.ImportTree;
+import com.sun.source.tree.MemberReferenceTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
@@ -285,6 +286,12 @@ public final class SourceLocator {
     TreePath argPath = path;
     TreePath parent = path.getParentPath();
     while (parent != null) {
+      // Inside a method reference the cursor names its own symbol (the receiver of `x::m`, or m),
+      // not the argument value the callee parameter describes.
+      if (argPath.getLeaf() instanceof MemberReferenceTree) {
+        return null;
+      }
+
       final var leaf = parent.getLeaf();
       if (leaf instanceof final MethodInvocationTree inv) {
         final int idx = indexIn(inv.getArguments(), argPath.getLeaf());
