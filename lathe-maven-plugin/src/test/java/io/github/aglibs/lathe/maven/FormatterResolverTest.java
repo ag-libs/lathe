@@ -17,19 +17,25 @@ import org.junit.jupiter.api.Test;
 // classloader as sync does, so a renamed Spotless default fails here rather than in a user's sync.
 class FormatterResolverTest {
 
-  private static final Path SPOTLESS_LIB = Path.of("target", "test-spotless", "spotless-lib.jar");
+  private static final Path SPOTLESS = Path.of("target", "test-spotless");
 
   private static URLClassLoader spotless;
   private static Class<?> googleStep;
   private static Class<?> palantirStep;
+  private static Class<?> eclipseStep;
 
   @BeforeAll
   static void loadSpotless() throws Exception {
     spotless =
         new URLClassLoader(
-            new URL[] {SPOTLESS_LIB.toUri().toURL()}, ClassLoader.getPlatformClassLoader());
+            new URL[] {
+              SPOTLESS.resolve("spotless-lib.jar").toUri().toURL(),
+              SPOTLESS.resolve("spotless-lib-extra.jar").toUri().toURL()
+            },
+            ClassLoader.getPlatformClassLoader());
     googleStep = spotless.loadClass("com.diffplug.spotless.java.GoogleJavaFormatStep");
     palantirStep = spotless.loadClass("com.diffplug.spotless.java.PalantirJavaFormatStep");
+    eclipseStep = spotless.loadClass("com.diffplug.spotless.extra.java.EclipseJdtFormatterStep");
   }
 
   @AfterAll
@@ -96,6 +102,28 @@ class FormatterResolverTest {
                 "false"));
   }
 
+  // The Eclipse step has a release default and none of the GJF-family options; the Spotless
+  // lockfile
+  // for that release pins its jars.
+  @Test
+  void withDefaults_eclipseStep_defaultsReleaseThatSpotlessPinsByLockfile() throws Exception {
+    final FormatterSpec eclipse =
+        FormatterResolver.withDefaults(
+            new FormatterSpec(LatheFlags.FORMATTER_ECLIPSE, List.of()),
+            eclipseStep,
+            "org.eclipse.jdt:org.eclipse.jdt.core");
+
+    assertThat(eclipse.version()).matches("4\\.\\d+");
+    assertThat(eclipse.options())
+        .containsExactlyEntriesOf(
+            Map.of(LatheFlags.FORMAT_GROUP_ARTIFACT, "org.eclipse.jdt:org.eclipse.jdt.core"));
+    assertThat(
+            spotless.getResource(
+                "com/diffplug/spotless/extra/eclipse_jdt_formatter/v%s.lockfile"
+                    .formatted(eclipse.version())))
+        .isNotNull();
+  }
+
   @Test
   void javacGrants_engines_onlyJavacFormattersNeedGrants() {
     assertThat(FormatterResolver.javacGrants(google("", Map.of())))
@@ -104,6 +132,10 @@ class FormatterResolverTest {
             FormatterResolver.javacGrants(
                 new FormatterSpec(LatheFlags.FORMATTER_PALANTIR, List.of())))
         .isEqualTo(LatheFlags.FORMATTER_JAVAC_GRANTS);
+    assertThat(
+            FormatterResolver.javacGrants(
+                new FormatterSpec(LatheFlags.FORMATTER_ECLIPSE, List.of())))
+        .isEmpty();
     assertThat(
             FormatterResolver.javacGrants(
                 new FormatterSpec(LatheFlags.FORMATTER_COMMAND, List.of("cat"))))

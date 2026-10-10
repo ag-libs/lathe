@@ -63,8 +63,9 @@
         </configuration>
       </plugin>
       <plugin>
-        <!-- Tests load a pinned google-java-format and palantir-java-format from target/ the way the
-             server loads a project's (isolated classloader); neither is on the server's class path. -->
+        <!-- Tests load pinned formatters (google-java-format, palantir-java-format, Eclipse JDT) from
+             target/ the way the server loads a project's (isolated classloader); none is on the
+             server's class path. -->
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-dependency-plugin</artifactId>
         <executions>
@@ -121,6 +122,115 @@
                   <artifactId>functionaljava</artifactId>
                   <version>5.0</version>
                   <outputDirectory>${project.build.directory}/test-formatters/palantir-java-format</outputDirectory>
+                </artifactItem>
+                <!-- Eclipse JDT 4.40: exactly Spotless's eclipse_jdt_formatter/v4.40.lockfile. -->
+                <artifactItem>
+                  <groupId>org.eclipse.jdt</groupId>
+                  <artifactId>org.eclipse.jdt.core</artifactId>
+                  <version>3.46.0</version>
+                  <outputDirectory>${project.build.directory}/test-formatters/eclipse-jdt</outputDirectory>
+                </artifactItem>
+                <artifactItem>
+                  <groupId>net.java.dev.jna</groupId>
+                  <artifactId>jna-platform</artifactId>
+                  <version>5.18.1</version>
+                  <outputDirectory>${project.build.directory}/test-formatters/eclipse-jdt</outputDirectory>
+                </artifactItem>
+                <artifactItem>
+                  <groupId>org.eclipse.jdt</groupId>
+                  <artifactId>ecj</artifactId>
+                  <version>3.46.0</version>
+                  <outputDirectory>${project.build.directory}/test-formatters/eclipse-jdt</outputDirectory>
+                </artifactItem>
+                <artifactItem>
+                  <groupId>org.eclipse.platform</groupId>
+                  <artifactId>org.eclipse.core.commands</artifactId>
+                  <version>3.12.500</version>
+                  <outputDirectory>${project.build.directory}/test-formatters/eclipse-jdt</outputDirectory>
+                </artifactItem>
+                <artifactItem>
+                  <groupId>org.eclipse.platform</groupId>
+                  <artifactId>org.eclipse.core.contenttype</artifactId>
+                  <version>3.9.800</version>
+                  <outputDirectory>${project.build.directory}/test-formatters/eclipse-jdt</outputDirectory>
+                </artifactItem>
+                <artifactItem>
+                  <groupId>org.eclipse.platform</groupId>
+                  <artifactId>org.eclipse.core.expressions</artifactId>
+                  <version>3.9.600</version>
+                  <outputDirectory>${project.build.directory}/test-formatters/eclipse-jdt</outputDirectory>
+                </artifactItem>
+                <artifactItem>
+                  <groupId>org.eclipse.platform</groupId>
+                  <artifactId>org.eclipse.core.filesystem</artifactId>
+                  <version>1.11.400</version>
+                  <outputDirectory>${project.build.directory}/test-formatters/eclipse-jdt</outputDirectory>
+                </artifactItem>
+                <artifactItem>
+                  <groupId>org.eclipse.platform</groupId>
+                  <artifactId>org.eclipse.core.jobs</artifactId>
+                  <version>3.15.800</version>
+                  <outputDirectory>${project.build.directory}/test-formatters/eclipse-jdt</outputDirectory>
+                </artifactItem>
+                <artifactItem>
+                  <groupId>org.eclipse.platform</groupId>
+                  <artifactId>org.eclipse.core.resources</artifactId>
+                  <version>3.24.0</version>
+                  <outputDirectory>${project.build.directory}/test-formatters/eclipse-jdt</outputDirectory>
+                </artifactItem>
+                <artifactItem>
+                  <groupId>org.eclipse.platform</groupId>
+                  <artifactId>org.eclipse.core.runtime</artifactId>
+                  <version>3.34.200</version>
+                  <outputDirectory>${project.build.directory}/test-formatters/eclipse-jdt</outputDirectory>
+                </artifactItem>
+                <artifactItem>
+                  <groupId>org.eclipse.platform</groupId>
+                  <artifactId>org.eclipse.equinox.app</artifactId>
+                  <version>1.7.600</version>
+                  <outputDirectory>${project.build.directory}/test-formatters/eclipse-jdt</outputDirectory>
+                </artifactItem>
+                <artifactItem>
+                  <groupId>org.eclipse.platform</groupId>
+                  <artifactId>org.eclipse.equinox.common</artifactId>
+                  <version>3.20.400</version>
+                  <outputDirectory>${project.build.directory}/test-formatters/eclipse-jdt</outputDirectory>
+                </artifactItem>
+                <artifactItem>
+                  <groupId>org.eclipse.platform</groupId>
+                  <artifactId>org.eclipse.equinox.preferences</artifactId>
+                  <version>3.12.100</version>
+                  <outputDirectory>${project.build.directory}/test-formatters/eclipse-jdt</outputDirectory>
+                </artifactItem>
+                <artifactItem>
+                  <groupId>org.eclipse.platform</groupId>
+                  <artifactId>org.eclipse.equinox.registry</artifactId>
+                  <version>3.12.600</version>
+                  <outputDirectory>${project.build.directory}/test-formatters/eclipse-jdt</outputDirectory>
+                </artifactItem>
+                <artifactItem>
+                  <groupId>org.eclipse.platform</groupId>
+                  <artifactId>org.eclipse.equinox.supplement</artifactId>
+                  <version>1.12.300</version>
+                  <outputDirectory>${project.build.directory}/test-formatters/eclipse-jdt</outputDirectory>
+                </artifactItem>
+                <artifactItem>
+                  <groupId>org.eclipse.platform</groupId>
+                  <artifactId>org.eclipse.osgi</artifactId>
+                  <version>3.24.200</version>
+                  <outputDirectory>${project.build.directory}/test-formatters/eclipse-jdt</outputDirectory>
+                </artifactItem>
+                <artifactItem>
+                  <groupId>org.eclipse.platform</groupId>
+                  <artifactId>org.eclipse.text</artifactId>
+                  <version>3.14.700</version>
+                  <outputDirectory>${project.build.directory}/test-formatters/eclipse-jdt</outputDirectory>
+                </artifactItem>
+                <artifactItem>
+                  <groupId>org.osgi</groupId>
+                  <artifactId>org.osgi.service.prefs</artifactId>
+                  <version>1.1.2</version>
+                  <outputDirectory>${project.build.directory}/test-formatters/eclipse-jdt</outputDirectory>
                 </artifactItem>
               </artifactItems>
             </configuration>

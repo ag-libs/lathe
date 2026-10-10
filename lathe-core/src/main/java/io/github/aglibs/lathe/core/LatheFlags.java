@@ -23,6 +23,7 @@ public final class LatheFlags {
   public static final String FORMATTER_GOOGLE = "google";
   public static final String FORMATTER_AOSP = "aosp";
   public static final String FORMATTER_PALANTIR = "palantir";
+  public static final String FORMATTER_ECLIPSE = "eclipse";
   public static final String FORMATTER_NONE = "none";
   public static final String FORMATTER_COMMAND = "command";
   public static final String FORMATTER_COMMAND_FILE = "command-file";
@@ -42,6 +43,8 @@ public final class LatheFlags {
   public static final String FORMAT_JAVADOC = "formatJavadoc";
   public static final List<String> FORMAT_STEP_OPTIONS =
       List.of(FORMAT_STYLE, FORMAT_REFLOW_LONG_STRINGS, FORMAT_REORDER_IMPORTS, FORMAT_JAVADOC);
+  // The Eclipse formatter profile (Spotless <file>), as an absolute path.
+  public static final String FORMAT_FILE = "file";
   // A custom build of the formatter (Spotless <groupArtifact>), groupId:artifactId.
   public static final String FORMAT_GROUP_ARTIFACT = "groupArtifact";
 

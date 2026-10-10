@@ -7,9 +7,12 @@ import io.github.aglibs.lathe.install.ArtifactResolver;
 import io.github.aglibs.lathe.install.SyncException;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -29,12 +32,16 @@ final class FormatterResolver {
 
   private static final String SPOTLESS_GROUP = "com.diffplug.spotless";
   private static final String SPOTLESS_PLUGIN = "spotless-maven-plugin";
-  private static final String SPOTLESS_LIB = "spotless-lib";
+  // spotless-lib holds the google/palantir steps, spotless-lib-extra the eclipse step and its
+  // lockfiles; neither has dependencies of its own that these defaults need.
+  private static final List<String> SPOTLESS_LIBRARIES =
+      List.of("spotless-lib", "spotless-lib-extra");
   private static final Step GOOGLE_STEP =
       new Step(
           "com.diffplug.spotless.java.GoogleJavaFormatStep",
           "com.google.googlejavaformat:google-java-format",
-          true);
+          true,
+          "");
   private static final Map<String, Step> STEPS =
       Map.of(
           LatheFlags.FORMATTER_GOOGLE,
@@ -45,7 +52,14 @@ final class FormatterResolver {
           new Step(
               "com.diffplug.spotless.java.PalantirJavaFormatStep",
               "com.palantir.javaformat:palantir-java-format",
-              true));
+              true,
+              ""),
+          LatheFlags.FORMATTER_ECLIPSE,
+          new Step(
+              "com.diffplug.spotless.extra.java.EclipseJdtFormatterStep",
+              "org.eclipse.jdt:org.eclipse.jdt.core",
+              false,
+              "com/diffplug/spotless/extra/eclipse_jdt_formatter/v%s.lockfile"));
 
   private final ArtifactResolver artifacts;
   private final List<RemoteRepository> pluginRepositories;
@@ -68,19 +82,22 @@ final class FormatterResolver {
       return spec;
     }
 
-    try (var spotless = spotlessLib(spotlessVersion)) {
+    try (var spotless = spotlessLibraries(spotlessVersion)) {
       final FormatterSpec completed =
           withDefaults(spec, spotless.loadClass(step.type()), step.groupArtifact());
-      final String coordinates =
-          "%s:%s"
-              .formatted(
-                  completed.options().get(LatheFlags.FORMAT_GROUP_ARTIFACT), completed.version());
-      final List<String> classpath =
-          artifacts.resolveTransitive(coordinates, projectRepositories).stream()
-              .map(Path::toString)
-              .toList();
+      final List<Path> jars =
+          step.lockfile().isEmpty()
+              ? artifacts.resolveTransitive(
+                  "%s:%s"
+                      .formatted(
+                          completed.options().get(LatheFlags.FORMAT_GROUP_ARTIFACT),
+                          completed.version()),
+                  projectRepositories)
+              : lockfileJars(spotless, step.lockfile().formatted(completed.version()));
+      final List<String> classpath = jars.stream().map(Path::toString).toList();
       log.info(
-          "[sync] formatter %s %s jars=%d".formatted(spec.engine(), coordinates, classpath.size()));
+          "[sync] formatter %s %s jars=%d"
+              .formatted(spec.engine(), completed.version(), classpath.size()));
       return new FormatterSpec(
           completed.engine(),
           completed.command(),
@@ -100,29 +117,60 @@ final class FormatterResolver {
     return step != null && step.javacGrants() ? LatheFlags.FORMATTER_JAVAC_GRANTS : List.of();
   }
 
-  private URLClassLoader spotlessLib(final String spotlessVersion)
+  // The project's own Spotless libraries, at the versions its spotless-maven-plugin declares (read
+  // from the plugin's POM, without resolving the plugin's dependency tree).
+  private URLClassLoader spotlessLibraries(final String spotlessVersion)
       throws SyncException, IOException {
-    final String libVersion =
+    final List<Artifact> declared =
         artifacts
             .directDependencies(
                 "%s:%s:%s".formatted(SPOTLESS_GROUP, SPOTLESS_PLUGIN, spotlessVersion),
                 pluginRepositories)
             .stream()
             .map(Dependency::getArtifact)
-            .filter(artifact -> SPOTLESS_LIB.equals(artifact.getArtifactId()))
-            .map(Artifact::getVersion)
-            .findFirst()
-            .orElseThrow(
-                () ->
-                    new SyncException(
-                        "%s %s declares no %s"
-                            .formatted(SPOTLESS_PLUGIN, spotlessVersion, SPOTLESS_LIB),
-                        null));
-    final Path jar =
-        artifacts.resolve(
-            "%s:%s:%s".formatted(SPOTLESS_GROUP, SPOTLESS_LIB, libVersion), pluginRepositories);
-    return new URLClassLoader(
-        new URL[] {jar.toUri().toURL()}, ClassLoader.getPlatformClassLoader());
+            .filter(artifact -> SPOTLESS_LIBRARIES.contains(artifact.getArtifactId()))
+            .toList();
+    if (declared.size() != SPOTLESS_LIBRARIES.size()) {
+      throw new SyncException(
+          "%s %s does not declare %s"
+              .formatted(SPOTLESS_PLUGIN, spotlessVersion, SPOTLESS_LIBRARIES),
+          null);
+    }
+
+    final List<URL> urls = new ArrayList<>();
+    for (final Artifact library : declared) {
+      urls.add(
+          artifacts
+              .resolve(
+                  "%s:%s:%s"
+                      .formatted(SPOTLESS_GROUP, library.getArtifactId(), library.getVersion()),
+                  pluginRepositories)
+              .toUri()
+              .toURL());
+    }
+
+    return new URLClassLoader(urls.toArray(URL[]::new), ClassLoader.getPlatformClassLoader());
+  }
+
+  // Exactly the jars Spotless pins for this formatter release, each resolved on its own. A release
+  // without a lockfile is one Spotless fetches from an Eclipse P2 site, which Lathe does not.
+  private List<Path> lockfileJars(final ClassLoader spotless, final String lockfile)
+      throws IOException {
+    try (InputStream in = spotless.getResourceAsStream(lockfile)) {
+      if (in == null) {
+        throw new SyncException(
+            "Spotless has no lockfile %s; only lockfile-pinned Eclipse releases are supported"
+                .formatted(lockfile),
+            null);
+      }
+
+      return new String(in.readAllBytes(), StandardCharsets.UTF_8)
+          .lines()
+          .map(String::trim)
+          .filter(line -> !line.isEmpty() && !line.startsWith("#"))
+          .map(coordinates -> artifacts.resolve(coordinates, projectRepositories))
+          .toList();
+    }
   }
 
   // Fills what the POM left out with the Spotless step's own defaults (defaultVersion(),
@@ -158,12 +206,18 @@ final class FormatterResolver {
     return String.valueOf(step.getMethod(method).invoke(null));
   }
 
-  // A Spotless step class (its defaults), the formatter's groupId:artifactId, and whether the
-  // formatter reaches into javac internals and so needs FORMATTER_JAVAC_GRANTS.
-  private record Step(String type, String groupArtifact, boolean javacGrants) {
+  // A Spotless step class (its defaults), the formatter's groupId:artifactId, whether the
+  // formatter reaches into javac internals and so needs FORMATTER_JAVAC_GRANTS, and the Spotless
+  // lockfile (a resource pattern taking the version) pinning its jars, or empty to resolve the
+  // artifact's runtime closure.
+  private record Step(String type, String groupArtifact, boolean javacGrants, String lockfile) {
 
     private Step {
-      ValidCheck.check().notBlank(type, "type").notBlank(groupArtifact, "groupArtifact").validate();
+      ValidCheck.check()
+          .notBlank(type, "type")
+          .notBlank(groupArtifact, "groupArtifact")
+          .notNull(lockfile, "lockfile")
+          .validate();
     }
   }
 }

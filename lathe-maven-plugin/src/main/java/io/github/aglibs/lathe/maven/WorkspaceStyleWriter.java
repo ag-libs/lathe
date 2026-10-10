@@ -9,10 +9,13 @@ import io.github.aglibs.lathe.core.schema.IndentSpec;
 import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
 import io.github.aglibs.lathe.install.SyncException;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.maven.model.Plugin;
@@ -20,13 +23,16 @@ import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
 
-// Derives .lathe/style.json from the reactor's spotless-maven-plugin. googleJavaFormat and
-// palantirJavaFormat run in-process from the project's pinned jars; any other formatter is
+// Derives .lathe/style.json from the reactor's spotless-maven-plugin. googleJavaFormat,
+// palantirJavaFormat, and eclipse run in-process from the project's pinned jars; any other
+// formatter is
 // delegated to `mvn spotless:apply` (command-file), or disabled (none) when delegation is opted
 // out — so Lathe never fights the project's own formatter.
 final class WorkspaceStyleWriter {
 
   private static final String SPOTLESS_PLUGIN_KEY = "com.diffplug.spotless:spotless-maven-plugin";
+  // Formatters whose indentation Lathe does not derive leave it to the project's .editorconfig.
+  private static final IndentSpec EDITORCONFIG_INDENT = new IndentSpec("editorconfig", 0, 0);
 
   private final FormatterResolver resolver;
   private final Log log;
@@ -46,9 +52,11 @@ final class WorkspaceStyleWriter {
       return null;
     }
 
-    final var style =
-        new WorkspaceStyleData(
-            resolver.resolve(detected.formatter(), spotless.getVersion()), detected.indent());
+    final FormatterSpec formatter =
+        withLocalProfile(detected.formatter(), rootProject.getBasedir().toPath())
+            .map(spec -> resolver.resolve(spec, spotless.getVersion()))
+            .orElse(detected.formatter());
+    final var style = new WorkspaceStyleData(formatter, detected.indent());
     final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
     final var stylePath = latheDir.resolve(LatheLayout.STYLE_FILE);
     final var content = Json.toJson(style);
@@ -61,6 +69,30 @@ final class WorkspaceStyleWriter {
     } catch (final IOException e) {
       throw new SyncException("lathe:sync failed to write style.json", e);
     }
+  }
+
+  // The Eclipse profile as an absolute path, resolved against the root project as Spotless resolves
+  // it; empty when it is not a local file (Spotless also takes URLs and classpath resources), which
+  // leaves the formatter unresolved and so disabled.
+  private Optional<FormatterSpec> withLocalProfile(final FormatterSpec spec, final Path basedir) {
+    final String profile = spec.options().get(LatheFlags.FORMAT_FILE);
+    if (profile == null) {
+      return Optional.of(spec);
+    }
+
+    final Path file = basedir.resolve(profile).normalize();
+    if (!Files.isRegularFile(file)) {
+      log.warn(
+          "[sync] formatter %s profile %s is not a local file, formatting disabled"
+              .formatted(spec.engine(), profile));
+      return Optional.empty();
+    }
+
+    final var options = new HashMap<>(spec.options());
+    options.put(LatheFlags.FORMAT_FILE, file.toString());
+    return Optional.of(
+        new FormatterSpec(
+            spec.engine(), spec.command(), spec.version(), options, spec.classpath()));
   }
 
   static WorkspaceStyleData detect(final MavenProject rootProject) {
@@ -108,11 +140,24 @@ final class WorkspaceStyleWriter {
           styleOf(palantirJavaFormat, LatheFlags.FORMAT_STYLE_PALANTIR));
     }
 
+    final Xpp3Dom eclipse = java.getChild("eclipse");
+    if (eclipse != null) {
+      final String profile = childValue(eclipse, LatheFlags.FORMAT_FILE);
+      return new WorkspaceStyleData(
+          new FormatterSpec(
+              LatheFlags.FORMATTER_ECLIPSE,
+              List.of(),
+              childValue(eclipse, "version"),
+              profile.isEmpty() ? Map.of() : Map.of(LatheFlags.FORMAT_FILE, profile),
+              List.of()),
+          EDITORCONFIG_INDENT);
+    }
+
     final FormatterSpec formatter =
         delegate
             ? new FormatterSpec(LatheFlags.FORMATTER_COMMAND_FILE, mavenSpotlessCommand())
             : new FormatterSpec(LatheFlags.FORMATTER_NONE, List.of());
-    return new WorkspaceStyleData(formatter, new IndentSpec("editorconfig", 0, 0));
+    return new WorkspaceStyleData(formatter, EDITORCONFIG_INDENT);
   }
 
   // Runs `mvn -pl <module> spotless:apply` on the edited file. The engine fills %MODULE%/%FILE%;

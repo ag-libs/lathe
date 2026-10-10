@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.CodeActionKind;
 import org.eclipse.lsp4j.CodeActionOptions;
@@ -104,7 +105,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
       capabilities.setDocumentFormattingProvider(true);
     }
 
-    if (formatEngine instanceof GjfFormatEngine) {
+    if (formatEngine != null && formatEngine.formatsRanges()) {
       final var rangeFormatting = new DocumentRangeFormattingOptions();
       rangeFormatting.setRangesSupport(true);
       capabilities.setDocumentRangeFormattingProvider(rangeFormatting);
@@ -230,19 +231,32 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
   private static FormatEngine engineFor(final FormatterSpec spec, final Path workingDir) {
     return switch (spec.engine()) {
       case LatheFlags.FORMATTER_GOOGLE, LatheFlags.FORMATTER_AOSP ->
-          gjfEngine(spec, GjfFormatEngine.Family.GOOGLE, spec.engine().toUpperCase(Locale.ROOT));
+          pinned(
+              spec,
+              () ->
+                  gjfEngine(
+                      spec, GjfFormatEngine.Family.GOOGLE, spec.engine().toUpperCase(Locale.ROOT)));
       case LatheFlags.FORMATTER_PALANTIR ->
-          gjfEngine(spec, GjfFormatEngine.Family.PALANTIR, LatheFlags.FORMAT_STYLE_PALANTIR);
+          pinned(
+              spec,
+              () ->
+                  gjfEngine(
+                      spec, GjfFormatEngine.Family.PALANTIR, LatheFlags.FORMAT_STYLE_PALANTIR));
+      case LatheFlags.FORMATTER_ECLIPSE ->
+          pinned(
+              spec,
+              () ->
+                  new EclipseFormatEngine(
+                      spec.options().getOrDefault(LatheFlags.FORMAT_FILE, ""), spec.classpath()));
       case LatheFlags.FORMATTER_COMMAND -> commandEngine(spec.command(), workingDir);
       case LatheFlags.FORMATTER_COMMAND_FILE -> fileCommandEngine(spec.command(), workingDir);
       default -> null;
     };
   }
 
-  // The project's pinned formatter; unavailable until lathe:sync has resolved its jars. The style
-  // is the Spotless step's, else the engine's own (a hand-written style file may omit it).
-  private static FormatEngine gjfEngine(
-      final FormatterSpec spec, final GjfFormatEngine.Family family, final String defaultStyle) {
+  // The project's pinned formatter is unavailable until lathe:sync has resolved its jars.
+  private static FormatEngine pinned(
+      final FormatterSpec spec, final Supplier<FormatEngine> engine) {
     if (spec.classpath().isEmpty()) {
       LOG.warning(
           () ->
@@ -251,6 +265,13 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
       return null;
     }
 
+    return engine.get();
+  }
+
+  // The style is the Spotless step's, else the engine's own (a hand-written style file may omit
+  // it).
+  private static FormatEngine gjfEngine(
+      final FormatterSpec spec, final GjfFormatEngine.Family family, final String defaultStyle) {
     return new GjfFormatEngine(
         family,
         spec.options().getOrDefault(LatheFlags.FORMAT_STYLE, defaultStyle),

@@ -22,11 +22,6 @@ import java.util.stream.Stream;
 // removes unused imports, then formats.
 final class GjfFormatEngine implements FormatEngine {
 
-  // Spotless re-applies a step until its output stops changing (its PaddedCell, at most 10 passes),
-  // so spotless:apply writes the converged text: removing an unused import after formatting leaves
-  // a blank line that only the next pass collapses.
-  private static final int MAX_PASSES = 10;
-
   private final Family family;
   private final String style;
   private final Map<String, String> options;
@@ -46,22 +41,18 @@ final class GjfFormatEngine implements FormatEngine {
 
   @Override
   public String format(final String source, final Path file) throws Exception {
-    final List<Step> pipeline = gjf().pipeline();
-    String current = source;
-    for (int pass = 0; pass < MAX_PASSES; pass++) {
-      final String next = applyAll(pipeline, current);
-      if (next.equals(current)) {
-        return current;
-      }
+    final List<Pass> pipeline = gjf().pipeline();
+    return FormatEngine.converge(source, current -> applyAll(pipeline, current));
+  }
 
-      current = next;
-    }
-
-    return current;
+  @Override
+  public boolean formatsRanges() {
+    return true;
   }
 
   // GJF's partial formatting: only the given spans change, and imports are left alone.
-  String formatRanges(final String source, final List<TextRange> ranges) throws Exception {
+  @Override
+  public String formatRanges(final String source, final List<TextRange> ranges) throws Exception {
     final Gjf loaded = gjf();
     final List<Object> spans = ranges.stream().map(loaded::span).toList();
     final var replacements =
@@ -109,17 +100,17 @@ final class GjfFormatEngine implements FormatEngine {
                   .getMethod("createFormatter", optionsType)
                   .invoke(null, formatterOptions);
         };
-    final Step format = step(formatterType.getMethod("formatSource", String.class), formatter);
-    final Step removeUnused =
+    final Pass format = step(formatterType.getMethod("formatSource", String.class), formatter);
+    final Pass removeUnused =
         step(
             type(loader, "RemoveUnusedImports").getMethod("removeUnusedImports", String.class),
             null);
-    final Step reorder =
+    final Pass reorder =
         step(
             type(loader, "ImportOrderer").getMethod("reorderImports", String.class, styleType),
             null,
             styleValue);
-    final List<Step> pipeline =
+    final List<Pass> pipeline =
         switch (family) {
           case GOOGLE ->
               googlePipeline(loader, formatterType, formatter, format, removeUnused, reorder);
@@ -134,15 +125,15 @@ final class GjfFormatEngine implements FormatEngine {
         pipeline);
   }
 
-  private List<Step> googlePipeline(
+  private List<Pass> googlePipeline(
       final ClassLoader loader,
       final Class<?> formatterType,
       final Object formatter,
-      final Step format,
-      final Step removeUnused,
-      final Step reorder)
+      final Pass format,
+      final Pass removeUnused,
+      final Pass reorder)
       throws ReflectiveOperationException {
-    final List<Step> pipeline = new ArrayList<>(List.of(format, removeUnused));
+    final List<Pass> pipeline = new ArrayList<>(List.of(format, removeUnused));
     if (enabled(LatheFlags.FORMAT_REORDER_IMPORTS, false)) {
       pipeline.add(reorder);
     }
@@ -162,7 +153,7 @@ final class GjfFormatEngine implements FormatEngine {
   }
 
   // A GJF call that takes the source first, then any fixed trailing arguments.
-  private static Step step(final Method method, final Object target, final Object... trailing) {
+  private static Pass step(final Method method, final Object target, final Object... trailing) {
     return source ->
         (String)
             invoke(
@@ -171,9 +162,9 @@ final class GjfFormatEngine implements FormatEngine {
                 Stream.concat(Stream.of(source), Arrays.stream(trailing)).toArray());
   }
 
-  private static String applyAll(final List<Step> pipeline, final String source) throws Exception {
+  private static String applyAll(final List<Pass> pipeline, final String source) throws Exception {
     String formatted = source;
-    for (final Step step : pipeline) {
+    for (final Pass step : pipeline) {
       formatted = step.apply(formatted);
     }
 
@@ -212,15 +203,10 @@ final class GjfFormatEngine implements FormatEngine {
     }
   }
 
-  @FunctionalInterface
-  private interface Step {
-    String apply(String source) throws Exception;
-  }
-
   // The loaded formatter: its instance, the partial-formatting entry points, and the format
   // pipeline built once from the project's options.
   private record Gjf(
-      Object formatter, Method replacements, Method closedOpen, List<Step> pipeline) {
+      Object formatter, Method replacements, Method closedOpen, List<Pass> pipeline) {
 
     private Gjf {
       ValidCheck.check()

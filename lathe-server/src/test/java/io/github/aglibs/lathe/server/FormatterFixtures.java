@@ -39,6 +39,11 @@ final class FormatterFixtures {
         classpath("palantir-java-format"));
   }
 
+  // profile is an Eclipse formatter settings file, or empty for Eclipse's defaults.
+  static EclipseFormatEngine eclipseJdt(final String profile) {
+    return new EclipseFormatEngine(profile, classpath("eclipse-jdt"));
+  }
+
   private static List<String> classpath(final String formatter) {
     return IOUtil.unchecked(
             () ->

@@ -105,16 +105,30 @@ class WorkspaceStyleWriterTest {
   }
 
   @Test
+  void fromConfig_eclipse_mapsToEclipseWithProfileAndEditorconfigIndent() throws Exception {
+    final WorkspaceStyleData configured =
+        javaStyle("<eclipse><file>build/eclipse.xml</file><version>4.38</version></eclipse>");
+    final WorkspaceStyleData bare = javaStyle("<eclipse/>");
+
+    assertThat(configured.formatter().engine()).isEqualTo("eclipse");
+    assertThat(configured.formatter().version()).isEqualTo("4.38");
+    assertThat(configured.formatter().options())
+        .containsExactlyEntriesOf(Map.of(LatheFlags.FORMAT_FILE, "build/eclipse.xml"));
+    assertThat(configured.indent().profile()).isEqualTo("editorconfig");
+    assertThat(bare.formatter().options()).isEmpty();
+  }
+
+  @Test
   void fromConfig_otherFormatter_delegatesOrDisables() throws Exception {
-    final String eclipse = "<eclipse><file>fmt.xml</file></eclipse>";
-    final WorkspaceStyleData delegated = javaStyle(eclipse, true);
+    final String prettier = "<prettier/>";
+    final WorkspaceStyleData delegated = javaStyle(prettier, true);
 
     assertThat(delegated.formatter().engine()).isEqualTo("command-file");
     assertThat(delegated.formatter().command())
         .containsExactly(
             "%MVN%", "-pl", "%MODULE%", "spotless:apply", "-DspotlessFiles=\\Q%FILE%\\E");
     assertThat(delegated.indent().profile()).isEqualTo("editorconfig");
-    assertThat(javaStyle(eclipse, false).formatter().engine()).isEqualTo("none");
+    assertThat(javaStyle(prettier, false).formatter().engine()).isEqualTo("none");
   }
 
   @Test

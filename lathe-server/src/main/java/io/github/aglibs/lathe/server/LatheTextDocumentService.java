@@ -519,12 +519,12 @@ public final class LatheTextDocumentService implements TextDocumentService {
     return formatRanges(params.getTextDocument().getUri(), params.getRanges());
   }
 
-  // Only the in-process google-java-format formats ranges; other engines are whole-file only and
-  // the capability is not advertised for them, so a stray request gets no edits.
+  // Only in-process engines format ranges; whole-file ones do not advertise the capability, so a
+  // stray request gets no edits.
   private CompletableFuture<List<? extends TextEdit>> formatRanges(
       final String uri, final List<Range> ranges) {
-    if (!(formatEngine instanceof final GjfFormatEngine engine)
-        || ignoreNonFile(uri, "rangeFormatting")) {
+    final FormatEngine engine = formatEngine;
+    if (engine == null || !engine.formatsRanges() || ignoreNonFile(uri, "rangeFormatting")) {
       return CompletableFuture.completedFuture(List.of());
     }
 

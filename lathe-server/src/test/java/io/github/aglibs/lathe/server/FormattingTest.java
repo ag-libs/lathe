@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -12,6 +13,7 @@ import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class FormattingTest {
 
@@ -204,6 +206,81 @@ class FormattingTest {
             edit ->
                 assertThat(edit.getRange().getStart().getLine())
                     .isEqualTo(range.getStart().getLine()));
+  }
+
+  // The profile's settings drive the result (3-space indent here), from either an Eclipse XML
+  // export
+  // or a .prefs file, as Spotless reads them; ranges touch only the requested line.
+  @Test
+  void format_eclipseJdtProfile_formatsDocumentAndRange(@TempDir final Path profiles)
+      throws Exception {
+    final Path xml = profiles.resolve("eclipse-formatter.xml");
+    Files.writeString(
+        xml,
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <profiles version="23">
+          <profile kind="CodeFormatterProfile" name="project" version="23">
+            <setting id="org.eclipse.jdt.core.formatter.tabulation.char" value="space"/>
+            <setting id="org.eclipse.jdt.core.formatter.tabulation.size" value="3"/>
+            <setting id="org.eclipse.jdt.core.formatter.indentation.size" value="3"/>
+          </profile>
+        </profiles>
+        """);
+    final Path prefs = profiles.resolve("org.eclipse.jdt.core.prefs");
+    Files.writeString(
+        prefs,
+        """
+        org.eclipse.jdt.core.formatter.tabulation.char=space
+        org.eclipse.jdt.core.formatter.tabulation.size=3
+        org.eclipse.jdt.core.formatter.indentation.size=3
+        """);
+    final var source =
+        """
+        package demo;
+
+        final class Sample {
+        int a( ) {return   1;}
+
+        int b( ) {return   2;}
+        }
+        """;
+    final var expected =
+        """
+        package demo;
+
+        final class Sample {
+           int a() {
+              return 1;
+           }
+
+           int b() {
+              return 2;
+           }
+        }
+        """;
+    final EclipseFormatEngine eclipse = FormatterFixtures.eclipseJdt(xml.toString());
+    final Range range = lineRange(source, "int b(");
+    final List<TextEdit> ranged = JavaFormatter.formatRanges(eclipse, source, List.of(range));
+
+    assertThat(apply(source, JavaFormatter.format(eclipse, source, FILE).getFirst()))
+        .isEqualTo(expected);
+    assertThat(JavaFormatter.format(eclipse, expected, FILE)).isEmpty();
+    assertThat(
+            apply(
+                source,
+                JavaFormatter.format(FormatterFixtures.eclipseJdt(prefs.toString()), source, FILE)
+                    .getFirst()))
+        .isEqualTo(expected);
+    assertThat(apply(source, ranged.getFirst()))
+        .isEqualTo(
+            source.replace(
+                "int b( ) {return   2;}\n",
+                """
+                int b() {
+                   return 2;
+                }
+                """));
   }
 
   @Test
