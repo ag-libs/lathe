@@ -76,7 +76,7 @@
     <jar.version>3.5.1</jar.version>
     <jacoco.version>0.8.15</jacoco.version>
     <!-- default empty so @{argLine} resolves when JaCoCo agent is not active -->
-    <argLine></argLine>
+    <argLine/>
     <lsp4j.version>1.0.0</lsp4j.version>
     <plexus-compiler.version>2.17.1</plexus-compiler.version>
     <plexus-java.version>1.6.0</plexus-java.version>
@@ -100,7 +100,7 @@
       by default so local/dev builds package the SNAPSHOT version from package.json;
       the release profile overrides this to stamp the release version into the .vsix.
     -->
-    <vsce.package.args></vsce.package.args>
+    <vsce.package.args/>
   </properties>
 
   <dependencyManagement>
@@ -223,12 +223,12 @@
                   <include>**/*.md</include>
                   <include>**/*.sh</include>
                 </includes>
-                <trimTrailingWhitespace></trimTrailingWhitespace>
-                <endWithNewline></endWithNewline>
+                <trimTrailingWhitespace/>
+                <endWithNewline/>
               </format>
             </formats>
             <pom>
-              <sortPom></sortPom>
+              <sortPom/>
             </pom>
           </configuration>
           <executions>

@@ -19,7 +19,7 @@
     <!-- Main code compiles with the parent's release 21, which also forbids any javac-internal
          export. The test-only javac scanner oracle needs internal exports, which the release flag
          rejects, so test code compiles with source/target instead. -->
-    <maven.compiler.testRelease></maven.compiler.testRelease>
+    <maven.compiler.testRelease/>
     <maven.compiler.testSource>21</maven.compiler.testSource>
     <maven.compiler.testTarget>21</maven.compiler.testTarget>
     <guava.version>32.1.3-jre</guava.version>
@@ -117,7 +117,7 @@
             </path>
           </annotationProcessorPaths>
           <!-- -Werror is dropped: lint on the vendored google-java-format code is not actionable. -->
-          <compilerArgs combine.self="override"></compilerArgs>
+          <compilerArgs combine.self="override"/>
         </configuration>
         <executions>
           <execution>
