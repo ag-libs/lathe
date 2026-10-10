@@ -83,7 +83,12 @@ class HoverTest extends SampleFixture {
         /**
          * Use {@link Greeter} and {@link Greeter#greet()}.
          */
-        class User {}
+        class User {
+          /** Delegates to {@link Greeter#greet()} via {@link Nested}. */
+          void run() {}
+          /** Wraps {@link Greeter}. */
+          static class Nested {}
+        }
         """;
     assertThat(hoverText(src, "{@link Greeter}", "Greeter"))
         .contains("class Greeter")
@@ -91,6 +96,14 @@ class HoverTest extends SampleFixture {
     assertThat(hoverText(src, "Greeter#greet", "greet"))
         .contains("greet")
         .contains("Returns a greeting");
+    // A member's or nested type's Javadoc lies outside its tree; the link, not the enclosing
+    // class, must resolve.
+    assertThat(hoverText(src, "Delegates to {@link Greeter#greet", "greet"))
+        .contains("Returns a greeting");
+    assertThat(hoverText(src, "via {@link Nested", "Nested")).contains("class Nested");
+    assertThat(hoverText(src, "Wraps {@link Greeter", "Greeter"))
+        .contains("class Greeter")
+        .doesNotContain("class User");
   }
 
   @Test

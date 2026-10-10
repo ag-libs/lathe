@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.analysis;
 
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.Tree;
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
@@ -445,9 +446,8 @@ public final class SourceAnalysisSession implements AutoCloseable {
     return ReferenceTarget.from(element, trees, cur.analysis().types(), cur.analysis().elements());
   }
 
-  // A constructor rename redirects to its enclosing type; public top-level types (which would need
-  // a
-  // file move) and enum constants are deferred, so both are refused here (null).
+  // A constructor rename redirects to its enclosing type. Null when the cursor does not name a
+  // renameable element (the file move a public top-level type needs is gated in WorkspaceSession).
   public ReferenceTarget resolveRenameTarget(final SourceFeatureRequest request) {
     final var cur = resolve(request);
     if (cur == null) {
@@ -456,8 +456,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
 
     final var trees = cur.analysis().trees();
     final Element constructor = SourceLocator.constructorAtNewClassType(trees, cur.path());
-    Element element =
-        constructor != null ? constructor : SourceLocator.elementAt(trees, cur.path());
+    Element element = constructor != null ? constructor : elementOrJavadocReference(cur);
     if (element == null) {
       return null;
     }
@@ -466,7 +465,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
       element = element.getEnclosingElement();
     }
 
-    if (!isRenameable(element)) {
+    if (!isRenameable(element) || !cursorNames(request.content(), cur.offset(), element)) {
       return null;
     }
 
@@ -1155,13 +1154,30 @@ public final class SourceAnalysisSession implements AutoCloseable {
 
   private record CursorContext(AttributedFileAnalysis analysis, TreePath path, long offset) {}
 
-  // The element at the cursor, falling back to a Javadoc reference tag ({@link} / @see / @throws)
-  // when the cursor is not on an attributed AST node. Shared by hover, definition, and references.
+  // The element at the cursor, or the Javadoc reference tag ({@link} / @see / @throws) under it.
+  // A member's Javadoc lies outside the member's tree, so its path ends at the enclosing class (or
+  // the compilation unit), which elementAt would resolve to: consult the Javadoc there first.
+  // Shared by hover, definition, references, and rename.
   private static Element elementOrJavadocReference(final CursorContext cur) {
-    final Element element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
-    return element != null
-        ? element
-        : JavadocReferenceResolver.referenceAt(cur.analysis(), cur.offset());
+    final Tree leaf = cur.path() != null ? cur.path().getLeaf() : null;
+    if (leaf == null || leaf instanceof ClassTree || leaf instanceof CompilationUnitTree) {
+      final Element reference = JavadocReferenceResolver.referenceAt(cur.analysis(), cur.offset());
+      if (reference != null) {
+        return reference;
+      }
+    }
+
+    return SourceLocator.elementAt(cur.analysis().trees(), cur.path());
+  }
+
+  // A rename edits the identifier at the cursor, so the target must be what that identifier names;
+  // otherwise Javadoc prose, a comment, or a keyword inside a class body would rename the
+  // enclosing class.
+  private static boolean cursorNames(
+      final String content, final long offset, final Element target) {
+    final int start = SourceLocator.identifierStart(content, (int) offset);
+    final int end = SourceLocator.identifierEnd(content, (int) offset);
+    return target.getSimpleName().contentEquals(content.substring(start, end));
   }
 
   private CachedFileAnalysis currentCache(final String uri, final String content) {

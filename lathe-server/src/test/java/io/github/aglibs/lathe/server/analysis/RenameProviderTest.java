@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.util.List;
+import java.util.Map;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
@@ -224,6 +225,40 @@ class RenameProviderTest {
 
           // declaration, `case RED`, and `return RED`
           assertThat(edits).hasSize(3).allMatch(e -> e.getNewText().equals("CRIMSON"));
+        });
+  }
+
+  @Test
+  void resolveRenameTarget_cursorNotNamingTarget_isRefusedButJavadocLinkTargetsLinkedType() {
+    final var source =
+        """
+        public class Outer {
+            /** Prose words, then {@link Helper}. */
+            int run() {
+                // a comment word
+                return 1;
+            }
+        }
+        class Helper {}
+        """;
+    withSession(
+        source,
+        session -> {
+          // Javadoc prose, a comment, and a keyword all sit in Outer's body; none names Outer.
+          Map.of("Prose words", "words", "a comment word", "comment", "return 1", "return")
+              .forEach(
+                  (context, token) ->
+                      assertThat(
+                              session.resolveRenameTarget(
+                                  requestAt(source, posOf(source, context, token))))
+                          .as(token)
+                          .isNull());
+
+          final var link =
+              session.resolveRenameTarget(
+                  requestAt(source, posOf(source, "{@link Helper}", "Helper")));
+          assertThat(link).isNotNull();
+          assertThat(link.simpleName()).isEqualTo("Helper");
         });
   }
 
