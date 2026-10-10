@@ -310,6 +310,9 @@ reused):
 ## Potential Designs
 
 - [Potential Design Policy](potential/README.md)
+- [Rename Transactions](potential/lathe-rename-transactions.md) — **on hold.** The server would absorb a rename it
+  produced as one transaction (one batch analysis when the edit is applied, one batch compile per source configuration when
+  the last touched file is saved, then one dependents refresh and one semantic-token refresh); nine open review issues.
 - [In-Process External-Change Recompilation](potential/lathe-external-change-recompilation.md) —
   **superseded** by [In-Process Workspace Sync](done/lathe-in-process-workspace-sync.md); retained as
   the archive of the reaction mechanics (batch FULL compile, startup reconciliation,
