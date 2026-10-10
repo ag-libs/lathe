@@ -12,8 +12,8 @@ import java.util.stream.Collectors;
 
 final class ClassMetadataReader {
 
-  private static final int CLASS_MAGIC = 0xCAFEBABE;
-  private static final int CONSTANT_UTF8 = 1;
+  static final int CLASS_MAGIC = 0xCAFEBABE;
+  static final int CONSTANT_UTF8 = 1;
   private static final int CONSTANT_CLASS = 7;
   private static final int CONSTANT_NAME_AND_TYPE = 12;
   private static final int CONSTANT_INVOKE_DYNAMIC = 18;
@@ -177,17 +177,17 @@ final class ClassMetadataReader {
     return internalName != null ? internalName.replace('/', '.') : null;
   }
 
-  private static int skipConstantPoolEntry(final DataInputStream data, final int tag)
-      throws IOException {
+  // Returns the constant-pool slots consumed, or 0 for an unknown tag (a malformed class file).
+  static int skipConstantPoolEntry(final DataInputStream data, final int tag) throws IOException {
     return switch (tag) {
-      // CONSTANT_Integer, Float, Fieldref, Methodref, InterfaceMethodref, Dynamic: fixed u4
-      // payload.
-      // (NameAndType and InvokeDynamic are captured before reaching here.)
-      case 3, 4, 9, 10, 11, 17 -> skip(data, 4);
+      case CONSTANT_UTF8 -> skip(data, data.readUnsignedShort());
+      // CONSTANT_Integer, Float, Fieldref, Methodref, InterfaceMethodref, NameAndType, Dynamic,
+      // InvokeDynamic: fixed u4 payload.
+      case 3, 4, 9, 10, 11, 12, 17, 18 -> skip(data, 4);
       // CONSTANT_Long and Double: fixed u8 payload and consume two constant-pool slots.
       case 5, 6 -> skip(data, 8) + 1;
-      // CONSTANT_String, MethodType, Module, Package: fixed u2 payload.
-      case 8, 16, 19, 20 -> skip(data, 2);
+      // CONSTANT_Class, String, MethodType, Module, Package: fixed u2 payload.
+      case 7, 8, 16, 19, 20 -> skip(data, 2);
       // CONSTANT_MethodHandle: u1 reference_kind plus u2 reference_index.
       case 15 -> skip(data, 3);
       default -> 0;

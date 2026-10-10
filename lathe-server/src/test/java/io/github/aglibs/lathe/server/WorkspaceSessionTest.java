@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.aglibs.lathe.core.CompiledStamps;
+import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.JdwpOptions;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
@@ -20,10 +21,11 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
+import javax.tools.ToolProvider;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -53,7 +55,7 @@ class WorkspaceSessionTest {
     Files.writeString(outputDir.resolve("Foobar.class"), "");
     Files.writeString(outputDir.resolve("Bar.class"), "");
 
-    final int deleted = WorkspaceSession.deleteClassOutputs(config, sourceFile);
+    final int deleted = WorkspaceSession.deleteClassOutputs(config, sourceFile, Set.of());
 
     assertThat(deleted).isEqualTo(3);
     assertThat(outputDir.resolve("Foo.class")).doesNotExist();
@@ -68,7 +70,7 @@ class WorkspaceSessionTest {
     final var txtFile = tmp.resolve("module/src/main/java/com/example/Foo.txt");
     Files.writeString(outputDir.resolve("Foo.class"), "");
 
-    final int deleted = WorkspaceSession.deleteClassOutputs(config, txtFile);
+    final int deleted = WorkspaceSession.deleteClassOutputs(config, txtFile, Set.of());
 
     assertThat(deleted).isZero();
     assertThat(outputDir.resolve("Foo.class")).exists();
@@ -107,69 +109,39 @@ class WorkspaceSessionTest {
   }
 
   @Test
-  void deleteStaleClassOutputs_namedInnerClassRemoved_deletesStaleClassFile() throws Exception {
+  void deleteClassOutputs_nestedAndAnonymousRemoved_deletesOnlyUnkeptOutputsOfTheSource()
+      throws Exception {
     Files.writeString(outputDir.resolve("Foo.class"), "");
     Files.writeString(outputDir.resolve("Foo$Inner.class"), "");
-
-    final int deleted =
-        WorkspaceSession.deleteStaleClassOutputs(config, sourceFile, Set.of("com.example.Foo"));
-
-    assertThat(deleted).isEqualTo(1);
-    assertThat(outputDir.resolve("Foo.class")).exists();
-    assertThat(outputDir.resolve("Foo$Inner.class")).doesNotExist();
-  }
-
-  @Test
-  void deleteStaleClassOutputs_anonymousClassRemoved_deletesStaleClassFile() throws Exception {
-    Files.writeString(outputDir.resolve("Foo.class"), "");
     Files.writeString(outputDir.resolve("Foo$1.class"), "");
-
-    final int deleted =
-        WorkspaceSession.deleteStaleClassOutputs(config, sourceFile, Set.of("com.example.Foo"));
-
-    assertThat(deleted).isEqualTo(1);
-    assertThat(outputDir.resolve("Foo.class")).exists();
-    assertThat(outputDir.resolve("Foo$1.class")).doesNotExist();
-  }
-
-  @Test
-  void deleteStaleClassOutputs_outerClass_isUntouched() throws Exception {
-    Files.writeString(outputDir.resolve("Foo.class"), "");
-
-    final int deleted =
-        WorkspaceSession.deleteStaleClassOutputs(config, sourceFile, Set.of("com.example.Foo"));
-
-    assertThat(deleted).isZero();
-    assertThat(outputDir.resolve("Foo.class")).exists();
-  }
-
-  @Test
-  void deleteStaleClassOutputs_sibling_isUntouched() throws Exception {
-    Files.writeString(outputDir.resolve("Foo.class"), "");
-    Files.writeString(outputDir.resolve("Foo$Inner.class"), "");
     Files.writeString(outputDir.resolve("Bar.class"), "");
 
-    WorkspaceSession.deleteStaleClassOutputs(config, sourceFile, Set.of("com.example.Foo"));
+    final int deleted =
+        WorkspaceSession.deleteClassOutputs(config, sourceFile, Set.of("com.example.Foo"));
 
+    assertThat(deleted).isEqualTo(2);
+    assertThat(outputDir.resolve("Foo$Inner.class")).doesNotExist();
+    assertThat(outputDir.resolve("Foo$1.class")).doesNotExist();
+    assertThat(outputDir.resolve("Foo.class")).exists();
     assertThat(outputDir.resolve("Bar.class")).exists();
   }
 
-  // GAP: package-private sibling types (e.g. `class Helper {}` co-declared in Foo.java) produce
-  // Helper.class with no Foo$ prefix; deleteStaleClassOutputs only considers Foo$* files and
-  // cannot identify Helper.class as stale without sidecar tracking.
-  @Disabled
   @Test
-  void deleteStaleClassOutputs_packagePrivateSiblingRemoved_deletesStaleClassFile()
-      throws Exception {
-    Files.writeString(outputDir.resolve("Foo.class"), "");
-    Files.writeString(outputDir.resolve("Helper.class"), "");
+  void deleteClassOutputs_packagePrivateSiblingRemoved_deletesOnlyItsOwnSibling() throws Exception {
+    // Helper was declared in Foo.java and is gone from the latest compile; Other is a sibling of
+    // Bar.java, which this save did not touch.
+    compileIntoMirror(
+        Map.of(
+            "Foo.java", "class Foo {} class Helper {}", "Bar.java", "class Bar {} class Other {}"));
 
     final int deleted =
-        WorkspaceSession.deleteStaleClassOutputs(config, sourceFile, Set.of("com.example.Foo"));
+        WorkspaceSession.deleteClassOutputs(config, sourceFile, Set.of("com.example.Foo"));
 
     assertThat(deleted).isEqualTo(1);
-    assertThat(outputDir.resolve("Foo.class")).exists();
     assertThat(outputDir.resolve("Helper.class")).doesNotExist();
+    assertThat(outputDir.resolve("Foo.class")).exists();
+    assertThat(outputDir.resolve("Bar.class")).exists();
+    assertThat(outputDir.resolve("Other.class")).exists();
   }
 
   @Test
@@ -662,5 +634,23 @@ class WorkspaceSessionTest {
         tmp.resolve("module/target/classes"),
         tmp.resolve("module/src/main/java"),
         genRoot);
+  }
+
+  // Real class files, so each carries the SourceFile attribute naming the source it came from.
+  private void compileIntoMirror(final Map<String, String> bodiesByFileName) throws IOException {
+    final var sourceDir = Files.createDirectories(tmp.resolve("compile-src/com/example"));
+    bodiesByFileName.forEach(
+        (fileName, body) ->
+            IOUtil.unchecked(
+                () ->
+                    Files.writeString(
+                        sourceDir.resolve(fileName), "package com.example; %s".formatted(body))));
+    final String[] args =
+        Stream.concat(
+                Stream.of("-d", config.latheClassesDir().toString()),
+                bodiesByFileName.keySet().stream().map(sourceDir::resolve).map(Path::toString))
+            .toArray(String[]::new);
+
+    assertThat(ToolProvider.getSystemJavaCompiler().run(null, null, null, args)).isZero();
   }
 }
