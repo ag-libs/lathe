@@ -33,7 +33,8 @@ grep -n 'Target: next' docs/gaps/gaps.md                       # what the next c
 ```
 
 Entries follow, grouped by area: exploration (EG) below, then Find References (FR), Code Actions
-(CA), Completion (CQ), Workspace Lifecycle (WS), and Test Execution (TE).
+(CA), Completion (CQ), Workspace Lifecycle (WS), Test Execution (TE), Debug & Evaluation (DB),
+Neovim Client (NV), and MCP / Agent Facade (MC).
 
 ---
 
@@ -209,7 +210,7 @@ Regression targets:
 `FoldingRangeScannerTest.scan_multilineJavadocOnDeclarations_returnsCommentFoldsSpanningDelimiters`,
 `FoldingRangeScannerTest.scan_singleLineJavadocAndNonJavadocComments_returnNoCommentFold`.
 
-### Remaining — non-Javadoc comments (deferred, Target: next)
+### Remaining — non-Javadoc comments (deferred)
 
 jdtls also folds plain multi-line block comments (`/* … */` not attached to a declaration) and runs of
 consecutive single-line `//` comments. These are **not** folded: a free-floating comment is not an AST
@@ -247,7 +248,7 @@ Active `textDocument/codeAction` provider gaps. Resolved CA entries are in
 
 ## CA-7 — Pasting code with unresolved types requires per-symbol quick fixes; no whole-file "add missing imports"
 
-**Status: accepted — Target: next (add-missing slice shipped; client auto-wiring deferred to backlog).**
+**Status: deferred — Target: backlog (add-missing slice shipped; automatic invocation deferred).**
 
 Signal: user feedback — pasting a snippet with several unimported types was recurring friction: the
 only path was moving the cursor onto each unresolved name and invoking the single-name import quick fix
@@ -393,7 +394,7 @@ None yet — to be defined when the fix is scheduled.
 
 ## DB-7 — Breakpoints in a class outside the launched module resolve to no source (and only arm when the file is open)
 
-**Status: accepted — Target: next (root cause confirmed by probe; primary fix is small).**
+**Status: accepted — Target: next (primary fix shipped; arming breakpoints in unopened files remains).**
 
 Signal: user feedback — setting breakpoints across several project source files and debugging suspends
 at seemingly "random" places along the execution path rather than at the set breakpoints. Reproduced
@@ -438,11 +439,14 @@ launched module:
 
 ### Fix direction
 
-- **Primary (small):** pass `workspace.allSourceRoots()` to `LatheProviderContext` so cross-module
-  frames resolve to their real source files. This alone fixes the visible symptom (stops show the right
-  file:line) for any breakpoint whose file is open.
-- **Follow-up:** arm breakpoints in files that are not open — attribute/compile the breakpoint file on
-  demand in the owning module worker rather than requiring the open-file cache.
+- **Primary — shipped:** the debug provider context now receives `workspace.allSourceRoots()` plus the
+  manifest's dependency and per-module JDK source dirs, so cross-module (and library) frames resolve to
+  their real source files.
+  Defect 1 is fixed: a stop in another module's class shows the right file:line when its file is open.
+- **Follow-up — remaining:** arm breakpoints in files that are not open — attribute/compile the
+  breakpoint file on demand in the owning module worker rather than requiring the open-file cache.
+  Today `LatheSourceLookUpProvider` logs a `[breakpoint] … not armed` warning and the breakpoint never
+  suspends.
 
 ### Probe commands
 
@@ -481,7 +485,7 @@ Resolved MC entries move to [gaps-archive.md](gaps-archive.md).
 
 **Status: accepted — Target: next (root cause confirmed by code trace; fix is small and localized).**
 
-Signal: dogfooding `describe_symbol` while designing [EG-003](#eg-003--hover-returns-null-on-positions-inside-javadoc-type-reference-tags).
+Signal: dogfooding `describe_symbol` while designing [EG-003](gaps-archive.md#eg-003--hover-returns-null-on-positions-inside-javadoc-type-reference-tags--done).
 Pointing it at a javac `DocTrees` method to confirm an API returned nothing; the same symbol
 described from a use-site in reactor code returned the full signature + javadoc.
 
@@ -563,7 +567,7 @@ To be added with the fix:
 
 ## MC-3 — MCP server logs are not observable: the client persists only startup stderr; the server has no durable log sink
 
-**Status: accepted — Target: next.**
+**Status: accepted — Target: next (durable file sink shipped; rotation/pruning and timestamp format remain).**
 
 Signal: attempting to read the server's per-call logs to diagnose [MC-1](#mc-1--describe_symbol-and-position-tools-return-empty-on-dependencyjdk-source-files-the-mcp-warmup-skips-the-external-compile-route)
 — the logs were nowhere to be found despite the server emitting them.
@@ -612,6 +616,22 @@ Give the MCP server a durable, rotating JUL `FileHandler` alongside the existing
 The MCP `logging` protocol capability (`notifications/message`) is deprecated in favour of
 stderr/OpenTelemetry, so a server-owned file plus stderr is the spec-aligned path — not protocol
 logging.
+
+### Delivered — per-session file sink
+
+`LatheMcpServer.main` now attaches an appending JUL `FileHandler` via `LatheLogging.initFile`, writing
+to `~/.cache/lathe/logs/mcp-<start-timestamp>-<pid>.log` (`LatheLayout.mcpSessionLog`), alongside the
+existing `ConsoleHandler`. This differs from the per-workspace-slug design above: one file per server
+process, so concurrent servers never share a file and no `%u` disambiguation is needed.
+
+### Remaining
+
+- **Retention:** nothing rotates or prunes `~/.cache/lathe/logs`; one file accrues per MCP session,
+  indefinitely. Cap the per-file size and prune old session files (e.g. keep the newest N).
+- **Timestamps:** `logging.properties` still formats server-local time; switch to UTC / ISO-8601.
+- **Discoverability:** the startup line (`[startup] pid=… cwd=…`) does not name the log file; include
+  the resolved path so the one stderr snapshot the client persists points at the full log.
+- **Override:** no `LATHE_LOG_DIR` env override for the logs dir.
 
 ### Regression targets
 
