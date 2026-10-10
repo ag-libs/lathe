@@ -4,6 +4,7 @@ import static java.util.logging.Level.SEVERE;
 
 import io.github.aglibs.lathe.core.CollectionUtil;
 import io.github.aglibs.lathe.core.CompiledStamps;
+import io.github.aglibs.lathe.core.ExceptionUtil;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
@@ -82,6 +83,7 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
@@ -210,6 +212,7 @@ final class WorkspaceSession {
   // keeping the single-threaded discipline of every other field here.
   private final Map<String, LaunchSession> activeRuns = new HashMap<>();
   private final Map<String, DapHost> activeDebugHosts = new HashMap<>();
+  private final AtomicBoolean formatFailureReported = new AtomicBoolean();
 
   WorkspaceSession(
       final LanguageClient client,
@@ -2835,8 +2838,16 @@ final class WorkspaceSession {
       }
 
       LOG.log(Level.SEVERE, e, () -> "[format] %s failed %dms".formatted(uri, t.elapsedMs()));
-      client.showMessage(
-          new MessageParams(MessageType.Warning, "Lathe: formatting failed — see the server log."));
+      // Format-on-save would repeat the same failure (a formatter that cannot run on this JDK, a
+      // file that does not parse) on every save; say why once, then only log.
+      if (formatFailureReported.compareAndSet(false, true)) {
+        client.showMessage(
+            new MessageParams(
+                MessageType.Warning,
+                "Lathe: formatting failed: %s (further failures are only logged)"
+                    .formatted(ExceptionUtil.rootCause(e).getMessage())));
+      }
+
       return List.of();
     }
   }

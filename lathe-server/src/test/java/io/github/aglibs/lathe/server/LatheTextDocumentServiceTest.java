@@ -228,22 +228,26 @@ class LatheTextDocumentServiceTest {
   }
 
   @Test
-  void formatting_engineFails_notifiesClientAndReturnsEmpty() throws Exception {
+  void formatting_engineFailsRepeatedly_notifiesClientOnceWithReason() throws Exception {
     service.initialize(tmp);
     service.setFormatEngine(FormatterFixtures.googleJavaFormat());
     service.didOpen(
         new DidOpenTextDocumentParams(new TextDocumentItem(URI, "java", 1, "class { broken")));
 
-    final List<? extends TextEdit> edits =
+    final List<? extends TextEdit> first =
+        service.formatting(formattingParams()).get(5, TimeUnit.SECONDS);
+    final List<? extends TextEdit> second =
         service.formatting(formattingParams()).get(5, TimeUnit.SECONDS);
 
-    assertThat(edits).isEmpty();
-    verify(client, timeout(2000))
+    assertThat(first).isEmpty();
+    assertThat(second).isEmpty();
+    verify(client, timeout(2000).times(1))
         .showMessage(
             argThat(
                 m ->
                     m.getType() == MessageType.Warning
-                        && m.getMessage().contains("formatting failed")));
+                        && m.getMessage().startsWith("Lathe: formatting failed: ")
+                        && m.getMessage().endsWith("(further failures are only logged)")));
   }
 
   @Test
