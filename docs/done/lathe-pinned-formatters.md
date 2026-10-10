@@ -167,8 +167,8 @@ those grants).
   - eclipse calls `ToolFactory.createCodeFormatter` with the profile's settings (an Eclipse XML export, properties
     XML, or `.prefs`, read with the JDK) and applies the returned `TextEdit`, as Spotless's eclipse step does;
     member sorting is not applied.
-- `FormatEngine` gains `formatsRanges()`/`formatRanges()`, a shared `converge()` loop (Spotless's PaddedCell), and
-  `warmUp()`; the two engines replace the bundled-GJF `GoogleFormatEngine`, and `FileCommandFormatEngine` stays.
+- `FormatEngine` gains `formatsRanges()`/`formatRanges()` and a shared `converge()` loop (Spotless's PaddedCell);
+  the two engines replace the bundled-GJF `GoogleFormatEngine`, and `FileCommandFormatEngine` stays.
 - **Range formatting** — `rangeFormatting` and `rangesFormatting` are implemented (today a stub) and advertised,
   with `rangesSupport`, for the in-process engines; `command` stays whole-file.
 - **Failure policy** — a formatter whose jars were not resolved (an empty `classpath`) is not created: formatting
