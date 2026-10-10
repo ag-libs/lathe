@@ -21,7 +21,8 @@ export LATHE_JVM_OPTS="-Xmx4g -Xms512m -XX:+UseZGC"
 The language server compiles in-process, so it drops the `-J` options a Maven build passes to a
 **forked** `javac` (the in-process javac API rejects them as `invalid flag`; see
 `ModuleSourceCompiler.dropForkedLauncherArgs`).
-Their module grants (`--add-exports`/`--add-opens`), and those in `.mvn/jvm.config`, are carried over
+Their module grants (`--add-exports`/`--add-opens`), those in `.mvn/jvm.config`, and `jdk.compiler`
+grants in `MAVEN_OPTS` are carried over
 automatically by sync into `.lathe/jvm.args` (see [Workspace JVM Args](lathe-jvm-args.md)).
 `LATHE_JVM_OPTS` covers everything else: heap/GC tuning, or access the build does not declare —
 e.g. `export LATHE_JVM_OPTS="--add-opens jdk.compiler/com.sun.tools.javac.jvm=ALL-UNNAMED"`.

@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.maven;
 
 import io.github.aglibs.lathe.core.LatheFlags;
+import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.install.PluginProps;
 import io.github.aglibs.lathe.install.ServerInstaller;
 import io.github.aglibs.lathe.install.SyncException;
@@ -92,7 +93,11 @@ final class SyncCoordinator {
               pomPaths,
               ModuleResourcesReader.read(workspaceRoot, projects));
       new WorkspaceStyleWriter(log).write(workspaceRoot, session.getTopLevelProject());
-      new JvmArgsWriter(log).write(workspaceRoot, projects);
+      new JvmArgsWriter(log)
+          .write(
+              workspaceRoot,
+              projects,
+              session.getSystemProperties().getProperty(LatheLayout.MAVEN_OPTS_PROPERTY, ""));
     }
   }
 

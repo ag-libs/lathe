@@ -4,7 +4,6 @@ import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.install.SyncException;
 import java.io.IOException;
-import java.lang.management.ManagementFactory;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -24,9 +23,8 @@ import org.codehaus.plexus.util.xml.Xpp3Dom;
 // Derives .lathe/jvm.args: the module-access flags the server JVM needs so the build's classpath
 // javac plugins (Error Prone, NullAway, ...) also run in-process. A build grants them either to a
 // forked javac (-J flags in compilerArgs/compilerArgument) or to Maven's own JVM (.mvn/jvm.config,
-// MAVEN_OPTS, ~/.mavenrc); the launcher passes the file to java as an @argfile. Read from the
-// model, not the captured lsp-params files: sync runs in the reactor root, before any child
-// module compiles.
+// MAVEN_OPTS); the launcher passes the file to java as an @argfile. Read from the model, not the
+// captured lsp-params files: sync runs in the reactor root, before any child module compiles.
 final class JvmArgsWriter {
 
   private static final String COMPILER_PLUGIN_KEY =
@@ -46,21 +44,13 @@ final class JvmArgsWriter {
     this.log = log;
   }
 
-  void write(final Path workspaceRoot, final List<MavenProject> projects) {
-    write(workspaceRoot, projects, ManagementFactory.getRuntimeMXBean().getInputArguments());
-  }
-
-  // mavenJvmArgs are the running Maven JVM's own arguments, which carry MAVEN_OPTS and ~/.mavenrc
-  // grants; only jdk.compiler grants are taken, since the JVM's other flags differ between mvn
-  // and mvnd and would rewrite the file on every switch.
-  void write(
-      final Path workspaceRoot,
-      final List<MavenProject> projects,
-      final List<String> mavenJvmArgs) {
+  // mavenOpts is MAVEN_OPTS as the build sees it (empty when unset). Only its jdk.compiler grants
+  // are taken: it often carries unrelated JVM tuning or java.base opens meant for Maven itself.
+  void write(final Path workspaceRoot, final List<MavenProject> projects, final String mavenOpts) {
     final var args = new LinkedHashSet<String>();
     args.addAll(accessFlags(forkedJvmArgs(projects)));
     args.addAll(accessFlags(jvmConfigTokens(workspaceRoot)));
-    accessFlags(mavenJvmArgs).stream()
+    accessFlags(tokens(mavenOpts)).stream()
         .filter(flag -> flag.contains(JAVAC_MODULE_TARGET))
         .forEach(args::add);
     final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
@@ -142,11 +132,16 @@ final class JvmArgsWriter {
     final Stream<String> single =
         compilerArgument == null || compilerArgument.getValue() == null
             ? Stream.empty()
-            : Arrays.stream(compilerArgument.getValue().split("\\s+"));
+            : tokens(compilerArgument.getValue()).stream();
     return Stream.concat(listed, single)
         .filter(Objects::nonNull)
         .map(String::trim)
         .filter(arg -> !arg.isEmpty());
+  }
+
+  // Whitespace-separated tokens of a flag string: MAVEN_OPTS, compilerArgument, a jvm.config line.
+  private static List<String> tokens(final String flags) {
+    return Arrays.stream(flags.trim().split("\\s+")).filter(token -> !token.isEmpty()).toList();
   }
 
   private static List<String> jvmConfigTokens(final Path workspaceRoot) {
@@ -160,8 +155,7 @@ final class JvmArgsWriter {
       return Files.readAllLines(jvmConfig, StandardCharsets.UTF_8).stream()
           .map(String::trim)
           .filter(line -> !line.startsWith("#"))
-          .flatMap(line -> Arrays.stream(line.split("\\s+")))
-          .filter(token -> !token.isEmpty())
+          .flatMap(line -> tokens(line).stream())
           .toList();
     } catch (final IOException e) {
       throw new SyncException("lathe:sync failed to read %s".formatted(jvmConfig), e);

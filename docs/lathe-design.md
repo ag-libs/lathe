@@ -62,7 +62,8 @@ It replays Maven's captured javac options but drops forked-launcher-only `-J` fl
 these forward JVM options to a forked `javac` executable (`maven-compiler-plugin` `fork=true`), and the
 in-process javac API has no launcher to receive them — it rejects them as `invalid flag`, where
 Maven's own non-forked compiler would ignore them. The module grants among them (and in
-`.mvn/jvm.config`) reach the server JVM through `.lathe/jvm.args`, written by sync
+`.mvn/jvm.config`, plus `jdk.compiler` grants in `MAVEN_OPTS`) reach the server JVM through
+`.lathe/jvm.args`, written by sync
 (see [Workspace JVM Args](done/lathe-jvm-args.md)); anything else via `LATHE_JVM_OPTS`
 (see [Launcher JVM Options](done/lathe-launcher-jvm-opts.md)).
 It reads dependency/JDK sources from `~/.cache/lathe/`.

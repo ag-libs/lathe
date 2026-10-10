@@ -25,7 +25,7 @@ The tag-driven release pipeline (CI GPG signing + publish; see [RELEASING.md](..
 | POM staleness detection | Implemented | Neovim receives a sync prompt after a POM / project-structure change (or a bulk, branch-switch-scale source change). |
 | In-process workspace sync | Implemented | Sources changed outside the editor (a git pull, branch switch, or agent) are recompiled in-process into the `.lathe/` mirror on the idle tick — the changed files in dependency order, deletions removing their mirrored classes, plus a refresh of open dependents — no Maven round trip. |
 | Server-exit surfacing & manual start | Implemented | Neovim notifies on an unexpected server exit (pointing at the LSP log); the launcher routes JVM startup errors to stderr so they reach that log; `:LatheStart` starts the server for a directory with no Java file open. |
-| Javac-plugin JVM access | Implemented | `lathe:sync` copies the build's `--add-exports`/`--add-opens` (forked `-J` flags, `.mvn/jvm.config`) into `.lathe/jvm.args`, which the launcher passes to the server JVM, so Error Prone and similar plugins run on save. |
+| Javac-plugin JVM access | Implemented | `lathe:sync` copies the build's `--add-exports`/`--add-opens` (forked `-J` flags, `.mvn/jvm.config`, `jdk.compiler` grants in `MAVEN_OPTS`) into `.lathe/jvm.args`, which the launcher passes to the server JVM, so Error Prone and similar plugins run on save. |
 | Inheritance index | Implemented | Dependency, JDK, and reactor entries include direct supertypes in immutable snapshots. |
 | Maven Central distribution | Published | Tag-driven CI (GPG signing + `central-publishing-maven-plugin`), `versions:set` stamping, `release.sh`, and `RELEASING.md` are in place. Releases are live on Maven Central. |
 

@@ -219,7 +219,7 @@ happens the server logs one line per module naming what it dropped.
 The module grants your build gives its javac plugins (Error Prone, NullAway, ...) still reach the
 server: `mvn process-test-classes` copies every `--add-exports`/`--add-opens` from forked `-J` options
 and from `.mvn/jvm.config` into `.lathe/jvm.args`, which the launcher passes to the server JVM.
-Grants given to Maven's own JVM another way (`MAVEN_OPTS`, `~/.mavenrc`) are carried over too, limited to `jdk.compiler`.
+`jdk.compiler` grants in `MAVEN_OPTS` are carried over too, the same under `mvn` and `mvnd`.
 Other `-J` flags (such as `-J-Xmx…`, sized for a short-lived compiler) are not carried over.
 The server reads `.lathe/jvm.args` only at startup, so restart it (`:LspRestart` in Neovim) after a sync changes the file.
 

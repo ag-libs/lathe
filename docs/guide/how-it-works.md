@@ -68,8 +68,8 @@ editing responsive and reserves the full, build-faithful pass for save.
 
 Plugins such as Error Prone reach into `javac` internals, so the JVM running them needs extra
 `--add-exports`/`--add-opens` grants.
-Your build already declares these, as `-J` flags for a forked compiler or in `.mvn/jvm.config`.
-`lathe:sync` copies them into `.lathe/jvm.args`, and the server starts with them; re-sync after you change them.
+Your build already declares these, as `-J` flags for a forked compiler, in `.mvn/jvm.config`, or in `MAVEN_OPTS`.
+`lathe:sync` copies them into `.lathe/jvm.args`, and the server starts with them; after you change them, re-sync and restart the server.
 
 ## Workspace freshness
 

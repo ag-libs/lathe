@@ -32,6 +32,10 @@ public final class LatheLayout {
   public static final String JVM_ARGS_FILE = "jvm.args";
   public static final String MVN_DIR = ".mvn";
   public static final String MVN_JVM_CONFIG_FILE = "jvm.config";
+  // MAVEN_OPTS as the build sees it: Maven exposes the environment as env.* session properties,
+  // and mvnd forwards the client's environment per build (it never applies MAVEN_OPTS to its
+  // daemon JVM), so this reads the same under mvn and mvnd.
+  public static final String MAVEN_OPTS_PROPERTY = "env.MAVEN_OPTS";
   public static final String LOCK_FILE = "lathe.lock";
   public static final String MODULE_INFO_JAVA = "module-info.java";
   public static final String POM_XML = "pom.xml";

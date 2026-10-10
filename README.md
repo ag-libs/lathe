@@ -314,8 +314,9 @@ overrides the POM opt-out, so the next build wires Lathe up and repopulates the 
   its `java.import.exclusions`; see
   [installation.md](docs/guide/installation.md#coexisting-with-another-java-language-server-jdtls).
 - **A processor or plugin needs extra JVM access in the editor** — Lathe analyzes with an in-process
-  javac. Sync carries the build's own module grants (forked `-J--add-exports`/`--add-opens`, and
-  `.mvn/jvm.config`) into `.lathe/jvm.args` automatically. Add anything else (or tune heap/GC) with
+  javac. Sync carries the build's own module grants (forked `-J--add-exports`/`--add-opens`,
+  `.mvn/jvm.config`, and `jdk.compiler` grants in `MAVEN_OPTS`) into `.lathe/jvm.args` automatically;
+  restart the server after it changes. Add anything else (or tune heap/GC) with
   `LATHE_JVM_OPTS`; see
   [installation.md](docs/guide/installation.md#tuning-the-server-jvm-lathe_jvm_opts).
 

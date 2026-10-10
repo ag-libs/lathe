@@ -142,7 +142,8 @@ reused):
 - [Launcher JVM Options](done/lathe-launcher-jvm-opts.md) — **shipped.** `LATHE_JVM_OPTS` support; also
   the escape hatch for JVM access the build does not declare.
 - [Workspace JVM Args](done/lathe-jvm-args.md) — **shipped.** Sync copies the build's own javac-plugin
-  module grants (forked `-J`, `.mvn/jvm.config`) into `.lathe/jvm.args`, passed to the server as an `@argfile`.
+  module grants (forked `-J`, `.mvn/jvm.config`, `jdk.compiler` grants in `MAVEN_OPTS`) into `.lathe/jvm.args`,
+  passed to the server as an `@argfile`.
 - [Workspace-Specific Server JDK](done/lathe-workspace-java-home.md) — **shipped.** The launcher runs the
   server under the project's build JDK (captured in `.lathe/java-home`), overridable with `LATHE_JAVA_HOME`.
 - [Workspace-Scoped Style](done/lathe-workspace-style.md) — **shipped.** Per-workspace `style.json`

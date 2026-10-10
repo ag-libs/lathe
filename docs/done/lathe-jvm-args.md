@@ -12,18 +12,21 @@ They access `jdk.compiler` internals directly and need `--add-exports`/`--add-op
 The editor launcher used to grant a fixed Error Prone-shaped set to every workspace, whether or not it used a plugin.
 That was broader than needed, and a plugin needing a different grant got nothing unless the user set `LATHE_JVM_OPTS` by hand.
 
-The build already states what its plugins need, in one of two places:
+The build already states what its plugins need, in one of these places:
 
 - **Forked javac** (`maven-compiler-plugin` `<fork>true</fork>`, e.g. equalsverifier): `-J--add-exports=...` entries in `compilerArgs`.
   The server drops `-J` from the javac args, since the in-process javac API rejects them.
 - **In-process javac** (no fork, e.g. dropwizard): `--add-exports ...` lines in `<root>/.mvn/jvm.config`, which Maven applies to its own JVM.
+  The same grants can also reach Maven's JVM from `MAVEN_OPTS`.
 
 ## Design
 
-`JvmArgsWriter` (in `lathe-maven-plugin`, called by `SyncCoordinator` next to the workspace manifest) collects, from both sources:
+`JvmArgsWriter` (in `lathe-maven-plugin`, called by `SyncCoordinator` next to the workspace manifest) collects, from three sources:
 
-1. `-J` entries of `maven-compiler-plugin` `compilerArgs`, plugin-level and per execution, across every reactor project, with the `-J` prefix stripped.
+1. `-J` entries of `maven-compiler-plugin` `compilerArgs` (and the legacy single-string `compilerArgument`, split on whitespace), plugin-level and per execution, across every reactor project, with the `-J` prefix stripped.
 2. Whitespace-separated tokens of `<root>/.mvn/jvm.config`, skipping `#` comment lines.
+3. `MAVEN_OPTS`, read from the build's environment (the `env.MAVEN_OPTS` session property), keeping only its `jdk.compiler` grants.
+   It often carries unrelated JVM tuning or `java.base` opens meant for Maven itself.
 
 It keeps only `--add-exports` and `--add-opens`, normalizes the two-token form to `--add-exports=<value>`, dedupes in order, and writes one flag per line.
 Other flags are ignored on purpose: a forked compiler's `-J-Xmx256m` or the build's heap/GC tuning would starve the long-running server.
@@ -50,13 +53,22 @@ The path is relative to the server's cwd, the workspace root, as with `.lathe/ja
 The editor launcher no longer carries any `ALL-UNNAMED` grants: the server itself uses no javac internals, and google-java-format keeps its module-qualified grants.
 The MCP launcher keeps its `ALL-UNNAMED` grants, because it runs on the classpath and google-java-format is in the unnamed module there.
 
+`MAVEN_OPTS` is read from the environment, not from the running JVM's own arguments, so `mvn` and `mvnd` produce the same file.
+mvnd never applies `MAVEN_OPTS` to its long-lived daemon JVM, whose arguments are fixed when it starts, but it forwards the client's environment to every build.
+Reading the JVM's arguments would therefore make the file depend on which tool ran the sync, and switching tools would rewrite it and require a server restart.
+
 ## Limits
 
-- Grants added only at runtime (by another plugin, or via `MAVEN_OPTS`) are not seen; `LATHE_JVM_OPTS` remains the escape hatch.
+- Grants added only at runtime (by another plugin) are not seen; `LATHE_JVM_OPTS` remains the escape hatch.
+- `~/.mavenrc` is a script only plain `mvn` runs, so a `MAVEN_OPTS` it sets reaches sync only under `mvn`, and only when exported; set such grants in `LATHE_JVM_OPTS` instead.
+- The server reads the file only at startup; after a sync changes it, restart the server.
+- Grants written for another purpose are carried over too (for example Spotless/google-java-format's `jdk.compiler` exports in `.mvn/jvm.config`).
+  That only widens `jdk.compiler` access inside the server JVM.
+  A grant the server JDK cannot apply (an unknown package or target module) makes the JVM print a startup warning, not fail.
 - One server JVM serves the whole reactor, so the file is the reactor-wide union.
 - A workspace synced before this change loses on-save plugin runs until its next `mvn process-test-classes`.
 
 ## Tests
 
-`JvmArgsWriterTest` covers both sources together (forked `-J` in both forms, an execution duplicate, `jvm.config` with comments and unrelated flags) and the no-grant case deleting a stale file.
+`JvmArgsWriterTest` covers all sources together (forked `-J` in both forms, an execution duplicate, the single-string `compilerArgument`, `jvm.config` with comments and unrelated flags, `MAVEN_OPTS` with a skipped non-`jdk.compiler` grant) and the no-grant case deleting a stale file.
 `ServerInstallerTest` asserts both launchers wire the `@argfile` between the stdout guard and `LATHE_JVM_OPTS`, and that only the MCP launcher has `ALL-UNNAMED` grants.
