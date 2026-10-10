@@ -46,6 +46,11 @@ final class GjfFormatEngine implements FormatEngine {
   }
 
   @Override
+  public void warmUp() throws Exception {
+    format(WARM_UP_SOURCE, WARM_UP_FILE);
+  }
+
+  @Override
   public boolean formatsRanges() {
     return true;
   }
