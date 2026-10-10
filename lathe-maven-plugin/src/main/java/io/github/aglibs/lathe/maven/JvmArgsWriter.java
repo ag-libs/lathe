@@ -4,6 +4,7 @@ import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.install.SyncException;
 import java.io.IOException;
+import java.lang.management.ManagementFactory;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,9 +23,10 @@ import org.codehaus.plexus.util.xml.Xpp3Dom;
 
 // Derives .lathe/jvm.args: the module-access flags the server JVM needs so the build's classpath
 // javac plugins (Error Prone, NullAway, ...) also run in-process. A build grants them either to a
-// forked javac (-J flags in compilerArgs) or to Maven's own JVM (.mvn/jvm.config); the launcher
-// passes the file to java as an @argfile. Read from the model, not the captured lsp-params files:
-// sync runs in the reactor root, before any child module compiles.
+// forked javac (-J flags in compilerArgs/compilerArgument) or to Maven's own JVM (.mvn/jvm.config,
+// MAVEN_OPTS, ~/.mavenrc); the launcher passes the file to java as an @argfile. Read from the
+// model, not the captured lsp-params files: sync runs in the reactor root, before any child
+// module compiles.
 final class JvmArgsWriter {
 
   private static final String COMPILER_PLUGIN_KEY =
@@ -36,6 +38,7 @@ final class JvmArgsWriter {
   // Only module access is carried over: other forked-javac options (e.g. -J-Xmx256m) size a
   // short-lived compiler and would starve the long-running server.
   private static final Set<String> ACCESS_FLAGS = Set.of("--add-exports", "--add-opens");
+  private static final String JAVAC_MODULE_TARGET = "=jdk.compiler/";
 
   private final Log log;
 
@@ -44,9 +47,22 @@ final class JvmArgsWriter {
   }
 
   void write(final Path workspaceRoot, final List<MavenProject> projects) {
+    write(workspaceRoot, projects, ManagementFactory.getRuntimeMXBean().getInputArguments());
+  }
+
+  // mavenJvmArgs are the running Maven JVM's own arguments, which carry MAVEN_OPTS and ~/.mavenrc
+  // grants; only jdk.compiler grants are taken, since the JVM's other flags differ between mvn
+  // and mvnd and would rewrite the file on every switch.
+  void write(
+      final Path workspaceRoot,
+      final List<MavenProject> projects,
+      final List<String> mavenJvmArgs) {
     final var args = new LinkedHashSet<String>();
     args.addAll(accessFlags(forkedJvmArgs(projects)));
     args.addAll(accessFlags(jvmConfigTokens(workspaceRoot)));
+    accessFlags(mavenJvmArgs).stream()
+        .filter(flag -> flag.contains(JAVAC_MODULE_TARGET))
+        .forEach(args::add);
     final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
     final var argsPath = latheDir.resolve(LatheLayout.JVM_ARGS_FILE);
     try {
@@ -115,14 +131,22 @@ final class JvmArgsWriter {
         .map(Xpp3Dom.class::cast);
   }
 
+  // <compilerArgs> entries, plus the legacy single-string <compilerArgument> split on whitespace.
   private static Stream<String> compilerArgs(final Xpp3Dom configuration) {
     final Xpp3Dom compilerArgs = configuration.getChild("compilerArgs");
-    return compilerArgs == null
-        ? Stream.empty()
-        : Arrays.stream(compilerArgs.getChildren())
-            .map(Xpp3Dom::getValue)
-            .filter(Objects::nonNull)
-            .map(String::trim);
+    final Xpp3Dom compilerArgument = configuration.getChild("compilerArgument");
+    final Stream<String> listed =
+        compilerArgs == null
+            ? Stream.empty()
+            : Arrays.stream(compilerArgs.getChildren()).map(Xpp3Dom::getValue);
+    final Stream<String> single =
+        compilerArgument == null || compilerArgument.getValue() == null
+            ? Stream.empty()
+            : Arrays.stream(compilerArgument.getValue().split("\\s+"));
+    return Stream.concat(listed, single)
+        .filter(Objects::nonNull)
+        .map(String::trim)
+        .filter(arg -> !arg.isEmpty());
   }
 
   private static List<String> jvmConfigTokens(final Path workspaceRoot) {

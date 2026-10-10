@@ -22,7 +22,7 @@ class JvmArgsWriterTest {
   @TempDir Path workspaceRoot;
 
   @Test
-  void write_forkedAndJvmConfigGrants_writesDedupedAccessFlags() throws Exception {
+  void write_forkedJvmConfigAndMavenJvmGrants_writesDedupedAccessFlags() throws Exception {
     // Forked style: -J flags on the compiler plugin, in both the =-joined and two-token forms, the
     // same grant repeated in an execution, and a heap flag that must not reach the server.
     final var forked =
@@ -43,13 +43,31 @@ class JvmArgsWriterTest {
         --add-opens=jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED
         """);
 
-    writer().write(workspaceRoot, List.of(forked, new MavenProject()));
+    // Legacy single-string form on another module.
+    final var legacy =
+        projectWithCompilerArgs(
+            Xpp3DomBuilder.build(
+                new StringReader(
+                    "<configuration><compilerArgument>-Xlint:all "
+                        + "-J--add-exports=jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED"
+                        + "</compilerArgument></configuration>")));
+    // Maven's own JVM (MAVEN_OPTS, ~/.mavenrc): only its jdk.compiler grants are carried over.
+    final var mavenJvmArgs =
+        List.of(
+            "--add-opens=java.base/java.lang=ALL-UNNAMED",
+            "-Xmx1g",
+            "--add-exports",
+            "jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED");
+
+    writer().write(workspaceRoot, List.of(forked, legacy, new MavenProject()), mavenJvmArgs);
 
     assertThat(Files.readAllLines(jvmArgs()))
         .containsExactly(
             "--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED",
             "--add-opens=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED",
-            "--add-opens=jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED");
+            "--add-exports=jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED",
+            "--add-opens=jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED",
+            "--add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED");
   }
 
   @Test
@@ -60,7 +78,11 @@ class JvmArgsWriterTest {
     writeJvmConfig("-Xmx2g\n");
     final var project = projectWithCompilerArgs(compilerArgs("-J-Xmx256m", "-parameters"));
 
-    writer().write(workspaceRoot, List.of(project));
+    writer()
+        .write(
+            workspaceRoot,
+            List.of(project),
+            List.of("--add-opens=java.base/java.lang=ALL-UNNAMED"));
 
     assertThat(jvmArgs()).doesNotExist();
   }
