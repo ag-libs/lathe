@@ -186,6 +186,9 @@ final class WorkspaceSession {
   // Sources whose in-process recompile is in flight, so a later tick does not resubmit one still
   // building. Worker-thread-confined like every other field here.
   private final Set<Path> reacting = new HashSet<>();
+  // Sources whose last compile emitted no class (a compile error), keyed to the mtime compiled.
+  // They are skipped until edited again or another compile lands, not recompiled every tick.
+  private final Map<Path, Long> failedCompiles = new HashMap<>();
   // The -pl module selectors carried from the pending sync prompt to the sync request (empty = full
   // reactor). Set at prompt time because the request fires later, on the user's response.
   private List<String> pendingSyncModules = List.of();
@@ -2935,17 +2938,8 @@ final class WorkspaceSession {
       return 0;
     }
 
-    final var sourceRoot = sourceRootFor(config, source);
-    if (sourceRoot == null) {
-      return 0;
-    }
-
-    final var packageRel = sourceRoot.relativize(source).getParent();
-    final var classDir =
-        packageRel != null
-            ? config.latheClassesDir().resolve(packageRel)
-            : config.latheClassesDir();
-    if (!Files.isDirectory(classDir)) {
+    final var classDir = classDirOf(config, source);
+    if (classDir == null || !Files.isDirectory(classDir)) {
       return 0;
     }
 
@@ -3194,7 +3188,7 @@ final class WorkspaceSession {
   // edit (a rename) only needs recompiling against the current one — it must not freeze behind it.
   private List<CompletableFuture<Void>> reconcileChangedSources(final boolean eager) {
     final StaleScan scan = scanStaleModules();
-    final Map<Path, Long> current = staleMtimes(scan);
+    final Map<Path, Long> current = withoutFailedCompiles(staleMtimes(scan), failedCompiles);
     if (current.isEmpty()) {
       pendingStale = Map.of();
       awaitingSettle = false;
@@ -3262,6 +3256,13 @@ final class WorkspaceSession {
         .collect(
             Collectors.toUnmodifiableMap(
                 source -> source, WorkspaceSession::mtimeMillis, (first, ignored) -> first));
+  }
+
+  static Map<Path, Long> withoutFailedCompiles(
+      final Map<Path, Long> stale, final Map<Path, Long> failedCompiles) {
+    return stale.entrySet().stream()
+        .filter(entry -> !entry.getValue().equals(failedCompiles.get(entry.getKey())))
+        .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue));
   }
 
   // A source is safe to recompile once its mtime has held across two ticks, so a file still being
@@ -3365,6 +3366,7 @@ final class WorkspaceSession {
           error,
           () ->
               "[react] batch compile failed in %s".formatted(moduleRelForDir(config.moduleDir())));
+      sources.forEach(source -> failedCompiles.put(source, mtimeMillis(source)));
       return;
     }
 
@@ -3377,32 +3379,51 @@ final class WorkspaceSession {
                 .formatted(sources.size(), moduleRelForDir(config.moduleDir())));
   }
 
-  // Only prune + stamp a source whose primary class the compile actually emitted. A source that
-  // failed to compile (an ordering error mid-rename emits no bytecode) keeps its old mirror class
-  // and stays unstamped, so the next batch retries it once its dependencies land -- otherwise the
-  // stamp would mark it fresh while its mirror class is stale and dependents keep seeing the old
-  // type.
+  // Only prune + stamp a source the compile actually emitted a class for. A source that failed to
+  // compile (an ordering error mid-rename emits no bytecode) keeps its old mirror class and stays
+  // unstamped, so a later batch retries it once its dependencies land -- otherwise the stamp would
+  // mark it fresh while its mirror class is stale and dependents keep seeing the old type.
   private void freshenClassOutputs(
       final ModuleSourceConfig config, final Path source, final Set<String> writtenBinaryNames) {
-    if (!wrotePrimaryClass(config, source, writtenBinaryNames)) {
+    if (!wroteClassOf(config, source, writtenBinaryNames)) {
+      failedCompiles.put(source, mtimeMillis(source));
       return;
     }
 
+    // Progress may supply what a failed source was missing, so each gets one more attempt.
+    failedCompiles.clear();
     deleteClassOutputs(config, source, writtenBinaryNames);
     recordCompileStamp(config, source);
   }
 
-  private static boolean wrotePrimaryClass(
+  // Any written class of the source counts (Foo.class, Foo$*.class, or a sibling type), so a file
+  // declaring no type named after itself still freshens.
+  static boolean wroteClassOf(
       final ModuleSourceConfig config, final Path source, final Set<String> writtenBinaryNames) {
     final var root = sourceRootFor(config, source);
-    if (root == null) {
+    // No type to key on (package-info/module-info or no source root) -- do not block.
+    if (root == null || SourceTypeScanner.deriveEntry(root, source).isEmpty()) {
       return true;
     }
 
-    // No primary type to key on (package-info/module-info or unparseable) -- do not block.
-    return SourceTypeScanner.deriveEntry(root, source)
-        .map(entry -> writtenBinaryNames.contains(entry.binaryName()))
-        .orElse(true);
+    final var classDir = classDirOf(config, source);
+    return writtenBinaryNames.stream()
+        .map(name -> config.latheClassesDir().resolve("%s.class".formatted(name.replace('.', '/'))))
+        .filter(classFile -> classFile.getParent().equals(classDir))
+        .anyMatch(classFile -> classOutputOf(source, classFile));
+  }
+
+  // The mirror directory holding the source's package classes; null outside the config's roots.
+  private static Path classDirOf(final ModuleSourceConfig config, final Path source) {
+    final var sourceRoot = sourceRootFor(config, source);
+    if (sourceRoot == null) {
+      return null;
+    }
+
+    final var packageRel = sourceRoot.relativize(source).getParent();
+    return packageRel != null
+        ? config.latheClassesDir().resolve(packageRel)
+        : config.latheClassesDir();
   }
 
   private static String readSource(final Path source) {

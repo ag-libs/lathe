@@ -145,6 +145,34 @@ class WorkspaceSessionTest {
   }
 
   @Test
+  void wroteClassOf_sourceDeclaringNoTypeNamedAfterIt_matchesOnlyItsOwnWrittenClasses()
+      throws Exception {
+    // Foo.java declares no Foo, so its outputs are tied to it only by the SourceFile attribute.
+    compileIntoMirror(
+        Map.of(
+            "Foo.java", "class Alpha {} class Beta {}", "Bar.java", "class Bar {} class Other {}"));
+
+    assertThat(WorkspaceSession.wroteClassOf(config, sourceFile, Set.of("com.example.Alpha")))
+        .isTrue();
+    // A failed compile writes nothing; another source's classes do not count either.
+    assertThat(WorkspaceSession.wroteClassOf(config, sourceFile, Set.of())).isFalse();
+    assertThat(WorkspaceSession.wroteClassOf(config, sourceFile, Set.of("com.example.Other")))
+        .isFalse();
+  }
+
+  @Test
+  void withoutFailedCompiles_unchangedSinceFailure_skipped_editedOrNeverFailedKept() {
+    final var broken = sourceRoot.resolve("com/example/Broken.java");
+    final var edited = sourceRoot.resolve("com/example/Edited.java");
+    final var fresh = sourceRoot.resolve("com/example/Fresh.java");
+    final Map<Path, Long> stale = Map.of(broken, 100L, edited, 200L, fresh, 300L);
+    final Map<Path, Long> failed = Map.of(broken, 100L, edited, 150L);
+
+    assertThat(WorkspaceSession.withoutFailedCompiles(stale, failed))
+        .containsOnlyKeys(edited, fresh);
+  }
+
+  @Test
   void stableSources_unchangedMtimeAcrossTicks_included_newOrMovedExcluded() {
     final var settled = sourceRoot.resolve("com/example/Settled.java");
     final var moving = sourceRoot.resolve("com/example/Moving.java");
