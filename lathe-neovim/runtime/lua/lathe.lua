@@ -164,9 +164,10 @@ function M.format(bufnr, opts)
   require('lathe.fold').format(bufnr, opts)
 end
 
--- Nudge for the two silent failure modes: a Java buffer is open but Lathe can't serve it because the
--- client was never configured, or no `.lathe/` workspace exists (the Lathe Maven build isn't
--- configured, or the project hasn't been synced). Both otherwise fail silently.
+-- Nudge for the silent failure modes: a Java buffer is open but Lathe can't serve it because the
+-- client was never configured, no `.lathe/` workspace exists (the Lathe Maven build isn't
+-- configured, or the project hasn't been synced), or the workspace was synced by a Lathe older than
+-- the per-workspace launcher link (so the server never starts). All otherwise fail silently.
 --
 -- Called from ftplugin/java.lua, the one place that runs even when `setup()` was
 -- never called. Fires at most once per session (re-armed by setup()).
@@ -175,7 +176,8 @@ function M.warn_if_not_ready(bufnr)
   if not_ready_notified then
     return
   end
-  if M._configured and M.get_root(bufnr) ~= nil then
+  local root = M._configured and M.get_root(bufnr) or nil
+  if root ~= nil and vim.fn.executable(launcher_path(root)) == 1 then
     return
   end
 
@@ -183,9 +185,12 @@ function M.warn_if_not_ready(bufnr)
   local msg
   if not M._configured then
     msg = 'Lathe: plugin installed but not configured -- call `require("lathe").setup()`.'
-  else
+  elseif root == nil then
     msg = 'Lathe: no `.lathe/` workspace -- the Lathe Maven plugin is not configured, or the project '
       .. 'is not synced. Run `mvn process-test-classes` (then `:LatheSync` refreshes it).'
+  else
+    msg = 'Lathe: `.lathe/` has no server launcher -- the workspace was synced by an older Lathe. '
+      .. 'Set lathe-maven-extension to 0.1.16 or later and run `mvn process-test-classes`.'
   end
 
   vim.notify(msg, vim.log.levels.WARN, { title = 'Lathe' })

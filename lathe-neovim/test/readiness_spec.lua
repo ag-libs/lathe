@@ -1,7 +1,8 @@
 -- Verifies the first-run readiness nudge (lathe.warn_if_not_ready): before setup()
 -- it reports "not configured"; once configured it stays silent in a `.lathe`
--- workspace but reports the missing-workspace cause (Maven not configured / not
--- synced) elsewhere; and it fires at most once per session. Self-contained: builds
+-- workspace with a launcher, reports the missing-workspace cause (Maven not
+-- configured / not synced) elsewhere, and names an older-Lathe sync when `.lathe/`
+-- has no launcher; and it fires at most once per session. Self-contained: builds
 -- its own workspace tree and stubs vim.notify.
 --
 -- Run via run-specs.sh, or headless:
@@ -16,16 +17,23 @@ local work = vim.fn.tempname()
 local cache = work .. "/cache"
 local synced = work .. "/synced"
 local bare = work .. "/bare"
+local legacy = work .. "/legacy"
 vim.fn.mkdir(cache, "p")
 vim.fn.mkdir(synced .. "/.lathe", "p") -- a resolvable Lathe workspace; `bare` has none
 vim.fn.mkdir(synced .. "/src/main/java", "p")
 vim.fn.mkdir(bare .. "/src/main/java", "p")
+-- Synced by a Lathe older than the per-workspace launcher link: `.lathe/` but no launcher.
+vim.fn.mkdir(legacy .. "/.lathe", "p")
+vim.fn.mkdir(legacy .. "/src/main/java", "p")
 
 local function write_file(path, contents)
   local f = assert(io.open(path, "w"))
   f:write(contents)
   f:close()
 end
+
+write_file(synced .. "/.lathe/lathe-launcher.sh", "#!/bin/sh\n")
+vim.fn.setfperm(synced .. "/.lathe/lathe-launcher.sh", "rwxr-xr-x")
 
 vim.env.LATHE_CACHE = cache
 local lathe = require("lathe")
@@ -72,6 +80,18 @@ spec.check(
 -- Fires once per session after configuring, too.
 lathe.warn_if_not_ready(vim.fn.bufadd(bare .. "/src/main/java/D.java"))
 spec.check("configured, no workspace: fires once per session", #notes, 2)
+
+-- 4) Configured, `.lathe/` present but no launcher: the server would never start, so name the
+-- older-Lathe sync instead of staying silent.
+lathe.setup({})
+lathe.warn_if_not_ready(vim.fn.bufadd(legacy .. "/src/main/java/E.java"))
+spec.check("legacy sync: notify", #notes, 3)
+spec.check(
+  "legacy sync: message names the older Lathe and the fix",
+  notes[3] and notes[3]:find("older Lathe", 1, true) ~= nil
+    and notes[3]:find("0.1.16", 1, true) ~= nil,
+  true
+)
 
 vim.fn.delete(work, "rf")
 spec.finish()
