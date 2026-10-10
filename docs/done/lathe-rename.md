@@ -2,7 +2,23 @@
 
 ## Status
 
-Planned — M2. Approved design; no code yet. The freshness gate was revised after a code audit of the
+Implemented. Both slices below shipped, and so did the pieces this design first deferred:
+enum-constant rename, the public top-level type file rename, and renaming a symbol's Javadoc reference
+mentions (`{@link}`, `@see`, `@throws`). The sections below are kept as the design record; where they
+say "deferred" or "refused", the notes in Deferred and Non-goals give what shipped.
+
+Two guards shipped with it:
+
+- **The cursor must name the target.** `prepareRename`/`rename` accept a target only when the identifier
+  under the cursor is that target's name (a constructor redirects to its type first). Cursor
+  resolution walks up from the tree under the cursor, and a member's Javadoc, a comment, or a keyword
+  inside a class body otherwise resolves to the enclosing class, which would rename (and move) it. A
+  `{@link}` to a workspace type renames that type.
+- **File moves need client support.** A public top-level type rename emits `documentChanges` with a
+  `RenameFile` operation; it is refused when the client does not advertise rename resource operations,
+  rather than leave the type in a mismatched file.
+
+The freshness gate was revised after a code audit of the
 reference pipeline — see Correctness gate and Resolved decision 2. A second audit re-verified the
 freshness argument against `ReferenceCandidatePlanner` and resolved the constructor, conflict-depth,
 and enum-constant edges — see Resolved decisions 4–6.
@@ -234,15 +250,11 @@ they are deferred to keep the tested surface focused — see Non-goals).
 ## Non-goals (explicit, documented)
 
 - Renaming external / JDK / dependency symbols — read-only.
-- **Public top-level type file rename** — moving `Foo.java` → `Bar.java` needs `documentChanges` +
-  `RenameFile` resource operations, client capability capture, and document versioning; deferred to a
-  focused follow-up (see Deferred). Type *reference* renames that need no file move are in scope.
-- **Enum-constant rename** — supported by the pipeline and index-independent, but deferred from M2 to
-  keep the tested-kind surface focused; a small, safe follow-up.
 - **Package rename** — JDT itself treats this as partial; deferred.
 - **Local/parameter same-scope duplicate detection** — needs a block-scope AST walk rather than an
   element scan; not done (see Conflict detection). Only the illegal-identifier check applies.
-- **Non-code usages** — comments, string literals, Javadoc `{@link}` / `@see` reference text; opt-in later.
+- **Non-code usages** — comments and string literals; opt-in later. (Javadoc reference tags are
+  renamed: they are parsed by javac's `DocTrees`, not matched as text.)
 - Related-symbol propagation — renaming a field does not rename its getter/setter; renaming an interface
   does not rename an implementation's differently-named member.
 - Cross-language / configuration references — Spring XML, `.properties`, service files.
@@ -250,7 +262,7 @@ they are deferred to keep the tested surface focused — see Non-goals).
   visibility changes) — see Conflict detection.
 - Reflection / string-referenced names.
 
-## Deferred to a follow-up — public top-level type file rename
+## Public top-level type file rename (originally deferred; shipped)
 
 Renaming a public top-level type requires moving its `.java` file so the file name keeps matching the
 type. That is the one piece of this feature that needs machinery the initial delivery does not build,
@@ -267,9 +279,9 @@ and it is carved out as a focused follow-up:
   precede** the `RenameFile` op; open documents use `OptionalVersionedTextDocumentIdentifier` (version
   from the open-document store), closed files a null version.
 
-Until this lands, `prepareRename` refuses a public top-level type (and a constructor that redirects to
-one) with a clear "not supported yet" message. Every other rename — including nested and non-public
-top-level types — is unaffected.
+Shipped as described: the type's text edits precede the `RenameFile` op, and a client without rename
+resource operations gets a refusal rather than a text-only edit that would leave the type in a
+mismatched file.
 
 ## Reuse map
 
@@ -320,7 +332,7 @@ the deferred follow-up (see Deferred), not this delivery.
 - Invoker (`LspSmokeTest`): drive `prepareRename` + `rename` against the multi-module fixture and assert
   the `WorkspaceEdit` touches the expected files.
 - Differential-vs-jdtls comparison is post-M3 quality tooling
-  ([lathe-jdtls-differential-testing.md](lathe-jdtls-differential-testing.md)), not an M2 gate.
+  ([lathe-jdtls-differential-testing.md](../planned/lathe-jdtls-differential-testing.md)), not an M2 gate.
 
 ## Open items before implementation
 

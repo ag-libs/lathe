@@ -153,9 +153,13 @@ through the same resolver, definition and references).
 The sibling features (references / highlight / rename over Javadoc mentions) shipped with EG-050;
 completion inside a tag stays deferred there.
 
+Follow-up fix: links in a member's or nested type's Javadoc first resolved to the enclosing class,
+because that Javadoc lies outside the member's tree and the cursor path ends at the class. The
+Javadoc resolver is now consulted first whenever the path ends at a class or the compilation unit.
+
 ### Regression targets
 
-- `HoverTest.hover_javadocLinkTags_resolveReferencedTypeAndMember`.
+- `HoverTest.hover_javadocLinkTags_resolveReferencedTypeAndMember` (incl. member and nested-type links).
 
 ---
 

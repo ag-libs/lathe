@@ -93,7 +93,7 @@ All triaged correctness gaps are resolved — see [gaps-archive.md](gaps/gaps-ar
 
 - Implement prepare-rename and exact reactor rename edits, correctness-gated with explicit non-goals —
   a wrong cross-module rename corrupts code, so it ships tested or it is not advertised.
-  See [Rename](design-index.md) → [lathe-rename.md](planned/lathe-rename.md): built on the Find
+  See [Rename](design-index.md) → [lathe-rename.md](done/lathe-rename.md): built on the Find
   References pipeline, freshness-gated for method/type renames, minimal conflict checks.
 
 ### Run, test, and debug (shipped)

@@ -177,9 +177,14 @@ EG-003). Implemented via javac's structured `DocTrees` — the comment is read a
 each reference resolved to an element + source span, consumed by `JavadocReferenceResolver` (cursor →
 element) and `ReferenceLocator.scanJavadocReferences` (match + emit).
 
+Rename can also be started from a `{@link}` to a workspace type. It only proceeds when the identifier
+under the cursor names the target, so Javadoc prose, comments, and keywords are refused instead of
+renaming the enclosing class.
+
 Regression targets:
 `ReferenceLocatorTest.javadocLinkMentions_includedForMemberAndType`,
-`HoverTest.hover_javadocLinkTags_resolveReferencedTypeAndMember`.
+`HoverTest.hover_javadocLinkTags_resolveReferencedTypeAndMember`,
+`RenameProviderTest.resolveRenameTarget_cursorNotNamingTarget_isRefusedButJavadocLinkTargetsLinkedType`.
 
 ### Remaining — completion inside `{@link}` / `{@code}` (deferred)
 

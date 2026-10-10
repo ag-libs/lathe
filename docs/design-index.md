@@ -29,9 +29,10 @@ Reliability, the triaged gaps, and rename — see the [roadmap](roadmap.md) for 
   are all resolved (see [gaps-archive.md](gaps/gaps-archive.md)). EG-003 is deferred until after M2.
 - [Completion Expectations](done/lathe-completion-expectations.md) — completion behavioral contract (reference).
 - [Gap Workflow](gaps/gap-workflow.md) — reproducible gap discovery and triage (all areas).
-- [Rename](planned/lathe-rename.md) — `textDocument/rename` + `prepareRename` on the Find References
-  pipeline (occurrence ranges → `WorkspaceEdit`, no `ASTRewrite`); scoped to the common cases,
-  correctness-gated (freshness refusal + minimal conflict checks), with explicit non-goals.
+- [Rename](done/lathe-rename.md) — **shipped.** `textDocument/rename` + `prepareRename` on the Find
+  References pipeline (occurrence ranges → `WorkspaceEdit`, no `ASTRewrite`), incl. enum constants,
+  public top-level types with a file move, and Javadoc reference mentions; the cursor must name the
+  target. Minimal conflict checks, with explicit non-goals.
 - [Interactive Request Priority & Reaction Coalescing](planned/lathe-interactive-request-priority.md) —
   server-wide: stop multi-second background recompiles (the in-process-sync reaction) from blocking
   millisecond interactive requests on the single serial worker; prioritize/cancel, coalesce the reaction,
