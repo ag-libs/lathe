@@ -104,10 +104,14 @@ reused):
 - [Sync Launcher](planned/lathe-sync-launcher.md) — **in progress** (Maven writes it, Neovim runs it). The build integration writes
   `.lathe/lathe-sync.sh [--tests] [module ...]`, which clients, the server, and the MCP server run instead
   of composing Maven commands; runs the build on the recorded JDK, scopes with `-am -amd`. Prepares Gradle.
-- [Gradle Support](planned/lathe-gradle-support.md) — **proposed.** A `lathe-gradle-plugin` (settings +
-  project plugin + `latheSync`) emitting the same `.lathe/` files: typed-API compiler capture on
-  `JavaCompile`, in-fork test-launch capture reusing `lathe-junit`, plexus-java module placement,
-  polyglot Maven-orchestrated build.
+- [Build-Tool-Agnostic Core](planned/lathe-build-agnostic-core.md) — **proposed, prerequisite for
+  Gradle.** Maven-only step that makes `.lathe/` the real seam: a front-end-written `outputs` map in
+  `workspace.json` replaces `target/`-shape path guessing, `pomPaths` → `buildFiles`, neutral texts,
+  and a written workspace contract.
+- [Gradle Support](planned/lathe-gradle-support.md) — **proposed, spiked on Gradle 8.14 and 9.8.** A
+  `lathe-gradle-plugin` (settings + project plugin + `latheSync`) emitting the same `.lathe/` files:
+  typed-API compiler capture on `JavaCompile`, in-fork test-launch capture reusing `lathe-junit`,
+  plexus-java module placement, polyglot Maven-orchestrated build. Depends on the build-agnostic step.
 - [OpenJDK Support](planned/lathe-openjdk-support.md) — **proposed.** A `lathe-openjdk` reader that emits
   `.lathe/` for the JDK's own GNU Make build by reading the per-module compile descriptors the build
   already persists (`_the.<module>.vardeps` / `_the.<module>_batch.filelist`). Code-intelligence MVP;
