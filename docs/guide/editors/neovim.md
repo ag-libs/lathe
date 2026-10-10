@@ -63,7 +63,7 @@ require("lathe").setup()
 
 | Option | Default | Meaning |
 |---|---|---|
-| `style.formatter` | none | global-default formatter for projects whose Spotless config does not provide one: `{ engine = "command", command = { … } }` or `{ engine = "command-file", command = { … } }` for an external tool (see below), or `{ engine = "none" }` |
+| `style.formatter` | none | global-default formatter, used only when neither `lathe-style.json` nor `.lathe/style.json` defines one (sync writes `none` for a Spotless formatter Lathe cannot run, which also wins): `{ engine = "command", command = { … } }` or `{ engine = "command-file", command = { … } }` for an external tool (see below), or `{ engine = "none" }` |
 | `style.indent` | `{ profile = "editorconfig" }` | global-default live-editing indent: `profile` `"editorconfig"` (follow `.editorconfig`, else a 4-space Java baseline) or `"google"` (2-space block, 4-space continuation); optional `block` / `continuation` widths override the profile |
 | `format_on_save` | `false` | wire format-on-save (takes effect whenever the server advertises a formatter) |
 | `capabilities` | `make_client_capabilities()` | LSP capabilities table |

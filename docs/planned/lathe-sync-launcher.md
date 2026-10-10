@@ -36,7 +36,9 @@ This has three costs:
 ## Non-goals
 
 - **The formatter.**
-  The delegated formatter's `%MVN%` token is out of scope; formatting is moving to an in-process, Spotless-based engine on an isolated classloader.
+  Formatting runs the project's pinned formatter in-process (see [Pinned Formatters](../done/lathe-pinned-formatters.md)), so it never runs the build.
+  The one exception is the opt-in `command-file` engine: its `%MVN%` token still picks `mvnd` / `./mvnw` / `mvn` in the server, for teams that choose to run `spotless:apply` on save.
+  That is a deliberate exception to the goal above, since the user configured a Maven command explicitly; routing it through a build-written script is possible later but not part of this design.
 - **The first sync.**
   The script only exists once a build has run, so the first sync stays a documented manual command (`mvn process-test-classes`, later `./gradlew latheSync`).
 - **Windows.**

@@ -282,8 +282,9 @@ Regression targets: `CodeActionTest.missingImports_mixedNames_partitionsCandidat
 
 Running the command **automatically** — on paste and/or as an on-save step alongside format-on-save —
 so the common case needs no manual invocation. A Neovim-client concern layered on the shipped command;
-keep it opt-in like `format_on_save`. Unused-import removal and import sorting (a fuller "organize
-imports") are separate later slices.
+keep it opt-in like `format_on_save`. Unused-import removal and import sorting for this command (a fuller
+"organize imports") are separate later slices; formatting with a pinned google-java-format or palantir already
+removes unused imports and reorders them as the project's Spotless does.
 
 ---
 

@@ -230,11 +230,13 @@ reused):
 - [Formatting and Indentation Profiles](done/lathe-formatting-profiles.md) — opt-in Google Java Format
   (`formatter = "google"`, gated server capability) split from always-on client indentation
   (`indent_style` = `editor_config` default | `google`); the range-aware / on-type formatting tail
-  (absorbs former gaps EG-029 and EG-028) remains deferred.
+  (absorbs former gaps EG-029 and EG-028) remains deferred. The formatter part is **superseded** by
+  [Pinned Formatters In-Process](done/lathe-pinned-formatters.md) (no bundled formatter; range formatting shipped).
 - [Pluggable Formatter](done/lathe-pluggable-formatter.md) — `formatter` also accepts
   `{ command = [...] }` to run an external tool server-side (buffer piped through stdin/stdout, run in
   the workspace root, stderr to `lsp.log`, failures leave the buffer unchanged) behind a
-  `FormatEngine` abstraction, with the in-process `"google"` engine as the default.
+  `FormatEngine` abstraction, with the in-process `"google"` engine as the default. The `command` engine
+  remains; the bundled `"google"` default is **superseded** by [Pinned Formatters In-Process](done/lathe-pinned-formatters.md).
 - [CamelCase Workspace Symbol Matching](done/lathe-workspace-symbol-camelcase.md) — resolves
   EG-005; IntelliJ-style CamelHumps abbreviation matching for `workspace/symbol`, scoped to
   reactor-owned types, merged alongside the existing exact-prefix search.

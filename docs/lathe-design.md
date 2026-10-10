@@ -100,7 +100,7 @@ lathe-server
     reads        → .lathe/ params files + workspace manifest
     reads/writes → .lathe/<rel>/classes/, .lathe/<rel>/test-classes/, .lathe/<rel>/generated-sources/
     reads        → ~/.cache/lathe/ (sources)
-    depends on   → lathe-core, lsp4j, google-java-format
+    depends on   → lathe-core, lsp4j (formatters are loaded from the project's pinned jars, not bundled)
 ```
 
 `lathe:init` does not install server binaries.
@@ -1103,19 +1103,18 @@ LSP initialization state, exit-code protocols, or crash-loop handling.
 ### Launcher script
 
 The launcher starts `lathe-server`.
-JDK compiler internals are exported/opened only to the third-party formatter module that requires them;
-grants for classpath javac plugins (e.g. Error Prone) come per workspace from `.lathe/jvm.args`
-(see [Workspace JVM Args](done/lathe-jvm-args.md)).
+It carries no JDK compiler grants of its own: the server needs none.
+Everything that does — classpath javac plugins (e.g. Error Prone) and the project's pinned formatter, both
+running in the unnamed module — gets its `--add-exports`/`--add-opens` per workspace from `.lathe/jvm.args`,
+written by sync (see [Workspace JVM Args](done/lathe-jvm-args.md) and
+[Pinned Formatters](done/lathe-pinned-formatters.md)).
 It is installed by `lathe:sync` as part of the server distribution.
 
 ```sh
 #!/bin/sh
-exec java <stdout guard> @.lathe/jvm.args ${LATHE_JVM_OPTS:-} \
-  # google-java-format is a named module on the module path; use module-qualified exports.
-  --add-exports jdk.compiler/com.sun.tools.javac.api=com.google.googlejavaformat \
-  ... (9 packages, no processing) ...
-  --add-opens jdk.compiler/com.sun.tools.javac.code=com.google.googlejavaformat \
-  --add-opens jdk.compiler/com.sun.tools.javac.comp=com.google.googlejavaformat \
+<JDK prologue: .lathe/java-home>
+exec "$java_bin" <stdout guard> @.lathe/jvm.args ${LATHE_JVM_OPTS:-} \
+  --add-modules java.net.http \
   --module-path /abs/.m2/.../lathe-server.jar:/abs/.m2/.../lathe-core.jar:... \
   -m io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer "$@"
 ```

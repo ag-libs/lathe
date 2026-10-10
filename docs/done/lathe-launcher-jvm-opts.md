@@ -31,14 +31,13 @@ e.g. `export LATHE_JVM_OPTS="--add-opens jdk.compiler/com.sun.tools.javac.jvm=AL
 
 `lathe:sync` renders `~/.cache/lathe/servers/<version>/lathe-launcher.sh` (and the MCP launcher) from
 `ServerInstaller`. Each script expands `LATHE_JVM_OPTS` after the stdout-guard flags and the
-workspace's `.lathe/jvm.args`, and before Lathe's fixed module and javac-access arguments:
+workspace's `.lathe/jvm.args`, and before Lathe's fixed arguments (the module setup; the MCP launcher, which
+runs on the class path, also carries its own javac grants):
 
 ```sh
 #!/bin/sh
 exec java -XX:+DisplayVMOutputToStderr -Xlog:disable -Xlog:all=warning:stderr $jvm_args ${LATHE_JVM_OPTS:-} \
   --add-modules java.net.http \
-  --add-exports jdk.compiler/com.sun.tools.javac.api=com.google.googlejavaformat \
-  ... \
   --module-path /abs/.m2/... \
   -m io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer "$@"
 ```

@@ -115,7 +115,10 @@ Lathe keeps its model in step with your build. Open files are analysed live as y
 sources or resources change **outside** the editor — a branch switch, a `git pull`, or an AI agent
 editing files — Lathe reconciles in-process automatically, recompiling the changed files in dependency
 order and cleaning up deletions with no Maven build. Only **POM / module-structure** changes prompt a
-full refresh.
+full refresh, which runs `.lathe/lathe-sync.sh` — a script the build writes, so the editor never needs to
+know your build tool. Run it yourself any time: `.lathe/lathe-sync.sh` refreshes everything,
+`.lathe/lathe-sync.sh app core` only those modules (with their upstream and dependents), and `--tests` also
+re-captures test launches without running the tests. It prints the exact build command first.
 
 ## OpenJDK
 
@@ -167,7 +170,7 @@ Like the editor, it reads from a populated `.lathe/`, so run a build once first.
 | `rename_symbol`        | rename a symbol across the whole reactor, applied to disk           |
 | `run_test`             | replay a test / class / package from captured bytecode — no build   |
 | `analyze_change`       | pre-edit impact of a symbol: override family, production/test reference counts, affected modules, relevant tests |
-| `verify_change`        | recompile a change set in-process, report new diagnostics per module + the scoped `mvn` for cross-module impact — no build |
+| `verify_change`        | recompile a change set in-process, report new diagnostics per module + the scoped `.lathe/lathe-sync.sh` for cross-module impact — no build |
 
 Full setup — registering with Claude Code, Codex, and Gemini, the result contract, and the freshness
 model — is in the [AI agents guide](docs/guide/ai-agents.md).
@@ -243,7 +246,8 @@ work without extra maps. Full keymaps, formatting options, and the neotest test-
 in the [Neovim cheatsheet](docs/guide/editors/neovim.md). Requires Neovim 0.12+.
 
 After that, it keeps up on its own: every Maven build (`mvn test`, `verify`, `install`) refreshes
-Lathe's configuration, and Lathe reconciles source changes made outside the editor in-process.
+Lathe's configuration, `.lathe/lathe-sync.sh` refreshes it on demand, and Lathe reconciles source changes
+made outside the editor in-process.
 The added build cost is marginal — Lathe runs your real `javac` and just records its parameters (plus a
 one-time resolve of dependency and JDK sources). See
 [what the build writes](docs/guide/installation.md#what-and-where-lathe-writes) for the details.
