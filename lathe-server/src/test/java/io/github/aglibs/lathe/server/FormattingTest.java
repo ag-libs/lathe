@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
@@ -19,6 +20,8 @@ class FormattingTest {
 
   private static final GjfFormatEngine ENGINE = FormatterFixtures.googleJavaFormat();
   private static final Path FILE = Path.of("Sample.java");
+  // palantir-java-format 2.98.0 (the fixture) predates JDK 27's javac.
+  private static final int PALANTIR_UNSUPPORTED_JDK = 27;
 
   // Formatting returns a minimal edit (only the changed region), so apply it to recover the result.
   private static String formattedText(final String source) throws Exception {
@@ -165,6 +168,9 @@ class FormattingTest {
 
   @Test
   void format_palantirJavaFormat_followsSpotlessPalantirStepAndFormatsRanges() throws Exception {
+    assumeTrue(
+        Runtime.version().feature() < PALANTIR_UNSUPPORTED_JDK,
+        "the fixture's palantir does not support this JDK");
     final GjfFormatEngine palantir = FormatterFixtures.palantirJavaFormat();
     final var source =
         """
@@ -281,6 +287,25 @@ class FormattingTest {
                    return 2;
                 }
                 """));
+  }
+
+  // The fixture's palantir reads a javac field JDK 27 removed when it removes an unused import
+  // (other
+  // files still format): the failure must name the JDK, not suggest a re-sync. Once a palantir
+  // release supports JDK 27, this fails: bump the fixture and drop the test.
+  @Test
+  void format_palantirOnUnsupportedJdk_reportsUnsupportedJava() {
+    assumeTrue(
+        Runtime.version().feature() >= PALANTIR_UNSUPPORTED_JDK,
+        "the fixture's palantir supports this JDK");
+
+    assertThatThrownBy(
+            () ->
+                JavaFormatter.format(
+                    FormatterFixtures.palantirJavaFormat(),
+                    "import java.util.List;\nimport java.util.Set;\n\nclass A {\n  List<String> names;\n}\n",
+                    FILE))
+        .hasMessageContaining("does not support Java %d".formatted(Runtime.version().feature()));
   }
 
   @Test

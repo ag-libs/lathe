@@ -32,13 +32,24 @@ final class FormatterLoader {
         throw cause;
       }
 
-      // Typically the javac-internals grants missing from the server JVM (a .lathe/ older than
-      // the last lathe:sync, or a launcher not started from the workspace root). Reported as a
-      // formatting failure rather than escaping as an internal error.
+      // Reported as a formatting failure rather than escaping as an internal error. Access is
+      // refused when the server JVM lacks the javac-internals grants (a .lathe/ older than the
+      // last lathe:sync, or a launcher not started from the workspace root); any other linkage
+      // failure is a formatter release that does not support this JDK's javac.
+      if (e.getCause() instanceof final IllegalAccessError error) {
+        throw new IllegalStateException(
+            "%s cannot access javac; run lathe:sync and restart the server: %s"
+                .formatted(method.getDeclaringClass().getName(), error.getMessage()),
+            error);
+      }
+
       if (e.getCause() instanceof final LinkageError error) {
         throw new IllegalStateException(
-            "%s cannot run in this server JVM; run lathe:sync and restart the server: %s"
-                .formatted(method.getDeclaringClass().getName(), error.getMessage()),
+            "%s does not support Java %d: %s"
+                .formatted(
+                    method.getDeclaringClass().getName(),
+                    Runtime.version().feature(),
+                    error.getMessage()),
             error);
       }
 

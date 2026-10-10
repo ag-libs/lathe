@@ -22,10 +22,21 @@ class FormatterLoaderTest {
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("run lathe:sync")
         .hasCauseInstanceOf(IllegalAccessError.class);
+    assertThatThrownBy(
+            () ->
+                FormatterLoader.invoke(
+                    FormatterLoaderTest.class.getDeclaredMethod("predatesThisJdk"), null))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("does not support Java %d".formatted(Runtime.version().feature()))
+        .hasCauseInstanceOf(NoSuchFieldError.class);
   }
 
   static void failsToParse() throws IOException {
     throw new IOException("syntax error");
+  }
+
+  static void predatesThisJdk() {
+    throw new NoSuchFieldError("JCCompilationUnit.endPositions");
   }
 
   static void lacksJavacGrants() {
