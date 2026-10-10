@@ -140,6 +140,21 @@ final class FileUtilTest {
     assertThat(dest).hasContent("new");
   }
 
+  @Test
+  void writeIfChanged_newSameAndChangedContent_writesOnlyWhenDifferent() throws IOException {
+    final Path dir = tempDir.resolve("nested");
+    final Path file = dir.resolve("args");
+
+    assertThat(FileUtil.writeIfChanged(dir, file, "a\n", false)).isTrue();
+    assertThat(FileUtil.writeIfChanged(dir, file, "a\n", false)).isFalse();
+    assertThat(FileUtil.writeIfChanged(dir, file, "b\n", false)).isTrue();
+    assertThat(file).hasContent("b");
+    // Same content but not yet executable: rewritten so the launcher can run.
+    assertThat(FileUtil.writeIfChanged(dir, file, "b\n", true)).isTrue();
+    assertThat(Files.isExecutable(file)).isTrue();
+    assertThat(FileUtil.writeIfChanged(dir, file, "b\n", true)).isFalse();
+  }
+
   private static void writeEmpty(final Path file) throws IOException {
     Files.createDirectories(file.getParent());
     Files.writeString(file, "");

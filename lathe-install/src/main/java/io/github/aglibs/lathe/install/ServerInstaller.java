@@ -3,7 +3,6 @@ package io.github.aglibs.lathe.install;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -120,15 +119,12 @@ public final class ServerInstaller {
   private void writeLauncher(final Path versionDir, final String scriptName, final String script)
       throws IOException {
     final var launcherScript = versionDir.resolve(scriptName);
-    if (Files.exists(launcherScript)
-        && Files.isExecutable(launcherScript)
-        && script.equals(Files.readString(launcherScript, StandardCharsets.UTF_8))) {
+    final boolean isUpdate = Files.exists(launcherScript);
+    if (!FileUtil.writeIfChanged(versionDir, launcherScript, script, true)) {
       log.debug("[server] %s unchanged — skipping write".formatted(scriptName));
       return;
     }
 
-    final boolean isUpdate = Files.exists(launcherScript);
-    FileUtil.writeAtomically(versionDir, launcherScript, script, true);
     log.info(
         "[server] %s %s at %s"
             .formatted(isUpdate ? "updated" : "installed", scriptName, launcherScript));

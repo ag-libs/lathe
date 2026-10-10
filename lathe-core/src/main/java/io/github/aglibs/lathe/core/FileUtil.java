@@ -92,6 +92,22 @@ public final class FileUtil {
     copyDir(src, dest);
   }
 
+  // Writes content atomically (creating dir) unless target already holds it; returns whether it
+  // wrote, so callers log only real changes and avoid touching an unchanged file's mtime.
+  public static boolean writeIfChanged(
+      final Path dir, final Path target, final String content, final boolean executable)
+      throws IOException {
+    if (Files.exists(target)
+        && (!executable || Files.isExecutable(target))
+        && content.equals(Files.readString(target, StandardCharsets.UTF_8))) {
+      return false;
+    }
+
+    Files.createDirectories(dir);
+    writeAtomically(dir, target, content, executable);
+    return true;
+  }
+
   public static void writeAtomically(
       final Path dir, final Path target, final String content, final boolean executable)
       throws IOException {

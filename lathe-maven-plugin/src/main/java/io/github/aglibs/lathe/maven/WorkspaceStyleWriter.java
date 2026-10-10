@@ -9,8 +9,6 @@ import io.github.aglibs.lathe.core.schema.IndentSpec;
 import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
 import io.github.aglibs.lathe.install.SyncException;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -53,14 +51,10 @@ final class WorkspaceStyleWriter {
     final var stylePath = latheDir.resolve(LatheLayout.STYLE_FILE);
     final var content = Json.toJson(style);
     try {
-      Files.createDirectories(latheDir);
-      if (Files.exists(stylePath)
-          && content.equals(Files.readString(stylePath, StandardCharsets.UTF_8))) {
-        return style;
+      if (FileUtil.writeIfChanged(latheDir, stylePath, content, false)) {
+        log.info("[sync] style formatter=%s".formatted(style.formatter().engine()));
       }
 
-      FileUtil.writeAtomically(latheDir, stylePath, content, false);
-      log.info("[sync] style formatter=%s".formatted(style.formatter().engine()));
       return style;
     } catch (final IOException e) {
       throw new SyncException("lathe:sync failed to write style.json", e);

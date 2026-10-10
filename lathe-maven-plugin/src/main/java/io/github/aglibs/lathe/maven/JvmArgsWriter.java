@@ -69,13 +69,10 @@ final class JvmArgsWriter {
       }
 
       final var content = String.join("\n", args).concat("\n");
-      Files.createDirectories(latheDir);
-      if (Files.exists(argsPath)
-          && content.equals(Files.readString(argsPath, StandardCharsets.UTF_8))) {
+      if (!FileUtil.writeIfChanged(latheDir, argsPath, content, false)) {
         return;
       }
 
-      FileUtil.writeAtomically(latheDir, argsPath, content, false);
       log.info("[sync] jvm.args %d module-access flag(s)".formatted(args.size()));
     } catch (final IOException e) {
       throw new SyncException("lathe:sync failed to write jvm.args", e);
