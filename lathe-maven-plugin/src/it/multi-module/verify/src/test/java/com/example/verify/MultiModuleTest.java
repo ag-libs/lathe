@@ -63,11 +63,17 @@ class MultiModuleTest {
     final var content = read(launcher);
     assertThat(content).startsWith("#!/bin/sh\n");
     assertThat(content).contains("--add-modules java.net.http");
-    assertThat(content).contains("--add-exports jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED");
-    assertThat(content).contains("--add-opens jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED");
+    assertThat(content).contains("@.lathe/jvm.args");
+    assertThat(content).doesNotContain("=ALL-UNNAMED");
     assertThat(content).contains("--add-exports jdk.compiler/com.sun.tools.javac.api=com.google.googlejavaformat");
     assertThat(content).contains("--module-path");
     assertThat(content).contains("-m io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer");
+  }
+
+  // The fixture's build declares no javac-plugin module grants, so sync writes no jvm.args.
+  @Test
+  void sync_noBuildGrants_noJvmArgsFile() {
+    assertThat(lathe("jvm.args")).doesNotExist();
   }
 
   // --- sync: workspace.json ---
