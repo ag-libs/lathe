@@ -64,9 +64,19 @@ The front-end, which knows its outputs, records them; downstream looks them up i
 
 Paths are workspace-relative.
 The Maven sync writes each module's `outputDirectory`, `testOutputDirectory`, and its packaged main and test-jar file names.
+It extends `ReactorProjects.reactorOutputDirs`, which already maps each reactor module to its output directory for `MainLaunchWriter`, rather than walking the projects a second time.
+The list is always whole-reactor: a partial (`-pl`) sync already skips writing `workspace.json`, so `outputs` is never half-merged.
+
+Jar names are computed, not read.
+The sync runs at `process-test-classes`, before `package`, so the artifact file does not exist yet;
+the name comes from `build.finalName` plus the test-jar classifier (default `tests`, configurable on `maven-jar-plugin`).
+Other classified jars (for example a shaded jar) are not listed and pass through unchanged, a known limit rather than a guess.
+
 One `lathe-core` helper resolves a path through the map;
 a path not in the map passes through unchanged, which fixes the in-repo jar case.
 `ReactorRewrite` and `ModuleSourceConfig.remapPath` both delegate to it, so the two can no longer disagree.
+This changes `ReactorRewrite.toLathe(path, workspaceRoot)`: it takes the output map instead of guessing from the root,
+so its callers (`LaunchPlan`, `CompletenessGate`, `ResourceRootIndex`) are handed the loaded manifest.
 OpenJDK keeps `externalOutput` (its outputs are read in place, not mirrored); it writes no `outputs` entries.
 
 **Alternative considered:** derive the map from each module's `lsp-params` `outputDir`.
@@ -132,22 +142,29 @@ It uses the module registry instead (the module whose source roots contain the f
 Maven-only constants in `LatheLayout` (`POM_XML`, `TARGET_DIR`, `MVN_DIR`, `MAVEN_OPTS_PROPERTY`, the compiler-plugin coordinates, `SYNC_PHASE`, `SYNC_COMMAND`) move into a nested `LatheLayout.Maven` class.
 A test in each downstream module fails if its main sources reference `LatheLayout.Maven`, so a new Maven assumption is caught at review time rather than by the next front-end.
 
+**Alternative considered:** put the Maven constants in a non-exported `lathe-core` package, so the compiler rejects them.
+That works only for `lathe-server`, the one JPMS module;
+the MCP server and `lathe-test-runner` load `lathe-core` from the classpath, where package encapsulation does not apply, so the test is needed anyway.
+
 ## Verification
 
 - The Maven invoker tests (`multi-module`, `LspSmokeTest`, and the rest) pass unchanged; they are the proof that Maven behavior did not move.
 - Output-map unit tests use Maven-shaped **and** Gradle-shaped paths (`build/classes/java/main`, `build/libs/app.jar`), proving neutrality without a Gradle build.
 - A regression test for an in-repo jar (`libs/vendor.jar`) passing through unchanged.
+- The Maven sync writes jar entries for a default and a custom test-jar classifier, before `package` has run.
 
 ## Slicing
 
 1. **Contract document** — docs only; settles the file list the later slices reference.
-2. **Output map** — `workspace.json` `outputs`, the `lathe-core` helper, `ReactorRewrite` and `remapPath` delegating, the Maven sync writing the entries.
+2. **Output map** — `workspace.json` `outputs`, the `lathe-core` helper, `ReactorRewrite` and `remapPath` delegating (callers passed the manifest), the Maven sync writing the entries.
 3. **Build files and texts** — `buildFiles`, `BUILD_FILES_CHANGED`, server and MCP texts, the capture `kind`.
 4. **Client** — Neovim messages and neotest directory skip.
 5. **`%MODULE%` and the `LatheLayout.Maven` guard.**
 
-## Open decisions
+## Decisions
 
-1. **Output map location** — `workspace.json` (recommended, one read, already loaded by every consumer) or a separate `.lathe/outputs.json`.
-2. **First-sync wording** — list every front-end's first command in the remediation, or detect the build tool from the root (`pom.xml` vs `settings.gradle`) and name only that one.
-   Listing keeps the server free of build detection; detection gives a shorter message.
+1. **Output map location** — `workspace.json`.
+   Every consumer already loads it; a separate `.lathe/outputs.json` would be a second read that can drift from the manifest.
+2. **First-sync wording** — list every front-end's first command in the remediation, rather than detecting the build tool from the root (`pom.xml` vs `settings.gradle`).
+   Listing keeps the server free of build detection, and with Maven as the only front-end the message is unchanged.
+   Revisit detection if the list grows long.
