@@ -16,6 +16,8 @@
 
   <properties>
     <maven-invoker-plugin.version>3.10.1</maven-invoker-plugin.version>
+    <!-- The spotless-lib that spotless-maven-plugin ${spotless.version} ships. -->
+    <spotless-lib.version>4.10.3</spotless-lib.version>
   </properties>
 
   <dependencies>
@@ -78,6 +80,32 @@
 
   <build>
     <plugins>
+      <plugin>
+        <!-- Tests read Spotless's step defaults from a real spotless-lib in target/, loaded in an
+             isolated classloader the way sync loads a project's; it is never on the test class path. -->
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>copy-test-spotless-lib</id>
+            <goals>
+              <goal>copy</goal>
+            </goals>
+            <phase>process-test-resources</phase>
+            <configuration>
+              <outputDirectory>${project.build.directory}/test-spotless</outputDirectory>
+              <artifactItems>
+                <artifactItem>
+                  <groupId>com.diffplug.spotless</groupId>
+                  <artifactId>spotless-lib</artifactId>
+                  <version>${spotless-lib.version}</version>
+                  <destFileName>spotless-lib.jar</destFileName>
+                </artifactItem>
+              </artifactItems>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
       <plugin>
         <groupId>com.diffplug.spotless</groupId>
         <artifactId>spotless-maven-plugin</artifactId>

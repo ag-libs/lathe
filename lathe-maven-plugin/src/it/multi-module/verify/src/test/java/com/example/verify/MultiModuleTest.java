@@ -71,10 +71,18 @@ class MultiModuleTest {
     assertThat(content).contains("-m io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer");
   }
 
-  // The fixture's build declares no javac-plugin module grants, so sync writes no jvm.args.
+  // The build itself declares no module grants; jvm.args holds only what the project's pinned
+  // google-java-format needs to run in the server.
   @Test
-  void sync_noBuildGrants_noJvmArgsFile() {
-    assertThat(lathe("jvm.args")).doesNotExist();
+  void sync_spotlessGoogleJavaFormat_jvmArgsHoldsFormatterGrants() throws IOException {
+    assertThat(Files.readAllLines(lathe("jvm.args")))
+        .containsExactly(
+            "--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED",
+            "--add-exports=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED",
+            "--add-exports=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED",
+            "--add-exports=jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED",
+            "--add-exports=jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED",
+            "--add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED");
   }
 
   // Its behavior (goal, scope, tool, JDK) is covered by SyncScriptWriterTest, which runs it.
@@ -114,6 +122,11 @@ class MultiModuleTest {
     final var content = read(style);
     assertThat(content).contains("\"engine\": \"google\"");
     assertThat(content).contains("\"profile\": \"google\"");
+    // Spotless's own defaults, and the resolved formatter jars from the local repository.
+    assertThat(content).containsPattern("\"version\": \"\\d+\\.\\d+");
+    assertThat(content).contains("\"groupArtifact\": \"com.google.googlejavaformat:google-java-format\"");
+    assertThat(content).contains("\"reorderImports\": \"false\"");
+    assertThat(content).containsPattern("\"classpath\": \\[\\s*\"[^\"]+google-java-format-[^\"]+\\.jar\"");
   }
 
   @Test

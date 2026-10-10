@@ -67,7 +67,6 @@
              (isolated classloader); it is never on the server's own class path. -->
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-dependency-plugin</artifactId>
-        <version>3.11.0</version>
         <executions>
           <execution>
             <id>copy-test-formatters</id>

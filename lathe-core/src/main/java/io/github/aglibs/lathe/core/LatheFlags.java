@@ -1,5 +1,8 @@
 package io.github.aglibs.lathe.core;
 
+import java.util.List;
+import java.util.stream.Stream;
+
 public final class LatheFlags {
 
   public static final String DISABLED = "lathe.disabled";
@@ -33,6 +36,17 @@ public final class LatheFlags {
   public static final boolean FORMAT_REFLOW_LONG_STRINGS_DEFAULT = false;
   public static final boolean FORMAT_REORDER_IMPORTS_DEFAULT = false;
   public static final boolean FORMAT_JAVADOC_DEFAULT = true;
+  public static final List<String> FORMAT_STEP_OPTIONS =
+      List.of(FORMAT_REFLOW_LONG_STRINGS, FORMAT_REORDER_IMPORTS, FORMAT_JAVADOC);
+  // A custom build of the formatter (Spotless <groupArtifact>), groupId:artifactId.
+  public static final String FORMAT_GROUP_ARTIFACT = "groupArtifact";
+
+  // The javac internals google-java-format and palantir reach into. A pinned formatter runs in the
+  // unnamed module (an isolated classloader), so sync grants them to ALL-UNNAMED in jvm.args.
+  public static final List<String> FORMATTER_JAVAC_GRANTS =
+      Stream.of("api", "code", "file", "parser", "tree", "util")
+          .map("--add-exports=jdk.compiler/com.sun.tools.javac.%s=ALL-UNNAMED"::formatted)
+          .toList();
 
   // Coarse client<->server contract version. The server advertises it via
   // capabilities.experimental.latheProtocol; the standalone client compares it against its own

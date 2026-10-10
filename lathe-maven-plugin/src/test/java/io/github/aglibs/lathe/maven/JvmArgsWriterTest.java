@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.maven;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import java.io.StringReader;
 import java.nio.file.Files;
@@ -22,7 +23,7 @@ class JvmArgsWriterTest {
   @TempDir Path workspaceRoot;
 
   @Test
-  void write_forkedJvmConfigAndMavenOptsGrants_writesDedupedAccessFlags() throws Exception {
+  void write_buildAndFormatterGrants_writesDedupedAccessFlags() throws Exception {
     // Forked style: -J flags on the compiler plugin, in both the =-joined and two-token forms, the
     // same grant repeated in an execution, and a heap flag that must not reach the server.
     final var forked =
@@ -56,7 +57,13 @@ class JvmArgsWriterTest {
         " --add-opens=java.base/java.lang=ALL-UNNAMED -Xmx1g"
             + "  --add-exports jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED ";
 
-    writer().write(workspaceRoot, List.of(forked, legacy, new MavenProject()), mavenOpts);
+    // The pinned formatter's grants overlap the build's (api, tree, util) and add the rest.
+    writer()
+        .write(
+            workspaceRoot,
+            List.of(forked, legacy, new MavenProject()),
+            mavenOpts,
+            LatheFlags.FORMATTER_JAVAC_GRANTS);
 
     assertThat(Files.readAllLines(jvmArgs()))
         .containsExactly(
@@ -64,7 +71,10 @@ class JvmArgsWriterTest {
             "--add-opens=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED",
             "--add-exports=jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED",
             "--add-opens=jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED",
-            "--add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED");
+            "--add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED",
+            "--add-exports=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED",
+            "--add-exports=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED",
+            "--add-exports=jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED");
   }
 
   @Test
@@ -75,7 +85,12 @@ class JvmArgsWriterTest {
     writeJvmConfig("-Xmx2g\n");
     final var project = projectWithCompilerArgs(compilerArgs("-J-Xmx256m", "-parameters"));
 
-    writer().write(workspaceRoot, List.of(project), "--add-opens=java.base/java.lang=ALL-UNNAMED");
+    writer()
+        .write(
+            workspaceRoot,
+            List.of(project),
+            "--add-opens=java.base/java.lang=ALL-UNNAMED",
+            List.of());
 
     assertThat(jvmArgs()).doesNotExist();
   }

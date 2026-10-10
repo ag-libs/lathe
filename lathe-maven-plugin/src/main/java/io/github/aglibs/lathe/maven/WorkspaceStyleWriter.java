@@ -13,6 +13,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.apache.maven.model.Plugin;
 import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.project.MavenProject;
@@ -25,19 +28,27 @@ final class WorkspaceStyleWriter {
 
   private static final String SPOTLESS_PLUGIN_KEY = "com.diffplug.spotless:spotless-maven-plugin";
 
+  private final FormatterResolver resolver;
   private final Log log;
 
-  WorkspaceStyleWriter(final Log log) {
+  WorkspaceStyleWriter(final FormatterResolver resolver, final Log log) {
+    this.resolver = resolver;
     this.log = log;
   }
 
-  void write(final Path workspaceRoot, final MavenProject rootProject) {
-    final WorkspaceStyleData style = detect(rootProject);
-    if (style == null) {
+  // Writes the style with its formatter resolved, and returns it (null when the build has no
+  // Spotless Java formatter) so the caller can grant what the formatter needs.
+  WorkspaceStyleData write(final Path workspaceRoot, final MavenProject rootProject) {
+    final Plugin spotless = spotlessPlugin(rootProject);
+    final WorkspaceStyleData detected = detect(spotless);
+    if (detected == null) {
       log.debug("[sync] no spotless java formatter — skipping style.json");
-      return;
+      return null;
     }
 
+    final var style =
+        new WorkspaceStyleData(
+            resolver.resolve(detected.formatter(), spotless.getVersion()), detected.indent());
     final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
     final var stylePath = latheDir.resolve(LatheLayout.STYLE_FILE);
     final var content = Json.toJson(style);
@@ -45,25 +56,32 @@ final class WorkspaceStyleWriter {
       Files.createDirectories(latheDir);
       if (Files.exists(stylePath)
           && content.equals(Files.readString(stylePath, StandardCharsets.UTF_8))) {
-        return;
+        return style;
       }
 
       FileUtil.writeAtomically(latheDir, stylePath, content, false);
       log.info("[sync] style formatter=%s".formatted(style.formatter().engine()));
+      return style;
     } catch (final IOException e) {
       throw new SyncException("lathe:sync failed to write style.json", e);
     }
   }
 
   static WorkspaceStyleData detect(final MavenProject rootProject) {
-    final Plugin spotless =
-        rootProject.getBuild() == null
-            ? null
-            : rootProject.getBuild().getPluginsAsMap().get(SPOTLESS_PLUGIN_KEY);
+    return detect(spotlessPlugin(rootProject));
+  }
+
+  private static WorkspaceStyleData detect(final Plugin spotless) {
     return spotless == null
         ? null
         : fromConfig(
             (Xpp3Dom) spotless.getConfiguration(), LatheFlags.isSpotlessDelegationEnabled());
+  }
+
+  private static Plugin spotlessPlugin(final MavenProject rootProject) {
+    return rootProject.getBuild() == null
+        ? null
+        : rootProject.getBuild().getPluginsAsMap().get(SPOTLESS_PLUGIN_KEY);
   }
 
   // Maps a spotless <configuration> to a style, or null when it formats no Java. google runs
@@ -99,12 +117,30 @@ final class WorkspaceStyleWriter {
   }
 
   private static WorkspaceStyleData googleStyle(final Xpp3Dom googleJavaFormat) {
-    final Xpp3Dom styleEl = googleJavaFormat.getChild("style");
-    final boolean aosp = styleEl != null && "AOSP".equalsIgnoreCase(styleEl.getValue().trim());
-    return aosp
-        ? new WorkspaceStyleData(
-            new FormatterSpec("aosp", List.of()), new IndentSpec("google", 4, 8))
-        : new WorkspaceStyleData(
-            new FormatterSpec("google", List.of()), new IndentSpec("google", 2, 4));
+    final boolean aosp = "AOSP".equalsIgnoreCase(childValue(googleJavaFormat, "style"));
+    final var formatter =
+        new FormatterSpec(
+            aosp ? LatheFlags.FORMATTER_AOSP : LatheFlags.FORMATTER_GOOGLE,
+            List.of(),
+            childValue(googleJavaFormat, "version"),
+            stepOptions(googleJavaFormat),
+            List.of());
+    return new WorkspaceStyleData(
+        formatter, aosp ? new IndentSpec("google", 4, 8) : new IndentSpec("google", 2, 4));
+  }
+
+  // The step's configured options, keyed by their Spotless element names; unset ones are left for
+  // FormatterResolver to fill with Spotless's defaults.
+  private static Map<String, String> stepOptions(final Xpp3Dom step) {
+    return Stream.concat(
+            Stream.of(LatheFlags.FORMAT_GROUP_ARTIFACT), LatheFlags.FORMAT_STEP_OPTIONS.stream())
+        .filter(option -> !childValue(step, option).isEmpty())
+        .collect(
+            Collectors.toUnmodifiableMap(option -> option, option -> childValue(step, option)));
+  }
+
+  private static String childValue(final Xpp3Dom parent, final String name) {
+    final Xpp3Dom child = parent.getChild(name);
+    return child == null || child.getValue() == null ? "" : child.getValue().trim();
   }
 }

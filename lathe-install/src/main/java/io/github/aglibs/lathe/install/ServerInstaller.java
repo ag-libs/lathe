@@ -16,16 +16,7 @@ import org.apache.maven.artifact.versioning.ComparableVersion;
 import org.apache.maven.plugin.logging.Log;
 import org.eclipse.aether.RepositorySystem;
 import org.eclipse.aether.RepositorySystemSession;
-import org.eclipse.aether.artifact.DefaultArtifact;
-import org.eclipse.aether.collection.CollectRequest;
-import org.eclipse.aether.graph.Dependency;
 import org.eclipse.aether.repository.RemoteRepository;
-import org.eclipse.aether.resolution.ArtifactRequest;
-import org.eclipse.aether.resolution.ArtifactResolutionException;
-import org.eclipse.aether.resolution.ArtifactResult;
-import org.eclipse.aether.resolution.DependencyRequest;
-import org.eclipse.aether.resolution.DependencyResolutionException;
-import org.eclipse.aether.util.artifact.JavaScopes;
 
 public final class ServerInstaller {
 
@@ -41,8 +32,7 @@ public final class ServerInstaller {
   private static final String STDOUT_GUARD_JVM_OPTS =
       "-XX:+DisplayVMOutputToStderr -Xlog:disable -Xlog:all=warning:stderr";
 
-  private final RepositorySystem repositorySystem;
-  private final RepositorySystemSession repoSession;
+  private final ArtifactResolver artifactResolver;
   private final List<RemoteRepository> remoteRepositories;
   private final Log log;
 
@@ -51,8 +41,7 @@ public final class ServerInstaller {
       final RepositorySystemSession repoSession,
       final List<RemoteRepository> remoteRepositories,
       final Log log) {
-    this.repositorySystem = repositorySystem;
-    this.repoSession = repoSession;
+    this.artifactResolver = new ArtifactResolver(repositorySystem, repoSession);
     this.remoteRepositories = remoteRepositories;
     this.log = log;
   }
@@ -150,25 +139,11 @@ public final class ServerInstaller {
   }
 
   Path resolveRunnerJar() throws SyncException {
-    final var artifact =
-        new DefaultArtifact(
-            PluginProps.groupId(),
-            PluginProps.TEST_RUNNER_ARTIFACT_ID,
-            "jar",
-            PluginProps.version());
-    final var request = new ArtifactRequest(artifact, remoteRepositories, null);
-    try {
-      return repositorySystem
-          .resolveArtifact(repoSession, request)
-          .getArtifact()
-          .getFile()
-          .toPath();
-    } catch (final ArtifactResolutionException e) {
-      throw new SyncException(
-          "lathe:sync failed to resolve lathe-test-runner artifact for version %s"
-              .formatted(PluginProps.version()),
-          e);
-    }
+    return artifactResolver.resolve(
+        "%s:%s:%s"
+            .formatted(
+                PluginProps.groupId(), PluginProps.TEST_RUNNER_ARTIFACT_ID, PluginProps.version()),
+        remoteRepositories);
   }
 
   private List<Path> resolveServerJars() throws SyncException {
@@ -231,22 +206,8 @@ public final class ServerInstaller {
 
   private List<Path> resolveTransitiveJars(
       final String groupId, final String artifactId, final String version) throws SyncException {
-    final var artifact = new DefaultArtifact(groupId, artifactId, "jar", version);
-    final var dep = new Dependency(artifact, JavaScopes.RUNTIME);
-    final var collectRequest = new CollectRequest(dep, remoteRepositories);
-    final var depRequest = new DependencyRequest(collectRequest, null);
-    try {
-      return repositorySystem
-          .resolveDependencies(repoSession, depRequest)
-          .getArtifactResults()
-          .stream()
-          .filter(ArtifactResult::isResolved)
-          .map(r -> r.getArtifact().getFile().toPath())
-          .toList();
-    } catch (final DependencyResolutionException e) {
-      throw new SyncException(
-          "lathe:sync failed to resolve %s:%s:%s".formatted(groupId, artifactId, version), e);
-    }
+    return artifactResolver.resolveTransitive(
+        "%s:%s:%s".formatted(groupId, artifactId, version), remoteRepositories);
   }
 
   static String renderLauncherScript(final String modulePath) {
