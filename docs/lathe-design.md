@@ -61,8 +61,9 @@ Reads params files written by the shim and the workspace manifest written by the
 It replays Maven's captured javac options but drops forked-launcher-only `-J` flags:
 these forward JVM options to a forked `javac` executable (`maven-compiler-plugin` `fork=true`), and the
 in-process javac API has no launcher to receive them — it rejects them as `invalid flag`, where
-Maven's own non-forked compiler would ignore them. JVM access the in-process compiler genuinely needs
-is granted by the launcher (and extensible via `LATHE_JVM_OPTS`), not by per-project `-J`
+Maven's own non-forked compiler would ignore them. The module grants among them (and in
+`.mvn/jvm.config`) reach the server JVM through `.lathe/jvm.args`, written by sync
+(see [Workspace JVM Args](done/lathe-jvm-args.md)); anything else via `LATHE_JVM_OPTS`
 (see [Launcher JVM Options](done/lathe-launcher-jvm-opts.md)).
 It reads dependency/JDK sources from `~/.cache/lathe/`.
 `WorkspaceWatcher` watches `workspace.json` and reactor POM fingerprints,
@@ -1096,20 +1097,14 @@ LSP initialization state, exit-code protocols, or crash-loop handling.
 ### Launcher script
 
 The launcher starts `lathe-server`.
-JDK compiler internals are exported/opened only to classpath javac plugins and third-party formatter modules that
-require them.
+JDK compiler internals are exported/opened only to the third-party formatter module that requires them;
+grants for classpath javac plugins (e.g. Error Prone) come per workspace from `.lathe/jvm.args`
+(see [Workspace JVM Args](done/lathe-jvm-args.md)).
 It is installed by `lathe:sync` as part of the server distribution.
 
 ```sh
 #!/bin/sh
-exec java \
-  # Classpath javac plugins (e.g. Error Prone via -Xplugin:) run in the unnamed module
-  # and access javac internals directly. Without ALL-UNNAMED exports, didSave full passes
-  # that replay -Xplugin:ErrorProne throw IllegalAccessError.
-  --add-exports jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED \
-  ... (all 10 packages) ...
-  --add-opens jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED \
-  --add-opens jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED \
+exec java <stdout guard> @.lathe/jvm.args ${LATHE_JVM_OPTS:-} \
   # google-java-format is a named module on the module path; use module-qualified exports.
   --add-exports jdk.compiler/com.sun.tools.javac.api=com.google.googlejavaformat \
   ... (9 packages, no processing) ...

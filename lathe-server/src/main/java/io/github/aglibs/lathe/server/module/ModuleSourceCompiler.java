@@ -358,7 +358,8 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
 
   // -J flags forward JVM options to a forked javac executable (fork=true); the in-process javac API
   // has no launcher to receive them and rejects them as invalid flags, where Maven's own non-forked
-  // compiler would ignore them. Lost JVM access can be restored via LATHE_JVM_OPTS.
+  // compiler would ignore them. Sync carries their --add-exports/--add-opens over to the server JVM
+  // via .lathe/jvm.args; anything else can be restored via LATHE_JVM_OPTS.
   static List<String> dropForkedLauncherArgs(final List<String> args) {
     final Map<Boolean, List<String>> partitioned =
         args.stream().collect(Collectors.partitioningBy(arg -> arg.startsWith("-J")));
@@ -366,7 +367,7 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
     if (!dropped.isEmpty()) {
       LOG.info(
           () ->
-              "[compile] dropped %d forked-javac -J option(s) %s; set LATHE_JVM_OPTS to extend in-process access"
+              "[compile] dropped %d forked-javac -J option(s) %s; module access is applied via .lathe/jvm.args, others need LATHE_JVM_OPTS"
                   .formatted(dropped.size(), dropped));
     }
 

@@ -29,9 +29,8 @@ import org.eclipse.aether.util.artifact.JavaScopes;
 
 public final class ServerInstaller {
 
-  // jdk.compiler internals the in-process javac needs. Shared by both launchers: the editor grants
-  // them to ALL-UNNAMED (Error Prone) and to the google-java-format module; the MCP launcher runs
-  // entirely on the classpath, so it grants them to ALL-UNNAMED only.
+  // jdk.compiler internals the MCP launcher grants to ALL-UNNAMED: it runs entirely on the
+  // classpath, so google-java-format is in the unnamed module there.
   private static final String[] JAVAC_EXPORT_PACKAGES = {
     "api", "code", "comp", "file", "main", "model", "parser", "processing", "tree", "util"
   };
@@ -257,23 +256,22 @@ public final class ServerInstaller {
     // references HttpClient at class-load time and throws ClassNotFoundException if java.net.http
     // is absent from the module graph. jdk.unsupported is declared in module-info.java.
     //
-    // Classpath javac plugins (e.g. Error Prone, loaded via -Xplugin: on the processor path) run
-    // in the unnamed module. They access javac internals directly and need ALL-UNNAMED exports.
-    // Without these, didSave full passes that replay -Xplugin:ErrorProne throw IllegalAccessError.
+    // Classpath javac plugins (e.g. Error Prone) run in the unnamed module and need javac
+    // internals exported to ALL-UNNAMED. Those grants are per workspace, in .lathe/jvm.args, copied
+    // from the build's own -J / .mvn/jvm.config flags; the server itself needs none.
     //
     // google-java-format is a named module on the module path and uses module-qualified exports.
     return """
         #!/bin/sh
-        %sexec "$java_bin" %s ${LATHE_JVM_OPTS:-} \\
+        %s%sexec "$java_bin" %s $jvm_args ${LATHE_JVM_OPTS:-} \\
           --add-modules java.net.http \\
-        %s%s%s%s  --module-path %s \\
+        %s%s  --module-path %s \\
           -m io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer "$@"
         """
         .formatted(
             javaResolvePrologue(),
+            jvmArgsPrologue(),
             STDOUT_GUARD_JVM_OPTS,
-            javacAccessLines("--add-exports", "ALL-UNNAMED", JAVAC_EXPORT_PACKAGES),
-            javacAccessLines("--add-opens", "ALL-UNNAMED", JAVAC_OPEN_PACKAGES),
             javacAccessLines(
                 "--add-exports",
                 "com.google.googlejavaformat",
@@ -299,13 +297,14 @@ public final class ServerInstaller {
     // here (google-java-format is unnamed on the classpath too, so the same exports cover it).
     return """
         #!/bin/sh
-        %sexec "$java_bin" %s ${LATHE_JVM_OPTS:-} \\
+        %s%sexec "$java_bin" %s $jvm_args ${LATHE_JVM_OPTS:-} \\
           --add-modules java.net.http \\
         %s%s  -cp %s \\
           io.github.aglibs.lathe.mcp.LatheMcpServer "$@"
         """
         .formatted(
             javaResolvePrologue(),
+            jvmArgsPrologue(),
             STDOUT_GUARD_JVM_OPTS,
             javacAccessLines("--add-exports", "ALL-UNNAMED", JAVAC_EXPORT_PACKAGES),
             javacAccessLines("--add-opens", "ALL-UNNAMED", JAVAC_OPEN_PACKAGES),
@@ -331,6 +330,19 @@ public final class ServerInstaller {
           fi
         fi
         """;
+  }
+
+  // The workspace's module-access flags written by sync, passed as a java @argfile so the script
+  // never parses them.
+  private static String jvmArgsPrologue() {
+    final var argsFile = "%s/%s".formatted(LatheLayout.LATHE_DIR, LatheLayout.JVM_ARGS_FILE);
+    return """
+        jvm_args=
+        if [ -r %s ]; then
+          jvm_args=@%s
+        fi
+        """
+        .formatted(argsFile, argsFile);
   }
 
   private static String javacAccessLines(

@@ -16,6 +16,17 @@ class ServerInstallerTest {
     assertLaunchContract(ServerInstaller.renderMcpLauncherScript("/abs/classpath.jar"));
   }
 
+  // Only the classpath MCP launcher needs javac internals for ALL-UNNAMED (google-java-format is
+  // unnamed there); the editor launcher leaves plugin grants to the workspace's jvm.args.
+  @Test
+  void renderLaunchers_allUnnamedAccess_onlyInMcpLauncher() {
+    assertThat(ServerInstaller.renderLauncherScript("/abs/module-path"))
+        .doesNotContain("=ALL-UNNAMED")
+        .contains("jdk.compiler/com.sun.tools.javac.api=com.google.googlejavaformat");
+    assertThat(ServerInstaller.renderMcpLauncherScript("/abs/classpath.jar"))
+        .contains("jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED");
+  }
+
   @Test
   void newestVersionDir_releaseBeatsOlderSnapshot_picksHighestVersion(@TempDir final Path servers)
       throws IOException {
@@ -33,13 +44,15 @@ class ServerInstallerTest {
   }
 
   // Both launchers resolve the JDK (LATHE_JAVA_HOME, else .lathe/java-home, else PATH java) and
-  // then exec it with the stdout guard and LATHE_JVM_OPTS, all before Lathe's fixed arguments.
+  // then exec it with the stdout guard, the workspace's jvm.args @argfile, and LATHE_JVM_OPTS (so
+  // user flags win), all before Lathe's fixed arguments.
   private static void assertLaunchContract(final String script) {
     assertThat(script).contains("${LATHE_JAVA_HOME:-}", ".lathe/java-home", "java_bin=java");
+    assertThat(script).contains("if [ -r .lathe/jvm.args ]; then", "jvm_args=@.lathe/jvm.args");
     assertThat(script)
         .contains(
             "exec \"$java_bin\" -XX:+DisplayVMOutputToStderr -Xlog:disable"
-                + " -Xlog:all=warning:stderr ${LATHE_JVM_OPTS:-} \\");
+                + " -Xlog:all=warning:stderr $jvm_args ${LATHE_JVM_OPTS:-} \\");
     assertThat(script.indexOf(".lathe/java-home")).isLessThan(script.indexOf("exec \"$java_bin\""));
     assertThat(script.indexOf("exec \"$java_bin\""))
         .isLessThan(script.indexOf("--add-modules java.net.http"));

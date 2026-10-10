@@ -18,26 +18,25 @@ export LATHE_JVM_OPTS="-Xmx4g -Xms512m -XX:+UseZGC"
 
 ## Relation to compiler-arg capture
 
-`LATHE_JVM_OPTS` is the sanctioned successor to the per-project `-J` options a Maven build passes to a
-**forked** `javac` (`maven-compiler-plugin` `fork=true`). The language server compiles in-process, so
-it drops those `-J` flags (the in-process javac API rejects them as `invalid flag`; see
-`ModuleSourceCompiler.dropForkedLauncherArgs` and [the design overview](../lathe-design.md)). Most
-`-J--add-exports`/`-J--add-opens` into `jdk.compiler` are already covered by the launcher's fixed
-javac-access grants, which is why in-process Error Prone works. When an in-process processor or javac
-plugin genuinely needs JVM access the launcher does not grant, `LATHE_JVM_OPTS` is how the user
-restores it — e.g. `export LATHE_JVM_OPTS="--add-opens jdk.compiler/com.sun.tools.javac.jvm=ALL-UNNAMED"`.
+The language server compiles in-process, so it drops the `-J` options a Maven build passes to a
+**forked** `javac` (the in-process javac API rejects them as `invalid flag`; see
+`ModuleSourceCompiler.dropForkedLauncherArgs`).
+Their module grants (`--add-exports`/`--add-opens`), and those in `.mvn/jvm.config`, are carried over
+automatically by sync into `.lathe/jvm.args` (see [Workspace JVM Args](lathe-jvm-args.md)).
+`LATHE_JVM_OPTS` covers everything else: heap/GC tuning, or access the build does not declare —
+e.g. `export LATHE_JVM_OPTS="--add-opens jdk.compiler/com.sun.tools.javac.jvm=ALL-UNNAMED"`.
 
 ## Implementation
 
 `lathe:sync` renders `~/.cache/lathe/servers/<version>/lathe-launcher.sh` (and the MCP launcher) from
-`ServerInstaller`. Each script expands `LATHE_JVM_OPTS` right after the stdout-guard flags and before
-Lathe's fixed module and javac-access arguments:
+`ServerInstaller`. Each script expands `LATHE_JVM_OPTS` after the stdout-guard flags and the
+workspace's `.lathe/jvm.args`, and before Lathe's fixed module and javac-access arguments:
 
 ```sh
 #!/bin/sh
-exec java -XX:+DisplayVMOutputToStderr -Xlog:disable -Xlog:all=warning:stderr ${LATHE_JVM_OPTS:-} \
+exec java -XX:+DisplayVMOutputToStderr -Xlog:disable -Xlog:all=warning:stderr $jvm_args ${LATHE_JVM_OPTS:-} \
   --add-modules java.net.http \
-  --add-exports jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED \
+  --add-exports jdk.compiler/com.sun.tools.javac.api=com.google.googlejavaformat \
   ... \
   --module-path /abs/.m2/... \
   -m io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer "$@"

@@ -213,15 +213,18 @@ to run Error Prone. The in-process javac API has no launcher to receive them and
 `invalid flag`, so Lathe drops them (just as Maven's own non-forked compiler ignores them). When this
 happens the server logs one line per module naming what it dropped.
 
-Most `-J--add-exports`/`-J--add-opens` into `jdk.compiler` are already granted to the server JVM by
-Lathe's launcher, which is why in-process Error Prone keeps working. If an annotation processor or
-javac plugin genuinely needs JVM access the launcher does not grant — or you simply want to tune heap
-or GC — set `LATHE_JVM_OPTS` in the environment your editor launches from. It is expanded ahead of
-Lathe's own arguments:
+The module grants your build gives its javac plugins (Error Prone, NullAway, ...) still reach the
+server: `mvn process-test-classes` copies every `--add-exports`/`--add-opens` from forked `-J` options
+and from `.mvn/jvm.config` into `.lathe/jvm.args`, which the launcher passes to the server JVM.
+Other `-J` flags (such as `-J-Xmx…`, sized for a short-lived compiler) are not carried over.
+
+If an annotation processor or javac plugin needs JVM access your build does not declare — or you
+simply want to tune heap or GC — set `LATHE_JVM_OPTS` in the environment your editor launches from.
+It is expanded after `.lathe/jvm.args` and ahead of Lathe's own arguments:
 
 ```bash
 export LATHE_JVM_OPTS="-Xmx4g -XX:+UseZGC"
-# or restore a JVM option a forked build passed via -J:
+# or grant access the build does not declare:
 export LATHE_JVM_OPTS="--add-opens jdk.compiler/com.sun.tools.javac.jvm=ALL-UNNAMED"
 ```
 

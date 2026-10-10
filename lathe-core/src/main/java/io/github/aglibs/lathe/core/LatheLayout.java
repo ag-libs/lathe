@@ -29,6 +29,9 @@ public final class LatheLayout {
   public static final String SCHEMA_VERSION = "4";
   public static final String WORKSPACE_JSON = "workspace.json";
   public static final String JAVA_HOME_FILE = "java-home";
+  public static final String JVM_ARGS_FILE = "jvm.args";
+  public static final String MVN_DIR = ".mvn";
+  public static final String MVN_JVM_CONFIG_FILE = "jvm.config";
   public static final String LOCK_FILE = "lathe.lock";
   public static final String MODULE_INFO_JAVA = "module-info.java";
   public static final String POM_XML = "pom.xml";

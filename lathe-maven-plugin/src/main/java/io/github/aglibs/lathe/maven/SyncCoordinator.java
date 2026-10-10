@@ -92,6 +92,7 @@ final class SyncCoordinator {
               pomPaths,
               ModuleResourcesReader.read(workspaceRoot, projects));
       new WorkspaceStyleWriter(log).write(workspaceRoot, session.getTopLevelProject());
+      new JvmArgsWriter(log).write(workspaceRoot, projects);
     }
   }
 
