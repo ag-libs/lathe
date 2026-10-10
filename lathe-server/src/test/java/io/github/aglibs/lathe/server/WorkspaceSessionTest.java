@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -185,6 +186,26 @@ class WorkspaceSessionTest {
 
     assertThat(merged.scope()).containsExactlyInAnyOrder(api, app);
     assertThat(merged.exclusions()).containsExactly("Shared");
+  }
+
+  @Test
+  void claimStable_fileMidSaveOrAlreadyReacting_skipped_restClaimed() {
+    final var settled = sourceRoot.resolve("com/example/Settled.java");
+    final var saving = sourceRoot.resolve("com/example/Saving.java");
+    final var reacting = sourceRoot.resolve("com/example/Reacting.java");
+    final var moving = sourceRoot.resolve("com/example/Moving.java");
+    final var inFlight = new HashSet<>(Set.of(reacting));
+
+    // Saving's own save compile is still running; Moving has not settled across two ticks.
+    final List<Path> claimed =
+        WorkspaceSession.claimStable(
+            List.of(settled, saving, reacting, moving),
+            Set.of(settled, saving, reacting),
+            Map.of(saving, 1),
+            inFlight);
+
+    assertThat(claimed).containsExactly(settled);
+    assertThat(inFlight).containsExactlyInAnyOrder(reacting, settled);
   }
 
   @Test

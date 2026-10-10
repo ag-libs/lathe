@@ -196,6 +196,9 @@ final class WorkspaceSession {
   // file once instead of once per completing save.
   private int sourceCompilesInFlight;
   private DependentRefresh pendingRefresh;
+  // Files with a save compile in flight (a count per file, as one file can be saved twice in a
+  // row), so the reconcile pass does not compile them a second time from disk meanwhile.
+  private final Map<Path, Integer> saving = new HashMap<>();
   // The -pl module selectors carried from the pending sync prompt to the sync request (empty = full
   // reactor). Set at prompt time because the request fires later, on the user's response.
   private List<String> pendingSyncModules = List.of();
@@ -3337,15 +3340,20 @@ final class WorkspaceSession {
   // One batch per tree over its claimed stale set; empty when nothing is ready.
   private List<CompletableFuture<Void>> reactToChangedSources(
       final ModuleSourceConfig config, final List<Path> moduleStale, final Set<Path> stable) {
-    final List<Path> batch = claimStable(moduleStale, stable);
+    final List<Path> batch = claimStable(moduleStale, stable, saving, reacting);
     return batch.isEmpty() ? List.of() : List.of(compileChangedBatch(config, batch));
   }
 
   // Claim each stable, not-already-reacting source; the batch owns and later releases these.
-  private List<Path> claimStable(final List<Path> moduleStale, final Set<Path> stable) {
+  // A file mid-save is left to its save compile, which stamps it when done.
+  static List<Path> claimStable(
+      final List<Path> moduleStale,
+      final Set<Path> stable,
+      final Map<Path, Integer> saving,
+      final Set<Path> reacting) {
     final var claimed = new ArrayList<Path>(moduleStale.size());
     for (final var source : moduleStale) {
-      if (stable.contains(source) && reacting.add(source)) {
+      if (stable.contains(source) && !saving.containsKey(source) && reacting.add(source)) {
         claimed.add(source);
       }
     }
@@ -3865,8 +3873,10 @@ final class WorkspaceSession {
         new CompileRequest(
             snapshot.uri(), snapshot.content(), snapshot.version(), snapshot.generation(), mode);
     final boolean save = mode == CompileMode.FULL;
+    final Path source = LatheUri.toPath(snapshot.uri());
     if (save) {
       sourceCompilesInFlight++;
+      saving.merge(source, 1, Integer::sum);
     }
 
     moduleWorker
@@ -3880,7 +3890,7 @@ final class WorkspaceSession {
                         maybeWidenSealed(route, snapshot, result);
                       } finally {
                         if (save) {
-                          sourceCompileDone();
+                          saveCompileDone(source);
                         }
                       }
                     }))
@@ -3892,7 +3902,7 @@ final class WorkspaceSession {
                       publisher.publishError(snapshot, mode, ex);
                     } finally {
                       if (save) {
-                        sourceCompileDone();
+                        saveCompileDone(source);
                       }
                     }
                   });
@@ -4097,6 +4107,11 @@ final class WorkspaceSession {
     if (sourceCompilesInFlight == 0) {
       runPendingRefresh();
     }
+  }
+
+  private void saveCompileDone(final Path source) {
+    saving.computeIfPresent(source, (path, count) -> count > 1 ? count - 1 : null);
+    sourceCompileDone();
   }
 
   private void sourceCompileDone() {
