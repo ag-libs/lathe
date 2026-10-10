@@ -5722,20 +5722,26 @@ No new classes, no sidecar files, no in-memory state map.
 AP-generated `Foo$Something.class` files are safe: they are written during the same compile that
 produces `Foo.class`, so they appear in `task.generate()` output and are retained.
 
-The package-private sibling case (`Helper.class`) is a documented gap.
-`Helper.class` carries no `Foo$` prefix so `deleteStaleClassOutputs` never considers it.
-Accepting this gap avoids source-root inference, which would incorrectly delete AP-generated
-files that share a name with a type from another source file.
+The package-private sibling case (`Helper.class`) was initially left as a documented gap:
+`Helper.class` carries no `Foo$` prefix, and inferring its source from its name would incorrectly
+delete AP-generated files that share a name with a type from another source file.
+
+**Since fixed** without name inference or sidecar state: the class file's `SourceFile` attribute
+(read by `ClassSourceFile` in lathe-core) names the source it was compiled from.
+The save-time prune and the deleted-source cleanup are now one method,
+`WorkspaceSession.deleteClassOutputs(config, source, keptBinaryNames)`, which treats a class whose
+`SourceFile` is `Foo.java` as one of `Foo.java`'s outputs.
+An AP-generated class names its own generated source, so it is never matched; a class compiled
+without the attribute (`-g:none`) is always kept.
 
 ### Regression tests
 
-Disabled tests in `WorkspaceSessionTest` cover the expected behaviour of `deleteStaleClassOutputs`:
+`WorkspaceSessionTest` covers the expected behaviour of `deleteClassOutputs`:
 
-- `deleteStaleClassOutputs_namedInnerClassRemoved_deletesStaleClassFile`
-- `deleteStaleClassOutputs_anonymousClassRemoved_deletesStaleClassFile`
-- `deleteStaleClassOutputs_outerClass_isUntouched`
-- `deleteStaleClassOutputs_sibling_isUntouched`
-- `deleteStaleClassOutputs_packagePrivateSiblingRemoved_deletesStaleClassFile`
+- `deleteClassOutputs_javaSource_removesTopLevelAndNestedClassFiles`
+- `deleteClassOutputs_nestedAndAnonymousRemoved_deletesOnlyUnkeptOutputsOfTheSource`
+- `deleteClassOutputs_packagePrivateSiblingRemoved_deletesOnlyItsOwnSibling`
+- `ClassSourceFileTest` (lathe-core) for the attribute reader itself.
 
 ---
 

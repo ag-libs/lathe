@@ -114,7 +114,7 @@ class ModuleSourceCompilerTest {
 
       assertThat(result.writtenBinaryNames()).containsExactly("Foo");
       assertThat(config.latheClassesDir().resolve("Foo$Inner.class"))
-          .exists(); // WorkspaceSession calls deleteStaleClassOutputs, not ModuleSourceCompiler
+          .exists(); // WorkspaceSession calls deleteClassOutputs, not ModuleSourceCompiler
     }
   }
 

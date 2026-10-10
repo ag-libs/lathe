@@ -5,6 +5,7 @@ import static java.util.logging.Level.SEVERE;
 import io.github.aglibs.lathe.core.CollectionUtil;
 import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.PortUtil;
@@ -16,6 +17,7 @@ import io.github.aglibs.lathe.core.schema.MainLaunchData;
 import io.github.aglibs.lathe.core.schema.RunKind;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
+import io.github.aglibs.lathe.core.typeindex.ClassSourceFile;
 import io.github.aglibs.lathe.core.typeindex.SourceTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.analysis.CallHierarchyItemData;
@@ -177,6 +179,10 @@ final class WorkspaceSession {
   // in-process
   // only once its mtime has held across two ticks, so a file mid-write is left to settle first.
   private Map<Path, Long> pendingStale = Map.of();
+  // Not !pendingStale.isEmpty(): a standing bulk backlog would keep that true and defeat back-off.
+  private boolean awaitingSettle;
+  private Stopwatch lastActivity = Stopwatch.start();
+  private Stopwatch lastReconcile = Stopwatch.start();
   // Sources whose in-process recompile is in flight, so a later tick does not resubmit one still
   // building. Worker-thread-confined like every other field here.
   private final Set<Path> reacting = new HashSet<>();
@@ -1331,6 +1337,7 @@ final class WorkspaceSession {
   }
 
   void onOpen(final String uri, final String content, final int version) {
+    lastActivity = Stopwatch.start();
     final var snapshot = docs.put(uri, content, version);
     LOG.info(() -> "[open] %s".formatted(uri));
     candidateIndex.update(uri, content);
@@ -1363,6 +1370,7 @@ final class WorkspaceSession {
   }
 
   void onChange(final String uri, final String content, final int version) {
+    lastActivity = Stopwatch.start();
     docs.put(uri, content, version);
     LOG.fine(() -> "[change] %s".formatted(uri));
     candidateIndex.update(uri, content);
@@ -1380,6 +1388,7 @@ final class WorkspaceSession {
   }
 
   void onClose(final String uri) {
+    lastActivity = Stopwatch.start();
     docs.remove(uri);
     LOG.info(() -> "[close] %s".formatted(uri));
     worker.cancel(uri);
@@ -1390,6 +1399,7 @@ final class WorkspaceSession {
   }
 
   void onSave(final String uri, final String savedContent) {
+    lastActivity = Stopwatch.start();
     LOG.info(() -> "[save] %s".formatted(uri));
     worker.cancel(uri);
 
@@ -2917,18 +2927,20 @@ final class WorkspaceSession {
     return config.externalOutput() ? config.outputDir() : config.latheClassesDir();
   }
 
-  static int deleteClassOutputs(final ModuleSourceConfig config, final Path deletedSource) {
-    if (!FileUtil.isJavaFile(deletedSource)) {
+  // Deletes the source's class outputs except those the latest compile wrote (keptBinaryNames):
+  // empty for a deleted source, the compile's output set to prune what a save removed.
+  static int deleteClassOutputs(
+      final ModuleSourceConfig config, final Path source, final Set<String> keptBinaryNames) {
+    if (!FileUtil.isJavaFile(source)) {
       return 0;
     }
 
-    final var sourceRoot = sourceRootFor(config, deletedSource);
+    final var sourceRoot = sourceRootFor(config, source);
     if (sourceRoot == null) {
       return 0;
     }
 
-    final var rel = sourceRoot.relativize(deletedSource);
-    final var packageRel = rel.getParent();
+    final var packageRel = sourceRoot.relativize(source).getParent();
     final var classDir =
         packageRel != null
             ? config.latheClassesDir().resolve(packageRel)
@@ -2937,72 +2949,22 @@ final class WorkspaceSession {
       return 0;
     }
 
-    final var typeName = FileUtil.javaTypeName(deletedSource);
     try (final var stream = Files.list(classDir)) {
-      final var matchingClassFiles =
-          stream.filter(path -> deletedClassFile(typeName, path)).toList();
-      for (final var classFile : matchingClassFiles) {
-        Files.deleteIfExists(classFile);
-      }
-      return matchingClassFiles.size();
-    } catch (final IOException e) {
-      LOG.log(
-          Level.WARNING, e, () -> "[delete] class cleanup failed for %s".formatted(deletedSource));
-      return 0;
-    }
-  }
-
-  static int deleteStaleClassOutputs(
-      final ModuleSourceConfig config,
-      final Path savedSource,
-      final Set<String> writtenBinaryNames) {
-    if (!FileUtil.isJavaFile(savedSource)) {
-      return 0;
-    }
-
-    final var sourceRoot = sourceRootFor(config, savedSource);
-    if (sourceRoot == null) {
-      return 0;
-    }
-
-    final var rel = sourceRoot.relativize(savedSource);
-    final var packageRel = rel.getParent();
-    final var classDir =
-        packageRel != null
-            ? config.latheClassesDir().resolve(packageRel)
-            : config.latheClassesDir();
-    if (!Files.isDirectory(classDir)) {
-      return 0;
-    }
-
-    final var typeName = FileUtil.javaTypeName(savedSource);
-    try (final var stream = Files.list(classDir)) {
-      final var staleClassFiles =
+      final var deletedClassFiles =
           stream
-              .filter(
-                  path -> {
-                    final var n = path.getFileName().toString();
-                    return n.startsWith(typeName + "$") && n.endsWith(".class");
-                  })
-              .filter(path -> !writtenBinaryNames.contains(toBinaryName(config, path)))
+              .filter(path -> !keptBinaryNames.contains(toBinaryName(config, path)))
+              .filter(path -> classOutputOf(source, path))
               .toList();
-      for (final var classFile : staleClassFiles) {
-        Files.deleteIfExists(classFile);
-      }
-
-      if (!staleClassFiles.isEmpty()) {
+      deletedClassFiles.forEach(path -> IOUtil.unchecked(() -> Files.deleteIfExists(path)));
+      if (!deletedClassFiles.isEmpty()) {
         LOG.fine(
             () ->
-                "[delete] %s stale=%d"
-                    .formatted(savedSource.getFileName(), staleClassFiles.size()));
+                "[delete] %s classes=%d".formatted(source.getFileName(), deletedClassFiles.size()));
       }
 
-      return staleClassFiles.size();
-    } catch (final IOException e) {
-      LOG.log(
-          Level.WARNING,
-          e,
-          () -> "[delete] stale class cleanup failed for %s".formatted(savedSource));
+      return deletedClassFiles.size();
+    } catch (final IOException | UncheckedIOException e) {
+      LOG.log(Level.WARNING, e, () -> "[delete] class cleanup failed for %s".formatted(source));
       return 0;
     }
   }
@@ -3030,7 +2992,7 @@ final class WorkspaceSession {
     final Path root = roots.getFirst();
     int removed = 0;
     for (final var rel : orphans) {
-      removed += deleteClassOutputs(config, root.resolve(rel));
+      removed += deleteClassOutputs(config, root.resolve(rel), Set.of());
     }
 
     pruneOrphanStamps(config, orphans);
@@ -3069,6 +3031,7 @@ final class WorkspaceSession {
       return List.of();
     }
 
+    lastReconcile = Stopwatch.start();
     reconcileDeletedSources();
     final List<CompletableFuture<Void>> reactions = reconcileChangedSources(eager);
     reconcileResources();
@@ -3234,6 +3197,7 @@ final class WorkspaceSession {
     final Map<Path, Long> current = staleMtimes(scan);
     if (current.isEmpty()) {
       pendingStale = Map.of();
+      awaitingSettle = false;
       bulkNoticeShown = false;
       return List.of();
     }
@@ -3263,6 +3227,7 @@ final class WorkspaceSession {
     final Set<Path> ready =
         eager ? reconcilable.keySet() : stableSources(reconcilable, pendingStale);
     pendingStale = current;
+    awaitingSettle = ready.size() < reconcilable.size();
     if (ready.isEmpty()) {
       return List.of();
     }
@@ -3423,7 +3388,7 @@ final class WorkspaceSession {
       return;
     }
 
-    deleteStaleClassOutputs(config, source, writtenBinaryNames);
+    deleteClassOutputs(config, source, writtenBinaryNames);
     recordCompileStamp(config, source);
   }
 
@@ -3619,10 +3584,22 @@ final class WorkspaceSession {
         .orElse(null);
   }
 
-  private static boolean deletedClassFile(final String typeName, final Path path) {
-    final var name = path.getFileName().toString();
-    return name.equals(typeName + ".class")
-        || (name.startsWith(typeName + "$") && name.endsWith(".class"));
+  // Foo.java's outputs are Foo.class, Foo$*.class, and any package-private sibling top-level type
+  // (Helper.class). Only the class file's SourceFile attribute ties a sibling back to Foo.java; a
+  // class generated from another source names that source, so it is never matched.
+  private static boolean classOutputOf(final Path source, final Path classFile) {
+    final var name = classFile.getFileName().toString();
+    if (!name.endsWith(".class")) {
+      return false;
+    }
+
+    final var typeName = FileUtil.javaTypeName(source);
+    if (name.equals("%s.class".formatted(typeName)) || name.startsWith("%s$".formatted(typeName))) {
+      return true;
+    }
+
+    final var sourceName = source.getFileName().toString();
+    return ClassSourceFile.of(classFile).filter(sourceName::equals).isPresent();
   }
 
   private static String toBinaryName(final ModuleSourceConfig config, final Path classFile) {
@@ -3635,6 +3612,8 @@ final class WorkspaceSession {
   // Above this many externally changed sources (a branch switch, a large pull), recommend a Maven
   // sync instead of recompiling in-process file by file.
   private static final int BULK_CHANGE_THRESHOLD = 50;
+  static final long ACTIVE_WINDOW_MS = 30_000L;
+  static final long IDLE_RECONCILE_INTERVAL_MS = 20_000L;
   private static final String SYNC_ACTION = "Sync";
   private static final String SYNC_CAPTURE_ACTION = "Sync + capture tests";
   private static final String LATER_ACTION = "Later";
@@ -3666,8 +3645,20 @@ final class WorkspaceSession {
         promptForSync("Maven project changed. Lathe will run a full refresh.", List.of());
         reconcileIfIdle(false);
       }
-      case NO_CHANGE -> reconcileIfIdle(false);
+      case NO_CHANGE -> {
+        if (reconcileDue(lastActivity.elapsedMs(), lastReconcile.elapsedMs(), awaitingSettle)) {
+          reconcileIfIdle(false);
+        }
+      }
     }
+  }
+
+  // The pass stats every reactor source and resource -- costly on macOS -- so back off when idle.
+  static boolean reconcileDue(
+      final long sinceActivityMs, final long sinceReconcileMs, final boolean awaitingSettle) {
+    return awaitingSettle
+        || sinceActivityMs < ACTIVE_WINDOW_MS
+        || sinceReconcileMs >= IDLE_RECONCILE_INTERVAL_MS;
   }
 
   private void promptForSync(final String message, final List<String> scope) {
