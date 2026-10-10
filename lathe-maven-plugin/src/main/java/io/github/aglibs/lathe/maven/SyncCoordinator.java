@@ -98,6 +98,7 @@ final class SyncCoordinator {
               workspaceRoot,
               projects,
               session.getSystemProperties().getProperty(LatheLayout.MAVEN_OPTS_PROPERTY, ""));
+      new SyncScriptWriter(log).write(workspaceRoot);
     }
   }
 

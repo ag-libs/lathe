@@ -315,7 +315,8 @@ public final class ServerInstaller {
   // .lathe/java-home (relative to the server cwd = workspace root), else PATH java. Shared by both
   // launchers. In a method body, not a field, so the plugin descriptor's QDOX parser skips the
   // block.
-  private static String javaResolvePrologue() {
+  // Shared with the sync script, which runs the build on the same JDK the server launcher picks.
+  public static String javaResolvePrologue() {
     return """
         jhome="${LATHE_JAVA_HOME:-}"
         if [ -z "$jhome" ] && [ -r .lathe/java-home ]; then

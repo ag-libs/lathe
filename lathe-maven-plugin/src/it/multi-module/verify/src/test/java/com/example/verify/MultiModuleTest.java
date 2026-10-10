@@ -76,6 +76,17 @@ class MultiModuleTest {
     assertThat(lathe("jvm.args")).doesNotExist();
   }
 
+  // Its behavior (goal, scope, tool, JDK) is covered by SyncScriptWriterTest, which runs it.
+  @Test
+  void sync_syncScript_writtenExecutable() throws IOException {
+    final var script = lathe("lathe-sync.sh");
+    assertThat(script).isRegularFile().isExecutable();
+    assertThat(read(script))
+        .startsWith("#!/bin/sh\n")
+        .contains("-Dmaven.build.cache.enabled=false")
+        .contains("-am -amd");
+  }
+
   // --- sync: workspace.json ---
 
   @Test

@@ -26,6 +26,7 @@ public final class LatheLayout {
   public static final String LEGACY_CURRENT_LINK = "current";
   public static final String LAUNCHER_SCRIPT = "lathe-launcher.sh";
   public static final String MCP_LAUNCHER_SCRIPT = "lathe-mcp-launcher.sh";
+  public static final String SYNC_SCRIPT = "lathe-sync.sh";
   public static final String SCHEMA_VERSION = "4";
   public static final String WORKSPACE_JSON = "workspace.json";
   public static final String JAVA_HOME_FILE = "java-home";

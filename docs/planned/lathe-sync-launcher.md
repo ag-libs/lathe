@@ -157,7 +157,7 @@ This replaces both of today's halves (the client's `-am`, the server text's `-am
 
 1. **Write the script.**
    `lathe:sync` writes `.lathe/lathe-sync.sh` (shared JDK prologue, scoped `-am -amd`).
-   Tests: the generated script for full, `--tests`, and scoped invocations; invoker IT asserts it exists, is executable, and runs a scoped sync.
+   Tests: a unit test runs the generated script against stub `mvn`/`mvnd`/`./mvnw` for full, `--tests`, scoped, and combined invocations (tool choice, JDK, cwd, printed command); the invoker IT asserts sync writes it, executable.
 2. **Neovim uses it.**
    Delete the Maven code from `lathe/sync.lua`; missing script → notice.
    Tests: headless spec runs a stub script and checks the arguments it receives.
