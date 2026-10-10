@@ -2921,14 +2921,13 @@ final class WorkspaceSession {
     reactorLambdaImplementors = mergeLambdaShards();
   }
 
-  // External output: index types from dirty/open sources not yet built, so they show in symbols
-  // before a make+sync. Keyed on disk staleness, not open buffers (so they survive closing).
+  // Index types from dirty/open sources not yet built, so they show in symbols before their class
+  // exists: for external output until the next make+sync, and for the Maven mirror whenever a
+  // compile has not caught up (a bulk external change deferred to a sync, a file that does not
+  // compile). Keyed on disk staleness, not open buffers (so they survive closing); the bytecode
+  // entry, with its real kind, wins once the class is built.
   private List<TypeIndexEntry> withSourceDelta(
       final ModuleSourceConfig config, final List<TypeIndexEntry> base) {
-    if (!config.externalOutput()) {
-      return base;
-    }
-
     final Set<String> known =
         base.stream().map(TypeIndexEntry::binaryName).collect(Collectors.toUnmodifiableSet());
     final List<TypeIndexEntry> delta =

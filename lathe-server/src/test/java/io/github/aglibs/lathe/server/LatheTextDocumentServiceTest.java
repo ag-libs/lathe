@@ -69,6 +69,7 @@ import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.ReferenceContext;
 import org.eclipse.lsp4j.ReferenceParams;
+import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.SymbolKind;
 import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
@@ -804,6 +805,29 @@ class LatheTextDocumentServiceTest {
   private static long openCompiles(final Collection<String> compileLog, final Path file) {
     final String prefix = "[compile:open] %s ".formatted(file.toUri());
     return compileLog.stream().filter(m -> m.startsWith(prefix)).count();
+  }
+
+  @Test
+  void workspaceSymbol_sourceWithoutCompiledClass_foundFromSource_compiledTypeStillFound()
+      throws Exception {
+    final DepFixture fx = depWithUsers(1);
+    // On disk but never compiled into the mirror: it does not compile, as a type restored by a
+    // bulk external change the server defers to a sync has no class either.
+    TestCompiler.writeModuleSource(
+        tmp,
+        "com/example/Restored.java",
+        "package com.example;\npublic class Restored { Missing m; }\n");
+    service.initialize(tmp);
+    awaitStartup();
+
+    assertThat(symbolNames("Restored")).contains("Restored");
+    assertThat(symbolNames("Dep")).contains("Dep");
+  }
+
+  private List<String> symbolNames(final String query) throws Exception {
+    return service.workspaceSymbolFuture(query).get(5, TimeUnit.SECONDS).stream()
+        .map(SymbolInformation::getName)
+        .toList();
   }
 
   @Test
