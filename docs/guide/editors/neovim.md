@@ -73,6 +73,19 @@ overrides `style` for that workspace — so `style` here is only the fallback fo
 
 See [Formatting & indentation](#formatting--indentation) below.
 
+### Upgrading from Lathe 0.1.15 or earlier
+
+Two things changed in 0.1.16, and both need a one-time step:
+
+- **The client is no longer unpacked into the cache.**
+  A `dir = vim.fn.expand("~/.cache/lathe/current/neovim")` plugin spec stops working, because sync now deletes the machine-global `~/.cache/lathe/current` link.
+  Replace it with the `ag-libs/lathe.nvim` spec above.
+- **The server is found through each project's own `.lathe/lathe-launcher.sh`.**
+  A project still pinned to an older `lathe-maven-extension` has no such link, so the server cannot start; the client warns `.lathe/ has no server launcher`.
+  Set the extension to 0.1.16 or later and run `mvn process-test-classes`.
+
+Keep every project on 0.1.16 or later: an older sync recreates the `current` link that a newer one removes.
+
 ## LSP actions
 
 Lathe implements these endpoints; in Neovim most already have a built-in default mapping. Bind or rebind

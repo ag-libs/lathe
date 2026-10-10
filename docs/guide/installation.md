@@ -66,6 +66,9 @@ every resolved project — including modules with their own compiler configurati
 POM. All injected artifacts use the extension's own version, so they stay in lockstep with the version
 you register, and a stale Lathe version already in a POM is overwritten.
 
+Upgrading a project from 0.1.15 or earlier also needs a one-time editor-side step; see
+[Upgrading from Lathe 0.1.15 or earlier](editors/neovim.md#upgrading-from-lathe-0115-or-earlier).
+
 ## Method 2 — Manual POM configuration
 
 Declare the same three pieces in your **parent `pom.xml`**. Pin one version with a property:
@@ -216,7 +219,9 @@ happens the server logs one line per module naming what it dropped.
 The module grants your build gives its javac plugins (Error Prone, NullAway, ...) still reach the
 server: `mvn process-test-classes` copies every `--add-exports`/`--add-opens` from forked `-J` options
 and from `.mvn/jvm.config` into `.lathe/jvm.args`, which the launcher passes to the server JVM.
+Grants given to Maven's own JVM another way (`MAVEN_OPTS`, `~/.mavenrc`) are carried over too, limited to `jdk.compiler`.
 Other `-J` flags (such as `-J-Xmx…`, sized for a short-lived compiler) are not carried over.
+The server reads `.lathe/jvm.args` only at startup, so restart it (`:LspRestart` in Neovim) after a sync changes the file.
 
 If an annotation processor or javac plugin needs JVM access your build does not declare — or you
 simply want to tune heap or GC — set `LATHE_JVM_OPTS` in the environment your editor launches from.
