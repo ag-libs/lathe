@@ -31,13 +31,15 @@
           <installDirectory>${project.build.directory}</installDirectory>
           <skip>${skipTests}</skip>
         </configuration>
+        <!-- Every step binds to package (run in declaration order): the module has no Java, so the
+             IDE-sync lifecycle (process-test-classes, which Lathe's own sync runs) skips Node entirely. -->
         <executions>
           <execution>
             <id>install-node-and-npm</id>
             <goals>
               <goal>install-node-and-npm</goal>
             </goals>
-            <phase>generate-resources</phase>
+            <phase>package</phase>
             <configuration>
               <nodeVersion>${node.version}</nodeVersion>
             </configuration>
@@ -47,7 +49,7 @@
             <goals>
               <goal>npm</goal>
             </goals>
-            <phase>generate-resources</phase>
+            <phase>package</phase>
             <configuration>
               <arguments>ci</arguments>
             </configuration>
@@ -57,7 +59,7 @@
             <goals>
               <goal>npm</goal>
             </goals>
-            <phase>process-classes</phase>
+            <phase>package</phase>
             <configuration>
               <arguments>run check</arguments>
             </configuration>
