@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.maven;
 
+import io.github.aglibs.lathe.core.ExceptionUtil;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.install.ArtifactResolver;
@@ -29,11 +30,22 @@ final class FormatterResolver {
   private static final String SPOTLESS_GROUP = "com.diffplug.spotless";
   private static final String SPOTLESS_PLUGIN = "spotless-maven-plugin";
   private static final String SPOTLESS_LIB = "spotless-lib";
-  private static final String GOOGLE_STEP = "com.diffplug.spotless.java.GoogleJavaFormatStep";
+  private static final Step GOOGLE_STEP =
+      new Step(
+          "com.diffplug.spotless.java.GoogleJavaFormatStep",
+          "com.google.googlejavaformat:google-java-format",
+          true);
   private static final Map<String, Step> STEPS =
       Map.of(
-          LatheFlags.FORMATTER_GOOGLE, new Step(GOOGLE_STEP, true),
-          LatheFlags.FORMATTER_AOSP, new Step(GOOGLE_STEP, true));
+          LatheFlags.FORMATTER_GOOGLE,
+          GOOGLE_STEP,
+          LatheFlags.FORMATTER_AOSP,
+          GOOGLE_STEP,
+          LatheFlags.FORMATTER_PALANTIR,
+          new Step(
+              "com.diffplug.spotless.java.PalantirJavaFormatStep",
+              "com.palantir.javaformat:palantir-java-format",
+              true));
 
   private final ArtifactResolver artifacts;
   private final List<RemoteRepository> pluginRepositories;
@@ -57,7 +69,8 @@ final class FormatterResolver {
     }
 
     try (var spotless = spotlessLib(spotlessVersion)) {
-      final FormatterSpec completed = withDefaults(spec, spotless.loadClass(step.type()));
+      final FormatterSpec completed =
+          withDefaults(spec, spotless.loadClass(step.type()), step.groupArtifact());
       final String coordinates =
           "%s:%s"
               .formatted(
@@ -76,8 +89,8 @@ final class FormatterResolver {
           classpath);
     } catch (final SyncException | ReflectiveOperationException | IOException e) {
       log.warn(
-          "[sync] formatter %s unresolved, formatting disabled: %s"
-              .formatted(spec.engine(), e.getMessage()));
+          "[sync] formatter %s unresolved, formatting disabled: %s (%s)"
+              .formatted(spec.engine(), e.getMessage(), ExceptionUtil.rootCause(e).getMessage()));
       return spec;
     }
   }
@@ -113,11 +126,15 @@ final class FormatterResolver {
   }
 
   // Fills what the POM left out with the Spotless step's own defaults (defaultVersion(),
-  // defaultGroupArtifact(), default<Option>()); configured values win.
-  static FormatterSpec withDefaults(final FormatterSpec spec, final Class<?> step)
+  // defaultGroupArtifact(), default<Option>()); configured values win. groupArtifact is the
+  // formatter Lathe resolves when the step names none (palantir's has no defaultGroupArtifact()).
+  static FormatterSpec withDefaults(
+      final FormatterSpec spec, final Class<?> step, final String groupArtifact)
       throws ReflectiveOperationException {
     final var options = new HashMap<>(spec.options());
-    options.putIfAbsent(LatheFlags.FORMAT_GROUP_ARTIFACT, call(step, "defaultGroupArtifact"));
+    options.putIfAbsent(
+        LatheFlags.FORMAT_GROUP_ARTIFACT,
+        stepDefault(step, LatheFlags.FORMAT_GROUP_ARTIFACT).orElse(groupArtifact));
     LatheFlags.FORMAT_STEP_OPTIONS.forEach(
         option -> stepDefault(step, option).ifPresent(value -> options.putIfAbsent(option, value)));
     final String version = spec.version().isBlank() ? call(step, "defaultVersion") : spec.version();
@@ -141,12 +158,12 @@ final class FormatterResolver {
     return String.valueOf(step.getMethod(method).invoke(null));
   }
 
-  // A Spotless step class (its defaults), and whether its formatter reaches into javac internals
-  // and so needs FORMATTER_JAVAC_GRANTS.
-  private record Step(String type, boolean javacGrants) {
+  // A Spotless step class (its defaults), the formatter's groupId:artifactId, and whether the
+  // formatter reaches into javac internals and so needs FORMATTER_JAVAC_GRANTS.
+  private record Step(String type, String groupArtifact, boolean javacGrants) {
 
     private Step {
-      ValidCheck.check().notBlank(type, "type").validate();
+      ValidCheck.check().notBlank(type, "type").notBlank(groupArtifact, "groupArtifact").validate();
     }
   }
 }

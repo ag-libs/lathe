@@ -523,7 +523,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
   // the capability is not advertised for them, so a stray request gets no edits.
   private CompletableFuture<List<? extends TextEdit>> formatRanges(
       final String uri, final List<Range> ranges) {
-    if (!(formatEngine instanceof final GoogleFormatEngine engine)
+    if (!(formatEngine instanceof final GjfFormatEngine engine)
         || ignoreNonFile(uri, "rangeFormatting")) {
       return CompletableFuture.completedFuture(List.of());
     }

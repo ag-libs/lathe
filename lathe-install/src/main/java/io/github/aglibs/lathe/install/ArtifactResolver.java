@@ -44,11 +44,14 @@ public final class ArtifactResolver {
     }
   }
 
-  // The artifact with its runtime dependency closure.
+  // The artifact with its runtime dependency closure, resolved as a project's dependency would be.
+  // Not as the collection root: the root keeps its own optional dependencies (palantir-java-format
+  // declares a jar-less optional parent), a dependency does not.
   public List<Path> resolveTransitive(
       final String coordinates, final List<RemoteRepository> repositories) throws SyncException {
     final var dependency = new Dependency(new DefaultArtifact(coordinates), JavaScopes.RUNTIME);
-    final var request = new DependencyRequest(new CollectRequest(dependency, repositories), null);
+    final var request =
+        new DependencyRequest(new CollectRequest(List.of(dependency), null, repositories), null);
     try {
       return repositorySystem
           .resolveDependencies(repoSession, request)

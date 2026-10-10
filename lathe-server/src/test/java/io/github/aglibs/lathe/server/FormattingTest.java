@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
 
 class FormattingTest {
 
-  private static final GoogleFormatEngine ENGINE = FormatterFixtures.googleJavaFormat();
+  private static final GjfFormatEngine ENGINE = FormatterFixtures.googleJavaFormat();
   private static final Path FILE = Path.of("Sample.java");
 
   // Formatting returns a minimal edit (only the changed region), so apply it to recover the result.
@@ -23,6 +23,12 @@ class FormattingTest {
     final List<TextEdit> edits = JavaFormatter.format(ENGINE, source, FILE);
     assertThat(edits).hasSize(1);
     return apply(source, edits.getFirst());
+  }
+
+  // The whole line of source containing text, as a range request selects it.
+  private static Range lineRange(final String source, final String text) {
+    final int line = (int) source.lines().takeWhile(candidate -> !candidate.contains(text)).count();
+    return new Range(new Position(line, 0), new Position(line + 1, 0));
   }
 
   private static String apply(final String source, final TextEdit edit) {
@@ -139,9 +145,7 @@ class FormattingTest {
           int b( ) {return   2;}
         }
         """;
-    final int start = source.indexOf("  int a");
-    final int line = source.substring(0, start).split("\n", -1).length - 1;
-    final var range = new Range(new Position(line, 0), new Position(line + 1, 0));
+    final Range range = lineRange(source, "int a(");
 
     final List<TextEdit> edits = JavaFormatter.formatRanges(ENGINE, source, List.of(range));
 
@@ -155,6 +159,51 @@ class FormattingTest {
                     return 1;
                   }
                 """));
+  }
+
+  @Test
+  void format_palantirJavaFormat_followsSpotlessPalantirStepAndFormatsRanges() throws Exception {
+    final GjfFormatEngine palantir = FormatterFixtures.palantirJavaFormat();
+    final var source =
+        """
+        import java.util.Map;
+        import java.util.List;
+        import java.util.Set;
+
+        final class Sample {
+          Map<String, List<String>> values( ) {return   null;}
+
+          int b( ) {return   2;}
+        }
+        """;
+    final var expected =
+        """
+        import java.util.List;
+        import java.util.Map;
+
+        final class Sample {
+            Map<String, List<String>> values() {
+                return null;
+            }
+
+            int b() {
+                return 2;
+            }
+        }
+        """;
+    // Spotless's palantir step always reorders imports and removes unused ones, then formats.
+    final String formatted = apply(source, JavaFormatter.format(palantir, source, FILE).getFirst());
+    final Range range = lineRange(source, "int b(");
+    final List<TextEdit> ranged = JavaFormatter.formatRanges(palantir, source, List.of(range));
+
+    assertThat(formatted).isEqualTo(expected);
+    assertThat(JavaFormatter.format(palantir, expected, FILE)).isEmpty();
+    assertThat(ranged)
+        .singleElement()
+        .satisfies(
+            edit ->
+                assertThat(edit.getRange().getStart().getLine())
+                    .isEqualTo(range.getStart().getLine()));
   }
 
   @Test

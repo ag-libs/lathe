@@ -2807,7 +2807,7 @@ final class WorkspaceSession {
   }
 
   List<? extends TextEdit> formatRanges(
-      final String uri, final List<Range> ranges, final GoogleFormatEngine engine) {
+      final String uri, final List<Range> ranges, final GjfFormatEngine engine) {
     return formatDocument(uri, content -> JavaFormatter.formatRanges(engine, content, ranges));
   }
 

@@ -11,6 +11,7 @@ import io.github.aglibs.lathe.install.SyncException;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -19,9 +20,10 @@ import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
 
-// Derives .lathe/style.json from the reactor's spotless-maven-plugin. googleJavaFormat maps to the
-// in-process engine; any other formatter is delegated to `mvn spotless:apply` (command-file), or
-// disabled (none) when delegation is opted out — so Lathe never fights the project's own formatter.
+// Derives .lathe/style.json from the reactor's spotless-maven-plugin. googleJavaFormat and
+// palantirJavaFormat run in-process from the project's pinned jars; any other formatter is
+// delegated to `mvn spotless:apply` (command-file), or disabled (none) when delegation is opted
+// out — so Lathe never fights the project's own formatter.
 final class WorkspaceStyleWriter {
 
   private static final String SPOTLESS_PLUGIN_KEY = "com.diffplug.spotless:spotless-maven-plugin";
@@ -89,7 +91,21 @@ final class WorkspaceStyleWriter {
 
     final Xpp3Dom googleJavaFormat = java.getChild("googleJavaFormat");
     if (googleJavaFormat != null) {
-      return googleStyle(googleJavaFormat);
+      final String style = styleOf(googleJavaFormat, LatheFlags.FORMAT_STYLE_GOOGLE);
+      return pinnedStyle(
+          LatheFlags.FORMAT_STYLE_AOSP.equals(style)
+              ? LatheFlags.FORMATTER_AOSP
+              : LatheFlags.FORMATTER_GOOGLE,
+          googleJavaFormat,
+          style);
+    }
+
+    final Xpp3Dom palantirJavaFormat = java.getChild("palantirJavaFormat");
+    if (palantirJavaFormat != null) {
+      return pinnedStyle(
+          LatheFlags.FORMATTER_PALANTIR,
+          palantirJavaFormat,
+          styleOf(palantirJavaFormat, LatheFlags.FORMAT_STYLE_PALANTIR));
     }
 
     final FormatterSpec formatter =
@@ -110,17 +126,23 @@ final class WorkspaceStyleWriter {
         "-DspotlessFiles=\\Q" + LatheFlags.FORMAT_FILE_TOKEN + "\\E");
   }
 
-  private static WorkspaceStyleData googleStyle(final Xpp3Dom googleJavaFormat) {
-    final boolean aosp = "AOSP".equalsIgnoreCase(childValue(googleJavaFormat, "style"));
+  // A formatter run in-process from its pinned jars. Only GOOGLE style indents by 2; AOSP and
+  // PALANTIR indent by 4.
+  private static WorkspaceStyleData pinnedStyle(
+      final String engine, final Xpp3Dom step, final String style) {
     final var formatter =
         new FormatterSpec(
-            aosp ? LatheFlags.FORMATTER_AOSP : LatheFlags.FORMATTER_GOOGLE,
-            List.of(),
-            childValue(googleJavaFormat, "version"),
-            stepOptions(googleJavaFormat),
-            List.of());
+            engine, List.of(), childValue(step, "version"), stepOptions(step), List.of());
     return new WorkspaceStyleData(
-        formatter, aosp ? new IndentSpec("google", 4, 8) : new IndentSpec("google", 2, 4));
+        formatter,
+        LatheFlags.FORMAT_STYLE_GOOGLE.equals(style)
+            ? new IndentSpec("google", 2, 4)
+            : new IndentSpec("google", 4, 8));
+  }
+
+  private static String styleOf(final Xpp3Dom step, final String defaultStyle) {
+    final String style = childValue(step, LatheFlags.FORMAT_STYLE).toUpperCase(Locale.ROOT);
+    return style.isEmpty() ? defaultStyle : style;
   }
 
   // The step's configured options, keyed by their Spotless element names; unset ones are left for

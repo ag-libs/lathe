@@ -174,7 +174,7 @@ class LatheLanguageServerTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"google", "aosp"})
+  @ValueSource(strings = {"google", "aosp", "palantir"})
   void initialize_styleFileInProcessEngine_advertisesFormatting(final String engine)
       throws Exception {
     writeStyle(

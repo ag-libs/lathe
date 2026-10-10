@@ -25,7 +25,7 @@ final class JavaFormatter {
 
   // Formats only the given ranges (LSP positions) of content; text outside them is not touched.
   static List<TextEdit> formatRanges(
-      final GoogleFormatEngine engine, final String content, final List<Range> ranges)
+      final GjfFormatEngine engine, final String content, final List<Range> ranges)
       throws Exception {
     return edits(
         engine,

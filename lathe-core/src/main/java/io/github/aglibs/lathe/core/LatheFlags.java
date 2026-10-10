@@ -22,6 +22,7 @@ public final class LatheFlags {
   public static final String FORMATTER_COMMAND_OPTION = "command";
   public static final String FORMATTER_GOOGLE = "google";
   public static final String FORMATTER_AOSP = "aosp";
+  public static final String FORMATTER_PALANTIR = "palantir";
   public static final String FORMATTER_NONE = "none";
   public static final String FORMATTER_COMMAND = "command";
   public static final String FORMATTER_COMMAND_FILE = "command-file";
@@ -29,15 +30,18 @@ public final class LatheFlags {
   public static final String FORMAT_MODULE_TOKEN = "%MODULE%";
   public static final String FORMAT_MVN_TOKEN = "%MVN%";
 
-  // Spotless step options carried in FormatterSpec.options, with Spotless's own defaults.
+  // Spotless step options carried in FormatterSpec.options, named as in the Spotless POM config.
+  // Sync fills unset ones from the step's own default<Option>() (a step without one does not
+  // support the option).
+  public static final String FORMAT_STYLE = "style";
+  public static final String FORMAT_STYLE_GOOGLE = "GOOGLE";
+  public static final String FORMAT_STYLE_AOSP = "AOSP";
+  public static final String FORMAT_STYLE_PALANTIR = "PALANTIR";
   public static final String FORMAT_REFLOW_LONG_STRINGS = "reflowLongStrings";
   public static final String FORMAT_REORDER_IMPORTS = "reorderImports";
   public static final String FORMAT_JAVADOC = "formatJavadoc";
-  public static final boolean FORMAT_REFLOW_LONG_STRINGS_DEFAULT = false;
-  public static final boolean FORMAT_REORDER_IMPORTS_DEFAULT = false;
-  public static final boolean FORMAT_JAVADOC_DEFAULT = true;
   public static final List<String> FORMAT_STEP_OPTIONS =
-      List.of(FORMAT_REFLOW_LONG_STRINGS, FORMAT_REORDER_IMPORTS, FORMAT_JAVADOC);
+      List.of(FORMAT_STYLE, FORMAT_REFLOW_LONG_STRINGS, FORMAT_REORDER_IMPORTS, FORMAT_JAVADOC);
   // A custom build of the formatter (Spotless <groupArtifact>), groupId:artifactId.
   public static final String FORMAT_GROUP_ARTIFACT = "groupArtifact";
 

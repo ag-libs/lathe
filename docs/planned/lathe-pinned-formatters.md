@@ -141,7 +141,8 @@ those grants).
     (only if `reorderImports`) → reflow long strings (only if `reflowLongStrings`; GJF only);
   - eclipse builds `DefaultCodeFormatterConstants` settings overlaid with the profile XML (parsed with the JDK's XML
     API) and applies the returned `TextEdit`.
-- `FormatEngine` keeps its shape; the in-process engines replace `GoogleFormatEngine`, and
+- `FormatEngine` keeps its shape; `GjfFormatEngine` (google-java-format and its fork palantir, one reflective
+  engine over their shared API) replaces the bundled-GJF `GoogleFormatEngine`, and
   `FileCommandFormatEngine` is deleted.
 - **Range formatting** — `rangeFormatting` and `rangesFormatting` are implemented (today a stub) and advertised,
   with `rangesSupport`, for the in-process engines; `command` stays whole-file.

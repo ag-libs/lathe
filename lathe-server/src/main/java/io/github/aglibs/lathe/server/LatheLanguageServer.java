@@ -104,7 +104,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
       capabilities.setDocumentFormattingProvider(true);
     }
 
-    if (formatEngine instanceof GoogleFormatEngine) {
+    if (formatEngine instanceof GjfFormatEngine) {
       final var rangeFormatting = new DocumentRangeFormattingOptions();
       rangeFormatting.setRangesSupport(true);
       capabilities.setDocumentRangeFormattingProvider(rangeFormatting);
@@ -229,15 +229,20 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
 
   private static FormatEngine engineFor(final FormatterSpec spec, final Path workingDir) {
     return switch (spec.engine()) {
-      case LatheFlags.FORMATTER_GOOGLE, LatheFlags.FORMATTER_AOSP -> googleEngine(spec);
+      case LatheFlags.FORMATTER_GOOGLE, LatheFlags.FORMATTER_AOSP ->
+          gjfEngine(spec, GjfFormatEngine.Family.GOOGLE, spec.engine().toUpperCase(Locale.ROOT));
+      case LatheFlags.FORMATTER_PALANTIR ->
+          gjfEngine(spec, GjfFormatEngine.Family.PALANTIR, LatheFlags.FORMAT_STYLE_PALANTIR);
       case LatheFlags.FORMATTER_COMMAND -> commandEngine(spec.command(), workingDir);
       case LatheFlags.FORMATTER_COMMAND_FILE -> fileCommandEngine(spec.command(), workingDir);
       default -> null;
     };
   }
 
-  // The project's pinned google-java-format; unavailable until lathe:sync has resolved its jars.
-  private static FormatEngine googleEngine(final FormatterSpec spec) {
+  // The project's pinned formatter; unavailable until lathe:sync has resolved its jars. The style
+  // is the Spotless step's, else the engine's own (a hand-written style file may omit it).
+  private static FormatEngine gjfEngine(
+      final FormatterSpec spec, final GjfFormatEngine.Family family, final String defaultStyle) {
     if (spec.classpath().isEmpty()) {
       LOG.warning(
           () ->
@@ -246,8 +251,11 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
       return null;
     }
 
-    return new GoogleFormatEngine(
-        spec.engine().toUpperCase(Locale.ROOT), spec.options(), spec.classpath());
+    return new GjfFormatEngine(
+        family,
+        spec.options().getOrDefault(LatheFlags.FORMAT_STYLE, defaultStyle),
+        spec.options(),
+        spec.classpath());
   }
 
   private static FormatEngine commandEngine(final List<String> command, final Path workingDir) {

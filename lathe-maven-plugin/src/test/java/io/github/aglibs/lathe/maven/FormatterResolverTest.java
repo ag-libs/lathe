@@ -21,6 +21,7 @@ class FormatterResolverTest {
 
   private static URLClassLoader spotless;
   private static Class<?> googleStep;
+  private static Class<?> palantirStep;
 
   @BeforeAll
   static void loadSpotless() throws Exception {
@@ -28,6 +29,7 @@ class FormatterResolverTest {
         new URLClassLoader(
             new URL[] {SPOTLESS_LIB.toUri().toURL()}, ClassLoader.getPlatformClassLoader());
     googleStep = spotless.loadClass("com.diffplug.spotless.java.GoogleJavaFormatStep");
+    palantirStep = spotless.loadClass("com.diffplug.spotless.java.PalantirJavaFormatStep");
   }
 
   @AfterAll
@@ -37,7 +39,8 @@ class FormatterResolverTest {
 
   @Test
   void withDefaults_unconfiguredAndConfiguredStep_spotlessDefaultsFillOnlyGaps() throws Exception {
-    final FormatterSpec bare = FormatterResolver.withDefaults(google("", Map.of()), googleStep);
+    final FormatterSpec bare =
+        FormatterResolver.withDefaults(google("", Map.of()), googleStep, "unused:fallback");
 
     assertThat(bare.version()).matches("\\d+\\.\\d+(\\.\\d+)?");
     assertThat(bare.options())
@@ -45,6 +48,8 @@ class FormatterResolverTest {
             Map.of(
                 LatheFlags.FORMAT_GROUP_ARTIFACT,
                 "com.google.googlejavaformat:google-java-format",
+                LatheFlags.FORMAT_STYLE,
+                "GOOGLE",
                 LatheFlags.FORMAT_REFLOW_LONG_STRINGS,
                 "false",
                 LatheFlags.FORMAT_REORDER_IMPORTS,
@@ -59,7 +64,8 @@ class FormatterResolverTest {
             LatheFlags.FORMAT_REORDER_IMPORTS,
             "true");
     final FormatterSpec configured =
-        FormatterResolver.withDefaults(google("1.28.0", configuredOptions), googleStep);
+        FormatterResolver.withDefaults(
+            google("1.28.0", configuredOptions), googleStep, "unused:fallback");
 
     assertThat(configured.version()).isEqualTo("1.28.0");
     assertThat(configured.options())
@@ -68,9 +74,35 @@ class FormatterResolverTest {
         .containsEntry(LatheFlags.FORMAT_JAVADOC, "true");
   }
 
+  // palantir's step has no defaultGroupArtifact() nor reflow/reorder options: the fallback
+  // coordinates apply and the unsupported options stay unset.
+  @Test
+  void withDefaults_palantirStep_usesFallbackArtifactAndOnlySupportedOptions() throws Exception {
+    final FormatterSpec palantir =
+        FormatterResolver.withDefaults(
+            new FormatterSpec(LatheFlags.FORMATTER_PALANTIR, List.of()),
+            palantirStep,
+            "com.palantir.javaformat:palantir-java-format");
+
+    assertThat(palantir.version()).matches("\\d+\\.\\d+(\\.\\d+)?");
+    assertThat(palantir.options())
+        .containsExactlyInAnyOrderEntriesOf(
+            Map.of(
+                LatheFlags.FORMAT_GROUP_ARTIFACT,
+                "com.palantir.javaformat:palantir-java-format",
+                LatheFlags.FORMAT_STYLE,
+                "PALANTIR",
+                LatheFlags.FORMAT_JAVADOC,
+                "false"));
+  }
+
   @Test
   void javacGrants_engines_onlyJavacFormattersNeedGrants() {
     assertThat(FormatterResolver.javacGrants(google("", Map.of())))
+        .isEqualTo(LatheFlags.FORMATTER_JAVAC_GRANTS);
+    assertThat(
+            FormatterResolver.javacGrants(
+                new FormatterSpec(LatheFlags.FORMATTER_PALANTIR, List.of())))
         .isEqualTo(LatheFlags.FORMATTER_JAVAC_GRANTS);
     assertThat(
             FormatterResolver.javacGrants(
