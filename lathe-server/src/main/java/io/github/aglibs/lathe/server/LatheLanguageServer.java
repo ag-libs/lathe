@@ -203,7 +203,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
   }
 
   // The workspace style file wins when it declares a formatter; otherwise the client's
-  // initializationOptions.lathe.formatter. "none"/unknown or absent means formatting is disabled.
+  // initializationOptions.lathe.style.formatter. "none", unknown, or absent disables formatting.
   private static FormatEngine resolveFormatEngine(
       final InitializeParams params, final Path workingDir) {
     final FormatterSpec spec = workspaceFormatterSpec(workingDir);

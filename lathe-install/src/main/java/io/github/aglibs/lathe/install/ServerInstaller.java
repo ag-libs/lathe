@@ -20,7 +20,7 @@ import org.eclipse.aether.repository.RemoteRepository;
 public final class ServerInstaller {
 
   // jdk.compiler internals the MCP launcher grants to ALL-UNNAMED: it runs entirely on the
-  // classpath, so google-java-format is in the unnamed module there.
+  // classpath, so its in-process javac is in the unnamed module there.
   private static final String[] JAVAC_EXPORT_PACKAGES = {
     "api", "code", "comp", "file", "main", "model", "parser", "processing", "tree", "util"
   };
@@ -231,10 +231,8 @@ public final class ServerInstaller {
   static String renderMcpLauncherScript(final String classpath) {
     // Classpath launcher: on the classpath lathe-server's module-info is ignored, so LatheEngine
     // and
-    // the in-process javac it drives run in the unnamed module. That javac needs the same
-    // jdk.compiler
-    // internals the editor launcher grants, but targeted at ALL-UNNAMED — there is no named module
-    // here.
+    // the in-process javac it drives run in the unnamed module, which needs jdk.compiler internals
+    // exported to ALL-UNNAMED. The editor launcher needs none: the server is a named module there.
     return """
         #!/bin/sh
         %s%sexec "$java_bin" %s $jvm_args ${LATHE_JVM_OPTS:-} \\

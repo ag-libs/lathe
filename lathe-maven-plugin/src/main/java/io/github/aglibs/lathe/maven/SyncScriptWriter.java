@@ -6,8 +6,6 @@ import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.install.ServerInstaller;
 import io.github.aglibs.lathe.install.SyncException;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import org.apache.maven.plugin.logging.Log;
 
@@ -26,16 +24,10 @@ final class SyncScriptWriter {
   void write(final Path workspaceRoot) {
     final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
     final var script = latheDir.resolve(LatheLayout.SYNC_SCRIPT);
-    final String content = render();
     try {
-      if (Files.isExecutable(script)
-          && content.equals(Files.readString(script, StandardCharsets.UTF_8))) {
-        return;
+      if (FileUtil.writeIfChanged(latheDir, script, render(), true)) {
+        log.info("[sync] wrote %s".formatted(script));
       }
-
-      Files.createDirectories(latheDir);
-      FileUtil.writeAtomically(latheDir, script, content, true);
-      log.info("[sync] wrote %s".formatted(script));
     } catch (final IOException e) {
       throw new SyncException("lathe:sync failed to write %s".formatted(script), e);
     }
