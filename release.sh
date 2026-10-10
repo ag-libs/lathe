@@ -123,14 +123,10 @@ echo
 echo "Tagged ${tag}. Push to trigger the release workflow:"
 echo "  git push origin HEAD ${tag}"
 
-# Remind to publish the standalone Neovim client mirror when its sources changed
-# since the previous release, so a client change is never silently left
-# unpublished. This is a reminder only — publish-nvim.sh runs separately, after the
-# tag is pushed, and pushes to a different repo with your own credentials.
-prev="$(release_tags | sed -n '2p')" # the tag before the one just cut
-client_paths=(lathe-neovim/runtime lathe-neovim/mirror publish-nvim.sh)
-if [ -z "$prev" ] || ! git diff --quiet "$prev" HEAD -- "${client_paths[@]}"; then
-  echo
-  echo "The Neovim client changed since ${prev:-the last release} — after pushing, publish the mirror:"
-  echo "  ./publish-nvim.sh ${version}"
-fi
+# The Neovim client mirror is published on every release, even when the client did
+# not change, so its tags always match the server versions on Maven Central. This
+# is a reminder only — publish-nvim.sh runs separately, after the tag is pushed,
+# and pushes to a different repo with your own credentials.
+echo
+echo "After pushing, publish the Neovim client mirror:"
+echo "  ./publish-nvim.sh ${version}"

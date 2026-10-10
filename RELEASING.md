@@ -38,17 +38,15 @@ tag is out — see [The Neovim client mirror](#the-neovim-client-mirror).
    all modules. If the `release` environment requires approval, approve the run.
 5. Verify the artifacts at
    [central.sonatype.com/namespace/io.github.ag-libs](https://central.sonatype.com/namespace/io.github.ag-libs).
-6. **Publish the Neovim client mirror — only if it changed.** In step 2, `release.sh` prints a reminder
-   when the client sources (`lathe-neovim/runtime`, `lathe-neovim/mirror`, or
-   `publish-nvim.sh`) changed since the previous tag. If it did, once the tag is on origin:
+6. **Publish the Neovim client mirror — on every release.** Once the tag is on origin:
    ```bash
    ./publish-nvim.sh 0.1.1          # or just ./publish-nvim.sh for the latest tag
    ```
    This snapshots the client **from the release tag**, overlays the standalone-only files
    (`lathe-neovim/mirror` + the repo `LICENSE`), stamps the version into `lua/lathe/version.lua`, shows the
    diff, and — on your `[y/N]` confirmation — pushes a `release vX.Y.Z` commit + tag to
-   `ag-libs/lathe.nvim`. Preview first with `./publish-nvim.sh --dry-run`. If the client did not change,
-   skip this — the mirror keeps its own version cadence.
+   `ag-libs/lathe.nvim`. Preview first with `./publish-nvim.sh --dry-run`.
+   Publish even when the client did not change, so every server version has a matching client tag.
 
 ## How it works
 
@@ -72,8 +70,8 @@ the monorepo. `publish-nvim.sh` publishes it entirely locally (no CI secret or P
 `release.sh`): it snapshots the client from the release tag, so the mirror is a pure function of the
 tag, and records the source commit SHA in the mirror commit message.
 
-Its version cadence is **independent of the server**: the mirror is published only when the client
-changed, so its latest tag may lag Maven Central. See
+Its versions **track the server**: the mirror is published on every release, even when the client did
+not change, so each version on Maven Central has a matching mirror tag. See
 [docs/planned/lathe-standalone-nvim-plugin.md](docs/planned/lathe-standalone-nvim-plugin.md) for the
 design and the client↔server protocol.
 
