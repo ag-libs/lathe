@@ -52,7 +52,7 @@ prompt now has a single meaning — "the build graph changed; only Maven knows h
 `afterModuleSave` (`WorkspaceSession`) already runs the entire reaction pipeline after a save:
 
 ```
-deleteStaleClassOutputs    prune stale inner/anonymous classes for the compiled file
+deleteClassOutputs         prune the compiled file's stale classes (nested, anonymous, siblings)
 recordCompileStamp         write the per-source compile stamp (CompiledStamps.record)
 scheduleAstRefresh         refresh the compiled file's own analysis
 scheduleDownstreamOpenFiles recompile OPEN docs in downstream modules (via WorkspaceModuleGraph)
@@ -166,13 +166,15 @@ full build makes the AP-aggregation edge a fallback case rather than a correctne
   Maven `target/` needs a confirming check; regardless, "run a Maven build before running" is the robust
   fallback. Treated as a separate slice.
 - **Repeated in-process failure**: a file that cannot compile in-process (e.g. it needs a
-  not-yet-generated dependency) must not retry forever. After a bounded number of attempts, surface the
-  Maven sync suggestion — honest degradation to the escape hatch.
+  not-yet-generated dependency) must not retry forever. A source whose compile emitted no class is
+  remembered with its mtime and skipped until the file changes or another compile succeeds (which may
+  supply what it was missing); it stays stale, so the staleness signal still points at a Maven sync.
 
 ## Robustness
 
-- **Inert on failure** — keep the old mirror, do not record the stamp, retry next tick (bounded by the
-  failure counter above). A half-written agent file simply fails and is retried when it stabilizes.
+- **Inert on failure** — keep the old mirror and do not record the stamp; retry only once the file
+  changes or another compile lands (above). A half-written agent file simply fails and is retried when
+  its next write lands.
 - **Mid-write safety** — act only on files whose `mtime` is stable across two consecutive ticks, so a
   file being written is not compiled mid-flight.
 - **Bulk cutoff** — a branch switch or large `git pull` can touch hundreds of files. Above a tunable
