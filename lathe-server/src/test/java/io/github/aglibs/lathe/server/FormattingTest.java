@@ -1,7 +1,6 @@
 package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -306,19 +305,6 @@ class FormattingTest {
                     "import java.util.List;\nimport java.util.Set;\n\nclass A {\n  List<String> names;\n}\n",
                     FILE))
         .hasMessageContaining("does not support Java %d".formatted(Runtime.version().feature()));
-  }
-
-  // The startup warm-up snippet must format on every in-process engine: a warm-up failure is only
-  // logged, so a broken snippet would silently leave the first save cold.
-  @Test
-  void warmUp_inProcessEngines_formatSnippetWithoutError() {
-    assertThatCode(() -> FormatterFixtures.googleJavaFormat().warmUp()).doesNotThrowAnyException();
-    if (Runtime.version().feature() < PALANTIR_UNSUPPORTED_JDK) {
-      assertThatCode(() -> FormatterFixtures.palantirJavaFormat().warmUp())
-          .doesNotThrowAnyException();
-    }
-
-    assertThatCode(() -> FormatterFixtures.eclipseJdt("").warmUp()).doesNotThrowAnyException();
   }
 
   @Test

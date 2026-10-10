@@ -945,8 +945,7 @@ generated `.lathe/style.json`, merged per section), auto-detected from `spotless
 `lathe:sync`.
 For Spotless `googleJavaFormat`, `palantirJavaFormat`, and `eclipse`, sync resolves the formatter
 release the project's Spotless pins and the server runs it in-process from an isolated classloader,
-reflectively, so no formatter is a dependency of Lathe; these engines also format ranges and are warmed
-up at startup.
+reflectively, so no formatter is a dependency of Lathe; these engines also format ranges.
 google-java-format and palantir also remove unused imports (and reorder them where the project enables
 it), as their Spotless steps do; Eclipse leaves imports alone.
 Only the formatter step runs, not the rest of the Spotless `<java>` section.

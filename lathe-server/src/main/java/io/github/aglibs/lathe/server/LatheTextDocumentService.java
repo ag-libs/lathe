@@ -1,6 +1,5 @@
 package io.github.aglibs.lathe.server;
 
-import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.schema.RunKind;
 import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
@@ -17,7 +16,6 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiFunction;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.*;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
@@ -71,29 +69,6 @@ public final class LatheTextDocumentService implements TextDocumentService {
 
   void setFormatEngine(final FormatEngine engine) {
     formatEngine = engine;
-    if (engine != null) {
-      worker.execute(() -> warmUp(engine));
-    }
-  }
-
-  // Fire and forget on the worker, where format requests run: a failure is only logged, and the
-  // first real format reports it to the user.
-  private static void warmUp(final FormatEngine engine) {
-    final var t = Stopwatch.start();
-    final String engineType = engine.getClass().getSimpleName();
-    try {
-      engine.warmUp();
-      LOG.fine(() -> "[format] warm-up %s %dms".formatted(engineType, t.elapsedMs()));
-    } catch (final Exception e) {
-      if (e instanceof InterruptedException) {
-        Thread.currentThread().interrupt();
-      }
-
-      LOG.log(
-          Level.WARNING,
-          e,
-          () -> "[format] warm-up %s failed %dms".formatted(engineType, t.elapsedMs()));
-    }
   }
 
   void setFileRenameSupported(final boolean supported) {
