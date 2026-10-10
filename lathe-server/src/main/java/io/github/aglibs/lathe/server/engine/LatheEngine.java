@@ -21,7 +21,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -404,16 +403,16 @@ public final class LatheEngine {
    * Recompile the change set in-process against the captured classpath (no reactor build) and
    * report the resulting compiler diagnostics, grouped by module. With no {@code files}, the change
    * set is detected from disk (sources newer than their last compile); otherwise it is those files.
-   * When the change reaches other modules, {@link LatheVerifyChange#suggestedMvn()} carries the
-   * precise scoped build to verify the remainder — Lathe never runs Maven. If the in-process
-   * recompile cannot be trusted (a pending POM sync, too many files, or a running build), the
-   * result is deferred to Maven.
+   * When the change reaches other modules, {@link LatheVerifyChange#suggestedSync()} carries the
+   * scoped sync that builds the remainder — Lathe never runs the build. If the in-process recompile
+   * cannot be trusted (a pending POM sync, too many files, or a running build), the result is
+   * deferred to a full sync.
    */
   public LatheVerifyChange verifyChange(final List<Path> files) {
     final ReconcileOutcome outcome = await(service.reconcileForVerify());
     if (outcome.deferral() != ReconcileOutcome.DeferReason.NONE) {
       return new LatheVerifyChange(
-          outcome.deferral().name(), List.of(), List.of(), LatheLayout.SYNC_COMMAND);
+          outcome.deferral().name(), List.of(), List.of(), LatheLayout.SYNC_SCRIPT_COMMAND);
     }
 
     final List<Path> changed = files.isEmpty() ? outcome.reacted() : files;
@@ -428,16 +427,15 @@ public final class LatheEngine {
             .filter(module -> !module.diagnostics().isEmpty())
             .toList();
     final List<String> downstream = await(service.downstreamModuleRels(changed));
-    final String suggestedMvn = downstream.isEmpty() ? null : crossModuleMvn(targets.keySet());
-    return new LatheVerifyChange(null, perModule, downstream, suggestedMvn);
+    final String suggestedSync =
+        downstream.isEmpty()
+            ? null
+            : LatheLayout.scopedSyncCommand(new TreeSet<>(targets.keySet()));
+    return new LatheVerifyChange(null, perModule, downstream, suggestedSync);
   }
 
   private List<Diagnostic> diagnose(final List<Path> files) {
     return files.stream().flatMap(file -> compileFromDisk(file).stream()).toList();
-  }
-
-  private static String crossModuleMvn(final Set<String> changedModuleRels) {
-    return LatheLayout.scopedSyncCommand(String.join(",", new TreeSet<>(changedModuleRels)));
   }
 
   /**

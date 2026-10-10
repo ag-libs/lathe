@@ -74,7 +74,7 @@ stamps against the mirrored bytecode and routed to the same re-sync prompt
 (see [external-change detection](done/lathe-external-change-detection.md) and
 [compile-stamp staleness](done/lathe-staleness-compile-stamps.md)); changed resources are copied into
 `.lathe/` without a build. When only some modules changed, the server computes the affected module set
-and asks the client to run a targeted `mvn -pl <modules> -am` sync rather than a full reactor build.
+and asks the client to run a scoped `.lathe/lathe-sync.sh <modules>` (`-am -amd`) rather than a full sync.
 `LatheWorkspaceService.didChangeWatchedFiles` is an unused no-op.
 Type indexes back dependency, JDK, and reactor type-name completion.
 Beyond the standard LSP methods, the server exposes an `executeCommand` surface for run/test/debug,
@@ -178,7 +178,7 @@ Lathe incidentally:
 mvnd process-test-classes    # refresh Lathe — init creates .lathe/, shim writes params, sync refreshes metadata
 ```
 
-Run `mvnd process-test-classes` when you want to refresh Lathe directly;
+Run `.lathe/lathe-sync.sh` when you want to refresh Lathe directly (before the first sync, which writes it, run `mvnd process-test-classes`);
 ordinary `mvnd package` and `mvnd install` runs also reach this phase and refresh Lathe automatically.
 The shim updates `lsp-params-classes.json` and `lsp-params-test-classes.json` for every module it compiles.
 The bound `lathe:sync` goal then resolves external dependency source JARs,
@@ -191,12 +191,12 @@ The LS reads shim params on startup and registry reload;
 it also reads the workspace manifest for dependency/JDK source roots, external-source classpaths,
 type-index shard paths, reactor POM paths, server version, and hover origin labels.
 
-If a module has no params file yet (first checkout, new module added), the LS surfaces:
-"Run `mvn process-test-classes` to activate module `<relativePath>`."
+If a module has no params file yet (first checkout, new module added), the LS has no compiler
+configuration for it until the next sync (`.lathe/lathe-sync.sh`).
 
 Stale-POM detection compares watched POM modification time and size against the baseline loaded from
-`workspace.json` and surfaces:
-"Maven project changed. Run `mvn process-test-classes` to refresh Lathe."
+`workspace.json` and prompts "Maven project changed. Lathe will run a full refresh."; accepting it has
+the client run `.lathe/lathe-sync.sh`.
 
 After cloning a checkout or changing the `.mvn/extensions.xml` registration, run a build:
 the next `process-test-classes`, `package`, or `install` run refreshes params and synchronized metadata.
@@ -553,11 +553,12 @@ No `JavacTask` is created at startup.
 No compiler or javac state is created at startup; per-module compilation state is built lazily on first use.
 Startup cost is bounded by the number of params files, not by reactor complexity or classpath size.
 
-If `.lathe/` does not exist: "Run `mvn lathe:init` then `mvn process-test-classes` to initialize Lathe."
+If `.lathe/` does not exist, the LS shows `LatheLayout.SETUP_REMEDIATION`: add the Lathe extension, then
+run `mvn process-test-classes` (the first sync, which also writes `.lathe/lathe-sync.sh`).
 If `.lathe/` is present but dependency source lookup is unavailable,
 the LS may still serve compiler-backed features from params files and should prompt for
-`mvn process-test-classes` only when a feature needs synced source metadata.
-If a module directory has no params files: "Run `mvn process-test-classes` to activate module `<relativePath>`."
+`.lathe/lathe-sync.sh` only when a feature needs synced source metadata.
+If a module directory has no params files, it has no compiler configuration until the next sync.
 
 The LS watches `workspace.json` and `lsp-params-*.json` files.
 Manifest or params changes trigger a full LS reload:
@@ -740,7 +741,7 @@ Cancels any in-flight pass for the module and any pending debounce,
 then runs immediately with no debounce, using the same full-pass logic as `didSave`.
 First-file-in-module open also pays for one-time module compiler setup and params-file parse.
 
-If the module has no params yet: "Run `mvn process-test-classes` to activate module `<relativePath>`."
+If the module has no params yet, it has no compiler configuration until the next sync.
 
 Target: ~1s p95.
 

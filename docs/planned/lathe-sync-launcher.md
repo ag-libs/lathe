@@ -2,7 +2,7 @@
 
 ## Status
 
-**In progress.** Slices 1 (Maven writes the script) and 2 (the Neovim client runs it) are done; slice 3 (server and MCP texts) is next.
+**In progress.** Slices 1–3 are done for Maven: sync writes the script, the Neovim client runs it, and server and MCP texts name it. Gradle and OpenJDK scripts come with their own work.
 Prepares Lathe for [Gradle support](lathe-gradle-support.md) by removing the last place outside the build integration that knows how to run the build.
 
 ## Problem

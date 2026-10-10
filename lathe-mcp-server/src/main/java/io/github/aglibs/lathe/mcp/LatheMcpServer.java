@@ -63,7 +63,7 @@ public final class LatheMcpServer {
 
       A "Stale:" note on a result means a module's source is newer than its compiled classes; run \
       `%s` to refresh, then re-query."""
-          .formatted(LatheLayout.SYNC_COMMAND);
+          .formatted(LatheLayout.SYNC_SCRIPT_COMMAND);
 
   private LatheMcpServer() {}
 

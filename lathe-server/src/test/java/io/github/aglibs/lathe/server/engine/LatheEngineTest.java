@@ -313,7 +313,7 @@ class LatheEngineTest {
 
     assertThat(verify.deferral()).isNull();
     assertThat(verify.perModule()).isEmpty();
-    assertThat(verify.suggestedMvn()).isNull();
+    assertThat(verify.suggestedSync()).isNull();
   }
 
   // Record a compile stamp per source so a freshly started engine sees the module as already

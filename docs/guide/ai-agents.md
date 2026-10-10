@@ -130,8 +130,9 @@ file after your edit, with no Maven:
 
 While a referenced module's source is newer than its compiled classes (e.g. in the moment before the
 reconcile catches up), results append a **`Stale:`** note listing those modules; it clears once the
-in-process recompile lands, or you can force it with `mvn process-test-classes`. `rename_symbol`
-force-refreshes so its own result is current.
+in-process recompile lands, or you can force it with `.lathe/lathe-sync.sh`. Every tool recompiles
+changed sources before answering, so a note that persists means that catch-up was deferred (a POM
+change, a bulk change, or a running build).
 
 `rename_symbol` is the one tool that writes: it applies javac-computed edits to disk and **refuses to
 touch a file outside the reactor**.
@@ -155,5 +156,5 @@ server's stderr in their own logs. Set `LATHE_DEBUG=1` for finer detail.
   (`mvn process-test-classes`); see the prerequisite above.
 - **Launcher not found** — the launcher is written by `lathe:sync`, so it appears only after a build;
   confirm the Lathe extension is registered (see [installation.md](installation.md)).
-- **Tools resolve nothing / results look stale** — check for a `Stale:` note and re-run the build; a
+- **Tools resolve nothing / results look stale** — check for a `Stale:` note and run `.lathe/lathe-sync.sh`; a
   cold index also needs a moment to warm on the first query.

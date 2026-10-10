@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.core;
 
 import java.nio.file.Path;
+import java.util.Collection;
 
 public final class LatheLayout {
 
@@ -75,17 +76,19 @@ public final class LatheLayout {
   public static final String INIT_EXECUTION_ID = "lathe-init";
   public static final String SYNC_EXECUTION_ID = "lathe-sync";
 
-  // The Maven phase that runs lathe:sync (bound via LifecyclePhase.PROCESS_TEST_CLASSES) and the
-  // command we suggest users/agents run to refresh .lathe/. The single source for that wording —
-  // every remediation string below and the MCP instructions compose it rather than repeating it.
+  // The Maven phase that runs lathe:sync (bound via LifecyclePhase.PROCESS_TEST_CLASSES), and the
+  // build command for the first sync, before the build has written the sync script.
   private static final String MVN = "mvn";
   public static final String SYNC_PHASE = "process-test-classes";
   public static final String SYNC_COMMAND = "%s %s".formatted(MVN, SYNC_PHASE);
 
-  // Scoped form of SYNC_COMMAND: refresh the given modules and everything downstream (-amd =
-  // also-make-dependents). Shares the mvn/phase wording with SYNC_COMMAND so the two never drift.
-  public static String scopedSyncCommand(final String modules) {
-    return "%s -pl %s -amd %s".formatted(MVN, modules, SYNC_PHASE);
+  // What users and agents run to refresh an already-synced workspace: the script the build wrote,
+  // which knows the build tool. Every remediation below and the MCP instructions compose it.
+  public static final String SYNC_SCRIPT_COMMAND = "%s/%s".formatted(LATHE_DIR, SYNC_SCRIPT);
+
+  // Scoped form: refresh the given modules, their upstream, and everything downstream.
+  public static String scopedSyncCommand(final Collection<String> modules) {
+    return "%s %s".formatted(SYNC_SCRIPT_COMMAND, String.join(" ", modules));
   }
 
   // A missing .lathe/ can mean the project is not set up for Lathe at all, or set up but not yet
@@ -99,7 +102,7 @@ public final class LatheLayout {
   // this instead. The remaining %s is the stale-module list, filled at use.
   public static final String STALE_REMEDIATION =
       "Stale: module(s) %%s have source newer than their compiled classes, so cross-module results may be out of date. Run `%s` to refresh Lathe's classes."
-          .formatted(SYNC_COMMAND);
+          .formatted(SYNC_SCRIPT_COMMAND);
 
   private LatheLayout() {}
 

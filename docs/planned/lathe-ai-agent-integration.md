@@ -47,7 +47,7 @@ own `mvn`, and Lathe surfaces staleness instead (see [Freshness model](#freshnes
 > **Note.** The cross-module freshness question `verify_build` once stood in for is now answered by two
 > shipped/designed pieces: the shipped [In-Process Workspace Sync](../done/lathe-in-process-workspace-sync.md)
 > reaction and the designed [`verify_change`](lathe-change-impact-and-verification.md) tool (in-process
-> Tier-1 recompile + a precise `mvn -pl … -amd` handoff for the reactor-bound remainder). Any remaining
+> Tier-1 recompile + a scoped `.lathe/lathe-sync.sh <modules>` handoff for the reactor-bound remainder). Any remaining
 > `verify_build` mention in the deeper Measurement section refers to using the agent's own `mvn` as the
 > benchmark oracle, not a Lathe tool.
 
@@ -387,7 +387,7 @@ dependency order — reserving Maven for POM / module-structure changes only.
 |---|---|---|
 | The single edited file | in-process javac vs `.lathe/` | No (≈280ms) |
 | Multiple files, same module | in-process reaction — FULL recompile of the changed set into the mirror | No — **shipped** (in-process sync) |
-| Cross-module (an API used by another module) | in-process reaction recompiles the changed set upstream-first; the remainder via `verify_change` Tier-3 (`mvn -pl … -amd`) | Only the genuinely reactor-bound remainder (codegen / cross-module AP) |
+| Cross-module (an API used by another module) | in-process reaction recompiles the changed set upstream-first; the remainder via `verify_change` Tier-3 (`.lathe/lathe-sync.sh <modules>`) | Only the genuinely reactor-bound remainder (codegen / cross-module AP) |
 | POM / dependency / module-structure change | full `mvn process-test-classes` (the sync prompt) | **Yes — unavoidable** |
 
 `get_diagnostics` is messaged as "errors in *this* file after your edit" and carries a `Stale:` advisory
@@ -470,7 +470,7 @@ Detailed design: [Change Impact & Verification](lathe-change-impact-and-verifica
 | Tool | Kind | In → Out |
 |---|---|---|
 | `analyze_change` | read | `{file,line,column}` → `{symbol, publicApi, overrideFamily[], productionRefs, testRefs, affectedModules[], relevantTests[]}` — pre-edit "what will this break?", composed from `describe`/`find_implementations`/`find_references` + the reactor graph. |
-| `verify_change` | **action** | `{files?}` → `{changeSet, deferred{toMaven,reason}, perModule[{module, diagnostics[]}], crossModule{affectedModules[], suggestedMvn}}` — post-edit scoped recompile driving the [In-Process Workspace Sync](../done/lathe-in-process-workspace-sync.md) reaction (Tier 1) + a precise `mvn` handoff for the cross-module remainder (Tier 3). |
+| `verify_change` | **action** | `{files?}` → `{changeSet, deferred{toMaven,reason}, perModule[{module, diagnostics[]}], crossModule{affectedModules[], suggestedSync}}` — post-edit scoped recompile driving the [In-Process Workspace Sync](../done/lathe-in-process-workspace-sync.md) reaction (Tier 1) + a precise `mvn` handoff for the cross-module remainder (Tier 3). |
 
 ### Example — `find_references` result (pins the snippet shape)
 

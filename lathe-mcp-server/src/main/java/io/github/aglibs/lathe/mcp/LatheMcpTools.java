@@ -858,11 +858,11 @@ final class LatheMcpTools {
     if (verify.deferral() != null) {
       final String text =
           "Verification deferred: %s. Run `%s`, then re-check."
-              .formatted(deferralText(verify.deferral()), verify.suggestedMvn());
+              .formatted(deferralText(verify.deferral()), verify.suggestedSync());
       return result(
           text,
           Map.<String, Object>of(
-              "deferred", verify.deferral(), "suggestedMvn", verify.suggestedMvn()),
+              "deferred", verify.deferral(), "suggestedSync", verify.suggestedSync()),
           List.of());
     }
 
@@ -876,7 +876,7 @@ final class LatheMcpTools {
   }
 
   private static String crossModuleNote(final LatheVerifyChange verify) {
-    if (verify.suggestedMvn() == null) {
+    if (verify.suggestedSync() == null) {
       return "";
     }
 
@@ -884,7 +884,7 @@ final class LatheMcpTools {
         .formatted(
             verify.affectedModules().size(),
             String.join(", ", verify.affectedModules()),
-            verify.suggestedMvn());
+            verify.suggestedSync());
   }
 
   private static Map<String, Object> verifyStructured(
@@ -894,8 +894,8 @@ final class LatheMcpTools {
     structured.put(
         "perModule", verify.perModule().stream().map(LatheMcpTools::moduleDiagnosticsMap).toList());
     structured.put("affectedModules", verify.affectedModules());
-    if (verify.suggestedMvn() != null) {
-      structured.put("suggestedMvn", verify.suggestedMvn());
+    if (verify.suggestedSync() != null) {
+      structured.put("suggestedSync", verify.suggestedSync());
     }
 
     return structured;

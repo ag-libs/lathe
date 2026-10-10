@@ -4,7 +4,7 @@
 
 **`verify_change` — DONE** (P1 shipped 2026-09-26): engine method + MCP tool + `reconcileForVerify`
 seam, unit-tested and probe-validated on the `multi-module` invoker fixture (auto change-detection,
-per-module diagnostics, cross-module `mvn -pl … -amd` handoff). **`analyze_change` — DONE** (P2 shipped
+per-module diagnostics, cross-module `.lathe/lathe-sync.sh <modules>` handoff). **`analyze_change` — DONE** (P2 shipped
 2026-09-26): pre-edit impact (override family, production/test reference split, affected modules,
 relevant tests), composed from `describe`/`find_implementations`/`find_references` + a path-placement
 accessor. `publicApi` was dropped from the KISS cut (no semantic-modifier accessor) — revisit after
@@ -233,7 +233,7 @@ LatheVerifyChange(
   changeSet,           // { files[], source: "stamps"|"explicit", deletions[] }
   deferred,            // { toMaven: boolean, reason }  — true ⇒ Tier 1 skipped (Step 2)
   perModule,           // List<{ module, diagnostics[] }>
-  crossModule          // { affectedModules[], suggestedMvn }
+  crossModule          // { affectedModules[], suggestedSync }
 )
 ```
 
