@@ -16,6 +16,7 @@ import static org.mockito.Mockito.verify;
 
 import com.google.googlejavaformat.java.JavaFormatterOptions.Style;
 import io.github.aglibs.lathe.core.CompiledStamps;
+import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.TestSelection;
@@ -29,6 +30,7 @@ import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -724,7 +726,7 @@ class LatheTextDocumentServiceTest {
   }
 
   @Test
-  void didSave_burstOfSavesAcrossFiles_recompilesEachOpenDependentAtMostOnce() throws Exception {
+  void didSave_singleSaveThenBurstAcrossFiles_recompilesEachOpenDependentOnce() throws Exception {
     final DepFixture fx = depWithUsers(3);
     service.initialize(tmp);
     awaitStartup();
@@ -743,24 +745,39 @@ class LatheTextDocumentServiceTest {
     final var logger = Logger.getLogger(SourceAnalysisSession.class.getName());
     logger.addHandler(handler);
     try {
-      // `:wa` after a rename saves every touched file back to back, and each save refreshes the
-      // other open files; repeated saves of one file supersede each other, so they never pile up.
-      final var all = new ArrayList<Path>(fx.users());
-      all.addFirst(fx.dep());
-      for (final Path file : all) {
-        service.didSave(
-            new DidSaveTextDocumentParams(
-                new TextDocumentIdentifier(file.toUri().toString()), Files.readString(file)));
+      // A single save refreshes each open dependent as soon as its own compile is done.
+      save(fx.dep());
+      for (final Path user : fx.users()) {
+        verify(client, timeout(5_000)).publishDiagnostics(argThat(p -> isFor(p, user)));
+        assertThat(openCompiles(compiles, user)).isEqualTo(1);
       }
 
+      awaitWorkerIdle();
+      compiles.clear();
+      clearInvocations(client);
+      // `:wa` after a rename saves every touched file back to back; the refresh waits for all of
+      // their compiles, instead of every completing save refreshing every other open file.
+      save(fx.dep());
+      fx.users().forEach(this::save);
       for (final Path user : fx.users()) {
         verify(client, after(1_500).atLeastOnce()).publishDiagnostics(argThat(p -> isFor(p, user)));
-        final String openCompile = "[compile:open] %s ".formatted(user.toUri());
-        assertThat(compiles).filteredOn(m -> m.startsWith(openCompile)).hasSizeLessThanOrEqualTo(1);
+        assertThat(openCompiles(compiles, user)).isEqualTo(1);
       }
     } finally {
       logger.removeHandler(handler);
     }
+  }
+
+  private void save(final Path file) {
+    service.didSave(
+        new DidSaveTextDocumentParams(
+            new TextDocumentIdentifier(file.toUri().toString()),
+            IOUtil.unchecked(() -> Files.readString(file))));
+  }
+
+  private static long openCompiles(final Collection<String> compileLog, final Path file) {
+    final String prefix = "[compile:open] %s ".formatted(file.toUri());
+    return compileLog.stream().filter(m -> m.startsWith(prefix)).count();
   }
 
   @Test

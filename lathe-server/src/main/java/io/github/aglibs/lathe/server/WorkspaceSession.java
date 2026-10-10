@@ -189,6 +189,11 @@ final class WorkspaceSession {
   // Sources whose last compile emitted no class (a compile error), keyed to the mtime compiled.
   // They are skipped until edited again or another compile lands, not recompiled every tick.
   private final Map<Path, Long> failedCompiles = new HashMap<>();
+  // Save and reconcile-batch compiles still running. A dependents refresh requested meanwhile
+  // is merged into pendingRefresh and runs once they drain, so a `:wa` burst refreshes each open
+  // file once instead of once per completing save.
+  private int sourceCompilesInFlight;
+  private DependentRefresh pendingRefresh;
   // The -pl module selectors carried from the pending sync prompt to the sync request (empty = full
   // reactor). Set at prompt time because the request fires later, on the user's response.
   private List<String> pendingSyncModules = List.of();
@@ -3344,6 +3349,7 @@ final class WorkspaceSession {
 
     final List<Path> batch = List.copyOf(readable);
     final var done = new CompletableFuture<Void>();
+    sourceCompilesInFlight++;
     workspace
         .workerFor(config)
         .compileBatch(List.copyOf(transientSources))
@@ -3351,8 +3357,12 @@ final class WorkspaceSession {
             (written, error) ->
                 worker.execute(
                     () -> {
-                      afterChangedBatch(config, batch, written, error);
-                      done.complete(null);
+                      try {
+                        afterChangedBatch(config, batch, written, error);
+                      } finally {
+                        sourceCompileDone();
+                        done.complete(null);
+                      }
                     }));
     return done;
   }
@@ -3638,7 +3648,6 @@ final class WorkspaceSession {
   private static final int BULK_CHANGE_THRESHOLD = 50;
   static final long ACTIVE_WINDOW_MS = 30_000L;
   static final long IDLE_RECONCILE_INTERVAL_MS = 20_000L;
-  static final long DEPENDENT_REFRESH_DEBOUNCE_MS = 500L;
   private static final String SYNC_ACTION = "Sync";
   private static final String SYNC_CAPTURE_ACTION = "Sync + capture tests";
   private static final String LATER_ACTION = "Later";
@@ -3828,18 +3837,38 @@ final class WorkspaceSession {
     final var request =
         new CompileRequest(
             snapshot.uri(), snapshot.content(), snapshot.version(), snapshot.generation(), mode);
+    final boolean save = mode == CompileMode.FULL;
+    if (save) {
+      sourceCompilesInFlight++;
+    }
+
     moduleWorker
         .compile(request)
         .thenAccept(
             result ->
                 worker.execute(
                     () -> {
-                      afterCompile.accept(snapshot, result);
-                      maybeWidenSealed(route, snapshot, result);
+                      try {
+                        afterCompile.accept(snapshot, result);
+                        maybeWidenSealed(route, snapshot, result);
+                      } finally {
+                        if (save) {
+                          sourceCompileDone();
+                        }
+                      }
                     }))
         .exceptionally(
             ex -> {
-              worker.execute(() -> publisher.publishError(snapshot, mode, ex));
+              worker.execute(
+                  () -> {
+                    try {
+                      publisher.publishError(snapshot, mode, ex);
+                    } finally {
+                      if (save) {
+                        sourceCompileDone();
+                      }
+                    }
+                  });
               return null;
             });
   }
@@ -4033,24 +4062,58 @@ final class WorkspaceSession {
   // Recompile open files in this module or downstream, so a change/deletion here shows in their
   // diagnostics; excludeUri (the just-saved file, or null) compiles on its own path.
   private void refreshOpenDependents(final ModuleSourceConfig module, final String excludeUri) {
-    final Set<Path> scope = moduleGraph.downstreamModuleDirs(module.moduleDir());
+    final var request =
+        new DependentRefresh(
+            moduleGraph.downstreamModuleDirs(module.moduleDir()),
+            excludeUri == null ? Set.of() : Set.of(excludeUri));
+    pendingRefresh = pendingRefresh == null ? request : pendingRefresh.merge(request);
+    if (sourceCompilesInFlight == 0) {
+      runPendingRefresh();
+    }
+  }
+
+  private void sourceCompileDone() {
+    sourceCompilesInFlight--;
+    if (sourceCompilesInFlight == 0 && pendingRefresh != null) {
+      runPendingRefresh();
+    }
+  }
+
+  private void runPendingRefresh() {
+    final DependentRefresh refresh = pendingRefresh;
+    pendingRefresh = null;
     LOG.fine(
         () ->
-            "[dependents] %s: checking %d open file(s) across %d module(s)"
-                .formatted(module.moduleDir().getFileName(), docs.all().size(), scope.size()));
+            "[dependents] checking %d open file(s) across %d module(s)"
+                .formatted(docs.all().size(), refresh.scope().size()));
     docs.all().stream()
         .map(OpenDocument::uri)
-        .filter(uri -> !uri.equals(excludeUri))
-        .filter(uri -> inDownstreamScope(uri, scope))
+        .filter(uri -> !refresh.exclusions().contains(uri))
+        .filter(uri -> inDownstreamScope(uri, refresh.scope()))
+        .toList()
         .forEach(this::scheduleDependent);
   }
 
-  // Debounced, unlike the editor's own file: the event loop coalesces per uri, so a burst of saves
-  // (`:wa` after a reactor-wide rename) refreshes each open dependent once after the burst, instead
-  // of every save queuing a compile of every other open file on the module worker.
   private void scheduleDependent(final String uri) {
     LOG.fine(() -> "[dependents] recompiling %s".formatted(uri));
-    scheduleOpenFile(uri, DEPENDENT_REFRESH_DEBOUNCE_MS);
+    scheduleOpenFile(uri);
+  }
+
+  // Downstream modules to refresh, minus the open files that every merged request excluded (a saved
+  // file was just compiled itself, but another save's refresh may still need it).
+  record DependentRefresh(Set<Path> scope, Set<String> exclusions) {
+    DependentRefresh {
+      scope = Set.copyOf(scope);
+      exclusions = Set.copyOf(exclusions);
+    }
+
+    DependentRefresh merge(final DependentRefresh other) {
+      final var mergedScope = new HashSet<>(scope);
+      mergedScope.addAll(other.scope());
+      final var keptExclusions = new HashSet<>(exclusions);
+      keptExclusions.retainAll(other.exclusions());
+      return new DependentRefresh(mergedScope, keptExclusions);
+    }
   }
 
   private boolean inDownstreamScope(final String uri, final Set<Path> scope) {
@@ -4061,13 +4124,13 @@ final class WorkspaceSession {
   }
 
   private void scheduleAllOpenFiles() {
-    docs.all().stream().map(OpenDocument::uri).toList().forEach(uri -> scheduleOpenFile(uri, 0L));
+    docs.all().stream().map(OpenDocument::uri).toList().forEach(this::scheduleOpenFile);
   }
 
-  private void scheduleOpenFile(final String uri, final long delayMs) {
+  private void scheduleOpenFile(final String uri) {
     worker.schedule(
         uri,
-        delayMs,
+        0L,
         () -> {
           final OpenDocument openFile = docs.get(uri);
           if (openFile != null) {

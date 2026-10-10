@@ -173,6 +173,21 @@ class WorkspaceSessionTest {
   }
 
   @Test
+  void dependentRefreshMerge_unionsScopes_skipsOnlyFilesEveryRequestExcluded() {
+    final var api = tmp.resolve(".lathe/api");
+    final var app = tmp.resolve(".lathe/app");
+    // Each save excludes the file it just compiled; a file stays excluded only if no merged
+    // request needs it refreshed.
+    final var first = new WorkspaceSession.DependentRefresh(Set.of(api), Set.of("A", "Shared"));
+    final var second = new WorkspaceSession.DependentRefresh(Set.of(app), Set.of("Shared"));
+
+    final var merged = first.merge(second);
+
+    assertThat(merged.scope()).containsExactlyInAnyOrder(api, app);
+    assertThat(merged.exclusions()).containsExactly("Shared");
+  }
+
+  @Test
   void stableSources_unchangedMtimeAcrossTicks_included_newOrMovedExcluded() {
     final var settled = sourceRoot.resolve("com/example/Settled.java");
     final var moving = sourceRoot.resolve("com/example/Moving.java");
