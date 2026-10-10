@@ -147,7 +147,7 @@ The JDK prologue is therefore a per-front-end choice, not part of the contract: 
 - **Neovim client.**
   `lathe/sync` and `:LatheSync` / `:LatheSyncCaptureTest` run `.lathe/lathe-sync.sh` with `--tests` and the modules from the notification, `cwd` = root.
   The Maven-specific code (`maven_executable`, the goal and flag assembly) is deleted.
-  The "syncing…" toast starts with the script invocation and switches to the full build command once the script's first stderr line arrives; the failure buffer shows it as part of the output.
+  The "syncing…" toast and the success summary name the invocation the client ran (`.lathe/lathe-sync.sh --tests app`); the full build command, which the script prints first, shows in the output console and the failure view.
   If the script is missing, the workspace was synced by an older Lathe: the client shows the existing "older Lathe" notice instead of falling back to Maven.
 - **Server.**
   The `lathe/sync` notification is unchanged (`captureTests`, `modules`); clients map it to script arguments.

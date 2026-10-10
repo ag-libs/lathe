@@ -1,6 +1,6 @@
 -- Verifies lathe.sync: run executes the workspace's .lathe/lathe-sync.sh with --tests and module
 -- arguments, at the workspace root; a missing script (a workspace synced by an older Lathe) is
--- reported instead of run; the toast shows the full build command the script prints first; a
+-- reported instead of run; the toast names the script invocation the client ran; a
 -- concurrent sync for the same root is a no-op; an empty root does nothing; and the lathe/sync
 -- handler dispatches to run. Stubs vim.system so no build is spawned.
 --
@@ -58,13 +58,13 @@ spec.check("full sync passes no arguments", #last_args(), 0)
 spec.check("runs at the workspace root", calls[1].opts.cwd, "/ws/a")
 spec.check("pre-touches the reactor lock before spawning", writes[1], "/ws/a/.lathe/lathe.lock")
 
--- The script prints the exact build command first; the toast and console show it from then on.
-calls[1].opts.stderr(nil, "lathe-sync: mvnd -pl core -am -amd process-test-classes\n[INFO] x\n")
-pending_cb({ code = 0, stdout = "" })
+-- The toast names what the client ran, not the build command the script resolves.
+pending_cb({ code = 0, stdout = "", stderr = "lathe-sync: mvnd process-test-classes\n" })
 spec.check("releases the reactor lock when the build ends", unlinks[1], "/ws/a/.lathe/lathe.lock")
 spec.check(
-  "success toast shows the full command the script printed",
-  notes[#notes]:find("mvnd -pl core -am -amd process-test-classes", 1, true) ~= nil,
+  "success toast names the script invocation",
+  notes[#notes]:find("`.lathe/lathe-sync.sh`", 1, true) ~= nil
+    and notes[#notes]:find("mvnd", 1, true) == nil,
   true
 )
 
@@ -78,10 +78,9 @@ pending_cb({ code = 0 })
 
 sync.run("/ws/e", true, { "app" })
 spec.check("capture and scope combine", table.concat(last_args(), " "), "--tests app")
-calls[#calls].opts.stderr(nil, "boom\n")
-pending_cb({ code = 1, stdout = "out\n" })
+pending_cb({ code = 1, stdout = "out\n", stderr = "lathe-sync: mvnd -pl app test\nboom\n" })
 spec.check(
-  "failure toast keeps the script invocation when no command was printed",
+  "failure toast names the script invocation",
   notes[#notes]:find(".lathe/lathe-sync.sh --tests app", 1, true) ~= nil,
   true
 )

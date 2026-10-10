@@ -149,9 +149,8 @@ local function release_lock(root)
   pcall(vim.loop.fs_unlink, lock_path(root))
 end
 
--- The script prints the exact build command as its first stderr line, `lathe-sync: <command>`; the
--- tool it picks (mvnd, ./mvnw, mvn, gradlew) is only known once it runs.
-local SCRIPT_COMMAND_PREFIX = 'lathe-sync: '
+-- The notification names what the client ran; the script prints the build command it resolves
+-- (`lathe-sync: mvnd …`) as its first stderr line, so that shows in the output console.
 local SCRIPT = '.lathe/lathe-sync.sh'
 
 --- Runs `.lathe/lathe-sync.sh [--tests] [module ...]` at `root` as a background job, notifying on
@@ -192,31 +191,13 @@ function M.run(root, capture_tests, modules)
   end)
 
   pretouch_lock(root)
-  -- Collect stderr ourselves (vim.system drops it from the result once a handler is set) and show
-  -- the script's full command, from its first line, once it arrives.
-  local stderr = {}
-  local found_command = false
-  local function on_stderr(_, data)
-    if not data then
-      return
-    end
-    table.insert(stderr, data)
-    if not found_command then
-      local first =
-        table.concat(stderr):match('^' .. vim.pesc(SCRIPT_COMMAND_PREFIX) .. '([^\n]+)\n')
-      found_command = first ~= nil
-      state.cmd_str = first or state.cmd_str
-    end
-  end
-
-  vim.system(cmd, { cwd = root, text = true, stderr = on_stderr }, function(res)
+  vim.system(cmd, { cwd = root, text = true }, function(res)
     release_lock(root)
     running[root] = nil
     state.done = true
     timer:stop()
     timer:close()
     local secs = elapsed_s(state.started)
-    cmd_str = state.cmd_str
     vim.schedule(function()
       if res.code == 0 then
         show_success(cmd_str, secs)
@@ -235,7 +216,7 @@ function M.run(root, capture_tests, modules)
           ),
           vim.log.levels.ERROR
         )
-        show_failure(cmd_str, root, res.code, (res.stdout or '') .. table.concat(stderr))
+        show_failure(cmd_str, root, res.code, (res.stdout or '') .. (res.stderr or ''))
       end
     end)
   end)
