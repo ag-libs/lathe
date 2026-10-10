@@ -506,7 +506,9 @@ tail -f ~/.local/state/nvim/lsp.log
 ## Troubleshooting (Neovim)
 
 If the server exits unexpectedly, Lathe notifies you (`language server exited unexpectedly`); check the
-LSP log above and set `LATHE_DEBUG=1` for verbose compiler logging. If it does not attach at all,
+LSP log above and set `LATHE_DEBUG=1` for verbose compiler logging.
+A server that fails before it starts (a bad JDK, a module missing from the server's module path) also
+reports there: the JVM's startup errors appear as `stderr` lines in the LSP log. If it does not attach at all,
 confirm the launcher exists (`:LatheStart` reports when it is missing) and run `mvn process-test-classes`.
 For workspace-level issues (`.lathe/` not found, missing params file), see the **Troubleshooting**
 section of the [README](../../../README.md#troubleshooting).

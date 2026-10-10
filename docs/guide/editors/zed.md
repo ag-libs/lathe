@@ -36,7 +36,7 @@ No Lathe plugin, no extra config beyond one file.
 The launcher is the symlink `lathe:sync` links at `<root>/.lathe/`, pinned to the server version this
 project uses; any `mvn` build populates it.
 Zed starts language servers with the worktree root as their working directory, so the relative path
-resolves there (and the launcher finds `.lathe/java-home` relative to it).
+resolves there (and the launcher finds `.lathe/java-home` and `.lathe/jvm.args` relative to it).
 Setting `binary.path` replaces the Java extension's own launch command, so Eclipse JDT LS is never
 downloaded or started.
 Zed's UI and logs still label the server `jdtls`.

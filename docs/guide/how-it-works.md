@@ -66,6 +66,11 @@ Error Prone findings and, where the build sets `-Werror`, warnings promoted to e
 This is intentional: processor runs are too expensive to repeat on every keystroke, so Lathe keeps live
 editing responsive and reserves the full, build-faithful pass for save.
 
+Plugins such as Error Prone reach into `javac` internals, so the JVM running them needs extra
+`--add-exports`/`--add-opens` grants.
+Your build already declares these, as `-J` flags for a forked compiler or in `.mvn/jvm.config`.
+`lathe:sync` copies them into `.lathe/jvm.args`, and the server starts with them; re-sync after you change them.
+
 ## Workspace freshness
 
 Files you have open are analysed live as you edit and save them. When sources or resources change

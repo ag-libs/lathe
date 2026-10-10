@@ -307,7 +307,8 @@ overrides the POM opt-out, so the next build wires Lathe up and repopulates the 
   (see [installation.md](docs/guide/installation.md)).
 - **The server won't attach, or crashes** — set `LATHE_DEBUG=1` before launching your editor and check
   its LSP log (Neovim: [cheatsheet](docs/guide/editors/neovim.md#verbose-logging)). An unexpected exit
-  is also surfaced as an editor notification pointing at the log.
+  is also surfaced as an editor notification pointing at the log, and a server that fails at JVM
+  startup writes its error there too.
 - **Another Java language server (jdtls) misbehaves when Lathe is present** — a co-running Eclipse JDT LS
   scans Lathe's generated `.lathe/` mirror and can treat it as duplicate projects. Add `**/.lathe/**` to
   its `java.import.exclusions`; see
