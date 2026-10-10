@@ -104,7 +104,7 @@ freely.
 | Completion (with auto-import) | `vim.lsp.completion` / omnifunc | `<C-x><C-o>` | auto |
 | Code action (import type · add `throws` · wrap `try/catch` · declare local · replace `var` · stub missing method) | `vim.lsp.buf.code_action()` | `gra` | `<leader>ca` |
 | Add missing imports (whole file, one pass) | `:LatheMissingImports` | — | `<leader>li` |
-| Format document (when the workspace resolves a formatter) | `require('lathe').format()` / `:LatheFormat` | — | `<leader>f` |
+| Format document or selection (when the workspace resolves a formatter) | `require('lathe').format()` / `:LatheFormat` | — | `<leader>cf` |
 | Refresh the workspace: run `.lathe/lathe-sync.sh` (the toast shows the full build command) | `:LatheSync` / `:LatheSyncCaptureTest` (also re-captures test launches, without running the tests) | — | — |
 | Document symbols (outline) | `vim.lsp.buf.document_symbol()` | `gO` | `gO` |
 | Workspace symbols (CamelCase-hump aware) | `vim.lsp.buf.workspace_symbol()` | — | `<leader>ws` |
@@ -220,10 +220,14 @@ not fight format-on-save.
 
 Prefer `require('lathe').format()` over a bare `vim.lsp.buf.format()`: a format edit that touches the
 import block makes nvim-ufo reopen a closed imports fold, and `lathe.format` snapshots and restores that
-fold (the same preservation format-on-save applies). To bind it:
+fold (the same preservation format-on-save applies).
+To bind it, use LazyVim's `<leader>cf` ("code: format") rather than `<leader>f`: most setups put
+finders under `<leader>f…` (`<leader>ff`, `<leader>fg`, …), and while a key is the prefix of other
+mappings Neovim waits `timeoutlen` (1 s by default) before running it, so formatting feels slow even
+though the server answers in milliseconds.
 
 ```lua
-vim.keymap.set({ "n", "x" }, "<leader>f", function()
+vim.keymap.set({ "n", "x" }, "<leader>cf", function()
   require("lathe").format()
 end, { desc = "Lathe: format buffer" })
 ```
